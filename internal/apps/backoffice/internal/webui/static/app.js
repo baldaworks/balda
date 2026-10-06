@@ -140,7 +140,12 @@ document.addEventListener("click", async function (event) {
   }
 });
 
+function clearMCPInstructions() {
+  document.querySelectorAll("[data-mcp-transient]").forEach(function (element) { element.replaceChildren(); });
+}
+
 window.addEventListener("pagehide", function () {
+  clearMCPInstructions();
   document.querySelectorAll("[data-binding-secret], [data-mcp-secret]").forEach(function (element) {
     if (element instanceof HTMLInputElement) {
       element.value = "";
@@ -152,6 +157,7 @@ window.addEventListener("pagehide", function () {
 });
 
 window.addEventListener("pageshow", function (event) {
+  if (event.persisted) clearMCPInstructions();
   if (event.persisted) document.querySelectorAll("[data-mcp-secret]").forEach(function (input) { input.value = ""; });
 });
 

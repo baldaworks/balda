@@ -564,8 +564,61 @@ retained revisions. Deleted connection details expose retained metadata without
 edit, probe or selection forms. Worker OAuth completion and configuration recapture are
 separate operations from definition editing.
 
-Backoffice owns the narrow `MCPOperations` consuming port and its HTML views.
+Backoffice owns the `MCPOperations` and `MCPAuthorizations` consuming ports and its HTML views.
 `internal/apps/balda/mcpbackofficeapp` adapts the host's definition and catalog
 owners to that port. Validation, encrypted values, durable authority fences and
 readiness policy remain in their existing owners. Balda configures the port
 before the Backoffice HTTP listener starts; startup stage ordering is unchanged.
+
+### Worker authorization
+
+For a remote connection, **Authorize worker** starts a native browser or
+supported device flow from its current trusted definition. Configuration entries
+remain read-only. Starting explicitly captures current file values when needed;
+changing the file never silently changes an existing session's captured revision.
+A static `Authorization` header conflicts with worker OAuth and must be removed
+in the host definition before authorization.
+
+Use an explicit pre-registered client ID and its supported authentication method.
+Client secrets are encrypted and write-only. Browser authorization can use
+supported server client registration when the ID is blank; device authorization
+requires a pre-registered client and server support. Unsupported device flows
+show an error and leave browser authorization available. The browser callback is
+`<public_url><base_path>/mcp/oauth/callback`; register that exact URL with the issuer.
+Use the configured public origin, including any reverse-proxy base path.
+
+Begin, cancel, disconnect and retry are native forms with the existing normal
+administrator, current assurance, CSRF and same-origin checks. The callback uses
+one-use protocol state bound to the initiating browser family and issuer. Browser
+start also sets a host-only, HttpOnly callback credential with `SameSite=Lax`,
+scoped to that callback and expiring no later than the current access credential
+or attempt. Callback validation uses the same current administrator and fresh
+assurance checks, then clears this temporary cookie. Ordinary session cookies
+remain `SameSite=Strict`.
+
+Every callback outcome redirects to a safe continuation page before rendering,
+including access or assurance failures. Use **Continue to MCP** to return through
+a local browser navigation; this restores ordinary Strict-cookie eligibility
+after the external issuer's redirect chain. The page contains no code or state;
+refresh and history never replay the callback. Device verification
+instructions appear once in the native begin response. Status GETs show safe
+progress only; if instructions are lost, cancel and start again. Pending attempts
+live only in memory: host restart invalidates them and requires a new attempt.
+Already saved encrypted worker grants survive restart.
+
+Completion checks the original definition revision, current administrator
+versions and grant generation in one database transaction. An edit during code
+exchange or device polling prevents installation. After installation, the same
+host policy binds the exact initiating revision outside protocol locks. A later
+edit can reject that binding without assigning the saved grant to another
+revision. Existing session pins and ready runners retain their exact identity.
+
+**Authorized** means a worker grant was saved; **Ready** means its current tools
+are available. Inspect both states on the connection. **Retry tool attachment**
+uses its saved current grant without repeating OAuth, keeps an unchanged binding
+revision and retries the affected failed attachment. It does not restart ready
+runners or change historical pins. **Disconnect worker** requires confirmation
+and revokes every retained worker grant context, including existing sessions.
+Run one active writer for worker grants; keep the deployment credential key with
+the database backup. No tokens, client secrets or local bridge capabilities belong
+in logs, URLs used for recovery, exported read models or browser history caches.

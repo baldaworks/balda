@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/baldaworks/balda/internal/apps/backoffice/internal/webui"
 	"github.com/baldaworks/balda/internal/apps/backoffice/security"
@@ -53,6 +52,30 @@ func (a *httpApp) mcpPage(w http.ResponseWriter, r *http.Request) {
 		a.mcpError(w, r, page, err)
 		return
 	}
+
+	if result := r.URL.Query().Get("oauth_result"); result != "" {
+		err := mcpcmd.ErrUnavailable
+		switch result {
+		case mcpOAuthAuthorizedPending:
+			if page.MCP.Editor != nil && page.MCP.Editor.Row.Authorization == "Authorized" {
+				page.MCP.ProbeMessage = "Worker authorization was saved. Inspect current tool readiness below; retry attachment if needed."
+			}
+			a.render(w, r, http.StatusOK, webui.TemplateMCP, page)
+			return
+		case mcpOAuthInvalid:
+			err = mcpcmd.ErrInvalid
+		case mcpOAuthForbidden:
+			err = mcpcmd.ErrForbidden
+		case mcpOAuthDenied:
+			err = mcpcmd.ErrAuthRequired
+		case mcpOAuthConflict:
+			err = mcpcmd.ErrConflict
+		case mcpOAuthEnded:
+			err = mcpcmd.ErrNotFound
+		}
+		a.mcpAuthorizationError(w, r, page, err)
+		return
+	}
 	a.render(w, r, http.StatusOK, webui.TemplateMCP, page)
 }
 
@@ -92,6 +115,15 @@ func (a *httpApp) mcpView(r *http.Request, p security.Principal) (webui.Page, er
 			}
 			page.Title = item.Connection.PublicID + " · MCP · Balda"
 			page.MCP = &webui.MCPView{Editor: webui.ProjectMCPEditor(item, providers, false)}
+			if a.mcpAuthorizations != nil && page.MCP.Editor.AuthorizationAvailable {
+				attempt, found, err := a.mcpAuthorizations.CurrentAttempt(r.Context(), id, a.mcpAuthority(p))
+				if err != nil {
+					return page, err
+				}
+				if found {
+					page.MCP.Editor.Attempt = &webui.MCPAttempt{ID: attempt.ID, Device: attempt.Device, Expires: attempt.ExpiresAt.UTC().Format("2006-01-02 15:04 UTC"), CancelPath: "/mcp/oauth/attempts/" + url.PathEscape(attempt.ID) + "/cancel", StatusPath: "/mcp/oauth/device/" + url.PathEscape(attempt.ID)}
+				}
+			}
 			return page, nil
 		}
 	}
@@ -120,7 +152,7 @@ func (a *httpApp) mcpMutation(w http.ResponseWriter, r *http.Request) (url.Value
 		a.mcpError(w, r, page, mcpcmd.ErrForbidden)
 		return nil, page, mcpcmd.Authority{}, false
 	}
-	authority := mcpcmd.Authority{UserID: p.User.ID, UserVersion: p.User.Version, CredentialVersion: p.User.Credential.Version, MFAVersion: p.MFAVersion, SessionID: p.FamilyID, SessionVersion: p.Version, At: time.Now().UTC(), FreshProofAge: a.security.FreshProofAge()}
+	authority := a.mcpAuthority(p)
 	return form, page, authority, true
 }
 

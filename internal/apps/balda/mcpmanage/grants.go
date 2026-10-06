@@ -18,6 +18,7 @@ type GrantMutation struct {
 	Grant              mcpcmd.Grant
 	Operation          mcpcmd.GrantOperation
 	ExpectedGeneration uint64
+	ExpectedRevisionID string
 	Authority          *mcpcmd.Authority
 	Audit              usercmd.AuditEvent
 }
@@ -145,7 +146,7 @@ func (s *Grants) RequestCredentials(ctx context.Context, binding mcpcmd.AuthBind
 	updated.Generation++
 	updated.UpdatedAt = time.Now().UTC()
 	updated.AccessExpiresAt = token.ExpiresAt
-	if err := s.save(ctx, g, updated, token.Secrets, mcpcmd.GrantRenew, nil); err != nil {
+	if err := s.save(ctx, g, updated, token.Secrets, mcpcmd.GrantRenew, nil, ""); err != nil {
 		return GrantSecrets{}, err
 	}
 	return token.Secrets, nil
@@ -176,7 +177,7 @@ func (s *Grants) Disconnect(ctx context.Context, binding mcpcmd.AuthBinding, exp
 	updated.AccessExpiresAt = time.Time{}
 	updated.UpdatedAt = authority.At
 	secrets.AccessToken, secrets.RefreshToken, secrets.TokenType = "", "", ""
-	return s.save(ctx, g, updated, secrets, mcpcmd.GrantDisconnect, &authority)
+	return s.save(ctx, g, updated, secrets, mcpcmd.GrantDisconnect, &authority, "")
 }
 
 func (s *Grants) requireAuthorization(ctx context.Context, g mcpcmd.Grant, secrets GrantSecrets) error {
@@ -186,25 +187,37 @@ func (s *Grants) requireAuthorization(ctx context.Context, g mcpcmd.Grant, secre
 	updated.AccessExpiresAt = time.Time{}
 	updated.UpdatedAt = time.Now().UTC()
 	secrets.AccessToken, secrets.RefreshToken, secrets.TokenType = "", "", ""
-	if err := s.save(ctx, g, updated, secrets, mcpcmd.GrantRenew, nil); err != nil {
+	if err := s.save(ctx, g, updated, secrets, mcpcmd.GrantRenew, nil, ""); err != nil {
 		return err
 	}
 	return mcpcmd.ErrAuthRequired
 }
 
-func (s *Grants) save(ctx context.Context, previous, updated mcpcmd.Grant, secrets GrantSecrets, operation mcpcmd.GrantOperation, authority *mcpcmd.Authority) error {
+func (s *Grants) save(ctx context.Context, previous, updated mcpcmd.Grant, secrets GrantSecrets, operation mcpcmd.GrantOperation, authority *mcpcmd.Authority, expectedRevisionID string) error {
+	auditTime := updated.UpdatedAt
+	if authority != nil {
+		auditTime = authority.At
+	}
+	// Grant metadata must not move backwards when the wall clock changes.
+	// Keep current audit/authority time independent for security freshness.
+	if updated.UpdatedAt.Before(updated.CreatedAt) {
+		updated.UpdatedAt = updated.CreatedAt
+	}
+	if updated.UpdatedAt.Before(previous.UpdatedAt) {
+		updated.UpdatedAt = previous.UpdatedAt
+	}
 	payload, err := s.credentials.ProtectGrant(updated, secrets)
 	if err != nil {
 		return err
 	}
 	updated.ProtectedValues = payload
-	audit := usercmd.AuditEvent{ID: rand.Text(), Action: usercmd.AuditActionMCPAuthorizationChanged, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetMCP, TargetID: updated.Binding.ConnectionID, Source: "mcp-management", OccurredAt: updated.UpdatedAt}
+	audit := usercmd.AuditEvent{ID: rand.Text(), Action: usercmd.AuditActionMCPAuthorizationChanged, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetMCP, TargetID: updated.Binding.ConnectionID, Source: "mcp-management", OccurredAt: auditTime}
 	if authority == nil {
 		audit.Action = usercmd.AuditActionMCPCredentialsRenewed
 	} else {
 		audit.ActorUserID, audit.ActorSessionID = authority.UserID, authority.SessionID
 	}
-	return safeOperationError(s.store.SaveGrant(ctx, GrantMutation{Grant: updated, ExpectedGeneration: previous.Generation, Operation: operation, Authority: authority, Audit: audit}))
+	return safeOperationError(s.store.SaveGrant(ctx, GrantMutation{Grant: updated, ExpectedGeneration: previous.Generation, ExpectedRevisionID: expectedRevisionID, Operation: operation, Authority: authority, Audit: audit}))
 }
 
 func matchesGrantMetadata(g mcpcmd.Grant, metadata OAuthMetadata) bool {
@@ -282,7 +295,7 @@ func (s *Grants) prepareAuthorization(ctx context.Context, revision mcpcmd.Revis
 	g.Generation++
 	g.Status, g.Scopes, g.TokenEndpointAuthMethod = mcpcmd.GrantAuthRequired, slices.Clone(d.Scopes), client.AuthMethod
 	g.ClientSecretExpiresAt, g.AccessExpiresAt, g.UpdatedAt = client.SecretExpiresAt, time.Time{}, authority.At
-	if err := s.save(ctx, previous, g, GrantSecrets{ClientSecret: client.Secret}, mcpcmd.GrantRegister, &authority); err != nil {
+	if err := s.save(ctx, previous, g, GrantSecrets{ClientSecret: client.Secret}, mcpcmd.GrantRegister, &authority, ""); err != nil {
 		return mcpcmd.Grant{}, OAuthMetadata{}, err
 	}
 	// Return public metadata only; the private payload remains behind the store.

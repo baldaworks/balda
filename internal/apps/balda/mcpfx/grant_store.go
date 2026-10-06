@@ -15,5 +15,5 @@ func NewGrantStore(store state.MCPStore) *GrantStore { return &GrantStore{MCPSto
 
 // SaveGrant commits credentials, authority and safe audit atomically.
 func (s *GrantStore) SaveGrant(ctx context.Context, m mcpmanage.GrantMutation) error {
-	return s.SaveMCPGrant(ctx, state.MCPGrantMutation{Grant: m.Grant, Operation: m.Operation, ExpectedGeneration: m.ExpectedGeneration, Authority: m.Authority, Audit: m.Audit})
+	return s.SaveMCPGrant(ctx, state.MCPGrantMutation{Grant: m.Grant, Operation: m.Operation, ExpectedGeneration: m.ExpectedGeneration, ExpectedRevisionID: m.ExpectedRevisionID, Authority: m.Authority, Audit: m.Audit})
 }

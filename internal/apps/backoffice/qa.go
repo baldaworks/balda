@@ -39,6 +39,9 @@ func QAHandler(basePath string) (http.Handler, error) {
 		if page.ReturnTo != "" {
 			page.ReturnTo = basePath + "/qa/ui/overview"
 		}
+		if page.RestartURL != "" {
+			page.RestartURL = basePath + "/qa/ui/mcp"
+		}
 		if r.Method == http.MethodHead {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(status)
@@ -66,9 +69,39 @@ type qaEntry struct {
 }
 
 var qaEntries = []qaEntry{
+	{name: "mcp-oauth-return", label: "MCP · native callback continuation", templateName: webui.TemplateOAuthReturn, page: func() webui.Page {
+		return webui.Page{Title: "Continue to MCP · QA", RestartURL: "/mcp"}
+	}, gallery: true},
+	{name: "mcp-authorizing", label: "MCP · pending browser authorization", templateName: webui.TemplateMCP, page: func() webui.Page {
+		p := qaMCPEditor(false, true)
+		p.MCP.Editor.Attempt = &webui.MCPAttempt{ID: "qa-attempt", CancelPath: "/mcp/oauth/attempts/qa-attempt/cancel", Expires: "2026-08-01 12:10 UTC"}
+		return p
+	}, gallery: true},
+	{name: "mcp-device-issued", label: "MCP · one-time device instructions", templateName: webui.TemplateMCP, page: func() webui.Page { return qaMCPDevice(mcpcmd.DevicePending, true) }, gallery: true},
+	{name: "mcp-device-pending", label: "MCP · device status without instructions", templateName: webui.TemplateMCP, page: func() webui.Page { return qaMCPDevice(mcpcmd.DevicePending, false) }, gallery: true},
+	{name: "mcp-device-authorized", label: "MCP · saved device grant, readiness separate", templateName: webui.TemplateMCP, page: func() webui.Page { return qaMCPDevice(mcpcmd.DeviceAuthorized, false) }, gallery: true},
+	{name: "mcp-device-denied", label: "MCP · device denied", templateName: webui.TemplateMCP, page: func() webui.Page { return qaMCPDevice(mcpcmd.DeviceDenied, false) }, gallery: true},
+	{name: "mcp-device-expired", label: "MCP · device expired", templateName: webui.TemplateMCP, page: func() webui.Page { return qaMCPDevice(mcpcmd.DeviceExpired, false) }, gallery: true},
+	{name: "mcp-device-failed", label: "MCP · device failed", templateName: webui.TemplateMCP, page: func() webui.Page { return qaMCPDevice(mcpcmd.DeviceFailed, false) }, gallery: true},
+	{name: "mcp-authorization-unavailable", label: "MCP · authorization unsupported", templateName: webui.TemplateError, page: func() webui.Page {
+		p := qaMCP()
+		p.MCP = nil
+		p.Error = &webui.ErrorView{Heading: "Worker authorization could not complete", Message: "Device authorization is unavailable. Reopen the connection and use supported browser authorization."}
+		return p
+	}, status: http.StatusServiceUnavailable, gallery: true},
+	{name: "mcp-authorization-retry", label: "MCP · saved authorization with explicit attachment retry", templateName: webui.TemplateMCP, page: func() webui.Page {
+		p := qaMCPEditor(false, true)
+		p.MCP.Editor.Row.RevisionID = "qa-revision"
+		p.MCP.Editor.Row.Authorization = "Authorized"
+		p.MCP.Editor.Row.Recovery = ""
+		p.MCP.ProbeMessage = "Worker authorization was saved. Inspect current tool readiness below; retry attachment if needed."
+		return p
+	}, gallery: true},
+
 	{name: "mcp-retained", label: "MCP · deleted retained definition", templateName: webui.TemplateMCP, page: func() webui.Page {
 		p := qaMCPEditor(false, false)
 		p.MCP.Editor.Row.Deleted = true
+		p.MCP.Editor.AuthorizationAvailable = false
 		p.MCP.Editor.Row.Status = "Deleted"
 		p.MCP.Editor.Row.Ready = false
 		return p
@@ -522,5 +555,12 @@ func qaMCPEditor(create, configured bool) webui.Page {
 	} else {
 		p.Title = "Edit MCP server · QA"
 	}
+	return p
+}
+
+func qaMCPDevice(status mcpcmd.DeviceStatus, instructions bool) webui.Page {
+	p := qaMCP()
+	p.Title = "Worker authorization · synthetic preview"
+	p.MCP = &webui.MCPView{Device: webui.ProjectMCPDevice(mcpcmd.DeviceAuthorization{ID: "qa-attempt", ConnectionID: "qa-worker", Status: status, UserCode: "INVALID-QA-CODE", VerificationURI: "https://issuer.example.test/verify", VerificationURIComplete: "https://issuer.example.test/verify?code=invalid-qa", ExpiresAt: time.Date(2026, 8, 1, 12, 10, 0, 0, time.UTC)}, instructions)}
 	return p
 }

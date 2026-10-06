@@ -25,6 +25,10 @@ const (
 	CSRFCookieName = "balda_csrf"
 	// RefreshPath is the only request path that receives the refresh cookie.
 	RefreshPath = "/auth/session/refresh"
+	// OAuthCallbackCookieName carries the initiating access credential only to OAuth callbacks.
+	OAuthCallbackCookieName = "balda_oauth_callback"
+	// OAuthCallbackPath is the only route allowed to restore the callback credential.
+	OAuthCallbackPath = "/mcp/oauth/callback"
 
 	defaultMaxBodyBytes = 8 << 10
 )
@@ -300,6 +304,54 @@ func (b *Browser) Authenticate(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalContextKey{}, principal)))
 	})
+}
+
+// PreserveOAuthCallbackCredential retains an already guarded access credential
+// for the top-level return from an external issuer. It never extends access life.
+func (b *Browser) PreserveOAuthCallbackCredential(w http.ResponseWriter, r *http.Request, attemptExpires time.Time) error {
+	cookie, err := r.Cookie(AccessCookieName)
+	if err != nil || cookie.Value == "" {
+		return ErrUnauthenticated
+	}
+	p, err := b.service.ValidateAccess(r.Context(), cookie.Value)
+	if err != nil {
+		return err
+	}
+	expires := p.AccessExpiresAt
+	if attemptExpires.Before(expires) {
+		expires = attemptExpires
+	}
+	if expires.IsZero() {
+		return ErrUnauthenticated
+	}
+	http.SetCookie(w, &http.Cookie{Name: OAuthCallbackCookieName, Value: cookie.Value,
+		Path: b.path(OAuthCallbackPath), Expires: expires,
+		HttpOnly: true, Secure: b.secureCookies, SameSite: http.SameSiteLaxMode})
+	return nil
+}
+
+// RestoreOAuthCallbackCredential clears the transient cookie on every callback
+// outcome and supplies it to the ordinary guards only when access is absent.
+func (b *Browser) RestoreOAuthCallbackCredential(w http.ResponseWriter, r *http.Request) *http.Request {
+	if r.URL.Path != b.path(OAuthCallbackPath) {
+		return r
+	}
+	http.SetCookie(w, &http.Cookie{Name: OAuthCallbackCookieName, Path: b.path(OAuthCallbackPath),
+		MaxAge: -1, Expires: time.Unix(1, 0).UTC(), HttpOnly: true,
+		Secure: b.secureCookies, SameSite: http.SameSiteLaxMode})
+	if r.Method != http.MethodGet {
+		return r
+	}
+	if _, err := r.Cookie(AccessCookieName); err == nil {
+		return r
+	}
+	cookie, err := r.Cookie(OAuthCallbackCookieName)
+	if err != nil || cookie.Value == "" {
+		return r
+	}
+	restored := r.Clone(r.Context())
+	restored.AddCookie(&http.Cookie{Name: AccessCookieName, Value: cookie.Value})
+	return restored
 }
 
 // RequireNormal rejects restricted temporary-password sessions.

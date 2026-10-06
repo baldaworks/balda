@@ -11,10 +11,67 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 )
+
+func checkMCPGrantMetadataUsesIndependentSecurityTime(t *testing.T, open contractOpener) {
+	p := newContractProvider(t, open)
+	defer closeContractProvider(t, p)
+	m := contractMCPGrant(t, p)
+	authority := *m.Authority
+	floor := authority.At.Add(time.Hour)
+	m.Grant.CreatedAt, m.Grant.UpdatedAt = floor, floor.Add(time.Minute)
+	for _, operation := range []mcpcmd.GrantOperation{mcpcmd.GrantRegister, mcpcmd.GrantAuthorize, mcpcmd.GrantRenew, mcpcmd.GrantDisconnect} {
+		if operation != mcpcmd.GrantRegister {
+			m.ExpectedGeneration = m.Grant.Generation
+			m.Grant.Generation++
+		}
+		m.Operation = operation
+		m.Audit.ID = "clock-" + string(operation)
+		m.Audit.OccurredAt = authority.At
+		m.Authority = &authority
+		switch operation {
+		case mcpcmd.GrantAuthorize:
+			m.Grant.Status = mcpcmd.GrantAuthorized
+			m.Grant.ProtectedValues = append([]byte{1}, bytes.Repeat([]byte{0x91}, 64)...)
+		case mcpcmd.GrantRenew:
+			m.Authority = nil
+			m.Audit.Action = usercmd.AuditActionMCPCredentialsRenewed
+			m.Audit.ActorUserID, m.Audit.ActorSessionID = "", ""
+		case mcpcmd.GrantDisconnect:
+			m.Grant.Status, m.Grant.ProtectedValues = mcpcmd.GrantDisconnected, nil
+			m.Audit.Action = usercmd.AuditActionMCPAuthorizationChanged
+			m.Audit.ActorUserID, m.Audit.ActorSessionID = authority.UserID, authority.SessionID
+		}
+		if m.Authority != nil {
+			bad := m
+			bad.Audit.OccurredAt = bad.Audit.OccurredAt.Add(time.Second)
+			if err := p.MCP().SaveMCPGrant(t.Context(), bad); !errors.Is(err, mcpcmd.ErrInvalid) {
+				t.Fatalf("mismatched current authority/audit %s = %v", operation, err)
+			}
+		}
+		if err := p.MCP().SaveMCPGrant(t.Context(), m); err != nil {
+			t.Fatalf("monotonic grant with independent security time %s: %v", operation, err)
+		}
+		got, found, err := p.MCP().GetMCPGrant(t.Context(), m.Grant.Binding)
+		if err != nil || !found || !got.UpdatedAt.Equal(floor.Add(time.Minute)) || !got.CreatedAt.Equal(floor) {
+			t.Fatal("grant metadata floor was not retained")
+		}
+		authority.At = authority.At.Add(time.Minute)
+	}
+	audits, err := p.Users().ListAuditEvents(t.Context(), usercmd.PageRequest{Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, audit := range audits.Events {
+		if audit.TargetType == usercmd.AuditTargetMCP && audit.Action != usercmd.AuditActionMCPDefinitionChanged && !audit.OccurredAt.Before(floor) {
+			t.Fatal("grant metadata floor replaced the current audit time")
+		}
+	}
+}
 
 func contractMCPGrant(t *testing.T, p Provider) MCPGrantMutation {
 	t.Helper()
@@ -23,7 +80,7 @@ func contractMCPGrant(t *testing.T, p Provider) MCPGrantMutation {
 		t.Fatal(err)
 	}
 	a := connection.Authority
-	return MCPGrantMutation{Grant: mcpcmd.Grant{ID: "worker-grant", Binding: mcpcmd.AuthBinding{ConnectionID: connection.Connection.ID, Resource: connection.Revision.Definition.URL, Issuer: "https://issuer.example.org", ClientID: "worker-client"}, Generation: 1, Status: mcpcmd.GrantAuthRequired, Scopes: []string{"tools"}, TokenEndpointAuthMethod: "none", CreatedAt: a.At, UpdatedAt: a.At}, Operation: mcpcmd.GrantRegister, Authority: &a, Audit: usercmd.AuditEvent{ID: "grant-register", Action: usercmd.AuditActionMCPAuthorizationChanged, Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: a.UserID, ActorSessionID: a.SessionID, TargetType: usercmd.AuditTargetMCP, TargetID: connection.Connection.ID, Source: "provider-contract", OccurredAt: a.At}}
+	return MCPGrantMutation{ExpectedRevisionID: connection.Connection.CurrentRevisionID, Grant: mcpcmd.Grant{ID: "worker-grant", Binding: mcpcmd.AuthBinding{ConnectionID: connection.Connection.ID, Resource: connection.Revision.Definition.URL, Issuer: "https://issuer.example.org", ClientID: "worker-client"}, Generation: 1, Status: mcpcmd.GrantAuthRequired, Scopes: []string{"tools"}, TokenEndpointAuthMethod: "none", CreatedAt: a.At, UpdatedAt: a.At}, Operation: mcpcmd.GrantRegister, Authority: &a, Audit: usercmd.AuditEvent{ID: "grant-register", Action: usercmd.AuditActionMCPAuthorizationChanged, Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: a.UserID, ActorSessionID: a.SessionID, TargetType: usercmd.AuditTargetMCP, TargetID: connection.Connection.ID, Source: "provider-contract", OccurredAt: a.At}}
 }
 
 func authorizeContractGrant(m MCPGrantMutation) MCPGrantMutation {
@@ -34,6 +91,37 @@ func authorizeContractGrant(m MCPGrantMutation) MCPGrantMutation {
 	m.Operation = mcpcmd.GrantAuthorize
 	m.Audit.ID = "grant-authorize"
 	return m
+}
+
+func checkMCPDefinitionEditFencesCompletion(t *testing.T, open contractOpener) {
+	p := newContractProvider(t, open)
+	defer closeContractProvider(t, p)
+	m := contractMCPGrant(t, p)
+	if err := p.MCP().SaveMCPGrant(t.Context(), m); err != nil {
+		t.Fatal(err)
+	}
+	c, found, err := p.MCP().GetMCPConnection(t.Context(), m.Grant.Binding.ConnectionID)
+	if err != nil || !found {
+		t.Fatal("connection missing")
+	}
+	r, found, err := p.MCP().GetMCPRevision(t.Context(), c.ID, c.CurrentRevisionID)
+	if err != nil || !found {
+		t.Fatal("revision missing")
+	}
+	c.CurrentRevisionID, r.ID = "edited-revision", "edited-revision"
+	r.Definition.URL = "https://edited.example/mcp"
+	audit := m.Audit
+	audit.ID, audit.Action = "definition-edit", usercmd.AuditActionMCPDefinitionChanged
+	if err := p.MCP().SaveMCPConnection(t.Context(), MCPMutation{Connection: c, Revision: &r, ExpectedVersion: c.Version, Authority: *m.Authority, Audit: audit}); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.MCP().SaveMCPGrant(t.Context(), authorizeContractGrant(m)); !errors.Is(err, mcpcmd.ErrConflict) {
+		t.Fatalf("completion after definition edit = %v, want conflict", err)
+	}
+	got, found, err := p.MCP().GetMCPGrant(t.Context(), m.Grant.Binding)
+	if err != nil || !found || !reflect.DeepEqual(got, m.Grant) {
+		t.Fatal("stale completion changed grant")
+	}
 }
 
 func checkMCPGrantsSurviveRestart(t *testing.T, open contractOpener) {
@@ -111,6 +199,8 @@ func checkMCPGrantTransitionsAreAtomic(t *testing.T, open contractOpener) {
 		{"stale administrator", func(m *MCPGrantMutation) { a := *m.Authority; a.UserVersion++; m.Authority = &a }, mcpcmd.ErrConflict},
 		{"missing authority", func(m *MCPGrantMutation) { m.Authority = nil }, mcpcmd.ErrInvalid},
 		{"missing protected tokens", func(m *MCPGrantMutation) { m.Grant.ProtectedValues = nil }, mcpcmd.ErrInvalid},
+		{"missing initiating revision", func(m *MCPGrantMutation) { m.ExpectedRevisionID = "" }, mcpcmd.ErrInvalid},
+		{"wrong initiating revision", func(m *MCPGrantMutation) { m.ExpectedRevisionID = "other-revision" }, mcpcmd.ErrConflict},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			bad := authorized

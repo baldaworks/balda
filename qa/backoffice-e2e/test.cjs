@@ -5,6 +5,8 @@ const path = require('node:path');
 const { chromium } = require('playwright');
 
 const routes = [
+ 'mcp-oauth-return',
+ 'mcp-authorizing', 'mcp-device-issued', 'mcp-device-pending', 'mcp-device-authorized', 'mcp-device-denied', 'mcp-device-expired', 'mcp-device-failed', 'mcp-authorization-unavailable', 'mcp-authorization-retry',
   'mcp-retained', 'mcp', 'mcp-empty', 'mcp/new', 'mcp/connections/qa-worker', 'mcp/connections/config:qa-worker', 'mcp-probe', 'mcp-invalid', 'mcp-conflict', 'mcp-unavailable',
   '', 'style-guide', 'layout', 'layout-long', 'login', 'login-error', 'refresh', 'refresh-error', 'refresh-conflict',
   'password', 'password-error', 'overview', 'overview-empty', 'access-list',
@@ -15,7 +17,7 @@ const routes = [
   'form-bad-request', 'form-forbidden', 'form-conflict', 'form-server-error',
 ];
 const expectedStatus = new Map([
- ['mcp-invalid',400],['mcp-conflict',409],['mcp-unavailable',503],
+ ['mcp-authorization-unavailable',503], ['mcp-invalid',400],['mcp-conflict',409],['mcp-unavailable',503],
   ['form-bad-request', 400], ['form-forbidden', 403],
   ['form-conflict', 409], ['form-server-error', 500],
 ]);

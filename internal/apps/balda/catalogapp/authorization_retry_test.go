@@ -1,9 +1,12 @@
 package catalogapp
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -19,10 +22,94 @@ import (
 	"github.com/normahq/runtime/v2/mcpregistry"
 )
 
+func TestAuthorizationRetryRecoversSavedPendingPublication(t *testing.T) {
+	for _, failure := range []string{"snapshot persistence", "completion marker"} {
+		t.Run(failure, func(t *testing.T) {
+			p, original, _, mutation, credentials := hybridCatalogFixture(t)
+			upstream := newAuthorizationMCPFixture(t, mcpcmd.TransportHTTP, "private-header")
+			grants, err := mcpmanage.NewGrants(credentials, mcpfx.NewGrantStore(p.MCP()), mcpfx.NewOAuthProvider(nil))
+			if err != nil {
+				t.Fatal(err)
+			}
+			bridge := mcpbridge.New(mcpfx.GrantCredentials{Grants: grants}, nil)
+			if err := bridge.Start(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = bridge.Close(context.Background()) })
+			configured := map[string]agentconfig.MCPServerConfig{"worker-tools": {Type: agentconfig.MCPServerTypeHTTP, URL: upstream.server.URL, Headers: map[string]string{"X-Worker-Secret": "private-header"}}}
+			catalog, err := NewRuntime(original.stateDir, "", "", p, nil, configured, mcpregistry.New(nil), commandcmd.NewRegistry(), credentials, bridge)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = catalog.MCP().Shutdown(context.Background()) })
+			probe, err := mcpfx.NewManagedProbe(credentials, mcpfx.NewClientLauncher(), bridge)
+			if err != nil {
+				t.Fatal(err)
+			}
+			definitions, err := mcpmanage.NewDefinitions(credentials, mcpfx.NewDefinitionStore(p.MCP()), mcpfx.NewConfiguredDefinitions(configured, map[string]agentconfig.Config{"hosted": {}}, "hosted", nil), catalog, probe)
+			if err != nil {
+				t.Fatal(err)
+			}
+			capture, err := definitions.PrepareAuthorization(t.Context(), mcpcmd.PrepareAuthorization{ConnectionID: "config:worker-tools", Scopes: []string{"tools:read"}, Authority: mutation.Authority})
+			if err != nil {
+				t.Fatal(err)
+			}
+			pinned, err := catalog.Store().Application()
+			if err != nil {
+				t.Fatal(err)
+			}
+			worker := newWorkerGrantFixture(t, p, credentials, mutation.Authority, capture.ConnectionID, upstream.server.URL)
+			worker.authorize(t)
+			upstream.worker.Store(worker)
+			grant, found, err := p.MCP().GetMCPGrant(t.Context(), worker.binding)
+			if err != nil || !found {
+				t.Fatal("authorized grant missing")
+			}
+			if failure == "snapshot persistence" {
+				catalog.kv = &failedSnapshotWrite{KVStore: p.AppKV()}
+			} else {
+				catalog.managedMCP = &failedMCPMarker{MCPStore: p.MCP()}
+			}
+			request := mcpcmd.SelectAuthorization{ConnectionID: capture.ConnectionID, ExpectedRevisionID: capture.ID, Binding: worker.binding, Authority: mutation.Authority}
+			bound, err := definitions.BindAuthorization(t.Context(), request)
+			if err != nil || bound.Status != mcpcmd.StatusPending || bound.Connection.PublishedVersion >= bound.Connection.Version || bound.Definition.AuthBinding == nil {
+				t.Fatalf("saved binding after publication failure = %+v/%v", bound, err)
+			}
+			connected := upstream.initializations.Load()
+			catalog.kv, catalog.managedMCP = p.AppKV(), p.MCP()
+			request.ExpectedRevisionID = bound.Connection.CurrentRevisionID
+			ready, err := definitions.BindAuthorization(t.Context(), request)
+			if err != nil || ready.Status != mcpcmd.StatusReady || ready.ToolCount != 1 || ready.Connection.PublishedVersion != ready.Connection.Version {
+				t.Fatalf("retry after publication fault cleared = %s/%d/%+v/%v", ready.Status, ready.ToolCount, ready.Connection, err)
+			}
+			if ready.Connection.CurrentRevisionID != bound.Connection.CurrentRevisionID || ready.Connection.Version != bound.Connection.Version {
+				t.Fatal("publication retry fabricated a new definition revision")
+			}
+			if failure == "completion marker" && (connected != 1 || upstream.initializations.Load() != connected) {
+				t.Fatalf("marker recovery MCP initializations = %d -> %d", connected, upstream.initializations.Load())
+			}
+			retained, err := catalog.Store().Get(pinned.ID)
+			if err != nil || retained.ID != pinned.ID {
+				t.Fatal("publication retry lost historical snapshot")
+			}
+			for _, descriptor := range retained.MCPServers {
+				if string(descriptor.Revision) != capture.ID {
+					t.Fatal("publication retry retargeted historical capture")
+				}
+			}
+			after, found, err := p.MCP().GetMCPGrant(t.Context(), worker.binding)
+			if err != nil || !found || after.Generation != grant.Generation || !bytes.Equal(after.ProtectedValues, grant.ProtectedValues) || worker.renewals.Load() != 0 {
+				t.Fatal("publication retry repeated OAuth or altered saved credentials")
+			}
+		})
+	}
+}
+
 type authorizationMCPFixture struct {
-	server      *httptest.Server
-	worker      atomic.Pointer[workerGrantFixture]
-	unavailable atomic.Bool
+	server          *httptest.Server
+	worker          atomic.Pointer[workerGrantFixture]
+	unavailable     atomic.Bool
+	initializations atomic.Int64
 }
 
 func newAuthorizationMCPFixture(t *testing.T, transport mcpcmd.Transport, header string) *authorizationMCPFixture {
@@ -53,6 +140,22 @@ func newAuthorizationMCPFixture(t *testing.T, transport mcpcmd.Transport, header
 			w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer resource_metadata="%s/.well-known/oauth-protected-resource"`, f.server.URL))
 			w.WriteHeader(http.StatusUnauthorized)
 			return
+		}
+		if r.Method == http.MethodPost {
+			data, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Error(err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			_ = r.Body.Close()
+			r.Body = io.NopCloser(bytes.NewReader(data))
+			var request struct {
+				Method string `json:"method"`
+			}
+			if json.Unmarshal(data, &request) == nil && request.Method == "initialize" {
+				f.initializations.Add(1)
+			}
 		}
 		handler.ServeHTTP(w, r)
 	}))

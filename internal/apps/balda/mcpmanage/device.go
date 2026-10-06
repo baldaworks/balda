@@ -84,7 +84,7 @@ func (s *Authorizations) BeginDevice(ctx context.Context, r mcpcmd.Revision, met
 		a.ExpiresAt = device.ExpiresAt
 	}
 	device.ExpiresAt = a.ExpiresAt
-	a.Grant, a.Metadata, a.Ready = g, metadata, true
+	a.Grant, a.Metadata, a.Ready, a.RevisionID = g, metadata, true, r.ID
 	a.Device = mcpcmd.DeviceAuthorization{ID: a.ID, ConnectionID: a.ConnectionID, VerificationURI: device.VerificationURI, VerificationURIComplete: device.VerificationURIComplete, UserCode: device.UserCode, ExpiresAt: a.ExpiresAt, Status: mcpcmd.DevicePending}
 	s.polls.Add(1)
 	go s.pollDevice(a, device, secrets)
@@ -117,8 +117,8 @@ func (s *Authorizations) pollDevice(a *authorizationAttempt, device OAuthDevice,
 	defer cancel()
 	token, err := s.grants.oauth.PollDevice(ctx, a.Metadata, a.Grant, secrets, device)
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.attempts[a.ID] != a {
+		s.mu.Unlock()
 		return
 	}
 	if ctx.Err() != nil || !a.ExpiresAt.After(time.Now()) {
@@ -142,6 +142,13 @@ func (s *Authorizations) pollDevice(a *authorizationAttempt, device OAuthDevice,
 		delete(s.byConnection, a.ConnectionID)
 	}
 	a.cancel()
+	snapshot := *a
+	s.mu.Unlock()
+	if err == nil {
+		// Authorized describes the saved grant, even when attachment fails.
+		// The catalog/definition read exposes readiness for explicit retry.
+		_ = s.bindAuthorization(s.ctx, snapshot, snapshot.Authority)
+	}
 }
 
 // Caller holds the attempt mutex so cancellation and durable completion agree.
@@ -166,7 +173,7 @@ func (s *Authorizations) installDevice(ctx context.Context, a *authorizationAtte
 	authority := a.Authority
 	authority.At = time.Now().UTC()
 	updated.UpdatedAt = authority.At
-	return s.grants.save(ctx, g, updated, token.Secrets, mcpcmd.GrantAuthorize, &authority)
+	return s.grants.save(ctx, g, updated, token.Secrets, mcpcmd.GrantAuthorize, &authority, a.RevisionID)
 }
 
 func supportsDeviceAuthorization(metadata OAuthMetadata) bool {

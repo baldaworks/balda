@@ -15,20 +15,21 @@ import (
 )
 
 const (
-	TemplateWebAuthn   = "webauthn"
-	TemplateStepUp     = "step-up"
-	TemplateLogin      = "login"
-	TemplateOverview   = "overview"
-	TemplateAccess     = "access"
-	TemplateAccount    = "account"
-	TemplateAudit      = "audit"
-	TemplateMCP        = "mcp"
-	TemplateError      = "error"
-	TemplateRefresh    = "refresh"
-	TemplatePassword   = "password"
-	TemplateGallery    = "gallery"
-	TemplateStyleGuide = "style-guide"
-	TemplateLayout     = "layout"
+	TemplateWebAuthn    = "webauthn"
+	TemplateStepUp      = "step-up"
+	TemplateLogin       = "login"
+	TemplateOverview    = "overview"
+	TemplateAccess      = "access"
+	TemplateAccount     = "account"
+	TemplateAudit       = "audit"
+	TemplateMCP         = "mcp"
+	TemplateOAuthReturn = "oauth-return"
+	TemplateError       = "error"
+	TemplateRefresh     = "refresh"
+	TemplatePassword    = "password"
+	TemplateGallery     = "gallery"
+	TemplateStyleGuide  = "style-guide"
+	TemplateLayout      = "layout"
 )
 
 var templateFiles = map[string]string{
@@ -37,9 +38,10 @@ var templateFiles = map[string]string{
 	TemplateAccess: "templates/access.tmpl", TemplateAccount: "templates/account.tmpl",
 	TemplateAudit: "templates/audit.tmpl", TemplateError: "templates/error.tmpl",
 	TemplateRefresh: "templates/refresh.tmpl", TemplatePassword: "templates/password.tmpl",
-	TemplateMCP:        "templates/mcp.tmpl",
-	TemplateGallery:    "templates/gallery.tmpl",
-	TemplateStyleGuide: "templates/style-guide.tmpl", TemplateLayout: "templates/layout.tmpl",
+	TemplateMCP:         "templates/mcp.tmpl",
+	TemplateOAuthReturn: "templates/oauth-return.tmpl",
+	TemplateGallery:     "templates/gallery.tmpl",
+	TemplateStyleGuide:  "templates/style-guide.tmpl", TemplateLayout: "templates/layout.tmpl",
 }
 
 //go:embed templates static

@@ -13,6 +13,28 @@ import (
 
 const deviceShutdownCase = "shutdown"
 
+func waitDeviceStatus(t *testing.T, s *Authorizations, id string, authority mcpcmd.Authority, want mcpcmd.DeviceStatus) mcpcmd.DeviceAuthorization {
+	t.Helper()
+	deadline := time.NewTimer(time.Second)
+	defer deadline.Stop()
+	tick := time.NewTicker(time.Millisecond)
+	defer tick.Stop()
+	for {
+		status, err := s.Device(t.Context(), id, authority)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if status.Status == want {
+			return status
+		}
+		select {
+		case <-deadline.C:
+			t.Fatalf("device status = %s, want %s", status.Status, want)
+		case <-tick.C:
+		}
+	}
+}
+
 func deviceHarness(t *testing.T) (*Authorizations, *grantMemoryStore, *grantOAuth, mcpcmd.Revision, mcpcmd.Authority) {
 	t.Helper()
 	s, store, o, r, a := browserHarness(t)
@@ -23,6 +45,61 @@ func deviceHarness(t *testing.T) (*Authorizations, *grantMemoryStore, *grantOAut
 	o.metadata.RequireIssuerParameter = false
 	o.device = OAuthDevice{Code: "private-device-code", UserCode: "ABCD-EFGH", VerificationURI: o.metadata.Issuer + "/verify", ExpiresAt: time.Now().Add(time.Minute), Interval: 1}
 	return s, store, o, r, a
+}
+
+func TestDeviceDefinitionEditDuringPollCannotInstallGrant(t *testing.T) {
+	s, store, o, r, a := deviceHarness(t)
+	defer s.Close()
+	o.poll = func(context.Context, mcpcmd.Grant, GrantSecrets, OAuthDevice) (OAuthToken, error) {
+		store.mu.Lock()
+		store.currentRevisionID = "edited-revision"
+		store.mu.Unlock()
+		return OAuthToken{Secrets: GrantSecrets{AccessToken: "stale-device-token", TokenType: "Bearer"}}, nil
+	}
+	started, err := s.BeginDevice(t.Context(), r, "", OAuthClient{ID: "worker-client", AuthMethod: mcpcmd.ClientAuthNone}, a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status := waitDeviceStatus(t, s, started.ID, a, mcpcmd.DeviceFailed)
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if status.Status != mcpcmd.DeviceFailed || store.grant.Status != mcpcmd.GrantAuthRequired || len(store.writes) != 1 {
+		t.Fatal("stale device poll installed a grant")
+	}
+}
+
+func TestDeviceCompletionBindsSavedGrantOutsideAttemptLock(t *testing.T) {
+	s, _, o, r, a := deviceHarness(t)
+	defer s.Close()
+	bound := make(chan mcpcmd.SelectAuthorization, 1)
+	s.definitions = authorizationBinder{bind: func(ctx context.Context, request mcpcmd.SelectAuthorization) (mcpcmd.Item, error) {
+		if !s.mu.TryLock() {
+			t.Error("binding held the attempt lock")
+			return mcpcmd.Item{}, mcpcmd.ErrUnavailable
+		}
+		s.mu.Unlock()
+		if _, err := s.grants.RequestCredentials(ctx, request.Binding, r.Definition.Scopes); err != nil {
+			t.Errorf("binding cannot acquire saved grant: %v", err)
+		}
+		bound <- request
+		return mcpcmd.Item{}, mcpcmd.ErrUnavailable
+	}}
+	o.poll = func(context.Context, mcpcmd.Grant, GrantSecrets, OAuthDevice) (OAuthToken, error) {
+		return OAuthToken{Secrets: GrantSecrets{AccessToken: "device-token", TokenType: "Bearer"}}, nil
+	}
+	started, err := s.BeginDevice(t.Context(), r, "", OAuthClient{ID: "worker-client", AuthMethod: mcpcmd.ClientAuthNone}, a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case request := <-bound:
+		if request.ExpectedRevisionID != r.ID || request.ConnectionID != r.ConnectionID {
+			t.Fatal("device completion selected another revision")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("saved device grant was not bound")
+	}
+	_ = waitDeviceStatus(t, s, started.ID, a, mcpcmd.DeviceAuthorized)
 }
 
 func TestDeviceAuthorizationUsesPersistedConfidentialClientSecret(t *testing.T) {
@@ -146,7 +223,7 @@ func TestDeviceAuthorizationInstallsWorkerGrantWithoutCallback(t *testing.T) {
 func TestDeviceAuthorizationDoesNotRequireBrowserCallbackConfiguration(t *testing.T) {
 	s, _, o, r, a := deviceHarness(t)
 	defer s.Close()
-	deviceOnly, err := NewAuthorizations(s.grants, "")
+	deviceOnly, err := NewAuthorizations(s.grants, "", s.definitions)
 	if err != nil {
 		t.Fatalf("device-only service requires browser callback: %v", err)
 	}
@@ -251,7 +328,7 @@ func TestDeviceLatePollingCannotInstallAfterCancelDisconnectRestartOrGenerationC
 				t.Fatalf("late polling authorized worker after %s: %v", action, err)
 			}
 			if action == deviceShutdownCase {
-				restarted, err := NewAuthorizations(s.grants, "")
+				restarted, err := NewAuthorizations(s.grants, "", s.definitions)
 				if err != nil {
 					t.Fatal(err)
 				}

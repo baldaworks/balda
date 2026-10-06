@@ -11,11 +11,12 @@ import (
 )
 
 type grantMemoryStore struct {
-	mu         sync.Mutex
-	grant      mcpcmd.Grant
-	retained   []mcpcmd.Grant
-	writes     []GrantMutation
-	writeError error
+	mu                sync.Mutex
+	grant             mcpcmd.Grant
+	retained          []mcpcmd.Grant
+	writes            []GrantMutation
+	writeError        error
+	currentRevisionID string
 }
 
 func (s *grantMemoryStore) CheckMCPAuthority(_ context.Context, a mcpcmd.Authority) error {
@@ -48,6 +49,9 @@ func (s *grantMemoryStore) SaveGrant(_ context.Context, m GrantMutation) error {
 	defer s.mu.Unlock()
 	if s.writeError != nil {
 		return s.writeError
+	}
+	if m.Operation == mcpcmd.GrantAuthorize && m.ExpectedRevisionID != s.currentRevisionID {
+		return mcpcmd.ErrConflict
 	}
 	for i, g := range s.retained {
 		if g.Binding == m.Grant.Binding {
@@ -150,6 +154,46 @@ func grantHarness(t *testing.T) (*Grants, *grantMemoryStore, *grantOAuth) {
 		t.Fatal(err)
 	}
 	return s, store, o
+}
+
+func TestGrantMetadataPreservesCurrentSecurityAndAuditTimeAfterClockRollback(t *testing.T) {
+	for _, operation := range []mcpcmd.GrantOperation{mcpcmd.GrantRegister, mcpcmd.GrantAuthorize, mcpcmd.GrantRenew, mcpcmd.GrantDisconnect} {
+		t.Run(string(operation), func(t *testing.T) {
+			grants, store, _ := grantHarness(t)
+			previous := store.grant
+			previous.CreatedAt = time.Now().UTC().Add(time.Hour)
+			previous.UpdatedAt = previous.CreatedAt.Add(time.Minute)
+			store.grant = previous
+			store.currentRevisionID = "revision"
+			updated := previous
+			updated.Generation++
+			now := time.Now().UTC()
+			updated.UpdatedAt = now
+			authority := definitionCreate().Authority
+			authority.At = now
+			var grantAuthority *mcpcmd.Authority
+			if operation != mcpcmd.GrantRenew {
+				grantAuthority = &authority
+			}
+			secrets := GrantSecrets{AccessToken: "private-access", TokenType: "Bearer"}
+			switch operation {
+			case mcpcmd.GrantRegister:
+				updated.Status, secrets = mcpcmd.GrantAuthRequired, GrantSecrets{}
+			case mcpcmd.GrantDisconnect:
+				updated.Status, secrets = mcpcmd.GrantDisconnected, GrantSecrets{}
+			}
+			if err := grants.save(t.Context(), previous, updated, secrets, operation, grantAuthority, "revision"); err != nil {
+				t.Fatal(err)
+			}
+			mutation := store.writes[0]
+			if mutation.Grant.UpdatedAt.Before(previous.UpdatedAt) || !mutation.Grant.CreatedAt.Equal(previous.CreatedAt) {
+				t.Fatal("grant metadata moved backwards")
+			}
+			if !mutation.Audit.OccurredAt.Equal(now) || (mutation.Authority != nil && !mutation.Authority.At.Equal(now)) {
+				t.Fatal("grant metadata floor changed audit/authority freshness")
+			}
+		})
+	}
 }
 
 func TestConcurrentWorkerRequestsPersistOneRotationAndRestart(t *testing.T) {

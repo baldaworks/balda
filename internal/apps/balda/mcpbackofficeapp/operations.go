@@ -11,8 +11,9 @@ import (
 
 // Operations delegates management and safe current metadata to their owners.
 type Operations struct {
-	definitions *mcpmanage.Definitions
-	catalog     *catalogapp.Runtime
+	definitions    *mcpmanage.Definitions
+	catalog        *catalogapp.Runtime
+	authorizations *mcpmanage.Authorizations
 }
 
 // New composes existing definition and catalog services without additional policy.

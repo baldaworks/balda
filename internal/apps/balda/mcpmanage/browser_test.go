@@ -12,6 +12,45 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
 )
 
+type authorizationBinder struct {
+	bind func(context.Context, mcpcmd.SelectAuthorization) (mcpcmd.Item, error)
+}
+
+func (b authorizationBinder) BindAuthorization(ctx context.Context, r mcpcmd.SelectAuthorization) (mcpcmd.Item, error) {
+	if b.bind != nil {
+		return b.bind(ctx, r)
+	}
+	return mcpcmd.Item{}, nil
+}
+
+func TestBrowserCompletionBindsSavedGrantOutsideAttemptLock(t *testing.T) {
+	s, store, o, r, a := browserHarness(t)
+	defer s.Close()
+	bound := false
+	s.definitions = authorizationBinder{bind: func(ctx context.Context, request mcpcmd.SelectAuthorization) (mcpcmd.Item, error) {
+		bound = true
+		if !s.mu.TryLock() {
+			t.Fatal("binding held the attempt lock")
+		}
+		s.mu.Unlock()
+		if request.ExpectedRevisionID != r.ID || request.ConnectionID != r.ConnectionID {
+			t.Fatal("completion selected a different revision")
+		}
+		if _, err := s.grants.RequestCredentials(ctx, request.Binding, r.Definition.Scopes); err != nil {
+			t.Fatalf("binding cannot acquire saved grant: %v", err)
+		}
+		return mcpcmd.Item{}, mcpcmd.ErrUnavailable
+	}}
+	started, err := s.BeginBrowser(t.Context(), r, "", OAuthClient{ID: "worker-client", AuthMethod: mcpcmd.ClientAuthNone}, a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := s.CompleteBrowser(t.Context(), mcpcmd.BrowserCallback{State: browserState(t, started), Code: "one-use-code", Issuer: o.metadata.Issuer, Authority: a})
+	if !bound || !errors.Is(err, mcpcmd.ErrUnavailable) || g.Status != mcpcmd.GrantAuthorized || store.grant.Status != mcpcmd.GrantAuthorized {
+		t.Fatalf("saved grant and failed binding were not preserved: bound=%v, status=%s, err=%v", bound, g.Status, err)
+	}
+}
+
 func browserHarness(t *testing.T) (*Authorizations, *grantMemoryStore, *grantOAuth, mcpcmd.Revision, mcpcmd.Authority) {
 	t.Helper()
 	grants, store, o := grantHarness(t)
@@ -26,12 +65,57 @@ func browserHarness(t *testing.T) (*Authorizations, *grantMemoryStore, *grantOAu
 		}
 		return OAuthToken{Secrets: GrantSecrets{AccessToken: "browser-worker-access", RefreshToken: "browser-worker-refresh", TokenType: "Bearer"}, ExpiresAt: time.Now().Add(time.Hour), Scopes: []string{"tools"}}, nil
 	}
-	s, err := NewAuthorizations(grants, "https://backoffice.example.org/balda/mcp/oauth/callback")
+	s, err := NewAuthorizations(grants, "https://backoffice.example.org/balda/mcp/oauth/callback", authorizationBinder{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	r := mcpcmd.Revision{ID: "revision", ConnectionID: "worker", Definition: mcpcmd.Definition{OAuth: true, Transport: mcpcmd.TransportHTTP, URL: o.metadata.Resource, Scopes: []string{"tools"}}}
+	store.currentRevisionID = r.ID
 	return s, store, o, r, definitionCreate().Authority
+}
+
+func TestBrowserDefinitionEditDuringExchangeCannotInstallGrant(t *testing.T) {
+	s, store, o, r, a := browserHarness(t)
+	defer s.Close()
+	started, err := s.BeginBrowser(t.Context(), r, "", OAuthClient{ID: "worker-client", AuthMethod: mcpcmd.ClientAuthNone}, a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exchange := o.exchange
+	o.exchange = func(ctx context.Context, grant mcpcmd.Grant, code, verifier string) (OAuthToken, error) {
+		store.mu.Lock()
+		store.currentRevisionID = "edited-revision"
+		store.mu.Unlock()
+		return exchange(ctx, grant, code, verifier)
+	}
+	_, err = s.CompleteBrowser(t.Context(), mcpcmd.BrowserCallback{State: browserState(t, started), Code: "one-use-code", Issuer: o.metadata.Issuer, Authority: a})
+	if !errors.Is(err, mcpcmd.ErrConflict) || store.grant.Status != mcpcmd.GrantAuthRequired || len(store.writes) != 1 {
+		t.Fatalf("definition edit allowed stale completion: status=%s, err=%v", store.grant.Status, err)
+	}
+}
+
+func TestCurrentAttemptIsSafeAndBoundToInitiatingBrowser(t *testing.T) {
+	s, _, _, r, a := browserHarness(t)
+	defer s.Close()
+	started, err := s.BeginBrowser(t.Context(), r, "", OAuthClient{ID: "worker-client", AuthMethod: mcpcmd.ClientAuthNone}, a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt, found, err := s.CurrentAttempt(t.Context(), r.ConnectionID, a)
+	if err != nil || !found || attempt.ID != started.ID || attempt.Device {
+		t.Fatalf("pending attempt = %+v/%v/%v", attempt, found, err)
+	}
+	other := a
+	other.SessionID = "other-browser"
+	if hidden, found, err := s.CurrentAttempt(t.Context(), r.ConnectionID, other); err != nil || found || hidden.ID != "" {
+		t.Fatal("another current browser could not read management without private attempt metadata")
+	}
+	if err := s.Cancel(t.Context(), attempt.ID, a); err != nil {
+		t.Fatal(err)
+	}
+	if _, found, err := s.CurrentAttempt(t.Context(), r.ConnectionID, a); err != nil || found {
+		t.Fatal("canceled attempt remained current")
+	}
 }
 
 func TestBrowserAttemptExpiresDuringExchangeAndCannotCommit(t *testing.T) {
@@ -93,7 +177,7 @@ func TestBrowserCancelAndRestartInvalidateAttemptsWithoutPrivateProjection(t *te
 		t.Fatal(err)
 	}
 	s.Close()
-	restarted, err := NewAuthorizations(s.grants, s.redirectURI)
+	restarted, err := NewAuthorizations(s.grants, s.redirectURI, s.definitions)
 	if err != nil {
 		t.Fatal(err)
 	}

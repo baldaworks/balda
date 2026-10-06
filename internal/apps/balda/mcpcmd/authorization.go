@@ -2,6 +2,24 @@ package mcpcmd
 
 import "time"
 
+// BeginAuthorization accepts only worker client inputs and trusted authority.
+// Transport, resource and provider selection come from the definition owner.
+type BeginAuthorization struct {
+	ConnectionID     string
+	Scopes           []string
+	ClientID         string
+	ClientAuthMethod string
+	ClientSecret     string `json:"-"`
+	Authority        Authority
+}
+
+// AuthorizationAttempt is safe metadata for cancelling a live browser attempt.
+type AuthorizationAttempt struct {
+	ID, ConnectionID string
+	ExpiresAt        time.Time
+	Device           bool
+}
+
 // PrepareAuthorization captures current trusted configuration for worker
 // authorization. Nil scopes retain the current configured authorization scopes.
 type PrepareAuthorization struct {

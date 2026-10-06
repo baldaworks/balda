@@ -14,6 +14,7 @@ import (
 // Authorizations owns transient browser/device attempts for this installation.
 type Authorizations struct {
 	grants       *Grants
+	definitions  authorizationBinding
 	redirectURI  string
 	mu           sync.Mutex
 	attempts     map[string]*authorizationAttempt
@@ -35,19 +36,24 @@ type authorizationAttempt struct {
 	ExpiresAt                         time.Time
 	Authority                         mcpcmd.Authority
 	Grant                             mcpcmd.Grant
+	RevisionID                        string
 	Metadata                          OAuthMetadata
 	Ready, Consumed                   bool
 	ctx                               context.Context
 	cancel                            context.CancelFunc
 }
 
+type authorizationBinding interface {
+	BindAuthorization(ctx context.Context, request mcpcmd.SelectAuthorization) (mcpcmd.Item, error)
+}
+
 // NewAuthorizations binds native callback policy to trusted grant storage.
-func NewAuthorizations(grants *Grants, redirectURI string) (*Authorizations, error) {
-	if grants == nil || (redirectURI != "" && !validRemoteURL(redirectURI)) {
+func NewAuthorizations(grants *Grants, redirectURI string, definitions authorizationBinding) (*Authorizations, error) {
+	if grants == nil || definitions == nil || (redirectURI != "" && !validRemoteURL(redirectURI)) {
 		return nil, mcpcmd.ErrInvalid
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Authorizations{grants: grants, redirectURI: redirectURI, attempts: make(map[string]*authorizationAttempt), byConnection: make(map[string]string), byState: make(map[string]string), ctx: ctx, cancel: cancel}, nil
+	return &Authorizations{grants: grants, definitions: definitions, redirectURI: redirectURI, attempts: make(map[string]*authorizationAttempt), byConnection: make(map[string]string), byState: make(map[string]string), ctx: ctx, cancel: cancel}, nil
 }
 
 // BeginBrowser starts one worker authorization attempt for the current browser.
@@ -87,13 +93,14 @@ func (s *Authorizations) BeginBrowser(ctx context.Context, r mcpcmd.Revision, me
 	if s.attempts[a.ID] != a || a.ctx.Err() != nil {
 		return mcpcmd.BrowserAuthorization{}, mcpcmd.ErrAuthAttempt
 	}
-	a.Grant, a.Metadata, a.Verifier, a.Ready = g, metadata, verifier, true
+	a.Grant, a.Metadata, a.Verifier, a.Ready, a.RevisionID = g, metadata, verifier, true, r.ID
 	complete = true
 	return mcpcmd.BrowserAuthorization{ID: a.ID, ConnectionID: a.ConnectionID, AuthorizationURL: location, ExpiresAt: a.ExpiresAt}, nil
 }
 
 // CompleteBrowser consumes protocol state once before code exchange and commit.
 func (s *Authorizations) CompleteBrowser(ctx context.Context, callback mcpcmd.BrowserCallback) (mcpcmd.Grant, error) {
+	completionCtx := ctx
 	s.mu.Lock()
 	s.expireLocked()
 	a := s.attempts[s.byState[callback.State]]
@@ -158,22 +165,35 @@ func (s *Authorizations) CompleteBrowser(ctx context.Context, callback mcpcmd.Br
 	}
 	// Cancellation and commit have one winner. Protocol I/O finishes before this
 	// lock; a successful cancel cannot race an already dispatched storage commit.
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.attempts[a.ID] != a || a.ctx.Err() != nil || !a.ExpiresAt.After(time.Now()) {
-		return mcpcmd.Grant{}, mcpcmd.ErrAuthAttempt
-	}
-	if !validOAuthClient(OAuthClient{ID: g.Binding.ClientID, Secret: secrets.ClientSecret, AuthMethod: g.TokenEndpointAuthMethod, SecretExpiresAt: g.ClientSecretExpiresAt}, snapshot.Metadata, time.Now()) {
-		return mcpcmd.Grant{}, mcpcmd.ErrAuthRequired
-	}
-	callback.Authority.At = time.Now().UTC()
-	updated.UpdatedAt = callback.Authority.At
-	if err := s.grants.save(ctx, g, updated, token.Secrets, mcpcmd.GrantAuthorize, &callback.Authority); err != nil {
+	err = func() error {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.attempts[a.ID] != a || a.ctx.Err() != nil || !a.ExpiresAt.After(time.Now()) {
+			return mcpcmd.ErrAuthAttempt
+		}
+		if !validOAuthClient(OAuthClient{ID: g.Binding.ClientID, Secret: secrets.ClientSecret, AuthMethod: g.TokenEndpointAuthMethod, SecretExpiresAt: g.ClientSecretExpiresAt}, snapshot.Metadata, time.Now()) {
+			return mcpcmd.ErrAuthRequired
+		}
+		callback.Authority.At = time.Now().UTC()
+		updated.UpdatedAt = callback.Authority.At
+		if err := s.grants.save(ctx, g, updated, token.Secrets, mcpcmd.GrantAuthorize, &callback.Authority, snapshot.RevisionID); err != nil {
+			return err
+		}
+		s.removeLocked(a)
+		return nil
+	}()
+	if err != nil {
 		return mcpcmd.Grant{}, err
 	}
-	s.removeLocked(a)
 	updated.ProtectedValues = nil
-	return updated, nil
+	return updated, s.bindAuthorization(completionCtx, snapshot, callback.Authority)
+}
+
+// Grant installation is already durable here. Discovery may request its
+// credentials, so binding must run outside attempt and grant-refresh locks.
+func (s *Authorizations) bindAuthorization(ctx context.Context, a authorizationAttempt, authority mcpcmd.Authority) error {
+	_, err := s.definitions.BindAuthorization(ctx, mcpcmd.SelectAuthorization{ConnectionID: a.ConnectionID, ExpectedRevisionID: a.RevisionID, Binding: a.Grant.Binding, Authority: authority})
+	return safeOperationError(err)
 }
 
 func sameBrowserAuthority(a, b mcpcmd.Authority) bool {
@@ -228,6 +248,27 @@ func (s *Authorizations) Cancel(ctx context.Context, id string, authority mcpcmd
 	}
 	s.removeLocked(a)
 	return nil
+}
+
+// CurrentAttempt reads transient metadata only for the initiating browser.
+func (s *Authorizations) CurrentAttempt(ctx context.Context, connectionID string, authority mcpcmd.Authority) (mcpcmd.AuthorizationAttempt, bool, error) {
+	authority.At = time.Now().UTC()
+	if err := s.grants.store.CheckMCPAuthority(ctx, authority); err != nil {
+		return mcpcmd.AuthorizationAttempt{}, false, safeOperationError(err)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.expireLocked()
+	a := s.attempts[s.byConnection[connectionID]]
+	if a == nil {
+		return mcpcmd.AuthorizationAttempt{}, false, nil
+	}
+	if !sameBrowserAuthority(a.Authority, authority) {
+		// A current administrator can still read connection management while
+		// another browser owns the private authorization handoff.
+		return mcpcmd.AuthorizationAttempt{}, false, nil
+	}
+	return mcpcmd.AuthorizationAttempt{ID: a.ID, ConnectionID: a.ConnectionID, ExpiresAt: a.ExpiresAt, Device: a.Flow == authorizationDevice}, true, nil
 }
 
 // Disconnect cancels transient attempts and revokes every retained grant context.

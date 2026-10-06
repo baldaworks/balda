@@ -37,6 +37,7 @@ type MCPGrantMutation struct {
 	Grant              mcpcmd.Grant
 	Operation          mcpcmd.GrantOperation
 	ExpectedGeneration uint64
+	ExpectedRevisionID string
 	Authority          *mcpcmd.Authority
 	Audit              usercmd.AuditEvent
 }

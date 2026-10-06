@@ -134,7 +134,15 @@ func (s *Definitions) save(ctx context.Context, c mcpcmd.Connection, r *mcpcmd.R
 		// Publication can queue behind external discovery. Fence the current
 		// family/assurance at commit time, not at the original request time.
 		authority.At = time.Now().UTC()
-		c.UpdatedAt, audit.OccurredAt = authority.At, authority.At
+		// Metadata remains monotonic across a wall-clock rollback. Security
+		// authority and audit time still use the current clock for freshness.
+		if c.UpdatedAt.Before(c.CreatedAt) {
+			c.UpdatedAt = c.CreatedAt
+		}
+		if authority.At.After(c.UpdatedAt) {
+			c.UpdatedAt = authority.At
+		}
+		audit.OccurredAt = authority.At
 		err := s.store.SaveDefinition(ctx, Mutation{Connection: c, Revision: r, ExpectedVersion: version, Authority: authority, Audit: audit})
 		committed = err == nil
 		return err
@@ -242,7 +250,9 @@ func (s *Definitions) prepareUpdate(ctx context.Context, request mcpcmd.UpdateDe
 	}
 	c.CurrentRevisionID = rand.Text()
 	c.Enabled = request.Enabled
-	c.UpdatedAt = request.Authority.At
+	if request.Authority.At.After(c.UpdatedAt) {
+		c.UpdatedAt = request.Authority.At
+	}
 	r, err := s.prepare(ctx, &previous, c, definition, request.Values)
 	if err != nil {
 		return mcpcmd.Connection{}, mcpcmd.Revision{}, err
@@ -286,7 +296,6 @@ func (s *Definitions) changeSelection(ctx context.Context, request mcpcmd.Change
 	}
 	c.Enabled = request.Enabled && !deleted
 	c.Deleted = deleted
-	c.UpdatedAt = request.Authority.At
 	return s.save(ctx, c, nil, request.ExpectedVersion, request.Authority)
 }
 

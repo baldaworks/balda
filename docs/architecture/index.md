@@ -131,7 +131,7 @@ neutral MCP adapter returns bounded untrusted references.
 - Changes to retries, dedupe, or DLQ semantics.
 - New ingress or actor execution paths.
 
-Backoffice MCP pages consume a local `MCPOperations` port. The dedicated
+Backoffice MCP pages consume local `MCPOperations` and `MCPAuthorizations` ports. The dedicated
 `mcpbackofficeapp` composition adapter connects it to `mcpmanage` definition,
 credential and durable authority policy and `catalogapp` current recovery and
 readiness reads. HTML projections depend only on `mcpcmd` contracts; the
@@ -139,3 +139,12 @@ Backoffice application does not import either host policy owner. Runtime
 failure evidence remains in `mcpruntime`, while recovery classification remains
 in the catalog owner. Browser input does not supply configuration captures or
 worker authorization evidence.
+
+Native worker OAuth stays in the same owners: `mcpmanage.Authorizations` keeps
+bounded transient attempts and composes grant installation with exact revision
+binding outside protocol locks; `state` fences the initiating revision with
+current authority and grant generation in its existing transaction. The
+Backoffice adapter starts through trusted `Definitions.PrepareAuthorization` and
+projects stored authorization separately from catalog readiness. The browser
+handles native redirects and one-time device instructions, with no persistent
+attempt recovery or Backoffice-owned completion policy.

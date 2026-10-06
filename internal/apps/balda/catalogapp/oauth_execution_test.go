@@ -112,7 +112,11 @@ func (f *workerGrantFixture) save(t *testing.T, grant mcpcmd.Grant, secrets mcpm
 	} else {
 		audit.Action = usercmd.AuditActionMCPCredentialsRenewed
 	}
-	if err := f.provider.MCP().SaveMCPGrant(t.Context(), state.MCPGrantMutation{Grant: grant, Operation: operation, ExpectedGeneration: expected, Authority: authority, Audit: audit}); err != nil {
+	connection, found, err := f.provider.MCP().GetMCPConnection(t.Context(), grant.Binding.ConnectionID)
+	if err != nil || !found {
+		t.Fatal("fixture grant connection missing")
+	}
+	if err := f.provider.MCP().SaveMCPGrant(t.Context(), state.MCPGrantMutation{Grant: grant, Operation: operation, ExpectedGeneration: expected, ExpectedRevisionID: connection.CurrentRevisionID, Authority: authority, Audit: audit}); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -214,7 +214,8 @@ components:
     in:
       - internal/apps/balda/mcpmanage
 
-  # Dedicated host adapter for the Backoffice consuming MCP port.
+  # Dedicated host adapter for Backoffice definition and native authorization
+  # ports. Shared completion stays in mcp_management; UI cannot import its owner.
   mcp_backoffice_wiring:
     in:
       - internal/apps/balda/mcpbackofficeapp

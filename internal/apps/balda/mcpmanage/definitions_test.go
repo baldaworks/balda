@@ -141,6 +141,49 @@ type expiringDefinitionStore struct {
 	expiresAt time.Time
 }
 
+func TestPendingAuthorizationRetryFencesQueuedDefinitionAndAuthority(t *testing.T) {
+	for _, revoked := range []bool{false, true} {
+		name := "definition edit"
+		want := mcpcmd.ErrConflict
+		if revoked {
+			name, want = "revoked authority", mcpcmd.ErrForbidden
+		}
+		t.Run(name, func(t *testing.T) {
+			s, store, _ := definitionHarness(t)
+			request := definitionCreate()
+			request.Definition = mcpcmd.Definition{Transport: mcpcmd.TransportHTTP, URL: "https://worker.example/mcp", OAuth: true, Targets: mcpcmd.Targets{All: true}}
+			created, err := s.Create(t.Context(), request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			binding := mcpcmd.AuthBinding{ConnectionID: created.Connection.ID, Resource: request.Definition.URL, Issuer: "https://issuer.example", ClientID: "worker-client"}
+			store.grants = map[mcpcmd.AuthBinding]mcpcmd.Grant{binding: {Binding: binding, Status: mcpcmd.GrantAuthorized}}
+			selection := mcpcmd.SelectAuthorization{ConnectionID: created.Connection.ID, ExpectedRevisionID: created.Connection.CurrentRevisionID, Binding: binding, Authority: request.Authority}
+			bound, err := s.BindAuthorization(t.Context(), selection)
+			if err != nil || bound.Connection.PublishedVersion >= bound.Connection.Version {
+				t.Fatalf("pending binding = %+v/%v", bound, err)
+			}
+			selection.ExpectedRevisionID = bound.Connection.CurrentRevisionID
+			s.catalog = &queuedDefinitionCatalog{beforeCommit: func() {
+				if revoked {
+					store.writeError = mcpcmd.ErrForbidden
+					return
+				}
+				current := store.connections[created.Connection.ID]
+				current.CurrentRevisionID = "queued-edit-revision"
+				current.Version++
+				store.connections[current.ID] = current
+			}}
+			if _, err := s.BindAuthorization(t.Context(), selection); !errors.Is(err, want) {
+				t.Fatalf("queued publication recovery = %v, want %v", err, want)
+			}
+			if len(store.writes) != 2 {
+				t.Fatal("rejected publication recovery rewrote the definition")
+			}
+		})
+	}
+}
+
 func (s *expiringDefinitionStore) SaveDefinition(ctx context.Context, m Mutation) error {
 	if !m.Authority.At.Before(s.expiresAt) {
 		return mcpcmd.ErrForbidden

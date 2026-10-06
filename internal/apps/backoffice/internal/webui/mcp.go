@@ -12,6 +12,7 @@ import (
 type MCPView struct {
 	Rows         []MCPRow
 	Editor       *MCPEditor
+	Device       *MCPDevice
 	ProbeMessage string
 }
 
@@ -19,6 +20,7 @@ type MCPView struct {
 type MCPRow struct {
 	ID, PublicID, Source, Transport, Endpoint, Targets, Status, Authorization, Recovery string
 	DetailPath                                                                          string
+	RevisionID                                                                          string
 	Version                                                                             uint64
 	ToolCount                                                                           int
 	Ready, Enabled, ReadOnly, Deleted                                                   bool
@@ -27,7 +29,7 @@ type MCPRow struct {
 // ProjectMCPRow constructs a bounded, secret-free inventory projection.
 func ProjectMCPRow(item mcpcmd.Item) MCPRow {
 	row := MCPRow{ID: item.Connection.ID, PublicID: item.Connection.PublicID, Version: item.Connection.Version,
-		DetailPath: "/mcp/connections/" + url.PathEscape(item.Connection.ID), Enabled: item.Connection.Enabled, Deleted: item.Connection.Deleted,
+		DetailPath: "/mcp/connections/" + url.PathEscape(item.Connection.ID), RevisionID: item.Connection.CurrentRevisionID, Enabled: item.Connection.Enabled, Deleted: item.Connection.Deleted,
 		ReadOnly: item.Connection.Source != mcpcmd.SourceManaged, ToolCount: item.ToolCount, Ready: item.Status == mcpcmd.StatusReady}
 	row.Source = "Backoffice"
 	if row.ReadOnly {
@@ -83,6 +85,8 @@ func ProjectMCPRow(item mcpcmd.Item) MCPRow {
 type MCPEditor struct {
 	Row                                                        MCPRow
 	New                                                        bool
+	AuthorizationAvailable                                     bool
+	Attempt                                                    *MCPAttempt
 	PublicID, Transport, Command, Args, Directory, URL, Scopes string
 	Enabled, OAuth, All                                        bool
 	Providers                                                  []MCPProvider
@@ -105,6 +109,7 @@ func ProjectMCPEditor(item mcpcmd.Item, providers []string, create bool) *MCPEdi
 		e.Row.ReadOnly = false
 		e.Action = "/mcp/connections"
 	}
+	e.AuthorizationAvailable = !create && !item.Connection.Deleted && (d.Transport == mcpcmd.TransportHTTP || d.Transport == mcpcmd.TransportSSE) && (d.OAuth || item.Recovery != "")
 	for _, id := range providers {
 		selected := false
 		for _, target := range d.Targets.Providers {
@@ -143,4 +148,42 @@ type MCPValueForm struct {
 
 func mcpValueForm(row MCPValueRow, prefix string, index int) MCPValueForm {
 	return MCPValueForm{Row: row, Prefix: prefix, Index: index}
+}
+
+// MCPAttempt projects a safe cancellation/status control for an active attempt.
+type MCPAttempt struct {
+	ID, CancelPath, StatusPath, Expires string
+	Device                              bool
+}
+
+// MCPDevice contains native one-time instructions or safe terminal status.
+type MCPDevice struct {
+	Status, Message, UserCode, VerificationURI, VerificationURIComplete string
+	DetailPath, StatusPath, CancelPath, Expires                         string
+	Pending, Instructions                                               bool
+}
+
+// ProjectMCPDevice reveals verification instructions only in the begin response.
+// Status/history GETs expose progress and metadata, never another issuance.
+func ProjectMCPDevice(device mcpcmd.DeviceAuthorization, instructions bool) *MCPDevice {
+	view := &MCPDevice{Status: string(device.Status), Pending: device.Status == mcpcmd.DevicePending, DetailPath: "/mcp/connections/" + url.PathEscape(device.ConnectionID), StatusPath: "/mcp/oauth/device/" + url.PathEscape(device.ID), CancelPath: "/mcp/oauth/attempts/" + url.PathEscape(device.ID) + "/cancel", Expires: device.ExpiresAt.UTC().Format("2006-01-02 15:04 UTC")}
+	switch device.Status {
+	case mcpcmd.DeviceAuthorized:
+		view.Message = "Worker authorization was saved. Open the connection to inspect tool readiness or retry attachment; authorization does not mean Ready."
+	case mcpcmd.DeviceDenied:
+		view.Message = "Worker authorization was denied. Reopen the connection and start again."
+	case mcpcmd.DeviceExpired:
+		view.Message = "Worker authorization expired. Reopen the connection and start again."
+	case mcpcmd.DeviceFailed:
+		view.Message = "Worker authorization could not complete. Reopen the connection and start again."
+	default:
+		view.Message = "Worker authorization is pending. Instructions are shown once when the attempt starts. If they are lost, cancel and start again."
+	}
+	if instructions && view.Pending {
+		view.Instructions = true
+		view.UserCode = device.UserCode
+		view.VerificationURI = device.VerificationURI
+		view.VerificationURIComplete = device.VerificationURIComplete
+	}
+	return view
 }

@@ -26,7 +26,9 @@ type contractOpener func(context.Context, string) (Provider, error)
 
 func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) {
 	t.Run("MCPGrantsSurviveRestart", func(t *testing.T) { checkMCPGrantsSurviveRestart(t, factory(t)) })
+	t.Run("MCPDefinitionEditFencesCompletion", func(t *testing.T) { checkMCPDefinitionEditFencesCompletion(t, factory(t)) })
 	t.Run("MCPGrantTransitionsAreAtomic", func(t *testing.T) { checkMCPGrantTransitionsAreAtomic(t, factory(t)) })
+	t.Run("MCPGrantMetadataSecurityTime", func(t *testing.T) { checkMCPGrantMetadataUsesIndependentSecurityTime(t, factory(t)) })
 	t.Run("MCPDisconnectFencesCompletion", func(t *testing.T) { checkMCPDisconnectFencesCompletion(t, factory(t)) })
 	t.Run("MCPConcurrentGrantRenewalCommitsOnce", func(t *testing.T) { checkMCPConcurrentGrantRenewalCommitsOnce(t, factory(t)) })
 	t.Run("MCPRevisionsSurviveRestart", func(t *testing.T) { checkMCPRevisionsSurviveRestart(t, factory(t)) })

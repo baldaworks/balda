@@ -51,8 +51,16 @@ func (s *Definitions) BindAuthorization(ctx context.Context, request mcpcmd.Sele
 		return mcpcmd.Item{}, mcpcmd.ErrUnavailable
 	}
 	if definition.AuthBinding != nil && *definition.AuthBinding == binding {
-		// The grant owner has released its lock before binding. Retry only
-		// affected failed attachments; no definition/snapshot write is needed.
+		// A saved binding may still lack its catalog publication/marker.
+		// Recover that same revision before retrying failed exact attachments.
+		if c.PublishedVersion < c.Version {
+			var err error
+			c, err = s.recoverAuthorizationPublication(ctx, c, request.Authority)
+			if err != nil {
+				item, _ := s.item(ctx, c)
+				return item, safeOperationError(err)
+			}
+		}
 		retryErr := s.catalog.RetryMCPAuthorization(ctx, binding)
 		item, err := s.item(ctx, c)
 		if err != nil {
@@ -61,10 +69,43 @@ func (s *Definitions) BindAuthorization(ctx context.Context, request mcpcmd.Sele
 		return item, safeOperationError(retryErr)
 	}
 	definition.AuthBinding = &binding
-	c.CurrentRevisionID, c.UpdatedAt = rand.Text(), request.Authority.At
+	c.CurrentRevisionID = rand.Text()
+	if request.Authority.At.After(c.UpdatedAt) {
+		c.UpdatedAt = request.Authority.At
+	}
 	next, err := s.credentials.PrepareRevision(&previous, mcpcmd.Revision{ConnectionID: c.ID, ID: c.CurrentRevisionID, Definition: definition, CreatedAt: c.UpdatedAt}, mcpcmd.ValueEdits{})
 	if err != nil {
 		return mcpcmd.Item{}, err
 	}
 	return s.save(ctx, c, &next, c.Version, request.Authority)
+}
+
+func (s *Definitions) recoverAuthorizationPublication(ctx context.Context, c mcpcmd.Connection, authority mcpcmd.Authority) (mcpcmd.Connection, error) {
+	err := s.catalog.PublishMCP(ctx, func() error {
+		// Use the existing catalog mutation lock to fence the current revision
+		// and browser authority without another definition write or audit.
+		authority.At = time.Now().UTC()
+		if err := s.store.CheckMCPAuthority(ctx, authority); err != nil {
+			return err
+		}
+		current, found, err := s.store.GetMCPConnection(ctx, c.ID)
+		if err != nil {
+			return err
+		}
+		if !found || current != c {
+			return mcpcmd.ErrConflict
+		}
+		return nil
+	})
+	if err != nil {
+		return c, err
+	}
+	current, found, err := s.store.GetMCPConnection(ctx, c.ID)
+	if err != nil {
+		return c, err
+	}
+	if !found || current.CurrentRevisionID != c.CurrentRevisionID || current.Version != c.Version {
+		return c, mcpcmd.ErrConflict
+	}
+	return current, nil
 }

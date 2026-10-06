@@ -44,6 +44,9 @@ func (s *sqlMCPStore) SaveMCPGrant(ctx context.Context, m MCPGrantMutation) erro
 	if c.Deleted && (m.Operation == mcpcmd.GrantRegister || m.Operation == mcpcmd.GrantAuthorize) {
 		return mcpcmd.ErrConflict
 	}
+	if m.Operation == mcpcmd.GrantAuthorize && c.CurrentRevisionID != m.ExpectedRevisionID {
+		return mcpcmd.ErrConflict
+	}
 	current, found, err := s.grantByID(ctx, tx, g.ID, true)
 	if err != nil {
 		return err
@@ -115,7 +118,7 @@ func validateMCPGrantMutation(m MCPGrantMutation) error {
 			return mcpcmd.ErrInvalid
 		}
 	}
-	if err := usercmd.ValidateAuditEvent(m.Audit); err != nil || m.Audit.TargetType != usercmd.AuditTargetMCP || m.Audit.TargetID != b.ConnectionID || m.Audit.Outcome != usercmd.AuditOutcomeSucceeded || !m.Audit.OccurredAt.Equal(g.UpdatedAt) {
+	if err := usercmd.ValidateAuditEvent(m.Audit); err != nil || m.Audit.TargetType != usercmd.AuditTargetMCP || m.Audit.TargetID != b.ConnectionID || m.Audit.Outcome != usercmd.AuditOutcomeSucceeded || m.Audit.OccurredAt.After(g.UpdatedAt) {
 		return mcpcmd.ErrInvalid
 	}
 	if m.Operation == mcpcmd.GrantRenew {
@@ -123,7 +126,7 @@ func validateMCPGrantMutation(m MCPGrantMutation) error {
 			return mcpcmd.ErrInvalid
 		}
 	} else {
-		if m.Authority == nil || validateMCPAuthority(*m.Authority) != nil || m.Audit.Action != usercmd.AuditActionMCPAuthorizationChanged || m.Audit.ActorUserID != m.Authority.UserID || m.Audit.ActorSessionID != m.Authority.SessionID || !m.Authority.At.Equal(g.UpdatedAt) {
+		if m.Authority == nil || validateMCPAuthority(*m.Authority) != nil || m.Audit.Action != usercmd.AuditActionMCPAuthorizationChanged || m.Audit.ActorUserID != m.Authority.UserID || m.Audit.ActorSessionID != m.Authority.SessionID || !m.Authority.At.Equal(m.Audit.OccurredAt) {
 			return mcpcmd.ErrInvalid
 		}
 	}
@@ -133,7 +136,7 @@ func validateMCPGrantMutation(m MCPGrantMutation) error {
 			return mcpcmd.ErrInvalid
 		}
 	case mcpcmd.GrantAuthorize:
-		if g.Status != mcpcmd.GrantAuthorized {
+		if g.Status != mcpcmd.GrantAuthorized || m.ExpectedRevisionID == "" || len(m.ExpectedRevisionID) > 256 {
 			return mcpcmd.ErrInvalid
 		}
 	case mcpcmd.GrantRenew:

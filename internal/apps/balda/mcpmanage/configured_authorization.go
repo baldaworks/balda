@@ -94,7 +94,10 @@ func (s *Definitions) PrepareAuthorization(ctx context.Context, request mcpcmd.P
 			d.AuthBinding = previous.Definition.AuthBinding
 		}
 	}
-	c.CurrentRevisionID, c.UpdatedAt = rand.Text(), request.Authority.At
+	c.CurrentRevisionID = rand.Text()
+	if request.Authority.At.After(c.UpdatedAt) {
+		c.UpdatedAt = request.Authority.At
+	}
 	// Capture current values, not previous bindings: a removed file header
 	// must disappear from a new revision while old captures retain it.
 	r, err := s.credentials.PrepareRevision(nil, mcpcmd.Revision{ConnectionID: c.ID, ID: c.CurrentRevisionID, Definition: d, CreatedAt: c.UpdatedAt}, mcpcmd.ValueEdits{Env: protectedCapture(values.Env), Headers: protectedCapture(values.Headers)})

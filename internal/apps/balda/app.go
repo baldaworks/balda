@@ -283,12 +283,12 @@ func Module(
 			func(grants *mcpmanage.Grants) *mcpbridge.Bridge {
 				return mcpbridge.New(mcpfx.GrantCredentials{Grants: grants}, nil)
 			},
-			func(grants *mcpmanage.Grants) (*mcpmanage.Authorizations, error) {
+			func(grants *mcpmanage.Grants, definitions *mcpmanage.Definitions) (*mcpmanage.Authorizations, error) {
 				callback, err := mcpfx.MCPCallbackURL(backofficeConfig.Server.PublicURL, backofficeConfig.Server.BasePath)
 				if err != nil {
 					return nil, err
 				}
-				return mcpmanage.NewAuthorizations(grants, callback)
+				return mcpmanage.NewAuthorizations(grants, callback, definitions)
 			},
 			func(credentials *mcpmanage.Service, provider baldastate.Provider, catalog *catalogapp.Runtime, bridge *mcpbridge.Bridge) (*mcpmanage.Definitions, error) {
 				probe, err := mcpfx.NewManagedProbe(credentials, mcpfx.NewClientLauncher(), bridge)
@@ -298,7 +298,13 @@ func Module(
 				configured := mcpfx.NewConfiguredDefinitions(normaCfg.MCPServers, normaCfg.Providers, cfg.Balda.Provider, cfg.Balda.MCPServers)
 				return mcpmanage.NewDefinitions(credentials, mcpfx.NewDefinitionStore(provider.MCP()), configured, catalog, probe)
 			},
-			mcpbackofficeapp.New,
+			func(definitions *mcpmanage.Definitions, catalog *catalogapp.Runtime, authorizations *mcpmanage.Authorizations) (*mcpbackofficeapp.Operations, error) {
+				operations := mcpbackofficeapp.New(definitions, catalog)
+				if err := operations.ConfigureAuthorizations(authorizations); err != nil {
+					return nil, err
+				}
+				return operations, nil
+			},
 			sessionmemorymcp.NewContextBroker,
 			fx.Annotate(
 				func() bool { return cfg.Balda.SessionMemory.Enabled },
@@ -386,6 +392,9 @@ func Module(
 					return nil, err
 				}
 				if err := runtime.ConfigureMCPOperations(mcp); err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigureMCPAuthorizations(mcp); err != nil {
 					return nil, err
 				}
 				return runtime, nil
