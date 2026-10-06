@@ -71,8 +71,11 @@ func checkMCPRevisionsSurviveRestart(t *testing.T, open contractOpener) {
 }
 
 func contractMCPMutation(t *testing.T, p Provider) MCPMutation {
+	return contractMCPMutationAt(t, p, time.Now().UTC().Truncate(time.Second))
+}
+
+func contractMCPMutationAt(t *testing.T, p Provider, now time.Time) MCPMutation {
 	t.Helper()
-	now := time.Now().UTC().Truncate(time.Second)
 	u := contractUser("mcp-admin", "mcp-admin", false, now)
 	if err := p.Users().CreateUser(t.Context(), u, contractSecret(u.ID), contractAudit("mcp-admin-create", usercmd.AuditActionUserCreated, u.ID, now)); err != nil {
 		t.Fatal(err)
@@ -89,7 +92,7 @@ func contractMCPMutation(t *testing.T, p Provider) MCPMutation {
 				Headers: map[string]mcpcmd.ValueBinding{"Authorization": {Kind: mcpcmd.ValueProtected}}},
 			ProtectedValues: []byte("opaque-protected-revision-1")},
 		Authority: mcpcmd.Authority{UserID: u.ID, UserVersion: u.Version, CredentialVersion: u.Credential.Version,
-			SessionID: f.ID, SessionVersion: f.Version, At: now, FreshProofAge: 5 * time.Minute},
+			SessionID: f.ID, SessionVersion: f.Version, At: now},
 		Audit: usercmd.AuditEvent{ID: "mcp-create", ActorUserID: u.ID, ActorSessionID: f.ID, Action: "mcp.definition.changed",
 			TargetType: "mcp", TargetID: "connection-1", Outcome: usercmd.AuditOutcomeSucceeded, Source: "provider-contract", OccurredAt: now},
 	}
@@ -165,7 +168,7 @@ func checkMCPAuthorityFences(t *testing.T, open contractOpener) {
 		t.Fatalf("valid MCP preflight rejected: %v", err)
 	}
 	for _, change := range []func(*mcpcmd.Authority){
-		func(a *mcpcmd.Authority) { a.At = time.Time{} }, func(a *mcpcmd.Authority) { a.FreshProofAge = 0 }, func(a *mcpcmd.Authority) { a.UserID = "" }, func(a *mcpcmd.Authority) { a.SessionID = "" }, func(a *mcpcmd.Authority) { a.UserVersion = 0 }, func(a *mcpcmd.Authority) { a.CredentialVersion = 0 }, func(a *mcpcmd.Authority) { a.SessionVersion = 0 },
+		func(a *mcpcmd.Authority) { a.At = time.Time{} }, func(a *mcpcmd.Authority) { a.UserID = "" }, func(a *mcpcmd.Authority) { a.SessionID = "" }, func(a *mcpcmd.Authority) { a.UserVersion = 0 }, func(a *mcpcmd.Authority) { a.CredentialVersion = 0 }, func(a *mcpcmd.Authority) { a.SessionVersion = 0 },
 	} {
 		a := m.Authority
 		change(&a)
@@ -330,10 +333,10 @@ func checkMCPProtectedBindingsAndSafeAudit(t *testing.T, open contractOpener) {
 	}
 }
 
-func checkMCPFreshFactorAndRevocation(t *testing.T, open contractOpener) {
+func checkMCPEnrolledFactorAndRevocation(t *testing.T, open contractOpener) {
 	p := newContractProvider(t, open)
 	defer closeContractProvider(t, p)
-	m := contractMCPMutation(t, p)
+	m := contractMCPMutationAt(t, p, time.Now().UTC().Add(-6*time.Minute).Truncate(time.Second))
 	now, uid := m.Authority.At, m.Authority.UserID
 	key := usercmd.MFACredential{ID: "mcp-factor", UserID: uid, RPID: "localhost", CredentialID: []byte("public-credential"),
 		PublicKey: []byte("public-key"), Data: []byte(`{"credential":"public"}`), CreatedAt: now}
@@ -357,17 +360,11 @@ func checkMCPFreshFactorAndRevocation(t *testing.T, open contractOpener) {
 		t.Fatal(err)
 	}
 	m.Authority.SessionID, m.Audit.ActorSessionID = f.ID, f.ID
-	expired := m
-	expired.Authority.At = now.Add(expired.Authority.FreshProofAge)
-	expired.Audit.OccurredAt = expired.Authority.At
-	if err := p.MCP().CheckMCPAuthority(t.Context(), expired.Authority); !errors.Is(err, mcpcmd.ErrForbidden) {
-		t.Fatalf("stale factor preflight accepted: %v", err)
-	}
-	if err := p.MCP().SaveMCPConnection(t.Context(), expired); !errors.Is(err, mcpcmd.ErrForbidden) {
-		t.Fatalf("stale factor proof accepted: %v", err)
+	if err := p.MCP().CheckMCPAuthority(t.Context(), m.Authority); err != nil {
+		t.Fatalf("enrolled session preflight rejected after proof aged: %v", err)
 	}
 	if err := p.MCP().SaveMCPConnection(t.Context(), m); err != nil {
-		t.Fatalf("fresh factor proof rejected: %v", err)
+		t.Fatalf("enrolled session commit rejected after proof aged: %v", err)
 	}
 	if err := p.Users().RevokeSession(t.Context(), f.ID, f.Version, now, "test revocation", contractAudit("mcp-factor-revoke", usercmd.AuditActionSessionRevoked, f.ID, now)); err != nil {
 		t.Fatal(err)

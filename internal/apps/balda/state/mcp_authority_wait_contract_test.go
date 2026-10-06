@@ -14,59 +14,61 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 )
 
-const mcpProofExpiry = "proof"
+const mcpAgedFactor = "aged-factor"
 
-func checkMCPAuthorityExpiresWhileWaitingForConnection(t *testing.T, factory func(*testing.T) contractOpener) {
-	for _, tc := range []struct{ operation, expiry string }{
-		{"definition", "access"}, {"grant", mcpProofExpiry}, {"preflight", "access"},
+func checkMCPAuthorityWhileWaitingForConnection(t *testing.T, factory func(*testing.T) contractOpener) {
+	for _, tc := range []struct{ operation, condition string }{
+		{"definition", "access"}, {"grant", mcpAgedFactor}, {"preflight", "access"},
+		{"definition", "revocation"}, {"grant", "version"},
 	} {
-		t.Run(tc.operation+"/"+tc.expiry, func(t *testing.T) {
-			checkMCPAuthorityExpiresWhileWaiting(t, factory(t), "database", tc.operation, tc.expiry)
+		t.Run(tc.operation+"/"+tc.condition, func(t *testing.T) {
+			checkMCPAuthorityWhileWaiting(t, factory(t), "database", tc.operation, tc.condition)
 		})
 	}
 }
 
 // Each row tests a different reachable wait before privileged durable work.
-func checkMCPAuthorityExpiresWhileWaitingForRow(t *testing.T, open contractOpener) {
-	for _, tc := range []struct{ row, operation, expiry string }{
+func checkMCPAuthorityWhileWaitingForRow(t *testing.T, open contractOpener) {
+	for _, tc := range []struct{ row, operation, condition string }{
 		{"canonical-user", "definition", "access"},
-		{"family", "grant", mcpProofExpiry},
+		{"family", "grant", "access"},
+		{"family", "definition", "revocation"},
+		{"family", "grant", "version"},
 		{"connection", "definition", "access"},
 		{"connection", "grant", "access"},
-		{"grant", "grant", mcpProofExpiry},
+		{"grant", "grant", mcpAgedFactor},
 		{"audit", "definition", "access"},
 	} {
-		t.Run(tc.row+"/"+tc.operation+"/"+tc.expiry, func(t *testing.T) {
-			checkMCPAuthorityExpiresWhileWaiting(t, open, tc.row, tc.operation, tc.expiry)
+		t.Run(tc.row+"/"+tc.operation+"/"+tc.condition, func(t *testing.T) {
+			checkMCPAuthorityWhileWaiting(t, open, tc.row, tc.operation, tc.condition)
 		})
 	}
 }
 
-func checkMCPAuthorityExpiresWhileWaiting(t *testing.T, open contractOpener, wait, operation, expiry string) {
+func checkMCPAuthorityWhileWaiting(t *testing.T, open contractOpener, wait, operation, condition string) {
 	t.Helper()
 	p := newContractProvider(t, open)
 	defer closeContractProvider(t, p)
-	grant := contractMCPGrant(t, p)
+	var grant MCPGrantMutation
+	if condition == mcpAgedFactor {
+		grant = contractMCPGrantAt(t, p, time.Now().UTC().Add(-6*time.Minute).Truncate(time.Second))
+	} else {
+		grant = contractMCPGrant(t, p)
+	}
 	if err := p.MCP().SaveMCPGrant(t.Context(), grant); err != nil {
 		t.Fatal(err)
 	}
 	grant = authorizeContractGrant(grant)
 	a := *grant.Authority
-	if expiry == mcpProofExpiry {
-		a = contractMCPFreshAuthority(t, p, a)
+	if condition == mcpAgedFactor {
+		a = contractMCPEnrolledAuthority(t, p, a)
 	}
 	store := p.MCP().(*sqlMCPStore)
 	db := contractDatabase(p).db
 	deadline := time.Now().UTC().Add(time.Second)
-	switch expiry {
+	switch condition {
 	case "access":
 		if _, err := db.ExecContext(t.Context(), store.users.bind(`UPDATE balda_backoffice_sessions SET access_expires_at = ? WHERE session_id = ?`), formatUserTime(deadline), a.SessionID); err != nil {
-			t.Fatal(err)
-		}
-	case mcpProofExpiry:
-		verified := deadline.Add(-time.Second)
-		a.FreshProofAge = time.Second
-		if _, err := db.ExecContext(t.Context(), store.users.bind(`UPDATE balda_backoffice_sessions SET webauthn_verified_at = ? WHERE session_id = ?`), formatUserTime(verified), a.SessionID); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -78,15 +80,14 @@ func checkMCPAuthorityExpiresWhileWaiting(t *testing.T, open contractOpener, wai
 	if err != nil || !found {
 		t.Fatal("missing queued authority family")
 	}
-	storedDeadline := family.Access.ExpiresAt
-	if expiry == mcpProofExpiry {
+	if condition == mcpAgedFactor {
 		profile, err := p.Users().GetMFAProfile(t.Context(), a.UserID)
 		if err != nil || !profile.Enabled || family.MFAFactorID != profile.Credential.ID {
 			t.Fatal("queued authority did not have an enabled verified factor")
 		}
-		storedDeadline = family.WebAuthnVerifiedAt.Add(a.FreshProofAge)
 	}
-	if !storedDeadline.Equal(deadline) {
+	storedDeadline := family.Access.ExpiresAt
+	if condition == "access" && !storedDeadline.Equal(deadline) {
 		t.Fatalf("stored expiry %s differs from fixture expiry %s", storedDeadline, deadline)
 	}
 	c, found, err := p.MCP().GetMCPConnection(t.Context(), grant.Grant.Binding.ConnectionID)
@@ -148,7 +149,7 @@ func checkMCPAuthorityExpiresWhileWaiting(t *testing.T, open contractOpener, wai
 	}()
 	observeMCPAuthorityWait(t, ctx, db, initialWaitCount, blockerPID, done)
 	if !time.Now().Before(deadline) {
-		t.Fatal("authority expired before the queue was observed")
+		t.Fatal("queue deadline passed before the wait was observed")
 	}
 	timer := time.NewTimer(time.Until(deadline.Add(20 * time.Millisecond)))
 	defer timer.Stop()
@@ -158,35 +159,58 @@ func checkMCPAuthorityExpiresWhileWaiting(t *testing.T, open contractOpener, wai
 		t.Fatal(ctx.Err())
 	}
 	releasedAt := time.Now().UTC()
-	if releasedAt.Before(storedDeadline) {
+	if condition == "access" && releasedAt.Before(storedDeadline) {
 		t.Fatalf("timer elapsed before actual stored expiry: release=%s expiry=%s", releasedAt, storedDeadline)
 	}
-	t.Logf("authority time=%s stored expiry=%s verified=%s proof age=%s release=%s", a.At, storedDeadline, family.WebAuthnVerifiedAt, a.FreshProofAge, releasedAt)
-	if err := tx.Rollback(); err != nil {
+	if condition == mcpAgedFactor && releasedAt.Sub(family.WebAuthnVerifiedAt) < time.Second {
+		t.Fatalf("enrolled proof did not age during wait: verified=%s release=%s", family.WebAuthnVerifiedAt, releasedAt)
+	}
+	switch condition {
+	case "revocation":
+		if _, err := tx.ExecContext(ctx, store.users.bind(`UPDATE balda_backoffice_sessions SET revoked_at = ? WHERE session_id = ?`), formatUserTime(releasedAt), a.SessionID); err != nil {
+			t.Fatal(err)
+		}
+	case "version":
+		if _, err := tx.ExecContext(ctx, store.users.bind(`UPDATE balda_backoffice_sessions SET version = version + 1 WHERE session_id = ?`), a.SessionID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if condition == "revocation" || condition == "version" {
+		if err := tx.Commit(); err != nil {
+			t.Fatal(err)
+		}
+	} else if err := tx.Rollback(); err != nil {
 		t.Fatal(err)
 	}
 	select {
 	case err := <-done:
-		if !errors.Is(err, mcpcmd.ErrForbidden) {
-			t.Logf("authority time=%s deadline=%s completed=%s", a.At, deadline, time.Now().UTC())
-			if expiry == mcpProofExpiry {
-				profile, profileErr := p.Users().GetMFAProfile(t.Context(), a.UserID)
-				family, found, familyErr := p.Users().GetSession(t.Context(), a.SessionID)
-				t.Logf("MFA enabled=%v profile error=%v family found=%v family error=%v verified=%s proof age=%s", profile.Enabled, profileErr, found, familyErr, family.WebAuthnVerifiedAt, a.FreshProofAge)
+		if condition == mcpAgedFactor {
+			if err != nil {
+				t.Errorf("enrolled session rejected after queued %s despite valid session: %v", operation, err)
 			}
-			t.Errorf("%s committed or returned wrong rejection after %s expired in %s queue: %v", operation, expiry, wait, err)
+		} else if condition == "version" {
+			if !errors.Is(err, mcpcmd.ErrConflict) {
+				t.Errorf("%s accepted changed session version after %s queue: %v", operation, wait, err)
+			}
+		} else if !errors.Is(err, mcpcmd.ErrForbidden) {
+			t.Errorf("%s committed or returned wrong rejection after %s in %s queue: %v", operation, condition, wait, err)
 		}
 	case <-ctx.Done():
 		t.Fatal("queued authority check did not finish")
 	}
-	if after := snapshotMCPAuthorityWaitState(t, p); !reflect.DeepEqual(after, before) {
-		t.Error("expired queued authority changed connection, revision, grant or audit state")
+	after := snapshotMCPAuthorityWaitState(t, p)
+	same := reflect.DeepEqual(after, before)
+	if condition == mcpAgedFactor && same {
+		t.Error("queued grant from enrolled session did not commit")
+	}
+	if condition != mcpAgedFactor && !same {
+		t.Errorf("queued %s changed connection, revision, grant or audit state after %s", operation, condition)
 	}
 }
 
-func contractMCPFreshAuthority(t *testing.T, p Provider, a mcpcmd.Authority) mcpcmd.Authority {
+func contractMCPEnrolledAuthority(t *testing.T, p Provider, a mcpcmd.Authority) mcpcmd.Authority {
 	t.Helper()
-	now := time.Now().UTC()
+	now := a.At
 	key := usercmd.MFACredential{ID: "queue-factor", UserID: a.UserID, RPID: "localhost", CredentialID: []byte("public-credential"), PublicKey: []byte("public-key"), Data: []byte(`{"credential":"public"}`), CreatedAt: now}
 	change := usercmd.MFAChange{UserID: a.UserID, ExpectedUserVersion: 1, ExpectedCredentialVersion: 1, Purpose: usercmd.MFAEnable, BoundSessionID: a.SessionID, ExpectedSessionVersion: 1, Credential: key, ChangedAt: now, Audit: contractAudit("queue-factor-enable", usercmd.AuditActionMFAEnabled, a.UserID, now)}
 	if err := p.Users().ApplyMFAChange(t.Context(), change); err != nil {

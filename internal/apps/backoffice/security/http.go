@@ -36,7 +36,6 @@ const (
 var defaultReturnPrefixes = []string{"/", "/overview", "/access", "/account", "/audit", "/mcp"}
 
 type browserService interface {
-	RequireFresh(ctx context.Context, rawAccessToken string) error
 	Login(ctx context.Context, username string, password []byte) (Credentials, error)
 	ValidateAccess(ctx context.Context, rawToken string) (Principal, error)
 	ValidateCSRF(ctx context.Context, rawAccessToken, csrfToken string) error
@@ -48,7 +47,6 @@ type browserService interface {
 
 // HTTPConfig controls the browser-only trust boundary.
 type HTTPConfig struct {
-	StepUpResponder       func(http.ResponseWriter, *http.Request)
 	CeremonyResponder     func(http.ResponseWriter, *http.Request, usercmd.MFAPurpose, CeremonyStart)
 	TrustedOrigin         string
 	BasePath              string
@@ -61,7 +59,6 @@ type HTTPConfig struct {
 
 // Browser implements the HTTP security boundary without owning page rendering.
 type Browser struct {
-	stepUpResponder   func(http.ResponseWriter, *http.Request)
 	service           browserService
 	ceremonyResponder func(http.ResponseWriter, *http.Request, usercmd.MFAPurpose, CeremonyStart)
 	trustedOrigin     string
@@ -108,7 +105,6 @@ func NewBrowser(service browserService, config HTTPConfig) (*Browser, error) {
 		}
 	}
 	return &Browser{
-		stepUpResponder:   config.StepUpResponder,
 		ceremonyResponder: config.CeremonyResponder,
 		service:           service, trustedOrigin: strings.TrimSuffix(origin.String(), "/"),
 		basePath:      config.BasePath,
@@ -382,13 +378,6 @@ func (b *Browser) RequireAdministrator(next http.Handler) http.Handler {
 			b.writeServiceError(w, r, ErrForbidden)
 			return
 		}
-		if cookie, err := r.Cookie(AccessCookieName); err != nil {
-			b.writeServiceError(w, r, ErrUnauthenticated)
-			return
-		} else if err := b.service.RequireFresh(r.Context(), cookie.Value); err != nil {
-			b.writeServiceError(w, r, err)
-			return
-		}
 		next.ServeHTTP(w, r)
 	})
 }
@@ -426,10 +415,6 @@ func (b *Browser) AdministratorMutationLimit(w http.ResponseWriter, r *http.Requ
 	}
 	if principal.Assurance != usercmd.SessionAssuranceNormal || principal.User.Role != usercmd.RoleAdministrator {
 		b.writeServiceError(w, r, ErrForbidden)
-		return nil, Principal{}, false
-	}
-	if err := b.service.RequireFresh(r.Context(), access.Value); err != nil {
-		b.writeServiceError(w, r, err)
 		return nil, Principal{}, false
 	}
 	return form, principal, true
@@ -543,17 +528,6 @@ func (b *Browser) respondMutation(w http.ResponseWriter, r *http.Request, locati
 func (b *Browser) writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 	w.Header().Set("Cache-Control", "no-store")
 	switch {
-	case errors.Is(err, ErrStepUp):
-		if r.Method == http.MethodGet || r.Method == http.MethodHead {
-			b.redirect(w, r, "", b.path("/auth/step-up"))
-		} else {
-			w.Header().Set("Link", "<"+b.path("/auth/step-up")+">; rel=\"authenticate\"")
-			if b.stepUpResponder != nil {
-				b.stepUpResponder(w, r)
-			} else {
-				b.writeHTTPError(w, r, http.StatusForbidden, "fresh verification required: "+b.path("/auth/step-up"))
-			}
-		}
 	case errors.Is(err, ErrMFAUnavailable):
 		b.writeHTTPError(w, r, http.StatusServiceUnavailable, ErrMFAUnavailable.Error())
 	case errors.Is(err, ErrRefreshConcurrent):

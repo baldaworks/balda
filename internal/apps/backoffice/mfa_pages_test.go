@@ -43,9 +43,8 @@ func TestMFAErrorsOfferScopedNativeRestartWithoutSessionRestorePromise(t *testin
 	}
 	for _, tc := range []struct{ route, link, message string }{
 		{"/account/2fa/enable/start", "/balda/account", "current password"},
-		{"/account/2fa/disable/start", "/balda/account", "current password"},
+		{"/account/2fa/disable", "/balda/account", "current password"},
 		{"/auth/webauthn/finish", "/balda/login", "failed or expired"},
-		{"/auth/step-up/finish", "/balda/auth/step-up", "failed or expired"},
 	} {
 		t.Run(tc.route, func(t *testing.T) {
 			r := httptest.NewRequest(http.MethodPost, "http://backoffice.example/balda"+tc.route, nil)

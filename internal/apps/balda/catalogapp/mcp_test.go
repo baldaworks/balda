@@ -722,7 +722,7 @@ func hybridCatalogFixtureWithDatabase(t *testing.T, databasePath string) (state.
 	event := audit("create-mcp", usercmd.AuditActionMCPDefinitionChanged, usercmd.AuditTargetMCP, r.ConnectionID)
 	event.ActorUserID, event.ActorSessionID = u.ID, f.ID
 	m := state.MCPMutation{Connection: mcpcmd.Connection{ID: r.ConnectionID, PublicID: "worker-tools", Source: mcpcmd.SourceManaged, CurrentRevisionID: r.ID, Enabled: true, CreatedAt: now, UpdatedAt: now}, Revision: &r, Audit: event,
-		Authority: mcpcmd.Authority{UserID: u.ID, UserVersion: 1, CredentialVersion: 1, SessionID: f.ID, SessionVersion: 1, At: now, FreshProofAge: time.Minute}}
+		Authority: mcpcmd.Authority{UserID: u.ID, UserVersion: 1, CredentialVersion: 1, SessionID: f.ID, SessionVersion: 1, At: now}}
 	runtime, err := NewRuntime(dir, "", "", p, nil, nil, mcpregistry.New(nil), commandcmd.NewRegistry(), credentials, nil)
 	if err != nil {
 		t.Fatal(err)

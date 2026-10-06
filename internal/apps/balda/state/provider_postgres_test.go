@@ -60,8 +60,8 @@ func TestPostgresProviderContract(t *testing.T) {
 	})
 }
 
-func TestPostgresMCPAuthorityExpiresWhileWaitingForRow(t *testing.T) {
-	checkMCPAuthorityExpiresWhileWaitingForRow(t, func(ctx context.Context, _ string) (Provider, error) {
+func TestPostgresMCPAuthorityWhileWaitingForRow(t *testing.T) {
+	checkMCPAuthorityWhileWaitingForRow(t, func(ctx context.Context, _ string) (Provider, error) {
 		db := newPostgresTestDB(t)
 		return initializePostgresProvider(ctx, db)
 	})

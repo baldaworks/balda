@@ -74,8 +74,12 @@ func checkMCPGrantMetadataUsesIndependentSecurityTime(t *testing.T, open contrac
 }
 
 func contractMCPGrant(t *testing.T, p Provider) MCPGrantMutation {
+	return contractMCPGrantAt(t, p, time.Now().UTC().Truncate(time.Second))
+}
+
+func contractMCPGrantAt(t *testing.T, p Provider, now time.Time) MCPGrantMutation {
 	t.Helper()
-	connection := contractMCPMutation(t, p)
+	connection := contractMCPMutationAt(t, p, now)
 	if err := p.MCP().SaveMCPConnection(t.Context(), connection); err != nil {
 		t.Fatal(err)
 	}

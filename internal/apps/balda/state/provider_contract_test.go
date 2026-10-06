@@ -25,7 +25,7 @@ const secondPluginRevision = "rev-2"
 type contractOpener func(context.Context, string) (Provider, error)
 
 func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) {
-	t.Run("MCPAuthorityExpiresWhileWaitingForConnection", func(t *testing.T) { checkMCPAuthorityExpiresWhileWaitingForConnection(t, factory) })
+	t.Run("MCPAuthorityWhileWaitingForConnection", func(t *testing.T) { checkMCPAuthorityWhileWaitingForConnection(t, factory) })
 	t.Run("MCPGrantsSurviveRestart", func(t *testing.T) { checkMCPGrantsSurviveRestart(t, factory(t)) })
 	t.Run("MCPDefinitionEditFencesCompletion", func(t *testing.T) { checkMCPDefinitionEditFencesCompletion(t, factory(t)) })
 	t.Run("MCPGrantTransitionsAreAtomic", func(t *testing.T) { checkMCPGrantTransitionsAreAtomic(t, factory(t)) })
@@ -38,7 +38,7 @@ func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) 
 	t.Run("MCPSelectionAndPublicationSurviveRestart", func(t *testing.T) { checkMCPSelectionAndPublicationSurviveRestart(t, factory(t)) })
 	t.Run("MCPConcurrentEditsCommitOnce", func(t *testing.T) { checkMCPConcurrentEditsCommitOnce(t, factory(t)) })
 	t.Run("MCPProtectedBindingsAndSafeAudit", func(t *testing.T) { checkMCPProtectedBindingsAndSafeAudit(t, factory(t)) })
-	t.Run("MCPFreshFactorAndRevocation", func(t *testing.T) { checkMCPFreshFactorAndRevocation(t, factory(t)) })
+	t.Run("MCPEnrolledFactorAndRevocation", func(t *testing.T) { checkMCPEnrolledFactorAndRevocation(t, factory(t)) })
 	t.Run("MFAStoreLifecycle", func(t *testing.T) { checkMFAStoreLifecycle(t, factory(t)) })
 	t.Run("UserStoreCanonicalLifecycle", func(t *testing.T) { checkUserStoreCanonicalLifecycle(t, factory(t)) })
 	t.Run("ManagedBindings", func(t *testing.T) { checkManagedBindings(t, factory(t)) })

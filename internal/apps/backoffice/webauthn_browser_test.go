@@ -33,7 +33,6 @@ func TestHTTPAppWebAuthnBrowserWorkflow(t *testing.T) {
 			}
 			config.Server.PublicURL = "http://localhost:" + port
 			config.Server.BasePath = basePath
-			config.Server.StepUpTTL = 3 * time.Second
 			config.Server.CeremonyTTL = 5 * time.Second
 			app, err := newHTTPApp(p.Users(), config)
 			if err != nil {

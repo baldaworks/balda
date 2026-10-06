@@ -476,13 +476,10 @@ balda:
     public_url: https://lab.example.org
     base_path: /balda
     ceremony_ttl: 5m
-    step_up_ttl: 15m
 ```
 
-`ceremony_ttl` must be positive and at most 15 minutes; `step_up_ttl` must be
-positive and at most one hour. Environment overrides are
-`BALDA_BACKOFFICE_CEREMONY_TTL` and
-`BALDA_BACKOFFICE_STEP_UP_TTL`. Ceremony state is one-use, expiring and
+`ceremony_ttl` must be positive and at most 15 minutes. Its environment
+override is `BALDA_BACKOFFICE_CEREMONY_TTL`. Ceremony state is one-use, expiring and
 bound to its browser, CSRF token, purpose, user and current authority.
 
 - **Enable:** confirm the current password, then register and verify a passkey.
@@ -491,17 +488,14 @@ bound to its browser, CSRF token, purpose, user and current authority.
 - **Sign in:** submit the password, then verify the passkey. Until verification
   finishes, the browser has no usable access or refresh credentials. Temporary
   passwords still require password replacement after both factors succeed.
-- **Sensitive actions:** Access, Audit and privileged mutations require recent
-  passkey verification. Use the explicit confirmation screen after it expires.
-  A rejected mutation returns 403 and is not applied or automatically replayed;
-  return and submit it again after confirmation. Step-up keeps the refresh
-  lineage and currently renewed session deadline. Refresh does not extend
-  passkey verification freshness.
-- **Replace:** explicitly confirm replacement, verify the current key, then
-  register the new key. Only successful completion replaces the key and revokes
-  old sessions. **Disable:** explicitly confirm removal, provide the current
-  password and verify the current key. Successful removal returns to password
-  authentication and revokes old sessions.
+- **Authenticated session:** after the sign-in assertion, Account, Access, Audit,
+  MCP and other authorized routes use the current session. Refresh rotates access
+  authority without another passkey challenge. Normal session expiry, revocation,
+  role, CSRF and factor identity checks continue to apply.
+- **Replace:** confirm with the current password, then register the new key.
+  Only successful registration replaces the key and revokes old sessions.
+  **Disable:** confirm with the current password. Successful removal returns to
+  password authentication and revokes old sessions.
 - **Cancel or retry:** cancelling the authenticator or leaving the ceremony
   keeps the factor setting unchanged. Retry while the ceremony is live, or
   cancel and start again. Unsupported/no-JavaScript browsers show guidance;
@@ -532,8 +526,7 @@ and source reuse are documented in the
 
 Administrators with a normal browser session can open **MCP** at `/mcp`.
 Operators do not receive MCP navigation and cannot open the pages or submit
-mutations. Optional passkey freshness applies to both sensitive reads and
-writes. All forms use the current session CSRF token and same-origin guard;
+mutations. All forms use the current session CSRF token and same-origin guard;
 the host rechecks current user, credential, MFA and browser-family versions
 at the durable write boundary. MCP form intake is bounded to 1 MiB; other
 browser forms retain their existing limits.

@@ -146,7 +146,7 @@ never enter the database; pending ceremony/browser/CSRF selectors are digested.
 
 Enable, replacement, disable and confirmed recovery advance user/credential/MFA
 authority, revoke old families and append audit in one transaction. Counter
-verification and family issuance/step-up are transactional as well. An audit or
+verification and family issuance are transactional as well. An audit or
 SQL failure rolls back the corresponding security mutation.
 
 These migrations are forward-only. Back up the database before upgrading.

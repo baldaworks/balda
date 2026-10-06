@@ -112,7 +112,7 @@ func persistStartupMCPRevisions(t *testing.T, p state.Provider, s *mcpmanage.Ser
 	event.ActorUserID, event.ActorSessionID = u.ID, f.ID
 	m := state.MCPMutation{Connection: mcpcmd.Connection{ID: r.ConnectionID, PublicID: "worker", Source: mcpcmd.SourceManaged,
 		CurrentRevisionID: r.ID, Enabled: true, CreatedAt: now, UpdatedAt: now}, Revision: &r, Audit: event,
-		Authority: mcpcmd.Authority{UserID: u.ID, UserVersion: 1, CredentialVersion: 1, SessionID: f.ID, SessionVersion: 1, At: now, FreshProofAge: 5 * time.Minute}}
+		Authority: mcpcmd.Authority{UserID: u.ID, UserVersion: 1, CredentialVersion: 1, SessionID: f.ID, SessionVersion: 1, At: now}}
 	if err := p.MCP().SaveMCPConnection(t.Context(), m); err != nil {
 		t.Fatal(err)
 	}

@@ -10,10 +10,9 @@ import (
 type accountMFAService interface {
 	BeginEnable(ctx context.Context, token string, password []byte, browser, csrf string) (CeremonyStart, error)
 	FinishEnable(ctx context.Context, token, transaction, browser, csrf string, response []byte) (Credentials, error)
-	BeginReplace(ctx context.Context, token string, confirmed bool, browser, csrf string) (CeremonyStart, error)
-	FinishReplace(ctx context.Context, token, transaction, browser, csrf string, confirmed bool, response []byte) (MFAReplacement, error)
-	BeginDisable(ctx context.Context, token string, password []byte, confirmed bool, browser, csrf string) (CeremonyStart, error)
-	FinishDisable(ctx context.Context, token, transaction, browser, csrf string, confirmed bool, response []byte) (Credentials, error)
+	BeginReplace(ctx context.Context, token string, password []byte, confirmed bool, browser, csrf string) (CeremonyStart, error)
+	FinishReplace(ctx context.Context, token, transaction, browser, csrf string, response []byte) (Credentials, error)
+	Disable(ctx context.Context, token string, password []byte, confirmed bool) (Credentials, error)
 }
 
 // BeginEnable starts password-confirmed opt-in registration.
@@ -26,24 +25,45 @@ func (b *Browser) FinishEnable(w http.ResponseWriter, r *http.Request) {
 	b.accountMFAFinish(w, r, usercmd.MFAEnable)
 }
 
-// BeginReplace starts verification of the existing key.
+// BeginReplace starts password-confirmed replacement registration.
 func (b *Browser) BeginReplace(w http.ResponseWriter, r *http.Request) {
 	b.accountMFAStart(w, r, usercmd.MFAReplace)
 }
 
-// FinishReplace advances replacement or commits its verified registration.
+// FinishReplace commits a verified replacement registration.
 func (b *Browser) FinishReplace(w http.ResponseWriter, r *http.Request) {
 	b.accountMFAFinish(w, r, usercmd.MFAReplace)
 }
 
-// BeginDisable starts password-and-confirmation guarded opt-out.
-func (b *Browser) BeginDisable(w http.ResponseWriter, r *http.Request) {
-	b.accountMFAStart(w, r, usercmd.MFADisable)
-}
-
-// FinishDisable commits verified opt-out and a new password-authenticated family.
-func (b *Browser) FinishDisable(w http.ResponseWriter, r *http.Request) {
-	b.accountMFAFinish(w, r, usercmd.MFADisable)
+// Disable removes the factor and installs a new password-authenticated family.
+func (b *Browser) Disable(w http.ResponseWriter, r *http.Request) {
+	form, ok := b.mutationForm(w, r)
+	if !ok {
+		return
+	}
+	access, err := r.Cookie(AccessCookieName)
+	if err != nil {
+		b.writeServiceError(w, r, ErrUnauthenticated)
+		return
+	}
+	if err := b.service.ValidateCSRF(r.Context(), access.Value, form.Get("csrf_token")); err != nil {
+		b.writeServiceError(w, r, err)
+		return
+	}
+	s, ok := b.service.(accountMFAService)
+	if !ok {
+		b.writeServiceError(w, r, ErrMFAUnavailable)
+		return
+	}
+	password := []byte(form.Get("password"))
+	defer zero(password)
+	credentials, err := s.Disable(r.Context(), access.Value, password, form.Get("confirm") == "on")
+	if err != nil {
+		b.writeServiceError(w, r, err)
+		return
+	}
+	b.setCredentials(w, credentials)
+	b.redirect(w, r, "", b.path("/account"))
 }
 
 func (b *Browser) accountMFAStart(w http.ResponseWriter, r *http.Request, purpose usercmd.MFAPurpose) {
@@ -77,9 +97,7 @@ func (b *Browser) accountMFAStart(w http.ResponseWriter, r *http.Request, purpos
 	case usercmd.MFAEnable:
 		start, err = s.BeginEnable(r.Context(), access.Value, password, browser, form.Get("csrf_token"))
 	case usercmd.MFAReplace:
-		start, err = s.BeginReplace(r.Context(), access.Value, form.Get("confirm") == "on", browser, form.Get("csrf_token"))
-	case usercmd.MFADisable:
-		start, err = s.BeginDisable(r.Context(), access.Value, password, form.Get("confirm") == "on", browser, form.Get("csrf_token"))
+		start, err = s.BeginReplace(r.Context(), access.Value, password, form.Get("confirm") == "on", browser, form.Get("csrf_token"))
 	}
 	if err != nil {
 		b.writeServiceError(w, r, err)
@@ -113,15 +131,7 @@ func (b *Browser) accountMFAFinish(w http.ResponseWriter, r *http.Request, purpo
 	case usercmd.MFAEnable:
 		credentials, err = s.FinishEnable(r.Context(), access.Value, form.Get("transaction"), mfaCookie(r), form.Get("csrf_token"), response)
 	case usercmd.MFAReplace:
-		var replacement MFAReplacement
-		replacement, err = s.FinishReplace(r.Context(), access.Value, form.Get("transaction"), mfaCookie(r), form.Get("csrf_token"), form.Get("confirm") == "on", response)
-		if err == nil && replacement.Next != nil {
-			b.respondCeremony(w, r, purpose, *replacement.Next)
-			return
-		}
-		credentials = replacement.Credentials
-	case usercmd.MFADisable:
-		credentials, err = s.FinishDisable(r.Context(), access.Value, form.Get("transaction"), mfaCookie(r), form.Get("csrf_token"), form.Get("confirm") == "on", response)
+		credentials, err = s.FinishReplace(r.Context(), access.Value, form.Get("transaction"), mfaCookie(r), form.Get("csrf_token"), response)
 	}
 	if err != nil {
 		b.writeServiceError(w, r, err)

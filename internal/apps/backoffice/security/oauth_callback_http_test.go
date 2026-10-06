@@ -155,17 +155,14 @@ func TestOAuthCallbackCredentialRequiresCurrentCanonicalAccess(t *testing.T) {
 	}
 }
 
-func TestOAuthCallbackCredentialRequiresFreshMFA(t *testing.T) {
+func TestOAuthCallbackCredentialAllowsNormalAdministrator(t *testing.T) {
 	t.Parallel()
 	service := &fakeBrowserService{
-		validate: func(context.Context, string) (Principal, error) {
-			return Principal{User: usercmd.User{Role: usercmd.RoleAdministrator}, Assurance: usercmd.SessionAssuranceNormal}, nil
-		},
-		fresh: func(_ context.Context, access string) error {
+		validate: func(_ context.Context, access string) (Principal, error) {
 			if access != "initiating-access" {
-				t.Fatal("callback freshness check did not receive the initiating canonical credential")
+				t.Fatalf("callback access token = %q", access)
 			}
-			return ErrStepUp
+			return Principal{User: usercmd.User{Role: usercmd.RoleAdministrator}, Assurance: usercmd.SessionAssuranceNormal}, nil
 		},
 	}
 	b := newHTTPTestBrowser(t, service, false, 0)
@@ -173,11 +170,11 @@ func TestOAuthCallbackCredentialRequiresFreshMFA(t *testing.T) {
 	r.AddCookie(&http.Cookie{Name: OAuthCallbackCookieName, Value: "initiating-access"})
 	w := httptest.NewRecorder()
 	r = b.RestoreOAuthCallbackCredential(w, r)
-	b.Authenticate(b.RequireAdministrator(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-		t.Fatal("stale MFA reached callback completion")
+	b.Authenticate(b.RequireAdministrator(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
 	}))).ServeHTTP(w, r)
-	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/auth/step-up" {
-		t.Fatalf("fresh proof guard = %d %q", w.Code, w.Header().Get("Location"))
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("callback guard status = %d, want %d", w.Code, http.StatusNoContent)
 	}
 	assertClearedCookie(t, w.Result().Cookies(), OAuthCallbackCookieName, "/mcp/oauth/callback")
 }

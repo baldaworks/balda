@@ -166,7 +166,7 @@ func operationsFixture(t *testing.T, configured map[string]agentconfig.MCPServer
 	if err != nil {
 		t.Fatal(err)
 	}
-	return New(definitions, catalog), p, catalog, credentials, mcpcmd.Authority{UserID: user.ID, UserVersion: 1, CredentialVersion: 1, SessionID: family.ID, SessionVersion: 1, At: now, FreshProofAge: time.Minute}
+	return New(definitions, catalog), p, catalog, credentials, mcpcmd.Authority{UserID: user.ID, UserVersion: 1, CredentialVersion: 1, SessionID: family.ID, SessionVersion: 1, At: now}
 }
 
 func TestOperationsInventoryRecoveryReadsNeverLaunch(t *testing.T) {

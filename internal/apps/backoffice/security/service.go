@@ -41,7 +41,6 @@ type Config struct {
 	RefreshTTL  time.Duration
 	Origin      string
 	CeremonyTTL time.Duration
-	StepUpTTL   time.Duration
 }
 
 type store interface {
@@ -108,11 +107,8 @@ func NewService(store store, config Config) (*Service, error) {
 	if config.CeremonyTTL == 0 {
 		config.CeremonyTTL = 5 * time.Minute
 	}
-	if config.StepUpTTL == 0 {
-		config.StepUpTTL = 15 * time.Minute
-	}
-	if config.CeremonyTTL <= 0 || config.CeremonyTTL > 15*time.Minute || config.StepUpTTL <= 0 || config.StepUpTTL > time.Hour {
-		return nil, fmt.Errorf("invalid WebAuthn ceremony or step-up lifetime")
+	if config.CeremonyTTL <= 0 || config.CeremonyTTL > 15*time.Minute {
+		return nil, fmt.Errorf("invalid WebAuthn ceremony lifetime")
 	}
 	engine, _ := newWebAuthnEngine(config.Origin)
 	return &Service{store: store, config: config, webauthn: engine, random: rand.Reader, now: time.Now, newID: uuid.NewString}, nil
@@ -310,11 +306,6 @@ func (s *Service) ListSessions(ctx context.Context, rawAccessToken, userID strin
 	if targetUserID == "" {
 		targetUserID = principal.User.ID
 	}
-	if targetUserID != principal.User.ID {
-		if err := s.RequireFresh(ctx, rawAccessToken); err != nil {
-			return usercmd.SessionPage{}, err
-		}
-	}
 	if targetUserID != principal.User.ID && principal.User.Role != usercmd.RoleAdministrator {
 		return usercmd.SessionPage{}, ErrForbidden
 	}
@@ -330,9 +321,6 @@ func (s *Service) ListSessions(ctx context.Context, rawAccessToken, userID strin
 
 // RevokeSession revokes an owned session or any session when called by an administrator.
 func (s *Service) RevokeSession(ctx context.Context, rawAccessToken, targetSessionID string, confirmCurrent bool) error {
-	if err := s.RequireFresh(ctx, rawAccessToken); err != nil {
-		return err
-	}
 	principal, err := s.requireNormal(ctx, rawAccessToken)
 	if err != nil {
 		return err
@@ -362,9 +350,6 @@ func (s *Service) RevokeSession(ctx context.Context, rawAccessToken, targetSessi
 
 // ReplacePassword rotates a normal password or replaces a verified temporary credential.
 func (s *Service) ReplacePassword(ctx context.Context, rawAccessToken string, currentPassword, nextPassword []byte) (Credentials, error) {
-	if err := s.RequireFresh(ctx, rawAccessToken); err != nil {
-		return Credentials{}, err
-	}
 	current := append([]byte(nil), currentPassword...)
 	next := append([]byte(nil), nextPassword...)
 	defer zero(current)
@@ -557,6 +542,3 @@ func dummyPasswordHash() (string, error) {
 	})
 	return dummyHash, dummyHashErr
 }
-
-// FreshProofAge returns the resolved administrator proof lifetime used by this service.
-func (s *Service) FreshProofAge() time.Duration { return s.config.StepUpTTL }

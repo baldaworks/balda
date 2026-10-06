@@ -210,7 +210,6 @@ balda:
     access_token_ttl: "15m"
     refresh_token_ttl: "720h"
     ceremony_ttl: "5m"
-    step_up_ttl: "15m"
     qa_ui: false
 
   sessions:

@@ -160,7 +160,7 @@ func validateMCPMutation(m MCPMutation) error {
 }
 
 func validateMCPAuthority(a mcpcmd.Authority) error {
-	if a.UserID == "" || a.UserVersion == 0 || a.CredentialVersion == 0 || a.SessionID == "" || a.SessionVersion == 0 || a.At.IsZero() || a.FreshProofAge <= 0 {
+	if a.UserID == "" || a.UserVersion == 0 || a.CredentialVersion == 0 || a.SessionID == "" || a.SessionVersion == 0 || a.At.IsZero() {
 		return mcpcmd.ErrInvalid
 	}
 	return nil
@@ -203,8 +203,7 @@ func (f lockedMCPAuthority) checkTime(a mcpcmd.Authority) error {
 		if !now.Before(f.family.Access.ExpiresAt) || !now.Before(f.family.RefreshExpiresAt) {
 			return mcpcmd.ErrForbidden
 		}
-		if f.mfaEnabled && (f.family.WebAuthnVerifiedAt.IsZero() || now.Before(f.family.WebAuthnVerifiedAt) ||
-			!now.Before(f.family.WebAuthnVerifiedAt.Add(a.FreshProofAge))) {
+		if f.mfaEnabled && (f.family.WebAuthnVerifiedAt.IsZero() || now.Before(f.family.WebAuthnVerifiedAt)) {
 			return mcpcmd.ErrForbidden
 		}
 	}

@@ -71,7 +71,7 @@ func (a *httpApp) mcpAuthorizationRoutes(mux *http.ServeMux) {
 }
 
 func (a *httpApp) mcpAuthority(p security.Principal) mcpcmd.Authority {
-	return mcpcmd.Authority{UserID: p.User.ID, UserVersion: p.User.Version, CredentialVersion: p.User.Credential.Version, MFAVersion: p.MFAVersion, SessionID: p.FamilyID, SessionVersion: p.Version, At: time.Now().UTC(), FreshProofAge: a.security.FreshProofAge()}
+	return mcpcmd.Authority{UserID: p.User.ID, UserVersion: p.User.Version, CredentialVersion: p.User.Credential.Version, MFAVersion: p.MFAVersion, SessionID: p.FamilyID, SessionVersion: p.Version, At: time.Now().UTC()}
 }
 
 // OAuth instructions and redirects must be native; even a forged HTMX request
