@@ -650,6 +650,10 @@ exchange or device polling prevents installation. After installation, the same
 host policy binds the exact initiating revision outside protocol locks. A later
 edit can reject that binding without assigning the saved grant to another
 revision. Existing session pins and ready runners retain their exact identity.
+Service authorization is shared: reauthorization replaces the grant for that
+connection, resource, issuer and client. Reducing scopes can deny tools to
+existing sessions that require the previous scopes. Their revisions stay
+unchanged; restoring sufficient authorization permits access again.
 
 **Authorized** means service authorization was saved; **Available** means its current tools
 are available. Inspect both states on the connection. **Retry tool attachment**

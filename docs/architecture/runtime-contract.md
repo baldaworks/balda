@@ -22,6 +22,11 @@ Status: active
   identity even if subsequent authorization start fails. Backoffice owns form
   intake and presentation through its consuming ports; it never selects grant
   identity or replaces retained session pins.
+- Historical revision and authorization-binding identities are immutable, while
+  installation grants retain their shared mutable generation policy. Explicit
+  reauthorization can narrow that grant's scopes; incompatible historical scope
+  requirements fail closed. Restoring sufficient authorization permits retained
+  pins to use their original identity again, without rewriting the revision.
 - Shutdown follows the exact reverse lifecycle order.
 - The durable command runtime must be available before ingress accepts work.
 - No runtime path executes user work without durable actor dispatch acceptance.
