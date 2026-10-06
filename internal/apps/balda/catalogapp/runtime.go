@@ -33,25 +33,26 @@ const transportStreamableHTTP = "streamable-http"
 
 // Runtime owns compilation, retention, scope overlays, and projection fanout.
 type Runtime struct {
-	mutation      sync.Mutex
-	mu            sync.Mutex
-	stateDir      string
-	agentSkillDir string
-	codexSkillDir string
-	compiler      *runtimecatalog.Compiler
-	store         *runtimecatalog.Store
-	loader        *runtimecatalog.SourceLoader
-	archive       *runtimecatalog.RevisionArchive
-	reader        *runtimecatalog.SkillReader
-	plugins       baldastate.PluginStore
-	managedMCP    baldastate.MCPStore
-	credentials   *mcpmanage.Service
-	sessions      baldastate.SessionStore
-	kv            baldastate.KVStore
-	builtin       runtimecatalogcmd.Source
-	configuredMCP []runtimecatalogcmd.Source
-	mcp           *mcpruntime.Reconciler
-	ads           *commandfx.AdvertisementProjector
+	mutation                   sync.Mutex
+	mu                         sync.Mutex
+	stateDir                   string
+	agentSkillDir              string
+	codexSkillDir              string
+	compiler                   *runtimecatalog.Compiler
+	store                      *runtimecatalog.Store
+	loader                     *runtimecatalog.SourceLoader
+	archive                    *runtimecatalog.RevisionArchive
+	reader                     *runtimecatalog.SkillReader
+	plugins                    baldastate.PluginStore
+	managedMCP                 baldastate.MCPStore
+	credentials                *mcpmanage.Service
+	sessions                   baldastate.SessionStore
+	kv                         baldastate.KVStore
+	builtin                    runtimecatalogcmd.Source
+	configuredMCP              []runtimecatalogcmd.Source
+	configuredUpgradeRevisions map[runtimecatalogcmd.ContributionID]runtimecatalogcmd.RevisionID
+	mcp                        *mcpruntime.Reconciler
+	ads                        *commandfx.AdvertisementProjector
 }
 
 // NewRuntime creates the application catalog without publishing mutable state.
@@ -87,6 +88,7 @@ func NewRuntime(
 		stateDir: stateDir, agentSkillDir: strings.TrimSpace(agentSkillDir), codexSkillDir: strings.TrimSpace(codexSkillDir), compiler: runtimecatalog.NewCompiler(), store: runtimecatalog.NewStore(),
 		loader: loader, archive: archive, reader: reader, plugins: provider.Plugins(), managedMCP: provider.MCP(), sessions: provider.Sessions(), kv: provider.AppKV(),
 		builtin: builtinSource(advertisements), configuredMCP: configuredMCPSources(configured), credentials: credentials,
+		configuredUpgradeRevisions: configuredUpgradeRevisions(configured),
 	}
 	pluginResolver, err := mcpruntime.NewPluginResolver(archive, runtime, nil, mcpruntime.PluginPolicy{})
 	if err != nil {
@@ -101,7 +103,7 @@ func NewRuntime(
 		managedResolver.Values = credentials
 	}
 	runtime.mcp, err = mcpruntime.New(
-		mcpruntime.RoutedResolver{Configured: configuredLaunchResolver{catalog: runtime, fallback: mcpfx.ConfiguredResolver{Static: mcpfx.BridgeResolver{Resolver: configuredMCPResolver(configured), Bridge: bridge}, Retained: managedResolver}}, Managed: managedResolver, Plugin: pluginResolver},
+		mcpruntime.RoutedResolver{Configured: configuredLaunchResolver{catalog: runtime, fallback: mcpfx.ConfiguredResolver{Static: mcpfx.BridgeResolver{Resolver: configuredUpgradeResolver{catalog: runtime, current: configuredMCPResolver(configured)}, Bridge: bridge}, Retained: managedResolver}}, Managed: managedResolver, Plugin: pluginResolver},
 		mcpfx.BridgeLauncher{Bridge: bridge, Launcher: mcpfx.NewClientLauncher()}, projector, mcpruntime.Limits{},
 	)
 	if err != nil {
@@ -490,7 +492,7 @@ func configuredMCPSources(configs map[string]agentconfig.MCPServerConfig) []runt
 		id := runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindConfiguredMCP, Name: name}
 		revision := configuredMCPRevision(config)
 		transport := string(config.Type)
-		if transport == "http" {
+		if config.Type == agentconfig.MCPServerTypeHTTP {
 			transport = transportStreamableHTTP
 		}
 		sources = append(sources, runtimecatalogcmd.Source{
@@ -507,7 +509,7 @@ func configuredMCPResolver(configs map[string]agentconfig.MCPServerConfig) *mcpr
 		source := runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindConfiguredMCP, Name: name}
 		id := runtimecatalogcmd.ContributionID{Source: source, Kind: runtimecatalogcmd.ContributionKindMCPServer, Name: name}
 		transport := string(config.Type)
-		if transport == "http" {
+		if config.Type == agentconfig.MCPServerTypeHTTP {
 			transport = transportStreamableHTTP
 		}
 		command := ""

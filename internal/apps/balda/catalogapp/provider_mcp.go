@@ -43,9 +43,19 @@ func (r *Runtime) AcquireProviderMCPServerIDs(ctx context.Context, snapshotID ru
 		var targets []string
 		if kind == runtimecatalogcmd.SourceKindConfiguredMCP {
 			if !descriptor.TargetingKnown {
-				return nil, nil, runtimecatalogcmd.ErrRevisionUnavailable
+				if _, err := r.configuredUpgradeDescriptor(ctx, descriptor); err != nil {
+					return nil, nil, err
+				}
+				// The pre-upgrade producer had no targeting metadata. Its
+				// configured tools followed each provider's default name list.
+				for providerID, names := range configured {
+					if slices.Contains(names, descriptor.Name) {
+						targets = append(targets, providerID)
+					}
+				}
+			} else {
+				targets = descriptor.TargetProviderIDs
 			}
-			targets = descriptor.TargetProviderIDs
 		} else if !all {
 			revision, found, err := r.managedMCP.GetMCPRevision(ctx, descriptor.ConfigRef, string(descriptor.Revision))
 			if err != nil || !found || revision.ConnectionID != descriptor.ConfigRef || revision.ID != string(descriptor.Revision) {
