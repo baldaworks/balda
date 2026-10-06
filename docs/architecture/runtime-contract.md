@@ -50,6 +50,18 @@ Status: active
   are supplied only when the provider session is created or restored. Every
   turn reuses `TopicSession`'s runner. Restore fails closed for an unavailable
   non-empty pin, while reset deliberately selects current capabilities.
+- Provider-open Goose SQL migrations mark persisted configured MCP descriptors
+  from the pre-targeting catalog format without rewriting snapshots, session
+  pins or history. `catalogapp` consumes those exact markers at restore and
+  validates the original source, contribution identity, transport and structural
+  revision against the current host declaration before using the strict launch
+  resolver. Marked pins retain configured provider-default selection and the
+  original environment/header **key-only** revision contract; historical private
+  values were never persisted and cannot be verified. New snapshots keep full-value
+  revisions and retained targeting. Missing markers or changed structural/key
+  definitions fail closed. There is no application-lifecycle migration or restore
+  write. This temporary format adapter can be removed when old session pins have
+  aged out through normal explicit reset; upgrades never reset sessions.
 - Adapter boundaries are explicit: transport/use-case integrations should prefer package-local ports with composition-root adapters instead of reaching directly into concrete runtime or transport implementations.
 - Ingress construction is fail-fast: formatting/registry validation and all downstream runtime dependencies must resolve before any ingress lifecycle stage can accept work.
 - Telegram polling settlement is explicit: the provider-owned offset boundary advances only after accepted or terminal event processing; retryable handler outcomes preserve the previous offset for stable-ID replay, while webhook settlement remains request-local.

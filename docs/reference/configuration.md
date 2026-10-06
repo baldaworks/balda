@@ -603,6 +603,13 @@ or non-regular paths return a stable build error.
   - balda agents should use the config path shown in the system instruction and edit `.config/balda/config.yaml` directly
 - `balda.mcp_servers`: extra MCP server IDs for all balda-started sessions (must reference IDs declared in `runtime.mcp_servers`)
   - configured-source selection = bundled defaults + `runtime.providers.<provider_id>.mcp_servers` + `balda.mcp_servers` (deduplicated).
+  - Provider-open Goose SQL migrations preserve configured MCP pins from snapshots
+    written before targeting metadata. Only explicitly marked historical descriptors
+    can restore with a matching source/transport/command/arguments/directory/URL and
+    environment/header key set. Their original digest omitted binding values, so
+    these pins still use host-file values and configured provider defaults. New pins
+    bind full values and captured targeting exactly. Migration leaves snapshot IDs,
+    sessions and history unchanged; reset remains an explicit user action.
   - Effective selection also includes enabled, available Backoffice-managed definitions matching the requested provider's targets and applicable enabled plugin contributions.
   - Provider and `balda.mcp_servers` lists reference configured IDs; managed definitions use their Backoffice provider targets and do not require a duplicate YAML declaration or ID-list entry.
 - `balda.global_instruction`: optional balda-wide global instruction applied to all sessions

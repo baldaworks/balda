@@ -11,6 +11,9 @@ on:
       - 'internal/apps/balda/catalogapp/stdio_process_*_test.go'
       - 'internal/apps/balda/catalogapp/provider_execution_test.go'
       - 'internal/apps/balda/catalogapp/acp_execution_test.go'
+      - 'internal/apps/balda/catalogapp/configured_upgrade*.go'
+      - 'internal/apps/balda/catalogapp/provider_mcp.go'
+      - 'internal/apps/balda/catalogapp/runtime.go'
       - 'go.mod'
       - 'go.sum'
   pull_request:
@@ -23,6 +26,9 @@ on:
       - 'internal/apps/balda/catalogapp/stdio_process_*_test.go'
       - 'internal/apps/balda/catalogapp/provider_execution_test.go'
       - 'internal/apps/balda/catalogapp/acp_execution_test.go'
+      - 'internal/apps/balda/catalogapp/configured_upgrade*.go'
+      - 'internal/apps/balda/catalogapp/provider_mcp.go'
+      - 'internal/apps/balda/catalogapp/runtime.go'
       - 'go.mod'
       - 'go.sum'
 permissions:
@@ -50,3 +56,5 @@ jobs:
         run: go test -race -count=1 ./cmd/balda ./internal/apps/balda/mcpfx -run 'Test(PrivateStdio|StdioLaunch)'
       - name: Actual configured and managed hosted and ACP calls and owned process exit
         run: go test -race -count=1 ./internal/apps/balda/catalogapp -run '^TestStdio(DiscoveryAndActualProvidersUseHostEnvironmentAndOverlay|ActualACPParentTerminationReleasesChildren)$'
+      - name: SQL upgrade, persisted restore, history and actual configured tools
+        run: go test -race -count=1 ./internal/apps/balda/catalogapp -run '^TestConfiguredSessionUpgradeRestoresPersistedPin$'

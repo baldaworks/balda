@@ -27,6 +27,15 @@ overrides, opens the database selected by `balda.database`, and applies its
 embedded Goose schema and data migrations. Backoffice uses that same provider
 and canonical user store; it does not select a second database or run separate migrations.
 Provider opening automatically converts legacy owner/collaborator data.
+It also applies a Goose SQL data migration for retained configured MCP snapshots
+created before provider targeting was captured. The migration adds exact format
+markers in app KV and preserves the original snapshots, session IDs and history.
+Restoration accepts those markers only when the configured source, transport,
+command/arguments, directory, URL and environment/header keys match the original
+revision. These older revisions never recorded binding values or targeting:
+they keep host-file values and provider-default selection. New snapshots retain
+full-value hashes and exact targeting. Missing or mismatched pins still abort
+restoration; no automatic reset or live state repair is required.
 The lifecycle checks canonical administrator bootstrap before
 MCP or ingress, then binds Backoffice HTTP before enabling inbound transports.
 A failed prerequisite or listener bind aborts startup. Shutdown closes ingress
