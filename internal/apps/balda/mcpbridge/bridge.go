@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
@@ -53,6 +54,7 @@ type endpoint struct {
 	target               *url.URL
 	ctx                  context.Context
 	cancel               context.CancelFunc
+	credentialFailed     atomic.Bool
 }
 type route struct {
 	endpoint *endpoint
@@ -175,6 +177,54 @@ func (b *Bridge) projection(e *endpoint) Projection {
 	return Projection{URL: "http://" + b.address + e.path, Headers: map[string]string{CapabilityHeader: e.capability}}
 }
 
+// CredentialsUnavailable reports a failed credential request for one exact
+// installed endpoint. It never fetches tokens or changes authorization state.
+func (b *Bridge) CredentialsUnavailable(id string) bool {
+	b.mu.RLock()
+	e := b.entries[id]
+	b.mu.RUnlock()
+	return e != nil && e.credentialFailed.Load()
+}
+
+// RetryCredentials checks an installed endpoint's existing credential source
+// without restarting its transport or dispatching an upstream tool request.
+func (b *Bridge) RetryCredentials(ctx context.Context, id string) error {
+	b.mu.RLock()
+	e := b.entries[id]
+	b.mu.RUnlock()
+	if e == nil || e.ctx.Err() != nil {
+		return mcpcmd.ErrUnavailable
+	}
+	if e.config.Binding == nil {
+		return nil
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	stop := context.AfterFunc(e.ctx, cancel)
+	defer stop()
+	defer cancel()
+	_, err := b.accessToken(ctx, e)
+	return err
+}
+
+func (b *Bridge) accessToken(ctx context.Context, e *endpoint) (string, error) {
+	token, err := b.credentials.AccessToken(ctx, *e.config.Binding, e.config.Scopes)
+	if err == nil && (token == "" || len(token) > 16<<10 || strings.ContainsAny(token, "\x00\r\n")) {
+		err = mcpcmd.ErrUnavailable
+	}
+	e.credentialFailed.Store(err != nil)
+	if err == nil {
+		return token, nil
+	}
+	// The transport port can fail with private upstream details. Public retry
+	// responses retain only supported typed errors, as ordinary bridge calls do.
+	for _, safe := range []error{context.Canceled, context.DeadlineExceeded, mcpcmd.ErrAuthRequired, mcpcmd.ErrDisconnected, mcpcmd.ErrCredentials, mcpcmd.ErrConflict} {
+		if errors.Is(err, safe) {
+			return "", safe
+		}
+	}
+	return "", mcpcmd.ErrUnavailable
+}
+
 // Remove invalidates access after the exact revision has drained.
 func (b *Bridge) Remove(id string) {
 	b.mu.Lock()
@@ -231,8 +281,8 @@ func (b *Bridge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r = r.Clone(ctx)
 	headers := maps.Clone(e.config.Headers)
 	if e.config.Binding != nil {
-		token, err := b.credentials.AccessToken(ctx, *e.config.Binding, e.config.Scopes)
-		if err != nil || token == "" || len(token) > 16<<10 || strings.ContainsAny(token, "\x00\r\n") {
+		token, err := b.accessToken(ctx, e)
+		if err != nil {
 			if e.config.Observe != nil {
 				e.config.Observe(0, nil, err)
 			}

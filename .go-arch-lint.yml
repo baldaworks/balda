@@ -222,7 +222,8 @@ components:
 
   # Fixed-upstream loopback MCP transport; grant policy stays behind its port.
   # Upstream observation is injected by mcp_wiring; no OAuth SDK/policy belongs
-  # in the bridge's dependency set.
+  # in the bridge's dependency set. Exact endpoint credential observations
+  # and retry feed a catalog-owned consuming port; the bridge owns no grant policy.
   mcp_bridge:
     in:
       - internal/apps/balda/mcpbridge
