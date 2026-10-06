@@ -154,6 +154,24 @@ type fakeResolver struct {
 	resolved map[string]Resolved
 }
 
+func (f *fakeResolver) ResolveSession(_ context.Context, sessionID string) (Resolved, error) {
+	if r, ok := f.resolved[sessionID]; ok {
+		return r, nil
+	}
+	return Resolved{}, fmt.Errorf("session %q not found", sessionID)
+}
+
+func TestResolveEnvelopeTarget_Session(t *testing.T) {
+	want := Resolved{Locator: deliverycmd.Locator{SessionID: "mm-c-target", AddressKey: "c:channel:target-root"}}
+	got, err := Resolve(context.Background(), &fakeResolver{resolved: map[string]Resolved{"mm-c-target": want}}, Target{Target: TargetSession, Key: "mm-c-target"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Locator != want.Locator {
+		t.Fatalf("resolved locator = %+v", got.Locator)
+	}
+}
+
 func (f *fakeResolver) ResolveAlias(_ context.Context, alias string) (Resolved, error) {
 	norm := strings.ToLower(strings.TrimSpace(alias))
 	if r, ok := f.resolved[norm]; ok {

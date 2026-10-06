@@ -9,14 +9,38 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
 )
 
+// SessionLookup reads a persisted session destination without coupling auth to storage.
+type SessionLookup func(ctx context.Context, sessionID string) (envelopetarget.Resolved, bool, error)
+
 // DestinationResolver resolves envelope alias targets using registered destinations.
 type DestinationResolver struct {
 	destStore *DestinationStore
+	sessions  SessionLookup
 }
 
 // NewDestinationResolver creates a new DestinationResolver.
 func NewDestinationResolver(destStore *DestinationStore) *DestinationResolver {
 	return &DestinationResolver{destStore: destStore}
+}
+
+// NewDestinationResolverWithSessions also resolves persisted session destinations.
+func NewDestinationResolverWithSessions(destStore *DestinationStore, sessions SessionLookup) *DestinationResolver {
+	return &DestinationResolver{destStore: destStore, sessions: sessions}
+}
+
+// ResolveSession returns the canonical locator for an active session.
+func (r *DestinationResolver) ResolveSession(ctx context.Context, sessionID string) (envelopetarget.Resolved, error) {
+	if r.sessions == nil {
+		return envelopetarget.Resolved{}, fmt.Errorf("session store is unavailable")
+	}
+	resolved, found, err := r.sessions(ctx, sessionID)
+	if err != nil {
+		return envelopetarget.Resolved{}, fmt.Errorf("read session %q: %w", sessionID, err)
+	}
+	if !found {
+		return envelopetarget.Resolved{}, fmt.Errorf("%w: active session %q not found", envelopetarget.ErrSessionUnavailable, sessionID)
+	}
+	return resolved, nil
 }
 
 // ResolveAlias resolves an alias (e.g. "owner", "owner@slackagent", "collaborator") to a canonical delivery locator and principal.

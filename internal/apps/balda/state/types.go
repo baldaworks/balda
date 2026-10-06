@@ -404,6 +404,7 @@ type DeliveryStore interface {
 	MarkDeliverySending(ctx context.Context, deliveryKey string) error
 	MarkDeliverySent(ctx context.Context, deliveryKey string, providerMessageID string) error
 	MarkDeliveryFailed(ctx context.Context, deliveryKey string, reason string) error
+	SentFinalDelivery(ctx context.Context, jobID string) (string, bool, error)
 }
 
 // AgentStepStore persists idempotent agent workflow steps.
