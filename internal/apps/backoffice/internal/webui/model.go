@@ -147,7 +147,6 @@ type Page struct {
 	MFA          *MFAView
 	Ceremony     *MFACeremonyView
 
-	StepUpURL string
 	// ViewerUsername identifies the signed-in operator, independently of User.
 	ViewerUsername      string
 	Title               string

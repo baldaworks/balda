@@ -45,7 +45,7 @@ func TestDefinitionServiceUsesCanonicalAuthorityAtCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := mcpcmd.CreateDefinition{PublicID: "worker", Enabled: true, Definition: mcpcmd.Definition{Transport: mcpcmd.TransportStdio, Command: "worker-mcp", Targets: mcpcmd.Targets{All: true}}, Authority: mcpcmd.Authority{UserID: u.ID, UserVersion: 1, CredentialVersion: 1, SessionID: f.ID, SessionVersion: 1, At: now, FreshProofAge: time.Minute}}
+	request := mcpcmd.CreateDefinition{PublicID: "worker", Enabled: true, Definition: mcpcmd.Definition{Transport: mcpcmd.TransportStdio, Command: "worker-mcp", Targets: mcpcmd.Targets{All: true}}, Authority: mcpcmd.Authority{UserID: u.ID, UserVersion: 1, CredentialVersion: 1, SessionID: f.ID, SessionVersion: 1, At: now}}
 	created, err := service.Create(t.Context(), request)
 	if err != nil {
 		t.Fatal(err)
@@ -56,7 +56,7 @@ func TestDefinitionServiceUsesCanonicalAuthorityAtCommit(t *testing.T) {
 	if err := p.MCP().CheckMCPAuthority(t.Context(), request.Authority); err != nil {
 		t.Fatalf("valid canonical preflight rejected: %v", err)
 	}
-	for _, change := range []func(*mcpcmd.Authority){func(a *mcpcmd.Authority) { a.At = time.Time{} }, func(a *mcpcmd.Authority) { a.FreshProofAge = 0 }, func(a *mcpcmd.Authority) { a.SessionVersion = 0 }, func(a *mcpcmd.Authority) { a.UserID = "" }} {
+	for _, change := range []func(*mcpcmd.Authority){func(a *mcpcmd.Authority) { a.At = time.Time{} }, func(a *mcpcmd.Authority) { a.SessionVersion = 0 }, func(a *mcpcmd.Authority) { a.UserID = "" }} {
 		a := request.Authority
 		change(&a)
 		if err := p.MCP().CheckMCPAuthority(t.Context(), a); !errors.Is(err, mcpcmd.ErrInvalid) {

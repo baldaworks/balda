@@ -37,8 +37,6 @@ const (
 	MFAEnable MFAPurpose = "enable"
 	// MFALogin verifies the second factor after password authentication.
 	MFALogin MFAPurpose = "login"
-	// MFAStepUp refreshes an existing family's WebAuthn proof.
-	MFAStepUp MFAPurpose = "step_up"
 	// MFAReplace registers a replacement for an existing factor.
 	MFAReplace MFAPurpose = "replace"
 	// MFADisable verifies removal of an optional factor.
@@ -49,7 +47,7 @@ const (
 
 // Valid reports whether a supported MFA operation was selected.
 func (p MFAPurpose) Valid() bool {
-	return p == MFAEnable || p == MFALogin || p == MFAStepUp || p == MFAReplace || p == MFADisable || p == MFARecover
+	return p == MFAEnable || p == MFALogin || p == MFAReplace || p == MFADisable || p == MFARecover
 }
 
 // MFACeremony is expiring library state bound to browser, user, purpose and authority.
@@ -83,7 +81,7 @@ type MFAChange struct {
 	Audit                     AuditEvent
 }
 
-// MFAVerification commits a verified counter update and optional login or step-up.
+// MFAVerification commits a verified counter update and optional login session.
 type MFAVerification struct {
 	UserID                    string
 	ExpectedUserVersion       uint64
@@ -92,9 +90,6 @@ type MFAVerification struct {
 	ExpectedSignCount         uint32
 	Credential                MFACredential
 	Session                   *SessionFamily
-	SessionID                 string
-	ExpectedSessionVersion    uint64
-	Access                    AccessCredential
 	VerifiedAt                time.Time
 	Audit                     AuditEvent
 }

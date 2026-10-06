@@ -33,12 +33,11 @@ func TestEnrolledLoginRequiresAssertion(t *testing.T) {
 	principal, err := s.ValidateAccess(ctx, credentials.AccessToken)
 	require.NoError(t, err)
 	require.Equal(t, u.ID, principal.User.ID)
-	require.NoError(t, s.RequireFresh(ctx, credentials.AccessToken))
 	_, err = s.FinishLogin(ctx, pending.Pending.Transaction, "browser", "csrf", response)
 	require.ErrorIs(t, err, ErrUnauthenticated)
 }
 
-func TestMFARefreshPreservesProofAndStepUpPreservesRefresh(t *testing.T) {
+func TestMFARefreshPreservesFactorBindingAndReplayProtection(t *testing.T) {
 	p, s, u, private, key, now := enrolledTestService(t)
 	s.config.RefreshTTL = 30 * 24 * time.Hour
 	ctx := withMFABrowser(t.Context(), "browser", "csrf")
@@ -53,29 +52,43 @@ func TestMFARefreshPreservesProofAndStepUpPreservesRefresh(t *testing.T) {
 	principal, err := s.ValidateAccess(ctx, rotated.AccessToken)
 	require.NoError(t, err)
 	require.Equal(t, now, principal.WebAuthnVerifiedAt)
-	require.ErrorIs(t, s.RequireFresh(ctx, rotated.AccessToken), ErrStepUp)
-	start, err := s.BeginStepUp(ctx, rotated.AccessToken, "step-browser", rotated.CSRFToken)
-	require.NoError(t, err)
-	stepped, err := s.FinishStepUp(ctx, rotated.AccessToken, start.Transaction, "step-browser", rotated.CSRFToken, assertionResponseForStart(t, start, key, private, 0x05, 2))
-	require.NoError(t, err)
-	require.Empty(t, stepped.RefreshToken)
-	require.Equal(t, rotated.RefreshExpiresAt, stepped.RefreshExpiresAt)
-	require.NoError(t, s.RequireFresh(ctx, stepped.AccessToken))
-	require.ErrorIs(t, func() error { _, err := s.ValidateAccess(ctx, rotated.AccessToken); return err }(), ErrUnauthenticated)
-	principal, err = s.ValidateAccess(ctx, stepped.AccessToken)
-	require.NoError(t, err)
+	require.Equal(t, key.ID, principal.MFAFactorID)
 	family, found, err := p.Users().GetSession(ctx, principal.FamilyID)
 	require.NoError(t, err)
 	require.True(t, found)
 	require.Len(t, family.RefreshTokens, 2)
-	// A duplicate refresh remains a conflict and does not revoke the stepped family.
+	// A duplicate refresh remains a conflict and does not revoke the verified family.
 	_, err = s.Refresh(ctx, credentials.RefreshToken, credentials.CSRFToken)
 	require.ErrorIs(t, err, ErrRefreshConcurrent)
-	require.NoError(t, s.RequireFresh(ctx, stepped.AccessToken))
+	_, err = s.ValidateAccess(ctx, rotated.AccessToken)
+	require.NoError(t, err)
 	s.now = func() time.Time { return now.Add(29*24*time.Hour + 31*time.Second) }
 	_, err = s.Refresh(ctx, credentials.RefreshToken, credentials.CSRFToken)
 	require.ErrorIs(t, err, ErrUnauthenticated)
-	_, err = s.ValidateAccess(ctx, stepped.AccessToken)
+	_, err = s.ValidateAccess(ctx, rotated.AccessToken)
+	require.ErrorIs(t, err, ErrUnauthenticated)
+}
+
+func TestEnrolledAdministratorCanManageSessionsAndPasswordAfterRefresh(t *testing.T) {
+	p, s, u, private, key, now := enrolledTestService(t)
+	other := createSecurityTestUser(t, p.Users(), "other-user", "other-user", usercmd.CredentialStateActive, usercmd.RoleOperator, false, now)
+	ctx := withMFABrowser(t.Context(), "browser", "csrf")
+	pending, err := s.Login(ctx, u.Username, []byte(testPassword))
+	require.NoError(t, err)
+	credentials, err := s.FinishLogin(ctx, pending.Pending.Transaction, "browser", "csrf", assertionResponseForStart(t, *pending.Pending, key, private, 0x05, 1))
+	require.NoError(t, err)
+	s.now = func() time.Time { return now.Add(16 * time.Minute) }
+	rotated, err := s.Refresh(ctx, credentials.RefreshToken, credentials.CSRFToken)
+	require.NoError(t, err)
+	_, err = s.ListSessions(ctx, rotated.AccessToken, other.ID, usercmd.PageRequest{Limit: 10})
+	require.NoError(t, err)
+	replacement, err := s.ReplacePassword(ctx, rotated.AccessToken, []byte(testPassword), []byte("a sufficiently long replacement password"))
+	require.NoError(t, err)
+	principal, err := s.ValidateAccess(ctx, replacement.AccessToken)
+	require.NoError(t, err)
+	require.Equal(t, key.ID, principal.MFAFactorID)
+	require.NoError(t, s.RevokeSession(ctx, replacement.AccessToken, principal.FamilyID, true))
+	_, err = s.ValidateAccess(ctx, replacement.AccessToken)
 	require.ErrorIs(t, err, ErrUnauthenticated)
 }
 
@@ -98,7 +111,6 @@ func TestMFAPasswordResetAndReplacementPreserveFactor(t *testing.T) {
 	replacement, err := s.ReplacePassword(ctx, credentials.AccessToken, []byte(testPassword), []byte("a sufficiently long replacement password"))
 	require.NoError(t, err)
 	require.Equal(t, usercmd.SessionAssuranceNormal, replacement.Assurance)
-	require.NoError(t, s.RequireFresh(ctx, replacement.AccessToken))
 	profile, err := p.Users().GetMFAProfile(ctx, u.ID)
 	require.NoError(t, err)
 	require.True(t, profile.Enabled)

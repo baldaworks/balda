@@ -158,7 +158,7 @@ func TestMFACeremonyBrowserBindingAndReplay(t *testing.T) {
 	for _, binding := range []struct {
 		csrf    string
 		purpose usercmd.MFAPurpose
-	}{{"other", usercmd.MFAEnable}, {"csrf", usercmd.MFADisable}} {
+	}{{"other", usercmd.MFAEnable}, {"csrf", usercmd.MFAReplace}} {
 		_, err := s.finishMFA(t.Context(), start.Transaction, "browser", binding.csrf, binding.purpose, body)
 		require.ErrorIs(t, err, ErrUnauthenticated)
 	}
@@ -183,8 +183,6 @@ func TestMFACeremonyBrowserBindingAndReplay(t *testing.T) {
 	require.NoError(t, err)
 	_, err = s.finishMFA(t.Context(), start.Transaction, "browser", "csrf", usercmd.MFAEnable, registrationResponseForStart(t, start))
 	require.ErrorIs(t, err, ErrUnauthenticated)
-	_, err = s.startMFA(t.Context(), u, profile, usercmd.MFADisable, principal.FamilyID, principal.Version, "browser", "csrf", true)
-	require.ErrorIs(t, err, ErrForbidden)
 }
 
 func registrationResponseForStart(t *testing.T, start CeremonyStart) []byte {

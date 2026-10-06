@@ -62,7 +62,7 @@ func TestLoadBackofficeEnvironmentOverridesFromSameDocument(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if server.ListenAddr != "127.0.0.1:9095" || server.AccessTokenTTL != 10*time.Minute || server.RefreshTokenTTL != 48*time.Hour || server.CeremonyTTL != 3*time.Minute || server.StepUpTTL != 7*time.Minute {
+	if server.ListenAddr != "127.0.0.1:9095" || server.AccessTokenTTL != 10*time.Minute || server.RefreshTokenTTL != 48*time.Hour || server.CeremonyTTL != 3*time.Minute {
 		t.Fatalf("backoffice server = %+v", server)
 	}
 }

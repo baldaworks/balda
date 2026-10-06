@@ -267,7 +267,7 @@ func TestMCPFormsFenceAuthorityAndNeverReflectValues(t *testing.T) {
 	if !request.Enabled {
 		t.Error("new connection was not enabled for its selected providers")
 	}
-	if request.Values.Headers["X-Secret"].Value != "write-only-canary" || request.Authority.UserID != "admin" || request.Authority.SessionID == "" || request.Authority.SessionVersion == 0 || request.Authority.FreshProofAge <= 0 {
+	if request.Values.Headers["X-Secret"].Value != "write-only-canary" || request.Authority.UserID != "admin" || request.Authority.SessionID == "" || request.Authority.SessionVersion == 0 {
 		t.Fatal("write or current authority lost")
 	}
 	for _, tc := range []struct {

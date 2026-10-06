@@ -279,7 +279,7 @@ func (s *sqlUserStore) liveMFASession(ctx context.Context, tx *sql.Tx, sessionID
 }
 
 func (s *sqlUserStore) VerifyMFACredential(ctx context.Context, v usercmd.MFAVerification) error {
-	if v.VerifiedAt.IsZero() || !validMFACredential(v.Credential, v.UserID) || (v.Session != nil && v.SessionID != "") {
+	if v.VerifiedAt.IsZero() || !validMFACredential(v.Credential, v.UserID) {
 		return usercmd.ErrInvalid
 	}
 	if err := usercmd.ValidateAuditEvent(v.Audit); err != nil {
@@ -317,26 +317,6 @@ func (s *sqlUserStore) VerifyMFACredential(ctx context.Context, v usercmd.MFAVer
 			return err
 		}
 		if err := s.insertSessionTx(ctx, tx, *v.Session); err != nil {
-			return err
-		}
-	}
-	if v.SessionID != "" {
-		f, err := s.liveMFASession(ctx, tx, v.SessionID, v.UserID, v.ExpectedCredentialVersion, v.VerifiedAt)
-		if err != nil {
-			return err
-		}
-		if f.Version != v.ExpectedSessionVersion || v.Access.Selector == "" || len(v.Access.VerifierDigest) == 0 ||
-			!v.Access.ExpiresAt.After(v.VerifiedAt) || !v.Access.ExpiresAt.Before(f.RefreshExpiresAt) {
-			return usercmd.ErrConflict
-		}
-		result, err := tx.ExecContext(ctx, s.bind(`UPDATE balda_backoffice_sessions SET access_selector = ?, access_verifier_digest = ?,
-			access_expires_at = ?, last_seen_at = ?, webauthn_verified_at = ?, mfa_factor_id = ?, version = version + 1
-			WHERE session_id = ? AND version = ? AND revoked_at = ''`), v.Access.Selector, v.Access.VerifierDigest,
-			formatUserTime(v.Access.ExpiresAt), formatUserTime(v.VerifiedAt), formatUserTime(v.VerifiedAt), key.ID, f.ID, f.Version)
-		if err != nil {
-			return s.mutationError("refresh WebAuthn proof", err)
-		}
-		if err := requireOneMFAUpdate(result); err != nil {
 			return err
 		}
 	}

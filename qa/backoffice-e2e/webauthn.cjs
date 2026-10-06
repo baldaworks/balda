@@ -70,8 +70,7 @@ const widths = [1440, 1024, 768, 390];
    }
    // A server-rejected ceremony issues no auth; restart is explicit.
    await login();
-   if(width===1440) await page.waitForTimeout(5100);
-   else await page.locator('input[name="transaction"]').evaluate(el=>el.value='invalid-expired-transaction');
+   await page.locator('input[name="transaction"]').evaluate(el=>el.value='invalid-transaction');
    await verify(); await page.getByRole('alert').filter({hasText:'verification failed or expired'}).waitFor();
    assert.equal((await context.cookies()).some(c=>['balda_access','balda_refresh'].includes(c.name)&&c.value),false);
    await page.getByRole('link',{name:'Start sign-in again',exact:true}).click();
@@ -82,17 +81,22 @@ const widths = [1440, 1024, 768, 390];
    await verify(); await page.getByRole('status').filter({hasText:'cancelled or failed'}).waitFor(); await verify(); await page.waitForURL(`${baseURL}/overview`);
    const refreshBefore=(await context.cookies(`${baseURL}/auth/session/refresh`)).find(c=>c.name==='balda_refresh').value;
    await page.goto(`${baseURL}/access/new`);
-   const target=`must-not-create-${width}`;
+   const target=`created-after-refresh-${width}`;
    await page.locator('#create-display-name').fill(target); await page.locator('#create-username').fill(target); await page.locator('#create-password').fill(password);
    let mutationCount=0; const mutationListener=request=>{if(request.method()==='POST'&&request.url()===`${baseURL}/access/users`)mutationCount++;}; page.on('request',mutationListener);
    await page.waitForTimeout(3200);
-   const [rejected]=await Promise.all([page.waitForResponse(r=>r.url()===`${baseURL}/access/users`),page.getByRole('button',{name:'Create user',exact:true}).click()]);
-   assert.equal(rejected.status(),403); assert.match(await rejected.text(),/This change was not applied/);
-   await page.goto(`${baseURL}/auth/step-up`);
-   await page.getByRole('button',{name:'Confirm passkey',exact:true}).click(); await verify(); await page.waitForURL(`${baseURL}/account`);
+   const [created]=await Promise.all([page.waitForResponse(r=>r.url()===`${baseURL}/access/users`),page.getByRole('button',{name:'Create user',exact:true}).click()]);
+   assert.notEqual(created.status(),403,'valid refreshed session must not require another passkey');
+   await page.goto(`${baseURL}/account`);
+   assert.equal(await page.getByRole('heading',{name:'Account',exact:true}).count(),1);
+   for (const path of ['/access','/audit','/mcp']) {
+    const response=await page.goto(`${baseURL}${path}`);
+    assert.equal(response.status(),path==='/mcp'?503:200,`refreshed administrator cannot open ${path}`);
+    assert.equal(new URL(page.url()).pathname,`${new URL(baseURL).pathname.replace(/\/$/,'')}${path}`);
+   }
    assert.equal((await context.cookies(`${baseURL}/auth/session/refresh`)).find(c=>c.name==='balda_refresh').value,refreshBefore);
-   assert.equal(mutationCount,1,'step-up never replays a POST'); page.off('request',mutationListener);
-   await page.goto(`${baseURL}/access`); await page.getByRole('heading',{name:'Access',exact:true}).waitFor(); assert.equal(await page.getByText(target,{exact:true}).count(),0);
+   assert.equal(mutationCount,1,'valid refreshed action must execute once'); page.off('request',mutationListener);
+   await page.goto(`${baseURL}/access`); await page.getByRole('heading',{name:'Access',exact:true}).waitFor(); assert.ok((await page.getByText(target,{exact:true}).count())>0,'created user is absent after refresh');
    await account();
    // Account opts out of HTMX history; back/forward must fetch usable pages.
    if(width<992) await page.getByRole('button',{name:'Toggle navigation',exact:true}).click();
@@ -100,18 +104,18 @@ const widths = [1440, 1024, 768, 390];
    await page.goBack(); await page.getByRole('heading',{name:'Account',exact:true}).waitFor();
    await page.goForward(); await page.getByRole('heading',{name:'Overview',exact:true}).waitFor();
    assert.equal(await page.evaluate(()=>document.querySelector('form[data-webauthn]')!==null),false);
-   await account(); await page.getByLabel('Replace my current passkey after verifying it').check(); await page.getByRole('button',{name:'Replace passkey',exact:true}).click();
-   await verify(); await page.waitForFunction(()=>document.querySelector('form[data-registration="true"]'));
+   await account(); await page.locator('#replace-mfa-password').fill(password); await page.locator('form[action$="/account/2fa/replace/start"] input[name="confirm"]').check(); await page.getByRole('button',{name:'Replace passkey',exact:true}).click();
+   await page.waitForFunction(()=>document.querySelector('form[data-registration="true"]'));
    await verify(); await page.waitForURL(`${baseURL}/account`);
    const keys=(await client.send('WebAuthn.getCredentials',{authenticatorId})).credentials;
    assert.equal(keys.length,2);
    await client.send('WebAuthn.removeCredential',{authenticatorId,credentialId:originalCredentialId});
-   await page.locator('#disable-mfa-password').fill(password); await page.getByLabel('Disable two-factor authentication for my account').check(); await page.getByRole('button',{name:'Disable 2FA',exact:true}).click(); await verify(); await page.waitForURL(`${baseURL}/account`);
+   await page.locator('#disable-mfa-password').fill(password); await page.locator('form[action$="/account/2fa/disable"] input[name="confirm"]').check(); await page.getByRole('button',{name:'Disable 2FA',exact:true}).click(); await page.waitForURL(`${baseURL}/account`);
    assert.match(await page.locator('#mfa-heading').locator('..').locator('..').innerText(),/Status: Off/);
    await login(); await page.waitForURL(`${baseURL}/overview`);
    assert.equal(errors.length,0,errors.join('\n')); assert.deepEqual(cacheFailures,[],'authentication responses must be no-store');
    await context.close();
-   console.log(`WebAuthn enable/login/step-up/replace/disable, cancel, no-JS/unsupported, keyboard ${width}: passed`);
+   console.log(`WebAuthn enable/login/refresh/replace/disable, cancel, no-JS/unsupported, keyboard ${width}: passed`);
   }
  } finally { await browser.close(); }
 })().catch(error=>{console.error(error);process.exit(1);});

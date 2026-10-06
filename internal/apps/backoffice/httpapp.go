@@ -44,7 +44,7 @@ func newHTTPApp(store usercmd.Store, config ResolvedConfig) (*httpApp, error) {
 	}
 	service, err := security.NewService(store, security.Config{
 		AccessTTL: config.Server.AccessTokenTTL, RefreshTTL: config.Server.RefreshTokenTTL,
-		Origin: config.Server.PublicURL, CeremonyTTL: config.Server.CeremonyTTL, StepUpTTL: config.Server.StepUpTTL,
+		Origin: config.Server.PublicURL, CeremonyTTL: config.Server.CeremonyTTL,
 	})
 	if err != nil {
 		return nil, err
@@ -54,7 +54,6 @@ func newHTTPApp(store usercmd.Store, config ResolvedConfig) (*httpApp, error) {
 	browser, err := security.NewBrowser(service, security.HTTPConfig{
 		TrustedOrigin: config.Server.PublicURL, SecureCookies: config.Server.SecureCookies, BasePath: config.Server.BasePath,
 		ErrorHandler:      app.renderSecurityError,
-		StepUpResponder:   app.renderStepUpRequired,
 		CeremonyResponder: app.renderMFACeremony,
 		MutationResponder: func(w http.ResponseWriter, r *http.Request, location string) error {
 			return webui.RespondMutationAt(w, r, webui.Location(strings.TrimPrefix(location, config.Server.BasePath)), config.Server.BasePath)
@@ -89,11 +88,7 @@ func (a *httpApp) handler() (http.Handler, error) {
 	mux.HandleFunc("POST "+a.path("/account/2fa/enable/finish"), a.browser.FinishEnable)
 	mux.HandleFunc("POST "+a.path("/account/2fa/replace/start"), a.browser.BeginReplace)
 	mux.HandleFunc("POST "+a.path("/account/2fa/replace/finish"), a.browser.FinishReplace)
-	mux.HandleFunc("POST "+a.path("/account/2fa/disable/start"), a.browser.BeginDisable)
-	mux.HandleFunc("POST "+a.path("/account/2fa/disable/finish"), a.browser.FinishDisable)
-	mux.Handle("GET "+a.path("/auth/step-up"), a.browser.Authenticate(a.browser.RequireNormal(http.HandlerFunc(a.stepUpPage))))
-	mux.HandleFunc("POST "+a.path("/auth/step-up/start"), a.browser.BeginStepUp)
-	mux.HandleFunc("POST "+a.path("/auth/step-up/finish"), a.browser.FinishStepUp)
+	mux.HandleFunc("POST "+a.path("/account/2fa/disable"), a.browser.Disable)
 	mux.HandleFunc("GET "+a.path(security.RefreshPath), a.refreshPage)
 	mux.HandleFunc("POST "+a.path(security.RefreshPath), a.browser.Refresh)
 	mux.HandleFunc("POST "+a.path("/logout"), a.browser.Logout)
@@ -544,17 +539,6 @@ func parseFormVersion(raw string) (uint64, error) {
 	return version, nil
 }
 
-func (a *httpApp) renderStepUpRequired(w http.ResponseWriter, r *http.Request) {
-	if r.Context().Value(mcpCallbackKey{}) == true {
-		a.mcpCallbackResult(w, r, mcpcmd.Item{}, mcpcmd.ErrForbidden)
-		return
-	}
-	a.render(w, r, http.StatusForbidden, webui.TemplateError, webui.Page{
-		Title: "Verification required · Balda", StepUpURL: a.path("/auth/step-up"),
-		Error: &webui.ErrorView{Heading: "Confirm your passkey", Message: "This change was not applied. Confirm your passkey, then return and submit it again."},
-	})
-}
-
 func (a *httpApp) renderSecurityError(w http.ResponseWriter, r *http.Request, status int) {
 	if r.Context().Value(mcpCallbackKey{}) == true {
 		a.mcpCallbackResult(w, r, mcpcmd.Item{}, mcpcmd.ErrForbidden)
@@ -585,9 +569,6 @@ func (a *httpApp) renderSecurityError(w http.ResponseWriter, r *http.Request, st
 	case strings.HasPrefix(r.URL.Path, a.path("/account/2fa/")):
 		page.Error.Message = "The passkey operation did not complete. Check your current password and verification, then start again from Account. Your second-factor setting has not changed."
 		page.RestartURL, page.RestartLabel = a.path(string(webui.LocationAccount)), "Return to Account"
-	case strings.HasPrefix(r.URL.Path, a.path("/auth/step-up/")):
-		page.Error.Message = "Passkey verification failed or expired. Start a new confirmation before repeating your sensitive action."
-		page.RestartURL, page.RestartLabel = a.path("/auth/step-up"), "Start verification again"
 	case r.URL.Path == a.path("/auth/webauthn/finish"):
 		page.Error.Message = "Passkey verification failed or expired. Sign in again to start a new verification."
 		page.RestartURL, page.RestartLabel = a.path(string(webui.LocationLogin)), "Start sign-in again"

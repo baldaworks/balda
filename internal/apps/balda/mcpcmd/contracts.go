@@ -98,7 +98,7 @@ type Revision struct {
 }
 
 // Authority binds a write to the canonical administrator and browser family.
-// The caller supplies the server's current time and configured fresh-proof age.
+// The caller supplies the server's current time for session expiry checks.
 type Authority struct {
 	UserID            string
 	UserVersion       uint64
@@ -107,7 +107,6 @@ type Authority struct {
 	SessionID         string
 	SessionVersion    uint64
 	At                time.Time
-	FreshProofAge     time.Duration
 }
 
 type ValueOperation string

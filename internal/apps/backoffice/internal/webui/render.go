@@ -16,7 +16,6 @@ import (
 
 const (
 	TemplateWebAuthn    = "webauthn"
-	TemplateStepUp      = "step-up"
 	TemplateLogin       = "login"
 	TemplateOverview    = "overview"
 	TemplateAccess      = "access"
@@ -33,8 +32,8 @@ const (
 )
 
 var templateFiles = map[string]string{
-	TemplateWebAuthn: "templates/webauthn.tmpl", TemplateStepUp: "templates/step-up.tmpl",
-	TemplateLogin: "templates/login.tmpl", TemplateOverview: "templates/overview.tmpl",
+	TemplateWebAuthn: "templates/webauthn.tmpl",
+	TemplateLogin:    "templates/login.tmpl", TemplateOverview: "templates/overview.tmpl",
 	TemplateAccess: "templates/access.tmpl", TemplateAccount: "templates/account.tmpl",
 	TemplateAudit: "templates/audit.tmpl", TemplateError: "templates/error.tmpl",
 	TemplateRefresh: "templates/refresh.tmpl", TemplatePassword: "templates/password.tmpl",

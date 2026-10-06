@@ -394,7 +394,7 @@ func definitionHarness(t *testing.T) (*Definitions, *definitionMemoryStore, *def
 	return s, store, configured
 }
 func definitionCreate() mcpcmd.CreateDefinition {
-	return mcpcmd.CreateDefinition{PublicID: "worker-tools", Enabled: true, Definition: mcpcmd.Definition{Transport: mcpcmd.TransportStdio, Command: "worker-mcp", Targets: mcpcmd.Targets{All: true}}, Authority: mcpcmd.Authority{UserID: "admin", UserVersion: 1, CredentialVersion: 1, SessionID: "browser", SessionVersion: 1, At: time.Now().UTC(), FreshProofAge: time.Minute}}
+	return mcpcmd.CreateDefinition{PublicID: "worker-tools", Enabled: true, Definition: mcpcmd.Definition{Transport: mcpcmd.TransportStdio, Command: "worker-mcp", Targets: mcpcmd.Targets{All: true}}, Authority: mcpcmd.Authority{UserID: "admin", UserVersion: 1, CredentialVersion: 1, SessionID: "browser", SessionVersion: 1, At: time.Now().UTC()}}
 }
 
 func TestHybridInventoryConflictsAndConfiguredReadOnly(t *testing.T) {

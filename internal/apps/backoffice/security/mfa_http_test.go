@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestMFABrowserPendingLoginAndSensitiveGuards(t *testing.T) {
+func TestMFABrowserPendingLoginAndAdministratorGuardsAfterRefresh(t *testing.T) {
 	for _, basePath := range []string{"", "/balda"} {
 		t.Run(basePath, func(t *testing.T) {
 			_, s, u, private, key, now := enrolledTestService(t)
@@ -66,47 +66,27 @@ func TestMFABrowserPendingLoginAndSensitiveGuards(t *testing.T) {
 			guard := b.Authenticate(b.RequireAdministrator(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { called = true })))
 			read := httptest.NewRequest(http.MethodGet, basePath+"/access", nil)
 			read.AddCookie(&http.Cookie{Name: AccessCookieName, Value: rotated.AccessToken})
-			blocked := httptest.NewRecorder()
-			guard.ServeHTTP(blocked, read)
-			require.False(t, called)
-			require.Equal(t, http.StatusSeeOther, blocked.Code)
-			require.Equal(t, basePath+"/auth/step-up", blocked.Header().Get("Location"))
+			allowed := httptest.NewRecorder()
+			guard.ServeHTTP(allowed, read)
+			require.True(t, called)
+			require.Equal(t, http.StatusOK, allowed.Code)
+			invalidCSRF := mfaFormRequest(basePath+"/access/users", url.Values{"csrf_token": {"wrong"}})
+			invalidCSRF.Header.Del("Cookie")
+			invalidCSRF.AddCookie(&http.Cookie{Name: AccessCookieName, Value: rotated.AccessToken})
+			invalidCSRF.AddCookie(&http.Cookie{Name: CSRFCookieName, Value: rotated.CSRFToken})
+			denied := httptest.NewRecorder()
+			_, _, ok := b.AdministratorMutation(denied, invalidCSRF)
+			require.False(t, ok)
+			require.Equal(t, http.StatusForbidden, denied.Code)
 			mutation := mfaFormRequest(basePath+"/access/users", url.Values{"csrf_token": {rotated.CSRFToken}})
 			mutation.Header.Set("Origin", "https://example.org")
 			mutation.Header.Del("Cookie")
 			mutation.AddCookie(&http.Cookie{Name: AccessCookieName, Value: rotated.AccessToken})
 			mutation.AddCookie(&http.Cookie{Name: CSRFCookieName, Value: rotated.CSRFToken})
-			denied := httptest.NewRecorder()
-			_, _, ok := b.AdministratorMutation(denied, mutation)
-			require.False(t, ok)
-			require.Equal(t, http.StatusForbidden, denied.Code)
-			require.Contains(t, denied.Header().Get("Link"), "<"+basePath+"/auth/step-up>")
-			// Complete explicit step-up over HTTP without changing the refresh cookie.
-			step := mfaFormRequest(basePath+"/auth/step-up/start", url.Values{"csrf_token": {rotated.CSRFToken}})
-			step.Header.Del("Cookie")
-			step.AddCookie(&http.Cookie{Name: AccessCookieName, Value: rotated.AccessToken})
-			step.AddCookie(&http.Cookie{Name: CSRFCookieName, Value: rotated.CSRFToken})
-			stepResponse := httptest.NewRecorder()
-			b.BeginStepUp(stepResponse, step)
-			require.Equal(t, http.StatusOK, stepResponse.Code)
-			require.NoError(t, json.Unmarshal(stepResponse.Body.Bytes(), &pending))
-			for _, cookie := range stepResponse.Result().Cookies() {
-				if cookie.Name == MFACookieName {
-					binding = cookie
-				}
-			}
-			start = CeremonyStart{Transaction: pending.Transaction, Options: &pending.Options}
-			stepFinish := mfaFormRequest(basePath+"/auth/step-up/finish", url.Values{"csrf_token": {rotated.CSRFToken}, "transaction": {start.Transaction}, "credential": {string(assertionResponseForStart(t, start, key, private, 0x05, 2))}})
-			stepFinish.Header.Del("Cookie")
-			stepFinish.AddCookie(binding)
-			stepFinish.AddCookie(&http.Cookie{Name: AccessCookieName, Value: rotated.AccessToken})
-			stepFinish.AddCookie(&http.Cookie{Name: CSRFCookieName, Value: rotated.CSRFToken})
-			stepped := httptest.NewRecorder()
-			b.FinishStepUp(stepped, stepFinish)
-			require.Equal(t, http.StatusSeeOther, stepped.Code)
-			for _, cookie := range stepped.Result().Cookies() {
-				require.NotEqual(t, RefreshCookieName, cookie.Name)
-			}
+			mutationResponse := httptest.NewRecorder()
+			_, principal, ok := b.AdministratorMutation(mutationResponse, mutation)
+			require.True(t, ok)
+			require.Equal(t, u.ID, principal.User.ID)
 		})
 	}
 }
@@ -172,4 +152,28 @@ func TestMFAAccountHTTPEnableGuardsAndCookieScopes(t *testing.T) {
 			require.True(t, profile.Enabled)
 		})
 	}
+}
+
+func TestMFAAccountHTTPDisableWithPasswordAndConfirmation(t *testing.T) {
+	p, s, u, private, key, _ := enrolledTestService(t)
+	ctx := withMFABrowser(t.Context(), "login-browser", "csrf")
+	pending, err := s.Login(ctx, u.Username, []byte(testPassword))
+	require.NoError(t, err)
+	credentials, err := s.FinishLogin(ctx, pending.Pending.Transaction, "login-browser", "csrf", assertionResponseForStart(t, *pending.Pending, key, private, 0x05, 1))
+	require.NoError(t, err)
+	b, err := NewBrowser(s, HTTPConfig{TrustedOrigin: "https://example.org", SecureCookies: true})
+	require.NoError(t, err)
+	r := mfaFormRequest("/account/2fa/disable", url.Values{"password": {testPassword}, "confirm": {"on"}, "csrf_token": {credentials.CSRFToken}})
+	r.Header.Del("Cookie")
+	r.AddCookie(&http.Cookie{Name: AccessCookieName, Value: credentials.AccessToken})
+	r.AddCookie(&http.Cookie{Name: CSRFCookieName, Value: credentials.CSRFToken})
+	w := httptest.NewRecorder()
+	b.Disable(w, r)
+	require.Equal(t, http.StatusSeeOther, w.Code)
+	require.Equal(t, "/account", w.Header().Get("Location"))
+	profile, err := p.Users().GetMFAProfile(ctx, u.ID)
+	require.NoError(t, err)
+	require.False(t, profile.Enabled)
+	_, err = s.ValidateAccess(ctx, credentials.AccessToken)
+	require.ErrorIs(t, err, ErrUnauthenticated)
 }
