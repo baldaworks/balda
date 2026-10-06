@@ -58,7 +58,7 @@ func (a *httpApp) mcpPage(w http.ResponseWriter, r *http.Request) {
 		switch result {
 		case mcpOAuthAuthorizedPending:
 			if page.MCP.Editor != nil && page.MCP.Editor.Row.Authorization == "Authorized" {
-				page.MCP.ProbeMessage = "Worker authorization was saved. Inspect current tool readiness below; retry attachment if needed."
+				page.MCP.ProbeMessage = "Authorization was saved. Check tool availability on the connection; retry if needed."
 			}
 			a.render(w, r, http.StatusOK, webui.TemplateMCP, page)
 			return
@@ -238,7 +238,7 @@ func mcpVersion(form url.Values) (uint64, error) {
 }
 
 func parseMCPDefinition(form url.Values) (mcpcmd.Definition, mcpcmd.ValueEdits, error) {
-	definition := mcpcmd.Definition{Transport: mcpcmd.Transport(form.Get("transport")), Command: form.Get("command"), Directory: form.Get("directory"), Args: mcpLines(form.Get("args")), URL: form.Get("url"), OAuth: form.Get("oauth") == checkedFormValue, Scopes: mcpLines(form.Get("scopes")), Targets: mcpcmd.Targets{All: form.Get("targets_all") == checkedFormValue, Providers: form["provider"]}}
+	definition := mcpcmd.Definition{Transport: mcpcmd.Transport(form.Get("transport")), Command: form.Get("command"), Directory: form.Get("directory"), Args: mcpLines(form.Get("args")), URL: form.Get("url"), Targets: mcpcmd.Targets{All: form.Get("targets_all") == checkedFormValue, Providers: form["provider"]}}
 	env, err := parseMCPValues(form, "env")
 	if err != nil {
 		return definition, mcpcmd.ValueEdits{}, err

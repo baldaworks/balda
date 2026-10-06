@@ -94,7 +94,7 @@ var qaEntries = []qaEntry{
 		p.MCP.Editor.Row.RevisionID = "qa-revision"
 		p.MCP.Editor.Row.Authorization = "Authorized"
 		p.MCP.Editor.Row.Recovery = ""
-		p.MCP.ProbeMessage = "Worker authorization was saved. Inspect current tool readiness below; retry attachment if needed."
+		p.MCP.ProbeMessage = "Authorization was saved. Check tool availability on the connection; retry if needed."
 		return p
 	}, gallery: true},
 
@@ -107,6 +107,21 @@ var qaEntries = []qaEntry{
 		return p
 	}, gallery: true},
 	{name: "mcp", label: "MCP · inventory and readiness", templateName: webui.TemplateMCP, page: qaMCP, gallery: true},
+	{name: "mcp-public", label: "MCP · available public server, optional OAuth", templateName: webui.TemplateMCP, page: func() webui.Page { return qaMCPState(mcpcmd.StatusReady, "", mcpcmd.TransportHTTP) }, gallery: true},
+	{name: "mcp-auth-required", label: "MCP · authorization required", templateName: webui.TemplateMCP, page: func() webui.Page {
+		return qaMCPState(mcpcmd.StatusAuthRequired, mcpcmd.GrantAuthRequired, mcpcmd.TransportSSE)
+	}, gallery: true},
+	{name: "mcp-revoked", label: "MCP · revoked shared authorization", templateName: webui.TemplateMCP, page: func() webui.Page {
+		return qaMCPState(mcpcmd.StatusDisconnected, mcpcmd.GrantDisconnected, mcpcmd.TransportHTTP)
+	}, gallery: true},
+	{name: "mcp-stdio", label: "MCP · local process", templateName: webui.TemplateMCP, page: func() webui.Page { return qaMCPState(mcpcmd.StatusReady, "", mcpcmd.TransportStdio) }, gallery: true},
+	{name: "mcp-saved-start-failed", label: "MCP · saved connection, failed OAuth start", templateName: webui.TemplateError, page: func() webui.Page {
+		p := qaMCP()
+		p.MCP = nil
+		p.Error = &webui.ErrorView{Heading: "Connection saved; OAuth could not start", Message: "Use browser authorization if the service does not support device authorization. Open the saved connection to retry authorization."}
+		p.RestartURL, p.RestartLabel = "/mcp/connections/qa-worker", "Open saved connection"
+		return p
+	}, gallery: true, status: http.StatusServiceUnavailable},
 	{name: "mcp-empty", label: "MCP · empty inventory", templateName: webui.TemplateMCP, page: func() webui.Page { p := qaMCP(); p.MCP.Rows = nil; return p }, gallery: true},
 	{name: "mcp/new", label: "MCP · new server", templateName: webui.TemplateMCP, page: func() webui.Page { return qaMCPEditor(true, false) }, gallery: true},
 	{name: "mcp/connections/qa-worker", label: "MCP · edit server and protected values", templateName: webui.TemplateMCP, page: func() webui.Page { return qaMCPEditor(false, false) }, gallery: true},
@@ -511,7 +526,24 @@ func qaWebAuthn(registration bool) webui.Page {
 }
 
 func qaMCPItem() mcpcmd.Item {
-	return mcpcmd.Item{Connection: mcpcmd.Connection{ID: "qa-worker", PublicID: "synthetic-worker-tools", Source: mcpcmd.SourceManaged, Version: 4, Enabled: true}, Definition: mcpcmd.Definition{Transport: mcpcmd.TransportHTTP, URL: "https://mcp.example.test/worker", OAuth: true, Scopes: []string{"tools.read"}, Targets: mcpcmd.Targets{Providers: []string{"hosted-primary"}}, Headers: map[string]mcpcmd.ValueBinding{"X-Worker-Key": {Kind: mcpcmd.ValueProtected}, "X-Deployment": {Kind: mcpcmd.ValueEnvironment}}}, Status: mcpcmd.StatusUnavailable, Authorization: mcpcmd.GrantAuthorized}
+	return mcpcmd.Item{Connection: mcpcmd.Connection{ID: "qa-worker", PublicID: "synthetic-worker-tools", CurrentRevisionID: "qa-revision", Source: mcpcmd.SourceManaged, Version: 4, Enabled: true}, Definition: mcpcmd.Definition{Transport: mcpcmd.TransportHTTP, URL: "https://mcp.example.test/worker", OAuth: true, Scopes: []string{"tools.read"}, Targets: mcpcmd.Targets{Providers: []string{"hosted-primary"}}, Headers: map[string]mcpcmd.ValueBinding{"X-Worker-Key": {Kind: mcpcmd.ValueProtected}, "X-Deployment": {Kind: mcpcmd.ValueEnvironment}}}, Status: mcpcmd.StatusUnavailable, Authorization: mcpcmd.GrantAuthorized}
+}
+
+func qaMCPState(status mcpcmd.Status, authorization mcpcmd.GrantStatus, transport mcpcmd.Transport) webui.Page {
+	p := qaMCP()
+	item := qaMCPItem()
+	item.Status, item.Authorization, item.ToolCount = status, authorization, 3
+	item.Definition.Transport = transport
+	if authorization == "" {
+		item.Definition.OAuth = false
+	}
+	if transport == mcpcmd.TransportStdio {
+		item.Definition.Command, item.Definition.URL = "synthetic-tool-server", ""
+		item.Definition.Scopes, item.Definition.Headers = nil, nil
+	}
+	p.MCP.Rows = nil
+	p.MCP.Editor = webui.ProjectMCPEditor(item, nil, false)
+	return p
 }
 func qaMCP() webui.Page {
 	p := webui.Page{Title: "MCP servers · QA", Current: webui.LocationMCP, Navigation: qaAdminNavigation(webui.LocationMCP), CSRFToken: "qa-csrf", MCP: &webui.MCPView{}}

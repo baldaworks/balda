@@ -113,7 +113,7 @@ func TestMCPInventoryUsesSafeSharedRendering(t *testing.T) {
 			if response.Code != http.StatusOK {
 				t.Fatalf("inventory = %d", response.Code)
 			}
-			for _, visible := range []string{"worker-tools", "protected", "alpha", "Authorized", "Unavailable", "First worker authorization", "Configuration"} {
+			for _, visible := range []string{"worker-tools", "protected", "alpha", "Authorized", "Tools unavailable", "This server requires authorization", "Configuration"} {
 				if !strings.Contains(body, visible) {
 					t.Errorf("missing visible %q", visible)
 				}
@@ -124,7 +124,7 @@ func TestMCPInventoryUsesSafeSharedRendering(t *testing.T) {
 			if got := strings.Contains(strings.ToLower(body), "<!doctype html>"); got != (shape != "fragment") {
 				t.Fatalf("document=%t for %s", got, shape)
 			}
-			if strings.Contains(body, "Ready</span>") {
+			if strings.Contains(body, "Available</span>") {
 				t.Fatal("authorized grant was presented as runtime ready")
 			}
 		})
@@ -340,8 +340,8 @@ func TestMCPFormsFenceAuthorityAndNeverReflectValues(t *testing.T) {
 }
 
 func TestMCPIntakePreservesTransportFieldsForOwnerValidation(t *testing.T) {
-	definition, _, err := parseMCPDefinition(url.Values{"transport": {"http"}, "url": {"https://worker.example/mcp"}, "command": {"worker"}, "args": {"--fixed\ntwo words"}, "directory": {"/worker"}, "oauth": {"yes"}, "scopes": {"tools.read"}})
-	if err != nil || definition.Command != "worker" || len(definition.Args) != 2 || definition.Args[1] != "two words" || definition.Directory != "/worker" || definition.URL != "https://worker.example/mcp" || !definition.OAuth {
+	definition, _, err := parseMCPDefinition(url.Values{"transport": {"http"}, "url": {"https://worker.example/mcp"}, "command": {"worker"}, "args": {"--fixed\ntwo words"}, "directory": {"/worker"}})
+	if err != nil || definition.Command != "worker" || len(definition.Args) != 2 || definition.Args[1] != "two words" || definition.Directory != "/worker" || definition.URL != "https://worker.example/mcp" {
 		t.Fatal("intake silently discarded fields before owner validation")
 	}
 }
