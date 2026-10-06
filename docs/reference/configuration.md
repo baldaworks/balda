@@ -222,6 +222,9 @@ MCP servers are configured in `runtime.mcp_servers` and referenced by providers 
 Backoffice also manages durable MCP definitions. Configuration-owned entries
 remain read-only there; worker authorization explicitly captures their current
 configuration. Provider targets apply when a session is created or reset.
+When a provider pool is selected, its MCP selection also applies to that pool's
+members for that runtime. It does not change the shared member configuration or
+the selection for standalone members or other pools.
 Existing and restored sessions keep their captured revision and authorization
 binding. Changing a file or saving a managed definition does not update those
 sessions. See [MCP management](backoffice.md#mcp-management) for authorization,
@@ -244,8 +247,10 @@ lost-key recovery is provided. Run one active Balda grant writer. Pending
 authorization attempts are process-local and must be restarted after a host
 restart; saved encrypted grants persist. Register the browser callback as
 `<public_url><base_path>/mcp/oauth/callback`, and use a supported pre-registered
-client for device authorization. Unsupported device authorization leaves browser
-authorization available.
+client for device authorization. Browser authorization requires the issuer to
+advertise S256 PKCE and `authorization_response_iss_parameter_supported`, with a
+callback `iss` value matching the trusted issuer. Use browser authorization after
+an unsupported device flow only when the service supports browser authorization.
 
 HTTP/SSE connections with configured headers or worker OAuth use Balda's private
 credential bridge for discovery and execution. External ACP clients receive
@@ -592,7 +597,9 @@ or non-regular paths return a stable build error.
 - Balda config is edited via the config file itself, not through MCP.
   - balda agents should use the config path shown in the system instruction and edit `.config/balda/config.yaml` directly
 - `balda.mcp_servers`: extra MCP server IDs for all balda-started sessions (must reference IDs declared in `runtime.mcp_servers`)
-  - effective MCP IDs = bundled defaults + `runtime.providers.<provider_id>.mcp_servers` + `balda.mcp_servers` (deduplicated)
+  - configured-source selection = bundled defaults + `runtime.providers.<provider_id>.mcp_servers` + `balda.mcp_servers` (deduplicated).
+  - Effective selection also includes enabled, available Backoffice-managed definitions matching the requested provider's targets and applicable enabled plugin contributions.
+  - Provider and `balda.mcp_servers` lists reference configured IDs; managed definitions use their Backoffice provider targets and do not require a duplicate YAML declaration or ID-list entry.
 - `balda.global_instruction`: optional balda-wide global instruction applied to all sessions
   - value: global instruction text included in balda prompt for all agents
   - effective balda instruction order: built-in balda instructions + `balda.global_instruction` + `runtime.providers.<provider_id>.system_instructions`
@@ -607,6 +614,9 @@ or non-regular paths return a stable build error.
   - `balda.workspace.export` requires main repo to be on this branch
 - `balda.workspace.sessions_dir`: directory name under `balda.state_dir` used for per-session worktrees
   - defaults to `sessions`
-- Balda auto-starts only its built-in `balda` MCP server. Any additional MCP
-  servers must be declared explicitly through `runtime.mcp_servers`,
-  provider-level `mcp_servers`, or `balda.mcp_servers`.
+- Balda includes its built-in `balda` MCP server by default. Any additional MCP
+  servers must be declared in `runtime.mcp_servers` and selected through provider
+  or `balda.mcp_servers` lists, managed through Backoffice with provider targets,
+  or supplied by an applicable enabled plugin. A selected current or retained
+  revision that is unavailable fails closed; saving a definition or worker grant
+  does not make it **Ready**.

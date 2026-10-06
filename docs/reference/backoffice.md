@@ -557,9 +557,12 @@ eligible HTMX saves use 204 with a local `HX-Location`.
 
 Configuration-owned entries are read-only: browser editing, selection changes,
 probe edits and deletion are rejected. Change their definition in the host
-configuration. Disabling and deleting managed connections require explicit
-confirmation. They affect new sessions; existing sessions retain their exact
-revision until release. Deletion tombstones the connection and does not erase
+configuration. The dedicated **Enable/Disable connection** and **Delete connection**
+controls require explicit confirmation. **Save definition** also applies the
+editor's **Enabled for new provider sessions** checkbox under the normal authority
+and CSRF checks, without a separate confirmation. These changes affect new
+sessions; existing sessions retain their exact revision until release.
+Deletion tombstones the connection and does not erase
 retained revisions. Deleted connection details expose retained metadata without
 edit, probe or selection forms. Worker OAuth completion and configuration recapture are
 separate operations from definition editing.
@@ -583,7 +586,10 @@ Use an explicit pre-registered client ID and its supported authentication method
 Client secrets are encrypted and write-only. Browser authorization can use
 supported server client registration when the ID is blank; device authorization
 requires a pre-registered client and server support. Unsupported device flows
-show an error and leave browser authorization available. The browser callback is
+show an error; use browser authorization when the service supports that flow.
+Browser authorization requires the issuer to advertise S256 PKCE and
+`authorization_response_iss_parameter_supported`; the callback's `iss` value must
+match the trusted issuer. The browser callback is
 `<public_url><base_path>/mcp/oauth/callback`; register that exact URL with the issuer.
 Use the configured public origin, including any reverse-proxy base path.
 
