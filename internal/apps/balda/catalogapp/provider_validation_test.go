@@ -19,6 +19,7 @@ func TestProviderMCPDefaultsValidatesSelectedGraph(t *testing.T) {
 		{"missing selected key", agentconfig.Config{Type: agentconfig.AgentTypeOpenAI, OpenAI: &agentconfig.LocalAPIConfig{Model: "fixture"}}, valid, true},
 		{"missing selected model", agentconfig.Config{Type: agentconfig.AgentTypeOpenAI, OpenAI: &agentconfig.LocalAPIConfig{APIKey: "fixture"}}, valid, true},
 		{"invalid unselected member", valid, invalid, false},
+		{"nested selected pool", agentconfig.Config{Type: agentconfig.AgentTypePool, PoolConfig: &agentconfig.PoolConfig{Members: []string{"other"}}}, valid, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			providers := map[string]agentconfig.Config{

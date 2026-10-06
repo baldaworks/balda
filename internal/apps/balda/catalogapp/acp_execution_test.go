@@ -30,16 +30,21 @@ import (
 	"github.com/rs/zerolog"
 )
 
+const (
+	alphaID     = "alpha"
+	poolAlphaID = "pool-alpha"
+)
+
 func testACPInvocation(t *testing.T, catalog *Runtime, registry *mcpregistry.MapRegistry, snapshotID runtimecatalogcmd.SnapshotID, source mcpcmd.Source, worker *workerGrantFixture) {
 	t.Helper()
 	var configuredIDs []string
 	if source == mcpcmd.SourceConfig {
 		configuredIDs = []string{"worker-tools"}
 	}
-	testACPInvocationWithServers(t, catalog, registry, snapshotID, configuredIDs, worker, nil, false)
+	testACPInvocationWithServers(t, catalog, registry, snapshotID, configuredIDs, worker, nil, false, false)
 }
 
-func testACPInvocationWithServers(t *testing.T, catalog *Runtime, registry *mcpregistry.MapRegistry, snapshotID runtimecatalogcmd.SnapshotID, configuredIDs []string, worker *workerGrantFixture, observe providerLifecycleObserver, forcedExit bool) {
+func testACPInvocationWithServers(t *testing.T, catalog *Runtime, registry *mcpregistry.MapRegistry, snapshotID runtimecatalogcmd.SnapshotID, configuredIDs []string, worker *workerGrantFixture, observe providerLifecycleObserver, forcedExit, poolOnly bool) {
 	t.Helper()
 	executable, err := os.Executable()
 	if err != nil {
@@ -51,32 +56,38 @@ func testACPInvocationWithServers(t *testing.T, catalog *Runtime, registry *mcpr
 	defer func() { bundledHTTP.CloseClientConnections(); bundledHTTP.Close() }()
 	registry.Set("balda", agentconfig.MCPServerConfig{Type: agentconfig.MCPServerTypeHTTP, URL: bundledHTTP.URL})
 	providers := map[string]agentconfig.Config{
-		"pool-alpha": {Type: agentconfig.AgentTypePool, PoolConfig: &agentconfig.PoolConfig{Members: []string{"alpha"}}},
-		"pool-beta":  {Type: agentconfig.AgentTypePool, PoolConfig: &agentconfig.PoolConfig{Members: []string{"beta"}}},
-		"alpha":      {Type: agentconfig.AgentTypeGenericACP, GenericACP: &agentconfig.ACPConfig{Cmd: []string{executable, "-test.run=^TestMCPACPProviderChild$"}}},
-		"beta":       {Type: agentconfig.AgentTypeGenericACP, GenericACP: &agentconfig.ACPConfig{Cmd: []string{executable, "-test.run=^TestMCPACPProviderChild$"}}},
+		poolAlphaID: {Type: agentconfig.AgentTypePool, PoolConfig: &agentconfig.PoolConfig{Members: []string{alphaID}}},
+		"pool-beta": {Type: agentconfig.AgentTypePool, PoolConfig: &agentconfig.PoolConfig{Members: []string{"beta"}}},
+		alphaID:     {Type: agentconfig.AgentTypeGenericACP, GenericACP: &agentconfig.ACPConfig{Cmd: []string{executable, "-test.run=^TestMCPACPProviderChild$"}}},
+		"beta":      {Type: agentconfig.AgentTypeGenericACP, GenericACP: &agentconfig.ACPConfig{Cmd: []string{executable, "-test.run=^TestMCPACPProviderChild$"}}},
 	}
 	if len(configuredIDs) > 0 {
-		alpha := providers["alpha"]
+		alpha := providers[alphaID]
 		alpha.MCPServers = append([]string(nil), configuredIDs...)
-		providers["alpha"] = alpha
+		providers[alphaID] = alpha
 	}
 	skills, err := baldaagent.NewSkillManager(catalog, catalog, baldaagent.SkillMetadataBudget{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	binder := &sessionCapabilityBinder{catalog: catalog, skills: skills, providers: providers}
-	for _, providerID := range []string{"alpha", "pool-alpha", "pool-beta", "root-alpha"} {
+	providerIDs := []string{alphaID, poolAlphaID, "pool-beta", "root-alpha"}
+	if poolOnly {
+		providers["pool-shared-alpha"] = agentconfig.Config{Type: agentconfig.AgentTypePool, PoolConfig: &agentconfig.PoolConfig{Members: []string{alphaID}}}
+		providerIDs = append(providerIDs, "pool-shared-alpha", alphaID)
+	}
+	scopedFactory := NewProviderFactory(providers, registry)
+	for _, providerID := range providerIDs {
 		var check func(bool)
 		if observe != nil {
 			check = observe("ACP/" + providerID)
 		}
 		root := providerID == "root-alpha"
 		if root {
-			providerID = "pool-alpha"
+			providerID = poolAlphaID
 		}
 		workspace := t.TempDir()
-		builder := baldaagent.NewBuilder(baldaagent.BuilderParams{Factory: agentfactory.New(providers, registry), ScopedFactory: NewProviderFactory(providers, registry), NormaCfg: runtimeconfig.RuntimeConfig{Providers: providers}})
+		builder := baldaagent.NewBuilder(baldaagent.BuilderParams{Factory: agentfactory.New(providers, registry), ScopedFactory: scopedFactory, NormaCfg: runtimeconfig.RuntimeConfig{Providers: providers}})
 		manager := baldaagent.NewRuntimeManager(baldaagent.RuntimeManagerParams{Builder: builder, BaldaProviderID: providerID, WorkingDir: workspace, StateDir: t.TempDir(), CapabilityBinder: binder, MCPRegistry: registry, Logger: zerolog.Nop()})
 		ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 		var runtime *baldaagent.BuiltRuntime
@@ -96,7 +107,7 @@ func testACPInvocationWithServers(t *testing.T, catalog *Runtime, registry *mcpr
 			t.Fatal(err)
 		}
 		final, err := runProviderTurn(ctx, runtime, created.ID(), "invoke worker")
-		if err == nil && worker != nil && providerID == "alpha" {
+		if err == nil && worker != nil && providerID == alphaID {
 			before := worker.renewals.Load()
 			worker.expire(t)
 			final, err = runProviderTurn(ctx, runtime, created.ID(), "invoke worker again")
@@ -113,7 +124,7 @@ func testACPInvocationWithServers(t *testing.T, catalog *Runtime, registry *mcpr
 		}
 		cancel()
 		want := "actual ACP tool"
-		if providerID == "pool-beta" {
+		if providerID == "pool-beta" || (poolOnly && (providerID == alphaID || providerID == "pool-shared-alpha")) {
 			want = "ACP has no worker tool"
 		}
 		if forcedExit && closeErr != nil {

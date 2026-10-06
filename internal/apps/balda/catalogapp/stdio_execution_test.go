@@ -46,12 +46,14 @@ func testStdioActualProviders(t *testing.T, forceACP bool) {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {
-		name    string
-		sources []mcpcmd.Source
+		name     string
+		sources  []mcpcmd.Source
+		poolOnly bool
 	}{
-		{"managed", []mcpcmd.Source{mcpcmd.SourceManaged, mcpcmd.SourceManaged}},
-		{"config", []mcpcmd.Source{mcpcmd.SourceConfig, mcpcmd.SourceConfig}},
-		{"mixed", []mcpcmd.Source{mcpcmd.SourceConfig, mcpcmd.SourceManaged}},
+		{"managed", []mcpcmd.Source{mcpcmd.SourceManaged, mcpcmd.SourceManaged}, false},
+		{"managed-pool-only", []mcpcmd.Source{mcpcmd.SourceManaged, mcpcmd.SourceManaged}, true},
+		{"config", []mcpcmd.Source{mcpcmd.SourceConfig, mcpcmd.SourceConfig}, false},
+		{"mixed", []mcpcmd.Source{mcpcmd.SourceConfig, mcpcmd.SourceManaged}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// Exercise real store mutations and both provider transports without
@@ -84,7 +86,11 @@ func testStdioActualProviders(t *testing.T, forceACP bool) {
 				overlay.Kind = mcpcmd.ValueProtected
 				edits["BALDA_MCP_CATALOG_STDIO_OVERLAY"] = overlay
 				edits["BALDA_MCP_CATALOG_STDIO_REFERENCE"] = mcpcmd.ValueEdit{Operation: mcpcmd.ValueSet, Kind: mcpcmd.ValueEnvironment, Value: "BALDA_MCP_CATALOG_STDIO_REFERENCE_SOURCE"}
-				revision, err := credentials.PrepareRevision(nil, mcpcmd.Revision{ConnectionID: next.Connection.ID, ID: next.Connection.CurrentRevisionID, CreatedAt: next.Connection.UpdatedAt, Definition: mcpcmd.Definition{Transport: mcpcmd.TransportStdio, Command: executable, Args: config.Args, Directory: directory, Targets: mcpcmd.Targets{Providers: []string{"alpha"}}}}, mcpcmd.ValueEdits{Env: edits})
+				target := alphaID
+				if tc.poolOnly {
+					target = poolAlphaID
+				}
+				revision, err := credentials.PrepareRevision(nil, mcpcmd.Revision{ConnectionID: next.Connection.ID, ID: next.Connection.CurrentRevisionID, CreatedAt: next.Connection.UpdatedAt, Definition: mcpcmd.Definition{Transport: mcpcmd.TransportStdio, Command: executable, Args: config.Args, Directory: directory, Targets: mcpcmd.Targets{Providers: []string{target}}}}, mcpcmd.ValueEdits{Env: edits})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -160,11 +166,11 @@ func testStdioActualProviders(t *testing.T, forceACP bool) {
 					t.Fatal("stdio was not projected directly")
 				}
 			}
-			observe := catalogProcessObserver(t, directories, processDirectory, forceACP)
+			observe := catalogProcessObserver(t, directories, processDirectory, forceACP, tc.poolOnly)
 			if !forceACP {
-				testHostedPoolInvocationWithTools(t, catalog, registry, snapshot.ID, configuredIDs, nil, names, observe)
+				testHostedPoolInvocationWithTools(t, catalog, registry, snapshot.ID, configuredIDs, nil, names, observe, tc.poolOnly)
 			}
-			testACPInvocationWithServers(t, catalog, registry, snapshot.ID, configuredIDs, nil, observe, forceACP)
+			testACPInvocationWithServers(t, catalog, registry, snapshot.ID, configuredIDs, nil, observe, forceACP, tc.poolOnly)
 			for _, directory := range directories {
 				calls, err := os.ReadFile(filepath.Join(directory, "invocations.txt"))
 				if err != nil || (!forceACP && !strings.Contains(string(calls), "actual hosted tool")) || !strings.Contains(string(calls), "actual ACP tool") {
@@ -244,10 +250,11 @@ func recordCatalogProcess(t *testing.T, directory, kind string) {
 	}
 }
 
-func catalogProcessObserver(t *testing.T, serverDirectories []string, processDirectory string, forceACP bool) providerLifecycleObserver {
+func catalogProcessObserver(t *testing.T, serverDirectories []string, processDirectory string, forceACP, poolOnly bool) providerLifecycleObserver {
 	t.Helper()
 	directories := append(slices.Clone(serverDirectories), processDirectory)
 	return func(provider string) func(bool) {
+		excluded := strings.HasSuffix(provider, "pool-beta") || (poolOnly && (strings.HasSuffix(provider, "/alpha") || strings.HasSuffix(provider, "/pool-shared-alpha")))
 		before := readCatalogProcesses(t, directories)
 		invocations := make([]int, len(serverDirectories))
 		for index, directory := range serverDirectories {
@@ -258,7 +265,7 @@ func catalogProcessObserver(t *testing.T, serverDirectories []string, processDir
 			invocations[index] = len(calls)
 		}
 		return func(stopped bool) {
-			if !stopped && !strings.HasSuffix(provider, "pool-beta") {
+			if !stopped && !excluded {
 				want := "actual hosted tool"
 				if strings.HasPrefix(provider, "ACP/") {
 					want = "actual ACP tool"
@@ -291,7 +298,7 @@ func catalogProcessObserver(t *testing.T, serverDirectories []string, processDir
 				}
 			}
 			wantServers := len(serverDirectories)
-			if strings.HasSuffix(provider, "pool-beta") {
+			if excluded {
 				wantServers = 0
 			}
 			wantProviders := 0

@@ -42,6 +42,24 @@ func (f *ProviderFactory) BuildScoped(ctx context.Context, request agentfactory.
 		config.MCPServers = slices.Clone(ids)
 		providers[id] = config
 	}
+	if root, ok := providers[request.AgentID]; ok && agentconfig.IsPoolType(root.Type) {
+		defaults, err := providerMCPDefaults(providers, request.AgentID, nil)
+		if err != nil {
+			return nil, err
+		}
+		// Pool members are built from their own defaults. Inherit only this
+		// runtime's selected pool policy, leaving shared leaf defaults intact.
+		for id, ids := range defaults {
+			if id == request.AgentID {
+				continue
+			}
+			config := providers[id]
+			ids = append(ids, root.MCPServers...)
+			slices.Sort(ids)
+			config.MCPServers = slices.Compact(ids)
+			providers[id] = config
+		}
+	}
 	return agentfactory.New(providers, f.registry, f.options...).Build(ctx, request)
 }
 

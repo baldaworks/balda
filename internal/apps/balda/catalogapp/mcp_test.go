@@ -32,21 +32,29 @@ import (
 
 func TestRemoteDiscoveryAndExecutionUseSameProtectedBridge(t *testing.T) {
 	for _, source := range []mcpcmd.Source{mcpcmd.SourceManaged, mcpcmd.SourceConfig} {
-		t.Run(string(source), func(t *testing.T) { testRemoteDiscoveryAndExecutionUseSameProtectedBridge(t, source, false, false) })
+		t.Run(string(source), func(t *testing.T) {
+			testRemoteDiscoveryAndExecutionUseSameProtectedBridge(t, source, false, false, false)
+		})
 	}
 }
 
 func TestOAuthDiscoveryAndProviderExecutionKeepSameBinding(t *testing.T) {
 	for _, source := range []mcpcmd.Source{mcpcmd.SourceManaged, mcpcmd.SourceConfig} {
-		t.Run(string(source), func(t *testing.T) { testRemoteDiscoveryAndExecutionUseSameProtectedBridge(t, source, true, false) })
+		t.Run(string(source), func(t *testing.T) {
+			testRemoteDiscoveryAndExecutionUseSameProtectedBridge(t, source, true, false, false)
+		})
 	}
 }
 
 func TestHeaderlessConfiguredRemoteInvokesHostedAndACPDirectly(t *testing.T) {
-	testRemoteDiscoveryAndExecutionUseSameProtectedBridge(t, mcpcmd.SourceConfig, false, true)
+	testRemoteDiscoveryAndExecutionUseSameProtectedBridge(t, mcpcmd.SourceConfig, false, true, false)
 }
 
-func testRemoteDiscoveryAndExecutionUseSameProtectedBridge(t *testing.T, source mcpcmd.Source, oauth, headerless bool) {
+func TestManagedPoolTargetInvokesHostedAndACPTools(t *testing.T) {
+	testRemoteDiscoveryAndExecutionUseSameProtectedBridge(t, mcpcmd.SourceManaged, false, false, true)
+}
+
+func testRemoteDiscoveryAndExecutionUseSameProtectedBridge(t *testing.T, source mcpcmd.Source, oauth, headerless, poolOnly bool) {
 	for _, transport := range []mcpcmd.Transport{mcpcmd.TransportHTTP, mcpcmd.TransportSSE} {
 		t.Run(string(transport), func(t *testing.T) {
 			p, original, _, mutation, credentials := hybridCatalogFixture(t)
@@ -98,7 +106,11 @@ func testRemoteDiscoveryAndExecutionUseSameProtectedBridge(t *testing.T, source 
 			revision := *mutation.Revision
 			revision.Definition = mcpcmd.Definition{Transport: transport, URL: upstream.URL, Targets: mcpcmd.Targets{All: true}}
 			if source == mcpcmd.SourceManaged {
-				revision.Definition.Targets = mcpcmd.Targets{Providers: []string{"alpha"}}
+				target := alphaID
+				if poolOnly {
+					target = poolAlphaID
+				}
+				revision.Definition.Targets = mcpcmd.Targets{Providers: []string{target}}
 			}
 			if oauth && source == mcpcmd.SourceManaged {
 				worker = newWorkerGrantFixture(t, p, credentials, mutation.Authority, revision.ConnectionID, upstream.URL)
@@ -223,9 +235,18 @@ func testRemoteDiscoveryAndExecutionUseSameProtectedBridge(t *testing.T, source 
 			if _, err := catalog.store.PublishApplication(pinned); err != nil {
 				t.Fatal(err)
 			}
-			testHostedPoolInvocation(t, catalog, registry, pinned.ID, source, worker)
-			testACPInvocation(t, catalog, registry, pinned.ID, source, worker)
-			if !headerless {
+			if poolOnly {
+				t.Run("hosted", func(t *testing.T) {
+					testHostedPoolInvocationWithTools(t, catalog, registry, pinned.ID, nil, worker, []string{"echo"}, nil, true)
+				})
+				t.Run("ACP", func(t *testing.T) {
+					testACPInvocationWithServers(t, catalog, registry, pinned.ID, nil, worker, nil, false, true)
+				})
+			} else {
+				testHostedPoolInvocation(t, catalog, registry, pinned.ID, source, worker)
+				testACPInvocation(t, catalog, registry, pinned.ID, source, worker)
+			}
+			if !headerless && !poolOnly {
 				attack.Store(true)
 				testActualProviderOriginGuard(t, catalog, registry, pinned.ID)
 				attack.Store(false)

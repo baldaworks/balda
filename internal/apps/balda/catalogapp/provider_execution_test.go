@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -29,11 +30,12 @@ func testHostedPoolInvocation(t *testing.T, catalog *Runtime, registry *mcpregis
 	if source == mcpcmd.SourceConfig {
 		configuredIDs = []string{"worker-tools"}
 	}
-	testHostedPoolInvocationWithTools(t, catalog, registry, snapshotID, configuredIDs, worker, []string{"echo"}, nil)
+	testHostedPoolInvocationWithTools(t, catalog, registry, snapshotID, configuredIDs, worker, []string{"echo"}, nil, false)
 }
 
-func testHostedPoolInvocationWithTools(t *testing.T, catalog *Runtime, registry *mcpregistry.MapRegistry, snapshotID runtimecatalogcmd.SnapshotID, configuredIDs []string, worker *workerGrantFixture, names []string, observe providerLifecycleObserver) {
+func testHostedPoolInvocationWithTools(t *testing.T, catalog *Runtime, registry *mcpregistry.MapRegistry, snapshotID runtimecatalogcmd.SnapshotID, configuredIDs []string, worker *workerGrantFixture, names []string, observe providerLifecycleObserver, poolOnly bool) {
 	t.Helper()
+	var excludedLeaf atomic.Bool
 	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var request struct {
 			Model string `json:"model"`
@@ -60,6 +62,15 @@ func testHostedPoolInvocationWithTools(t *testing.T, catalog *Runtime, registry 
 				return
 			}
 			_, _ = io.WriteString(w, `{"choices":[{"message":{"role":"assistant","content":"beta has no worker tool"}}]}`)
+			return
+		}
+		if excludedLeaf.Load() {
+			if len(request.Tools) != 0 {
+				t.Error("direct alpha member received pool-only MCP tools")
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			_, _ = io.WriteString(w, `{"choices":[{"message":{"role":"assistant","content":"alpha has no worker tool"}}]}`)
 			return
 		}
 		if len(request.Tools) != len(names) {
@@ -118,7 +129,14 @@ func testHostedPoolInvocationWithTools(t *testing.T, catalog *Runtime, registry 
 		t.Fatal(err)
 	}
 	binder := &sessionCapabilityBinder{catalog: catalog, skills: skills, providers: providers}
-	for _, providerID := range []string{"alpha", "pool-alpha", "pool-beta", "root-alpha"} {
+	providerIDs := []string{"alpha", "pool-alpha", "pool-beta", "root-alpha"}
+	if poolOnly {
+		providers["pool-shared-alpha"] = agentconfig.Config{Type: agentconfig.AgentTypePool, PoolConfig: &agentconfig.PoolConfig{Members: []string{"alpha"}}}
+		providerIDs = append(providerIDs, "pool-shared-alpha", "alpha")
+	}
+	scopedFactory := NewProviderFactory(providers, registry)
+	for _, providerID := range providerIDs {
+		excludedLeaf.Store(poolOnly && (providerID == "alpha" || providerID == "pool-shared-alpha"))
 		var check func(bool)
 		if observe != nil {
 			check = observe("hosted/" + providerID)
@@ -128,7 +146,7 @@ func testHostedPoolInvocationWithTools(t *testing.T, catalog *Runtime, registry 
 			providerID = "pool-alpha"
 		}
 		workspace := t.TempDir()
-		builder := baldaagent.NewBuilder(baldaagent.BuilderParams{Factory: agentfactory.New(providers, registry), ScopedFactory: NewProviderFactory(providers, registry), NormaCfg: runtimeconfig.RuntimeConfig{Providers: providers}})
+		builder := baldaagent.NewBuilder(baldaagent.BuilderParams{Factory: agentfactory.New(providers, registry), ScopedFactory: scopedFactory, NormaCfg: runtimeconfig.RuntimeConfig{Providers: providers}})
 		manager := baldaagent.NewRuntimeManager(baldaagent.RuntimeManagerParams{
 			Builder:         builder,
 			BaldaProviderID: providerID, WorkingDir: workspace, StateDir: t.TempDir(),
@@ -169,6 +187,9 @@ func testHostedPoolInvocationWithTools(t *testing.T, catalog *Runtime, registry 
 		}
 		cancel()
 		want := "hosted tool completed"
+		if excludedLeaf.Load() {
+			want = "alpha has no worker tool"
+		}
 		if providerID == "pool-beta" {
 			want = "beta has no worker tool"
 		}
