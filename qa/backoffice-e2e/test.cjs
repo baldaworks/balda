@@ -42,6 +42,52 @@ async function startPreview() {
   return { server, url };
 }
 
+async function checkMCPTransport(browser, baseURL, viewport) {
+  const page = await browser.newPage({ viewport });
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto(`${baseURL}/qa/ui/mcp/new`);
+  await page.getByLabel('Command', { exact: true }).fill('draft-command');
+  await page.locator('#env-key-0').fill('DRAFT_ENV');
+  await page.locator('#env-value-0').fill('synthetic-draft-value');
+  const transport = page.getByLabel('Transport', { exact: true });
+  for (const value of ['http', 'sse']) {
+    await transport.selectOption(value);
+    assert.equal(await page.getByLabel('Command', { exact: true }).isVisible(), false, `${value} hides local process fields`);
+    assert.equal(await page.locator('#env-key-0').isVisible(), false, `${value} hides environment fields`);
+    assert.equal(await page.getByLabel('Server URL', { exact: true }).isVisible(), true, `${value} shows remote server fields`);
+    assert.equal(await page.locator('#header-key-0').isVisible(), true, `${value} shows header fields`);
+    const names = await transport.evaluate(select => [...new FormData(select.form).keys()]);
+    for (const name of ['command', 'args', 'directory', 'env_key', 'env_value']) {
+      assert.equal(names.includes(name), false, `${value} excludes inactive ${name} from submission`);
+    }
+    assert.equal(names.includes('url'), true, `${value} submits its URL`);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${value} has no overflow at ${viewport.width}px`);
+  }
+  await page.getByLabel('Server URL', { exact: true }).fill('https://synthetic.example.test/mcp');
+  await transport.selectOption('stdio');
+  assert.equal(await page.getByLabel('Command', { exact: true }).isVisible(), true, 'stdio shows local process fields');
+  assert.equal(await page.locator('#env-key-0').isVisible(), true, 'stdio shows environment fields');
+  assert.equal(await page.getByLabel('Command', { exact: true }).inputValue(), 'draft-command', 'switching back preserves non-secret draft fields');
+  assert.equal(await page.getByLabel('Server URL', { exact: true }).isVisible(), false, 'stdio hides remote server fields');
+  assert.equal(await page.locator('#header-key-0').isVisible(), false, 'stdio hides header fields');
+  const names = await transport.evaluate(select => [...new FormData(select.form).keys()]);
+  for (const name of ['url', 'oauth', 'scopes', 'header_key', 'header_value']) {
+    assert.equal(names.includes(name), false, `stdio excludes inactive ${name} from submission`);
+  }
+  await page.getByRole('link', { name: 'All MCP servers', exact: true }).click();
+  await page.getByRole('link', { name: 'Add server', exact: true }).click();
+  await page.getByRole('heading', { name: 'Add MCP server', exact: true }).waitFor();
+  assert.equal(await page.getByLabel('Server URL', { exact: true }).isVisible(), false, 'HTMX navigation initializes the stdio form');
+  await page.getByLabel('Transport', { exact: true }).focus();
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Tab');
+  assert.equal(await page.getByLabel('Server URL', { exact: true }).isVisible(), true, 'keyboard transport selection updates the form');
+  assert.equal(await page.getByLabel('Command', { exact: true }).isVisible(), false);
+  assert.deepEqual(errors, [], 'transport switching has no browser errors');
+  await page.close();
+}
+
 async function checkTopBar(page, label) {
   const geometry = await page.evaluate(() => {
     const header = document.querySelector('.app-header');
@@ -221,9 +267,14 @@ async function checkPage(browser, baseURL, viewport) {
     const browser = await chromium.launch({ headless: true });
     try {
       for (const viewport of [{ width: 1440, height: 900 }, { width: 1024, height: 768 }, { width: 768, height: 1024 }, { width: 390, height: 844 }]) {
+        await checkMCPTransport(browser, url, viewport);
         await checkPage(browser, url, viewport);
       }
       const noScript = await browser.newPage({ javaScriptEnabled: false, viewport: { width: 390, height: 844 } });
+      await noScript.goto(`${url}/qa/ui/mcp/new`);
+      await noScript.getByLabel('Transport', { exact: true }).selectOption('http');
+      assert.equal(await noScript.getByLabel('Command', { exact: true }).isVisible(), true, 'native form keeps its explained transport fields available');
+      assert.equal(await noScript.getByLabel('Server URL', { exact: true }).isVisible(), true, 'native remote URL field is usable');
       await noScript.goto(`${url}/qa/ui/audit`);
       assert.equal(await noScript.locator('table tbody tr').count(), 3);
       await noScript.getByText('Dates and actor ID').click();

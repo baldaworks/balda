@@ -324,7 +324,7 @@ The pinned stack is:
 | AdminLTE | 4.9.1 | Shell and UI components |
 | HTMX | 2.0.10 | Progressive enhancement |
 | Bootstrap Icons | 1.13.1 | Local icons |
-| Vanilla JavaScript | Built in | HTMX lifecycle, focus, and sidebar behavior only |
+| Vanilla JavaScript | Built in | HTMX lifecycle, focus, sidebar and create-form field visibility |
 
 The shell adapts the AlaTooGuide Backoffice layout: a sticky utility top bar with the
 current authenticated username, Account and native CSRF-protected sign-out;
@@ -549,6 +549,11 @@ Opening inventory does not start a server or discover OAuth metadata.
 its current state and editor. The immutable server ID must be unique across
 both sources. Stdio uses a direct command, working directory and one argument
 per line; HTTP and SSE use a URL, headers and optional worker OAuth scopes.
+With JavaScript, the new-server form shows only the selected transport's fields
+and excludes inactive draft fields from submission. Switching back retains the
+draft until navigation or submission clears write-only values. Without
+JavaScript, all transport sections remain available with their applicability
+instructions; clear fields for the other transport before submitting.
 Choose all providers or specific configured providers. The editor supplies
 explicit literal, protected and deployment-variable value sources. Keep retains
 an existing value, Replace supplies a new value, and Remove deletes it. Existing
