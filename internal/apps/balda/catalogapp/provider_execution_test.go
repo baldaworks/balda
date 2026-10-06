@@ -25,10 +25,14 @@ import (
 
 func testHostedPoolInvocation(t *testing.T, catalog *Runtime, registry *mcpregistry.MapRegistry, snapshotID runtimecatalogcmd.SnapshotID, source mcpcmd.Source, worker *workerGrantFixture) {
 	t.Helper()
-	testHostedPoolInvocationWithTools(t, catalog, registry, snapshotID, source, worker, []string{"echo"}, nil)
+	var configuredIDs []string
+	if source == mcpcmd.SourceConfig {
+		configuredIDs = []string{"worker-tools"}
+	}
+	testHostedPoolInvocationWithTools(t, catalog, registry, snapshotID, configuredIDs, worker, []string{"echo"}, nil)
 }
 
-func testHostedPoolInvocationWithTools(t *testing.T, catalog *Runtime, registry *mcpregistry.MapRegistry, snapshotID runtimecatalogcmd.SnapshotID, source mcpcmd.Source, worker *workerGrantFixture, names []string, observe providerLifecycleObserver) {
+func testHostedPoolInvocationWithTools(t *testing.T, catalog *Runtime, registry *mcpregistry.MapRegistry, snapshotID runtimecatalogcmd.SnapshotID, configuredIDs []string, worker *workerGrantFixture, names []string, observe providerLifecycleObserver) {
 	t.Helper()
 	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var request struct {
@@ -104,12 +108,9 @@ func testHostedPoolInvocationWithTools(t *testing.T, catalog *Runtime, registry 
 		"alpha":      {Type: agentconfig.AgentTypeOpenAI, OpenAI: &agentconfig.LocalAPIConfig{APIKey: "fixture-key", Model: "alpha"}},
 		"beta":       {Type: agentconfig.AgentTypeOpenAI, OpenAI: &agentconfig.LocalAPIConfig{APIKey: "fixture-key", Model: "beta"}},
 	}
-	if source == mcpcmd.SourceConfig {
+	if len(configuredIDs) > 0 {
 		alpha := providers["alpha"]
-		alpha.MCPServers = []string{"worker-tools"}
-		if len(names) == 2 {
-			alpha.MCPServers = append(alpha.MCPServers, "worker-tools-two")
-		}
+		alpha.MCPServers = append([]string(nil), configuredIDs...)
 		providers["alpha"] = alpha
 	}
 	skills, err := baldaagent.NewSkillManager(catalog, catalog, baldaagent.SkillMetadataBudget{})

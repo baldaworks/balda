@@ -45,8 +45,15 @@ func testStdioActualProviders(t *testing.T, forceACP bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, source := range []mcpcmd.Source{mcpcmd.SourceManaged, mcpcmd.SourceConfig} {
-		t.Run(string(source), func(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		sources []mcpcmd.Source
+	}{
+		{"managed", []mcpcmd.Source{mcpcmd.SourceManaged, mcpcmd.SourceManaged}},
+		{"config", []mcpcmd.Source{mcpcmd.SourceConfig, mcpcmd.SourceConfig}},
+		{"mixed", []mcpcmd.Source{mcpcmd.SourceConfig, mcpcmd.SourceManaged}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			// Exercise real store mutations and both provider transports without
 			// coupling this process-launch test to platform database file URIs.
 			p, original, _, mutation, credentials := hybridCatalogFixtureWithDatabase(t, ":memory:")
@@ -54,12 +61,14 @@ func testStdioActualProviders(t *testing.T, forceACP bool) {
 			var directories []string
 			names := []string{"echo", "echo_two"}
 			ids := []string{"worker-tools", "worker-tools-two"}
+			var configuredIDs []string
 			for index, name := range names {
 				directory := t.TempDir()
 				directories = append(directories, directory)
 				config := agentconfig.MCPServerConfig{Type: agentconfig.MCPServerTypeStdio, Cmd: []string{executable}, Args: append([]string{"-test.run=^TestMCPCatalogStdioChild$", "--"}, stdioCatalogLiteralArgs()...), WorkingDir: directory, Env: map[string]string{"BALDA_MCP_CATALOG_STDIO_CHILD": "1", "BALDA_MCP_CATALOG_STDIO_OVERLAY": "child-value", "BALDA_MCP_CATALOG_STDIO_DIRECTORY": directory, "BALDA_MCP_CATALOG_STDIO_TOOL": name, "BALDA_MCP_CATALOG_STDIO_REFERENCE": "referenced-value"}}
-				if source == mcpcmd.SourceConfig {
+				if tc.sources[index] == mcpcmd.SourceConfig {
 					configured[ids[index]] = config
+					configuredIDs = append(configuredIDs, ids[index])
 					continue
 				}
 				next := mutation
@@ -85,22 +94,22 @@ func testStdioActualProviders(t *testing.T, forceACP bool) {
 				}
 			}
 			var retained []mcpcmd.Revision
-			if source == mcpcmd.SourceConfig {
+			if len(configuredIDs) > 0 {
 				// A prior remote OAuth capture must not alter the ordinary
 				// current stdio launch or either actual provider's selection.
 				remote := make(map[string]agentconfig.MCPServerConfig)
-				for _, id := range ids {
+				for _, id := range configuredIDs {
 					remote[id] = agentconfig.MCPServerConfig{Type: agentconfig.MCPServerTypeHTTP, URL: "https://worker.example/" + id}
 				}
 				probe, err := mcpfx.NewManagedProbe(credentials, mcpfx.NewClientLauncher(), nil)
 				if err != nil {
 					t.Fatal(err)
 				}
-				definitions, err := mcpmanage.NewDefinitions(credentials, mcpfx.NewDefinitionStore(p.MCP()), mcpfx.NewConfiguredDefinitions(remote, map[string]agentconfig.Config{"alpha": {MCPServers: ids}}, "alpha", nil), original, probe)
+				definitions, err := mcpmanage.NewDefinitions(credentials, mcpfx.NewDefinitionStore(p.MCP()), mcpfx.NewConfiguredDefinitions(remote, map[string]agentconfig.Config{"alpha": {MCPServers: configuredIDs}}, "alpha", nil), original, probe)
 				if err != nil {
 					t.Fatal(err)
 				}
-				for _, id := range ids {
+				for _, id := range configuredIDs {
 					capture, err := definitions.PrepareAuthorization(t.Context(), mcpcmd.PrepareAuthorization{ConnectionID: "config:" + id, Authority: mutation.Authority})
 					if err != nil {
 						t.Fatal(err)
@@ -116,8 +125,8 @@ func testStdioActualProviders(t *testing.T, forceACP bool) {
 				t.Fatal(err)
 			}
 			defer func() { _ = catalog.MCP().Shutdown(t.Context()) }()
-			if source == mcpcmd.SourceConfig {
-				if err := catalog.configureProviderMCP(map[string]agentconfig.Config{"alpha": {MCPServers: ids}, "beta": {}}, "alpha", nil); err != nil {
+			if len(configuredIDs) > 0 {
+				if err := catalog.configureProviderMCP(map[string]agentconfig.Config{"alpha": {MCPServers: configuredIDs}, "beta": {}}, "alpha", nil); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -153,9 +162,9 @@ func testStdioActualProviders(t *testing.T, forceACP bool) {
 			}
 			observe := catalogProcessObserver(t, directories, processDirectory, forceACP)
 			if !forceACP {
-				testHostedPoolInvocationWithTools(t, catalog, registry, snapshot.ID, source, nil, names, observe)
+				testHostedPoolInvocationWithTools(t, catalog, registry, snapshot.ID, configuredIDs, nil, names, observe)
 			}
-			testACPInvocationWithServers(t, catalog, registry, snapshot.ID, source, nil, ids, observe, forceACP)
+			testACPInvocationWithServers(t, catalog, registry, snapshot.ID, configuredIDs, nil, observe, forceACP)
 			for _, directory := range directories {
 				calls, err := os.ReadFile(filepath.Join(directory, "invocations.txt"))
 				if err != nil || (!forceACP && !strings.Contains(string(calls), "actual hosted tool")) || !strings.Contains(string(calls), "actual ACP tool") {
@@ -240,7 +249,27 @@ func catalogProcessObserver(t *testing.T, serverDirectories []string, processDir
 	directories := append(slices.Clone(serverDirectories), processDirectory)
 	return func(provider string) func(bool) {
 		before := readCatalogProcesses(t, directories)
+		invocations := make([]int, len(serverDirectories))
+		for index, directory := range serverDirectories {
+			calls, err := os.ReadFile(filepath.Join(directory, "invocations.txt"))
+			if err != nil && !os.IsNotExist(err) {
+				t.Fatal(err)
+			}
+			invocations[index] = len(calls)
+		}
 		return func(stopped bool) {
+			if !stopped && !strings.HasSuffix(provider, "pool-beta") {
+				want := "actual hosted tool"
+				if strings.HasPrefix(provider, "ACP/") {
+					want = "actual ACP tool"
+				}
+				for index, directory := range serverDirectories {
+					calls, err := os.ReadFile(filepath.Join(directory, "invocations.txt"))
+					if err != nil || len(calls) < invocations[index] || !strings.Contains(string(calls[invocations[index]:]), want) {
+						t.Errorf("%s did not invoke server %s in its new session: %v", provider, directory, err)
+					}
+				}
+			}
 			current := readCatalogProcesses(t, directories)
 			var pids, children, owners []int
 			var servers, providers int

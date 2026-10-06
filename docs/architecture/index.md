@@ -148,3 +148,10 @@ Backoffice adapter starts through trusted `Definitions.PrepareAuthorization` and
 projects stored authorization separately from catalog readiness. The browser
 handles native redirects and one-time device instructions, with no persistent
 attempt recovery or Backoffice-owned completion policy.
+
+`mcpbridge` owns private HTTP/SSE credential forwarding for header-bearing and
+OAuth connections; hosted and ACP execution share the same captured catalog
+binding. ACP projections expose only the local endpoint and capability.
+Deployment-key validation includes retained revisions and grants before provider
+startup. `state` owns native SQLite file URI normalization and durable reopen;
+the existing native platform workflow exercises real files and MCP contracts.

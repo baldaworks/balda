@@ -219,6 +219,42 @@ the Balda process.
 
 MCP servers are configured in `runtime.mcp_servers` and referenced by providers via `runtime.providers.<id>.mcp_servers`.
 
+Backoffice also manages durable MCP definitions. Configuration-owned entries
+remain read-only there; worker authorization explicitly captures their current
+configuration. Provider targets apply when a session is created or reset.
+Existing and restored sessions keep their captured revision and authorization
+binding. Changing a file or saving a managed definition does not update those
+sessions. See [MCP management](backoffice.md#mcp-management) for authorization,
+readiness and retry operations.
+
+#### Protected values and worker grants
+
+Set `balda.mcp_management.credential_key`, or its environment override
+`BALDA_MCP_MANAGEMENT_CREDENTIAL_KEY`, to a standard base64-encoded 32-byte
+deployment key before storing protected values or worker OAuth grants. Supply
+it through your deployment's secret mechanism. An empty key supports
+installations without encrypted MCP data; protected writes require a key.
+Startup validates every retained encrypted revision and worker grant, including
+historical session bindings. A missing or different key prevents startup when
+that data cannot be decrypted.
+
+Keep the same key across restarts and back it up securely with the database.
+Replacing it is not a key rotation operation: no automatic re-encryption or
+lost-key recovery is provided. Run one active Balda grant writer. Pending
+authorization attempts are process-local and must be restarted after a host
+restart; saved encrypted grants persist. Register the browser callback as
+`<public_url><base_path>/mcp/oauth/callback`, and use a supported pre-registered
+client for device authorization. Unsupported device authorization leaves browser
+authorization available.
+
+HTTP/SSE connections with configured headers or worker OAuth use Balda's private
+credential bridge for discovery and execution. External ACP clients receive
+only the local bridge endpoint and its capability, rather than upstream headers
+or OAuth tokens. Headerless connections without OAuth and stdio connections use
+their direct transports. Saving authorization and making tools ready are
+separate outcomes; retry a saved grant's tool attachment from Backoffice when
+publication or discovery failed.
+
 #### Transport Types
 
 | Type | Description |

@@ -620,5 +620,7 @@ revision and retries the affected failed attachment. It does not restart ready
 runners or change historical pins. **Disconnect worker** requires confirmation
 and revokes every retained worker grant context, including existing sessions.
 Run one active writer for worker grants; keep the deployment credential key with
-the database backup. No tokens, client secrets or local bridge capabilities belong
+the database backup. Configure its format and deployment override as described in
+[MCP credential configuration](configuration.md#protected-values-and-worker-grants).
+No tokens, client secrets or local bridge capabilities belong
 in logs, URLs used for recovery, exported read models or browser history caches.

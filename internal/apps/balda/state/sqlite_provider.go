@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -181,6 +182,11 @@ func sqliteConnectionString(path string) string {
 	query.Add("_pragma", "busy_timeout(5000)")
 	if path == ":memory:" {
 		return "file::memory:?" + query.Encode()
+	}
+	path = filepath.ToSlash(path)
+	if filepath.IsAbs(path) && !strings.HasPrefix(path, "/") {
+		// Keep native Windows drive letters in the URI path, not its authority.
+		path = "/" + path
 	}
 	return (&url.URL{Scheme: "file", Path: path, RawQuery: query.Encode()}).String()
 }

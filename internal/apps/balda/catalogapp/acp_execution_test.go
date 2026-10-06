@@ -32,10 +32,14 @@ import (
 
 func testACPInvocation(t *testing.T, catalog *Runtime, registry *mcpregistry.MapRegistry, snapshotID runtimecatalogcmd.SnapshotID, source mcpcmd.Source, worker *workerGrantFixture) {
 	t.Helper()
-	testACPInvocationWithServers(t, catalog, registry, snapshotID, source, worker, []string{"worker-tools"}, nil, false)
+	var configuredIDs []string
+	if source == mcpcmd.SourceConfig {
+		configuredIDs = []string{"worker-tools"}
+	}
+	testACPInvocationWithServers(t, catalog, registry, snapshotID, configuredIDs, worker, nil, false)
 }
 
-func testACPInvocationWithServers(t *testing.T, catalog *Runtime, registry *mcpregistry.MapRegistry, snapshotID runtimecatalogcmd.SnapshotID, source mcpcmd.Source, worker *workerGrantFixture, ids []string, observe providerLifecycleObserver, forcedExit bool) {
+func testACPInvocationWithServers(t *testing.T, catalog *Runtime, registry *mcpregistry.MapRegistry, snapshotID runtimecatalogcmd.SnapshotID, configuredIDs []string, worker *workerGrantFixture, observe providerLifecycleObserver, forcedExit bool) {
 	t.Helper()
 	executable, err := os.Executable()
 	if err != nil {
@@ -52,9 +56,9 @@ func testACPInvocationWithServers(t *testing.T, catalog *Runtime, registry *mcpr
 		"alpha":      {Type: agentconfig.AgentTypeGenericACP, GenericACP: &agentconfig.ACPConfig{Cmd: []string{executable, "-test.run=^TestMCPACPProviderChild$"}}},
 		"beta":       {Type: agentconfig.AgentTypeGenericACP, GenericACP: &agentconfig.ACPConfig{Cmd: []string{executable, "-test.run=^TestMCPACPProviderChild$"}}},
 	}
-	if source == mcpcmd.SourceConfig {
+	if len(configuredIDs) > 0 {
 		alpha := providers["alpha"]
-		alpha.MCPServers = append([]string(nil), ids...)
+		alpha.MCPServers = append([]string(nil), configuredIDs...)
 		providers["alpha"] = alpha
 	}
 	skills, err := baldaagent.NewSkillManager(catalog, catalog, baldaagent.SkillMetadataBudget{})

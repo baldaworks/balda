@@ -76,6 +76,11 @@ uses the current trusted definition, including explicit configured capture;
 saved grants can retry tool attachment without repeating OAuth. See [MCP management](docs/reference/backoffice.md#mcp-management)
 for provider targeting and value operations.
 
+Before storing protected MCP values or worker grants, configure the deployment
+[MCP credential key](docs/reference/configuration.md#protected-values-and-worker-grants)
+and keep it with your database backup. Existing sessions retain their captured
+MCP revision; create or reset a session to activate changed definitions.
+
 `balda init` creates `.config/balda/config.yaml`, initializes
 `.config/balda/state.db` by default, detects available provider CLIs, and prints
 the next step for your selected chat provider.
