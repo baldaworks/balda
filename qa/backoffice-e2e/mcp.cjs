@@ -17,6 +17,14 @@ async function link(page, name) {
 }
 async function candidate(page, id) {
   await page.getByLabel('Server ID', { exact: true }).fill(id);
+  if (page.mcpJavaScriptEnabled !== false) {
+    await page.getByLabel('Transport', { exact: true }).selectOption('stdio');
+    await page.getByLabel('Command', { exact: true }).fill('unused-draft-command');
+    await page.getByLabel('Arguments · one per line', { exact: true }).fill('unused-draft-argument');
+    await page.getByLabel('Working directory', { exact: true }).fill('/unused-draft-directory');
+    await page.locator('#env-key-0').fill('UNUSED_DRAFT_ENV');
+    await page.locator('#env-value-0').fill('synthetic-unused-value');
+  }
   await page.getByLabel('Transport', { exact: true }).selectOption('http');
   await page.getByLabel('Server URL', { exact: true }).fill(workerURL);
   await page.locator('#header-key-0').fill('X-Worker');
@@ -45,6 +53,12 @@ async function mutation(page, button, path, status) {
     const fields=new URLSearchParams(response.request().postData()||'');
     const safe={version:fields.get('expected_version'),confirmation:fields.get('confirm'),enabled:fields.get('enabled'),hasCSRF:!!fields.get('csrf_token'),names:[...new Set(fields.keys())]};
     throw new Error(`${button} response ${response.status()}, expected ${status}; safe submitted metadata ${JSON.stringify(safe)}`);
+  }
+  if (page.mcpJavaScriptEnabled !== false && path === '/mcp/connections') {
+    const fields = new URLSearchParams(response.request().postData() || '');
+    for (const name of ['command', 'args', 'directory', 'env_key', 'env_value']) {
+      assert.equal(fields.has(name), false, `HTTP create/probe excludes inactive ${name} from the actual request`);
+    }
   }
   if (status === 303) assert.equal((response.headers().location || '').includes(protectedValue),false,'protected input absent from redirect');
   else assert.equal((await response.text()).includes(protectedValue), false, 'protected input absent from response');
