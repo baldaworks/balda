@@ -15,6 +15,13 @@ Status: active
   Any fatal blocker wins. Acquisition remains complete-or-fail; retained pins
   never become current recovery candidates. Equal-binding retry preserves
   snapshot/revision identity and every ready runner.
+- `mcpmanage` owns explicit OAuth selection and scopes for remote connections.
+  Native authorization prepares an immutable current revision; ordinary
+  connection edits and candidate probes retain trusted authorization settings.
+  `mcpbackofficeapp` composes creation and protocol start, returning the saved
+  identity even if subsequent authorization start fails. Backoffice owns form
+  intake and presentation through its consuming ports; it never selects grant
+  identity or replaces retained session pins.
 - Shutdown follows the exact reverse lifecycle order.
 - The durable command runtime must be available before ingress accepts work.
 - No runtime path executes user work without durable actor dispatch acceptance.

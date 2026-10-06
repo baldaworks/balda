@@ -232,6 +232,16 @@ type mcpAuthorizationFixture struct {
 	begins   int
 }
 
+func (f *mcpAuthorizationFixture) CreateAndBeginBrowser(ctx context.Context, _ mcpcmd.CreateDefinition, request mcpcmd.BeginAuthorization) (mcpcmd.Item, mcpcmd.BrowserAuthorization, error) {
+	started, err := f.BeginBrowser(ctx, request)
+	return f.item, started, err
+}
+
+func (f *mcpAuthorizationFixture) CreateAndBeginDevice(ctx context.Context, _ mcpcmd.CreateDefinition, request mcpcmd.BeginAuthorization) (mcpcmd.Item, mcpcmd.DeviceAuthorization, error) {
+	started, err := f.BeginDevice(ctx, request)
+	return f.item, started, err
+}
+
 func (f *mcpAuthorizationFixture) BeginBrowser(context.Context, mcpcmd.BeginAuthorization) (mcpcmd.BrowserAuthorization, error) {
 	f.begins++
 	return mcpcmd.BrowserAuthorization{AuthorizationURL: "https://issuer.example/authorize?state=private", ExpiresAt: time.Now().UTC().Add(time.Minute)}, nil

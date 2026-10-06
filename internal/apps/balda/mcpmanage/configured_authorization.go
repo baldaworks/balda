@@ -41,10 +41,7 @@ func (s *Definitions) PrepareAuthorization(ctx context.Context, request mcpcmd.P
 		}
 		previous = &r
 		if c.Source == mcpcmd.SourceManaged {
-			if !r.Definition.OAuth || r.Definition.Transport == mcpcmd.TransportStdio || (request.Scopes != nil && !slices.Equal(request.Scopes, r.Definition.Scopes)) {
-				return mcpcmd.Revision{}, mcpcmd.ErrInvalid
-			}
-			return r, nil
+			return s.prepareManagedAuthorization(ctx, c, r, request)
 		}
 	} else {
 		publicID, ok := strings.CutPrefix(request.ConnectionID, "config:")
@@ -90,7 +87,7 @@ func (s *Definitions) PrepareAuthorization(ctx context.Context, request mcpcmd.P
 		if previous.Definition.ConfigRevision == d.ConfigRevision && previous.Definition.OAuth && slices.Equal(d.Scopes, previous.Definition.Scopes) {
 			return *previous, nil
 		}
-		if previous.Definition.OAuth && previous.Definition.URL == d.URL && previous.Definition.Transport == d.Transport {
+		if previous.Definition.OAuth && previous.Definition.URL == d.URL && previous.Definition.Transport == d.Transport && slices.Equal(previous.Definition.Scopes, d.Scopes) {
 			d.AuthBinding = previous.Definition.AuthBinding
 		}
 	}
@@ -111,6 +108,50 @@ func (s *Definitions) PrepareAuthorization(ctx context.Context, request mcpcmd.P
 		return mcpcmd.Revision{}, err
 	}
 	return r, nil
+}
+
+func (s *Definitions) prepareManagedAuthorization(ctx context.Context, c mcpcmd.Connection, previous mcpcmd.Revision, request mcpcmd.PrepareAuthorization) (mcpcmd.Revision, error) {
+	d := previous.Definition
+	if d.Transport != mcpcmd.TransportHTTP && d.Transport != mcpcmd.TransportSSE {
+		return mcpcmd.Revision{}, mcpcmd.ErrInvalid
+	}
+	if request.Scopes != nil {
+		d.Scopes = slices.Clone(request.Scopes)
+	}
+	if d.OAuth && slices.Equal(d.Scopes, previous.Definition.Scopes) {
+		if err := s.credentials.ValidateTransportRevision(previous); err != nil {
+			return mcpcmd.Revision{}, err
+		}
+		return previous, nil
+	}
+	d.OAuth, d.AuthBinding = true, nil
+	c.CurrentRevisionID = rand.Text()
+	if request.Authority.At.After(c.UpdatedAt) {
+		c.UpdatedAt = request.Authority.At
+	}
+	r, err := s.prepare(ctx, &previous, c, d, mcpcmd.ValueEdits{})
+	if err != nil {
+		return mcpcmd.Revision{}, err
+	}
+	if _, err := s.save(ctx, c, &r, c.Version, request.Authority); err != nil {
+		return mcpcmd.Revision{}, err
+	}
+	return r, nil
+}
+
+// CreateForAuthorization selects OAuth only for an explicit onboarding action.
+// Client credentials remain inputs to the separate protocol owner.
+func (s *Definitions) CreateForAuthorization(ctx context.Context, request mcpcmd.CreateDefinition, scopes []string) (mcpcmd.Item, error) {
+	request.Authority.At = time.Now().UTC()
+	if err := s.store.CheckMCPAuthority(ctx, request.Authority); err != nil {
+		return mcpcmd.Item{}, safeOperationError(err)
+	}
+	if s.credentials.credentials == nil {
+		return mcpcmd.Item{}, mcpcmd.ErrCredentials
+	}
+	request.Definition.OAuth = true
+	request.Definition.Scopes = slices.Clone(scopes)
+	return s.Create(ctx, request)
 }
 
 func protectedCapture(values map[string]string) map[string]mcpcmd.ValueEdit {

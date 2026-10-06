@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
+	"slices"
 	"sort"
 	"time"
 
@@ -155,19 +156,27 @@ func (s *Definitions) save(ctx context.Context, c mcpcmd.Connection, r *mcpcmd.R
 	}
 	// A failed publish leaves the version marker pending; the durable save is
 	// returned explicitly, allowing catalog recovery rather than duplicate writes.
+	saved := mcpcmd.Item{Connection: c, Status: mcpcmd.StatusPending}
+	saved.Connection.Version = version + 1
+	if r != nil {
+		saved.Definition = r.Definition
+	}
 	c, found, readErr := s.store.GetMCPConnection(ctx, c.ID)
 	if readErr != nil {
-		return mcpcmd.Item{}, safeOperationError(readErr)
+		return saved, safeOperationError(readErr)
 	}
 	if !found {
-		return mcpcmd.Item{}, mcpcmd.ErrNotFound
+		return saved, mcpcmd.ErrNotFound
 	}
 	item, itemErr := s.item(ctx, c)
-	if itemErr == nil && err != nil && item.Status == mcpcmd.StatusReady {
+	if itemErr != nil {
+		return saved, itemErr
+	}
+	if err != nil && item.Status == mcpcmd.StatusReady {
 		item.Status = mcpcmd.StatusPending
 		item.ToolCount = 0
 	}
-	return item, itemErr
+	return item, nil
 }
 
 func (s *Definitions) item(ctx context.Context, c mcpcmd.Connection) (mcpcmd.Item, error) {
@@ -243,6 +252,13 @@ func (s *Definitions) prepareUpdate(ctx context.Context, request mcpcmd.UpdateDe
 	}
 	if definition.AuthBinding != nil && (previous.Definition.AuthBinding == nil || *definition.AuthBinding != *previous.Definition.AuthBinding) {
 		return mcpcmd.Connection{}, mcpcmd.Revision{}, mcpcmd.ErrInvalid
+	}
+	// Connection edits do not select or revoke authorization. The explicit
+	// authorization operation owns scopes and OAuth intent for remote revisions.
+	definition.OAuth, definition.Scopes = false, nil
+	if definition.Transport == mcpcmd.TransportHTTP || definition.Transport == mcpcmd.TransportSSE {
+		definition.OAuth = previous.Definition.OAuth
+		definition.Scopes = slices.Clone(previous.Definition.Scopes)
 	}
 	definition.AuthBinding = nil
 	if definition.OAuth && previous.Definition.OAuth && definition.URL == previous.Definition.URL && definition.Transport == previous.Definition.Transport {
