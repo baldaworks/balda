@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
@@ -31,7 +32,7 @@ func (s *sqlMCPStore) CheckMCPAuthority(ctx context.Context, a mcpcmd.Authority)
 		return mcpStoreError("begin MCP authority check", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err := s.checkAuthority(ctx, tx, a); err != nil {
+	if _, err := s.checkAuthority(ctx, tx, a); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
@@ -49,12 +50,16 @@ func (s *sqlMCPStore) SaveMCPConnection(ctx context.Context, m MCPMutation) erro
 		return mcpStoreError("begin MCP mutation", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err := s.checkAuthority(ctx, tx, m.Authority); err != nil {
+	authority, err := s.checkAuthority(ctx, tx, m.Authority)
+	if err != nil {
 		return err
 	}
 	c := m.Connection
 	current, found, err := s.connection(ctx, tx, c.ID, true)
 	if err != nil {
+		return err
+	}
+	if err := authority.checkTime(m.Authority); err != nil {
 		return err
 	}
 	if m.ExpectedVersion == 0 {
@@ -111,6 +116,9 @@ func (s *sqlMCPStore) SaveMCPConnection(ctx context.Context, m MCPMutation) erro
 	if err := s.users.insertAudit(ctx, tx, audit); err != nil {
 		return mcpMutationError(err)
 	}
+	if err := authority.checkTime(m.Authority); err != nil {
+		return err
+	}
 	if err := tx.Commit(); err != nil {
 		return mcpMutationError(err)
 	}
@@ -160,24 +168,45 @@ func validateMCPAuthority(a mcpcmd.Authority) error {
 
 // Canonical user -> browser family is the same lock order as security writes.
 // This closes the gap between an HTTP guard and commit when access is revoked.
-func (s *sqlMCPStore) checkAuthority(ctx context.Context, tx *sql.Tx, a mcpcmd.Authority) error {
+func (s *sqlMCPStore) checkAuthority(ctx context.Context, tx *sql.Tx, a mcpcmd.Authority) (lockedMCPAuthority, error) {
 	profile, err := s.users.mfaAuthority(ctx, tx, a.UserID, a.UserVersion, a.CredentialVersion, a.MFAVersion)
 	if err != nil {
-		return mcpMutationError(err)
+		return lockedMCPAuthority{}, mcpMutationError(err)
 	}
 	family, err := s.users.liveMFASession(ctx, tx, a.SessionID, a.UserID, a.CredentialVersion, a.At)
 	if err != nil {
-		return mcpMutationError(err)
+		return lockedMCPAuthority{}, mcpMutationError(err)
 	}
 	if family.Assurance != usercmd.SessionAssuranceNormal {
-		return mcpcmd.ErrForbidden
+		return lockedMCPAuthority{}, mcpcmd.ErrForbidden
 	}
 	if family.Version != a.SessionVersion {
-		return mcpcmd.ErrConflict
+		return lockedMCPAuthority{}, mcpcmd.ErrConflict
 	}
-	if profile.Enabled && (family.MFAFactorID != profile.Credential.ID || family.WebAuthnVerifiedAt.IsZero() ||
-		a.At.Before(family.WebAuthnVerifiedAt) || !a.At.Before(family.WebAuthnVerifiedAt.Add(a.FreshProofAge))) {
-		return mcpcmd.ErrForbidden
+	if profile.Enabled && family.MFAFactorID != profile.Credential.ID {
+		return lockedMCPAuthority{}, mcpcmd.ErrForbidden
+	}
+	authority := lockedMCPAuthority{family: family, mfaEnabled: profile.Enabled}
+	return authority, authority.checkTime(a)
+}
+
+// The canonical user and family stay locked while target rows are acquired.
+// Recheck time after those waits without changing audit or metadata timestamps.
+type lockedMCPAuthority struct {
+	family     usercmd.SessionFamily
+	mfaEnabled bool
+}
+
+func (f lockedMCPAuthority) checkTime(a mcpcmd.Authority) error {
+	// Caller time remains a conservative guard, never an upper freshness bound.
+	for _, now := range []time.Time{time.Now(), a.At} {
+		if !now.Before(f.family.Access.ExpiresAt) || !now.Before(f.family.RefreshExpiresAt) {
+			return mcpcmd.ErrForbidden
+		}
+		if f.mfaEnabled && (f.family.WebAuthnVerifiedAt.IsZero() || now.Before(f.family.WebAuthnVerifiedAt) ||
+			!now.Before(f.family.WebAuthnVerifiedAt.Add(a.FreshProofAge))) {
+			return mcpcmd.ErrForbidden
+		}
 	}
 	return nil
 }

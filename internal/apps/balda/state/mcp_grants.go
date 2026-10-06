@@ -26,8 +26,10 @@ func (s *sqlMCPStore) SaveMCPGrant(ctx context.Context, m MCPGrantMutation) erro
 		return mcpStoreError("begin MCP grant mutation", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	var authority lockedMCPAuthority
 	if m.Authority != nil {
-		if err := s.checkAuthority(ctx, tx, *m.Authority); err != nil {
+		authority, err = s.checkAuthority(ctx, tx, *m.Authority)
+		if err != nil {
 			return err
 		}
 	}
@@ -74,6 +76,11 @@ func (s *sqlMCPStore) SaveMCPGrant(ctx context.Context, m MCPGrantMutation) erro
 	if payload == nil {
 		payload = []byte{}
 	}
+	if m.Authority != nil {
+		if err := authority.checkTime(*m.Authority); err != nil {
+			return err
+		}
+	}
 	if m.ExpectedGeneration == 0 {
 		_, err = tx.ExecContext(ctx, s.users.bind(`INSERT INTO balda_mcp_grants (`+mcpGrantColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`), g.ID, g.Binding.ConnectionID, g.Binding.Resource, g.Binding.Issuer, g.Binding.ClientID, g.Generation, g.Status, string(scopes), g.TokenEndpointAuthMethod, formatUserTime(g.ClientSecretExpiresAt), formatUserTime(g.AccessExpiresAt), payload, formatUserTime(g.CreatedAt), formatUserTime(g.UpdatedAt))
 	} else {
@@ -89,6 +96,11 @@ func (s *sqlMCPStore) SaveMCPGrant(ctx context.Context, m MCPGrantMutation) erro
 	}
 	if err := s.users.insertAudit(ctx, tx, audit); err != nil {
 		return mcpMutationError(err)
+	}
+	if m.Authority != nil {
+		if err := authority.checkTime(*m.Authority); err != nil {
+			return err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return mcpMutationError(err)
