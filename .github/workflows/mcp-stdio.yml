@@ -43,9 +43,9 @@ jobs:
       - name: Build packaged entrypoint
         run: go build ./cmd/balda
       - name: Native SQLite file path, escaping and reopen
-        run: go test -race -tags=integration,sqlite -count=1 ./internal/apps/balda/state -run '^TestSQLite(NativePathPersistence|ConnectionString)$'
+        run: go test -race -tags 'integration,sqlite' -count=1 ./internal/apps/balda/state -run '^TestSQLite(NativePathPersistence|ConnectionString)$'
       - name: Native durable MCP revision and worker grant contracts
-        run: go test -race -tags=integration,sqlite -count=1 ./internal/apps/balda/state -run '^TestSQLiteProviderContract/MCP'
+        run: go test -race -tags 'integration,sqlite' -count=1 ./internal/apps/balda/state -run '^TestSQLiteProviderContract/MCP'
       - name: Native cwd, literal argv, environment, EOF and forced termination
         run: go test -race -count=1 ./cmd/balda ./internal/apps/balda/mcpfx -run 'Test(PrivateStdio|StdioLaunch)'
       - name: Actual configured and managed hosted and ACP calls and owned process exit
