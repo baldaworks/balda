@@ -16,7 +16,9 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/commandfx"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpbridge"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpfx"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpruntime"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalog"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
@@ -27,9 +29,11 @@ import (
 
 const builtinRevisionSeed = "balda-builtin-commands-v1"
 const snapshotKeyPrefix = "runtime_catalog_snapshot:"
+const transportStreamableHTTP = "streamable-http"
 
 // Runtime owns compilation, retention, scope overlays, and projection fanout.
 type Runtime struct {
+	mutation      sync.Mutex
 	mu            sync.Mutex
 	stateDir      string
 	agentSkillDir string
@@ -40,6 +44,8 @@ type Runtime struct {
 	archive       *runtimecatalog.RevisionArchive
 	reader        *runtimecatalog.SkillReader
 	plugins       baldastate.PluginStore
+	managedMCP    baldastate.MCPStore
+	credentials   *mcpmanage.Service
 	sessions      baldastate.SessionStore
 	kv            baldastate.KVStore
 	builtin       runtimecatalogcmd.Source
@@ -58,6 +64,8 @@ func NewRuntime(
 	configured map[string]agentconfig.MCPServerConfig,
 	registry *mcpregistry.MapRegistry,
 	commands *commandcmd.Registry,
+	credentials *mcpmanage.Service,
+	bridge *mcpbridge.Bridge,
 ) (*Runtime, error) {
 	stateDir = strings.TrimSpace(stateDir)
 	if stateDir == "" || provider == nil || registry == nil || commands == nil {
@@ -77,8 +85,8 @@ func NewRuntime(
 	}
 	runtime := &Runtime{
 		stateDir: stateDir, agentSkillDir: strings.TrimSpace(agentSkillDir), codexSkillDir: strings.TrimSpace(codexSkillDir), compiler: runtimecatalog.NewCompiler(), store: runtimecatalog.NewStore(),
-		loader: loader, archive: archive, reader: reader, plugins: provider.Plugins(), sessions: provider.Sessions(), kv: provider.AppKV(),
-		builtin: builtinSource(advertisements), configuredMCP: configuredMCPSources(configured),
+		loader: loader, archive: archive, reader: reader, plugins: provider.Plugins(), managedMCP: provider.MCP(), sessions: provider.Sessions(), kv: provider.AppKV(),
+		builtin: builtinSource(advertisements), configuredMCP: configuredMCPSources(configured), credentials: credentials,
 	}
 	pluginResolver, err := mcpruntime.NewPluginResolver(archive, runtime, nil, mcpruntime.PluginPolicy{})
 	if err != nil {
@@ -88,9 +96,13 @@ func NewRuntime(
 	if err != nil {
 		return nil, err
 	}
+	managedResolver := &mcpfx.ManagedResolver{Store: provider.MCP(), Bridge: bridge}
+	if credentials != nil {
+		managedResolver.Values = credentials
+	}
 	runtime.mcp, err = mcpruntime.New(
-		mcpruntime.RoutedResolver{Configured: configuredMCPResolver(configured), Plugin: pluginResolver},
-		mcpfx.NewClientLauncher(), projector, mcpruntime.Limits{},
+		mcpruntime.RoutedResolver{Configured: configuredLaunchResolver{catalog: runtime, fallback: mcpfx.ConfiguredResolver{Static: mcpfx.BridgeResolver{Resolver: configuredMCPResolver(configured), Bridge: bridge}, Retained: managedResolver}}, Managed: managedResolver, Plugin: pluginResolver},
+		mcpfx.BridgeLauncher{Bridge: bridge, Launcher: mcpfx.NewClientLauncher()}, projector, mcpruntime.Limits{},
 	)
 	if err != nil {
 		return nil, err
@@ -129,7 +141,16 @@ func (r *Runtime) PreparePluginCandidate(ctx context.Context, plugins []runtimec
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	sources := []runtimecatalogcmd.Source{r.builtin}
-	sources = append(sources, r.configuredMCP...)
+	configured, err := r.currentConfiguredMCPSources(ctx)
+	if err != nil {
+		return runtimecatalogcmd.Snapshot{}, err
+	}
+	sources = append(sources, configured...)
+	managed, err := r.managedMCPSources(ctx)
+	if err != nil {
+		return runtimecatalogcmd.Snapshot{}, err
+	}
+	sources = append(sources, managed...)
 	skillRoots := []struct {
 		dir  string
 		name string
@@ -181,7 +202,7 @@ func (r *Runtime) PublishCandidate(ctx context.Context, snapshot runtimecatalogc
 			return err
 		}
 	}
-	return nil
+	return r.markMCPPublished(ctx, retained)
 }
 
 // ResolveEffectiveSnapshot pins command ingress to its trusted session scope.
@@ -244,7 +265,7 @@ func (r *Runtime) ReadSkill(ctx context.Context, request runtimecatalogcmd.Skill
 	return r.reader.ReadSkill(ctx, request)
 }
 
-// AcquireMCPServerIDs pins ready plugin MCP instances from one exact retained
+// AcquireMCPServerIDs pins ready MCP instances from one exact retained
 // snapshot for the lifetime of a provider session.
 func (r *Runtime) AcquireMCPServerIDs(ctx context.Context, snapshotID runtimecatalogcmd.SnapshotID) ([]string, func(), error) {
 	snapshot, err := r.retainedSnapshot(ctx, snapshotID)
@@ -253,9 +274,7 @@ func (r *Runtime) AcquireMCPServerIDs(ctx context.Context, snapshotID runtimecat
 	}
 	descriptors := make([]runtimecatalogcmd.MCPServerDescriptor, 0, len(snapshot.MCPServers))
 	for _, descriptor := range snapshot.MCPServers {
-		if descriptor.ID.Source.Kind == runtimecatalogcmd.SourceKindPlugin {
-			descriptors = append(descriptors, descriptor)
-		}
+		descriptors = append(descriptors, descriptor)
 	}
 	keys, release, err := r.mcp.AcquireDescriptors(ctx, descriptors)
 	if err != nil {
@@ -472,11 +491,11 @@ func configuredMCPSources(configs map[string]agentconfig.MCPServerConfig) []runt
 		revision := configuredMCPRevision(config)
 		transport := string(config.Type)
 		if transport == "http" {
-			transport = "streamable-http"
+			transport = transportStreamableHTTP
 		}
 		sources = append(sources, runtimecatalogcmd.Source{
 			Descriptor: runtimecatalogcmd.SourceDescriptor{ID: id, Revision: revision},
-			MCPServers: []runtimecatalogcmd.MCPServerDescriptor{{ID: runtimecatalogcmd.ContributionID{Source: id, Kind: runtimecatalogcmd.ContributionKindMCPServer, Name: name}, Revision: revision, Name: name, Transport: transport}},
+			MCPServers: []runtimecatalogcmd.MCPServerDescriptor{{ID: runtimecatalogcmd.ContributionID{Source: id, Kind: runtimecatalogcmd.ContributionKindMCPServer, Name: name}, Revision: revision, Name: name, Transport: transport, TargetingKnown: true}},
 		})
 	}
 	return sources
@@ -489,7 +508,7 @@ func configuredMCPResolver(configs map[string]agentconfig.MCPServerConfig) *mcpr
 		id := runtimecatalogcmd.ContributionID{Source: source, Kind: runtimecatalogcmd.ContributionKindMCPServer, Name: name}
 		transport := string(config.Type)
 		if transport == "http" {
-			transport = "streamable-http"
+			transport = transportStreamableHTTP
 		}
 		command := ""
 		args := append([]string(nil), config.Args...)
@@ -505,33 +524,12 @@ func configuredMCPResolver(configs map[string]agentconfig.MCPServerConfig) *mcpr
 }
 
 func configuredMCPRevision(config agentconfig.MCPServerConfig) runtimecatalogcmd.RevisionID {
-	envKeys := sortedKeys(config.Env)
-	headerKeys := sortedKeys(config.Headers)
-	value := struct {
-		Type       agentconfig.MCPServerType `json:"type"`
-		Cmd        []string                  `json:"cmd,omitempty"`
-		Args       []string                  `json:"args,omitempty"`
-		WorkingDir string                    `json:"working_dir,omitempty"`
-		URL        string                    `json:"url,omitempty"`
-		EnvKeys    []string                  `json:"env_keys,omitempty"`
-		HeaderKeys []string                  `json:"header_keys,omitempty"`
-	}{config.Type, config.Cmd, config.Args, config.WorkingDir, config.URL, envKeys, headerKeys}
-	data, _ := json.Marshal(value)
-	return hashValue(string(data))
+	return runtimecatalogcmd.RevisionID(mcpfx.ConfiguredRevision(config))
 }
 
 func hashValue(value string) runtimecatalogcmd.RevisionID {
 	digest := sha256.Sum256([]byte(value))
 	return runtimecatalogcmd.RevisionID(hex.EncodeToString(digest[:]))
-}
-
-func sortedKeys(values map[string]string) []string {
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 func workspaceScopeName(workspace string) string { return string(hashValue(filepath.Clean(workspace))) }

@@ -33,6 +33,10 @@ processes, share the file across hosts, or place it on a network filesystem.
 It uses foreign keys, WAL where available, an immediate transaction lock for
 writes, a bounded busy timeout, and one pooled connection.
 
+Native absolute paths are supported on Linux, macOS and Windows, including
+filenames containing spaces, `#` or `%`. Balda escapes the path as a local SQLite
+file URI; do not pre-encode it in configuration.
+
 ## PostgreSQL
 
 Provision a dedicated database and login externally, then configure:
@@ -109,6 +113,14 @@ verify Backoffice health and bot ingress. `balda start` applies schema
 migrations and checks canonical users before listeners become ready. Schema
 recovery is forward migration or backup restore, not automatic migration
 downgrade.
+
+Back up the deployment MCP credential key securely alongside the database if
+protected MCP values or worker grants are stored. Restore the matching
+`balda.mcp_management.credential_key` (or
+`BALDA_MCP_MANAGEMENT_CREDENTIAL_KEY`) before starting the restored deployment.
+The database alone cannot decrypt that data. Retained session revisions need
+the same key even after a connection is edited or deleted. See
+[MCP credential configuration](configuration.md#protected-values-and-worker-grants).
 
 Changing `type` does **not** copy data between engines. An empty PostgreSQL
 database starts empty: existing users do not appear there automatically.

@@ -5,6 +5,9 @@ const path = require('node:path');
 const { chromium } = require('playwright');
 
 const routes = [
+ 'mcp-oauth-return',
+ 'mcp-authorizing', 'mcp-device-issued', 'mcp-device-pending', 'mcp-device-authorized', 'mcp-device-denied', 'mcp-device-expired', 'mcp-device-failed', 'mcp-authorization-unavailable', 'mcp-authorization-retry',
+  'mcp-retained', 'mcp', 'mcp-empty', 'mcp/new', 'mcp/connections/qa-worker', 'mcp/connections/config:qa-worker', 'mcp-probe', 'mcp-invalid', 'mcp-conflict', 'mcp-unavailable',
   '', 'style-guide', 'layout', 'layout-long', 'login', 'login-error', 'refresh', 'refresh-error', 'refresh-conflict',
   'password', 'password-error', 'overview', 'overview-empty', 'access-list',
   'access-create', 'access-empty', 'access-error', 'access', 'access-primary',
@@ -14,6 +17,7 @@ const routes = [
   'form-bad-request', 'form-forbidden', 'form-conflict', 'form-server-error',
 ];
 const expectedStatus = new Map([
+ ['mcp-authorization-unavailable',503], ['mcp-invalid',400],['mcp-conflict',409],['mcp-unavailable',503],
   ['form-bad-request', 400], ['form-forbidden', 403],
   ['form-conflict', 409], ['form-server-error', 500],
 ]);
@@ -105,12 +109,12 @@ async function checkPage(browser, baseURL, viewport) {
     assert.deepEqual(errors, [], `${route} script errors at ${viewport.width}px`);
     if (process.env.BACKOFFICE_E2E_SCREENSHOTS) {
       fs.mkdirSync(process.env.BACKOFFICE_E2E_SCREENSHOTS, { recursive: true });
-      await page.screenshot({ path: path.join(process.env.BACKOFFICE_E2E_SCREENSHOTS, `${route || 'gallery'}-${viewport.width}.png`), fullPage: true });
+      await page.screenshot({ path: path.join(process.env.BACKOFFICE_E2E_SCREENSHOTS, `${(route || 'gallery').replaceAll('/', '-')}-${viewport.width}.png`), fullPage: true });
     }
   }
 
   const nativeLayouts = new Map();
-  const destinations = ['Overview', 'Account', 'Access', 'Audit'];
+  const destinations = ['Overview', 'Account', 'Access', 'MCP', 'Audit'];
   async function layout() {
     return page.locator('main#main-content').evaluate(element => {
       const bounds = element.querySelector('.container-fluid').getBoundingClientRect();

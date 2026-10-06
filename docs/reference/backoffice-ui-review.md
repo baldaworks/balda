@@ -149,3 +149,52 @@ A stale sensitive POST returns 403 with a confirmation link. Verification must
 not replay the POST. A lost key shows the offline recovery route; password reset
 alone must not remove the factor. The default IP-origin Account screen explains
 why enrollment is unavailable while password-only use continues.
+
+## MCP inventory and editors
+
+The gallery includes `mcp`, `mcp-empty`, `mcp/new`,
+`mcp/connections/qa-worker`, `mcp/connections/config:qa-worker`, `mcp-probe`,
+`mcp-invalid`, `mcp-conflict`, `mcp-retained` and `mcp-unavailable`. These cover the inventory,
+all runtime states, separate grant/recovery labels, native editors, write-only
+binding controls, read-only configuration, candidate probing and actual error
+statuses. Fixtures contain only synthetic identifiers and blank replacement
+inputs. Preview forms cannot mutate application state.
+
+Run the durable host integration browser gate with the same Playwright tools:
+
+```bash
+BALDA_BACKOFFICE_BROWSER_TEST=1 go test -race ./internal/apps/balda -run TestBackofficeMCPBrowserWorkflow -count=1 -v
+```
+
+It starts the actual Backoffice runtime and security stack, the dedicated MCP
+adapter, catalog, temporary SQLite and a loopback MCP SDK server. Ordinary
+administrator/operator login verifies native and HTMX CRUD, protected value
+retention, candidate probing without persistence, version conflicts, configured
+read-only behavior, actual Back/Forward with write-only input checks, history restoration and logout at desktop and mobile, with
+and without JavaScript. The native no-script forms also exercise keyboard
+activation. It checks the resulting durable revisions and
+tombstones. It does not use an authentication bypass or deployment credentials.
+
+
+The MCP gallery also covers native callback continuation, pending browser
+authorization, one-time device
+instructions, safe device status, authorized/denied/expired/failed outcomes,
+unsupported authorization and saved-grant attachment retry. Instructions contain
+invalid synthetic values only. Review the native forms, cancellation and separate
+authorization/readiness labels at all four widths.
+
+Run the native worker OAuth integration gate:
+
+```bash
+BALDA_BACKOFFICE_BROWSER_TEST=1 go test -race ./internal/apps/balda -run '^TestBackofficeMCPOAuthBrowserWorkflow$' -count=1 -v
+```
+
+It uses ordinary login, the real host owners and temporary SQLite with controlled
+OAuth and HTTP/SSE MCP servers on a different browser site from Backoffice. The
+matrix covers browser/device flows, the native callback continuation with Strict
+session cookies, root and
+`/balda`, desktop/mobile and JavaScript enabled/disabled, denial/cancellation,
+saved-grant attachment retry, changed-file recapture and actual hosted/ACP tool
+execution. Its private protocol inputs are excluded from diagnostics; no real
+administrator, deployment or transport credentials are used. Synthetic gallery
+results remain separate from this authenticated runtime evidence.

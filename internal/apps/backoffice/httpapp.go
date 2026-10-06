@@ -13,6 +13,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/backoffice/audit"
 	"github.com/baldaworks/balda/internal/apps/backoffice/internal/webui"
 	"github.com/baldaworks/balda/internal/apps/backoffice/security"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/users"
 )
@@ -21,17 +22,19 @@ const checkedFormValue = "yes"
 const sessionPageSize = 20
 
 type httpApp struct {
-	renderer        *webui.Renderer
-	browser         *security.Browser
-	security        *security.Service
-	access          *access.Service
-	auditLog        *audit.Service
-	cards           []webui.CapabilityCard
-	bindingChoices  []string
-	invitations     BindingInvitations
-	bindingChannels BindingChannels
-	qa              bool
-	basePath        string
+	renderer          *webui.Renderer
+	browser           *security.Browser
+	security          *security.Service
+	access            *access.Service
+	auditLog          *audit.Service
+	cards             []webui.CapabilityCard
+	bindingChoices    []string
+	invitations       BindingInvitations
+	bindingChannels   BindingChannels
+	mcp               MCPOperations
+	mcpAuthorizations MCPAuthorizations
+	qa                bool
+	basePath          string
 }
 
 func newHTTPApp(store usercmd.Store, config ResolvedConfig) (*httpApp, error) {
@@ -99,6 +102,14 @@ func (a *httpApp) handler() (http.Handler, error) {
 	mux.Handle("GET "+a.path("/overview"), a.browser.Authenticate(a.browser.RequireNormal(http.HandlerFunc(a.overview))))
 	mux.Handle("GET "+a.path("/account"), a.browser.Authenticate(a.browser.RequireNormal(http.HandlerFunc(a.account))))
 	mux.HandleFunc("POST "+a.path("/account/sessions/{session_id}/revoke"), a.browser.RevokeSession)
+	for _, route := range []string{"/mcp", "/mcp/new", "/mcp/connections/{connection_id}"} {
+		mux.Handle("GET "+a.path(route), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.mcpPage))))
+	}
+	mux.HandleFunc("POST "+a.path("/mcp/connections"), a.mcpCreate)
+	mux.HandleFunc("POST "+a.path("/mcp/connections/{connection_id}"), a.mcpUpdate)
+	mux.HandleFunc("POST "+a.path("/mcp/connections/{connection_id}/selection"), a.mcpSelection)
+	mux.HandleFunc("POST "+a.path("/mcp/connections/{connection_id}/delete"), a.mcpDelete)
+	a.mcpAuthorizationRoutes(mux)
 	mux.Handle("GET "+a.path("/audit"), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.audit))))
 	mux.Handle("GET "+a.path("/access"), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.accessList))))
 	mux.Handle("GET "+a.path("/access/new"), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.accessCreatePage))))
@@ -534,6 +545,10 @@ func parseFormVersion(raw string) (uint64, error) {
 }
 
 func (a *httpApp) renderStepUpRequired(w http.ResponseWriter, r *http.Request) {
+	if r.Context().Value(mcpCallbackKey{}) == true {
+		a.mcpCallbackResult(w, r, mcpcmd.Item{}, mcpcmd.ErrForbidden)
+		return
+	}
 	a.render(w, r, http.StatusForbidden, webui.TemplateError, webui.Page{
 		Title: "Verification required · Balda", StepUpURL: a.path("/auth/step-up"),
 		Error: &webui.ErrorView{Heading: "Confirm your passkey", Message: "This change was not applied. Confirm your passkey, then return and submit it again."},
@@ -541,6 +556,10 @@ func (a *httpApp) renderStepUpRequired(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *httpApp) renderSecurityError(w http.ResponseWriter, r *http.Request, status int) {
+	if r.Context().Value(mcpCallbackKey{}) == true {
+		a.mcpCallbackResult(w, r, mcpcmd.Item{}, mcpcmd.ErrForbidden)
+		return
+	}
 	message := "The request could not be completed."
 	if status == http.StatusServiceUnavailable {
 		message = "Passkey verification is unavailable. Use a supported browser at the configured HTTPS domain or localhost. If the key was lost or the domain changed, ask the host administrator to run the confirmed offline 2FA recovery command, then register a new key."

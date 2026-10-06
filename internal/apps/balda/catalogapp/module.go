@@ -14,23 +14,28 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/commandfx"
 	"github.com/baldaworks/balda/internal/apps/balda/ingressapp"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpbridge"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpruntime"
 	"github.com/baldaworks/balda/internal/apps/balda/pluginapp"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalog"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionturn"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/normahq/runtime/v2/agentconfig"
 	runtimeconfig "github.com/normahq/runtime/v2/appconfig"
 	"github.com/normahq/runtime/v2/mcpregistry"
 	"go.uber.org/fx"
 )
 
 type sessionCapabilityBinder struct {
-	catalog *Runtime
-	skills  *baldaagent.SkillManager
+	catalog   *Runtime
+	skills    *baldaagent.SkillManager
+	providers map[string]agentconfig.Config
+	extra     []string
 }
 
-func (b *sessionCapabilityBinder) BindSessionCapabilities(ctx context.Context, request baldaagent.SessionRuntimeRequest) (baldaagent.SessionCapabilityBinding, error) {
+func (b *sessionCapabilityBinder) BindSessionCapabilities(ctx context.Context, providerID string, request baldaagent.SessionRuntimeRequest) (baldaagent.SessionCapabilityBinding, error) {
 	if b == nil || b.catalog == nil || b.skills == nil {
 		return baldaagent.SessionCapabilityBinding{}, fmt.Errorf("session capability binder is unavailable")
 	}
@@ -54,15 +59,28 @@ func (b *sessionCapabilityBinder) BindSessionCapabilities(ctx context.Context, r
 	if err != nil {
 		return baldaagent.SessionCapabilityBinding{}, err
 	}
-	ids, release, err := b.catalog.AcquireMCPServerIDs(ctx, snapshot.ID)
+	var ids []string
+	var selections map[string][]string
+	var release func()
+	if len(b.providers) == 0 && len(snapshot.MCPServers) == 0 {
+		ids, release, err = b.catalog.AcquireMCPServerIDs(ctx, snapshot.ID)
+	} else {
+		var defaults map[string][]string
+		defaults, err = providerMCPDefaults(b.providers, providerID, b.extra)
+		if err == nil {
+			selections, release, err = b.catalog.AcquireProviderMCPServerIDs(ctx, snapshot.ID, defaults)
+			ids = selections[providerID]
+		}
+	}
 	if err != nil {
 		return baldaagent.SessionCapabilityBinding{}, err
 	}
 	var once sync.Once
 	return baldaagent.SessionCapabilityBinding{
-		SnapshotID:   snapshot.ID,
-		Skills:       projection,
-		MCPServerIDs: ids,
+		SnapshotID:           snapshot.ID,
+		Skills:               projection,
+		MCPServerIDs:         ids,
+		ProviderMCPServerIDs: selections,
 		Close: func() error {
 			once.Do(func() {
 				if release != nil {
@@ -85,6 +103,10 @@ type runtimeParams struct {
 	Norma          runtimeconfig.RuntimeConfig
 	Registry       *mcpregistry.MapRegistry
 	Commands       *commandcmd.Registry
+	Credentials    *mcpmanage.Service
+	Bridge         *mcpbridge.Bridge
+	ProviderID     string   `name:"balda_provider"`
+	MCPServerIDs   []string `name:"balda_mcp_servers"`
 }
 
 type agentSkillDir string
@@ -128,7 +150,14 @@ func provideCodexSkillDir() codexSkillDir {
 }
 
 func newRuntime(params runtimeParams) (*Runtime, error) {
-	return NewRuntime(params.StateDir, string(params.AgentSkillDir), string(params.CodexSkillDir), params.Provider, params.Advertisements, params.Norma.MCPServers, params.Registry, params.Commands)
+	runtime, err := NewRuntime(params.StateDir, string(params.AgentSkillDir), string(params.CodexSkillDir), params.Provider, params.Advertisements, params.Norma.MCPServers, params.Registry, params.Commands, params.Credentials, params.Bridge)
+	if err != nil {
+		return nil, err
+	}
+	if err := runtime.configureProviderMCP(params.Norma.Providers, params.ProviderID, params.MCPServerIDs); err != nil {
+		return nil, err
+	}
+	return runtime, nil
 }
 
 // Lifecycle reconstructs durable catalog state before dependent ingress.
@@ -173,9 +202,9 @@ var Module = fx.Module("balda_runtime_catalog",
 		func(catalog baldaagent.SkillCatalog, reader baldaagent.SkillContentReader) (*baldaagent.SkillManager, error) {
 			return baldaagent.NewSkillManager(catalog, reader, baldaagent.SkillMetadataBudget{})
 		},
-		fx.Annotate(func(runtime *Runtime, manager *baldaagent.SkillManager) baldaagent.SessionCapabilityBinder {
-			return &sessionCapabilityBinder{catalog: runtime, skills: manager}
-		}),
+		fx.Annotate(func(runtime *Runtime, manager *baldaagent.SkillManager, config runtimeconfig.RuntimeConfig, extra []string) baldaagent.SessionCapabilityBinder {
+			return &sessionCapabilityBinder{catalog: runtime, skills: manager, providers: config.Providers, extra: append([]string(nil), extra...)}
+		}, fx.ParamTags("", "", "", `name:"balda_mcp_servers"`)),
 		fx.Annotate(func(manager *baldaagent.SkillManager) sessionturn.SkillLoader { return manager }),
 		fx.Annotate(func(manager *baldaagent.SkillManager) chatapp.SkillPinner { return manager }),
 		fx.Annotate(func(manager *baldaagent.SkillManager) ingressapp.SkillPinner { return manager }),

@@ -45,8 +45,14 @@ type BaldaConfig struct {
 	Scheduler           SchedulerConfig           `mapstructure:"scheduler"`
 	Workspace           WorkspaceConfig           `mapstructure:"workspace"`
 	MCPServers          []string                  `mapstructure:"mcp_servers"`
+	MCPManagement       MCPManagementConfig       `mapstructure:"mcp_management"`
 	GlobalInstruction   string                    `mapstructure:"global_instruction"`
 	SessionInstructions SessionInstructionsConfig `mapstructure:"session_instructions"`
+}
+
+// MCPManagementConfig supplies the deployment-owned worker credential key.
+type MCPManagementConfig struct {
+	CredentialKey string `mapstructure:"credential_key" json:"-"`
 }
 
 // SessionInstructionsConfig controls trusted host instruction contributions.

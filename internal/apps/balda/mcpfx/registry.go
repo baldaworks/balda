@@ -29,6 +29,14 @@ func NewRegistryProjector(registry mcpregistry.Registry) (*RegistryProjector, er
 
 // Project registers a revision-qualified config for new runtimes.
 func (p *RegistryProjector) Project(_ context.Context, key mcpruntime.InstanceKey, config mcpruntime.LaunchConfig) (runtimecatalogcmd.MCPProjectionOutcome, error) {
+	if config.Transport == transportStdio && config.WorkingDir != "" &&
+		(key.Source.Kind == runtimecatalogcmd.SourceKindConfiguredMCP || key.Source.Kind == runtimecatalogcmd.SourceKindManagedMCP) {
+		var err error
+		config, err = stdioProviderLaunch(config)
+		if err != nil {
+			return runtimecatalogcmd.MCPProjectionUnsupported, err
+		}
+	}
 	providerConfig, err := providerConfig(config)
 	if err != nil {
 		return runtimecatalogcmd.MCPProjectionUnsupported, err
@@ -57,14 +65,20 @@ func RegistryID(key mcpruntime.InstanceKey) string {
 }
 
 func providerConfig(config mcpruntime.LaunchConfig) (agentconfig.MCPServerConfig, error) {
+	// The current provider DTO cannot carry a redirect policy. Until provider
+	// execution supplies an equivalent protected transport, fail explicitly
+	// instead of projecting credentials while discarding their origin boundary.
+	if config.EnforceHTTPOrigin {
+		return agentconfig.MCPServerConfig{}, errors.New("provider MCP credential origin policy is unsupported")
+	}
 	switch config.Transport {
-	case "stdio":
+	case transportStdio:
 		return agentconfig.MCPServerConfig{
 			Type: agentconfig.MCPServerTypeStdio,
 			Cmd:  []string{config.Command}, Args: append([]string(nil), config.Args...),
 			Env: cloneMap(config.Env), WorkingDir: config.WorkingDir,
 		}, nil
-	case "streamable-http":
+	case transportStreamableHTTP:
 		return agentconfig.MCPServerConfig{Type: agentconfig.MCPServerTypeHTTP, URL: config.URL, Headers: cloneMap(config.Headers)}, nil
 	case "sse":
 		return agentconfig.MCPServerConfig{Type: agentconfig.MCPServerTypeSSE, URL: config.URL, Headers: cloneMap(config.Headers)}, nil

@@ -78,7 +78,10 @@ func TestApplicationLifecycleStagesStartQuestionProjectorAfterTransport(t *testi
 	want := []string{
 		"user readiness",
 		"bundled MCP",
+		"managed MCP credential readiness",
+		"MCP credential bridge",
 		"runtime contribution catalog",
+		"MCP authorization attempts",
 		"session-memory runtime",
 		"provider runtime",
 		"session manager",

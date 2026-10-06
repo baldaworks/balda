@@ -130,3 +130,28 @@ neutral MCP adapter returns bounded untrusted references.
 - Startup or transport lifecycle changes.
 - Changes to retries, dedupe, or DLQ semantics.
 - New ingress or actor execution paths.
+
+Backoffice MCP pages consume local `MCPOperations` and `MCPAuthorizations` ports. The dedicated
+`mcpbackofficeapp` composition adapter connects it to `mcpmanage` definition,
+credential and durable authority policy and `catalogapp` current recovery and
+readiness reads. HTML projections depend only on `mcpcmd` contracts; the
+Backoffice application does not import either host policy owner. Runtime
+failure evidence remains in `mcpruntime`, while recovery classification remains
+in the catalog owner. Browser input does not supply configuration captures or
+worker authorization evidence.
+
+Native worker OAuth stays in the same owners: `mcpmanage.Authorizations` keeps
+bounded transient attempts and composes grant installation with exact revision
+binding outside protocol locks; `state` fences the initiating revision with
+current authority and grant generation in its existing transaction. The
+Backoffice adapter starts through trusted `Definitions.PrepareAuthorization` and
+projects stored authorization separately from catalog readiness. The browser
+handles native redirects and one-time device instructions, with no persistent
+attempt recovery or Backoffice-owned completion policy.
+
+`mcpbridge` owns private HTTP/SSE credential forwarding for header-bearing and
+OAuth connections; hosted and ACP execution share the same captured catalog
+binding. ACP projections expose only the local endpoint and capability.
+Deployment-key validation includes retained revisions and grants before provider
+startup. `state` owns native SQLite file URI normalization and durable reopen;
+the existing native platform workflow exercises real files and MCP contracts.

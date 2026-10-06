@@ -16,11 +16,14 @@ import (
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	"github.com/baldaworks/balda/internal/apps/balda/internalmcp"
 	baldajobs "github.com/baldaworks/balda/internal/apps/balda/jobs"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpbridge"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
 	"github.com/baldaworks/balda/internal/apps/balda/scheduledjobs"
 	"github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
 	"github.com/baldaworks/balda/internal/apps/balda/shutdown"
+	"github.com/baldaworks/balda/internal/apps/balda/state"
 	portableapp "github.com/baldaworks/balda/sessionmemory/app"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/runtime"
@@ -142,7 +145,12 @@ type applicationLifecycleParams struct {
 	Logger               zerolog.Logger
 	Backoffice           *backoffice.Runtime
 	MCP                  *internalmcp.InternalMCPManager
+	MCPManagement        *mcpmanage.Service
+	MCPBridge            *mcpbridge.Bridge
+	MCPAuthorizations    *mcpmanage.Authorizations
+	StateProvider        state.Provider
 	Catalog              *catalogapp.Lifecycle
+	CatalogRuntime       *catalogapp.Runtime
 	Runtime              *baldaagent.RuntimeManager
 	Sessions             *session.Manager
 	Bus                  *natsbus.Bus
@@ -175,13 +183,25 @@ func applicationLifecycleStages(p applicationLifecycleParams, telegram *telegram
 	stages := []lifecycleStage{
 		{name: "user readiness", start: p.Backoffice.ValidateReady},
 		{name: "bundled MCP", start: p.MCP.EnsureStarted, stop: p.MCP.Stop},
+		{name: "managed MCP credential readiness", start: func(ctx context.Context) error {
+			return p.MCPManagement.ValidateCredentials(ctx, p.StateProvider.MCP())
+		}},
+		{name: "MCP credential bridge", start: p.MCPBridge.Start, stop: p.MCPBridge.Close},
 		{name: "runtime contribution catalog", start: p.Catalog.Start, stop: p.Catalog.Stop},
+		{name: "MCP authorization attempts", stop: func(context.Context) error { p.MCPAuthorizations.Close(); return nil }},
 		{name: "session-memory runtime", start: func(ctx context.Context) error {
 			return startSessionMemoryRuntime(ctx, p.SessionMemoryRuntime)
 		}, stop: func(ctx context.Context) error {
 			return closeSessionMemoryRuntime(ctx, p.SessionMemoryRuntime)
 		}},
-		{name: "provider runtime", start: p.Runtime.EnsureRuntime, stop: p.Runtime.Stop},
+		{name: "provider runtime", start: func(ctx context.Context) error {
+			err := p.Runtime.EnsureRuntime(ctx)
+			if err != nil && p.CatalogRuntime.MCPAuthorizationPending(ctx, err) {
+				p.Logger.Warn().Msg("provider unavailable until MCP worker authorization completes")
+				return nil
+			}
+			return err
+		}, stop: p.Runtime.Stop},
 		{name: "session manager", start: p.Sessions.Start, stop: p.Sessions.Stop},
 		{name: "durable transport", start: p.Bus.Start, stop: p.Bus.Drain},
 		{name: "session-memory ingress outbox", start: p.SessionMemoryIngress.Start, stop: p.SessionMemoryIngress.Stop},

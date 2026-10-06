@@ -48,6 +48,7 @@ const (
 
 type Builder struct {
 	factory                  runtimeFactory
+	scopedFactory            ScopedRuntimeFactory
 	dedicatedFactory         dedicatedRuntimeFactory
 	normaCfg                 runtimeconfig.RuntimeConfig
 	workingDir               string
@@ -197,6 +198,7 @@ type BuilderParams struct {
 	fx.In
 
 	Factory                  *agentfactory.Factory
+	ScopedFactory            ScopedRuntimeFactory `optional:"true"`
 	NormaCfg                 runtimeconfig.RuntimeConfig
 	WorkingDir               string
 	WorkspaceEnabled         bool               `name:"balda_workspace_enabled"`
@@ -219,6 +221,7 @@ func NewBuilder(params BuilderParams) *Builder {
 	}
 	return &Builder{
 		factory:                  factory,
+		scopedFactory:            params.ScopedFactory,
 		dedicatedFactory:         dedicatedFactory,
 		normaCfg:                 params.NormaCfg,
 		workingDir:               strings.TrimSpace(params.WorkingDir),

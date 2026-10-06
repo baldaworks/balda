@@ -331,6 +331,8 @@ balda:
   # Effective MCP IDs are: bundled default `balda` + agent mcp_servers + balda.mcp_servers.
   # Use the built-in `balda` server ID for Balda workspace/state tools.
   mcp_servers: []
+  mcp_management:
+    credential_key: ""
 
   # Optional balda-wide global instruction applied to all sessions.
   # Applied before runtime.providers.<provider_id>.system_instructions when both are set.

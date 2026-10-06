@@ -3,20 +3,106 @@ package mcpruntime
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 )
 
 type fakeLaunchResolver struct {
-	fail map[InstanceKey]bool
+	fail   map[InstanceKey]bool
+	causes map[InstanceKey]error
 }
 
 func (r fakeLaunchResolver) ResolveLaunch(_ context.Context, descriptor runtimecatalogcmd.MCPServerDescriptor) (LaunchConfig, error) {
+	if err := r.causes[keyFromDescriptor(descriptor)]; err != nil {
+		return LaunchConfig{}, err
+	}
 	if r.fail[keyFromDescriptor(descriptor)] {
 		return LaunchConfig{}, errors.New("secret value must not escape")
 	}
 	return LaunchConfig{Transport: descriptor.Transport, Command: "server"}, nil
+}
+
+func TestAcquireDescriptorsReportsEveryExactBlocker(t *testing.T) {
+	for _, reversed := range []bool{false, true} {
+		t.Run(fmt.Sprint(reversed), func(t *testing.T) {
+			auth, fatal := mcpDescriptor("auth"), mcpDescriptor("fatal")
+			descriptors := []runtimecatalogcmd.MCPServerDescriptor{auth, fatal}
+			if reversed {
+				descriptors[0], descriptors[1] = descriptors[1], descriptors[0]
+			}
+			launcher := &fakeLauncher{instances: make(map[InstanceKey]*fakeInstance)}
+			projector := &fakeProjector{outcome: runtimecatalogcmd.MCPProjectionApplied, set: make(map[InstanceKey]int), removed: make(map[InstanceKey]int)}
+			r, err := New(fakeLaunchResolver{causes: map[InstanceKey]error{
+				keyFromDescriptor(auth):  &LaunchError{Reason: FailureAuthorizationRequired},
+				keyFromDescriptor(fatal): errors.New("private transport detail"),
+			}}, launcher, projector, Limits{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, release, err := r.AcquireDescriptors(t.Context(), descriptors)
+			if release != nil || err == nil {
+				t.Fatalf("AcquireDescriptors lease/error = %t, %v; want no lease and both blockers", release != nil, err)
+			}
+			joined, ok := err.(interface{ Unwrap() []error })
+			if !ok || len(joined.Unwrap()) != 2 {
+				t.Fatalf("blockers = %v, want both exact failures", err)
+			}
+			for i, child := range joined.Unwrap() {
+				failure, ok := child.(*AttachmentError)
+				if !ok || failure.Key != keyFromDescriptor(descriptors[i]) {
+					t.Fatalf("failure = %v, want exact descriptor identity", child)
+				}
+				want := FailureUnavailable
+				if failure.Key == keyFromDescriptor(auth) {
+					want = FailureAuthorizationRequired
+				}
+				if failure.Reason != want {
+					t.Errorf("reason = %s, want %s", failure.Reason, want)
+				}
+			}
+			if strings.Contains(err.Error(), "private transport detail") {
+				t.Fatalf("raw resolver detail escaped: %v", err)
+			}
+		})
+	}
+}
+
+func TestRetryPreservesReadyLeaseAndRetriesExactFailure(t *testing.T) {
+	ready, blocked := mcpDescriptor("ready"), mcpDescriptor("blocked")
+	blocked.Name, blocked.ID.Name = "blocked", "blocked"
+	readyKey, blockedKey := keyFromDescriptor(ready), keyFromDescriptor(blocked)
+	causes := map[InstanceKey]error{blockedKey: &LaunchError{Reason: FailureAuthorizationRequired}}
+	launcher := &fakeLauncher{instances: make(map[InstanceKey]*fakeInstance)}
+	projector := &fakeProjector{outcome: runtimecatalogcmd.MCPProjectionApplied, set: make(map[InstanceKey]int), removed: make(map[InstanceKey]int)}
+	r, err := New(fakeLaunchResolver{causes: causes}, launcher, projector, Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := mcpSnapshot("immutable-snapshot", ready, blocked)
+	r.Reconcile(t.Context(), snapshot)
+	_, release, err := r.Acquire([]InstanceKey{readyKey})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	retained := launcher.instances[readyKey]
+	causes[blockedKey] = errors.New("saved grant, remote still unavailable")
+	if err := r.Retry(t.Context(), []InstanceKey{blockedKey}); err == nil {
+		t.Fatal("failed retry reported ready")
+	}
+	delete(causes, blockedKey)
+	if err := r.Retry(t.Context(), []InstanceKey{readyKey, blockedKey}); err != nil {
+		t.Fatalf("exact authorization retry: %v", err)
+	}
+	if !r.MCPServerReady(blockedKey.Source, blockedKey.Revision, blockedKey.Name) {
+		t.Fatal("saved grant did not enable exact failed attachment")
+	}
+	if launcher.instances[readyKey] != retained || retained.closed != 0 || projector.set[readyKey] != 1 || snapshot.ID != "immutable-snapshot" {
+		t.Fatal("retry replaced ready lease/projection or immutable snapshot")
+	}
 }
 
 type fakeInstance struct {

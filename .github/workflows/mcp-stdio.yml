@@ -1,0 +1,52 @@
+name: MCP native execution and persistence
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/mcp-stdio.yml'
+      - 'cmd/balda/**'
+      - 'internal/apps/balda/mcpfx/**'
+      - 'internal/apps/balda/state/**'
+      - 'internal/apps/balda/catalogapp/stdio_execution_test.go'
+      - 'internal/apps/balda/catalogapp/stdio_process_*_test.go'
+      - 'internal/apps/balda/catalogapp/provider_execution_test.go'
+      - 'internal/apps/balda/catalogapp/acp_execution_test.go'
+      - 'go.mod'
+      - 'go.sum'
+  pull_request:
+    paths:
+      - '.github/workflows/mcp-stdio.yml'
+      - 'cmd/balda/**'
+      - 'internal/apps/balda/mcpfx/**'
+      - 'internal/apps/balda/state/**'
+      - 'internal/apps/balda/catalogapp/stdio_execution_test.go'
+      - 'internal/apps/balda/catalogapp/stdio_process_*_test.go'
+      - 'internal/apps/balda/catalogapp/provider_execution_test.go'
+      - 'internal/apps/balda/catalogapp/acp_execution_test.go'
+      - 'go.mod'
+      - 'go.sum'
+permissions:
+  contents: read
+jobs:
+  native-launch:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Build packaged entrypoint
+        run: go build ./cmd/balda
+      - name: Native SQLite file path, escaping and reopen
+        run: go test -race -tags 'integration,sqlite' -count=1 ./internal/apps/balda/state -run '^TestSQLite(NativePathPersistence|ConnectionString)$'
+      - name: Native durable MCP revision and worker grant contracts
+        run: go test -race -tags 'integration,sqlite' -count=1 ./internal/apps/balda/state -run '^TestSQLiteProviderContract/MCP'
+      - name: Native cwd, literal argv, environment, EOF and forced termination
+        run: go test -race -count=1 ./cmd/balda ./internal/apps/balda/mcpfx -run 'Test(PrivateStdio|StdioLaunch)'
+      - name: Actual configured and managed hosted and ACP calls and owned process exit
+        run: go test -race -count=1 ./internal/apps/balda/catalogapp -run '^TestStdio(DiscoveryAndActualProvidersUseHostEnvironmentAndOverlay|ActualACPParentTerminationReleasesChildren)$'

@@ -40,6 +40,10 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/internalmcp"
 	"github.com/baldaworks/balda/internal/apps/balda/jobexec"
 	baldajobs "github.com/baldaworks/balda/internal/apps/balda/jobs"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpbackofficeapp"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpbridge"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpfx"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
 	"github.com/baldaworks/balda/internal/apps/balda/memory"
 	"github.com/baldaworks/balda/internal/apps/balda/paths"
 	"github.com/baldaworks/balda/internal/apps/balda/permissions"
@@ -273,6 +277,35 @@ func Module(
 			permissionConfig,
 		),
 		fx.Provide(
+			func() (*mcpmanage.Service, error) { return mcpmanage.New(cfg.Balda.MCPManagement.CredentialKey) },
+			func(credentials *mcpmanage.Service, provider baldastate.Provider) (*mcpmanage.Grants, error) {
+				return mcpmanage.NewGrants(credentials, mcpfx.NewGrantStore(provider.MCP()), mcpfx.NewOAuthProvider(nil))
+			},
+			func(grants *mcpmanage.Grants) *mcpbridge.Bridge {
+				return mcpbridge.New(mcpfx.GrantCredentials{Grants: grants}, nil)
+			},
+			func(grants *mcpmanage.Grants, definitions *mcpmanage.Definitions) (*mcpmanage.Authorizations, error) {
+				callback, err := mcpfx.MCPCallbackURL(backofficeConfig.Server.PublicURL, backofficeConfig.Server.BasePath)
+				if err != nil {
+					return nil, err
+				}
+				return mcpmanage.NewAuthorizations(grants, callback, definitions)
+			},
+			func(credentials *mcpmanage.Service, provider baldastate.Provider, catalog *catalogapp.Runtime, bridge *mcpbridge.Bridge) (*mcpmanage.Definitions, error) {
+				probe, err := mcpfx.NewManagedProbe(credentials, mcpfx.NewClientLauncher(), bridge)
+				if err != nil {
+					return nil, err
+				}
+				configured := mcpfx.NewConfiguredDefinitions(normaCfg.MCPServers, normaCfg.Providers, cfg.Balda.Provider, cfg.Balda.MCPServers)
+				return mcpmanage.NewDefinitions(credentials, mcpfx.NewDefinitionStore(provider.MCP()), configured, catalog, probe)
+			},
+			func(definitions *mcpmanage.Definitions, catalog *catalogapp.Runtime, authorizations *mcpmanage.Authorizations) (*mcpbackofficeapp.Operations, error) {
+				operations := mcpbackofficeapp.New(definitions, catalog)
+				if err := operations.ConfigureAuthorizations(authorizations); err != nil {
+					return nil, err
+				}
+				return operations, nil
+			},
 			sessionmemorymcp.NewContextBroker,
 			fx.Annotate(
 				func() bool { return cfg.Balda.SessionMemory.Enabled },
@@ -351,12 +384,18 @@ func Module(
 				})
 				return provider, nil
 			},
-			func(provider baldastate.Provider, invitations *auth.BindingInvitations, channels *auth.BindingChannels) (*backoffice.Runtime, error) {
+			func(provider baldastate.Provider, invitations *auth.BindingInvitations, channels *auth.BindingChannels, mcp *mcpbackofficeapp.Operations) (*backoffice.Runtime, error) {
 				runtime, err := backoffice.NewRuntime(backofficeConfig, provider)
 				if err != nil {
 					return nil, err
 				}
 				if err := runtime.ConfigureBindingInvitations(invitations, channels); err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigureMCPOperations(mcp); err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigureMCPAuthorizations(mcp); err != nil {
 					return nil, err
 				}
 				return runtime, nil
@@ -757,6 +796,10 @@ func Module(
 				reg,
 				agentfactory.WithPermissionHandler(baldaagent.NewPermissionHandler(reviewer, logger)),
 			)
+		}),
+		fx.Provide(func(reg *mcpregistry.MapRegistry, reviewer *permissions.Service) baldaagent.ScopedRuntimeFactory {
+			return catalogapp.NewProviderFactory(normaCfg.Providers, reg,
+				agentfactory.WithPermissionHandler(baldaagent.NewPermissionHandler(reviewer, logger)))
 		}),
 		tgbotkit.Module,
 		natsbus.Module,

@@ -32,6 +32,25 @@ MCP or ingress, then binds Backoffice HTTP before enabling inbound transports.
 A failed prerequisite or listener bind aborts startup. Shutdown closes ingress
 before HTTP and the shared provider.
 
+The selected provider may remain explicitly unavailable while authenticated
+management starts for three current MCP authorization states: a valid selected
+OAuth revision needs worker authorization, a fresh configured remote returns a
+bounded same-origin OAuth challenge, or a changed remote file requires a new
+capture of its valid retained OAuth definition. Tools are never omitted to
+construct a partial runner. Every selected MCP blocker is inspected; an ordinary
+remote failure, malformed or foreign challenge, missing historical revision,
+invalid selected provider, unavailable protection material, or cancellation
+still aborts startup. The credential bridge and catalog retain their existing
+position before provider construction.
+
+Saving the same worker authorization retries only its failed exact MCP
+attachments. It preserves the definition revision, capability snapshot, and
+ready runners. A failed retry leaves the saved grant non-ready and retryable.
+A first or changed binding follows ordinary immutable catalog publication.
+Changing a file-owned remote to stdio uses the current stdio declaration;
+removing it excludes it from new selections. Retained remote captures, grants,
+and session pins remain available under their exact identities.
+
 Commands:
 
 - `balda validate` checks configuration and the application graph without
@@ -499,3 +518,115 @@ with the existing password and register a replacement key from Account.
 Factor transitions and verification appear in Audit. The verifier dependency
 and source reuse are documented in the
 [WebAuthn dependency review](backoffice-webauthn-dependency-review.md).
+
+## MCP management
+
+Administrators with a normal browser session can open **MCP** at `/mcp`.
+Operators do not receive MCP navigation and cannot open the pages or submit
+mutations. Optional passkey freshness applies to both sensitive reads and
+writes. All forms use the current session CSRF token and same-origin guard;
+the host rechecks current user, credential, MFA and browser-family versions
+at the durable write boundary. MCP form intake is bounded to 1 MiB; other
+browser forms retain their existing limits.
+
+Inventory combines configured and Backoffice-managed connections. It shows
+source, transport, provider targets, runtime status and current worker grant
+status separately. **Ready** means the selected revision's tools are available;
+saving or storing an authorized grant does not establish readiness. Recovery
+labels come from the catalog owner's exact current failed attachment evidence.
+Opening inventory does not start a server or discover OAuth metadata.
+
+`/mcp/new` creates a managed server. `/mcp/connections/{connection_id}` shows
+its current state and editor. The immutable server ID must be unique across
+both sources. Stdio uses a direct command, working directory and one argument
+per line; HTTP and SSE use a URL, headers and optional worker OAuth scopes.
+Choose all providers or specific configured providers. The editor supplies
+explicit literal, protected and deployment-variable value sources. Keep retains
+an existing value, Replace supplies a new value, and Remove deletes it. Existing
+values are never prefilled. Protected replacement inputs are write-only and are
+cleared after browser requests and history restoration. Save and reopen to add
+more binding rows. When changing transport, remove incompatible bindings.
+
+**Probe candidate** validates and discovers the proposed revision without
+saving, publishing or selecting it. Successful probing reports a tool count
+and leaves runtime readiness unchanged. Probe inputs are cleared; enter them
+again before saving. Saves redirect to the current detail. Conflicts return
+409 and require reopening the editor. Errors retain their HTTP status and never
+reflect submitted values or private transport errors. Native forms use 303;
+eligible HTMX saves use 204 with a local `HX-Location`.
+
+Configuration-owned entries are read-only: browser editing, selection changes,
+probe edits and deletion are rejected. Change their definition in the host
+configuration. The dedicated **Enable/Disable connection** and **Delete connection**
+controls require explicit confirmation. **Save definition** also applies the
+editor's **Enabled for new provider sessions** checkbox under the normal authority
+and CSRF checks, without a separate confirmation. These changes affect new
+sessions; existing sessions retain their exact revision until release.
+Deletion tombstones the connection and does not erase
+retained revisions. Deleted connection details expose retained metadata without
+edit, probe or selection forms. Worker OAuth completion and configuration recapture are
+separate operations from definition editing.
+
+Backoffice owns the `MCPOperations` and `MCPAuthorizations` consuming ports and its HTML views.
+`internal/apps/balda/mcpbackofficeapp` adapts the host's definition and catalog
+owners to that port. Validation, encrypted values, durable authority fences and
+readiness policy remain in their existing owners. Balda configures the port
+before the Backoffice HTTP listener starts; startup stage ordering is unchanged.
+
+### Worker authorization
+
+For a remote connection, **Authorize worker** starts a native browser or
+supported device flow from its current trusted definition. Configuration entries
+remain read-only. Starting explicitly captures current file values when needed;
+changing the file never silently changes an existing session's captured revision.
+A static `Authorization` header conflicts with worker OAuth and must be removed
+in the host definition before authorization.
+
+Use an explicit pre-registered client ID and its supported authentication method.
+Client secrets are encrypted and write-only. Browser authorization can use
+supported server client registration when the ID is blank; device authorization
+requires a pre-registered client and server support. Unsupported device flows
+show an error; use browser authorization when the service supports that flow.
+Browser authorization requires the issuer to advertise S256 PKCE and
+`authorization_response_iss_parameter_supported`; the callback's `iss` value must
+match the trusted issuer. The browser callback is
+`<public_url><base_path>/mcp/oauth/callback`; register that exact URL with the issuer.
+Use the configured public origin, including any reverse-proxy base path.
+
+Begin, cancel, disconnect and retry are native forms with the existing normal
+administrator, current assurance, CSRF and same-origin checks. The callback uses
+one-use protocol state bound to the initiating browser family and issuer. Browser
+start also sets a host-only, HttpOnly callback credential with `SameSite=Lax`,
+scoped to that callback and expiring no later than the current access credential
+or attempt. Callback validation uses the same current administrator and fresh
+assurance checks, then clears this temporary cookie. Ordinary session cookies
+remain `SameSite=Strict`.
+
+Every callback outcome redirects to a safe continuation page before rendering,
+including access or assurance failures. Use **Continue to MCP** to return through
+a local browser navigation; this restores ordinary Strict-cookie eligibility
+after the external issuer's redirect chain. The page contains no code or state;
+refresh and history never replay the callback. Device verification
+instructions appear once in the native begin response. Status GETs show safe
+progress only; if instructions are lost, cancel and start again. Pending attempts
+live only in memory: host restart invalidates them and requires a new attempt.
+Already saved encrypted worker grants survive restart.
+
+Completion checks the original definition revision, current administrator
+versions and grant generation in one database transaction. An edit during code
+exchange or device polling prevents installation. After installation, the same
+host policy binds the exact initiating revision outside protocol locks. A later
+edit can reject that binding without assigning the saved grant to another
+revision. Existing session pins and ready runners retain their exact identity.
+
+**Authorized** means a worker grant was saved; **Ready** means its current tools
+are available. Inspect both states on the connection. **Retry tool attachment**
+uses its saved current grant without repeating OAuth, keeps an unchanged binding
+revision and retries the affected failed attachment. It does not restart ready
+runners or change historical pins. **Disconnect worker** requires confirmation
+and revokes every retained worker grant context, including existing sessions.
+Run one active writer for worker grants; keep the deployment credential key with
+the database backup. Configure its format and deployment override as described in
+[MCP credential configuration](configuration.md#protected-values-and-worker-grants).
+No tokens, client secrets or local bridge capabilities belong
+in logs, URLs used for recovery, exported read models or browser history caches.

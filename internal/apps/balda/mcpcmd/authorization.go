@@ -1,0 +1,76 @@
+package mcpcmd
+
+import "time"
+
+// BeginAuthorization accepts only worker client inputs and trusted authority.
+// Transport, resource and provider selection come from the definition owner.
+type BeginAuthorization struct {
+	ConnectionID     string
+	Scopes           []string
+	ClientID         string
+	ClientAuthMethod string
+	ClientSecret     string `json:"-"`
+	Authority        Authority
+}
+
+// AuthorizationAttempt is safe metadata for cancelling a live browser attempt.
+type AuthorizationAttempt struct {
+	ID, ConnectionID string
+	ExpiresAt        time.Time
+	Device           bool
+}
+
+// PrepareAuthorization captures current trusted configuration for worker
+// authorization. Nil scopes retain the current configured authorization scopes.
+type PrepareAuthorization struct {
+	ConnectionID string
+	Scopes       []string
+	Authority    Authority
+}
+
+// SelectAuthorization attaches a protocol-discovered worker identity to an
+// exact current revision. Its tokens remain in the independently fenced grant.
+type SelectAuthorization struct {
+	ConnectionID       string
+	ExpectedRevisionID string
+	Binding            AuthBinding
+	Authority          Authority
+}
+
+// BrowserAuthorization exposes only native redirect instructions and safe ID.
+type BrowserAuthorization struct {
+	ID               string
+	ConnectionID     string
+	AuthorizationURL string `json:"-"`
+	ExpiresAt        time.Time
+}
+
+// BrowserCallback is write-only protocol input bound to current browser authority.
+type BrowserCallback struct {
+	State     string `json:"-"`
+	Code      string `json:"-"`
+	Issuer    string
+	Denied    bool
+	Authority Authority
+}
+
+// DeviceAuthorization carries instructions for a native no-store page only.
+type DeviceAuthorization struct {
+	ID, ConnectionID        string
+	VerificationURI         string `json:"-"`
+	VerificationURIComplete string `json:"-"`
+	UserCode                string `json:"-"`
+	ExpiresAt               time.Time
+	Status                  DeviceStatus
+}
+
+// DeviceStatus is the safe progress of a transient device authorization.
+type DeviceStatus string
+
+const (
+	DevicePending    DeviceStatus = "pending"
+	DeviceAuthorized DeviceStatus = "authorized"
+	DeviceDenied     DeviceStatus = "denied"
+	DeviceExpired    DeviceStatus = "expired"
+	DeviceFailed     DeviceStatus = "failed"
+)

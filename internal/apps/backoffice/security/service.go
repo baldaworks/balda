@@ -73,6 +73,8 @@ type Credentials struct {
 
 // Principal is current canonical user and session-family authorization state.
 type Principal struct {
+	AccessExpiresAt    time.Time
+	MFAVersion         uint64
 	MFAEnabled         bool
 	WebAuthnVerifiedAt time.Time
 	MFAFactorID        string
@@ -180,12 +182,13 @@ func (s *Service) ValidateAccess(ctx context.Context, rawToken string) (Principa
 	if err != nil || wantAssurance != session.Family.Assurance {
 		return Principal{}, ErrUnauthenticated
 	}
-	enabled, err := s.checkMFAFamily(ctx, session.User, session.Family)
+	profile, err := s.checkMFAFamily(ctx, session.User, session.Family)
 	if err != nil {
 		return Principal{}, err
 	}
 	return Principal{
-		MFAEnabled: enabled, WebAuthnVerifiedAt: session.Family.WebAuthnVerifiedAt, MFAFactorID: session.Family.MFAFactorID,
+		AccessExpiresAt: session.Family.Access.ExpiresAt,
+		MFAVersion:      profile.Version, MFAEnabled: profile.Enabled, WebAuthnVerifiedAt: session.Family.WebAuthnVerifiedAt, MFAFactorID: session.Family.MFAFactorID,
 		User: session.User, FamilyID: session.Family.ID,
 		Version: session.Family.Version, Assurance: session.Family.Assurance,
 	}, nil
@@ -554,3 +557,6 @@ func dummyPasswordHash() (string, error) {
 	})
 	return dummyHash, dummyHashErr
 }
+
+// FreshProofAge returns the resolved administrator proof lifetime used by this service.
+func (s *Service) FreshProofAge() time.Duration { return s.config.StepUpTTL }

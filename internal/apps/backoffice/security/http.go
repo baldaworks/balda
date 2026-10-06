@@ -25,11 +25,15 @@ const (
 	CSRFCookieName = "balda_csrf"
 	// RefreshPath is the only request path that receives the refresh cookie.
 	RefreshPath = "/auth/session/refresh"
+	// OAuthCallbackCookieName carries the initiating access credential only to OAuth callbacks.
+	OAuthCallbackCookieName = "balda_oauth_callback"
+	// OAuthCallbackPath is the only route allowed to restore the callback credential.
+	OAuthCallbackPath = "/mcp/oauth/callback"
 
 	defaultMaxBodyBytes = 8 << 10
 )
 
-var defaultReturnPrefixes = []string{"/", "/overview", "/access", "/account", "/audit"}
+var defaultReturnPrefixes = []string{"/", "/overview", "/access", "/account", "/audit", "/mcp"}
 
 type browserService interface {
 	RequireFresh(ctx context.Context, rawAccessToken string) error
@@ -302,6 +306,54 @@ func (b *Browser) Authenticate(next http.Handler) http.Handler {
 	})
 }
 
+// PreserveOAuthCallbackCredential retains an already guarded access credential
+// for the top-level return from an external issuer. It never extends access life.
+func (b *Browser) PreserveOAuthCallbackCredential(w http.ResponseWriter, r *http.Request, attemptExpires time.Time) error {
+	cookie, err := r.Cookie(AccessCookieName)
+	if err != nil || cookie.Value == "" {
+		return ErrUnauthenticated
+	}
+	p, err := b.service.ValidateAccess(r.Context(), cookie.Value)
+	if err != nil {
+		return err
+	}
+	expires := p.AccessExpiresAt
+	if attemptExpires.Before(expires) {
+		expires = attemptExpires
+	}
+	if expires.IsZero() {
+		return ErrUnauthenticated
+	}
+	http.SetCookie(w, &http.Cookie{Name: OAuthCallbackCookieName, Value: cookie.Value,
+		Path: b.path(OAuthCallbackPath), Expires: expires,
+		HttpOnly: true, Secure: b.secureCookies, SameSite: http.SameSiteLaxMode})
+	return nil
+}
+
+// RestoreOAuthCallbackCredential clears the transient cookie on every callback
+// outcome and supplies it to the ordinary guards only when access is absent.
+func (b *Browser) RestoreOAuthCallbackCredential(w http.ResponseWriter, r *http.Request) *http.Request {
+	if r.URL.Path != b.path(OAuthCallbackPath) {
+		return r
+	}
+	http.SetCookie(w, &http.Cookie{Name: OAuthCallbackCookieName, Path: b.path(OAuthCallbackPath),
+		MaxAge: -1, Expires: time.Unix(1, 0).UTC(), HttpOnly: true,
+		Secure: b.secureCookies, SameSite: http.SameSiteLaxMode})
+	if r.Method != http.MethodGet {
+		return r
+	}
+	if _, err := r.Cookie(AccessCookieName); err == nil {
+		return r
+	}
+	cookie, err := r.Cookie(OAuthCallbackCookieName)
+	if err != nil || cookie.Value == "" {
+		return r
+	}
+	restored := r.Clone(r.Context())
+	restored.AddCookie(&http.Cookie{Name: AccessCookieName, Value: cookie.Value})
+	return restored
+}
+
 // RequireNormal rejects restricted temporary-password sessions.
 func (b *Browser) RequireNormal(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -344,7 +396,17 @@ func (b *Browser) RequireAdministrator(next http.Handler) http.Handler {
 // AdministratorMutation applies the browser mutation guard in trust-boundary
 // order and returns a current normal administrator principal.
 func (b *Browser) AdministratorMutation(w http.ResponseWriter, r *http.Request) (url.Values, Principal, bool) {
-	form, ok := b.mutationForm(w, r)
+	return b.AdministratorMutationLimit(w, r, b.maxBodyBytes)
+}
+
+// AdministratorMutationLimit keeps the same authority guard with a server-chosen
+// bounded intake size for larger editors. Other forms retain their usual limit.
+func (b *Browser) AdministratorMutationLimit(w http.ResponseWriter, r *http.Request, limit int64) (url.Values, Principal, bool) {
+	if limit < 256 || limit > 1<<20 {
+		b.writeHTTPError(w, r, http.StatusBadRequest, "invalid request")
+		return nil, Principal{}, false
+	}
+	form, ok := b.mutationFormLimit(w, r, limit)
 	if !ok {
 		return nil, Principal{}, false
 	}

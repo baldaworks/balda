@@ -128,7 +128,7 @@ func TestRuntimeForSessionProjectsSkillMetadataAndExtensionInstructionsToProvide
 	}
 }
 
-func (b *recordingCapabilityBinder) BindSessionCapabilities(_ context.Context, request SessionRuntimeRequest) (SessionCapabilityBinding, error) {
+func (b *recordingCapabilityBinder) BindSessionCapabilities(_ context.Context, _ string, request SessionRuntimeRequest) (SessionCapabilityBinding, error) {
 	b.requests = append(b.requests, request)
 	return b.binding, b.err
 }

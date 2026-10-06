@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -27,6 +28,7 @@ type sqliteProvider struct {
 	offset         *sqliteOffsetStore
 	plugins        *sqlitePluginStore
 	users          usercmd.Store
+	mcp            *sqlMCPStore
 }
 
 var _ Provider = (*sqliteProvider)(nil)
@@ -169,6 +171,7 @@ func NewSQLiteProvider(ctx context.Context, path string) (Provider, error) {
 		offset:         &sqliteOffsetStore{db: db},
 		plugins:        &sqlitePluginStore{db: db},
 		users:          newSQLiteUserStore(db),
+		mcp:            &sqlMCPStore{users: newSQLiteUserStore(db)},
 	}
 	return provider, nil
 }
@@ -179,6 +182,11 @@ func sqliteConnectionString(path string) string {
 	query.Add("_pragma", "busy_timeout(5000)")
 	if path == ":memory:" {
 		return "file::memory:?" + query.Encode()
+	}
+	path = filepath.ToSlash(path)
+	if filepath.IsAbs(path) && !strings.HasPrefix(path, "/") {
+		// Keep native Windows drive letters in the URI path, not its authority.
+		path = "/" + path
 	}
 	return (&url.URL{Scheme: "file", Path: path, RawQuery: query.Encode()}).String()
 }
@@ -224,6 +232,8 @@ func (p *sqliteProvider) Collaborators() CollaboratorStore {
 }
 
 func (p *sqliteProvider) Plugins() PluginStore { return p.plugins }
+
+func (p *sqliteProvider) MCP() MCPStore { return p.mcp }
 
 func (p *sqliteProvider) Users() usercmd.Store { return p.users }
 

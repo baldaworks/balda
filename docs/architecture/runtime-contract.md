@@ -6,6 +6,15 @@ Status: active
 ## Invariants
 
 - Startup order stays strict: config -> bundled MCP -> runtime contribution catalog reconstruction -> provider runtime -> session/mailbox and durable actor infrastructure -> scheduler/webhook/Zulip/Telegram/Slackagent ingress. Shutdown runs these stages in reverse.
+- `catalogapp` owns current MCP authorization startup recovery and exact
+  authorization retry. `mcpruntime` carries bounded attachment evidence and
+  inspects every selected blocker; `mcpfx` observes supported challenges at the
+  configured upstream, including through the fixed credential bridge. Only
+  valid current authorization-required, fresh configured challenge, and known
+  remote recapture states permit management with an unavailable provider.
+  Any fatal blocker wins. Acquisition remains complete-or-fail; retained pins
+  never become current recovery candidates. Equal-binding retry preserves
+  snapshot/revision identity and every ready runner.
 - Shutdown follows the exact reverse lifecycle order.
 - The durable command runtime must be available before ingress accepts work.
 - No runtime path executes user work without durable actor dispatch acceptance.
@@ -88,6 +97,7 @@ Status: active
 - `internal/apps/balda/execution/config_test.go`
 - `internal/apps/balda/eventbus/config_test.go`
 - `internal/apps/balda/application_lifecycle_test.go`
+- `internal/apps/balda/application_mcp_startup_test.go`
 - `internal/apps/balda/actors/turn_dispatcher_test.go`
 - `internal/apps/balda/jobs/service_test.go`
 

@@ -23,17 +23,19 @@ const (
 
 // Runtime composes Backoffice operations over the selected Balda database only.
 type Runtime struct {
-	config          ResolvedConfig
-	provider        state.Provider
-	state           *StateService
-	bootstrap       *BootstrapService
-	owned           bool
-	mu              sync.Mutex
-	server          *http.Server
-	done            chan struct{}
-	serveErr        error
-	invitations     BindingInvitations
-	bindingChannels BindingChannels
+	config            ResolvedConfig
+	provider          state.Provider
+	state             *StateService
+	bootstrap         *BootstrapService
+	owned             bool
+	mu                sync.Mutex
+	server            *http.Server
+	done              chan struct{}
+	serveErr          error
+	mcp               MCPOperations
+	mcpAuthorizations MCPAuthorizations
+	invitations       BindingInvitations
+	bindingChannels   BindingChannels
 }
 
 // NewRuntime constructs Backoffice over a provider owned by its host.
@@ -111,6 +113,8 @@ func (r *Runtime) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("construct Backoffice HTTP application: %w", err)
 	}
+	httpApplication.mcp = r.mcp
+	httpApplication.mcpAuthorizations = r.mcpAuthorizations
 	httpApplication.invitations = r.invitations
 	httpApplication.bindingChannels = r.bindingChannels
 	handler, err := httpApplication.handler()

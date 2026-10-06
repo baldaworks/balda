@@ -37,6 +37,7 @@ type PluginStore interface {
 // CatalogActivator combines enabled plugin sources with host-owned non-plugin
 // sources, compiles the complete application snapshot, and publishes it.
 type CatalogActivator interface {
+	LockCatalogMutation(ctx context.Context) (release func(), err error)
 	PreparePluginCandidate(ctx context.Context, enabledPlugins []runtimecatalogcmd.Source) (runtimecatalogcmd.Snapshot, error)
 	PublishCandidate(ctx context.Context, snapshot runtimecatalogcmd.Snapshot) error
 }
@@ -72,18 +73,33 @@ const legacyMigrationCompleteKey = "plugin_legacy_migration_complete"
 func (m *managedLifecycle) install(ctx context.Context, plugin AvailablePlugin) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	release, err := m.activator.LockCatalogMutation(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
 	return m.installLocked(ctx, plugin, false)
 }
 
 func (m *managedLifecycle) upgrade(ctx context.Context, plugin AvailablePlugin) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	release, err := m.activator.LockCatalogMutation(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
 	return m.installLocked(ctx, plugin, true)
 }
 
 func (m *managedLifecycle) adoptOrigin(ctx context.Context, plugin AvailablePlugin) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	release, err := m.activator.LockCatalogMutation(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
 	if _, err := m.reconcilePending(ctx, plugin.Name); err != nil {
 		return fmt.Errorf("reconcile plugin before origin adoption: %w", err)
 	}
@@ -260,6 +276,11 @@ func (m *managedLifecycle) installLocked(ctx context.Context, plugin AvailablePl
 func (m *managedLifecycle) migrateLegacy(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	release, err := m.activator.LockCatalogMutation(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
 	if m.kv == nil {
 		return errors.New("managed plugin migration store unavailable")
 	}
@@ -554,6 +575,11 @@ func capabilitySummary(source runtimecatalogcmd.Source) CapabilitySummary {
 func (m *managedLifecycle) setEnabled(ctx context.Context, pluginID string, enabled bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	release, err := m.activator.LockCatalogMutation(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
 
 	if _, err := m.reconcilePending(ctx, pluginID); err != nil {
 		return err
@@ -584,6 +610,11 @@ func (m *managedLifecycle) setEnabled(ctx context.Context, pluginID string, enab
 func (m *managedLifecycle) rollback(ctx context.Context, pluginID, revisionID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	release, err := m.activator.LockCatalogMutation(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
 
 	if _, err := m.reconcilePending(ctx, pluginID); err != nil {
 		return err
@@ -621,6 +652,11 @@ func (m *managedLifecycle) rollback(ctx context.Context, pluginID, revisionID st
 func (m *managedLifecycle) remove(ctx context.Context, pluginID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	release, err := m.activator.LockCatalogMutation(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
 
 	reconciled, err := m.reconcilePending(ctx, pluginID)
 	if err != nil {
@@ -669,6 +705,11 @@ func (m *managedLifecycle) remove(ctx context.Context, pluginID string) error {
 func (m *managedLifecycle) recover(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	release, err := m.activator.LockCatalogMutation(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
 	return m.recoverLocked(ctx)
 }
 
@@ -752,6 +793,11 @@ func (m *managedLifecycle) drifted(ctx context.Context, pluginID string) (bool, 
 func (m *managedLifecycle) purge(ctx context.Context, pluginID, revisionID string, purgeData bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	release, err := m.activator.LockCatalogMutation(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
 
 	if _, err := m.reconcilePending(ctx, pluginID); err != nil {
 		return err
