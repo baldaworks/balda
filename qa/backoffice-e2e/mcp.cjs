@@ -16,7 +16,7 @@ async function link(page, name) {
   await page.waitForLoadState('networkidle');
 }
 async function candidate(page, id) {
-  await page.getByLabel('Server ID', { exact: true }).fill(id);
+  await page.getByLabel(/^Server ID(?: \(required\))?$/).fill(id);
   if (page.mcpJavaScriptEnabled !== false) {
     await page.getByLabel('Transport', { exact: true }).selectOption('stdio');
     await page.getByLabel('Command', { exact: true }).fill('unused-draft-command');
@@ -93,10 +93,10 @@ async function mutation(page, button, path, status) {
     await page.getByRole('status').filter({hasText:'Candidate probe succeeded'}).waitFor();
     assert.equal(await page.locator('input[data-mcp-secret]').evaluateAll(inputs => inputs.every(i => i.value === '')),true,'probe clears write-only input');
     await candidate(page,id);
-    await mutation(page,'Create server','/mcp/connections',javaScriptEnabled?204:303);
+    await mutation(page,'Create server','/mcp/connections',303);
     await page.waitForURL(/\/mcp\/connections\//);
     await page.getByRole('heading',{name:'Current state',exact:true}).waitFor();
-    assert.equal(await page.locator('.status-chip').filter({hasText:/^Ready$/}).count(),1,'real catalog discovers tools');
+    assert.equal(await page.locator('.status-chip').filter({hasText:/^Available$/}).count(),1,'real catalog discovers tools');
     const detailPath=new URL(page.url()).pathname;
     const version=await page.locator('input[name="expected_version"]').first().inputValue();
     assert.equal(await page.locator('input[data-mcp-secret]').evaluateAll(inputs => inputs.every(i => i.value === '')),true);

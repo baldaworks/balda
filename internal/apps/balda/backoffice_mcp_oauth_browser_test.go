@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -39,7 +40,10 @@ import (
 	"golang.org/x/oauth2"
 )
 
-const oauthBrowserClientID = "browser-client"
+const (
+	oauthBrowserClientID             = "browser-client"
+	oauthBrowserConfidentialClientID = "confidential-client"
+)
 
 // This gate starts ordinary Backoffice authentication and the production owners.
 // The only remote services are a controlled OAuth issuer, MCP server and model.
@@ -96,10 +100,27 @@ func TestBackofficeMCPOAuthBrowserWorkflow(t *testing.T) {
 			_ = listener.Close()
 			origin := "http://" + address
 			providers := oauthBrowserProviders(t)
+			for _, prefix := range []string{"managed", "static", "partial", "public"} {
+				for _, kind := range []string{"hosted", "acp"} {
+					provider := providers[kind]
+					provider.MCPServers = nil
+					providers[prefix+"-"+kind] = provider
+				}
+			}
 			bootstrapped := false
+			var retryChecks atomic.Int32
+			var currentOperations *mcpbackofficeapp.Operations
 			start := func(resource string) (*backoffice.Runtime, *catalogapp.Runtime, *mcpregistry.MapRegistry, baldaagent.SessionCapabilityBinder, *mcpmanage.Authorizations) {
 				registry := mcpregistry.New(nil)
-				configs := map[string]agentconfig.MCPServerConfig{"worker-tools": {Type: agentconfig.MCPServerType(scenario.transport), URL: issuer.server.URL + resource, Headers: map[string]string{"X-Worker-Secret": "synthetic-oauth-header" + resource}}}
+				configs := map[string]agentconfig.MCPServerConfig{
+					"worker-tools": {Type: agentconfig.MCPServerType(scenario.transport), URL: issuer.server.URL + resource, Headers: map[string]string{"X-Worker-Secret": "synthetic-oauth-header" + resource}},
+					"public-tools": {Type: agentconfig.MCPServerType(scenario.transport), URL: issuer.server.URL + "/public", Headers: map[string]string{"X-Worker-Secret": "synthetic-oauth-header/public"}},
+				}
+				for _, id := range []string{"public-hosted", "public-acp"} {
+					provider := providers[id]
+					provider.MCPServers = []string{"public-tools"}
+					providers[id] = provider
+				}
 				config := runtimeconfig.RuntimeConfig{Providers: providers, MCPServers: configs}
 				var catalog *catalogapp.Runtime
 				var binder baldaagent.SessionCapabilityBinder
@@ -128,6 +149,7 @@ func TestBackofficeMCPOAuthBrowserWorkflow(t *testing.T) {
 					t.Fatal(err)
 				}
 				operations := mcpbackofficeapp.New(definitions, catalog)
+				currentOperations = operations
 				if err := operations.ConfigureAuthorizations(flows); err != nil {
 					t.Fatal(err)
 				}
@@ -144,7 +166,7 @@ func TestBackofficeMCPOAuthBrowserWorkflow(t *testing.T) {
 				if err := runtime.ConfigureMCPOperations(operations); err != nil {
 					t.Fatal(err)
 				}
-				if err := runtime.ConfigureMCPAuthorizations(&oauthBrowserAuthorizations{MCPAuthorizations: operations, deviceBegins: &issuer.deviceBegins}); err != nil {
+				if err := runtime.ConfigureMCPAuthorizations(&oauthBrowserAuthorizations{MCPAuthorizations: operations, deviceBegins: &issuer.deviceBegins, retryChecks: &retryChecks, t: t}); err != nil {
 					t.Fatal(err)
 				}
 				if err := runtime.Start(t.Context()); err != nil {
@@ -158,12 +180,102 @@ func TestBackofficeMCPOAuthBrowserWorkflow(t *testing.T) {
 			if err != nil || len(captures) != 0 {
 				t.Fatal("startup must leave fresh configured capture empty")
 			}
+			inventory, err := currentOperations.Inventory(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			publicFound := false
+			for _, item := range inventory {
+				if item.Connection.PublicID == "public-tools" {
+					publicFound = !item.Definition.OAuth && item.Recovery == "" && item.Authorization == ""
+				}
+			}
+			if !publicFound {
+				t.Fatal("configured public entry unexpectedly requires OAuth or recovery")
+			}
+			publicBefore, err := catalog.Store().Application()
+			if err != nil {
+				t.Fatal(err)
+			}
+			verifyOAuthBrowserExecution(t, catalog, registry, binder, providers, publicBefore.ID, "/public", "public-hosted", "public-acp")
+			runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "configured-public", scenario.width, scenario.js)
+			publicAfter, err := catalog.Store().Application()
+			if err != nil {
+				t.Fatal(err)
+			}
+			verifyOAuthBrowserExecution(t, catalog, registry, binder, providers, publicBefore.ID, "/public", "public-hosted", "public-acp")
+			verifyOAuthBrowserExecution(t, catalog, registry, binder, providers, publicAfter.ID, "/public", "public-hosted", "public-acp")
 			runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "fresh", scenario.width, scenario.js)
 			pinned, err := catalog.Store().Application()
 			if err != nil {
 				t.Fatal(err)
 			}
 			verifyOAuthBrowserExecution(t, catalog, registry, binder, providers, pinned.ID, "/mcp")
+			runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "managed-create-"+scenario.transport, scenario.width, scenario.js)
+			managedPin, err := catalog.Store().Application()
+			if err != nil {
+				t.Fatal(err)
+			}
+			verifyOAuthBrowserExecution(t, catalog, registry, binder, providers, managedPin.ID, "/mcp", "managed-hosted", "managed-acp")
+			runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "managed-partial-"+scenario.transport, scenario.width, scenario.js)
+			partialPin, err := catalog.Store().Application()
+			if err != nil {
+				t.Fatal(err)
+			}
+			verifyOAuthBrowserExecution(t, catalog, registry, binder, providers, partialPin.ID, "/mcp", "partial-hosted", "partial-acp")
+			_ = oauthBrowserConnectionRevision(t, p, "partial-tools")
+			managedBefore := oauthBrowserConnectionRevision(t, p, "managed-tools")
+			for _, intent := range []string{"missing", "equal"} {
+				runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "managed-"+intent+"-"+scenario.transport, scenario.width, scenario.js)
+				unchanged := oauthBrowserConnectionRevision(t, p, "managed-tools")
+				if !sameOAuthBrowserRevision(unchanged, managedBefore) {
+					t.Fatal("missing or unchanged native scopes replaced the bound revision")
+				}
+				verifyOAuthBrowserExecution(t, catalog, registry, binder, providers, managedPin.ID, "/mcp", "managed-hosted", "managed-acp")
+			}
+			runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "managed-scopes-"+scenario.transport, scenario.width, scenario.js)
+			managedAfter := oauthBrowserConnectionRevision(t, p, "managed-tools")
+			retained, found, err := p.MCP().GetMCPRevision(t.Context(), managedBefore.ConnectionID, managedBefore.ID)
+			if err != nil || !found || !sameOAuthBrowserRevision(retained, managedBefore) || managedAfter.ID == managedBefore.ID || len(managedAfter.Definition.Scopes) != 0 || managedAfter.Definition.AuthBinding == nil {
+				t.Fatal("native scope change lost the exact historical revision or current authorization")
+			}
+			if _, err := grants.RequestCredentials(t.Context(), *managedBefore.Definition.AuthBinding, managedBefore.Definition.Scopes); !errors.Is(err, mcpcmd.ErrAuthRequired) {
+				t.Fatal("narrowed shared authorization did not fail the scoped historical pin closed")
+			}
+			scopePin, err := catalog.Store().Application()
+			if err != nil {
+				t.Fatal(err)
+			}
+			verifyOAuthBrowserExecution(t, catalog, registry, binder, providers, scopePin.ID, "/mcp", "managed-hosted", "managed-acp")
+			runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "managed-restore-"+scenario.transport, scenario.width, scenario.js)
+			verifyOAuthBrowserExecution(t, catalog, registry, binder, providers, managedPin.ID, "/mcp", "managed-hosted", "managed-acp")
+			runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "managed-static-"+scenario.transport, scenario.width, scenario.js)
+			staticPin, err := catalog.Store().Application()
+			if err != nil {
+				t.Fatal(err)
+			}
+			verifyOAuthBrowserExecution(t, catalog, registry, binder, providers, staticPin.ID, "/mcp", "static-hosted", "static-acp")
+			staticCurrent := oauthBrowserConnectionRevision(t, p, "static-tools")
+			if staticCurrent.Definition.AuthBinding == nil || staticCurrent.Definition.AuthBinding.ClientID != oauthBrowserConfidentialClientID {
+				t.Fatal("native static entry lost its confidential client identity")
+			}
+			staticGrant, found, err := p.MCP().GetMCPGrant(t.Context(), *staticCurrent.Definition.AuthBinding)
+			if err != nil || !found || staticGrant.TokenEndpointAuthMethod != mcpcmd.ClientAuthSecretBasic {
+				t.Fatal("native confidential client did not retain its required authentication method")
+			}
+			revisions, err := p.MCP().ListMCPRevisions(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			staticRetained := false
+			for _, revision := range revisions {
+				if revision.ConnectionID == staticCurrent.ConnectionID && !revision.Definition.OAuth && revision.Definition.Headers["X-Worker-Secret"].Kind == mcpcmd.ValueProtected {
+					staticRetained = revision.ID != staticCurrent.ID && revision.Definition.AuthBinding == nil
+				}
+			}
+			if !staticRetained || staticCurrent.Definition.AuthBinding == nil {
+				t.Fatal("native authorization of static managed server changed its historical definition")
+			}
 			if scenario.flow == "device" {
 				runOAuthBrowserRestart(t, origin+scenario.base, issuer.server.URL, scenario.flow, "pending-restart", scenario.width, scenario.js, func() {
 					flows.Close()
@@ -193,11 +305,49 @@ func TestBackofficeMCPOAuthBrowserWorkflow(t *testing.T) {
 			}
 			verifyOAuthBrowserExecution(t, restarted, nextRegistry, nextBinder, providers, pinned.ID, "/mcp")
 			verifyOAuthBrowserExecution(t, restarted, nextRegistry, nextBinder, providers, current.ID, "/changed")
+			verifyOAuthBrowserExecution(t, restarted, nextRegistry, nextBinder, providers, managedPin.ID, "/mcp", "managed-hosted", "managed-acp")
+			verifyOAuthBrowserExecution(t, restarted, nextRegistry, nextBinder, providers, staticPin.ID, "/mcp", "static-hosted", "static-acp")
+			if scenario.flow == "browser" && issuer.registrations.Load() == 0 {
+				t.Fatal("managed browser onboarding did not use supported client registration")
+			}
 			if issuer.hostedCalls.Load() < 3 || issuer.acpCalls.Load() < 3 {
 				t.Fatal("native authorization did not reach actual hosted and ACP invocation")
 			}
+			if retryChecks.Load() < 8 {
+				t.Fatal("native retries were not verified against actual returned revision identities")
+			}
 		})
 	}
+}
+
+func oauthBrowserConnectionRevision(t *testing.T, p state.Provider, publicID string) mcpcmd.Revision {
+	t.Helper()
+	connections, err := p.MCP().ListMCPConnections(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var selected mcpcmd.Connection
+	count := 0
+	for _, connection := range connections {
+		if connection.PublicID == publicID {
+			selected = connection
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatal("native onboarding did not retain exactly one connection")
+	}
+	revision, found, err := p.MCP().GetMCPRevision(t.Context(), selected.ID, selected.CurrentRevisionID)
+	if err != nil || !found {
+		t.Fatal("current native authorization revision unavailable")
+	}
+	return revision
+}
+
+func sameOAuthBrowserRevision(a, b mcpcmd.Revision) bool {
+	first, _ := json.Marshal(a)
+	second, _ := json.Marshal(b)
+	return bytes.Equal(first, second)
 }
 
 func runOAuthBrowser(t *testing.T, base, issuer, flow, phase string, width int, js bool) {
@@ -257,11 +407,14 @@ func runOAuthBrowserRestart(t *testing.T, base, issuer, flow, phase string, widt
 	t.Log(string(output))
 }
 
-type backofficeOAuthRequest struct{ resource, challenge, redirect, state string }
+type backofficeOAuthRequest struct{ resource, challenge, redirect, state, clientID string }
+type backofficeOAuthDevice struct{ resource, clientID string }
 
 type oauthBrowserAuthorizations struct {
 	backoffice.MCPAuthorizations
 	deviceBegins *atomic.Int32
+	retryChecks  *atomic.Int32
+	t            *testing.T
 }
 
 func (a *oauthBrowserAuthorizations) BeginDevice(ctx context.Context, request mcpcmd.BeginAuthorization) (mcpcmd.DeviceAuthorization, error) {
@@ -269,26 +422,44 @@ func (a *oauthBrowserAuthorizations) BeginDevice(ctx context.Context, request mc
 	return a.MCPAuthorizations.BeginDevice(ctx, request)
 }
 
+func (a *oauthBrowserAuthorizations) CreateAndBeginDevice(ctx context.Context, creation mcpcmd.CreateDefinition, request mcpcmd.BeginAuthorization) (mcpcmd.Item, mcpcmd.DeviceAuthorization, error) {
+	a.deviceBegins.Add(1)
+	return a.MCPAuthorizations.CreateAndBeginDevice(ctx, creation, request)
+}
+
+func (a *oauthBrowserAuthorizations) RetryAuthorization(ctx context.Context, request mcpcmd.SelectAuthorization) (mcpcmd.Item, error) {
+	item, err := a.MCPAuthorizations.RetryAuthorization(ctx, request)
+	if err == nil {
+		if item.Connection.ID != request.ConnectionID || item.Connection.CurrentRevisionID != request.ExpectedRevisionID {
+			a.t.Error("native retry changed its exact selected connection or revision")
+		}
+		a.retryChecks.Add(1)
+	}
+	return item, err
+}
+
 type backofficeOAuthIssuer struct {
-	server            *httptest.Server
-	mu                sync.Mutex
-	codes             map[string]backofficeOAuthRequest
-	devices           map[string]string
-	approved          map[string]bool
-	unavailable       atomic.Bool
-	deviceUnsupported atomic.Bool
-	deviceStarts      atomic.Int32
-	deviceBegins      atomic.Int32
-	exchanges         atomic.Int32
-	hostedCalls       atomic.Int32
-	acpCalls          atomic.Int32
+	server              *httptest.Server
+	mu                  sync.Mutex
+	codes               map[string]backofficeOAuthRequest
+	devices             map[string]backofficeOAuthDevice
+	approved            map[string]bool
+	unavailable         atomic.Bool
+	deviceUnsupported   atomic.Bool
+	metadataUnavailable atomic.Bool
+	registrations       atomic.Int32
+	deviceStarts        atomic.Int32
+	deviceBegins        atomic.Int32
+	exchanges           atomic.Int32
+	hostedCalls         atomic.Int32
+	acpCalls            atomic.Int32
 }
 
 func newBackofficeOAuthIssuer(t *testing.T, transport string) *backofficeOAuthIssuer {
 	t.Helper()
-	f := &backofficeOAuthIssuer{codes: make(map[string]backofficeOAuthRequest), devices: make(map[string]string), approved: make(map[string]bool)}
+	f := &backofficeOAuthIssuer{codes: make(map[string]backofficeOAuthRequest), devices: make(map[string]backofficeOAuthDevice), approved: make(map[string]bool)}
 	handlers := make(map[string]http.Handler)
-	for _, resource := range []string{"/mcp", "/changed"} {
+	for _, resource := range []string{"/mcp", "/changed", "/public"} {
 		sdk := mcp.NewServer(&mcp.Implementation{Name: "oauth-browser-tools", Version: "1"}, nil)
 		mcp.AddTool(sdk, &mcp.Tool{Name: "echo"}, func(_ context.Context, _ *mcp.CallToolRequest, args struct {
 			Text string `json:"text"`
@@ -311,6 +482,10 @@ func newBackofficeOAuthIssuer(t *testing.T, transport string) *backofficeOAuthIs
 		origin := f.server.URL
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/.well-known/oauth-protected-resource"):
+			if f.metadataUnavailable.Load() {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
 			resource := strings.TrimPrefix(r.URL.Path, "/.well-known/oauth-protected-resource")
 			if resource == "" {
 				resource = "/mcp"
@@ -319,29 +494,49 @@ func newBackofficeOAuthIssuer(t *testing.T, transport string) *backofficeOAuthIs
 			_ = json.NewEncoder(w).Encode(map[string]any{"resource": origin + resource, "authorization_servers": []string{origin}, "scopes_supported": []string{"tools:read"}})
 		case r.URL.Path == "/.well-known/oauth-authorization-server":
 			w.Header().Set("Content-Type", "application/json")
-			metadata := map[string]any{"issuer": origin, "authorization_endpoint": origin + "/authorize", "token_endpoint": origin + "/token", "code_challenge_methods_supported": []string{"S256"}, "token_endpoint_auth_methods_supported": []string{"none"}, "response_types_supported": []string{"code"}, "grant_types_supported": []string{"authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code"}, "scopes_supported": []string{"tools:read"}, "authorization_response_iss_parameter_supported": true}
+			metadata := map[string]any{"issuer": origin, "authorization_endpoint": origin + "/authorize", "token_endpoint": origin + "/token", "registration_endpoint": origin + "/register", "code_challenge_methods_supported": []string{"S256"}, "token_endpoint_auth_methods_supported": []string{"none", "client_secret_basic"}, "response_types_supported": []string{"code"}, "grant_types_supported": []string{"authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code"}, "scopes_supported": []string{"tools:read"}, "authorization_response_iss_parameter_supported": true}
 			if !f.deviceUnsupported.Load() {
 				metadata["device_authorization_endpoint"] = origin + "/device"
 			}
 			_ = json.NewEncoder(w).Encode(metadata)
+		case r.URL.Path == "/register":
+			if r.Method != http.MethodPost {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			f.registrations.Add(1)
+			var registration struct {
+				RedirectURIs []string `json:"redirect_uris"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&registration); err != nil || len(registration.RedirectURIs) != 1 {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]any{"client_id": oauthBrowserClientID, "token_endpoint_auth_method": "none", "redirect_uris": registration.RedirectURIs, "grant_types": []string{"authorization_code", "refresh_token"}, "response_types": []string{"code"}})
 		case r.URL.Path == "/authorize":
 			if r.Method == http.MethodGet {
 				q := r.URL.Query()
-				if q.Get("client_id") != oauthBrowserClientID || q.Get("code_challenge_method") != "S256" || q.Get("state") == "" || q.Get("resource") == "" {
+				if (q.Get("client_id") != oauthBrowserClientID && q.Get("client_id") != oauthBrowserConfidentialClientID) || q.Get("code_challenge_method") != "S256" || q.Get("state") == "" || q.Get("resource") == "" {
 					t.Error("browser authorization lost protocol bindings")
 					w.WriteHeader(http.StatusBadRequest)
 					return
 				}
 				code := rand.Text()
 				f.mu.Lock()
-				f.codes[code] = backofficeOAuthRequest{resource: q.Get("resource"), challenge: q.Get("code_challenge"), redirect: q.Get("redirect_uri"), state: q.Get("state")}
+				f.codes[code] = backofficeOAuthRequest{resource: q.Get("resource"), challenge: q.Get("code_challenge"), redirect: q.Get("redirect_uri"), state: q.Get("state"), clientID: q.Get("client_id")}
 				f.mu.Unlock()
 				w.Header().Set("Cache-Control", "no-store")
 				w.Header().Set("Content-Type", "text/html")
-				_, _ = fmt.Fprintf(w, `<!doctype html><form method="post"><input name="code" type="hidden" value="%s"><button name="decision" value="accept">Authorize worker</button><button name="decision" value="deny">Deny worker</button></form>`, code)
+				_, _ = fmt.Fprintf(w, `<!doctype html><form method="post"><label>Service account<input name="account" required></label><label>Service password<input name="password" type="password" required></label><input name="code" type="hidden" value="%s"><button name="decision" value="accept">Authorize worker</button><button name="decision" value="deny">Deny worker</button></form>`, code)
 				return
 			}
 			_ = r.ParseForm()
+			if r.Form.Get("account") != "service-user" || r.Form.Get("password") != "synthetic-service-password" {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
 			f.mu.Lock()
 			request, ok := f.codes[r.Form.Get("code")]
 			f.mu.Unlock()
@@ -362,7 +557,7 @@ func newBackofficeOAuthIssuer(t *testing.T, transport string) *backofficeOAuthIs
 			http.Redirect(w, r, target.String(), http.StatusSeeOther)
 		case r.URL.Path == "/device":
 			_ = r.ParseForm()
-			if r.Form.Get("client_id") != oauthBrowserClientID || r.Form.Get("resource") == "" {
+			if !validOAuthBrowserClient(r) || r.Form.Get("resource") == "" {
 				t.Error("device authorization lost worker resource/client")
 				w.WriteHeader(http.StatusBadRequest)
 				return
@@ -370,7 +565,7 @@ func newBackofficeOAuthIssuer(t *testing.T, transport string) *backofficeOAuthIs
 			code := rand.Text()
 			f.deviceStarts.Add(1)
 			f.mu.Lock()
-			f.devices[code] = r.Form.Get("resource")
+			f.devices[code] = backofficeOAuthDevice{resource: r.Form.Get("resource"), clientID: oauthBrowserRequestClientID(r)}
 			f.mu.Unlock()
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{"device_code": code, "user_code": "SYNTHETIC-CODE", "verification_uri": origin + "/verify", "verification_uri_complete": origin + "/verify?device=" + code, "expires_in": 120, "interval": 1})
@@ -378,6 +573,10 @@ func newBackofficeOAuthIssuer(t *testing.T, transport string) *backofficeOAuthIs
 			code := r.URL.Query().Get("device")
 			if r.Method == http.MethodPost {
 				_ = r.ParseForm()
+				if r.Form.Get("account") != "service-user" || r.Form.Get("password") != "synthetic-service-password" {
+					w.WriteHeader(http.StatusForbidden)
+					return
+				}
 				code = r.Form.Get("device")
 				f.mu.Lock()
 				f.approved[code] = true
@@ -387,7 +586,7 @@ func newBackofficeOAuthIssuer(t *testing.T, transport string) *backofficeOAuthIs
 			}
 			w.Header().Set("Cache-Control", "no-store")
 			w.Header().Set("Content-Type", "text/html")
-			_, _ = fmt.Fprintf(w, `<!doctype html><form method="post"><input type="hidden" name="device" value="%s"><button>Authorize worker</button></form>`, code)
+			_, _ = fmt.Fprintf(w, `<!doctype html><form method="post"><label>Service account<input name="account" required></label><label>Service password<input name="password" type="password" required></label><input type="hidden" name="device" value="%s"><button>Authorize worker</button></form>`, code)
 		case r.URL.Path == "/token":
 			_ = r.ParseForm()
 			resource := r.Form.Get("resource")
@@ -396,11 +595,11 @@ func newBackofficeOAuthIssuer(t *testing.T, transport string) *backofficeOAuthIs
 			switch r.Form.Get("grant_type") {
 			case "authorization_code":
 				request, ok := f.codes[r.Form.Get("code")]
-				valid = ok && request.resource == resource && request.redirect == r.Form.Get("redirect_uri") && request.challenge == oauth2.S256ChallengeFromVerifier(r.Form.Get("code_verifier"))
+				valid = ok && request.resource == resource && request.clientID == oauthBrowserRequestClientID(r) && request.redirect == r.Form.Get("redirect_uri") && request.challenge == oauth2.S256ChallengeFromVerifier(r.Form.Get("code_verifier"))
 				delete(f.codes, r.Form.Get("code"))
 			case "urn:ietf:params:oauth:grant-type:device_code":
 				code := r.Form.Get("device_code")
-				valid = f.devices[code] == resource && f.approved[code]
+				valid = f.devices[code].resource == resource && f.devices[code].clientID == oauthBrowserRequestClientID(r) && f.approved[code]
 			}
 			f.mu.Unlock()
 			w.Header().Set("Content-Type", "application/json")
@@ -409,7 +608,7 @@ func newBackofficeOAuthIssuer(t *testing.T, transport string) *backofficeOAuthIs
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": "authorization_pending"})
 				return
 			}
-			if r.Form.Get("client_id") != oauthBrowserClientID {
+			if !validOAuthBrowserClient(r) {
 				t.Error("token exchange lost client")
 				w.WriteHeader(http.StatusBadRequest)
 				return
@@ -422,6 +621,9 @@ func newBackofficeOAuthIssuer(t *testing.T, transport string) *backofficeOAuthIs
 		case r.URL.Path == "/fixture/device-support":
 			f.deviceUnsupported.Store(r.URL.Query().Get("value") == "false")
 			w.WriteHeader(http.StatusNoContent)
+		case r.URL.Path == "/fixture/metadata-unavailable":
+			f.metadataUnavailable.Store(r.URL.Query().Get("value") == "true")
+			w.WriteHeader(http.StatusNoContent)
 		case r.URL.Path == "/fixture/counts":
 			_ = json.NewEncoder(w).Encode(map[string]int32{"exchanges": f.exchanges.Load(), "device_starts": f.deviceStarts.Load(), "device_begins": f.deviceBegins.Load()})
 		default:
@@ -429,12 +631,15 @@ func newBackofficeOAuthIssuer(t *testing.T, transport string) *backofficeOAuthIs
 			if strings.HasPrefix(r.URL.Path, "/changed") {
 				resource = "/changed"
 			}
+			if strings.HasPrefix(r.URL.Path, "/public") {
+				resource = "/public"
+			}
 			if r.Header.Get("X-Worker-Secret") != "synthetic-oauth-header"+resource || r.Header.Get(mcpbridge.CapabilityHeader) != "" {
 				t.Error("upstream protected-header boundary crossed")
 				w.WriteHeader(http.StatusForbidden)
 				return
 			}
-			if r.Header.Get("Authorization") != "Bearer synthetic-browser-access" {
+			if resource != "/public" && r.Header.Get("Authorization") != "Bearer synthetic-browser-access" {
 				w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer resource_metadata="%s/.well-known/oauth-protected-resource%s"`, origin, r.URL.Path))
 				w.WriteHeader(http.StatusUnauthorized)
 				return
@@ -451,4 +656,18 @@ func newBackofficeOAuthIssuer(t *testing.T, transport string) *backofficeOAuthIs
 	f.server.URL = strings.Replace(f.server.URL, "127.0.0.1", "localhost", 1)
 	t.Cleanup(func() { f.server.CloseClientConnections(); f.server.Close() })
 	return f
+}
+
+func validOAuthBrowserClient(r *http.Request) bool {
+	if id, secret, basic := r.BasicAuth(); basic {
+		return id == oauthBrowserConfidentialClientID && secret == "synthetic-client-secret"
+	}
+	return r.Form.Get("client_id") == oauthBrowserClientID
+}
+
+func oauthBrowserRequestClientID(r *http.Request) string {
+	if id, _, basic := r.BasicAuth(); basic {
+		return id
+	}
+	return r.Form.Get("client_id")
 }

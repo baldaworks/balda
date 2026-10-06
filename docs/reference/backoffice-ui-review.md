@@ -154,8 +154,9 @@ why enrollment is unavailable while password-only use continues.
 
 The gallery includes `mcp`, `mcp-empty`, `mcp/new`,
 `mcp/connections/qa-worker`, `mcp/connections/config:qa-worker`, `mcp-probe`,
-`mcp-invalid`, `mcp-conflict`, `mcp-retained` and `mcp-unavailable`. These cover the inventory,
-all runtime states, separate grant/recovery labels, native editors, write-only
+`mcp-invalid`, `mcp-conflict`, `mcp-retained`, `mcp-unavailable`, `mcp-public`,
+`mcp-auth-required`, `mcp-revoked`, `mcp-stdio` and `mcp-saved-start-failed`.
+These cover the inventory, tool availability, separate OAuth/recovery labels, native editors, write-only
 binding controls, read-only configuration, candidate probing and actual error
 statuses. Fixtures contain only synthetic identifiers and blank replacement
 inputs. Preview forms cannot mutate application state.
@@ -181,9 +182,14 @@ authorization, one-time device
 instructions, safe device status, authorized/denied/expired/failed outcomes,
 unsupported authorization and saved-grant attachment retry. Instructions contain
 invalid synthetic values only. Review the native forms, cancellation and separate
-authorization/readiness labels at all four widths.
+authorization/availability labels at all four widths. On creation, select HTTP
+or SSE and open **Client settings — optional** with mouse and keyboard. The
+creation form submits natively, while saved definition edits retain HTMX.
+Stdio hides the remote OAuth controls with JavaScript; its ordinary command,
+arguments and environment remain available. Without JavaScript, native details
+and transport applicability instructions remain usable.
 
-Run the native worker OAuth integration gate:
+Run the native OAuth integration gate:
 
 ```bash
 BALDA_BACKOFFICE_BROWSER_TEST=1 go test -race ./internal/apps/balda -run '^TestBackofficeMCPOAuthBrowserWorkflow$' -count=1 -v
@@ -191,10 +197,20 @@ BALDA_BACKOFFICE_BROWSER_TEST=1 go test -race ./internal/apps/balda -run '^TestB
 
 It uses ordinary login, the real host owners and temporary SQLite with controlled
 OAuth and HTTP/SSE MCP servers on a different browser site from Backoffice. The
-matrix covers browser/device flows, the native callback continuation with Strict
+matrix covers configured public servers without a recovery prerequisite,
+successful managed create-and-authorize, saved creation followed by a discovery
+failure and retry without duplicates, and authorization of a previously static
+managed server. It exercises optional browser client registration, confidential
+client settings, and account/password entry at the external issuer only.
+It also covers browser/device flows, the native callback continuation with Strict
 session cookies, root and
 `/balda`, desktop/mobile and JavaScript enabled/disabled, denial/cancellation,
-saved-grant attachment retry, changed-file recapture and actual hosted/ACP tool
-execution. Its private protocol inputs are excluded from diagnostics; no real
+saved-grant attachment retry, changed/empty scopes, changed-file recapture and
+actual hosted/ACP tool execution. Historical revision payloads remain unchanged.
+Narrowed shared grants fail incompatible retained scopes closed; restoring
+authorization permits the original snapshot to invoke tools again. Existing
+stdio subprocess/environment and hosted/ACP invocation coverage remains in
+`TestStdioDiscoveryAndActualProvidersUseHostEnvironmentAndOverlay`.
+Its private protocol inputs are excluded from diagnostics; no real
 administrator, deployment or transport credentials are used. Synthetic gallery
 results remain separate from this authenticated runtime evidence.

@@ -43,7 +43,7 @@ func oauthBrowserProviders(t *testing.T) map[string]agentconfig.Config {
 
 // Adapted from catalogapp's actual provider fixtures: the model asks the hosted
 // runtime for a real tool call; the external ACP subprocess consumes session/new.
-func verifyOAuthBrowserExecution(t *testing.T, catalog *catalogapp.Runtime, registry *mcpregistry.MapRegistry, binder baldaagent.SessionCapabilityBinder, providers map[string]agentconfig.Config, snapshot runtimecatalogcmd.SnapshotID, resource string) {
+func verifyOAuthBrowserExecution(t *testing.T, catalog *catalogapp.Runtime, registry *mcpregistry.MapRegistry, binder baldaagent.SessionCapabilityBinder, providers map[string]agentconfig.Config, snapshot runtimecatalogcmd.SnapshotID, resource string, providerIDs ...string) {
 	t.Helper()
 	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var request struct {
@@ -85,7 +85,10 @@ func verifyOAuthBrowserExecution(t *testing.T, catalog *catalogapp.Runtime, regi
 	bundledHTTP := httptest.NewServer(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return bundled }, nil))
 	defer bundledHTTP.Close()
 	registry.Set("balda", agentconfig.MCPServerConfig{Type: agentconfig.MCPServerTypeHTTP, URL: bundledHTTP.URL})
-	for _, id := range []string{"hosted", "acp"} {
+	if len(providerIDs) == 0 {
+		providerIDs = []string{"hosted", "acp"}
+	}
+	for _, id := range providerIDs {
 		ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 		workspace := t.TempDir()
 		builder := baldaagent.NewBuilder(baldaagent.BuilderParams{Factory: agentfactory.New(providers, registry), ScopedFactory: catalogapp.NewProviderFactory(providers, registry), NormaCfg: runtimeconfig.RuntimeConfig{Providers: providers}})
@@ -116,7 +119,7 @@ func verifyOAuthBrowserExecution(t *testing.T, catalog *catalogapp.Runtime, regi
 		closeErr := manager.Stop(ctx)
 		cancel()
 		want := "hosted tool completed"
-		if id == "acp" {
+		if providers[id].Type == agentconfig.AgentTypeGenericACP {
 			want = "actual ACP tool " + resource
 		}
 		if err != nil || closeErr != nil || !strings.Contains(final.String(), want) {

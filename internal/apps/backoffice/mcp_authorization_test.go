@@ -220,21 +220,42 @@ func TestMCPAuthorizationNativeGuardsAndConfiguredSideState(t *testing.T) {
 	r.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: admin.access})
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, r)
-	if !strings.Contains(response.Body.String(), "authorization does not mean Ready") {
+	if !strings.Contains(response.Body.String(), "Open the connection to check whether tools are available") {
 		t.Fatal("device grant status was mistaken for runtime readiness")
 	}
 }
 
 type mcpAuthorizationFixture struct {
-	item     mcpcmd.Item
-	device   mcpcmd.DeviceAuthorization
-	callback mcpcmd.BrowserCallback
-	begins   int
+	item      mcpcmd.Item
+	device    mcpcmd.DeviceAuthorization
+	callback  mcpcmd.BrowserCallback
+	begins    int
+	creations int
+	creation  mcpcmd.CreateDefinition
+	begin     mcpcmd.BeginAuthorization
+	beginErr  error
 }
 
-func (f *mcpAuthorizationFixture) BeginBrowser(context.Context, mcpcmd.BeginAuthorization) (mcpcmd.BrowserAuthorization, error) {
+func (f *mcpAuthorizationFixture) CreateAndBeginBrowser(ctx context.Context, creation mcpcmd.CreateDefinition, request mcpcmd.BeginAuthorization) (mcpcmd.Item, mcpcmd.BrowserAuthorization, error) {
+	f.creations++
+	f.creation = creation
+	request.ConnectionID = f.item.Connection.ID
+	started, err := f.BeginBrowser(ctx, request)
+	return f.item, started, err
+}
+
+func (f *mcpAuthorizationFixture) CreateAndBeginDevice(ctx context.Context, creation mcpcmd.CreateDefinition, request mcpcmd.BeginAuthorization) (mcpcmd.Item, mcpcmd.DeviceAuthorization, error) {
+	f.creations++
+	f.creation = creation
+	request.ConnectionID = f.item.Connection.ID
+	started, err := f.BeginDevice(ctx, request)
+	return f.item, started, err
+}
+
+func (f *mcpAuthorizationFixture) BeginBrowser(_ context.Context, request mcpcmd.BeginAuthorization) (mcpcmd.BrowserAuthorization, error) {
 	f.begins++
-	return mcpcmd.BrowserAuthorization{AuthorizationURL: "https://issuer.example/authorize?state=private", ExpiresAt: time.Now().UTC().Add(time.Minute)}, nil
+	f.begin = request
+	return mcpcmd.BrowserAuthorization{AuthorizationURL: "https://issuer.example/authorize?state=private", ExpiresAt: time.Now().UTC().Add(time.Minute)}, f.beginErr
 }
 func (f *mcpAuthorizationFixture) CompleteBrowser(_ context.Context, callback mcpcmd.BrowserCallback) (mcpcmd.Item, error) {
 	f.callback = callback
@@ -242,8 +263,9 @@ func (f *mcpAuthorizationFixture) CompleteBrowser(_ context.Context, callback mc
 }
 func (f *mcpAuthorizationFixture) BeginDevice(_ context.Context, r mcpcmd.BeginAuthorization) (mcpcmd.DeviceAuthorization, error) {
 	f.begins++
+	f.begin = r
 	f.device = mcpcmd.DeviceAuthorization{ID: "attempt", ConnectionID: r.ConnectionID, UserCode: "one-time-user-code", VerificationURI: "https://issuer.example/device", VerificationURIComplete: "https://issuer.example/device?device=device-capability", Status: mcpcmd.DevicePending, ExpiresAt: time.Now().Add(time.Minute)}
-	return f.device, nil
+	return f.device, f.beginErr
 }
 func (f *mcpAuthorizationFixture) Device(context.Context, string, mcpcmd.Authority) (mcpcmd.DeviceAuthorization, error) {
 	return f.device, nil

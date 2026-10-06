@@ -232,6 +232,11 @@ readiness and retry operations.
 
 #### Protected values and worker grants
 
+HTTP/SSE OAuth settings and authorization are managed in Backoffice, including
+for file-owned server definitions; no OAuth settings need to be added to YAML.
+The operator signs in at the external service. Stdio keeps its ordinary command,
+arguments and environment configuration.
+
 Set `balda.mcp_management.credential_key`, or its environment override
 `BALDA_MCP_MANAGEMENT_CREDENTIAL_KEY`, to a standard base64-encoded 32-byte
 deployment key before storing protected values or worker OAuth grants. Supply

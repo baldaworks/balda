@@ -7,7 +7,7 @@ const { chromium } = require('playwright');
 const routes = [
  'mcp-oauth-return',
  'mcp-authorizing', 'mcp-device-issued', 'mcp-device-pending', 'mcp-device-authorized', 'mcp-device-denied', 'mcp-device-expired', 'mcp-device-failed', 'mcp-authorization-unavailable', 'mcp-authorization-retry',
-  'mcp-retained', 'mcp', 'mcp-empty', 'mcp/new', 'mcp/connections/qa-worker', 'mcp/connections/config:qa-worker', 'mcp-probe', 'mcp-invalid', 'mcp-conflict', 'mcp-unavailable',
+  'mcp-public', 'mcp-auth-required', 'mcp-revoked', 'mcp-stdio', 'mcp-saved-start-failed', 'mcp-retained', 'mcp', 'mcp-empty', 'mcp/new', 'mcp/connections/qa-worker', 'mcp/connections/config:qa-worker', 'mcp-probe', 'mcp-invalid', 'mcp-conflict', 'mcp-unavailable',
   '', 'style-guide', 'layout', 'layout-long', 'login', 'login-error', 'refresh', 'refresh-error', 'refresh-conflict',
   'password', 'password-error', 'overview', 'overview-empty', 'access-list',
   'access-create', 'access-empty', 'access-error', 'access', 'access-primary',
@@ -17,7 +17,7 @@ const routes = [
   'form-bad-request', 'form-forbidden', 'form-conflict', 'form-server-error',
 ];
 const expectedStatus = new Map([
- ['mcp-authorization-unavailable',503], ['mcp-invalid',400],['mcp-conflict',409],['mcp-unavailable',503],
+ ['mcp-saved-start-failed',503], ['mcp-authorization-unavailable',503], ['mcp-invalid',400],['mcp-conflict',409],['mcp-unavailable',503],
   ['form-bad-request', 400], ['form-forbidden', 403],
   ['form-conflict', 409], ['form-server-error', 500],
 ]);
@@ -62,6 +62,14 @@ async function checkMCPTransport(browser, baseURL, viewport) {
       assert.equal(names.includes(name), false, `${value} excludes inactive ${name} from submission`);
     }
     assert.equal(names.includes('url'), true, `${value} submits its URL`);
+    await page.getByText('Client settings — optional', { exact: true }).click();
+    assert.equal(await page.getByLabel('Client ID', { exact: true }).isVisible(), true, `${value} exposes optional native client settings`);
+    await page.getByLabel('Client secret', { exact: true }).fill('synthetic-client-draft');
+    const form = page.locator('form[data-mcp-create]');
+    assert.equal(await form.getAttribute('hx-boost'), 'false', 'creation uses native submit');
+    assert.equal(await form.getAttribute('hx-post'), null, 'OAuth controls share a native form');
+    assert.equal(await page.getByRole('button', { name: 'Create and authorize in browser', exact: true }).isVisible(), true);
+    await page.getByText('Client settings — optional', { exact: true }).click();
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${value} has no overflow at ${viewport.width}px`);
   }
   await page.getByLabel('Server URL', { exact: true }).fill('https://synthetic.example.test/mcp');
@@ -72,7 +80,7 @@ async function checkMCPTransport(browser, baseURL, viewport) {
   assert.equal(await page.getByLabel('Server URL', { exact: true }).isVisible(), false, 'stdio hides remote server fields');
   assert.equal(await page.locator('#header-key-0').isVisible(), false, 'stdio hides header fields');
   const names = await transport.evaluate(select => [...new FormData(select.form).keys()]);
-  for (const name of ['url', 'oauth', 'scopes', 'header_key', 'header_value']) {
+  for (const name of ['url', 'client_id', 'client_secret', 'scopes', 'header_key', 'header_value']) {
     assert.equal(names.includes(name), false, `stdio excludes inactive ${name} from submission`);
   }
   await page.getByRole('link', { name: 'All MCP servers', exact: true }).click();
@@ -275,6 +283,9 @@ async function checkPage(browser, baseURL, viewport) {
       await noScript.getByLabel('Transport', { exact: true }).selectOption('http');
       assert.equal(await noScript.getByLabel('Command', { exact: true }).isVisible(), true, 'native form keeps its explained transport fields available');
       assert.equal(await noScript.getByLabel('Server URL', { exact: true }).isVisible(), true, 'native remote URL field is usable');
+      await noScript.getByText('Client settings — optional', { exact: true }).click();
+      assert.equal(await noScript.getByLabel('Client ID', { exact: true }).isVisible(), true, 'client settings use native details without JavaScript');
+      assert.equal(await noScript.getByRole('button', { name: 'Create and authorize in browser', exact: true }).isVisible(), true);
       await noScript.goto(`${url}/qa/ui/audit`);
       assert.equal(await noScript.locator('table tbody tr').count(), 3);
       await noScript.getByText('Dates and actor ID').click();

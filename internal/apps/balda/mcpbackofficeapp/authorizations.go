@@ -17,6 +17,39 @@ func (o *Operations) ConfigureAuthorizations(authorizations *mcpmanage.Authoriza
 	return nil
 }
 
+// CreateAndBeginBrowser keeps the saved identity available if protocol start
+// fails. Only the trusted creation authority can bind the new attempt.
+func (o *Operations) CreateAndBeginBrowser(ctx context.Context, creation mcpcmd.CreateDefinition, request mcpcmd.BeginAuthorization) (mcpcmd.Item, mcpcmd.BrowserAuthorization, error) {
+	item, request, err := o.createAuthorization(ctx, creation, request)
+	if err != nil {
+		return item, mcpcmd.BrowserAuthorization{}, err
+	}
+	started, err := o.BeginBrowser(ctx, request)
+	return item, started, err
+}
+
+// CreateAndBeginDevice creates once, then starts the existing native device flow.
+func (o *Operations) CreateAndBeginDevice(ctx context.Context, creation mcpcmd.CreateDefinition, request mcpcmd.BeginAuthorization) (mcpcmd.Item, mcpcmd.DeviceAuthorization, error) {
+	item, request, err := o.createAuthorization(ctx, creation, request)
+	if err != nil {
+		return item, mcpcmd.DeviceAuthorization{}, err
+	}
+	started, err := o.BeginDevice(ctx, request)
+	return item, started, err
+}
+
+func (o *Operations) createAuthorization(ctx context.Context, creation mcpcmd.CreateDefinition, request mcpcmd.BeginAuthorization) (mcpcmd.Item, mcpcmd.BeginAuthorization, error) {
+	if o.authorizations == nil {
+		return mcpcmd.Item{}, request, mcpcmd.ErrUnavailable
+	}
+	item, err := o.definitions.CreateForAuthorization(ctx, creation, request.Scopes)
+	if err != nil {
+		return item, request, err
+	}
+	request.ConnectionID, request.Authority = item.Connection.ID, creation.Authority
+	return item, request, nil
+}
+
 // BeginBrowser captures trusted current file values before starting protocol I/O.
 func (o *Operations) BeginBrowser(ctx context.Context, request mcpcmd.BeginAuthorization) (mcpcmd.BrowserAuthorization, error) {
 	if o.authorizations == nil {

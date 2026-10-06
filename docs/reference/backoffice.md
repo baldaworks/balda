@@ -539,8 +539,8 @@ at the durable write boundary. MCP form intake is bounded to 1 MiB; other
 browser forms retain their existing limits.
 
 Inventory combines configured and Backoffice-managed connections. It shows
-source, transport, provider targets, runtime status and current worker grant
-status separately. **Ready** means the selected revision's tools are available;
+source, transport, provider targets, tool availability and OAuth
+status separately. **Available** means the selected revision's tools are available;
 saving or storing an authorized grant does not establish readiness. Recovery
 labels come from the catalog owner's exact current failed attachment evidence.
 Opening inventory does not start a server or discover OAuth metadata.
@@ -548,7 +548,8 @@ Opening inventory does not start a server or discover OAuth metadata.
 `/mcp/new` creates a managed server. `/mcp/connections/{connection_id}` shows
 its current state and editor. The immutable server ID must be unique across
 both sources. Stdio uses a direct command, working directory and one argument
-per line; HTTP and SSE use a URL, headers and optional worker OAuth scopes.
+per line; HTTP and SSE use a URL and headers. Their OAuth settings are
+managed separately in Backoffice, including for configuration-owned servers.
 With JavaScript, the new-server form shows only the selected transport's fields
 and excludes inactive draft fields from submission. Switching back retains the
 draft until navigation or submission clears write-only values. Without
@@ -567,7 +568,8 @@ and leaves runtime readiness unchanged. Probe inputs are cleared; enter them
 again before saving. Saves redirect to the current detail. Conflicts return
 409 and require reopening the editor. Errors retain their HTTP status and never
 reflect submitted values or private transport errors. Native forms use 303;
-eligible HTMX saves use 204 with a local `HX-Location`.
+creation is native even with JavaScript; eligible saved-editor HTMX mutations
+use 204 with a local `HX-Location`.
 
 Configuration-owned entries are read-only: browser editing, selection changes,
 probe edits and deletion are rejected. Change their definition in the host
@@ -587,17 +589,33 @@ owners to that port. Validation, encrypted values, durable authority fences and
 readiness policy remain in their existing owners. Balda configures the port
 before the Backoffice HTTP listener starts; startup stage ordering is unchanged.
 
-### Worker authorization
+### OAuth authorization
 
-For a remote connection, **Authorize worker** starts a native browser or
-supported device flow from its current trusted definition. Configuration entries
+Every non-deleted HTTP/SSE detail offers an **OAuth** section, including public
+servers and configuration-owned entries. **Not configured** is neutral: a
+working public or header-only server does not require sign-in. Availability
+shows whether tools can be used; authorization status shows the saved service
+authorization. Required-login guidance comes from current attachment or grant
+evidence, not merely an empty grant.
+
+When adding an HTTP/SSE server, use **Create and authorize in browser** or
+**Create with device code** to save once and start authorization. **Create
+server** and **Probe candidate** remain available for public/header-only
+connections. If authorization cannot start after saving, **Open saved
+connection** returns to that connection for retry; do not create it again.
+
+On a saved remote connection, **Authorize in browser** or **Authorize with
+device** starts a native flow from its current trusted definition. Configuration entries
 remain read-only. Starting explicitly captures current file values when needed;
 changing the file never silently changes an existing session's captured revision.
 A static `Authorization` header conflicts with worker OAuth and must be removed
-in the host definition before authorization.
+in its definition before authorization (the host configuration for file-owned
+servers, the editor for managed servers).
 
-Use an explicit pre-registered client ID and its supported authentication method.
-Client secrets are encrypted and write-only. Browser authorization can use
+Open **Client settings — optional** when the service requires a client ID,
+authentication method, client secret or scopes. The operator enters service
+account credentials at the external service, never in Balda. The authorization
+is shared by the installation. Client secrets are encrypted and write-only. Browser authorization can use
 supported server client registration when the ID is blank; device authorization
 requires a pre-registered client and server support. Unsupported device flows
 show an error; use browser authorization when the service supports that flow.
@@ -632,12 +650,16 @@ exchange or device polling prevents installation. After installation, the same
 host policy binds the exact initiating revision outside protocol locks. A later
 edit can reject that binding without assigning the saved grant to another
 revision. Existing session pins and ready runners retain their exact identity.
+Service authorization is shared: reauthorization replaces the grant for that
+connection, resource, issuer and client. Reducing scopes can deny tools to
+existing sessions that require the previous scopes. Their revisions stay
+unchanged; restoring sufficient authorization permits access again.
 
-**Authorized** means a worker grant was saved; **Ready** means its current tools
+**Authorized** means service authorization was saved; **Available** means its current tools
 are available. Inspect both states on the connection. **Retry tool attachment**
 uses its saved current grant without repeating OAuth, keeps an unchanged binding
 revision and retries the affected failed attachment. It does not restart ready
-runners or change historical pins. **Disconnect worker** requires confirmation
+runners or change historical pins. **Revoke authorization** requires confirmation
 and revokes every retained worker grant context, including existing sessions.
 Run one active writer for worker grants; keep the deployment credential key with
 the database backup. Configure its format and deployment override as described in
