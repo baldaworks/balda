@@ -569,7 +569,10 @@ again before saving. Saves redirect to the current detail. Conflicts return
 409 and require reopening the editor. Errors retain their HTTP status and never
 reflect submitted values or private transport errors. Native forms use 303;
 creation is native even with JavaScript; eligible saved-editor HTMX mutations
-use 204 with a local `HX-Location`.
+use 204 with a local `HX-Location`. If a change commits but reading its current
+state fails, the error response explicitly reports the saved change and offers
+**Open saved connection**. Use that record to check its state instead of repeating
+creation; the error status and write-only input clearing are preserved.
 
 Configuration-owned entries are read-only: browser editing, selection changes,
 probe edits and deletion are rejected. Change their definition in the host
@@ -659,7 +662,11 @@ unchanged; restoring sufficient authorization permits access again.
 are available. Inspect both states on the connection. **Retry tool attachment**
 uses its saved current grant without repeating OAuth, keeps an unchanged binding
 revision and retries the affected failed attachment. It does not restart ready
-runners or change historical pins. **Revoke authorization** requires confirmation
+runners or change historical pins. A transient OAuth refresh failure makes the
+exact connection **Tools unavailable** while retaining its saved authorization.
+A successful subsequent credential request or **Retry tool attachment** restores
+availability without restarting the attached MCP or changing its revision.
+Retry does not dispatch a tool request. **Revoke authorization** requires confirmation
 and revokes every retained worker grant context, including existing sessions.
 Run one active writer for worker grants; keep the deployment credential key with
 the database backup. Configure its format and deployment override as described in

@@ -166,7 +166,7 @@ func (a *httpApp) mcpOnboardingError(w http.ResponseWriter, r *http.Request, pag
 	}
 	status, message := mcpAuthorizationFailure(err)
 	page.Error = &webui.ErrorView{Heading: "Connection saved; OAuth could not start", Message: message + " Open the saved connection to retry authorization."}
-	page.RestartURL, page.RestartLabel = a.path("/mcp/connections/"+url.PathEscape(item.Connection.ID)), "Open saved connection"
+	page.RestartURL, page.RestartLabel = a.path("/mcp/connections/"+url.PathEscape(item.Connection.ID)), mcpSavedConnectionLabel
 	a.render(w, r, status, webui.TemplateError, page)
 }
 func (a *httpApp) mcpBeginBrowser(w http.ResponseWriter, r *http.Request) {

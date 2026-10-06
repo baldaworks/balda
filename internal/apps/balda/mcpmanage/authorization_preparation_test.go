@@ -182,3 +182,13 @@ func TestConnectionEditAndProbeKeepTrustedOAuthSettings(t *testing.T) {
 		})
 	}
 }
+
+func TestOrdinaryCommittedCreateRetainsIdentity(t *testing.T) {
+	definitions, store, _ := definitionHarness(t)
+	definitions.store = &committedReadFailureStore{definitionMemoryStore: store}
+	item, err := definitions.Create(t.Context(), definitionCreate())
+	if !errors.Is(err, mcpcmd.ErrUnavailable) || item.Connection.ID == "" || len(store.connections) != 1 || item.Status != mcpcmd.StatusPending {
+		t.Fatalf("unexpected outcome: saved=%s error=%v count=%d status=%s", item.Connection.ID, err, len(store.connections), item.Status)
+	}
+	t.Log("ordinary Create committed once, returned saved identity plus readback error")
+}

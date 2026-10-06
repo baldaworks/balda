@@ -52,6 +52,7 @@ type Runtime struct {
 	configuredMCP              []runtimecatalogcmd.Source
 	configuredUpgradeRevisions map[runtimecatalogcmd.ContributionID]runtimecatalogcmd.RevisionID
 	mcp                        *mcpruntime.Reconciler
+	mcpCredentials             mcpCredentialHealth
 	ads                        *commandfx.AdvertisementProjector
 }
 
@@ -89,6 +90,9 @@ func NewRuntime(
 		loader: loader, archive: archive, reader: reader, plugins: provider.Plugins(), managedMCP: provider.MCP(), sessions: provider.Sessions(), kv: provider.AppKV(),
 		builtin: builtinSource(advertisements), configuredMCP: configuredMCPSources(configured), credentials: credentials,
 		configuredUpgradeRevisions: configuredUpgradeRevisions(configured),
+	}
+	if bridge != nil {
+		runtime.mcpCredentials = bridge
 	}
 	pluginResolver, err := mcpruntime.NewPluginResolver(archive, runtime, nil, mcpruntime.PluginPolicy{})
 	if err != nil {

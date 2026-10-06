@@ -492,3 +492,77 @@ func (t bridgeTestHeaders) RoundTrip(r *http.Request) (*http.Response, error) {
 	r.Header.Set("Cookie", "browser=private-cookie")
 	return t.base.RoundTrip(r)
 }
+
+func TestCredentialFailureRecoveryIsScopedToExactEndpoint(t *testing.T) {
+	var upstreamRequests atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamRequests.Add(1)
+		if r.Header.Get("Authorization") != "Bearer worker-token" {
+			t.Error("upstream request lost its bound token")
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer upstream.Close()
+	binding := mcpcmd.AuthBinding{ConnectionID: "worker", Resource: upstream.URL, Issuer: "https://issuer.example.org", ClientID: "client"}
+	tokens := &bridgeTokens{t: t, binding: binding, err: errors.New("private-issuer-failure-marker")}
+	bridge := New(tokens, nil)
+	if err := bridge.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = bridge.Close(t.Context()) }()
+	config := Endpoint{URL: binding.Resource, Transport: mcpcmd.TransportHTTP, Binding: &binding, Scopes: []string{"tools"}}
+	retained, err := bridge.Install("retained", config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := bridge.Install("current", config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := func(projection Projection) int {
+		t.Helper()
+		request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, projection.URL, strings.NewReader("{}"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		request.Header.Set(CapabilityHeader, projection.Headers[CapabilityHeader])
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = response.Body.Close() }()
+		return response.StatusCode
+	}
+	if request(retained) != http.StatusBadGateway || !bridge.CredentialsUnavailable("retained") || bridge.CredentialsUnavailable("current") {
+		t.Fatal("retained request failure changed current endpoint availability")
+	}
+	if err := bridge.RetryCredentials(t.Context(), "retained"); !errors.Is(err, mcpcmd.ErrUnavailable) || strings.Contains(err.Error(), "private-issuer-failure-marker") {
+		t.Fatalf("private failure escaped retry: %v", err)
+	}
+	tokens.mu.Lock()
+	tokens.err = nil
+	tokens.token = "worker-token"
+	tokens.mu.Unlock()
+	if request(current) != http.StatusNoContent || bridge.CredentialsUnavailable("current") || !bridge.CredentialsUnavailable("retained") {
+		t.Fatal("another revision's successful request cleared retained failure")
+	}
+	if request(retained) != http.StatusNoContent || bridge.CredentialsUnavailable("retained") {
+		t.Fatal("successful request did not restore exact endpoint availability")
+	}
+	tokens.mu.Lock()
+	tokens.err = mcpcmd.ErrUnavailable
+	tokens.mu.Unlock()
+	if request(retained) != http.StatusBadGateway {
+		t.Fatal("credential failure reached upstream")
+	}
+	tokens.mu.Lock()
+	tokens.err = nil
+	tokens.mu.Unlock()
+	dispatched := upstreamRequests.Load()
+	if err := bridge.RetryCredentials(t.Context(), "retained"); err != nil || bridge.CredentialsUnavailable("retained") {
+		t.Fatalf("explicit retry did not recover: %v", err)
+	}
+	if upstreamRequests.Load() != dispatched {
+		t.Fatal("credential retry dispatched an upstream request")
+	}
+}

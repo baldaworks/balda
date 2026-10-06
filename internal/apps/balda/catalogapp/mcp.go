@@ -5,9 +5,16 @@ import (
 	"path/filepath"
 
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpfx"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpruntime"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 )
+
+// Credential observations supplement discovery without changing its lifetime.
+type mcpCredentialHealth interface {
+	CredentialsUnavailable(id string) bool
+	RetryCredentials(ctx context.Context, id string) error
+}
 
 // MCPHealth returns only observed readiness for the exact selected revision.
 func (r *Runtime) MCPHealth(ctx context.Context, c mcpcmd.Connection) (mcpcmd.Status, int, error) {
@@ -73,6 +80,9 @@ func (r *Runtime) MCPHealth(ctx context.Context, c mcpcmd.Connection) (mcpcmd.St
 		}
 		switch health.State {
 		case mcpruntime.HealthReady:
+			if r.mcpCredentials != nil && r.mcpCredentials.CredentialsUnavailable(mcpfx.RegistryID(key)) {
+				return mcpcmd.StatusUnavailable, 0, nil
+			}
 			return mcpcmd.StatusReady, health.ToolCount, nil
 		case mcpruntime.HealthFailed, mcpruntime.HealthDegraded, mcpruntime.HealthStopping:
 			return mcpcmd.StatusUnavailable, 0, nil

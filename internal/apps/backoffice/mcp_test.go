@@ -354,3 +354,56 @@ func TestMCPIntakePreservesTransportFieldsForOwnerValidation(t *testing.T) {
 		t.Fatal("intake silently discarded fields before owner validation")
 	}
 }
+
+type committedMCPCreatePort struct{ *mcpHTTPFixture }
+
+func (f *committedMCPCreatePort) Create(_ context.Context, request mcpcmd.CreateDefinition) (mcpcmd.Item, error) {
+	f.creates = append(f.creates, request)
+	saved := mcpcmd.Item{Connection: mcpcmd.Connection{ID: "saved-worker", PublicID: request.PublicID, Source: mcpcmd.SourceManaged, Version: 1, Enabled: true}, Definition: request.Definition, Status: mcpcmd.StatusPending}
+	f.items = append(f.items, saved)
+	return saved, mcpcmd.ErrUnavailable
+}
+func TestCommittedMCPCreateHasRecoveryLink(t *testing.T) {
+	for _, base := range []string{"", "/balda"} {
+		t.Run("base="+base, func(t *testing.T) { testCommittedMCPCreateHasRecoveryLink(t, base) })
+	}
+}
+
+func testCommittedMCPCreateHasRecoveryLink(t *testing.T, base string) {
+	provider, config := newHTTPAppTestState(t)
+	config.Server.BasePath = base
+	now := time.Now().UTC()
+	createAccessTestUser(t, provider.Users(), usercmd.User{ID: "admin", Username: "admin", NormalizedUsername: "admin", DisplayName: "Admin", Role: usercmd.RoleAdministrator, Status: usercmd.StatusActive, Primary: true, Credential: usercmd.Credential{State: usercmd.CredentialStateActive, Version: 1}, Version: 1, CreatedAt: now, UpdatedAt: now})
+	app, err := newHTTPApp(provider.Users(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := &committedMCPCreatePort{mcpHTTPFixture: &mcpHTTPFixture{}}
+	app.mcp = port
+	handler, err := app.handler()
+	if err != nil {
+		t.Fatal(err)
+	}
+	login := loginHTTPAppSession(t, handler, config, "admin")
+	for _, fragment := range []bool{false, true} {
+		t.Run(fmt.Sprint(fragment), func(t *testing.T) {
+			response := performAccessMutation(t, handler, config, base+"/mcp/connections", url.Values{"csrf_token": {login.csrf}, "public_id": {"worker"}, "transport": {"http"}, "url": {"https://worker.example/mcp"}, "targets_all": {"true"}, "operation": {"save"}, "header_key": {"X-Private"}, "header_operation": {"set"}, "header_kind": {"protected"}, "header_value": {"private-recovery-marker"}}, login.access, login.csrf, fragment)
+			body := response.Body.String()
+			if response.Code != http.StatusServiceUnavailable || !strings.Contains(body, `href="`+base+`/mcp/connections/saved-worker"`) {
+				t.Errorf("post-commit status/link = %d/%t", response.Code, strings.Contains(body, `href="`+base+`/mcp/connections/saved-worker"`))
+			}
+			if !strings.Contains(body, "saved") || strings.Contains(body, "private-recovery-marker") || response.Header().Get("Cache-Control") != noStoreCacheControl {
+				t.Error("saved response lost its explicit outcome, input clearing or no-store policy")
+			}
+		})
+	}
+	for _, operation := range []string{"save", "probe"} {
+		t.Run(operation+" without commit", func(t *testing.T) {
+			app.mcp = &mcpHTTPFixture{err: mcpcmd.ErrUnavailable}
+			response := performAccessMutation(t, handler, config, base+"/mcp/connections", url.Values{"csrf_token": {login.csrf}, "public_id": {"worker"}, "transport": {"http"}, "url": {"https://worker.example/mcp"}, "targets_all": {"true"}, "operation": {operation}}, login.access, login.csrf, false)
+			if response.Code != http.StatusServiceUnavailable || strings.Contains(response.Body.String(), "Open saved connection") {
+				t.Fatal("pre-commit failure or candidate probe advertised a saved connection")
+			}
+		})
+	}
+}

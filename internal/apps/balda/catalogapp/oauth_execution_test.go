@@ -18,14 +18,15 @@ import (
 )
 
 type workerGrantFixture struct {
-	provider      state.Provider
-	credentials   *mcpmanage.Service
-	grants        *mcpmanage.Grants
-	authority     mcpcmd.Authority
-	binding       mcpcmd.AuthBinding
-	access        atomic.Value
-	renewals      atomic.Int32
-	rejectRefresh atomic.Bool
+	provider         state.Provider
+	credentials      *mcpmanage.Service
+	grants           *mcpmanage.Grants
+	authority        mcpcmd.Authority
+	binding          mcpcmd.AuthBinding
+	access           atomic.Value
+	renewals         atomic.Int32
+	rejectRefresh    atomic.Bool
+	transientRefresh atomic.Bool
 }
 
 func newWorkerGrantFixture(t *testing.T, provider state.Provider, credentials *mcpmanage.Service, authority mcpcmd.Authority, connectionID, resource string) *workerGrantFixture {
@@ -36,6 +37,11 @@ func newWorkerGrantFixture(t *testing.T, provider state.Provider, credentials *m
 	issuer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/token" {
+			if f.transientRefresh.Load() {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_, _ = w.Write([]byte(`{"error":"temporarily_unavailable"}`))
+				return
+			}
 			if f.rejectRefresh.Load() {
 				w.WriteHeader(http.StatusBadRequest)
 				_, _ = w.Write([]byte(`{"error":"invalid_grant"}`))

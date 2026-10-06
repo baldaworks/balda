@@ -872,10 +872,10 @@ func loginHTTPApp(t *testing.T, handler http.Handler, config ResolvedConfig, use
 func loginHTTPAppSession(t *testing.T, handler http.Handler, config ResolvedConfig, username string) httpLoginCookies {
 	t.Helper()
 	loginPage := httptest.NewRecorder()
-	handler.ServeHTTP(loginPage, httptest.NewRequest(http.MethodGet, "/login", nil))
+	handler.ServeHTTP(loginPage, httptest.NewRequest(http.MethodGet, config.Server.BasePath+"/login", nil))
 	csrf := cookieValue(loginPage.Result().Cookies(), security.CSRFCookieName)
 	form := url.Values{"username": {username}, "password": {"correct horse battery staple"}, "csrf_token": {csrf}}
-	request := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(form.Encode()))
+	request := httptest.NewRequest(http.MethodPost, config.Server.BasePath+"/login", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Origin", config.Server.PublicURL)
 	request.Header.Set("Sec-Fetch-Site", "same-origin")

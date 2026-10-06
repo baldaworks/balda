@@ -16,6 +16,7 @@ import (
 )
 
 const mcpProbeOperation = "probe"
+const mcpSavedConnectionLabel = "Open saved connection"
 
 // MCPOperations is Backoffice's port to host-owned MCP management. Definition
 // validation, durable authority fences and readiness policy remain with the host.
@@ -291,6 +292,13 @@ func parseMCPValues(form url.Values, prefix string) (map[string]mcpcmd.ValueEdit
 
 func (a *httpApp) mcpResult(w http.ResponseWriter, r *http.Request, page webui.Page, item mcpcmd.Item, err error, probe, remove bool) {
 	if err != nil {
+		if !probe && item.Connection.ID != "" {
+			status, _ := mcpOperationFailure(err)
+			page.Error = &webui.ErrorView{Heading: "Connection change saved", Message: "The change was saved, but its current state could not be read. Open the saved connection to check its state; do not repeat creation."}
+			page.RestartURL, page.RestartLabel = a.path("/mcp/connections/"+url.PathEscape(item.Connection.ID)), mcpSavedConnectionLabel
+			a.render(w, r, status, webui.TemplateError, page)
+			return
+		}
 		a.mcpError(w, r, page, err)
 		return
 	}
@@ -309,6 +317,17 @@ func (a *httpApp) mcpResult(w http.ResponseWriter, r *http.Request, page webui.P
 }
 
 func (a *httpApp) mcpError(w http.ResponseWriter, r *http.Request, page webui.Page, err error) {
+	status, message := mcpOperationFailure(err)
+	page.Error = &webui.ErrorView{Heading: "MCP operation could not complete", Message: message}
+	templateName := webui.TemplateMCP
+	if page.MCP == nil {
+		page.Title = "MCP operation unavailable · Balda"
+		templateName = webui.TemplateError
+	}
+	a.render(w, r, status, templateName, page)
+}
+
+func mcpOperationFailure(err error) (int, string) {
 	status, message := http.StatusServiceUnavailable, "The operation could not be completed. Reopen MCP management and try again."
 	switch {
 	case errors.Is(err, mcpcmd.ErrInvalid):
@@ -324,11 +343,5 @@ func (a *httpApp) mcpError(w http.ResponseWriter, r *http.Request, page webui.Pa
 	case errors.Is(err, mcpcmd.ErrAuthRequired), errors.Is(err, mcpcmd.ErrDisconnected):
 		message = "Worker authorization is required before this operation can complete."
 	}
-	page.Error = &webui.ErrorView{Heading: "MCP operation could not complete", Message: message}
-	templateName := webui.TemplateMCP
-	if page.MCP == nil {
-		page.Title = "MCP operation unavailable · Balda"
-		templateName = webui.TemplateError
-	}
-	a.render(w, r, status, templateName, page)
+	return status, message
 }

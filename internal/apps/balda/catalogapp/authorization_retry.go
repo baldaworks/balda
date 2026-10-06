@@ -4,12 +4,14 @@ import (
 	"context"
 
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpfx"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpruntime"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 )
 
-// RetryMCPAuthorization retries only failed exact attachments sharing the
-// installed worker identity. It never publishes or replaces a ready runner.
+// RetryMCPAuthorization retries failed exact attachments sharing the installed
+// worker identity, or the current endpoint's failed credential request. It never
+// publishes or replaces a ready runner.
 func (r *Runtime) RetryMCPAuthorization(ctx context.Context, binding mcpcmd.AuthBinding) error {
 	unlock, err := r.LockCatalogMutation(ctx)
 	if err != nil {
@@ -22,7 +24,11 @@ func (r *Runtime) RetryMCPAuthorization(ctx context.Context, binding mcpcmd.Auth
 	}
 	var keys []mcpruntime.InstanceKey
 	for _, health := range r.mcp.Health() {
-		if health.State != mcpruntime.HealthFailed {
+		id := mcpfx.RegistryID(health.Key)
+		// Retained pins may intentionally require scopes absent from the current
+		// grant. Their denial must not interfere with current-detail recovery.
+		retryCredentials := health.State == mcpruntime.HealthReady && string(health.Key.Revision) == connection.CurrentRevisionID && r.mcpCredentials != nil && r.mcpCredentials.CredentialsUnavailable(id)
+		if health.State != mcpruntime.HealthFailed && !retryCredentials {
 			continue
 		}
 		kind := health.Key.Source.Kind
@@ -55,7 +61,13 @@ func (r *Runtime) RetryMCPAuthorization(ctx context.Context, binding mcpcmd.Auth
 			return mcpcmd.ErrUnavailable
 		}
 		if revision.Definition.AuthBinding != nil && *revision.Definition.AuthBinding == binding {
-			keys = append(keys, health.Key)
+			if retryCredentials {
+				if err := r.mcpCredentials.RetryCredentials(ctx, id); err != nil {
+					return err
+				}
+			} else {
+				keys = append(keys, health.Key)
+			}
 		}
 	}
 	return r.mcp.Retry(ctx, keys)
