@@ -29,7 +29,7 @@ const (
 	defaultMaxBodyBytes = 8 << 10
 )
 
-var defaultReturnPrefixes = []string{"/", "/overview", "/access", "/account", "/audit"}
+var defaultReturnPrefixes = []string{"/", "/overview", "/access", "/account", "/audit", "/mcp"}
 
 type browserService interface {
 	RequireFresh(ctx context.Context, rawAccessToken string) error
@@ -344,7 +344,17 @@ func (b *Browser) RequireAdministrator(next http.Handler) http.Handler {
 // AdministratorMutation applies the browser mutation guard in trust-boundary
 // order and returns a current normal administrator principal.
 func (b *Browser) AdministratorMutation(w http.ResponseWriter, r *http.Request) (url.Values, Principal, bool) {
-	form, ok := b.mutationForm(w, r)
+	return b.AdministratorMutationLimit(w, r, b.maxBodyBytes)
+}
+
+// AdministratorMutationLimit keeps the same authority guard with a server-chosen
+// bounded intake size for larger editors. Other forms retain their usual limit.
+func (b *Browser) AdministratorMutationLimit(w http.ResponseWriter, r *http.Request, limit int64) (url.Values, Principal, bool) {
+	if limit < 256 || limit > 1<<20 {
+		b.writeHTTPError(w, r, http.StatusBadRequest, "invalid request")
+		return nil, Principal{}, false
+	}
+	form, ok := b.mutationFormLimit(w, r, limit)
 	if !ok {
 		return nil, Principal{}, false
 	}

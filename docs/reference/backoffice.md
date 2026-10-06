@@ -518,3 +518,54 @@ with the existing password and register a replacement key from Account.
 Factor transitions and verification appear in Audit. The verifier dependency
 and source reuse are documented in the
 [WebAuthn dependency review](backoffice-webauthn-dependency-review.md).
+
+## MCP management
+
+Administrators with a normal browser session can open **MCP** at `/mcp`.
+Operators do not receive MCP navigation and cannot open the pages or submit
+mutations. Optional passkey freshness applies to both sensitive reads and
+writes. All forms use the current session CSRF token and same-origin guard;
+the host rechecks current user, credential, MFA and browser-family versions
+at the durable write boundary. MCP form intake is bounded to 1 MiB; other
+browser forms retain their existing limits.
+
+Inventory combines configured and Backoffice-managed connections. It shows
+source, transport, provider targets, runtime status and current worker grant
+status separately. **Ready** means the selected revision's tools are available;
+saving or storing an authorized grant does not establish readiness. Recovery
+labels come from the catalog owner's exact current failed attachment evidence.
+Opening inventory does not start a server or discover OAuth metadata.
+
+`/mcp/new` creates a managed server. `/mcp/connections/{connection_id}` shows
+its current state and editor. The immutable server ID must be unique across
+both sources. Stdio uses a direct command, working directory and one argument
+per line; HTTP and SSE use a URL, headers and optional worker OAuth scopes.
+Choose all providers or specific configured providers. The editor supplies
+explicit literal, protected and deployment-variable value sources. Keep retains
+an existing value, Replace supplies a new value, and Remove deletes it. Existing
+values are never prefilled. Protected replacement inputs are write-only and are
+cleared after browser requests and history restoration. Save and reopen to add
+more binding rows. When changing transport, remove incompatible bindings.
+
+**Probe candidate** validates and discovers the proposed revision without
+saving, publishing or selecting it. Successful probing reports a tool count
+and leaves runtime readiness unchanged. Probe inputs are cleared; enter them
+again before saving. Saves redirect to the current detail. Conflicts return
+409 and require reopening the editor. Errors retain their HTTP status and never
+reflect submitted values or private transport errors. Native forms use 303;
+eligible HTMX saves use 204 with a local `HX-Location`.
+
+Configuration-owned entries are read-only: browser editing, selection changes,
+probe edits and deletion are rejected. Change their definition in the host
+configuration. Disabling and deleting managed connections require explicit
+confirmation. They affect new sessions; existing sessions retain their exact
+revision until release. Deletion tombstones the connection and does not erase
+retained revisions. Deleted connection details expose retained metadata without
+edit, probe or selection forms. Worker OAuth completion and configuration recapture are
+separate operations from definition editing.
+
+Backoffice owns the narrow `MCPOperations` consuming port and its HTML views.
+`internal/apps/balda/mcpbackofficeapp` adapts the host's definition and catalog
+owners to that port. Validation, encrypted values, durable authority fences and
+readiness policy remain in their existing owners. Balda configures the port
+before the Backoffice HTTP listener starts; startup stage ordering is unchanged.

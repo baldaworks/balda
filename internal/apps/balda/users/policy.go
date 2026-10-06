@@ -69,6 +69,7 @@ func BackofficeCapabilities(user usercmd.User) usercmd.BackofficeCapabilities {
 			Overview:    true,
 			Account:     true,
 			ManageUsers: true,
+			ManageMCP:   true,
 			ViewAudit:   true,
 		}
 	case usercmd.RoleOperator:

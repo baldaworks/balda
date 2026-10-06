@@ -112,6 +112,7 @@ func TestConfiguredAuthorizationRetryAndRecaptureInvokeActualProviders(t *testin
 			if err != nil {
 				t.Fatal(err)
 			}
+			assertCurrentRecovery(t, catalog, definitions, mcpcmd.RecoveryAuthorizationRequired, mcpcmd.GrantAuthRequired)
 			worker := newWorkerGrantFixture(t, p, credentials, mutation.Authority, capture.ConnectionID, first.server.URL)
 			worker.authorize(t)
 			first.worker.Store(worker)
@@ -121,6 +122,7 @@ func TestConfiguredAuthorizationRetryAndRecaptureInvokeActualProviders(t *testin
 			if err != nil || bound.Status == mcpcmd.StatusReady {
 				t.Fatalf("saved grant with failed remote = %s, %v", bound.Status, err)
 			}
+			assertCurrentRecovery(t, catalog, definitions, "", mcpcmd.GrantAuthorized)
 			pinned, err := catalog.Store().Application()
 			if err != nil {
 				t.Fatal(err)
@@ -139,6 +141,7 @@ func TestConfiguredAuthorizationRetryAndRecaptureInvokeActualProviders(t *testin
 			if err != nil || ready.Status != mcpcmd.StatusReady || ready.ToolCount != 1 {
 				t.Fatalf("same-binding retry = %s/%d/%v", ready.Status, ready.ToolCount, err)
 			}
+			assertCurrentRecovery(t, catalog, definitions, "", mcpcmd.GrantAuthorized)
 			unchanged, err := catalog.Store().Application()
 			if err != nil || unchanged.ID != pinned.ID || ready.Connection.CurrentRevisionID != bound.Connection.CurrentRevisionID || ready.Connection.Version != bound.Connection.Version {
 				t.Fatal("same binding retry rewrote definition or snapshot")
@@ -160,6 +163,7 @@ func TestConfiguredAuthorizationRetryAndRecaptureInvokeActualProviders(t *testin
 			if lease != nil || !restarted.MCPAuthorizationPending(t.Context(), blocked) {
 				t.Fatalf("trusted recapture startup: %v", blocked)
 			}
+			assertCurrentRecovery(t, restarted, nextDefinitions, mcpcmd.RecoveryCaptureRequired, "")
 			recapture, err := nextDefinitions.PrepareAuthorization(t.Context(), mcpcmd.PrepareAuthorization{ConnectionID: capture.ConnectionID, Authority: mutation.Authority})
 			if err != nil || recapture.ID == capture.ID {
 				t.Fatalf("changed config capture: %v", err)
@@ -266,5 +270,21 @@ func TestBoundAuthorizationStartupRecovery(t *testing.T) {
 				t.Fatalf("known bound startup state %s = %v", state, err)
 			}
 		})
+	}
+}
+
+func assertCurrentRecovery(t *testing.T, catalog *Runtime, definitions *mcpmanage.Definitions, want mcpcmd.RecoveryReason, authorization mcpcmd.GrantStatus) {
+	t.Helper()
+	items, err := definitions.Inventory(t.Context())
+	if err != nil || len(items) != 1 {
+		t.Fatalf("current inventory = %d/%v", len(items), err)
+	}
+	recovery, err := catalog.CurrentMCPRecovery(t.Context(), items[0])
+	if err != nil || recovery != want {
+		t.Fatalf("current recovery = %s/%v, want %s", recovery, err, want)
+	}
+	status, err := definitions.WorkerAuthorization(t.Context(), items[0])
+	if err != nil || status != authorization {
+		t.Fatalf("worker authorization = %s/%v, want %s", status, err, authorization)
 	}
 }

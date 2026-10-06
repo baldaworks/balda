@@ -57,3 +57,15 @@ func attachmentFailure(key InstanceKey, current *managedInstance) error {
 	}
 	return &AttachmentError{Key: key, Reason: reason}
 }
+
+// Failure reads bounded failure evidence for an observed desired attachment.
+// It neither launches an instance nor acquires a lease.
+func (r *Reconciler) Failure(key InstanceKey) (FailureReason, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	current, found := r.instances[key]
+	if !found || !current.desired || current.health.State != HealthFailed {
+		return "", false
+	}
+	return boundedReason(current.failure), true
+}

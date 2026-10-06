@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/backoffice/internal/webui"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 )
 
@@ -65,6 +66,37 @@ type qaEntry struct {
 }
 
 var qaEntries = []qaEntry{
+	{name: "mcp-retained", label: "MCP · deleted retained definition", templateName: webui.TemplateMCP, page: func() webui.Page {
+		p := qaMCPEditor(false, false)
+		p.MCP.Editor.Row.Deleted = true
+		p.MCP.Editor.Row.Status = "Deleted"
+		p.MCP.Editor.Row.Ready = false
+		return p
+	}, gallery: true},
+	{name: "mcp", label: "MCP · inventory and readiness", templateName: webui.TemplateMCP, page: qaMCP, gallery: true},
+	{name: "mcp-empty", label: "MCP · empty inventory", templateName: webui.TemplateMCP, page: func() webui.Page { p := qaMCP(); p.MCP.Rows = nil; return p }, gallery: true},
+	{name: "mcp/new", label: "MCP · new server", templateName: webui.TemplateMCP, page: func() webui.Page { return qaMCPEditor(true, false) }, gallery: true},
+	{name: "mcp/connections/qa-worker", label: "MCP · edit server and protected values", templateName: webui.TemplateMCP, page: func() webui.Page { return qaMCPEditor(false, false) }, gallery: true},
+	{name: "mcp/connections/config:qa-worker", label: "MCP · configuration read-only", templateName: webui.TemplateMCP, page: func() webui.Page { return qaMCPEditor(false, true) }, gallery: true},
+	{name: "mcp-probe", label: "MCP · candidate probe", templateName: webui.TemplateMCP, page: func() webui.Page {
+		p := qaMCPEditor(false, false)
+		p.MCP.ProbeMessage = "Candidate probe succeeded: 3 tools discovered. No definition was saved; runtime readiness is unchanged."
+		return p
+	}, gallery: true},
+	{name: "mcp-invalid", label: "MCP · invalid definition (400)", templateName: webui.TemplateMCP, page: func() webui.Page {
+		p := qaMCPEditor(true, false)
+		p.Error = &webui.ErrorView{Heading: "MCP operation could not complete", Message: "Review the transport, targets and value operations. Enter replacement values again."}
+		return p
+	}, gallery: true, status: 400},
+	{name: "mcp-conflict", label: "MCP · conflicting update (409)", templateName: webui.TemplateMCP, page: func() webui.Page {
+		p := qaMCPEditor(false, false)
+		p.Error = &webui.ErrorView{Heading: "MCP operation could not complete", Message: "The connection or administrator authority changed. Reopen the editor before trying again."}
+		return p
+	}, gallery: true, status: 409},
+	{name: "mcp-unavailable", label: "MCP · unavailable management (503)", templateName: webui.TemplateError, page: func() webui.Page {
+		return webui.Page{Title: "MCP management unavailable · QA", Error: &webui.ErrorView{Heading: "MCP management unavailable", Message: "Check the host configuration and reopen MCP management."}}
+	}, gallery: true, status: 503},
+
 	{name: "account-2fa-off", label: "Account · 2FA off", templateName: webui.TemplateAccount, page: func() webui.Page { p := qaAccount(); p.MFA = &webui.MFAView{Available: true}; return p }, gallery: true},
 	{name: "account-2fa-enabled", label: "Account · 2FA enabled", templateName: webui.TemplateAccount, page: func() webui.Page {
 		p := qaAccount()
@@ -140,7 +172,7 @@ var qaNow = time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
 
 func qaAdminNavigation(current webui.Location) []webui.NavItem {
 	return webui.Navigation(usercmd.BackofficeCapabilities{
-		Overview: true, Account: true, ManageUsers: true, ViewAudit: true,
+		Overview: true, Account: true, ManageUsers: true, ManageMCP: true, ViewAudit: true,
 	}, current)
 }
 
@@ -443,4 +475,52 @@ func qaBindingsDisabled() webui.Page {
 
 func qaWebAuthn(registration bool) webui.Page {
 	return webui.Page{Title: "Verify your passkey", CSRFToken: "synthetic-csrf", Ceremony: &webui.MFACeremonyView{Registration: registration, OptionsJSON: `{"publicKey":{"challenge":"c3ludGhldGlj","rpId":"invalid.example"}}`, Transaction: "synthetic-invalid", FinishPath: "/webauthn-assert", CancelPath: "/account"}}
+}
+
+func qaMCPItem() mcpcmd.Item {
+	return mcpcmd.Item{Connection: mcpcmd.Connection{ID: "qa-worker", PublicID: "synthetic-worker-tools", Source: mcpcmd.SourceManaged, Version: 4, Enabled: true}, Definition: mcpcmd.Definition{Transport: mcpcmd.TransportHTTP, URL: "https://mcp.example.test/worker", OAuth: true, Scopes: []string{"tools.read"}, Targets: mcpcmd.Targets{Providers: []string{"hosted-primary"}}, Headers: map[string]mcpcmd.ValueBinding{"X-Worker-Key": {Kind: mcpcmd.ValueProtected}, "X-Deployment": {Kind: mcpcmd.ValueEnvironment}}}, Status: mcpcmd.StatusUnavailable, Authorization: mcpcmd.GrantAuthorized}
+}
+func qaMCP() webui.Page {
+	p := webui.Page{Title: "MCP servers · QA", Current: webui.LocationMCP, Navigation: qaAdminNavigation(webui.LocationMCP), CSRFToken: "qa-csrf", MCP: &webui.MCPView{}}
+	item := qaMCPItem()
+	p.MCP.Rows = append(p.MCP.Rows, webui.ProjectMCPRow(item))
+	for _, status := range []mcpcmd.Status{mcpcmd.StatusReady, mcpcmd.StatusPending, mcpcmd.StatusDisabled, mcpcmd.StatusDeleted, mcpcmd.StatusConflict, mcpcmd.StatusAuthRequired, mcpcmd.StatusDisconnected} {
+		item.Connection.PublicID = "synthetic-" + string(status)
+		item.Status = status
+		item.Connection.Deleted = status == mcpcmd.StatusDeleted
+		item.ToolCount = 3
+		item.Authorization = ""
+		p.MCP.Rows = append(p.MCP.Rows, webui.ProjectMCPRow(item))
+	}
+	for _, reason := range []mcpcmd.RecoveryReason{mcpcmd.RecoveryAuthorizationRequired, mcpcmd.RecoveryFirstAuthorization, mcpcmd.RecoveryCaptureRequired} {
+		item.Connection.ID = "config:qa-worker"
+		item.Connection.PublicID = "configured-" + string(reason)
+		item.Connection.Source = mcpcmd.SourceConfig
+		item.Status = mcpcmd.StatusUnavailable
+		item.Recovery = reason
+		item.Connection.Deleted = false
+		p.MCP.Rows = append(p.MCP.Rows, webui.ProjectMCPRow(item))
+	}
+	return p
+}
+func qaMCPEditor(create, configured bool) webui.Page {
+	p := qaMCP()
+	p.MCP.Rows = nil
+	item := qaMCPItem()
+	if configured {
+		item.Connection.ID = "config:qa-worker"
+		item.Connection.Source = mcpcmd.SourceConfig
+		item.Recovery = mcpcmd.RecoveryCaptureRequired
+		item.Authorization = ""
+	}
+	if create {
+		item = mcpcmd.Item{}
+	}
+	p.MCP.Editor = webui.ProjectMCPEditor(item, []string{"hosted-primary", "acp-backup"}, create)
+	if create {
+		p.Title = "Add MCP server · QA"
+	} else {
+		p.Title = "Edit MCP server · QA"
+	}
+	return p
 }

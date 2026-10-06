@@ -214,6 +214,11 @@ components:
     in:
       - internal/apps/balda/mcpmanage
 
+  # Dedicated host adapter for the Backoffice consuming MCP port.
+  mcp_backoffice_wiring:
+    in:
+      - internal/apps/balda/mcpbackofficeapp
+
   # Fixed-upstream loopback MCP transport; grant policy stays behind its port.
   # Upstream observation is injected by mcp_wiring; no OAuth SDK/policy belongs
   # in the bridge's dependency set.
@@ -450,6 +455,7 @@ deps:
 
   backoffice_application:
     mayDependOn:
+      - mcp_contracts
       - contracts
       - user_contracts
       - user_application
@@ -496,6 +502,7 @@ deps:
 
   backoffice_webui:
     mayDependOn:
+      - mcp_contracts
       - user_contracts
       - backoffice_webui
     anyVendorDeps: false
@@ -567,6 +574,15 @@ deps:
       - mcp_contracts
       - user_contracts
       - mcp_management
+    deepScan: false
+    anyVendorDeps: false
+
+  mcp_backoffice_wiring:
+    mayDependOn:
+      - mcp_contracts
+      - mcp_management
+      - catalog_wiring
+      - mcp_backoffice_wiring
     deepScan: false
     anyVendorDeps: false
 
@@ -800,6 +816,7 @@ deps:
 
   composition_root:
     mayDependOn:
+      - mcp_backoffice_wiring
       - foundation
       - mcp_bridge
       - mcp_wiring

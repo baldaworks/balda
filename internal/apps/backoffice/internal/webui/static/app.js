@@ -92,7 +92,8 @@ function syncNavigation() {
   document.querySelectorAll("[data-nav-link]").forEach(function (link) {
     const path = new URL(link.href).pathname;
     const current = location.pathname === path ||
-      (path.endsWith("/access") && location.pathname.startsWith(path + "/users/"));
+      (path.endsWith("/access") && location.pathname.startsWith(path + "/users/")) ||
+      (path.endsWith("/mcp") && location.pathname.startsWith(path + "/"));
     link.classList.toggle("active", current);
     if (current) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
@@ -140,7 +141,7 @@ document.addEventListener("click", async function (event) {
 });
 
 window.addEventListener("pagehide", function () {
-  document.querySelectorAll("[data-binding-secret]").forEach(function (element) {
+  document.querySelectorAll("[data-binding-secret], [data-mcp-secret]").forEach(function (element) {
     if (element instanceof HTMLInputElement) {
       element.value = "";
       element.removeAttribute("value");
@@ -148,4 +149,13 @@ window.addEventListener("pagehide", function () {
       element.removeAttribute("href");
     }
   });
+});
+
+window.addEventListener("pageshow", function (event) {
+  if (event.persisted) document.querySelectorAll("[data-mcp-secret]").forEach(function (input) { input.value = ""; });
+});
+
+document.addEventListener("htmx:afterRequest", function (event) {
+  const form = event.detail.elt?.closest("form");
+  form?.querySelectorAll("[data-mcp-secret]").forEach(function (input) { input.value = ""; });
 });

@@ -22,24 +22,24 @@ func withMFABrowser(ctx context.Context, browser, csrf string) context.Context {
 // MFAAvailable reports whether this configured public origin supports WebAuthn.
 func (s *Service) MFAAvailable() bool { return s.webauthn != nil }
 
-func (s *Service) checkMFAFamily(ctx context.Context, user usercmd.User, family usercmd.SessionFamily) (bool, error) {
+func (s *Service) checkMFAFamily(ctx context.Context, user usercmd.User, family usercmd.SessionFamily) (usercmd.MFAProfile, error) {
 	if user.Role != usercmd.RoleAdministrator {
-		return false, nil
+		return usercmd.MFAProfile{}, nil
 	}
 	p, err := s.store.GetMFAProfile(ctx, user.ID)
 	if err != nil {
-		return false, err
+		return usercmd.MFAProfile{}, err
 	}
 	if !p.Enabled {
-		return false, nil
+		return p, nil
 	}
 	if s.webauthn == nil || p.Credential.RPID != s.webauthn.rpID {
-		return true, ErrMFAUnavailable
+		return p, ErrMFAUnavailable
 	}
 	if family.MFAFactorID != p.Credential.ID || family.WebAuthnVerifiedAt.IsZero() {
-		return true, ErrUnauthenticated
+		return p, ErrUnauthenticated
 	}
-	return true, nil
+	return p, nil
 }
 
 // RequireFresh checks optional administrator policy without changing session assurance.

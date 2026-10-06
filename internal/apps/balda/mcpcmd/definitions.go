@@ -14,12 +14,23 @@ const (
 	StatusDisconnected Status = "disconnected"
 )
 
+// RecoveryReason identifies a positively evidenced current repair action.
+type RecoveryReason string
+
+const (
+	RecoveryAuthorizationRequired RecoveryReason = "authorization_required"
+	RecoveryFirstAuthorization    RecoveryReason = "first_authorization_required"
+	RecoveryCaptureRequired       RecoveryReason = "capture_required"
+)
+
 // Item is a secret-free inventory row; configured values are redacted.
 type Item struct {
-	Connection Connection `json:"connection"`
-	Definition Definition `json:"definition"`
-	Status     Status     `json:"status"`
-	ToolCount  int        `json:"tool_count"`
+	Connection    Connection     `json:"connection"`
+	Definition    Definition     `json:"definition"`
+	Status        Status         `json:"status"`
+	ToolCount     int            `json:"tool_count"`
+	Recovery      RecoveryReason `json:"recovery,omitempty"`
+	Authorization GrantStatus    `json:"authorization,omitempty"`
 }
 
 // CreateDefinition creates a managed identity. Values are write-only edits.

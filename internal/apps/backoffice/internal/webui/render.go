@@ -22,6 +22,7 @@ const (
 	TemplateAccess     = "access"
 	TemplateAccount    = "account"
 	TemplateAudit      = "audit"
+	TemplateMCP        = "mcp"
 	TemplateError      = "error"
 	TemplateRefresh    = "refresh"
 	TemplatePassword   = "password"
@@ -36,6 +37,7 @@ var templateFiles = map[string]string{
 	TemplateAccess: "templates/access.tmpl", TemplateAccount: "templates/account.tmpl",
 	TemplateAudit: "templates/audit.tmpl", TemplateError: "templates/error.tmpl",
 	TemplateRefresh: "templates/refresh.tmpl", TemplatePassword: "templates/password.tmpl",
+	TemplateMCP:        "templates/mcp.tmpl",
 	TemplateGallery:    "templates/gallery.tmpl",
 	TemplateStyleGuide: "templates/style-guide.tmpl", TemplateLayout: "templates/layout.tmpl",
 }
@@ -66,7 +68,8 @@ func newRenderer(pagePath, assetPath string) (*Renderer, error) {
 	templates := make(map[string]*template.Template, len(templateFiles))
 	for name, pageFile := range templateFiles {
 		parsed, err := template.New(name).Funcs(template.FuncMap{
-			"path": func(route any) string { return pagePath + fmt.Sprint(route) },
+			"valueRow": mcpValueForm,
+			"path":     func(route any) string { return pagePath + fmt.Sprint(route) },
 			"assetPath": func(route string) string {
 				if version, ok := versioned[route]; ok {
 					return assetPath + version

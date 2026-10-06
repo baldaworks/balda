@@ -285,6 +285,11 @@ func TestSafeReturnPathRejectsNonAllowlistedAndAmbiguousPaths(t *testing.T) {
 			t.Errorf("SafeReturnPath(%q) = %q", unsafe, got)
 		}
 	}
+	for _, path := range []string{"/mcp", "/mcp/new", "/mcp/connections/managed?view=state"} {
+		if got := browser.SafeReturnPath(path, "/overview"); got != path {
+			t.Errorf("SafeReturnPath(%q) = %q", path, got)
+		}
+	}
 	if got := browser.SafeReturnPath("/account/sessions?active=1", "/overview"); got != "/account/sessions?active=1" {
 		t.Errorf("SafeReturnPath(allowed) = %q", got)
 	}

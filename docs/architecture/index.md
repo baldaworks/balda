@@ -130,3 +130,12 @@ neutral MCP adapter returns bounded untrusted references.
 - Startup or transport lifecycle changes.
 - Changes to retries, dedupe, or DLQ semantics.
 - New ingress or actor execution paths.
+
+Backoffice MCP pages consume a local `MCPOperations` port. The dedicated
+`mcpbackofficeapp` composition adapter connects it to `mcpmanage` definition,
+credential and durable authority policy and `catalogapp` current recovery and
+readiness reads. HTML projections depend only on `mcpcmd` contracts; the
+Backoffice application does not import either host policy owner. Runtime
+failure evidence remains in `mcpruntime`, while recovery classification remains
+in the catalog owner. Browser input does not supply configuration captures or
+worker authorization evidence.

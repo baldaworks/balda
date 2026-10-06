@@ -117,6 +117,7 @@ const (
 type BackofficeCapabilities struct {
 	Overview    bool
 	Account     bool
+	ManageMCP   bool
 	ManageUsers bool
 	ViewAudit   bool
 }

@@ -149,3 +149,28 @@ A stale sensitive POST returns 403 with a confirmation link. Verification must
 not replay the POST. A lost key shows the offline recovery route; password reset
 alone must not remove the factor. The default IP-origin Account screen explains
 why enrollment is unavailable while password-only use continues.
+
+## MCP inventory and editors
+
+The gallery includes `mcp`, `mcp-empty`, `mcp/new`,
+`mcp/connections/qa-worker`, `mcp/connections/config:qa-worker`, `mcp-probe`,
+`mcp-invalid`, `mcp-conflict`, `mcp-retained` and `mcp-unavailable`. These cover the inventory,
+all runtime states, separate grant/recovery labels, native editors, write-only
+binding controls, read-only configuration, candidate probing and actual error
+statuses. Fixtures contain only synthetic identifiers and blank replacement
+inputs. Preview forms cannot mutate application state.
+
+Run the durable host integration browser gate with the same Playwright tools:
+
+```bash
+BALDA_BACKOFFICE_BROWSER_TEST=1 go test -race ./internal/apps/balda -run TestBackofficeMCPBrowserWorkflow -count=1 -v
+```
+
+It starts the actual Backoffice runtime and security stack, the dedicated MCP
+adapter, catalog, temporary SQLite and a loopback MCP SDK server. Ordinary
+administrator/operator login verifies native and HTMX CRUD, protected value
+retention, candidate probing without persistence, version conflicts, configured
+read-only behavior, actual Back/Forward with write-only input checks, history restoration and logout at desktop and mobile, with
+and without JavaScript. The native no-script forms also exercise keyboard
+activation. It checks the resulting durable revisions and
+tombstones. It does not use an authentication bypass or deployment credentials.

@@ -207,26 +207,34 @@ func safeOperationError(err error) error {
 
 // Update creates a new immutable revision while preserving public identity.
 func (s *Definitions) Update(ctx context.Context, request mcpcmd.UpdateDefinition) (mcpcmd.Item, error) {
-	c, err := s.managed(ctx, request.ConnectionID, request.ExpectedVersion)
+	c, r, err := s.prepareUpdate(ctx, request)
 	if err != nil {
 		return mcpcmd.Item{}, err
 	}
+	return s.save(ctx, c, &r, request.ExpectedVersion, request.Authority)
+}
+
+func (s *Definitions) prepareUpdate(ctx context.Context, request mcpcmd.UpdateDefinition) (mcpcmd.Connection, mcpcmd.Revision, error) {
+	c, err := s.managed(ctx, request.ConnectionID, request.ExpectedVersion)
+	if err != nil {
+		return mcpcmd.Connection{}, mcpcmd.Revision{}, err
+	}
 	if err := s.checkConflict(ctx, c.PublicID, c.ID); err != nil {
-		return mcpcmd.Item{}, err
+		return mcpcmd.Connection{}, mcpcmd.Revision{}, err
 	}
 	previous, found, err := s.store.GetMCPRevision(ctx, c.ID, c.CurrentRevisionID)
 	if err != nil {
-		return mcpcmd.Item{}, safeOperationError(err)
+		return mcpcmd.Connection{}, mcpcmd.Revision{}, safeOperationError(err)
 	}
 	if !found {
-		return mcpcmd.Item{}, mcpcmd.ErrUnavailable
+		return mcpcmd.Connection{}, mcpcmd.Revision{}, mcpcmd.ErrUnavailable
 	}
 	definition := request.Definition
 	if definition.ConfigRevision != "" {
-		return mcpcmd.Item{}, mcpcmd.ErrInvalid
+		return mcpcmd.Connection{}, mcpcmd.Revision{}, mcpcmd.ErrInvalid
 	}
 	if definition.AuthBinding != nil && (previous.Definition.AuthBinding == nil || *definition.AuthBinding != *previous.Definition.AuthBinding) {
-		return mcpcmd.Item{}, mcpcmd.ErrInvalid
+		return mcpcmd.Connection{}, mcpcmd.Revision{}, mcpcmd.ErrInvalid
 	}
 	definition.AuthBinding = nil
 	if definition.OAuth && previous.Definition.OAuth && definition.URL == previous.Definition.URL && definition.Transport == previous.Definition.Transport {
@@ -237,9 +245,9 @@ func (s *Definitions) Update(ctx context.Context, request mcpcmd.UpdateDefinitio
 	c.UpdatedAt = request.Authority.At
 	r, err := s.prepare(ctx, &previous, c, definition, request.Values)
 	if err != nil {
-		return mcpcmd.Item{}, err
+		return mcpcmd.Connection{}, mcpcmd.Revision{}, err
 	}
-	return s.save(ctx, c, &r, request.ExpectedVersion, request.Authority)
+	return c, r, nil
 }
 
 // SetEnabled changes new selection without rewriting retained definitions.
@@ -389,6 +397,23 @@ func (s *Definitions) Probe(ctx context.Context, request mcpcmd.CreateDefinition
 	if err != nil {
 		return mcpcmd.Item{}, err
 	}
+	return s.probeRevision(ctx, r)
+}
+
+// ProbeUpdate checks an edit against its exact retained revision without saving
+// a definition, selecting capabilities, or treating discovery as published Ready.
+func (s *Definitions) ProbeUpdate(ctx context.Context, request mcpcmd.UpdateDefinition) (mcpcmd.Item, error) {
+	if err := s.store.CheckMCPAuthority(ctx, request.Authority); err != nil {
+		return mcpcmd.Item{}, safeOperationError(err)
+	}
+	_, r, err := s.prepareUpdate(ctx, request)
+	if err != nil {
+		return mcpcmd.Item{}, err
+	}
+	return s.probeRevision(ctx, r)
+}
+
+func (s *Definitions) probeRevision(ctx context.Context, r mcpcmd.Revision) (mcpcmd.Item, error) {
 	item := mcpcmd.Item{Definition: r.Definition, Status: mcpcmd.StatusPending}
 	count, err := s.probe.ProbeMCP(ctx, r)
 	if err != nil || count < 0 {

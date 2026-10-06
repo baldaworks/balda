@@ -30,6 +30,7 @@ type httpApp struct {
 	bindingChoices  []string
 	invitations     BindingInvitations
 	bindingChannels BindingChannels
+	mcp             MCPOperations
 	qa              bool
 	basePath        string
 }
@@ -99,6 +100,13 @@ func (a *httpApp) handler() (http.Handler, error) {
 	mux.Handle("GET "+a.path("/overview"), a.browser.Authenticate(a.browser.RequireNormal(http.HandlerFunc(a.overview))))
 	mux.Handle("GET "+a.path("/account"), a.browser.Authenticate(a.browser.RequireNormal(http.HandlerFunc(a.account))))
 	mux.HandleFunc("POST "+a.path("/account/sessions/{session_id}/revoke"), a.browser.RevokeSession)
+	for _, route := range []string{"/mcp", "/mcp/new", "/mcp/connections/{connection_id}"} {
+		mux.Handle("GET "+a.path(route), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.mcpPage))))
+	}
+	mux.HandleFunc("POST "+a.path("/mcp/connections"), a.mcpCreate)
+	mux.HandleFunc("POST "+a.path("/mcp/connections/{connection_id}"), a.mcpUpdate)
+	mux.HandleFunc("POST "+a.path("/mcp/connections/{connection_id}/selection"), a.mcpSelection)
+	mux.HandleFunc("POST "+a.path("/mcp/connections/{connection_id}/delete"), a.mcpDelete)
 	mux.Handle("GET "+a.path("/audit"), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.audit))))
 	mux.Handle("GET "+a.path("/access"), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.accessList))))
 	mux.Handle("GET "+a.path("/access/new"), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.accessCreatePage))))

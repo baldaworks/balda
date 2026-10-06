@@ -10,6 +10,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpbridge"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpruntime"
 	"github.com/normahq/runtime/v2/agentconfig"
 	"github.com/normahq/runtime/v2/mcpregistry"
@@ -66,6 +67,31 @@ func TestCurrentStartupAuthorizationReadiness(t *testing.T) {
 					}
 					if got := r.MCPAuthorizationPending(t.Context(), fmt.Errorf("bind provider capabilities: %w", err)); got == mixed {
 						t.Fatalf("pending = %t, want %t; blockers: %v", got, !mixed, err)
+					}
+					for _, name := range selected {
+						item := mcpcmd.Item{Connection: mcpcmd.Connection{ID: "config:" + name, PublicID: name, Source: mcpcmd.SourceConfig, Enabled: true}}
+						recovery, readErr := r.CurrentMCPRecovery(t.Context(), item)
+						want := mcpcmd.RecoveryReason("")
+						if name == "auth" {
+							want = mcpcmd.RecoveryFirstAuthorization
+						}
+						if readErr != nil || recovery != want {
+							t.Fatalf("current recovery %s = %s/%v, want %s", name, recovery, readErr, want)
+						}
+						item.Status = mcpcmd.StatusReady
+						if recovery, _ := r.CurrentMCPRecovery(t.Context(), item); recovery != "" {
+							t.Fatal("ready inventory offered recovery")
+						}
+						item.Status = mcpcmd.StatusUnavailable
+						item.Connection.Enabled = false
+						if recovery, _ := r.CurrentMCPRecovery(t.Context(), item); recovery != "" {
+							t.Fatal("disabled inventory offered recovery")
+						}
+						canceled, cancel := context.WithCancel(t.Context())
+						cancel()
+						if recovery, readErr := r.CurrentMCPRecovery(canceled, item); recovery != "" || !errors.Is(readErr, context.Canceled) {
+							t.Fatal("cancellation offered recovery")
+						}
 					}
 					var exact *mcpruntime.AttachmentError
 					if !errors.As(err, &exact) {

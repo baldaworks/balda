@@ -32,6 +32,7 @@ type Runtime struct {
 	server          *http.Server
 	done            chan struct{}
 	serveErr        error
+	mcp             MCPOperations
 	invitations     BindingInvitations
 	bindingChannels BindingChannels
 }
@@ -111,6 +112,7 @@ func (r *Runtime) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("construct Backoffice HTTP application: %w", err)
 	}
+	httpApplication.mcp = r.mcp
 	httpApplication.invitations = r.invitations
 	httpApplication.bindingChannels = r.bindingChannels
 	handler, err := httpApplication.handler()

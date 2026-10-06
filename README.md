@@ -68,6 +68,12 @@ shows recent security events with filters. The **Overview** integration cards
 show configuration, not a live health check. See the
 [Backoffice reference](docs/reference/backoffice.md) for session and security details.
 
+Administrators can open **MCP** in Backoffice to inspect configured servers and
+create, edit, probe, disable or delete managed connections. Configuration entries
+are read-only. Protected values are write-only, and worker authorization is shown
+separately from runtime readiness. See [MCP management](docs/reference/backoffice.md#mcp-management)
+for provider targeting and value operations.
+
 `balda init` creates `.config/balda/config.yaml`, initializes
 `.config/balda/state.db` by default, detects available provider CLIs, and prints
 the next step for your selected chat provider.

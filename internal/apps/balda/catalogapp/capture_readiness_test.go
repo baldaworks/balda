@@ -17,6 +17,7 @@ import (
 
 func TestConfiguredCaptureTransitionsKeepRetainedIdentity(t *testing.T) {
 	const wrongKey = "wrong key"
+	const remote = "remote"
 	p, original, _, mutation, credentials := hybridCatalogFixture(t)
 	configured := map[string]agentconfig.MCPServerConfig{"worker-tools": {Type: agentconfig.MCPServerTypeHTTP, URL: "https://worker.example/mcp", Headers: map[string]string{"X-Worker": "original-private-value"}}}
 	providers := map[string]agentconfig.Config{"alpha": {MCPServers: []string{"worker-tools"}}}
@@ -37,12 +38,12 @@ func TestConfiguredCaptureTransitionsKeepRetainedIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, change := range []string{"remote", transportStdio, "removed", wrongKey} {
+	for _, change := range []string{remote, transportStdio, "removed", wrongKey} {
 		t.Run(change, func(t *testing.T) {
 			current := map[string]agentconfig.MCPServerConfig{}
 			values := credentials
 			switch change {
-			case "remote", wrongKey:
+			case remote, wrongKey:
 				current["worker-tools"] = agentconfig.MCPServerConfig{Type: agentconfig.MCPServerTypeHTTP, URL: "https://worker.example/changed", Headers: map[string]string{"X-Worker": "changed-private-value"}}
 			case transportStdio:
 				current["worker-tools"] = agentconfig.MCPServerConfig{Type: agentconfig.MCPServerTypeStdio, Cmd: []string{"fixture-current-stdio"}}
@@ -98,11 +99,28 @@ func TestConfiguredCaptureTransitionsKeepRetainedIdentity(t *testing.T) {
 						if !errors.As(err, &failure) || failure.Reason != want {
 							t.Fatalf("current attachment = %v, want %s", err, want)
 						}
-						if restarted.MCPAuthorizationPending(t.Context(), err) != (change == "remote") {
+						if restarted.MCPAuthorizationPending(t.Context(), err) != (change == remote) {
 							t.Fatal("recapture recovery hid a retained protection failure")
 						}
 					}
 				}
+			}
+			connection, found, err := p.MCP().GetMCPConnection(t.Context(), capture.ConnectionID)
+			if err != nil || !found {
+				t.Fatal("retained capture connection missing")
+			}
+			recovery, err := restarted.CurrentMCPRecovery(t.Context(), mcpcmd.Item{Connection: connection})
+			wantRecovery := mcpcmd.RecoveryReason("")
+			if change == remote {
+				wantRecovery = mcpcmd.RecoveryCaptureRequired
+			}
+			if err != nil || recovery != wantRecovery {
+				t.Fatalf("current recovery = %s/%v, want %s", recovery, err, wantRecovery)
+			}
+			stale := connection
+			stale.CurrentRevisionID += "-historical"
+			if recovery, _ := restarted.CurrentMCPRecovery(t.Context(), mcpcmd.Item{Connection: stale}); recovery != "" {
+				t.Fatal("historical capture offered current recovery")
 			}
 			retained, found, err := p.MCP().GetMCPRevision(t.Context(), capture.ConnectionID, capture.ID)
 			if err != nil || !found || retained.ID != capture.ID || retained.Definition.URL != capture.Definition.URL {
