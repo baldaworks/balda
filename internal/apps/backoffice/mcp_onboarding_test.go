@@ -51,18 +51,21 @@ func TestMCPOnboardingNativeGuardsAndSavedFailure(t *testing.T) {
 			})
 		}
 	}
-	form := url.Values{"csrf_token": {admin.csrf}, "public_id": {"onboarding"}, "transport": {"http"}, "url": {"https://tools.example/mcp"}, "targets_all": {"yes"}, "enabled": {"yes"}, "client_id": {"registered-client"}, "client_secret": {"private-marker"}, "scopes": {"tools.read\ntools.write"}}
+	form := url.Values{"csrf_token": {admin.csrf}, "public_id": {"onboarding"}, "transport": {"http"}, "url": {"https://tools.example/mcp"}, "targets_all": {"yes"}, "client_id": {"registered-client"}, "client_secret": {"private-marker"}, "scopes": {"tools.read\ntools.write"}}
 	flows.beginErr = mcpcmd.ErrUnavailable
 	w := performAccessMutation(t, handler, config, "/mcp/connections/oauth/browser", form, admin.access, admin.csrf, false)
 	if w.Code != http.StatusServiceUnavailable || flows.creations != 1 || flows.creation.PublicID != "onboarding" || len(flows.begin.Scopes) != 2 || flows.begin.Authority.UserID != string(usercmd.RoleAdministrator) {
 		t.Fatalf("saved onboarding failure status/calls = %d/%d", w.Code, flows.creations)
+	}
+	if !flows.creation.Enabled {
+		t.Fatal("OAuth onboarding did not enable the selected connection")
 	}
 	if !strings.Contains(w.Body.String(), `href="/mcp/connections/saved"`) || !strings.Contains(w.Body.String(), "Connection saved") || strings.Contains(w.Body.String(), "private-marker") {
 		t.Fatal("failed begin lost saved retry path or exposed secret")
 	}
 	flows.beginErr = nil
 	w = performAccessMutation(t, handler, config, "/mcp/connections/oauth/device", form, admin.access, admin.csrf, false)
-	if w.Code != http.StatusOK || flows.creations != 2 || !strings.Contains(w.Body.String(), "one-time-user-code") || w.Header().Get("Cache-Control") != noStoreCacheControl {
+	if w.Code != http.StatusOK || flows.creations != 2 || !flows.creation.Enabled || !strings.Contains(w.Body.String(), "one-time-user-code") || w.Header().Get("Cache-Control") != noStoreCacheControl {
 		t.Fatal("native device creation did not return private instructions")
 	}
 	form.Set("padding", strings.Repeat("a", 32<<10))

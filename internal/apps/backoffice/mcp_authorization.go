@@ -122,7 +122,7 @@ func (a *httpApp) mcpOnboardingRequest(w http.ResponseWriter, r *http.Request) (
 		a.mcpAuthorizationError(w, r, page, err)
 		return mcpcmd.CreateDefinition{}, mcpcmd.BeginAuthorization{}, page, false
 	}
-	creation := mcpcmd.CreateDefinition{PublicID: form.Get("public_id"), Definition: definition, Values: values, Enabled: form.Get("enabled") == checkedFormValue, Authority: authority}
+	creation := mcpcmd.CreateDefinition{PublicID: form.Get("public_id"), Definition: definition, Values: values, Enabled: true, Authority: authority}
 	return creation, mcpBeginRequest(form, "", authority), page, true
 }
 

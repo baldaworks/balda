@@ -241,7 +241,7 @@ func TestMCPFormsFenceAuthorityAndNeverReflectValues(t *testing.T) {
 		}
 	}
 	fixture.inventoryErr = nil
-	form := url.Values{"csrf_token": {login.csrf}, "public_id": {"worker"}, "transport": {"http"}, "url": {"https://worker.example/mcp"}, "enabled": {"yes"}, "targets_all": {"yes"}, "header_key": {"X-Secret"}, "header_operation": {"set"}, "header_kind": {"protected"}, "header_value": {"write-only-canary"}}
+	form := url.Values{"csrf_token": {login.csrf}, "public_id": {"worker"}, "transport": {"http"}, "url": {"https://worker.example/mcp"}, "targets_all": {"yes"}, "header_key": {"X-Secret"}, "header_operation": {"set"}, "header_kind": {"protected"}, "header_value": {"write-only-canary"}}
 	bad := url.Values{}
 	for k, v := range form {
 		bad[k] = append([]string(nil), v...)
@@ -264,6 +264,9 @@ func TestMCPFormsFenceAuthorityAndNeverReflectValues(t *testing.T) {
 		}
 	}
 	request := fixture.creates[0]
+	if !request.Enabled {
+		t.Error("new connection was not enabled for its selected providers")
+	}
 	if request.Values.Headers["X-Secret"].Value != "write-only-canary" || request.Authority.UserID != "admin" || request.Authority.SessionID == "" || request.Authority.SessionVersion == 0 || request.Authority.FreshProofAge <= 0 {
 		t.Fatal("write or current authority lost")
 	}
@@ -280,7 +283,7 @@ func TestMCPFormsFenceAuthorityAndNeverReflectValues(t *testing.T) {
 	fixture.err = nil
 	form.Set("expected_version", "2")
 	w := performAccessMutation(t, handler, config, "/mcp/connections/managed", form, login.access, login.csrf, true)
-	if w.Code != 204 || len(fixture.updates) != 1 || fixture.updates[0].ExpectedVersion != 2 {
+	if w.Code != 204 || len(fixture.updates) != 1 || fixture.updates[0].ExpectedVersion != 2 || !fixture.updates[0].Enabled {
 		t.Fatal("versioned update failed")
 	}
 	w = performAccessMutation(t, handler, config, "/mcp/connections/config:worker", form, login.access, login.csrf, false)
@@ -336,6 +339,12 @@ func TestMCPFormsFenceAuthorityAndNeverReflectValues(t *testing.T) {
 	w = performAccessMutation(t, handler, config, "/mcp/connections/managed", large, login.access, login.csrf, false)
 	if w.Code != 400 || fixture.probes != before {
 		t.Fatal("oversized body reached owner")
+	}
+	fixture.items[0].Connection.Enabled = false
+	form.Del("operation")
+	w = performAccessMutation(t, handler, config, "/mcp/connections/managed", form, login.access, login.csrf, false)
+	if w.Code != 303 || fixture.updates[len(fixture.updates)-1].Enabled {
+		t.Fatal("saving a disabled definition enabled the connection")
 	}
 }
 
