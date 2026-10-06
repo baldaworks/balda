@@ -574,9 +574,9 @@ use 204 with a local `HX-Location`.
 Configuration-owned entries are read-only: browser editing, selection changes,
 probe edits and deletion are rejected. Change their definition in the host
 configuration. The dedicated **Enable/Disable connection** and **Delete connection**
-controls require explicit confirmation. **Save definition** also applies the
-editor's **Enabled for new provider sessions** checkbox under the normal authority
-and CSRF checks, without a separate confirmation. These changes affect new
+controls require explicit confirmation. New managed connections start enabled
+for their selected providers. **Save definition** preserves the connection's
+enabled or disabled state. Selection changes affect new
 sessions; existing sessions retain their exact revision until release.
 Deletion tombstones the connection and does not erase
 retained revisions. Deleted connection details expose retained metadata without

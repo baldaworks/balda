@@ -166,7 +166,7 @@ func (a *httpApp) mcpCreate(w http.ResponseWriter, r *http.Request) {
 		a.mcpError(w, r, page, err)
 		return
 	}
-	request := mcpcmd.CreateDefinition{PublicID: form.Get("public_id"), Definition: definition, Values: edits, Enabled: form.Get("enabled") == checkedFormValue, Authority: authority}
+	request := mcpcmd.CreateDefinition{PublicID: form.Get("public_id"), Definition: definition, Values: edits, Enabled: true, Authority: authority}
 	var item mcpcmd.Item
 	switch form.Get("operation") {
 	case mcpProbeOperation:
@@ -194,7 +194,7 @@ func (a *httpApp) mcpUpdate(w http.ResponseWriter, r *http.Request) {
 		a.mcpError(w, r, page, err)
 		return
 	}
-	request := mcpcmd.UpdateDefinition{ConnectionID: r.PathValue("connection_id"), ExpectedVersion: version, Definition: definition, Values: edits, Enabled: form.Get("enabled") == checkedFormValue, Authority: authority}
+	request := mcpcmd.UpdateDefinition{ConnectionID: r.PathValue("connection_id"), ExpectedVersion: version, Definition: definition, Values: edits, Enabled: page.MCP.Editor.Enabled, Authority: authority}
 	var item mcpcmd.Item
 	switch form.Get("operation") {
 	case mcpProbeOperation:
