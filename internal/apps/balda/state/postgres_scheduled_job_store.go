@@ -41,6 +41,23 @@ func (s *postgresScheduledJobStore) Upsert(ctx context.Context, record Scheduled
 		return postgresErrorf("next_run_at is required")
 	}
 
+	source := strings.TrimSpace(record.Source)
+	defaultSource := source == ""
+	if defaultSource {
+		source = ScheduledJobSourceInternal
+	}
+	if source != ScheduledJobSourceInternal && source != ScheduledJobSourceConfig && source != ScheduledJobSourceManaged {
+		return postgresErrorf("unsupported schedule source %q", source)
+	}
+	enabled := record.Enabled
+	if defaultSource {
+		enabled = true
+	}
+	definitionVersion := record.DefinitionVersion
+	if definitionVersion == 0 {
+		definitionVersion = 1
+	}
+
 	status := strings.TrimSpace(record.Status)
 	if status == "" {
 		status = ScheduledJobStatusActive
@@ -70,9 +87,11 @@ func (s *postgresScheduledJobStore) Upsert(ctx context.Context, record Scheduled
 			job_id, session_id, channel_type, address_key, address_json,
 			report_to_enabled, report_to_session_id, report_to_channel_type, report_to_address_key, report_to_address_json,
 			content, schedule_spec, timezone, status,
-			max_retries, retry_count, last_dispatch_key, next_run_at, last_run_at, last_error, created_at, updated_at
+			max_retries, retry_count, last_dispatch_key, next_run_at, last_run_at, last_error, created_at, updated_at,
+			source, enabled, deleted, definition_version, target_kind, target_key,
+			report_to_target_kind, report_to_target_key
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(job_id) DO UPDATE SET
 			session_id = excluded.session_id,
 			channel_type = excluded.channel_type,
@@ -94,6 +113,14 @@ func (s *postgresScheduledJobStore) Upsert(ctx context.Context, record Scheduled
 			last_run_at = excluded.last_run_at,
 			last_error = excluded.last_error,
 			updated_at = excluded.updated_at,
+			source = excluded.source,
+			enabled = excluded.enabled,
+			deleted = excluded.deleted,
+			definition_version = excluded.definition_version,
+			target_kind = excluded.target_kind,
+			target_key = excluded.target_key,
+			report_to_target_kind = excluded.report_to_target_kind,
+			report_to_target_key = excluded.report_to_target_key,
 			created_at = balda_scheduled_jobs.created_at`), jobID,
 		strings.TrimSpace(record.SessionID),
 		channelType,
@@ -121,6 +148,14 @@ func (s *postgresScheduledJobStore) Upsert(ctx context.Context, record Scheduled
 		strings.TrimSpace(record.LastError),
 		createdAt.Format(time.RFC3339),
 		updatedAt.Format(time.RFC3339),
+		source,
+		postgresBool(enabled),
+		postgresBool(record.Deleted),
+		definitionVersion,
+		strings.TrimSpace(record.TargetKind),
+		strings.TrimSpace(record.TargetKey),
+		strings.TrimSpace(record.ReportToTargetKind),
+		strings.TrimSpace(record.ReportToTargetKey),
 	); err != nil {
 		return postgresErrorf("upsert scheduled job %q: %w", jobID, err)
 	}
@@ -133,7 +168,9 @@ func (s *postgresScheduledJobStore) GetByID(ctx context.Context, jobID string) (
 		SELECT job_id, session_id, channel_type, address_key, address_json,
 		       report_to_enabled, report_to_session_id, report_to_channel_type, report_to_address_key, report_to_address_json,
 		       content, schedule_spec, timezone, status,
-		       max_retries, retry_count, last_dispatch_key, next_run_at, last_run_at, last_error, created_at, updated_at
+		       max_retries, retry_count, last_dispatch_key, next_run_at, last_run_at, last_error, created_at, updated_at,
+			source, enabled, deleted, definition_version, target_kind, target_key,
+			report_to_target_kind, report_to_target_key
 		FROM balda_scheduled_jobs
 		WHERE job_id = ?`), strings.TrimSpace(jobID),
 	)
@@ -150,7 +187,9 @@ func (s *postgresScheduledJobStore) List(ctx context.Context) ([]ScheduledJobRec
 		SELECT job_id, session_id, channel_type, address_key, address_json,
 		       report_to_enabled, report_to_session_id, report_to_channel_type, report_to_address_key, report_to_address_json,
 		       content, schedule_spec, timezone, status,
-		       max_retries, retry_count, last_dispatch_key, next_run_at, last_run_at, last_error, created_at, updated_at
+		       max_retries, retry_count, last_dispatch_key, next_run_at, last_run_at, last_error, created_at, updated_at,
+			source, enabled, deleted, definition_version, target_kind, target_key,
+			report_to_target_kind, report_to_target_key
 		FROM balda_scheduled_jobs
 		ORDER BY job_id ASC`))
 	if err != nil {
@@ -170,7 +209,9 @@ func (s *postgresScheduledJobStore) ListByAddress(
 		SELECT job_id, session_id, channel_type, address_key, address_json,
 		       report_to_enabled, report_to_session_id, report_to_channel_type, report_to_address_key, report_to_address_json,
 		       content, schedule_spec, timezone, status,
-		       max_retries, retry_count, last_dispatch_key, next_run_at, last_run_at, last_error, created_at, updated_at
+		       max_retries, retry_count, last_dispatch_key, next_run_at, last_run_at, last_error, created_at, updated_at,
+			source, enabled, deleted, definition_version, target_kind, target_key,
+			report_to_target_kind, report_to_target_key
 		FROM balda_scheduled_jobs
 		WHERE channel_type = ? AND address_key = ?
 		ORDER BY next_run_at ASC`), strings.TrimSpace(channelType), strings.TrimSpace(addressKey),
@@ -192,9 +233,11 @@ func (s *postgresScheduledJobStore) ListDue(ctx context.Context, now time.Time, 
 		SELECT job_id, session_id, channel_type, address_key, address_json,
 		       report_to_enabled, report_to_session_id, report_to_channel_type, report_to_address_key, report_to_address_json,
 		       content, schedule_spec, timezone, status,
-		       max_retries, retry_count, last_dispatch_key, next_run_at, last_run_at, last_error, created_at, updated_at
+		       max_retries, retry_count, last_dispatch_key, next_run_at, last_run_at, last_error, created_at, updated_at,
+			source, enabled, deleted, definition_version, target_kind, target_key,
+			report_to_target_kind, report_to_target_key
 		FROM balda_scheduled_jobs
-		WHERE status = ? AND next_run_at <= ?
+		WHERE status = ? AND enabled = 1 AND deleted = 0 AND next_run_at <= ?
 		ORDER BY next_run_at ASC
 		LIMIT ?`), ScheduledJobStatusActive,
 		now.UTC().Format(time.RFC3339),

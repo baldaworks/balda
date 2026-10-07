@@ -56,6 +56,7 @@ func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) 
 	t.Run("Provider_QuestionStoreRoundTrip", func(t *testing.T) { checkProvider_QuestionStoreRoundTrip(t, factory(t)) })
 	t.Run("Provider_SessionStoreUpsert_DoesNotDecodeAddressJSON", func(t *testing.T) { checkProvider_SessionStoreUpsert_DoesNotDecodeAddressJSON(t, factory(t)) })
 	t.Run("Provider_ScheduledJobStoreRoundTrip", func(t *testing.T) { checkProvider_ScheduledJobStoreRoundTrip(t, factory(t)) })
+	t.Run("Provider_ScheduleRunStoreRoundTrip", func(t *testing.T) { checkProvider_ScheduleRunStoreRoundTrip(t, factory(t)) })
 	t.Run("Provider_OffsetPersistsAcrossReopen", func(t *testing.T) { checkProvider_OffsetPersistsAcrossReopen(t, factory(t)) })
 	t.Run("Provider_RuntimeSessionPersistsAcrossReopen", func(t *testing.T) { checkProvider_RuntimeSessionPersistsAcrossReopen(t, factory(t)) })
 	t.Run("JobStore_JobLifecycle", func(t *testing.T) { checkJobStore_JobLifecycle(t, factory(t)) })
@@ -436,6 +437,40 @@ func checkProvider_ScheduledJobStoreRoundTrip(t *testing.T, open contractOpener)
 	}
 	if ok {
 		t.Fatal("GetByID(after delete) found = true, want false")
+	}
+}
+
+func checkProvider_ScheduleRunStoreRoundTrip(t *testing.T, open contractOpener) {
+	provider := newContractProvider(t, open)
+	defer closeContractProvider(t, provider)
+
+	run := ScheduleRunRecord{
+		RunID: "run-1", ScheduleID: "daily-review", Trigger: ScheduleRunTriggerManual,
+		TriggerKey: "manual:request-1", DefinitionVersion: 1,
+		RequestedAt:   time.Date(2026, 10, 7, 9, 30, 0, 0, time.UTC),
+		DispatchState: ScheduleRunPending, PayloadJSON: `{"content":"review"}`,
+	}
+	created, err := provider.ScheduleRuns().Create(t.Context(), run)
+	if err != nil || !created {
+		t.Fatalf("Create() = %v, %v, want true, nil", created, err)
+	}
+	got, found, err := provider.ScheduleRuns().GetByTriggerKey(t.Context(), run.ScheduleID, run.TriggerKey)
+	if err != nil || !found || got.RunID != run.RunID || got.Version != 1 {
+		t.Fatalf("GetByTriggerKey() = %+v, %v, %v", got, found, err)
+	}
+	got.DispatchState = ScheduleRunDispatched
+	got.ExecutionJobID = "execution-1"
+	updated, err := provider.ScheduleRuns().Update(t.Context(), got, got.Version)
+	if err != nil || !updated {
+		t.Fatalf("Update() = %v, %v, want true, nil", updated, err)
+	}
+	got, found, err = provider.ScheduleRuns().GetByID(t.Context(), run.RunID)
+	if err != nil || !found || got.Version != 2 || got.ExecutionJobID != "execution-1" {
+		t.Fatalf("GetByID() = %+v, %v, %v", got, found, err)
+	}
+	history, err := provider.ScheduleRuns().ListBySchedule(t.Context(), run.ScheduleID, time.Time{}, "", 50)
+	if err != nil || len(history) != 1 || history[0].RunID != run.RunID {
+		t.Fatalf("ListBySchedule() = %+v, %v", history, err)
 	}
 }
 
