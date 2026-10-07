@@ -108,7 +108,8 @@ function syncNavigation() {
     const path = new URL(link.href).pathname;
     const current = location.pathname === path ||
       (path.endsWith("/access") && location.pathname.startsWith(path + "/users/")) ||
-      (path.endsWith("/mcp") && location.pathname.startsWith(path + "/"));
+      (path.endsWith("/mcp") && location.pathname.startsWith(path + "/")) ||
+      (path.endsWith("/schedules") && location.pathname.startsWith(path + "/"));
     link.classList.toggle("active", current);
     if (current) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");

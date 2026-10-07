@@ -62,6 +62,7 @@ async function textLineCount(locator) {
 
       await Promise.all([page.waitForURL(`${baseURL}/schedules/daily-summary`), managedLink.click()]);
       await page.getByRole('heading', { name: 'Edit schedule' }).waitFor();
+      await page.waitForFunction(() => document.querySelector('.app-sidebar [data-nav-link][href$="/schedules"]')?.getAttribute('aria-current') === 'page');
       await page.getByRole('button', { name: 'Run now' }).click();
       await page.getByText('Queued', { exact: true }).waitFor();
       await page.getByRole('region', { name: /Schedule run history/ }).locator('tbody tr a').first().click();

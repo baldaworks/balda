@@ -71,6 +71,73 @@ func TestRendererFullFragmentAndHistoryContracts(t *testing.T) {
 	}
 }
 
+func TestRendererGroupsAuthorizedNavigationWithoutDuplicateAccount(t *testing.T) {
+	t.Parallel()
+	renderer, err := NewRenderer("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name         string
+		capabilities usercmd.BackofficeCapabilities
+		wantGroups   []string
+		absentGroups []string
+		wantLinks    []string
+		absentLinks  []string
+	}{
+		{
+			name: "administrator",
+			capabilities: usercmd.BackofficeCapabilities{
+				Overview: true, Account: true, ManageUsers: true,
+				ManageMCP: true, ManageSchedules: true, ViewAudit: true,
+			},
+			wantGroups: []string{"Workspace", "Operations", "Administration"},
+			wantLinks:  []string{"/overview", "/mcp", "/schedules", "/access", "/audit"},
+		},
+		{
+			name:         "operator",
+			capabilities: usercmd.BackofficeCapabilities{Overview: true, Account: true},
+			wantGroups:   []string{"Workspace"},
+			absentGroups: []string{"Operations", "Administration"},
+			wantLinks:    []string{"/overview"},
+			absentLinks:  []string{"/mcp", "/schedules", "/access", "/audit"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			page := Page{Title: "Overview", Navigation: Navigation(tt.capabilities, LocationOverview)}
+			response := httptest.NewRecorder()
+			if err := renderer.Render(response, httptest.NewRequest(http.MethodGet, "/overview", nil), http.StatusOK, TemplateOverview, page); err != nil {
+				t.Fatal(err)
+			}
+			body := response.Body.String()
+			if got := strings.Count(body, `href="/account"`); got != 1 {
+				t.Errorf("Account link count = %d, want 1", got)
+			}
+			for _, group := range tt.wantGroups {
+				if !strings.Contains(body, ">"+group+"</h2>") {
+					t.Errorf("group heading %q is missing", group)
+				}
+			}
+			for _, group := range tt.absentGroups {
+				if strings.Contains(body, ">"+group+"</h2>") {
+					t.Errorf("empty group heading %q is present", group)
+				}
+			}
+			for _, href := range tt.wantLinks {
+				if !strings.Contains(body, `href="`+href+`"`) {
+					t.Errorf("navigation link %q is missing", href)
+				}
+			}
+			for _, href := range tt.absentLinks {
+				if strings.Contains(body, `href="`+href+`"`) {
+					t.Errorf("unauthorized navigation link %q is present", href)
+				}
+			}
+		})
+	}
+}
+
 func TestRendererPreservesErrorStatusAndDoesNotCommitRejectedModel(t *testing.T) {
 	t.Parallel()
 	renderer, err := NewRenderer("")

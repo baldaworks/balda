@@ -217,13 +217,13 @@ func qaFixture(name string) (webui.Page, string, int, bool) {
 
 var qaNow = time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
 
-func qaAdminNavigation(current webui.Location) []webui.NavItem {
+func qaAdminNavigation(current webui.Location) []webui.NavGroup {
 	return webui.Navigation(usercmd.BackofficeCapabilities{
 		Overview: true, Account: true, ManageUsers: true, ManageMCP: true, ManageSchedules: true, ViewAudit: true,
 	}, current)
 }
 
-func qaOperatorNavigation(current webui.Location) []webui.NavItem {
+func qaOperatorNavigation(current webui.Location) []webui.NavGroup {
 	return webui.Navigation(usercmd.BackofficeCapabilities{Overview: true, Account: true}, current)
 }
 
