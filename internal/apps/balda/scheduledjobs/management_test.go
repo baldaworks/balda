@@ -13,6 +13,12 @@ import (
 
 type recordingScheduleManagementStore struct{ jobs state.ScheduledJobStore }
 
+type unavailableScheduleResolver struct{}
+
+func (unavailableScheduleResolver) ResolveAlias(context.Context, string) (envelopetarget.Resolved, error) {
+	return envelopetarget.Resolved{}, envelopetarget.ErrResolutionUnavailable
+}
+
 func (*recordingScheduleManagementStore) CheckAuthority(context.Context, schedulecmd.Authority) error {
 	return nil
 }
@@ -34,6 +40,10 @@ func TestManagementLifecyclePreservesDisabledSelectionAndArchive(t *testing.T) {
 		!created.NextRunAt.Equal(time.Date(2026, 10, 8, 9, 0, 0, 0, time.UTC)) {
 		t.Fatalf("created = %+v, %v", created, err)
 	}
+	inventory, err := m.Inventory(ctx, authority)
+	if err != nil || len(inventory) != 1 || inventory[0].Definition.Content != "" {
+		t.Fatalf("inventory leaked content = %+v, %v", inventory, err)
+	}
 	disabled, err := m.SetEnabled(ctx, schedulecmd.ChangeSelection{ID: definition.ID, ExpectedVersion: 1, Enabled: false, Authority: authority})
 	if err != nil || disabled.Enabled || disabled.Version != 2 {
 		t.Fatalf("disabled = %+v, %v", disabled, err)
@@ -50,9 +60,20 @@ func TestManagementLifecyclePreservesDisabledSelectionAndArchive(t *testing.T) {
 	if err != nil || !archived.Deleted || archived.Enabled || archived.Version != 4 {
 		t.Fatalf("archived = %+v, %v", archived, err)
 	}
-	inventory, err := m.Inventory(ctx, authority)
+	inventory, err = m.Inventory(ctx, authority)
 	if err != nil || len(inventory) != 0 {
 		t.Fatalf("inventory after archive = %+v, %v", inventory, err)
+	}
+}
+
+func TestManagementMapsDestinationBackendFailureToUnavailable(t *testing.T) {
+	jobs := newSchedulerJobStore(t)
+	m := NewManagement(jobs, &recordingScheduleManagementStore{jobs: jobs}, unavailableScheduleResolver{})
+	definition := schedulecmd.Definition{ID: "daily", Cron: "0 9 * * *", Content: "review",
+		Target: schedulecmd.Target{Kind: envelopetarget.TargetAlias, Key: envelopetarget.AliasOwner}}
+	_, err := m.Create(t.Context(), schedulecmd.Create{Definition: definition})
+	if !errors.Is(err, schedulecmd.ErrUnavailable) {
+		t.Fatalf("Create() = %v, want unavailable", err)
 	}
 }
 

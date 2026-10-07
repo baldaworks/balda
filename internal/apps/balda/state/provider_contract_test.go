@@ -149,13 +149,20 @@ func checkProvider_ScheduleManagementAuthorityAndVersion(t *testing.T, open cont
 		t.Fatal(err)
 	}
 	count := 0
+	reasons := map[string]bool{}
 	for _, event := range audits.Events {
 		if event.TargetType == usercmd.AuditTargetSchedule {
 			count++
+			reasons[event.Reason] = true
 		}
 	}
 	if count != 4 {
 		t.Fatalf("schedule audits = %d, want four committed changes", count)
+	}
+	for _, reason := range []string{"Schedule created", "Schedule edited", "Schedule disabled", "Schedule deleted"} {
+		if !reasons[reason] {
+			t.Errorf("missing audit operation %q", reason)
+		}
 	}
 }
 

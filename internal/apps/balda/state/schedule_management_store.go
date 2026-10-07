@@ -87,7 +87,7 @@ func (s *sqlScheduleManagementStore) Save(ctx context.Context, m ScheduleMutatio
 		}
 	}
 	audit := m.Audit
-	audit.Reason = "Schedule definition or selection changed"
+	audit.Reason = scheduleMutationReason(m)
 	if err := s.users.insertAudit(ctx, tx, audit); err != nil {
 		return schedulecmd.ErrUnavailable
 	}
@@ -98,6 +98,24 @@ func (s *sqlScheduleManagementStore) Save(ctx context.Context, m ScheduleMutatio
 		return schedulecmd.ErrUnavailable
 	}
 	return nil
+}
+
+func scheduleMutationReason(m ScheduleMutation) string {
+	switch m.Kind {
+	case ScheduleCreate:
+		return "Schedule created"
+	case ScheduleEdit:
+		return "Schedule edited"
+	case ScheduleSelection:
+		if m.Record.Enabled {
+			return "Schedule enabled"
+		}
+		return "Schedule disabled"
+	case ScheduleDelete:
+		return "Schedule deleted"
+	default:
+		return "Schedule changed"
+	}
 }
 
 func validateScheduleMutation(m ScheduleMutation) error {

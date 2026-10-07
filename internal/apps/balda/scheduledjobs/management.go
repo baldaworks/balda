@@ -2,6 +2,7 @@ package scheduledjobs
 
 import (
 	"context"
+	"errors"
 	"regexp"
 	"strings"
 	"time"
@@ -41,7 +42,9 @@ func (m *Management) Inventory(ctx context.Context, authority schedulecmd.Author
 		if record.Source == state.ScheduledJobSourceInternal || record.Deleted {
 			continue
 		}
-		items = append(items, scheduleItem(record))
+		item := scheduleItem(record)
+		item.Definition.Content = ""
+		items = append(items, item)
 	}
 	return items, nil
 }
@@ -185,7 +188,7 @@ func (m *Management) build(ctx context.Context, definition schedulecmd.Definitio
 	}
 	target, err := envelopetarget.Resolve(ctx, m.resolver, envelopetarget.Target{Target: definition.Target.Kind, Key: definition.Target.Key})
 	if err != nil {
-		return state.ScheduledJobRecord{}, schedulecmd.ErrInvalid
+		return state.ScheduledJobRecord{}, scheduleTargetError(err)
 	}
 	r := state.ScheduledJobRecord{JobID: id, TargetKind: definition.Target.Kind, TargetKey: definition.Target.Key,
 		SessionID: target.Locator.SessionID, ChannelType: target.Locator.ChannelType,
@@ -198,7 +201,7 @@ func (m *Management) build(ctx context.Context, definition schedulecmd.Definitio
 		}
 		resolved, err := envelopetarget.Resolve(ctx, m.resolver, envelopetarget.Target{Target: definition.ReportTo.Kind, Key: definition.ReportTo.Key})
 		if err != nil {
-			return state.ScheduledJobRecord{}, schedulecmd.ErrInvalid
+			return state.ScheduledJobRecord{}, scheduleTargetError(err)
 		}
 		r.ReportToEnabled = true
 		r.ReportToTargetKind = definition.ReportTo.Kind
@@ -209,6 +212,13 @@ func (m *Management) build(ctx context.Context, definition schedulecmd.Definitio
 		r.ReportToAddressJSON = resolved.Locator.AddressJSON
 	}
 	return r, nil
+}
+
+func scheduleTargetError(err error) error {
+	if errors.Is(err, envelopetarget.ErrResolutionUnavailable) {
+		return schedulecmd.ErrUnavailable
+	}
+	return schedulecmd.ErrInvalid
 }
 
 func scheduleItem(r state.ScheduledJobRecord) schedulecmd.Item {
