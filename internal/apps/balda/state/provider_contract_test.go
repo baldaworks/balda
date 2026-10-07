@@ -427,6 +427,20 @@ func checkProvider_ScheduledJobStoreRoundTrip(t *testing.T, open contractOpener)
 	if len(dueTasks) != 1 || dueTasks[0].JobID != scheduledJobID {
 		t.Fatalf("ListDue() = %#v, want single %s", dueTasks, scheduledJobID)
 	}
+	updated, err := store.UpdateRuntime(ctx, ScheduledJobRuntimeUpdate{
+		JobID: scheduledJobID, DefinitionVersion: got.DefinitionVersion,
+		ExpectedNextRunAt: got.NextRunAt, ExpectedLastDispatchKey: got.LastDispatchKey,
+		Status: ScheduledJobStatusActive, NextRunAt: nextRunAt.Add(5 * time.Minute),
+		LastDispatchKey: "task-1@slot", LastRunAt: nextRunAt,
+	})
+	if err != nil || !updated {
+		t.Fatalf("UpdateRuntime() = %v, %v, want true, nil", updated, err)
+	}
+	got, ok, err = store.GetByID(ctx, scheduledJobID)
+	if err != nil || !ok || got.LastDispatchKey != "task-1@slot" ||
+		!got.NextRunAt.Equal(nextRunAt.Add(5*time.Minute)) {
+		t.Fatalf("GetByID(after runtime update) = %+v, %v, %v", got, ok, err)
+	}
 
 	if err := store.Delete(ctx, scheduledJobID); err != nil {
 		t.Fatalf("Delete() error = %v", err)

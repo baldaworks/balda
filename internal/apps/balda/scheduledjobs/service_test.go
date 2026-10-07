@@ -319,6 +319,44 @@ func TestScheduledJobSchedulerDispatchJob_IdempotentForSameDueSlot(t *testing.T)
 	}
 }
 
+func TestScheduledJobSchedulerDispatchJob_DoesNotUndoConcurrentDisable(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := newSchedulerJobStore(t)
+	locator := baldatelegram.NewLocator(9001, 99)
+	now := time.Date(2026, time.May, 14, 13, 0, 0, 0, time.UTC)
+	record := baldastate.ScheduledJobRecord{
+		JobID: "task-disable", Source: baldastate.ScheduledJobSourceManaged,
+		Enabled: true, DefinitionVersion: 1, SessionID: locator.SessionID,
+		ChannelType: locator.ChannelType, AddressKey: locator.AddressKey,
+		AddressJSON: locator.AddressJSON, Content: "old", ScheduleSpec: "@every 5s",
+		Status: baldastate.ScheduledJobStatusActive, NextRunAt: now.Add(-time.Second),
+	}
+	if err := store.Upsert(ctx, record); err != nil {
+		t.Fatal(err)
+	}
+	bus := &recordingHandlerCommandBus{onDispatch: func() {
+		updated, found, err := store.GetByID(ctx, record.JobID)
+		if err != nil || !found {
+			t.Fatalf("GetByID() = %v, %v", found, err)
+		}
+		updated.Enabled = false
+		updated.Content = "edited"
+		updated.DefinitionVersion++
+		if err := store.Upsert(ctx, updated); err != nil {
+			t.Fatal(err)
+		}
+	}}
+	scheduler := newSchedulerForTest(t, store, bus, now)
+	if err := scheduler.dispatchJob(ctx, record, now); err != nil {
+		t.Fatal(err)
+	}
+	got, found, err := store.GetByID(ctx, record.JobID)
+	if err != nil || !found || got.Enabled || got.Content != "edited" || got.DefinitionVersion != 2 || got.LastDispatchKey != "" {
+		t.Fatalf("concurrent edit overwritten: %+v, %v, %v", got, found, err)
+	}
+}
+
 func TestScheduledJobSchedulerMarkFailure_RetryThenPause(t *testing.T) {
 	t.Parallel()
 
@@ -534,6 +572,64 @@ func TestScheduledJobSchedulerReconcileConfiguredTasks_UpsertsAndDeletes(t *test
 	}
 	if orphanedExists {
 		t.Fatal("orphaned task still exists after reconcile")
+	}
+}
+
+func TestScheduledJobSchedulerReconcilePreservesManagedAndArchivesRemovedConfig(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := newSchedulerJobStore(t)
+	now := time.Date(2026, time.May, 14, 16, 0, 0, 0, time.UTC)
+	locator := baldatelegram.NewLocator(9001, 222)
+	for _, item := range []struct{ id, source string }{
+		{"ui-task", baldastate.ScheduledJobSourceManaged},
+		{"old-config", baldastate.ScheduledJobSourceConfig},
+	} {
+		if err := store.Upsert(ctx, baldastate.ScheduledJobRecord{
+			JobID: item.id, Source: item.source, Enabled: true, DefinitionVersion: 1,
+			SessionID: locator.SessionID, ChannelType: locator.ChannelType,
+			AddressKey: locator.AddressKey, AddressJSON: locator.AddressJSON,
+			Content: "review", ScheduleSpec: "0 9 * * *", Status: baldastate.ScheduledJobStatusActive,
+			NextRunAt: now.Add(time.Hour),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	scheduler := &ScheduledJobScheduler{jobStore: store, logger: zerolog.Nop(), now: func() time.Time { return now }}
+	if err := scheduler.reconcileConfiguredJobs(ctx); err != nil {
+		t.Fatal(err)
+	}
+	managed, found, err := store.GetByID(ctx, "ui-task")
+	if err != nil || !found || managed.Deleted || managed.Source != baldastate.ScheduledJobSourceManaged {
+		t.Fatalf("managed = %+v, %v, %v", managed, found, err)
+	}
+	removed, found, err := store.GetByID(ctx, "old-config")
+	if err != nil || !found || !removed.Deleted || removed.Source != baldastate.ScheduledJobSourceConfig {
+		t.Fatalf("removed config = %+v, %v, %v", removed, found, err)
+	}
+}
+
+func TestScheduledJobSchedulerReconcileRejectsManagedIDCollision(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := newSchedulerJobStore(t)
+	now := time.Date(2026, time.May, 14, 16, 0, 0, 0, time.UTC)
+	locator := baldatelegram.NewLocator(9001, 222)
+	if err := store.Upsert(ctx, baldastate.ScheduledJobRecord{
+		JobID: "same", Source: baldastate.ScheduledJobSourceManaged, Enabled: true,
+		SessionID: locator.SessionID, ChannelType: locator.ChannelType,
+		AddressKey: locator.AddressKey, AddressJSON: locator.AddressJSON,
+		Content: "ui content", ScheduleSpec: "0 9 * * *", NextRunAt: now.Add(time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	scheduler := &ScheduledJobScheduler{jobStore: store, owner: newOwnerStoreForTest(t, 101, 9001), logger: zerolog.Nop(), now: func() time.Time { return now }, config: ScheduledJobSchedulerConfig{Jobs: []ConfiguredScheduledJob{{ID: "same", Cron: "0 9 * * *", Target: "alias", Key: "owner", Content: "config content"}}}}
+	if err := scheduler.reconcileConfiguredJobs(ctx); err == nil || !strings.Contains(err.Error(), "collision") {
+		t.Fatalf("reconcile = %v, want collision", err)
+	}
+	got, _, err := store.GetByID(ctx, "same")
+	if err != nil || got.Content != "ui content" {
+		t.Fatalf("managed row changed: %+v, %v", got, err)
 	}
 }
 

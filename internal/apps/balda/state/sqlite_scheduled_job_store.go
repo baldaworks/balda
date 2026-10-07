@@ -12,6 +12,10 @@ type sqliteScheduledJobStore struct {
 	db *sql.DB
 }
 
+func (s *sqliteScheduledJobStore) UpdateRuntime(ctx context.Context, update ScheduledJobRuntimeUpdate) (bool, error) {
+	return updateScheduledJobRuntime(ctx, s.db, func(query string) string { return query }, update)
+}
+
 func (s *sqliteScheduledJobStore) Upsert(ctx context.Context, record ScheduledJobRecord) error {
 	jobID := strings.TrimSpace(record.JobID)
 	if jobID == "" {

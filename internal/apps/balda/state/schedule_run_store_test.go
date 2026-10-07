@@ -118,3 +118,36 @@ func TestScheduledJobStorePersistsManagedSelection(t *testing.T) {
 		t.Fatalf("disabled schedule due = %+v, %v, want none", due, err)
 	}
 }
+
+func TestScheduledJobRuntimeUpdateRejectsStaleDefinition(t *testing.T) {
+	provider, err := NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = provider.Close() })
+	now := time.Date(2026, 10, 8, 9, 0, 0, 0, time.UTC)
+	record := ScheduledJobRecord{JobID: "daily", Source: ScheduledJobSourceManaged,
+		Enabled: true, DefinitionVersion: 1, SessionID: "tg-1-0", ChannelType: ChannelTypeTelegram,
+		AddressKey: "1:0", AddressJSON: `{}`, Content: "old", ScheduleSpec: "0 9 * * *",
+		Status: ScheduledJobStatusActive, NextRunAt: now}
+	if err := provider.ScheduledJobs().Upsert(t.Context(), record); err != nil {
+		t.Fatal(err)
+	}
+	record.Content = "new"
+	record.Enabled = false
+	record.DefinitionVersion = 2
+	if err := provider.ScheduledJobs().Upsert(t.Context(), record); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := provider.ScheduledJobs().UpdateRuntime(t.Context(), ScheduledJobRuntimeUpdate{
+		JobID: "daily", DefinitionVersion: 1, ExpectedNextRunAt: now,
+		NextRunAt: now.Add(time.Hour), LastDispatchKey: "daily@slot", Status: ScheduledJobStatusActive,
+	})
+	if err != nil || updated {
+		t.Fatalf("stale update = %v, %v", updated, err)
+	}
+	got, _, err := provider.ScheduledJobs().GetByID(t.Context(), "daily")
+	if err != nil || got.Content != "new" || got.Enabled || got.DefinitionVersion != 2 || !got.NextRunAt.Equal(now) {
+		t.Fatalf("after stale update = %+v, %v", got, err)
+	}
+}

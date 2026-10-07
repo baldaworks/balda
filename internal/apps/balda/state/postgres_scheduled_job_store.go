@@ -12,6 +12,14 @@ type postgresScheduledJobStore struct {
 	db *sql.DB
 }
 
+func (s *postgresScheduledJobStore) UpdateRuntime(ctx context.Context, update ScheduledJobRuntimeUpdate) (bool, error) {
+	updated, err := updateScheduledJobRuntime(ctx, s.db, postgresBind, update)
+	if err != nil {
+		return false, redactPostgresError(err)
+	}
+	return updated, nil
+}
+
 func (s *postgresScheduledJobStore) Upsert(ctx context.Context, record ScheduledJobRecord) error {
 	jobID := strings.TrimSpace(record.JobID)
 	if jobID == "" {

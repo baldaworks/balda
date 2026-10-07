@@ -265,11 +265,26 @@ type ScheduledJobRecord struct {
 // ScheduledJobStore persists scheduler jobs bound to canonical locators.
 type ScheduledJobStore interface {
 	Upsert(ctx context.Context, record ScheduledJobRecord) error
+	UpdateRuntime(ctx context.Context, update ScheduledJobRuntimeUpdate) (bool, error)
 	GetByID(ctx context.Context, jobID string) (ScheduledJobRecord, bool, error)
 	List(ctx context.Context) ([]ScheduledJobRecord, error)
 	ListByAddress(ctx context.Context, channelType, addressKey string) ([]ScheduledJobRecord, error)
 	ListDue(ctx context.Context, now time.Time, limit int) ([]ScheduledJobRecord, error)
 	Delete(ctx context.Context, jobID string) error
+}
+
+// ScheduledJobRuntimeUpdate changes only dispatch state when the selected definition and slot still match.
+type ScheduledJobRuntimeUpdate struct {
+	JobID                   string
+	DefinitionVersion       uint64
+	ExpectedNextRunAt       time.Time
+	ExpectedLastDispatchKey string
+	Status                  string
+	RetryCount              int
+	LastDispatchKey         string
+	NextRunAt               time.Time
+	LastRunAt               time.Time
+	LastError               string
 }
 
 // ScheduleRunRecord persists one exact manual or cron dispatch intent.

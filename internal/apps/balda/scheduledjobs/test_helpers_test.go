@@ -13,6 +13,7 @@ const testLocatorTopicSessionID = "tg--1002667079342-8939"
 type recordingHandlerCommandBus struct {
 	commands    []actorlayer.Envelope
 	commandErrs []error
+	onDispatch  func()
 }
 
 func (b *recordingHandlerCommandBus) Dispatch(_ context.Context, env actorlayer.Envelope) (*actortransport.DispatchReceipt, error) {
@@ -24,6 +25,9 @@ func (b *recordingHandlerCommandBus) Dispatch(_ context.Context, env actorlayer.
 		}
 	}
 	b.commands = append(b.commands, env)
+	if b.onDispatch != nil {
+		b.onDispatch()
+	}
 	return &actortransport.DispatchReceipt{
 		Stream:   baldaexecution.DefaultCommandStream,
 		Sequence: uint64(len(b.commands)),
