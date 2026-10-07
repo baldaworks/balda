@@ -49,6 +49,21 @@ func (m *Manager) EnsureSession(ctx context.Context, sessionCtx SessionContext, 
 	return m.GetSession(sessionCtx.Locator)
 }
 
+// EnsureTransientSession creates a private run session without address-indexed metadata.
+func (m *Manager) EnsureTransientSession(ctx context.Context, sessionCtx SessionContext, agentName string) (*TopicSession, error) {
+	sessionID := strings.TrimSpace(sessionCtx.Locator.SessionID)
+	if !strings.HasPrefix(sessionID, "sch-") {
+		return nil, fmt.Errorf("schedule execution session id is required")
+	}
+	if existing, err := m.GetSession(sessionCtx.Locator); err == nil {
+		return existing, nil
+	}
+	if err := m.createSession(ctx, sessionCtx, agentName, nil, true); err != nil {
+		return nil, err
+	}
+	return m.GetSession(sessionCtx.Locator)
+}
+
 // RestoreSession restores a session from persisted metadata when it is not active in memory.
 func (m *Manager) RestoreSession(ctx context.Context, sessionCtx SessionContext) (*TopicSession, error) {
 	locator := sessionCtx.Locator
@@ -106,7 +121,7 @@ func (m *Manager) RestoreSession(ctx context.Context, sessionCtx SessionContext)
 	if userID := strings.TrimSpace(record.UserID); userID != "" {
 		restoredCtx.UserID = userID
 	}
-	if err := m.createSession(ctx, restoredCtx, sessionLabel, &record); err != nil {
+	if err := m.createSession(ctx, restoredCtx, sessionLabel, &record, false); err != nil {
 		return nil, err
 	}
 	return m.GetSession(recordLocator)

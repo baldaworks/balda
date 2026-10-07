@@ -9,8 +9,9 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
-	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/locatorref"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/telegramref"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
@@ -56,6 +57,7 @@ type scheduledJobSchedulerParams struct {
 	Dispatcher actortransport.Dispatcher
 	OwnerStore *auth.OwnerStore                   `optional:"true"`
 	Resolver   envelopetarget.DestinationResolver `optional:"true"`
+	Finalizer  *RunFinalizer
 	Logger     zerolog.Logger
 	Config     ScheduledJobSchedulerConfig
 }
@@ -67,6 +69,7 @@ type ScheduledJobScheduler struct {
 	dispatcher actortransport.Dispatcher
 	owner      *auth.OwnerStore
 	resolver   envelopetarget.DestinationResolver
+	finalizer  *RunFinalizer
 	logger     zerolog.Logger
 	config     ScheduledJobSchedulerConfig
 
@@ -112,6 +115,11 @@ func (s *ScheduledJobScheduler) start() {
 			}
 			if err := s.processPendingRuns(runCtx, s.now().UTC()); err != nil {
 				s.logger.Warn().Err(err).Msg("failed to process schedule runs")
+			}
+			if s.finalizer != nil {
+				if err := s.finalizer.Settle(runCtx, s.dueBatchSize); err != nil {
+					s.logger.Warn().Err(err).Msg("failed to finalize schedule runs")
+				}
 			}
 
 			select {
@@ -160,48 +168,42 @@ func (s *ScheduledJobScheduler) reconcileConfiguredJobs(ctx context.Context) err
 	prepared := make([]baldastate.ScheduledJobRecord, 0, len(s.config.Jobs))
 
 	for _, job := range s.config.Jobs {
-		target, err := envelopetarget.Resolve(ctx, s.getResolver(), envelopetarget.Target{Target: job.Target, Key: job.Key})
-		if err != nil {
-			return fmt.Errorf("resolve scheduler job %q target: %w", job.ID, err)
-		}
-		var reportTo *envelopetarget.Resolved
-		if job.ReportTo != nil {
-			resolved, err := envelopetarget.Resolve(ctx, s.getResolver(), envelopetarget.Target{Target: job.ReportTo.Target, Key: job.ReportTo.Key})
+		var target deliverycmd.Locator
+		if job.Key != "" {
+			var err error
+			target, err = locatorref.Parse(job.Key)
 			if err != nil {
-				return fmt.Errorf("resolve scheduler job %q report_to: %w", job.ID, err)
+				return fmt.Errorf("scheduler job %q envelope.key: %w", job.ID, err)
 			}
-			reportTo = &resolved
 		}
 		nextRunAt, err := nextRunAtFromSpec(job.Cron, now)
 		if err != nil {
 			return fmt.Errorf("compute next run for scheduler job %q: %w", job.ID, err)
 		}
 		record := baldastate.ScheduledJobRecord{
-			JobID:        job.ID,
-			Source:       baldastate.ScheduledJobSourceConfig,
-			Enabled:      true,
-			TargetKind:   job.Target,
-			TargetKey:    job.Key,
-			SessionID:    target.Locator.SessionID,
-			ChannelType:  target.Locator.ChannelType,
-			AddressKey:   target.Locator.AddressKey,
-			AddressJSON:  target.Locator.AddressJSON,
-			Content:      job.Content,
-			ScheduleSpec: job.Cron,
-			Timezone:     "UTC",
-			Status:       baldastate.ScheduledJobStatusActive,
-			MaxRetries:   defaultSchedulerMaxRetries,
-			RetryCount:   0,
-			NextRunAt:    nextRunAt,
-		}
-		if reportTo != nil {
-			record.ReportToEnabled = true
-			record.ReportToTargetKind = job.ReportTo.Target
-			record.ReportToTargetKey = job.ReportTo.Key
-			record.ReportToSessionID = reportTo.Locator.SessionID
-			record.ReportToChannelType = reportTo.Locator.ChannelType
-			record.ReportToAddressKey = reportTo.Locator.AddressKey
-			record.ReportToAddressJSON = reportTo.Locator.AddressJSON
+			JobID:               job.ID,
+			Source:              baldastate.ScheduledJobSourceConfig,
+			Enabled:             true,
+			TargetKind:          job.Target,
+			TargetKey:           job.Key,
+			SessionID:           target.SessionID,
+			ChannelType:         target.ChannelType,
+			AddressKey:          target.AddressKey,
+			AddressJSON:         target.AddressJSON,
+			ReportToEnabled:     job.Key != "",
+			ReportToTargetKind:  job.Target,
+			ReportToTargetKey:   locatorref.Format(target),
+			ReportToSessionID:   target.SessionID,
+			ReportToChannelType: target.ChannelType,
+			ReportToAddressKey:  target.AddressKey,
+			ReportToAddressJSON: target.AddressJSON,
+			Content:             job.Content,
+			ScheduleSpec:        job.Cron,
+			Timezone:            "UTC",
+			Status:              baldastate.ScheduledJobStatusActive,
+			MaxRetries:          defaultSchedulerMaxRetries,
+			RetryCount:          0,
+			NextRunAt:           nextRunAt,
 		}
 		if previous, ok := currentByID[job.ID]; ok {
 			record.DefinitionVersion = previous.DefinitionVersion
@@ -255,9 +257,8 @@ func (s *ScheduledJobScheduler) reconcileConfiguredJobs(ctx context.Context) err
 
 func sameConfiguredDefinition(a, b baldastate.ScheduledJobRecord) bool {
 	return a.Content == b.Content && a.ScheduleSpec == b.ScheduleSpec &&
-		sameConfiguredTargetForm(a.TargetKind, a.TargetKey, b.TargetKind, b.TargetKey, a.ChannelType, a.AddressKey) &&
-		sameConfiguredTargetForm(a.ReportToTargetKind, a.ReportToTargetKey,
-			b.ReportToTargetKind, b.ReportToTargetKey, a.ReportToChannelType, a.ReportToAddressKey) &&
+		a.TargetKind == b.TargetKind && a.TargetKey == b.TargetKey &&
+		a.ReportToTargetKind == b.ReportToTargetKind && a.ReportToTargetKey == b.ReportToTargetKey &&
 		a.SessionID == b.SessionID && a.ChannelType == b.ChannelType &&
 		a.AddressKey == b.AddressKey && a.AddressJSON == b.AddressJSON &&
 		a.ReportToEnabled == b.ReportToEnabled &&
@@ -265,15 +266,6 @@ func sameConfiguredDefinition(a, b baldastate.ScheduledJobRecord) bool {
 		a.ReportToChannelType == b.ReportToChannelType &&
 		a.ReportToAddressKey == b.ReportToAddressKey &&
 		a.ReportToAddressJSON == b.ReportToAddressJSON
-}
-
-func sameConfiguredTargetForm(oldKind, oldKey, newKind, newKey, channelType, addressKey string) bool {
-	if oldKind == newKind && oldKey == newKey {
-		return true
-	}
-	// The migration could only reconstruct the canonical locator. A first
-	// reconciliation may recover an alias without changing its destination.
-	return oldKind == "locator" && oldKey == channelType+":"+addressKey
 }
 
 func (s *ScheduledJobScheduler) dispatchDue(ctx context.Context, now time.Time) error {
@@ -368,9 +360,16 @@ func (s *ScheduledJobScheduler) getResolver() envelopetarget.DestinationResolver
 }
 
 func (s *ScheduledJobScheduler) resolveScheduledJobTarget(ctx context.Context, job baldastate.ScheduledJobRecord) (envelopetarget.Resolved, error) {
-	locator, err := baldasession.NewSessionLocator(job.ChannelType, job.AddressKey, job.AddressJSON, job.SessionID)
+	if job.Source != baldastate.ScheduledJobSourceInternal && !isOneShotScheduleSpec(job.ScheduleSpec) &&
+		strings.TrimSpace(job.ChannelType) == "" {
+		return envelopetarget.Resolved{}, nil
+	}
+	locator, err := deliverycmd.NewLocator(job.ChannelType, job.AddressKey, job.AddressJSON, job.SessionID)
 	if err != nil {
-		return envelopetarget.Resolve(ctx, s.getResolver(), envelopetarget.Target{Target: envelopetarget.TargetAlias, Key: envelopetarget.AliasOwner})
+		if job.Source == baldastate.ScheduledJobSourceInternal {
+			return envelopetarget.Resolve(ctx, s.getResolver(), envelopetarget.Target{Target: envelopetarget.TargetAlias, Key: envelopetarget.AliasOwner})
+		}
+		return envelopetarget.Resolved{}, fmt.Errorf("scheduled job %q has invalid locator: %w", job.JobID, err)
 	}
 	target := envelopetarget.Resolved{Locator: locator}
 	if s.owner != nil {
@@ -388,15 +387,19 @@ func (s *ScheduledJobScheduler) dispatchScheduledJob(
 	content string,
 	dispatchKey string,
 ) error {
-	var reportTo *baldasession.SessionLocator
+	var reportTo *deliverycmd.Locator
 	if job.ReportToEnabled {
-		locator, err := baldasession.NewSessionLocator(job.ReportToChannelType, job.ReportToAddressKey, job.ReportToAddressJSON, job.ReportToSessionID)
+		locator, err := deliverycmd.NewLocator(job.ReportToChannelType, job.ReportToAddressKey, job.ReportToAddressJSON, job.ReportToSessionID)
 		if err != nil {
 			return s.markFailureForJob(ctx, job, fmt.Errorf("resolve report_to locator: %w", err))
 		}
 		reportTo = &locator
 	}
-	env, err := turncmd.ScheduledJobEnvelope(job.JobID, content, target.Locator, reportTo, target.UserID(), 0, dispatchKey)
+	envelope := turncmd.ScheduledJobEnvelope
+	if job.Source == baldastate.ScheduledJobSourceInternal || isOneShotScheduleSpec(job.ScheduleSpec) {
+		envelope = turncmd.InternalOneShotEnvelope
+	}
+	env, err := envelope(job.JobID, content, target.Locator, reportTo, target.UserID(), 0, dispatchKey)
 	if err != nil {
 		return s.markFailureForJob(ctx, job, err)
 	}
@@ -528,38 +531,34 @@ func normalizeScheduledJobSchedulerConfig(raw ScheduledJobSchedulerConfig) (Sche
 		}
 
 		target := strings.TrimSpace(rawJob.Target)
-		if target == "" {
-			return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].envelope.target is required", idx)
-		}
 		key := strings.TrimSpace(rawJob.Key)
-		if key == "" {
-			return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].envelope.key is required", idx)
+		if target == "" && key != "" || target != "" && key == "" {
+			return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].envelope.target and key must be supplied together", idx)
+		}
+		if target != "" && target != envelopetarget.TargetLocator {
+			return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].envelope.target must be locator; replace alias/session with a public locator ref", idx)
+		}
+		if key != "" {
+			locator, err := locatorref.Parse(key)
+			if err != nil {
+				return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].envelope.key: %w", idx, err)
+			}
+			key = locatorref.Format(locator)
 		}
 		content := strings.TrimSpace(rawJob.Content)
 		if content == "" {
 			return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].envelope.content is required", idx)
 		}
-		var reportTo *ConfiguredScheduledJobTarget
 		if rawJob.ReportTo != nil {
-			reportTo = &ConfiguredScheduledJobTarget{
-				Target: strings.TrimSpace(rawJob.ReportTo.Target),
-				Key:    strings.TrimSpace(rawJob.ReportTo.Key),
-			}
-			if reportTo.Target == "" {
-				return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].envelope.report_to.target is required", idx)
-			}
-			if reportTo.Key == "" {
-				return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].envelope.report_to.key is required", idx)
-			}
+			return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].envelope.report_to is unsupported; use envelope.key for the report locator", idx)
 		}
 
 		cfg.Jobs = append(cfg.Jobs, ConfiguredScheduledJob{
-			ID:       jobID,
-			Cron:     cronSpec,
-			Target:   target,
-			Key:      key,
-			Content:  content,
-			ReportTo: reportTo,
+			ID:      jobID,
+			Cron:    cronSpec,
+			Target:  target,
+			Key:     key,
+			Content: content,
 		})
 	}
 

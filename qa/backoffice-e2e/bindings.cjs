@@ -24,8 +24,7 @@ async function consume(channel, payload, sender) {
   try {
     let caseID = 0;
     for (const width of [390, 768, 1024, 1440]) {
-      for (const javaScriptEnabled of [true, false]) {
-        const context = await browser.newContext({ javaScriptEnabled, viewport: { width, height: 900 }, permissions: ['clipboard-read', 'clipboard-write'] });
+        const context = await browser.newContext({ viewport: { width, height: 900 }, permissions: ['clipboard-read', 'clipboard-write'] });
         const page = await context.newPage();
         const errors = [];
         const secrets = [];
@@ -35,7 +34,7 @@ async function consume(channel, payload, sender) {
         await page.getByLabel(/^Username/).fill('administrator');
         await page.getByLabel(/^Password/).fill('correct horse battery staple');
         await Promise.all([page.waitForURL(`${baseURL}/overview`), page.getByRole('button', { name: 'Sign in', exact: true }).click()]);
-        const target = javaScriptEnabled ? 'operator' : 'secondary';
+        const target = width < 1024 ? 'operator' : 'secondary';
         const detailURL = `${baseURL}/access/users/${target}`;
         for (const channel of ['telegram', 'slackagent', 'zulip', 'mattermost']) {
           const sender = ++caseID;
@@ -63,28 +62,15 @@ async function consume(channel, payload, sender) {
             await page.goto(detailURL);
           }
           let payload = await issue();
-          if (javaScriptEnabled) {
-            await panel().getByRole('button', { name: 'Copy message', exact: true }).click();
-            await panel().getByText('Copied.', { exact: true }).waitFor();
-            assert.equal(await page.evaluate(() => navigator.clipboard.readText()), payload);
-          } else assert.equal(await page.locator(`#binding-message-${channel}`).getAttribute('readonly'), '', 'manual copy field');
+          await panel().getByRole('button', { name: 'Copy message', exact: true }).click();
+          await panel().getByText('Copied.', { exact: true }).waitFor();
+          assert.equal(await page.evaluate(() => navigator.clipboard.readText()), payload);
           if (channel === 'mattermost') {
             assert.equal(await page.locator('#binding-command-mattermost').count(), 0, 'disabled slash receiver has DM fallback only');
             assert.equal((await page.locator('#binding-dm-mattermost').inputValue()).startsWith('/msg @fixture_bot '), true);
           }
           await page.goto(`${baseURL}/overview`);
-          const nativeLoad = javaScriptEnabled ? null : page.waitForEvent('load');
-          let nativeCacheMiss = false;
-          try { await page.goBack(); } catch (error) {
-            if (javaScriptEnabled || !error.message.includes('ERR_CACHE_MISS')) throw error;
-            nativeCacheMiss = true;
-          }
-          if (nativeLoad) await nativeLoad;
-          if (nativeCacheMiss) {
-            // Native no-store POST history cannot recover the secret. Reopening
-            // its URL as GET redirects to metadata-only user detail.
-            await page.goto(`${detailURL}/invitations/${channel}`);
-          }
+          await page.goBack();
           await page.waitForSelector(`[data-binding-channel="${channel}"]`);
           assert.equal(await page.locator('[data-binding-reveal]').count(), 0, 'history recovery must contain metadata only');
           assert.equal(secrets.some(secret => page.url().includes(secret)), false);
@@ -108,15 +94,12 @@ async function consume(channel, payload, sender) {
           assert.equal(await page.locator('[data-binding-reveal]').count(), 0);
           assert.equal(await page.locator('h1').evaluate(element => getComputedStyle(element).color), 'rgb(222, 226, 230)');
           assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-          if (javaScriptEnabled) {
-            const storage = await page.evaluate(() => JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage } }));
-            assert.equal(secrets.some(secret => storage.includes(secret)), false, 'credential excluded from storage/history cache');
-          }
+          const storage = await page.evaluate(() => JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage } }));
+          assert.equal(secrets.some(secret => storage.includes(secret)), false, 'credential excluded from storage/history cache');
         }
         assert.deepEqual(errors, [], 'browser script errors');
         await context.close();
-      }
     }
-    console.log('Binding browser: four configured channels at 390/768/1024/1440px with JS and no-JS; selected operator/non-primary admin, issue/copy/history/replace/cancel/consume/replay/refresh passed; Slack uses signed concrete receiver, other channels use trusted proof fixtures.');
+    console.log('Binding browser: four configured channels at 390/768/1024/1440px; selected operator/non-primary admin, issue/copy/history/replace/cancel/consume/replay/refresh passed; Slack uses signed concrete receiver, other channels use trusted proof fixtures.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

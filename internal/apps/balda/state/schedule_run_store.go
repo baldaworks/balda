@@ -239,6 +239,62 @@ func (s *sqlScheduleRunStore) ListPending(ctx context.Context, now time.Time, li
 	return s.readRows(rows)
 }
 
+// ListUnclosedDispatched finds runs whose execution settled but cleanup has not.
+func (s *sqlScheduleRunStore) ListUnclosedDispatched(
+	ctx context.Context, afterAt time.Time, afterID string, limit int,
+) ([]ScheduleRunRecord, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 100
+	}
+	reportEnabled := `COALESCE(json_extract(balda_schedule_runs.payload_json, '$.ReportToEnabled'), 0) = 1`
+	if s.postgres {
+		reportEnabled = `COALESCE(balda_schedule_runs.payload_json::jsonb ->> 'ReportToEnabled', 'false') = 'true'`
+	}
+	query := `SELECT ` + scheduleRunColumns + `
+		FROM balda_schedule_runs WHERE dispatch_state = 'dispatched' AND closed_at = ''
+		AND EXISTS (SELECT 1 FROM execution_jobs job
+		  WHERE job.id = balda_schedule_runs.execution_job_id
+		  AND job.status IN ('completed', 'failed', 'canceled', 'deadlettered')
+		  AND (job.session_id NOT LIKE 'sch-%' OR NOT (` + reportEnabled + `)
+		    OR (job.status IN ('canceled', 'deadlettered') AND NOT EXISTS
+		      (SELECT 1 FROM execution_delivery_outbox pending
+		       WHERE pending.job_id = job.id
+		       AND pending.delivery_key IN (job.id || ':delivery:final', job.id || ':delivery:terminal')))
+		    OR EXISTS (SELECT 1 FROM execution_delivery_outbox delivery
+		      WHERE delivery.job_id = job.id
+		      AND delivery.delivery_key IN (job.id || ':delivery:final', job.id || ':delivery:terminal')
+		      AND (delivery.status = 'sent' OR
+		        (delivery.status = 'failed' AND delivery.error = 'permanent')))))`
+	args := make([]any, 0, 3)
+	if !afterAt.IsZero() {
+		query += ` AND (requested_at > ? OR (requested_at = ? AND run_id > ?))`
+		at := formatScheduleRunTime(afterAt)
+		args = append(args, at, at, afterID)
+	}
+	query += ` ORDER BY requested_at ASC, run_id ASC LIMIT ?`
+	args = append(args, limit)
+	rows, err := s.db.QueryContext(ctx, s.bind(query), args...)
+	if err != nil {
+		return nil, s.failure("list unclosed schedule runs", err)
+	}
+	defer func() { _ = rows.Close() }()
+	return s.readRows(rows)
+}
+
+// MarkClosed is idempotent so a crash between runtime deletion and this write can retry.
+func (s *sqlScheduleRunStore) MarkClosed(ctx context.Context, runID string, at time.Time) error {
+	if strings.TrimSpace(runID) == "" || at.IsZero() {
+		return fmt.Errorf("run id and close time are required")
+	}
+	_, err := s.db.ExecContext(ctx, s.bind(`UPDATE balda_schedule_runs SET closed_at = ?
+		WHERE run_id = ? AND dispatch_state = 'dispatched' AND closed_at = ''`),
+		formatScheduleRunTime(at), strings.TrimSpace(runID))
+	if err != nil {
+		return s.failure("mark schedule run closed", err)
+	}
+	return nil
+}
+
 func (s *sqlScheduleRunStore) readRows(rows *sql.Rows) ([]ScheduleRunRecord, error) {
 	var records []ScheduleRunRecord
 	for rows.Next() {

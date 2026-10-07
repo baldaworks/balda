@@ -12,6 +12,10 @@ type postgresJobStore struct {
 	db *sql.DB
 }
 
+func (s *postgresJobStore) RecordScheduledOutput(ctx context.Context, jobID, output string) error {
+	return redactPostgresError(recordScheduledOutput(ctx, s.db, postgresBind, jobID, output))
+}
+
 func (s *postgresJobStore) CreateJob(ctx context.Context, record JobRecord) (bool, error) {
 	now := time.Now().UTC()
 	normalized, err := normalizeExecutionJob(record, now)
@@ -94,6 +98,18 @@ func (s *postgresJobStore) GetJob(ctx context.Context, jobID string) (JobRecord,
 		return JobRecord{}, false, redactPostgresError(err)
 	}
 	return record, ok, nil
+}
+
+func (s *postgresJobStore) RebindScheduledJobSession(ctx context.Context, jobID, oldSessionID, newSessionID, assignedActor string) (bool, error) {
+	result, err := s.db.ExecContext(ctx, postgresBind(`UPDATE execution_jobs SET session_id = ?, assigned_actor = ?, updated_at = ?
+		WHERE id = ? AND session_id = ? AND status NOT IN (?, ?, ?, ?)`),
+		newSessionID, assignedActor, time.Now().UTC().Format(time.RFC3339), jobID, oldSessionID,
+		JobStatusCompleted, JobStatusFailed, JobStatusCanceled, JobStatusDeadLettered)
+	if err != nil {
+		return false, postgresErrorf("rebind scheduled job session: %w", err)
+	}
+	count, err := result.RowsAffected()
+	return count == 1, err
 }
 
 func (s *postgresJobStore) ListActiveJobsBySession(ctx context.Context, sessionID string) ([]JobRecord, error) {
@@ -613,6 +629,10 @@ func (s *postgresJobStore) SentFinalDelivery(ctx context.Context, jobID string) 
 		return "", false, postgresErrorf("read final delivery for job %q: %w", jobID, err)
 	}
 	return providerMessageID, true, nil
+}
+
+func (s *postgresJobStore) FinalDelivery(ctx context.Context, jobID string) (DeliveryRecord, bool, error) {
+	return findFinalDelivery(ctx, jobID, s.getDeliveryByKey)
 }
 
 func (s *postgresJobStore) ReserveAgentStep(ctx context.Context, record AgentStepRecord) (AgentStepRecord, bool, error) {

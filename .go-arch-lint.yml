@@ -185,7 +185,6 @@ components:
       - internal/apps/balda/questions
       - internal/apps/balda/permissions
       - internal/apps/balda/pluginapp
-      - internal/apps/balda/scheduledjobs
       - internal/apps/balda/session
       - internal/apps/balda/sessionmemorymcp
       - internal/apps/balda/sessionturn
@@ -193,6 +192,12 @@ components:
       - internal/apps/balda/sessionmemoryapp
       - internal/apps/balda/welcome
       - internal/apps/balda/webhookapp
+
+  # Schedule policy owns recurring definitions and runs. Session cleanup is
+  # supplied through a consuming port by sessionapp, not constructed here.
+  schedule_policy:
+    in:
+      - internal/apps/balda/scheduledjobs
 
   # Runtime contribution compilation and bounded source/content reads. Agent,
   # command, and MCP consumers depend on contracts or local ports; this owner
@@ -541,6 +546,7 @@ deps:
   application:
     mayDependOn:
       - schedule_contracts
+      - schedule_policy
       - auth_payload
       - foundation
       - contracts
@@ -557,6 +563,15 @@ deps:
       - runtime_catalog
       - storage
       - infrastructure
+    anyVendorDeps: true
+
+  schedule_policy:
+    mayDependOn:
+      - schedule_contracts
+      - contracts
+      - user_contracts
+      - application
+      - storage
     anyVendorDeps: true
 
   runtime_catalog:
@@ -610,6 +625,7 @@ deps:
     mayDependOn:
       - schedule_contracts
       - application
+      - schedule_policy
       - schedule_backoffice_wiring
     deepScan: false
     anyVendorDeps: false
@@ -847,6 +863,7 @@ deps:
     mayDependOn:
       - mcp_backoffice_wiring
       - schedule_backoffice_wiring
+      - schedule_policy
       - foundation
       - mcp_bridge
       - mcp_wiring

@@ -54,6 +54,16 @@ func (a sessionAccessor) EnsureSession(ctx context.Context, sessionCtx sessiontu
 	}, agentName)
 }
 
+func (a sessionAccessor) EnsureTransientSession(ctx context.Context, sessionCtx sessionturn.SessionContext, agentName string) (sessionturn.ActiveSession, error) {
+	return a.manager.EnsureTransientSession(ctx, baldasession.SessionContext{
+		Locator: baldasession.SessionLocator{
+			SessionID: sessionCtx.Locator.SessionID, ChannelType: sessionCtx.Locator.ChannelType,
+			AddressKey: sessionCtx.Locator.AddressKey, AddressJSON: sessionCtx.Locator.AddressJSON,
+		},
+		UserID: sessionCtx.UserID,
+	}, agentName)
+}
+
 type memoryProvider struct {
 	store *memory.Store
 }

@@ -233,7 +233,7 @@ type SessionStore interface {
 	List(ctx context.Context) ([]SessionRecord, error)
 }
 
-// ScheduledJobRecord persists locator-targeted recurring job metadata.
+// ScheduledJobRecord persists recurring job metadata and optional report targeting.
 type ScheduledJobRecord struct {
 	JobID               string
 	Source              string
@@ -342,6 +342,8 @@ type ScheduleRunStore interface {
 	GetByTriggerKey(ctx context.Context, scheduleID, triggerKey string) (ScheduleRunRecord, bool, error)
 	ListBySchedule(ctx context.Context, scheduleID string, beforeAt time.Time, beforeID string, limit int) ([]ScheduleRunRecord, error)
 	ListPending(ctx context.Context, now time.Time, limit int) ([]ScheduleRunRecord, error)
+	ListUnclosedDispatched(ctx context.Context, afterAt time.Time, afterID string, limit int) ([]ScheduleRunRecord, error)
+	MarkClosed(ctx context.Context, runID string, at time.Time) error
 }
 
 type QuestionRecord struct {
@@ -465,10 +467,16 @@ type JobLifecycleStore interface {
 	CreateJobWithEvent(ctx context.Context, record JobRecord, event JobEventOutboxRecord) (bool, error)
 	GetJob(ctx context.Context, jobID string) (JobRecord, bool, error)
 	ListActiveJobsBySession(ctx context.Context, sessionID string) ([]JobRecord, error)
+	RebindScheduledJobSession(ctx context.Context, jobID, oldSessionID, newSessionID, assignedActor string) (bool, error)
 	UpdateJobStatus(ctx context.Context, jobID string, status string, reason string) error
 	UpdateJobStatusWithEvent(ctx context.Context, jobID string, status string, reason string, event JobEventOutboxRecord) error
 	SetJobResult(ctx context.Context, jobID string, result string, status string, reason string) error
 	SetJobResultWithEvent(ctx context.Context, jobID string, result string, status string, reason string, event JobEventOutboxRecord) error
+}
+
+// ScheduledOutputStore records one private scheduled run's provider output.
+type ScheduledOutputStore interface {
+	RecordScheduledOutput(ctx context.Context, jobID, output string) error
 }
 
 // JobEventStore persists projected job history.
@@ -492,6 +500,7 @@ type DeliveryStore interface {
 	MarkDeliverySent(ctx context.Context, deliveryKey string, providerMessageID string) error
 	MarkDeliveryFailed(ctx context.Context, deliveryKey string, reason string) error
 	SentFinalDelivery(ctx context.Context, jobID string) (string, bool, error)
+	FinalDelivery(ctx context.Context, jobID string) (DeliveryRecord, bool, error)
 }
 
 // AgentStepStore persists idempotent agent workflow steps.
@@ -504,6 +513,7 @@ type AgentStepStore interface {
 // JobStore is the complete SQLite capability set exposed by the state provider.
 type JobStore interface {
 	JobLifecycleStore
+	ScheduledOutputStore
 	JobEventStore
 	JobEventOutboxStore
 	DeliveryStore

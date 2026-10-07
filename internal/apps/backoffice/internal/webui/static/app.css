@@ -12,9 +12,6 @@ html, body { color: var(--ink); background: var(--canvas); }
 :focus-visible { outline: 3px solid var(--focus) !important; outline-offset: 3px; }
 .skip-link { position: fixed; z-index: 1200; top: .5rem; left: .75rem; padding: .65rem .9rem; background: var(--surface); color: var(--accent); border: 2px solid var(--focus); border-radius: .35rem; transform: translateY(-160%); }
 .skip-link:focus { transform: translateY(0); }
-.enhanced-only { display: none; }
-.enhanced .enhanced-only { display: inline-flex; }
-.enhanced .native-navigation { display: none; }
 .app-header { min-height: var(--shell-header-height); padding-block: 0; border-bottom: 1px solid var(--border); background: var(--surface); }
 .app-header .container-fluid { gap: .75rem; }
 .app-header .nav-link { color: var(--ink); }
@@ -81,6 +78,9 @@ summary:not(.btn) { color: var(--accent); font-weight: 500; }
 .table-responsive { width: 100%; min-width: 0; max-width: 100%; overflow-x: auto; border-radius: var(--radius); contain: inline-size; }
 .audit-table { min-width: 54rem; }
 .access-table { min-width: 39rem; }
+.schedule-inventory-table { min-width: 54rem; }
+.schedule-inventory-table td:first-child { min-width: 11rem; }
+.schedule-history-table { min-width: 44rem; }
 .empty-table-message { display: block; max-width: 25rem; padding: .75rem 0; white-space: normal; font-weight: 400; color: var(--muted); }
 .audit-table td:first-child { min-width: 8rem; white-space: nowrap; }
 .audit-table td:nth-child(2) { min-width: 11rem; }
@@ -92,9 +92,6 @@ summary:not(.btn) { color: var(--accent); font-weight: 500; }
 .audit-filters details > summary { list-style-position: inside; }
 .audit-filters details[open] > summary { margin-bottom: 1rem; }
 .app-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; min-height: 3.5rem; color: var(--muted); background: var(--surface); border-top: 1px solid var(--border); font-size: .85rem; }
-.native-navigation { position: relative; }
-.native-navigation nav { position: absolute; top: 100%; left: 0; z-index: 1050; min-width: 12rem; padding: .5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); }
-.native-navigation nav a { display: block; padding: .5rem .75rem; }
 .auth-wrapper { display: block; }
 .auth-wrapper .app-main { padding: 0; }
 .login-page { min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; padding: 2rem 1rem; background: var(--canvas); color: var(--ink); }

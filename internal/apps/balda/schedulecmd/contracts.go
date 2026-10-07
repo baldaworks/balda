@@ -25,19 +25,12 @@ type Authority struct {
 	At                time.Time
 }
 
-// Target identifies a supported envelope destination in its original form.
-type Target struct {
-	Kind string
-	Key  string
-}
-
 // Definition is the editable portion of a recurring schedule.
 type Definition struct {
-	ID       string
-	Cron     string
-	Target   Target
-	Content  string
-	ReportTo *Target
+	ID      string
+	Cron    string
+	Locator string
+	Content string
 }
 
 // Item is the safe management read model. Content is shown only on guarded detail.
@@ -94,4 +87,11 @@ type RunItem struct {
 	State           string
 	CompletedAt     time.Time
 	SafeFailureCode string
+}
+
+// RunDetail exposes only the frozen input and durable provider output.
+type RunDetail struct {
+	Run    RunItem
+	Input  string
+	Output string
 }

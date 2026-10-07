@@ -67,6 +67,7 @@ type SessionAccessor interface {
 	GetSession(locator SessionLocator) (ActiveSession, error)
 	RestoreSession(ctx context.Context, sessionCtx SessionContext) (ActiveSession, error)
 	EnsureSession(ctx context.Context, sessionCtx SessionContext, agentName string) (ActiveSession, error)
+	EnsureTransientSession(ctx context.Context, sessionCtx SessionContext, agentName string) (ActiveSession, error)
 }
 
 type MemorySnapshot struct {
@@ -160,32 +161,51 @@ func (r *Runner) RunSessionTurnPayload(ctx context.Context, payload turncmd.Sess
 	if r.executor == nil {
 		return fmt.Errorf("session turn: executor is unavailable")
 	}
+	if payload.Source == turncmd.SourceSchedule && (payload.ScheduleOneShot == nil || !*payload.ScheduleOneShot) {
+		var err error
+		payload, err = turncmd.PrivateScheduledTurn(payload)
+		if err != nil {
+			return fmt.Errorf("prepare scheduled turn: %w", err)
+		}
+	}
 	locator := sessionLocatorFromPayload(payload)
 	topicSession, err := r.sessions.GetSession(locator)
 	if err != nil {
 		userID := strings.TrimSpace(payload.UserID)
-		topicSession, err = r.sessions.RestoreSession(ctx, SessionContext{
-			Locator: locator,
-			UserID:  userID,
-		})
-		if err != nil {
-			if !errors.Is(err, ErrNoPersistedSession) {
-				return fmt.Errorf("restore session for queued turn: %w", err)
-			}
+		if payload.Source == turncmd.SourceSchedule && (payload.ScheduleOneShot == nil || !*payload.ScheduleOneShot) {
 			if userID == "" {
-				r.logger.Debug().
-					Str("session_id", payload.Locator.SessionID).
-					Str("channel_type", payload.Locator.ChannelType).
-					Str("address_key", payload.Locator.AddressKey).
-					Msg("dropping queued turn for unknown session without transport user")
-				return nil
+				return fmt.Errorf("scheduled execution user id is required")
 			}
-			topicSession, err = r.sessions.EnsureSession(ctx, SessionContext{
-				Locator: locator,
-				UserID:  userID,
+			topicSession, err = r.sessions.EnsureTransientSession(ctx, SessionContext{
+				Locator: locator, UserID: userID,
 			}, ownerSessionLabel)
 			if err != nil {
-				return fmt.Errorf("create session for queued turn: %w", err)
+				return fmt.Errorf("create private scheduled session: %w", err)
+			}
+		} else {
+			topicSession, err = r.sessions.RestoreSession(ctx, SessionContext{
+				Locator: locator,
+				UserID:  userID,
+			})
+			if err != nil {
+				if !errors.Is(err, ErrNoPersistedSession) {
+					return fmt.Errorf("restore session for queued turn: %w", err)
+				}
+				if userID == "" {
+					r.logger.Debug().
+						Str("session_id", payload.Locator.SessionID).
+						Str("channel_type", payload.Locator.ChannelType).
+						Str("address_key", payload.Locator.AddressKey).
+						Msg("dropping queued turn for unknown session without transport user")
+					return nil
+				}
+				topicSession, err = r.sessions.EnsureSession(ctx, SessionContext{
+					Locator: locator,
+					UserID:  userID,
+				}, ownerSessionLabel)
+				if err != nil {
+					return fmt.Errorf("create session for queued turn: %w", err)
+				}
 			}
 		}
 	}

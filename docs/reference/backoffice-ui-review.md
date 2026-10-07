@@ -59,7 +59,7 @@ gallery page and state at 1440×900, 1024×768, 768×1024 and 390×844. It check
 document overflow, consistent headings, dark authentication controls, native/HTMX
 geometry, top-bar visibility and alignment during navigation and scrolling,
 browser history and focus, sidebar collapse/overlay/backdrop/Escape,
-short-page footer position, Audit details, recovery actions and no-script menus. It needs no application credentials or deployment access.
+short-page footer position, Audit details, and recovery actions. It needs no application credentials or deployment access.
 
 Run the separate authenticated browser gate from the repository root after
 installing the same optional Playwright tooling:
@@ -69,13 +69,11 @@ BALDA_BACKOFFICE_BROWSER_TEST=1 go test ./internal/apps/backoffice -run 'TestHTT
 ```
 
 This gate starts the actual HTTP/security application against a temporary SQLite
-database, creates synthetic accounts and uses the ordinary browser login with
-and without JavaScript. It checks viewer identity on another user's detail,
+database, creates synthetic accounts and uses the ordinary JavaScript-enabled browser login. It checks viewer identity on another user's detail,
 conflict feedback without password reflection, access-token expiry recovery and
 native logout. It does not access deployment data or bypass authentication.
 
-The binding workflow additionally exercises four widths with and without
-JavaScript: administrator issuance for an operator or non-primary administrator,
+The binding workflow additionally exercises four widths: administrator issuance for an operator or non-primary administrator,
 manual/clipboard copy, metadata-only history recovery, explicit replacement and
 cancellation, confirmed attachment, replay denial, role preservation and refresh.
 Slack admission uses the concrete receiver with a synthetic signed request.
@@ -95,9 +93,8 @@ and hydrated-history boundaries are separately tested in `handlersfx` and
    **768×1024** and **390×844**. Check visual hierarchy, contrast, focus visibility, labels,
    form controls, sidebar behavior, horizontal overflow, and table containment.
    Verify that assets load and that browser console errors are absent. Follow
-   navigation and tab through forms with the keyboard; the page should remain
-   useful without JavaScript. Follow **Older active sessions** with JavaScript
-   enabled and disabled. Request a `form-*` route as an HTMX fragment and check
+   navigation and tab through forms with the keyboard. Follow **Older active sessions**
+   in the browser. Request a `form-*` route as an HTMX fragment and check
    that its original error status and visible feedback survive.
 3. Record the reviewed route/state and viewport sizes, observed defects and
    fixes, and the test result as a severity-ranked table in the Beads review
@@ -139,7 +136,7 @@ BALDA_BACKOFFICE_BROWSER_TEST=1 go test -race ./internal/apps/backoffice -run Te
 It uses `http://localhost` and both root and `/balda`, Chromium's CTAP2 virtual
 authenticator with required user verification, and isolated test administrators.
 Check enable, enrolled password-pending login, assertion, continued access after refresh,
-replacement, disable, no-script and unsupported browsers, cancellation/retry,
+replacement, disable, unsupported browsers, cancellation/retry,
 non-boosted forms, no-store and history without ceremony caching. Capture browser
 errors and document overflow at 1440×900, 1024×768, 768×1024 and 390×844. This gate
 is authenticated evidence; synthetic QA alone is not a verifier test. Never point
@@ -171,8 +168,7 @@ It starts the actual Backoffice runtime and security stack, the dedicated MCP
 adapter, catalog, temporary SQLite and a loopback MCP SDK server. Ordinary
 administrator/operator login verifies native and HTMX CRUD, protected value
 retention, candidate probing without persistence, version conflicts, configured
-read-only behavior, actual Back/Forward with write-only input checks, history restoration and logout at desktop and mobile, with
-and without JavaScript. The native no-script forms also exercise keyboard
+read-only behavior, actual Back/Forward with write-only input checks, history restoration and logout at desktop and mobile. Native forms also exercise keyboard
 activation. It checks the resulting durable revisions and
 tombstones. It does not use an authentication bypass or deployment credentials.
 

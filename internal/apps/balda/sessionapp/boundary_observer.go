@@ -6,6 +6,7 @@ import (
 
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
+	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/baldaworks/balda/sessionmemory"
 )
 
@@ -17,6 +18,9 @@ type SessionBoundaryObserverAdapter struct {
 
 // BeforeSessionBoundary publishes the old session identity before cleanup.
 func (a SessionBoundaryObserverAdapter) BeforeSessionBoundary(ctx context.Context, boundary baldasession.SessionBoundary) error {
+	if boundary.Locator.ChannelType == turncmd.SourceSchedule {
+		return nil
+	}
 	if a.Capture == nil {
 		return nil
 	}

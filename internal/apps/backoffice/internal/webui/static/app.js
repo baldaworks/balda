@@ -1,5 +1,4 @@
 "use strict";
-document.body.classList.add("enhanced");
 
 function syncMCPTransport() {
   document.querySelectorAll("form[data-mcp-create]").forEach(function (form) {
@@ -114,8 +113,6 @@ function syncNavigation() {
     if (current) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
   });
-  const menu = document.querySelector(".native-navigation");
-  if (menu) menu.open = false;
   closeMobileSidebar();
 }
 

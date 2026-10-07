@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/actorcmd"
-	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/google/uuid"
@@ -104,9 +104,9 @@ func (s *ScheduledJobScheduler) processRun(ctx context.Context, run state.Schedu
 	if err != nil {
 		return s.failRun(ctx, run, now, "destination_unavailable", true)
 	}
-	var reportTo *baldasession.SessionLocator
+	var reportTo *deliverycmd.Locator
 	if job.ReportToEnabled {
-		locator, err := baldasession.NewSessionLocator(job.ReportToChannelType,
+		locator, err := deliverycmd.NewLocator(job.ReportToChannelType,
 			job.ReportToAddressKey, job.ReportToAddressJSON, job.ReportToSessionID)
 		if err != nil {
 			return s.failRun(ctx, run, now, "invalid_snapshot", false)

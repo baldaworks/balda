@@ -100,6 +100,17 @@ func (f *schedulesHTTPFixture) History(_ context.Context, id string, beforeAt ti
 	return page, nil
 }
 
+func (f *schedulesHTTPFixture) RunDetail(_ context.Context, scheduleID, runID string,
+	_ schedulecmd.Authority) (schedulecmd.RunDetail, error) {
+	for _, run := range f.runs[scheduleID] {
+		if run.ID == runID {
+			return schedulecmd.RunDetail{Run: run, Input: "private <script>input</script>",
+				Output: "sent <script>output</script>"}, nil
+		}
+	}
+	return schedulecmd.RunDetail{}, schedulecmd.ErrNotFound
+}
+
 func TestSchedulesBrowserManagement(t *testing.T) {
 	for _, base := range []string{"", "/balda"} {
 		t.Run(base, func(t *testing.T) {
@@ -114,11 +125,11 @@ func TestSchedulesBrowserManagement(t *testing.T) {
 				t.Fatal(err)
 			}
 			fixture := &schedulesHTTPFixture{items: []schedulecmd.Item{
-				{Definition: schedulecmd.Definition{ID: "daily", Cron: "0 9 * * *", Content: "ping <script>alert(1)</script>", Target: schedulecmd.Target{Kind: "alias", Key: "owner"}}, Source: "managed", Enabled: true, Version: 2, Status: "active", NextRunAt: now},
-				{Definition: schedulecmd.Definition{ID: "new", Cron: "0 8 * * *", Content: "name collision", Target: schedulecmd.Target{Kind: "alias", Key: "owner"}}, Source: "managed", Enabled: true, Version: 1, Status: "active"},
-				{Definition: schedulecmd.Definition{ID: "config:knowl", Cron: "0 10 * * *", Content: "configured", Target: schedulecmd.Target{Kind: "alias", Key: "owner"}, ReportTo: &schedulecmd.Target{Kind: "session", Key: "report-session"}}, Source: "config", Enabled: true, Version: 1, Status: "active"},
-				{Definition: schedulecmd.Definition{ID: "disabled", Cron: "0 11 * * *", Content: "disabled", Target: schedulecmd.Target{Kind: "alias", Key: "owner"}}, Source: "managed", Enabled: false, Version: 1, Status: "active"},
-				{Definition: schedulecmd.Definition{ID: "archived", Cron: "0 12 * * *", Content: "archived", Target: schedulecmd.Target{Kind: "alias", Key: "owner"}}, Source: "managed", Enabled: false, Deleted: true, Version: 2, Status: "active"},
+				{Definition: schedulecmd.Definition{ID: "daily", Cron: "0 9 * * *", Content: "ping <script>alert(1)</script>", Locator: "telegram:9001:0"}, Source: "managed", Enabled: true, Version: 2, Status: "active", NextRunAt: now},
+				{Definition: schedulecmd.Definition{ID: "new", Cron: "0 8 * * *", Content: "name collision", Locator: "telegram:9001:0"}, Source: "managed", Enabled: true, Version: 1, Status: "active"},
+				{Definition: schedulecmd.Definition{ID: "config:knowl", Cron: "0 10 * * *", Content: "configured", Locator: "telegram:9001:0"}, Source: "config", Enabled: true, Version: 1, Status: "active"},
+				{Definition: schedulecmd.Definition{ID: "disabled", Cron: "0 11 * * *", Content: "disabled", Locator: "telegram:9001:0"}, Source: "managed", Enabled: false, Version: 1, Status: "active"},
+				{Definition: schedulecmd.Definition{ID: "archived", Cron: "0 12 * * *", Content: "archived", Locator: "telegram:9001:0"}, Source: "managed", Enabled: false, Deleted: true, Version: 2, Status: "active"},
 			}}
 			fixture.runs = map[string][]schedulecmd.RunItem{
 				"config:knowl": {{ID: uuid.NewString(), Trigger: "cron", State: "failed", RequestedAt: now, SafeFailureCode: "private provider error <script>"}},
@@ -154,7 +165,7 @@ func TestSchedulesBrowserManagement(t *testing.T) {
 				}
 			}
 			inventory := get("/schedules", admin.access)
-			if inventory.Code != http.StatusOK || !strings.Contains(inventory.Body.String(), "config:knowl") || !strings.Contains(inventory.Body.String(), "daily") || !strings.Contains(inventory.Body.String(), "Report to: session: report-session") || strings.Contains(inventory.Body.String(), "ping &lt;script&gt;") {
+			if inventory.Code != http.StatusOK || !strings.Contains(inventory.Body.String(), "config:knowl") || !strings.Contains(inventory.Body.String(), "daily") || !strings.Contains(inventory.Body.String(), "telegram:9001:0") || strings.Contains(inventory.Body.String(), "ping &lt;script&gt;") {
 				t.Fatalf("unsafe inventory: %d", inventory.Code)
 			}
 			if strings.Contains(inventory.Body.String(), `href="`+base+`/schedules/archived"`) {
@@ -171,6 +182,11 @@ func TestSchedulesBrowserManagement(t *testing.T) {
 			if managed.Code != http.StatusOK || !strings.Contains(managed.Body.String(), `name="expected_version"`) || !strings.Contains(managed.Body.String(), "ping &lt;script&gt;") || strings.Contains(managed.Body.String(), "<script>alert(1)</script>") {
 				t.Fatalf("managed editor is missing or unsafe: %d", managed.Code)
 			}
+			if !strings.Contains(managed.Body.String(), `name="locator" value="telegram:9001:0"`) ||
+				strings.Contains(managed.Body.String(), `name="target_kind"`) ||
+				strings.Contains(managed.Body.String(), `name="report_to_key"`) {
+				t.Fatal("managed editor must contain one report locator")
+			}
 			if got := get("/schedules/new", admin.access); got.Code != http.StatusOK || !strings.Contains(got.Body.String(), "name collision") || strings.Contains(got.Body.String(), "Add schedule</h1>") {
 				t.Fatalf("schedule named new is hidden: %d", got.Code)
 			}
@@ -180,6 +196,20 @@ func TestSchedulesBrowserManagement(t *testing.T) {
 			configuredHistory := get("/schedules/config:knowl", admin.access)
 			if configuredHistory.Code != http.StatusOK || !strings.Contains(configuredHistory.Body.String(), "Run now") || !strings.Contains(configuredHistory.Body.String(), "Scheduled") || !strings.Contains(configuredHistory.Body.String(), "Execution could not complete") || strings.Contains(configuredHistory.Body.String(), "private provider error") {
 				t.Fatalf("configured run/history view = %d", configuredHistory.Code)
+			}
+			runPath := "/schedules/config:knowl?run_id=" + url.QueryEscape(fixture.runs["config:knowl"][0].ID)
+			if got := get(runPath, "").Code; got != http.StatusUnauthorized {
+				t.Fatalf("anonymous run detail = %d", got)
+			}
+			if got := get(runPath, operator.access).Code; got != http.StatusForbidden {
+				t.Fatalf("operator run detail = %d", got)
+			}
+			detail := get(runPath, admin.access)
+			if detail.Code != http.StatusOK || !strings.Contains(detail.Body.String(), "private &lt;script&gt;input") ||
+				!strings.Contains(detail.Body.String(), "sent &lt;script&gt;output") ||
+				strings.Contains(detail.Body.String(), "<script>output</script>") ||
+				strings.Contains(configuredHistory.Body.String(), "private &lt;script&gt;input") {
+				t.Fatalf("run detail access or escaping = %d", detail.Code)
 			}
 			archivedHistory := get("/schedules/archived", admin.access)
 			if archivedHistory.Code != http.StatusOK || !strings.Contains(archivedHistory.Body.String(), "Archived schedule") || !strings.Contains(archivedHistory.Body.String(), "Succeeded") || strings.Contains(archivedHistory.Body.String(), "Run now</button>") {
@@ -204,7 +234,12 @@ func TestSchedulesBrowserManagement(t *testing.T) {
 			if got := mutation("/schedules/config:knowl/delete", url.Values{"expected_version": {"1"}, "confirm": {"yes"}}).Code; got != http.StatusForbidden || len(fixture.deletes) != 0 {
 				t.Fatalf("configured deletion = %d", got)
 			}
-			createForm := url.Values{"id": {"new-daily"}, "cron": {"0 11 * * *"}, "target_kind": {"alias"}, "target_key": {"owner"}, "content": {"run report"}}
+			createForm := url.Values{"id": {"new-daily"}, "cron": {"0 11 * * *"}, "locator": {"telegram:9001:0"}, "content": {"run report"}}
+			legacyForm := url.Values{"id": {"new-daily"}, "cron": {"0 11 * * *"}, "locator": {"telegram:9001:0"},
+				"content": {"run report"}, "report_to_key": {"telegram:9002:0"}}
+			if got := mutation("/schedules", legacyForm).Code; got != http.StatusBadRequest || len(fixture.creates) != 0 {
+				t.Fatalf("legacy report input reached schedule owner: %d", got)
+			}
 			invalidCSRF := url.Values{}
 			for key, values := range createForm {
 				invalidCSRF[key] = append([]string(nil), values...)
@@ -227,7 +262,13 @@ func TestSchedulesBrowserManagement(t *testing.T) {
 			if created.Code != http.StatusSeeOther || created.Header().Get("Location") != base+"/schedules/new-daily" || len(fixture.creates) != 1 || fixture.creates[0].Authority.SessionID == "" {
 				t.Fatalf("schedule create = %d, location %q", created.Code, created.Header().Get("Location"))
 			}
-			updateForm := url.Values{"expected_version": {"2"}, "cron": {"0 12 * * *"}, "target_kind": {"alias"}, "target_key": {"owner"}, "content": {"updated"}}
+			withoutReport := mutation("/schedules", url.Values{"id": {"local-review"},
+				"cron": {"0 11 * * *"}, "content": {"review locally"}})
+			if withoutReport.Code != http.StatusSeeOther || len(fixture.creates) != 2 ||
+				fixture.creates[1].Definition.Locator != "" {
+				t.Fatalf("no-report schedule create = %d, definitions=%+v", withoutReport.Code, fixture.creates)
+			}
+			updateForm := url.Values{"expected_version": {"2"}, "cron": {"0 12 * * *"}, "locator": {"telegram:9001:0"}, "content": {"updated"}}
 			if got := mutation("/schedules/daily", updateForm).Code; got != http.StatusSeeOther || len(fixture.updates) != 1 || fixture.updates[0].ID != "daily" || fixture.updates[0].ExpectedVersion != 2 {
 				t.Fatalf("schedule update = %d", got)
 			}

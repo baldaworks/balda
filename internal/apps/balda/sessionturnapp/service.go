@@ -37,6 +37,11 @@ type jobEventAppender interface {
 	AppendEvent(ctx context.Context, jobID string, eventType string, actor string, messageID string, payload any) error
 }
 
+// ScheduleOutputRecorder keeps one provider result before optional delivery.
+type ScheduleOutputRecorder interface {
+	RecordScheduledOutput(ctx context.Context, jobID, output string) error
+}
+
 type runtimeStateReader interface {
 	RuntimeStateValue(ctx context.Context, locator baldasession.SessionLocator, key string) (any, bool, error)
 }
@@ -93,6 +98,7 @@ type TurnExecutionService struct {
 	jobEvents      jobEventAppender
 	sessions       runtimeStateReader
 	turnCapture    CompletedTurnCapture
+	scheduleOutput ScheduleOutputRecorder
 	progressHook   ProgressTransportHook
 	formatComposer *FormatPromptComposer
 	logger         zerolog.Logger
@@ -117,6 +123,7 @@ type ExecutionRequest struct {
 	JobID           string
 	AgentSessionID  string
 	Locator         baldasession.SessionLocator
+	DeliveryLocator baldasession.SessionLocator
 	MessageID       int
 	DeliveryOptions deliveryfmt.Options
 	Deliver         bool
@@ -198,6 +205,13 @@ func (s *TurnExecutionService) SetCompletedTurnCapture(capture CompletedTurnCapt
 	s.turnCapture = capture
 }
 
+// SetScheduleOutputRecorder binds the durable result writer at composition time.
+func (s *TurnExecutionService) SetScheduleOutputRecorder(recorder ScheduleOutputRecorder) {
+	if s != nil {
+		s.scheduleOutput = recorder
+	}
+}
+
 func (s *TurnExecutionService) SetProgressTransportHook(hook ProgressTransportHook) {
 	if s == nil {
 		return
@@ -257,12 +271,16 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 	}
 
 	req.DeliveryOptions = deliveryfmt.NormalizeOptions(req.DeliveryOptions)
+	recurringSchedule := req.TurnSource == turncmd.SourceSchedule && strings.HasPrefix(req.SessionID, "sch-")
+	if recurringSchedule && req.Deliver && req.DeliveryLocator.ChannelType == "" {
+		return fmt.Errorf("scheduled report locator is required")
+	}
 	providerText := req.Text
 	var (
 		formatState *formatStateChange
 		err         error
 	)
-	if s.formatComposer != nil {
+	if !recurringSchedule && s.formatComposer != nil {
 		providerText, formatState, err = s.formatComposer.Compose(
 			ctx,
 			req.Locator,
@@ -331,8 +349,10 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 		Int("input_file_data_part_count", inputFileDataPartCount).
 		Strs("input_inline_data_mime_types", inlineMIMETypes).
 		Msg("assembled provider user content")
-	if err := s.startAutoCycleIfNeeded(ctx, req); err != nil {
-		return err
+	if !recurringSchedule {
+		if err := s.startAutoCycleIfNeeded(ctx, req); err != nil {
+			return err
+		}
 	}
 	requesterUserID := strings.TrimSpace(req.RequesterUserID)
 	if requesterUserID == "" {
@@ -349,7 +369,9 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 	})
 
 	progressEmitter := req.ProgressEmitter
-	if progressEmitter == nil && s.dispatcher != nil {
+	if recurringSchedule {
+		progressEmitter = nil
+	} else if progressEmitter == nil && req.Deliver && s.dispatcher != nil {
 		progressEmitter = NewSessionProgressDispatcher(
 			s.dispatcher,
 			req.OutboundFrom,
@@ -439,7 +461,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 			if err != nil {
 				return err
 			}
-			if jobBackedDelivery && result.DispatchedPlanText != "" {
+			if jobBackedDelivery && !recurringSchedule && result.DispatchedPlanText != "" {
 				if err := s.appendJobEvent(ctx, req.JobID, baldajobs.JobEventAgentProgress, "session.actor", "", map[string]any{
 					"kind": "plan",
 					"text": result.DispatchedPlanText,
@@ -567,12 +589,12 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 			sawTurnComplete = true
 			responseText := streamedText.String()
 			memoryResponseText := memoryStreamedText.String()
-			if formatState != nil && successfulFormatTurn(ev, responseText) {
+			if !recurringSchedule && formatState != nil && successfulFormatTurn(ev, responseText) {
 				if err := s.formatComposer.Commit(ctx, req.Locator, *formatState); err != nil {
 					return err
 				}
 			}
-			if s.turnCapture != nil && shouldCaptureTerminalTurn(ev, req.Text, memoryResponseText) {
+			if !recurringSchedule && s.turnCapture != nil && shouldCaptureTerminalTurn(ev, req.Text, memoryResponseText) {
 				if sourceTurnID := completedTurnSourceID(req); sourceTurnID != "" {
 					captureErr := s.turnCapture.CaptureCompletedTurn(ctx, CompletedTurn{
 						UserText:       req.Text,
@@ -592,6 +614,50 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 							Msg("failed to publish completed turn to session memory")
 					}
 				}
+			}
+			if recurringSchedule {
+				if s.scheduleOutput == nil {
+					return fmt.Errorf("scheduled output recorder is unavailable")
+				}
+				providerFailed := ev.Interrupted || terminalTurnStatus(ev) != TerminalStatusSuccess
+				failureText := ""
+				if providerFailed {
+					failureText = "The scheduled run could not complete. Ask the operator to check Balda."
+				}
+				if failureText == "" {
+					failureText = permissionOutcomeTurnMessage(permissionOutcomes.Latest())
+				}
+				if failureText == "" && strings.TrimSpace(responseText) == "" {
+					failureText = terminalTurnMessage(terminalFinishReason)
+				}
+				failed := providerFailed || failureText != ""
+				output := responseText
+				if failed && failureText != "" {
+					output = failureText
+				}
+				if strings.TrimSpace(output) == "" {
+					output = "The scheduled run produced no report. Ask the operator to check Balda."
+					failed = true
+				}
+				if err := s.scheduleOutput.RecordScheduledOutput(ctx, req.JobID, output); err != nil {
+					return fmt.Errorf("record scheduled output: %w", err)
+				}
+				if req.Deliver {
+					if !jobBackedDelivery {
+						return fmt.Errorf("scheduled report dispatcher is unavailable")
+					}
+					if err := s.dispatchJobDelivery(ctx, req.JobID, req.DeliveryLocator, req.SessionID,
+						deliveryFormat, output, "final"); err != nil {
+						return err
+					}
+				}
+				if failed {
+					if req.Deliver {
+						return fmt.Errorf("%w: provider execution failed", turncmd.ErrScheduledReportQueued)
+					}
+					return fmt.Errorf("scheduled provider execution failed")
+				}
+				break
 			}
 			responseEmitted := false
 			responseSource := responseSourceNone
@@ -667,7 +733,11 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 				}
 				if terminalMessage != "" {
 					if jobBackedDelivery {
-						if err := s.dispatchJobDelivery(ctx, req.JobID, req.Locator, req.SessionID, deliveryFormat, terminalMessage, "terminal"); err != nil {
+						suffix := "terminal"
+						if recurringSchedule {
+							suffix = "final"
+						}
+						if err := s.dispatchJobDelivery(ctx, req.JobID, req.Locator, req.SessionID, deliveryFormat, terminalMessage, suffix); err != nil {
 							return err
 						}
 						if err := s.appendJobEvent(ctx, req.JobID, baldajobs.JobEventAgentResult, "session.actor", "", map[string]any{
@@ -696,8 +766,10 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 				Bool("terminal_has_error_message", terminalErrorMessage != "").
 				Bool("handled_empty_terminal_reason", handledEmptyTerminalReason).
 				Msg("processed turn complete event")
-			if err := s.maybeScheduleAutoTurn(ctx, req, responseSource, strings.TrimSpace(responseText)); err != nil {
-				return err
+			if !recurringSchedule {
+				if err := s.maybeScheduleAutoTurn(ctx, req, responseSource, strings.TrimSpace(responseText)); err != nil {
+					return err
+				}
 			}
 			break
 		}
@@ -706,6 +778,9 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 		zerolog.Ctx(runCtx).Warn().
 			Int("streamed_text_char_count", streamedText.Len()).
 			Msg("provider event stream ended without turn complete; suppressing balda response")
+	}
+	if recurringSchedule && !sawTurnComplete {
+		return fmt.Errorf("scheduled run ended without turn completion")
 	}
 
 	return nil

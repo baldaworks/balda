@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"strings"
 
+	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/google/uuid"
-	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
-	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/rs/zerolog/log"
 )
 
@@ -34,6 +34,7 @@ const (
 // ServiceStore is the job state needed by concrete job services.
 type ServiceStore interface {
 	baldastate.JobLifecycleStore
+	baldastate.ScheduledOutputStore
 	baldastate.JobEventOutboxStore
 	baldastate.DeliveryStore
 	baldastate.AgentStepStore

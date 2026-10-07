@@ -4,13 +4,17 @@ import (
 	"context"
 	"errors"
 	"iter"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/automode"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionturn"
+	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
-	"github.com/baldaworks/balda/internal/apps/balda/automode"
-	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/rs/zerolog"
 	adkagent "google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/runner"
@@ -21,6 +25,153 @@ import (
 type captureHook struct {
 	turns []CompletedTurn
 	err   error
+}
+
+type recordedScheduleOutput struct {
+	jobID  string
+	output string
+}
+
+type recordingScheduleProgress struct{ calls int }
+
+func (p *recordingScheduleProgress) HandleNonTerminal(context.Context, SessionProgressUpdate) (SessionProgressResult, error) {
+	p.calls++
+	return SessionProgressResult{}, nil
+}
+
+type oneShotActiveSession struct {
+	runner *runner.Runner
+}
+
+func (s *oneShotActiveSession) GetRunner() *runner.Runner  { return s.runner }
+func (*oneShotActiveSession) GetRuntimeSnapshotID() string { return "" }
+func (*oneShotActiveSession) GetSessionID() string         { return "tg-origin" }
+func (*oneShotActiveSession) GetAgentSessionID() string    { return "agent-origin" }
+func (*oneShotActiveSession) GetUserID() string            { return "tg-101" }
+func (*oneShotActiveSession) RuntimeStateValue(context.Context, string) (any, bool, error) {
+	return nil, false, nil
+}
+
+func TestOneShotTurnKeepsDistinctReportToLocator(t *testing.T) {
+	dispatcher := &captureDispatcher{}
+	service := NewTurnExecutionServiceWithJobEventsAndCapture(dispatcher, nil, nil,
+		zerolog.Nop(), automode.DefaultMaxTurns, nil)
+	adkRunner, agentSessionID := newCaptureTestRunner(t, func(invocationID string) []*adksession.Event {
+		done := adksession.NewEvent(context.Background(), invocationID)
+		done.Content = genai.NewContentFromText("one-shot answer", genai.RoleModel)
+		done.TurnComplete = true
+		return []*adksession.Event{done}
+	})
+	oneShot := true
+	origin := baldasession.SessionLocator{ChannelType: "telegram", AddressKey: "100:0",
+		AddressJSON: `{"chat_id":100,"topic_id":0}`, SessionID: "tg-origin"}
+	report := baldasession.SessionLocator{ChannelType: "telegram", AddressKey: "200:0",
+		AddressJSON: `{"chat_id":200,"topic_id":0}`, SessionID: "tg-report"}
+	executor := NewProviderTurnExecutorFromService(service)
+	if err := executor.ExecuteSessionTurn(t.Context(), sessionturn.Request{
+		Payload: turncmd.SessionTurnPayload{Source: turncmd.SourceSchedule,
+			ScheduleOneShot: &oneShot, JobID: "scheduled-once", Text: "input",
+			Locator: origin, ReportTo: &report, Deliver: true},
+		Session: &oneShotActiveSession{runner: adkRunner}, UserID: "tg-101",
+		AgentSessionID: agentSessionID, Runner: adkRunner,
+		DeliveryLocator: sessionturn.SessionLocator{ChannelType: report.ChannelType,
+			AddressKey: report.AddressKey, AddressJSON: report.AddressJSON, SessionID: report.SessionID},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(dispatcher.envelopes) != 1 {
+		t.Fatalf("deliveries = %d, want one final report", len(dispatcher.envelopes))
+	}
+	var delivery deliverycmd.Payload
+	if err := actorlayer.UnmarshalPayload(dispatcher.envelopes[0].Payload, &delivery); err != nil {
+		t.Fatal(err)
+	}
+	if delivery.Locator.AddressKey != report.AddressKey || delivery.Text != "one-shot answer" {
+		t.Fatalf("one-shot delivery = %+v", delivery)
+	}
+}
+
+func (r *recordedScheduleOutput) RecordScheduledOutput(_ context.Context, jobID, output string) error {
+	r.jobID, r.output = jobID, output
+	return nil
+}
+
+func TestPrivateScheduleWithoutLocatorRecordsOutputWithoutDeliveryOrMemoryCapture(t *testing.T) {
+	output := &recordedScheduleOutput{}
+	capture := &captureHook{}
+	dispatcher := &captureDispatcher{}
+	service := NewTurnExecutionServiceWithJobEventsAndCapture(dispatcher, nil, nil,
+		zerolog.Nop(), automode.DefaultMaxTurns, capture)
+	service.SetScheduleOutputRecorder(output)
+	adkRunner, agentSessionID := newCaptureTestRunner(t, func(invocationID string) []*adksession.Event {
+		answer := adksession.NewEvent(context.Background(), invocationID)
+		answer.Content = genai.NewContentFromText("visible answer", genai.RoleModel)
+		done := adksession.NewEvent(context.Background(), invocationID)
+		done.Content = genai.NewContentFromText("visible answer", genai.RoleModel)
+		done.TurnComplete = true
+		return []*adksession.Event{answer, done}
+	})
+	err := service.Execute(t.Context(), ExecutionRequest{
+		Text: "scheduled input", Runner: adkRunner, UserID: "tg-101",
+		AgentSessionID: agentSessionID, SessionID: "sch-private-run", JobID: "scheduled-daily-slot",
+		Locator: baldasession.SessionLocator{ChannelType: "schedule", AddressKey: "sch-private-run",
+			AddressJSON: `{"run_id":"sch-private-run"}`, SessionID: "sch-private-run"},
+		TurnSource: "schedule", Deliver: false,
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v; recorded output = %+v", err, output)
+	}
+	if output.jobID != "scheduled-daily-slot" || output.output != "visible answer" {
+		t.Fatalf("recorded output = %+v", output)
+	}
+	if len(dispatcher.envelopes) != 0 || len(capture.turns) != 0 {
+		t.Fatalf("private schedule leaked delivery or memory: envelopes=%d captures=%d",
+			len(dispatcher.envelopes), len(capture.turns))
+	}
+}
+
+func TestPrivateScheduleProviderFailureKeepsOneBoundedReportAndFailedOutcome(t *testing.T) {
+	output := &recordedScheduleOutput{}
+	dispatcher := &captureDispatcher{}
+	progress := &recordingScheduleProgress{}
+	service := NewTurnExecutionServiceWithJobEventsAndCapture(dispatcher, nil, nil,
+		zerolog.Nop(), automode.DefaultMaxTurns, &captureHook{})
+	service.SetScheduleOutputRecorder(output)
+	adkRunner, agentSessionID := newCaptureTestRunner(t, func(invocationID string) []*adksession.Event {
+		thinking := adksession.NewEvent(context.Background(), invocationID)
+		thinking.Content = genai.NewContentFromText("intermediate text", genai.RoleModel)
+		done := adksession.NewEvent(context.Background(), invocationID)
+		done.TurnComplete = true
+		done.ErrorCode = "provider_error"
+		done.ErrorMessage = "private provider details"
+		return []*adksession.Event{thinking, done}
+	})
+	err := service.Execute(t.Context(), ExecutionRequest{
+		Text: "scheduled input", Runner: adkRunner, UserID: "tg-101",
+		AgentSessionID: agentSessionID, SessionID: "sch-private-run", JobID: "scheduled-daily-slot",
+		Locator: baldasession.SessionLocator{ChannelType: "schedule", AddressKey: "sch-private-run",
+			AddressJSON: `{"run_id":"sch-private-run"}`, SessionID: "sch-private-run"},
+		DeliveryLocator: baldasession.SessionLocator{ChannelType: "telegram", AddressKey: "123:0",
+			AddressJSON: `{"chat_id":123,"topic_id":0}`, SessionID: "tg-123-0"},
+		TurnSource: "schedule", Deliver: true, ProgressEmitter: progress,
+	})
+	if !errors.Is(err, turncmd.ErrScheduledReportQueued) {
+		t.Fatalf("Execute() error = %v, want queued failed outcome", err)
+	}
+	if len(dispatcher.envelopes) != 1 || output.jobID != "scheduled-daily-slot" ||
+		output.output == "" || strings.Contains(output.output, "private provider details") {
+		t.Fatalf("failure report = %+v, deliveries=%d", output, len(dispatcher.envelopes))
+	}
+	if progress.calls != 0 {
+		t.Fatalf("private schedule sent %d progress updates", progress.calls)
+	}
+	var delivery deliverycmd.Payload
+	if err := actorlayer.UnmarshalPayload(dispatcher.envelopes[0].Payload, &delivery); err != nil {
+		t.Fatal(err)
+	}
+	if delivery.Locator.ChannelType != "telegram" || delivery.Locator.AddressKey != "123:0" {
+		t.Fatalf("final report target = %+v", delivery.Locator)
+	}
 }
 
 type captureDispatcher struct {

@@ -594,6 +594,89 @@ func TestCreateSessionPersistsRuntimeSnapshot(t *testing.T) {
 	}
 }
 
+func TestEnsureTransientSessionDoesNotPersistAddressMetadata(t *testing.T) {
+	store := &fakeSessionStore{}
+	builder := &fakeAgentBuilder{}
+	m := &Manager{baldaProviderName: "balda-provider", runtimeManager: &fakeScopedRuntimeManager{
+		fakeBaldaRuntimeManager: fakeBaldaRuntimeManager{providerID: "balda-provider"},
+		sessionRuntime:          &BuiltRuntime{RuntimeSnapshotID: currentSnapshotID},
+	}, agentBuilder: builder, workingDir: t.TempDir(), logger: zerolog.Nop(),
+		sessions: make(map[string]*TopicSession), sessionStore: store, sessionsPersistent: true}
+	recipient := testTelegramLocator(10, 42)
+	first := recipient
+	first.SessionID = "sch-run-one"
+	second := recipient
+	second.SessionID = "sch-run-two"
+	for _, locator := range []SessionLocator{first, second, first} {
+		if _, err := m.EnsureTransientSession(t.Context(), SessionContext{Locator: locator, UserID: "tg-101"}, "balda"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(store.upsertedRecords) != 0 {
+		t.Fatalf("private sessions persisted address metadata: %+v", store.upsertedRecords)
+	}
+	if len(builder.createRuntimeSessionSessionIDs) != 2 || builder.createRuntimeSessionSessionIDs[0] != first.SessionID ||
+		builder.createRuntimeSessionSessionIDs[1] != second.SessionID {
+		t.Fatalf("runtime session IDs = %v", builder.createRuntimeSessionSessionIDs)
+	}
+	if _, err := m.GetSession(recipient); err == nil {
+		t.Fatal("recipient chat was created by private schedule sessions")
+	}
+	// A restarted manager has no address record to restore, yet uses the same
+	// private ADK identity for an unfinished run.
+	restarted := &Manager{baldaProviderName: m.baldaProviderName, runtimeManager: m.runtimeManager,
+		agentBuilder: builder, workingDir: m.workingDir, logger: zerolog.Nop(),
+		sessions: make(map[string]*TopicSession), sessionStore: store, sessionsPersistent: true}
+	if _, err := restarted.EnsureTransientSession(t.Context(), SessionContext{Locator: first, UserID: "tg-101"}, "balda"); err != nil {
+		t.Fatal(err)
+	}
+	if len(builder.createRuntimeSessionSessionIDs) != 3 || builder.createRuntimeSessionSessionIDs[2] != first.SessionID ||
+		len(store.upsertedRecords) != 0 {
+		t.Fatalf("restart identities=%v, metadata=%d", builder.createRuntimeSessionSessionIDs, len(store.upsertedRecords))
+	}
+}
+
+func TestCloseRunSessionDeletesPersistedEventsAfterRestart(t *testing.T) {
+	provider, err := baldastate.NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = provider.Close() }()
+	const sessionID = "sch-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	service := provider.RuntimeSessions()
+	created, err := service.Create(t.Context(), &adksession.CreateRequest{
+		AppName: baldaRuntimeAppName, UserID: "owner", SessionID: sessionID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	event := adksession.NewEvent(t.Context(), "run-turn")
+	event.Author = "user"
+	if err := service.AppendEvent(t.Context(), created.Session, event); err != nil {
+		t.Fatal(err)
+	}
+	manager := &Manager{runtimeManager: &fakeBaldaRuntimeManager{
+		runtime: &BuiltRuntime{AppName: baldaRuntimeAppName, SessionSvc: service},
+	}, sessions: make(map[string]*TopicSession)}
+	if err := manager.CloseRunSession(t.Context(), "tg-ordinary", "owner"); err == nil {
+		t.Fatal("ordinary chat session accepted as private run")
+	}
+	for range 2 {
+		if err := manager.CloseRunSession(t.Context(), sessionID, "owner"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	recreated, err := service.Create(t.Context(), &adksession.CreateRequest{
+		AppName: baldaRuntimeAppName, UserID: "owner", SessionID: sessionID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := recreated.Session.Events().Len(); got != 0 {
+		t.Fatalf("events after private session delete = %d", got)
+	}
+}
+
 func TestResetThenCreateSessionAdoptsCurrentRuntimeSnapshot(t *testing.T) {
 	locator := testTelegramLocator(10, 42)
 	otherLocator := testTelegramLocator(11, 43)

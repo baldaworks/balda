@@ -3,7 +3,6 @@ package sessionturnapp
 import (
 	"context"
 
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	baldajobs "github.com/baldaworks/balda/internal/apps/balda/jobs"
@@ -11,6 +10,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionturn"
 	"github.com/baldaworks/balda/sessionmemory"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )
@@ -81,6 +81,9 @@ var Module = fx.Module("balda_sessionturnapp",
 	fx.Invoke(
 		func(params progressTransportHookParams) {
 			params.Service.SetProgressTransportHook(params.Hook)
+		},
+		func(service *TurnExecutionService, jobs *baldajobs.JobLifecycleService) {
+			service.SetScheduleOutputRecorder(jobs)
 		},
 	),
 )

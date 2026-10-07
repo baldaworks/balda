@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/baldaworks/go-actorlayer"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/jobexec"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
+	"github.com/baldaworks/go-actorlayer"
 )
 
 const (
@@ -34,6 +34,7 @@ type scheduledJobPayload struct {
 	ParentJobID string                       `json:"parent_job_id,omitempty"`
 	UserID      string                       `json:"user_id"`
 	TopicID     int                          `json:"topic_id,omitempty"`
+	OneShot     *bool                        `json:"one_shot,omitempty"`
 }
 
 type DeliveryPayload = deliverycmd.Payload
@@ -136,5 +137,6 @@ func (e *JobActorExecutor) startScheduledJob(ctx context.Context, env actorlayer
 		ParentJobID: payload.ParentJobID,
 		UserID:      payload.UserID,
 		TopicID:     payload.TopicID,
+		OneShot:     payload.OneShot,
 	})
 }

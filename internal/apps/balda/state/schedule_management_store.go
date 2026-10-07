@@ -220,9 +220,12 @@ func validateScheduleMutation(m ScheduleMutation) error {
 	if strings.TrimSpace(r.JobID) == "" || len(r.JobID) > 128 || r.Source != ScheduledJobSourceManaged ||
 		m.ExpectedVersion >= math.MaxInt64 ||
 		r.DefinitionVersion != m.ExpectedVersion+1 || r.NextRunAt.IsZero() ||
-		strings.TrimSpace(r.ChannelType) == "" || strings.TrimSpace(r.AddressKey) == "" ||
-		strings.TrimSpace(r.AddressJSON) == "" || strings.TrimSpace(r.Content) == "" ||
+		strings.TrimSpace(r.Content) == "" ||
 		strings.TrimSpace(r.ScheduleSpec) == "" || r.Deleted && r.Enabled {
+		return schedulecmd.ErrInvalid
+	}
+	if r.ReportToEnabled && (strings.TrimSpace(r.ReportToChannelType) == "" ||
+		strings.TrimSpace(r.ReportToAddressKey) == "" || strings.TrimSpace(r.ReportToAddressJSON) == "") {
 		return schedulecmd.ErrInvalid
 	}
 	if (m.Kind == ScheduleCreate && (m.ExpectedVersion != 0 || r.Deleted || !r.Enabled)) ||

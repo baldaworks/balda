@@ -12,10 +12,16 @@ import (
 )
 
 const preparationFailureMessage = "Balda could not start this turn. Please retry your message. If it fails again, ask the operator to check the service."
+const scheduledFailureMessage = "The scheduled run could not complete. Ask the operator to check Balda."
 
 func (e *SessionActorExecutor) reportPreparationFailure(ctx context.Context, env actorlayer.Envelope, payload SessionTurnPayload, runErr error) error {
 	var preparation *turncmd.PreparationError
-	if !payload.Deliver || errors.Is(runErr, context.Canceled) || !errors.As(runErr, &preparation) {
+	if !payload.Deliver || runErr == nil || errors.Is(runErr, context.Canceled) ||
+		errors.Is(runErr, turncmd.ErrScheduledReportQueued) {
+		return nil
+	}
+	recurring := payload.Source == turncmd.SourceSchedule && payload.ScheduleOneShot != nil && !*payload.ScheduleOneShot
+	if !recurring && !errors.As(runErr, &preparation) {
 		return nil
 	}
 	terminal := sessionTurnUsesJobLifecycle(env, payload) || !actorlayer.IsRetryableError(runErr) || actorlayer.RetryExhausted(env.Attempt+1, env.MaxAttempts)
@@ -29,15 +35,21 @@ func (e *SessionActorExecutor) reportPreparationFailure(ctx context.Context, env
 	if payload.ReportTo != nil {
 		locator = *payload.ReportTo
 	}
-	delivery, err := deliverycmd.AgentReplyEnvelopeWithSettlement(payload.JobID, env.To, locator, deliverycmd.SettlementOutbox, preparationFailureMessage, "preparation-failure")
+	message, suffix := preparationFailureMessage, "preparation-failure"
+	if recurring {
+		message, suffix = scheduledFailureMessage, "final"
+	}
+	delivery, err := deliverycmd.AgentReplyEnvelopeWithSettlement(payload.JobID, env.To, locator, deliverycmd.SettlementOutbox, message, suffix)
 	if err != nil {
 		return fmt.Errorf("build preparation failure delivery: %w", err)
 	}
 	// Ordinary chat turns may have no JobID. Preserve one delivery identity
 	// across redelivery/restart without manufacturing a job or exposing input.
-	key := fmt.Sprintf("turn-preparation-failure:%x", sha256.Sum256([]byte(env.ID)))
-	delivery.ID = key
-	delivery.DedupeKey = key
+	if !recurring {
+		key := fmt.Sprintf("turn-preparation-failure:%x", sha256.Sum256([]byte(env.ID)))
+		delivery.ID = key
+		delivery.DedupeKey = key
+	}
 	if _, err := e.dispatcher.Dispatch(ctx, delivery); err != nil {
 		return fmt.Errorf("dispatch preparation failure delivery: %w", err)
 	}

@@ -61,8 +61,8 @@ func TestHTTPAppBrowserWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("authenticated browser workflow: %v\n%s", err, output)
 	}
-	if got := refreshPosts.Load(); got != 4 {
-		t.Fatalf("refresh POST count = %d, want one per browser context (4)", got)
+	if got := refreshPosts.Load(); got != 2 {
+		t.Fatalf("refresh POST count = %d, want one per browser context (2)", got)
 	}
 	t.Log(string(output))
 }

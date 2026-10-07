@@ -33,6 +33,7 @@ type ScheduledJobRecorder = appports.ScheduledJobRecorder
 type SessionJobLifecycle interface {
 	Get(ctx context.Context, jobID string) (baldastate.JobRecord, bool, error)
 	MarkStatus(ctx context.Context, jobID string, status string, actor string, messageID string, reason string, payload any) error
+	RebindScheduledSession(ctx context.Context, jobID, oldSessionID, newSessionID string) (bool, error)
 }
 
 type sessionJobLifecycle = SessionJobLifecycle
@@ -53,6 +54,7 @@ type SessionActorConfig struct {
 	Dispatcher actortransport.Dispatcher
 	Questions  *questions.Service
 	Sessions   SessionRuntimeStateUpdater
+	Modes      appports.ScheduleModeResolver
 }
 
 type SessionActorExecutor struct {
@@ -63,6 +65,7 @@ type SessionActorExecutor struct {
 	dispatcher actortransport.Dispatcher
 	questions  *questions.Service
 	sessions   SessionRuntimeStateUpdater
+	modes      appports.ScheduleModeResolver
 }
 
 type sessionActorExecutor = SessionActorExecutor
@@ -76,6 +79,7 @@ func NewSessionActor(cfg SessionActorConfig) *SessionActorExecutor {
 		dispatcher: cfg.Dispatcher,
 		questions:  cfg.Questions,
 		sessions:   cfg.Sessions,
+		modes:      cfg.Modes,
 	}
 }
 
@@ -137,6 +141,57 @@ func (e *SessionActorExecutor) enqueueTurn(ctx context.Context, env actorlayer.E
 	}
 	if handled, err := e.handleScheduledQuestionTimeout(ctx, env, payload); handled {
 		return settlement.settle(ctx, env, payload, err)
+	}
+	if payload.Source == turncmd.SourceSchedule {
+		if payload.ScheduleOneShot == nil {
+			if e.modes == nil {
+				return actorlayer.TransientError(fmt.Errorf("scheduled mode resolver is unavailable"))
+			}
+			oneShot, err := e.modes.IsOneShot(ctx, payload.ScheduledJobID)
+			if err != nil {
+				return actorlayer.TransientError(err)
+			}
+			payload.ScheduleOneShot = &oneShot
+		}
+		if !*payload.ScheduleOneShot {
+			var err error
+			payload, err = turncmd.PrivateScheduledTurn(payload)
+			if err != nil {
+				return actorlayer.PolicyError(err)
+			}
+			if e.tasks != nil {
+				job, found, err := e.tasks.Get(ctx, payload.JobID)
+				if err != nil {
+					return actorlayer.TransientError(err)
+				}
+				if found && job.SessionID != payload.Locator.SessionID {
+					updated, err := e.tasks.RebindScheduledSession(ctx, payload.JobID, job.SessionID, payload.Locator.SessionID)
+					if err != nil {
+						return actorlayer.TransientError(fmt.Errorf("rebind queued scheduled job: %w", err))
+					}
+					if !updated {
+						return actorlayer.TransientError(fmt.Errorf("queued scheduled job scope changed concurrently"))
+					}
+				}
+			}
+			if env.To.Key != payload.Locator.SessionID {
+				if e.dispatcher == nil {
+					return actorlayer.TransientError(fmt.Errorf("private schedule dispatcher is unavailable"))
+				}
+				payload.DedupeKey += ":private"
+				redirect, err := turncmd.SessionTurnEnvelope(payload)
+				if err != nil {
+					return actorlayer.PermanentError(err)
+				}
+				redirect.ID = redirect.DedupeKey
+				redirect.CorrelationID = env.CorrelationID
+				redirect.CausationID = env.ID
+				if _, err := e.dispatcher.Dispatch(ctx, redirect); err != nil {
+					return actorlayer.TransientError(err)
+				}
+				return nil
+			}
+		}
 	}
 	if e.turns == nil {
 		return actorlayer.TransientError(fmt.Errorf("turn dispatcher is required"))
