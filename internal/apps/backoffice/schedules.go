@@ -193,8 +193,17 @@ func (a *httpApp) scheduleRunNow(w http.ResponseWriter, r *http.Request) {
 	}
 	request := schedulecmd.RunNow{ID: r.PathValue("schedule_id"), RequestKey: form.Get("request_key"),
 		ConfirmDisabled: form.Get("confirm_disabled") == checkedFormValue, Authority: a.scheduleAuthority(p)}
+	if _, keyErr := uuid.Parse(request.RequestKey); keyErr == nil {
+		page.Schedules.Editor.RunRequestKey = request.RequestKey
+	}
 	_, err = a.schedules.RunNow(r.Context(), request)
 	if err != nil {
+		if errors.Is(err, schedulecmd.ErrUnavailable) {
+			page.Error = &webui.ErrorView{Heading: "Run state unavailable",
+				Message: "The run may have been queued. Retry this form with the same request key, or reopen history before starting another run."}
+			a.render(w, r, http.StatusServiceUnavailable, webui.TemplateSchedules, page)
+			return
+		}
 		a.scheduleError(w, r, page, err)
 		return
 	}

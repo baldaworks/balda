@@ -24,6 +24,7 @@ type schedulesHTTPFixture struct {
 	deletes     []schedulecmd.Delete
 	runRequests []schedulecmd.RunNow
 	runs        map[string][]schedulecmd.RunItem
+	runErr      error
 }
 
 func (f *schedulesHTTPFixture) Inventory(context.Context, schedulecmd.Authority) ([]schedulecmd.Item, error) {
@@ -70,6 +71,9 @@ func (f *schedulesHTTPFixture) Delete(_ context.Context, request schedulecmd.Del
 
 func (f *schedulesHTTPFixture) RunNow(_ context.Context, request schedulecmd.RunNow) (schedulecmd.RunItem, error) {
 	f.runRequests = append(f.runRequests, request)
+	if f.runErr != nil {
+		return schedulecmd.RunItem{}, f.runErr
+	}
 	if request.ID == "disabled" && !request.ConfirmDisabled {
 		return schedulecmd.RunItem{}, schedulecmd.ErrConflict
 	}
@@ -267,6 +271,12 @@ func TestSchedulesBrowserManagement(t *testing.T) {
 			}
 			if got := mutation("/schedules/archived/runs", url.Values{"request_key": {uuid.NewString()}}).Code; got != http.StatusNotFound {
 				t.Fatalf("archived manual run = %d", got)
+			}
+			fixture.runErr = schedulecmd.ErrUnavailable
+			key := uuid.NewString()
+			uncertain := mutation("/schedules/daily/runs", url.Values{"request_key": {key}})
+			if uncertain.Code != http.StatusServiceUnavailable || !strings.Contains(uncertain.Body.String(), "may have been queued") || !strings.Contains(uncertain.Body.String(), `name="request_key" value="`+key+`"`) || strings.Contains(uncertain.Body.String(), "No runs yet") {
+				t.Fatalf("uncertain manual admission = %d", uncertain.Code)
 			}
 		})
 	}
