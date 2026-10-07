@@ -5,6 +5,7 @@ package state
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -217,7 +218,6 @@ func checkProvider_SessionStoreRoundTrip(t *testing.T, open contractOpener) {
 	if err := store.Upsert(ctx, record); err != nil {
 		t.Fatalf("Upsert() error = %v", err)
 	}
-
 	got, ok, err := store.GetByAddress(ctx, ChannelTypeTelegram, "1:2")
 	if err != nil {
 		t.Fatalf("GetByAddress() error = %v", err)
@@ -394,6 +394,12 @@ func checkProvider_ScheduledJobStoreRoundTrip(t *testing.T, open contractOpener)
 	}
 	if err := store.Upsert(ctx, record); err != nil {
 		t.Fatalf("Upsert() error = %v", err)
+	}
+	collision := record
+	collision.Source = ScheduledJobSourceManaged
+	collision.Content = "unexpected overwrite"
+	if err := store.Upsert(ctx, collision); !errors.Is(err, ErrScheduledJobSourceConflict) {
+		t.Fatalf("Upsert(other source) = %v, want source conflict", err)
 	}
 
 	got, ok, err := store.GetByID(ctx, scheduledJobID)

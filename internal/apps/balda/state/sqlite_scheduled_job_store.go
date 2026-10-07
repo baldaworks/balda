@@ -86,7 +86,7 @@ func (s *sqliteScheduledJobStore) Upsert(ctx context.Context, record ScheduledJo
 	}
 	updatedAt := now
 
-	if _, err := s.db.ExecContext(ctx, `
+	result, err := s.db.ExecContext(ctx, `
 		INSERT INTO balda_scheduled_jobs (
 			job_id, session_id, channel_type, address_key, address_json,
 			report_to_enabled, report_to_session_id, report_to_channel_type, report_to_address_key, report_to_address_json,
@@ -125,7 +125,8 @@ func (s *sqliteScheduledJobStore) Upsert(ctx context.Context, record ScheduledJo
 			target_key = excluded.target_key,
 			report_to_target_kind = excluded.report_to_target_kind,
 			report_to_target_key = excluded.report_to_target_key,
-			created_at = balda_scheduled_jobs.created_at`,
+			created_at = balda_scheduled_jobs.created_at
+		WHERE balda_scheduled_jobs.source = excluded.source`,
 		jobID,
 		strings.TrimSpace(record.SessionID),
 		channelType,
@@ -161,8 +162,16 @@ func (s *sqliteScheduledJobStore) Upsert(ctx context.Context, record ScheduledJo
 		strings.TrimSpace(record.TargetKey),
 		strings.TrimSpace(record.ReportToTargetKind),
 		strings.TrimSpace(record.ReportToTargetKey),
-	); err != nil {
+	)
+	if err != nil {
 		return fmt.Errorf("upsert scheduled job %q: %w", jobID, err)
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("count upserted scheduled jobs %q: %w", jobID, err)
+	}
+	if count != 1 {
+		return ErrScheduledJobSourceConflict
 	}
 
 	return nil

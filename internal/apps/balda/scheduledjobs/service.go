@@ -250,8 +250,9 @@ func (s *ScheduledJobScheduler) reconcileConfiguredJobs(ctx context.Context) err
 
 func sameConfiguredDefinition(a, b baldastate.ScheduledJobRecord) bool {
 	return a.Content == b.Content && a.ScheduleSpec == b.ScheduleSpec &&
-		a.TargetKind == b.TargetKind && a.TargetKey == b.TargetKey &&
-		a.ReportToTargetKind == b.ReportToTargetKind && a.ReportToTargetKey == b.ReportToTargetKey &&
+		sameConfiguredTargetForm(a.TargetKind, a.TargetKey, b.TargetKind, b.TargetKey, a.ChannelType, a.AddressKey) &&
+		sameConfiguredTargetForm(a.ReportToTargetKind, a.ReportToTargetKey,
+			b.ReportToTargetKind, b.ReportToTargetKey, a.ReportToChannelType, a.ReportToAddressKey) &&
 		a.SessionID == b.SessionID && a.ChannelType == b.ChannelType &&
 		a.AddressKey == b.AddressKey && a.AddressJSON == b.AddressJSON &&
 		a.ReportToEnabled == b.ReportToEnabled &&
@@ -259,6 +260,15 @@ func sameConfiguredDefinition(a, b baldastate.ScheduledJobRecord) bool {
 		a.ReportToChannelType == b.ReportToChannelType &&
 		a.ReportToAddressKey == b.ReportToAddressKey &&
 		a.ReportToAddressJSON == b.ReportToAddressJSON
+}
+
+func sameConfiguredTargetForm(oldKind, oldKey, newKind, newKey, channelType, addressKey string) bool {
+	if oldKind == newKind && oldKey == newKey {
+		return true
+	}
+	// The migration could only reconstruct the canonical locator. A first
+	// reconciliation may recover an alias without changing its destination.
+	return oldKind == "locator" && oldKey == channelType+":"+addressKey
 }
 
 func (s *ScheduledJobScheduler) dispatchDue(ctx context.Context, now time.Time) error {

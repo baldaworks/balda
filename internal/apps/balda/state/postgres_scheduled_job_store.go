@@ -90,7 +90,7 @@ func (s *postgresScheduledJobStore) Upsert(ctx context.Context, record Scheduled
 	}
 	updatedAt := now
 
-	if _, err := s.db.ExecContext(ctx, postgresBind(`
+	result, err := s.db.ExecContext(ctx, postgresBind(`
 		INSERT INTO balda_scheduled_jobs (
 			job_id, session_id, channel_type, address_key, address_json,
 			report_to_enabled, report_to_session_id, report_to_channel_type, report_to_address_key, report_to_address_json,
@@ -129,7 +129,8 @@ func (s *postgresScheduledJobStore) Upsert(ctx context.Context, record Scheduled
 			target_key = excluded.target_key,
 			report_to_target_kind = excluded.report_to_target_kind,
 			report_to_target_key = excluded.report_to_target_key,
-			created_at = balda_scheduled_jobs.created_at`), jobID,
+			created_at = balda_scheduled_jobs.created_at
+		WHERE balda_scheduled_jobs.source = excluded.source`), jobID,
 		strings.TrimSpace(record.SessionID),
 		channelType,
 		addressKey,
@@ -164,8 +165,16 @@ func (s *postgresScheduledJobStore) Upsert(ctx context.Context, record Scheduled
 		strings.TrimSpace(record.TargetKey),
 		strings.TrimSpace(record.ReportToTargetKind),
 		strings.TrimSpace(record.ReportToTargetKey),
-	); err != nil {
+	)
+	if err != nil {
 		return postgresErrorf("upsert scheduled job %q: %w", jobID, err)
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return postgresErrorf("count upserted scheduled jobs %q: %w", jobID, err)
+	}
+	if count != 1 {
+		return ErrScheduledJobSourceConflict
 	}
 
 	return nil

@@ -10,6 +10,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
+	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/rs/zerolog"
@@ -521,12 +522,12 @@ func TestScheduledJobSchedulerReconcileConfiguredTasks_UpsertsAndDeletes(t *test
 				{
 					ID:      "managed-task",
 					Cron:    "@every 2s",
-					Target:  "alias",
-					Key:     "owner",
+					Target:  envelopetarget.TargetAlias,
+					Key:     envelopetarget.AliasOwner,
 					Content: "review queue",
 					ReportTo: &ConfiguredScheduledJobTarget{
-						Target: "alias",
-						Key:    "owner",
+						Target: envelopetarget.TargetAlias,
+						Key:    envelopetarget.AliasOwner,
 					},
 				},
 			},
@@ -623,13 +624,46 @@ func TestScheduledJobSchedulerReconcileRejectsManagedIDCollision(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	scheduler := &ScheduledJobScheduler{jobStore: store, owner: newOwnerStoreForTest(t, 101, 9001), logger: zerolog.Nop(), now: func() time.Time { return now }, config: ScheduledJobSchedulerConfig{Jobs: []ConfiguredScheduledJob{{ID: "same", Cron: "0 9 * * *", Target: "alias", Key: "owner", Content: "config content"}}}}
+	scheduler := &ScheduledJobScheduler{jobStore: store, owner: newOwnerStoreForTest(t, 101, 9001), logger: zerolog.Nop(), now: func() time.Time { return now }, config: ScheduledJobSchedulerConfig{Jobs: []ConfiguredScheduledJob{{ID: "same", Cron: "0 9 * * *", Target: envelopetarget.TargetAlias, Key: envelopetarget.AliasOwner, Content: "config content"}}}}
 	if err := scheduler.reconcileConfiguredJobs(ctx); err == nil || !strings.Contains(err.Error(), "collision") {
 		t.Fatalf("reconcile = %v, want collision", err)
 	}
 	got, _, err := store.GetByID(ctx, "same")
 	if err != nil || got.Content != "ui content" {
 		t.Fatalf("managed row changed: %+v, %v", got, err)
+	}
+}
+
+func TestScheduledJobSchedulerReconcilePreservesMigratedRuntimeForSameTarget(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := newSchedulerJobStore(t)
+	now := time.Date(2026, time.May, 14, 16, 0, 0, 0, time.UTC)
+	owner := newOwnerStoreForTest(t, 101, 9001)
+	locator := baldatelegram.NewLocator(9001, 0)
+	previous := baldastate.ScheduledJobRecord{
+		JobID: "configured", Source: baldastate.ScheduledJobSourceConfig,
+		Enabled: true, DefinitionVersion: 1, TargetKind: "locator", TargetKey: "telegram:9001:0",
+		SessionID: locator.SessionID, ChannelType: locator.ChannelType,
+		AddressKey: locator.AddressKey, AddressJSON: locator.AddressJSON,
+		Content: "review", ScheduleSpec: "0 9 * * *", Status: baldastate.ScheduledJobStatusPaused,
+		RetryCount: 2, LastDispatchKey: "configured@old", NextRunAt: now.Add(time.Hour),
+	}
+	if err := store.Upsert(ctx, previous); err != nil {
+		t.Fatal(err)
+	}
+	scheduler := &ScheduledJobScheduler{jobStore: store, owner: owner, logger: zerolog.Nop(),
+		now: func() time.Time { return now }, config: ScheduledJobSchedulerConfig{Jobs: []ConfiguredScheduledJob{{
+			ID: "configured", Cron: "0 9 * * *", Target: envelopetarget.TargetAlias, Key: envelopetarget.AliasOwner, Content: "review",
+		}}}}
+	if err := scheduler.reconcileConfiguredJobs(ctx); err != nil {
+		t.Fatal(err)
+	}
+	got, found, err := store.GetByID(ctx, "configured")
+	if err != nil || !found || got.DefinitionVersion != 1 || got.Status != baldastate.ScheduledJobStatusPaused ||
+		got.RetryCount != 2 || got.LastDispatchKey != "configured@old" || !got.NextRunAt.Equal(previous.NextRunAt) ||
+		got.TargetKind != envelopetarget.TargetAlias || got.TargetKey != envelopetarget.AliasOwner {
+		t.Fatalf("migrated config reset = %+v, %v, %v", got, found, err)
 	}
 }
 
@@ -692,10 +726,10 @@ func TestNormalizeScheduledJobSchedulerConfig_TrimsEnvelope(t *testing.T) {
 		t.Fatalf("tasks = %d, want 1", len(got.Jobs))
 	}
 	task := got.Jobs[0]
-	if task.ID != "task-1" || task.Target != "alias" || task.Key != "owner" || task.Content != "check" {
+	if task.ID != "task-1" || task.Target != envelopetarget.TargetAlias || task.Key != envelopetarget.AliasOwner || task.Content != "check" {
 		t.Fatalf("task = %+v, want trimmed envelope", task)
 	}
-	if task.ReportTo == nil || task.ReportTo.Target != "alias" || task.ReportTo.Key != "owner" {
+	if task.ReportTo == nil || task.ReportTo.Target != envelopetarget.TargetAlias || task.ReportTo.Key != envelopetarget.AliasOwner {
 		t.Fatalf("report_to = %+v, want trimmed alias/owner", task.ReportTo)
 	}
 }

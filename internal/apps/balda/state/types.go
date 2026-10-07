@@ -2,6 +2,7 @@ package state
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/authcmd"
@@ -11,6 +12,9 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	adksession "google.golang.org/adk/v2/session"
 )
+
+// ErrScheduledJobSourceConflict means an ID is already owned by another source.
+var ErrScheduledJobSourceConflict = errors.New("scheduled job source conflict")
 
 const (
 	// NamespaceApp stores balda app internal state (for example owner auth).

@@ -1,10 +1,37 @@
 package state
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
 )
+
+func TestScheduledJobStoreRejectsCrossSourceOverwrite(t *testing.T) {
+	provider, err := NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = provider.Close() })
+	now := time.Date(2026, 10, 8, 9, 0, 0, 0, time.UTC)
+	record := ScheduledJobRecord{JobID: "shared", Source: ScheduledJobSourceManaged,
+		Enabled: true, DefinitionVersion: 1, SessionID: "tg-1-0", ChannelType: ChannelTypeTelegram,
+		AddressKey: "1:0", AddressJSON: `{}`, Content: "managed", ScheduleSpec: "0 9 * * *",
+		Status: ScheduledJobStatusActive, NextRunAt: now}
+	if err := provider.ScheduledJobs().Upsert(t.Context(), record); err != nil {
+		t.Fatal(err)
+	}
+	record.Source = ScheduledJobSourceInternal
+	record.Content = "overwrite"
+	record.ScheduleSpec = "@once"
+	if err := provider.ScheduledJobs().Upsert(t.Context(), record); !errors.Is(err, ErrScheduledJobSourceConflict) {
+		t.Fatalf("Upsert(collision) = %v, want source conflict", err)
+	}
+	got, _, err := provider.ScheduledJobs().GetByID(t.Context(), "shared")
+	if err != nil || got.Source != ScheduledJobSourceManaged || got.Content != "managed" {
+		t.Fatalf("record after collision = %+v, %v", got, err)
+	}
+}
 
 // This catches loss of run history when the schedule is removed or the database
 // is reopened, and catches duplicate submission of the same due/manual key.
