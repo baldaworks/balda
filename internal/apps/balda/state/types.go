@@ -2,6 +2,7 @@ package state
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/authcmd"
@@ -11,6 +12,9 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	adksession "google.golang.org/adk/v2/session"
 )
+
+// ErrScheduledJobSourceConflict means an ID is already owned by another source.
+var ErrScheduledJobSourceConflict = errors.New("scheduled job source conflict")
 
 const (
 	// NamespaceApp stores balda app internal state (for example owner auth).
@@ -34,6 +38,12 @@ const (
 	ScheduledJobStatusActive = "active"
 	// ScheduledJobStatusPaused means the job is persisted but not dispatched.
 	ScheduledJobStatusPaused = "paused"
+	// ScheduledJobSourceConfig means host configuration owns the definition.
+	ScheduledJobSourceConfig = "config"
+	// ScheduledJobSourceManaged means Backoffice owns the definition.
+	ScheduledJobSourceManaged = "managed"
+	// ScheduledJobSourceInternal means the runtime owns a one-shot timer.
+	ScheduledJobSourceInternal = "internal"
 
 	// JobStatusCreated means a job record exists but has not been queued.
 	JobStatusCreated = "created"
@@ -82,6 +92,8 @@ type Provider interface {
 	SessionMCPKV() KVStore
 	Sessions() SessionStore
 	ScheduledJobs() ScheduledJobStore
+	ScheduleManagement() ScheduleManagementStore
+	ScheduleRuns() ScheduleRunStore
 	Questions() QuestionStore
 	// SessionMemoryIngressOutbox returns producer-local exports awaiting
 	// JetStream PubAck. It is distinct from canonical memory delivery state.
@@ -224,6 +236,14 @@ type SessionStore interface {
 // ScheduledJobRecord persists locator-targeted recurring job metadata.
 type ScheduledJobRecord struct {
 	JobID               string
+	Source              string
+	Enabled             bool
+	Deleted             bool
+	DefinitionVersion   uint64
+	TargetKind          string
+	TargetKey           string
+	ReportToTargetKind  string
+	ReportToTargetKey   string
 	SessionID           string
 	ChannelType         string
 	AddressKey          string
@@ -250,11 +270,78 @@ type ScheduledJobRecord struct {
 // ScheduledJobStore persists scheduler jobs bound to canonical locators.
 type ScheduledJobStore interface {
 	Upsert(ctx context.Context, record ScheduledJobRecord) error
+	UpdateRuntime(ctx context.Context, update ScheduledJobRuntimeUpdate) (bool, error)
 	GetByID(ctx context.Context, jobID string) (ScheduledJobRecord, bool, error)
 	List(ctx context.Context) ([]ScheduledJobRecord, error)
 	ListByAddress(ctx context.Context, channelType, addressKey string) ([]ScheduledJobRecord, error)
 	ListDue(ctx context.Context, now time.Time, limit int) ([]ScheduledJobRecord, error)
 	Delete(ctx context.Context, jobID string) error
+}
+
+// ScheduledJobRuntimeUpdate changes only dispatch state when the selected definition and slot still match.
+type ScheduledJobRuntimeUpdate struct {
+	JobID                   string
+	DefinitionVersion       uint64
+	ExpectedNextRunAt       time.Time
+	ExpectedLastDispatchKey string
+	Status                  string
+	RetryCount              int
+	LastDispatchKey         string
+	NextRunAt               time.Time
+	LastRunAt               time.Time
+	LastError               string
+}
+
+// ScheduleRunRecord persists one exact manual or cron dispatch intent.
+type ScheduleRunRecord struct {
+	RunID             string
+	ScheduleID        string
+	Trigger           string
+	TriggerKey        string
+	DefinitionVersion uint64
+	Version           uint64
+	RequestedAt       time.Time
+	DueAt             time.Time
+	DispatchState     string
+	Attempts          int
+	NextAttemptAt     time.Time
+	SafeFailureCode   string
+	DispatchedAt      time.Time
+	ExecutionJobID    string
+	PayloadJSON       string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
+const (
+	// ScheduleRunTriggerCron marks a due cron slot.
+	ScheduleRunTriggerCron = "cron"
+	// ScheduleRunTriggerManual marks an administrator-requested run.
+	ScheduleRunTriggerManual = "manual"
+	// ScheduleRunPending means an intent is awaiting durable dispatch.
+	ScheduleRunPending = "pending"
+	// ScheduleRunRetrying means a dispatch retry is due later.
+	ScheduleRunRetrying = "retrying"
+	// ScheduleRunPublishing means a worker claimed publication until its lease expires.
+	ScheduleRunPublishing = "publishing"
+	// ScheduleRunDispatched means the actor command was durably published.
+	ScheduleRunDispatched = "dispatched"
+	// ScheduleRunFailed means pre-publication dispatch exhausted its retries.
+	ScheduleRunFailed = "failed"
+	// ScheduleRunCanceled means a stale unclaimed intent was canceled.
+	ScheduleRunCanceled = "canceled"
+)
+
+// ScheduleRunStore persists run intents and lists history independently of definitions.
+type ScheduleRunStore interface {
+	Create(ctx context.Context, record ScheduleRunRecord) (bool, error)
+	CreateCron(ctx context.Context, record ScheduleRunRecord, expectedNextRunAt time.Time) (bool, error)
+	ClaimCron(ctx context.Context, record ScheduleRunRecord, now, leaseUntil time.Time) (bool, error)
+	Update(ctx context.Context, record ScheduleRunRecord, expectedVersion uint64) (bool, error)
+	GetByID(ctx context.Context, runID string) (ScheduleRunRecord, bool, error)
+	GetByTriggerKey(ctx context.Context, scheduleID, triggerKey string) (ScheduleRunRecord, bool, error)
+	ListBySchedule(ctx context.Context, scheduleID string, beforeAt time.Time, beforeID string, limit int) ([]ScheduleRunRecord, error)
+	ListPending(ctx context.Context, now time.Time, limit int) ([]ScheduleRunRecord, error)
 }
 
 type QuestionRecord struct {

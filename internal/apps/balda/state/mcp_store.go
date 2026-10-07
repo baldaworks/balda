@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
@@ -166,48 +165,29 @@ func validateMCPAuthority(a mcpcmd.Authority) error {
 	return nil
 }
 
-// Canonical user -> browser family is the same lock order as security writes.
-// This closes the gap between an HTTP guard and commit when access is revoked.
 func (s *sqlMCPStore) checkAuthority(ctx context.Context, tx *sql.Tx, a mcpcmd.Authority) (lockedMCPAuthority, error) {
-	profile, err := s.users.mfaAuthority(ctx, tx, a.UserID, a.UserVersion, a.CredentialVersion, a.MFAVersion)
+	locked, err := s.users.checkBrowserAuthority(ctx, tx, mcpBrowserAuthority(a))
 	if err != nil {
 		return lockedMCPAuthority{}, mcpMutationError(err)
 	}
-	family, err := s.users.liveMFASession(ctx, tx, a.SessionID, a.UserID, a.CredentialVersion, a.At)
-	if err != nil {
-		return lockedMCPAuthority{}, mcpMutationError(err)
-	}
-	if family.Assurance != usercmd.SessionAssuranceNormal {
-		return lockedMCPAuthority{}, mcpcmd.ErrForbidden
-	}
-	if family.Version != a.SessionVersion {
-		return lockedMCPAuthority{}, mcpcmd.ErrConflict
-	}
-	if profile.Enabled && family.MFAFactorID != profile.Credential.ID {
-		return lockedMCPAuthority{}, mcpcmd.ErrForbidden
-	}
-	authority := lockedMCPAuthority{family: family, mfaEnabled: profile.Enabled}
-	return authority, authority.checkTime(a)
+	return lockedMCPAuthority{browser: locked}, nil
 }
 
-// The canonical user and family stay locked while target rows are acquired.
-// Recheck time after those waits without changing audit or metadata timestamps.
 type lockedMCPAuthority struct {
-	family     usercmd.SessionFamily
-	mfaEnabled bool
+	browser lockedBrowserAuthority
 }
 
 func (f lockedMCPAuthority) checkTime(a mcpcmd.Authority) error {
-	// Caller time remains a conservative guard, never an upper freshness bound.
-	for _, now := range []time.Time{time.Now(), a.At} {
-		if !now.Before(f.family.Access.ExpiresAt) || !now.Before(f.family.RefreshExpiresAt) {
-			return mcpcmd.ErrForbidden
-		}
-		if f.mfaEnabled && (f.family.WebAuthnVerifiedAt.IsZero() || now.Before(f.family.WebAuthnVerifiedAt)) {
-			return mcpcmd.ErrForbidden
-		}
+	if err := f.browser.checkTime(mcpBrowserAuthority(a)); err != nil {
+		return mcpMutationError(err)
 	}
 	return nil
+}
+
+func mcpBrowserAuthority(a mcpcmd.Authority) browserAuthority {
+	return browserAuthority{userID: a.UserID, sessionID: a.SessionID,
+		userVersion: a.UserVersion, credentialVersion: a.CredentialVersion,
+		mfaVersion: a.MFAVersion, sessionVersion: a.SessionVersion, at: a.At}
 }
 
 func (s *sqlMCPStore) GetMCPConnection(ctx context.Context, id string) (mcpcmd.Connection, bool, error) {

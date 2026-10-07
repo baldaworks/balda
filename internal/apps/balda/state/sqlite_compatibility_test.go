@@ -53,7 +53,8 @@ func TestDatabaseDefaultPreservesExistingSQLite(t *testing.T) {
 		t.Fatal(err)
 	}
 	seedSQLiteCompatibilityFixture(t, db)
-	before := snapshotSQLiteFixture(t, db)
+	columns := sqliteFixtureColumns(t, db)
+	before := snapshotSQLiteFixture(t, db, columns)
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +82,7 @@ func TestDatabaseDefaultPreservesExistingSQLite(t *testing.T) {
 	if !os.SameFile(originalFile, reopenedFile) {
 		t.Fatal("opening the default database replaced the existing file")
 	}
-	after := snapshotSQLiteFixture(t, p.(*sqliteProvider).db)
+	after := snapshotSQLiteFixture(t, p.(*sqliteProvider).db, columns)
 	if !reflect.DeepEqual(before, after) {
 		t.Fatal("opening the default database changed existing rows")
 	}
@@ -170,15 +171,38 @@ func sqliteFixtureValue(table, column, kind string) any {
 	return "fixture"
 }
 
-func snapshotSQLiteFixture(t *testing.T, db *sql.DB) map[string][]string {
+func sqliteFixtureColumns(t *testing.T, db *sql.DB) map[string][]string {
 	t.Helper()
-	snapshot := make(map[string][]string)
+	columnsByTable := make(map[string][]string, len(sqliteV36Tables))
 	for _, table := range sqliteV36Tables {
-		rows, err := db.QueryContext(t.Context(), "SELECT * FROM "+table+" ORDER BY 1") //nolint:unqueryvet // The compatibility snapshot must compare every stored column.
+		rows, err := db.QueryContext(t.Context(), "SELECT * FROM "+table+" LIMIT 0") //nolint:unqueryvet // Capture the fixture's pre-upgrade columns.
 		if err != nil {
 			t.Fatal(err)
 		}
 		columns, err := rows.Columns()
+		if err != nil {
+			_ = rows.Close()
+			t.Fatal(err)
+		}
+		if err := rows.Close(); err != nil {
+			t.Fatal(err)
+		}
+		columnsByTable[table] = columns
+	}
+	return columnsByTable
+}
+
+func snapshotSQLiteFixture(t *testing.T, db *sql.DB, columnsByTable map[string][]string) map[string][]string {
+	t.Helper()
+	snapshot := make(map[string][]string)
+	for _, table := range sqliteV36Tables {
+		columns := columnsByTable[table]
+		query := `SELECT "` + strings.Join(columns, `","`) + `" FROM ` + table + " ORDER BY 1"
+		rows, err := db.QueryContext(t.Context(), query) //nolint:unqueryvet // Compare every pre-upgrade column, excluding columns added by migrations.
+		if err != nil {
+			t.Fatal(err)
+		}
+		columns, err = rows.Columns()
 		if err != nil {
 			t.Fatal(err)
 		}

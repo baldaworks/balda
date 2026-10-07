@@ -3,16 +3,17 @@ package actors
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
-	"github.com/baldaworks/go-actorlayer"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	"github.com/baldaworks/balda/internal/apps/balda/jobexec"
 	baldajobs "github.com/baldaworks/balda/internal/apps/balda/jobs"
 	"github.com/baldaworks/balda/internal/apps/balda/session"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 )
 
 func TestTaskActorDispatchesWebhookSessionTurn(t *testing.T) {
@@ -142,6 +143,33 @@ func TestScheduledJobEnvelopeDispatchesSessionTurn(t *testing.T) {
 	published := lastPublishedCommandTo(t, bus, baldaexecution.ActorTypeSession, locator.SessionID)
 	if published.Namespace != baldaexecution.NamespaceScheduleInbound {
 		t.Fatalf("published namespace = %q, want %q", published.Namespace, baldaexecution.NamespaceScheduleInbound)
+	}
+}
+
+func TestScheduledJobReplayPublishesSessionTurnAfterJobWasCreated(t *testing.T) {
+	ctx := t.Context()
+	bus, dispatcher, tasks := newTaskActorDispatchServices(t, ctx)
+	exec := NewJobActorExecutor(jobexec.New(tasks, dispatcher))
+	locator := session.SessionLocator{SessionID: "tg-101-202", AddressKey: "101"}
+	env, err := ScheduledJobEnvelope("daily", "summarize", locator, nil, "101", 0, "daily@slot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bus.commandErrs = []error{errors.New("session publish interrupted")}
+	if err := exec.Handle(ctx, env); err == nil {
+		t.Fatal("first scheduled dispatch succeeded despite publish failure")
+	}
+	if err := exec.Handle(ctx, env); err != nil {
+		t.Fatalf("replay = %v", err)
+	}
+	published := lastPublishedCommandTo(t, bus, baldaexecution.ActorTypeSession, locator.SessionID)
+	if published.DedupeKey != env.DedupeKey+":session" {
+		t.Fatalf("replay key = %q", published.DedupeKey)
+	}
+	jobID := baldaexecution.EnvelopeJobID(env)
+	job, found, err := tasks.Get(ctx, jobID)
+	if err != nil || !found || job.Status != baldastate.JobStatusRunning {
+		t.Fatalf("replayed job = %+v, %v", job, err)
 	}
 }
 

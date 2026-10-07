@@ -5,6 +5,7 @@ package state
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -14,7 +15,9 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/authcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/schedulecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/baldaworks/balda/sessionmemory"
 	adksession "google.golang.org/adk/v2/session"
 )
@@ -56,6 +59,9 @@ func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) 
 	t.Run("Provider_QuestionStoreRoundTrip", func(t *testing.T) { checkProvider_QuestionStoreRoundTrip(t, factory(t)) })
 	t.Run("Provider_SessionStoreUpsert_DoesNotDecodeAddressJSON", func(t *testing.T) { checkProvider_SessionStoreUpsert_DoesNotDecodeAddressJSON(t, factory(t)) })
 	t.Run("Provider_ScheduledJobStoreRoundTrip", func(t *testing.T) { checkProvider_ScheduledJobStoreRoundTrip(t, factory(t)) })
+	t.Run("Provider_ScheduleManagementAuthorityAndVersion", func(t *testing.T) { checkProvider_ScheduleManagementAuthorityAndVersion(t, factory(t)) })
+	t.Run("Provider_ScheduleRunStoreRoundTrip", func(t *testing.T) { checkProvider_ScheduleRunStoreRoundTrip(t, factory(t)) })
+	t.Run("Provider_ScheduleRunAdmissions", func(t *testing.T) { checkProvider_ScheduleRunAdmissions(t, factory(t)) })
 	t.Run("Provider_OffsetPersistsAcrossReopen", func(t *testing.T) { checkProvider_OffsetPersistsAcrossReopen(t, factory(t)) })
 	t.Run("Provider_RuntimeSessionPersistsAcrossReopen", func(t *testing.T) { checkProvider_RuntimeSessionPersistsAcrossReopen(t, factory(t)) })
 	t.Run("JobStore_JobLifecycle", func(t *testing.T) { checkJobStore_JobLifecycle(t, factory(t)) })
@@ -76,6 +82,189 @@ func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) 
 		checkSessionMemoryIngressOutboxRecoversExpiredLeaseAndRejectsForeignSettlement(t, factory(t))
 	})
 	t.Run("SessionMemoryIngressOutboxReplaysTerminalWithAuditAndStats", func(t *testing.T) { checkSessionMemoryIngressOutboxReplaysTerminalWithAuditAndStats(t, factory(t)) })
+}
+
+func checkProvider_ScheduleManagementAuthorityAndVersion(t *testing.T, open contractOpener) {
+	p := newContractProvider(t, open)
+	defer closeContractProvider(t, p)
+	base := contractMCPMutation(t, p)
+	a := schedulecmd.Authority{UserID: base.Authority.UserID, UserVersion: base.Authority.UserVersion,
+		CredentialVersion: base.Authority.CredentialVersion, MFAVersion: base.Authority.MFAVersion,
+		SessionID: base.Authority.SessionID, SessionVersion: base.Authority.SessionVersion, At: base.Authority.At}
+	next := a.At.Add(time.Hour)
+	r := ScheduledJobRecord{JobID: "managed-daily", Source: ScheduledJobSourceManaged,
+		Enabled: true, DefinitionVersion: 1, SessionID: "tg-1-0", ChannelType: ChannelTypeTelegram,
+		AddressKey: "1:0", AddressJSON: `{}`, Content: "review", ScheduleSpec: "0 9 * * *",
+		Status: ScheduledJobStatusActive, TargetKind: "locator", TargetKey: "telegram:1:0", NextRunAt: next}
+	audit := usercmd.AuditEvent{ID: "schedule-create", Action: usercmd.AuditActionScheduleDefinitionChanged,
+		Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: a.UserID, ActorSessionID: a.SessionID,
+		TargetType: usercmd.AuditTargetSchedule, TargetID: r.JobID, Source: "provider-contract", OccurredAt: a.At}
+	m := ScheduleMutation{Kind: ScheduleCreate, Record: r, Authority: a, Audit: audit}
+	if err := p.ScheduleManagement().Save(t.Context(), m); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.ScheduleManagement().Save(t.Context(), m); !errors.Is(err, schedulecmd.ErrConflict) {
+		t.Fatalf("duplicate create = %v, want conflict", err)
+	}
+	current, found, err := p.ScheduledJobs().GetByID(t.Context(), r.JobID)
+	if err != nil || !found || current.Source != ScheduledJobSourceManaged || current.DefinitionVersion != 1 {
+		t.Fatalf("created = %+v, %v, %v", current, found, err)
+	}
+	m.Kind, m.ExpectedVersion, m.Record.DefinitionVersion, m.Audit.ID = ScheduleEdit, 1, 2, "schedule-edit"
+	m.Record.Content = "updated"
+	stale := m
+	stale.Authority.UserVersion++
+	if err := p.ScheduleManagement().Save(t.Context(), stale); !errors.Is(err, schedulecmd.ErrConflict) {
+		t.Fatalf("stale administrator = %v, want conflict", err)
+	}
+	if err := p.ScheduleManagement().Save(t.Context(), m); err != nil {
+		t.Fatal(err)
+	}
+	current, _, err = p.ScheduledJobs().GetByID(t.Context(), r.JobID)
+	if err != nil || current.Content != "updated" || current.DefinitionVersion != 2 {
+		t.Fatalf("edited = %+v, %v", current, err)
+	}
+	if err := p.ScheduleManagement().Save(t.Context(), m); !errors.Is(err, schedulecmd.ErrConflict) {
+		t.Fatalf("stale edit = %v, want conflict", err)
+	}
+	m.Kind, m.ExpectedVersion, m.Record.DefinitionVersion, m.Audit.ID = ScheduleSelection, 2, 3, "schedule-disable"
+	m.Record.Enabled = false
+	if err := p.ScheduleManagement().Save(t.Context(), m); err != nil {
+		t.Fatal(err)
+	}
+	current, _, err = p.ScheduledJobs().GetByID(t.Context(), r.JobID)
+	if err != nil || current.Enabled || current.DefinitionVersion != 3 {
+		t.Fatalf("disabled = %+v, %v", current, err)
+	}
+	m.Kind, m.ExpectedVersion, m.Record.DefinitionVersion, m.Audit.ID = ScheduleDelete, 3, 4, "schedule-delete"
+	m.Record.Deleted = true
+	if err := p.ScheduleManagement().Save(t.Context(), m); err != nil {
+		t.Fatal(err)
+	}
+	current, _, err = p.ScheduledJobs().GetByID(t.Context(), r.JobID)
+	if err != nil || !current.Deleted || current.Enabled || current.DefinitionVersion != 4 {
+		t.Fatalf("archived = %+v, %v", current, err)
+	}
+	audits, err := p.Users().ListAuditEvents(t.Context(), usercmd.PageRequest{Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	reasons := map[string]bool{}
+	for _, event := range audits.Events {
+		if event.TargetType == usercmd.AuditTargetSchedule {
+			count++
+			reasons[event.Reason] = true
+		}
+	}
+	if count != 4 {
+		t.Fatalf("schedule audits = %d, want four committed changes", count)
+	}
+	for _, reason := range []string{"Schedule created", "Schedule edited", "Schedule disabled", "Schedule deleted"} {
+		if !reasons[reason] {
+			t.Errorf("missing audit operation %q", reason)
+		}
+	}
+}
+
+func checkProvider_ScheduleRunAdmissions(t *testing.T, open contractOpener) {
+	p := newContractProvider(t, open)
+	defer closeContractProvider(t, p)
+	base := contractMCPMutation(t, p)
+	a := schedulecmd.Authority{UserID: base.Authority.UserID, UserVersion: base.Authority.UserVersion,
+		CredentialVersion: base.Authority.CredentialVersion, MFAVersion: base.Authority.MFAVersion,
+		SessionID: base.Authority.SessionID, SessionVersion: base.Authority.SessionVersion, At: base.Authority.At}
+	now := a.At
+	job := ScheduledJobRecord{JobID: "configured-daily", Source: ScheduledJobSourceConfig, Enabled: true,
+		DefinitionVersion: 1, SessionID: "tg-1-0", ChannelType: ChannelTypeTelegram,
+		AddressKey: "1:0", AddressJSON: `{}`, Content: "review", ScheduleSpec: "0 9 * * *",
+		Status: ScheduledJobStatusActive, NextRunAt: now.Add(time.Hour)}
+	if err := p.ScheduledJobs().Upsert(t.Context(), job); err != nil {
+		t.Fatal(err)
+	}
+	cron := ScheduleRunRecord{RunID: "cron-1", ScheduleID: job.JobID, Trigger: ScheduleRunTriggerCron,
+		TriggerKey: "cron-slot", DefinitionVersion: 1, RequestedAt: now, DueAt: job.NextRunAt,
+		DispatchState: ScheduleRunPending, PayloadJSON: `{}`}
+	created, err := p.ScheduleRuns().CreateCron(t.Context(), cron, job.NextRunAt)
+	if err != nil || !created {
+		t.Fatalf("CreateCron() = %v, %v", created, err)
+	}
+	created, err = p.ScheduleRuns().CreateCron(t.Context(), cron, job.NextRunAt)
+	if err != nil || created {
+		t.Fatalf("duplicate CreateCron() = %v, %v", created, err)
+	}
+	selected, found, err := p.ScheduleRuns().GetByID(t.Context(), cron.RunID)
+	if err != nil || !found {
+		t.Fatalf("load cron intent = %+v, %v", selected, err)
+	}
+	leaseAt := job.NextRunAt
+	claimed, err := p.ScheduleRuns().ClaimCron(t.Context(), selected, leaseAt, leaseAt.Add(30*time.Second))
+	if err != nil || !claimed {
+		t.Fatalf("ClaimCron() = %v, %v", claimed, err)
+	}
+	claimed, err = p.ScheduleRuns().ClaimCron(t.Context(), selected, leaseAt.Add(time.Second), leaseAt.Add(time.Minute))
+	if err != nil || claimed {
+		t.Fatalf("duplicate ClaimCron() = %v, %v", claimed, err)
+	}
+	selected, found, err = p.ScheduleRuns().GetByID(t.Context(), cron.RunID)
+	if err != nil || !found || selected.DispatchState != ScheduleRunPublishing {
+		t.Fatalf("publishing cron intent = %+v, %v", selected, err)
+	}
+	claimed, err = p.ScheduleRuns().ClaimCron(t.Context(), selected, leaseAt.Add(31*time.Second), leaseAt.Add(time.Minute))
+	if err != nil || !claimed {
+		t.Fatalf("expired ClaimCron() = %v, %v", claimed, err)
+	}
+	stale := cron
+	stale.RunID, stale.TriggerKey, stale.DefinitionVersion = "cron-2", "stale-slot", 2
+	created, err = p.ScheduleRuns().CreateCron(t.Context(), stale, job.NextRunAt)
+	if err != nil || created {
+		t.Fatalf("stale CreateCron() = %v, %v", created, err)
+	}
+	job.Enabled = false
+	if err := p.ScheduledJobs().Upsert(t.Context(), job); err != nil {
+		t.Fatal(err)
+	}
+	selected, found, err = p.ScheduleRuns().GetByID(t.Context(), cron.RunID)
+	if err != nil || !found {
+		t.Fatalf("load disabled cron intent = %+v, %v", selected, err)
+	}
+	claimed, err = p.ScheduleRuns().ClaimCron(t.Context(), selected, leaseAt.Add(time.Minute), leaseAt.Add(2*time.Minute))
+	if err != nil || !claimed {
+		t.Fatalf("recover claimed run after disable = %v, %v", claimed, err)
+	}
+	stale.DefinitionVersion, stale.RunID, stale.TriggerKey = 1, "cron-3", "disabled-slot"
+	created, err = p.ScheduleRuns().CreateCron(t.Context(), stale, job.NextRunAt)
+	if err != nil || created {
+		t.Fatalf("disabled CreateCron() = %v, %v", created, err)
+	}
+	manual := ScheduleRunRecord{RunID: "manual-1", ScheduleID: job.JobID, Trigger: ScheduleRunTriggerManual,
+		TriggerKey: "manual:nonce-1", DefinitionVersion: 1, RequestedAt: now,
+		DispatchState: ScheduleRunPending, PayloadJSON: `{}`}
+	audit := usercmd.AuditEvent{ID: "manual-audit", Action: usercmd.AuditActionScheduleRunRequested,
+		Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: a.UserID, ActorSessionID: a.SessionID,
+		TargetType: usercmd.AuditTargetSchedule, TargetID: job.JobID, Source: "provider-contract", OccurredAt: a.At}
+	admission := ScheduleManualAdmission{Run: manual, ExpectedVersion: 1, Authority: a, Audit: audit}
+	created, err = p.ScheduleManagement().AdmitManualRun(t.Context(), admission)
+	if !errors.Is(err, schedulecmd.ErrConflict) || created {
+		t.Fatalf("unconfirmed disabled run = %v, %v", created, err)
+	}
+	admission.ConfirmDisabled = true
+	created, err = p.ScheduleManagement().AdmitManualRun(t.Context(), admission)
+	if err != nil || !created {
+		t.Fatalf("confirmed manual run = %v, %v", created, err)
+	}
+	created, err = p.ScheduleManagement().AdmitManualRun(t.Context(), admission)
+	if err != nil || created {
+		t.Fatalf("duplicate manual run = %v, %v", created, err)
+	}
+	current, found, err := p.ScheduledJobs().GetByID(t.Context(), job.JobID)
+	if err != nil || !found || current.Enabled || !current.NextRunAt.Equal(job.NextRunAt) {
+		t.Fatalf("manual changed cron selection = %+v, %v", current, err)
+	}
+	got, found, err := p.ScheduleRuns().GetByTriggerKey(t.Context(), job.JobID, manual.TriggerKey)
+	if err != nil || !found || got.RunID != manual.RunID {
+		t.Fatalf("manual run = %+v, %v", got, err)
+	}
 }
 
 func checkCollaborators(t *testing.T, open contractOpener) {
@@ -216,7 +405,6 @@ func checkProvider_SessionStoreRoundTrip(t *testing.T, open contractOpener) {
 	if err := store.Upsert(ctx, record); err != nil {
 		t.Fatalf("Upsert() error = %v", err)
 	}
-
 	got, ok, err := store.GetByAddress(ctx, ChannelTypeTelegram, "1:2")
 	if err != nil {
 		t.Fatalf("GetByAddress() error = %v", err)
@@ -394,6 +582,12 @@ func checkProvider_ScheduledJobStoreRoundTrip(t *testing.T, open contractOpener)
 	if err := store.Upsert(ctx, record); err != nil {
 		t.Fatalf("Upsert() error = %v", err)
 	}
+	collision := record
+	collision.Source = ScheduledJobSourceManaged
+	collision.Content = "unexpected overwrite"
+	if err := store.Upsert(ctx, collision); !errors.Is(err, ErrScheduledJobSourceConflict) {
+		t.Fatalf("Upsert(other source) = %v, want source conflict", err)
+	}
 
 	got, ok, err := store.GetByID(ctx, scheduledJobID)
 	if err != nil {
@@ -426,6 +620,20 @@ func checkProvider_ScheduledJobStoreRoundTrip(t *testing.T, open contractOpener)
 	if len(dueTasks) != 1 || dueTasks[0].JobID != scheduledJobID {
 		t.Fatalf("ListDue() = %#v, want single %s", dueTasks, scheduledJobID)
 	}
+	updated, err := store.UpdateRuntime(ctx, ScheduledJobRuntimeUpdate{
+		JobID: scheduledJobID, DefinitionVersion: got.DefinitionVersion,
+		ExpectedNextRunAt: got.NextRunAt, ExpectedLastDispatchKey: got.LastDispatchKey,
+		Status: ScheduledJobStatusActive, NextRunAt: nextRunAt.Add(5 * time.Minute),
+		LastDispatchKey: "task-1@slot", LastRunAt: nextRunAt,
+	})
+	if err != nil || !updated {
+		t.Fatalf("UpdateRuntime() = %v, %v, want true, nil", updated, err)
+	}
+	got, ok, err = store.GetByID(ctx, scheduledJobID)
+	if err != nil || !ok || got.LastDispatchKey != "task-1@slot" ||
+		!got.NextRunAt.Equal(nextRunAt.Add(5*time.Minute)) {
+		t.Fatalf("GetByID(after runtime update) = %+v, %v, %v", got, ok, err)
+	}
 
 	if err := store.Delete(ctx, scheduledJobID); err != nil {
 		t.Fatalf("Delete() error = %v", err)
@@ -436,6 +644,40 @@ func checkProvider_ScheduledJobStoreRoundTrip(t *testing.T, open contractOpener)
 	}
 	if ok {
 		t.Fatal("GetByID(after delete) found = true, want false")
+	}
+}
+
+func checkProvider_ScheduleRunStoreRoundTrip(t *testing.T, open contractOpener) {
+	provider := newContractProvider(t, open)
+	defer closeContractProvider(t, provider)
+
+	run := ScheduleRunRecord{
+		RunID: "run-1", ScheduleID: "daily-review", Trigger: ScheduleRunTriggerManual,
+		TriggerKey: "manual:request-1", DefinitionVersion: 1,
+		RequestedAt:   time.Date(2026, 10, 7, 9, 30, 0, 0, time.UTC),
+		DispatchState: ScheduleRunPending, PayloadJSON: `{"content":"review"}`,
+	}
+	created, err := provider.ScheduleRuns().Create(t.Context(), run)
+	if err != nil || !created {
+		t.Fatalf("Create() = %v, %v, want true, nil", created, err)
+	}
+	got, found, err := provider.ScheduleRuns().GetByTriggerKey(t.Context(), run.ScheduleID, run.TriggerKey)
+	if err != nil || !found || got.RunID != run.RunID || got.Version != 1 {
+		t.Fatalf("GetByTriggerKey() = %+v, %v, %v", got, found, err)
+	}
+	got.DispatchState = ScheduleRunDispatched
+	got.ExecutionJobID = "execution-1"
+	updated, err := provider.ScheduleRuns().Update(t.Context(), got, got.Version)
+	if err != nil || !updated {
+		t.Fatalf("Update() = %v, %v, want true, nil", updated, err)
+	}
+	got, found, err = provider.ScheduleRuns().GetByID(t.Context(), run.RunID)
+	if err != nil || !found || got.Version != 2 || got.ExecutionJobID != "execution-1" {
+		t.Fatalf("GetByID() = %+v, %v, %v", got, found, err)
+	}
+	history, err := provider.ScheduleRuns().ListBySchedule(t.Context(), run.ScheduleID, time.Time{}, "", 50)
+	if err != nil || len(history) != 1 || history[0].RunID != run.RunID {
+		t.Fatalf("ListBySchedule() = %+v, %v", history, err)
 	}
 }
 

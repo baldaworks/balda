@@ -23,6 +23,7 @@ var requiredBaldaStateTables = []string{
 	"balda_runtime_sessions",
 	"balda_runtime_events",
 	"balda_scheduled_jobs",
+	"balda_schedule_runs",
 	"execution_jobs",
 	"execution_job_events",
 	"execution_job_event_outbox",

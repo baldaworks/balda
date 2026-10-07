@@ -33,6 +33,7 @@ type Runtime struct {
 	done              chan struct{}
 	serveErr          error
 	mcp               MCPOperations
+	schedules         SchedulesOperations
 	mcpAuthorizations MCPAuthorizations
 	invitations       BindingInvitations
 	bindingChannels   BindingChannels
@@ -114,6 +115,7 @@ func (r *Runtime) Start(ctx context.Context) error {
 		return fmt.Errorf("construct Backoffice HTTP application: %w", err)
 	}
 	httpApplication.mcp = r.mcp
+	httpApplication.schedules = r.schedules
 	httpApplication.mcpAuthorizations = r.mcpAuthorizations
 	httpApplication.invitations = r.invitations
 	httpApplication.bindingChannels = r.bindingChannels

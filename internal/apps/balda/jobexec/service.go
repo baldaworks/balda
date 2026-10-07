@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/baldaworks/go-actorlayer"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 )
 
 type Service struct {
@@ -98,29 +98,44 @@ func (s *Service) StartScheduledJob(ctx context.Context, env actorlayer.Envelope
 	if content == "" {
 		return actorlayer.PolicyError(fmt.Errorf("scheduled job content is required"))
 	}
+	markRunning := true
 	if s.tasks != nil {
-		if _, ok, err := s.tasks.Get(ctx, jobID); err != nil {
+		if existing, ok, err := s.tasks.Get(ctx, jobID); err != nil {
 			return actorlayer.TransientError(err)
 		} else if ok {
-			return nil
-		}
-		created, err := s.tasks.Create(ctx, baldastate.JobRecord{
-			ID:            jobID,
-			SessionID:     strings.TrimSpace(payload.Locator.SessionID),
-			ParentJobID:   strings.TrimSpace(payload.ParentJobID),
-			Title:         "Scheduled job: " + strings.TrimSpace(payload.JobID),
-			Objective:     content,
-			Status:        baldastate.JobStatusCreated,
-			OwnerActor:    baldaexecution.ActorTypeJob + ":" + jobID,
-			AssignedActor: baldaexecution.ActorTypeSession + ":" + payload.Locator.SessionID,
-			Priority:      50,
-			CreatedBy:     strings.TrimSpace(payload.UserID),
-		}, "job.actor", payload)
-		if err != nil {
-			return actorlayer.TransientError(err)
-		}
-		if !created {
-			return nil
+			if terminalScheduledExecution(existing.Status) {
+				return nil
+			}
+			markRunning = existing.Status == baldastate.JobStatusCreated || existing.Status == baldastate.JobStatusQueued
+		} else {
+			created, err := s.tasks.Create(ctx, baldastate.JobRecord{
+				ID:            jobID,
+				SessionID:     strings.TrimSpace(payload.Locator.SessionID),
+				ParentJobID:   strings.TrimSpace(payload.ParentJobID),
+				Title:         "Scheduled job: " + strings.TrimSpace(payload.JobID),
+				Objective:     content,
+				Status:        baldastate.JobStatusCreated,
+				OwnerActor:    baldaexecution.ActorTypeJob + ":" + jobID,
+				AssignedActor: baldaexecution.ActorTypeSession + ":" + payload.Locator.SessionID,
+				Priority:      50,
+				CreatedBy:     strings.TrimSpace(payload.UserID),
+			}, "job.actor", payload)
+			if err != nil {
+				return actorlayer.TransientError(err)
+			}
+			if !created {
+				existing, found, err := s.tasks.Get(ctx, jobID)
+				if err != nil {
+					return actorlayer.TransientError(fmt.Errorf("load concurrent scheduled execution: %w", err))
+				}
+				if !found {
+					return actorlayer.TransientError(fmt.Errorf("concurrent scheduled execution is unavailable"))
+				}
+				if terminalScheduledExecution(existing.Status) {
+					return nil
+				}
+				markRunning = existing.Status == baldastate.JobStatusCreated || existing.Status == baldastate.JobStatusQueued
+			}
 		}
 	}
 	sessionPayload := turncmd.SessionTurnPayload{
@@ -149,12 +164,22 @@ func (s *Service) StartScheduledJob(ctx context.Context, env actorlayer.Envelope
 	if _, err := s.dispatcher.Dispatch(ctx, sessionEnv); err != nil {
 		return actorlayer.TransientError(err)
 	}
-	if s.tasks != nil {
+	if s.tasks != nil && markRunning {
 		if err := s.tasks.MarkStatus(ctx, jobID, baldastate.JobStatusRunning, "job.actor", env.ID, "", nil); err != nil {
 			return actorlayer.TransientError(err)
 		}
 	}
 	return nil
+}
+
+func terminalScheduledExecution(status string) bool {
+	switch status {
+	case baldastate.JobStatusCompleted, baldastate.JobStatusFailed,
+		baldastate.JobStatusCanceled, baldastate.JobStatusDeadLettered:
+		return true
+	default:
+		return false
+	}
 }
 
 func firstNonEmpty(values ...string) string {

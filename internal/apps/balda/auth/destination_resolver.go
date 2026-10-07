@@ -31,11 +31,11 @@ func NewDestinationResolverWithSessions(destStore *DestinationStore, sessions Se
 // ResolveSession returns the canonical locator for an active session.
 func (r *DestinationResolver) ResolveSession(ctx context.Context, sessionID string) (envelopetarget.Resolved, error) {
 	if r.sessions == nil {
-		return envelopetarget.Resolved{}, fmt.Errorf("session store is unavailable")
+		return envelopetarget.Resolved{}, fmt.Errorf("%w: session store is unavailable", envelopetarget.ErrResolutionUnavailable)
 	}
 	resolved, found, err := r.sessions(ctx, sessionID)
 	if err != nil {
-		return envelopetarget.Resolved{}, fmt.Errorf("read session %q: %w", sessionID, err)
+		return envelopetarget.Resolved{}, fmt.Errorf("%w: read session %q: %w", envelopetarget.ErrResolutionUnavailable, sessionID, err)
 	}
 	if !found {
 		return envelopetarget.Resolved{}, fmt.Errorf("%w: active session %q not found", envelopetarget.ErrSessionUnavailable, sessionID)
@@ -58,7 +58,7 @@ func (r *DestinationResolver) ResolveAlias(ctx context.Context, alias string) (e
 	if r.destStore != nil {
 		candidates, err := r.destStore.GetDestinationsByRole(ctx, role)
 		if err != nil {
-			return envelopetarget.Resolved{}, fmt.Errorf("lookup destinations for role %q: %w", role, err)
+			return envelopetarget.Resolved{}, fmt.Errorf("%w: lookup destinations for role %q: %w", envelopetarget.ErrResolutionUnavailable, role, err)
 		}
 
 		if channelFilter != "" {

@@ -32,6 +32,7 @@ type httpApp struct {
 	invitations       BindingInvitations
 	bindingChannels   BindingChannels
 	mcp               MCPOperations
+	schedules         SchedulesOperations
 	mcpAuthorizations MCPAuthorizations
 	qa                bool
 	basePath          string
@@ -104,6 +105,14 @@ func (a *httpApp) handler() (http.Handler, error) {
 	mux.HandleFunc("POST "+a.path("/mcp/connections/{connection_id}"), a.mcpUpdate)
 	mux.HandleFunc("POST "+a.path("/mcp/connections/{connection_id}/selection"), a.mcpSelection)
 	mux.HandleFunc("POST "+a.path("/mcp/connections/{connection_id}/delete"), a.mcpDelete)
+	for _, route := range []string{"/schedules", "/schedules/{schedule_id}"} {
+		mux.Handle("GET "+a.path(route), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.schedulesPage))))
+	}
+	mux.HandleFunc("POST "+a.path("/schedules"), a.scheduleCreate)
+	mux.HandleFunc("POST "+a.path("/schedules/{schedule_id}"), a.scheduleUpdate)
+	mux.HandleFunc("POST "+a.path("/schedules/{schedule_id}/selection"), a.scheduleSelection)
+	mux.HandleFunc("POST "+a.path("/schedules/{schedule_id}/delete"), a.scheduleDelete)
+	mux.HandleFunc("POST "+a.path("/schedules/{schedule_id}/runs"), a.scheduleRunNow)
 	a.mcpAuthorizationRoutes(mux)
 	mux.Handle("GET "+a.path("/audit"), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.audit))))
 	mux.Handle("GET "+a.path("/access"), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.accessList))))

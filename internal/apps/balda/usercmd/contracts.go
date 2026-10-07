@@ -115,11 +115,12 @@ const (
 
 // BackofficeCapabilities is the server-authoritative navigation and action set.
 type BackofficeCapabilities struct {
-	Overview    bool
-	Account     bool
-	ManageMCP   bool
-	ManageUsers bool
-	ViewAudit   bool
+	Overview        bool
+	Account         bool
+	ManageMCP       bool
+	ManageSchedules bool
+	ManageUsers     bool
+	ViewAudit       bool
 }
 
 // BindingClaim scopes one transport verification to one user and channel.
@@ -269,6 +270,10 @@ const (
 	AuditActionMCPAuthorizationChanged AuditAction = "mcp.authorization.changed"
 	// AuditActionMCPCredentialsRenewed records a durable background renewal.
 	AuditActionMCPCredentialsRenewed AuditAction = "mcp.credentials.renewed"
+	// AuditActionScheduleDefinitionChanged records a managed schedule change.
+	AuditActionScheduleDefinitionChanged AuditAction = "schedule.definition.changed"
+	// AuditActionScheduleRunRequested records an administrator manual run.
+	AuditActionScheduleRunRequested AuditAction = "schedule.run.requested"
 )
 
 // Valid reports whether the action belongs to the bounded security audit vocabulary.
@@ -278,7 +283,7 @@ func (a AuditAction) Valid() bool {
 		AuditActionUserRoleChanged, AuditActionUserStatusChanged, AuditActionCredentialChanged,
 		AuditActionSessionRevoked, AuditActionBindingAttached, AuditActionBindingDetached, AuditActionBindingClaimCreated,
 		AuditActionUserMigrated, AuditActionLoginSucceeded, AuditActionRefreshSucceeded,
-		AuditActionRefreshReplay, AuditActionMFAEnabled, AuditActionMFAReplaced, AuditActionMFADisabled, AuditActionMFARecovered, AuditActionMFAVerified, AuditActionLogout, AuditActionInvitationIssued, AuditActionInvitationRevoked, AuditActionMCPDefinitionChanged, AuditActionMCPAuthorizationChanged, AuditActionMCPCredentialsRenewed:
+		AuditActionRefreshReplay, AuditActionMFAEnabled, AuditActionMFAReplaced, AuditActionMFADisabled, AuditActionMFARecovered, AuditActionMFAVerified, AuditActionLogout, AuditActionInvitationIssued, AuditActionInvitationRevoked, AuditActionMCPDefinitionChanged, AuditActionMCPAuthorizationChanged, AuditActionMCPCredentialsRenewed, AuditActionScheduleDefinitionChanged, AuditActionScheduleRunRequested:
 		return true
 	default:
 		return false
@@ -316,12 +321,14 @@ const (
 	AuditTargetMigration AuditTargetType = "migration"
 	// AuditTargetMCP identifies a worker MCP connection without credential material.
 	AuditTargetMCP AuditTargetType = "mcp"
+	// AuditTargetSchedule identifies a recurring schedule without content.
+	AuditTargetSchedule AuditTargetType = "schedule"
 )
 
 // Valid reports whether the audit target type is supported.
 func (t AuditTargetType) Valid() bool {
 	switch t {
-	case AuditTargetUser, AuditTargetSession, AuditTargetBinding, AuditTargetSystem, AuditTargetMigration, AuditTargetMCP:
+	case AuditTargetUser, AuditTargetSession, AuditTargetBinding, AuditTargetSystem, AuditTargetMigration, AuditTargetMCP, AuditTargetSchedule:
 		return true
 	default:
 		return false

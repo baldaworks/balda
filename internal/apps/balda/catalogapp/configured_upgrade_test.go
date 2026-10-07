@@ -33,6 +33,7 @@ import (
 	"github.com/normahq/runtime/v2/agentfactory"
 	runtimeconfig "github.com/normahq/runtime/v2/appconfig"
 	"github.com/normahq/runtime/v2/mcpregistry"
+	"github.com/pressly/goose/v3"
 	"github.com/rs/zerolog"
 	adkagent "google.golang.org/adk/v2/agent"
 	adksession "google.golang.org/adk/v2/session"
@@ -429,8 +430,8 @@ func persistUpgradeSnapshot(t *testing.T, p state.Provider, snapshot runtimecata
 	}
 }
 
-// Seed persisted records before the new SQL migration by restoring the prior
-// Goose version. The logical pre-upgrade schema matches the current schema.
+// Restore the pre-upgrade schema and Goose version using the SQL migrations.
+// Removing only the version markers would replay later schema changes twice.
 func prepareConfiguredUpgradeVersion(t *testing.T, path string) {
 	t.Helper()
 	db, err := sql.Open("sqlite", path)
@@ -438,7 +439,11 @@ func prepareConfiguredUpgradeVersion(t *testing.T, path string) {
 		t.Fatal(err)
 	}
 	defer func() { _ = db.Close() }()
-	if _, err := db.ExecContext(t.Context(), "DELETE FROM goose_db_version WHERE version_id >= 50"); err != nil {
+	provider, err := goose.NewProvider(goose.DialectSQLite3, db, os.DirFS("../state/migrations"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.DownTo(t.Context(), 49); err != nil {
 		t.Fatal(err)
 	}
 }

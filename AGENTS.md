@@ -154,7 +154,7 @@ Use this checklist before merging any architecture-affecting change.
 
 ## Scheduling
 
-Recurring scheduling is config-managed via `balda.scheduler.jobs`. It is not a chat command surface.
+Recurring scheduling is owned either by `balda.scheduler.jobs` or Backoffice-managed definitions. It is not a chat command surface.
 
 ## Documentation
 

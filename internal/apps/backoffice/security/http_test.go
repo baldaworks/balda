@@ -75,6 +75,11 @@ func TestBrowserBasePathScopesCookiesAndReturnPaths(t *testing.T) {
 	if got := browser.SafeReturnPath("/access", "/balda/overview"); got != "/balda/overview" {
 		t.Errorf("unprefixed return path = %q", got)
 	}
+	for _, path := range []string{"/balda/schedules", "/balda/schedules?new=1", "/balda/schedules/daily"} {
+		if got := browser.SafeReturnPath(path, "/balda/overview"); got != path {
+			t.Errorf("schedule return path %q = %q", path, got)
+		}
+	}
 }
 
 func TestBrowserRefreshRotatesCookiesAndNeverReplaysUnsafeRequest(t *testing.T) {
@@ -285,7 +290,7 @@ func TestSafeReturnPathRejectsNonAllowlistedAndAmbiguousPaths(t *testing.T) {
 			t.Errorf("SafeReturnPath(%q) = %q", unsafe, got)
 		}
 	}
-	for _, path := range []string{"/mcp", "/mcp/new", "/mcp/connections/managed?view=state"} {
+	for _, path := range []string{"/mcp", "/mcp/new", "/mcp/connections/managed?view=state", "/schedules", "/schedules?new=1", "/schedules/daily"} {
 		if got := browser.SafeReturnPath(path, "/overview"); got != path {
 			t.Errorf("SafeReturnPath(%q) = %q", path, got)
 		}

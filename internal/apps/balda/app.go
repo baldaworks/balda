@@ -49,6 +49,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/permissions"
 	"github.com/baldaworks/balda/internal/apps/balda/pluginapp"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
+	"github.com/baldaworks/balda/internal/apps/balda/schedulebackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/scheduledjobs"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionapp"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
@@ -384,7 +385,7 @@ func Module(
 				})
 				return provider, nil
 			},
-			func(provider baldastate.Provider, invitations *auth.BindingInvitations, channels *auth.BindingChannels, mcp *mcpbackofficeapp.Operations) (*backoffice.Runtime, error) {
+			func(provider baldastate.Provider, invitations *auth.BindingInvitations, channels *auth.BindingChannels, mcp *mcpbackofficeapp.Operations, schedules *schedulebackofficeapp.Operations) (*backoffice.Runtime, error) {
 				runtime, err := backoffice.NewRuntime(backofficeConfig, provider)
 				if err != nil {
 					return nil, err
@@ -393,6 +394,9 @@ func Module(
 					return nil, err
 				}
 				if err := runtime.ConfigureMCPOperations(mcp); err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigureSchedulesOperations(schedules); err != nil {
 					return nil, err
 				}
 				if err := runtime.ConfigureMCPAuthorizations(mcp); err != nil {
@@ -412,6 +416,16 @@ func Module(
 			func(provider baldastate.Provider) baldastate.ScheduledJobStore {
 				return provider.ScheduledJobs()
 			},
+			func(provider baldastate.Provider) baldastate.ScheduleManagementStore {
+				return provider.ScheduleManagement()
+			},
+			func(provider baldastate.Provider) baldastate.ScheduleRunStore {
+				return provider.ScheduleRuns()
+			},
+			func(provider baldastate.Provider) baldastate.JobLifecycleStore {
+				return provider.Jobs()
+			},
+			schedulebackofficeapp.New,
 			func(provider baldastate.Provider) baldastate.QuestionStore {
 				return provider.Questions()
 			},

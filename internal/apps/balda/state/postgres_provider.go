@@ -18,6 +18,8 @@ type postgresProvider struct {
 	runtimeSession *postgresRuntimeSessionService
 	session        *postgresSessionStore
 	jobs           *postgresScheduledJobStore
+	management     *sqlScheduleManagementStore
+	runs           *sqlScheduleRunStore
 	questions      *postgresQuestionStore
 	runtime        *postgresJobStore
 	ingress        *postgresSessionMemoryIngressOutboxStore
@@ -54,6 +56,8 @@ func initializePostgresProvider(ctx context.Context, db *sql.DB) (Provider, erro
 		runtimeSession: &postgresRuntimeSessionService{db: db},
 		session:        &postgresSessionStore{db: db},
 		jobs:           &postgresScheduledJobStore{db: db},
+		management:     &sqlScheduleManagementStore{users: newPostgresUserStore(db)},
+		runs:           &sqlScheduleRunStore{db: db, bind: postgresBind, postgres: true},
 		questions:      &postgresQuestionStore{db: db},
 		runtime:        &postgresJobStore{db: db},
 		ingress:        &postgresSessionMemoryIngressOutboxStore{db: db},
@@ -171,6 +175,14 @@ func (p *postgresProvider) Sessions() SessionStore {
 
 func (p *postgresProvider) ScheduledJobs() ScheduledJobStore {
 	return p.jobs
+}
+
+func (p *postgresProvider) ScheduleManagement() ScheduleManagementStore {
+	return p.management
+}
+
+func (p *postgresProvider) ScheduleRuns() ScheduleRunStore {
+	return p.runs
 }
 
 func (p *postgresProvider) Questions() QuestionStore {

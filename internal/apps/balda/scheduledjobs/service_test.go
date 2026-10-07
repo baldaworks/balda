@@ -10,6 +10,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
+	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/rs/zerolog"
@@ -319,6 +320,44 @@ func TestScheduledJobSchedulerDispatchJob_IdempotentForSameDueSlot(t *testing.T)
 	}
 }
 
+func TestScheduledJobSchedulerDispatchJob_DoesNotUndoConcurrentDisable(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := newSchedulerJobStore(t)
+	locator := baldatelegram.NewLocator(9001, 99)
+	now := time.Date(2026, time.May, 14, 13, 0, 0, 0, time.UTC)
+	record := baldastate.ScheduledJobRecord{
+		JobID: "task-disable", Source: baldastate.ScheduledJobSourceManaged,
+		Enabled: true, DefinitionVersion: 1, SessionID: locator.SessionID,
+		ChannelType: locator.ChannelType, AddressKey: locator.AddressKey,
+		AddressJSON: locator.AddressJSON, Content: "old", ScheduleSpec: "@every 5s",
+		Status: baldastate.ScheduledJobStatusActive, NextRunAt: now.Add(-time.Second),
+	}
+	if err := store.Upsert(ctx, record); err != nil {
+		t.Fatal(err)
+	}
+	bus := &recordingHandlerCommandBus{onDispatch: func() {
+		updated, found, err := store.GetByID(ctx, record.JobID)
+		if err != nil || !found {
+			t.Fatalf("GetByID() = %v, %v", found, err)
+		}
+		updated.Enabled = false
+		updated.Content = "edited"
+		updated.DefinitionVersion++
+		if err := store.Upsert(ctx, updated); err != nil {
+			t.Fatal(err)
+		}
+	}}
+	scheduler := newSchedulerForTest(t, store, bus, now)
+	if err := scheduler.dispatchJob(ctx, record, now); err != nil {
+		t.Fatal(err)
+	}
+	got, found, err := store.GetByID(ctx, record.JobID)
+	if err != nil || !found || got.Enabled || got.Content != "edited" || got.DefinitionVersion != 2 || got.LastDispatchKey != "" {
+		t.Fatalf("concurrent edit overwritten: %+v, %v, %v", got, found, err)
+	}
+}
+
 func TestScheduledJobSchedulerMarkFailure_RetryThenPause(t *testing.T) {
 	t.Parallel()
 
@@ -483,12 +522,12 @@ func TestScheduledJobSchedulerReconcileConfiguredTasks_UpsertsAndDeletes(t *test
 				{
 					ID:      "managed-task",
 					Cron:    "@every 2s",
-					Target:  "alias",
-					Key:     "owner",
+					Target:  envelopetarget.TargetAlias,
+					Key:     envelopetarget.AliasOwner,
 					Content: "review queue",
 					ReportTo: &ConfiguredScheduledJobTarget{
-						Target: "alias",
-						Key:    "owner",
+						Target: envelopetarget.TargetAlias,
+						Key:    envelopetarget.AliasOwner,
 					},
 				},
 			},
@@ -534,6 +573,97 @@ func TestScheduledJobSchedulerReconcileConfiguredTasks_UpsertsAndDeletes(t *test
 	}
 	if orphanedExists {
 		t.Fatal("orphaned task still exists after reconcile")
+	}
+}
+
+func TestScheduledJobSchedulerReconcilePreservesManagedAndArchivesRemovedConfig(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := newSchedulerJobStore(t)
+	now := time.Date(2026, time.May, 14, 16, 0, 0, 0, time.UTC)
+	locator := baldatelegram.NewLocator(9001, 222)
+	for _, item := range []struct{ id, source string }{
+		{"ui-task", baldastate.ScheduledJobSourceManaged},
+		{"old-config", baldastate.ScheduledJobSourceConfig},
+	} {
+		if err := store.Upsert(ctx, baldastate.ScheduledJobRecord{
+			JobID: item.id, Source: item.source, Enabled: true, DefinitionVersion: 1,
+			SessionID: locator.SessionID, ChannelType: locator.ChannelType,
+			AddressKey: locator.AddressKey, AddressJSON: locator.AddressJSON,
+			Content: "review", ScheduleSpec: "0 9 * * *", Status: baldastate.ScheduledJobStatusActive,
+			NextRunAt: now.Add(time.Hour),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	scheduler := &ScheduledJobScheduler{jobStore: store, logger: zerolog.Nop(), now: func() time.Time { return now }}
+	if err := scheduler.reconcileConfiguredJobs(ctx); err != nil {
+		t.Fatal(err)
+	}
+	managed, found, err := store.GetByID(ctx, "ui-task")
+	if err != nil || !found || managed.Deleted || managed.Source != baldastate.ScheduledJobSourceManaged {
+		t.Fatalf("managed = %+v, %v, %v", managed, found, err)
+	}
+	removed, found, err := store.GetByID(ctx, "old-config")
+	if err != nil || !found || !removed.Deleted || removed.Source != baldastate.ScheduledJobSourceConfig {
+		t.Fatalf("removed config = %+v, %v, %v", removed, found, err)
+	}
+}
+
+func TestScheduledJobSchedulerReconcileRejectsManagedIDCollision(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := newSchedulerJobStore(t)
+	now := time.Date(2026, time.May, 14, 16, 0, 0, 0, time.UTC)
+	locator := baldatelegram.NewLocator(9001, 222)
+	if err := store.Upsert(ctx, baldastate.ScheduledJobRecord{
+		JobID: "same", Source: baldastate.ScheduledJobSourceManaged, Enabled: true,
+		SessionID: locator.SessionID, ChannelType: locator.ChannelType,
+		AddressKey: locator.AddressKey, AddressJSON: locator.AddressJSON,
+		Content: "ui content", ScheduleSpec: "0 9 * * *", NextRunAt: now.Add(time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	scheduler := &ScheduledJobScheduler{jobStore: store, owner: newOwnerStoreForTest(t, 101, 9001), logger: zerolog.Nop(), now: func() time.Time { return now }, config: ScheduledJobSchedulerConfig{Jobs: []ConfiguredScheduledJob{{ID: "same", Cron: "0 9 * * *", Target: envelopetarget.TargetAlias, Key: envelopetarget.AliasOwner, Content: "config content"}}}}
+	if err := scheduler.reconcileConfiguredJobs(ctx); err == nil || !strings.Contains(err.Error(), "collision") {
+		t.Fatalf("reconcile = %v, want collision", err)
+	}
+	got, _, err := store.GetByID(ctx, "same")
+	if err != nil || got.Content != "ui content" {
+		t.Fatalf("managed row changed: %+v, %v", got, err)
+	}
+}
+
+func TestScheduledJobSchedulerReconcilePreservesMigratedRuntimeForSameTarget(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := newSchedulerJobStore(t)
+	now := time.Date(2026, time.May, 14, 16, 0, 0, 0, time.UTC)
+	owner := newOwnerStoreForTest(t, 101, 9001)
+	locator := baldatelegram.NewLocator(9001, 0)
+	previous := baldastate.ScheduledJobRecord{
+		JobID: "configured", Source: baldastate.ScheduledJobSourceConfig,
+		Enabled: true, DefinitionVersion: 1, TargetKind: "locator", TargetKey: "telegram:9001:0",
+		SessionID: locator.SessionID, ChannelType: locator.ChannelType,
+		AddressKey: locator.AddressKey, AddressJSON: locator.AddressJSON,
+		Content: "review", ScheduleSpec: "0 9 * * *", Status: baldastate.ScheduledJobStatusPaused,
+		RetryCount: 2, LastDispatchKey: "configured@old", NextRunAt: now.Add(time.Hour),
+	}
+	if err := store.Upsert(ctx, previous); err != nil {
+		t.Fatal(err)
+	}
+	scheduler := &ScheduledJobScheduler{jobStore: store, owner: owner, logger: zerolog.Nop(),
+		now: func() time.Time { return now }, config: ScheduledJobSchedulerConfig{Jobs: []ConfiguredScheduledJob{{
+			ID: "configured", Cron: "0 9 * * *", Target: envelopetarget.TargetAlias, Key: envelopetarget.AliasOwner, Content: "review",
+		}}}}
+	if err := scheduler.reconcileConfiguredJobs(ctx); err != nil {
+		t.Fatal(err)
+	}
+	got, found, err := store.GetByID(ctx, "configured")
+	if err != nil || !found || got.DefinitionVersion != 1 || got.Status != baldastate.ScheduledJobStatusPaused ||
+		got.RetryCount != 2 || got.LastDispatchKey != "configured@old" || !got.NextRunAt.Equal(previous.NextRunAt) ||
+		got.TargetKind != envelopetarget.TargetAlias || got.TargetKey != envelopetarget.AliasOwner {
+		t.Fatalf("migrated config reset = %+v, %v, %v", got, found, err)
 	}
 }
 
@@ -596,10 +726,10 @@ func TestNormalizeScheduledJobSchedulerConfig_TrimsEnvelope(t *testing.T) {
 		t.Fatalf("tasks = %d, want 1", len(got.Jobs))
 	}
 	task := got.Jobs[0]
-	if task.ID != "task-1" || task.Target != "alias" || task.Key != "owner" || task.Content != "check" {
+	if task.ID != "task-1" || task.Target != envelopetarget.TargetAlias || task.Key != envelopetarget.AliasOwner || task.Content != "check" {
 		t.Fatalf("task = %+v, want trimmed envelope", task)
 	}
-	if task.ReportTo == nil || task.ReportTo.Target != "alias" || task.ReportTo.Key != "owner" {
+	if task.ReportTo == nil || task.ReportTo.Target != envelopetarget.TargetAlias || task.ReportTo.Key != envelopetarget.AliasOwner {
 		t.Fatalf("report_to = %+v, want trimmed alias/owner", task.ReportTo)
 	}
 }

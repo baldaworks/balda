@@ -66,11 +66,12 @@ func BackofficeCapabilities(user usercmd.User) usercmd.BackofficeCapabilities {
 	switch user.Role {
 	case usercmd.RoleAdministrator:
 		return usercmd.BackofficeCapabilities{
-			Overview:    true,
-			Account:     true,
-			ManageUsers: true,
-			ManageMCP:   true,
-			ViewAudit:   true,
+			Overview:        true,
+			Account:         true,
+			ManageUsers:     true,
+			ManageMCP:       true,
+			ManageSchedules: true,
+			ViewAudit:       true,
 		}
 	case usercmd.RoleOperator:
 		return usercmd.BackofficeCapabilities{Overview: true, Account: true}

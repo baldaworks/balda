@@ -56,14 +56,8 @@ func (c sessionSettlementCoordinator) settle(ctx context.Context, env actorlayer
 
 func (c sessionSettlementCoordinator) record(ctx context.Context, env actorlayer.Envelope, payload SessionTurnPayload, runErr error) error {
 	if c.scheduler != nil && strings.TrimSpace(payload.ScheduledJobID) != "" {
-		if runErr == nil {
-			if err := c.scheduler.MarkSuccess(ctx, payload.ScheduledJobID); err != nil {
-				return fmt.Errorf("mark scheduled job %q success: %w", payload.ScheduledJobID, err)
-			}
-		} else {
-			if err := c.scheduler.RecordExecutionFailure(ctx, payload.ScheduledJobID, runErr); err != nil {
-				return fmt.Errorf("record scheduled job %q failure: %w", payload.ScheduledJobID, err)
-			}
+		if err := c.scheduler.RecordExecution(ctx, payload.ScheduledJobID, payload.DedupeKey, runErr); err != nil {
+			return fmt.Errorf("record scheduled job %q completion: %w", payload.ScheduledJobID, err)
 		}
 	}
 	if c.tasks == nil || !sessionTurnUsesJobLifecycle(env, payload) {

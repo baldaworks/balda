@@ -13,6 +13,9 @@ import (
 // ErrSessionUnavailable means a session ID has no active destination.
 var ErrSessionUnavailable = errors.New("session destination unavailable")
 
+// ErrResolutionUnavailable means the destination backend could not be read.
+var ErrResolutionUnavailable = errors.New("destination resolution unavailable")
+
 const (
 	TargetAlias   = "alias"
 	AliasOwner    = "owner"
@@ -65,7 +68,7 @@ func Resolve(
 	switch targetKind {
 	case TargetAlias:
 		if resolver == nil {
-			return Resolved{}, fmt.Errorf("destination resolver is required")
+			return Resolved{}, fmt.Errorf("%w: destination resolver is required", ErrResolutionUnavailable)
 		}
 		return resolver.ResolveAlias(ctx, key)
 	case TargetLocator:
@@ -77,7 +80,7 @@ func Resolve(
 	case TargetSession:
 		sessionResolver, ok := resolver.(SessionDestinationResolver)
 		if !ok {
-			return Resolved{}, fmt.Errorf("session destination resolver is required")
+			return Resolved{}, fmt.Errorf("%w: session destination resolver is required", ErrResolutionUnavailable)
 		}
 		return sessionResolver.ResolveSession(ctx, key)
 	default:
