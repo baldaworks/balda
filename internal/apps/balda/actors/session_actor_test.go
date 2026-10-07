@@ -15,9 +15,63 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/baldaworks/go-actorlayer"
 	"github.com/rs/zerolog"
 )
+
+type actorScheduleModeFixture struct{ oneShot bool }
+
+func (f actorScheduleModeFixture) IsOneShot(context.Context, string) (bool, error) {
+	return f.oneShot, nil
+}
+
+func TestSessionActorRedirectsOldRecurringTurnBeforeChatQueue(t *testing.T) {
+	ctx := t.Context()
+	_, bus, dispatcher, tasks, _ := newTaskActorRuntimeServices(t, ctx)
+	recipient := baldasession.SessionLocator{SessionID: "tg-9001-0", ChannelType: "telegram",
+		AddressKey: "9001:0", AddressJSON: `{"chat_id":9001,"topic_id":0}`}
+	jobID := "scheduled-daily-old"
+	if created, err := tasks.Create(ctx, baldastate.JobRecord{ID: jobID, SessionID: recipient.SessionID,
+		Objective: "review", Status: baldastate.JobStatusRunning, AssignedActor: "session:" + recipient.SessionID},
+		"job.actor", map[string]any{"source": "old-wire"}); err != nil || !created {
+		t.Fatalf("create pre-upgrade job = %t, %v", created, err)
+	}
+	env, err := turncmd.SessionTurnEnvelope(turncmd.SessionTurnPayload{
+		JobID: jobID, ScheduledJobID: "daily", Source: turncmd.SourceSchedule,
+		Locator: recipient, UserID: "tg-101", Text: "review", Deliver: false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	actor := NewSessionActor(SessionActorConfig{Dispatcher: dispatcher, Tasks: tasks, Modes: actorScheduleModeFixture{}})
+	if err := actor.enqueueTurn(t.Context(), env); err != nil {
+		t.Fatal(err)
+	}
+	if len(bus.commands) != 1 {
+		t.Fatalf("redirected commands = %d", len(bus.commands))
+	}
+	privateID := turncmd.ScheduledExecutionSessionID(jobID)
+	if bus.commands[0].To.Key != privateID {
+		t.Fatalf("redirect destination = %+v", bus.commands[0].To)
+	}
+	var redirected turncmd.SessionTurnPayload
+	if err := actorlayer.UnmarshalPayload(bus.commands[0].Payload, &redirected); err != nil {
+		t.Fatal(err)
+	}
+	if redirected.Locator.SessionID != privateID || redirected.ReportTo != nil || redirected.Deliver ||
+		redirected.ScheduleOneShot == nil || *redirected.ScheduleOneShot {
+		t.Fatalf("redirected turn = %+v", redirected)
+	}
+	job, found, err := tasks.Get(ctx, jobID)
+	if err != nil || !found || job.SessionID != privateID || job.AssignedActor != "session:"+privateID {
+		t.Fatalf("pre-upgrade job still scoped to chat: %+v, %t, %v", job, found, err)
+	}
+	canceled, err := tasks.CancelBySession(ctx, recipient.SessionID, "control.actor", "chat canceled")
+	if err != nil || len(canceled) != 0 {
+		t.Fatalf("chat cancel affected schedule: %v, %v", canceled, err)
+	}
+}
 
 func TestNewSessionActorWiresRuntimeStateUpdater(t *testing.T) {
 	t.Parallel()

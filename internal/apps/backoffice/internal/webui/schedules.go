@@ -15,27 +15,36 @@ type SchedulesView struct {
 
 // ScheduleRow is a content-free inventory projection.
 type ScheduleRow struct {
-	ID, DetailPath, Source, Cron, Target, ReportTo, Status, NextRun, LastRun string
-	Enabled, ReadOnly, Deleted                                               bool
-	Version                                                                  uint64
+	ID, DetailPath, Source, Cron, Locator, Status, NextRun, LastRun string
+	Enabled, ReadOnly, Deleted                                      bool
+	Version                                                         uint64
 }
 
 // ScheduleEditor contains the guarded definition detail for one schedule.
 type ScheduleEditor struct {
 	Row                            ScheduleRow
 	New                            bool
-	ID, Cron, Content              string
-	TargetKind, TargetKey          string
-	ReportToKind, ReportToKey      string
+	ID, Cron, Content, Locator     string
 	Action                         string
 	RunRequestKey, NextHistoryPath string
 	Runs                           []ScheduleRunView
+	RunDetail                      *ScheduleRunDetailView
 	HistoryLoaded                  bool
 }
 
 // ScheduleRunView contains bounded, content-free execution status.
 type ScheduleRunView struct {
-	Trigger, State, Requested, Due, Completed, Failure string
+	Trigger, State, Requested, Due, Completed, Failure, DetailPath string
+}
+
+// ScheduleRunDetailView carries only one run's input and confirmed output.
+type ScheduleRunDetailView struct {
+	Input, Output, State string
+}
+
+func ProjectScheduleRunDetail(detail schedulecmd.RunDetail) *ScheduleRunDetailView {
+	return &ScheduleRunDetailView{Input: detail.Input, Output: detail.Output,
+		State: ProjectScheduleRun(detail.Run).State}
 }
 
 // ProjectScheduleRun maps durable execution state to safe operator labels.
@@ -61,6 +70,8 @@ func ProjectScheduleRun(run schedulecmd.RunItem) ScheduleRunView {
 		view.State = "Waiting for execution"
 	case "running":
 		view.State = "Running"
+	case "report_pending":
+		view.State = "Delivering report"
 	case "succeeded":
 		view.State = "Succeeded"
 	case "failed":
@@ -77,6 +88,8 @@ func ProjectScheduleRun(run schedulecmd.RunItem) ScheduleRunView {
 			view.Failure = "Schedule selection changed before execution."
 		case "execution_failed":
 			view.Failure = "Execution failed."
+		case "delivery_failed":
+			view.Failure = "Report delivery failed."
 		}
 	}
 	return view
@@ -86,14 +99,14 @@ func ProjectScheduleRun(run schedulecmd.RunItem) ScheduleRunView {
 func ProjectScheduleRow(item schedulecmd.Item) ScheduleRow {
 	d := item.Definition
 	row := ScheduleRow{ID: d.ID, DetailPath: "/schedules/" + url.PathEscape(d.ID), Cron: d.Cron,
-		Target: scheduleTarget(d.Target), Status: item.Status, NextRun: scheduleTime(item.NextRunAt),
+		Locator: d.Locator, Status: item.Status, NextRun: scheduleTime(item.NextRunAt),
 		LastRun: scheduleTime(item.LastRunAt), Enabled: item.Enabled, Deleted: item.Deleted,
 		ReadOnly: item.Source != "managed", Version: item.Version, Source: "Backoffice"}
 	if row.ReadOnly {
 		row.Source = "Configuration"
 	}
-	if d.ReportTo != nil {
-		row.ReportTo = scheduleTarget(*d.ReportTo)
+	if row.Locator == "" {
+		row.Locator = "None"
 	}
 	return row
 }
@@ -102,25 +115,13 @@ func ProjectScheduleRow(item schedulecmd.Item) ScheduleRow {
 func ProjectScheduleEditor(item schedulecmd.Item, create bool) *ScheduleEditor {
 	d := item.Definition
 	e := &ScheduleEditor{Row: ProjectScheduleRow(item), New: create, ID: d.ID, Cron: d.Cron,
-		Content: d.Content, TargetKind: d.Target.Kind, TargetKey: d.Target.Key,
+		Content: d.Content, Locator: d.Locator,
 		Action: "/schedules/" + url.PathEscape(d.ID)}
-	if d.ReportTo != nil {
-		e.ReportToKind, e.ReportToKey = d.ReportTo.Kind, d.ReportTo.Key
-	}
 	if create {
 		e.Action = "/schedules"
 		e.Row.ReadOnly = false
-		e.TargetKind = "alias"
-		e.TargetKey = "owner"
 	}
 	return e
-}
-
-func scheduleTarget(target schedulecmd.Target) string {
-	if target.Kind == "" {
-		return ""
-	}
-	return target.Kind + ": " + target.Key
 }
 
 func scheduleTime(at time.Time) string {

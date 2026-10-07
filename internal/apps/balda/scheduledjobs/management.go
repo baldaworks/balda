@@ -3,16 +3,25 @@ package scheduledjobs
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
+	"github.com/baldaworks/balda/internal/apps/balda/locatorref"
 	"github.com/baldaworks/balda/internal/apps/balda/schedulecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/google/uuid"
+)
+
+const (
+	runStateSucceeded   = "succeeded"
+	runStateFailed      = "failed"
+	runStateCanceled    = "canceled"
+	runFailureExecution = "execution_failed"
 )
 
 var managedScheduleID = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
@@ -24,16 +33,15 @@ type Management struct {
 	store         state.ScheduleManagementStore
 	runs          state.ScheduleRunStore
 	executionJobs state.JobLifecycleStore
-	resolver      envelopetarget.DestinationResolver
+	deliveries    state.DeliveryStore
 	now           func() time.Time
 }
 
 // NewManagement composes the schedule policy with its persistence ports.
 func NewManagement(jobs state.ScheduledJobStore, store state.ScheduleManagementStore,
-	runs state.ScheduleRunStore, executionJobs state.JobLifecycleStore,
-	resolver envelopetarget.DestinationResolver) *Management {
+	runs state.ScheduleRunStore, executionJobs state.JobLifecycleStore, deliveries state.DeliveryStore) *Management {
 	return &Management{jobs: jobs, store: store, runs: runs, executionJobs: executionJobs,
-		resolver: resolver, now: time.Now}
+		deliveries: deliveries, now: time.Now}
 }
 
 // RunNow admits one manual execution, including for a disabled schedule when confirmed.
@@ -108,6 +116,57 @@ func (m *Management) History(ctx context.Context, id string, beforeAt time.Time,
 	return items, nil
 }
 
+// RunDetail returns one run's frozen instruction and provider result.
+func (m *Management) RunDetail(ctx context.Context, scheduleID, runID string,
+	authority schedulecmd.Authority) (schedulecmd.RunDetail, error) {
+	if err := m.store.CheckAuthority(ctx, authority); err != nil {
+		return schedulecmd.RunDetail{}, err
+	}
+	if _, err := m.get(ctx, scheduleID); err != nil {
+		return schedulecmd.RunDetail{}, err
+	}
+	run, found, err := m.runs.GetByID(ctx, runID)
+	if err != nil {
+		return schedulecmd.RunDetail{}, schedulecmd.ErrUnavailable
+	}
+	if !found || run.ScheduleID != scheduleID {
+		return schedulecmd.RunDetail{}, schedulecmd.ErrNotFound
+	}
+	item, err := m.projectRun(ctx, run)
+	if err != nil {
+		return schedulecmd.RunDetail{}, err
+	}
+	detail := schedulecmd.RunDetail{Run: item}
+	var snapshot state.ScheduledJobRecord
+	if err := json.Unmarshal([]byte(run.PayloadJSON), &snapshot); err != nil {
+		return schedulecmd.RunDetail{}, schedulecmd.ErrUnavailable
+	}
+	detail.Input = snapshot.Content
+	if run.ExecutionJobID != "" && m.executionJobs != nil {
+		job, found, err := m.executionJobs.GetJob(ctx, run.ExecutionJobID)
+		if err != nil {
+			return schedulecmd.RunDetail{}, schedulecmd.ErrUnavailable
+		}
+		if found {
+			detail.Output = job.Result
+		}
+	}
+	if detail.Output == "" && run.ExecutionJobID != "" && m.deliveries != nil {
+		delivery, found, err := m.deliveries.FinalDelivery(ctx, run.ExecutionJobID)
+		if err != nil {
+			return schedulecmd.RunDetail{}, schedulecmd.ErrUnavailable
+		}
+		if found && delivery.Status == state.DeliveryStatusSent {
+			var payload deliverycmd.Payload
+			if err := json.Unmarshal([]byte(delivery.Payload), &payload); err != nil {
+				return schedulecmd.RunDetail{}, schedulecmd.ErrUnavailable
+			}
+			detail.Output = payload.Text
+		}
+	}
+	return detail, nil
+}
+
 func (m *Management) projectRun(ctx context.Context, run state.ScheduleRunRecord) (schedulecmd.RunItem, error) {
 	item := schedulecmd.RunItem{ID: run.RunID, Trigger: run.Trigger,
 		RequestedAt: run.RequestedAt, DueAt: run.DueAt,
@@ -128,13 +187,53 @@ func (m *Management) projectRun(ctx context.Context, run state.ScheduleRunRecord
 	if !found {
 		return item, nil
 	}
+	var snapshot state.ScheduledJobRecord
+	if err := json.Unmarshal([]byte(run.PayloadJSON), &snapshot); err != nil {
+		return schedulecmd.RunItem{}, schedulecmd.ErrUnavailable
+	}
+	if job.SessionID == turncmd.ScheduledExecutionSessionID(run.ExecutionJobID) &&
+		snapshot.ReportToEnabled && m.deliveries != nil {
+		switch job.Status {
+		case state.JobStatusCompleted, state.JobStatusFailed, state.JobStatusCanceled, state.JobStatusDeadLettered:
+		default:
+			item.State = "running"
+			return item, nil
+		}
+		delivery, present, err := m.deliveries.FinalDelivery(ctx, run.ExecutionJobID)
+		if err != nil {
+			return schedulecmd.RunItem{}, schedulecmd.ErrUnavailable
+		}
+		if present && delivery.Status == state.DeliveryStatusSent {
+			item.CompletedAt = delivery.SentAt
+			if job.Status == state.JobStatusCompleted {
+				item.State = runStateSucceeded
+			} else {
+				item.State, item.SafeFailureCode = runStateFailed, runFailureExecution
+			}
+			return item, nil
+		}
+		if present && delivery.Status == state.DeliveryStatusFailed && delivery.Error == "permanent" {
+			item.State, item.CompletedAt, item.SafeFailureCode = runStateFailed, delivery.UpdatedAt, "delivery_failed"
+			return item, nil
+		}
+		if !present && job.Status == state.JobStatusCanceled {
+			item.State, item.CompletedAt = runStateCanceled, job.CanceledAt
+			return item, nil
+		}
+		if !present && job.Status == state.JobStatusDeadLettered {
+			item.State, item.CompletedAt, item.SafeFailureCode = runStateFailed, job.CompletedAt, runFailureExecution
+			return item, nil
+		}
+		item.State = "report_pending"
+		return item, nil
+	}
 	switch job.Status {
 	case state.JobStatusCompleted:
-		item.State, item.CompletedAt = "succeeded", job.CompletedAt
+		item.State, item.CompletedAt = runStateSucceeded, job.CompletedAt
 	case state.JobStatusFailed, state.JobStatusDeadLettered:
-		item.State, item.CompletedAt, item.SafeFailureCode = "failed", job.CompletedAt, "execution_failed"
+		item.State, item.CompletedAt, item.SafeFailureCode = runStateFailed, job.CompletedAt, runFailureExecution
 	case state.JobStatusCanceled:
-		item.State, item.CompletedAt = "canceled", job.CanceledAt
+		item.State, item.CompletedAt = runStateCanceled, job.CanceledAt
 	default:
 		item.State = "running"
 	}
@@ -176,7 +275,7 @@ func (m *Management) Create(ctx context.Context, request schedulecmd.Create) (sc
 	if err := m.store.CheckAuthority(ctx, request.Authority); err != nil {
 		return schedulecmd.Item{}, err
 	}
-	record, err := m.build(ctx, request.Definition)
+	record, err := m.build(request.Definition)
 	if err != nil {
 		return schedulecmd.Item{}, err
 	}
@@ -201,7 +300,7 @@ func (m *Management) Update(ctx context.Context, request schedulecmd.Update) (sc
 	if request.Definition.ID != request.ID {
 		return schedulecmd.Item{}, schedulecmd.ErrInvalid
 	}
-	record, err := m.build(ctx, request.Definition)
+	record, err := m.build(request.Definition)
 	if err != nil {
 		return schedulecmd.Item{}, err
 	}
@@ -286,59 +385,52 @@ func (m *Management) get(ctx context.Context, id string) (state.ScheduledJobReco
 	return record, nil
 }
 
-func (m *Management) build(ctx context.Context, definition schedulecmd.Definition) (state.ScheduledJobRecord, error) {
+func (m *Management) build(definition schedulecmd.Definition) (state.ScheduledJobRecord, error) {
 	id := strings.TrimSpace(definition.ID)
 	cron := strings.TrimSpace(definition.Cron)
 	content := strings.TrimSpace(definition.Content)
 	if !managedScheduleID.MatchString(id) || len(strings.Fields(cron)) != 5 || len(cron) > 128 ||
-		content == "" || len(content) > 16384 || len(definition.Target.Kind) > 32 || len(definition.Target.Key) > 512 {
+		content == "" || len(content) > 16384 || len(definition.Locator) > 512 {
 		return state.ScheduledJobRecord{}, schedulecmd.ErrInvalid
 	}
 	next, err := nextRunAtFromSpec(cron, m.now().UTC())
 	if err != nil {
 		return state.ScheduledJobRecord{}, schedulecmd.ErrInvalid
 	}
-	target, err := envelopetarget.Resolve(ctx, m.resolver, envelopetarget.Target{Target: definition.Target.Kind, Key: definition.Target.Key})
-	if err != nil {
-		return state.ScheduledJobRecord{}, scheduleTargetError(err)
-	}
-	r := state.ScheduledJobRecord{JobID: id, TargetKind: definition.Target.Kind, TargetKey: definition.Target.Key,
-		SessionID: target.Locator.SessionID, ChannelType: target.Locator.ChannelType,
-		AddressKey: target.Locator.AddressKey, AddressJSON: target.Locator.AddressJSON,
+	r := state.ScheduledJobRecord{JobID: id,
 		Content: content, ScheduleSpec: cron, Timezone: "UTC", Status: state.ScheduledJobStatusActive,
 		MaxRetries: defaultSchedulerMaxRetries, NextRunAt: next}
-	if definition.ReportTo != nil {
-		if len(definition.ReportTo.Kind) > 32 || len(definition.ReportTo.Key) > 512 {
-			return state.ScheduledJobRecord{}, schedulecmd.ErrInvalid
-		}
-		resolved, err := envelopetarget.Resolve(ctx, m.resolver, envelopetarget.Target{Target: definition.ReportTo.Kind, Key: definition.ReportTo.Key})
-		if err != nil {
-			return state.ScheduledJobRecord{}, scheduleTargetError(err)
-		}
-		r.ReportToEnabled = true
-		r.ReportToTargetKind = definition.ReportTo.Kind
-		r.ReportToTargetKey = definition.ReportTo.Key
-		r.ReportToSessionID = resolved.Locator.SessionID
-		r.ReportToChannelType = resolved.Locator.ChannelType
-		r.ReportToAddressKey = resolved.Locator.AddressKey
-		r.ReportToAddressJSON = resolved.Locator.AddressJSON
+	if strings.TrimSpace(definition.Locator) == "" {
+		return r, nil
 	}
+	target, err := locatorref.Parse(definition.Locator)
+	if err != nil {
+		return state.ScheduledJobRecord{}, schedulecmd.ErrInvalid
+	}
+	canonical := locatorref.Format(target)
+	r.TargetKind = envelopetarget.TargetLocator
+	r.TargetKey = canonical
+	r.SessionID = target.SessionID
+	r.ChannelType = target.ChannelType
+	r.AddressKey = target.AddressKey
+	r.AddressJSON = target.AddressJSON
+	r.ReportToEnabled = true
+	r.ReportToTargetKind = envelopetarget.TargetLocator
+	r.ReportToTargetKey = canonical
+	r.ReportToSessionID = target.SessionID
+	r.ReportToChannelType = target.ChannelType
+	r.ReportToAddressKey = target.AddressKey
+	r.ReportToAddressJSON = target.AddressJSON
 	return r, nil
 }
 
-func scheduleTargetError(err error) error {
-	if errors.Is(err, envelopetarget.ErrResolutionUnavailable) {
-		return schedulecmd.ErrUnavailable
-	}
-	return schedulecmd.ErrInvalid
-}
-
 func scheduleItem(r state.ScheduledJobRecord) schedulecmd.Item {
-	d := schedulecmd.Definition{ID: r.JobID, Cron: r.ScheduleSpec, Content: r.Content,
-		Target: schedulecmd.Target{Kind: r.TargetKind, Key: r.TargetKey}}
+	locator := ""
 	if r.ReportToEnabled {
-		d.ReportTo = &schedulecmd.Target{Kind: r.ReportToTargetKind, Key: r.ReportToTargetKey}
+		locator = r.ReportToChannelType + ":" + r.ReportToAddressKey
 	}
+	d := schedulecmd.Definition{ID: r.JobID, Cron: r.ScheduleSpec, Content: r.Content,
+		Locator: locator}
 	return schedulecmd.Item{Definition: d, Source: r.Source, Enabled: r.Enabled, Deleted: r.Deleted,
 		Version: r.DefinitionVersion, Status: r.Status, NextRunAt: r.NextRunAt, LastRunAt: r.LastRunAt}
 }

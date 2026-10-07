@@ -14,10 +14,7 @@
   {{if .Navigation}}
   <header class="app-header navbar navbar-expand" aria-label="Utility navigation">
     <div class="container-fluid">
-      <button class="nav-link btn btn-link sidebar-toggle enhanced-only" type="button" data-lte-toggle="sidebar" aria-label="Toggle navigation" aria-controls="primary-sidebar" aria-expanded="true"><i class="bi bi-list" aria-hidden="true"></i></button>
-      <details class="native-navigation d-lg-none"><summary class="btn btn-outline-secondary">Menu</summary><nav aria-label="Mobile navigation">
-        {{range .Navigation}}<a class="nav-link{{if .Current}} active{{end}}" data-nav-link href="{{path .Href}}"{{if .Current}} aria-current="page"{{end}}>{{.Label}}</a>{{end}}
-      </nav></details>
+      <button class="nav-link btn btn-link sidebar-toggle" type="button" data-lte-toggle="sidebar" aria-label="Toggle navigation" aria-controls="primary-sidebar" aria-expanded="true"><i class="bi bi-list" aria-hidden="true"></i></button>
       <div class="viewer-actions ms-auto"><span class="viewer"><i class="bi bi-person-circle" aria-hidden="true"></i> <span class="viewer-prefix">Signed in as </span><strong title="{{.ViewerUsername}}">{{.ViewerUsername}}</strong></span>
         <a class="btn btn-sm btn-outline-secondary" href="{{path "/"}}account" hx-boost="true" hx-target="#main-content" hx-swap="outerHTML" hx-push-url="true" aria-label="Your account"><i class="bi bi-person" aria-hidden="true"></i><span class="d-none d-sm-inline"> Account</span></a>
         <form method="post" action="{{path "/"}}logout" hx-boost="false" class="m-0"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><button class="btn btn-sm btn-outline-secondary" type="submit"{{if .Preview}} disabled title="Synthetic preview"{{end}}><i class="bi bi-box-arrow-right" aria-hidden="true"></i><span class="d-none d-sm-inline"> Sign out</span><span class="visually-hidden d-sm-none">Sign out</span></button></form>

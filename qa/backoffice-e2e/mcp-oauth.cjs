@@ -1,7 +1,6 @@
 const assert = require('node:assert/strict');
 const { chromium } = require('playwright');
-const [baseURL, issuerURL, flow, phase, widthString, javaScriptString, markerDirectory] = process.argv.slice(2);
-const js = javaScriptString === 'true';
+const [baseURL, issuerURL, flow, phase, widthString, markerDirectory] = process.argv.slice(2);
 let detailURL = `${baseURL}/mcp/connections/config%3Aworker-tools`;
 const prefix = new URL(baseURL).pathname.replace(/\/$/, '');
 let stage = 'launch';
@@ -18,10 +17,7 @@ const providerPrefix = staticEntry ? 'static' : partialEntry ? 'partial' : 'mana
 const clientSecret = 'synthetic-client-secret';
 async function activate(page, role, name) {
   const target = page.getByRole(role, { name, exact: true });
-  const press = async () => {
-    if (js) await target.click();
-    else { await target.focus(); await page.keyboard.press('Enter'); }
-  };
+  const press = () => target.click();
   if (await target.getAttribute('target') === '_blank') await press();
   else await Promise.all([page.waitForNavigation({ waitUntil: 'domcontentloaded' }), press()]);
 }
@@ -48,15 +44,13 @@ async function detail(page) {
 }
 async function selection(page, label, selected) {
   const checkbox = page.getByLabel(label, { exact: true });
-  if (js) await checkbox.setChecked(selected);
-  else if (await checkbox.isChecked() !== selected) { await checkbox.focus(); await page.keyboard.press('Space'); }
+  await checkbox.setChecked(selected);
   assert.equal(await checkbox.isChecked(), selected, 'native provider selection is applied');
 }
 async function clientSettings(page, register = false) {
   const summary = page.getByText('Client settings — optional', { exact: true });
   if (!await page.getByLabel('Client ID', { exact: true }).isVisible()) {
-    if (js) await summary.click();
-    else { await summary.focus(); await page.keyboard.press('Enter'); }
+    await summary.click();
   }
   await page.getByLabel('Client ID', { exact: true }).fill(register ? '' : staticEntry ? 'confidential-client' : 'browser-client');
   await page.getByLabel('Client authentication', { exact: true }).selectOption(staticEntry ? 'client_secret_basic' : 'none');
@@ -211,7 +205,7 @@ async function complete(page, context, denied = false) {
 (async () => {
   const browser = await chromium.launch({ headless: true });
   try {
-    const context = await browser.newContext({ viewport: { width: Number(widthString), height: 900 }, javaScriptEnabled: js });
+    const context = await browser.newContext({ viewport: { width: Number(widthString), height: 900 } });
     const page = await context.newPage();
     page.on('response', r => { if (r.request().method() === 'POST') console.log(`Native POST ${new URL(r.url()).pathname} status=${r.status()} origin=${r.request().headers().origin === new URL(baseURL).origin ? 'trusted' : r.request().headers().origin === 'null' ? 'null' : 'other'}`); });
     const errors = []; page.on('pageerror', () => errors.push('browser script error'));
@@ -297,7 +291,7 @@ async function complete(page, context, denied = false) {
       await begin(page);
       if (flow === 'browser') await complete(page, context, true);
       else {
-        if (!js) await pendingDeviceHistory(page);
+        await pendingDeviceHistory(page);
         stage = 'native device cancellation';
         const [cancelled] = await Promise.all([
           page.waitForResponse(r => r.request().method() === 'POST' && new URL(r.url()).pathname.endsWith('/cancel')),
@@ -323,7 +317,7 @@ async function complete(page, context, denied = false) {
       assert.equal(await page.getByRole('button', { name: 'Retry tool attachment', exact: true }).count(), 0);
       assert.deepEqual(errors, []);
       await activate(page, 'button', 'Sign out'); await context.close();
-      console.log(`MCP OAuth ${flow} ${phase}: native scope intent and existing availability passed (${widthString}px JavaScript=${js})`);
+      console.log(`MCP OAuth ${flow} ${phase}: native scope intent and existing availability passed (${widthString}px)`);
       return;
     }
     stage = 'authorization with unavailable tools';
@@ -365,7 +359,7 @@ async function complete(page, context, denied = false) {
     await activate(page, 'button', 'Sign out');
     await page.waitForURL(`${baseURL}/login`);
     await context.close();
-    console.log(`MCP OAuth ${flow} ${phase}: ordinary login, native authorization, safe recovery, real available tools and history passed (${widthString}px JavaScript=${js})`);
+    console.log(`MCP OAuth ${flow} ${phase}: ordinary login, native authorization, safe recovery, real available tools and history passed (${widthString}px)`);
   } finally { await browser.close(); }
 })().catch(error => {
   // Playwright diagnostics may contain an issuer/callback query. Keep OAuth

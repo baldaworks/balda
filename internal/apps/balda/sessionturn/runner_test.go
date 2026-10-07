@@ -28,6 +28,31 @@ func TestRunnerRequiresSessionManager(t *testing.T) {
 	}
 }
 
+func TestRunnerRestoresQueuedScheduleTurnAsPrivateSession(t *testing.T) {
+	accessor := &testSessionAccessor{getErr: errors.New("not active"), transient: &testActiveSession{}}
+	executor := &testExecutor{}
+	runner := New(accessor, executor, nil, zerolog.Nop())
+	payload := turncmd.SessionTurnPayload{JobID: "scheduled-daily-slot", ScheduledJobID: "daily",
+		Source: turncmd.SourceSchedule, UserID: "tg-101", Text: "review",
+		Locator: baldasession.SessionLocator{SessionID: "tg-10-42", ChannelType: "telegram",
+			AddressKey: "10:42", AddressJSON: `{"chat_id":10,"topic_id":42}`}}
+	if err := runner.RunSessionTurnPayload(t.Context(), payload); err != nil {
+		t.Fatal(err)
+	}
+	if accessor.restoreCalled || len(accessor.transientCtx) != 1 {
+		t.Fatalf("ordinary restore called=%t, private creates=%d", accessor.restoreCalled, len(accessor.transientCtx))
+	}
+	privateID := turncmd.ScheduledExecutionSessionID(payload.JobID)
+	if accessor.transientCtx[0].Locator.SessionID != privateID {
+		t.Fatalf("private session = %+v", accessor.transientCtx[0])
+	}
+	request := executor.singleRequest(t)
+	if request.Payload.Locator.SessionID != privateID || request.DeliveryLocator.SessionID != privateID ||
+		request.Payload.Deliver || request.Payload.ReportTo != nil {
+		t.Fatalf("execution/delivery locators = %+v, %+v", request.Payload, request.DeliveryLocator)
+	}
+}
+
 func TestRunnerLoadsExactSelectedSkillBeforeProviderExecution(t *testing.T) {
 	t.Parallel()
 
@@ -401,10 +426,13 @@ func (p testMemoryProvider) Snapshot(context.Context) (MemorySnapshot, error) {
 }
 
 type testSessionAccessor struct {
-	active     ActiveSession
-	getErr     error
-	restored   ActiveSession
-	restoreErr error
+	active        ActiveSession
+	getErr        error
+	restored      ActiveSession
+	restoreErr    error
+	transient     ActiveSession
+	transientCtx  []SessionContext
+	restoreCalled bool
 }
 
 func (a *testSessionAccessor) GetSession(SessionLocator) (ActiveSession, error) {
@@ -412,11 +440,20 @@ func (a *testSessionAccessor) GetSession(SessionLocator) (ActiveSession, error) 
 }
 
 func (a *testSessionAccessor) RestoreSession(context.Context, SessionContext) (ActiveSession, error) {
+	a.restoreCalled = true
 	return a.restored, a.restoreErr
 }
 
 func (a *testSessionAccessor) EnsureSession(context.Context, SessionContext, string) (ActiveSession, error) {
 	return nil, errors.New("unexpected EnsureSession call")
+}
+
+func (a *testSessionAccessor) EnsureTransientSession(_ context.Context, sessionCtx SessionContext, _ string) (ActiveSession, error) {
+	a.transientCtx = append(a.transientCtx, sessionCtx)
+	if a.transient == nil {
+		return nil, errors.New("unexpected EnsureTransientSession call")
+	}
+	return a.transient, nil
 }
 
 type testActiveSession struct {

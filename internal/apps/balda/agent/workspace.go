@@ -268,6 +268,21 @@ func (m *WorkspaceManager) CleanupWorkspace(ctx context.Context, workspaceDir st
 	return nil
 }
 
+// DeleteBranch removes a branch after its worktree has been detached.
+func (m *WorkspaceManager) DeleteBranch(ctx context.Context, branchName string) error {
+	listed, err := git.GitRunCmdOutput(ctx, m.workingDir, "git", "branch", "--list", "--format=%(refname)", "--", branchName)
+	if err != nil {
+		return fmt.Errorf("inspect workspace branch %q: %w", branchName, err)
+	}
+	if strings.TrimSpace(listed) == "" {
+		return nil
+	}
+	if err := git.GitRunCmdErr(ctx, m.workingDir, "git", "branch", "-D", "--", branchName); err != nil {
+		return fmt.Errorf("delete workspace branch %q: %w", branchName, err)
+	}
+	return nil
+}
+
 func (m *WorkspaceManager) recreateWorkspaceWithoutSync(ctx context.Context, workspaceDir, branchName string, syncErr error) (EnsureWorkspaceResult, error) {
 	result := EnsureWorkspaceResult{Dir: workspaceDir}
 	if strings.TrimSpace(branchName) == "" {

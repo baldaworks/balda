@@ -6,6 +6,7 @@ import (
 
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/scheduledjobs"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorymcp"
@@ -172,6 +173,10 @@ func (a SessionWorkspaceManagerAdapter) CleanupWorkspace(ctx context.Context, wo
 	return a.Manager.CleanupWorkspace(ctx, workspaceDir)
 }
 
+func (a SessionWorkspaceManagerAdapter) DeleteBranch(ctx context.Context, branchName string) error {
+	return a.Manager.DeleteBranch(ctx, branchName)
+}
+
 func translateWorkspaceError(err error) error {
 	if errors.Is(err, baldaagent.ErrWorkspaceCollision) {
 		return errors.Join(baldasession.ErrWorkspaceCollision, err)
@@ -208,6 +213,7 @@ var Module = fx.Module("balda_sessionapp",
 			fx.ParamTags(``, `name:"balda_state_dir"`, `name:"balda_workspace_base_branch"`, `name:"balda_workspace_sessions_dir"`),
 		),
 		baldasession.NewManager,
+		func(manager *baldasession.Manager) scheduledjobs.RunSessionCloser { return manager },
 		fx.Annotate(
 			NewTopicService,
 			fx.ParamTags(`optional:"true"`),

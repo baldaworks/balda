@@ -278,32 +278,6 @@ async function checkPage(browser, baseURL, viewport) {
         await checkMCPTransport(browser, url, viewport);
         await checkPage(browser, url, viewport);
       }
-      const noScript = await browser.newPage({ javaScriptEnabled: false, viewport: { width: 390, height: 844 } });
-      await noScript.goto(`${url}/qa/ui/mcp/new`);
-      await noScript.getByLabel('Transport', { exact: true }).selectOption('http');
-      assert.equal(await noScript.getByLabel('Command', { exact: true }).isVisible(), true, 'native form keeps its explained transport fields available');
-      assert.equal(await noScript.getByLabel('Server URL', { exact: true }).isVisible(), true, 'native remote URL field is usable');
-      await noScript.getByText('Client settings — optional', { exact: true }).click();
-      assert.equal(await noScript.getByLabel('Client ID', { exact: true }).isVisible(), true, 'client settings use native details without JavaScript');
-      assert.equal(await noScript.getByRole('button', { name: 'Create and authorize in browser', exact: true }).isVisible(), true);
-      await noScript.goto(`${url}/qa/ui/audit`);
-      assert.equal(await noScript.locator('table tbody tr').count(), 3);
-      await noScript.getByText('Dates and actor ID').click();
-      assert.equal(await noScript.locator('#audit-actor').isVisible(), true);
-      await noScript.locator('.native-navigation summary').click();
-      await noScript.getByRole('navigation', { name: 'Mobile navigation' }).getByText('Account', { exact: true }).click();
-      assert.equal(await noScript.locator('h1').textContent(), 'Account');
-      await checkTopBar(noScript, 'Account without JavaScript');
-      await noScript.evaluate(() => window.scrollTo(0, 400));
-      await noScript.waitForFunction(() => scrollY > 0);
-      assert.equal(await noScript.locator('.app-header').evaluate(element => element.getBoundingClientRect().top), 0, 'top bar stays visible without JavaScript');
-      await noScript.goto(`${url}/qa/ui/bindings-issued`);
-      assert.equal(await noScript.locator('[data-binding-channel]').count(), 4);
-      assert.equal(await noScript.locator('input[data-binding-secret]').count(), 9);
-      assert.equal(await noScript.locator('input[data-binding-secret]').first().inputValue(), 'bind_SYNTHETIC_PREVIEW_ONLY');
-      await noScript.getByText('Replace invitation', { exact: true }).first().click();
-      assert.equal(await noScript.locator('input[name=replace]').first().isVisible(), true, 'native replacement confirmation is usable');
-      await noScript.close();
       console.log(`Backoffice E2E: ${routes.length} gallery pages and states at 390/768/1024/1440px, consistent heading colors, native/HTMX layout, audit, refresh, and navigation passed`);
     } finally { await browser.close(); }
   } finally { process.kill(-server.pid, 'SIGINT'); }

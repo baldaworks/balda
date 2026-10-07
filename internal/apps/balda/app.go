@@ -425,6 +425,9 @@ func Module(
 			func(provider baldastate.Provider) baldastate.JobLifecycleStore {
 				return provider.Jobs()
 			},
+			func(provider baldastate.Provider) baldastate.DeliveryStore {
+				return provider.Jobs()
+			},
 			schedulebackofficeapp.New,
 			func(provider baldastate.Provider) baldastate.QuestionStore {
 				return provider.Questions()

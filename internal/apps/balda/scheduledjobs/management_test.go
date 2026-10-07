@@ -7,20 +7,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
 	"github.com/baldaworks/balda/internal/apps/balda/schedulecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
+)
+
+const (
+	testTelegramReportLocator = "telegram:9001:0"
+	testTelegramAddressKey    = "9001:0"
 )
 
 type recordingScheduleManagementStore struct {
 	jobs state.ScheduledJobStore
 	runs state.ScheduleRunStore
-}
-
-type unavailableScheduleResolver struct{}
-
-func (unavailableScheduleResolver) ResolveAlias(context.Context, string) (envelopetarget.Resolved, error) {
-	return envelopetarget.Resolved{}, envelopetarget.ErrResolutionUnavailable
 }
 
 func (*recordingScheduleManagementStore) CheckAuthority(context.Context, schedulecmd.Authority) error {
@@ -42,15 +40,14 @@ func TestManagementManualRunIsIdempotentAndHistoryIsSafe(t *testing.T) {
 	now := time.Date(2026, 10, 8, 8, 0, 0, 0, time.UTC)
 	job := state.ScheduledJobRecord{JobID: "daily", Source: state.ScheduledJobSourceConfig,
 		Enabled: false, DefinitionVersion: 1, SessionID: "tg-9001-0",
-		ChannelType: state.ChannelTypeTelegram, AddressKey: "9001:0", AddressJSON: `{}`,
+		ChannelType: state.ChannelTypeTelegram, AddressKey: testTelegramAddressKey, AddressJSON: `{}`,
 		Content: "private content", ScheduleSpec: "0 9 * * *", Status: state.ScheduledJobStatusActive,
 		NextRunAt: now.Add(time.Hour)}
 	if err := provider.ScheduledJobs().Upsert(t.Context(), job); err != nil {
 		t.Fatal(err)
 	}
 	store := &recordingScheduleManagementStore{jobs: provider.ScheduledJobs(), runs: provider.ScheduleRuns()}
-	m := NewManagement(provider.ScheduledJobs(), store, provider.ScheduleRuns(), provider.Jobs(),
-		newOwnerStoreForTest(t, 101, 9001))
+	m := NewManagement(provider.ScheduledJobs(), store, provider.ScheduleRuns(), provider.Jobs(), provider.Jobs())
 	m.now = func() time.Time { return now }
 	authority := schedulecmd.Authority{UserID: "admin", SessionID: "session", At: now}
 	request := schedulecmd.RunNow{ID: job.JobID, RequestKey: "nonce-123", Authority: authority}
@@ -90,8 +87,8 @@ func TestManagementManualRunIsIdempotentAndHistoryIsSafe(t *testing.T) {
 		t.Fatalf("create execution = %v, %v", created, err)
 	}
 	runs, err = m.History(t.Context(), job.JobID, time.Time{}, "", 10, authority)
-	if err != nil || len(runs) != 1 || runs[0].State != "failed" ||
-		runs[0].SafeFailureCode != "execution_failed" {
+	if err != nil || len(runs) != 1 || runs[0].State != runStateFailed ||
+		runs[0].SafeFailureCode != runFailureExecution {
 		t.Fatalf("safe failed history = %+v, %v", runs, err)
 	}
 	job.Deleted = true
@@ -125,11 +122,11 @@ func TestManagementLifecyclePreservesDisabledSelectionAndArchive(t *testing.T) {
 	ctx := t.Context()
 	jobs := newSchedulerJobStore(t)
 	now := time.Date(2026, 10, 8, 8, 0, 0, 0, time.UTC)
-	m := NewManagement(jobs, &recordingScheduleManagementStore{jobs: jobs}, nil, nil, newOwnerStoreForTest(t, 101, 9001))
+	m := NewManagement(jobs, &recordingScheduleManagementStore{jobs: jobs}, nil, nil, nil)
 	m.now = func() time.Time { return now }
 	authority := schedulecmd.Authority{UserID: "admin", SessionID: "session", At: now}
 	definition := schedulecmd.Definition{ID: "daily-review", Cron: "0 9 * * *", Content: "review",
-		Target: schedulecmd.Target{Kind: envelopetarget.TargetAlias, Key: envelopetarget.AliasOwner}}
+		Locator: testTelegramReportLocator}
 	created, err := m.Create(ctx, schedulecmd.Create{Definition: definition, Authority: authority})
 	if err != nil || !created.Enabled || created.Version != 1 || created.Source != state.ScheduledJobSourceManaged ||
 		!created.NextRunAt.Equal(time.Date(2026, 10, 8, 9, 0, 0, 0, time.UTC)) {
@@ -161,36 +158,69 @@ func TestManagementLifecyclePreservesDisabledSelectionAndArchive(t *testing.T) {
 	}
 }
 
-func TestManagementMapsDestinationBackendFailureToUnavailable(t *testing.T) {
+func TestManagementCreatesScheduleWithoutReportLocator(t *testing.T) {
 	jobs := newSchedulerJobStore(t)
-	m := NewManagement(jobs, &recordingScheduleManagementStore{jobs: jobs}, nil, nil, unavailableScheduleResolver{})
-	definition := schedulecmd.Definition{ID: "daily", Cron: "0 9 * * *", Content: "review",
-		Target: schedulecmd.Target{Kind: envelopetarget.TargetAlias, Key: envelopetarget.AliasOwner}}
-	_, err := m.Create(t.Context(), schedulecmd.Create{Definition: definition})
-	if !errors.Is(err, schedulecmd.ErrUnavailable) {
-		t.Fatalf("Create() = %v, want unavailable", err)
+	m := NewManagement(jobs, &recordingScheduleManagementStore{jobs: jobs}, nil, nil, nil)
+	authority := schedulecmd.Authority{At: time.Now().UTC()}
+	item, err := m.Create(t.Context(), schedulecmd.Create{Definition: schedulecmd.Definition{
+		ID: "local-only", Cron: "0 9 * * *", Content: "review local state",
+	}, Authority: authority})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if item.Definition.Locator != "" {
+		t.Fatalf("locator = %q, want omitted", item.Definition.Locator)
+	}
+	stored, found, err := jobs.GetByID(t.Context(), "local-only")
+	if err != nil || !found || stored.ReportToEnabled {
+		t.Fatalf("stored schedule = %+v, found=%v, err=%v", stored, found, err)
 	}
 }
 
 func TestManagementRejectsInvalidDefinitionAndConfigMutation(t *testing.T) {
 	jobs := newSchedulerJobStore(t)
 	now := time.Date(2026, 10, 8, 8, 0, 0, 0, time.UTC)
-	m := NewManagement(jobs, &recordingScheduleManagementStore{jobs: jobs}, nil, nil, newOwnerStoreForTest(t, 101, 9001))
+	m := NewManagement(jobs, &recordingScheduleManagementStore{jobs: jobs}, nil, nil, nil)
 	m.now = func() time.Time { return now }
 	authority := schedulecmd.Authority{At: now}
 	definition := schedulecmd.Definition{ID: "bad/id", Cron: "@every 1m", Content: "review",
-		Target: schedulecmd.Target{Kind: envelopetarget.TargetAlias, Key: envelopetarget.AliasOwner}}
+		Locator: testTelegramReportLocator}
 	if _, err := m.Create(t.Context(), schedulecmd.Create{Definition: definition, Authority: authority}); !errors.Is(err, schedulecmd.ErrInvalid) {
 		t.Fatalf("invalid definition = %v", err)
 	}
 	config := state.ScheduledJobRecord{JobID: "config-daily", Source: state.ScheduledJobSourceConfig,
 		Enabled: true, DefinitionVersion: 1, SessionID: "tg-9001-0", ChannelType: state.ChannelTypeTelegram,
-		AddressKey: "9001:0", AddressJSON: `{}`, Content: "config", ScheduleSpec: "0 9 * * *",
+		AddressKey: testTelegramAddressKey, AddressJSON: `{}`, Content: "config", ScheduleSpec: "0 9 * * *",
 		NextRunAt: now.Add(time.Hour)}
 	if err := jobs.Upsert(t.Context(), config); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := m.SetEnabled(t.Context(), schedulecmd.ChangeSelection{ID: config.JobID, ExpectedVersion: 1, Authority: authority}); !errors.Is(err, schedulecmd.ErrForbidden) {
 		t.Fatalf("config mutation = %v", err)
+	}
+}
+
+func TestManagementValidatesSuppliedPublicReportLocator(t *testing.T) {
+	jobs := newSchedulerJobStore(t)
+	m := NewManagement(jobs, &recordingScheduleManagementStore{jobs: jobs}, nil, nil, nil)
+	base := schedulecmd.Definition{ID: "daily", Cron: "0 9 * * *", Content: "review"}
+	for _, locator := range []string{"owner", "telegram:bad", "unknown:key"} {
+		definition := base
+		definition.Locator = locator
+		if _, err := m.Create(t.Context(), schedulecmd.Create{Definition: definition}); !errors.Is(err, schedulecmd.ErrInvalid) {
+			t.Fatalf("locator %q: Create() = %v, want invalid", locator, err)
+		}
+	}
+	if records, err := jobs.List(t.Context()); err != nil || len(records) != 0 {
+		t.Fatalf("invalid locator wrote definitions: %+v, %v", records, err)
+	}
+	base.Locator = testTelegramReportLocator
+	item, err := m.Create(t.Context(), schedulecmd.Create{Definition: base})
+	if err != nil || item.Definition.Locator != base.Locator {
+		t.Fatalf("Create() = %+v, %v", item, err)
+	}
+	stored, found, err := jobs.GetByID(t.Context(), base.ID)
+	if err != nil || !found || !stored.ReportToEnabled || stored.AddressKey != testTelegramAddressKey || stored.ReportToAddressKey != testTelegramAddressKey {
+		t.Fatalf("stored locator = %+v, %v", stored, err)
 	}
 }

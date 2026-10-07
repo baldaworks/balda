@@ -1,0 +1,114 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { chromium } = require('playwright');
+
+const baseURL = process.argv[2];
+assert.equal(new URL(baseURL).hostname, '127.0.0.1', 'browser gate requires an isolated loopback server');
+const screenshotDir = process.env.BALDA_SCHEDULES_SCREENSHOTS;
+if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
+
+async function screenshot(page, name, viewport) {
+  if (!screenshotDir) return;
+  const prefix = new URL(baseURL).pathname === '/' ? 'root' : 'base';
+  await page.screenshot({ path: path.join(screenshotDir, `${prefix}-${name}-${viewport}.png`), fullPage: true });
+}
+
+async function assertNoDocumentOverflow(page, name) {
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  assert.ok(overflow <= 1, `${name} overflows the document horizontally by ${overflow}px`);
+}
+
+async function textLineCount(locator) {
+  return locator.evaluate(element => {
+    const text = [...element.childNodes].find(node => node.nodeType === Node.TEXT_NODE);
+    const range = document.createRange();
+    range.selectNodeContents(text);
+    return range.getClientRects().length;
+  });
+}
+
+(async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    for (const viewport of [{ width: 1440, height: 900, name: 'desktop' }, { width: 390, height: 844, name: 'mobile' }]) {
+      const context = await browser.newContext({ viewport });
+      const page = await context.newPage();
+      const errors = [];
+      page.on('pageerror', error => errors.push(error.message));
+      await page.goto(`${baseURL}/login`);
+      await page.getByLabel(/^Username(?: \(required\))?$/).fill('administrator');
+      await page.getByLabel(/^Password(?: \(required\))?$/).fill('correct horse battery staple');
+      await Promise.all([page.waitForURL(`${baseURL}/overview`), page.getByRole('button', { name: 'Sign in', exact: true }).click()]);
+
+      const inventory = await page.goto(`${baseURL}/schedules`);
+      assert.equal(inventory.status(), 200);
+      assert.equal(await page.locator('h1').textContent(), 'Schedules');
+      const managedLink = page.getByRole('link', { name: 'daily-summary' });
+      const configuredLink = page.getByRole('link', { name: 'config:morning' });
+      await managedLink.waitFor();
+      await configuredLink.waitFor();
+      await assertNoDocumentOverflow(page, `${viewport.name} inventory`);
+      await screenshot(page, 'inventory', viewport.name);
+      if (viewport.name === 'mobile') {
+        const source = page.locator('table tbody tr').first().locator('td').nth(1);
+        assert.equal(await textLineCount(source), 1, 'source label wraps on a narrow inventory');
+        assert.equal(await textLineCount(configuredLink), 1, 'short schedule ID wraps on a narrow inventory');
+        const table = page.getByRole('region', { name: /Schedules table/ });
+        assert.ok(await table.evaluate(element => element.scrollWidth > element.clientWidth), 'mobile inventory table does not scroll');
+        await table.evaluate(element => { element.scrollLeft = element.scrollWidth - element.clientWidth; });
+        await screenshot(page, 'inventory-right', viewport.name);
+      }
+
+      await Promise.all([page.waitForURL(`${baseURL}/schedules/daily-summary`), managedLink.click()]);
+      await page.getByRole('heading', { name: 'Edit schedule' }).waitFor();
+      await page.getByRole('button', { name: 'Run now' }).click();
+      await page.getByText('Queued', { exact: true }).waitFor();
+      await page.getByRole('region', { name: /Schedule run history/ }).locator('tbody tr a').first().click();
+      await page.getByRole('heading', { name: 'Run detail · Queued' }).waitFor();
+      await page.getByText("Summarize yesterday's work", { exact: true }).last().waitFor();
+      await page.getByText('No output recorded yet.').waitFor();
+      await assertNoDocumentOverflow(page, `${viewport.name} managed detail`);
+      await screenshot(page, 'managed', viewport.name);
+      if (viewport.name === 'mobile') {
+        const table = page.getByRole('region', { name: /Schedule run history/ });
+        const trigger = table.locator('tbody td').nth(1);
+        assert.equal(await textLineCount(trigger), 1, 'run trigger wraps on a narrow history');
+        assert.ok(await table.evaluate(element => element.scrollWidth > element.clientWidth), 'mobile history table does not scroll');
+        await table.evaluate(element => { element.scrollLeft = element.scrollWidth - element.clientWidth; });
+        await screenshot(page, 'managed-history-right', viewport.name);
+      }
+
+      await Promise.all([page.waitForURL(`${baseURL}/schedules`), page.getByRole('link', { name: 'All schedules' }).click()]);
+      await Promise.all([page.waitForURL(`${baseURL}/schedules?new=1`), page.getByRole('link', { name: 'Add schedule' }).click()]);
+      assert.equal(await page.locator('h1').textContent(), 'Add schedule');
+      const newID = `weekly-review-${viewport.name}`;
+      await page.getByLabel('Schedule ID').fill(newID);
+      await page.getByLabel('Cron (UTC)').fill('0 9 * * 1');
+      if (viewport.name === 'desktop') {
+        await page.getByLabel('Report locator (optional)', { exact: true }).fill('telegram:9001:0');
+      }
+      await page.getByLabel('Content').fill('Prepare weekly review');
+      await assertNoDocumentOverflow(page, `${viewport.name} creation form`);
+      await screenshot(page, 'create', viewport.name);
+      await Promise.all([page.waitForURL(`${baseURL}/schedules/${newID}`), page.getByRole('button', { name: 'Create schedule' }).click()]);
+      await page.getByRole('heading', { name: 'Edit schedule' }).waitFor();
+      await screenshot(page, 'created', viewport.name);
+
+      await Promise.all([page.waitForURL(`${baseURL}/schedules`), page.getByRole('link', { name: 'All schedules' }).click()]);
+      await Promise.all([page.waitForURL(`${baseURL}/schedules/config:morning`), page.getByRole('link', { name: 'config:morning' }).click()]);
+      await page.getByRole('heading', { name: 'Configuration schedule' }).waitFor();
+      assert.equal(await page.getByRole('button', { name: 'Save schedule' }).count(), 0);
+      await page.getByRole('button', { name: 'Run now' }).click();
+      await page.getByText('Queued', { exact: true }).waitFor();
+      await assertNoDocumentOverflow(page, `${viewport.name} configured detail`);
+      await screenshot(page, 'configured', viewport.name);
+
+      assert.deepEqual(errors, [], `${viewport.name} browser errors`);
+      await context.close();
+    }
+    console.log('Authenticated Schedules create, manual-run and history flow passed at desktop and mobile widths');
+  } finally {
+    await browser.close();
+  }
+})().catch(error => { console.error(error); process.exitCode = 1; });

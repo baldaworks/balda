@@ -41,6 +41,10 @@ func (m testWorkspaceManager) CleanupWorkspace(ctx context.Context, workspaceDir
 	return m.inner.CleanupWorkspace(ctx, workspaceDir)
 }
 
+func (m testWorkspaceManager) DeleteBranch(ctx context.Context, branchName string) error {
+	return m.inner.DeleteBranch(ctx, branchName)
+}
+
 func translateTestWorkspaceError(err error) error {
 	if errors.Is(err, baldaagent.ErrWorkspaceCollision) {
 		return errors.Join(ErrWorkspaceCollision, err)

@@ -56,18 +56,16 @@ const widths = [1440, 1024, 768, 390];
    assert.equal(originalKeys.length,1);
    const originalCredentialId=originalKeys[0].credentialId;
    assert.match(await page.locator('#mfa-heading').locator('..').locator('..').innerText(),/Status: Enabled/);
-   // Unsupported and no-script browsers get pending verification, never auth cookies.
-   for (const javaScriptEnabled of [false,true]) {
-    const restricted = await browser.newContext({javaScriptEnabled});
-    if(javaScriptEnabled) await restricted.addInitScript(()=>Object.defineProperty(window,'PublicKeyCredential',{value:undefined}));
-    const p=await restricted.newPage(); await p.goto(`${baseURL}/login`);
-    await p.locator('#username').fill(username); await p.locator('#password').fill(password); await p.getByRole('button',{name:'Sign in',exact:true}).click();
-    await p.locator('form[data-webauthn]').waitFor();
-    assert.equal((await restricted.cookies()).some(c=>['balda_access','balda_refresh'].includes(c.name)&&c.value),false);
-    assert.equal(await p.getByRole('button',{name:'Continue with passkey'}).isDisabled(),true);
-    assert.match(await p.locator('body').innerText(),javaScriptEnabled?/Passkeys are unavailable/:/require JavaScript/);
-    await restricted.close();
-   }
+   // A browser without WebAuthn remains pending and never receives auth cookies.
+   const restricted = await browser.newContext();
+   await restricted.addInitScript(()=>Object.defineProperty(window,'PublicKeyCredential',{value:undefined}));
+   const p=await restricted.newPage(); await p.goto(`${baseURL}/login`);
+   await p.locator('#username').fill(username); await p.locator('#password').fill(password); await p.getByRole('button',{name:'Sign in',exact:true}).click();
+   await p.locator('form[data-webauthn]').waitFor();
+   assert.equal((await restricted.cookies()).some(c=>['balda_access','balda_refresh'].includes(c.name)&&c.value),false);
+   assert.equal(await p.getByRole('button',{name:'Continue with passkey'}).isDisabled(),true);
+   assert.match(await p.locator('body').innerText(),/Passkeys are unavailable/);
+   await restricted.close();
    // A server-rejected ceremony issues no auth; restart is explicit.
    await login();
    await page.locator('input[name="transaction"]').evaluate(el=>el.value='invalid-transaction');
@@ -115,7 +113,7 @@ const widths = [1440, 1024, 768, 390];
    await login(); await page.waitForURL(`${baseURL}/overview`);
    assert.equal(errors.length,0,errors.join('\n')); assert.deepEqual(cacheFailures,[],'authentication responses must be no-store');
    await context.close();
-   console.log(`WebAuthn enable/login/refresh/replace/disable, cancel, no-JS/unsupported, keyboard ${width}: passed`);
+   console.log(`WebAuthn enable/login/refresh/replace/disable, cancel, unsupported WebAuthn, keyboard ${width}: passed`);
   }
  } finally { await browser.close(); }
 })().catch(error=>{console.error(error);process.exit(1);});

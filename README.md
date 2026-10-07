@@ -82,7 +82,9 @@ for provider targeting and value operations.
 Administrators can open **Schedules** in Backoffice to inspect configured
 recurring jobs and create persistent UI-owned jobs. Configuration entries are
 read-only; either source can be run manually, and both have retained run
-history. Cron uses UTC. A manual run queues work without moving its next
+history. A report locator is optional and need not exist when a schedule is saved
+or run. Every run uses a new private session and retains its input and output in
+the run detail; a configured locator receives the final output. Cron uses UTC. A manual run queues work without moving its next
 scheduled time; a disabled job requires confirmation. See
 [Schedules management](docs/reference/backoffice.md#schedules-management).
 

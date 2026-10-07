@@ -9,6 +9,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
 	"github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionturn"
+	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
@@ -57,22 +58,36 @@ func (e *ProviderTurnExecutor) ExecuteSessionTurn(ctx context.Context, request s
 		providerRunner = request.Session.GetRunner()
 	}
 	from := actorlayer.ActorAddress{Target: actorcmd.ActorTypeSession, Key: request.Session.GetSessionID()}
-	progressEmitter := NewSessionProgressDispatcher(
-		execution.dispatcher,
-		from,
-		session.SessionLocator{
-			SessionID:   request.DeliveryLocator.SessionID,
-			ChannelType: request.DeliveryLocator.ChannelType,
-			AddressKey:  request.DeliveryLocator.AddressKey,
-			AddressJSON: request.DeliveryLocator.AddressJSON,
-		},
-		payload.JobID,
-		payload.TopicID,
-		request.DeliveryOptions.ProgressPolicy,
-		strings.TrimSpace(payload.JobID) != "",
-		execution.progressHook,
-		execution.logger,
-	)
+	var progressEmitter SessionProgressEmitter
+	privateSchedule := payload.Source == turncmd.SourceSchedule &&
+		strings.HasPrefix(request.Session.GetSessionID(), "sch-")
+	executionLocator := request.DeliveryLocator
+	if privateSchedule {
+		executionLocator = sessionturn.SessionLocator{
+			SessionID:   payload.Locator.SessionID,
+			ChannelType: payload.Locator.ChannelType,
+			AddressKey:  payload.Locator.AddressKey,
+			AddressJSON: payload.Locator.AddressJSON,
+		}
+	}
+	if payload.Deliver && !privateSchedule {
+		progressEmitter = NewSessionProgressDispatcher(
+			execution.dispatcher,
+			from,
+			session.SessionLocator{
+				SessionID:   request.DeliveryLocator.SessionID,
+				ChannelType: request.DeliveryLocator.ChannelType,
+				AddressKey:  request.DeliveryLocator.AddressKey,
+				AddressJSON: request.DeliveryLocator.AddressJSON,
+			},
+			payload.JobID,
+			payload.TopicID,
+			request.DeliveryOptions.ProgressPolicy,
+			strings.TrimSpace(payload.JobID) != "",
+			execution.progressHook,
+			execution.logger,
+		)
+	}
 	return execution.Execute(ctx, ExecutionRequest{
 		Text:            payload.Text,
 		Runner:          providerRunner,
@@ -82,6 +97,12 @@ func (e *ProviderTurnExecutor) ExecuteSessionTurn(ctx context.Context, request s
 		JobID:           payload.JobID,
 		AgentSessionID:  request.AgentSessionID,
 		Locator: session.SessionLocator{
+			SessionID:   executionLocator.SessionID,
+			ChannelType: executionLocator.ChannelType,
+			AddressKey:  executionLocator.AddressKey,
+			AddressJSON: executionLocator.AddressJSON,
+		},
+		DeliveryLocator: session.SessionLocator{
 			SessionID:   request.DeliveryLocator.SessionID,
 			ChannelType: request.DeliveryLocator.ChannelType,
 			AddressKey:  request.DeliveryLocator.AddressKey,

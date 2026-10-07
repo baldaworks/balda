@@ -29,6 +29,7 @@ type SchedulesOperations interface {
 	Delete(ctx context.Context, request schedulecmd.Delete) (schedulecmd.Item, error)
 	RunNow(ctx context.Context, request schedulecmd.RunNow) (schedulecmd.RunItem, error)
 	History(ctx context.Context, id string, beforeAt time.Time, beforeID string, limit int, authority schedulecmd.Authority) ([]schedulecmd.RunItem, error)
+	RunDetail(ctx context.Context, scheduleID, runID string, authority schedulecmd.Authority) (schedulecmd.RunDetail, error)
 }
 
 // ConfigureSchedulesOperations wires host policy before Backoffice starts.
@@ -95,7 +96,16 @@ func (a *httpApp) schedulesView(r *http.Request, p security.Principal) (webui.Pa
 			runs = runs[:scheduleHistoryPageSize]
 		}
 		for _, run := range runs {
-			page.Schedules.Editor.Runs = append(page.Schedules.Editor.Runs, webui.ProjectScheduleRun(run))
+			view := webui.ProjectScheduleRun(run)
+			view.DetailPath = page.Schedules.Editor.Row.DetailPath + "?run_id=" + url.QueryEscape(run.ID)
+			page.Schedules.Editor.Runs = append(page.Schedules.Editor.Runs, view)
+		}
+		if runID := r.URL.Query().Get("run_id"); runID != "" {
+			detail, err := a.schedules.RunDetail(r.Context(), id, runID, a.scheduleAuthority(p))
+			if err != nil {
+				return page, err
+			}
+			page.Schedules.Editor.RunDetail = webui.ProjectScheduleRunDetail(detail)
 		}
 		page.Schedules.Editor.HistoryLoaded = true
 		return page, nil
@@ -153,7 +163,12 @@ func (a *httpApp) scheduleCreate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	item, err := a.schedules.Create(r.Context(), schedulecmd.Create{Definition: scheduleDefinition(form, form.Get("id")), Authority: authority})
+	definition, err := scheduleDefinition(form, form.Get("id"))
+	if err != nil {
+		a.scheduleError(w, r, page, err)
+		return
+	}
+	item, err := a.schedules.Create(r.Context(), schedulecmd.Create{Definition: definition, Authority: authority})
 	a.scheduleResult(w, r, page, item, err, false)
 }
 
@@ -167,9 +182,14 @@ func (a *httpApp) scheduleUpdate(w http.ResponseWriter, r *http.Request) {
 		a.scheduleError(w, r, page, err)
 		return
 	}
+	definition, err := scheduleDefinition(form, r.PathValue("schedule_id"))
+	if err != nil {
+		a.scheduleError(w, r, page, err)
+		return
+	}
 	id := r.PathValue("schedule_id")
 	item, err := a.schedules.Update(r.Context(), schedulecmd.Update{ID: id, ExpectedVersion: version,
-		Definition: scheduleDefinition(form, id), Authority: authority})
+		Definition: definition, Authority: authority})
 	a.scheduleResult(w, r, page, item, err, false)
 }
 
@@ -233,13 +253,14 @@ func (a *httpApp) scheduleChange(w http.ResponseWriter, r *http.Request, remove 
 	a.scheduleResult(w, r, page, item, err, remove)
 }
 
-func scheduleDefinition(form url.Values, id string) schedulecmd.Definition {
-	d := schedulecmd.Definition{ID: id, Cron: form.Get("cron"), Content: form.Get("content"),
-		Target: schedulecmd.Target{Kind: form.Get("target_kind"), Key: form.Get("target_key")}}
-	if form.Get("report_to_kind") != "" || form.Get("report_to_key") != "" {
-		d.ReportTo = &schedulecmd.Target{Kind: form.Get("report_to_kind"), Key: form.Get("report_to_key")}
+func scheduleDefinition(form url.Values, id string) (schedulecmd.Definition, error) {
+	for _, oldField := range []string{"target_kind", "target_key", "report_to_kind", "report_to_key"} {
+		if _, exists := form[oldField]; exists {
+			return schedulecmd.Definition{}, schedulecmd.ErrInvalid
+		}
 	}
-	return d
+	return schedulecmd.Definition{ID: id, Cron: form.Get("cron"), Content: form.Get("content"),
+		Locator: form.Get("locator")}, nil
 }
 
 func scheduleVersion(form url.Values) (uint64, error) {

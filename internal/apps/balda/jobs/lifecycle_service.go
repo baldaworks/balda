@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"go.uber.org/fx"
 )
 
@@ -65,6 +65,23 @@ func (s *JobLifecycleService) Get(ctx context.Context, jobID string) (baldastate
 		return baldastate.JobRecord{}, false, nil
 	}
 	return s.store.GetJob(ctx, jobID)
+}
+
+// RecordScheduledOutput keeps one provider result for guarded schedule history.
+func (s *JobLifecycleService) RecordScheduledOutput(ctx context.Context, jobID, output string) error {
+	if s == nil {
+		return fmt.Errorf("job lifecycle service is unavailable")
+	}
+	return s.store.RecordScheduledOutput(ctx, jobID, output)
+}
+
+// RebindScheduledSession moves an active queued pre-upgrade run off its recipient chat scope.
+func (s *JobLifecycleService) RebindScheduledSession(ctx context.Context, jobID, oldSessionID, newSessionID string) (bool, error) {
+	if s == nil || !strings.HasPrefix(strings.TrimSpace(jobID), "scheduled-") || strings.TrimSpace(oldSessionID) == "" ||
+		strings.TrimSpace(newSessionID) == "" || !strings.HasPrefix(newSessionID, "sch-") {
+		return false, fmt.Errorf("valid scheduled job and private session ids are required")
+	}
+	return s.store.RebindScheduledJobSession(ctx, jobID, oldSessionID, newSessionID, "session:"+newSessionID)
 }
 
 func (s *JobLifecycleService) ListActiveGoalJobsBySession(ctx context.Context, sessionID string) ([]baldastate.JobRecord, error) {

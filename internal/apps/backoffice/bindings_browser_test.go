@@ -130,7 +130,7 @@ func TestHTTPAppBindingBrowserWorkflow(t *testing.T) {
 	}
 	for _, id := range []string{string(usercmd.RoleOperator), "secondary"} {
 		user, found, err := provider.Users().GetUser(t.Context(), id)
-		if err != nil || !found || user.Primary || len(user.Bindings) != 16 {
+		if err != nil || !found || user.Primary || len(user.Bindings) != 8 {
 			t.Fatalf("selected %s binding count/primary: %d/%t: %v", id, len(user.Bindings), user.Primary, err)
 		}
 		expectedRole := usercmd.RoleAdministrator

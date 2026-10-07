@@ -142,8 +142,9 @@ worker authorization evidence.
 
 Backoffice Schedules pages consume a local `SchedulesOperations` port. The
 `schedulebackofficeapp` composition adapter connects it to `scheduledjobs`,
-which owns source reconciliation, UTC cron and destination validation, managed
-definition policy, durable run admission and dispatch. `schedulecmd` holds the
+which owns source reconciliation, UTC cron, optional report-locator syntax
+validation, managed definition policy, durable run admission and dispatch.
+`schedulecmd` holds the
 transport-neutral management values used by Backoffice projections. `state`
 owns the SQL source/version and administrator authority fences, run ledger,
 and audit transaction. Configuration rows remain host-owned; Backoffice may

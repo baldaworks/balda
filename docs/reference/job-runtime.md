@@ -46,8 +46,8 @@ Ordinary conversational turns from Telegram, Slack, and Zulip do not create
 Balda includes an internal scheduler backed by `balda_scheduled_jobs` and a
 durable run ledger in `balda_schedule_runs`. Recurring definitions have two
 owners: host configuration (`balda.scheduler.jobs`) and Backoffice. Each has
-an ID, a five-field UTC cron expression, a target/key, content, and optional
-report destination. Backoffice creates managed definitions through the
+an ID, a five-field UTC cron expression, content, and an optional report locator.
+Backoffice creates managed definitions through the
 administrator-only [Schedules page](backoffice.md#schedules-management).
 Internal one-shot `@once` timers share the job store but are never listed as
 recurring schedules.
@@ -56,19 +56,26 @@ recurring schedules.
   `next_run_at <= now` are selected. A manual run can be requested for either
   source without changing the cron cursor; a disabled job requires explicit
   confirmation.
-- Dispatch path: admitted runs retain an exact definition snapshot and resolve
-  the envelope target by `target`/`key`, persist its canonical locator
-  (`channel_type`, `address_key`, `address_json`, `session_id`), and publish a
-  durable job command. Session restore and execution happen after command
-  delivery. Pending or retrying runs survive restart.
-- Locator target form: `target=locator`, `key=<channel_type>:<address_key>`;
-  `/locator` returns the paste-ready value in a transport-formatted structured
-  response. See the [locator command contract](../commands.md#locator).
-- Alias target form: `target=alias`, `key=owner` (or `owner@<channel_type>`);
-  resolves through the transport-neutral destination resolver across active
-  channels (Telegram, Slack, Zulip) with deterministic default selection and
-  fallback to registered Telegram owner data.
-- Delivery: scheduled jobs are fire-and-forget by default. If `envelope.report_to` is set, the session turn delivers progress/final replies to that locator.
+- Dispatch path: admitted runs retain an exact definition snapshot and publish
+  a durable job command. Execution starts in a new private session derived from
+  the run's execution job identity, independent of any recipient chat. Pending
+  or retrying runs survive restart.
+- Optional locator form: omit both `envelope.target` and `envelope.key` for no
+  external report, or set `target=locator` and
+  `key=<channel_type>:<address_key>`. A supplied value is syntax-checked but
+  does not need to identify a currently existing chat or session. `/locator`
+  returns a paste-ready value. See the [locator command contract](../commands.md#locator).
+- Output and delivery: the execution job stores the provider output, and the
+  run snapshot stores its input. If a locator is configured, Balda offers that
+  output (or a bounded failure message) through the durable delivery outbox.
+  Progress and interactive permission questions never go to the report locator;
+  permission requests that require a live conversation fail closed.
+  No locator means no external delivery. The private runtime session, its events,
+  and its ephemeral workspace branch are deleted after execution and, when
+  applicable, final delivery settles, even if workspace mode changed during a
+  restart. A canceled run with no queued report
+  closes without waiting for a delivery that will never be created.
+  An ambiguous external send stays pending and is not automatically retried.
 - Idempotency key: each due slot uses deterministic `last_dispatch_key = <job_id>@<due_next_run_at_rfc3339nano>`. A manual request has a separate request key; retrying the same request returns the same run.
 - Startup reconciliation: configuration updates only config-owned rows. A removed
   config entry is archived for retained history; managed rows survive unchanged.
@@ -88,9 +95,9 @@ recurring schedules.
 - Execution failure after transport delivery: `last_run_at` and `last_error` are recorded for visibility, but scheduler retry fields and `next_run_at` are not changed. Transport owns command retry, redelivery, and DLQ after publish.
 - Run history is newest first and retains both scheduled and manual attempts,
   including failures before publication and terminal execution outcomes.
-  Archived schedules retain readable history. Browser views expose bounded
-  status/failure labels, never raw provider errors or instruction content in
-  inventory.
+  Archived schedules retain readable history. Browser inventory exposes bounded
+  status/failure labels without instruction content. Guarded run detail exposes
+  only the frozen input and durable output, regardless of report delivery.
 
 ## Inbound webhook contract (internal)
 

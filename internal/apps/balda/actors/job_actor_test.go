@@ -132,7 +132,7 @@ func TestScheduledJobEnvelopeDispatchesSessionTurn(t *testing.T) {
 	ctx := context.Background()
 	bus, dispatcher, tasks := newTaskActorDispatchServices(t, ctx)
 	exec := NewJobActorExecutor(jobexec.New(tasks, dispatcher))
-	locator := session.SessionLocator{SessionID: "tg-101-202", AddressKey: "101"}
+	locator := session.SessionLocator{SessionID: "tg-101-202", ChannelType: "telegram", AddressKey: "101:202", AddressJSON: `{"chat_id":101,"topic_id":202}`}
 	env, err := ScheduledJobEnvelope("daily", "summarize", locator, nil, "101", 0, "tick-1")
 	if err != nil {
 		t.Fatalf("ScheduledJobEnvelope() error = %v", err)
@@ -140,7 +140,7 @@ func TestScheduledJobEnvelopeDispatchesSessionTurn(t *testing.T) {
 	if err := exec.Handle(ctx, env); err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
-	published := lastPublishedCommandTo(t, bus, baldaexecution.ActorTypeSession, locator.SessionID)
+	published := lastPublishedCommandTo(t, bus, baldaexecution.ActorTypeSession, baldaexecution.EnvelopeSessionID(env))
 	if published.Namespace != baldaexecution.NamespaceScheduleInbound {
 		t.Fatalf("published namespace = %q, want %q", published.Namespace, baldaexecution.NamespaceScheduleInbound)
 	}
@@ -150,7 +150,7 @@ func TestScheduledJobReplayPublishesSessionTurnAfterJobWasCreated(t *testing.T) 
 	ctx := t.Context()
 	bus, dispatcher, tasks := newTaskActorDispatchServices(t, ctx)
 	exec := NewJobActorExecutor(jobexec.New(tasks, dispatcher))
-	locator := session.SessionLocator{SessionID: "tg-101-202", AddressKey: "101"}
+	locator := session.SessionLocator{SessionID: "tg-101-202", ChannelType: "telegram", AddressKey: "101:202", AddressJSON: `{"chat_id":101,"topic_id":202}`}
 	env, err := ScheduledJobEnvelope("daily", "summarize", locator, nil, "101", 0, "daily@slot")
 	if err != nil {
 		t.Fatal(err)
@@ -162,7 +162,7 @@ func TestScheduledJobReplayPublishesSessionTurnAfterJobWasCreated(t *testing.T) 
 	if err := exec.Handle(ctx, env); err != nil {
 		t.Fatalf("replay = %v", err)
 	}
-	published := lastPublishedCommandTo(t, bus, baldaexecution.ActorTypeSession, locator.SessionID)
+	published := lastPublishedCommandTo(t, bus, baldaexecution.ActorTypeSession, baldaexecution.EnvelopeSessionID(env))
 	if published.DedupeKey != env.DedupeKey+":session" {
 		t.Fatalf("replay key = %q", published.DedupeKey)
 	}
@@ -170,6 +170,31 @@ func TestScheduledJobReplayPublishesSessionTurnAfterJobWasCreated(t *testing.T) 
 	job, found, err := tasks.Get(ctx, jobID)
 	if err != nil || !found || job.Status != baldastate.JobStatusRunning {
 		t.Fatalf("replayed job = %+v, %v", job, err)
+	}
+}
+
+func TestJobActorReplaysOldOneShotWireInOrdinarySession(t *testing.T) {
+	bus := &recordingHandlerCommandBus{}
+	executor := NewJobActorExecutor(jobexec.NewWithScheduleModes(nil, bus, actorScheduleModeFixture{oneShot: true}))
+	locator := session.SessionLocator{SessionID: "tg-9001-0", ChannelType: "telegram",
+		AddressKey: "9001:0", AddressJSON: `{"chat_id":9001,"topic_id":0}`}
+	data, err := actorlayer.MarshalPayload(jobEnvelopePayload{Kind: jobPayloadKindScheduledJob,
+		ScheduledJob: &scheduledJobPayload{JobID: "wait-old", Content: "wake", Locator: locator, UserID: "tg-101"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := actorlayer.Envelope{ID: "old-wire", Meta: baldaexecution.WithJobIDMeta(nil, "scheduled-wait-old"), Payload: data}
+	if err := executor.Handle(t.Context(), env); err != nil {
+		t.Fatal(err)
+	}
+	turn := lastPublishedCommandTo(t, bus, baldaexecution.ActorTypeSession, locator.SessionID)
+	var payload SessionTurnPayload
+	if err := actorlayer.UnmarshalPayload(turn.Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Locator.SessionID != locator.SessionID || payload.ReportTo != nil || payload.Deliver ||
+		payload.ScheduleOneShot == nil || !*payload.ScheduleOneShot {
+		t.Fatalf("old one-shot replay = %+v", payload)
 	}
 }
 

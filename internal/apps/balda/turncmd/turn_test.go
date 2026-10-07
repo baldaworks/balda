@@ -145,6 +145,25 @@ func TestSessionTurnEnvelopePreservesExplicitDedupeKey(t *testing.T) {
 	}
 }
 
+func TestPrivateScheduledTurnDoesNotRequireAReportAddress(t *testing.T) {
+	t.Parallel()
+
+	const jobID = "scheduled-daily-slot"
+	turn, err := PrivateScheduledTurn(SessionTurnPayload{JobID: jobID, ScheduledJobID: "daily"})
+	if err != nil {
+		t.Fatalf("PrivateScheduledTurn() error = %v", err)
+	}
+	if turn.Locator.SessionID != ScheduledExecutionSessionID(jobID) || turn.Locator.ChannelType != SourceSchedule {
+		t.Fatalf("private execution locator = %+v", turn.Locator)
+	}
+	if turn.ReportTo != nil || turn.Deliver {
+		t.Fatalf("delivery enabled without report locator: %+v", turn)
+	}
+	if turn.UserID == "" {
+		t.Fatal("private execution user ID is empty")
+	}
+}
+
 func TestNormalizedInboundCarriesOneOrderedAttachmentSetThroughDurableTurn(t *testing.T) {
 	t.Parallel()
 

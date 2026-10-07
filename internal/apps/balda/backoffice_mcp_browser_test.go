@@ -133,8 +133,8 @@ func TestBackofficeMCPBrowserWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(items) != 5 || len(revisions) != 12 {
-		t.Fatalf("durable definitions/revisions = %d/%d, want 5/12", len(items), len(revisions))
+	if len(items) != 3 || len(revisions) != 6 {
+		t.Fatalf("durable definitions/revisions = %d/%d, want 3/6", len(items), len(revisions))
 	}
 	for _, item := range items {
 		if item.Connection.Source == mcpcmd.SourceManaged && item.Status != mcpcmd.StatusDeleted {

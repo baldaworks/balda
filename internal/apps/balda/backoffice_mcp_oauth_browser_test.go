@@ -54,10 +54,9 @@ func TestBackofficeMCPOAuthBrowserWorkflow(t *testing.T) {
 	for _, scenario := range []struct {
 		transport, flow, base string
 		width                 int
-		js                    bool
 	}{
-		{"http", "browser", "", 1440, true}, {"http", "device", "/balda", 390, false},
-		{"sse", "browser", "/balda", 1440, false}, {"sse", "device", "", 390, true},
+		{"http", "browser", "", 1440}, {"http", "device", "/balda", 390},
+		{"sse", "browser", "/balda", 1440}, {"sse", "device", "", 390},
 	} {
 		t.Run(scenario.transport+"/"+scenario.flow, func(t *testing.T) {
 			dir := t.TempDir()
@@ -198,26 +197,26 @@ func TestBackofficeMCPOAuthBrowserWorkflow(t *testing.T) {
 				t.Fatal(err)
 			}
 			verifyOAuthBrowserExecution(t, catalog, registry, binder, providers, publicBefore.ID, "/public", "public-hosted", "public-acp")
-			runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "configured-public", scenario.width, scenario.js)
+			runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "configured-public", scenario.width)
 			publicAfter, err := catalog.Store().Application()
 			if err != nil {
 				t.Fatal(err)
 			}
 			verifyOAuthBrowserExecution(t, catalog, registry, binder, providers, publicBefore.ID, "/public", "public-hosted", "public-acp")
 			verifyOAuthBrowserExecution(t, catalog, registry, binder, providers, publicAfter.ID, "/public", "public-hosted", "public-acp")
-			runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "fresh", scenario.width, scenario.js)
+			runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "fresh", scenario.width)
 			pinned, err := catalog.Store().Application()
 			if err != nil {
 				t.Fatal(err)
 			}
 			verifyOAuthBrowserExecution(t, catalog, registry, binder, providers, pinned.ID, "/mcp")
-			runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "managed-create-"+scenario.transport, scenario.width, scenario.js)
+			runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "managed-create-"+scenario.transport, scenario.width)
 			managedPin, err := catalog.Store().Application()
 			if err != nil {
 				t.Fatal(err)
 			}
 			verifyOAuthBrowserExecution(t, catalog, registry, binder, providers, managedPin.ID, "/mcp", "managed-hosted", "managed-acp")
-			runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "managed-partial-"+scenario.transport, scenario.width, scenario.js)
+			runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "managed-partial-"+scenario.transport, scenario.width)
 			partialPin, err := catalog.Store().Application()
 			if err != nil {
 				t.Fatal(err)
@@ -226,14 +225,14 @@ func TestBackofficeMCPOAuthBrowserWorkflow(t *testing.T) {
 			_ = oauthBrowserConnectionRevision(t, p, "partial-tools")
 			managedBefore := oauthBrowserConnectionRevision(t, p, "managed-tools")
 			for _, intent := range []string{"missing", "equal"} {
-				runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "managed-"+intent+"-"+scenario.transport, scenario.width, scenario.js)
+				runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "managed-"+intent+"-"+scenario.transport, scenario.width)
 				unchanged := oauthBrowserConnectionRevision(t, p, "managed-tools")
 				if !sameOAuthBrowserRevision(unchanged, managedBefore) {
 					t.Fatal("missing or unchanged native scopes replaced the bound revision")
 				}
 				verifyOAuthBrowserExecution(t, catalog, registry, binder, providers, managedPin.ID, "/mcp", "managed-hosted", "managed-acp")
 			}
-			runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "managed-scopes-"+scenario.transport, scenario.width, scenario.js)
+			runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "managed-scopes-"+scenario.transport, scenario.width)
 			managedAfter := oauthBrowserConnectionRevision(t, p, "managed-tools")
 			retained, found, err := p.MCP().GetMCPRevision(t.Context(), managedBefore.ConnectionID, managedBefore.ID)
 			if err != nil || !found || !sameOAuthBrowserRevision(retained, managedBefore) || managedAfter.ID == managedBefore.ID || len(managedAfter.Definition.Scopes) != 0 || managedAfter.Definition.AuthBinding == nil {
@@ -247,9 +246,9 @@ func TestBackofficeMCPOAuthBrowserWorkflow(t *testing.T) {
 				t.Fatal(err)
 			}
 			verifyOAuthBrowserExecution(t, catalog, registry, binder, providers, scopePin.ID, "/mcp", "managed-hosted", "managed-acp")
-			runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "managed-restore-"+scenario.transport, scenario.width, scenario.js)
+			runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "managed-restore-"+scenario.transport, scenario.width)
 			verifyOAuthBrowserExecution(t, catalog, registry, binder, providers, managedPin.ID, "/mcp", "managed-hosted", "managed-acp")
-			runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "managed-static-"+scenario.transport, scenario.width, scenario.js)
+			runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "managed-static-"+scenario.transport, scenario.width)
 			staticPin, err := catalog.Store().Application()
 			if err != nil {
 				t.Fatal(err)
@@ -277,7 +276,7 @@ func TestBackofficeMCPOAuthBrowserWorkflow(t *testing.T) {
 				t.Fatal("native authorization of static managed server changed its historical definition")
 			}
 			if scenario.flow == "device" {
-				runOAuthBrowserRestart(t, origin+scenario.base, issuer.server.URL, scenario.flow, "pending-restart", scenario.width, scenario.js, func() {
+				runOAuthBrowserRestart(t, origin+scenario.base, issuer.server.URL, scenario.flow, "pending-restart", scenario.width, func() {
 					flows.Close()
 					if err := runtime.Stop(t.Context()); err != nil {
 						t.Fatal(err)
@@ -298,7 +297,7 @@ func TestBackofficeMCPOAuthBrowserWorkflow(t *testing.T) {
 				t.Fatal(err)
 			}
 			_, restarted, nextRegistry, nextBinder, _ := start("/changed")
-			runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "recapture", scenario.width, scenario.js)
+			runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "recapture", scenario.width)
 			current, err := restarted.Store().Application()
 			if err != nil || current.ID == pinned.ID {
 				t.Fatal("changed configuration did not publish a new snapshot")
@@ -350,18 +349,18 @@ func sameOAuthBrowserRevision(a, b mcpcmd.Revision) bool {
 	return bytes.Equal(first, second)
 }
 
-func runOAuthBrowser(t *testing.T, base, issuer, flow, phase string, width int, js bool) {
+func runOAuthBrowser(t *testing.T, base, issuer, flow, phase string, width int) {
 	t.Helper()
-	runOAuthBrowserRestart(t, base, issuer, flow, phase, width, js, nil)
+	runOAuthBrowserRestart(t, base, issuer, flow, phase, width, nil)
 }
 
-func runOAuthBrowserRestart(t *testing.T, base, issuer, flow, phase string, width int, js bool, restart func()) {
+func runOAuthBrowserRestart(t *testing.T, base, issuer, flow, phase string, width int, restart func()) {
 	t.Helper()
 	root, err := filepath.Abs("../../..")
 	if err != nil {
 		t.Fatal(err)
 	}
-	command := exec.CommandContext(t.Context(), "node", "qa/backoffice-e2e/mcp-oauth.cjs", base, issuer, flow, phase, fmt.Sprint(width), fmt.Sprint(js))
+	command := exec.CommandContext(t.Context(), "node", "qa/backoffice-e2e/mcp-oauth.cjs", base, issuer, flow, phase, fmt.Sprint(width))
 	command.Dir = root
 	var output []byte
 	if restart == nil {

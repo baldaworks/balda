@@ -24,7 +24,7 @@ func TestMFACeremonyUsesNativeSecretFreeScopedDocument(t *testing.T) {
 	response := httptest.NewRecorder()
 	app.renderMFACeremony(response, request, usercmd.MFALogin, security.CeremonyStart{Transaction: "opaque-transaction", Options: map[string]any{"publicKey": map[string]any{"challenge": "cHVibGlj"}}})
 	body := response.Body.String()
-	for _, want := range []string{`<!doctype html>`, `/balda/auth/webauthn/finish`, `hx-boost="false"`, `hx-history="false"`, `name="csrf_token" value="test-csrf"`, `JavaScript`, `data-webauthn`} {
+	for _, want := range []string{`<!doctype html>`, `/balda/auth/webauthn/finish`, `hx-boost="false"`, `hx-history="false"`, `name="csrf_token" value="test-csrf"`, `/assets/webauthn.`, `data-webauthn`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("missing %q", want)
 		}

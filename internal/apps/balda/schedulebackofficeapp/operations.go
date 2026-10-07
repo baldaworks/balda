@@ -48,3 +48,8 @@ func (o *Operations) History(ctx context.Context, id string, beforeAt time.Time,
 	limit int, authority schedulecmd.Authority) ([]schedulecmd.RunItem, error) {
 	return o.management.History(ctx, id, beforeAt, beforeID, limit, authority)
 }
+
+func (o *Operations) RunDetail(ctx context.Context, scheduleID, runID string,
+	authority schedulecmd.Authority) (schedulecmd.RunDetail, error) {
+	return o.management.RunDetail(ctx, scheduleID, runID, authority)
+}

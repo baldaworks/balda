@@ -187,8 +187,7 @@ or re-enable legacy reads.
 
 Successful login creates a short-lived opaque access token and a longer-lived
 refresh family. When access expires, the browser submits a guarded refresh form
-automatically and returns to the page the user was opening. A manual form
-remains available when JavaScript is disabled. The server consumes generation
+automatically and returns to the page the user was opening. The server consumes generation
 N, creates generation N+1, replaces the access, refresh and CSRF cookies, and
 renews the family deadline to 30 days after that successful refresh by default.
 The active token, family deadline and success audit commit in one transaction;
@@ -290,8 +289,7 @@ raw User-Agent and token values are never displayed.
 - A terminal refresh failure offers sign-in as the primary action. A
   concurrent-refresh conflict offers a safe page reopen because another
   request may already have installed new cookies. Failed native and HTMX forms
-  retain their HTTP status and show an actionable message. Ordinary links and
-  forms remain available without JavaScript.
+  retain their HTTP status and show an actionable message.
 - Keep `qa_ui: false` in production. A private development instance may enable
   the same synthetic previews under `/qa/ui/`, but the preferred local workflow
   uses `balda backoffice qa serve` without configuration or database access.
@@ -322,7 +320,7 @@ The pinned stack is:
 | --- | --- | --- |
 | Go `html/template` | Go 1.26.6 | Authoritative SSR and HTML fragments |
 | AdminLTE | 4.9.1 | Shell and UI components |
-| HTMX | 2.0.10 | Progressive enhancement |
+| HTMX | 2.0.10 | Browser navigation and fragment updates |
 | Bootstrap Icons | 1.13.1 | Local icons |
 | Vanilla JavaScript | Built in | HTMX lifecycle, focus, sidebar and create-form field visibility |
 
@@ -333,8 +331,7 @@ in normal grid flow. The top bar and sidebar brand share the same height;
 navigation scrolls content below the top bar so page headings remain visible.
 The viewer identity is independent of an inspected user.
 Desktop collapse hides the sidebar and expands content. Mobile navigation uses
-an overlay with backdrop, Escape and focus containment; ordinary menu links
-remain available without JavaScript.
+an overlay with backdrop, Escape and focus containment.
 
 The theme is explicitly dark on console, authentication and recovery pages.
 `data-lte-color-mode="off"` disables OS-driven mutation. Shared CSS tokens and
@@ -343,8 +340,7 @@ danger states. Review the synthetic component and full-layout examples before
 changing runtime page layouts; see the UI review runbook.
 
 Go templates are the only source of HTML. JavaScript must not assemble HTML.
-Every screen must work without JavaScript through ordinary links and forms.
-Every HTMX interaction must preserve an ordinary link or form as its fallback.
+Backoffice requires JavaScript for navigation, session refresh, and interactive forms.
 
 HTMX may improve navigation and interaction, but it must not own
 authentication, authorization, validation, or domain state. Those concerns
@@ -432,9 +428,7 @@ Add pages in this order:
 7. Render exactly one `main-content` element. Links and forms targeting `#main-content` use
 `hx-swap="outerHTML"` because the response includes the main element itself.
 8. Do not assemble HTML with JavaScript.
-9. Preserve an ordinary link or form for every HTMX operation.
-10. Verify the full page, fragment, non-JavaScript fallback, canonical URL, and
-    error paths.
+9. Verify the full page, fragment, canonical URL, and error paths.
 
 ## Verification matrix
 
@@ -445,7 +439,6 @@ For every page or interaction, verify:
 | Full-page navigation | Complete HTML document, canonical URL, one `main-content` |
 | Eligible HTMX navigation | Only `title` and `main#main-content` |
 | HTMX history restoration | Complete HTML document |
-| JavaScript disabled | Equivalent navigation or mutation through links and forms |
 | Ordinary mutation | `303` with `Location` |
 | HTMX mutation | `204` with `HX-Location` |
 | Validation or authorization error | Original error status and correct full-page or fragment shape |
@@ -458,7 +451,7 @@ can enable it in **Account → Two-factor authentication**; operators continue
 using password authentication. Bot bindings and admission are independent.
 One passkey is active at a time. Use a browser with JavaScript and WebAuthn support
 and an authenticator that supports user verification (PIN or biometric).
-Password-only accounts remain usable without JavaScript.
+Password-only accounts also use the JavaScript-enabled Backoffice browser.
 
 Set `balda.backoffice.public_url` to the exact HTTPS origin, for example
 `https://lab.example.org`, or `http://localhost:8095` for local development.
@@ -498,7 +491,7 @@ bound to its browser, CSRF token, purpose, user and current authority.
   password authentication and revokes old sessions.
 - **Cancel or retry:** cancelling the authenticator or leaving the ceremony
   keeps the factor setting unchanged. Retry while the ceremony is live, or
-  cancel and start again. Unsupported/no-JavaScript browsers show guidance;
+  cancel and start again. Unsupported browsers show guidance;
   they cannot bypass an enrolled factor. Authentication pages and ceremonies
   are native, non-boosted and excluded from HTMX history; responses use no-store.
 
@@ -543,11 +536,9 @@ its current state and editor. The immutable server ID must be unique across
 both sources. Stdio uses a direct command, working directory and one argument
 per line; HTTP and SSE use a URL and headers. Their OAuth settings are
 managed separately in Backoffice, including for configuration-owned servers.
-With JavaScript, the new-server form shows only the selected transport's fields
+The new-server form shows only the selected transport's fields
 and excludes inactive draft fields from submission. Switching back retains the
-draft until navigation or submission clears write-only values. Without
-JavaScript, all transport sections remain available with their applicability
-instructions; clear fields for the other transport before submitting.
+draft until navigation or submission clears write-only values.
 Choose all providers or specific configured providers. The editor supplies
 explicit literal, protected and deployment-variable value sources. Keep retains
 an existing value, Replace supplies a new value, and Remove deletes it. Existing
@@ -672,7 +663,7 @@ in logs, URLs used for recovery, exported read models or browser history caches.
 Administrators with a normal browser session can open **Schedules** at
 `<base_path>/schedules`. Operators cannot view or mutate schedules. The
 inventory lists recurring definitions from both `balda.scheduler.jobs` and
-Backoffice, with source, UTC cron, destination, optional report destination,
+Backoffice, with source, UTC cron, report locator,
 enabled/runtime state, and next/last run times. Internal `@once` timers are not
 listed. Opening a detail loads the instruction content only for that guarded
 administrator page; the inventory omits it. HTML content and safe errors are
@@ -683,15 +674,21 @@ versions. Session refresh returns to the requested Schedules page.
 `/schedules?new=1` creates a Backoffice-owned schedule. IDs use lowercase
 letters, digits, `_` and `-`, start with a letter or digit, and are fixed after
 creation. The ID must be unique across sources. The form uses a five-field UTC
-cron expression, content, and an existing `alias`, `locator` or `session`
-destination; `report_to` is optional and uses the same target forms. A new
-managed schedule starts enabled. Saving an edit recalculates its next future
-slot while preserving its enabled state. Confirmed disable prevents future due
+cron expression, content, and an optional public
+`<channel_type>:<address_key>` report locator. Each run starts in a new private
+session independent of that address. A supplied locator is checked for syntax,
+but its address need not exist when the schedule is saved or run. Without a
+locator, the output remains in run history and no external report is sent. A new
+managed schedule starts enabled. The report locator receives only the final
+output or bounded failure message, never progress or interactive permission
+questions. A permission request requiring a live conversation fails closed.
+Saving an edit recalculates its next future slot while preserving its enabled
+state. Confirmed disable prevents future due
 selection; an already admitted or published run may finish. Confirmed enable
 selects a new future slot. Confirmed delete archives the definition; its
 detail and run history remain accessible at `/schedules/{id}`. Stale versions
 or ID collisions return a conflict, and the editor asks the administrator to
-reload. Invalid cron, destination or report destination leaves the prior
+reload. Invalid cron or supplied locator leaves the prior
 definition intact.
 
 Configuration-owned schedules are read-only in Backoffice. Change their
@@ -707,16 +704,24 @@ requires a separate confirmation. A duplicate submission from the same form
 uses one request key and returns the same durable run; opening the page again
 starts a new request. The newest-first history distinguishes scheduled and
 manual triggers and shows queued, retrying, starting, waiting-for-execution,
-running, succeeded, failed or canceled state. It includes failures before
+running, delivering-report, succeeded, failed or canceled state. It includes failures before
 command publication and terminal execution outcomes, with bounded failure
-labels instead of raw provider errors. History is paginated and remains
+labels instead of raw provider errors. Opening a run shows only its frozen
+input and the durable provider output. Delivery status remains separate from
+the output: a failed or pending send does not erase the result. After execution
+and, when applicable, final delivery settles, Balda deletes the private session
+and its runtime events and ephemeral workspace branch; interrupted cleanup
+retries after restart without sending a second report. A canceled run without
+a queued report closes without waiting for delivery. History is paginated and remains
 available after deletion. A successful Run now redirect means admission, not
 completion; refresh the detail to observe the result.
 
 The shared state provider applies Goose SQL migrations for SQLite and
 PostgreSQL before Backoffice or ingress starts. They classify existing
 recurring rows as config-owned and `@once` rows as internal, add source and
-version fences, and create the durable run ledger. Back up the selected
+version fences, and create the durable run ledger. Later SQL migrations
+preserve optional report settings and add idempotent run-session cleanup state.
+Back up the selected
 database before upgrading. A migration failure aborts startup without running
 the scheduler. Restoring an older binary after new managed schedules or runs
 have been written requires a matching pre-upgrade database backup.

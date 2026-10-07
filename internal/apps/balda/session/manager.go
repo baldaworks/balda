@@ -72,6 +72,7 @@ type WorkspaceManager interface {
 	Import(ctx context.Context, workspaceDir string) error
 	Export(ctx context.Context, workspaceDir, branchName, commitMessage string) error
 	CleanupWorkspace(ctx context.Context, workspaceDir string) error
+	DeleteBranch(ctx context.Context, branchName string) error
 }
 
 type AgentMetadata struct {
@@ -278,10 +279,11 @@ func (m *Manager) BaldaProviderID() string {
 
 // CreateSession builds an agent for the given locator and stores it in memory.
 func (m *Manager) CreateSession(ctx context.Context, sessionCtx SessionContext, agentName string) error {
-	return m.createSession(ctx, sessionCtx, agentName, nil)
+	return m.createSession(ctx, sessionCtx, agentName, nil, false)
 }
 
-func (m *Manager) createSession(ctx context.Context, sessionCtx SessionContext, agentName string, persisted *baldastate.SessionRecord) error {
+func (m *Manager) createSession(ctx context.Context, sessionCtx SessionContext, agentName string,
+	persisted *baldastate.SessionRecord, transient bool) error {
 	locator := sessionCtx.Locator
 	userID := strings.TrimSpace(sessionCtx.UserID)
 	if userID == "" {
@@ -370,7 +372,7 @@ func (m *Manager) createSession(ctx context.Context, sessionCtx SessionContext, 
 	}
 
 	agentSessionID := m.newAgentSessionID(sessionID)
-	if m.sessionsPersistent {
+	if m.sessionsPersistent || transient {
 		agentSessionID = sessionID
 	}
 	sessionRuntime := rootRuntime
@@ -464,11 +466,13 @@ func (m *Manager) createSession(ctx context.Context, sessionCtx SessionContext, 
 		startupNotice:     startupNotice,
 	}
 
-	if err := m.persistSessionRecord(ctx, ts, baldastate.SessionStatusActive); err != nil {
-		if closeErr := m.cleanupTopicSession(ctx, ts, sessionCleanupOptions{deleteRuntimeSession: true, cleanupWorkspace: true}); closeErr != nil {
-			m.logger.Warn().Err(closeErr).Str("session_id", sessionID).Msg("failed to rollback session after persist error")
+	if !transient {
+		if err := m.persistSessionRecord(ctx, ts, baldastate.SessionStatusActive); err != nil {
+			if closeErr := m.cleanupTopicSession(ctx, ts, sessionCleanupOptions{deleteRuntimeSession: true, cleanupWorkspace: true}); closeErr != nil {
+				m.logger.Warn().Err(closeErr).Str("session_id", sessionID).Msg("failed to rollback session after persist error")
+			}
+			return fmt.Errorf("persist session metadata: %w", err)
 		}
-		return fmt.Errorf("persist session metadata: %w", err)
 	}
 
 	m.mu.Lock()

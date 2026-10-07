@@ -12,6 +12,10 @@ type sqliteJobStore struct {
 	db *sql.DB
 }
 
+func (s *sqliteJobStore) RecordScheduledOutput(ctx context.Context, jobID, output string) error {
+	return recordScheduledOutput(ctx, s.db, func(query string) string { return query }, jobID, output)
+}
+
 type contextExecer interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }
@@ -99,6 +103,18 @@ func (s *sqliteJobStore) GetJob(ctx context.Context, jobID string) (JobRecord, b
 		return JobRecord{}, false, err
 	}
 	return record, ok, nil
+}
+
+func (s *sqliteJobStore) RebindScheduledJobSession(ctx context.Context, jobID, oldSessionID, newSessionID, assignedActor string) (bool, error) {
+	result, err := s.db.ExecContext(ctx, `UPDATE execution_jobs SET session_id = ?, assigned_actor = ?, updated_at = ?
+		WHERE id = ? AND session_id = ? AND status NOT IN (?, ?, ?, ?)`,
+		newSessionID, assignedActor, time.Now().UTC().Format(time.RFC3339), jobID, oldSessionID,
+		JobStatusCompleted, JobStatusFailed, JobStatusCanceled, JobStatusDeadLettered)
+	if err != nil {
+		return false, fmt.Errorf("rebind scheduled job session: %w", err)
+	}
+	count, err := result.RowsAffected()
+	return count == 1, err
 }
 
 func (s *sqliteJobStore) ListActiveJobsBySession(ctx context.Context, sessionID string) ([]JobRecord, error) {
@@ -630,6 +646,10 @@ func (s *sqliteJobStore) SentFinalDelivery(ctx context.Context, jobID string) (s
 		return "", false, fmt.Errorf("read final delivery for job %q: %w", jobID, err)
 	}
 	return providerMessageID, true, nil
+}
+
+func (s *sqliteJobStore) FinalDelivery(ctx context.Context, jobID string) (DeliveryRecord, bool, error) {
+	return findFinalDelivery(ctx, jobID, s.getDeliveryByKey)
 }
 
 func (s *sqliteJobStore) ReserveAgentStep(ctx context.Context, record AgentStepRecord) (AgentStepRecord, bool, error) {
