@@ -112,6 +112,7 @@ func (a *httpApp) handler() (http.Handler, error) {
 	mux.HandleFunc("POST "+a.path("/schedules/{schedule_id}"), a.scheduleUpdate)
 	mux.HandleFunc("POST "+a.path("/schedules/{schedule_id}/selection"), a.scheduleSelection)
 	mux.HandleFunc("POST "+a.path("/schedules/{schedule_id}/delete"), a.scheduleDelete)
+	mux.HandleFunc("POST "+a.path("/schedules/{schedule_id}/runs"), a.scheduleRunNow)
 	a.mcpAuthorizationRoutes(mux)
 	mux.Handle("GET "+a.path("/audit"), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.audit))))
 	mux.Handle("GET "+a.path("/access"), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.accessList))))

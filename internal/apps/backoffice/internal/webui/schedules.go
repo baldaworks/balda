@@ -22,12 +22,64 @@ type ScheduleRow struct {
 
 // ScheduleEditor contains the guarded definition detail for one schedule.
 type ScheduleEditor struct {
-	Row                       ScheduleRow
-	New                       bool
-	ID, Cron, Content         string
-	TargetKind, TargetKey     string
-	ReportToKind, ReportToKey string
-	Action                    string
+	Row                            ScheduleRow
+	New                            bool
+	ID, Cron, Content              string
+	TargetKind, TargetKey          string
+	ReportToKind, ReportToKey      string
+	Action                         string
+	RunRequestKey, NextHistoryPath string
+	Runs                           []ScheduleRunView
+	HistoryLoaded                  bool
+}
+
+// ScheduleRunView contains bounded, content-free execution status.
+type ScheduleRunView struct {
+	Trigger, State, Requested, Due, Completed, Failure string
+}
+
+// ProjectScheduleRun maps durable execution state to safe operator labels.
+func ProjectScheduleRun(run schedulecmd.RunItem) ScheduleRunView {
+	view := ScheduleRunView{Requested: scheduleTime(run.RequestedAt),
+		Due: scheduleTime(run.DueAt), Completed: scheduleTime(run.CompletedAt)}
+	switch run.Trigger {
+	case "manual":
+		view.Trigger = "Manual"
+	case "cron":
+		view.Trigger = "Scheduled"
+	default:
+		view.Trigger = "Unknown"
+	}
+	switch run.State {
+	case "queued", "pending":
+		view.State = "Queued"
+	case "retrying":
+		view.State = "Retrying"
+	case "publishing":
+		view.State = "Starting"
+	case "dispatched":
+		view.State = "Waiting for execution"
+	case "running":
+		view.State = "Running"
+	case "succeeded":
+		view.State = "Succeeded"
+	case "failed":
+		view.State = "Failed"
+	case "canceled":
+		view.State = "Canceled"
+	default:
+		view.State = "Status unavailable"
+	}
+	if run.SafeFailureCode != "" {
+		view.Failure = "Execution could not complete."
+		switch run.SafeFailureCode {
+		case "selection_changed":
+			view.Failure = "Schedule selection changed before execution."
+		case "execution_failed":
+			view.Failure = "Execution failed."
+		}
+	}
+	return view
 }
 
 // ProjectScheduleRow omits instruction content from the inventory.

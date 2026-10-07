@@ -14,7 +14,10 @@ import (
 	"github.com/baldaworks/balda/internal/apps/backoffice/security"
 	"github.com/baldaworks/balda/internal/apps/balda/schedulecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/users"
+	"github.com/google/uuid"
 )
+
+const scheduleHistoryPageSize = 20
 
 // SchedulesOperations is Backoffice's port to host-owned schedule policy.
 type SchedulesOperations interface {
@@ -24,6 +27,8 @@ type SchedulesOperations interface {
 	Update(ctx context.Context, request schedulecmd.Update) (schedulecmd.Item, error)
 	SetEnabled(ctx context.Context, request schedulecmd.ChangeSelection) (schedulecmd.Item, error)
 	Delete(ctx context.Context, request schedulecmd.Delete) (schedulecmd.Item, error)
+	RunNow(ctx context.Context, request schedulecmd.RunNow) (schedulecmd.RunItem, error)
+	History(ctx context.Context, id string, beforeAt time.Time, beforeID string, limit int, authority schedulecmd.Authority) ([]schedulecmd.RunItem, error)
 }
 
 // ConfigureSchedulesOperations wires host policy before Backoffice starts.
@@ -72,6 +77,27 @@ func (a *httpApp) schedulesView(r *http.Request, p security.Principal) (webui.Pa
 		}
 		page.Title = item.Definition.ID + " · Schedules · Balda"
 		page.Schedules = &webui.SchedulesView{Editor: webui.ProjectScheduleEditor(item, false)}
+		page.Schedules.Editor.RunRequestKey = uuid.NewString()
+		if r.Method != http.MethodGet {
+			return page, nil
+		}
+		beforeAt, beforeID, err := scheduleHistoryCursor(r.URL.Query())
+		if err != nil {
+			return page, err
+		}
+		runs, err := a.schedules.History(r.Context(), id, beforeAt, beforeID, scheduleHistoryPageSize+1, a.scheduleAuthority(p))
+		if err != nil {
+			return page, err
+		}
+		if len(runs) > scheduleHistoryPageSize {
+			last := runs[scheduleHistoryPageSize-1]
+			page.Schedules.Editor.NextHistoryPath = page.Schedules.Editor.Row.DetailPath + "?before_at=" + url.QueryEscape(last.RequestedAt.UTC().Format(time.RFC3339Nano)) + "&before_id=" + url.QueryEscape(last.ID)
+			runs = runs[:scheduleHistoryPageSize]
+		}
+		for _, run := range runs {
+			page.Schedules.Editor.Runs = append(page.Schedules.Editor.Runs, webui.ProjectScheduleRun(run))
+		}
+		page.Schedules.Editor.HistoryLoaded = true
 		return page, nil
 	}
 	items, err := a.schedules.Inventory(r.Context(), a.scheduleAuthority(p))
@@ -83,6 +109,20 @@ func (a *httpApp) schedulesView(r *http.Request, p security.Principal) (webui.Pa
 		page.Schedules.Rows = append(page.Schedules.Rows, webui.ProjectScheduleRow(item))
 	}
 	return page, nil
+}
+
+func scheduleHistoryCursor(query url.Values) (time.Time, string, error) {
+	if query.Get("before_at") == "" && query.Get("before_id") == "" {
+		return time.Time{}, "", nil
+	}
+	beforeAt, err := time.Parse(time.RFC3339Nano, query.Get("before_at"))
+	if err != nil || beforeAt.IsZero() {
+		return time.Time{}, "", schedulecmd.ErrInvalid
+	}
+	if _, err := uuid.Parse(query.Get("before_id")); err != nil {
+		return time.Time{}, "", schedulecmd.ErrInvalid
+	}
+	return beforeAt.UTC(), query.Get("before_id"), nil
 }
 
 func (a *httpApp) scheduleAuthority(p security.Principal) schedulecmd.Authority {
@@ -139,6 +179,28 @@ func (a *httpApp) scheduleSelection(w http.ResponseWriter, r *http.Request) {
 
 func (a *httpApp) scheduleDelete(w http.ResponseWriter, r *http.Request) {
 	a.scheduleChange(w, r, true)
+}
+
+func (a *httpApp) scheduleRunNow(w http.ResponseWriter, r *http.Request) {
+	form, p, ok := a.browser.AdministratorMutationLimit(w, r, 1<<20)
+	if !ok {
+		return
+	}
+	page, err := a.schedulesView(r, p)
+	if err != nil {
+		a.scheduleError(w, r, page, err)
+		return
+	}
+	request := schedulecmd.RunNow{ID: r.PathValue("schedule_id"), RequestKey: form.Get("request_key"),
+		ConfirmDisabled: form.Get("confirm_disabled") == checkedFormValue, Authority: a.scheduleAuthority(p)}
+	_, err = a.schedules.RunNow(r.Context(), request)
+	if err != nil {
+		a.scheduleError(w, r, page, err)
+		return
+	}
+	if err := webui.RespondMutationPath(w, r, a.path(page.Schedules.Editor.Row.DetailPath)); err != nil {
+		a.scheduleError(w, r, page, schedulecmd.ErrUnavailable)
+	}
 }
 
 func (a *httpApp) scheduleChange(w http.ResponseWriter, r *http.Request, remove bool) {
