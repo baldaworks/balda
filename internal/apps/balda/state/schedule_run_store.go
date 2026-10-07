@@ -51,6 +51,100 @@ func (s *sqlScheduleRunStore) Create(ctx context.Context, record ScheduleRunReco
 	return count == 1, nil
 }
 
+// CreateCron admits a due slot only while its selected definition is still eligible.
+func (s *sqlScheduleRunStore) CreateCron(ctx context.Context, record ScheduleRunRecord, expectedNextRunAt time.Time) (bool, error) {
+	if record.Trigger != ScheduleRunTriggerCron || expectedNextRunAt.IsZero() {
+		return false, fmt.Errorf("cron schedule run and due slot are required")
+	}
+	if err := validateScheduleRun(record); err != nil {
+		return false, err
+	}
+	now := time.Now().UTC()
+	if record.CreatedAt.IsZero() {
+		record.CreatedAt = now
+	}
+	if record.UpdatedAt.IsZero() {
+		record.UpdatedAt = now
+	}
+	if record.Version == 0 {
+		record.Version = 1
+	}
+	values := append(scheduleRunValues(record), record.ScheduleID, record.DefinitionVersion,
+		expectedNextRunAt.UTC().Format(time.RFC3339))
+	result, err := s.db.ExecContext(ctx, s.bind(`INSERT INTO balda_schedule_runs
+		(`+scheduleRunColumns+`)
+		SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+		FROM balda_scheduled_jobs WHERE job_id = ? AND definition_version = ?
+		AND next_run_at = ? AND source IN ('config', 'managed')
+		AND enabled = 1 AND deleted = 0 AND status = 'active'
+		ON CONFLICT (schedule_id, trigger_key) DO NOTHING`), values...)
+	if err != nil {
+		return false, s.failure("create cron schedule run", err)
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return false, s.failure("count created cron schedule runs", err)
+	}
+	return count == 1, nil
+}
+
+// ClaimCron serializes publication admission with definition changes and leases recovery.
+func (s *sqlScheduleRunStore) ClaimCron(
+	ctx context.Context, record ScheduleRunRecord, now, leaseUntil time.Time,
+) (bool, error) {
+	if record.Trigger != ScheduleRunTriggerCron || record.Version == 0 || record.DueAt.IsZero() ||
+		now.IsZero() || !leaseUntil.After(now) {
+		return false, fmt.Errorf("cron claim requires a selected run and future lease")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, s.failure("begin cron schedule claim", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if record.DispatchState != ScheduleRunPublishing {
+		// A new selection takes the same row lock as enable/edit/delete.
+		// An expired publishing claim is already in flight and may finish.
+		locked, err := tx.ExecContext(ctx, s.bind(`UPDATE balda_scheduled_jobs SET updated_at = updated_at
+			WHERE job_id = ? AND source IN ('config', 'managed') AND enabled = 1 AND deleted = 0
+			AND status = 'active' AND definition_version = ? AND next_run_at = ?
+			AND last_dispatch_key <> ?`), record.ScheduleID, record.DefinitionVersion,
+			record.DueAt.UTC().Format(time.RFC3339), record.TriggerKey)
+		if err != nil {
+			return false, s.failure("lock cron schedule selection", err)
+		}
+		count, err := locked.RowsAffected()
+		if err != nil {
+			return false, s.failure("count cron schedule selection", err)
+		}
+		if count != 1 {
+			return false, nil
+		}
+	}
+	claimed, err := tx.ExecContext(ctx, s.bind(`UPDATE balda_schedule_runs SET
+		dispatch_state = 'publishing', version = version + 1, next_attempt_at = ?, updated_at = ?
+		WHERE run_id = ? AND schedule_id = ? AND version = ? AND trigger = 'cron'
+		AND ((dispatch_state IN ('pending', 'retrying')
+			AND (next_attempt_at = '' OR next_attempt_at <= ?))
+			OR (dispatch_state = 'publishing' AND next_attempt_at <= ?))`),
+		formatScheduleRunTime(leaseUntil), formatScheduleRunTime(time.Now().UTC()),
+		record.RunID, record.ScheduleID, record.Version,
+		formatScheduleRunTime(now), formatScheduleRunTime(now))
+	if err != nil {
+		return false, s.failure("claim cron schedule run", err)
+	}
+	count, err := claimed.RowsAffected()
+	if err != nil {
+		return false, s.failure("count claimed cron schedule run", err)
+	}
+	if count != 1 {
+		return false, nil
+	}
+	if err := tx.Commit(); err != nil {
+		return false, s.failure("commit cron schedule claim", err)
+	}
+	return true, nil
+}
+
 func (s *sqlScheduleRunStore) Update(ctx context.Context, record ScheduleRunRecord, expectedVersion uint64) (bool, error) {
 	if err := validateScheduleRun(record); err != nil {
 		return false, err
@@ -135,7 +229,7 @@ func (s *sqlScheduleRunStore) ListPending(ctx context.Context, now time.Time, li
 	}
 	rows, err := s.db.QueryContext(ctx, s.bind(`SELECT `+scheduleRunColumns+`
 		FROM balda_schedule_runs
-		WHERE dispatch_state IN ('pending', 'retrying')
+		WHERE dispatch_state IN ('pending', 'retrying', 'publishing')
 		AND (next_attempt_at = '' OR next_attempt_at <= ?)
 		ORDER BY requested_at ASC, run_id ASC LIMIT ?`), formatScheduleRunTime(now), limit)
 	if err != nil {
@@ -176,6 +270,7 @@ func validateScheduleRun(record ScheduleRunRecord) error {
 		return fmt.Errorf("unsupported schedule run trigger")
 	}
 	if record.DispatchState != ScheduleRunPending && record.DispatchState != ScheduleRunRetrying &&
+		record.DispatchState != ScheduleRunPublishing &&
 		record.DispatchState != ScheduleRunDispatched && record.DispatchState != ScheduleRunFailed &&
 		record.DispatchState != ScheduleRunCanceled {
 		return fmt.Errorf("unsupported schedule run state")

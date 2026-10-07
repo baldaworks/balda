@@ -412,6 +412,23 @@ func (fakeSessionTurnRunner) RunSessionTurnPayload(context.Context, SessionTurnP
 type fakeScheduledJobRecorder struct {
 	successes []string
 	failures  []scheduledJobFailure
+	keys      []string
+}
+
+func TestManualScheduleSettlementPassesRunKey(t *testing.T) {
+	recorder := &fakeScheduledJobRecorder{}
+	coordinator := newSessionSettlementCoordinator(nil, recorder)
+	payload := SessionTurnPayload{ScheduledJobID: "daily", DedupeKey: "manual:nonce-123:session"}
+	if err := coordinator.record(t.Context(), actorlayer.Envelope{}, payload, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := coordinator.record(t.Context(), actorlayer.Envelope{}, payload, errors.New("execution failed")); err != nil {
+		t.Fatal(err)
+	}
+	if len(recorder.successes) != 1 || len(recorder.failures) != 1 ||
+		len(recorder.keys) != 2 || recorder.keys[0] != payload.DedupeKey || recorder.keys[1] != payload.DedupeKey {
+		t.Fatalf("manual run key was not forwarded: %+v", recorder)
+	}
 }
 
 type scheduledJobFailure struct {
@@ -419,13 +436,13 @@ type scheduledJobFailure struct {
 	cause error
 }
 
-func (f *fakeScheduledJobRecorder) MarkSuccess(_ context.Context, jobID string) error {
+func (f *fakeScheduledJobRecorder) RecordExecution(_ context.Context, jobID, key string, cause error) error {
+	f.keys = append(f.keys, key)
+	if cause != nil {
+		f.failures = append(f.failures, scheduledJobFailure{jobID: jobID, cause: cause})
+		return nil
+	}
 	f.successes = append(f.successes, jobID)
-	return nil
-}
-
-func (f *fakeScheduledJobRecorder) RecordExecutionFailure(_ context.Context, jobID string, cause error) error {
-	f.failures = append(f.failures, scheduledJobFailure{jobID: jobID, cause: cause})
 	return nil
 }
 

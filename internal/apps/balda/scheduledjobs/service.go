@@ -52,6 +52,7 @@ type scheduledJobSchedulerParams struct {
 	fx.In
 
 	JobStore   baldastate.ScheduledJobStore
+	RunStore   baldastate.ScheduleRunStore
 	Dispatcher actortransport.Dispatcher
 	OwnerStore *auth.OwnerStore                   `optional:"true"`
 	Resolver   envelopetarget.DestinationResolver `optional:"true"`
@@ -62,6 +63,7 @@ type scheduledJobSchedulerParams struct {
 // ScheduledJobScheduler publishes due locator-bound recurring jobs as durable job commands.
 type ScheduledJobScheduler struct {
 	jobStore   baldastate.ScheduledJobStore
+	runStore   baldastate.ScheduleRunStore
 	dispatcher actortransport.Dispatcher
 	owner      *auth.OwnerStore
 	resolver   envelopetarget.DestinationResolver
@@ -107,6 +109,9 @@ func (s *ScheduledJobScheduler) start() {
 		for {
 			if err := s.dispatchDue(runCtx, s.now().UTC()); err != nil {
 				s.logger.Warn().Err(err).Msg("failed to dispatch due jobs")
+			}
+			if err := s.processPendingRuns(runCtx, s.now().UTC()); err != nil {
+				s.logger.Warn().Err(err).Msg("failed to process schedule runs")
 			}
 
 			select {
@@ -308,6 +313,10 @@ func (s *ScheduledJobScheduler) dispatchJob(ctx context.Context, job baldastate.
 	dispatchKey := fmt.Sprintf("%s@%s", jobID, current.NextRunAt.UTC().Format(time.RFC3339Nano))
 	if strings.TrimSpace(current.LastDispatchKey) == dispatchKey {
 		return nil
+	}
+	if s.runStore != nil && current.Source != baldastate.ScheduledJobSourceInternal &&
+		!isOneShotScheduleSpec(current.ScheduleSpec) {
+		return s.dispatchRecurringRun(ctx, current, dispatchKey, now)
 	}
 
 	target, err := s.resolveScheduledJobTarget(ctx, current)

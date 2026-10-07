@@ -76,3 +76,22 @@ type Delete struct {
 	ExpectedVersion uint64
 	Authority       Authority
 }
+
+// RunNow requests one idempotent execution without changing recurrence.
+type RunNow struct {
+	ID              string
+	RequestKey      string
+	ConfirmDisabled bool
+	Authority       Authority
+}
+
+// RunItem is a bounded, content-free view of one execution.
+type RunItem struct {
+	ID              string
+	Trigger         string
+	RequestedAt     time.Time
+	DueAt           time.Time
+	State           string
+	CompletedAt     time.Time
+	SafeFailureCode string
+}

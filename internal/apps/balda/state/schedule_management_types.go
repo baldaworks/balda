@@ -29,4 +29,14 @@ type ScheduleMutation struct {
 type ScheduleManagementStore interface {
 	CheckAuthority(ctx context.Context, authority schedulecmd.Authority) error
 	Save(ctx context.Context, mutation ScheduleMutation) error
+	AdmitManualRun(ctx context.Context, admission ScheduleManualAdmission) (bool, error)
+}
+
+// ScheduleManualAdmission atomically checks current authority and definition selection.
+type ScheduleManualAdmission struct {
+	Run             ScheduleRunRecord
+	ExpectedVersion uint64
+	ConfirmDisabled bool
+	Authority       schedulecmd.Authority
+	Audit           usercmd.AuditEvent
 }

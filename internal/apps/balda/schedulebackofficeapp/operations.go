@@ -3,6 +3,7 @@ package schedulebackofficeapp
 
 import (
 	"context"
+	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/schedulecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/scheduledjobs"
@@ -37,4 +38,13 @@ func (o *Operations) SetEnabled(ctx context.Context, request schedulecmd.ChangeS
 
 func (o *Operations) Delete(ctx context.Context, request schedulecmd.Delete) (schedulecmd.Item, error) {
 	return o.management.Delete(ctx, request)
+}
+
+func (o *Operations) RunNow(ctx context.Context, request schedulecmd.RunNow) (schedulecmd.RunItem, error) {
+	return o.management.RunNow(ctx, request)
+}
+
+func (o *Operations) History(ctx context.Context, id string, beforeAt time.Time, beforeID string,
+	limit int, authority schedulecmd.Authority) ([]schedulecmd.RunItem, error) {
+	return o.management.History(ctx, id, beforeAt, beforeID, limit, authority)
 }

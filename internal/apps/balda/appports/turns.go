@@ -23,8 +23,7 @@ type SessionTurnRunner interface {
 }
 
 type ScheduledJobRecorder interface {
-	MarkSuccess(ctx context.Context, jobID string) error
-	RecordExecutionFailure(ctx context.Context, jobID string, cause error) error
+	RecordExecution(ctx context.Context, jobID, dispatchKey string, cause error) error
 }
 
 type SessionWorkCanceller interface {

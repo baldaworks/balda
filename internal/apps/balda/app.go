@@ -416,6 +416,12 @@ func Module(
 			func(provider baldastate.Provider) baldastate.ScheduleManagementStore {
 				return provider.ScheduleManagement()
 			},
+			func(provider baldastate.Provider) baldastate.ScheduleRunStore {
+				return provider.ScheduleRuns()
+			},
+			func(provider baldastate.Provider) baldastate.JobLifecycleStore {
+				return provider.Jobs()
+			},
 			schedulebackofficeapp.New,
 			func(provider baldastate.Provider) baldastate.QuestionStore {
 				return provider.Questions()

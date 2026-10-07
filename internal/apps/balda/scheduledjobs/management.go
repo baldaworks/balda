@@ -2,6 +2,7 @@ package scheduledjobs
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"regexp"
 	"strings"
@@ -15,18 +16,126 @@ import (
 )
 
 var managedScheduleID = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
+var manualRequestKey = regexp.MustCompile(`^[A-Za-z0-9_-]{8,128}$`)
 
 // Management owns recurring schedule definitions and selection policy.
 type Management struct {
-	jobs     state.ScheduledJobStore
-	store    state.ScheduleManagementStore
-	resolver envelopetarget.DestinationResolver
-	now      func() time.Time
+	jobs          state.ScheduledJobStore
+	store         state.ScheduleManagementStore
+	runs          state.ScheduleRunStore
+	executionJobs state.JobLifecycleStore
+	resolver      envelopetarget.DestinationResolver
+	now           func() time.Time
 }
 
 // NewManagement composes the schedule policy with its persistence ports.
-func NewManagement(jobs state.ScheduledJobStore, store state.ScheduleManagementStore, resolver envelopetarget.DestinationResolver) *Management {
-	return &Management{jobs: jobs, store: store, resolver: resolver, now: time.Now}
+func NewManagement(jobs state.ScheduledJobStore, store state.ScheduleManagementStore,
+	runs state.ScheduleRunStore, executionJobs state.JobLifecycleStore,
+	resolver envelopetarget.DestinationResolver) *Management {
+	return &Management{jobs: jobs, store: store, runs: runs, executionJobs: executionJobs,
+		resolver: resolver, now: time.Now}
+}
+
+// RunNow admits one manual execution, including for a disabled schedule when confirmed.
+func (m *Management) RunNow(ctx context.Context, request schedulecmd.RunNow) (schedulecmd.RunItem, error) {
+	if err := m.store.CheckAuthority(ctx, request.Authority); err != nil {
+		return schedulecmd.RunItem{}, err
+	}
+	if !manualRequestKey.MatchString(request.RequestKey) {
+		return schedulecmd.RunItem{}, schedulecmd.ErrInvalid
+	}
+	job, err := m.get(ctx, request.ID)
+	if err != nil {
+		return schedulecmd.RunItem{}, err
+	}
+	triggerKey := "manual:" + request.RequestKey
+	if existing, found, err := m.runs.GetByTriggerKey(ctx, job.JobID, triggerKey); err != nil {
+		return schedulecmd.RunItem{}, schedulecmd.ErrUnavailable
+	} else if found {
+		return m.projectRun(ctx, existing)
+	}
+	if job.Deleted {
+		return schedulecmd.RunItem{}, schedulecmd.ErrNotFound
+	}
+	if !job.Enabled && !request.ConfirmDisabled {
+		return schedulecmd.RunItem{}, schedulecmd.ErrConflict
+	}
+	payload, err := json.Marshal(job)
+	if err != nil {
+		return schedulecmd.RunItem{}, schedulecmd.ErrUnavailable
+	}
+	now := m.now().UTC()
+	run := state.ScheduleRunRecord{RunID: uuid.NewString(), ScheduleID: job.JobID,
+		Trigger: state.ScheduleRunTriggerManual, TriggerKey: triggerKey,
+		DefinitionVersion: job.DefinitionVersion, RequestedAt: now,
+		DispatchState: state.ScheduleRunPending, PayloadJSON: string(payload)}
+	audit := scheduleAudit(job.JobID, request.Authority)
+	audit.Action = usercmd.AuditActionScheduleRunRequested
+	_, err = m.store.AdmitManualRun(ctx, state.ScheduleManualAdmission{Run: run,
+		ExpectedVersion: job.DefinitionVersion, ConfirmDisabled: request.ConfirmDisabled,
+		Authority: request.Authority, Audit: audit})
+	if err != nil {
+		return schedulecmd.RunItem{}, err
+	}
+	stored, found, err := m.runs.GetByTriggerKey(ctx, job.JobID, triggerKey)
+	if err != nil || !found {
+		return schedulecmd.RunItem{}, schedulecmd.ErrUnavailable
+	}
+	return m.projectRun(ctx, stored)
+}
+
+// History returns the newest bounded runs, including for archived schedules.
+func (m *Management) History(ctx context.Context, id string, beforeAt time.Time, beforeID string,
+	limit int, authority schedulecmd.Authority) ([]schedulecmd.RunItem, error) {
+	if err := m.store.CheckAuthority(ctx, authority); err != nil {
+		return nil, err
+	}
+	if _, err := m.get(ctx, id); err != nil {
+		return nil, err
+	}
+	runs, err := m.runs.ListBySchedule(ctx, id, beforeAt, beforeID, limit)
+	if err != nil {
+		return nil, schedulecmd.ErrUnavailable
+	}
+	items := make([]schedulecmd.RunItem, 0, len(runs))
+	for _, run := range runs {
+		item, err := m.projectRun(ctx, run)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, nil
+}
+
+func (m *Management) projectRun(ctx context.Context, run state.ScheduleRunRecord) (schedulecmd.RunItem, error) {
+	item := schedulecmd.RunItem{ID: run.RunID, Trigger: run.Trigger,
+		RequestedAt: run.RequestedAt, DueAt: run.DueAt,
+		State: run.DispatchState, SafeFailureCode: run.SafeFailureCode}
+	if run.DispatchState == state.ScheduleRunPending {
+		item.State = "queued"
+	}
+	if run.DispatchState != state.ScheduleRunDispatched || run.ExecutionJobID == "" || m.executionJobs == nil {
+		return item, nil
+	}
+	job, found, err := m.executionJobs.GetJob(ctx, run.ExecutionJobID)
+	if err != nil {
+		return schedulecmd.RunItem{}, schedulecmd.ErrUnavailable
+	}
+	if !found {
+		return item, nil
+	}
+	switch job.Status {
+	case state.JobStatusCompleted:
+		item.State, item.CompletedAt = "succeeded", job.CompletedAt
+	case state.JobStatusFailed, state.JobStatusDeadLettered:
+		item.State, item.CompletedAt, item.SafeFailureCode = "failed", job.CompletedAt, "execution_failed"
+	case state.JobStatusCanceled:
+		item.State, item.CompletedAt = "canceled", job.CanceledAt
+	default:
+		item.State = "running"
+	}
+	return item, nil
 }
 
 func (m *Management) Inventory(ctx context.Context, authority schedulecmd.Authority) ([]schedulecmd.Item, error) {

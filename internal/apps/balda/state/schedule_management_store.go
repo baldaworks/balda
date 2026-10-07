@@ -100,6 +100,100 @@ func (s *sqlScheduleManagementStore) Save(ctx context.Context, m ScheduleMutatio
 	return nil
 }
 
+// AdmitManualRun makes the run intent and audit event one authority-checked write.
+func (s *sqlScheduleManagementStore) AdmitManualRun(ctx context.Context, a ScheduleManualAdmission) (bool, error) {
+	if err := validateScheduleAuthority(a.Authority); err != nil {
+		return false, err
+	}
+	if err := validateScheduleRun(a.Run); err != nil || a.Run.Trigger != ScheduleRunTriggerManual ||
+		a.Run.DefinitionVersion != a.ExpectedVersion || a.ExpectedVersion == 0 ||
+		a.Run.DispatchState != ScheduleRunPending {
+		return false, schedulecmd.ErrInvalid
+	}
+	if err := usercmd.ValidateAuditEvent(a.Audit); err != nil ||
+		a.Audit.Action != usercmd.AuditActionScheduleRunRequested ||
+		a.Audit.TargetType != usercmd.AuditTargetSchedule || a.Audit.TargetID != a.Run.ScheduleID ||
+		a.Audit.ActorUserID != a.Authority.UserID || a.Audit.ActorSessionID != a.Authority.SessionID ||
+		a.Audit.Outcome != usercmd.AuditOutcomeSucceeded || !a.Audit.OccurredAt.Equal(a.Authority.At) {
+		return false, schedulecmd.ErrInvalid
+	}
+	tx, err := s.users.begin(ctx)
+	if err != nil {
+		return false, schedulecmd.ErrUnavailable
+	}
+	defer func() { _ = tx.Rollback() }()
+	authority, err := s.checkAuthority(ctx, tx, a.Authority)
+	if err != nil {
+		return false, err
+	}
+	var source string
+	var version uint64
+	var deleted, enabled int
+	err = tx.QueryRowContext(ctx, s.users.bind(`SELECT source, definition_version, deleted, enabled
+		FROM balda_scheduled_jobs WHERE job_id = ?`)+s.users.forUpdate, a.Run.ScheduleID).
+		Scan(&source, &version, &deleted, &enabled)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, schedulecmd.ErrNotFound
+	}
+	if err != nil {
+		return false, schedulecmd.ErrUnavailable
+	}
+	var existing string
+	err = tx.QueryRowContext(ctx, s.users.bind(`SELECT run_id FROM balda_schedule_runs
+		WHERE schedule_id = ? AND trigger_key = ?`), a.Run.ScheduleID, a.Run.TriggerKey).Scan(&existing)
+	if err == nil {
+		if err := authority.checkTime(a.Authority); err != nil {
+			return false, err
+		}
+		return false, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return false, schedulecmd.ErrUnavailable
+	}
+	if source == ScheduledJobSourceInternal || deleted == 1 {
+		return false, schedulecmd.ErrNotFound
+	}
+	if version != a.ExpectedVersion {
+		return false, schedulecmd.ErrConflict
+	}
+	if enabled == 0 && !a.ConfirmDisabled {
+		return false, schedulecmd.ErrConflict
+	}
+	if err := authority.checkTime(a.Authority); err != nil {
+		return false, err
+	}
+	r := a.Run
+	r.Version = 1
+	r.CreatedAt = time.Now().UTC()
+	r.UpdatedAt = r.CreatedAt
+	result, err := tx.ExecContext(ctx, s.users.bind(`INSERT INTO balda_schedule_runs
+		(`+scheduleRunColumns+`)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (schedule_id, trigger_key) DO NOTHING`), scheduleRunValues(r)...)
+	if err != nil {
+		return false, schedulecmd.ErrUnavailable
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return false, schedulecmd.ErrUnavailable
+	}
+	if count == 0 {
+		return false, nil
+	}
+	audit := a.Audit
+	audit.Reason = "Schedule run requested"
+	if err := s.users.insertAudit(ctx, tx, audit); err != nil {
+		return false, schedulecmd.ErrUnavailable
+	}
+	if err := authority.checkTime(a.Authority); err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, schedulecmd.ErrUnavailable
+	}
+	return true, nil
+}
+
 func scheduleMutationReason(m ScheduleMutation) string {
 	switch m.Kind {
 	case ScheduleCreate:

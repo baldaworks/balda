@@ -322,6 +322,8 @@ const (
 	ScheduleRunPending = "pending"
 	// ScheduleRunRetrying means a dispatch retry is due later.
 	ScheduleRunRetrying = "retrying"
+	// ScheduleRunPublishing means a worker claimed publication until its lease expires.
+	ScheduleRunPublishing = "publishing"
 	// ScheduleRunDispatched means the actor command was durably published.
 	ScheduleRunDispatched = "dispatched"
 	// ScheduleRunFailed means pre-publication dispatch exhausted its retries.
@@ -333,6 +335,8 @@ const (
 // ScheduleRunStore persists run intents and lists history independently of definitions.
 type ScheduleRunStore interface {
 	Create(ctx context.Context, record ScheduleRunRecord) (bool, error)
+	CreateCron(ctx context.Context, record ScheduleRunRecord, expectedNextRunAt time.Time) (bool, error)
+	ClaimCron(ctx context.Context, record ScheduleRunRecord, now, leaseUntil time.Time) (bool, error)
 	Update(ctx context.Context, record ScheduleRunRecord, expectedVersion uint64) (bool, error)
 	GetByID(ctx context.Context, runID string) (ScheduleRunRecord, bool, error)
 	GetByTriggerKey(ctx context.Context, scheduleID, triggerKey string) (ScheduleRunRecord, bool, error)

@@ -61,6 +61,7 @@ func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) 
 	t.Run("Provider_ScheduledJobStoreRoundTrip", func(t *testing.T) { checkProvider_ScheduledJobStoreRoundTrip(t, factory(t)) })
 	t.Run("Provider_ScheduleManagementAuthorityAndVersion", func(t *testing.T) { checkProvider_ScheduleManagementAuthorityAndVersion(t, factory(t)) })
 	t.Run("Provider_ScheduleRunStoreRoundTrip", func(t *testing.T) { checkProvider_ScheduleRunStoreRoundTrip(t, factory(t)) })
+	t.Run("Provider_ScheduleRunAdmissions", func(t *testing.T) { checkProvider_ScheduleRunAdmissions(t, factory(t)) })
 	t.Run("Provider_OffsetPersistsAcrossReopen", func(t *testing.T) { checkProvider_OffsetPersistsAcrossReopen(t, factory(t)) })
 	t.Run("Provider_RuntimeSessionPersistsAcrossReopen", func(t *testing.T) { checkProvider_RuntimeSessionPersistsAcrossReopen(t, factory(t)) })
 	t.Run("JobStore_JobLifecycle", func(t *testing.T) { checkJobStore_JobLifecycle(t, factory(t)) })
@@ -163,6 +164,106 @@ func checkProvider_ScheduleManagementAuthorityAndVersion(t *testing.T, open cont
 		if !reasons[reason] {
 			t.Errorf("missing audit operation %q", reason)
 		}
+	}
+}
+
+func checkProvider_ScheduleRunAdmissions(t *testing.T, open contractOpener) {
+	p := newContractProvider(t, open)
+	defer closeContractProvider(t, p)
+	base := contractMCPMutation(t, p)
+	a := schedulecmd.Authority{UserID: base.Authority.UserID, UserVersion: base.Authority.UserVersion,
+		CredentialVersion: base.Authority.CredentialVersion, MFAVersion: base.Authority.MFAVersion,
+		SessionID: base.Authority.SessionID, SessionVersion: base.Authority.SessionVersion, At: base.Authority.At}
+	now := a.At
+	job := ScheduledJobRecord{JobID: "configured-daily", Source: ScheduledJobSourceConfig, Enabled: true,
+		DefinitionVersion: 1, SessionID: "tg-1-0", ChannelType: ChannelTypeTelegram,
+		AddressKey: "1:0", AddressJSON: `{}`, Content: "review", ScheduleSpec: "0 9 * * *",
+		Status: ScheduledJobStatusActive, NextRunAt: now.Add(time.Hour)}
+	if err := p.ScheduledJobs().Upsert(t.Context(), job); err != nil {
+		t.Fatal(err)
+	}
+	cron := ScheduleRunRecord{RunID: "cron-1", ScheduleID: job.JobID, Trigger: ScheduleRunTriggerCron,
+		TriggerKey: "cron-slot", DefinitionVersion: 1, RequestedAt: now, DueAt: job.NextRunAt,
+		DispatchState: ScheduleRunPending, PayloadJSON: `{}`}
+	created, err := p.ScheduleRuns().CreateCron(t.Context(), cron, job.NextRunAt)
+	if err != nil || !created {
+		t.Fatalf("CreateCron() = %v, %v", created, err)
+	}
+	created, err = p.ScheduleRuns().CreateCron(t.Context(), cron, job.NextRunAt)
+	if err != nil || created {
+		t.Fatalf("duplicate CreateCron() = %v, %v", created, err)
+	}
+	selected, found, err := p.ScheduleRuns().GetByID(t.Context(), cron.RunID)
+	if err != nil || !found {
+		t.Fatalf("load cron intent = %+v, %v", selected, err)
+	}
+	leaseAt := job.NextRunAt
+	claimed, err := p.ScheduleRuns().ClaimCron(t.Context(), selected, leaseAt, leaseAt.Add(30*time.Second))
+	if err != nil || !claimed {
+		t.Fatalf("ClaimCron() = %v, %v", claimed, err)
+	}
+	claimed, err = p.ScheduleRuns().ClaimCron(t.Context(), selected, leaseAt.Add(time.Second), leaseAt.Add(time.Minute))
+	if err != nil || claimed {
+		t.Fatalf("duplicate ClaimCron() = %v, %v", claimed, err)
+	}
+	selected, found, err = p.ScheduleRuns().GetByID(t.Context(), cron.RunID)
+	if err != nil || !found || selected.DispatchState != ScheduleRunPublishing {
+		t.Fatalf("publishing cron intent = %+v, %v", selected, err)
+	}
+	claimed, err = p.ScheduleRuns().ClaimCron(t.Context(), selected, leaseAt.Add(31*time.Second), leaseAt.Add(time.Minute))
+	if err != nil || !claimed {
+		t.Fatalf("expired ClaimCron() = %v, %v", claimed, err)
+	}
+	stale := cron
+	stale.RunID, stale.TriggerKey, stale.DefinitionVersion = "cron-2", "stale-slot", 2
+	created, err = p.ScheduleRuns().CreateCron(t.Context(), stale, job.NextRunAt)
+	if err != nil || created {
+		t.Fatalf("stale CreateCron() = %v, %v", created, err)
+	}
+	job.Enabled = false
+	if err := p.ScheduledJobs().Upsert(t.Context(), job); err != nil {
+		t.Fatal(err)
+	}
+	selected, found, err = p.ScheduleRuns().GetByID(t.Context(), cron.RunID)
+	if err != nil || !found {
+		t.Fatalf("load disabled cron intent = %+v, %v", selected, err)
+	}
+	claimed, err = p.ScheduleRuns().ClaimCron(t.Context(), selected, leaseAt.Add(time.Minute), leaseAt.Add(2*time.Minute))
+	if err != nil || !claimed {
+		t.Fatalf("recover claimed run after disable = %v, %v", claimed, err)
+	}
+	stale.DefinitionVersion, stale.RunID, stale.TriggerKey = 1, "cron-3", "disabled-slot"
+	created, err = p.ScheduleRuns().CreateCron(t.Context(), stale, job.NextRunAt)
+	if err != nil || created {
+		t.Fatalf("disabled CreateCron() = %v, %v", created, err)
+	}
+	manual := ScheduleRunRecord{RunID: "manual-1", ScheduleID: job.JobID, Trigger: ScheduleRunTriggerManual,
+		TriggerKey: "manual:nonce-1", DefinitionVersion: 1, RequestedAt: now,
+		DispatchState: ScheduleRunPending, PayloadJSON: `{}`}
+	audit := usercmd.AuditEvent{ID: "manual-audit", Action: usercmd.AuditActionScheduleRunRequested,
+		Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: a.UserID, ActorSessionID: a.SessionID,
+		TargetType: usercmd.AuditTargetSchedule, TargetID: job.JobID, Source: "provider-contract", OccurredAt: a.At}
+	admission := ScheduleManualAdmission{Run: manual, ExpectedVersion: 1, Authority: a, Audit: audit}
+	created, err = p.ScheduleManagement().AdmitManualRun(t.Context(), admission)
+	if !errors.Is(err, schedulecmd.ErrConflict) || created {
+		t.Fatalf("unconfirmed disabled run = %v, %v", created, err)
+	}
+	admission.ConfirmDisabled = true
+	created, err = p.ScheduleManagement().AdmitManualRun(t.Context(), admission)
+	if err != nil || !created {
+		t.Fatalf("confirmed manual run = %v, %v", created, err)
+	}
+	created, err = p.ScheduleManagement().AdmitManualRun(t.Context(), admission)
+	if err != nil || created {
+		t.Fatalf("duplicate manual run = %v, %v", created, err)
+	}
+	current, found, err := p.ScheduledJobs().GetByID(t.Context(), job.JobID)
+	if err != nil || !found || current.Enabled || !current.NextRunAt.Equal(job.NextRunAt) {
+		t.Fatalf("manual changed cron selection = %+v, %v", current, err)
+	}
+	got, found, err := p.ScheduleRuns().GetByTriggerKey(t.Context(), job.JobID, manual.TriggerKey)
+	if err != nil || !found || got.RunID != manual.RunID {
+		t.Fatalf("manual run = %+v, %v", got, err)
 	}
 }
 

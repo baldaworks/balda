@@ -16,6 +16,9 @@ var Module = fx.Module("balda_scheduled_jobs",
 			if params.JobStore == nil {
 				return nil, fmt.Errorf("scheduled job store is required")
 			}
+			if params.RunStore == nil {
+				return nil, fmt.Errorf("schedule run store is required")
+			}
 			if params.Dispatcher == nil {
 				return nil, fmt.Errorf("balda actor dispatcher is required for scheduler")
 			}
@@ -33,6 +36,7 @@ var Module = fx.Module("balda_scheduled_jobs",
 
 			scheduler := &ScheduledJobScheduler{
 				jobStore:     params.JobStore,
+				runStore:     params.RunStore,
 				dispatcher:   params.Dispatcher,
 				owner:        params.OwnerStore,
 				resolver:     resolver,
@@ -46,8 +50,10 @@ var Module = fx.Module("balda_scheduled_jobs",
 			return scheduler, nil
 		},
 		fx.Annotate(func(s *ScheduledJobScheduler) appports.ScheduledJobRecorder { return s }),
-		func(jobs state.ScheduledJobStore, store state.ScheduleManagementStore, scheduler *ScheduledJobScheduler) *Management {
-			return NewManagement(jobs, store, scheduler.getResolver())
+		func(jobs state.ScheduledJobStore, store state.ScheduleManagementStore,
+			runs state.ScheduleRunStore, executionJobs state.JobLifecycleStore,
+			scheduler *ScheduledJobScheduler) *Management {
+			return NewManagement(jobs, store, runs, executionJobs, scheduler.getResolver())
 		},
 	),
 	fx.Invoke(func(*ScheduledJobScheduler) {}),

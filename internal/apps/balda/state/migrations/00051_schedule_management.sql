@@ -30,7 +30,7 @@ CREATE TABLE balda_schedule_runs (
     requested_at TEXT NOT NULL,
     due_at TEXT NOT NULL DEFAULT '',
     dispatch_state TEXT NOT NULL DEFAULT 'pending'
-        CHECK (dispatch_state IN ('pending', 'retrying', 'dispatched', 'failed', 'canceled')),
+        CHECK (dispatch_state IN ('pending', 'retrying', 'publishing', 'dispatched', 'failed', 'canceled')),
     attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
     next_attempt_at TEXT NOT NULL DEFAULT '',
     safe_failure_code TEXT NOT NULL DEFAULT '',
