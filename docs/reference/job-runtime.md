@@ -43,13 +43,24 @@ Ordinary conversational turns from Telegram, Slack, and Zulip do not create
 
 ## Scheduled job runtime semantics (internal)
 
-Balda includes an internal scheduler backed by `balda_scheduled_tasks`.
-Scheduled jobs are managed from config on startup using `balda.scheduler.jobs`.
-Each configured job has `id`, `cron`, and an `envelope` with `target`, `key`,
-`content`, and optional `report_to`.
+Balda includes an internal scheduler backed by `balda_scheduled_jobs` and a
+durable run ledger in `balda_schedule_runs`. Recurring definitions have two
+owners: host configuration (`balda.scheduler.jobs`) and Backoffice. Each has
+an ID, a five-field UTC cron expression, a target/key, content, and optional
+report destination. Backoffice creates managed definitions through the
+administrator-only [Schedules page](backoffice.md#schedules-management).
+Internal one-shot `@once` timers share the job store but are never listed as
+recurring schedules.
 
-- Eligibility: only `status=active` tasks with `next_run_at <= now` are polled.
-- Dispatch path: due tasks resolve the envelope target by `target`/`key`, persist its canonical locator (`channel_type`, `address_key`, `address_json`, `session_id`), and publish a durable job command. Session restore and execution happen after command delivery.
+- Eligibility: only enabled, non-deleted, `status=active` recurring jobs with
+  `next_run_at <= now` are selected. A manual run can be requested for either
+  source without changing the cron cursor; a disabled job requires explicit
+  confirmation.
+- Dispatch path: admitted runs retain an exact definition snapshot and resolve
+  the envelope target by `target`/`key`, persist its canonical locator
+  (`channel_type`, `address_key`, `address_json`, `session_id`), and publish a
+  durable job command. Session restore and execution happen after command
+  delivery. Pending or retrying runs survive restart.
 - Locator target form: `target=locator`, `key=<channel_type>:<address_key>`;
   `/locator` returns the paste-ready value in a transport-formatted structured
   response. See the [locator command contract](../commands.md#locator).
@@ -58,13 +69,28 @@ Each configured job has `id`, `cron`, and an `envelope` with `target`, `key`,
   channels (Telegram, Slack, Zulip) with deterministic default selection and
   fallback to registered Telegram owner data.
 - Delivery: scheduled jobs are fire-and-forget by default. If `envelope.report_to` is set, the session turn delivers progress/final replies to that locator.
-- Idempotency key: each due slot uses deterministic `last_dispatch_key = <job_id>@<due_next_run_at_rfc3339nano>`.
-- Startup reconciliation: configured job IDs are upserted, and persisted jobs not present in config are deleted from the scheduler state.
-- Publish-before-mark: scheduler publishes the command first, then writes `last_dispatch_key` and advances `next_run_at`, so a failed publish does not mark work dispatched.
+- Idempotency key: each due slot uses deterministic `last_dispatch_key = <job_id>@<due_next_run_at_rfc3339nano>`. A manual request has a separate request key; retrying the same request returns the same run.
+- Startup reconciliation: configuration updates only config-owned rows. A removed
+  config entry is archived for retained history; managed rows survive unchanged.
+  A configured ID colliding with a managed or internal ID aborts startup.
+- Publication: a due slot is admitted with a version and selection check before
+  publication. A publishing lease allows recovery after a crash, using the same
+  dispatch key. Successful publication advances the cron cursor only while its
+  selected version still matches. An edit, disable, or delete cannot be undone
+  by a concurrent dispatch. Manual runs never advance that cursor.
 - Success after actor execution: `last_run_at` is updated, `last_error` is cleared, `retry_count` is reset to `0`, and the job remains `active`.
-- Pre-publish failure: target resolution, invalid schedule, or transport publish failure increments `retry_count`, records `last_error`, and may pause the task after `max_retries`.
+- Pre-publication failure: the run ledger records a safe failure code and increments
+  that run's attempt count. Retryable failures wait 1, 2 and 3 seconds before
+  further attempts; the next failure is terminal. Only a terminal failed cron
+  run updates the still-selected definition's `retry_count` and `last_error`
+  and pauses it. Manual-run failures leave recurring definition diagnostics and
+  cursor unchanged.
 - Execution failure after transport delivery: `last_run_at` and `last_error` are recorded for visibility, but scheduler retry fields and `next_run_at` are not changed. Transport owns command retry, redelivery, and DLQ after publish.
-- Pre-publish retry delay policy: linear backoff in seconds (`1s`, `2s`, `3s`, ...) capped at `60s`.
+- Run history is newest first and retains both scheduled and manual attempts,
+  including failures before publication and terminal execution outcomes.
+  Archived schedules retain readable history. Browser views expose bounded
+  status/failure labels, never raw provider errors or instruction content in
+  inventory.
 
 ## Inbound webhook contract (internal)
 

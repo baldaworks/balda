@@ -79,6 +79,13 @@ uses the current trusted definition, including explicit configured capture;
 saved grants can retry tool attachment without repeating OAuth. See [MCP management](docs/reference/backoffice.md#mcp-management)
 for provider targeting and value operations.
 
+Administrators can open **Schedules** in Backoffice to inspect configured
+recurring jobs and create persistent UI-owned jobs. Configuration entries are
+read-only; either source can be run manually, and both have retained run
+history. Cron uses UTC. A manual run queues work without moving its next
+scheduled time; a disabled job requires confirmation. See
+[Schedules management](docs/reference/backoffice.md#schedules-management).
+
 Before storing protected MCP values or worker grants, configure the deployment
 [MCP credential key](docs/reference/configuration.md#protected-values-and-worker-grants)
 and keep it with your database backup. Existing sessions retain their captured
@@ -355,7 +362,7 @@ does not require `/reset`. Custom ACP servers can set `model_config_id` and
   `token`, `bot_user_id`, `bot_username`) for websocket event ingress
 - `balda.slack.*` — Slack Agent credentials plus `agent.*` HTTP/streaming config
 - `balda.webhooks.*` — optional inbound webhook routes
-- `balda.scheduler.jobs` — recurring scheduled jobs
+- `balda.scheduler.jobs` — recurring scheduled jobs owned by host configuration; administrators can also create persistent schedules in Backoffice. See [Schedules management](docs/reference/backoffice.md#schedules-management).
 - `balda.workspace.*` — workspace/worktree behavior for goal execution
 - `balda.permissions.mode` — agent permission policy: `allow_all`, `ask`, or `deny_all`
 - `balda.permissions.timeout` — maximum wait for an interactive permission decision (default `2m`)

@@ -140,6 +140,17 @@ failure evidence remains in `mcpruntime`, while recovery classification remains
 in the catalog owner. Browser input does not supply configuration captures or
 worker authorization evidence.
 
+Backoffice Schedules pages consume a local `SchedulesOperations` port. The
+`schedulebackofficeapp` composition adapter connects it to `scheduledjobs`,
+which owns source reconciliation, UTC cron and destination validation, managed
+definition policy, durable run admission and dispatch. `schedulecmd` holds the
+transport-neutral management values used by Backoffice projections. `state`
+owns the SQL source/version and administrator authority fences, run ledger,
+and audit transaction. Configuration rows remain host-owned; Backoffice may
+read or manually run them, while definition mutations require managed source.
+Scheduler dispatch checks the selected definition before publication and
+cannot overwrite a concurrent administrator edit, disable or delete.
+
 Native worker OAuth stays in the same owners: `mcpmanage.Authorizations` keeps
 bounded transient attempts and composes grant installation with exact revision
 binding outside protocol locks; `state` fences the initiating revision with

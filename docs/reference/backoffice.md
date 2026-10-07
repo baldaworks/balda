@@ -666,3 +666,65 @@ the database backup. Configure its format and deployment override as described i
 [MCP credential configuration](configuration.md#protected-values-and-worker-grants).
 No tokens, client secrets or local bridge capabilities belong
 in logs, URLs used for recovery, exported read models or browser history caches.
+
+## Schedules management
+
+Administrators with a normal browser session can open **Schedules** at
+`<base_path>/schedules`. Operators cannot view or mutate schedules. The
+inventory lists recurring definitions from both `balda.scheduler.jobs` and
+Backoffice, with source, UTC cron, destination, optional report destination,
+enabled/runtime state, and next/last run times. Internal `@once` timers are not
+listed. Opening a detail loads the instruction content only for that guarded
+administrator page; the inventory omits it. HTML content and safe errors are
+escaped. Forms use the current CSRF token and same-origin guard, and durable
+writes recheck current administrator, credential, MFA and browser-session
+versions. Session refresh returns to the requested Schedules page.
+
+`/schedules?new=1` creates a Backoffice-owned schedule. IDs use lowercase
+letters, digits, `_` and `-`, start with a letter or digit, and are fixed after
+creation. The ID must be unique across sources. The form uses a five-field UTC
+cron expression, content, and an existing `alias`, `locator` or `session`
+destination; `report_to` is optional and uses the same target forms. A new
+managed schedule starts enabled. Saving an edit recalculates its next future
+slot while preserving its enabled state. Confirmed disable prevents future due
+selection; an already admitted or published run may finish. Confirmed enable
+selects a new future slot. Confirmed delete archives the definition; its
+detail and run history remain accessible at `/schedules/{id}`. Stale versions
+or ID collisions return a conflict, and the editor asks the administrator to
+reload. Invalid cron, destination or report destination leaves the prior
+definition intact.
+
+Configuration-owned schedules are read-only in Backoffice. Change their
+definition in `.config/balda/config.yaml` and restart Balda. A removed config
+entry becomes an archive so its history remains readable. A config ID that
+collides with a managed or internal job aborts startup rather than changing
+ownership. Managed definitions and enabled state survive restart and are never
+deleted by config reconciliation.
+
+**Run now** is available on active details for both sources and queues one
+execution without moving the recurring cron slot. Running a disabled schedule
+requires a separate confirmation. A duplicate submission from the same form
+uses one request key and returns the same durable run; opening the page again
+starts a new request. The newest-first history distinguishes scheduled and
+manual triggers and shows queued, retrying, starting, waiting-for-execution,
+running, succeeded, failed or canceled state. It includes failures before
+command publication and terminal execution outcomes, with bounded failure
+labels instead of raw provider errors. History is paginated and remains
+available after deletion. A successful Run now redirect means admission, not
+completion; refresh the detail to observe the result.
+
+The shared state provider applies Goose SQL migrations for SQLite and
+PostgreSQL before Backoffice or ingress starts. They classify existing
+recurring rows as config-owned and `@once` rows as internal, add source and
+version fences, and create the durable run ledger. Back up the selected
+database before upgrading. A migration failure aborts startup without running
+the scheduler. Restoring an older binary after new managed schedules or runs
+have been written requires a matching pre-upgrade database backup.
+
+Backoffice owns the `SchedulesOperations` consuming port and SSR views;
+`internal/apps/balda/schedulebackofficeapp` adapts the host-owned
+`scheduledjobs.Management` use case. `schedulecmd` holds the transport-neutral
+management values. `scheduledjobs` owns validation, source reconciliation,
+admission and dispatch policy; `state` owns the SQL rows and transactional
+authority/audit fences. Balda configures the port before the Backoffice
+listener starts, preserving the existing startup order.

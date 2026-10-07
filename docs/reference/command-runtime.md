@@ -78,7 +78,7 @@ performs exact-name resolution only after durable delivery.
 | Plugin chat command | The installed plugin's `plugin.json`, under `extensions.dev.baldaworks.balda.commands`; each declaration owns an inline instruction | The current catalog projects collision-free, provider-compatible aliases into the transport registry | `balda.v1.cmd.command` -> `CommandActor` -> generic plugin adapter -> normal session turn |
 | Ordinary chat message | Message content from Telegram, Slack, or Zulip | Transport message/mention rules and conversational ingress | Session command -> `SessionActor`; it is not routed by command name |
 | Generic inbound webhook | A configured `balda.webhooks.routes` entry and its prompt template | HTTP method, route, optional shared-header authentication, target resolution, and dedupe policy | Job mode -> `JobActor`; session mode -> `SessionActor` |
-| Scheduled work | A configured `balda.scheduler.jobs` entry | Scheduler reconciliation and due-time selection | Scheduled job envelope -> `JobActor` |
+| Scheduled work | A configured `balda.scheduler.jobs` entry or a Backoffice-managed schedule | Source-aware reconciliation, due-time selection, or an administrator's manual run | Scheduled job envelope -> `JobActor` |
 
 The built-in router, catalog, and transport whitelist answer different
 questions and are intentionally separate:

@@ -6,6 +6,7 @@ Status: active
 ## Invariants
 
 - Startup order stays strict: config -> bundled MCP -> runtime contribution catalog reconstruction -> provider runtime -> session/mailbox and durable actor infrastructure -> scheduler/webhook/Zulip/Telegram/Slackagent ingress. Shutdown runs these stages in reverse.
+- Scheduler startup reconciles only config-owned recurring definitions; managed definitions survive restart. A source ID collision fails startup. Due and manual runs have separate durable keys and preserve their exact definition snapshots; manual runs do not advance the cron cursor.
 - `catalogapp` owns current MCP authorization startup recovery and exact
   authorization retry. `mcpruntime` carries bounded attachment evidence and
   inspects every selected blocker; `mcpfx` observes supported challenges at the
