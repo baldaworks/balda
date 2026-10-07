@@ -59,7 +59,8 @@ gallery page and state at 1440×900, 1024×768, 768×1024 and 390×844. It check
 document overflow, consistent headings, dark authentication controls, native/HTMX
 geometry, top-bar visibility and alignment during navigation and scrolling,
 browser history and focus, sidebar collapse/overlay/backdrop/Escape,
-short-page footer position, Audit details, and recovery actions. It needs no application credentials or deployment access.
+short-page footer position, grouped navigation, Audit details, and recovery actions.
+It needs no application credentials or deployment access.
 
 Run the separate authenticated browser gate from the repository root after
 installing the same optional Playwright tooling:
@@ -92,6 +93,10 @@ and hydrated-history boundaries are separately tested in `handlersfx` and
    empty, validation-error, and generic-error state at **1440×900**, **1024×768**,
    **768×1024** and **390×844**. Check visual hierarchy, contrast, focus visibility, labels,
    form controls, sidebar behavior, horizontal overflow, and table containment.
+   For navigation changes, check Workspace, Operations and Administration in the
+   administrator sidebar, omit empty groups for operators, and verify Account
+   appears only in the top bar. Check the active sidebar link on nested Access,
+   MCP and Schedules pages after both HTMX navigation and browser history changes.
    Verify that assets load and that browser console errors are absent. Follow
    navigation and tab through forms with the keyboard. Follow **Older active sessions**
    in the browser. Request a `form-*` route as an HTMX fragment and check

@@ -128,7 +128,7 @@ async function checkPage(browser, baseURL, viewport) {
     const response = await page.goto(`${baseURL}/qa/ui/${route}`);
     assert.equal(response.status(), expectedStatus.get(route) ?? 200, `${route} HTTP status at ${viewport.width}px`);
     assert.equal(await page.locator('main#main-content').count(), 1, `${route} main landmark at ${viewport.width}px`);
-    const headingColors = await page.locator('h1, h2').evaluateAll(elements => elements.map(element => getComputedStyle(element).color));
+    const headingColors = await page.locator('main#main-content h1, main#main-content h2').evaluateAll(elements => elements.map(element => getComputedStyle(element).color));
     assert.equal(new Set(headingColors).size, 1, `${route} consistent heading colors at ${viewport.width}px`);
     if (await page.locator('.login-page').count()) {
       const theme = await page.locator('.login-page').evaluate(element => ({
@@ -180,16 +180,31 @@ async function checkPage(browser, baseURL, viewport) {
     nativeLayouts.set(name, await layout());
   }
   await page.goto(`${baseURL}/qa/ui/overview`);
+  await page.evaluate(() => {
+    const schedules = document.querySelector('[data-nav-link][href$="/schedules"]');
+    history.pushState({}, '', `${schedules.href}/daily-summary`);
+    dispatchEvent(new PopStateEvent('popstate'));
+  });
+  assert.deepEqual(
+    await page.locator('.app-sidebar [data-nav-link][aria-current="page"]').allTextContents(),
+    ['Schedules'],
+    'nested schedule detail keeps Schedules active',
+  );
+  await page.evaluate(() => {
+    history.replaceState({}, '', '/qa/ui/overview');
+    dispatchEvent(new PopStateEvent('popstate'));
+  });
   for (const name of ['Account', 'Access', 'Audit', 'Overview']) {
     const navigation = page.getByRole('navigation', { name: 'Primary navigation', exact: true });
-    if (viewport.width < 992) await page.getByRole('button', { name: 'Toggle navigation' }).click();
+    if (name !== 'Account' && viewport.width < 992) await page.getByRole('button', { name: 'Toggle navigation' }).click();
     const response = page.waitForResponse(response => response.url() === `${baseURL}/qa/ui/${name.toLowerCase()}`);
-    await navigation.getByText(name, { exact: true }).click();
+    if (name === 'Account') await page.getByRole('link', { name: 'Your account' }).click();
+    else await navigation.getByRole('link', { name, exact: true }).click();
     await response;
     await page.waitForFunction(expected => document.querySelector('h1')?.textContent === expected, name);
     assert.equal(await page.locator('main#main-content').count(), 1, `${name} HTMX keeps one main landmark`);
     assert.deepEqual(await layout(), nativeLayouts.get(name), `${name} HTMX layout matches native navigation`);
-    await page.waitForFunction(expected => [...document.querySelectorAll('[data-nav-link]')].filter(link => link.textContent.trim() === expected).every(link => link.getAttribute('aria-current') === 'page'), name);
+    if (name !== 'Account') await page.waitForFunction(expected => [...document.querySelectorAll('[data-nav-link]')].filter(link => link.textContent.trim() === expected).every(link => link.getAttribute('aria-current') === 'page'), name);
     assert.equal(await page.locator('main').evaluate(element => element === document.activeElement), true, `${name} main receives focus after navigation`);
     await checkTopBar(page, `${name} HTMX at ${viewport.width}px`);
   }
@@ -253,6 +268,9 @@ async function checkPage(browser, baseURL, viewport) {
     assert.equal(await page.locator('.app-header').evaluate(element => element.getBoundingClientRect().left), 0, 'collapsed sidebar expands top bar to viewport edge');
   } else {
     assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+    if (process.env.BACKOFFICE_E2E_SCREENSHOTS) {
+      await page.screenshot({ path: path.join(process.env.BACKOFFICE_E2E_SCREENSHOTS, `sidebar-open-${viewport.width}.png`) });
+    }
     assert.equal(await page.locator('.app-main').evaluate(element => element.inert), true);
     const links = page.locator('.sidebar-menu a');
     await links.last().focus();

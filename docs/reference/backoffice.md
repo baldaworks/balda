@@ -325,11 +325,16 @@ The pinned stack is:
 | Vanilla JavaScript | Built in | HTMX lifecycle, focus, sidebar and create-form field visibility |
 
 The shell adapts the AlaTooGuide Backoffice layout: a sticky utility top bar with the
-current authenticated username, Account and native CSRF-protected sign-out;
-a branded permission-derived sidebar; a shared content frame; and a footer
+current authenticated username, the sole Account navigation link and native
+CSRF-protected sign-out; a branded permission-derived sidebar; a shared content frame; and a footer
 in normal grid flow. The top bar and sidebar brand share the same height;
 navigation scrolls content below the top bar so page headings remain visible.
 The viewer identity is independent of an inspected user.
+The sidebar groups authorized links by purpose: Workspace contains Overview;
+Operations contains MCP and Schedules; Administration contains Access and Audit.
+It omits groups with no authorized links. Active administrators see all three;
+active operators see Workspace while Account remains available in the top bar.
+Nested Access, MCP and Schedules pages keep their parent sidebar link active.
 Desktop collapse hides the sidebar and expands content. Mobile navigation uses
 an overlay with backdrop, Escape and focus containment.
 

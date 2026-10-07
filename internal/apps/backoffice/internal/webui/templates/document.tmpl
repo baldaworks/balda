@@ -24,7 +24,7 @@
   <aside id="primary-sidebar" class="app-sidebar shadow" data-bs-theme="dark">
     <div class="sidebar-brand"><a href="{{path "/"}}overview" class="brand-link"><span class="brand-mark" aria-hidden="true">B</span><span class="brand-text">Balda</span></a></div>
     <div class="sidebar-wrapper"><nav aria-label="Primary navigation"><ul class="nav sidebar-menu flex-column" role="list">
-      {{range .Navigation}}<li class="nav-item"><a class="nav-link{{if .Current}} active{{end}}" data-nav-link href="{{path .Href}}" hx-boost="true" hx-target="#main-content" hx-swap="outerHTML" hx-push-url="true"{{if .Current}} aria-current="page"{{end}}><i class="nav-icon bi {{.Icon}}" aria-hidden="true"></i><p>{{.Label}}</p></a></li>{{end}}
+      {{range .Navigation}}<li class="nav-section"><h2 class="nav-section-title" id="{{.ID}}">{{.Label}}</h2><ul class="nav flex-column" role="list" aria-labelledby="{{.ID}}">{{range .Items}}<li class="nav-item"><a class="nav-link{{if .Current}} active{{end}}" data-nav-link href="{{path .Href}}" hx-boost="true" hx-target="#main-content" hx-swap="outerHTML" hx-push-url="true"{{if .Current}} aria-current="page"{{end}}><i class="nav-icon bi {{.Icon}}" aria-hidden="true"></i><p>{{.Label}}</p></a></li>{{end}}</ul></li>{{end}}
     </ul></nav></div>
   </aside>
   {{end}}

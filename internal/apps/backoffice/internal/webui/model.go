@@ -41,6 +41,13 @@ type NavItem struct {
 	Current bool
 }
 
+// NavGroup contains authorized links under one sidebar heading.
+type NavGroup struct {
+	Label string
+	ID    string
+	Items []NavItem
+}
+
 // CapabilityCard is a configured-only, secret-free integration projection.
 type CapabilityCard struct {
 	ID         string
@@ -153,7 +160,7 @@ type Page struct {
 	ViewerUsername      string
 	Title               string
 	Current             Location
-	Navigation          []NavItem
+	Navigation          []NavGroup
 	Capabilities        []CapabilityCard
 	BindingForms        []BindingForm
 	OwnUser             bool
@@ -184,21 +191,39 @@ type Page struct {
 	Preview             bool
 }
 
-// Navigation derives visible workspaces only from current server capabilities.
-func Navigation(capabilities usercmd.BackofficeCapabilities, current Location) []NavItem {
-	items := make([]NavItem, 0, 4)
-	add := func(enabled bool, label string, href Location, icon string) {
-		if enabled {
-			items = append(items, NavItem{Label: label, Href: href, Icon: icon, Current: current == href})
-		}
+// Navigation derives non-empty sidebar groups from current server capabilities.
+func Navigation(capabilities usercmd.BackofficeCapabilities, current Location) []NavGroup {
+	item := func(label string, href Location, icon string) NavItem {
+		return NavItem{Label: label, Href: href, Icon: icon, Current: current == href}
 	}
-	add(capabilities.Overview, "Overview", LocationOverview, "bi-speedometer2")
-	add(capabilities.ManageUsers, "Access", LocationAccess, "bi-people")
-	add(capabilities.ManageMCP, "MCP", LocationMCP, "bi-tools")
-	add(capabilities.ManageSchedules, "Schedules", LocationSchedules, "bi-calendar-event")
-	add(capabilities.Account, "Account", LocationAccount, "bi-person-circle")
-	add(capabilities.ViewAudit, "Audit", LocationAudit, "bi-shield-check")
-	return items
+	var groups []NavGroup
+	if capabilities.Overview {
+		groups = append(groups, NavGroup{
+			Label: "Workspace", ID: "nav-workspace",
+			Items: []NavItem{item("Overview", LocationOverview, "bi-speedometer2")},
+		})
+	}
+	var operations []NavItem
+	if capabilities.ManageMCP {
+		operations = append(operations, item("MCP", LocationMCP, "bi-tools"))
+	}
+	if capabilities.ManageSchedules {
+		operations = append(operations, item("Schedules", LocationSchedules, "bi-calendar-event"))
+	}
+	if len(operations) > 0 {
+		groups = append(groups, NavGroup{Label: "Operations", ID: "nav-operations", Items: operations})
+	}
+	var administration []NavItem
+	if capabilities.ManageUsers {
+		administration = append(administration, item("Access", LocationAccess, "bi-people"))
+	}
+	if capabilities.ViewAudit {
+		administration = append(administration, item("Audit", LocationAudit, "bi-shield-check"))
+	}
+	if len(administration) > 0 {
+		groups = append(groups, NavGroup{Label: "Administration", ID: "nav-administration", Items: administration})
+	}
+	return groups
 }
 
 // ProjectUser constructs the explicit safe projection of a canonical user.
