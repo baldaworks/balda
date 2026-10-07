@@ -92,6 +92,7 @@ type Provider interface {
 	SessionMCPKV() KVStore
 	Sessions() SessionStore
 	ScheduledJobs() ScheduledJobStore
+	ScheduleManagement() ScheduleManagementStore
 	ScheduleRuns() ScheduleRunStore
 	Questions() QuestionStore
 	// SessionMemoryIngressOutbox returns producer-local exports awaiting

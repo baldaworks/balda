@@ -15,7 +15,9 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/authcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/schedulecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/baldaworks/balda/sessionmemory"
 	adksession "google.golang.org/adk/v2/session"
 )
@@ -57,6 +59,7 @@ func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) 
 	t.Run("Provider_QuestionStoreRoundTrip", func(t *testing.T) { checkProvider_QuestionStoreRoundTrip(t, factory(t)) })
 	t.Run("Provider_SessionStoreUpsert_DoesNotDecodeAddressJSON", func(t *testing.T) { checkProvider_SessionStoreUpsert_DoesNotDecodeAddressJSON(t, factory(t)) })
 	t.Run("Provider_ScheduledJobStoreRoundTrip", func(t *testing.T) { checkProvider_ScheduledJobStoreRoundTrip(t, factory(t)) })
+	t.Run("Provider_ScheduleManagementAuthorityAndVersion", func(t *testing.T) { checkProvider_ScheduleManagementAuthorityAndVersion(t, factory(t)) })
 	t.Run("Provider_ScheduleRunStoreRoundTrip", func(t *testing.T) { checkProvider_ScheduleRunStoreRoundTrip(t, factory(t)) })
 	t.Run("Provider_OffsetPersistsAcrossReopen", func(t *testing.T) { checkProvider_OffsetPersistsAcrossReopen(t, factory(t)) })
 	t.Run("Provider_RuntimeSessionPersistsAcrossReopen", func(t *testing.T) { checkProvider_RuntimeSessionPersistsAcrossReopen(t, factory(t)) })
@@ -78,6 +81,82 @@ func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) 
 		checkSessionMemoryIngressOutboxRecoversExpiredLeaseAndRejectsForeignSettlement(t, factory(t))
 	})
 	t.Run("SessionMemoryIngressOutboxReplaysTerminalWithAuditAndStats", func(t *testing.T) { checkSessionMemoryIngressOutboxReplaysTerminalWithAuditAndStats(t, factory(t)) })
+}
+
+func checkProvider_ScheduleManagementAuthorityAndVersion(t *testing.T, open contractOpener) {
+	p := newContractProvider(t, open)
+	defer closeContractProvider(t, p)
+	base := contractMCPMutation(t, p)
+	a := schedulecmd.Authority{UserID: base.Authority.UserID, UserVersion: base.Authority.UserVersion,
+		CredentialVersion: base.Authority.CredentialVersion, MFAVersion: base.Authority.MFAVersion,
+		SessionID: base.Authority.SessionID, SessionVersion: base.Authority.SessionVersion, At: base.Authority.At}
+	next := a.At.Add(time.Hour)
+	r := ScheduledJobRecord{JobID: "managed-daily", Source: ScheduledJobSourceManaged,
+		Enabled: true, DefinitionVersion: 1, SessionID: "tg-1-0", ChannelType: ChannelTypeTelegram,
+		AddressKey: "1:0", AddressJSON: `{}`, Content: "review", ScheduleSpec: "0 9 * * *",
+		Status: ScheduledJobStatusActive, TargetKind: "locator", TargetKey: "telegram:1:0", NextRunAt: next}
+	audit := usercmd.AuditEvent{ID: "schedule-create", Action: usercmd.AuditActionScheduleDefinitionChanged,
+		Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: a.UserID, ActorSessionID: a.SessionID,
+		TargetType: usercmd.AuditTargetSchedule, TargetID: r.JobID, Source: "provider-contract", OccurredAt: a.At}
+	m := ScheduleMutation{Kind: ScheduleCreate, Record: r, Authority: a, Audit: audit}
+	if err := p.ScheduleManagement().Save(t.Context(), m); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.ScheduleManagement().Save(t.Context(), m); !errors.Is(err, schedulecmd.ErrConflict) {
+		t.Fatalf("duplicate create = %v, want conflict", err)
+	}
+	current, found, err := p.ScheduledJobs().GetByID(t.Context(), r.JobID)
+	if err != nil || !found || current.Source != ScheduledJobSourceManaged || current.DefinitionVersion != 1 {
+		t.Fatalf("created = %+v, %v, %v", current, found, err)
+	}
+	m.Kind, m.ExpectedVersion, m.Record.DefinitionVersion, m.Audit.ID = ScheduleEdit, 1, 2, "schedule-edit"
+	m.Record.Content = "updated"
+	stale := m
+	stale.Authority.UserVersion++
+	if err := p.ScheduleManagement().Save(t.Context(), stale); !errors.Is(err, schedulecmd.ErrConflict) {
+		t.Fatalf("stale administrator = %v, want conflict", err)
+	}
+	if err := p.ScheduleManagement().Save(t.Context(), m); err != nil {
+		t.Fatal(err)
+	}
+	current, _, err = p.ScheduledJobs().GetByID(t.Context(), r.JobID)
+	if err != nil || current.Content != "updated" || current.DefinitionVersion != 2 {
+		t.Fatalf("edited = %+v, %v", current, err)
+	}
+	if err := p.ScheduleManagement().Save(t.Context(), m); !errors.Is(err, schedulecmd.ErrConflict) {
+		t.Fatalf("stale edit = %v, want conflict", err)
+	}
+	m.Kind, m.ExpectedVersion, m.Record.DefinitionVersion, m.Audit.ID = ScheduleSelection, 2, 3, "schedule-disable"
+	m.Record.Enabled = false
+	if err := p.ScheduleManagement().Save(t.Context(), m); err != nil {
+		t.Fatal(err)
+	}
+	current, _, err = p.ScheduledJobs().GetByID(t.Context(), r.JobID)
+	if err != nil || current.Enabled || current.DefinitionVersion != 3 {
+		t.Fatalf("disabled = %+v, %v", current, err)
+	}
+	m.Kind, m.ExpectedVersion, m.Record.DefinitionVersion, m.Audit.ID = ScheduleDelete, 3, 4, "schedule-delete"
+	m.Record.Deleted = true
+	if err := p.ScheduleManagement().Save(t.Context(), m); err != nil {
+		t.Fatal(err)
+	}
+	current, _, err = p.ScheduledJobs().GetByID(t.Context(), r.JobID)
+	if err != nil || !current.Deleted || current.Enabled || current.DefinitionVersion != 4 {
+		t.Fatalf("archived = %+v, %v", current, err)
+	}
+	audits, err := p.Users().ListAuditEvents(t.Context(), usercmd.PageRequest{Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	for _, event := range audits.Events {
+		if event.TargetType == usercmd.AuditTargetSchedule {
+			count++
+		}
+	}
+	if count != 4 {
+		t.Fatalf("schedule audits = %d, want four committed changes", count)
+	}
 }
 
 func checkCollaborators(t *testing.T, open contractOpener) {

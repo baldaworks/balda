@@ -118,6 +118,11 @@ components:
     in:
       - internal/apps/balda/mcpcmd
 
+  # Schedule management values do not depend on HTTP, state, or transports.
+  schedule_contracts:
+    in:
+      - internal/apps/balda/schedulecmd
+
   # Credential recognition uses only standard-library values, never transports.
   auth_payload:
     in:
@@ -219,6 +224,11 @@ components:
   mcp_backoffice_wiring:
     in:
       - internal/apps/balda/mcpbackofficeapp
+
+  # Host adapter exposes schedule policy through Backoffice's consuming port.
+  schedule_backoffice_wiring:
+    in:
+      - internal/apps/balda/schedulebackofficeapp
 
   # Fixed-upstream loopback MCP transport; grant policy stays behind its port.
   # Upstream observation is injected by mcp_wiring; no OAuth SDK/policy belongs
@@ -439,6 +449,11 @@ deps:
       - mcp_contracts
     anyVendorDeps: false
 
+  schedule_contracts:
+    mayDependOn:
+      - schedule_contracts
+    anyVendorDeps: false
+
   auth_payload:
     mayDependOn:
       - auth_payload
@@ -458,6 +473,7 @@ deps:
   backoffice_application:
     mayDependOn:
       - mcp_contracts
+      - schedule_contracts
       - contracts
       - user_contracts
       - user_application
@@ -523,6 +539,7 @@ deps:
 
   application:
     mayDependOn:
+      - schedule_contracts
       - auth_payload
       - foundation
       - contracts
@@ -585,6 +602,14 @@ deps:
       - mcp_management
       - catalog_wiring
       - mcp_backoffice_wiring
+    deepScan: false
+    anyVendorDeps: false
+
+  schedule_backoffice_wiring:
+    mayDependOn:
+      - schedule_contracts
+      - application
+      - schedule_backoffice_wiring
     deepScan: false
     anyVendorDeps: false
 
@@ -804,6 +829,7 @@ deps:
       - contracts
       - user_contracts
       - mcp_contracts
+      - schedule_contracts
       - session_memory_core
       - session_memory_contracts
       - storage
@@ -819,6 +845,7 @@ deps:
   composition_root:
     mayDependOn:
       - mcp_backoffice_wiring
+      - schedule_backoffice_wiring
       - foundation
       - mcp_bridge
       - mcp_wiring

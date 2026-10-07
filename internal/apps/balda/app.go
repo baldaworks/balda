@@ -49,6 +49,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/permissions"
 	"github.com/baldaworks/balda/internal/apps/balda/pluginapp"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
+	"github.com/baldaworks/balda/internal/apps/balda/schedulebackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/scheduledjobs"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionapp"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
@@ -412,6 +413,10 @@ func Module(
 			func(provider baldastate.Provider) baldastate.ScheduledJobStore {
 				return provider.ScheduledJobs()
 			},
+			func(provider baldastate.Provider) baldastate.ScheduleManagementStore {
+				return provider.ScheduleManagement()
+			},
+			schedulebackofficeapp.New,
 			func(provider baldastate.Provider) baldastate.QuestionStore {
 				return provider.Questions()
 			},

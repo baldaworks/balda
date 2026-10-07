@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
+	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"go.uber.org/fx"
 )
 
@@ -45,6 +46,9 @@ var Module = fx.Module("balda_scheduled_jobs",
 			return scheduler, nil
 		},
 		fx.Annotate(func(s *ScheduledJobScheduler) appports.ScheduledJobRecorder { return s }),
+		func(jobs state.ScheduledJobStore, store state.ScheduleManagementStore, scheduler *ScheduledJobScheduler) *Management {
+			return NewManagement(jobs, store, scheduler.getResolver())
+		},
 	),
 	fx.Invoke(func(*ScheduledJobScheduler) {}),
 )
