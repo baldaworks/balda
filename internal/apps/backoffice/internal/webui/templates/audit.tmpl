@@ -1,5 +1,5 @@
 {{define "content"}}<main id="main-content" class="app-content" tabindex="-1">
-  <div class="container-fluid"><header class="content-header"><div><p class="section-kicker">Security</p><h1>Audit</h1><p>Recent security events appear first. Times are shown in UTC.</p></div></header>
+  <div class="container-fluid"><header class="content-header"><div><p class="section-kicker">Administration</p><h1>Audit</h1><p>Recent security events appear first. Times are shown in UTC.</p></div></header>
     <form action="{{path "/"}}audit" method="get" hx-get="{{path "/"}}audit" hx-target="#main-content" hx-swap="outerHTML" hx-push-url="true" class="card mb-3 audit-filters"><div class="card-body"><div class="row g-2 align-items-end">
       <div class="col-12 col-md-6"><label class="form-label" for="audit-action">Action</label><select class="form-select" id="audit-action" name="action">
         <option value="">All security actions</option>
