@@ -521,6 +521,7 @@ deps:
   backoffice_webui:
     mayDependOn:
       - mcp_contracts
+      - schedule_contracts
       - user_contracts
       - backoffice_webui
     anyVendorDeps: false

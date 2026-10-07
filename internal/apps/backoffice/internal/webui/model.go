@@ -14,18 +14,19 @@ import (
 type Location string
 
 const (
-	LocationLogin    Location = "/login"
-	LocationOverview Location = "/overview"
-	LocationAccess   Location = "/access"
-	LocationAccount  Location = "/account"
-	LocationAudit    Location = "/audit"
-	LocationMCP      Location = "/mcp"
+	LocationLogin     Location = "/login"
+	LocationOverview  Location = "/overview"
+	LocationAccess    Location = "/access"
+	LocationAccount   Location = "/account"
+	LocationAudit     Location = "/audit"
+	LocationMCP       Location = "/mcp"
+	LocationSchedules Location = "/schedules"
 )
 
 // Valid reports whether a location can be emitted by server navigation.
 func (l Location) Valid() bool {
 	switch l {
-	case LocationLogin, LocationOverview, LocationAccess, LocationAccount, LocationAudit, LocationMCP:
+	case LocationLogin, LocationOverview, LocationAccess, LocationAccount, LocationAudit, LocationMCP, LocationSchedules:
 		return true
 	default:
 		return false
@@ -142,6 +143,7 @@ type MFACeremonyView struct {
 // Page is the closed safe model accepted by production templates.
 type Page struct {
 	MCP          *MCPView
+	Schedules    *SchedulesView
 	RestartURL   string
 	RestartLabel string
 	MFA          *MFAView
@@ -193,6 +195,7 @@ func Navigation(capabilities usercmd.BackofficeCapabilities, current Location) [
 	add(capabilities.Overview, "Overview", LocationOverview, "bi-speedometer2")
 	add(capabilities.ManageUsers, "Access", LocationAccess, "bi-people")
 	add(capabilities.ManageMCP, "MCP", LocationMCP, "bi-tools")
+	add(capabilities.ManageSchedules, "Schedules", LocationSchedules, "bi-calendar-event")
 	add(capabilities.Account, "Account", LocationAccount, "bi-person-circle")
 	add(capabilities.ViewAudit, "Audit", LocationAudit, "bi-shield-check")
 	return items

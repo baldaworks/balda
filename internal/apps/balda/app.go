@@ -385,7 +385,7 @@ func Module(
 				})
 				return provider, nil
 			},
-			func(provider baldastate.Provider, invitations *auth.BindingInvitations, channels *auth.BindingChannels, mcp *mcpbackofficeapp.Operations) (*backoffice.Runtime, error) {
+			func(provider baldastate.Provider, invitations *auth.BindingInvitations, channels *auth.BindingChannels, mcp *mcpbackofficeapp.Operations, schedules *schedulebackofficeapp.Operations) (*backoffice.Runtime, error) {
 				runtime, err := backoffice.NewRuntime(backofficeConfig, provider)
 				if err != nil {
 					return nil, err
@@ -394,6 +394,9 @@ func Module(
 					return nil, err
 				}
 				if err := runtime.ConfigureMCPOperations(mcp); err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigureSchedulesOperations(schedules); err != nil {
 					return nil, err
 				}
 				if err := runtime.ConfigureMCPAuthorizations(mcp); err != nil {
