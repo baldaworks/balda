@@ -115,6 +115,9 @@ func (m *Management) projectRun(ctx context.Context, run state.ScheduleRunRecord
 	if run.DispatchState == state.ScheduleRunPending {
 		item.State = "queued"
 	}
+	if run.DispatchState == state.ScheduleRunFailed || run.DispatchState == state.ScheduleRunCanceled {
+		item.CompletedAt = run.UpdatedAt
+	}
 	if run.DispatchState != state.ScheduleRunDispatched || run.ExecutionJobID == "" || m.executionJobs == nil {
 		return item, nil
 	}

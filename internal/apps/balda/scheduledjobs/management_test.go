@@ -105,6 +105,22 @@ func TestManagementManualRunIsIdempotentAndHistoryIsSafe(t *testing.T) {
 	}
 }
 
+func TestManagementProjectsPrepublicationCompletionTime(t *testing.T) {
+	completed := time.Date(2026, 10, 8, 9, 5, 0, 0, time.UTC)
+	m := &Management{}
+	for _, stateName := range []string{state.ScheduleRunFailed, state.ScheduleRunCanceled} {
+		t.Run(stateName, func(t *testing.T) {
+			item, err := m.projectRun(t.Context(), state.ScheduleRunRecord{
+				RunID: "run", Trigger: state.ScheduleRunTriggerCron,
+				DispatchState: stateName, UpdatedAt: completed,
+			})
+			if err != nil || item.State != stateName || !item.CompletedAt.Equal(completed) {
+				t.Fatalf("terminal run = %+v, %v", item, err)
+			}
+		})
+	}
+}
+
 func TestManagementLifecyclePreservesDisabledSelectionAndArchive(t *testing.T) {
 	ctx := t.Context()
 	jobs := newSchedulerJobStore(t)
