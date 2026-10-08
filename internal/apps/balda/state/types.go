@@ -99,6 +99,7 @@ type Provider interface {
 	ScheduleRuns() ScheduleRunStore
 	Aliases() AliasStore
 	WebhookAdmissions() WebhookAdmissionStore
+	WebhookRoutes() WebhookRouteStore
 	Questions() QuestionStore
 	// SessionMemoryIngressOutbox returns producer-local exports awaiting
 	// JetStream PubAck. It is distinct from canonical memory delivery state.

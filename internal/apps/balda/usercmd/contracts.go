@@ -281,6 +281,8 @@ const (
 	AuditActionAliasRetargeted AuditAction = "alias.retargeted"
 	// AuditActionAliasDeleted records removal of a managed destination mapping.
 	AuditActionAliasDeleted AuditAction = "alias.deleted"
+	// AuditActionWebhookRouteChanged records a managed webhook route change.
+	AuditActionWebhookRouteChanged AuditAction = "webhook.route.changed"
 )
 
 // Valid reports whether the action belongs to the bounded security audit vocabulary.
@@ -290,7 +292,7 @@ func (a AuditAction) Valid() bool {
 		AuditActionUserRoleChanged, AuditActionUserStatusChanged, AuditActionCredentialChanged,
 		AuditActionSessionRevoked, AuditActionBindingAttached, AuditActionBindingDetached, AuditActionBindingClaimCreated,
 		AuditActionUserMigrated, AuditActionLoginSucceeded, AuditActionRefreshSucceeded,
-		AuditActionRefreshReplay, AuditActionMFAEnabled, AuditActionMFAReplaced, AuditActionMFADisabled, AuditActionMFARecovered, AuditActionMFAVerified, AuditActionLogout, AuditActionInvitationIssued, AuditActionInvitationRevoked, AuditActionMCPDefinitionChanged, AuditActionMCPAuthorizationChanged, AuditActionMCPCredentialsRenewed, AuditActionScheduleDefinitionChanged, AuditActionScheduleRunRequested, AuditActionAliasCreated, AuditActionAliasRetargeted, AuditActionAliasDeleted:
+		AuditActionRefreshReplay, AuditActionMFAEnabled, AuditActionMFAReplaced, AuditActionMFADisabled, AuditActionMFARecovered, AuditActionMFAVerified, AuditActionLogout, AuditActionInvitationIssued, AuditActionInvitationRevoked, AuditActionMCPDefinitionChanged, AuditActionMCPAuthorizationChanged, AuditActionMCPCredentialsRenewed, AuditActionScheduleDefinitionChanged, AuditActionScheduleRunRequested, AuditActionAliasCreated, AuditActionAliasRetargeted, AuditActionAliasDeleted, AuditActionWebhookRouteChanged:
 		return true
 	default:
 		return false
@@ -332,12 +334,14 @@ const (
 	AuditTargetSchedule AuditTargetType = "schedule"
 	// AuditTargetAlias identifies a managed destination name without exposing its address.
 	AuditTargetAlias AuditTargetType = "alias"
+	// AuditTargetWebhookRoute identifies a webhook route without its secret or input.
+	AuditTargetWebhookRoute AuditTargetType = "webhook_route"
 )
 
 // Valid reports whether the audit target type is supported.
 func (t AuditTargetType) Valid() bool {
 	switch t {
-	case AuditTargetUser, AuditTargetSession, AuditTargetBinding, AuditTargetSystem, AuditTargetMigration, AuditTargetMCP, AuditTargetSchedule, AuditTargetAlias:
+	case AuditTargetUser, AuditTargetSession, AuditTargetBinding, AuditTargetSystem, AuditTargetMigration, AuditTargetMCP, AuditTargetSchedule, AuditTargetAlias, AuditTargetWebhookRoute:
 		return true
 	default:
 		return false
