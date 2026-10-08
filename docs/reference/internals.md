@@ -79,15 +79,17 @@ flowchart TB
 | `commandfx` | `internal/apps/balda/commandfx` | CommandActor registration and port wiring | actors/command, session, runtime interfaces |
 | `auth` | `internal/apps/balda/auth` | Owner authentication store | state (interface) |
 | `channel/telegram` | `internal/apps/balda/channel/telegram` | Telegram transport package: adapter, delivery formatting, and message sending | session, `tgbotkit/client` |
-| `channel/webhook` | `internal/apps/balda/channel/webhook` | HTTP webhook receiver, authentication, body parsing, deduplication, and HTTP responses | webhookapp |
+| `channel/webhook` | `internal/apps/balda/channel/webhook` | HTTP webhook receiver, authentication, body parsing, deduplication, and HTTP responses | webhookcmd, local admission port |
 | `chatapp` | `internal/apps/balda/chatapp` | Conversational ingress orchestration, question settlement, and SessionActor publication | actorcmd, session, turncmd |
-| `webhookapp` | `internal/apps/balda/webhookapp` | Webhook target resolution and job/session publication use-case | actorcmd, appports, commandcmd |
+| `webhookapp` | `internal/apps/balda/webhookapp` | Frozen webhook admission, report selection, and private JobActor publication policy | webhookcmd, destination resolver port, actorcmd |
+| `webhookfx` | `internal/apps/balda/webhookfx` | Composition adapter between HTTP receiver, webhook admission policy and host services | channel/webhook, webhookapp |
+| `aliases` | `internal/apps/balda/aliases` | Administrator-managed public locator names and guarded mutation policy | aliascmd, state port |
 | `internalmcp` | `internal/apps/balda/internalmcp` | Bundled MCP server lifecycle | controlmcp, memory, session |
 | `memory` | `internal/apps/balda/memory` | Global explicit-fact store and `balda.memory.*` MCP tools | (standalone) |
 | `session` | `internal/apps/balda/session` | Session management | agent, state |
 | `sessionturn` | `internal/apps/balda/sessionturn` | Queued-turn restoration and execution orchestration | memory, session |
 | `sessionturnapp` | `internal/apps/balda/sessionturnapp` | Queued turn execution wiring, provider-turn execution, progress dispatch, and turn-facing adapters | jobs, memory, session, sessionturn, `github.com/baldaworks/go-actorlayer` |
-| `state` | `internal/apps/balda/state` | SQLite state persistence | `modernc.org/sqlite` |
+| `state` | `internal/apps/balda/state` | SQLite/PostgreSQL state persistence and read models | SQL drivers, Goose migrations |
 | `sessionmemory` | `sessionmemory` | Portable session-memory semantic core and canonical contracts | standard library |
 | `sessionmemory/app` | `sessionmemory/app` | Portable runtime, typed ingest, recall, trace, forget, and lifecycle ports | `sessionmemory` |
 | `sessionmemory/store/badger` | `sessionmemory/store/badger` | Canonical Badger persistence and maintenance | `sessionmemory`, `sessionmemory/app`, Badger |
@@ -116,11 +118,12 @@ Balda treats `actorlayer` as the reusable actor library boundary and never as pr
 - `internal/apps/balda/sessionturnapp`: queued turn execution wiring, provider execution, progress dispatch, and turn-specific adapters.
 - `internal/apps/balda/internalmcp`: bundled MCP construction and lifecycle.
 - `internal/apps/balda/chatapp` and `internal/apps/balda/chatfx`: conversational intake, question resolution, and SessionActor publication.
-- `internal/apps/balda/channel/webhook` and `internal/apps/balda/webhookapp`: webhook HTTP receiver and application target resolution.
+- `internal/apps/balda/channel/webhook`, `webhookapp`, and `webhookfx`: HTTP receiver, frozen report admission/private-job policy, and composition adapter, respectively. The concrete receiver consumes a local port and neutral webhook contracts.
 - `internal/apps/balda/handlersfx`: composition-root adapters that bind transport-owned ports to concrete provider runtimes.
 - `internal/apps/balda/channel/*`: concrete channel delivery semantics. They adapt provider-specific messaging APIs behind Balda delivery commands.
-- `internal/apps/balda/state`: SQLite-backed product state and read models. It owns sessions, scheduler state, job tables, delivery idempotency, and the session-memory ingress outbox/audit records. It does not own canonical session-memory domain state.
-- `internal/apps/balda/schedulecmd`, `scheduledjobs`, and `schedulebackofficeapp`: neutral Schedules management values, host-owned recurring policy/dispatch and optional-delivery-aware run finalization, and the narrow Backoffice port adapter, respectively. `state` persists source-owned definitions, frozen run input, execution job output, and delivery state. Private run sessions are removed through a small session port after execution and any requested delivery settle.
+- `internal/apps/balda/state`: SQLite/PostgreSQL product state and read models. It owns sessions, scheduler state, job tables, delivery idempotency, and the session-memory ingress outbox/audit records. It does not own canonical session-memory domain state.
+- `internal/apps/balda/aliases`, `aliascmd`, and `aliasfx`: managed destination policy, neutral values, and host resolution wiring. A schedule run or webhook admission stores its selected concrete report locator before actor publication; accepted work does not reread the alias.
+- `internal/apps/balda/schedulecmd`, `scheduledjobs`, and `schedulebackofficeapp`: neutral Schedules management values, host-owned recurring policy/dispatch and optional-delivery-aware run finalization, and the narrow Backoffice port adapter, respectively. `state` persists source-owned definitions, selected report locators, frozen run input, execution job output, and delivery state. Private run sessions are removed through a small session port after execution and any requested delivery settle.
 - `internal/apps/balda/memory`: separate global explicit-fact memory (`balda.memory.read`, `balda.memory.remember`, and `MEMORY.md` import). It is not the session-memory subsystem.
 - `sessionmemory` and `sessionmemory/app`: portable semantic ownership and capability orchestration for exact-scope session memory.
 - `sessionmemory/store/badger`: canonical session-memory state; `sessionmemory/index/bleve`: rebuildable lexical projection.

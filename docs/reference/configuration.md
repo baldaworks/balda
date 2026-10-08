@@ -466,23 +466,50 @@ balda:
   - each route requires:
     - `path`: local inbound webhook path (for example `/webhook/release`)
     - `prompt_template`: Go `text/template` rendered with `RequestID`, `Path`, `Method`, `RawBody`, and `Headers`
-  - optional `envelope`:
-    - `target` + `key`: destination address (defaults to `alias` + `owner`)
-      - `target=locator` consumes a locator ref in the form `<channel_type>:<address_key>`; `/locator` prints the current session value
-      - `target=alias` consumes an alias key (defaults to `owner`, with optional channel qualification such as `owner@telegram` or `owner@slackagent`); resolves via the transport-neutral destination resolver, supporting multiple concurrent channels and default selection with fallback to legacy Telegram owner state when no explicit destination records exist
-      - `target=session` resolves an existing session ID to its persisted locator
-    - `key_from_body`: for a header-authenticated route, read a top-level JSON string field instead of a fixed `key`; use `key_from_body=chat_id` to return an event to its source session
-    - `mode`: `job` (default) or `session`
-    - `report_to`: optional destination for progress/final replies; supports `key_from_body` too
-    - `fallback_to`: fixed `alias` or `locator` used when a body-sourced session target is missing or inactive; requires header authentication
-    - missing or inactive sessions return `404 session_not_found` when no fallback resolves them; session lookup storage failures return `503 dispatch_failed` so callers can retry
-    - `ack_on_delivery`: when true, return `200` only after the final reply is posted; requires `mode=job` and `report_to` (default: false)
+  - optional `envelope.report_to`: final-report destination with `target` and `key`
+    - `target=locator`: public `<channel_type>:<address_key>` ref; `/locator` prints one
+    - `target=managed_alias`: Backoffice-managed name such as `main_chat`
+    - `target=alias`: existing role selector such as `owner@telegram`
+    - omitted: retain final output in the job without external delivery
+    - the current destination is selected when a new request is accepted and stays fixed for deduplication and retries; an unavailable name rejects a new request
+  - optional `envelope.ack_on_delivery`: return `200` only after the final report is posted; requires `report_to` (default: `false`)
+  - every accepted request executes in a new private session, independent of `report_to`; only final output is sent externally
+  - older route keys `target`, `key`, `mode`, `key_from_body`, and `fallback_to` are incompatible and fail startup. Replace an older session-target route with an optional `report_to` and remove those fields; the webhook no longer continues that session.
   - optional `auth`:
     - `type`: `none` (default) or `header`
     - `header` + `value` (or `secret_env`) for `type=header`
   - optional `dedupe`:
     - `source`: `request_id` (default), `header`, or `body_sha256`
     - `header` required for `source=header`
+
+- `balda.scheduler.jobs`: config-owned recurring schedules, each with an `id`, five-field UTC `cron`, and `envelope.content`
+  - optional `envelope.report_to` uses `target: locator` or `target: managed_alias` with `key`; omit it to retain output only in run history
+  - a managed alias may be referenced before its mapping exists. Each cron or manual run selects the current concrete locator at admission. A missing alias fails only that run; the next cron slot remains eligible.
+  - an existing `envelope.target: locator` plus `envelope.key` remains supported as a literal report destination. Do not combine it with `report_to`.
+
+```yaml
+balda:
+  scheduler:
+    jobs:
+      - id: daily_summary
+        cron: "0 9 * * *"
+        envelope:
+          content: Summarize yesterday's work
+          report_to:
+            target: managed_alias
+            key: main_chat
+  webhooks:
+    enabled: true
+    routes:
+      release:
+        path: /webhook/release
+        prompt_template: '{{ .RawBody }}'
+        envelope:
+          report_to:
+            target: managed_alias
+            key: main_chat
+          ack_on_delivery: true
+```
 
 ### Attachment storage and prompt representation
 

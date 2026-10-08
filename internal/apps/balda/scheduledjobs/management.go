@@ -44,8 +44,15 @@ type Management struct {
 // NewManagement composes the schedule policy with its persistence ports.
 func NewManagement(jobs state.ScheduledJobStore, store state.ScheduleManagementStore,
 	runs state.ScheduleRunStore, executionJobs state.JobLifecycleStore, deliveries state.DeliveryStore) *Management {
+	return NewManagementWithResolver(jobs, store, runs, executionJobs, deliveries, nil)
+}
+
+// NewManagementWithResolver composes schedule policy with report destination resolution.
+func NewManagementWithResolver(jobs state.ScheduledJobStore, store state.ScheduleManagementStore,
+	runs state.ScheduleRunStore, executionJobs state.JobLifecycleStore, deliveries state.DeliveryStore,
+	resolver envelopetarget.DestinationResolver) *Management {
 	return &Management{jobs: jobs, store: store, runs: runs, executionJobs: executionJobs,
-		deliveries: deliveries, now: time.Now}
+		deliveries: deliveries, resolver: resolver, now: time.Now}
 }
 
 // RunNow admits one manual execution, including for a disabled schedule when confirmed.

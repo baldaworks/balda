@@ -668,7 +668,7 @@ in logs, URLs used for recovery, exported read models or browser history caches.
 Administrators with a normal browser session can open **Schedules** at
 `<base_path>/schedules`. Operators cannot view or mutate schedules. The
 inventory lists recurring definitions from both `balda.scheduler.jobs` and
-Backoffice, with source, UTC cron, report locator,
+Backoffice, with source, UTC cron, report destination,
 enabled/runtime state, and next/last run times. Internal `@once` timers are not
 listed. Opening a detail loads the instruction content only for that guarded
 administrator page; the inventory omits it. HTML content and safe errors are
@@ -679,12 +679,14 @@ versions. Session refresh returns to the requested Schedules page.
 `/schedules?new=1` creates a Backoffice-owned schedule. IDs use lowercase
 letters, digits, `_` and `-`, start with a letter or digit, and are fixed after
 creation. The ID must be unique across sources. The form uses a five-field UTC
-cron expression, content, and an optional public
-`<channel_type>:<address_key>` report locator. Each run starts in a new private
-session independent of that address. A supplied locator is checked for syntax,
-but its address need not exist when the schedule is saved or run. Without a
-locator, the output remains in run history and no external report is sent. A new
-managed schedule starts enabled. The report locator receives only the final
+cron expression, content, and an optional report destination: no delivery, a
+public `<channel_type>:<address_key>` locator, or a managed alias such as
+`main_chat`. Each run starts in a new private session independent of that
+destination. A supplied locator is checked for syntax, but its external address
+need not exist when the schedule is saved or run. An alias may be named before
+its mapping is created. Without a destination, the output remains in run history
+and no external report is sent. A new managed schedule starts enabled. The
+selected report locator receives only the final
 output or bounded failure message, never progress or interactive permission
 questions. A permission request requiring a live conversation fails closed.
 Saving an edit recalculates its next future slot while preserving its enabled
@@ -693,7 +695,7 @@ selection; an already admitted or published run may finish. Confirmed enable
 selects a new future slot. Confirmed delete archives the definition; its
 detail and run history remain accessible at `/schedules/{id}`. Stale versions
 or ID collisions return a conflict, and the editor asks the administrator to
-reload. Invalid cron or supplied locator leaves the prior
+reload. Invalid cron, alias name, or supplied locator leaves the prior
 definition intact.
 
 Configuration-owned schedules are read-only in Backoffice. Change their
@@ -711,8 +713,12 @@ starts a new request. The newest-first history distinguishes scheduled and
 manual triggers and shows queued, retrying, starting, waiting-for-execution,
 running, delivering-report, succeeded, failed or canceled state. It includes failures before
 command publication and terminal execution outcomes, with bounded failure
-labels instead of raw provider errors. Opening a run shows only its frozen
-input and the durable provider output. Delivery status remains separate from
+labels instead of raw provider errors. At admission, each run selects its report
+locator from the current alias mapping and freezes it for retries, restart and
+delivery. A missing alias creates a failed run; the recurring definition stays
+active for the next cron slot. A manual failure does not move its cron cursor.
+Opening a run shows the selected concrete locator, frozen input, and durable
+provider output. Delivery status remains separate from
 the output: a failed or pending send does not erase the result. After execution
 and, when applicable, final delivery settles, Balda deletes the private session
 and its runtime events and ephemeral workspace branch; interrupted cleanup

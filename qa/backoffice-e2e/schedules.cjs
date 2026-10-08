@@ -81,20 +81,45 @@ async function textLineCount(locator) {
       }
 
       await Promise.all([page.waitForURL(`${baseURL}/schedules`), page.getByRole('link', { name: 'All schedules' }).click()]);
+      if (viewport.name === 'desktop') {
+        const aliasInventory = await page.goto(`${baseURL}/aliases`);
+        assert.equal(aliasInventory.status(), 200);
+        await page.getByRole('link', { name: 'Add alias' }).click();
+        await page.getByLabel('Alias name').fill('main_chat');
+        await page.getByLabel('Public locator').fill('telegram:9001:0');
+        await Promise.all([page.waitForURL(`${baseURL}/aliases/main_chat`), page.getByRole('button', { name: 'Create alias' }).click()]);
+        await page.goto(`${baseURL}/schedules`);
+      }
       await Promise.all([page.waitForURL(`${baseURL}/schedules?new=1`), page.getByRole('link', { name: 'Add schedule' }).click()]);
       assert.equal(await page.locator('h1').textContent(), 'Add schedule');
       const newID = `weekly-review-${viewport.name}`;
       await page.getByLabel('Schedule ID').fill(newID);
       await page.getByLabel('Cron (UTC)').fill('0 9 * * 1');
       if (viewport.name === 'desktop') {
-        await page.getByLabel('Report destination').selectOption('locator');
-        await page.getByLabel('Report locator', { exact: true }).fill('telegram:9001:0');
+        await page.getByLabel('Report destination').selectOption('managed_alias');
+        await page.getByLabel('Managed alias').fill('main_chat');
       }
       await page.getByLabel('Content').fill('Prepare weekly review');
       await assertNoDocumentOverflow(page, `${viewport.name} creation form`);
       await screenshot(page, 'create', viewport.name);
       await Promise.all([page.waitForURL(`${baseURL}/schedules/${newID}`), page.getByRole('button', { name: 'Create schedule' }).click()]);
       await page.getByRole('heading', { name: 'Edit schedule' }).waitFor();
+      if (viewport.name === 'desktop') {
+        assert.equal(await page.getByLabel('Report destination').inputValue(), 'managed_alias');
+        assert.equal(await page.getByLabel('Managed alias').inputValue(), 'main_chat');
+        await page.getByRole('button', { name: 'Run now' }).click();
+        await page.getByRole('region', { name: /Schedule run history/ }).locator('tbody tr a').first().click();
+        await page.getByText('telegram:9001:0', { exact: true }).waitFor();
+        await page.goto(`${baseURL}/aliases/main_chat`);
+        await page.getByLabel('Public locator').fill('telegram:9002:0');
+        await page.getByRole('button', { name: 'Save destination' }).click();
+        assert.equal(await page.getByLabel('Public locator').inputValue(), 'telegram:9002:0');
+        await page.goto(`${baseURL}/schedules/${newID}`);
+        assert.equal(await page.getByLabel('Managed alias').inputValue(), 'main_chat');
+        await page.getByRole('button', { name: 'Run now' }).click();
+        await page.getByRole('region', { name: /Schedule run history/ }).locator('tbody tr a').first().click();
+        await page.getByText('telegram:9002:0', { exact: true }).waitFor();
+      }
       await screenshot(page, 'created', viewport.name);
 
       await Promise.all([page.waitForURL(`${baseURL}/schedules`), page.getByRole('link', { name: 'All schedules' }).click()]);
