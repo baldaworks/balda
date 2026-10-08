@@ -82,8 +82,9 @@ for provider targeting and value operations.
 Administrators can open **Schedules** in Backoffice to inspect configured
 recurring jobs and create persistent UI-owned jobs. Configuration entries are
 read-only; either source can be run manually, and both have retained run
-history. A report destination is optional: choose a public locator or a managed
-alias in **Aliases**. Alias names can be selected before their mapping exists;
+history. The optional **Report to** field accepts a public locator, including
+a direct-message locator, or a managed alias from **Aliases**. Alias names can
+be entered before their mapping exists;
 each new run selects the current mapping and retains that concrete address for
 retries. A missing alias fails only that run. Every run uses a new private
 session and retains its input and output in the run detail; a selected address

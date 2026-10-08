@@ -679,12 +679,14 @@ versions. Session refresh returns to the requested Schedules page.
 `/schedules?new=1` creates a Backoffice-owned schedule. IDs use lowercase
 letters, digits, `_` and `-`, start with a letter or digit, and are fixed after
 creation. The ID must be unique across sources. The form uses a five-field UTC
-cron expression, content, and an optional report destination: no delivery, a
-public `<channel_type>:<address_key>` locator, or a managed alias such as
-`main_chat`. Each run starts in a new private session independent of that
-destination. A supplied locator is checked for syntax, but its external address
-need not exist when the schedule is saved or run. An alias may be named before
-its mapping is created. Without a destination, the output remains in run history
+cron expression, content, and one optional **Report to** field. Leave it empty
+for no delivery, or enter a public `<channel_type>:<address_key>` locator
+(including a direct-message locator) or a managed alias such as `main_chat`.
+The form does not ask for a destination type. Each run starts in a new private
+session independent of that destination. A supplied locator is checked for
+syntax, but its external address need not exist when the schedule is saved or
+run. An alias may be named before its mapping is created. Without a destination,
+the output remains in run history
 and no external report is sent. A new managed schedule starts enabled. The
 selected report locator receives only the final
 output or bounded failure message, never progress or interactive permission

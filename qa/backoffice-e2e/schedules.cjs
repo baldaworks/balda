@@ -2,7 +2,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require('playwright');
-const { assertPlaceholderDistinct } = require('./form-color.cjs');
 
 const baseURL = process.argv[2];
 assert.equal(new URL(baseURL).hostname, '127.0.0.1', 'browser gate requires an isolated loopback server');
@@ -63,6 +62,7 @@ async function textLineCount(locator) {
 
       await Promise.all([page.waitForURL(`${baseURL}/schedules/daily-summary`), managedLink.click()]);
       await page.getByRole('heading', { name: 'Edit schedule' }).waitFor();
+      assert.equal(await page.getByLabel('Report to (optional)').inputValue(), 'telegram:9001:0');
       await page.waitForFunction(() => document.querySelector('.app-sidebar [data-nav-link][href$="/schedules"]')?.getAttribute('aria-current') === 'page');
       await page.getByRole('button', { name: 'Run now' }).click();
       await page.getByText('Queued', { exact: true }).waitFor();
@@ -93,14 +93,12 @@ async function textLineCount(locator) {
       }
       await Promise.all([page.waitForURL(`${baseURL}/schedules?new=1`), page.getByRole('link', { name: 'Add schedule' }).click()]);
       assert.equal(await page.locator('h1').textContent(), 'Add schedule');
-      await assertPlaceholderDistinct(page.getByLabel('Cron (UTC)'), `${viewport.name} schedule cron`);
+      assert.equal(await page.getByLabel('Report to (optional)').inputValue(), '');
       const newID = `weekly-review-${viewport.name}`;
       await page.getByLabel('Schedule ID').fill(newID);
       await page.getByLabel('Cron (UTC)').fill('0 9 * * 1');
       if (viewport.name === 'desktop') {
-        await page.getByLabel('Report destination').selectOption('managed_alias');
-        await assertPlaceholderDistinct(page.getByLabel('Managed alias'), 'schedule report alias');
-        await page.getByLabel('Managed alias').fill('main_chat');
+        await page.getByLabel('Report to (optional)').fill('main_chat');
       }
       await page.getByLabel('Content').fill('Prepare weekly review');
       await assertNoDocumentOverflow(page, `${viewport.name} creation form`);
@@ -108,8 +106,7 @@ async function textLineCount(locator) {
       await Promise.all([page.waitForURL(`${baseURL}/schedules/${newID}`), page.getByRole('button', { name: 'Create schedule' }).click()]);
       await page.getByRole('heading', { name: 'Edit schedule' }).waitFor();
       if (viewport.name === 'desktop') {
-        assert.equal(await page.getByLabel('Report destination').inputValue(), 'managed_alias');
-        assert.equal(await page.getByLabel('Managed alias').inputValue(), 'main_chat');
+        assert.equal(await page.getByLabel('Report to (optional)').inputValue(), 'main_chat');
         await page.getByRole('button', { name: 'Run now' }).click();
         await page.getByRole('region', { name: /Schedule run history/ }).locator('tbody tr a').first().click();
         await page.getByText('telegram:9001:0', { exact: true }).waitFor();
@@ -120,7 +117,7 @@ async function textLineCount(locator) {
         await page.getByRole('button', { name: 'Save destination' }).click();
         assert.equal(await page.getByLabel('Public locator').inputValue(), 'telegram:9002:0');
         await page.goto(`${baseURL}/schedules/${newID}`);
-        assert.equal(await page.getByLabel('Managed alias').inputValue(), 'main_chat');
+        assert.equal(await page.getByLabel('Report to (optional)').inputValue(), 'main_chat');
         await page.getByRole('button', { name: 'Run now' }).click();
         await page.getByRole('region', { name: /Schedule run history/ }).locator('tbody tr a').first().click();
         await page.getByText('telegram:9002:0', { exact: true }).waitFor();

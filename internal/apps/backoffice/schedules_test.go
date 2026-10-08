@@ -27,13 +27,23 @@ type schedulesHTTPFixture struct {
 	runErr      error
 }
 
-func TestScheduleDefinitionSelectsManagedReportAlias(t *testing.T) {
-	definition, err := scheduleDefinition(url.Values{
-		"cron": {"0 9 * * *"}, "content": {"review"},
-		"report_kind": {"managed_alias"}, "alias": {"main_chat"},
-	}, "daily")
-	if err != nil || definition.Alias != "main_chat" || definition.Locator != "" {
-		t.Fatalf("schedule definition = %+v, err=%v", definition, err)
+func TestScheduleDefinitionSelectsReportDestination(t *testing.T) {
+	for _, tc := range []struct {
+		name, reportTo, wantLocator, wantAlias string
+	}{
+		{name: "no report"},
+		{name: "channel locator", reportTo: "telegram:-1003953132277:0", wantLocator: "telegram:-1003953132277:0"},
+		{name: "direct message locator", reportTo: "telegram:123456:0", wantLocator: "telegram:123456:0"},
+		{name: "managed alias", reportTo: "main_chat", wantAlias: "main_chat"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			definition, err := scheduleDefinition(url.Values{
+				"cron": {"0 9 * * *"}, "content": {"review"}, "locator": {tc.reportTo},
+			}, "daily")
+			if err != nil || definition.Locator != tc.wantLocator || definition.Alias != tc.wantAlias {
+				t.Fatalf("schedule report destination = %+v, err=%v", definition, err)
+			}
+		})
 	}
 }
 
