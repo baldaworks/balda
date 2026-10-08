@@ -24,8 +24,7 @@ type ScheduleRow struct {
 type ScheduleEditor struct {
 	Row                            ScheduleRow
 	New                            bool
-	ID, Cron, Content, Locator     string
-	Alias, ReportKind              string
+	ID, Cron, Content, ReportTo    string
 	Action                         string
 	RunRequestKey, NextHistoryPath string
 	Runs                           []ScheduleRunView
@@ -123,13 +122,10 @@ func ProjectScheduleRow(item schedulecmd.Item) ScheduleRow {
 func ProjectScheduleEditor(item schedulecmd.Item, create bool) *ScheduleEditor {
 	d := item.Definition
 	e := &ScheduleEditor{Row: ProjectScheduleRow(item), New: create, ID: d.ID, Cron: d.Cron,
-		Content: d.Content, Locator: d.Locator, Alias: d.Alias, ReportKind: "none",
+		Content: d.Content, ReportTo: d.Locator,
 		Action: "/schedules/" + url.PathEscape(d.ID)}
-	if d.Locator != "" {
-		e.ReportKind = "locator"
-	}
 	if d.Alias != "" {
-		e.ReportKind = "managed_alias"
+		e.ReportTo = d.Alias
 	}
 	if create {
 		e.Action = "/schedules"

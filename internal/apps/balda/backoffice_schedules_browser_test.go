@@ -52,6 +52,8 @@ func TestBackofficeSchedulesBrowserWorkflow(t *testing.T) {
 				{JobID: "daily-summary", Source: state.ScheduledJobSourceManaged, Enabled: true, DefinitionVersion: 2,
 					TargetKind: "locator", TargetKey: "telegram:9001:0", SessionID: "tg-9001-0",
 					ChannelType: state.ChannelTypeTelegram, AddressKey: "9001:0", AddressJSON: `{}`,
+					ReportToEnabled: true, ReportToTargetKind: "locator", ReportToTargetKey: "telegram:9001:0",
+					ReportToChannelType: state.ChannelTypeTelegram, ReportToAddressKey: "9001:0",
 					Content: "Summarize yesterday's work", ScheduleSpec: "0 9 * * *", Timezone: "UTC",
 					Status: state.ScheduledJobStatusActive, NextRunAt: now.Add(12 * time.Hour), CreatedAt: now, UpdatedAt: now},
 				{JobID: "config:morning", Source: state.ScheduledJobSourceConfig, Enabled: true, DefinitionVersion: 1,

@@ -254,34 +254,17 @@ func (a *httpApp) scheduleChange(w http.ResponseWriter, r *http.Request, remove 
 }
 
 func scheduleDefinition(form url.Values, id string) (schedulecmd.Definition, error) {
-	for _, oldField := range []string{"target_kind", "target_key", "report_to_kind", "report_to_key"} {
+	for _, oldField := range []string{"target_kind", "target_key", "report_to_kind", "report_to_key", "report_kind", "alias"} {
 		if _, exists := form[oldField]; exists {
 			return schedulecmd.Definition{}, schedulecmd.ErrInvalid
 		}
 	}
 	definition := schedulecmd.Definition{ID: id, Cron: form.Get("cron"), Content: form.Get("content")}
-	switch form.Get("report_kind") {
-	case "":
-		if form.Get("alias") != "" {
-			return schedulecmd.Definition{}, schedulecmd.ErrInvalid
-		}
-		definition.Locator = form.Get("locator")
-	case "locator":
-		if strings.TrimSpace(form.Get("locator")) == "" || form.Get("alias") != "" {
-			return schedulecmd.Definition{}, schedulecmd.ErrInvalid
-		}
-		definition.Locator = form.Get("locator")
-	case "managed_alias":
-		if form.Get("locator") != "" || strings.TrimSpace(form.Get("alias")) == "" {
-			return schedulecmd.Definition{}, schedulecmd.ErrInvalid
-		}
-		definition.Alias = form.Get("alias")
-	case "none":
-		if form.Get("locator") != "" || form.Get("alias") != "" {
-			return schedulecmd.Definition{}, schedulecmd.ErrInvalid
-		}
-	default:
-		return schedulecmd.Definition{}, schedulecmd.ErrInvalid
+	reportTo := strings.TrimSpace(form.Get("locator"))
+	if strings.Contains(reportTo, ":") {
+		definition.Locator = reportTo
+	} else {
+		definition.Alias = reportTo
 	}
 	return definition, nil
 }
@@ -322,7 +305,7 @@ func (a *httpApp) scheduleError(w http.ResponseWriter, r *http.Request, page web
 func scheduleOperationFailure(err error) (int, string) {
 	switch {
 	case errors.Is(err, schedulecmd.ErrInvalid):
-		return http.StatusBadRequest, "Review the schedule ID, five-field UTC cron, destination and content. The destination must already exist."
+		return http.StatusBadRequest, "Review the schedule ID, five-field UTC cron, destination and content. Enter a public locator or managed alias for the optional destination."
 	case errors.Is(err, schedulecmd.ErrForbidden):
 		return http.StatusForbidden, "This schedule is read-only or your administrator authority changed."
 	case errors.Is(err, schedulecmd.ErrNotFound):

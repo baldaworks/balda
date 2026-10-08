@@ -47,7 +47,7 @@ html, body { color: var(--ink); background: var(--canvas); }
 .card-body { min-width: 0; padding: 1.25rem; }
 .form-label { font-weight: 600; }
 .form-control, .form-select, .form-check-input { color: var(--ink); background-color: var(--surface-raised); border-color: var(--border); }
-.form-control::placeholder { color: var(--input-placeholder); opacity: 1; }
+#alias-name::placeholder, #alias-locator::placeholder { color: var(--input-placeholder); opacity: 1; }
 .form-control:focus, .form-select:focus { background-color: var(--surface-raised); color: var(--ink); }
 .form-text { color: var(--muted); }
 .btn-outline-secondary { --bs-btn-color: var(--ink); --bs-btn-border-color: var(--muted); }

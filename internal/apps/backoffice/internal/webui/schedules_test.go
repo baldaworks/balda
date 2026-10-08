@@ -15,7 +15,7 @@ func TestScheduleViewsShowConfiguredAliasReference(t *testing.T) {
 		t.Fatalf("inventory destination = %q", row.Locator)
 	}
 	editor := ProjectScheduleEditor(item, false)
-	if editor.Alias != "main_chat" || editor.ReportKind != "managed_alias" {
+	if editor.ReportTo != "main_chat" {
 		t.Fatalf("editor destination = %+v", editor)
 	}
 }
