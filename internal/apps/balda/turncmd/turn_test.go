@@ -127,6 +127,40 @@ func TestWebhookJobEnvelopePreservesNestedMemoryMetadata(t *testing.T) {
 	}
 }
 
+func TestWebhookJobEnvelopeKeepsIdentityOnRetry(t *testing.T) {
+	t.Parallel()
+	payload := SessionTurnPayload{Text: "event", DedupeKey: "webhook:events:req-1",
+		Locator: deliverycmd.Locator{ChannelType: "webhook", AddressKey: "wh-1", AddressJSON: `{}`, SessionID: "wh-1"}}
+	first, firstJobID, err := WebhookJobEnvelope(payload, "events", "req-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	retry, retryJobID, err := WebhookJobEnvelope(payload, "events", "req-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ID == "" || first.ID != retry.ID || firstJobID != retryJobID || first.DedupeKey != retry.DedupeKey {
+		t.Fatalf("retry identity changed: first=%+v, retry=%+v", first, retry)
+	}
+	other := payload
+	other.DedupeKey = "webhook:events:req-2"
+	distinct, distinctJobID, err := WebhookJobEnvelope(other, "events", "req-2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if distinct.ID == first.ID || distinctJobID == firstJobID {
+		t.Fatalf("distinct request reused identity: %+v / %+v", first, distinct)
+	}
+	other.DedupeKey = payload.DedupeKey + ":session"
+	suffixed, suffixedJobID, err := WebhookJobEnvelope(other, "events", "req-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if suffixed.ID == first.ID || suffixedJobID == firstJobID {
+		t.Fatalf("distinct suffix-bearing key reused identity: %+v / %+v", first, suffixed)
+	}
+}
+
 func TestSessionTurnEnvelopePreservesExplicitDedupeKey(t *testing.T) {
 	t.Parallel()
 

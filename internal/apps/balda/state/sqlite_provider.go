@@ -24,6 +24,7 @@ type sqliteProvider struct {
 	jobs           *sqliteScheduledJobStore
 	management     *sqlScheduleManagementStore
 	aliases        *sqlAliasStore
+	webhook        *sqlWebhookAdmissionStore
 	runs           *sqlScheduleRunStore
 	questions      *sqliteQuestionStore
 	runtime        *sqliteJobStore
@@ -170,6 +171,7 @@ func NewSQLiteProvider(ctx context.Context, path string) (Provider, error) {
 		jobs:           &sqliteScheduledJobStore{db: db},
 		management:     &sqlScheduleManagementStore{users: newSQLiteUserStore(db)},
 		aliases:        &sqlAliasStore{users: newSQLiteUserStore(db)},
+		webhook:        &sqlWebhookAdmissionStore{db: db, bind: func(query string) string { return query }},
 		runs:           &sqlScheduleRunStore{db: db, bind: func(query string) string { return query }},
 		questions:      &sqliteQuestionStore{db: db},
 		runtime:        &sqliteJobStore{db: db},
@@ -222,6 +224,8 @@ func (p *sqliteProvider) ScheduleManagement() ScheduleManagementStore {
 }
 
 func (p *sqliteProvider) Aliases() AliasStore { return p.aliases }
+
+func (p *sqliteProvider) WebhookAdmissions() WebhookAdmissionStore { return p.webhook }
 
 func (p *sqliteProvider) ScheduleRuns() ScheduleRunStore {
 	return p.runs

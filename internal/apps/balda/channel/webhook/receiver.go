@@ -257,7 +257,7 @@ func (r *Receiver) handleWebhook(w http.ResponseWriter, req *http.Request) {
 		headers[name] = values[0]
 	}
 
-	var promptBuf bytes.Buffer
+	var promptBuf boundedPromptBuffer
 	renderErr := rt.PromptTemplate.Execute(&promptBuf, templateData{
 		RequestID: requestID,
 		Path:      req.URL.Path,
@@ -307,6 +307,15 @@ func (r *Receiver) handleWebhook(w http.ResponseWriter, req *http.Request) {
 		DedupeKey: dedupeKey,
 	})
 	if err != nil {
+		if webhookcmd.IsInvalidRequest(err) {
+			r.writeError(w, requestID, &httpError{
+				status:  http.StatusBadRequest,
+				code:    codeInvalidPayload,
+				message: messageCouldNotAccept,
+				cause:   err,
+			})
+			return
+		}
 		if webhookcmd.IsTargetNotFound(err) {
 			r.metrics.notFound.Add(1)
 			r.writeError(w, requestID, &httpError{
@@ -378,6 +387,15 @@ func (r *Receiver) handleWebhook(w http.ResponseWriter, req *http.Request) {
 		ProviderMessageID:  providerMessageID,
 		DeliveryAckEnabled: rt.AckOnDelivery,
 	})
+}
+
+type boundedPromptBuffer struct{ bytes.Buffer }
+
+func (b *boundedPromptBuffer) Write(p []byte) (int, error) {
+	if len(p) > webhookcmd.MaxPromptBytes-b.Len() {
+		return 0, fmt.Errorf("rendered prompt exceeds %d bytes", webhookcmd.MaxPromptBytes)
+	}
+	return b.Buffer.Write(p)
 }
 
 func authorizeRequest(req *http.Request, policy authPolicy) error {

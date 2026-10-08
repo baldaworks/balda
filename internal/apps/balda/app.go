@@ -58,6 +58,7 @@ import (
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookapp"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookfx"
 	"github.com/baldaworks/balda/internal/apps/sessionmcp"
 	"github.com/baldaworks/balda/internal/git"
@@ -787,6 +788,9 @@ func Module(
 		fx.Provide(aliasfx.NewService, aliasfx.NewDestinationResolver),
 		fx.Provide(func(provider baldastate.Provider) webhook.DeliveryReceipts {
 			return provider.Jobs()
+		}),
+		fx.Provide(func(provider baldastate.Provider) webhookapp.AdmissionStore {
+			return provider.WebhookAdmissions()
 		}),
 		fx.Provide(func(provider baldastate.Provider) (*auth.InviteStore, error) {
 			return auth.NewInviteStore(provider.AppKV())

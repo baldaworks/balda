@@ -9,13 +9,6 @@ import (
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 )
 
-// These aliases let the current policy owner consume the neutral intake
-// contract. TASK-007 removes the old execution-mode branch.
-const (
-	ModeJob     = "job"
-	ModeSession = "session"
-)
-
 type Request = webhookcmd.Request
 type Result = webhookcmd.Result
 type TargetNotFoundError = webhookcmd.TargetNotFoundError
@@ -47,17 +40,7 @@ func NewDestinationTargetResolver(resolver envelopetarget.DestinationResolver) T
 	})
 }
 
-// SessionPublisher and JobPublisher are the current runtime publication ports.
-type SessionPublisher interface {
-	PublishSessionTurn(ctx context.Context, payload turncmd.SessionTurnPayload) (*actortransport.DispatchReceipt, error)
-}
-
-type SessionPublisherFunc func(ctx context.Context, payload turncmd.SessionTurnPayload) (*actortransport.DispatchReceipt, error)
-
-func (f SessionPublisherFunc) PublishSessionTurn(ctx context.Context, payload turncmd.SessionTurnPayload) (*actortransport.DispatchReceipt, error) {
-	return f(ctx, payload)
-}
-
+// JobPublisher is the durable JobActor publication port.
 type JobPublisher interface {
 	PublishWebhookJob(ctx context.Context, payload turncmd.SessionTurnPayload, routeName string, requestID string) (*actortransport.DispatchReceipt, string, error)
 }

@@ -211,8 +211,6 @@ func SessionTurnEnvelope(payload SessionTurnPayload) (actorlayer.Envelope, error
 
 func WebhookJobEnvelope(payload SessionTurnPayload, routeName string, requestID string) (actorlayer.Envelope, string, error) {
 	dedupeBase := strings.TrimSpace(payload.DedupeKey)
-	dedupeBase = strings.TrimSuffix(dedupeBase, ":task")
-	dedupeBase = strings.TrimSuffix(dedupeBase, ":session")
 	if dedupeBase == "" {
 		dedupeBase = strings.Join([]string{"webhook", strings.TrimSpace(routeName), strings.TrimSpace(requestID)}, ":")
 	}
@@ -252,7 +250,7 @@ func WebhookJobEnvelope(payload SessionTurnPayload, routeName string, requestID 
 		return actorlayer.Envelope{}, "", fmt.Errorf("encode webhook job payload: %w", err)
 	}
 	return actorlayer.Envelope{
-		ID:        uuid.NewString(),
+		ID:        jobID + ":job",
 		Namespace: baldaexecution.NamespaceWebhookInbound,
 		Kind:      baldaexecution.KindWebhookEvent,
 		From:      actorlayer.ActorAddress{Target: "webhook", Key: firstNonEmpty(routeName, requestID, "inbound")},

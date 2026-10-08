@@ -10,6 +10,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookcmd"
 	adksession "google.golang.org/adk/v2/session"
 )
 
@@ -95,6 +96,7 @@ type Provider interface {
 	ScheduleManagement() ScheduleManagementStore
 	ScheduleRuns() ScheduleRunStore
 	Aliases() AliasStore
+	WebhookAdmissions() WebhookAdmissionStore
 	Questions() QuestionStore
 	// SessionMemoryIngressOutbox returns producer-local exports awaiting
 	// JetStream PubAck. It is distinct from canonical memory delivery state.
@@ -106,6 +108,14 @@ type Provider interface {
 	MCP() MCPStore
 	Users() usercmd.Store
 	Close() error
+}
+
+// WebhookAdmissionStore freezes inbound job input and delivery selection.
+// It persists admission, but never executes or schedules actor work.
+type WebhookAdmissionStore interface {
+	Get(ctx context.Context, routeName, dedupeKey string) (webhookcmd.Admission, bool, error)
+	Create(ctx context.Context, candidate webhookcmd.Admission) (webhookcmd.Admission, bool, error)
+	RecordReceipt(ctx context.Context, routeName, dedupeKey string, receipt webhookcmd.Receipt) (webhookcmd.Admission, error)
 }
 
 const (

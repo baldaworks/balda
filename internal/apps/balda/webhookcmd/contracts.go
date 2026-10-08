@@ -4,8 +4,19 @@ package webhookcmd
 import (
 	"errors"
 	"fmt"
+	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/destinationcmd"
+)
+
+const (
+	MaxRouteNameBytes      = 128
+	MaxRequestIDBytes      = 512
+	MaxDedupeKeyBytes      = 1024
+	MaxPromptBytes         = 1 << 20
+	MaxReceiptMessageBytes = 512
+	MaxReceiptStreamBytes  = 256
 )
 
 // Request is the normalized invocation accepted by webhook application policy.
@@ -15,12 +26,6 @@ type Request struct {
 	Prompt    string
 	ReportTo  *destinationcmd.Target
 	DedupeKey string
-
-	// Target, FallbackTo and Mode are removed when private admission replaces
-	// the old webhook service in TASK-007. The receiver never populates them.
-	Target     destinationcmd.Target
-	FallbackTo *destinationcmd.Target
-	Mode       string
 }
 
 // Result is the stable acceptance receipt returned to the HTTP receiver.
@@ -31,10 +36,30 @@ type Result struct {
 	JobID     string
 	Stream    string
 	Sequence  uint64
+}
 
-	// Target and FallbackUsed leave with the old service in TASK-007.
-	Target       destinationcmd.Resolved
-	FallbackUsed bool
+// Admission freezes one authenticated webhook request before actor publication.
+// The report locator is selected at admission; later mapping changes cannot
+// alter the job's destination or input.
+type Admission struct {
+	RouteName string
+	DedupeKey string
+	RequestID string
+	Prompt    string
+	JobID     string
+	SessionID string
+	ReportTo  *deliverycmd.Locator
+	CreatedAt time.Time
+	MessageID string
+	Stream    string
+	Sequence  uint64
+}
+
+// Receipt identifies a durable JobActor dispatch.
+type Receipt struct {
+	MessageID string
+	Stream    string
+	Sequence  uint64
 }
 
 // TargetNotFoundError means a configured destination is unavailable.

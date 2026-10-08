@@ -3,488 +3,231 @@ package webhookapp
 import (
 	"context"
 	"errors"
+	"reflect"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookcmd"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 )
 
-type fakeTargetResolver struct {
-	resolveFn func(ctx context.Context, target envelopetarget.Target) (envelopetarget.Resolved, error)
+type admissionMemory struct {
+	mu      sync.Mutex
+	records map[string]webhookcmd.Admission
 }
 
-func (f *fakeTargetResolver) ResolveTarget(ctx context.Context, target envelopetarget.Target) (envelopetarget.Resolved, error) {
-	if f.resolveFn != nil {
-		return f.resolveFn(ctx, target)
-	}
-	return envelopetarget.Resolved{
-		Locator: deliverycmd.Locator{
-			ChannelType: "telegram",
-			AddressKey:  "-100123:456",
-			SessionID:   "session-123",
-		},
-		Principal: "user-456",
-	}, nil
+func (m *admissionMemory) Get(_ context.Context, route, dedupe string) (webhookcmd.Admission, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	a, ok := m.records[route+"/"+dedupe]
+	return a, ok, nil
 }
 
-type fakeSessionPublisher struct {
-	lastPayload *turncmd.SessionTurnPayload
-	receipt     *actortransport.DispatchReceipt
-	err         error
+func (m *admissionMemory) Create(_ context.Context, candidate webhookcmd.Admission) (webhookcmd.Admission, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.records == nil {
+		m.records = make(map[string]webhookcmd.Admission)
+	}
+	key := candidate.RouteName + "/" + candidate.DedupeKey
+	if existing, ok := m.records[key]; ok {
+		return existing, false, nil
+	}
+	m.records[key] = candidate
+	return candidate, true, nil
 }
 
-func (f *fakeSessionPublisher) PublishSessionTurn(_ context.Context, payload turncmd.SessionTurnPayload) (*actortransport.DispatchReceipt, error) {
-	f.lastPayload = &payload
-	if f.err != nil {
-		return nil, f.err
+func (m *admissionMemory) RecordReceipt(_ context.Context, route, dedupe string, receipt webhookcmd.Receipt) (webhookcmd.Admission, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	key := route + "/" + dedupe
+	a := m.records[key]
+	if a.MessageID == "" {
+		a.MessageID, a.Stream, a.Sequence = receipt.MessageID, receipt.Stream, receipt.Sequence
+		m.records[key] = a
 	}
-	if f.receipt != nil {
-		return f.receipt, nil
-	}
-	return &actortransport.DispatchReceipt{
-		MsgID:    "msg-session-1",
-		Stream:   "balda.cmd.session",
-		Sequence: 42,
-	}, nil
+	return a, nil
 }
 
-type fakeJobPublisher struct {
-	lastPayload   *turncmd.SessionTurnPayload
-	lastRouteName string
-	lastRequestID string
-	receipt       *actortransport.DispatchReceipt
-	jobID         string
-	err           error
+type testResolver struct {
+	mu      sync.Mutex
+	locator deliverycmd.Locator
+	err     error
+	calls   int
 }
 
-func (f *fakeJobPublisher) PublishWebhookJob(_ context.Context, payload turncmd.SessionTurnPayload, routeName string, requestID string) (*actortransport.DispatchReceipt, string, error) {
-	f.lastPayload = &payload
-	f.lastRouteName = routeName
-	f.lastRequestID = requestID
-	if f.err != nil {
-		return nil, "", f.err
+func (r *testResolver) ResolveTarget(_ context.Context, _ envelopetarget.Target) (envelopetarget.Resolved, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls++
+	if r.err != nil {
+		return envelopetarget.Resolved{}, r.err
 	}
-	if f.receipt != nil {
-		return f.receipt, f.jobID, nil
-	}
-	return &actortransport.DispatchReceipt{
-		MsgID:     "msg-job-1",
-		Stream:    "balda.cmd.job",
-		Sequence:  101,
-		Duplicate: false,
-	}, "job-101", nil
+	return envelopetarget.Resolved{Locator: r.locator}, nil
 }
 
-func TestService_Accept_JobMode_Success(t *testing.T) {
-	t.Parallel()
+type testPublisher struct {
+	mu       sync.Mutex
+	payloads []turncmd.SessionTurnPayload
+	failNext error
+}
 
-	resolver := &fakeTargetResolver{}
-	sessionPub := &fakeSessionPublisher{}
-	jobPub := &fakeJobPublisher{}
-	svc := NewService(resolver, sessionPub, jobPub)
-
-	req := Request{
-		RequestID: "req-1",
-		RouteName: "alert_route",
-		Prompt:    "Disk is full",
-		Target: envelopetarget.Target{
-			Target: "locator",
-			Key:    "telegram:-100123:456",
-		},
-		Mode:      ModeJob,
-		DedupeKey: "webhook:alert_route:req-1",
+func (p *testPublisher) PublishWebhookJob(_ context.Context, payload turncmd.SessionTurnPayload, route, requestID string) (*actortransport.DispatchReceipt, string, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.payloads = append(p.payloads, payload)
+	if p.failNext != nil {
+		err := p.failNext
+		p.failNext = nil
+		return nil, "", err
 	}
-
-	res, err := svc.Accept(context.Background(), req)
+	_, jobID, err := turncmd.WebhookJobEnvelope(payload, route, requestID)
 	if err != nil {
-		t.Fatalf("Accept() error = %v", err)
+		return nil, "", err
 	}
-
-	if res.RequestID != "req-1" {
-		t.Errorf("res.RequestID = %q, want req-1", res.RequestID)
-	}
-	if res.MessageID != "msg-job-1" {
-		t.Errorf("res.MessageID = %q, want msg-job-1", res.MessageID)
-	}
-	if res.JobID != "job-101" {
-		t.Errorf("res.JobID = %q, want job-101", res.JobID)
-	}
-	if res.Stream != "balda.cmd.job" || res.Sequence != 101 {
-		t.Errorf("res stream/seq = %s/%d, want balda.cmd.job/101", res.Stream, res.Sequence)
-	}
-	if jobPub.lastPayload == nil {
-		t.Fatal("jobPub did not receive payload")
-	}
-	if jobPub.lastPayload.Text != "Disk is full" {
-		t.Errorf("payload text = %q, want 'Disk is full'", jobPub.lastPayload.Text)
-	}
-	if jobPub.lastPayload.Deliver {
-		t.Errorf("payload deliver = true, want false when ReportTo is nil")
-	}
-	if jobPub.lastPayload.Source != "webhook" {
-		t.Errorf("payload source = %q, want webhook", jobPub.lastPayload.Source)
-	}
-	if jobPub.lastPayload.DedupeKey != "webhook:alert_route:req-1" {
-		t.Errorf("payload dedupe key = %q, want webhook:alert_route:req-1", jobPub.lastPayload.DedupeKey)
-	}
-	if jobPub.lastRouteName != "alert_route" || jobPub.lastRequestID != "req-1" {
-		t.Errorf("jobPub route/reqID = %s/%s", jobPub.lastRouteName, jobPub.lastRequestID)
-	}
-	if sessionPub.lastPayload != nil {
-		t.Errorf("sessionPub should not have been called")
-	}
+	return &actortransport.DispatchReceipt{MsgID: "msg-1", Stream: "balda.cmd.job", Sequence: 1}, jobID, nil
 }
 
-func TestService_Accept_SessionMode_Success(t *testing.T) {
-	t.Parallel()
+func webhookRequest(dedupe string) Request {
+	return Request{RequestID: "req-1", RouteName: "events", Prompt: "event payload", DedupeKey: dedupe}
+}
 
-	resolver := &fakeTargetResolver{}
-	sessionPub := &fakeSessionPublisher{}
-	jobPub := &fakeJobPublisher{}
-	svc := NewService(resolver, sessionPub, jobPub)
-
-	reportToTarget := envelopetarget.Target{
-		Target: "locator",
-		Key:    "telegram:report:1",
-	}
-
-	req := Request{
-		RequestID: "req-sess",
-		RouteName: "chat_route",
-		Prompt:    "hello from hook",
-		Target: envelopetarget.Target{
-			Target: "locator",
-			Key:    "telegram:chat:1",
-		},
-		ReportTo:  &reportToTarget,
-		Mode:      ModeSession,
-		DedupeKey: "webhook:chat_route:req-sess",
-	}
-
-	res, err := svc.Accept(context.Background(), req)
+func TestAcceptCreatesPrivateJobWithoutDestination(t *testing.T) {
+	store, pub := &admissionMemory{}, &testPublisher{}
+	svc := NewService(nil, store, pub)
+	result, err := svc.Accept(t.Context(), webhookRequest("webhook:events:1"))
 	if err != nil {
-		t.Fatalf("Accept() error = %v", err)
+		t.Fatal(err)
 	}
-
-	if res.RequestID != "req-sess" {
-		t.Errorf("res.RequestID = %q, want req-sess", res.RequestID)
+	if result.JobID == "" || result.MessageID == "" || result.Duplicate {
+		t.Fatalf("unexpected result: %+v", result)
 	}
-	if res.MessageID != "msg-session-1" {
-		t.Errorf("res.MessageID = %q, want msg-session-1", res.MessageID)
+	payload := pub.payloads[0]
+	if payload.Locator.ChannelType != "webhook" || !strings.HasPrefix(payload.Locator.SessionID, "wh-") ||
+		payload.Locator.AddressKey != payload.Locator.SessionID || payload.ReportTo != nil || payload.Deliver {
+		t.Fatalf("unexpected private payload: %+v", payload)
 	}
-	if sessionPub.lastPayload == nil {
-		t.Fatal("sessionPub did not receive payload")
-	}
-	if !sessionPub.lastPayload.Deliver {
-		t.Errorf("payload deliver = false, want true when ReportTo is set")
-	}
-	if sessionPub.lastPayload.ReportTo == nil {
-		t.Errorf("payload ReportTo is nil")
-	}
-	if jobPub.lastPayload != nil {
-		t.Errorf("jobPub should not have been called")
+	second, err := svc.Accept(t.Context(), webhookRequest("webhook:events:1"))
+	if err != nil || !second.Duplicate || second.JobID != result.JobID || second.MessageID != result.MessageID || len(pub.payloads) != 1 {
+		t.Fatalf("duplicate = %+v, err = %v, publications = %d", second, err, len(pub.payloads))
 	}
 }
 
-func TestService_Accept_SessionUnavailable(t *testing.T) {
-	t.Parallel()
-
-	expectedErr := envelopetarget.ErrSessionUnavailable
-	resolver := &fakeTargetResolver{
-		resolveFn: func(_ context.Context, _ envelopetarget.Target) (envelopetarget.Resolved, error) {
-			return envelopetarget.Resolved{}, expectedErr
-		},
+func TestAcceptFreezesReportLocatorAcrossRetargetAndRetry(t *testing.T) {
+	original := deliverycmd.Locator{ChannelType: "telegram", AddressKey: "chat:1", AddressJSON: `{}`, SessionID: "tg-1"}
+	resolver := &testResolver{locator: original}
+	store, pub := &admissionMemory{}, &testPublisher{failNext: errors.New("temporary dispatch failure")}
+	svc := NewService(resolver, store, pub)
+	req := webhookRequest("webhook:events:stable")
+	req.ReportTo = &envelopetarget.Target{Target: "managed_alias", Key: "main_chat"}
+	if _, err := svc.Accept(t.Context(), req); !IsDispatchFailed(err) {
+		t.Fatalf("first acceptance error = %v", err)
 	}
-	svc := NewService(resolver, &fakeSessionPublisher{}, &fakeJobPublisher{})
-
-	req := Request{
-		RequestID: "req-err",
-		RouteName: "route",
-		Prompt:    "hello",
-		Target: envelopetarget.Target{
-			Target: "session",
-			Key:    "inactive",
-		},
+	first, found, err := store.Get(t.Context(), req.RouteName, req.DedupeKey)
+	if err != nil || !found || !reflect.DeepEqual(first.ReportTo, &original) || first.MessageID != "" {
+		t.Fatalf("stored admission = %+v, found = %t, err = %v", first, found, err)
 	}
-
-	_, err := svc.Accept(context.Background(), req)
-	if err == nil {
-		t.Fatal("expected error, got nil")
+	resolver.mu.Lock()
+	resolver.locator = deliverycmd.Locator{ChannelType: "telegram", AddressKey: "chat:2", AddressJSON: `{}`, SessionID: "tg-2"}
+	resolver.mu.Unlock()
+	got, err := svc.Accept(t.Context(), req)
+	if err != nil || !got.Duplicate || got.JobID != first.JobID || got.MessageID == "" {
+		t.Fatalf("retry = %+v, err = %v", got, err)
 	}
-	if !IsTargetNotFound(err) {
-		t.Errorf("IsTargetNotFound(err) = false, want true; err = %v", err)
-	}
-	if !errors.Is(err, expectedErr) {
-		t.Errorf("errors.Is(err, expectedErr) = false; err = %v", err)
+	if !reflect.DeepEqual(pub.payloads[0], pub.payloads[1]) || !reflect.DeepEqual(pub.payloads[1].ReportTo, &original) ||
+		pub.payloads[1].Locator.SessionID != first.SessionID || resolver.calls != 1 {
+		t.Fatalf("retarget changed frozen publication: %+v", pub.payloads)
 	}
 }
 
-func TestService_Accept_SessionFallbackAndIsolation(t *testing.T) {
-	t.Parallel()
-	available := map[string]envelopetarget.Resolved{
-		"session-a": {Locator: deliverycmd.Locator{ChannelType: "mattermost", AddressKey: "channel:a", SessionID: "session-a"}, Principal: "user-a"},
-		"session-b": {Locator: deliverycmd.Locator{ChannelType: "mattermost", AddressKey: "channel:b", SessionID: "session-b"}, Principal: "user-b"},
-		"default":   {Locator: deliverycmd.Locator{ChannelType: "mattermost", AddressKey: "channel:default", SessionID: "default"}, Principal: "owner"},
+func TestAcceptMissingAliasDoesNotPublish(t *testing.T) {
+	resolver := &testResolver{err: envelopetarget.ErrDestinationUnavailable}
+	store, pub := &admissionMemory{}, &testPublisher{}
+	req := webhookRequest("webhook:events:missing")
+	req.ReportTo = &envelopetarget.Target{Target: "managed_alias", Key: "missing"}
+	_, err := NewService(resolver, store, pub).Accept(t.Context(), req)
+	if !IsTargetNotFound(err) || len(pub.payloads) != 0 {
+		t.Fatalf("result error = %v, publications = %d", err, len(pub.payloads))
 	}
-	resolver := &fakeTargetResolver{resolveFn: func(_ context.Context, target envelopetarget.Target) (envelopetarget.Resolved, error) {
-		if got, ok := available[target.Key]; ok {
-			return got, nil
+	if _, found, _ := store.Get(t.Context(), req.RouteName, req.DedupeKey); found {
+		t.Fatal("missing alias created admission")
+	}
+}
+
+func TestAcceptConcurrentAdmissionSurvivesAliasDeletion(t *testing.T) {
+	store, pub := &admissionMemory{}, &testPublisher{}
+	req := webhookRequest("webhook:events:accepted")
+	req.ReportTo = &envelopetarget.Target{Target: "managed_alias", Key: "main_chat"}
+	resolved := deliverycmd.Locator{ChannelType: "telegram", AddressKey: "chat:1", AddressJSON: `{}`, SessionID: "tg-1"}
+	resolver := TargetResolverFunc(func(ctx context.Context, _ envelopetarget.Target) (envelopetarget.Resolved, error) {
+		candidate := webhookcmd.Admission{
+			RouteName: req.RouteName, DedupeKey: req.DedupeKey, RequestID: req.RequestID,
+			Prompt: req.Prompt, SessionID: "wh-existing", ReportTo: &resolved, CreatedAt: time.Now().UTC(),
 		}
-		return envelopetarget.Resolved{}, envelopetarget.ErrSessionUnavailable
-	}}
-	fallback := envelopetarget.Target{Target: "alias", Key: "default"}
-	for _, tc := range []struct {
-		session, wantSession string
-		fallbackUsed         bool
-	}{
-		{"session-a", "session-a", false},
-		{"session-b", "session-b", false},
-		{"closed", "default", true},
-	} {
-		t.Run(tc.session, func(t *testing.T) {
-			publisher := &fakeJobPublisher{}
-			svc := NewService(resolver, nil, publisher)
-			source := envelopetarget.Target{Target: "session", Key: tc.session}
-			result, err := svc.Accept(context.Background(), Request{
-				RequestID: tc.session, RouteName: "route", Prompt: "event", Target: source,
-				ReportTo: &source, FallbackTo: &fallback, Mode: ModeJob,
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if result.FallbackUsed != tc.fallbackUsed || result.Target.Locator.SessionID != tc.wantSession {
-				t.Fatalf("result = %+v", result)
-			}
-			if publisher.lastPayload == nil || publisher.lastPayload.ReportTo == nil ||
-				publisher.lastPayload.ReportTo.SessionID != tc.wantSession ||
-				publisher.lastPayload.Locator.SessionID != tc.wantSession {
-				t.Fatalf("payload = %+v", publisher.lastPayload)
-			}
-		})
-	}
-}
-
-func TestService_Accept_StorageErrorDoesNotUseFallback(t *testing.T) {
-	t.Parallel()
-	storageErr := errors.New("database unavailable")
-	resolver := &fakeTargetResolver{resolveFn: func(_ context.Context, _ envelopetarget.Target) (envelopetarget.Resolved, error) {
-		return envelopetarget.Resolved{}, storageErr
-	}}
-	svc := NewService(resolver, nil, &fakeJobPublisher{})
-	fallback := envelopetarget.Target{Target: "alias", Key: "default"}
-	_, err := svc.Accept(context.Background(), Request{RequestID: "r", RouteName: "route", Prompt: "event",
-		Target: envelopetarget.Target{Target: "session", Key: "source"}, FallbackTo: &fallback, Mode: ModeJob})
-	if !errors.Is(err, storageErr) {
-		t.Fatalf("error = %v, want storage error", err)
-	}
-	if !IsDispatchFailed(err) || IsTargetNotFound(err) {
-		t.Fatalf("error = %v, want retryable dispatch failure", err)
-	}
-}
-
-func TestService_Accept_ReportToSessionUnavailable(t *testing.T) {
-	t.Parallel()
-
-	expectedErr := envelopetarget.ErrSessionUnavailable
-	resolver := &fakeTargetResolver{
-		resolveFn: func(_ context.Context, target envelopetarget.Target) (envelopetarget.Resolved, error) {
-			if target.Key == "inactive-report" {
-				return envelopetarget.Resolved{}, expectedErr
-			}
-			return envelopetarget.Resolved{Locator: deliverycmd.Locator{SessionID: "ok"}}, nil
-		},
-	}
-	svc := NewService(resolver, &fakeSessionPublisher{}, &fakeJobPublisher{})
-
-	reportTo := envelopetarget.Target{Target: "session", Key: "inactive-report"}
-	req := Request{
-		RequestID: "req-rep-err",
-		RouteName: "route",
-		Prompt:    "hello",
-		Target:    envelopetarget.Target{Target: "alias", Key: "ok"},
-		ReportTo:  &reportTo,
-	}
-
-	_, err := svc.Accept(context.Background(), req)
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !IsTargetNotFound(err) {
-		t.Errorf("IsTargetNotFound(err) = false, want true; err = %v", err)
-	}
-}
-
-func TestService_Accept_ReportToStorageError(t *testing.T) {
-	t.Parallel()
-
-	storageErr := errors.New("database unavailable")
-	resolver := &fakeTargetResolver{resolveFn: func(_ context.Context, target envelopetarget.Target) (envelopetarget.Resolved, error) {
-		if target.Key == "report" {
-			return envelopetarget.Resolved{}, storageErr
+		_, candidate.JobID, _ = turncmd.WebhookJobEnvelope(payloadFromAdmission(candidate), req.RouteName, req.RequestID)
+		_, _, err := store.Create(ctx, candidate)
+		if err != nil {
+			t.Fatal(err)
 		}
-		return envelopetarget.Resolved{Locator: deliverycmd.Locator{SessionID: "source"}}, nil
-	}}
-	svc := NewService(resolver, nil, &fakeJobPublisher{})
-	reportTo := envelopetarget.Target{Target: "session", Key: "report"}
-	_, err := svc.Accept(context.Background(), Request{
-		RequestID: "req-report-storage", Prompt: "event", Target: envelopetarget.Target{Target: "session", Key: "source"},
-		ReportTo: &reportTo, Mode: ModeJob,
+		return envelopetarget.Resolved{}, envelopetarget.ErrDestinationUnavailable
 	})
-	if !errors.Is(err, storageErr) || !IsDispatchFailed(err) || IsTargetNotFound(err) {
-		t.Fatalf("error = %v, want retryable report-to lookup failure", err)
+	result, err := NewService(resolver, store, pub).Accept(t.Context(), req)
+	if err != nil || !result.Duplicate || len(pub.payloads) != 1 || !reflect.DeepEqual(pub.payloads[0].ReportTo, &resolved) {
+		t.Fatalf("accepted duplicate = %+v, err = %v, publications = %+v", result, err, pub.payloads)
 	}
 }
 
-func TestService_Accept_QueueFull(t *testing.T) {
-	t.Parallel()
-
-	resolver := &fakeTargetResolver{}
-	jobPub := &fakeJobPublisher{err: actorcmd.ErrCommandQueueFull}
-	svc := NewService(resolver, &fakeSessionPublisher{}, jobPub)
-
-	req := Request{
-		RequestID: "req-qf",
-		RouteName: "route",
-		Prompt:    "hello",
-		Target:    envelopetarget.Target{Target: "locator", Key: "telegram:1:2"},
-		Mode:      ModeJob,
+func TestAcceptDistinctAndConcurrentRequestsHaveStablePrivateSessions(t *testing.T) {
+	store, pub := &admissionMemory{}, &testPublisher{}
+	svc := NewService(nil, store, pub)
+	const n = 16
+	results := make([]Result, n)
+	errs := make([]error, n)
+	var group sync.WaitGroup
+	for i := range results {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			results[i], errs[i] = svc.Accept(t.Context(), webhookRequest("webhook:events:concurrent"))
+		}()
 	}
-
-	_, err := svc.Accept(context.Background(), req)
-	if err == nil {
-		t.Fatal("expected error, got nil")
+	group.Wait()
+	for i := range results {
+		if errs[i] != nil || results[i].JobID != results[0].JobID || results[i].MessageID != results[0].MessageID {
+			t.Fatalf("request %d = %+v, err = %v", i, results[i], errs[i])
+		}
 	}
+	first, _, _ := store.Get(t.Context(), "events", "webhook:events:concurrent")
+	second, err := svc.Accept(t.Context(), webhookRequest("webhook:events:other"))
+	if err != nil || second.JobID == first.JobID {
+		t.Fatalf("distinct request = %+v, err = %v", second, err)
+	}
+	other, _, _ := store.Get(t.Context(), "events", "webhook:events:other")
+	if first.SessionID == other.SessionID || !strings.HasPrefix(other.SessionID, "wh-") {
+		t.Fatalf("session IDs = %s / %s", first.SessionID, other.SessionID)
+	}
+	for _, payload := range pub.payloads {
+		if payload.DedupeKey == first.DedupeKey && payload.Locator.SessionID != first.SessionID {
+			t.Fatalf("concurrent duplicate changed session: %+v", payload)
+		}
+	}
+}
+
+func TestAcceptQueueBackpressurePreservesAdmission(t *testing.T) {
+	store, pub := &admissionMemory{}, &testPublisher{failNext: actorcmd.ErrCommandQueueFull}
+	svc := NewService(nil, store, pub)
+	req := webhookRequest("webhook:events:busy")
+	_, err := svc.Accept(t.Context(), req)
 	if !IsQueueFull(err) {
-		t.Errorf("IsQueueFull(err) = false, want true; err = %v", err)
+		t.Fatalf("Accept() error = %v", err)
 	}
-}
-
-func TestService_Accept_DispatchFailed(t *testing.T) {
-	t.Parallel()
-
-	resolver := &fakeTargetResolver{}
-	sessionPub := &fakeSessionPublisher{err: errors.New("nats broker unavailable")}
-	svc := NewService(resolver, sessionPub, &fakeJobPublisher{})
-
-	req := Request{
-		RequestID: "req-df",
-		RouteName: "route",
-		Prompt:    "hello",
-		Target:    envelopetarget.Target{Target: "locator", Key: "telegram:1:2"},
-		Mode:      ModeSession,
-	}
-
-	_, err := svc.Accept(context.Background(), req)
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !IsDispatchFailed(err) {
-		t.Errorf("IsDispatchFailed(err) = false, want true; err = %v", err)
-	}
-	if IsQueueFull(err) {
-		t.Errorf("IsQueueFull(err) = true, want false")
-	}
-}
-
-func TestService_Accept_InvalidRequest(t *testing.T) {
-	t.Parallel()
-
-	resolver := &fakeTargetResolver{}
-	svc := NewService(resolver, &fakeSessionPublisher{}, &fakeJobPublisher{})
-
-	// Missing request ID
-	_, err := svc.Accept(context.Background(), Request{
-		Prompt: "hello",
-		Target: envelopetarget.Target{Target: "locator", Key: "telegram:1:2"},
-	})
-	if err == nil || !IsInvalidRequest(err) {
-		t.Errorf("expected InvalidRequest for empty RequestID, got %v", err)
-	}
-
-	// Missing prompt
-	_, err = svc.Accept(context.Background(), Request{
-		RequestID: "req-1",
-		Prompt:    "   ",
-		Target:    envelopetarget.Target{Target: "locator", Key: "telegram:1:2"},
-	})
-	if err == nil || !IsInvalidRequest(err) {
-		t.Errorf("expected InvalidRequest for whitespace prompt, got %v", err)
-	}
-}
-
-func TestService_Accept_MissingPublishers(t *testing.T) {
-	t.Parallel()
-
-	resolver := &fakeTargetResolver{}
-	// Nil job publisher in job mode
-	svcNoJob := NewService(resolver, &fakeSessionPublisher{}, nil)
-	_, err := svcNoJob.Accept(context.Background(), Request{
-		RequestID: "req-1",
-		Prompt:    "hello",
-		Target:    envelopetarget.Target{Target: "locator", Key: "telegram:1:2"},
-		Mode:      ModeJob,
-	})
-	if err == nil || !IsDispatchFailed(err) {
-		t.Errorf("expected DispatchFailedError for nil jobPublisher, got %v", err)
-	}
-
-	// Nil session publisher in session mode
-	svcNoSess := NewService(resolver, nil, &fakeJobPublisher{})
-	_, err = svcNoSess.Accept(context.Background(), Request{
-		RequestID: "req-1",
-		Prompt:    "hello",
-		Target:    envelopetarget.Target{Target: "locator", Key: "telegram:1:2"},
-		Mode:      ModeSession,
-	})
-	if err == nil || !IsDispatchFailed(err) {
-		t.Errorf("expected DispatchFailedError for nil sessionPublisher, got %v", err)
-	}
-
-	// Nil target resolver
-	svcNoResolver := NewService(nil, &fakeSessionPublisher{}, &fakeJobPublisher{})
-	_, err = svcNoResolver.Accept(context.Background(), Request{
-		RequestID: "req-1",
-		Prompt:    "hello",
-		Target:    envelopetarget.Target{Target: "locator", Key: "telegram:1:2"},
-	})
-	if err == nil || !IsDispatchFailed(err) {
-		t.Errorf("expected DispatchFailedError for nil targetResolver, got %v", err)
-	}
-}
-
-func TestAdapters(t *testing.T) {
-	t.Parallel()
-
-	calledTarget := false
-	tf := TargetResolverFunc(func(_ context.Context, target envelopetarget.Target) (envelopetarget.Resolved, error) {
-		calledTarget = true
-		return envelopetarget.Resolved{Locator: deliverycmd.Locator{SessionID: target.Key}}, nil
-	})
-	res, err := tf.ResolveTarget(context.Background(), envelopetarget.Target{Key: "test-sess"})
-	if err != nil || !calledTarget || res.Locator.SessionID != "test-sess" {
-		t.Errorf("TargetResolverFunc failed: %v, %v, %v", err, calledTarget, res)
-	}
-
-	calledSession := false
-	sf := SessionPublisherFunc(func(_ context.Context, payload turncmd.SessionTurnPayload) (*actortransport.DispatchReceipt, error) {
-		calledSession = true
-		return &actortransport.DispatchReceipt{MsgID: payload.Text}, nil
-	})
-	sReceipt, sErr := sf.PublishSessionTurn(context.Background(), turncmd.SessionTurnPayload{Text: "hi"})
-	if sErr != nil || !calledSession || sReceipt.MsgID != "hi" {
-		t.Errorf("SessionPublisherFunc failed: %v, %v, %v", sErr, calledSession, sReceipt)
-	}
-
-	calledJob := false
-	jf := JobPublisherFunc(func(_ context.Context, _ turncmd.SessionTurnPayload, routeName string, requestID string) (*actortransport.DispatchReceipt, string, error) {
-		calledJob = true
-		return &actortransport.DispatchReceipt{MsgID: routeName}, requestID, nil
-	})
-	jReceipt, jID, jErr := jf.PublishWebhookJob(context.Background(), turncmd.SessionTurnPayload{}, "my-route", "req-99")
-	if jErr != nil || !calledJob || jReceipt.MsgID != "my-route" || jID != "req-99" {
-		t.Errorf("JobPublisherFunc failed: %v, %v, %v, %v", jErr, calledJob, jReceipt, jID)
+	if _, found, _ := store.Get(t.Context(), req.RouteName, req.DedupeKey); !found {
+		t.Fatal("backpressure lost admission")
 	}
 }

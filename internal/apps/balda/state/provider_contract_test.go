@@ -6,6 +6,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"math"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -16,10 +18,12 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/aliascmd"
 	"github.com/baldaworks/balda/internal/apps/balda/aliases"
 	"github.com/baldaworks/balda/internal/apps/balda/authcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/schedulecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookcmd"
 	"github.com/baldaworks/balda/sessionmemory"
 	adksession "google.golang.org/adk/v2/session"
 )
@@ -63,6 +67,7 @@ func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) 
 	t.Run("Provider_ScheduledJobStoreRoundTrip", func(t *testing.T) { checkProvider_ScheduledJobStoreRoundTrip(t, factory(t)) })
 	t.Run("Provider_ScheduleManagementAuthorityAndVersion", func(t *testing.T) { checkProvider_ScheduleManagementAuthorityAndVersion(t, factory(t)) })
 	t.Run("Provider_ManagedAliasAuthorityAndVersion", func(t *testing.T) { checkProvider_ManagedAliasAuthorityAndVersion(t, factory(t)) })
+	t.Run("Provider_WebhookAdmissionSnapshot", func(t *testing.T) { checkProvider_WebhookAdmissionSnapshot(t, factory(t)) })
 	t.Run("Provider_ScheduleRunStoreRoundTrip", func(t *testing.T) { checkProvider_ScheduleRunStoreRoundTrip(t, factory(t)) })
 	t.Run("Provider_ScheduleRunAdmissions", func(t *testing.T) { checkProvider_ScheduleRunAdmissions(t, factory(t)) })
 	t.Run("Provider_OffsetPersistsAcrossReopen", func(t *testing.T) { checkProvider_OffsetPersistsAcrossReopen(t, factory(t)) })
@@ -85,6 +90,102 @@ func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) 
 		checkSessionMemoryIngressOutboxRecoversExpiredLeaseAndRejectsForeignSettlement(t, factory(t))
 	})
 	t.Run("SessionMemoryIngressOutboxReplaysTerminalWithAuditAndStats", func(t *testing.T) { checkSessionMemoryIngressOutboxReplaysTerminalWithAuditAndStats(t, factory(t)) })
+}
+
+func checkProvider_WebhookAdmissionSnapshot(t *testing.T, open contractOpener) {
+	path := filepath.Join(t.TempDir(), "webhook-admissions.db")
+	p, err := open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { closeContractProvider(t, p) }()
+	now := time.Now().UTC()
+	first := webhookcmd.Admission{RouteName: "event", DedupeKey: "webhook:event:one", RequestID: "one",
+		Prompt: "first input", JobID: "webhook-event-one", SessionID: "wh-one",
+		ReportTo: &deliverycmd.Locator{ChannelType: "telegram", AddressKey: "9001:0", AddressJSON: `{}`,
+			SessionID: "tg-9001-0"}, CreatedAt: now}
+	selected, created, err := p.WebhookAdmissions().Create(t.Context(), first)
+	if err != nil || !created || selected.Prompt != first.Prompt || selected.ReportTo.AddressKey != first.ReportTo.AddressKey {
+		t.Fatalf("first admission = %+v, created=%t, error=%v", selected, created, err)
+	}
+	second := first
+	second.Prompt, second.RequestID, second.JobID, second.SessionID = "changed input", "later", "webhook-event-two", "wh-two"
+	second.ReportTo = &deliverycmd.Locator{ChannelType: "telegram", AddressKey: "9002:0", AddressJSON: `{}`, SessionID: "tg-9002-0"}
+	selected, created, err = p.WebhookAdmissions().Create(t.Context(), second)
+	if err != nil || created || selected.Prompt != first.Prompt || selected.RequestID != first.RequestID ||
+		selected.SessionID != first.SessionID || selected.ReportTo.AddressKey != first.ReportTo.AddressKey {
+		t.Fatalf("duplicate admission changed snapshot: %+v, created=%t, error=%v", selected, created, err)
+	}
+	for _, invalid := range []webhookcmd.Receipt{
+		{MessageID: strings.Repeat("m", webhookcmd.MaxReceiptMessageBytes+1), Stream: "BALDA_CMDS", Sequence: 1},
+		{MessageID: "message", Stream: strings.Repeat("s", webhookcmd.MaxReceiptStreamBytes+1), Sequence: 1},
+		{MessageID: "message", Stream: "BALDA_CMDS", Sequence: math.MaxUint64},
+	} {
+		if _, err := p.WebhookAdmissions().RecordReceipt(t.Context(), first.RouteName, first.DedupeKey, invalid); err == nil {
+			t.Fatalf("invalid receipt %+v accepted", invalid)
+		}
+	}
+	selected, err = p.WebhookAdmissions().RecordReceipt(t.Context(), first.RouteName, first.DedupeKey,
+		webhookcmd.Receipt{MessageID: "message-one", Stream: "BALDA_CMDS", Sequence: 7})
+	if err != nil || selected.MessageID != "message-one" || selected.Sequence != 7 {
+		t.Fatalf("record receipt = %+v, %v", selected, err)
+	}
+	selected, err = p.WebhookAdmissions().RecordReceipt(t.Context(), first.RouteName, first.DedupeKey,
+		webhookcmd.Receipt{MessageID: "message-two", Stream: "OTHER", Sequence: 8})
+	if err != nil || selected.MessageID != "message-one" || selected.Sequence != 7 {
+		t.Fatalf("receipt must be immutable: %+v, %v", selected, err)
+	}
+	pending := webhookcmd.Admission{RouteName: "event", DedupeKey: "webhook:event:pending",
+		RequestID: "pending", Prompt: "pending input", JobID: "webhook-event-pending",
+		SessionID: "wh-pending", CreatedAt: now}
+	if _, created, err := p.WebhookAdmissions().Create(t.Context(), pending); err != nil || !created {
+		t.Fatalf("pending admission created=%t, error=%v", created, err)
+	}
+	closeContractProvider(t, p)
+	p, err = open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected, found, err := p.WebhookAdmissions().Get(t.Context(), first.RouteName, first.DedupeKey)
+	if err != nil || !found || selected.Prompt != first.Prompt || selected.MessageID != "message-one" ||
+		selected.ReportTo.AddressKey != first.ReportTo.AddressKey {
+		t.Fatalf("reopened admission = %+v, found=%t, error=%v", selected, found, err)
+	}
+	selected, found, err = p.WebhookAdmissions().Get(t.Context(), pending.RouteName, pending.DedupeKey)
+	if err != nil || !found || selected.MessageID != "" || selected.JobID != pending.JobID ||
+		selected.SessionID != pending.SessionID || selected.Prompt != pending.Prompt {
+		t.Fatalf("pending admission after restart = %+v, found=%t, error=%v", selected, found, err)
+	}
+	const contenders = 12
+	results := make([]webhookcmd.Admission, contenders)
+	createdCount := atomic.Int32{}
+	errs := make([]error, contenders)
+	var group sync.WaitGroup
+	for i := range results {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			candidate := webhookcmd.Admission{RouteName: "event", DedupeKey: "webhook:event:race",
+				RequestID: fmt.Sprintf("race-%d", i), Prompt: fmt.Sprintf("input-%d", i),
+				JobID: fmt.Sprintf("webhook-event-race-%d", i), SessionID: fmt.Sprintf("wh-race-%d", i),
+				CreatedAt: now}
+			var created bool
+			results[i], created, errs[i] = p.WebhookAdmissions().Create(t.Context(), candidate)
+			if created {
+				createdCount.Add(1)
+			}
+		}()
+	}
+	group.Wait()
+	if createdCount.Load() != 1 {
+		t.Fatalf("created count = %d, want one", createdCount.Load())
+	}
+	for i := range results {
+		if errs[i] != nil || results[i].JobID != results[0].JobID ||
+			results[i].SessionID != results[0].SessionID || results[i].Prompt != results[0].Prompt {
+			t.Fatalf("contender %d = %+v, error = %v", i, results[i], errs[i])
+		}
+	}
 }
 
 func checkProvider_ManagedAliasAuthorityAndVersion(t *testing.T, open contractOpener) {

@@ -24,7 +24,6 @@ var Module = fx.Module("balda_handlersfx",
 		),
 		fx.Annotate(
 			newInboundTurnExecutor,
-			fx.As(new(webhookapp.SessionPublisher)),
 			fx.As(new(webhookapp.JobPublisher)),
 		),
 		fx.Annotate(

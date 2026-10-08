@@ -734,10 +734,6 @@ func (e *inboundTurnExecutor) SubmitWebhookTask(ctx context.Context, payload tur
 	return result, jobID, nil
 }
 
-func (e *inboundTurnExecutor) PublishSessionTurn(ctx context.Context, payload turncmd.SessionTurnPayload) (*actortransport.DispatchReceipt, error) {
-	return e.SubmitSessionTurn(ctx, payload)
-}
-
 func (e *inboundTurnExecutor) PublishWebhookJob(ctx context.Context, payload turncmd.SessionTurnPayload, routeName string, requestID string) (*actortransport.DispatchReceipt, string, error) {
 	return e.SubmitWebhookTask(ctx, payload, routeName, requestID)
 }

@@ -17,7 +17,7 @@ type serviceParams struct {
 
 	Resolver   envelopetarget.DestinationResolver `optional:"true"`
 	OwnerStore *auth.OwnerStore                   `optional:"true"`
-	SessionPub webhookapp.SessionPublisher        `optional:"true"`
+	Admissions webhookapp.AdmissionStore          `optional:"true"`
 	JobPub     webhookapp.JobPublisher            `optional:"true"`
 }
 
@@ -30,7 +30,7 @@ func newWebhookappService(params serviceParams) *webhookapp.Service {
 	if resolver != nil {
 		targetResolver = webhookapp.NewDestinationTargetResolver(resolver)
 	}
-	return webhookapp.NewService(targetResolver, params.SessionPub, params.JobPub)
+	return webhookapp.NewService(targetResolver, params.Admissions, params.JobPub)
 }
 
 type receiverParams struct {

@@ -94,8 +94,8 @@ func TestNormalizeConfig_CurrentReportDestination(t *testing.T) {
 			}
 			response := httptest.NewRecorder()
 			receiver.handleWebhook(response, httptest.NewRequest(http.MethodPost, "/event", strings.NewReader("input")))
-			if response.Code != http.StatusAccepted || svc.lastReq.Target.Target != "" || svc.lastReq.Target.Key != "" {
-				t.Fatalf("status = %d, execution target = %+v", response.Code, svc.lastReq.Target)
+			if response.Code != http.StatusAccepted {
+				t.Fatalf("status = %d", response.Code)
 			}
 			if tt.reportTo == nil && svc.lastReq.ReportTo != nil || tt.reportTo != nil &&
 				(svc.lastReq.ReportTo == nil || svc.lastReq.ReportTo.Target != tt.reportTo.Target || svc.lastReq.ReportTo.Key != tt.reportTo.Key) {
@@ -393,6 +393,22 @@ func TestReceiver_HTTPHandling(t *testing.T) {
 		r.handleWebhook(rec, req)
 
 		assertErrorResponse(t, rec, http.StatusBadRequest, codeInvalidPayload, messageCouldNotAccept)
+	})
+
+	t.Run("rendered_prompt_exceeds_max_bytes", func(t *testing.T) {
+		svc := &fakeService{}
+		r := newTestReceiver(svc)
+		r.routes["/webhook1"] = route{
+			Name: "webhook1", Path: "/webhook1",
+			PromptTemplate: template.Must(template.New("w").Parse("{{.RawBody}}{{.RawBody}}")),
+		}
+		req := httptest.NewRequest(http.MethodPost, "/webhook1", strings.NewReader(strings.Repeat("x", MaxBodyBytes/2+1)))
+		rec := httptest.NewRecorder()
+		r.handleWebhook(rec, req)
+		assertErrorResponse(t, rec, http.StatusBadRequest, codeInvalidPayload, messageCouldNotAccept)
+		if svc.lastReq.RequestID != "" {
+			t.Fatal("oversized rendered prompt reached application service")
+		}
 	})
 
 	t.Run("destination_not_found_mapped_to_404", func(t *testing.T) {
