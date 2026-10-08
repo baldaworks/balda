@@ -34,6 +34,7 @@ const secondPluginRevision = "rev-2"
 type contractOpener func(context.Context, string) (Provider, error)
 
 func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) {
+	t.Run("WebhookTurnClaimSurvivesRestart", func(t *testing.T) { checkWebhookTurnClaimSurvivesRestart(t, factory(t)) })
 	t.Run("MCPAuthorityWhileWaitingForConnection", func(t *testing.T) { checkMCPAuthorityWhileWaitingForConnection(t, factory) })
 	t.Run("MCPGrantsSurviveRestart", func(t *testing.T) { checkMCPGrantsSurviveRestart(t, factory(t)) })
 	t.Run("MCPDefinitionEditFencesCompletion", func(t *testing.T) { checkMCPDefinitionEditFencesCompletion(t, factory(t)) })
@@ -90,6 +91,35 @@ func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) 
 		checkSessionMemoryIngressOutboxRecoversExpiredLeaseAndRejectsForeignSettlement(t, factory(t))
 	})
 	t.Run("SessionMemoryIngressOutboxReplaysTerminalWithAuditAndStats", func(t *testing.T) { checkSessionMemoryIngressOutboxReplaysTerminalWithAuditAndStats(t, factory(t)) })
+}
+
+func checkWebhookTurnClaimSurvivesRestart(t *testing.T, open contractOpener) {
+	path := filepath.Join(t.TempDir(), "webhook-claim.db")
+	p, err := open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { closeContractProvider(t, p) }()
+	const jobID = "webhook-route-claim"
+	if created, err := p.Jobs().CreateJob(t.Context(), JobRecord{
+		ID: jobID, SessionID: "wh-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Objective: "input", Status: JobStatusRunning, PrivateRunKind: PrivateRunKindWebhook,
+	}); err != nil || !created {
+		t.Fatalf("create webhook job = %t, %v", created, err)
+	}
+	claimed, err := p.Jobs().ClaimWebhookTurn(t.Context(), jobID)
+	if err != nil || !claimed {
+		t.Fatalf("first claim = %t, %v", claimed, err)
+	}
+	closeContractProvider(t, p)
+	p, err = open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err = p.Jobs().ClaimWebhookTurn(t.Context(), jobID)
+	if err != nil || claimed {
+		t.Fatalf("replayed claim = %t, %v", claimed, err)
+	}
 }
 
 func checkProvider_WebhookAdmissionSnapshot(t *testing.T, open contractOpener) {

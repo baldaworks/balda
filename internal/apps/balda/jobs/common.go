@@ -34,6 +34,7 @@ const (
 // ServiceStore is the job state needed by concrete job services.
 type ServiceStore interface {
 	baldastate.JobLifecycleStore
+	baldastate.WebhookTurnClaimStore
 	baldastate.ScheduledOutputStore
 	baldastate.JobEventOutboxStore
 	baldastate.DeliveryStore

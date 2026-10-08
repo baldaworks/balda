@@ -42,6 +42,11 @@ type PrivateOutputRecorder interface {
 	RecordPrivateOutput(ctx context.Context, jobID, output string, failed bool) error
 }
 
+// WebhookTurnClaimer durably marks the first provider invocation for a webhook job.
+type WebhookTurnClaimer interface {
+	ClaimWebhookTurn(ctx context.Context, jobID string) (bool, error)
+}
+
 type runtimeStateReader interface {
 	RuntimeStateValue(ctx context.Context, locator baldasession.SessionLocator, key string) (any, bool, error)
 }
@@ -99,6 +104,7 @@ type TurnExecutionService struct {
 	sessions       runtimeStateReader
 	turnCapture    CompletedTurnCapture
 	privateOutput  PrivateOutputRecorder
+	webhookClaims  WebhookTurnClaimer
 	progressHook   ProgressTransportHook
 	formatComposer *FormatPromptComposer
 	logger         zerolog.Logger
@@ -209,6 +215,13 @@ func (s *TurnExecutionService) SetCompletedTurnCapture(capture CompletedTurnCapt
 func (s *TurnExecutionService) SetPrivateOutputRecorder(recorder PrivateOutputRecorder) {
 	if s != nil {
 		s.privateOutput = recorder
+	}
+}
+
+// SetWebhookTurnClaimer binds the durable webhook invocation guard at composition time.
+func (s *TurnExecutionService) SetWebhookTurnClaimer(claimer WebhookTurnClaimer) {
+	if s != nil {
+		s.webhookClaims = claimer
 	}
 }
 
@@ -395,6 +408,18 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 	terminalErrorCode := ""
 	terminalErrorMessage := ""
 	lastNonRetryErrorMessage := ""
+	if req.TurnSource == turncmd.SourceWebhook {
+		if s.webhookClaims == nil {
+			return fmt.Errorf("%w: claimer is unavailable", turncmd.ErrWebhookTurnClaimUnavailable)
+		}
+		claimed, err := s.webhookClaims.ClaimWebhookTurn(ctx, req.JobID)
+		if err != nil {
+			return fmt.Errorf("%w: %w", turncmd.ErrWebhookTurnClaimUnavailable, err)
+		}
+		if !claimed {
+			return turncmd.ErrWebhookTurnAlreadyClaimed
+		}
+	}
 
 	for ev, err := range req.Runner.Run(runCtx, req.UserID, req.AgentSessionID, userContent, agent.RunConfig{}, req.RunOptions...) {
 		if err != nil {

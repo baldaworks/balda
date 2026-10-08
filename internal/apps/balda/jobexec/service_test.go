@@ -171,10 +171,12 @@ func TestStartScheduledJobRebindsPreUpgradeRecipientScopedJob(t *testing.T) {
 }
 
 type webhookLifecycleFixture struct {
-	mu      sync.Mutex
-	jobs    map[string]state.JobRecord
-	creates int
-	marks   int
+	mu           sync.Mutex
+	jobs         map[string]state.JobRecord
+	creates      int
+	marks        int
+	failNextMark error
+	claimed      map[string]bool
 }
 
 func (f *webhookLifecycleFixture) Create(_ context.Context, record state.JobRecord, _ string, _ any) (bool, error) {
@@ -198,6 +200,11 @@ func (f *webhookLifecycleFixture) Get(_ context.Context, id string) (state.JobRe
 func (f *webhookLifecycleFixture) MarkStatus(_ context.Context, id, status, _, _, _ string, _ any) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.failNextMark != nil {
+		err := f.failNextMark
+		f.failNextMark = nil
+		return err
+	}
 	record := f.jobs[id]
 	if terminalJobExecution(record.Status) && record.Status != status {
 		return errors.New("invalid runtime job transition: terminal status")
@@ -206,6 +213,19 @@ func (f *webhookLifecycleFixture) MarkStatus(_ context.Context, id, status, _, _
 	f.jobs[id] = record
 	f.marks++
 	return nil
+}
+
+func (f *webhookLifecycleFixture) ClaimWebhookTurn(_ context.Context, id string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.claimed == nil {
+		f.claimed = make(map[string]bool)
+	}
+	if f.claimed[id] {
+		return false, nil
+	}
+	f.claimed[id] = true
+	return true, nil
 }
 
 func (f *webhookLifecycleFixture) RebindScheduledSession(context.Context, string, string, string) (bool, error) {
@@ -290,6 +310,41 @@ func TestWebhookJobReplaysAfterDispatchFailureAndRestart(t *testing.T) {
 	if first.ID == "" || first.ID != second.ID || first.DedupeKey != second.DedupeKey ||
 		first.To != second.To || !bytes.Equal(first.Payload.Data, second.Payload.Data) {
 		t.Fatalf("replayed session envelope changed: first=%+v second=%+v", first, second)
+	}
+}
+
+func TestWebhookJobFailedRunningMarkAfterDispatchDoesNotRepeatProviderTurn(t *testing.T) {
+	env, payload, jobID := webhookJobFixture(t)
+	tasks := &webhookLifecycleFixture{
+		jobs:         make(map[string]state.JobRecord),
+		failNextMark: errors.New("running status write failed"),
+	}
+	providerCalls := 0
+	dispatcher := &webhookDispatchFixture{onSuccess: func() {
+		claimed, err := tasks.ClaimWebhookTurn(t.Context(), jobID)
+		if err != nil {
+			t.Error(err)
+		}
+		if claimed {
+			providerCalls++
+		}
+	}}
+	if err := New(tasks, dispatcher).DispatchWebhookSessionTurn(t.Context(), env, payload); err == nil {
+		t.Fatal("running status write failure was lost")
+	}
+	stored, _, err := tasks.Get(t.Context(), jobID)
+	if err != nil || stored.Status != state.JobStatusCreated || providerCalls != 1 {
+		t.Fatalf("after first dispatch: job=%+v calls=%d err=%v", stored, providerCalls, err)
+	}
+	// Model a restart and a broker duplicate window that has expired.
+	dispatcher.mu.Lock()
+	dispatcher.accepted = nil
+	dispatcher.mu.Unlock()
+	if err := New(tasks, dispatcher).DispatchWebhookSessionTurn(t.Context(), env, payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(dispatcher.attempts) != 2 || providerCalls != 1 {
+		t.Fatalf("delayed replay: dispatches=%d provider calls=%d", len(dispatcher.attempts), providerCalls)
 	}
 }
 
