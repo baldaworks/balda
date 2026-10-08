@@ -44,10 +44,13 @@ async function textLineCount(locator) {
       const inventory = await page.goto(`${baseURL}/schedules`);
       assert.equal(inventory.status(), 200);
       assert.equal(await page.locator('h1').textContent(), 'Schedules');
+      await page.getByRole('columnheader', { name: 'Report to', exact: true }).waitFor();
       const managedLink = page.getByRole('link', { name: 'daily-summary' });
       const configuredLink = page.getByRole('link', { name: 'config:morning' });
       await managedLink.waitFor();
       await configuredLink.waitFor();
+      const managedRow = page.locator('.schedule-inventory-table tbody tr').filter({ has: managedLink });
+      assert.equal((await managedRow.locator('td').nth(2).textContent()).trim(), 'telegram:9001:0');
       await assertNoDocumentOverflow(page, `${viewport.name} inventory`);
       await screenshot(page, 'inventory', viewport.name);
       if (viewport.name === 'mobile') {
@@ -127,6 +130,8 @@ async function textLineCount(locator) {
       await screenshot(page, 'created', viewport.name);
 
       await Promise.all([page.waitForURL(`${baseURL}/schedules`), page.getByRole('link', { name: 'All schedules' }).click()]);
+      const createdRow = page.locator('.schedule-inventory-table tbody tr').filter({ has: page.getByRole('link', { name: newID }) });
+      assert.equal((await createdRow.locator('td').nth(2).textContent()).trim(), viewport.name === 'desktop' ? 'main_chat' : 'None');
       await Promise.all([page.waitForURL(`${baseURL}/schedules/config:morning`), page.getByRole('link', { name: 'config:morning' }).click()]);
       await page.getByRole('heading', { name: 'Configuration schedule' }).waitFor();
       assert.equal(await page.getByRole('button', { name: 'Save schedule' }).count(), 0);

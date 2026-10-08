@@ -145,6 +145,7 @@ func TestSchedulesBrowserManagement(t *testing.T) {
 				t.Fatal(err)
 			}
 			fixture := &schedulesHTTPFixture{items: []schedulecmd.Item{
+				{Definition: schedulecmd.Definition{ID: "alias_report", Cron: "0 7 * * *", Content: "report", Alias: "owner_tg"}, Source: "managed", Enabled: true, Version: 1, Status: "active"},
 				{Definition: schedulecmd.Definition{ID: "daily", Cron: "0 9 * * *", Content: "ping <script>alert(1)</script>", Locator: "telegram:9001:0"}, Source: "managed", Enabled: true, Version: 2, Status: "active", NextRunAt: now},
 				{Definition: schedulecmd.Definition{ID: "new", Cron: "0 8 * * *", Content: "name collision", Locator: "telegram:9001:0"}, Source: "managed", Enabled: true, Version: 1, Status: "active"},
 				{Definition: schedulecmd.Definition{ID: "config:knowl", Cron: "0 10 * * *", Content: "configured", Locator: "telegram:9001:0"}, Source: "config", Enabled: true, Version: 1, Status: "active"},
@@ -185,6 +186,11 @@ func TestSchedulesBrowserManagement(t *testing.T) {
 				}
 			}
 			inventory := get("/schedules", admin.access)
+			if !strings.Contains(inventory.Body.String(), `<th scope="col">Report to</th>`) ||
+				!strings.Contains(inventory.Body.String(), `href="`+base+`/schedules/alias_report"`) ||
+				!strings.Contains(inventory.Body.String(), `<td class="text-break">owner_tg</td>`) {
+				t.Fatal("inventory must show the configured report recipient")
+			}
 			if inventory.Code != http.StatusOK || !strings.Contains(inventory.Body.String(), "config:knowl") || !strings.Contains(inventory.Body.String(), "daily") || !strings.Contains(inventory.Body.String(), "telegram:9001:0") || strings.Contains(inventory.Body.String(), "ping &lt;script&gt;") {
 				t.Fatalf("unsafe inventory: %d", inventory.Code)
 			}

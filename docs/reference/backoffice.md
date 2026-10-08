@@ -668,7 +668,7 @@ in logs, URLs used for recovery, exported read models or browser history caches.
 Administrators with a normal browser session can open **Schedules** at
 `<base_path>/schedules`. Operators cannot view or mutate schedules. The
 inventory lists recurring definitions from both `balda.scheduler.jobs` and
-Backoffice, with source, UTC cron, report destination,
+Backoffice, with source, UTC cron, a **Report to** column for the configured alias or locator,
 enabled/runtime state, and next/last run times. Internal `@once` timers are not
 listed. Opening a detail loads the instruction content only for that guarded
 administrator page; the inventory omits it. HTML content and safe errors are
