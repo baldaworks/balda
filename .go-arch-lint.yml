@@ -89,6 +89,7 @@ components:
       - internal/apps/balda/chatapp
       - internal/apps/balda/commandcmd
       - internal/apps/balda/deliverycmd
+      - internal/apps/balda/destinationcmd
       - internal/apps/balda/goalkeepercmd
       - internal/apps/balda/goalresultcmd
       - internal/apps/balda/locatorref
@@ -106,6 +107,7 @@ components:
       - internal/apps/balda/telegramfmt
       - internal/apps/balda/turncmd
       - internal/apps/balda/usageview
+      - internal/apps/balda/webhookcmd
 
   # Canonical user, credential, binding, session, and audit contracts. These
   # values stay independent of storage, HTTP, and concrete transports.
@@ -357,6 +359,10 @@ components:
   webhook_transport:
     in:
       - internal/apps/balda/channel/webhook
+
+  webhook_wiring:
+    in:
+      - internal/apps/balda/webhookfx
 
   # Product state persistence, read models, and durable outbox storage.
   storage:
@@ -889,9 +895,16 @@ deps:
     mayDependOn:
       - foundation
       - contracts
-      - neutral_registry
+      - webhook_transport
+    anyVendorDeps: true
+
+  webhook_wiring:
+    mayDependOn:
+      - foundation
+      - contracts
       - application
       - webhook_transport
+      - webhook_wiring
     anyVendorDeps: true
 
   storage:
@@ -957,6 +970,7 @@ deps:
       - mattermost_transport
       - mattermost_wiring
       - webhook_transport
+      - webhook_wiring
       - storage
       - infrastructure
       - composition_root

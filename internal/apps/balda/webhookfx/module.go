@@ -1,8 +1,11 @@
-package webhook
+// Package webhookfx binds webhook ingress to Balda application policy.
+package webhookfx
 
 import (
 	"fmt"
+
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
+	"github.com/baldaworks/balda/internal/apps/balda/channel/webhook"
 	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookapp"
 	"github.com/rs/zerolog"
@@ -33,36 +36,34 @@ func newWebhookappService(params serviceParams) *webhookapp.Service {
 type receiverParams struct {
 	fx.In
 
-	Config   Config
-	Service  *webhookapp.Service
+	Config   webhook.Config
+	Service  webhook.Service
 	Logger   zerolog.Logger
-	Receipts DeliveryReceipts `optional:"true"`
+	Receipts webhook.DeliveryReceipts `optional:"true"`
 }
 
-func newReceiver(params receiverParams) (*Receiver, error) {
-	receiver, err := NewReceiver(params.Config, params.Service, params.Logger)
+func newReceiver(params receiverParams) (*webhook.Receiver, error) {
+	receiver, err := webhook.NewReceiver(params.Config, params.Service, params.Logger)
 	if err != nil {
 		return nil, err
 	}
 	receiver.SetDeliveryReceipts(params.Receipts)
-	for _, route := range receiver.routes {
-		if route.AckOnDelivery && receiver.deliveryReceipts == nil {
-			return nil, fmt.Errorf("webhook route %q requires a delivery receipt store", route.Name)
+	if params.Config.Enabled {
+		for _, route := range params.Config.Routes {
+			if route.Envelope.AckOnDelivery && params.Receipts == nil {
+				return nil, fmt.Errorf("webhook route requires a delivery receipt store")
+			}
 		}
 	}
 	return receiver, nil
 }
 
-// Module provides the inbound webhook receiver and its application service.
-var Module = fx.Module("balda_webhook_channel",
+// Module provides the inbound receiver and application policy at the host seam.
+var Module = fx.Module("balda_webhook",
 	fx.Provide(
 		newWebhookappService,
-		fx.Annotate(
-			func(s *webhookapp.Service) Service { return s },
-		),
+		fx.Annotate(func(s *webhookapp.Service) webhook.Service { return s }),
 		newReceiver,
 	),
-	fx.Invoke(
-		func(*Receiver) {},
-	),
+	fx.Invoke(func(*webhook.Receiver) {}),
 )

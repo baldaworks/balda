@@ -58,6 +58,7 @@ import (
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookfx"
 	"github.com/baldaworks/balda/internal/apps/sessionmcp"
 	"github.com/baldaworks/balda/internal/git"
 	portableapp "github.com/baldaworks/balda/sessionmemory/app"
@@ -204,6 +205,9 @@ func Module(
 			Content:  strings.TrimSpace(task.Envelope.Content),
 			ReportTo: reportTo,
 		})
+	}
+	if err := validateWebhookRawConfig(cfg.Balda.Webhooks); err != nil {
+		return fx.Module("balda", fx.Error(err))
 	}
 	inboundWebhookConfig := buildInboundWebhookConfig(cfg.Balda)
 	executionConfig := baldaexecution.Config{
@@ -833,7 +837,7 @@ func Module(
 		actorsfx.Module,
 		scheduledjobs.Module,
 		handlersfx.Module,
-		webhook.Module,
+		webhookfx.Module,
 		fx.Provide(
 			internalmcp.NewInternalMCPManager,
 		),
@@ -1141,18 +1145,10 @@ func buildInboundWebhookConfig(cfg BaldaConfig) webhook.Config {
 	routes := make(map[string]webhook.RouteConfig, len(cfg.Webhooks.Routes))
 	for routeName, route := range cfg.Webhooks.Routes {
 		var reportTo *webhook.RouteTargetConfig
-		var fallbackTo *webhook.RouteTargetConfig
 		if route.Envelope.ReportTo != nil {
 			reportTo = &webhook.RouteTargetConfig{
-				Target:      strings.TrimSpace(route.Envelope.ReportTo.Target),
-				Key:         strings.TrimSpace(route.Envelope.ReportTo.Key),
-				KeyFromBody: strings.TrimSpace(route.Envelope.ReportTo.KeyFromBody),
-			}
-		}
-		if route.Envelope.FallbackTo != nil {
-			fallbackTo = &webhook.RouteTargetConfig{
-				Target: strings.TrimSpace(route.Envelope.FallbackTo.Target),
-				Key:    strings.TrimSpace(route.Envelope.FallbackTo.Key),
+				Target: strings.TrimSpace(route.Envelope.ReportTo.Target),
+				Key:    strings.TrimSpace(route.Envelope.ReportTo.Key),
 			}
 		}
 		authValue := strings.TrimSpace(route.Auth.Value)
@@ -1165,12 +1161,7 @@ func buildInboundWebhookConfig(cfg BaldaConfig) webhook.Config {
 			Path:           strings.TrimSpace(route.Path),
 			PromptTemplate: strings.TrimSpace(route.PromptTemplate),
 			Envelope: webhook.RouteEnvelopeConfig{
-				Target:        strings.TrimSpace(route.Envelope.Target),
-				Key:           strings.TrimSpace(route.Envelope.Key),
-				KeyFromBody:   strings.TrimSpace(route.Envelope.KeyFromBody),
-				Mode:          strings.TrimSpace(route.Envelope.Mode),
 				ReportTo:      reportTo,
-				FallbackTo:    fallbackTo,
 				AckOnDelivery: route.Envelope.AckOnDelivery,
 			},
 			Auth: webhook.RouteAuthConfig{
@@ -1190,4 +1181,16 @@ func buildInboundWebhookConfig(cfg BaldaConfig) webhook.Config {
 		ListenAddr: strings.TrimSpace(cfg.Webhooks.ListenAddr),
 		Routes:     routes,
 	}
+}
+
+func validateWebhookRawConfig(cfg WebhooksConfig) error {
+	for _, route := range cfg.Routes {
+		if len(route.Envelope.Unsupported) > 0 {
+			return fmt.Errorf("balda.webhooks.routes envelope contains unsupported fields; use optional report_to and ack_on_delivery")
+		}
+		if route.Envelope.ReportTo != nil && len(route.Envelope.ReportTo.Unsupported) > 0 {
+			return fmt.Errorf("balda.webhooks.routes envelope.report_to contains unsupported fields; use target and key")
+		}
+	}
+	return nil
 }

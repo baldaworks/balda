@@ -156,22 +156,18 @@ type WebhookRouteConfig struct {
 	Dedupe         WebhookRouteDedupeConfig   `mapstructure:"dedupe"`
 }
 
-// WebhookRouteEnvelopeConfig configures the session envelope for one route.
+// WebhookRouteEnvelopeConfig configures optional final report delivery.
 type WebhookRouteEnvelopeConfig struct {
-	Target        string                            `mapstructure:"target"`
-	Key           string                            `mapstructure:"key"`
-	KeyFromBody   string                            `mapstructure:"key_from_body"`
-	Mode          string                            `mapstructure:"mode"`
 	ReportTo      *WebhookRouteEnvelopeTargetConfig `mapstructure:"report_to"`
-	FallbackTo    *WebhookRouteEnvelopeTargetConfig `mapstructure:"fallback_to"`
 	AckOnDelivery bool                              `mapstructure:"ack_on_delivery"`
+	Unsupported   map[string]any                    `mapstructure:",remain"`
 }
 
 // WebhookRouteEnvelopeTargetConfig defines a route report_to address.
 type WebhookRouteEnvelopeTargetConfig struct {
-	Target      string `mapstructure:"target"`
-	Key         string `mapstructure:"key"`
-	KeyFromBody string `mapstructure:"key_from_body"`
+	Target      string         `mapstructure:"target"`
+	Key         string         `mapstructure:"key"`
+	Unsupported map[string]any `mapstructure:",remain"`
 }
 
 // WebhookRouteAuthConfig configures route-level request authentication.
