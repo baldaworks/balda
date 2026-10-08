@@ -54,16 +54,17 @@ func (s *Service) DispatchWebhookSessionTurn(ctx context.Context, env actorlayer
 		}
 		if !found {
 			created, err := s.tasks.Create(ctx, baldastate.JobRecord{
-				ID:            jobID,
-				SessionID:     strings.TrimSpace(payload.Locator.SessionID),
-				ParentJobID:   strings.TrimSpace(payload.ParentJobID),
-				Title:         "Webhook job",
-				Objective:     strings.TrimSpace(payload.Text),
-				Status:        baldastate.JobStatusCreated,
-				OwnerActor:    baldaexecution.ActorTypeJob + ":" + jobID,
-				AssignedActor: baldaexecution.ActorTypeSession + ":" + payload.Locator.SessionID,
-				Priority:      80,
-				CreatedBy:     strings.TrimSpace(payload.UserID),
+				ID:             jobID,
+				SessionID:      strings.TrimSpace(payload.Locator.SessionID),
+				ParentJobID:    strings.TrimSpace(payload.ParentJobID),
+				Title:          "Webhook job",
+				Objective:      strings.TrimSpace(payload.Text),
+				Status:         baldastate.JobStatusCreated,
+				OwnerActor:     baldaexecution.ActorTypeJob + ":" + jobID,
+				AssignedActor:  baldaexecution.ActorTypeSession + ":" + payload.Locator.SessionID,
+				Priority:       80,
+				CreatedBy:      strings.TrimSpace(payload.UserID),
+				PrivateRunKind: baldastate.PrivateRunKindWebhook,
 			}, "job.actor", payload)
 			if err != nil {
 				return actorlayer.TransientError(err)

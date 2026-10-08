@@ -22,6 +22,8 @@ import (
 	"github.com/rs/zerolog"
 )
 
+const permanentDeliveryFailure = "permanent"
+
 type Lifecycle interface {
 	ReserveDelivery(ctx context.Context, record baldastate.DeliveryRecord) (baldastate.DeliveryRecord, bool, error)
 	MarkDeliverySending(ctx context.Context, deliveryKey string) error
@@ -83,11 +85,6 @@ func (s *Service) Handle(ctx context.Context, env actorlayer.Envelope, payload d
 	case envelopeJobID != payloadJobID:
 		return actorlayer.PolicyError(fmt.Errorf("delivery job scope mismatch: envelope=%q payload=%q", envelopeJobID, payloadJobID))
 	}
-	delivery, err := s.prepareDelivery(payload)
-	if err != nil {
-		s.logSettlement(payload, env.ID, env.Attempt+1, preparationFailureStage(err), "permanent")
-		return actorlayer.PermanentError(err)
-	}
 	durable := RequiresOutbox(payload)
 	deliveryKey := strings.TrimSpace(env.DedupeKey)
 	if deliveryKey == "" {
@@ -98,11 +95,14 @@ func (s *Service) Handle(ctx context.Context, env actorlayer.Envelope, payload d
 	}
 	sum := sha256.Sum256(env.Payload.Data)
 	payloadHash := hex.EncodeToString(sum[:])
+	var reserved baldastate.DeliveryRecord
+	var created bool
 	if durable {
 		if s.outbox == nil {
 			return actorlayer.TransientError(fmt.Errorf("delivery outbox store is required for durable delivery"))
 		}
-		record, created, err := s.outbox.ReserveDelivery(ctx, baldastate.DeliveryRecord{
+		var err error
+		reserved, created, err = s.outbox.ReserveDelivery(ctx, baldastate.DeliveryRecord{
 			ID:          uuid.NewString(),
 			DeliveryKey: deliveryKey,
 			JobID:       payload.JobID,
@@ -117,21 +117,36 @@ func (s *Service) Handle(ctx context.Context, env actorlayer.Envelope, payload d
 		if err != nil {
 			return actorlayer.TransientError(err)
 		}
-		if record.PayloadHash != "" && record.PayloadHash != payloadHash {
+		if reserved.PayloadHash != "" && reserved.PayloadHash != payloadHash {
 			return actorlayer.PermanentError(fmt.Errorf("delivery key %q already reserved for different payload", deliveryKey))
 		}
-		if record.Status == baldastate.DeliveryStatusSent {
-			if err := s.bindQuestionDelivery(ctx, payload, record.ProviderMessageID); err != nil {
+		if reserved.Status == baldastate.DeliveryStatusSent {
+			if err := s.bindQuestionDelivery(ctx, payload, reserved.ProviderMessageID); err != nil {
 				return actorlayer.TransientError(err)
 			}
 			return nil
 		}
-		if !created && !ReadyForAttempt(record) {
-			if record.Status == baldastate.DeliveryStatusSending {
-				return actorlayer.TransientError(fmt.Errorf("delivery %q has ambiguous sending status; automatic resend is disabled; last updated at %s", deliveryKey, record.UpdatedAt.Format(time.RFC3339)))
-			}
-			return actorlayer.TransientError(fmt.Errorf("delivery %q is already %s; last updated at %s", deliveryKey, record.Status, record.UpdatedAt.Format(time.RFC3339)))
+		if reserved.Status == baldastate.DeliveryStatusFailed && reserved.Error == permanentDeliveryFailure {
+			return nil
 		}
+		if !created && !ReadyForAttempt(reserved) {
+			if reserved.Status == baldastate.DeliveryStatusSending {
+				return actorlayer.TransientError(fmt.Errorf("delivery %q has ambiguous sending status; automatic resend is disabled; last updated at %s", deliveryKey, reserved.UpdatedAt.Format(time.RFC3339)))
+			}
+			return actorlayer.TransientError(fmt.Errorf("delivery %q is already %s; last updated at %s", deliveryKey, reserved.Status, reserved.UpdatedAt.Format(time.RFC3339)))
+		}
+	}
+	delivery, err := s.prepareDelivery(payload)
+	if err != nil {
+		s.logSettlement(payload, env.ID, env.Attempt+1, preparationFailureStage(err), "permanent")
+		if durable {
+			if markErr := s.outbox.MarkDeliveryFailed(ctx, deliveryKey, permanentDeliveryFailure); markErr != nil {
+				return actorlayer.TransientError(fmt.Errorf("record delivery preparation failure: %w", markErr))
+			}
+		}
+		return actorlayer.PermanentError(err)
+	}
+	if durable {
 		if err := s.outbox.MarkDeliverySending(ctx, deliveryKey); err != nil {
 			return actorlayer.TransientError(err)
 		}
@@ -417,7 +432,7 @@ func ReadyForAttempt(record baldastate.DeliveryRecord) bool {
 	case baldastate.DeliveryStatusSending:
 		return false
 	case baldastate.DeliveryStatusFailed:
-		return true
+		return record.Error != permanentDeliveryFailure
 	case baldastate.DeliveryStatusPending:
 		if record.UpdatedAt.IsZero() {
 			return true

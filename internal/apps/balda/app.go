@@ -51,6 +51,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
 	"github.com/baldaworks/balda/internal/apps/balda/schedulebackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/scheduledjobs"
+	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionapp"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorymcp"
@@ -435,6 +436,18 @@ func Module(
 			},
 			func(provider baldastate.Provider) baldastate.DeliveryStore {
 				return provider.Jobs()
+			},
+			func(provider baldastate.Provider) jobexec.WebhookRunStore {
+				return provider.Jobs()
+			},
+			func(provider baldastate.Provider) jobexec.WebhookAdmissionReader {
+				return provider.WebhookAdmissions()
+			},
+			func(provider baldastate.Provider) jobexec.WebhookFinalDeliveryReader {
+				return provider.Jobs()
+			},
+			func(manager *baldasession.Manager) jobexec.WebhookRunSessionCloser {
+				return manager
 			},
 			schedulebackofficeapp.New,
 			aliasbackofficeapp.New,

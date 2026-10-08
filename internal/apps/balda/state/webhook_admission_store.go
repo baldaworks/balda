@@ -36,6 +36,18 @@ func (s *sqlWebhookAdmissionStore) Get(ctx context.Context, routeName, dedupeKey
 	return record, true, nil
 }
 
+func (s *sqlWebhookAdmissionStore) GetByJobID(ctx context.Context, jobID string) (webhookcmd.Admission, bool, error) {
+	record, err := scanWebhookAdmission(s.db.QueryRowContext(ctx, s.bind(`SELECT `+webhookAdmissionColumns+`
+		FROM balda_webhook_admissions WHERE job_id = ?`), strings.TrimSpace(jobID)))
+	if errors.Is(err, sql.ErrNoRows) {
+		return webhookcmd.Admission{}, false, nil
+	}
+	if err != nil {
+		return webhookcmd.Admission{}, false, s.wrapError("read webhook admission by job", err)
+	}
+	return record, true, nil
+}
+
 func (s *sqlWebhookAdmissionStore) Create(ctx context.Context, candidate webhookcmd.Admission) (webhookcmd.Admission, bool, error) {
 	if err := validateWebhookAdmission(candidate); err != nil {
 		return webhookcmd.Admission{}, false, err

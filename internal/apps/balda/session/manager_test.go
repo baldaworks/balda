@@ -652,38 +652,42 @@ func TestCloseRunSessionDeletesPersistedEventsAfterRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = provider.Close() }()
-	const sessionID = "sch-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	service := provider.RuntimeSessions()
-	created, err := service.Create(t.Context(), &adksession.CreateRequest{
-		AppName: baldaRuntimeAppName, UserID: "owner", SessionID: sessionID,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	event := adksession.NewEvent(t.Context(), "run-turn")
-	event.Author = "user"
-	if err := service.AppendEvent(t.Context(), created.Session, event); err != nil {
-		t.Fatal(err)
-	}
 	manager := &Manager{runtimeManager: &fakeBaldaRuntimeManager{
 		runtime: &BuiltRuntime{AppName: baldaRuntimeAppName, SessionSvc: service},
 	}, sessions: make(map[string]*TopicSession)}
 	if err := manager.CloseRunSession(t.Context(), "tg-ordinary", "owner"); err == nil {
 		t.Fatal("ordinary chat session accepted as private run")
 	}
-	for range 2 {
-		if err := manager.CloseRunSession(t.Context(), sessionID, "owner"); err != nil {
+	for _, sessionID := range []string{
+		"sch-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		"wh-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+	} {
+		created, err := service.Create(t.Context(), &adksession.CreateRequest{
+			AppName: baldaRuntimeAppName, UserID: "owner", SessionID: sessionID,
+		})
+		if err != nil {
 			t.Fatal(err)
 		}
-	}
-	recreated, err := service.Create(t.Context(), &adksession.CreateRequest{
-		AppName: baldaRuntimeAppName, UserID: "owner", SessionID: sessionID,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := recreated.Session.Events().Len(); got != 0 {
-		t.Fatalf("events after private session delete = %d", got)
+		event := adksession.NewEvent(t.Context(), "run-turn")
+		event.Author = "user"
+		if err := service.AppendEvent(t.Context(), created.Session, event); err != nil {
+			t.Fatal(err)
+		}
+		for range 2 {
+			if err := manager.CloseRunSession(t.Context(), sessionID, "owner"); err != nil {
+				t.Fatal(err)
+			}
+		}
+		recreated, err := service.Create(t.Context(), &adksession.CreateRequest{
+			AppName: baldaRuntimeAppName, UserID: "owner", SessionID: sessionID,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := recreated.Session.Events().Len(); got != 0 {
+			t.Fatalf("events after private session %q delete = %d", sessionID, got)
+		}
 	}
 }
 

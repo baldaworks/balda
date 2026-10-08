@@ -106,3 +106,36 @@ func TestCloseRunSessionCleansOldWorkspaceAfterModeDisabled(t *testing.T) {
 		t.Fatalf("old workspace was not cleaned: %q", workspaces.cleaned)
 	}
 }
+
+func TestCloseActiveWebhookRunPublishesPrivateBoundaryAndDeletesRuntime(t *testing.T) {
+	const sessionID = "wh-dddddddddddddddddddddddddddddddd"
+	service := adksession.InMemoryService()
+	created, err := service.Create(t.Context(), &adksession.CreateRequest{
+		AppName: baldaRuntimeAppName, UserID: sessionID, SessionID: sessionID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	locator := SessionLocator{ChannelType: "webhook", AddressKey: sessionID,
+		AddressJSON: "{}", SessionID: sessionID}
+	observer := &fakeBoundaryObserver{}
+	manager := &Manager{
+		sessions: map[string]*TopicSession{sessionID: {
+			sessionID: sessionID, userID: sessionID, locator: locator,
+			sessionSvc: service, sess: created.Session,
+		}},
+		boundaryObserver: observer,
+	}
+	if err := manager.CloseRunSession(t.Context(), sessionID, sessionID); err != nil {
+		t.Fatal(err)
+	}
+	if len(observer.boundaries) != 1 || observer.boundaries[0].Locator.ChannelType != "webhook" ||
+		observer.boundaries[0].Reason != BoundaryReasonClose {
+		t.Fatalf("close boundary = %+v", observer.boundaries)
+	}
+	if _, err := service.Get(t.Context(), &adksession.GetRequest{
+		AppName: baldaRuntimeAppName, UserID: sessionID, SessionID: sessionID,
+	}); err == nil {
+		t.Fatal("active webhook runtime session survived close")
+	}
+}

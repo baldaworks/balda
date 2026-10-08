@@ -20,6 +20,15 @@ func (s *postgresJobStore) RecordPrivateOutput(ctx context.Context, jobID, outpu
 	return redactPostgresError(recordPrivateOutput(ctx, s.db, postgresBind, jobID, output, failed))
 }
 
+func (s *postgresJobStore) ListUnclosedTerminalWebhookJobs(ctx context.Context, after time.Time, afterID string, before time.Time, limit int) ([]JobRecord, error) {
+	jobs, err := listUnclosedTerminalWebhookJobs(ctx, s.db, postgresBind, after, afterID, before, limit)
+	return jobs, redactPostgresError(err)
+}
+
+func (s *postgresJobStore) MarkWebhookRunClosed(ctx context.Context, jobID string, closedAt time.Time) error {
+	return redactPostgresError(markWebhookRunClosed(ctx, s.db, postgresBind, jobID, closedAt))
+}
+
 func (s *postgresJobStore) CreateJob(ctx context.Context, record JobRecord) (bool, error) {
 	now := time.Now().UTC()
 	normalized, err := normalizeExecutionJob(record, now)
@@ -33,10 +42,10 @@ func postgresInsertExecutionJob(ctx context.Context, exec contextExecer, normali
 	res, err := exec.ExecContext(ctx, postgresBind(`
 		INSERT INTO execution_jobs (
 			id, session_id, parent_job_id, title, objective, status, owner_actor, assigned_actor,
-			priority, created_by, result, error,
+			priority, created_by, result, error, private_run_kind, private_run_closed_at,
 			created_at, updated_at, started_at, completed_at, canceled_at
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`), normalized.ID,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`), normalized.ID,
 		nullIfEmpty(normalized.SessionID),
 		nullIfEmpty(normalized.ParentJobID),
 		nullIfEmpty(normalized.Title),
@@ -48,6 +57,8 @@ func postgresInsertExecutionJob(ctx context.Context, exec contextExecer, normali
 		nullIfEmpty(normalized.CreatedBy),
 		nullIfEmpty(normalized.Result),
 		nullIfEmpty(normalized.Error),
+		normalized.PrivateRunKind,
+		normalized.PrivateRunClosedAt,
 		normalized.CreatedAt.Format(time.RFC3339),
 		normalized.UpdatedAt.Format(time.RFC3339),
 		optionalTimeValue(normalized.StartedAt),

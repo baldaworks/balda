@@ -85,6 +85,8 @@ const (
 	AgentStepStatusFailed = "failed"
 )
 
+const PrivateRunKindWebhook = "webhook"
+
 // Provider exposes balda state capabilities behind a backend-agnostic interface.
 // This allows swapping SQLite with another provider later.
 type Provider interface {
@@ -114,6 +116,7 @@ type Provider interface {
 // It persists admission, but never executes or schedules actor work.
 type WebhookAdmissionStore interface {
 	Get(ctx context.Context, routeName, dedupeKey string) (webhookcmd.Admission, bool, error)
+	GetByJobID(ctx context.Context, jobID string) (webhookcmd.Admission, bool, error)
 	Create(ctx context.Context, candidate webhookcmd.Admission) (webhookcmd.Admission, bool, error)
 	RecordReceipt(ctx context.Context, routeName, dedupeKey string, receipt webhookcmd.Receipt) (webhookcmd.Admission, error)
 }
@@ -394,23 +397,25 @@ type QuestionStore interface {
 
 // JobRecord persists one assignable work item.
 type JobRecord struct {
-	ID            string
-	SessionID     string
-	ParentJobID   string
-	Title         string
-	Objective     string
-	Status        string
-	OwnerActor    string
-	AssignedActor string
-	Priority      int
-	CreatedBy     string
-	Result        string
-	Error         string
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
-	StartedAt     time.Time
-	CompletedAt   time.Time
-	CanceledAt    time.Time
+	ID                 string
+	SessionID          string
+	ParentJobID        string
+	Title              string
+	Objective          string
+	Status             string
+	OwnerActor         string
+	AssignedActor      string
+	Priority           int
+	CreatedBy          string
+	Result             string
+	Error              string
+	PrivateRunKind     string
+	PrivateRunClosedAt string
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+	StartedAt          time.Time
+	CompletedAt        time.Time
+	CanceledAt         time.Time
 }
 
 // JobEventRecord persists an append-only job event.
@@ -485,6 +490,12 @@ type JobLifecycleStore interface {
 	SetJobResultWithEvent(ctx context.Context, jobID string, result string, status string, reason string, event JobEventOutboxRecord) error
 }
 
+// PrivateRunCleanupStore scans and marks private execution sessions for cleanup.
+type PrivateRunCleanupStore interface {
+	ListUnclosedTerminalWebhookJobs(ctx context.Context, after time.Time, afterID string, before time.Time, limit int) ([]JobRecord, error)
+	MarkWebhookRunClosed(ctx context.Context, jobID string, closedAt time.Time) error
+}
+
 // ScheduledOutputStore records one private scheduled run's provider output.
 type ScheduledOutputStore interface {
 	RecordScheduledOutput(ctx context.Context, jobID, output string) error
@@ -525,6 +536,7 @@ type AgentStepStore interface {
 // JobStore is the complete SQLite capability set exposed by the state provider.
 type JobStore interface {
 	JobLifecycleStore
+	PrivateRunCleanupStore
 	ScheduledOutputStore
 	JobEventStore
 	JobEventOutboxStore
