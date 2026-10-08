@@ -16,6 +16,10 @@ func (s *postgresJobStore) RecordScheduledOutput(ctx context.Context, jobID, out
 	return redactPostgresError(recordScheduledOutput(ctx, s.db, postgresBind, jobID, output))
 }
 
+func (s *postgresJobStore) RecordPrivateOutput(ctx context.Context, jobID, output string, failed bool) error {
+	return redactPostgresError(recordPrivateOutput(ctx, s.db, postgresBind, jobID, output, failed))
+}
+
 func (s *postgresJobStore) CreateJob(ctx context.Context, record JobRecord) (bool, error) {
 	now := time.Now().UTC()
 	normalized, err := normalizeExecutionJob(record, now)

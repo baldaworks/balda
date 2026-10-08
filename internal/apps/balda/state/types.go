@@ -488,6 +488,7 @@ type JobLifecycleStore interface {
 // ScheduledOutputStore records one private scheduled run's provider output.
 type ScheduledOutputStore interface {
 	RecordScheduledOutput(ctx context.Context, jobID, output string) error
+	RecordPrivateOutput(ctx context.Context, jobID, output string, failed bool) error
 }
 
 // JobEventStore persists projected job history.

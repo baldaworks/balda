@@ -16,6 +16,10 @@ func (s *sqliteJobStore) RecordScheduledOutput(ctx context.Context, jobID, outpu
 	return recordScheduledOutput(ctx, s.db, func(query string) string { return query }, jobID, output)
 }
 
+func (s *sqliteJobStore) RecordPrivateOutput(ctx context.Context, jobID, output string, failed bool) error {
+	return recordPrivateOutput(ctx, s.db, func(query string) string { return query }, jobID, output, failed)
+}
+
 type contextExecer interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }

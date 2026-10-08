@@ -169,18 +169,21 @@ func (r *Runner) RunSessionTurnPayload(ctx context.Context, payload turncmd.Sess
 		}
 	}
 	locator := sessionLocatorFromPayload(payload)
+	if payload.Source == turncmd.SourceWebhook && !turncmd.IsPrivateRun(payload.Source, locator.SessionID) {
+		return fmt.Errorf("private webhook execution session id is required")
+	}
 	topicSession, err := r.sessions.GetSession(locator)
 	if err != nil {
 		userID := strings.TrimSpace(payload.UserID)
-		if payload.Source == turncmd.SourceSchedule && (payload.ScheduleOneShot == nil || !*payload.ScheduleOneShot) {
+		if turncmd.IsPrivateRun(payload.Source, locator.SessionID) {
 			if userID == "" {
-				return fmt.Errorf("scheduled execution user id is required")
+				return fmt.Errorf("private execution user id is required")
 			}
 			topicSession, err = r.sessions.EnsureTransientSession(ctx, SessionContext{
 				Locator: locator, UserID: userID,
 			}, ownerSessionLabel)
 			if err != nil {
-				return fmt.Errorf("create private scheduled session: %w", err)
+				return fmt.Errorf("create private execution session: %w", err)
 			}
 		} else {
 			topicSession, err = r.sessions.RestoreSession(ctx, SessionContext{
@@ -224,9 +227,12 @@ func (r *Runner) RunSessionTurnPayload(ctx context.Context, payload turncmd.Sess
 	if payload.ReportTo != nil {
 		deliveryLocator = *payload.ReportTo
 	}
-	preparedMemory, err := prepareMemory(ctx, r.memory, topicSession, payload.Metadata)
-	if err != nil {
-		return err
+	var preparedMemory memoryPreparation
+	if payload.Source != turncmd.SourceWebhook {
+		preparedMemory, err = prepareMemory(ctx, r.memory, topicSession, payload.Metadata)
+		if err != nil {
+			return err
+		}
 	}
 	if preparedMemory.updatedAt != "" {
 		payload.Metadata = &turncmd.SessionTurnMetadata{LatestMemoryAt: preparedMemory.updatedAt}

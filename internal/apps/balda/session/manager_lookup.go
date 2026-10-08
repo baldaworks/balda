@@ -52,8 +52,8 @@ func (m *Manager) EnsureSession(ctx context.Context, sessionCtx SessionContext, 
 // EnsureTransientSession creates a private run session without address-indexed metadata.
 func (m *Manager) EnsureTransientSession(ctx context.Context, sessionCtx SessionContext, agentName string) (*TopicSession, error) {
 	sessionID := strings.TrimSpace(sessionCtx.Locator.SessionID)
-	if !strings.HasPrefix(sessionID, "sch-") {
-		return nil, fmt.Errorf("schedule execution session id is required")
+	if !isPrivateScheduleSessionID(sessionID) && !isPrivateWebhookSessionID(sessionID) {
+		return nil, fmt.Errorf("private execution session id is required")
 	}
 	if existing, err := m.GetSession(sessionCtx.Locator); err == nil {
 		return existing, nil

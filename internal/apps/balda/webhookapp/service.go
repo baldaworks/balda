@@ -113,7 +113,7 @@ func (s *Service) newAdmission(ctx context.Context, req Request, reqID, routeNam
 		}
 		reportTo = &resolved.Locator
 	}
-	sessionID := "wh-" + uuid.NewString()
+	sessionID := "wh-" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	candidate := webhookcmd.Admission{
 		RouteName: routeName, DedupeKey: dedupeKey, RequestID: reqID,
 		Prompt: prompt, SessionID: sessionID, ReportTo: reportTo, CreatedAt: time.Now().UTC(),
@@ -132,6 +132,7 @@ func payloadFromAdmission(admission webhookcmd.Admission) turncmd.SessionTurnPay
 		Locator: deliverycmd.Locator{ChannelType: "webhook", AddressKey: admission.SessionID,
 			AddressJSON: `{}`, SessionID: admission.SessionID},
 		ReportTo:       admission.ReportTo,
+		UserID:         admission.SessionID,
 		DeliveryFormat: deliveryfmt.DeliveryFormatNone,
 		ProgressPolicy: deliveryfmt.ProgressPolicy{},
 		Deliver:        admission.ReportTo != nil,

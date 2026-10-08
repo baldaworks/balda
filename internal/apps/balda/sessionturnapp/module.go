@@ -83,7 +83,7 @@ var Module = fx.Module("balda_sessionturnapp",
 			params.Service.SetProgressTransportHook(params.Hook)
 		},
 		func(service *TurnExecutionService, jobs *baldajobs.JobLifecycleService) {
-			service.SetScheduleOutputRecorder(jobs)
+			service.SetPrivateOutputRecorder(jobs)
 		},
 	),
 )

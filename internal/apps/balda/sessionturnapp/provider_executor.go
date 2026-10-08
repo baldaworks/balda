@@ -59,10 +59,9 @@ func (e *ProviderTurnExecutor) ExecuteSessionTurn(ctx context.Context, request s
 	}
 	from := actorlayer.ActorAddress{Target: actorcmd.ActorTypeSession, Key: request.Session.GetSessionID()}
 	var progressEmitter SessionProgressEmitter
-	privateSchedule := payload.Source == turncmd.SourceSchedule &&
-		strings.HasPrefix(request.Session.GetSessionID(), "sch-")
+	privateRun := turncmd.IsPrivateRun(payload.Source, request.Session.GetSessionID())
 	executionLocator := request.DeliveryLocator
-	if privateSchedule {
+	if privateRun {
 		executionLocator = sessionturn.SessionLocator{
 			SessionID:   payload.Locator.SessionID,
 			ChannelType: payload.Locator.ChannelType,
@@ -70,7 +69,7 @@ func (e *ProviderTurnExecutor) ExecuteSessionTurn(ctx context.Context, request s
 			AddressJSON: payload.Locator.AddressJSON,
 		}
 	}
-	if payload.Deliver && !privateSchedule {
+	if payload.Deliver && !privateRun {
 		progressEmitter = NewSessionProgressDispatcher(
 			execution.dispatcher,
 			from,

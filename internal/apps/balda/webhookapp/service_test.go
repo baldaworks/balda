@@ -109,7 +109,7 @@ func TestAcceptCreatesPrivateJobWithoutDestination(t *testing.T) {
 		t.Fatalf("unexpected result: %+v", result)
 	}
 	payload := pub.payloads[0]
-	if payload.Locator.ChannelType != "webhook" || !strings.HasPrefix(payload.Locator.SessionID, "wh-") ||
+	if payload.Locator.ChannelType != "webhook" || !turncmd.IsPrivateRun(turncmd.SourceWebhook, payload.Locator.SessionID) ||
 		payload.Locator.AddressKey != payload.Locator.SessionID || payload.ReportTo != nil || payload.Deliver {
 		t.Fatalf("unexpected private payload: %+v", payload)
 	}
