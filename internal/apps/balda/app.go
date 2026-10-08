@@ -61,6 +61,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookapp"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookfx"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookmanagement"
 	"github.com/baldaworks/balda/internal/apps/sessionmcp"
 	"github.com/baldaworks/balda/internal/git"
 	portableapp "github.com/baldaworks/balda/sessionmemory/app"
@@ -805,6 +806,9 @@ func Module(
 		fx.Provide(func(provider baldastate.Provider) webhookapp.AdmissionStore {
 			return provider.WebhookAdmissions()
 		}),
+		fx.Provide(func(provider baldastate.Provider) *webhookmanagement.Service {
+			return webhookmanagement.New(provider.WebhookRoutes())
+		}),
 		fx.Provide(func(provider baldastate.Provider) (*auth.InviteStore, error) {
 			return auth.NewInviteStore(provider.AppKV())
 		}),
@@ -855,6 +859,9 @@ func Module(
 		scheduledjobs.Module,
 		handlersfx.Module,
 		webhookfx.Module,
+		fx.Invoke(func(manager *webhookmanagement.Service) error {
+			return manager.ReconcileConfig(context.Background(), configuredWebhookRoutes(inboundWebhookConfig))
+		}),
 		fx.Provide(
 			internalmcp.NewInternalMCPManager,
 		),
