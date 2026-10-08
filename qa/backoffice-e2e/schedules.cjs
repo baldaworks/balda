@@ -113,6 +113,8 @@ async function textLineCount(locator) {
         await page.getByRole('button', { name: 'Run now' }).click();
         await page.getByRole('region', { name: /Schedule run history/ }).locator('tbody tr a').first().click();
         await page.getByText('telegram:9001:0', { exact: true }).waitFor();
+        const firstRunURL = page.url();
+        assert.ok(new URL(firstRunURL).searchParams.has('run_id'), 'first run has a durable detail URL');
         await page.goto(`${baseURL}/aliases/main_chat`);
         await page.getByLabel('Public locator').fill('telegram:9002:0');
         await page.getByRole('button', { name: 'Save destination' }).click();
@@ -122,6 +124,8 @@ async function textLineCount(locator) {
         await page.getByRole('button', { name: 'Run now' }).click();
         await page.getByRole('region', { name: /Schedule run history/ }).locator('tbody tr a').first().click();
         await page.getByText('telegram:9002:0', { exact: true }).waitFor();
+        await page.goto(firstRunURL);
+        await page.getByText('telegram:9001:0', { exact: true }).waitFor();
       }
       await screenshot(page, 'created', viewport.name);
 
