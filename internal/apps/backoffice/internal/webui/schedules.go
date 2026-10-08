@@ -110,7 +110,7 @@ func ProjectScheduleRow(item schedulecmd.Item) ScheduleRow {
 		row.Source = "Configuration"
 	}
 	if d.Alias != "" {
-		row.Locator = "Alias · " + d.Alias
+		row.Locator = d.Alias
 	}
 	if row.Locator == "" {
 		row.Locator = "None"
