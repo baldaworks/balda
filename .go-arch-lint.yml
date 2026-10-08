@@ -89,6 +89,7 @@ components:
       - internal/apps/balda/chatapp
       - internal/apps/balda/commandcmd
       - internal/apps/balda/deliverycmd
+      - internal/apps/balda/destinationcmd
       - internal/apps/balda/goalkeepercmd
       - internal/apps/balda/goalresultcmd
       - internal/apps/balda/locatorref
@@ -106,6 +107,7 @@ components:
       - internal/apps/balda/telegramfmt
       - internal/apps/balda/turncmd
       - internal/apps/balda/usageview
+      - internal/apps/balda/webhookcmd
 
   # Canonical user, credential, binding, session, and audit contracts. These
   # values stay independent of storage, HTTP, and concrete transports.
@@ -122,6 +124,22 @@ components:
   schedule_contracts:
     in:
       - internal/apps/balda/schedulecmd
+
+  alias_contracts:
+    in:
+      - internal/apps/balda/aliascmd
+
+  alias_policy:
+    in:
+      - internal/apps/balda/aliases
+
+  alias_wiring:
+    in:
+      - internal/apps/balda/aliasfx
+
+  alias_backoffice_wiring:
+    in:
+      - internal/apps/balda/aliasbackofficeapp
 
   # Credential recognition uses only standard-library values, never transports.
   auth_payload:
@@ -342,6 +360,10 @@ components:
     in:
       - internal/apps/balda/channel/webhook
 
+  webhook_wiring:
+    in:
+      - internal/apps/balda/webhookfx
+
   # Product state persistence, read models, and durable outbox storage.
   storage:
     in:
@@ -459,6 +481,41 @@ deps:
       - schedule_contracts
     anyVendorDeps: false
 
+  alias_contracts:
+    mayDependOn:
+      - alias_contracts
+      - user_contracts
+    anyVendorDeps: false
+
+  alias_policy:
+    mayDependOn:
+      - alias_contracts
+      - contracts
+      - user_contracts
+      - alias_policy
+    # Ports are injected at composition; direct import boundaries remain enforced.
+    deepScan: false
+    anyVendorDeps: true
+
+  alias_wiring:
+    mayDependOn:
+      - alias_contracts
+      - alias_policy
+      - contracts
+      - application
+      - storage
+      - alias_wiring
+    deepScan: false
+    anyVendorDeps: false
+
+  alias_backoffice_wiring:
+    mayDependOn:
+      - alias_contracts
+      - alias_policy
+      - alias_backoffice_wiring
+    deepScan: false
+    anyVendorDeps: false
+
   auth_payload:
     mayDependOn:
       - auth_payload
@@ -477,6 +534,7 @@ deps:
 
   backoffice_application:
     mayDependOn:
+      - alias_contracts
       - mcp_contracts
       - schedule_contracts
       - contracts
@@ -525,6 +583,7 @@ deps:
 
   backoffice_webui:
     mayDependOn:
+      - alias_contracts
       - mcp_contracts
       - schedule_contracts
       - user_contracts
@@ -545,6 +604,7 @@ deps:
 
   application:
     mayDependOn:
+      - alias_contracts
       - schedule_contracts
       - schedule_policy
       - auth_payload
@@ -835,13 +895,21 @@ deps:
     mayDependOn:
       - foundation
       - contracts
-      - neutral_registry
+      - webhook_transport
+    anyVendorDeps: true
+
+  webhook_wiring:
+    mayDependOn:
+      - foundation
+      - contracts
       - application
       - webhook_transport
+      - webhook_wiring
     anyVendorDeps: true
 
   storage:
     mayDependOn:
+      - alias_contracts
       - foundation
       - contracts
       - user_contracts
@@ -861,6 +929,10 @@ deps:
 
   composition_root:
     mayDependOn:
+      - alias_contracts
+      - alias_policy
+      - alias_wiring
+      - alias_backoffice_wiring
       - mcp_backoffice_wiring
       - schedule_backoffice_wiring
       - schedule_policy
@@ -898,6 +970,7 @@ deps:
       - mattermost_transport
       - mattermost_wiring
       - webhook_transport
+      - webhook_wiring
       - storage
       - infrastructure
       - composition_root

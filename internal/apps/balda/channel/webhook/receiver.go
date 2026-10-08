@@ -17,8 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
-	"github.com/baldaworks/balda/internal/apps/balda/webhookapp"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookcmd"
 	"github.com/rs/zerolog"
 )
 
@@ -27,13 +26,13 @@ const (
 	statusDelivered = "delivered"
 	statusError     = "error"
 
-	codeInvalidMethod   = "invalid_method"
-	codeRouteNotFound   = "route_not_found"
-	codeUnauthorized    = "unauthorized"
-	codeInvalidPayload  = "invalid_payload"
-	codeSessionNotFound = "session_not_found"
-	codeQueueFull       = "queue_full"
-	codeDispatchFailed  = "dispatch_failed"
+	codeInvalidMethod       = "invalid_method"
+	codeRouteNotFound       = "route_not_found"
+	codeUnauthorized        = "unauthorized"
+	codeInvalidPayload      = "invalid_payload"
+	codeDestinationNotFound = "destination_not_found"
+	codeQueueFull           = "queue_full"
+	codeDispatchFailed      = "dispatch_failed"
 
 	messageCouldNotAccept  = "could not accept request"
 	messageTemporarilyBusy = "temporarily busy"
@@ -41,7 +40,7 @@ const (
 
 // Service defines the application service interface required by the webhook receiver.
 type Service interface {
-	Accept(ctx context.Context, req webhookapp.Request) (webhookapp.Result, error)
+	Accept(ctx context.Context, req webhookcmd.Request) (webhookcmd.Result, error)
 }
 
 // DeliveryReceipts reads provider receipts from the durable delivery outbox.
@@ -49,7 +48,7 @@ type DeliveryReceipts interface {
 	SentFinalDelivery(ctx context.Context, jobID string) (string, bool, error)
 }
 
-// Receiver receives inbound HTTP webhook events and dispatches them via webhookapp.Service.
+// Receiver receives inbound HTTP webhook events and dispatches normalized input.
 type Receiver struct {
 	enabled          bool
 	listenAddr       string
@@ -249,23 +248,6 @@ func (r *Receiver) handleWebhook(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	rawBody := string(bodyBytes)
-	target, err := targetForBody(rt.Target, rt.TargetKeyFromBody, bodyBytes)
-	if err != nil {
-		r.metrics.invalid.Add(1)
-		r.writeError(w, requestID, &httpError{status: http.StatusBadRequest, code: codeInvalidPayload, message: messageCouldNotAccept, cause: err})
-		return
-	}
-	var reportTo *envelopetarget.Target
-	if rt.ReportTo != nil {
-		resolved, resolveErr := targetForBody(*rt.ReportTo, rt.ReportToKeyFromBody, bodyBytes)
-		if resolveErr != nil {
-			r.metrics.invalid.Add(1)
-			r.writeError(w, requestID, &httpError{status: http.StatusBadRequest, code: codeInvalidPayload, message: messageCouldNotAccept, cause: resolveErr})
-			return
-		}
-		reportTo = &resolved
-	}
-
 	headers := make(map[string]string, len(req.Header))
 	for name, values := range req.Header {
 		if len(values) == 0 {
@@ -275,7 +257,7 @@ func (r *Receiver) handleWebhook(w http.ResponseWriter, req *http.Request) {
 		headers[name] = values[0]
 	}
 
-	var promptBuf bytes.Buffer
+	var promptBuf boundedPromptBuffer
 	renderErr := rt.PromptTemplate.Execute(&promptBuf, templateData{
 		RequestID: requestID,
 		Path:      req.URL.Path,
@@ -317,28 +299,34 @@ func (r *Receiver) handleWebhook(w http.ResponseWriter, req *http.Request) {
 	}
 	dedupeKey := strings.Join([]string{"webhook", strings.TrimSpace(rt.Name), dedupeBase}, ":")
 
-	result, err := r.service.Accept(req.Context(), webhookapp.Request{
-		RequestID:  requestID,
-		RouteName:  rt.Name,
-		Prompt:     prompt,
-		Target:     target,
-		ReportTo:   reportTo,
-		FallbackTo: rt.FallbackTo,
-		Mode:       rt.Mode,
-		DedupeKey:  dedupeKey,
+	result, err := r.service.Accept(req.Context(), webhookcmd.Request{
+		RequestID: requestID,
+		RouteName: rt.Name,
+		Prompt:    prompt,
+		ReportTo:  rt.ReportTo,
+		DedupeKey: dedupeKey,
 	})
 	if err != nil {
-		if webhookapp.IsTargetNotFound(err) {
-			r.metrics.notFound.Add(1)
+		if webhookcmd.IsInvalidRequest(err) {
 			r.writeError(w, requestID, &httpError{
-				status:  http.StatusNotFound,
-				code:    codeSessionNotFound,
+				status:  http.StatusBadRequest,
+				code:    codeInvalidPayload,
 				message: messageCouldNotAccept,
 				cause:   err,
 			})
 			return
 		}
-		if webhookapp.IsQueueFull(err) {
+		if webhookcmd.IsTargetNotFound(err) {
+			r.metrics.notFound.Add(1)
+			r.writeError(w, requestID, &httpError{
+				status:  http.StatusNotFound,
+				code:    codeDestinationNotFound,
+				message: messageCouldNotAccept,
+				cause:   err,
+			})
+			return
+		}
+		if webhookcmd.IsQueueFull(err) {
 			r.metrics.queueFull.Add(1)
 			r.writeError(w, requestID, &httpError{
 				status:  http.StatusTooManyRequests,
@@ -363,15 +351,10 @@ func (r *Receiver) handleWebhook(w http.ResponseWriter, req *http.Request) {
 		Str("request_id", requestID).
 		Str("route", rt.Name).
 		Str("path", rt.Path).
-		Str("session_id", result.Target.Locator.SessionID).
-		Str("channel_type", result.Target.Locator.ChannelType).
-		Str("address_key", result.Target.Locator.AddressKey).
-		Str("mode", rt.Mode).
 		Str("dedupe_key", dedupeKey).
 		Str("stream", result.Stream).
 		Uint64("sequence", result.Sequence).
 		Str("job_id", result.JobID).
-		Bool("fallback_used", result.FallbackUsed).
 		Msg("inbound webhook accepted")
 
 	statusCode := http.StatusAccepted
@@ -400,27 +383,19 @@ func (r *Receiver) handleWebhook(w http.ResponseWriter, req *http.Request) {
 		RequestID:          requestID,
 		MessageID:          result.MessageID,
 		Duplicate:          result.Duplicate,
-		FallbackUsed:       result.FallbackUsed,
 		JobID:              result.JobID,
 		ProviderMessageID:  providerMessageID,
 		DeliveryAckEnabled: rt.AckOnDelivery,
 	})
 }
 
-func targetForBody(target envelopetarget.Target, field string, body []byte) (envelopetarget.Target, error) {
-	if field == "" {
-		return target, nil
+type boundedPromptBuffer struct{ bytes.Buffer }
+
+func (b *boundedPromptBuffer) Write(p []byte) (int, error) {
+	if len(p) > webhookcmd.MaxPromptBytes-b.Len() {
+		return 0, fmt.Errorf("rendered prompt exceeds %d bytes", webhookcmd.MaxPromptBytes)
 	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(body, &fields); err != nil {
-		return target, fmt.Errorf("decode webhook destination: %w", err)
-	}
-	var key string
-	if err := json.Unmarshal(fields[field], &key); err != nil || strings.TrimSpace(key) == "" {
-		return target, fmt.Errorf("webhook destination field %q must be a nonempty string", field)
-	}
-	target.Key = strings.TrimSpace(key)
-	return target, nil
+	return b.Buffer.Write(p)
 }
 
 func authorizeRequest(req *http.Request, policy authPolicy) error {
@@ -464,7 +439,6 @@ type acceptedResponse struct {
 	RequestID          string `json:"request_id"`
 	MessageID          string `json:"message_id"`
 	Duplicate          bool   `json:"duplicate,omitempty"`
-	FallbackUsed       bool   `json:"fallback_used,omitempty"`
 	JobID              string `json:"job_id,omitempty"`
 	ProviderMessageID  string `json:"provider_message_id,omitempty"`
 	DeliveryAckEnabled bool   `json:"delivery_ack_enabled,omitempty"`

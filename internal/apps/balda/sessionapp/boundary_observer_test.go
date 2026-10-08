@@ -85,16 +85,20 @@ func TestSessionBoundaryObserverAdapterMapsPortableBoundary(t *testing.T) {
 	}
 }
 
-func TestPrivateScheduleBoundaryDoesNotPersistSessionMemory(t *testing.T) {
-	publisher := &boundaryObserverPublisher{}
-	resolver := sessionmemoryapp.NewScopeResolver(map[string]sessionmemoryapp.ScopeClassifier{})
-	adapter := SessionBoundaryObserverAdapter{Capture: sessionmemoryapp.NewBoundaryCapture(publisher, resolver)}
-	err := adapter.BeforeSessionBoundary(t.Context(), baldasession.SessionBoundary{
-		Locator: deliverycmd.Locator{ChannelType: "schedule", AddressKey: "sch-run",
-			AddressJSON: `{"run_id":"sch-run"}`, SessionID: "sch-run"},
-		SessionID: "sch-run", AgentSessionID: "sch-run", Reason: baldasession.BoundaryReasonClose,
-	})
-	if err != nil || len(publisher.exports) != 0 {
-		t.Fatalf("private boundary capture = %v, exports=%d", err, len(publisher.exports))
+func TestPrivateRunBoundaryDoesNotPersistSessionMemory(t *testing.T) {
+	for _, channel := range []string{"schedule", "webhook"} {
+		t.Run(channel, func(t *testing.T) {
+			publisher := &boundaryObserverPublisher{}
+			resolver := sessionmemoryapp.NewScopeResolver(map[string]sessionmemoryapp.ScopeClassifier{})
+			adapter := SessionBoundaryObserverAdapter{Capture: sessionmemoryapp.NewBoundaryCapture(publisher, resolver)}
+			err := adapter.BeforeSessionBoundary(t.Context(), baldasession.SessionBoundary{
+				Locator: deliverycmd.Locator{ChannelType: channel, AddressKey: "private-run",
+					AddressJSON: "{}", SessionID: "private-run"},
+				SessionID: "private-run", AgentSessionID: "private-run", Reason: baldasession.BoundaryReasonClose,
+			})
+			if err != nil || len(publisher.exports) != 0 {
+				t.Fatalf("private boundary capture = %v, exports=%d", err, len(publisher.exports))
+			}
+		})
 	}
 }

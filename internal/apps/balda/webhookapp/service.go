@@ -3,133 +3,153 @@ package webhookapp
 import (
 	"context"
 	"errors"
+	"fmt"
+	"math"
 	"strings"
+	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookcmd"
+	"github.com/google/uuid"
 )
 
-// Service orchestrates inbound webhook requests across target resolution and command publication.
+// AdmissionStore is the policy owner's narrow port for one frozen request.
+type AdmissionStore interface {
+	Get(ctx context.Context, routeName, dedupeKey string) (webhookcmd.Admission, bool, error)
+	Create(ctx context.Context, candidate webhookcmd.Admission) (webhookcmd.Admission, bool, error)
+	RecordReceipt(ctx context.Context, routeName, dedupeKey string, receipt webhookcmd.Receipt) (webhookcmd.Admission, error)
+}
+
+// Service admits a webhook once and publishes its frozen private job.
 type Service struct {
-	targetResolver   TargetResolver
-	sessionPublisher SessionPublisher
-	jobPublisher     JobPublisher
+	targetResolver TargetResolver
+	admissions     AdmissionStore
+	jobPublisher   JobPublisher
 }
 
-// NewService creates a webhook application Service.
-func NewService(targetResolver TargetResolver, sessionPub SessionPublisher, jobPub JobPublisher) *Service {
-	return &Service{
-		targetResolver:   targetResolver,
-		sessionPublisher: sessionPub,
-		jobPublisher:     jobPub,
-	}
+func NewService(targetResolver TargetResolver, admissions AdmissionStore, jobPub JobPublisher) *Service {
+	return &Service{targetResolver: targetResolver, admissions: admissions, jobPublisher: jobPub}
 }
 
-// Accept validates and dispatches a normalized webhook request.
+// Accept returns the original admission for every duplicate, including retries
+// after a publication failure. SQL stores the snapshot; the actor transport
+// still owns durable dispatch and command deduplication.
 func (s *Service) Accept(ctx context.Context, req Request) (Result, error) {
-	reqID := strings.TrimSpace(req.RequestID)
-	if reqID == "" {
-		return Result{}, &InvalidRequestError{Field: "RequestID", Message: "cannot be empty"}
-	}
+	reqID, routeName, dedupeKey := strings.TrimSpace(req.RequestID), strings.TrimSpace(req.RouteName), strings.TrimSpace(req.DedupeKey)
 	prompt := strings.TrimSpace(req.Prompt)
-	if prompt == "" {
-		return Result{}, &InvalidRequestError{Field: "Prompt", Message: "cannot be empty"}
+	if reqID == "" || len(reqID) > webhookcmd.MaxRequestIDBytes ||
+		routeName == "" || len(routeName) > webhookcmd.MaxRouteNameBytes ||
+		dedupeKey == "" || len(dedupeKey) > webhookcmd.MaxDedupeKeyBytes ||
+		prompt == "" || len(prompt) > webhookcmd.MaxPromptBytes {
+		return Result{}, &InvalidRequestError{Field: "webhook", Message: "required input is empty or too large"}
 	}
-	if s.targetResolver == nil {
-		return Result{}, &DispatchFailedError{Cause: errors.New("target resolver is unavailable")}
+	if s.admissions == nil || s.jobPublisher == nil {
+		return Result{}, &DispatchFailedError{Cause: errors.New("webhook admission or publication is unavailable")}
 	}
-
-	target, err := s.targetResolver.ResolveTarget(ctx, req.Target)
-	fallbackUsed := false
-	if errors.Is(err, envelopetarget.ErrSessionUnavailable) && req.FallbackTo != nil {
-		target, err = s.targetResolver.ResolveTarget(ctx, *req.FallbackTo)
-		fallbackUsed = err == nil
-	}
+	selected, found, err := s.admissions.Get(ctx, routeName, dedupeKey)
 	if err != nil {
-		return Result{}, targetResolutionError(err)
+		return Result{}, &DispatchFailedError{Cause: err}
 	}
+	created := false
+	if !found {
+		candidate, admissionErr := s.newAdmission(ctx, req, reqID, routeName, dedupeKey, prompt)
+		if admissionErr != nil {
+			if IsTargetNotFound(admissionErr) {
+				selected, found, err = s.admissions.Get(ctx, routeName, dedupeKey)
+				if err != nil {
+					return Result{}, &DispatchFailedError{Cause: err}
+				}
+				if !found {
+					return Result{}, admissionErr
+				}
+			} else {
+				return Result{}, admissionErr
+			}
+		}
+		if !found {
+			selected, created, err = s.admissions.Create(ctx, candidate)
+			if err != nil {
+				return Result{}, &DispatchFailedError{Cause: err}
+			}
+		}
+	}
+	if selected.MessageID != "" {
+		return resultFromAdmission(selected, true), nil
+	}
+	payload := payloadFromAdmission(selected)
+	receipt, jobID, err := s.jobPublisher.PublishWebhookJob(ctx, payload, selected.RouteName, selected.RequestID)
+	if err != nil {
+		if actorcmd.IsCommandQueueFull(err) {
+			return Result{}, &QueueFullError{Cause: err}
+		}
+		return Result{}, &DispatchFailedError{Cause: err}
+	}
+	if receipt == nil || receipt.MsgID == "" || len(receipt.MsgID) > webhookcmd.MaxReceiptMessageBytes ||
+		receipt.Stream == "" || len(receipt.Stream) > webhookcmd.MaxReceiptStreamBytes ||
+		receipt.Sequence > math.MaxInt64 || jobID != selected.JobID {
+		return Result{}, &DispatchFailedError{Cause: fmt.Errorf("webhook publisher returned an inconsistent receipt")}
+	}
+	selected, err = s.admissions.RecordReceipt(ctx, selected.RouteName, selected.DedupeKey,
+		webhookcmd.Receipt{MessageID: receipt.MsgID, Stream: receipt.Stream, Sequence: receipt.Sequence})
+	if err != nil {
+		return Result{}, &DispatchFailedError{Cause: err}
+	}
+	return resultFromAdmission(selected, !created || receipt.Duplicate), nil
+}
 
+func (s *Service) newAdmission(ctx context.Context, req Request, reqID, routeName, dedupeKey, prompt string) (webhookcmd.Admission, error) {
 	var reportTo *deliverycmd.Locator
 	if req.ReportTo != nil {
-		resolvedReportTo := target
-		if *req.ReportTo != req.Target {
-			var reportErr error
-			resolvedReportTo, reportErr = s.targetResolver.ResolveTarget(ctx, *req.ReportTo)
-			if errors.Is(reportErr, envelopetarget.ErrSessionUnavailable) && req.FallbackTo != nil {
-				resolvedReportTo, reportErr = s.targetResolver.ResolveTarget(ctx, *req.FallbackTo)
-				fallbackUsed = reportErr == nil
-			}
-			if reportErr != nil {
-				return Result{}, targetResolutionError(reportErr)
-			}
+		if s.targetResolver == nil {
+			return webhookcmd.Admission{}, &DispatchFailedError{Cause: errors.New("report destination resolver is unavailable")}
 		}
-		reportTo = &resolvedReportTo.Locator
-	}
-
-	payload := turncmd.SessionTurnPayload{
-		Text:           prompt,
-		Locator:        target.Locator,
-		ReportTo:       reportTo,
-		UserID:         target.UserID(),
-		TopicID:        0,
-		DeliveryFormat: "",
-		ProgressPolicy: deliveryfmt.ProgressPolicy{
-			Typing:      false,
-			Thinking:    false,
-			PlanUpdates: true,
-		},
-		Deliver:   reportTo != nil,
-		Source:    "webhook",
-		DedupeKey: req.DedupeKey,
-	}
-
-	var (
-		receipt     *actortransport.DispatchReceipt
-		jobID       string
-		dispatchErr error
-	)
-
-	if req.Mode == ModeSession {
-		if s.sessionPublisher == nil {
-			return Result{}, &DispatchFailedError{Cause: errors.New("session publisher is unavailable")}
+		resolved, err := s.targetResolver.ResolveTarget(ctx, *req.ReportTo)
+		if err != nil {
+			return webhookcmd.Admission{}, targetResolutionError(err)
 		}
-		receipt, dispatchErr = s.sessionPublisher.PublishSessionTurn(ctx, payload)
-	} else {
-		if s.jobPublisher == nil {
-			return Result{}, &DispatchFailedError{Cause: errors.New("job publisher is unavailable")}
-		}
-		receipt, jobID, dispatchErr = s.jobPublisher.PublishWebhookJob(ctx, payload, req.RouteName, reqID)
+		reportTo = &resolved.Locator
 	}
-
-	if dispatchErr != nil {
-		if actorcmd.IsCommandQueueFull(dispatchErr) {
-			return Result{}, &QueueFullError{Cause: dispatchErr}
-		}
-		return Result{}, &DispatchFailedError{Cause: dispatchErr}
+	sessionID := "wh-" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	candidate := webhookcmd.Admission{
+		RouteName: routeName, DedupeKey: dedupeKey, RequestID: reqID,
+		Prompt: prompt, SessionID: sessionID, ReportTo: reportTo, CreatedAt: time.Now().UTC(),
 	}
-
-	if receipt == nil {
-		return Result{}, &DispatchFailedError{Cause: errors.New("nil dispatch receipt returned")}
+	_, jobID, err := turncmd.WebhookJobEnvelope(payloadFromAdmission(candidate), routeName, reqID)
+	if err != nil {
+		return webhookcmd.Admission{}, &InvalidRequestError{Field: "webhook", Message: "cannot prepare job"}
 	}
+	candidate.JobID = jobID
+	return candidate, nil
+}
 
-	return Result{
-		RequestID:    reqID,
-		MessageID:    receipt.MsgID,
-		Duplicate:    receipt.Duplicate,
-		JobID:        jobID,
-		Stream:       receipt.Stream,
-		Sequence:     receipt.Sequence,
-		Target:       target,
-		FallbackUsed: fallbackUsed,
-	}, nil
+func payloadFromAdmission(admission webhookcmd.Admission) turncmd.SessionTurnPayload {
+	return turncmd.SessionTurnPayload{
+		Text: admission.Prompt,
+		Locator: deliverycmd.Locator{ChannelType: "webhook", AddressKey: admission.SessionID,
+			AddressJSON: `{}`, SessionID: admission.SessionID},
+		ReportTo:       admission.ReportTo,
+		UserID:         admission.SessionID,
+		DeliveryFormat: deliveryfmt.DeliveryFormatNone,
+		ProgressPolicy: deliveryfmt.ProgressPolicy{},
+		Deliver:        admission.ReportTo != nil,
+		Source:         turncmd.SourceWebhook,
+		DedupeKey:      admission.DedupeKey,
+	}
+}
+
+func resultFromAdmission(admission webhookcmd.Admission, duplicate bool) Result {
+	return Result{RequestID: admission.RequestID, MessageID: admission.MessageID,
+		Duplicate: duplicate, JobID: admission.JobID, Stream: admission.Stream, Sequence: admission.Sequence}
 }
 
 func targetResolutionError(err error) error {
-	if errors.Is(err, envelopetarget.ErrSessionUnavailable) {
+	if errors.Is(err, envelopetarget.ErrSessionUnavailable) ||
+		errors.Is(err, envelopetarget.ErrDestinationUnavailable) ||
+		errors.Is(err, deliverycmd.ErrDestinationNotFound) {
 		return &TargetNotFoundError{Cause: err}
 	}
 	return &DispatchFailedError{Cause: err}

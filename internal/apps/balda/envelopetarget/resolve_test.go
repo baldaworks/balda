@@ -2,12 +2,31 @@ package envelopetarget
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 )
+
+func TestResolveEnvelopeTarget_ManagedAlias(t *testing.T) {
+	t.Parallel()
+	resolver := &fakeResolver{resolved: map[string]Resolved{
+		"main_chat": {Locator: deliverycmd.Locator{ChannelType: "telegram", AddressKey: "-1003953132277:0", SessionID: "tg--1003953132277-0"}},
+	}}
+	got, err := Resolve(context.Background(), resolver, Target{Target: TargetManagedAlias, Key: "main_chat"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Locator.AddressKey != "-1003953132277:0" {
+		t.Fatalf("address key = %q", got.Locator.AddressKey)
+	}
+	_, err = Resolve(context.Background(), resolver, Target{Target: TargetManagedAlias, Key: "gone"})
+	if !errors.Is(err, ErrDestinationUnavailable) {
+		t.Fatalf("missing managed alias error = %v", err)
+	}
+}
 
 const (
 	testLocatorTopicSessionID = "tg--1002667079342-8939"
@@ -178,4 +197,11 @@ func (f *fakeResolver) ResolveAlias(_ context.Context, alias string) (Resolved, 
 		return r, nil
 	}
 	return Resolved{}, fmt.Errorf("unsupported alias target %q", alias)
+}
+
+func (f *fakeResolver) ResolveManagedAlias(_ context.Context, alias string) (Resolved, error) {
+	if r, ok := f.resolved[alias]; ok {
+		return r, nil
+	}
+	return Resolved{}, ErrDestinationUnavailable
 }

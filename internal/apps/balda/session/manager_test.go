@@ -604,9 +604,12 @@ func TestEnsureTransientSessionDoesNotPersistAddressMetadata(t *testing.T) {
 		sessions: make(map[string]*TopicSession), sessionStore: store, sessionsPersistent: true}
 	recipient := testTelegramLocator(10, 42)
 	first := recipient
-	first.SessionID = "sch-run-one"
+	first.SessionID = "sch-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	second := recipient
-	second.SessionID = "sch-run-two"
+	second.SessionID = "wh-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	second.ChannelType = "webhook"
+	second.AddressKey = second.SessionID
+	second.AddressJSON = "{}"
 	for _, locator := range []SessionLocator{first, second, first} {
 		if _, err := m.EnsureTransientSession(t.Context(), SessionContext{Locator: locator, UserID: "tg-101"}, "balda"); err != nil {
 			t.Fatal(err)
@@ -621,6 +624,13 @@ func TestEnsureTransientSessionDoesNotPersistAddressMetadata(t *testing.T) {
 	}
 	if _, err := m.GetSession(recipient); err == nil {
 		t.Fatal("recipient chat was created by private schedule sessions")
+	}
+	for _, sessionID := range []string{"sch-short", "wh-short", "tg-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"} {
+		invalid := first
+		invalid.SessionID = sessionID
+		if _, err := m.EnsureTransientSession(t.Context(), SessionContext{Locator: invalid, UserID: "owner"}, "balda"); err == nil {
+			t.Fatalf("invalid private session id %q accepted", sessionID)
+		}
 	}
 	// A restarted manager has no address record to restore, yet uses the same
 	// private ADK identity for an unfinished run.
@@ -642,38 +652,42 @@ func TestCloseRunSessionDeletesPersistedEventsAfterRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = provider.Close() }()
-	const sessionID = "sch-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	service := provider.RuntimeSessions()
-	created, err := service.Create(t.Context(), &adksession.CreateRequest{
-		AppName: baldaRuntimeAppName, UserID: "owner", SessionID: sessionID,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	event := adksession.NewEvent(t.Context(), "run-turn")
-	event.Author = "user"
-	if err := service.AppendEvent(t.Context(), created.Session, event); err != nil {
-		t.Fatal(err)
-	}
 	manager := &Manager{runtimeManager: &fakeBaldaRuntimeManager{
 		runtime: &BuiltRuntime{AppName: baldaRuntimeAppName, SessionSvc: service},
 	}, sessions: make(map[string]*TopicSession)}
 	if err := manager.CloseRunSession(t.Context(), "tg-ordinary", "owner"); err == nil {
 		t.Fatal("ordinary chat session accepted as private run")
 	}
-	for range 2 {
-		if err := manager.CloseRunSession(t.Context(), sessionID, "owner"); err != nil {
+	for _, sessionID := range []string{
+		"sch-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		"wh-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+	} {
+		created, err := service.Create(t.Context(), &adksession.CreateRequest{
+			AppName: baldaRuntimeAppName, UserID: "owner", SessionID: sessionID,
+		})
+		if err != nil {
 			t.Fatal(err)
 		}
-	}
-	recreated, err := service.Create(t.Context(), &adksession.CreateRequest{
-		AppName: baldaRuntimeAppName, UserID: "owner", SessionID: sessionID,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := recreated.Session.Events().Len(); got != 0 {
-		t.Fatalf("events after private session delete = %d", got)
+		event := adksession.NewEvent(t.Context(), "run-turn")
+		event.Author = "user"
+		if err := service.AppendEvent(t.Context(), created.Session, event); err != nil {
+			t.Fatal(err)
+		}
+		for range 2 {
+			if err := manager.CloseRunSession(t.Context(), sessionID, "owner"); err != nil {
+				t.Fatal(err)
+			}
+		}
+		recreated, err := service.Create(t.Context(), &adksession.CreateRequest{
+			AppName: baldaRuntimeAppName, UserID: "owner", SessionID: sessionID,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := recreated.Session.Events().Len(); got != 0 {
+			t.Fatalf("events after private session %q delete = %d", sessionID, got)
+		}
 	}
 }
 

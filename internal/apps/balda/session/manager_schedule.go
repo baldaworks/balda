@@ -10,12 +10,12 @@ import (
 	adksession "google.golang.org/adk/v2/session"
 )
 
-// CloseRunSession removes a private schedule session after execution settles.
+// CloseRunSession removes a private run session after execution settles.
 // Repeating the call also cleans a persisted runtime or branch left by an interrupted close.
 func (m *Manager) CloseRunSession(ctx context.Context, sessionID, userID string) error {
 	sessionID, userID = strings.TrimSpace(sessionID), strings.TrimSpace(userID)
-	if !isPrivateScheduleSessionID(sessionID) || userID == "" {
-		return fmt.Errorf("private schedule session and user ids are required")
+	if !isPrivateScheduleSessionID(sessionID) && !isPrivateWebhookSessionID(sessionID) || userID == "" {
+		return fmt.Errorf("private run session and user ids are required")
 	}
 	m.mu.RLock()
 	active := m.sessions[sessionID]
@@ -73,7 +73,14 @@ func (m *Manager) CloseRunSession(ctx context.Context, sessionID, userID string)
 }
 
 func isPrivateScheduleSessionID(sessionID string) bool {
-	const prefix = "sch-"
+	return hasPrivateSessionID(sessionID, "sch-")
+}
+
+func isPrivateWebhookSessionID(sessionID string) bool {
+	return hasPrivateSessionID(sessionID, "wh-")
+}
+
+func hasPrivateSessionID(sessionID, prefix string) bool {
 	if len(sessionID) != len(prefix)+32 || !strings.HasPrefix(sessionID, prefix) {
 		return false
 	}

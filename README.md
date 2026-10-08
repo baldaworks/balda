@@ -82,9 +82,12 @@ for provider targeting and value operations.
 Administrators can open **Schedules** in Backoffice to inspect configured
 recurring jobs and create persistent UI-owned jobs. Configuration entries are
 read-only; either source can be run manually, and both have retained run
-history. A report locator is optional and need not exist when a schedule is saved
-or run. Every run uses a new private session and retains its input and output in
-the run detail; a configured locator receives the final output. Cron uses UTC. A manual run queues work without moving its next
+history. A report destination is optional: choose a public locator or a managed
+alias in **Aliases**. Alias names can be selected before their mapping exists;
+each new run selects the current mapping and retains that concrete address for
+retries. A missing alias fails only that run. Every run uses a new private
+session and retains its input and output in the run detail; a selected address
+receives the final output. Cron uses UTC. A manual run queues work without moving its next
 scheduled time; a disabled job requires confirmation. See
 [Schedules management](docs/reference/backoffice.md#schedules-management).
 
@@ -204,9 +207,10 @@ Balda can act as a wedge between team chat and the rest of your engineering
 system:
 
 - chat messages start work
-- scheduled jobs wake work up
-- inbound webhooks turn external events into session work
-- the same session can continue through follow-up questions and delayed work
+- scheduled jobs start isolated work on a cron
+- inbound webhooks start isolated work from external events
+- chat sessions continue through follow-up questions, while each schedule or
+  webhook invocation uses its own private session
 
 This is useful when you want one operational path for human requests,
 automation, and agent execution instead of separate bots and scripts.
@@ -300,8 +304,9 @@ Slack formats the response for scanning and copying:
 
 *Scheduler / webhook configuration*
 ```
-target: locator
-key: slackagent:c:T0BFTRBFA94:C0BU4LKUB6W
+report_to:
+  target: locator
+  key: slackagent:c:T0BFTRBFA94:C0BU4LKUB6W
 ```
 ````
 

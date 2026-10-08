@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryworkflow"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
@@ -61,6 +62,134 @@ func TestPreparationFailureDeliveryPolicy(t *testing.T) {
 				t.Fatalf("wrong delivery contract: %+v", delivery)
 			}
 		})
+	}
+}
+
+func TestWebhookPreparationFailurePersistsBoundedOutputAndFinalDelivery(t *testing.T) {
+	ctx := t.Context()
+	provider, eventBus, dispatcher, tasks, allocator := newTaskActorRuntimeServices(t, ctx)
+	_ = provider
+	_ = eventBus
+	_ = dispatcher
+	_ = allocator
+	const jobID = "webhook-route-123"
+	if _, err := tasks.Create(ctx, baldastate.JobRecord{
+		ID: jobID, SessionID: "wh-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Objective: "private input", Status: baldastate.JobStatusRunning,
+	}, "test", nil); err != nil {
+		t.Fatal(err)
+	}
+	bus := &recordingHandlerCommandBus{}
+	actor := NewSessionActor(SessionActorConfig{Dispatcher: bus, Tasks: tasks})
+	report := deliverycmd.Locator{SessionID: "tg-report", ChannelType: "telegram",
+		AddressKey: "10:42", AddressJSON: `{"chat_id":10,"topic_id":42}`}
+	payload := SessionTurnPayload{JobID: jobID, Source: turncmd.SourceWebhook, Deliver: true,
+		ReportTo: &report}
+	env := testSessionTurnEnvelopeWithJobID(t, nil, jobID, turncmd.SourceWebhook)
+	for range 2 {
+		if err := actor.reportPreparationFailure(ctx, env, payload,
+			&turncmd.PreparationError{Cause: errors.New("private provider diagnostic")}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	job, found, err := tasks.Get(ctx, jobID)
+	if err != nil || !found || job.Result != webhookFailureMessage {
+		t.Fatalf("job output = %+v, found=%t err=%v", job, found, err)
+	}
+	if len(bus.commands) != 2 || bus.commands[0].ID != bus.commands[1].ID {
+		t.Fatalf("final deliveries = %d, identities differ", len(bus.commands))
+	}
+	var delivery deliverycmd.Payload
+	if err := actorlayer.UnmarshalPayload(bus.commands[0].Payload, &delivery); err != nil {
+		t.Fatal(err)
+	}
+	if delivery.Text != webhookFailureMessage || delivery.Locator != report ||
+		delivery.DeliveryFormat != deliveryfmt.DeliveryFormatNone ||
+		delivery.Settlement != deliverycmd.SettlementOutbox {
+		t.Fatalf("webhook failure delivery = %+v", delivery)
+	}
+}
+
+func TestWebhookRecordedOutputReplaysDeliveryWithoutProvider(t *testing.T) {
+	ctx := t.Context()
+	provider, eventBus, dispatcher, tasks, allocator := newTaskActorRuntimeServices(t, ctx)
+	_ = provider
+	_ = eventBus
+	_ = dispatcher
+	_ = allocator
+	const jobID = "webhook-route-replay"
+	const sessionID = "wh-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	if _, err := tasks.Create(ctx, baldastate.JobRecord{
+		ID: jobID, SessionID: sessionID, Objective: "input", Status: baldastate.JobStatusRunning,
+	}, "test", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := tasks.RecordPrivateOutput(ctx, jobID, "saved answer", false); err != nil {
+		t.Fatal(err)
+	}
+	report := deliverycmd.Locator{SessionID: "tg-report", ChannelType: "telegram",
+		AddressKey: "10:42", AddressJSON: `{"chat_id":10,"topic_id":42}`}
+	payload := SessionTurnPayload{JobID: jobID, Source: turncmd.SourceWebhook, Text: "input",
+		Locator: deliverycmd.Locator{SessionID: sessionID, ChannelType: "webhook",
+			AddressKey: sessionID, AddressJSON: "{}"}, ReportTo: &report, Deliver: true}
+	env, err := turncmd.SessionTurnEnvelope(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bus := &recordingHandlerCommandBus{commandErrs: []error{errors.New("delivery unavailable")}}
+	actor := NewSessionActor(SessionActorConfig{Tasks: tasks, Dispatcher: bus})
+	if err := actor.Handle(ctx, env); err == nil {
+		t.Fatal("failed final publication settled the session command")
+	}
+	job, _, err := tasks.Get(ctx, jobID)
+	if err != nil || job.Status != baldastate.JobStatusRunning {
+		t.Fatalf("job after failed final publication = %+v, err=%v", job, err)
+	}
+	if err := actor.Handle(ctx, env); err != nil {
+		t.Fatal(err)
+	}
+	job, _, err = tasks.Get(ctx, jobID)
+	if err != nil || job.Status != baldastate.JobStatusCompleted || job.Result != "saved answer" {
+		t.Fatalf("replayed job = %+v, err=%v", job, err)
+	}
+	if len(bus.commands) != 1 {
+		t.Fatalf("final deliveries = %d, want one", len(bus.commands))
+	}
+}
+
+func TestWebhookCanceledTurnRemainsRetryableWithoutTerminalJob(t *testing.T) {
+	ctx := t.Context()
+	provider, eventBus, dispatcher, tasks, allocator := newTaskActorRuntimeServices(t, ctx)
+	_ = provider
+	_ = eventBus
+	_ = dispatcher
+	_ = allocator
+	const jobID = "webhook-route-canceled"
+	const sessionID = "wh-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	if _, err := tasks.Create(ctx, baldastate.JobRecord{
+		ID: jobID, SessionID: sessionID, Objective: "input", Status: baldastate.JobStatusRunning,
+	}, "test", nil); err != nil {
+		t.Fatal(err)
+	}
+	payload := SessionTurnPayload{JobID: jobID, Source: turncmd.SourceWebhook, Text: "input",
+		Locator: deliverycmd.Locator{SessionID: sessionID, ChannelType: "webhook",
+			AddressKey: sessionID, AddressJSON: "{}"}}
+	env, err := turncmd.SessionTurnEnvelope(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	turns := NewTurnDispatcher(zerolog.Nop())
+	t.Cleanup(func() { _ = turns.Shutdown(context.Background()) })
+	actor := NewSessionActor(SessionActorConfig{Tasks: tasks, Turns: turns,
+		Runner: callbackSessionTurnRunner{runFn: func(context.Context, SessionTurnPayload) error {
+			return context.Canceled
+		}}})
+	if err := actor.Handle(ctx, env); err == nil {
+		t.Fatal("canceled private turn settled without replay")
+	}
+	job, _, err := tasks.Get(ctx, jobID)
+	if err != nil || job.Status != baldastate.JobStatusRunning || job.Result != "" {
+		t.Fatalf("canceled private job = %+v, err=%v", job, err)
 	}
 }
 

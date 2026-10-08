@@ -259,8 +259,31 @@ func scheduleDefinition(form url.Values, id string) (schedulecmd.Definition, err
 			return schedulecmd.Definition{}, schedulecmd.ErrInvalid
 		}
 	}
-	return schedulecmd.Definition{ID: id, Cron: form.Get("cron"), Content: form.Get("content"),
-		Locator: form.Get("locator")}, nil
+	definition := schedulecmd.Definition{ID: id, Cron: form.Get("cron"), Content: form.Get("content")}
+	switch form.Get("report_kind") {
+	case "":
+		if form.Get("alias") != "" {
+			return schedulecmd.Definition{}, schedulecmd.ErrInvalid
+		}
+		definition.Locator = form.Get("locator")
+	case "locator":
+		if strings.TrimSpace(form.Get("locator")) == "" || form.Get("alias") != "" {
+			return schedulecmd.Definition{}, schedulecmd.ErrInvalid
+		}
+		definition.Locator = form.Get("locator")
+	case "managed_alias":
+		if form.Get("locator") != "" || strings.TrimSpace(form.Get("alias")) == "" {
+			return schedulecmd.Definition{}, schedulecmd.ErrInvalid
+		}
+		definition.Alias = form.Get("alias")
+	case "none":
+		if form.Get("locator") != "" || form.Get("alias") != "" {
+			return schedulecmd.Definition{}, schedulecmd.ErrInvalid
+		}
+	default:
+		return schedulecmd.Definition{}, schedulecmd.ErrInvalid
+	}
+	return definition, nil
 }
 
 func scheduleVersion(form url.Values) (uint64, error) {

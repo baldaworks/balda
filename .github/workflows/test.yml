@@ -65,7 +65,7 @@ jobs:
           TMPDIR: ${{ github.workspace }}/.tmp
         run: |
           set -o pipefail
-          go test -v -race -covermode=atomic -coverprofile=coverage.out ./... 2>&1 | tee test.log
+          go test -v -race -covermode=atomic -coverprofile=coverage.out -timeout=20m ./... 2>&1 | tee test.log
       - name: Vulnerability check
         run: |
           set -o pipefail

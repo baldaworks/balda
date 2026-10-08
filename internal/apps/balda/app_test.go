@@ -496,12 +496,9 @@ func TestBuildInboundWebhookConfig(t *testing.T) {
 					Path:           " webhook1 ",
 					PromptTemplate: " {{.RawBody}} ",
 					Envelope: WebhookRouteEnvelopeConfig{
-						Target: " alias ",
-						Key:    " owner ",
-						Mode:   " task ",
 						ReportTo: &WebhookRouteEnvelopeTargetConfig{
-							Target: " alias ",
-							Key:    " owner ",
+							Target: " managed_alias ",
+							Key:    " main_chat ",
 						},
 					},
 					Auth: WebhookRouteAuthConfig{
@@ -527,12 +524,9 @@ func TestBuildInboundWebhookConfig(t *testing.T) {
 				Path:           "webhook1",
 				PromptTemplate: "{{.RawBody}}",
 				Envelope: webhook.RouteEnvelopeConfig{
-					Target: "alias",
-					Key:    "owner",
-					Mode:   "task",
 					ReportTo: &webhook.RouteTargetConfig{
-						Target: "alias",
-						Key:    "owner",
+						Target: "managed_alias",
+						Key:    "main_chat",
 					},
 				},
 				Auth: webhook.RouteAuthConfig{

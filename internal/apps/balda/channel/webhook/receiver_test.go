@@ -12,16 +12,13 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
-	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
-	"github.com/baldaworks/balda/internal/apps/balda/webhookapp"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookcmd"
 	"github.com/rs/zerolog"
-	"go.uber.org/fx"
 )
 
 type fakeService struct {
-	lastReq webhookapp.Request
-	res     webhookapp.Result
+	lastReq webhookcmd.Request
+	res     webhookcmd.Result
 	err     error
 }
 
@@ -35,10 +32,10 @@ func (f *fakeDeliveryReceipts) SentFinalDelivery(_ context.Context, _ string) (s
 	return f.messageID, f.sent, f.err
 }
 
-func (f *fakeService) Accept(_ context.Context, req webhookapp.Request) (webhookapp.Result, error) {
+func (f *fakeService) Accept(_ context.Context, req webhookcmd.Request) (webhookcmd.Result, error) {
 	f.lastReq = req
 	if f.err != nil {
-		return webhookapp.Result{}, f.err
+		return webhookcmd.Result{}, f.err
 	}
 	res := f.res
 	if res.MessageID == "" {
@@ -46,13 +43,6 @@ func (f *fakeService) Accept(_ context.Context, req webhookapp.Request) (webhook
 	}
 	if res.RequestID == "" {
 		res.RequestID = req.RequestID
-	}
-	res.Target = envelopetarget.Resolved{
-		Locator: deliverycmd.Locator{
-			ChannelType: "telegram",
-			AddressKey:  "123",
-			SessionID:   "sess-123",
-		},
 	}
 	return res, nil
 }
@@ -65,8 +55,6 @@ func newTestReceiver(svc Service) *Receiver {
 				Name:           "webhook1",
 				Path:           "/webhook1",
 				PromptTemplate: template.Must(template.New("webhook1").Option("missingkey=error").Parse("{{.RawBody}}")),
-				Target:         envelopetarget.Target{Target: envelopetarget.TargetAlias, Key: envelopetarget.AliasOwner},
-				Mode:           RouteModeJob,
 				Auth:           authPolicy{Type: AuthTypeNone},
 				Dedupe:         dedupePolicy{Source: DedupeSourceRequestID},
 			},
@@ -76,44 +64,72 @@ func newTestReceiver(svc Service) *Receiver {
 	}
 }
 
-func TestReceiver_RoutesAuthenticatedBodySession(t *testing.T) {
+func TestNormalizeConfig_CurrentReportDestination(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name     string
+		reportTo *RouteTargetConfig
+	}{
+		{name: "omitted"},
+		{name: "managed alias", reportTo: &RouteTargetConfig{Target: "managed_alias", Key: "main_chat"}},
+		{name: "literal locator", reportTo: &RouteTargetConfig{Target: "locator", Key: "telegram:-1003953132277:0"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := normalizeConfig(Config{Enabled: true, Routes: map[string]RouteConfig{"event": {
+				Path: "/event", PromptTemplate: "{{.RawBody}}",
+				Envelope: RouteEnvelopeConfig{ReportTo: tt.reportTo, AckOnDelivery: tt.reportTo != nil},
+			}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Routes["/event"].AckOnDelivery != (tt.reportTo != nil) {
+				t.Fatalf("ack_on_delivery = %t", got.Routes["/event"].AckOnDelivery)
+			}
+			svc := &fakeService{}
+			receiver, err := NewReceiver(Config{Enabled: true, Routes: map[string]RouteConfig{"event": {
+				Path: "/event", PromptTemplate: "{{.RawBody}}", Envelope: RouteEnvelopeConfig{ReportTo: tt.reportTo},
+			}}}, svc, zerolog.Nop())
+			if err != nil {
+				t.Fatal(err)
+			}
+			response := httptest.NewRecorder()
+			receiver.handleWebhook(response, httptest.NewRequest(http.MethodPost, "/event", strings.NewReader("input")))
+			if response.Code != http.StatusAccepted {
+				t.Fatalf("status = %d", response.Code)
+			}
+			if tt.reportTo == nil && svc.lastReq.ReportTo != nil || tt.reportTo != nil &&
+				(svc.lastReq.ReportTo == nil || svc.lastReq.ReportTo.Target != tt.reportTo.Target || svc.lastReq.ReportTo.Key != tt.reportTo.Key) {
+				t.Fatalf("report_to = %+v, want %+v", svc.lastReq.ReportTo, tt.reportTo)
+			}
+		})
+	}
+}
+
+func TestReceiver_RoutesAuthenticatedReportReference(t *testing.T) {
 	svc := &fakeService{}
 	cfg := Config{Enabled: true, Routes: map[string]RouteConfig{"execution": {
-		Path: "/execution", PromptTemplate: "{{.RawBody}}",
-		Envelope: RouteEnvelopeConfig{
-			Target: "session", KeyFromBody: "chat_id", Mode: RouteModeSession,
-			ReportTo:   &RouteTargetConfig{Target: "session", KeyFromBody: "chat_id"},
-			FallbackTo: &RouteTargetConfig{Target: "alias", Key: "owner@mattermost"},
-		},
-		Auth: RouteAuthConfig{Type: AuthTypeHeader, Header: "Authorization", Value: "Bearer test"},
+		Path: "/execution", PromptTemplate: "event={{.RawBody}}",
+		Envelope: RouteEnvelopeConfig{ReportTo: &RouteTargetConfig{Target: "managed_alias", Key: "main_chat"}},
+		Auth:     RouteAuthConfig{Type: AuthTypeHeader, Header: "Authorization", Value: "Bearer test"},
 	}}}
 	receiver, err := NewReceiver(cfg, svc, zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := httptest.NewRequest(http.MethodPost, "/execution", strings.NewReader(`{"chat_id":"mm-c-original-thread"}`))
+	req := httptest.NewRequest(http.MethodPost, "/execution", strings.NewReader(`{"event":"update"}`))
 	req.Header.Set("Authorization", "Bearer test")
 	rec := httptest.NewRecorder()
 	receiver.handleWebhook(rec, req)
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
 	}
-	if svc.lastReq.Target.Key != "mm-c-original-thread" || svc.lastReq.ReportTo == nil || svc.lastReq.ReportTo.Key != "mm-c-original-thread" {
-		t.Fatalf("destination = %+v, report_to = %+v", svc.lastReq.Target, svc.lastReq.ReportTo)
+	if svc.lastReq.Prompt != `event={"event":"update"}` || svc.lastReq.ReportTo == nil || svc.lastReq.ReportTo.Key != "main_chat" {
+		t.Fatalf("normalized request = %+v", svc.lastReq)
 	}
-	if svc.lastReq.FallbackTo == nil || svc.lastReq.FallbackTo.Key != "owner@mattermost" {
-		t.Fatalf("fallback_to = %+v", svc.lastReq.FallbackTo)
-	}
-
-	bad := httptest.NewRequest(http.MethodPost, "/execution", strings.NewReader(`{"chat_id":123}`))
-	bad.Header.Set("Authorization", "Bearer test")
-	badRec := httptest.NewRecorder()
-	receiver.handleWebhook(badRec, bad)
-	assertErrorResponse(t, badRec, http.StatusBadRequest, codeInvalidPayload, messageCouldNotAccept)
 }
 
 func TestReceiver_AckOnDelivery(t *testing.T) {
-	service := &fakeService{res: webhookapp.Result{JobID: "job-1"}}
+	service := &fakeService{res: webhookcmd.Result{JobID: "job-1"}}
 	receiver := newTestReceiver(service)
 	route := receiver.routes["/webhook1"]
 	route.AckOnDelivery = true
@@ -143,39 +159,12 @@ func TestReceiver_AckOnDelivery(t *testing.T) {
 	}
 }
 
-func TestNormalizeConfig_RejectsUnauthenticatedBodyDestination(t *testing.T) {
-	_, err := normalizeConfig(Config{Enabled: true, Routes: map[string]RouteConfig{"execution": {
-		Path: "/execution", PromptTemplate: "{{.RawBody}}",
-		Envelope: RouteEnvelopeConfig{Target: "session", KeyFromBody: "chat_id"},
+func TestNormalizeConfig_AckRequiresReportTo(t *testing.T) {
+	_, err := normalizeConfig(Config{Enabled: true, Routes: map[string]RouteConfig{"r": {
+		Path: "/r", PromptTemplate: "{{.RawBody}}", Envelope: RouteEnvelopeConfig{AckOnDelivery: true},
 	}}})
-	if err == nil || !strings.Contains(err.Error(), "requires header authentication") {
-		t.Fatalf("expected authentication error, got %v", err)
-	}
-}
-
-func TestNormalizeConfig_RejectsDynamicFallback(t *testing.T) {
-	_, err := normalizeConfig(Config{Enabled: true, Routes: map[string]RouteConfig{"execution": {
-		Path: "/execution", PromptTemplate: "{{.RawBody}}",
-		Envelope: RouteEnvelopeConfig{Target: "session", KeyFromBody: "chat_id",
-			FallbackTo: &RouteTargetConfig{Target: "alias", KeyFromBody: "other"}},
-		Auth: RouteAuthConfig{Type: AuthTypeHeader, Header: "Authorization", Value: "test"},
-	}}})
-	if err == nil || !strings.Contains(err.Error(), "fallback_to requires a fixed key") {
-		t.Fatalf("expected fixed fallback validation, got %v", err)
-	}
-}
-
-func TestNormalizeConfig_AckRequiresJobAndReportTo(t *testing.T) {
-	for _, tc := range []RouteEnvelopeConfig{
-		{Target: "alias", Key: "owner", Mode: RouteModeSession, ReportTo: &RouteTargetConfig{Target: "alias", Key: "owner"}, AckOnDelivery: true},
-		{Target: "alias", Key: "owner", Mode: RouteModeJob, AckOnDelivery: true},
-	} {
-		_, err := normalizeConfig(Config{Enabled: true, Routes: map[string]RouteConfig{"r": {
-			Path: "/r", PromptTemplate: "{{.RawBody}}", Envelope: tc,
-		}}})
-		if err == nil || !strings.Contains(err.Error(), "ack_on_delivery requires mode=job and report_to") {
-			t.Fatalf("envelope %+v: expected ack validation, got %v", tc, err)
-		}
+	if err == nil || !strings.Contains(err.Error(), "ack_on_delivery requires report_to") {
+		t.Fatalf("expected ack validation, got %v", err)
 	}
 }
 
@@ -227,11 +216,8 @@ func TestNormalizeConfig(t *testing.T) {
 		if !ok {
 			t.Fatal("route /w1 missing")
 		}
-		if rt.Target != (envelopetarget.Target{Target: envelopetarget.TargetAlias, Key: envelopetarget.AliasOwner}) {
-			t.Fatalf("unexpected target %+v", rt.Target)
-		}
-		if rt.Mode != RouteModeJob {
-			t.Fatalf("mode = %q, want job", rt.Mode)
+		if rt.ReportTo != nil {
+			t.Fatalf("unexpected report destination %+v", rt.ReportTo)
 		}
 		if rt.Auth.Type != AuthTypeNone {
 			t.Fatalf("auth type = %q, want none", rt.Auth.Type)
@@ -241,7 +227,7 @@ func TestNormalizeConfig(t *testing.T) {
 		}
 	})
 
-	t.Run("allows_locator_target", func(t *testing.T) {
+	t.Run("allows_locator_report", func(t *testing.T) {
 		got, err := normalizeConfig(Config{
 			Enabled: true,
 			Routes: map[string]RouteConfig{
@@ -249,8 +235,6 @@ func TestNormalizeConfig(t *testing.T) {
 					Path:           "/w1",
 					PromptTemplate: "{{.RawBody}}",
 					Envelope: RouteEnvelopeConfig{
-						Target: "locator",
-						Key:    "telegram:100:200",
 						ReportTo: &RouteTargetConfig{
 							Target: "locator",
 							Key:    "telegram:300:400",
@@ -263,9 +247,6 @@ func TestNormalizeConfig(t *testing.T) {
 			t.Fatalf("normalizeConfig error = %v", err)
 		}
 		rt := got.Routes["/w1"]
-		if rt.Target != (envelopetarget.Target{Target: "locator", Key: "telegram:100:200"}) {
-			t.Fatalf("target = %+v", rt.Target)
-		}
 		if rt.ReportTo == nil || rt.ReportTo.Key != "telegram:300:400" {
 			t.Fatalf("report_to = %+v", rt.ReportTo)
 		}
@@ -414,43 +395,36 @@ func TestReceiver_HTTPHandling(t *testing.T) {
 		assertErrorResponse(t, rec, http.StatusBadRequest, codeInvalidPayload, messageCouldNotAccept)
 	})
 
-	t.Run("target_not_found_mapped_to_404", func(t *testing.T) {
-		svc := &fakeService{err: &webhookapp.TargetNotFoundError{Cause: errors.New("target not found")}}
+	t.Run("rendered_prompt_exceeds_max_bytes", func(t *testing.T) {
+		svc := &fakeService{}
 		r := newTestReceiver(svc)
-
-		req := httptest.NewRequest(http.MethodPost, "/webhook1", bytes.NewBufferString("body"))
+		r.routes["/webhook1"] = route{
+			Name: "webhook1", Path: "/webhook1",
+			PromptTemplate: template.Must(template.New("w").Parse("{{.RawBody}}{{.RawBody}}")),
+		}
+		req := httptest.NewRequest(http.MethodPost, "/webhook1", strings.NewReader(strings.Repeat("x", MaxBodyBytes/2+1)))
 		rec := httptest.NewRecorder()
-
 		r.handleWebhook(rec, req)
-
-		assertErrorResponse(t, rec, http.StatusNotFound, codeSessionNotFound, messageCouldNotAccept)
+		assertErrorResponse(t, rec, http.StatusBadRequest, codeInvalidPayload, messageCouldNotAccept)
+		if svc.lastReq.RequestID != "" {
+			t.Fatal("oversized rendered prompt reached application service")
+		}
 	})
 
-	t.Run("session_lookup_storage_error_mapped_to_503", func(t *testing.T) {
-		storageErr := errors.New("database unavailable")
-		var resolvedTarget envelopetarget.Target
-		svc := webhookapp.NewService(webhookapp.TargetResolverFunc(func(_ context.Context, target envelopetarget.Target) (envelopetarget.Resolved, error) {
-			resolvedTarget = target
-			return envelopetarget.Resolved{}, storageErr
-		}), nil, nil)
+	t.Run("destination_not_found_mapped_to_404", func(t *testing.T) {
+		svc := &fakeService{err: &webhookcmd.TargetNotFoundError{Cause: errors.New("target not found")}}
 		r := newTestReceiver(svc)
-		route := r.routes["/webhook1"]
-		route.Target = envelopetarget.Target{Target: envelopetarget.TargetSession, Key: "source-session"}
-		r.routes["/webhook1"] = route
 
 		req := httptest.NewRequest(http.MethodPost, "/webhook1", bytes.NewBufferString("body"))
 		rec := httptest.NewRecorder()
 
 		r.handleWebhook(rec, req)
 
-		if resolvedTarget.Target != envelopetarget.TargetSession || resolvedTarget.Key != "source-session" {
-			t.Fatalf("resolved target = %+v, want source session", resolvedTarget)
-		}
-		assertErrorResponse(t, rec, http.StatusServiceUnavailable, codeDispatchFailed, messageTemporarilyBusy)
+		assertErrorResponse(t, rec, http.StatusNotFound, codeDestinationNotFound, messageCouldNotAccept)
 	})
 
 	t.Run("queue_full_mapped_to_429", func(t *testing.T) {
-		svc := &fakeService{err: &webhookapp.QueueFullError{Cause: errors.New("command queue is full")}}
+		svc := &fakeService{err: &webhookcmd.QueueFullError{Cause: errors.New("command queue is full")}}
 		r := newTestReceiver(svc)
 
 		req := httptest.NewRequest(http.MethodPost, "/webhook1", bytes.NewBufferString("body"))
@@ -462,7 +436,7 @@ func TestReceiver_HTTPHandling(t *testing.T) {
 	})
 
 	t.Run("dispatch_failed_mapped_to_503", func(t *testing.T) {
-		svc := &fakeService{err: &webhookapp.DispatchFailedError{Cause: errors.New("dispatch failure")}}
+		svc := &fakeService{err: &webhookcmd.DispatchFailedError{Cause: errors.New("dispatch failure")}}
 		r := newTestReceiver(svc)
 
 		req := httptest.NewRequest(http.MethodPost, "/webhook1", bytes.NewBufferString("body"))
@@ -559,30 +533,5 @@ func TestReceiver_Lifecycle(t *testing.T) {
 	defer cancel()
 	if err := r.Stop(stopCtx); err != nil {
 		t.Fatalf("Stop() failed: %v", err)
-	}
-}
-
-func TestModule_Wiring(t *testing.T) {
-	t.Parallel()
-
-	app := fx.New(
-		fx.NopLogger,
-		fx.Provide(
-			func() Config {
-				return Config{
-					Enabled:    false,
-					ListenAddr: "127.0.0.1:0",
-				}
-			},
-			zerolog.Nop,
-		),
-		Module,
-	)
-
-	if err := app.Start(context.Background()); err != nil {
-		t.Fatalf("app.Start failed: %v", err)
-	}
-	if err := app.Stop(context.Background()); err != nil {
-		t.Fatalf("app.Stop failed: %v", err)
 	}
 }

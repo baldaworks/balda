@@ -34,6 +34,7 @@ type Runtime struct {
 	serveErr          error
 	mcp               MCPOperations
 	schedules         SchedulesOperations
+	aliases           AliasesOperations
 	mcpAuthorizations MCPAuthorizations
 	invitations       BindingInvitations
 	bindingChannels   BindingChannels
@@ -116,6 +117,7 @@ func (r *Runtime) Start(ctx context.Context) error {
 	}
 	httpApplication.mcp = r.mcp
 	httpApplication.schedules = r.schedules
+	httpApplication.aliases = r.aliases
 	httpApplication.mcpAuthorizations = r.mcpAuthorizations
 	httpApplication.invitations = r.invitations
 	httpApplication.bindingChannels = r.bindingChannels

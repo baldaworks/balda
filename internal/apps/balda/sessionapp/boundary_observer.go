@@ -18,7 +18,8 @@ type SessionBoundaryObserverAdapter struct {
 
 // BeforeSessionBoundary publishes the old session identity before cleanup.
 func (a SessionBoundaryObserverAdapter) BeforeSessionBoundary(ctx context.Context, boundary baldasession.SessionBoundary) error {
-	if boundary.Locator.ChannelType == turncmd.SourceSchedule {
+	if boundary.Locator.ChannelType == turncmd.SourceSchedule ||
+		boundary.Locator.ChannelType == turncmd.SourceWebhook {
 		return nil
 	}
 	if a.Capture == nil {

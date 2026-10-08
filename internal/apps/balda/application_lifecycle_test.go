@@ -93,6 +93,7 @@ func TestApplicationLifecycleStagesStartQuestionProjectorAfterTransport(t *testi
 		"job event projector",
 		"job event outbox",
 		"actor host",
+		"webhook run finalizer",
 		"scheduled jobs",
 		"Backoffice HTTP",
 		"inbound webhooks",

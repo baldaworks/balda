@@ -10,6 +10,9 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/backoffice"
+	"github.com/baldaworks/balda/internal/apps/balda/aliasbackofficeapp"
+	"github.com/baldaworks/balda/internal/apps/balda/aliases"
+	"github.com/baldaworks/balda/internal/apps/balda/aliasfx"
 	"github.com/baldaworks/balda/internal/apps/balda/schedulebackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/scheduledjobs"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
@@ -75,9 +78,14 @@ func TestBackofficeSchedulesBrowserWorkflow(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			management := scheduledjobs.NewManagement(provider.ScheduledJobs(), provider.ScheduleManagement(),
-				provider.ScheduleRuns(), provider.Jobs(), provider.Jobs())
+			managedAliases := aliases.New(provider.Aliases())
+			resolver := aliasfx.NewDestinationResolver(nil, provider, managedAliases)
+			management := scheduledjobs.NewManagementWithResolver(provider.ScheduledJobs(), provider.ScheduleManagement(),
+				provider.ScheduleRuns(), provider.Jobs(), provider.Jobs(), resolver)
 			if err := runtime.ConfigureSchedulesOperations(schedulebackofficeapp.New(management)); err != nil {
+				t.Fatal(err)
+			}
+			if err := runtime.ConfigureAliasesOperations(aliasbackofficeapp.New(managedAliases)); err != nil {
 				t.Fatal(err)
 			}
 			if err := runtime.Start(t.Context()); err != nil {
@@ -102,6 +110,21 @@ func TestBackofficeSchedulesBrowserWorkflow(t *testing.T) {
 				if created.ReportToEnabled != (id == "weekly-review-desktop") {
 					t.Fatalf("managed schedule %s report selection = %t", id, created.ReportToEnabled)
 				}
+				if id == "weekly-review-desktop" &&
+					(created.ReportToTargetKind != "managed_alias" || created.ReportToTargetKey != "main_chat") {
+					t.Fatalf("managed schedule %s report reference = %+v", id, created)
+				}
+			}
+			alias, found, err := provider.Aliases().Get(t.Context(), "main_chat")
+			if err != nil || !found || alias.LocatorRef != "telegram:9002:0" {
+				t.Fatalf("browser alias retarget = %+v, found=%t err=%v", alias, found, err)
+			}
+			aliasRuns, err := provider.ScheduleRuns().ListBySchedule(t.Context(), "weekly-review-desktop",
+				time.Time{}, "", 10)
+			if err != nil || len(aliasRuns) != 2 ||
+				aliasRuns[0].ReportLocatorRef != "telegram:9002:0" ||
+				aliasRuns[1].ReportLocatorRef != "telegram:9001:0" {
+				t.Fatalf("browser alias run selections = %+v, err=%v", aliasRuns, err)
 			}
 			for _, id := range []string{"daily-summary", "config:morning"} {
 				runs, err := provider.ScheduleRuns().ListBySchedule(t.Context(), id, time.Time{}, "", 10)

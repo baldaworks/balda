@@ -2,9 +2,11 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/baldaworks/balda/internal/apps/balda/aliascmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
 )
@@ -16,7 +18,11 @@ type SessionLookup func(ctx context.Context, sessionID string) (envelopetarget.R
 type DestinationResolver struct {
 	destStore *DestinationStore
 	sessions  SessionLookup
+	managed   ManagedAliasLookup
 }
+
+// ManagedAliasLookup resolves one managed name to its current concrete locator.
+type ManagedAliasLookup func(ctx context.Context, name string) (deliverycmd.Locator, error)
 
 // NewDestinationResolver creates a new DestinationResolver.
 func NewDestinationResolver(destStore *DestinationStore) *DestinationResolver {
@@ -26,6 +32,26 @@ func NewDestinationResolver(destStore *DestinationStore) *DestinationResolver {
 // NewDestinationResolverWithSessions also resolves persisted session destinations.
 func NewDestinationResolverWithSessions(destStore *DestinationStore, sessions SessionLookup) *DestinationResolver {
 	return &DestinationResolver{destStore: destStore, sessions: sessions}
+}
+
+// NewDestinationResolverWithManagedAliases composes role, session and managed-name resolution.
+func NewDestinationResolverWithManagedAliases(destStore *DestinationStore, sessions SessionLookup, managed ManagedAliasLookup) *DestinationResolver {
+	return &DestinationResolver{destStore: destStore, sessions: sessions, managed: managed}
+}
+
+// ResolveManagedAlias resolves a managed name without falling back to role aliases.
+func (r *DestinationResolver) ResolveManagedAlias(ctx context.Context, name string) (envelopetarget.Resolved, error) {
+	if r.managed == nil {
+		return envelopetarget.Resolved{}, envelopetarget.ErrResolutionUnavailable
+	}
+	locator, err := r.managed(ctx, name)
+	if errors.Is(err, aliascmd.ErrNotFound) || errors.Is(err, aliascmd.ErrInvalid) {
+		return envelopetarget.Resolved{}, envelopetarget.ErrDestinationUnavailable
+	}
+	if err != nil {
+		return envelopetarget.Resolved{}, fmt.Errorf("%w: managed alias lookup: %w", envelopetarget.ErrResolutionUnavailable, err)
+	}
+	return envelopetarget.Resolved{Locator: locator}, nil
 }
 
 // ResolveSession returns the canonical locator for an active session.

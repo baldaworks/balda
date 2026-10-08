@@ -10,6 +10,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionturn"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
@@ -31,6 +32,9 @@ type recordedScheduleOutput struct {
 	jobID  string
 	output string
 }
+
+const privateScheduleID = "sch-0123456789abcdef0123456789abcdef"
+const privateWebhookID = "wh-0123456789abcdef0123456789abcdef"
 
 type recordingScheduleProgress struct{ calls int }
 
@@ -91,9 +95,84 @@ func TestOneShotTurnKeepsDistinctReportToLocator(t *testing.T) {
 	}
 }
 
-func (r *recordedScheduleOutput) RecordScheduledOutput(_ context.Context, jobID, output string) error {
+func (r *recordedScheduleOutput) RecordPrivateOutput(_ context.Context, jobID, output string, _ bool) error {
 	r.jobID, r.output = jobID, output
 	return nil
+}
+
+func TestPrivateWebhookReportsOnlyFinalPlainTextAndKeepsOutput(t *testing.T) {
+	output := &recordedScheduleOutput{}
+	capture := &captureHook{}
+	dispatcher := &captureDispatcher{}
+	progress := &recordingScheduleProgress{}
+	service := NewTurnExecutionServiceWithJobEventsAndCapture(dispatcher, nil, nil,
+		zerolog.Nop(), automode.DefaultMaxTurns, capture)
+	service.SetPrivateOutputRecorder(output)
+	adkRunner, agentSessionID := newCaptureTestRunner(t, func(invocationID string) []*adksession.Event {
+		partial := adksession.NewEvent(context.Background(), invocationID)
+		partial.Content = genai.NewContentFromText("partial", genai.RoleModel)
+		partial.Partial = true
+		done := adksession.NewEvent(context.Background(), invocationID)
+		done.Content = genai.NewContentFromText("final answer", genai.RoleModel)
+		done.TurnComplete = true
+		return []*adksession.Event{partial, done}
+	})
+	report := baldasession.SessionLocator{SessionID: "tg-report", ChannelType: "telegram",
+		AddressKey: "10:42", AddressJSON: `{"chat_id":10,"topic_id":42}`}
+	err := service.Execute(t.Context(), ExecutionRequest{
+		Text: "webhook input", Runner: adkRunner, UserID: "tg-101",
+		AgentSessionID: agentSessionID, SessionID: privateWebhookID, JobID: "webhook-route-123",
+		Locator: baldasession.SessionLocator{ChannelType: "webhook", AddressKey: privateWebhookID,
+			AddressJSON: "{}", SessionID: privateWebhookID},
+		DeliveryLocator: report, TurnSource: turncmd.SourceWebhook, Deliver: true,
+		DeliveryOptions: deliveryfmt.Options{DeliveryFormat: deliveryfmt.DeliveryFormatNone},
+		ProgressEmitter: progress,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if output.jobID != "webhook-route-123" || output.output != "final answer" {
+		t.Fatalf("private result = %+v", output)
+	}
+	if len(capture.turns) != 0 || progress.calls != 0 || len(dispatcher.envelopes) != 1 {
+		t.Fatalf("private side effects: capture=%d progress=%d deliveries=%d",
+			len(capture.turns), progress.calls, len(dispatcher.envelopes))
+	}
+	var delivery deliverycmd.Payload
+	if err := actorlayer.UnmarshalPayload(dispatcher.envelopes[0].Payload, &delivery); err != nil {
+		t.Fatal(err)
+	}
+	if delivery.Text != "final answer" || delivery.Locator != report ||
+		delivery.DeliveryFormat != deliveryfmt.DeliveryFormatNone ||
+		delivery.Settlement != deliverycmd.SettlementOutbox {
+		t.Fatalf("final webhook delivery = %+v", delivery)
+	}
+}
+
+func TestPrivateWebhookWithoutReportKeepsOutputOnly(t *testing.T) {
+	output := &recordedScheduleOutput{}
+	dispatcher := &captureDispatcher{}
+	service := NewTurnExecutionServiceWithJobEventsAndCapture(dispatcher, nil, nil,
+		zerolog.Nop(), automode.DefaultMaxTurns, &captureHook{})
+	service.SetPrivateOutputRecorder(output)
+	adkRunner, agentSessionID := newCaptureTestRunner(t, func(invocationID string) []*adksession.Event {
+		done := adksession.NewEvent(context.Background(), invocationID)
+		done.Content = genai.NewContentFromText("saved answer", genai.RoleModel)
+		done.TurnComplete = true
+		return []*adksession.Event{done}
+	})
+	if err := service.Execute(t.Context(), ExecutionRequest{
+		Text: "webhook input", Runner: adkRunner, UserID: "tg-101",
+		AgentSessionID: agentSessionID, SessionID: privateWebhookID, JobID: "webhook-route-123",
+		Locator: baldasession.SessionLocator{ChannelType: "webhook", AddressKey: privateWebhookID,
+			AddressJSON: "{}", SessionID: privateWebhookID},
+		TurnSource: turncmd.SourceWebhook,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if output.output != "saved answer" || len(dispatcher.envelopes) != 0 {
+		t.Fatalf("silent webhook output=%q deliveries=%d", output.output, len(dispatcher.envelopes))
+	}
 }
 
 func TestPrivateScheduleWithoutLocatorRecordsOutputWithoutDeliveryOrMemoryCapture(t *testing.T) {
@@ -102,7 +181,7 @@ func TestPrivateScheduleWithoutLocatorRecordsOutputWithoutDeliveryOrMemoryCaptur
 	dispatcher := &captureDispatcher{}
 	service := NewTurnExecutionServiceWithJobEventsAndCapture(dispatcher, nil, nil,
 		zerolog.Nop(), automode.DefaultMaxTurns, capture)
-	service.SetScheduleOutputRecorder(output)
+	service.SetPrivateOutputRecorder(output)
 	adkRunner, agentSessionID := newCaptureTestRunner(t, func(invocationID string) []*adksession.Event {
 		answer := adksession.NewEvent(context.Background(), invocationID)
 		answer.Content = genai.NewContentFromText("visible answer", genai.RoleModel)
@@ -113,9 +192,9 @@ func TestPrivateScheduleWithoutLocatorRecordsOutputWithoutDeliveryOrMemoryCaptur
 	})
 	err := service.Execute(t.Context(), ExecutionRequest{
 		Text: "scheduled input", Runner: adkRunner, UserID: "tg-101",
-		AgentSessionID: agentSessionID, SessionID: "sch-private-run", JobID: "scheduled-daily-slot",
-		Locator: baldasession.SessionLocator{ChannelType: "schedule", AddressKey: "sch-private-run",
-			AddressJSON: `{"run_id":"sch-private-run"}`, SessionID: "sch-private-run"},
+		AgentSessionID: agentSessionID, SessionID: privateScheduleID, JobID: "scheduled-daily-slot",
+		Locator: baldasession.SessionLocator{ChannelType: "schedule", AddressKey: privateScheduleID,
+			AddressJSON: `{"run_id":"sch-private-run"}`, SessionID: privateScheduleID},
 		TurnSource: "schedule", Deliver: false,
 	})
 	if err != nil {
@@ -136,7 +215,7 @@ func TestPrivateScheduleProviderFailureKeepsOneBoundedReportAndFailedOutcome(t *
 	progress := &recordingScheduleProgress{}
 	service := NewTurnExecutionServiceWithJobEventsAndCapture(dispatcher, nil, nil,
 		zerolog.Nop(), automode.DefaultMaxTurns, &captureHook{})
-	service.SetScheduleOutputRecorder(output)
+	service.SetPrivateOutputRecorder(output)
 	adkRunner, agentSessionID := newCaptureTestRunner(t, func(invocationID string) []*adksession.Event {
 		thinking := adksession.NewEvent(context.Background(), invocationID)
 		thinking.Content = genai.NewContentFromText("intermediate text", genai.RoleModel)
@@ -148,9 +227,9 @@ func TestPrivateScheduleProviderFailureKeepsOneBoundedReportAndFailedOutcome(t *
 	})
 	err := service.Execute(t.Context(), ExecutionRequest{
 		Text: "scheduled input", Runner: adkRunner, UserID: "tg-101",
-		AgentSessionID: agentSessionID, SessionID: "sch-private-run", JobID: "scheduled-daily-slot",
-		Locator: baldasession.SessionLocator{ChannelType: "schedule", AddressKey: "sch-private-run",
-			AddressJSON: `{"run_id":"sch-private-run"}`, SessionID: "sch-private-run"},
+		AgentSessionID: agentSessionID, SessionID: privateScheduleID, JobID: "scheduled-daily-slot",
+		Locator: baldasession.SessionLocator{ChannelType: "schedule", AddressKey: privateScheduleID,
+			AddressJSON: `{"run_id":"sch-private-run"}`, SessionID: privateScheduleID},
 		DeliveryLocator: baldasession.SessionLocator{ChannelType: "telegram", AddressKey: "123:0",
 			AddressJSON: `{"chat_id":123,"topic_id":0}`, SessionID: "tg-123-0"},
 		TurnSource: "schedule", Deliver: true, ProgressEmitter: progress,

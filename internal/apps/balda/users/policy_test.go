@@ -80,7 +80,7 @@ func TestBackofficeCapabilities(t *testing.T) {
 		{
 			name: "administrator",
 			user: testUser(usercmd.RoleAdministrator, usercmd.StatusActive, nil),
-			want: usercmd.BackofficeCapabilities{Overview: true, Account: true, ManageMCP: true, ManageSchedules: true, ManageUsers: true, ViewAudit: true},
+			want: usercmd.BackofficeCapabilities{Overview: true, Account: true, ManageMCP: true, ManageSchedules: true, ManageAliases: true, ManageUsers: true, ViewAudit: true},
 		},
 		{
 			name: "operator",

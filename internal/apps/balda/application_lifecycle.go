@@ -15,6 +15,7 @@ import (
 	natsbus "github.com/baldaworks/balda/internal/apps/balda/eventbus/nats"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	"github.com/baldaworks/balda/internal/apps/balda/internalmcp"
+	"github.com/baldaworks/balda/internal/apps/balda/jobexec"
 	baldajobs "github.com/baldaworks/balda/internal/apps/balda/jobs"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpbridge"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
@@ -163,6 +164,7 @@ type applicationLifecycleParams struct {
 	ActorHost            *baldaexecution.ActorHost
 	TurnDispatcher       *actors.TurnDispatcher
 	Scheduler            *scheduledjobs.ScheduledJobScheduler
+	WebhookRunFinalizer  *jobexec.WebhookRunFinalizer
 	InboundWebhook       *webhook.Receiver
 	TransportStages      []appports.TransportLifecycleStage `group:"balda_transport_lifecycle_stage"`
 	TelegramBot          *runtime.Bot
@@ -217,6 +219,7 @@ func applicationLifecycleStages(p applicationLifecycleParams, telegram *telegram
 		{name: "job event projector", start: p.Projector.Start, stop: p.Projector.Stop},
 		{name: "job event outbox", start: p.OutboxPublisher.Start, stop: p.OutboxPublisher.Stop},
 		{name: "actor host", start: p.ActorHost.Start, stop: p.ActorHost.Stop},
+		{name: "webhook run finalizer", start: p.WebhookRunFinalizer.Start, stop: p.WebhookRunFinalizer.Stop},
 		{name: "scheduled jobs", start: p.Scheduler.Start, stop: p.Scheduler.Stop},
 		{name: "Backoffice HTTP", start: func(ctx context.Context) error {
 			if err := p.Backoffice.Start(ctx); err != nil {

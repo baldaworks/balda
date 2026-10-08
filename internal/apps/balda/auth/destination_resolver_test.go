@@ -5,9 +5,36 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/baldaworks/balda/internal/apps/balda/aliascmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
 )
+
+func TestDestinationResolverManagedAliasDoesNotFallBackToRole(t *testing.T) {
+	lookup := &managedAliasLookup{locator: deliverycmd.Locator{ChannelType: "telegram", AddressKey: "-1003953132277:0", SessionID: "tg--1003953132277-0"}}
+	resolver := NewDestinationResolverWithManagedAliases(nil, nil, lookup.Resolve)
+	got, err := resolver.ResolveManagedAlias(t.Context(), "main_chat")
+	if err != nil || got.Locator.AddressKey != "-1003953132277:0" {
+		t.Fatalf("managed alias = %+v, %v", got, err)
+	}
+	lookup.missing = true
+	_, err = resolver.ResolveManagedAlias(t.Context(), "main_chat")
+	if !errors.Is(err, envelopetarget.ErrDestinationUnavailable) {
+		t.Fatalf("deleted managed alias = %v", err)
+	}
+}
+
+type managedAliasLookup struct {
+	locator deliverycmd.Locator
+	missing bool
+}
+
+func (l *managedAliasLookup) Resolve(context.Context, string) (deliverycmd.Locator, error) {
+	if l.missing {
+		return deliverycmd.Locator{}, aliascmd.ErrNotFound
+	}
+	return l.locator, nil
+}
 
 func TestDestinationResolver_SingleDestination(t *testing.T) {
 	t.Parallel()

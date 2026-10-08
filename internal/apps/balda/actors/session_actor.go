@@ -33,6 +33,7 @@ type ScheduledJobRecorder = appports.ScheduledJobRecorder
 type SessionJobLifecycle interface {
 	Get(ctx context.Context, jobID string) (baldastate.JobRecord, bool, error)
 	MarkStatus(ctx context.Context, jobID string, status string, actor string, messageID string, reason string, payload any) error
+	RecordPrivateOutput(ctx context.Context, jobID, output string, failed bool) error
 	RebindScheduledSession(ctx context.Context, jobID, oldSessionID, newSessionID string) (bool, error)
 }
 
@@ -139,6 +140,12 @@ func (e *SessionActorExecutor) enqueueTurn(ctx context.Context, env actorlayer.E
 	if settlement.taskAlreadyDone(ctx, env, payload) {
 		return nil
 	}
+	if payload.Source == turncmd.SourceWebhook {
+		handled, err := e.replayWebhookOutput(ctx, env, payload, settlement)
+		if handled {
+			return err
+		}
+	}
 	if handled, err := e.handleScheduledQuestionTimeout(ctx, env, payload); handled {
 		return settlement.settle(ctx, env, payload, err)
 	}
@@ -223,6 +230,15 @@ func (e *SessionActorExecutor) enqueueTurn(ctx context.Context, env actorlayer.E
 
 	select {
 	case err := <-result:
+		if payload.Source == turncmd.SourceWebhook && errors.Is(err, context.Canceled) {
+			return actorlayer.TransientError(err)
+		}
+		if payload.Source == turncmd.SourceWebhook && err != nil {
+			handled, replayErr := e.replayWebhookOutput(ctx, env, payload, settlement)
+			if handled {
+				return replayErr
+			}
+		}
 		if reportErr := e.reportPreparationFailure(ctx, env, payload, err); reportErr != nil {
 			return actorlayer.TransientError(reportErr)
 		}

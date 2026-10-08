@@ -89,10 +89,10 @@ func TestRendererGroupsAuthorizedNavigationWithoutDuplicateAccount(t *testing.T)
 			name: "administrator",
 			capabilities: usercmd.BackofficeCapabilities{
 				Overview: true, Account: true, ManageUsers: true,
-				ManageMCP: true, ManageSchedules: true, ViewAudit: true,
+				ManageMCP: true, ManageSchedules: true, ManageAliases: true, ViewAudit: true,
 			},
 			wantGroups: []string{"Workspace", "Operations", "Administration"},
-			wantLinks:  []string{"/overview", "/mcp", "/schedules", "/access", "/audit"},
+			wantLinks:  []string{"/overview", "/mcp", "/schedules", "/aliases", "/access", "/audit"},
 		},
 		{
 			name:         "operator",
@@ -100,7 +100,7 @@ func TestRendererGroupsAuthorizedNavigationWithoutDuplicateAccount(t *testing.T)
 			wantGroups:   []string{"Workspace"},
 			absentGroups: []string{"Operations", "Administration"},
 			wantLinks:    []string{"/overview"},
-			absentLinks:  []string{"/mcp", "/schedules", "/access", "/audit"},
+			absentLinks:  []string{"/mcp", "/schedules", "/aliases", "/access", "/audit"},
 		},
 	}
 	for _, tt := range tests {
@@ -242,6 +242,27 @@ func TestAuditProjectionDoesNotRenderFreeFormReason(t *testing.T) {
 		if !strings.Contains(response.Body.String(), element) {
 			t.Fatalf("audit table missing %q", element)
 		}
+	}
+}
+
+func TestAuditProjectionNamesManagedAliasOperation(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		action usercmd.AuditAction
+		label  string
+	}{
+		{usercmd.AuditActionAliasCreated, "Created alias"},
+		{usercmd.AuditActionAliasRetargeted, "Retargeted alias"},
+		{usercmd.AuditActionAliasDeleted, "Deleted alias"},
+	} {
+		view := ProjectAudit(usercmd.AuditEvent{Action: tt.action, TargetType: usercmd.AuditTargetAlias, TargetID: "main_chat"})
+		if view.ActionLabel != tt.label || view.TargetName != "Alias" || view.TargetID != "main_chat" {
+			t.Errorf("ProjectAudit(%s) = %+v", tt.action, view)
+		}
+	}
+	view := ProjectAudit(usercmd.AuditEvent{Action: usercmd.AuditActionAliasCreated, TargetType: usercmd.AuditTargetAlias, TargetID: "<script>"})
+	if view.TargetID != "[redacted]" {
+		t.Fatalf("untrusted alias target = %q", view.TargetID)
 	}
 }
 

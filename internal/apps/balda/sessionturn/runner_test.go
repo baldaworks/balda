@@ -53,6 +53,51 @@ func TestRunnerRestoresQueuedScheduleTurnAsPrivateSession(t *testing.T) {
 	}
 }
 
+func TestRunnerRunsWebhookInNewTransientSessionWithoutRestoringReportChat(t *testing.T) {
+	accessor := &testSessionAccessor{getErr: errors.New("not active"), transient: &testActiveSession{}}
+	executor := &testExecutor{}
+	runner := New(accessor, executor, nil, zerolog.Nop())
+	report := baldasession.SessionLocator{SessionID: "tg-report", ChannelType: "telegram",
+		AddressKey: "10:42", AddressJSON: `{"chat_id":10,"topic_id":42}`}
+	for _, sessionID := range []string{
+		"wh-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		"wh-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+	} {
+		payload := turncmd.SessionTurnPayload{JobID: "webhook-test-" + sessionID, Source: turncmd.SourceWebhook,
+			UserID: sessionID, Text: "review", Deliver: true,
+			Locator: baldasession.SessionLocator{SessionID: sessionID, ChannelType: "webhook",
+				AddressKey: sessionID, AddressJSON: "{}"}, ReportTo: &report}
+		if err := runner.RunSessionTurnPayload(t.Context(), payload); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if accessor.restoreCalled || len(accessor.transientCtx) != 2 {
+		t.Fatalf("ordinary restore called=%t, private creates=%d", accessor.restoreCalled, len(accessor.transientCtx))
+	}
+	if accessor.transientCtx[0].Locator.SessionID == accessor.transientCtx[1].Locator.SessionID {
+		t.Fatal("separate webhook jobs shared an execution session")
+	}
+	for _, request := range executor.requests {
+		if request.Payload.Locator.ChannelType != "webhook" || request.DeliveryLocator.SessionID != report.SessionID ||
+			request.DeliveryLocator.AddressKey != report.AddressKey {
+			t.Fatalf("execution or report locator changed: %+v", request)
+		}
+	}
+}
+
+func TestRunnerRejectsWebhookWithoutPrivateSessionID(t *testing.T) {
+	accessor := &testSessionAccessor{getErr: errors.New("not active")}
+	executor := &testExecutor{}
+	runner := New(accessor, executor, nil, zerolog.Nop())
+	err := runner.RunSessionTurnPayload(t.Context(), turncmd.SessionTurnPayload{
+		Source: turncmd.SourceWebhook, Locator: baldasession.SessionLocator{
+			SessionID: "tg-recipient", ChannelType: "telegram", AddressKey: "10:42"},
+	})
+	if err == nil || accessor.restoreCalled || len(accessor.transientCtx) != 0 {
+		t.Fatalf("invalid webhook session: error=%v restore=%t transient=%d", err, accessor.restoreCalled, len(accessor.transientCtx))
+	}
+}
+
 func TestRunnerLoadsExactSelectedSkillBeforeProviderExecution(t *testing.T) {
 	t.Parallel()
 

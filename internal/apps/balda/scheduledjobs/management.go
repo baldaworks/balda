@@ -3,6 +3,7 @@ package scheduledjobs
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"regexp"
 	"strings"
 	"time"
@@ -18,13 +19,15 @@ import (
 )
 
 const (
-	runStateSucceeded   = "succeeded"
-	runStateFailed      = "failed"
-	runStateCanceled    = "canceled"
-	runFailureExecution = "execution_failed"
+	runStateSucceeded                = "succeeded"
+	runStateFailed                   = "failed"
+	runStateCanceled                 = "canceled"
+	runFailureExecution              = "execution_failed"
+	runFailureReportAliasUnavailable = "report_alias_unavailable"
 )
 
 var managedScheduleID = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
+var managedScheduleAlias = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
 var manualRequestKey = regexp.MustCompile(`^[A-Za-z0-9_-]{8,128}$`)
 
 // Management owns recurring schedule definitions and selection policy.
@@ -34,14 +37,22 @@ type Management struct {
 	runs          state.ScheduleRunStore
 	executionJobs state.JobLifecycleStore
 	deliveries    state.DeliveryStore
+	resolver      envelopetarget.DestinationResolver
 	now           func() time.Time
 }
 
 // NewManagement composes the schedule policy with its persistence ports.
 func NewManagement(jobs state.ScheduledJobStore, store state.ScheduleManagementStore,
 	runs state.ScheduleRunStore, executionJobs state.JobLifecycleStore, deliveries state.DeliveryStore) *Management {
+	return NewManagementWithResolver(jobs, store, runs, executionJobs, deliveries, nil)
+}
+
+// NewManagementWithResolver composes schedule policy with report destination resolution.
+func NewManagementWithResolver(jobs state.ScheduledJobStore, store state.ScheduleManagementStore,
+	runs state.ScheduleRunStore, executionJobs state.JobLifecycleStore, deliveries state.DeliveryStore,
+	resolver envelopetarget.DestinationResolver) *Management {
 	return &Management{jobs: jobs, store: store, runs: runs, executionJobs: executionJobs,
-		deliveries: deliveries, now: time.Now}
+		deliveries: deliveries, resolver: resolver, now: time.Now}
 }
 
 // RunNow admits one manual execution, including for a disabled schedule when confirmed.
@@ -68,7 +79,12 @@ func (m *Management) RunNow(ctx context.Context, request schedulecmd.RunNow) (sc
 	if !job.Enabled && !request.ConfirmDisabled {
 		return schedulecmd.RunItem{}, schedulecmd.ErrConflict
 	}
-	payload, err := json.Marshal(job)
+	selected := job
+	reportRef, resolutionErr := selectScheduleReport(ctx, m.resolver, &selected)
+	if resolutionErr != nil && !errors.Is(resolutionErr, envelopetarget.ErrDestinationUnavailable) {
+		return schedulecmd.RunItem{}, schedulecmd.ErrUnavailable
+	}
+	payload, err := json.Marshal(selected)
 	if err != nil {
 		return schedulecmd.RunItem{}, schedulecmd.ErrUnavailable
 	}
@@ -76,7 +92,13 @@ func (m *Management) RunNow(ctx context.Context, request schedulecmd.RunNow) (sc
 	run := state.ScheduleRunRecord{RunID: uuid.NewString(), ScheduleID: job.JobID,
 		Trigger: state.ScheduleRunTriggerManual, TriggerKey: triggerKey,
 		DefinitionVersion: job.DefinitionVersion, RequestedAt: now,
-		DispatchState: state.ScheduleRunPending, PayloadJSON: string(payload)}
+		DispatchState: state.ScheduleRunPending, PayloadJSON: string(payload),
+		ReportLocatorRef: reportRef}
+	if resolutionErr != nil {
+		run.DispatchState = state.ScheduleRunFailed
+		run.SafeFailureCode = runFailureReportAliasUnavailable
+		run.Attempts = 1
+	}
 	audit := scheduleAudit(job.JobID, request.Authority)
 	audit.Action = usercmd.AuditActionScheduleRunRequested
 	_, err = m.store.AdmitManualRun(ctx, state.ScheduleManualAdmission{Run: run,
@@ -170,7 +192,8 @@ func (m *Management) RunDetail(ctx context.Context, scheduleID, runID string,
 func (m *Management) projectRun(ctx context.Context, run state.ScheduleRunRecord) (schedulecmd.RunItem, error) {
 	item := schedulecmd.RunItem{ID: run.RunID, Trigger: run.Trigger,
 		RequestedAt: run.RequestedAt, DueAt: run.DueAt,
-		State: run.DispatchState, SafeFailureCode: run.SafeFailureCode}
+		State: run.DispatchState, SafeFailureCode: run.SafeFailureCode,
+		ReportLocatorRef: run.ReportLocatorRef}
 	if run.DispatchState == state.ScheduleRunPending {
 		item.State = "queued"
 	}
@@ -390,7 +413,8 @@ func (m *Management) build(definition schedulecmd.Definition) (state.ScheduledJo
 	cron := strings.TrimSpace(definition.Cron)
 	content := strings.TrimSpace(definition.Content)
 	if !managedScheduleID.MatchString(id) || len(strings.Fields(cron)) != 5 || len(cron) > 128 ||
-		content == "" || len(content) > 16384 || len(definition.Locator) > 512 {
+		content == "" || len(content) > 16384 || len(definition.Locator) > 512 ||
+		(definition.Alias != "" && definition.Locator != "") {
 		return state.ScheduledJobRecord{}, schedulecmd.ErrInvalid
 	}
 	next, err := nextRunAtFromSpec(cron, m.now().UTC())
@@ -400,6 +424,16 @@ func (m *Management) build(definition schedulecmd.Definition) (state.ScheduledJo
 	r := state.ScheduledJobRecord{JobID: id,
 		Content: content, ScheduleSpec: cron, Timezone: "UTC", Status: state.ScheduledJobStatusActive,
 		MaxRetries: defaultSchedulerMaxRetries, NextRunAt: next}
+	if definition.Alias != "" {
+		alias := strings.TrimSpace(definition.Alias)
+		if !validScheduleAliasName(alias) {
+			return state.ScheduledJobRecord{}, schedulecmd.ErrInvalid
+		}
+		r.ReportToEnabled = true
+		r.ReportToTargetKind = envelopetarget.TargetManagedAlias
+		r.ReportToTargetKey = alias
+		return r, nil
+	}
 	if strings.TrimSpace(definition.Locator) == "" {
 		return r, nil
 	}
@@ -424,13 +458,20 @@ func (m *Management) build(definition schedulecmd.Definition) (state.ScheduledJo
 	return r, nil
 }
 
+func validScheduleAliasName(name string) bool {
+	return managedScheduleAlias.MatchString(name) && name != deliverycmd.RoleOwner &&
+		name != deliverycmd.RoleCollaborator
+}
+
 func scheduleItem(r state.ScheduledJobRecord) schedulecmd.Item {
-	locator := ""
-	if r.ReportToEnabled {
+	locator, alias := "", ""
+	if r.ReportToEnabled && r.ReportToTargetKind == envelopetarget.TargetManagedAlias {
+		alias = r.ReportToTargetKey
+	} else if r.ReportToEnabled {
 		locator = r.ReportToChannelType + ":" + r.ReportToAddressKey
 	}
 	d := schedulecmd.Definition{ID: r.JobID, Cron: r.ScheduleSpec, Content: r.Content,
-		Locator: locator}
+		Locator: locator, Alias: alias}
 	return schedulecmd.Item{Definition: d, Source: r.Source, Enabled: r.Enabled, Deleted: r.Deleted,
 		Version: r.DefinitionVersion, Status: r.Status, NextRunAt: r.NextRunAt, LastRunAt: r.LastRunAt}
 }

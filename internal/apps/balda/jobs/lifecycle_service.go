@@ -75,6 +75,14 @@ func (s *JobLifecycleService) RecordScheduledOutput(ctx context.Context, jobID, 
 	return s.store.RecordScheduledOutput(ctx, jobID, output)
 }
 
+// RecordPrivateOutput keeps one schedule or webhook result before final delivery.
+func (s *JobLifecycleService) RecordPrivateOutput(ctx context.Context, jobID, output string, failed bool) error {
+	if s == nil {
+		return fmt.Errorf("job lifecycle service is unavailable")
+	}
+	return s.store.RecordPrivateOutput(ctx, jobID, output, failed)
+}
+
 // RebindScheduledSession moves an active queued pre-upgrade run off its recipient chat scope.
 func (s *JobLifecycleService) RebindScheduledSession(ctx context.Context, jobID, oldSessionID, newSessionID string) (bool, error) {
 	if s == nil || !strings.HasPrefix(strings.TrimSpace(jobID), "scheduled-") || strings.TrimSpace(oldSessionID) == "" ||

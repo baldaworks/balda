@@ -58,6 +58,7 @@ func TestScheduleRunStoreRetainsHistoryAfterScheduleDeletion(t *testing.T) {
 		DefinitionVersion: 1,
 		RequestedAt:       requestedAt,
 		DispatchState:     ScheduleRunPending,
+		ReportLocatorRef: "telegram:1:0",
 		PayloadJSON:       `{"content":"review"}`,
 	}
 	created, err := provider.ScheduleRuns().Create(t.Context(), run)
@@ -92,7 +93,8 @@ func TestScheduleRunStoreRetainsHistoryAfterScheduleDeletion(t *testing.T) {
 	if len(history) != 1 || history[0].RunID != "run-1" || history[0].Trigger != ScheduleRunTriggerManual {
 		t.Fatalf("history = %+v, want retained manual run", history)
 	}
-	if !history[0].RequestedAt.Equal(requestedAt) || history[0].PayloadJSON != run.PayloadJSON {
+	if !history[0].RequestedAt.Equal(requestedAt) || history[0].PayloadJSON != run.PayloadJSON ||
+		history[0].ReportLocatorRef != run.ReportLocatorRef {
 		t.Fatalf("reopened run = %+v, want requested_at and payload retained", history[0])
 	}
 	history[0].DispatchState = ScheduleRunDispatched
@@ -106,7 +108,8 @@ func TestScheduleRunStoreRetainsHistoryAfterScheduleDeletion(t *testing.T) {
 		t.Fatalf("Update(stale version) = %v, %v, want false, nil", updated, err)
 	}
 	current, found, err := provider.ScheduleRuns().GetByID(t.Context(), "run-1")
-	if err != nil || !found || current.DispatchState != ScheduleRunDispatched || current.Version != 2 {
+	if err != nil || !found || current.DispatchState != ScheduleRunDispatched || current.Version != 2 ||
+		current.ReportLocatorRef != run.ReportLocatorRef {
 		t.Fatalf("GetByID(after update) = %+v, %v, %v", current, found, err)
 	}
 	pending, err := provider.ScheduleRuns().ListPending(t.Context(), requestedAt.Add(time.Minute), 10)

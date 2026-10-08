@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/destinationcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/locatorref"
 )
 
@@ -16,33 +16,31 @@ var ErrSessionUnavailable = errors.New("session destination unavailable")
 // ErrResolutionUnavailable means the destination backend could not be read.
 var ErrResolutionUnavailable = errors.New("destination resolution unavailable")
 
+// ErrDestinationUnavailable means a named destination has no current mapping.
+var ErrDestinationUnavailable = errors.New("destination unavailable")
+
 const (
-	TargetAlias   = "alias"
-	AliasOwner    = "owner"
-	TargetLocator = "locator"
-	TargetSession = "session"
+	TargetAlias        = destinationcmd.TargetAlias
+	TargetManagedAlias = destinationcmd.TargetManagedAlias
+	AliasOwner         = destinationcmd.AliasOwner
+	TargetLocator      = destinationcmd.TargetLocator
+	TargetSession      = destinationcmd.TargetSession
 )
 
 // Target describes an envelope destination reference (either alias or locator).
-type Target struct {
-	Target string
-	Key    string
-}
+type Target = destinationcmd.Target
 
 // Resolved represents the transport-neutral resolution of an envelope target.
-type Resolved struct {
-	Locator   deliverycmd.Locator
-	Principal string
-}
-
-// UserID returns the principal string for compatibility with callers expecting UserID.
-func (r Resolved) UserID() string {
-	return r.Principal
-}
+type Resolved = destinationcmd.Resolved
 
 // DestinationResolver resolves an alias to a canonical delivery locator and principal.
 type DestinationResolver interface {
 	ResolveAlias(ctx context.Context, alias string) (Resolved, error)
+}
+
+// ManagedAliasResolver resolves an administrator-managed name independently of role aliases.
+type ManagedAliasResolver interface {
+	ResolveManagedAlias(ctx context.Context, name string) (Resolved, error)
 }
 
 // SessionDestinationResolver resolves an existing session ID to its persisted locator.
@@ -66,6 +64,12 @@ func Resolve(
 	}
 
 	switch targetKind {
+	case TargetManagedAlias:
+		managed, ok := resolver.(ManagedAliasResolver)
+		if !ok {
+			return Resolved{}, fmt.Errorf("%w: managed alias resolver is required", ErrResolutionUnavailable)
+		}
+		return managed.ResolveManagedAlias(ctx, key)
 	case TargetAlias:
 		if resolver == nil {
 			return Resolved{}, fmt.Errorf("%w: destination resolver is required", ErrResolutionUnavailable)

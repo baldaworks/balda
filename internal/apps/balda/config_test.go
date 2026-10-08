@@ -2,8 +2,40 @@ package balda
 
 import (
 	"math"
+	"strings"
 	"testing"
+
+	"github.com/normahq/runtime/v2/appconfig"
 )
+
+func TestWebhookConfigRejectsUnknownFieldsAfterDecode(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		envelope map[string]any
+		wantErr  bool
+	}{
+		{name: "current report reference", envelope: map[string]any{"report_to": map[string]any{"target": "managed_alias", "key": "main_chat"}}},
+		{name: "unknown envelope field", envelope: map[string]any{"unexpected": true}, wantErr: true},
+		{name: "unknown report field", envelope: map[string]any{"report_to": map[string]any{"target": "locator", "key": "telegram:9001:0", "unexpected": true}}, wantErr: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var decoded struct {
+				Balda BaldaConfig `mapstructure:"balda"`
+			}
+			settings := map[string]any{"balda": map[string]any{"webhooks": map[string]any{"routes": map[string]any{"event": map[string]any{"envelope": tt.envelope}}}}}
+			if err := appconfig.DecodeSettings(settings, &decoded); err != nil {
+				t.Fatal(err)
+			}
+			err := validateWebhookRawConfig(decoded.Balda.Webhooks)
+			if tt.wantErr != (err != nil) {
+				t.Fatalf("validateWebhookRawConfig() = %v", err)
+			}
+			if err != nil && (!strings.Contains(err.Error(), "unsupported fields") || strings.Contains(err.Error(), "unexpected")) {
+				t.Fatalf("unbounded config error = %v", err)
+			}
+		})
+	}
+}
 
 func TestAttachmentsConfigLimits(t *testing.T) {
 	tests := []struct {

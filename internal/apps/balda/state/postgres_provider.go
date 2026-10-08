@@ -19,6 +19,8 @@ type postgresProvider struct {
 	session        *postgresSessionStore
 	jobs           *postgresScheduledJobStore
 	management     *sqlScheduleManagementStore
+	aliases        *sqlAliasStore
+	webhook        *sqlWebhookAdmissionStore
 	runs           *sqlScheduleRunStore
 	questions      *postgresQuestionStore
 	runtime        *postgresJobStore
@@ -57,6 +59,8 @@ func initializePostgresProvider(ctx context.Context, db *sql.DB) (Provider, erro
 		session:        &postgresSessionStore{db: db},
 		jobs:           &postgresScheduledJobStore{db: db},
 		management:     &sqlScheduleManagementStore{users: newPostgresUserStore(db)},
+		aliases:        &sqlAliasStore{users: newPostgresUserStore(db)},
+		webhook:        &sqlWebhookAdmissionStore{db: db, bind: postgresBind, postgres: true},
 		runs:           &sqlScheduleRunStore{db: db, bind: postgresBind, postgres: true},
 		questions:      &postgresQuestionStore{db: db},
 		runtime:        &postgresJobStore{db: db},
@@ -180,6 +184,10 @@ func (p *postgresProvider) ScheduledJobs() ScheduledJobStore {
 func (p *postgresProvider) ScheduleManagement() ScheduleManagementStore {
 	return p.management
 }
+
+func (p *postgresProvider) Aliases() AliasStore { return p.aliases }
+
+func (p *postgresProvider) WebhookAdmissions() WebhookAdmissionStore { return p.webhook }
 
 func (p *postgresProvider) ScheduleRuns() ScheduleRunStore {
 	return p.runs

@@ -13,6 +13,8 @@ import (
 	"github.com/baldaworks/balda/internal/apps/backoffice"
 	"github.com/baldaworks/balda/internal/apps/balda/actorsfx"
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
+	"github.com/baldaworks/balda/internal/apps/balda/aliasbackofficeapp"
+	"github.com/baldaworks/balda/internal/apps/balda/aliasfx"
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	"github.com/baldaworks/balda/internal/apps/balda/attachmentstore"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
@@ -30,10 +32,8 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/chatfx"
 	"github.com/baldaworks/balda/internal/apps/balda/commandfx"
 	"github.com/baldaworks/balda/internal/apps/balda/controlapp"
-	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfx"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryworkflow"
-	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
 	natsbus "github.com/baldaworks/balda/internal/apps/balda/eventbus/nats"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	"github.com/baldaworks/balda/internal/apps/balda/handlersfx"
@@ -51,6 +51,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
 	"github.com/baldaworks/balda/internal/apps/balda/schedulebackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/scheduledjobs"
+	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionapp"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorymcp"
@@ -58,6 +59,8 @@ import (
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookapp"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookfx"
 	"github.com/baldaworks/balda/internal/apps/sessionmcp"
 	"github.com/baldaworks/balda/internal/git"
 	portableapp "github.com/baldaworks/balda/sessionmemory/app"
@@ -204,6 +207,9 @@ func Module(
 			Content:  strings.TrimSpace(task.Envelope.Content),
 			ReportTo: reportTo,
 		})
+	}
+	if err := validateWebhookRawConfig(cfg.Balda.Webhooks); err != nil {
+		return fx.Module("balda", fx.Error(err))
 	}
 	inboundWebhookConfig := buildInboundWebhookConfig(cfg.Balda)
 	executionConfig := baldaexecution.Config{
@@ -385,7 +391,7 @@ func Module(
 				})
 				return provider, nil
 			},
-			func(provider baldastate.Provider, invitations *auth.BindingInvitations, channels *auth.BindingChannels, mcp *mcpbackofficeapp.Operations, schedules *schedulebackofficeapp.Operations) (*backoffice.Runtime, error) {
+			func(provider baldastate.Provider, invitations *auth.BindingInvitations, channels *auth.BindingChannels, mcp *mcpbackofficeapp.Operations, schedules *schedulebackofficeapp.Operations, aliases *aliasbackofficeapp.Operations) (*backoffice.Runtime, error) {
 				runtime, err := backoffice.NewRuntime(backofficeConfig, provider)
 				if err != nil {
 					return nil, err
@@ -397,6 +403,9 @@ func Module(
 					return nil, err
 				}
 				if err := runtime.ConfigureSchedulesOperations(schedules); err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigureAliasesOperations(aliases); err != nil {
 					return nil, err
 				}
 				if err := runtime.ConfigureMCPAuthorizations(mcp); err != nil {
@@ -428,7 +437,20 @@ func Module(
 			func(provider baldastate.Provider) baldastate.DeliveryStore {
 				return provider.Jobs()
 			},
+			func(provider baldastate.Provider) jobexec.WebhookRunStore {
+				return provider.Jobs()
+			},
+			func(provider baldastate.Provider) jobexec.WebhookAdmissionReader {
+				return provider.WebhookAdmissions()
+			},
+			func(provider baldastate.Provider) jobexec.WebhookFinalDeliveryReader {
+				return provider.Jobs()
+			},
+			func(manager *baldasession.Manager) jobexec.WebhookRunSessionCloser {
+				return manager
+			},
 			schedulebackofficeapp.New,
+			aliasbackofficeapp.New,
 			func(provider baldastate.Provider) baldastate.QuestionStore {
 				return provider.Questions()
 			},
@@ -776,24 +798,12 @@ func Module(
 		fx.Provide(func(provider baldastate.Provider) (*auth.DestinationStore, error) {
 			return auth.NewDestinationStore(provider.AppKV())
 		}),
-		fx.Provide(func(destStore *auth.DestinationStore, provider baldastate.Provider) envelopetarget.DestinationResolver {
-			return auth.NewDestinationResolverWithSessions(destStore, func(ctx context.Context, sessionID string) (envelopetarget.Resolved, bool, error) {
-				record, found, err := provider.Sessions().GetBySessionID(ctx, sessionID)
-				if err != nil || !found {
-					return envelopetarget.Resolved{}, found, err
-				}
-				if record.Status != "" && record.Status != baldastate.SessionStatusActive {
-					return envelopetarget.Resolved{}, false, nil
-				}
-				locator, err := deliverycmd.NewLocator(record.ChannelType, record.AddressKey, record.AddressJSON, record.SessionID)
-				if err != nil {
-					return envelopetarget.Resolved{}, false, err
-				}
-				return envelopetarget.Resolved{Locator: locator, Principal: record.UserID}, true, nil
-			})
-		}),
+		fx.Provide(aliasfx.NewService, aliasfx.NewDestinationResolver),
 		fx.Provide(func(provider baldastate.Provider) webhook.DeliveryReceipts {
 			return provider.Jobs()
+		}),
+		fx.Provide(func(provider baldastate.Provider) webhookapp.AdmissionStore {
+			return provider.WebhookAdmissions()
 		}),
 		fx.Provide(func(provider baldastate.Provider) (*auth.InviteStore, error) {
 			return auth.NewInviteStore(provider.AppKV())
@@ -844,7 +854,7 @@ func Module(
 		actorsfx.Module,
 		scheduledjobs.Module,
 		handlersfx.Module,
-		webhook.Module,
+		webhookfx.Module,
 		fx.Provide(
 			internalmcp.NewInternalMCPManager,
 		),
@@ -1152,18 +1162,10 @@ func buildInboundWebhookConfig(cfg BaldaConfig) webhook.Config {
 	routes := make(map[string]webhook.RouteConfig, len(cfg.Webhooks.Routes))
 	for routeName, route := range cfg.Webhooks.Routes {
 		var reportTo *webhook.RouteTargetConfig
-		var fallbackTo *webhook.RouteTargetConfig
 		if route.Envelope.ReportTo != nil {
 			reportTo = &webhook.RouteTargetConfig{
-				Target:      strings.TrimSpace(route.Envelope.ReportTo.Target),
-				Key:         strings.TrimSpace(route.Envelope.ReportTo.Key),
-				KeyFromBody: strings.TrimSpace(route.Envelope.ReportTo.KeyFromBody),
-			}
-		}
-		if route.Envelope.FallbackTo != nil {
-			fallbackTo = &webhook.RouteTargetConfig{
-				Target: strings.TrimSpace(route.Envelope.FallbackTo.Target),
-				Key:    strings.TrimSpace(route.Envelope.FallbackTo.Key),
+				Target: strings.TrimSpace(route.Envelope.ReportTo.Target),
+				Key:    strings.TrimSpace(route.Envelope.ReportTo.Key),
 			}
 		}
 		authValue := strings.TrimSpace(route.Auth.Value)
@@ -1176,12 +1178,7 @@ func buildInboundWebhookConfig(cfg BaldaConfig) webhook.Config {
 			Path:           strings.TrimSpace(route.Path),
 			PromptTemplate: strings.TrimSpace(route.PromptTemplate),
 			Envelope: webhook.RouteEnvelopeConfig{
-				Target:        strings.TrimSpace(route.Envelope.Target),
-				Key:           strings.TrimSpace(route.Envelope.Key),
-				KeyFromBody:   strings.TrimSpace(route.Envelope.KeyFromBody),
-				Mode:          strings.TrimSpace(route.Envelope.Mode),
 				ReportTo:      reportTo,
-				FallbackTo:    fallbackTo,
 				AckOnDelivery: route.Envelope.AckOnDelivery,
 			},
 			Auth: webhook.RouteAuthConfig{
@@ -1201,4 +1198,16 @@ func buildInboundWebhookConfig(cfg BaldaConfig) webhook.Config {
 		ListenAddr: strings.TrimSpace(cfg.Webhooks.ListenAddr),
 		Routes:     routes,
 	}
+}
+
+func validateWebhookRawConfig(cfg WebhooksConfig) error {
+	for _, route := range cfg.Routes {
+		if len(route.Envelope.Unsupported) > 0 {
+			return fmt.Errorf("balda.webhooks.routes envelope contains unsupported fields; use optional report_to and ack_on_delivery")
+		}
+		if route.Envelope.ReportTo != nil && len(route.Envelope.ReportTo.Unsupported) > 0 {
+			return fmt.Errorf("balda.webhooks.routes envelope.report_to contains unsupported fields; use target and key")
+		}
+	}
+	return nil
 }

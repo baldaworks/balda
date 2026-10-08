@@ -29,6 +29,9 @@ const (
 // ErrScheduledReportQueued marks a failed run whose bounded final report is already queued.
 var ErrScheduledReportQueued = errors.New("scheduled report queued")
 
+// ErrWebhookReportQueued marks a failed private webhook run with a final report queued.
+var ErrWebhookReportQueued = errors.New("webhook report queued")
+
 type SessionTurnPayload struct {
 	JobID            string                            `json:"job_id,omitempty"`
 	Text             string                            `json:"text"`
@@ -211,8 +214,6 @@ func SessionTurnEnvelope(payload SessionTurnPayload) (actorlayer.Envelope, error
 
 func WebhookJobEnvelope(payload SessionTurnPayload, routeName string, requestID string) (actorlayer.Envelope, string, error) {
 	dedupeBase := strings.TrimSpace(payload.DedupeKey)
-	dedupeBase = strings.TrimSuffix(dedupeBase, ":task")
-	dedupeBase = strings.TrimSuffix(dedupeBase, ":session")
 	if dedupeBase == "" {
 		dedupeBase = strings.Join([]string{"webhook", strings.TrimSpace(routeName), strings.TrimSpace(requestID)}, ":")
 	}
@@ -252,7 +253,7 @@ func WebhookJobEnvelope(payload SessionTurnPayload, routeName string, requestID 
 		return actorlayer.Envelope{}, "", fmt.Errorf("encode webhook job payload: %w", err)
 	}
 	return actorlayer.Envelope{
-		ID:        uuid.NewString(),
+		ID:        jobID + ":job",
 		Namespace: baldaexecution.NamespaceWebhookInbound,
 		Kind:      baldaexecution.KindWebhookEvent,
 		From:      actorlayer.ActorAddress{Target: "webhook", Key: firstNonEmpty(routeName, requestID, "inbound")},
@@ -321,6 +322,30 @@ func scheduledJobEnvelope(scheduledJobID, content string, locator deliverycmd.Lo
 func ScheduledExecutionSessionID(jobID string) string {
 	sum := sha256.Sum256([]byte(strings.TrimSpace(jobID)))
 	return fmt.Sprintf("sch-%x", sum[:16])
+}
+
+// IsPrivateRun identifies an isolated schedule or webhook execution session.
+func IsPrivateRun(source, sessionID string) bool {
+	prefix := ""
+	switch source {
+	case SourceSchedule:
+		prefix = "sch-"
+	case SourceWebhook:
+		prefix = "wh-"
+	default:
+		return false
+	}
+	if len(sessionID) != len(prefix)+32 || !strings.HasPrefix(sessionID, prefix) {
+		return false
+	}
+	for _, digit := range sessionID[len(prefix):] {
+		if digit < '0' || digit > '9' {
+			if digit < 'a' || digit > 'f' {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // PrivateScheduledTurn isolates a recurring run from every delivery address.

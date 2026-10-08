@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	"github.com/baldaworks/balda/internal/apps/balda/schedulecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 )
@@ -14,6 +15,7 @@ import (
 const (
 	testTelegramReportLocator = "telegram:9001:0"
 	testTelegramAddressKey    = "9001:0"
+	testManagedScheduleAlias  = "main_chat"
 )
 
 type recordingScheduleManagementStore struct {
@@ -102,6 +104,75 @@ func TestManagementManualRunIsIdempotentAndHistoryIsSafe(t *testing.T) {
 	}
 }
 
+func TestManagedScheduleManualRunFreezesAliasAndDuplicateSelection(t *testing.T) {
+	provider, err := state.NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = provider.Close() })
+	store := &recordingScheduleManagementStore{jobs: provider.ScheduledJobs(), runs: provider.ScheduleRuns()}
+	manager := NewManagement(provider.ScheduledJobs(), store, provider.ScheduleRuns(), provider.Jobs(), provider.Jobs())
+	resolver := &mutableScheduleAliasResolver{locator: baldatelegram.NewLocator(9001, 0)}
+	manager.resolver = resolver
+	manager.now = func() time.Time { return time.Date(2026, 10, 8, 8, 0, 0, 0, time.UTC) }
+	definition := schedulecmd.Definition{ID: "daily", Cron: "0 9 * * *", Content: "review", Alias: testManagedScheduleAlias}
+	created, err := manager.Create(t.Context(), schedulecmd.Create{Definition: definition})
+	if err != nil || created.Definition.Alias != testManagedScheduleAlias {
+		t.Fatalf("created alias schedule = %+v, err=%v", created, err)
+	}
+	first, err := manager.RunNow(t.Context(), schedulecmd.RunNow{ID: "daily", RequestKey: "request-111"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, found, err := provider.ScheduleRuns().GetByID(t.Context(), first.ID)
+	if err != nil || !found || run.ReportLocatorRef != testTelegramReportLocator {
+		t.Fatalf("first run = %+v, found=%t err=%v", run, found, err)
+	}
+	resolver.locator = baldatelegram.NewLocator(9002, 0)
+	duplicate, err := manager.RunNow(t.Context(), schedulecmd.RunNow{ID: "daily", RequestKey: "request-111"})
+	if err != nil || duplicate.ID != first.ID || resolver.calls != 1 {
+		t.Fatalf("duplicate = %+v, calls=%d err=%v", duplicate, resolver.calls, err)
+	}
+	second, err := manager.RunNow(t.Context(), schedulecmd.RunNow{ID: "daily", RequestKey: "request-222"})
+	if err != nil || second.ID == first.ID {
+		t.Fatalf("second = %+v, err=%v", second, err)
+	}
+	run, found, err = provider.ScheduleRuns().GetByID(t.Context(), second.ID)
+	if err != nil || !found || run.ReportLocatorRef != "telegram:9002:0" {
+		t.Fatalf("second run = %+v, found=%t err=%v", run, found, err)
+	}
+}
+
+func TestManualRunWithMissingAliasRecordsFailureWithoutChangingCron(t *testing.T) {
+	provider, err := state.NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = provider.Close() })
+	store := &recordingScheduleManagementStore{jobs: provider.ScheduledJobs(), runs: provider.ScheduleRuns()}
+	manager := NewManagement(provider.ScheduledJobs(), store, provider.ScheduleRuns(), provider.Jobs(), provider.Jobs())
+	manager.resolver = &mutableScheduleAliasResolver{}
+	now := time.Date(2026, 10, 8, 8, 0, 0, 0, time.UTC)
+	manager.now = func() time.Time { return now }
+	if _, err := manager.Create(t.Context(), schedulecmd.Create{Definition: schedulecmd.Definition{
+		ID: "daily", Cron: "0 9 * * *", Content: "review", Alias: testManagedScheduleAlias,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	before, _, err := provider.ScheduledJobs().GetByID(t.Context(), "daily")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := manager.RunNow(t.Context(), schedulecmd.RunNow{ID: "daily", RequestKey: "request-111"})
+	if err != nil || result.State != state.ScheduleRunFailed || result.SafeFailureCode != runFailureReportAliasUnavailable {
+		t.Fatalf("missing alias run = %+v, err=%v", result, err)
+	}
+	after, _, err := provider.ScheduledJobs().GetByID(t.Context(), "daily")
+	if err != nil || !after.NextRunAt.Equal(before.NextRunAt) || after.LastDispatchKey != before.LastDispatchKey {
+		t.Fatalf("manual failure moved cron cursor: before=%+v after=%+v err=%v", before, after, err)
+	}
+}
+
 func TestManagementProjectsPrepublicationCompletionTime(t *testing.T) {
 	completed := time.Date(2026, 10, 8, 9, 5, 0, 0, time.UTC)
 	m := &Management{}
@@ -115,6 +186,17 @@ func TestManagementProjectsPrepublicationCompletionTime(t *testing.T) {
 				t.Fatalf("terminal run = %+v, %v", item, err)
 			}
 		})
+	}
+}
+
+func TestManagementRunProjectionShowsFrozenReportLocator(t *testing.T) {
+	manager := &Management{}
+	item, err := manager.projectRun(t.Context(), state.ScheduleRunRecord{
+		RunID: "run-1", Trigger: state.ScheduleRunTriggerManual,
+		DispatchState: state.ScheduleRunPending, ReportLocatorRef: testTelegramReportLocator,
+	})
+	if err != nil || item.ReportLocatorRef != testTelegramReportLocator {
+		t.Fatalf("projected run = %+v, err=%v", item, err)
 	}
 }
 

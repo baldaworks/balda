@@ -176,6 +176,18 @@ func (s *ScheduledJobScheduler) reconcileConfiguredJobs(ctx context.Context) err
 				return fmt.Errorf("scheduler job %q envelope.key: %w", job.ID, err)
 			}
 		}
+		reportKind, reportKey := job.Target, job.Key
+		report := target
+		if job.ReportTo != nil {
+			reportKind, reportKey = job.ReportTo.Target, job.ReportTo.Key
+			if reportKind == envelopetarget.TargetLocator {
+				var err error
+				report, err = locatorref.Parse(reportKey)
+				if err != nil {
+					return fmt.Errorf("scheduler job %q report_to: %w", job.ID, err)
+				}
+			}
+		}
 		nextRunAt, err := nextRunAtFromSpec(job.Cron, now)
 		if err != nil {
 			return fmt.Errorf("compute next run for scheduler job %q: %w", job.ID, err)
@@ -190,13 +202,13 @@ func (s *ScheduledJobScheduler) reconcileConfiguredJobs(ctx context.Context) err
 			ChannelType:         target.ChannelType,
 			AddressKey:          target.AddressKey,
 			AddressJSON:         target.AddressJSON,
-			ReportToEnabled:     job.Key != "",
-			ReportToTargetKind:  job.Target,
-			ReportToTargetKey:   locatorref.Format(target),
-			ReportToSessionID:   target.SessionID,
-			ReportToChannelType: target.ChannelType,
-			ReportToAddressKey:  target.AddressKey,
-			ReportToAddressJSON: target.AddressJSON,
+			ReportToEnabled:     reportKey != "",
+			ReportToTargetKind:  reportKind,
+			ReportToTargetKey:   reportKey,
+			ReportToSessionID:   report.SessionID,
+			ReportToChannelType: report.ChannelType,
+			ReportToAddressKey:  report.AddressKey,
+			ReportToAddressJSON: report.AddressJSON,
 			Content:             job.Content,
 			ScheduleSpec:        job.Cron,
 			Timezone:            "UTC",
@@ -549,16 +561,41 @@ func normalizeScheduledJobSchedulerConfig(raw ScheduledJobSchedulerConfig) (Sche
 		if content == "" {
 			return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].envelope.content is required", idx)
 		}
+		var reportTo *ConfiguredScheduledJobTarget
 		if rawJob.ReportTo != nil {
-			return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].envelope.report_to is unsupported; use envelope.key for the report locator", idx)
+			if key != "" {
+				return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].envelope must use either key or report_to", idx)
+			}
+			reference := ConfiguredScheduledJobTarget{
+				Target: strings.TrimSpace(rawJob.ReportTo.Target), Key: strings.TrimSpace(rawJob.ReportTo.Key),
+			}
+			if reference.Key == "" {
+				return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].envelope.report_to.key is required", idx)
+			}
+			switch reference.Target {
+			case envelopetarget.TargetLocator:
+				locator, err := locatorref.Parse(reference.Key)
+				if err != nil {
+					return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].envelope.report_to.key: %w", idx, err)
+				}
+				reference.Key = locatorref.Format(locator)
+			case envelopetarget.TargetManagedAlias:
+				if !validScheduleAliasName(reference.Key) {
+					return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].envelope.report_to.key is not a managed alias name", idx)
+				}
+			default:
+				return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].envelope.report_to.target must be locator or managed_alias", idx)
+			}
+			reportTo = &reference
 		}
 
 		cfg.Jobs = append(cfg.Jobs, ConfiguredScheduledJob{
-			ID:      jobID,
-			Cron:    cronSpec,
-			Target:  target,
-			Key:     key,
-			Content: content,
+			ID:       jobID,
+			Cron:     cronSpec,
+			Target:   target,
+			Key:      key,
+			Content:  content,
+			ReportTo: reportTo,
 		})
 	}
 

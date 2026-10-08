@@ -74,7 +74,7 @@ func (f workflowTestFormatter) Format(text string) (deliveryfmt.Message, error) 
 	return deliveryfmt.Message{Name: name, Text: "formatted:" + text, PlainFallback: text}, nil
 }
 
-func TestHandleResolvesFormattedDeliveryBeforeOutboxAndProvider(t *testing.T) {
+func TestHandleRecordsFormattedDeliveryBeforeProvider(t *testing.T) {
 	t.Parallel()
 
 	for _, test := range []struct {
@@ -114,8 +114,11 @@ func TestHandleResolvesFormattedDeliveryBeforeOutboxAndProvider(t *testing.T) {
 			if len(dispatcher.deliveries) != test.wantCalls {
 				t.Fatalf("provider calls = %d, want %d", len(dispatcher.deliveries), test.wantCalls)
 			}
-			if outbox.reserveCalls != test.wantCalls {
-				t.Fatalf("outbox reservations = %d, want %d", outbox.reserveCalls, test.wantCalls)
+			if outbox.reserveCalls != 1 {
+				t.Fatalf("outbox reservations = %d, want 1", outbox.reserveCalls)
+			}
+			if test.wantPermanent && outbox.failedReason != permanentDeliveryFailure {
+				t.Fatalf("outbox failure reason = %q, want permanent", outbox.failedReason)
 			}
 			if test.wantCalls == 1 {
 				message := dispatcher.deliveries[0].Message
@@ -241,6 +244,60 @@ func TestHandleLogsFormatterFailureWithoutMessageOrErrorContent(t *testing.T) {
 	if !strings.Contains(got, `"resolution_outcome":"formatter_failed"`) ||
 		!strings.Contains(got, `"settlement_class":"permanent"`) {
 		t.Fatalf("formatter diagnostics = %s, want formatter failure and permanent settlement", got)
+	}
+}
+
+func TestHandlePersistsPermanentPreparationFailureForFinalReport(t *testing.T) {
+	provider, err := baldastate.NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = provider.Close() })
+	const jobID = "webhook-report-preparation-failure"
+	if _, err := provider.Jobs().CreateJob(t.Context(), baldastate.JobRecord{
+		ID: jobID, Objective: "request", Status: baldastate.JobStatusCompleted,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	registry := workflowTestRegistry(t, workflowTestFormatter{
+		name: deliveryfmt.NameTelegramRichMarkdown, err: errors.New("formatter rejected output"),
+	}, true)
+	dispatcher := &recordingFormattedDispatcher{}
+	service := NewWithRegistry(dispatcher, registry, provider.Jobs(), nil, nil, nil, zerolog.Nop())
+	payload := deliverycmd.Payload{
+		Locator: deliverycmd.Locator{ChannelType: deliveryfmt.TransportTelegram, AddressKey: "1:0", SessionID: "tg-1-0"},
+		Mode:    deliverycmd.ModeAgentReply, Settlement: deliverycmd.SettlementOutbox,
+		DeliveryFormat: deliveryfmt.DeliveryFormatRichMarkdown, JobID: jobID, Text: "report",
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := actorlayer.Envelope{
+		ID: "report-delivery", DedupeKey: jobID + ":delivery:final", Kind: "delivery.command",
+		Meta:    map[string]string{"job_id": jobID},
+		Payload: actorlayer.Payload{Encoding: actorlayer.EncodingJSON, Data: raw},
+	}
+	if err := service.Handle(t.Context(), env, payload); actorlayer.ClassifyError(err) != actorlayer.ErrorKindPermanent {
+		t.Fatalf("delivery error = %v, want permanent", err)
+	}
+	if len(dispatcher.deliveries) != 0 {
+		t.Fatalf("provider sends = %d, want none", len(dispatcher.deliveries))
+	}
+	receipt, found, err := provider.Jobs().FinalDelivery(t.Context(), jobID)
+	if err != nil || !found || receipt.Status != baldastate.DeliveryStatusFailed || receipt.Error != permanentDeliveryFailure {
+		t.Fatalf("final receipt = %+v, found=%t err=%v", receipt, found, err)
+	}
+	successRegistry := workflowTestRegistry(t, workflowTestFormatter{
+		name: deliveryfmt.NameTelegramRichMarkdown,
+	}, true)
+	retryDispatcher := &recordingFormattedDispatcher{}
+	retryService := NewWithRegistry(retryDispatcher, successRegistry, provider.Jobs(), nil, nil, nil, zerolog.Nop())
+	if err := retryService.Handle(t.Context(), env, payload); err != nil {
+		t.Fatalf("duplicate terminal delivery = %v, want no-op", err)
+	}
+	if len(retryDispatcher.deliveries) != 0 {
+		t.Fatalf("duplicate provider sends = %d, want none", len(retryDispatcher.deliveries))
 	}
 }
 
@@ -407,7 +464,7 @@ func TestHandleRecordsSafeDeliveryFailureDiagnostics(t *testing.T) {
 	if actorlayer.ClassifyError(err) != actorlayer.ErrorKindPermanent {
 		t.Fatalf("Handle() error kind = %q, want permanent: %v", actorlayer.ClassifyError(err), err)
 	}
-	if outbox.failedReason != "permanent" {
+	if outbox.failedReason != permanentDeliveryFailure {
 		t.Fatalf("outbox failure reason = %q, want permanent", outbox.failedReason)
 	}
 	eventData, err := json.Marshal(events.payload)
@@ -639,4 +696,3 @@ func TestHandleAmbiguousQuestionDeliveryDoesNotFailQuestion(t *testing.T) {
 		t.Fatalf("actor.envelopes len = %d, want 0", len(actor.envelopes))
 	}
 }
-

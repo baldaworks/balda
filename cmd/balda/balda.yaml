@@ -141,10 +141,10 @@ balda:
     # Each route binds:
     # - path: incoming webhook path
     # - prompt_template: Go text/template rendered with request data
-    # - envelope: explicit destination and mode
-    #   - target/key: destination address (default alias/owner)
-    #   - mode: job|session (default job)
-    #   - report_to: optional destination for progress/final replies
+    # - envelope: optional final report destination
+    #   - report_to.target: locator|managed_alias|alias
+    #   - report_to.key: public locator or managed/role alias name
+    #   - ack_on_delivery: wait for a sent final report receipt
     # - auth: route auth policy
     #   - type: none|header
     #   - header/value: required for type=header
@@ -161,9 +161,9 @@ balda:
     #       Body:
     #       {{.RawBody}}
     #     envelope:
-    #       target: "alias"
-    #       key: "owner"
-    #       mode: "task"
+    #       report_to:
+    #         target: "managed_alias"
+    #         key: "main_chat"
     #     auth:
     #       type: "header"
     #       header: "X-Webhook-Token"

@@ -9,6 +9,7 @@ import (
 
 var Module = fx.Module("balda_jobexec",
 	fx.Provide(
+		NewWebhookRunFinalizer,
 		fx.Annotate(
 			func(s *baldajobs.JobLifecycleService) JobLifecycle { return s },
 		),

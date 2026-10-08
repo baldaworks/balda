@@ -21,6 +21,7 @@ New code should attach to one of these zones deliberately instead of landing in
 | Session runtime | runtime session lifecycle, restore/ensure/get session semantics, workspace/session binding, provider-backed runtime ownership for Balda sessions and goal runs | `session`, `sessionapp`, session-facing runtime support in `agent` | queued turn execution policy, durable job orchestration, feature actor behavior |
 | Turn execution | queued turn restoration, provider turn execution, turn progress/final reply orchestration | `sessionturn`, `sessionturnapp` | general session lifecycle, generic job persistence |
 | Job lifecycle | durable job records, job events, delivery persistence, projections, scheduled durable work execution | `jobs`, `jobexec`, `scheduledjobs` | transport adapters, ingress parsing, conversational session ownership |
+| Destination management | administrator-managed locator names, canonical public locator policy, guarded alias mutation and lookup | `aliases`; contracts in `aliascmd`, wiring in `aliasfx` and `aliasbackofficeapp` | role authorization state, concrete transport adapters, job execution |
 | Control and access | operator-driven cancel/clear/wait flows, owner/collaborator/channel auth state | `controlapp`, `auth` | feature actor behavior, transport-specific command handling |
 | Command behavior | exact-name product command handlers and neutral command envelopes | `actors/command`, `commandcmd`; wiring in `commandfx` | transport parsing, provider markup, generic session ownership |
 | Conversational ingress | provider-neutral authorization/session preconditions, one durable SessionActor publish attempt, accepted/retry/terminal settlement | `chatapp`, `chatfx`, `ingressapp`; concrete runtime bindings in `handlersfx` | channel delivery, provider turn execution |
@@ -79,6 +80,12 @@ This is already close to a small subsystem. Keep the ownership narrow:
 - `jobexec` owns job-specific execution use-cases over that durable state;
 - `scheduledjobs` owns startup-managed recurring and one-shot scheduled work.
 
+`scheduledjobs` resolves optional report references when a cron or manual run
+is admitted and stores the selected concrete locator with the run. It owns the
+missing-alias failed-slot policy; delivery and retry use the frozen snapshot.
+`jobexec` owns webhook JobActor replay and private-run finalization after final
+delivery settlement. The transient session lifecycle stays in `session`.
+
 Do not make `jobs` the default dependency for unrelated application logic just
 because it already has a convenient store or service.
 
@@ -94,6 +101,10 @@ This zone owns operator-facing control semantics and access state:
 `controlapp` owns control flows.
 `auth` owns access-control state and access-control support services.
 `authcmd` owns the transport-neutral collaborator data contract, ensuring persistence (`state`) and other layers can reference collaborator identity without importing the `auth` service package.
+
+Managed destination names belong to `aliases`, not the control/access zone.
+`auth` supplies existing role destination resolution and authority through
+narrow ports; `aliasfx` composes those ports with managed alias lookup.
 
 Do not mix feature behavior into this zone. It should express "who may do what"
 and "how operator actions settle", not product actor workflows.

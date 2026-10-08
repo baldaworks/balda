@@ -107,7 +107,8 @@ func (s *sqlScheduleManagementStore) AdmitManualRun(ctx context.Context, a Sched
 	}
 	if err := validateScheduleRun(a.Run); err != nil || a.Run.Trigger != ScheduleRunTriggerManual ||
 		a.Run.DefinitionVersion != a.ExpectedVersion || a.ExpectedVersion == 0 ||
-		a.Run.DispatchState != ScheduleRunPending {
+		(a.Run.DispatchState != ScheduleRunPending &&
+			(a.Run.DispatchState != ScheduleRunFailed || a.Run.SafeFailureCode != "report_alias_unavailable")) {
 		return false, schedulecmd.ErrInvalid
 	}
 	if err := usercmd.ValidateAuditEvent(a.Audit); err != nil ||
@@ -168,7 +169,7 @@ func (s *sqlScheduleManagementStore) AdmitManualRun(ctx context.Context, a Sched
 	r.UpdatedAt = r.CreatedAt
 	result, err := tx.ExecContext(ctx, s.users.bind(`INSERT INTO balda_schedule_runs
 		(`+scheduleRunColumns+`)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (schedule_id, trigger_key) DO NOTHING`), scheduleRunValues(r)...)
 	if err != nil {
 		return false, schedulecmd.ErrUnavailable
@@ -224,8 +225,11 @@ func validateScheduleMutation(m ScheduleMutation) error {
 		strings.TrimSpace(r.ScheduleSpec) == "" || r.Deleted && r.Enabled {
 		return schedulecmd.ErrInvalid
 	}
-	if r.ReportToEnabled && (strings.TrimSpace(r.ReportToChannelType) == "" ||
-		strings.TrimSpace(r.ReportToAddressKey) == "" || strings.TrimSpace(r.ReportToAddressJSON) == "") {
+	hasReportLocator := strings.TrimSpace(r.ReportToChannelType) != "" &&
+		strings.TrimSpace(r.ReportToAddressKey) != "" && strings.TrimSpace(r.ReportToAddressJSON) != ""
+	hasReportReference := strings.TrimSpace(r.ReportToTargetKind) != "" &&
+		strings.TrimSpace(r.ReportToTargetKey) != ""
+	if r.ReportToEnabled && !hasReportLocator && !hasReportReference {
 		return schedulecmd.ErrInvalid
 	}
 	if (m.Kind == ScheduleCreate && (m.ExpectedVersion != 0 || r.Deleted || !r.Enabled)) ||

@@ -37,9 +37,9 @@ type jobEventAppender interface {
 	AppendEvent(ctx context.Context, jobID string, eventType string, actor string, messageID string, payload any) error
 }
 
-// ScheduleOutputRecorder keeps one provider result before optional delivery.
-type ScheduleOutputRecorder interface {
-	RecordScheduledOutput(ctx context.Context, jobID, output string) error
+// PrivateOutputRecorder keeps one private run result before optional delivery.
+type PrivateOutputRecorder interface {
+	RecordPrivateOutput(ctx context.Context, jobID, output string, failed bool) error
 }
 
 type runtimeStateReader interface {
@@ -98,7 +98,7 @@ type TurnExecutionService struct {
 	jobEvents      jobEventAppender
 	sessions       runtimeStateReader
 	turnCapture    CompletedTurnCapture
-	scheduleOutput ScheduleOutputRecorder
+	privateOutput  PrivateOutputRecorder
 	progressHook   ProgressTransportHook
 	formatComposer *FormatPromptComposer
 	logger         zerolog.Logger
@@ -205,10 +205,10 @@ func (s *TurnExecutionService) SetCompletedTurnCapture(capture CompletedTurnCapt
 	s.turnCapture = capture
 }
 
-// SetScheduleOutputRecorder binds the durable result writer at composition time.
-func (s *TurnExecutionService) SetScheduleOutputRecorder(recorder ScheduleOutputRecorder) {
+// SetPrivateOutputRecorder binds the durable result writer at composition time.
+func (s *TurnExecutionService) SetPrivateOutputRecorder(recorder PrivateOutputRecorder) {
 	if s != nil {
-		s.scheduleOutput = recorder
+		s.privateOutput = recorder
 	}
 }
 
@@ -271,16 +271,16 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 	}
 
 	req.DeliveryOptions = deliveryfmt.NormalizeOptions(req.DeliveryOptions)
-	recurringSchedule := req.TurnSource == turncmd.SourceSchedule && strings.HasPrefix(req.SessionID, "sch-")
-	if recurringSchedule && req.Deliver && req.DeliveryLocator.ChannelType == "" {
-		return fmt.Errorf("scheduled report locator is required")
+	privateRun := turncmd.IsPrivateRun(req.TurnSource, req.SessionID)
+	if privateRun && req.Deliver && req.DeliveryLocator.ChannelType == "" {
+		return fmt.Errorf("private report locator is required")
 	}
 	providerText := req.Text
 	var (
 		formatState *formatStateChange
 		err         error
 	)
-	if !recurringSchedule && s.formatComposer != nil {
+	if !privateRun && s.formatComposer != nil {
 		providerText, formatState, err = s.formatComposer.Compose(
 			ctx,
 			req.Locator,
@@ -349,7 +349,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 		Int("input_file_data_part_count", inputFileDataPartCount).
 		Strs("input_inline_data_mime_types", inlineMIMETypes).
 		Msg("assembled provider user content")
-	if !recurringSchedule {
+	if !privateRun {
 		if err := s.startAutoCycleIfNeeded(ctx, req); err != nil {
 			return err
 		}
@@ -360,16 +360,18 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 	}
 	permissionOutcomes := &permissionOutcomeRecorder{}
 	runCtx = permissioncmd.WithOutcomeSink(runCtx, permissionOutcomes)
-	runCtx = permissioncmd.WithInteraction(runCtx, questioncmd.InteractionContext{
-		SessionID:   req.SessionID,
-		ChannelKind: req.Locator.ChannelType,
-		Locator:     req.Locator,
-		RequestedBy: questioncmd.UserRef{UserID: requesterUserID},
-		Origin:      questioncmd.InteractionOrigin{RootJobID: strings.TrimSpace(req.JobID)},
-	})
+	if !privateRun {
+		runCtx = permissioncmd.WithInteraction(runCtx, questioncmd.InteractionContext{
+			SessionID:   req.SessionID,
+			ChannelKind: req.Locator.ChannelType,
+			Locator:     req.Locator,
+			RequestedBy: questioncmd.UserRef{UserID: requesterUserID},
+			Origin:      questioncmd.InteractionOrigin{RootJobID: strings.TrimSpace(req.JobID)},
+		})
+	}
 
 	progressEmitter := req.ProgressEmitter
-	if recurringSchedule {
+	if privateRun {
 		progressEmitter = nil
 	} else if progressEmitter == nil && req.Deliver && s.dispatcher != nil {
 		progressEmitter = NewSessionProgressDispatcher(
@@ -461,7 +463,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 			if err != nil {
 				return err
 			}
-			if jobBackedDelivery && !recurringSchedule && result.DispatchedPlanText != "" {
+			if jobBackedDelivery && !privateRun && result.DispatchedPlanText != "" {
 				if err := s.appendJobEvent(ctx, req.JobID, baldajobs.JobEventAgentProgress, "session.actor", "", map[string]any{
 					"kind": "plan",
 					"text": result.DispatchedPlanText,
@@ -589,12 +591,12 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 			sawTurnComplete = true
 			responseText := streamedText.String()
 			memoryResponseText := memoryStreamedText.String()
-			if !recurringSchedule && formatState != nil && successfulFormatTurn(ev, responseText) {
+			if !privateRun && formatState != nil && successfulFormatTurn(ev, responseText) {
 				if err := s.formatComposer.Commit(ctx, req.Locator, *formatState); err != nil {
 					return err
 				}
 			}
-			if !recurringSchedule && s.turnCapture != nil && shouldCaptureTerminalTurn(ev, req.Text, memoryResponseText) {
+			if !privateRun && s.turnCapture != nil && shouldCaptureTerminalTurn(ev, req.Text, memoryResponseText) {
 				if sourceTurnID := completedTurnSourceID(req); sourceTurnID != "" {
 					captureErr := s.turnCapture.CaptureCompletedTurn(ctx, CompletedTurn{
 						UserText:       req.Text,
@@ -615,14 +617,14 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 					}
 				}
 			}
-			if recurringSchedule {
-				if s.scheduleOutput == nil {
-					return fmt.Errorf("scheduled output recorder is unavailable")
+			if privateRun {
+				if s.privateOutput == nil {
+					return fmt.Errorf("private output recorder is unavailable")
 				}
 				providerFailed := ev.Interrupted || terminalTurnStatus(ev) != TerminalStatusSuccess
 				failureText := ""
 				if providerFailed {
-					failureText = "The scheduled run could not complete. Ask the operator to check Balda."
+					failureText = privateRunFailureMessage(req.TurnSource)
 				}
 				if failureText == "" {
 					failureText = permissionOutcomeTurnMessage(permissionOutcomes.Latest())
@@ -636,15 +638,15 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 					output = failureText
 				}
 				if strings.TrimSpace(output) == "" {
-					output = "The scheduled run produced no report. Ask the operator to check Balda."
+					output = privateRunEmptyMessage(req.TurnSource)
 					failed = true
 				}
-				if err := s.scheduleOutput.RecordScheduledOutput(ctx, req.JobID, output); err != nil {
-					return fmt.Errorf("record scheduled output: %w", err)
+				if err := s.privateOutput.RecordPrivateOutput(ctx, req.JobID, output, failed); err != nil {
+					return fmt.Errorf("record private output: %w", err)
 				}
 				if req.Deliver {
 					if !jobBackedDelivery {
-						return fmt.Errorf("scheduled report dispatcher is unavailable")
+						return fmt.Errorf("private report dispatcher is unavailable")
 					}
 					if err := s.dispatchJobDelivery(ctx, req.JobID, req.DeliveryLocator, req.SessionID,
 						deliveryFormat, output, "final"); err != nil {
@@ -653,9 +655,12 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 				}
 				if failed {
 					if req.Deliver {
+						if req.TurnSource == turncmd.SourceWebhook {
+							return fmt.Errorf("%w: provider execution failed", turncmd.ErrWebhookReportQueued)
+						}
 						return fmt.Errorf("%w: provider execution failed", turncmd.ErrScheduledReportQueued)
 					}
-					return fmt.Errorf("scheduled provider execution failed")
+					return fmt.Errorf("private provider execution failed")
 				}
 				break
 			}
@@ -734,7 +739,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 				if terminalMessage != "" {
 					if jobBackedDelivery {
 						suffix := "terminal"
-						if recurringSchedule {
+						if privateRun {
 							suffix = "final"
 						}
 						if err := s.dispatchJobDelivery(ctx, req.JobID, req.Locator, req.SessionID, deliveryFormat, terminalMessage, suffix); err != nil {
@@ -766,7 +771,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 				Bool("terminal_has_error_message", terminalErrorMessage != "").
 				Bool("handled_empty_terminal_reason", handledEmptyTerminalReason).
 				Msg("processed turn complete event")
-			if !recurringSchedule {
+			if !privateRun {
 				if err := s.maybeScheduleAutoTurn(ctx, req, responseSource, strings.TrimSpace(responseText)); err != nil {
 					return err
 				}
@@ -779,11 +784,25 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 			Int("streamed_text_char_count", streamedText.Len()).
 			Msg("provider event stream ended without turn complete; suppressing balda response")
 	}
-	if recurringSchedule && !sawTurnComplete {
-		return fmt.Errorf("scheduled run ended without turn completion")
+	if privateRun && !sawTurnComplete {
+		return fmt.Errorf("private run ended without turn completion")
 	}
 
 	return nil
+}
+
+func privateRunFailureMessage(source string) string {
+	if source == turncmd.SourceWebhook {
+		return "The webhook run could not complete. Ask the operator to check Balda."
+	}
+	return "The scheduled run could not complete. Ask the operator to check Balda."
+}
+
+func privateRunEmptyMessage(source string) string {
+	if source == turncmd.SourceWebhook {
+		return "The webhook run produced no output. Ask the operator to check Balda."
+	}
+	return "The scheduled run produced no report. Ask the operator to check Balda."
 }
 
 func successfulFormatTurn(event *adksession.Event, responseText string) bool {

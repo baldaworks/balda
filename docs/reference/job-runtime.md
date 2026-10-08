@@ -46,7 +46,8 @@ Ordinary conversational turns from Telegram, Slack, and Zulip do not create
 Balda includes an internal scheduler backed by `balda_scheduled_jobs` and a
 durable run ledger in `balda_schedule_runs`. Recurring definitions have two
 owners: host configuration (`balda.scheduler.jobs`) and Backoffice. Each has
-an ID, a five-field UTC cron expression, content, and an optional report locator.
+an ID, a five-field UTC cron expression, content, and an optional report
+destination: a public locator or a Backoffice-managed alias.
 Backoffice creates managed definitions through the
 administrator-only [Schedules page](backoffice.md#schedules-management).
 Internal one-shot `@once` timers share the job store but are never listed as
@@ -60,17 +61,24 @@ recurring schedules.
   a durable job command. Execution starts in a new private session derived from
   the run's execution job identity, independent of any recipient chat. Pending
   or retrying runs survive restart.
-- Optional locator form: omit both `envelope.target` and `envelope.key` for no
-  external report, or set `target=locator` and
-  `key=<channel_type>:<address_key>`. A supplied value is syntax-checked but
-  does not need to identify a currently existing chat or session. `/locator`
-  returns a paste-ready value. See the [locator command contract](../commands.md#locator).
+- Optional report form: omit `envelope.report_to` for no external report, or
+  provide `target=locator` with `key=<channel_type>:<address_key>` or
+  `target=managed_alias` with a managed name. An existing literal
+  `envelope.target=locator` plus `envelope.key` remains accepted. `/locator`
+  returns a paste-ready public ref. A locator's external address need not exist;
+  an alias may be referenced before its mapping exists.
+- Admission selection: cron and manual runs resolve the report reference before
+  publication and durably store the concrete selected locator with the run.
+  Retargeting or deleting the alias affects future runs only. A missing alias
+  creates a failed run without command publication. A failed cron slot advances
+  its cursor while the definition stays active; a manual failure changes no
+  cron cursor. Resolver storage errors use the bounded retry policy.
 - Output and delivery: the execution job stores the provider output, and the
-  run snapshot stores its input. If a locator is configured, Balda offers that
+  run snapshot stores its input. If a destination is selected, Balda offers that
   output (or a bounded failure message) through the durable delivery outbox.
   Progress and interactive permission questions never go to the report locator;
   permission requests that require a live conversation fail closed.
-  No locator means no external delivery. The private runtime session, its events,
+  No destination means no external delivery. The private runtime session, its events,
   and its ephemeral workspace branch are deleted after execution and, when
   applicable, final delivery settles, even if workspace mode changed during a
   restart. A canceled run with no queued report
@@ -97,7 +105,8 @@ recurring schedules.
   including failures before publication and terminal execution outcomes.
   Archived schedules retain readable history. Browser inventory exposes bounded
   status/failure labels without instruction content. Guarded run detail exposes
-  only the frozen input and durable output, regardless of report delivery.
+  the selected concrete locator, frozen input and durable output, regardless of
+  report delivery.
 
 ## Inbound webhook contract (internal)
 
@@ -110,17 +119,17 @@ Balda can optionally expose local webhook routes that map path -> route envelope
 - Method: `POST` only.
 - Route resolution:
   - request path must match a configured route `path`
-  - destination comes from route `envelope.target` + `envelope.key` (default `alias:owner`)
-  - authenticated routes may use `envelope.key_from_body` to read a top-level JSON string instead of a fixed `key`; `target=session` resolves that session ID to its persisted locator
-  - `envelope.report_to` supports the same `key_from_body` field, so replies return to the source session
-  - `envelope.fallback_to` may name a fixed `alias` or `locator` for authenticated, body-sourced session routes; it is used only when the source session is missing or inactive
-  - `target=locator` accepts `<channel_type>:<address_key>` in `key`; obtain the
-    current value from the [locator command](../commands.md#locator)
-  - route `envelope.mode` decides publish target:
-    - `job` (default): publish webhook job command; job execution later emits the session command
-    - `session`: publish session command directly
+  - optional `envelope.report_to` accepts `target=locator`, `managed_alias`, or
+    the existing role `alias`, with a `key`; `/locator` prints a public locator
+  - no report destination retains the final job output without external delivery
+  - a new request resolves `report_to` when admitted and stores the concrete
+    locator in its durable admission row. Duplicates, retries and restarted
+    publication use that selection even after an alias changes or is deleted.
+    A missing destination rejects new admission without publishing work.
+  - every accepted request publishes a JobActor command for a new private
+    `wh-` session; it never restores the recipient's conversation session
 
-For a trusted event source that includes the originating session ID:
+For an authenticated event source that reports to `main_chat`:
 
 ```yaml
 balda:
@@ -134,30 +143,28 @@ balda:
           header: Authorization
           secret_env: BROKER_WEBHOOK_AUTHORIZATION
         envelope:
-          target: session
-          key_from_body: chat_id
-          mode: job
           ack_on_delivery: true
           report_to:
-            target: session
-            key_from_body: chat_id
-          fallback_to:
-            target: alias
-            key: owner@mattermost
+            target: managed_alias
+            key: main_chat
 ```
 
 - Prompt generation:
-  - request body is treated as opaque raw text unless a route uses `key_from_body`, which requires a JSON object
+  - request body is treated as opaque raw text
   - route `prompt_template` is rendered with `RequestID`, `Path`, `Method`, `RawBody`, `Headers`
   - rendered prompt must be non-empty
-- Session resolution:
-  - ingress resolves route target locator and user id from owner store aliases
-  - ingress publishes a durable command after prompt rendering
-  - job mode: the job command later emits the session command for execution
-  - session mode: ingress command is already a session command
-  - the runtime lazily restores the persisted session when inactive in memory and creates the owner session when no persisted session exists
-  - webhook acceptance therefore depends on transport publish, not on synchronous session restore
-  - uses `deliver=false` by default; route `envelope.report_to` enables progress/final delivery to that destination
+- Private execution and delivery:
+  - after admission, ingress publishes one durable JobActor command; JobActor
+    republishes the stable SessionActor turn if interrupted after job creation
+  - the provider executes in a transient private session independent of the
+    selected report locator; progress, session memory, automatic turns and
+    interactive questions do not enter this path
+  - job input and final output remain in durable job state. Only the final plain
+    text output or bounded terminal failure is sent through DeliveryActor and
+    the outbox when `report_to` is configured
+  - after terminal delivery settles, cleanup removes the private session,
+    runtime events and ephemeral workspace state; interrupted cleanup retries
+    after restart without resending the report
 - Dedupe:
   - default source is `request_id`
   - `dedupe.source=header` uses `dedupe.header` value when present
@@ -170,9 +177,14 @@ balda:
   - invalid method: `405` + `error.code="invalid_method"` + message `could not accept request`
   - auth reject: `401` + `error.code="unauthorized"` + message `could not accept request`
   - invalid body/template render: `400` + `error.code="invalid_payload"` + message `could not accept request`
-  - unresolved/restore-failed session: `404` + `error.code="session_not_found"` + message `could not accept request`
+  - unavailable report destination: `404` + `error.code="destination_not_found"` + message `could not accept request`
   - queue pressure: `429` + `error.code="queue_full"` + message `temporarily busy`
   - transport publish/internal failures: `503` + `error.code="dispatch_failed"` + message `temporarily busy`
 - Observability:
   - logs keep request routing and transport metadata internal; public responses stay limited to request id, message id, status, acceptance, and stable error code/message values
   - internal outcome counters track accepted, invalid, not-found, queue-full, and dispatch-failure events
+
+Older webhook route fields that selected an execution target (`target`, `key`,
+`mode`, `key_from_body`, `fallback_to`) are rejected at startup. Replace them
+with optional `envelope.report_to`; the route now executes a new private job
+instead of continuing an existing session.
