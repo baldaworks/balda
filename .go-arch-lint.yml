@@ -135,6 +135,10 @@ components:
     in:
       - internal/apps/balda/webhookmanagement
 
+  webhook_route_wiring:
+    in:
+      - internal/apps/balda/webhookroutefx
+
   alias_contracts:
     in:
       - internal/apps/balda/aliascmd
@@ -494,6 +498,7 @@ deps:
   webhook_route_contracts:
     mayDependOn:
       - webhook_route_contracts
+      - user_contracts
     anyVendorDeps: false
 
   webhook_management:
@@ -501,9 +506,16 @@ deps:
       - webhook_route_contracts
       - contracts
       - user_contracts
-      - storage
+    # Constructor injection otherwise infers a false policy-to-adapter edge;
+    # direct imports remain checked and storage is not an allowed dependency.
     deepScan: false
     anyVendorDeps: true
+
+  webhook_route_wiring:
+    mayDependOn:
+      - webhook_route_contracts
+      - storage
+    anyVendorDeps: false
 
   alias_contracts:
     mayDependOn:
@@ -955,6 +967,7 @@ deps:
     mayDependOn:
       - webhook_route_contracts
       - webhook_management
+      - webhook_route_wiring
       - alias_contracts
       - alias_policy
       - alias_wiring

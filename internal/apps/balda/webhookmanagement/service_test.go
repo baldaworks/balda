@@ -9,25 +9,24 @@ import (
 	"testing"
 	"time"
 
-	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookroutecmd"
 )
 
 type memoryStore struct {
-	routes       map[string]state.WebhookRouteRecord
-	mutations    []state.WebhookRouteMutation
-	reconciled   []state.WebhookRouteRecord
+	routes       map[string]webhookroutecmd.Record
+	mutations    []webhookroutecmd.Mutation
+	reconciled   []webhookroutecmd.Record
 	authorityErr error
 }
 
-func (s *memoryStore) Get(_ context.Context, name string) (state.WebhookRouteRecord, bool, error) {
+func (s *memoryStore) Get(_ context.Context, name string) (webhookroutecmd.Record, bool, error) {
 	r, ok := s.routes[name]
 	r.SecretVerifier = ""
 	return r, ok, nil
 }
 
-func (s *memoryStore) List(context.Context) ([]state.WebhookRouteRecord, error) {
-	var routes []state.WebhookRouteRecord
+func (s *memoryStore) List(context.Context) ([]webhookroutecmd.Record, error) {
+	var routes []webhookroutecmd.Record
 	for _, r := range s.routes {
 		if r.Deleted {
 			continue
@@ -38,25 +37,25 @@ func (s *memoryStore) List(context.Context) ([]state.WebhookRouteRecord, error) 
 	return routes, nil
 }
 
-func (s *memoryStore) ReconcileConfig(_ context.Context, routes []state.WebhookRouteRecord) error {
+func (s *memoryStore) ReconcileConfig(_ context.Context, routes []webhookroutecmd.Record) error {
 	s.reconciled = routes
 	return nil
 }
 
-func (s *memoryStore) CheckAuthority(context.Context, state.WebhookRouteAuthority) error {
+func (s *memoryStore) CheckAuthority(context.Context, webhookroutecmd.Authority) error {
 	return s.authorityErr
 }
 
-func (s *memoryStore) Save(_ context.Context, m state.WebhookRouteMutation) error {
+func (s *memoryStore) Save(_ context.Context, m webhookroutecmd.Mutation) error {
 	if r, ok := s.routes[m.Record.Name]; ok {
-		if r.Source != state.WebhookRouteSourceManaged {
-			return state.ErrWebhookRouteForbidden
+		if r.Source != webhookroutecmd.SourceManaged {
+			return webhookroutecmd.ErrForbidden
 		}
-		if m.Kind == state.WebhookRouteCreate || r.Version != m.ExpectedVersion {
-			return state.ErrWebhookRouteConflict
+		if m.Kind == webhookroutecmd.MutationCreate || r.Version != m.ExpectedVersion {
+			return webhookroutecmd.ErrConflict
 		}
-	} else if m.Kind != state.WebhookRouteCreate {
-		return state.ErrWebhookRouteNotFound
+	} else if m.Kind != webhookroutecmd.MutationCreate {
+		return webhookroutecmd.ErrNotFound
 	}
 	s.mutations = append(s.mutations, m)
 	s.routes[m.Record.Name] = m.Record
@@ -75,7 +74,7 @@ func testDefinition() webhookroutecmd.Definition {
 }
 
 func TestManagedRouteLifecycleAndOneTimeSecret(t *testing.T) {
-	store := &memoryStore{routes: make(map[string]state.WebhookRouteRecord)}
+	store := &memoryStore{routes: make(map[string]webhookroutecmd.Record)}
 	service := New(store)
 	authority := testAuthority()
 	created, err := service.Create(t.Context(), webhookroutecmd.Create{Definition: testDefinition(), Authority: authority})
@@ -135,7 +134,7 @@ func TestManagedRouteLifecycleAndOneTimeSecret(t *testing.T) {
 }
 
 func TestManagedRouteValidationAndAuthority(t *testing.T) {
-	store := &memoryStore{routes: make(map[string]state.WebhookRouteRecord)}
+	store := &memoryStore{routes: make(map[string]webhookroutecmd.Record)}
 	service := New(store)
 	authority := testAuthority()
 	for _, tc := range []struct {
@@ -162,7 +161,7 @@ func TestManagedRouteValidationAndAuthority(t *testing.T) {
 	if len(store.mutations) != 0 {
 		t.Fatalf("invalid inputs mutated store %d times", len(store.mutations))
 	}
-	store.authorityErr = state.ErrWebhookRouteForbidden
+	store.authorityErr = webhookroutecmd.ErrForbidden
 	if _, err := service.Create(t.Context(), webhookroutecmd.Create{Definition: testDefinition(),
 		Authority: authority}); !errors.Is(err, webhookroutecmd.ErrForbidden) {
 		t.Fatalf("forbidden create = %v", err)
@@ -173,7 +172,7 @@ func TestManagedRouteValidationAndAuthority(t *testing.T) {
 }
 
 func TestConfiguredRouteReconciliationRetainsDisabledDeclarations(t *testing.T) {
-	store := &memoryStore{routes: make(map[string]state.WebhookRouteRecord)}
+	store := &memoryStore{routes: make(map[string]webhookroutecmd.Record)}
 	service := New(store)
 	err := service.ReconcileConfig(t.Context(), []webhookroutecmd.ConfiguredRoute{{
 		Name: "configured", Path: "/configured", PromptTemplate: "{{.RawBody}}",
@@ -189,15 +188,33 @@ func TestConfiguredRouteReconciliationRetainsDisabledDeclarations(t *testing.T) 
 	}
 }
 
+func TestDisabledPlaceholderConfigDoesNotBlockReconciliation(t *testing.T) {
+	store := &memoryStore{routes: make(map[string]webhookroutecmd.Record)}
+	service := New(store)
+	placeholder := webhookroutecmd.ConfiguredRoute{Name: "later", Enabled: false}
+	valid := webhookroutecmd.ConfiguredRoute{Name: "configured", Path: "/configured",
+		PromptTemplate: "{{.RawBody}}", Enabled: false}
+	if err := service.ReconcileConfig(t.Context(), []webhookroutecmd.ConfiguredRoute{placeholder, valid}); err != nil {
+		t.Fatalf("disabled route reconciliation = %v", err)
+	}
+	if len(store.reconciled) != 1 || store.reconciled[0].Name != "configured" || store.reconciled[0].Enabled {
+		t.Fatalf("reconciled routes = %+v", store.reconciled)
+	}
+	placeholder.Enabled = true
+	if err := service.ReconcileConfig(t.Context(), []webhookroutecmd.ConfiguredRoute{placeholder}); !errors.Is(err, webhookroutecmd.ErrInvalid) {
+		t.Fatalf("enabled placeholder = %v, want invalid", err)
+	}
+}
+
 func TestConfigOwnedRouteIsReadOnly(t *testing.T) {
-	store := &memoryStore{routes: map[string]state.WebhookRouteRecord{
-		"configured": {Name: "configured", Source: state.WebhookRouteSourceConfig,
+	store := &memoryStore{routes: map[string]webhookroutecmd.Record{
+		"configured": {Name: "configured", Source: webhookroutecmd.SourceConfig,
 			Path: "/configured", PromptTemplate: "{{.RawBody}}", Enabled: true, Version: 1},
 	}}
 	service := New(store)
 	authority := testAuthority()
 	item, err := service.Get(t.Context(), "configured", authority)
-	if err != nil || item.Source != state.WebhookRouteSourceConfig {
+	if err != nil || item.Source != webhookroutecmd.SourceConfig {
 		t.Fatalf("config route detail = %+v, %v", item, err)
 	}
 	if _, err := service.SetEnabled(t.Context(), webhookroutecmd.ChangeSelection{

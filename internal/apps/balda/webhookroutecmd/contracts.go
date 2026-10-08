@@ -4,6 +4,8 @@ package webhookroutecmd
 import (
 	"errors"
 	"time"
+
+	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 )
 
 var (
@@ -125,4 +127,45 @@ type ConfiguredRoute struct {
 	AuthType       string
 	AuthHeader     string
 	Enabled        bool
+}
+
+const (
+	// SourceConfig marks metadata owned by host configuration.
+	SourceConfig = "config"
+	// SourceManaged marks a Backoffice-owned route definition.
+	SourceManaged = "managed"
+)
+
+// Record is the durable route value shared by management and its store port.
+// SecretVerifier is populated only for ingress lookup, not List or Get.
+type Record struct {
+	Name, Source, Path, PromptTemplate string
+	ReportToKind, ReportToKey          string
+	AckOnDelivery                      bool
+	DedupeSource, DedupeHeader         string
+	AuthType, AuthHeader               string
+	SecretVerifier                     string
+	Enabled, Deleted                   bool
+	Version                            uint64
+	CreatedAt, UpdatedAt               time.Time
+}
+
+// MutationKind identifies a guarded managed route write.
+type MutationKind string
+
+const (
+	MutationCreate    MutationKind = "create"
+	MutationEdit      MutationKind = "edit"
+	MutationSelection MutationKind = "selection"
+	MutationDelete    MutationKind = "delete"
+	MutationRotate    MutationKind = "rotate"
+)
+
+// Mutation couples a route write to browser authority and security audit.
+type Mutation struct {
+	Kind            MutationKind
+	Record          Record
+	ExpectedVersion uint64
+	Authority       Authority
+	Audit           usercmd.AuditEvent
 }
