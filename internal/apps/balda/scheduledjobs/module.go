@@ -56,7 +56,9 @@ var Module = fx.Module("balda_scheduled_jobs",
 			runs state.ScheduleRunStore, executionJobs state.JobLifecycleStore,
 			deliveries state.DeliveryStore,
 			scheduler *ScheduledJobScheduler) *Management {
-			return NewManagement(jobs, store, runs, executionJobs, deliveries)
+			management := NewManagement(jobs, store, runs, executionJobs, deliveries)
+			management.resolver = scheduler.resolver
+			return management
 		},
 	),
 	fx.Invoke(func(*ScheduledJobScheduler) {}),

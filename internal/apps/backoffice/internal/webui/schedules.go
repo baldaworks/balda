@@ -25,6 +25,7 @@ type ScheduleEditor struct {
 	Row                            ScheduleRow
 	New                            bool
 	ID, Cron, Content, Locator     string
+	Alias, ReportKind              string
 	Action                         string
 	RunRequestKey, NextHistoryPath string
 	Runs                           []ScheduleRunView
@@ -39,12 +40,14 @@ type ScheduleRunView struct {
 
 // ScheduleRunDetailView carries only one run's input and confirmed output.
 type ScheduleRunDetailView struct {
-	Input, Output, State string
+	Input, Output, State, Failure, ReportLocatorRef string
 }
 
 func ProjectScheduleRunDetail(detail schedulecmd.RunDetail) *ScheduleRunDetailView {
+	status := ProjectScheduleRun(detail.Run)
 	return &ScheduleRunDetailView{Input: detail.Input, Output: detail.Output,
-		State: ProjectScheduleRun(detail.Run).State}
+		ReportLocatorRef: detail.Run.ReportLocatorRef,
+		State:            status.State, Failure: status.Failure}
 }
 
 // ProjectScheduleRun maps durable execution state to safe operator labels.
@@ -90,6 +93,8 @@ func ProjectScheduleRun(run schedulecmd.RunItem) ScheduleRunView {
 			view.Failure = "Execution failed."
 		case "delivery_failed":
 			view.Failure = "Report delivery failed."
+		case "report_alias_unavailable":
+			view.Failure = "Report destination unavailable for this run."
 		}
 	}
 	return view
@@ -105,6 +110,9 @@ func ProjectScheduleRow(item schedulecmd.Item) ScheduleRow {
 	if row.ReadOnly {
 		row.Source = "Configuration"
 	}
+	if d.Alias != "" {
+		row.Locator = "Alias · " + d.Alias
+	}
 	if row.Locator == "" {
 		row.Locator = "None"
 	}
@@ -115,8 +123,14 @@ func ProjectScheduleRow(item schedulecmd.Item) ScheduleRow {
 func ProjectScheduleEditor(item schedulecmd.Item, create bool) *ScheduleEditor {
 	d := item.Definition
 	e := &ScheduleEditor{Row: ProjectScheduleRow(item), New: create, ID: d.ID, Cron: d.Cron,
-		Content: d.Content, Locator: d.Locator,
+		Content: d.Content, Locator: d.Locator, Alias: d.Alias, ReportKind: "none",
 		Action: "/schedules/" + url.PathEscape(d.ID)}
+	if d.Locator != "" {
+		e.ReportKind = "locator"
+	}
+	if d.Alias != "" {
+		e.ReportKind = "managed_alias"
+	}
 	if create {
 		e.Action = "/schedules"
 		e.Row.ReadOnly = false

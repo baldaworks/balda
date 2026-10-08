@@ -759,6 +759,53 @@ func TestNormalizeScheduledJobSchedulerConfig_TrimsEnvelope(t *testing.T) {
 	}
 }
 
+func TestNormalizeConfiguredScheduleAllowsManagedReportAliasBeforeItExists(t *testing.T) {
+	got, err := normalizeScheduledJobSchedulerConfig(ScheduledJobSchedulerConfig{
+		Jobs: []ConfiguredScheduledJob{{
+			ID: "daily", Cron: "0 9 * * *", Content: "review",
+			ReportTo: &ConfiguredScheduledJobTarget{Target: envelopetarget.TargetManagedAlias, Key: testManagedScheduleAlias},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Jobs) != 1 || got.Jobs[0].ReportTo == nil ||
+		got.Jobs[0].ReportTo.Target != envelopetarget.TargetManagedAlias ||
+		got.Jobs[0].ReportTo.Key != testManagedScheduleAlias {
+		t.Fatalf("normalized report alias = %+v", got.Jobs)
+	}
+}
+
+func TestNormalizeConfiguredScheduleRejectsMalformedAliasName(t *testing.T) {
+	_, err := normalizeScheduledJobSchedulerConfig(ScheduledJobSchedulerConfig{
+		Jobs: []ConfiguredScheduledJob{{ID: "daily", Cron: "0 9 * * *", Content: "review",
+			ReportTo: &ConfiguredScheduledJobTarget{Target: envelopetarget.TargetManagedAlias, Key: "Owner@Telegram"}}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "report_to.key") {
+		t.Fatalf("malformed alias = %v, want key error", err)
+	}
+}
+
+func TestReconcileConfiguredScheduleStoresUnresolvedReportAlias(t *testing.T) {
+	store := newSchedulerJobStore(t)
+	scheduler := newSchedulerForTest(t, store, nil, time.Date(2026, time.May, 14, 12, 0, 0, 0, time.UTC))
+	scheduler.config = ScheduledJobSchedulerConfig{Jobs: []ConfiguredScheduledJob{{
+		ID: "daily", Cron: "0 9 * * *", Content: "review",
+		ReportTo: &ConfiguredScheduledJobTarget{Target: envelopetarget.TargetManagedAlias, Key: testManagedScheduleAlias},
+	}}}
+	if err := scheduler.reconcileConfiguredJobs(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	record, found, err := store.GetByID(t.Context(), "daily")
+	if err != nil || !found {
+		t.Fatalf("stored schedule: found=%t err=%v", found, err)
+	}
+	if !record.ReportToEnabled || record.ReportToTargetKind != envelopetarget.TargetManagedAlias ||
+		record.ReportToTargetKey != testManagedScheduleAlias || record.ReportToSessionID != "" {
+		t.Fatalf("unresolved report reference = %+v", record)
+	}
+}
+
 func TestNormalizeScheduledJobSchedulerConfigRejectsAmbiguousAddress(t *testing.T) {
 	base := ConfiguredScheduledJob{ID: "daily", Cron: "0 9 * * *", Target: "locator",
 		Key: "telegram:9001:0", Content: "review"}
@@ -770,11 +817,6 @@ func TestNormalizeScheduledJobSchedulerConfigRejectsAmbiguousAddress(t *testing.
 		{name: "alias", job: func() ConfiguredScheduledJob { j := base; j.Target = "alias"; return j }(), want: "envelope.target must be locator"},
 		{name: "session", job: func() ConfiguredScheduledJob { j := base; j.Target = "session"; return j }(), want: "envelope.target must be locator"},
 		{name: "invalid locator", job: func() ConfiguredScheduledJob { j := base; j.Key = "telegram:bad"; return j }(), want: "envelope.key"},
-		{name: "report to", job: func() ConfiguredScheduledJob {
-			j := base
-			j.ReportTo = &ConfiguredScheduledJobTarget{Target: "locator", Key: "telegram:9002:0"}
-			return j
-		}(), want: "envelope.report_to is unsupported"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := normalizeScheduledJobSchedulerConfig(ScheduledJobSchedulerConfig{Jobs: []ConfiguredScheduledJob{tc.job}})

@@ -22,15 +22,15 @@ func (s *sqliteScheduledJobStore) Upsert(ctx context.Context, record ScheduledJo
 		return fmt.Errorf("job id is required")
 	}
 	channelType := strings.TrimSpace(record.ChannelType)
-	if channelType == "" && (record.Source == "" || record.Source == ScheduledJobSourceInternal || record.ReportToEnabled) {
+	if channelType == "" && (record.Source == "" || record.Source == ScheduledJobSourceInternal) {
 		return fmt.Errorf("channel_type is required")
 	}
 	addressKey := strings.TrimSpace(record.AddressKey)
-	if addressKey == "" && (record.Source == "" || record.Source == ScheduledJobSourceInternal || record.ReportToEnabled) {
+	if addressKey == "" && (record.Source == "" || record.Source == ScheduledJobSourceInternal) {
 		return fmt.Errorf("address_key is required")
 	}
 	addressJSON := strings.TrimSpace(record.AddressJSON)
-	if addressJSON == "" && (record.Source == "" || record.Source == ScheduledJobSourceInternal || record.ReportToEnabled) {
+	if addressJSON == "" && (record.Source == "" || record.Source == ScheduledJobSourceInternal) {
 		return fmt.Errorf("address_json is required")
 	}
 	content := strings.TrimSpace(record.Content)

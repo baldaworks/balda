@@ -461,6 +461,21 @@ func checkProvider_ScheduleRunAdmissions(t *testing.T, open contractOpener) {
 	if err != nil || !found || got.RunID != manual.RunID {
 		t.Fatalf("manual run = %+v, %v", got, err)
 	}
+	failed := manual
+	failed.RunID, failed.TriggerKey = "manual-missing-alias", "manual:missing-alias"
+	failed.DispatchState = ScheduleRunFailed
+	failed.SafeFailureCode = "report_alias_unavailable"
+	failed.ReportLocatorRef = ""
+	admission.Run = failed
+	admission.Audit.ID = "missing-alias-audit"
+	created, err = p.ScheduleManagement().AdmitManualRun(t.Context(), admission)
+	if err != nil || !created {
+		t.Fatalf("missing alias admission = %v, %v", created, err)
+	}
+	got, found, err = p.ScheduleRuns().GetByID(t.Context(), failed.RunID)
+	if err != nil || !found || got.DispatchState != ScheduleRunFailed || got.SafeFailureCode != "report_alias_unavailable" {
+		t.Fatalf("missing alias run = %+v, found=%t err=%v", got, found, err)
+	}
 }
 
 func checkCollaborators(t *testing.T, open contractOpener) {

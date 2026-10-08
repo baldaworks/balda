@@ -87,7 +87,8 @@ async function textLineCount(locator) {
       await page.getByLabel('Schedule ID').fill(newID);
       await page.getByLabel('Cron (UTC)').fill('0 9 * * 1');
       if (viewport.name === 'desktop') {
-        await page.getByLabel('Report locator (optional)', { exact: true }).fill('telegram:9001:0');
+        await page.getByLabel('Report destination').selectOption('locator');
+        await page.getByLabel('Report locator', { exact: true }).fill('telegram:9001:0');
       }
       await page.getByLabel('Content').fill('Prepare weekly review');
       await assertNoDocumentOverflow(page, `${viewport.name} creation form`);

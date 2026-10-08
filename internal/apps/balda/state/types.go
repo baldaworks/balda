@@ -323,6 +323,7 @@ type ScheduleRunRecord struct {
 	DispatchedAt      time.Time
 	ExecutionJobID    string
 	PayloadJSON       string
+	ReportLocatorRef  string
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 }

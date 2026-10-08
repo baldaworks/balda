@@ -10,9 +10,163 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 )
+
+type mutableScheduleAliasResolver struct {
+	locator deliverycmd.Locator
+	calls   int
+	err     error
+}
+
+func (r *mutableScheduleAliasResolver) ResolveAlias(context.Context, string) (envelopetarget.Resolved, error) {
+	return envelopetarget.Resolved{}, errors.New("role alias is not configured")
+}
+
+func (r *mutableScheduleAliasResolver) ResolveManagedAlias(_ context.Context, name string) (envelopetarget.Resolved, error) {
+	r.calls++
+	if r.err != nil {
+		return envelopetarget.Resolved{}, r.err
+	}
+	if name != testManagedScheduleAlias || r.locator.SessionID == "" {
+		return envelopetarget.Resolved{}, envelopetarget.ErrDestinationUnavailable
+	}
+	return envelopetarget.Resolved{Locator: r.locator}, nil
+}
+
+func TestCronAliasBackendFailureUsesBoundedRetryPolicy(t *testing.T) {
+	provider, err := state.NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = provider.Close() })
+	now := time.Date(2026, 10, 8, 9, 0, 0, 0, time.UTC)
+	job := state.ScheduledJobRecord{JobID: "daily", Source: state.ScheduledJobSourceConfig,
+		Enabled: true, DefinitionVersion: 1, ReportToEnabled: true,
+		ReportToTargetKind: envelopetarget.TargetManagedAlias, ReportToTargetKey: testManagedScheduleAlias,
+		Content: "review", ScheduleSpec: "0 9 * * *", Status: state.ScheduledJobStatusActive,
+		MaxRetries: 1, NextRunAt: now.Add(-time.Minute)}
+	if err := provider.ScheduledJobs().Upsert(t.Context(), job); err != nil {
+		t.Fatal(err)
+	}
+	scheduler := newSchedulerForTest(t, provider.ScheduledJobs(), &recordingHandlerCommandBus{}, now)
+	scheduler.runStore = provider.ScheduleRuns()
+	scheduler.resolver = &mutableScheduleAliasResolver{err: envelopetarget.ErrResolutionUnavailable}
+	if err := scheduler.dispatchJob(t.Context(), job, now); err == nil {
+		t.Fatal("backend failure did not return an error")
+	}
+	current, _, err := provider.ScheduledJobs().GetByID(t.Context(), job.JobID)
+	if err != nil || current.Status != state.ScheduledJobStatusActive || current.RetryCount != 1 ||
+		!current.NextRunAt.After(now) {
+		t.Fatalf("first backend retry = %+v, err=%v", current, err)
+	}
+	if err := scheduler.dispatchJob(t.Context(), current, current.NextRunAt); err == nil {
+		t.Fatal("second backend failure did not return an error")
+	}
+	current, _, err = provider.ScheduledJobs().GetByID(t.Context(), job.JobID)
+	if err != nil || current.Status != state.ScheduledJobStatusPaused || current.RetryCount != 2 ||
+		current.LastError != "report destination resolution unavailable" {
+		t.Fatalf("bounded backend failure = %+v, err=%v", current, err)
+	}
+}
+
+func TestCronReportAliasFreezesBeforePublicationRetry(t *testing.T) {
+	provider, err := state.NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = provider.Close() })
+	now := time.Date(2026, 10, 8, 9, 0, 0, 0, time.UTC)
+	due := now.Add(-time.Minute)
+	job := state.ScheduledJobRecord{JobID: "daily", Source: state.ScheduledJobSourceConfig,
+		Enabled: true, DefinitionVersion: 1, ReportToEnabled: true,
+		ReportToTargetKind: envelopetarget.TargetManagedAlias, ReportToTargetKey: testManagedScheduleAlias,
+		Content: "review", ScheduleSpec: "0 9 * * *", Status: state.ScheduledJobStatusActive,
+		NextRunAt: due}
+	if err := provider.ScheduledJobs().Upsert(t.Context(), job); err != nil {
+		t.Fatal(err)
+	}
+	first := baldatelegram.NewLocator(9001, 0)
+	second := baldatelegram.NewLocator(9002, 0)
+	resolver := &mutableScheduleAliasResolver{locator: first}
+	bus := &recordingHandlerCommandBus{commandErrs: []error{errors.New("broker unavailable")}}
+	scheduler := newSchedulerForTest(t, provider.ScheduledJobs(), bus, now)
+	scheduler.runStore = provider.ScheduleRuns()
+	scheduler.resolver = resolver
+	if err := scheduler.dispatchJob(t.Context(), job, now); err != nil {
+		t.Fatal(err)
+	}
+	key := "daily@" + due.Format(time.RFC3339Nano)
+	run, found, err := provider.ScheduleRuns().GetByTriggerKey(t.Context(), job.JobID, key)
+	if err != nil || !found || run.ReportLocatorRef != testTelegramReportLocator ||
+		run.DispatchState != state.ScheduleRunRetrying {
+		t.Fatalf("frozen retry run = %+v, found=%t err=%v", run, found, err)
+	}
+	resolver.locator = second
+	if err := scheduler.processPendingRuns(t.Context(), now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if resolver.calls != 1 || len(bus.commands) != 1 {
+		t.Fatalf("retry alias resolutions=%d commands=%d", resolver.calls, len(bus.commands))
+	}
+	var published struct {
+		ScheduledJob struct {
+			ReportTo *deliverycmd.Locator `json:"report_to"`
+		} `json:"scheduled_job"`
+	}
+	if err := json.Unmarshal(bus.commands[0].Payload.Data, &published); err != nil {
+		t.Fatal(err)
+	}
+	if published.ScheduledJob.ReportTo == nil || published.ScheduledJob.ReportTo.AddressKey != first.AddressKey {
+		t.Fatalf("retried report = %+v, want first address", published.ScheduledJob.ReportTo)
+	}
+}
+
+func TestMissingCronReportAliasFailsOnlySelectedSlot(t *testing.T) {
+	provider, err := state.NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = provider.Close() })
+	now := time.Date(2026, 10, 8, 9, 0, 0, 0, time.UTC)
+	job := state.ScheduledJobRecord{JobID: "daily", Source: state.ScheduledJobSourceManaged,
+		Enabled: true, DefinitionVersion: 1, ReportToEnabled: true,
+		ReportToTargetKind: envelopetarget.TargetManagedAlias, ReportToTargetKey: testManagedScheduleAlias,
+		Content: "review", ScheduleSpec: "0 9 * * *", Status: state.ScheduledJobStatusActive,
+		NextRunAt: now.Add(-time.Minute)}
+	if err := provider.ScheduledJobs().Upsert(t.Context(), job); err != nil {
+		t.Fatal(err)
+	}
+	resolver := &mutableScheduleAliasResolver{}
+	bus := &recordingHandlerCommandBus{}
+	scheduler := newSchedulerForTest(t, provider.ScheduledJobs(), bus, now)
+	scheduler.runStore = provider.ScheduleRuns()
+	scheduler.resolver = resolver
+	if err := scheduler.dispatchJob(t.Context(), job, now); err != nil {
+		t.Fatal(err)
+	}
+	key := "daily@" + job.NextRunAt.Format(time.RFC3339Nano)
+	failed, found, err := provider.ScheduleRuns().GetByTriggerKey(t.Context(), job.JobID, key)
+	if err != nil || !found || failed.DispatchState != state.ScheduleRunFailed ||
+		failed.SafeFailureCode != runFailureReportAliasUnavailable || len(bus.commands) != 0 {
+		t.Fatalf("missing alias run = %+v, found=%t commands=%d err=%v", failed, found, len(bus.commands), err)
+	}
+	current, found, err := provider.ScheduledJobs().GetByID(t.Context(), job.JobID)
+	if err != nil || !found || !current.Enabled || current.Status != state.ScheduledJobStatusActive ||
+		!current.NextRunAt.After(now) || current.LastDispatchKey != key {
+		t.Fatalf("cron after missing alias = %+v, found=%t err=%v", current, found, err)
+	}
+	resolver.locator = baldatelegram.NewLocator(9002, 0)
+	if err := scheduler.dispatchJob(t.Context(), current, current.NextRunAt); err != nil {
+		t.Fatal(err)
+	}
+	if len(bus.commands) != 1 {
+		t.Fatalf("next cron commands = %d, want 1", len(bus.commands))
+	}
+}
 
 func TestDurableCronRunRetriesWithSameExecutionKey(t *testing.T) {
 	ctx := t.Context()

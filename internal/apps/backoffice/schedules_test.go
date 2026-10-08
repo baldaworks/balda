@@ -27,6 +27,16 @@ type schedulesHTTPFixture struct {
 	runErr      error
 }
 
+func TestScheduleDefinitionSelectsManagedReportAlias(t *testing.T) {
+	definition, err := scheduleDefinition(url.Values{
+		"cron": {"0 9 * * *"}, "content": {"review"},
+		"report_kind": {"managed_alias"}, "alias": {"main_chat"},
+	}, "daily")
+	if err != nil || definition.Alias != "main_chat" || definition.Locator != "" {
+		t.Fatalf("schedule definition = %+v, err=%v", definition, err)
+	}
+}
+
 func (f *schedulesHTTPFixture) Inventory(context.Context, schedulecmd.Authority) ([]schedulecmd.Item, error) {
 	items := make([]schedulecmd.Item, 0, len(f.items))
 	for _, item := range f.items {

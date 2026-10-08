@@ -30,6 +30,7 @@ type Definition struct {
 	ID      string
 	Cron    string
 	Locator string
+	Alias   string
 	Content string
 }
 
@@ -80,13 +81,14 @@ type RunNow struct {
 
 // RunItem is a bounded, content-free view of one execution.
 type RunItem struct {
-	ID              string
-	Trigger         string
-	RequestedAt     time.Time
-	DueAt           time.Time
-	State           string
-	CompletedAt     time.Time
-	SafeFailureCode string
+	ID               string
+	Trigger          string
+	RequestedAt      time.Time
+	DueAt            time.Time
+	State            string
+	CompletedAt      time.Time
+	SafeFailureCode  string
+	ReportLocatorRef string
 }
 
 // RunDetail exposes only the frozen input and durable provider output.

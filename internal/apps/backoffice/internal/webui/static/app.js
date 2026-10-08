@@ -11,9 +11,22 @@ function syncMCPTransport() {
   });
 }
 syncMCPTransport();
+function syncScheduleReport() {
+  document.querySelectorAll("form[data-schedule-definition]").forEach(function (form) {
+    const kind = form.querySelector('[name="report_kind"]').value;
+    form.querySelectorAll("fieldset[data-schedule-reports]").forEach(function (fieldset) {
+      const active = fieldset.dataset.scheduleReports === kind;
+      fieldset.hidden = !active;
+      fieldset.disabled = !active;
+    });
+  });
+}
+syncScheduleReport();
 document.addEventListener("change", function (event) {
   if (event.target instanceof HTMLSelectElement && event.target.name === "transport" &&
       event.target.form?.matches("[data-mcp-create]")) syncMCPTransport();
+  if (event.target instanceof HTMLSelectElement && event.target.name === "report_kind" &&
+      event.target.form?.matches("[data-schedule-definition]")) syncScheduleReport();
 });
 
 function closeMobileSidebar() {
@@ -126,6 +139,7 @@ window.addEventListener("popstate", syncNavigation);
 document.addEventListener("htmx:afterSwap", function (event) {
   if (event.detail.target && event.detail.target.id === "main-content") {
     syncMCPTransport();
+    syncScheduleReport();
     const feedback = document.getElementById("request-error");
     if (feedback) {
       feedback.hidden = true;
@@ -138,6 +152,7 @@ document.addEventListener("htmx:afterSwap", function (event) {
 
 document.addEventListener("htmx:historyRestore", function () {
   syncMCPTransport();
+  syncScheduleReport();
   syncNavigation();
   document.getElementById("main-content")?.focus({ preventScroll: true });
 });

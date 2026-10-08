@@ -13,7 +13,7 @@ const scheduleRunTimeFormat = "2006-01-02T15:04:05.000000000Z07:00"
 
 const scheduleRunColumns = `run_id, schedule_id, trigger, trigger_key, definition_version,
 	version, requested_at, due_at, dispatch_state, attempts, next_attempt_at,
-	safe_failure_code, dispatched_at, execution_job_id, payload_json, created_at, updated_at`
+	safe_failure_code, dispatched_at, execution_job_id, payload_json, report_locator_ref, created_at, updated_at`
 
 type sqlScheduleRunStore struct {
 	db       *sql.DB
@@ -39,7 +39,7 @@ func (s *sqlScheduleRunStore) Create(ctx context.Context, record ScheduleRunReco
 	}
 	result, err := s.db.ExecContext(ctx, s.bind(`INSERT INTO balda_schedule_runs
 		(`+scheduleRunColumns+`)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (schedule_id, trigger_key) DO NOTHING`), scheduleRunValues(record)...)
 	if err != nil {
 		return false, s.failure("create schedule run", err)
@@ -73,7 +73,7 @@ func (s *sqlScheduleRunStore) CreateCron(ctx context.Context, record ScheduleRun
 		expectedNextRunAt.UTC().Format(time.RFC3339))
 	result, err := s.db.ExecContext(ctx, s.bind(`INSERT INTO balda_schedule_runs
 		(`+scheduleRunColumns+`)
-		SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+		SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 		FROM balda_scheduled_jobs WHERE job_id = ? AND definition_version = ?
 		AND next_run_at = ? AND source IN ('config', 'managed')
 		AND enabled = 1 AND deleted = 0 AND status = 'active'
@@ -157,13 +157,13 @@ func (s *sqlScheduleRunStore) Update(ctx context.Context, record ScheduleRunReco
 	result, err := s.db.ExecContext(ctx, s.bind(`UPDATE balda_schedule_runs SET
 		trigger = ?, trigger_key = ?, definition_version = ?, version = ?, requested_at = ?, due_at = ?,
 		dispatch_state = ?, attempts = ?, next_attempt_at = ?, safe_failure_code = ?,
-		dispatched_at = ?, execution_job_id = ?, payload_json = ?, updated_at = ?
+		dispatched_at = ?, execution_job_id = ?, payload_json = ?, report_locator_ref = ?, updated_at = ?
 		WHERE run_id = ? AND schedule_id = ? AND version = ?`),
 		record.Trigger, record.TriggerKey, record.DefinitionVersion, record.Version,
 		formatScheduleRunTime(record.RequestedAt), formatScheduleRunTime(record.DueAt),
 		record.DispatchState, record.Attempts, formatScheduleRunTime(record.NextAttemptAt),
 		record.SafeFailureCode, formatScheduleRunTime(record.DispatchedAt), record.ExecutionJobID,
-		record.PayloadJSON, formatScheduleRunTime(record.UpdatedAt), record.RunID, record.ScheduleID,
+		record.PayloadJSON, record.ReportLocatorRef, formatScheduleRunTime(record.UpdatedAt), record.RunID, record.ScheduleID,
 		expectedVersion)
 	if err != nil {
 		return false, s.failure("update schedule run", err)
@@ -344,6 +344,7 @@ func scheduleRunValues(record ScheduleRunRecord) []any {
 		formatScheduleRunTime(record.DueAt), record.DispatchState, record.Attempts,
 		formatScheduleRunTime(record.NextAttemptAt), record.SafeFailureCode,
 		formatScheduleRunTime(record.DispatchedAt), record.ExecutionJobID, record.PayloadJSON,
+		record.ReportLocatorRef,
 		formatScheduleRunTime(record.CreatedAt), formatScheduleRunTime(record.UpdatedAt),
 	}
 }
@@ -354,7 +355,7 @@ func scanScheduleRun(scan func(...any) error) (ScheduleRunRecord, error) {
 	err := scan(&record.RunID, &record.ScheduleID, &record.Trigger, &record.TriggerKey,
 		&record.DefinitionVersion, &record.Version, &requested, &due, &record.DispatchState,
 		&record.Attempts, &next, &record.SafeFailureCode, &dispatched, &record.ExecutionJobID,
-		&record.PayloadJSON, &created, &updated)
+		&record.PayloadJSON, &record.ReportLocatorRef, &created, &updated)
 	if err != nil {
 		return ScheduleRunRecord{}, err
 	}

@@ -3,12 +3,15 @@ package scheduledjobs
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
+	"github.com/baldaworks/balda/internal/apps/balda/locatorref"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/google/uuid"
@@ -19,7 +22,17 @@ const cronPublishLease = 30 * time.Second
 func (s *ScheduledJobScheduler) dispatchRecurringRun(
 	ctx context.Context, job state.ScheduledJobRecord, key string, now time.Time,
 ) error {
-	payload, err := json.Marshal(job)
+	if existing, found, err := s.runStore.GetByTriggerKey(ctx, job.JobID, key); err != nil {
+		return fmt.Errorf("load existing cron run: %w", err)
+	} else if found {
+		return s.processRun(ctx, existing, now)
+	}
+	selected := job
+	reportRef, resolutionErr := selectScheduleReport(ctx, s.getResolver(), &selected)
+	if resolutionErr != nil && !errors.Is(resolutionErr, envelopetarget.ErrDestinationUnavailable) {
+		return s.markFailureForJob(ctx, job, fmt.Errorf("report destination resolution unavailable"))
+	}
+	payload, err := json.Marshal(selected)
 	if err != nil {
 		return fmt.Errorf("encode schedule run snapshot: %w", err)
 	}
@@ -27,7 +40,12 @@ func (s *ScheduledJobScheduler) dispatchRecurringRun(
 		Trigger: state.ScheduleRunTriggerCron, TriggerKey: key,
 		DefinitionVersion: job.DefinitionVersion, Version: 1, RequestedAt: now.UTC(),
 		DueAt: job.NextRunAt, DispatchState: state.ScheduleRunPending,
-		PayloadJSON: string(payload)}
+		PayloadJSON: string(payload), ReportLocatorRef: reportRef}
+	if resolutionErr != nil {
+		run.DispatchState = state.ScheduleRunFailed
+		run.SafeFailureCode = runFailureReportAliasUnavailable
+		run.Attempts = 1
+	}
 	created, err := s.runStore.CreateCron(ctx, run, job.NextRunAt)
 	if err != nil {
 		return fmt.Errorf("admit cron schedule run: %w", err)
@@ -42,6 +60,35 @@ func (s *ScheduledJobScheduler) dispatchRecurringRun(
 		}
 	}
 	return s.processRun(ctx, run, now)
+}
+
+func selectScheduleReport(ctx context.Context, resolver envelopetarget.DestinationResolver,
+	job *state.ScheduledJobRecord) (string, error) {
+	if job == nil || !job.ReportToEnabled {
+		return "", nil
+	}
+	var locator deliverycmd.Locator
+	if job.ReportToTargetKind != "" {
+		selected, err := envelopetarget.Resolve(ctx, resolver, envelopetarget.Target{
+			Target: job.ReportToTargetKind, Key: job.ReportToTargetKey,
+		})
+		if err != nil {
+			return "", err
+		}
+		locator = selected.Locator
+	} else {
+		var err error
+		locator, err = deliverycmd.NewLocator(job.ReportToChannelType,
+			job.ReportToAddressKey, job.ReportToAddressJSON, job.ReportToSessionID)
+		if err != nil {
+			return "", err
+		}
+	}
+	job.ReportToSessionID = locator.SessionID
+	job.ReportToChannelType = locator.ChannelType
+	job.ReportToAddressKey = locator.AddressKey
+	job.ReportToAddressJSON = locator.AddressJSON
+	return locatorref.Format(locator), nil
 }
 
 func (s *ScheduledJobScheduler) processPendingRuns(ctx context.Context, now time.Time) error {
@@ -65,6 +112,9 @@ func (s *ScheduledJobScheduler) processRun(ctx context.Context, run state.Schedu
 		return s.settleCronRun(ctx, run, now)
 	}
 	if run.DispatchState == state.ScheduleRunFailed {
+		if run.SafeFailureCode == runFailureReportAliasUnavailable {
+			return s.settleMissingAliasCronRun(ctx, run, now)
+		}
 		return s.pauseFailedCronRun(ctx, run)
 	}
 	if run.DispatchState != state.ScheduleRunPending && run.DispatchState != state.ScheduleRunRetrying &&
@@ -111,6 +161,9 @@ func (s *ScheduledJobScheduler) processRun(ctx context.Context, run state.Schedu
 		if err != nil {
 			return s.failRun(ctx, run, now, "invalid_snapshot", false)
 		}
+		if run.ReportLocatorRef != "" && locatorref.Format(locator) != run.ReportLocatorRef {
+			return s.failRun(ctx, run, now, "invalid_snapshot", false)
+		}
 		reportTo = &locator
 	}
 	env, err := turncmd.ScheduledJobEnvelope(job.JobID, strings.TrimSpace(job.Content),
@@ -135,6 +188,32 @@ func (s *ScheduledJobScheduler) processRun(ctx context.Context, run state.Schedu
 		return nil
 	}
 	return s.settleCronRun(ctx, run, now)
+}
+
+func (s *ScheduledJobScheduler) settleMissingAliasCronRun(ctx context.Context,
+	run state.ScheduleRunRecord, now time.Time) error {
+	if run.Trigger != state.ScheduleRunTriggerCron {
+		return nil
+	}
+	var selected state.ScheduledJobRecord
+	if err := json.Unmarshal([]byte(run.PayloadJSON), &selected); err != nil {
+		return fmt.Errorf("decode unavailable cron snapshot: %w", err)
+	}
+	next, err := nextRunAtFromSpec(selected.ScheduleSpec, now.UTC())
+	if err != nil {
+		return fmt.Errorf("compute next cron slot: %w", err)
+	}
+	current := selected
+	current.LastDispatchKey = run.TriggerKey
+	current.LastError = runFailureReportAliasUnavailable
+	current.LastRunAt = run.RequestedAt
+	current.Status = state.ScheduledJobStatusActive
+	current.RetryCount = 0
+	current.NextRunAt = next
+	if _, err := s.jobStore.UpdateRuntime(ctx, runtimeUpdate(selected, current)); err != nil {
+		return fmt.Errorf("settle unavailable cron slot: %w", err)
+	}
+	return nil
 }
 
 func (s *ScheduledJobScheduler) cancelRun(ctx context.Context, run state.ScheduleRunRecord) error {
