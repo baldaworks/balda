@@ -13,6 +13,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/backoffice"
 	"github.com/baldaworks/balda/internal/apps/balda/actorsfx"
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
+	"github.com/baldaworks/balda/internal/apps/balda/aliasfx"
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	"github.com/baldaworks/balda/internal/apps/balda/attachmentstore"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
@@ -30,10 +31,8 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/chatfx"
 	"github.com/baldaworks/balda/internal/apps/balda/commandfx"
 	"github.com/baldaworks/balda/internal/apps/balda/controlapp"
-	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfx"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryworkflow"
-	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
 	natsbus "github.com/baldaworks/balda/internal/apps/balda/eventbus/nats"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	"github.com/baldaworks/balda/internal/apps/balda/handlersfx"
@@ -776,22 +775,7 @@ func Module(
 		fx.Provide(func(provider baldastate.Provider) (*auth.DestinationStore, error) {
 			return auth.NewDestinationStore(provider.AppKV())
 		}),
-		fx.Provide(func(destStore *auth.DestinationStore, provider baldastate.Provider) envelopetarget.DestinationResolver {
-			return auth.NewDestinationResolverWithSessions(destStore, func(ctx context.Context, sessionID string) (envelopetarget.Resolved, bool, error) {
-				record, found, err := provider.Sessions().GetBySessionID(ctx, sessionID)
-				if err != nil || !found {
-					return envelopetarget.Resolved{}, found, err
-				}
-				if record.Status != "" && record.Status != baldastate.SessionStatusActive {
-					return envelopetarget.Resolved{}, false, nil
-				}
-				locator, err := deliverycmd.NewLocator(record.ChannelType, record.AddressKey, record.AddressJSON, record.SessionID)
-				if err != nil {
-					return envelopetarget.Resolved{}, false, err
-				}
-				return envelopetarget.Resolved{Locator: locator, Principal: record.UserID}, true, nil
-			})
-		}),
+		fx.Provide(aliasfx.NewService, aliasfx.NewDestinationResolver),
 		fx.Provide(func(provider baldastate.Provider) webhook.DeliveryReceipts {
 			return provider.Jobs()
 		}),

@@ -274,6 +274,8 @@ const (
 	AuditActionScheduleDefinitionChanged AuditAction = "schedule.definition.changed"
 	// AuditActionScheduleRunRequested records an administrator manual run.
 	AuditActionScheduleRunRequested AuditAction = "schedule.run.requested"
+	// AuditActionAliasChanged records a managed destination mapping change.
+	AuditActionAliasChanged AuditAction = "alias.changed"
 )
 
 // Valid reports whether the action belongs to the bounded security audit vocabulary.
@@ -283,7 +285,7 @@ func (a AuditAction) Valid() bool {
 		AuditActionUserRoleChanged, AuditActionUserStatusChanged, AuditActionCredentialChanged,
 		AuditActionSessionRevoked, AuditActionBindingAttached, AuditActionBindingDetached, AuditActionBindingClaimCreated,
 		AuditActionUserMigrated, AuditActionLoginSucceeded, AuditActionRefreshSucceeded,
-		AuditActionRefreshReplay, AuditActionMFAEnabled, AuditActionMFAReplaced, AuditActionMFADisabled, AuditActionMFARecovered, AuditActionMFAVerified, AuditActionLogout, AuditActionInvitationIssued, AuditActionInvitationRevoked, AuditActionMCPDefinitionChanged, AuditActionMCPAuthorizationChanged, AuditActionMCPCredentialsRenewed, AuditActionScheduleDefinitionChanged, AuditActionScheduleRunRequested:
+		AuditActionRefreshReplay, AuditActionMFAEnabled, AuditActionMFAReplaced, AuditActionMFADisabled, AuditActionMFARecovered, AuditActionMFAVerified, AuditActionLogout, AuditActionInvitationIssued, AuditActionInvitationRevoked, AuditActionMCPDefinitionChanged, AuditActionMCPAuthorizationChanged, AuditActionMCPCredentialsRenewed, AuditActionScheduleDefinitionChanged, AuditActionScheduleRunRequested, AuditActionAliasChanged:
 		return true
 	default:
 		return false
@@ -323,12 +325,14 @@ const (
 	AuditTargetMCP AuditTargetType = "mcp"
 	// AuditTargetSchedule identifies a recurring schedule without content.
 	AuditTargetSchedule AuditTargetType = "schedule"
+	// AuditTargetAlias identifies a managed destination name without exposing its address.
+	AuditTargetAlias AuditTargetType = "alias"
 )
 
 // Valid reports whether the audit target type is supported.
 func (t AuditTargetType) Valid() bool {
 	switch t {
-	case AuditTargetUser, AuditTargetSession, AuditTargetBinding, AuditTargetSystem, AuditTargetMigration, AuditTargetMCP, AuditTargetSchedule:
+	case AuditTargetUser, AuditTargetSession, AuditTargetBinding, AuditTargetSystem, AuditTargetMigration, AuditTargetMCP, AuditTargetSchedule, AuditTargetAlias:
 		return true
 	default:
 		return false

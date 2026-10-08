@@ -123,6 +123,18 @@ components:
     in:
       - internal/apps/balda/schedulecmd
 
+  alias_contracts:
+    in:
+      - internal/apps/balda/aliascmd
+
+  alias_policy:
+    in:
+      - internal/apps/balda/aliases
+
+  alias_wiring:
+    in:
+      - internal/apps/balda/aliasfx
+
   # Credential recognition uses only standard-library values, never transports.
   auth_payload:
     in:
@@ -459,6 +471,33 @@ deps:
       - schedule_contracts
     anyVendorDeps: false
 
+  alias_contracts:
+    mayDependOn:
+      - alias_contracts
+      - user_contracts
+    anyVendorDeps: false
+
+  alias_policy:
+    mayDependOn:
+      - alias_contracts
+      - contracts
+      - user_contracts
+      - alias_policy
+    # Ports are injected at composition; direct import boundaries remain enforced.
+    deepScan: false
+    anyVendorDeps: true
+
+  alias_wiring:
+    mayDependOn:
+      - alias_contracts
+      - alias_policy
+      - contracts
+      - application
+      - storage
+      - alias_wiring
+    deepScan: false
+    anyVendorDeps: false
+
   auth_payload:
     mayDependOn:
       - auth_payload
@@ -545,6 +584,7 @@ deps:
 
   application:
     mayDependOn:
+      - alias_contracts
       - schedule_contracts
       - schedule_policy
       - auth_payload
@@ -842,6 +882,7 @@ deps:
 
   storage:
     mayDependOn:
+      - alias_contracts
       - foundation
       - contracts
       - user_contracts
@@ -861,6 +902,9 @@ deps:
 
   composition_root:
     mayDependOn:
+      - alias_contracts
+      - alias_policy
+      - alias_wiring
       - mcp_backoffice_wiring
       - schedule_backoffice_wiring
       - schedule_policy

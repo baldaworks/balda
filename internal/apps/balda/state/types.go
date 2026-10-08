@@ -94,6 +94,7 @@ type Provider interface {
 	ScheduledJobs() ScheduledJobStore
 	ScheduleManagement() ScheduleManagementStore
 	ScheduleRuns() ScheduleRunStore
+	Aliases() AliasStore
 	Questions() QuestionStore
 	// SessionMemoryIngressOutbox returns producer-local exports awaiting
 	// JetStream PubAck. It is distinct from canonical memory delivery state.

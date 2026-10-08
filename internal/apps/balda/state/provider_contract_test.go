@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/aliascmd"
+	"github.com/baldaworks/balda/internal/apps/balda/aliases"
 	"github.com/baldaworks/balda/internal/apps/balda/authcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/schedulecmd"
@@ -60,6 +62,7 @@ func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) 
 	t.Run("Provider_SessionStoreUpsert_DoesNotDecodeAddressJSON", func(t *testing.T) { checkProvider_SessionStoreUpsert_DoesNotDecodeAddressJSON(t, factory(t)) })
 	t.Run("Provider_ScheduledJobStoreRoundTrip", func(t *testing.T) { checkProvider_ScheduledJobStoreRoundTrip(t, factory(t)) })
 	t.Run("Provider_ScheduleManagementAuthorityAndVersion", func(t *testing.T) { checkProvider_ScheduleManagementAuthorityAndVersion(t, factory(t)) })
+	t.Run("Provider_ManagedAliasAuthorityAndVersion", func(t *testing.T) { checkProvider_ManagedAliasAuthorityAndVersion(t, factory(t)) })
 	t.Run("Provider_ScheduleRunStoreRoundTrip", func(t *testing.T) { checkProvider_ScheduleRunStoreRoundTrip(t, factory(t)) })
 	t.Run("Provider_ScheduleRunAdmissions", func(t *testing.T) { checkProvider_ScheduleRunAdmissions(t, factory(t)) })
 	t.Run("Provider_OffsetPersistsAcrossReopen", func(t *testing.T) { checkProvider_OffsetPersistsAcrossReopen(t, factory(t)) })
@@ -82,6 +85,95 @@ func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) 
 		checkSessionMemoryIngressOutboxRecoversExpiredLeaseAndRejectsForeignSettlement(t, factory(t))
 	})
 	t.Run("SessionMemoryIngressOutboxReplaysTerminalWithAuditAndStats", func(t *testing.T) { checkSessionMemoryIngressOutboxReplaysTerminalWithAuditAndStats(t, factory(t)) })
+}
+
+func checkProvider_ManagedAliasAuthorityAndVersion(t *testing.T, open contractOpener) {
+	path := filepath.Join(t.TempDir(), "aliases.db")
+	p, err := open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { closeContractProvider(t, p) }()
+	base := contractMCPMutation(t, p)
+	a := aliascmd.Authority{UserID: base.Authority.UserID, UserVersion: base.Authority.UserVersion,
+		CredentialVersion: base.Authority.CredentialVersion, MFAVersion: base.Authority.MFAVersion,
+		SessionID: base.Authority.SessionID, SessionVersion: base.Authority.SessionVersion, At: base.Authority.At}
+	audit := usercmd.AuditEvent{ID: "alias-create", Action: usercmd.AuditActionAliasChanged,
+		Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: a.UserID, ActorSessionID: a.SessionID,
+		TargetType: usercmd.AuditTargetAlias, TargetID: "main_chat", Source: "provider-contract", OccurredAt: a.At}
+	m := aliascmd.Mutation{Kind: aliascmd.MutationCreate, Record: aliascmd.Record{Name: "main_chat", LocatorRef: "telegram:-1003953132277:0", Version: 1}, Authority: a, Audit: audit}
+	if err := p.Aliases().Save(t.Context(), m); err != nil {
+		t.Fatal(err)
+	}
+	closeContractProvider(t, p)
+	p, err = open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Aliases().Save(t.Context(), m); !errors.Is(err, aliascmd.ErrConflict) {
+		t.Fatalf("duplicate alias = %v, want conflict", err)
+	}
+	m.Kind, m.ExpectedVersion, m.Record.Version, m.Record.LocatorRef, m.Audit.ID = aliascmd.MutationRetarget, 1, 2, "telegram:-1003953132278:0", "alias-retarget"
+	stale := m
+	stale.Authority.UserVersion++
+	if err := p.Aliases().Save(t.Context(), stale); !errors.Is(err, aliascmd.ErrConflict) {
+		t.Fatalf("stale administrator = %v, want conflict", err)
+	}
+	if err := p.Aliases().Save(t.Context(), m); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Aliases().Save(t.Context(), m); !errors.Is(err, aliascmd.ErrConflict) {
+		t.Fatalf("stale alias version = %v, want conflict", err)
+	}
+	record, found, err := p.Aliases().Get(t.Context(), "main_chat")
+	if err != nil || !found || record.LocatorRef != "telegram:-1003953132278:0" || record.Version != 2 {
+		t.Fatalf("retargeted alias = %+v, %v, %v", record, found, err)
+	}
+	m.Kind, m.ExpectedVersion, m.Record.Version, m.Audit.ID = aliascmd.MutationDelete, 2, 3, "alias-delete"
+	if err := p.Aliases().Save(t.Context(), m); err != nil {
+		t.Fatal(err)
+	}
+	_, found, err = p.Aliases().Get(t.Context(), "main_chat")
+	if err != nil || found {
+		t.Fatalf("deleted alias found = %v, error = %v", found, err)
+	}
+	service := aliases.New(p.Aliases())
+	recreated, err := service.Create(t.Context(), aliascmd.Create{Name: "main_chat", LocatorRef: "telegram:-1003953132279:0", Authority: a})
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, found, err = p.Aliases().Get(t.Context(), "main_chat")
+	if err != nil || !found || record.Version <= 2 || recreated.Version != record.Version {
+		t.Fatalf("recreated alias must return advanced generation: returned %+v, stored %+v, %v, %v", recreated, record, found, err)
+	}
+	stale = m
+	stale.Kind, stale.ExpectedVersion, stale.Record.Version, stale.Audit.ID = aliascmd.MutationRetarget, 1, 2, "alias-stale-old-generation"
+	if err := p.Aliases().Save(t.Context(), stale); !errors.Is(err, aliascmd.ErrConflict) {
+		t.Fatalf("old generation edit = %v, want conflict", err)
+	}
+	updated, err := service.Retarget(t.Context(), aliascmd.Retarget{Name: "main_chat", LocatorRef: "telegram:-1003953132280:0", ExpectedVersion: recreated.Version, Authority: a})
+	if err != nil || updated.Version != recreated.Version+1 {
+		t.Fatalf("retarget recreated alias = %+v, %v", updated, err)
+	}
+	admin, found, err := p.Users().GetUser(t.Context(), a.UserID)
+	if err != nil || !found {
+		t.Fatal(err)
+	}
+	keeper := contractUser("alias-keeper", "alias-keeper", false, a.At)
+	if err := p.Users().CreateUser(t.Context(), keeper, contractSecret(keeper.ID), contractAudit("alias-keeper-create", usercmd.AuditActionUserCreated, keeper.ID, a.At)); err != nil {
+		t.Fatal(err)
+	}
+	admin.Role, admin.Version = usercmd.RoleOperator, admin.Version+1
+	if err := p.Users().UpdateUser(t.Context(), admin, admin.Version-1, contractAudit("alias-admin-demote", usercmd.AuditActionUserRoleChanged, admin.ID, a.At)); err != nil {
+		t.Fatal(err)
+	}
+	a.UserVersion = admin.Version
+	if _, err := service.List(t.Context(), a); !errors.Is(err, aliascmd.ErrForbidden) {
+		t.Fatalf("operator list = %v, want forbidden", err)
+	}
+	if _, err := service.Retarget(t.Context(), aliascmd.Retarget{Name: "main_chat", LocatorRef: "telegram:1:0", ExpectedVersion: updated.Version, Authority: a}); !errors.Is(err, aliascmd.ErrForbidden) {
+		t.Fatalf("operator retarget = %v, want forbidden", err)
+	}
 }
 
 func checkProvider_ScheduleManagementAuthorityAndVersion(t *testing.T, open contractOpener) {

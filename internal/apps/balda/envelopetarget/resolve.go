@@ -16,11 +16,15 @@ var ErrSessionUnavailable = errors.New("session destination unavailable")
 // ErrResolutionUnavailable means the destination backend could not be read.
 var ErrResolutionUnavailable = errors.New("destination resolution unavailable")
 
+// ErrDestinationUnavailable means a named destination has no current mapping.
+var ErrDestinationUnavailable = errors.New("destination unavailable")
+
 const (
-	TargetAlias   = "alias"
-	AliasOwner    = "owner"
-	TargetLocator = "locator"
-	TargetSession = "session"
+	TargetAlias        = "alias"
+	TargetManagedAlias = "managed_alias"
+	AliasOwner         = "owner"
+	TargetLocator      = "locator"
+	TargetSession      = "session"
 )
 
 // Target describes an envelope destination reference (either alias or locator).
@@ -45,6 +49,11 @@ type DestinationResolver interface {
 	ResolveAlias(ctx context.Context, alias string) (Resolved, error)
 }
 
+// ManagedAliasResolver resolves an administrator-managed name independently of role aliases.
+type ManagedAliasResolver interface {
+	ResolveManagedAlias(ctx context.Context, name string) (Resolved, error)
+}
+
 // SessionDestinationResolver resolves an existing session ID to its persisted locator.
 type SessionDestinationResolver interface {
 	ResolveSession(ctx context.Context, sessionID string) (Resolved, error)
@@ -66,6 +75,12 @@ func Resolve(
 	}
 
 	switch targetKind {
+	case TargetManagedAlias:
+		managed, ok := resolver.(ManagedAliasResolver)
+		if !ok {
+			return Resolved{}, fmt.Errorf("%w: managed alias resolver is required", ErrResolutionUnavailable)
+		}
+		return managed.ResolveManagedAlias(ctx, key)
 	case TargetAlias:
 		if resolver == nil {
 			return Resolved{}, fmt.Errorf("%w: destination resolver is required", ErrResolutionUnavailable)
