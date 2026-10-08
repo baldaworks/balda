@@ -156,6 +156,15 @@ balda:
 - Private execution and delivery:
   - after admission, ingress publishes one durable JobActor command; JobActor
     republishes the stable SessionActor turn if interrupted after job creation
+  - immediately before provider invocation, the private turn atomically claims
+    its webhook job in durable state. A replay before this claim may start the
+    turn; a replay after it cannot invoke the provider again, even beyond the
+    broker's duplicate window. If the process stops after the claim but before
+    recording output, Balda reports an indeterminate execution failure rather
+    than risking a duplicate provider or tool side effect
+  - during upgrade, active webhook jobs created before this claim existed are
+    treated as indeterminate on replay because prior provider execution cannot
+    be proven absent
   - the provider executes in a transient private session independent of the
     selected report locator; progress, session memory, automatic turns and
     interactive questions do not enter this path

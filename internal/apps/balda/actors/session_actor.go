@@ -238,6 +238,12 @@ func (e *SessionActorExecutor) enqueueTurn(ctx context.Context, env actorlayer.E
 			if handled {
 				return replayErr
 			}
+			var preparation *turncmd.PreparationError
+			if (errors.Is(err, turncmd.ErrWebhookTurnClaimUnavailable) ||
+				errors.Is(err, turncmd.ErrWebhookTurnAlreadyClaimed) || errors.As(err, &preparation)) &&
+				!actorlayer.RetryExhausted(env.Attempt+1, env.MaxAttempts) {
+				return actorlayer.TransientError(err)
+			}
 		}
 		if reportErr := e.reportPreparationFailure(ctx, env, payload, err); reportErr != nil {
 			return actorlayer.TransientError(reportErr)

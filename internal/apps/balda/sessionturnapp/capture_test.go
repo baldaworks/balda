@@ -33,6 +33,43 @@ type recordedScheduleOutput struct {
 	output string
 }
 
+type webhookTurnClaimFixture struct {
+	claimed bool
+	err     error
+}
+
+func (f *webhookTurnClaimFixture) ClaimWebhookTurn(context.Context, string) (bool, error) {
+	if f.err != nil {
+		return false, f.err
+	}
+	if f.claimed {
+		return false, nil
+	}
+	f.claimed = true
+	return true, nil
+}
+
+func TestPrivateWebhookClaimFailureDoesNotCallProvider(t *testing.T) {
+	providerCalls := 0
+	adkRunner, agentSessionID := newCaptureTestRunner(t, func(invocationID string) []*adksession.Event {
+		providerCalls++
+		return nil
+	})
+	service := NewTurnExecutionServiceWithJobEventsAndCapture(nil, nil, nil,
+		zerolog.Nop(), automode.DefaultMaxTurns, nil)
+	service.SetWebhookTurnClaimer(&webhookTurnClaimFixture{err: errors.New("database unavailable")})
+	err := service.Execute(t.Context(), ExecutionRequest{
+		Text: "input", Runner: adkRunner, UserID: "tg-101", AgentSessionID: agentSessionID,
+		SessionID: privateWebhookID, JobID: "webhook-route-123",
+		Locator: baldasession.SessionLocator{ChannelType: "webhook", AddressKey: privateWebhookID,
+			AddressJSON: "{}", SessionID: privateWebhookID},
+		TurnSource: turncmd.SourceWebhook,
+	})
+	if !errors.Is(err, turncmd.ErrWebhookTurnClaimUnavailable) || providerCalls != 0 {
+		t.Fatalf("claim failure = %v, provider calls = %d", err, providerCalls)
+	}
+}
+
 const privateScheduleID = "sch-0123456789abcdef0123456789abcdef"
 const privateWebhookID = "wh-0123456789abcdef0123456789abcdef"
 
@@ -108,6 +145,7 @@ func TestPrivateWebhookReportsOnlyFinalPlainTextAndKeepsOutput(t *testing.T) {
 	service := NewTurnExecutionServiceWithJobEventsAndCapture(dispatcher, nil, nil,
 		zerolog.Nop(), automode.DefaultMaxTurns, capture)
 	service.SetPrivateOutputRecorder(output)
+	service.SetWebhookTurnClaimer(&webhookTurnClaimFixture{})
 	adkRunner, agentSessionID := newCaptureTestRunner(t, func(invocationID string) []*adksession.Event {
 		partial := adksession.NewEvent(context.Background(), invocationID)
 		partial.Content = genai.NewContentFromText("partial", genai.RoleModel)
@@ -155,6 +193,7 @@ func TestPrivateWebhookWithoutReportKeepsOutputOnly(t *testing.T) {
 	service := NewTurnExecutionServiceWithJobEventsAndCapture(dispatcher, nil, nil,
 		zerolog.Nop(), automode.DefaultMaxTurns, &captureHook{})
 	service.SetPrivateOutputRecorder(output)
+	service.SetWebhookTurnClaimer(&webhookTurnClaimFixture{})
 	adkRunner, agentSessionID := newCaptureTestRunner(t, func(invocationID string) []*adksession.Event {
 		done := adksession.NewEvent(context.Background(), invocationID)
 		done.Content = genai.NewContentFromText("saved answer", genai.RoleModel)
@@ -172,6 +211,42 @@ func TestPrivateWebhookWithoutReportKeepsOutputOnly(t *testing.T) {
 	}
 	if output.output != "saved answer" || len(dispatcher.envelopes) != 0 {
 		t.Fatalf("silent webhook output=%q deliveries=%d", output.output, len(dispatcher.envelopes))
+	}
+}
+
+func TestPrivateWebhookClaimPreventsSecondProviderTurnAfterRestart(t *testing.T) {
+	claim := &webhookTurnClaimFixture{}
+	output := &recordedScheduleOutput{}
+	providerCalls := 0
+	adkRunner, agentSessionID := newCaptureTestRunner(t, func(invocationID string) []*adksession.Event {
+		providerCalls++
+		done := adksession.NewEvent(context.Background(), invocationID)
+		done.Content = genai.NewContentFromText("first answer", genai.RoleModel)
+		done.TurnComplete = true
+		return []*adksession.Event{done}
+	})
+	request := ExecutionRequest{
+		Text: "webhook input", Runner: adkRunner, UserID: "tg-101",
+		AgentSessionID: agentSessionID, SessionID: privateWebhookID, JobID: "webhook-route-123",
+		Locator: baldasession.SessionLocator{ChannelType: "webhook", AddressKey: privateWebhookID,
+			AddressJSON: "{}", SessionID: privateWebhookID},
+		TurnSource: turncmd.SourceWebhook,
+	}
+	newService := func() *TurnExecutionService {
+		service := NewTurnExecutionServiceWithJobEventsAndCapture(nil, nil, nil,
+			zerolog.Nop(), automode.DefaultMaxTurns, nil)
+		service.SetPrivateOutputRecorder(output)
+		service.SetWebhookTurnClaimer(claim)
+		return service
+	}
+	if err := newService().Execute(t.Context(), request); err != nil {
+		t.Fatal(err)
+	}
+	if err := newService().Execute(t.Context(), request); !errors.Is(err, turncmd.ErrWebhookTurnAlreadyClaimed) {
+		t.Fatalf("replayed turn error = %v, want ambiguous prior execution", err)
+	}
+	if providerCalls != 1 {
+		t.Fatalf("provider calls = %d, want one", providerCalls)
 	}
 }
 

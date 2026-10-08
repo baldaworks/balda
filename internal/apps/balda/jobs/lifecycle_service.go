@@ -83,6 +83,14 @@ func (s *JobLifecycleService) RecordPrivateOutput(ctx context.Context, jobID, ou
 	return s.store.RecordPrivateOutput(ctx, jobID, output, failed)
 }
 
+// ClaimWebhookTurn atomically guards the first provider invocation for a webhook job.
+func (s *JobLifecycleService) ClaimWebhookTurn(ctx context.Context, jobID string) (bool, error) {
+	if s == nil {
+		return false, fmt.Errorf("job lifecycle service is unavailable")
+	}
+	return s.store.ClaimWebhookTurn(ctx, jobID)
+}
+
 // RebindScheduledSession moves an active queued pre-upgrade run off its recipient chat scope.
 func (s *JobLifecycleService) RebindScheduledSession(ctx context.Context, jobID, oldSessionID, newSessionID string) (bool, error) {
 	if s == nil || !strings.HasPrefix(strings.TrimSpace(jobID), "scheduled-") || strings.TrimSpace(oldSessionID) == "" ||

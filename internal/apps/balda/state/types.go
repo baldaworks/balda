@@ -497,6 +497,11 @@ type PrivateRunCleanupStore interface {
 	MarkWebhookRunClosed(ctx context.Context, jobID string, closedAt time.Time) error
 }
 
+// WebhookTurnClaimStore guards the first provider invocation for a webhook job.
+type WebhookTurnClaimStore interface {
+	ClaimWebhookTurn(ctx context.Context, jobID string) (bool, error)
+}
+
 // ScheduledOutputStore records one private scheduled run's provider output.
 type ScheduledOutputStore interface {
 	RecordScheduledOutput(ctx context.Context, jobID, output string) error
@@ -537,6 +542,7 @@ type AgentStepStore interface {
 // JobStore is the complete SQLite capability set exposed by the state provider.
 type JobStore interface {
 	JobLifecycleStore
+	WebhookTurnClaimStore
 	PrivateRunCleanupStore
 	ScheduledOutputStore
 	JobEventStore

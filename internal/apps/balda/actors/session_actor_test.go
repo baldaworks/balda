@@ -22,6 +22,102 @@ import (
 
 type actorScheduleModeFixture struct{ oneShot bool }
 
+type immediateTurnQueue struct{}
+
+func (immediateTurnQueue) Enqueue(ctx context.Context, task TurnTask) (<-chan error, int, error) {
+	result := make(chan error, 1)
+	result <- task.Run(ctx)
+	return result, 0, nil
+}
+
+func (immediateTurnQueue) CancelSession(baldasession.SessionLocator, bool) (bool, int, error) {
+	return false, 0, nil
+}
+
+func TestWebhookClaimWriteFailureKeepsUnstartedTurnRetryable(t *testing.T) {
+	ctx := t.Context()
+	provider, bus, dispatcher, tasks, allocator := newTaskActorRuntimeServices(t, ctx)
+	_ = provider
+	_ = bus
+	_ = allocator
+	const jobID = "webhook-route-retry"
+	if created, err := tasks.Create(ctx, baldastate.JobRecord{
+		ID: jobID, SessionID: "wh-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Objective: "input",
+		Status: baldastate.JobStatusRunning, PrivateRunKind: baldastate.PrivateRunKindWebhook,
+	}, "job.actor", nil); err != nil || !created {
+		t.Fatalf("create webhook job = %t, %v", created, err)
+	}
+	payload := SessionTurnPayload{JobID: jobID, Source: turncmd.SourceWebhook,
+		Locator: baldasession.SessionLocator{SessionID: "wh-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			ChannelType: "webhook", AddressKey: "wh-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", AddressJSON: "{}"},
+		Text: "input", DedupeKey: jobID + ":session"}
+	env, err := turncmd.SessionTurnEnvelope(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actor := NewSessionActor(SessionActorConfig{Turns: immediateTurnQueue{}, Tasks: tasks,
+		Dispatcher: dispatcher, Runner: callbackSessionTurnRunner{runFn: func(context.Context, SessionTurnPayload) error {
+			return turncmd.ErrWebhookTurnClaimUnavailable
+		}}})
+	if err := actor.Handle(ctx, env); err == nil || !actorlayer.IsRetryableError(err) {
+		t.Fatalf("unstarted turn error = %v, want retryable", err)
+	}
+	actor.runner = callbackSessionTurnRunner{runFn: func(context.Context, SessionTurnPayload) error {
+		return &turncmd.PreparationError{Cause: errors.New("restore private session failed")}
+	}}
+	if err := actor.Handle(ctx, env); err == nil || !actorlayer.IsRetryableError(err) {
+		t.Fatalf("private session preparation error = %v, want retryable", err)
+	}
+	job, found, err := tasks.Get(ctx, jobID)
+	if err != nil || !found || job.Status != baldastate.JobStatusRunning || job.Result != "" {
+		t.Fatalf("unstarted turn changed job: %+v, found=%t err=%v", job, found, err)
+	}
+}
+
+func TestWebhookInterruptedClaimRecordsIndeterminateFailure(t *testing.T) {
+	ctx := t.Context()
+	provider, bus, dispatcher, tasks, allocator := newTaskActorRuntimeServices(t, ctx)
+	_ = provider
+	_ = bus
+	_ = allocator
+	const jobID = "webhook-route-interrupted"
+	if created, err := tasks.Create(ctx, baldastate.JobRecord{
+		ID: jobID, SessionID: "wh-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Objective: "input",
+		Status: baldastate.JobStatusRunning, PrivateRunKind: baldastate.PrivateRunKindWebhook,
+	}, "job.actor", nil); err != nil || !created {
+		t.Fatalf("create webhook job = %t, %v", created, err)
+	}
+	payload := SessionTurnPayload{JobID: jobID, Source: turncmd.SourceWebhook,
+		Locator: baldasession.SessionLocator{SessionID: "wh-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+			ChannelType: "webhook", AddressKey: "wh-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", AddressJSON: "{}"},
+		Text: "input", DedupeKey: jobID + ":session"}
+	env, err := turncmd.SessionTurnEnvelope(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env.MaxAttempts = 3
+	actor := NewSessionActor(SessionActorConfig{Turns: immediateTurnQueue{}, Tasks: tasks,
+		Dispatcher: dispatcher, Runner: callbackSessionTurnRunner{runFn: func(context.Context, SessionTurnPayload) error {
+			return turncmd.ErrWebhookTurnAlreadyClaimed
+		}}})
+	if err := actor.Handle(ctx, env); err == nil || !actorlayer.IsRetryableError(err) {
+		t.Fatalf("possibly active turn error = %v, want retryable", err)
+	}
+	job, found, err := tasks.Get(ctx, jobID)
+	if err != nil || !found || job.Status != baldastate.JobStatusRunning || job.Result != "" {
+		t.Fatalf("possibly active turn changed job: %+v, found=%t err=%v", job, found, err)
+	}
+	env.Attempt = 2
+	if err := actor.Handle(ctx, env); err != nil {
+		t.Fatalf("ambiguous turn was not settled: %v", err)
+	}
+	job, found, err = tasks.Get(ctx, jobID)
+	if err != nil || !found || job.Status != baldastate.JobStatusFailed ||
+		job.Result != webhookFailureMessage || !strings.Contains(job.Error, "outcome unknown") {
+		t.Fatalf("ambiguous turn outcome = %+v, found=%t err=%v", job, found, err)
+	}
+}
+
 func (f actorScheduleModeFixture) IsOneShot(context.Context, string) (bool, error) {
 	return f.oneShot, nil
 }
