@@ -1,7 +1,7 @@
 :root, [data-bs-theme="dark"] {
   color-scheme: dark;
   --canvas: #181b20; --surface: #212529; --surface-raised: #2b3035;
-  --ink: #dee2e6; --muted: #adb5bd; --border: #495057; --accent: #6ea8fe; --focus: #f59e0b;
+  --ink: #dee2e6; --muted: #adb5bd; --input-placeholder: #94a3af; --border: #495057; --accent: #6ea8fe; --focus: #f59e0b;
   --bs-body-color: var(--ink); --bs-body-bg: var(--surface); --bs-secondary-color: var(--muted);
   --bs-border-color: var(--border); --bs-link-color: var(--accent); --bs-link-hover-color: #9ec5fe;
   --bs-tertiary-bg: var(--canvas); --bs-heading-color: var(--ink);
@@ -47,6 +47,7 @@ html, body { color: var(--ink); background: var(--canvas); }
 .card-body { min-width: 0; padding: 1.25rem; }
 .form-label { font-weight: 600; }
 .form-control, .form-select, .form-check-input { color: var(--ink); background-color: var(--surface-raised); border-color: var(--border); }
+.form-control::placeholder { color: var(--input-placeholder); opacity: 1; }
 .form-control:focus, .form-select:focus { background-color: var(--surface-raised); color: var(--ink); }
 .form-text { color: var(--muted); }
 .btn-outline-secondary { --bs-btn-color: var(--ink); --bs-btn-border-color: var(--muted); }

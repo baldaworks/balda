@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require('playwright');
+const { assertPlaceholderDistinct } = require('./form-color.cjs');
 
 const baseURL = process.argv[2];
 assert.equal(new URL(baseURL).hostname, '127.0.0.1', 'browser gate requires an isolated loopback server');
@@ -31,6 +32,9 @@ async function screenshot(page, name, viewport) {
       assert.equal(await page.locator('h1').textContent(), 'Aliases');
       await screenshot(page, 'inventory', viewport.name);
       await Promise.all([page.waitForURL(`${baseURL}/aliases?new=1`), page.getByRole('link', { name: 'Add alias' }).click()]);
+      await assertPlaceholderDistinct(page.getByLabel('Alias name'), `${viewport.name} alias name`);
+      await assertPlaceholderDistinct(page.getByLabel('Public locator'), `${viewport.name} alias locator`);
+      await screenshot(page, 'create-empty', viewport.name);
       await page.getByLabel('Alias name').fill(name);
       await page.getByLabel('Public locator').fill('telegram:-1003953132277:0');
       await screenshot(page, 'create', viewport.name);

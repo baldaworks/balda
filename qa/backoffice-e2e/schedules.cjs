@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require('playwright');
+const { assertPlaceholderDistinct } = require('./form-color.cjs');
 
 const baseURL = process.argv[2];
 assert.equal(new URL(baseURL).hostname, '127.0.0.1', 'browser gate requires an isolated loopback server');
@@ -92,11 +93,13 @@ async function textLineCount(locator) {
       }
       await Promise.all([page.waitForURL(`${baseURL}/schedules?new=1`), page.getByRole('link', { name: 'Add schedule' }).click()]);
       assert.equal(await page.locator('h1').textContent(), 'Add schedule');
+      await assertPlaceholderDistinct(page.getByLabel('Cron (UTC)'), `${viewport.name} schedule cron`);
       const newID = `weekly-review-${viewport.name}`;
       await page.getByLabel('Schedule ID').fill(newID);
       await page.getByLabel('Cron (UTC)').fill('0 9 * * 1');
       if (viewport.name === 'desktop') {
         await page.getByLabel('Report destination').selectOption('managed_alias');
+        await assertPlaceholderDistinct(page.getByLabel('Managed alias'), 'schedule report alias');
         await page.getByLabel('Managed alias').fill('main_chat');
       }
       await page.getByLabel('Content').fill('Prepare weekly review');
