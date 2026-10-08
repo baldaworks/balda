@@ -60,6 +60,45 @@ func TestTaskActorDispatchesWebhookSessionTurn(t *testing.T) {
 	}
 }
 
+func TestJobActorReplaysWebhookAfterJobRecordCreation(t *testing.T) {
+	ctx := context.Background()
+	bus, dispatcher, tasks := newTaskActorDispatchServices(t, ctx)
+	bus.commandErrs = []error{errors.New("command transport unavailable")}
+	locator := session.SessionLocator{ChannelType: "webhook", AddressKey: "wh-test", AddressJSON: `{}`, SessionID: "wh-test"}
+	env, jobID, err := WebhookJobEnvelope(SessionTurnPayload{
+		Text: "handle event", Locator: locator, Source: sessionTurnSourceWebhook,
+		DedupeKey: "webhook:events:req-1",
+	}, "events", "req-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := NewJobActorExecutor(jobexec.New(tasks, dispatcher)).Handle(ctx, env); err == nil {
+		t.Fatal("failed SessionActor publication was accepted")
+	}
+	stored, found, err := tasks.Get(ctx, jobID)
+	if err != nil || !found || stored.Status != baldastate.JobStatusCreated {
+		t.Fatalf("job after failed publication = %+v, found=%t, err=%v", stored, found, err)
+	}
+	if err := NewJobActorExecutor(jobexec.New(tasks, dispatcher)).Handle(ctx, env); err != nil {
+		t.Fatalf("restarted JobActor did not republish: %v", err)
+	}
+	first := lastPublishedCommandTo(t, bus, baldaexecution.ActorTypeSession, locator.SessionID)
+	if first.ID == "" || first.DedupeKey == "" || baldaexecution.EnvelopeJobID(first) != jobID {
+		t.Fatalf("replayed turn identity = %+v", first)
+	}
+	before := len(bus.commands)
+	if err := NewJobActorExecutor(jobexec.New(tasks, dispatcher)).Handle(ctx, env); err != nil {
+		t.Fatalf("running JobActor redelivery: %v", err)
+	}
+	if len(bus.commands) != before {
+		t.Fatalf("running JobActor redelivery republished: commands=%d, want %d", len(bus.commands), before)
+	}
+	stored, found, err = tasks.Get(ctx, jobID)
+	if err != nil || !found || stored.Status != baldastate.JobStatusRunning {
+		t.Fatalf("job after replay = %+v, found=%t, err=%v", stored, found, err)
+	}
+}
+
 func TestTaskActorRejectsWebhookSessionTurnWithoutEnvelopeJobID(t *testing.T) {
 	t.Parallel()
 

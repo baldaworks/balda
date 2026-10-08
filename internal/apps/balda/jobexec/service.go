@@ -48,28 +48,43 @@ func (s *Service) DispatchWebhookSessionTurn(ctx context.Context, env actorlayer
 		return actorlayer.PolicyError(fmt.Errorf("webhook session job id mismatch: envelope=%q payload=%q", jobID, payloadJobID))
 	}
 	if s.tasks != nil {
-		if _, ok, err := s.tasks.Get(ctx, jobID); err != nil {
-			return actorlayer.TransientError(err)
-		} else if ok {
-			return nil
-		}
-		created, err := s.tasks.Create(ctx, baldastate.JobRecord{
-			ID:            jobID,
-			SessionID:     strings.TrimSpace(payload.Locator.SessionID),
-			ParentJobID:   strings.TrimSpace(payload.ParentJobID),
-			Title:         "Webhook job",
-			Objective:     strings.TrimSpace(payload.Text),
-			Status:        baldastate.JobStatusCreated,
-			OwnerActor:    baldaexecution.ActorTypeJob + ":" + jobID,
-			AssignedActor: baldaexecution.ActorTypeSession + ":" + payload.Locator.SessionID,
-			Priority:      80,
-			CreatedBy:     strings.TrimSpace(payload.UserID),
-		}, "job.actor", payload)
+		existing, found, err := s.tasks.Get(ctx, jobID)
 		if err != nil {
 			return actorlayer.TransientError(err)
 		}
-		if !created {
+		if !found {
+			created, err := s.tasks.Create(ctx, baldastate.JobRecord{
+				ID:            jobID,
+				SessionID:     strings.TrimSpace(payload.Locator.SessionID),
+				ParentJobID:   strings.TrimSpace(payload.ParentJobID),
+				Title:         "Webhook job",
+				Objective:     strings.TrimSpace(payload.Text),
+				Status:        baldastate.JobStatusCreated,
+				OwnerActor:    baldaexecution.ActorTypeJob + ":" + jobID,
+				AssignedActor: baldaexecution.ActorTypeSession + ":" + payload.Locator.SessionID,
+				Priority:      80,
+				CreatedBy:     strings.TrimSpace(payload.UserID),
+			}, "job.actor", payload)
+			if err != nil {
+				return actorlayer.TransientError(err)
+			}
+			if !created {
+				existing, found, err = s.tasks.Get(ctx, jobID)
+				if err != nil {
+					return actorlayer.TransientError(fmt.Errorf("load concurrent webhook job: %w", err))
+				}
+				if !found {
+					return actorlayer.TransientError(fmt.Errorf("concurrent webhook job is unavailable"))
+				}
+			} else {
+				existing = baldastate.JobRecord{SessionID: payload.Locator.SessionID, Status: baldastate.JobStatusCreated}
+			}
+		}
+		if terminalJobExecution(existing.Status) || webhookSessionAlreadyDispatched(existing.Status) {
 			return nil
+		}
+		if existing.SessionID != payload.Locator.SessionID {
+			return actorlayer.PolicyError(fmt.Errorf("webhook job session mismatch"))
 		}
 	}
 	payload.JobID = jobID
@@ -87,6 +102,9 @@ func (s *Service) DispatchWebhookSessionTurn(ctx context.Context, env actorlayer
 	}
 	if s.tasks != nil {
 		if err := s.tasks.MarkStatus(ctx, jobID, baldastate.JobStatusRunning, "job.actor", env.ID, "", nil); err != nil {
+			if current, found, getErr := s.tasks.Get(ctx, jobID); getErr == nil && found && terminalJobExecution(current.Status) {
+				return nil
+			}
 			return actorlayer.TransientError(err)
 		}
 	}
@@ -133,7 +151,7 @@ func (s *Service) StartScheduledJob(ctx context.Context, env actorlayer.Envelope
 		if existing, ok, err := s.tasks.Get(ctx, jobID); err != nil {
 			return actorlayer.TransientError(err)
 		} else if ok {
-			if terminalScheduledExecution(existing.Status) {
+			if terminalJobExecution(existing.Status) {
 				return nil
 			}
 			if !oneShot && existing.SessionID != executionLocator.SessionID {
@@ -166,7 +184,7 @@ func (s *Service) StartScheduledJob(ctx context.Context, env actorlayer.Envelope
 				if !found {
 					return actorlayer.TransientError(fmt.Errorf("concurrent scheduled execution is unavailable"))
 				}
-				if terminalScheduledExecution(existing.Status) {
+				if terminalJobExecution(existing.Status) {
 					return nil
 				}
 				if !oneShot && existing.SessionID != executionLocator.SessionID {
@@ -227,10 +245,20 @@ func (s *Service) rebindScheduledSession(ctx context.Context, jobID, oldSessionI
 	return nil
 }
 
-func terminalScheduledExecution(status string) bool {
+func terminalJobExecution(status string) bool {
 	switch status {
 	case baldastate.JobStatusCompleted, baldastate.JobStatusFailed,
 		baldastate.JobStatusCanceled, baldastate.JobStatusDeadLettered:
+		return true
+	default:
+		return false
+	}
+}
+
+func webhookSessionAlreadyDispatched(status string) bool {
+	switch status {
+	case baldastate.JobStatusRunning, baldastate.JobStatusWaitingForAgent,
+		baldastate.JobStatusWaitingForUser, baldastate.JobStatusValidating:
 		return true
 	default:
 		return false
