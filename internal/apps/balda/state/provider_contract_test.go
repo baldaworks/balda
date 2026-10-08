@@ -98,7 +98,7 @@ func checkProvider_ManagedAliasAuthorityAndVersion(t *testing.T, open contractOp
 	a := aliascmd.Authority{UserID: base.Authority.UserID, UserVersion: base.Authority.UserVersion,
 		CredentialVersion: base.Authority.CredentialVersion, MFAVersion: base.Authority.MFAVersion,
 		SessionID: base.Authority.SessionID, SessionVersion: base.Authority.SessionVersion, At: base.Authority.At}
-	audit := usercmd.AuditEvent{ID: "alias-create", Action: usercmd.AuditActionAliasChanged,
+	audit := usercmd.AuditEvent{ID: "alias-create", Action: usercmd.AuditActionAliasCreated,
 		Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: a.UserID, ActorSessionID: a.SessionID,
 		TargetType: usercmd.AuditTargetAlias, TargetID: "main_chat", Source: "provider-contract", OccurredAt: a.At}
 	m := aliascmd.Mutation{Kind: aliascmd.MutationCreate, Record: aliascmd.Record{Name: "main_chat", LocatorRef: "telegram:-1003953132277:0", Version: 1}, Authority: a, Audit: audit}
@@ -114,6 +114,7 @@ func checkProvider_ManagedAliasAuthorityAndVersion(t *testing.T, open contractOp
 		t.Fatalf("duplicate alias = %v, want conflict", err)
 	}
 	m.Kind, m.ExpectedVersion, m.Record.Version, m.Record.LocatorRef, m.Audit.ID = aliascmd.MutationRetarget, 1, 2, "telegram:-1003953132278:0", "alias-retarget"
+	m.Audit.Action = usercmd.AuditActionAliasRetargeted
 	stale := m
 	stale.Authority.UserVersion++
 	if err := p.Aliases().Save(t.Context(), stale); !errors.Is(err, aliascmd.ErrConflict) {
@@ -130,6 +131,7 @@ func checkProvider_ManagedAliasAuthorityAndVersion(t *testing.T, open contractOp
 		t.Fatalf("retargeted alias = %+v, %v, %v", record, found, err)
 	}
 	m.Kind, m.ExpectedVersion, m.Record.Version, m.Audit.ID = aliascmd.MutationDelete, 2, 3, "alias-delete"
+	m.Audit.Action = usercmd.AuditActionAliasDeleted
 	if err := p.Aliases().Save(t.Context(), m); err != nil {
 		t.Fatal(err)
 	}
@@ -148,6 +150,7 @@ func checkProvider_ManagedAliasAuthorityAndVersion(t *testing.T, open contractOp
 	}
 	stale = m
 	stale.Kind, stale.ExpectedVersion, stale.Record.Version, stale.Audit.ID = aliascmd.MutationRetarget, 1, 2, "alias-stale-old-generation"
+	stale.Audit.Action = usercmd.AuditActionAliasRetargeted
 	if err := p.Aliases().Save(t.Context(), stale); !errors.Is(err, aliascmd.ErrConflict) {
 		t.Fatalf("old generation edit = %v, want conflict", err)
 	}

@@ -135,6 +135,10 @@ components:
     in:
       - internal/apps/balda/aliasfx
 
+  alias_backoffice_wiring:
+    in:
+      - internal/apps/balda/aliasbackofficeapp
+
   # Credential recognition uses only standard-library values, never transports.
   auth_payload:
     in:
@@ -498,6 +502,14 @@ deps:
     deepScan: false
     anyVendorDeps: false
 
+  alias_backoffice_wiring:
+    mayDependOn:
+      - alias_contracts
+      - alias_policy
+      - alias_backoffice_wiring
+    deepScan: false
+    anyVendorDeps: false
+
   auth_payload:
     mayDependOn:
       - auth_payload
@@ -516,6 +528,7 @@ deps:
 
   backoffice_application:
     mayDependOn:
+      - alias_contracts
       - mcp_contracts
       - schedule_contracts
       - contracts
@@ -564,6 +577,7 @@ deps:
 
   backoffice_webui:
     mayDependOn:
+      - alias_contracts
       - mcp_contracts
       - schedule_contracts
       - user_contracts
@@ -905,6 +919,7 @@ deps:
       - alias_contracts
       - alias_policy
       - alias_wiring
+      - alias_backoffice_wiring
       - mcp_backoffice_wiring
       - schedule_backoffice_wiring
       - schedule_policy

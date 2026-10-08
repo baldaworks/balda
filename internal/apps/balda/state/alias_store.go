@@ -166,8 +166,13 @@ func validateAliasMutation(m aliascmd.Mutation) error {
 		(m.Kind != aliascmd.MutationCreate && m.Kind != aliascmd.MutationRetarget && m.Kind != aliascmd.MutationDelete) {
 		return aliascmd.ErrInvalid
 	}
+	action := map[aliascmd.MutationKind]usercmd.AuditAction{
+		aliascmd.MutationCreate:   usercmd.AuditActionAliasCreated,
+		aliascmd.MutationRetarget: usercmd.AuditActionAliasRetargeted,
+		aliascmd.MutationDelete:   usercmd.AuditActionAliasDeleted,
+	}[m.Kind]
 	if err := usercmd.ValidateAuditEvent(m.Audit); err != nil ||
-		m.Audit.Action != usercmd.AuditActionAliasChanged || m.Audit.TargetType != usercmd.AuditTargetAlias ||
+		m.Audit.Action != action || m.Audit.TargetType != usercmd.AuditTargetAlias ||
 		m.Audit.TargetID != r.Name || m.Audit.ActorUserID != a.UserID || m.Audit.ActorSessionID != a.SessionID ||
 		m.Audit.Outcome != usercmd.AuditOutcomeSucceeded || !m.Audit.OccurredAt.Equal(a.At) {
 		return aliascmd.ErrInvalid

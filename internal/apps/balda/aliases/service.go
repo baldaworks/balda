@@ -64,7 +64,7 @@ func (s *Service) Create(ctx context.Context, request aliascmd.Create) (aliascmd
 	}
 	record := aliascmd.Record{Name: name, LocatorRef: ref, Version: 1}
 	m := aliascmd.Mutation{Kind: aliascmd.MutationCreate, Record: record,
-		Authority: request.Authority, Audit: aliasAudit(name, request.Authority)}
+		Authority: request.Authority, Audit: aliasAudit(name, usercmd.AuditActionAliasCreated, request.Authority)}
 	if err := s.store.Save(ctx, m); err != nil {
 		return aliascmd.Record{}, err
 	}
@@ -91,7 +91,7 @@ func (s *Service) Retarget(ctx context.Context, request aliascmd.Retarget) (alia
 	record := aliascmd.Record{Name: name, LocatorRef: ref, Version: request.ExpectedVersion + 1}
 	m := aliascmd.Mutation{Kind: aliascmd.MutationRetarget, Record: record,
 		ExpectedVersion: request.ExpectedVersion, Authority: request.Authority,
-		Audit: aliasAudit(name, request.Authority)}
+		Audit: aliasAudit(name, usercmd.AuditActionAliasRetargeted, request.Authority)}
 	if err := s.store.Save(ctx, m); err != nil {
 		return aliascmd.Record{}, err
 	}
@@ -107,7 +107,7 @@ func (s *Service) Delete(ctx context.Context, request aliascmd.Delete) error {
 	m := aliascmd.Mutation{Kind: aliascmd.MutationDelete,
 		Record:          aliascmd.Record{Name: name, Version: request.ExpectedVersion + 1},
 		ExpectedVersion: request.ExpectedVersion, Authority: request.Authority,
-		Audit: aliasAudit(name, request.Authority)}
+		Audit: aliasAudit(name, usercmd.AuditActionAliasDeleted, request.Authority)}
 	return s.store.Save(ctx, m)
 }
 
@@ -152,8 +152,8 @@ func validLocatorRef(raw string) (string, error) {
 	return ref, nil
 }
 
-func aliasAudit(name string, a aliascmd.Authority) usercmd.AuditEvent {
-	return usercmd.AuditEvent{ID: uuid.NewString(), Action: usercmd.AuditActionAliasChanged,
+func aliasAudit(name string, action usercmd.AuditAction, a aliascmd.Authority) usercmd.AuditEvent {
+	return usercmd.AuditEvent{ID: uuid.NewString(), Action: action,
 		Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: a.UserID,
 		ActorSessionID: a.SessionID, TargetType: usercmd.AuditTargetAlias,
 		TargetID: name, Source: "backoffice", OccurredAt: a.At}

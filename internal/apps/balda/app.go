@@ -13,6 +13,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/backoffice"
 	"github.com/baldaworks/balda/internal/apps/balda/actorsfx"
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
+	"github.com/baldaworks/balda/internal/apps/balda/aliasbackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/aliasfx"
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	"github.com/baldaworks/balda/internal/apps/balda/attachmentstore"
@@ -384,7 +385,7 @@ func Module(
 				})
 				return provider, nil
 			},
-			func(provider baldastate.Provider, invitations *auth.BindingInvitations, channels *auth.BindingChannels, mcp *mcpbackofficeapp.Operations, schedules *schedulebackofficeapp.Operations) (*backoffice.Runtime, error) {
+			func(provider baldastate.Provider, invitations *auth.BindingInvitations, channels *auth.BindingChannels, mcp *mcpbackofficeapp.Operations, schedules *schedulebackofficeapp.Operations, aliases *aliasbackofficeapp.Operations) (*backoffice.Runtime, error) {
 				runtime, err := backoffice.NewRuntime(backofficeConfig, provider)
 				if err != nil {
 					return nil, err
@@ -396,6 +397,9 @@ func Module(
 					return nil, err
 				}
 				if err := runtime.ConfigureSchedulesOperations(schedules); err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigureAliasesOperations(aliases); err != nil {
 					return nil, err
 				}
 				if err := runtime.ConfigureMCPAuthorizations(mcp); err != nil {
@@ -428,6 +432,7 @@ func Module(
 				return provider.Jobs()
 			},
 			schedulebackofficeapp.New,
+			aliasbackofficeapp.New,
 			func(provider baldastate.Provider) baldastate.QuestionStore {
 				return provider.Questions()
 			},

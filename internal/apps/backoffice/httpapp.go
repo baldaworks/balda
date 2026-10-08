@@ -33,6 +33,7 @@ type httpApp struct {
 	bindingChannels   BindingChannels
 	mcp               MCPOperations
 	schedules         SchedulesOperations
+	aliases           AliasesOperations
 	mcpAuthorizations MCPAuthorizations
 	qa                bool
 	basePath          string
@@ -113,6 +114,12 @@ func (a *httpApp) handler() (http.Handler, error) {
 	mux.HandleFunc("POST "+a.path("/schedules/{schedule_id}/selection"), a.scheduleSelection)
 	mux.HandleFunc("POST "+a.path("/schedules/{schedule_id}/delete"), a.scheduleDelete)
 	mux.HandleFunc("POST "+a.path("/schedules/{schedule_id}/runs"), a.scheduleRunNow)
+	for _, route := range []string{"/aliases", "/aliases/{alias_name}"} {
+		mux.Handle("GET "+a.path(route), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.aliasesPage))))
+	}
+	mux.HandleFunc("POST "+a.path("/aliases"), a.aliasCreate)
+	mux.HandleFunc("POST "+a.path("/aliases/{alias_name}"), a.aliasRetarget)
+	mux.HandleFunc("POST "+a.path("/aliases/{alias_name}/delete"), a.aliasDelete)
 	a.mcpAuthorizationRoutes(mux)
 	mux.Handle("GET "+a.path("/audit"), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.audit))))
 	mux.Handle("GET "+a.path("/access"), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.accessList))))

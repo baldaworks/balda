@@ -738,3 +738,31 @@ management values. `scheduledjobs` owns validation, source reconciliation,
 admission and dispatch policy; `state` owns the SQL rows and transactional
 authority/audit fences. Balda configures the port before the Backoffice
 listener starts, preserving the existing startup order.
+
+## Managed locator aliases
+
+Administrators can open **Aliases** at `<base_path>/aliases` to create, inspect,
+retarget, and delete named report destinations. Operators cannot view or mutate
+them. A name such as `main_chat` maps to one public locator such as
+`telegram:-1003953132277:0`. Names use lowercase letters, digits, underscores,
+and hyphens, begin with a letter, and cannot be `owner`, `collaborator`, or a
+role-qualified selector. Names are fixed after creation. The locator is checked
+for public syntax; its external address need not exist when saved.
+
+`/aliases?new=1` creates a name, and `/aliases/{name}` edits its current locator.
+The inventory and editor display the name and concrete locator separately.
+Writes use the normal administrator browser authority, same-origin and CSRF
+checks, current user/credential/MFA/session versions, and optimistic alias
+versions. A stale edit returns 409 and requires reopening the alias. Deletion
+requires confirmation. Deleted names are absent from the inventory and cannot
+resolve; recreating a deleted name advances its version so old forms cannot
+change the new mapping. Audit events contain the name and operation, not the
+locator value.
+
+The host-owned `aliases` service validates and resolves names; `state` persists
+the mapping and checks authority and versions in the same SQL transaction as
+the audit event. `aliascmd` carries neutral values. Backoffice owns only the
+`AliasesOperations` consuming port and escaped views, bound by
+`aliasbackofficeapp` before the HTTP listener starts. Current mapping changes
+apply to future admitted schedule runs and webhook requests; accepted work
+retains its selected concrete locator.

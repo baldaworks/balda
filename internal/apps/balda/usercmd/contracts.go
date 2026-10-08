@@ -119,6 +119,7 @@ type BackofficeCapabilities struct {
 	Account         bool
 	ManageMCP       bool
 	ManageSchedules bool
+	ManageAliases   bool
 	ManageUsers     bool
 	ViewAudit       bool
 }
@@ -274,8 +275,12 @@ const (
 	AuditActionScheduleDefinitionChanged AuditAction = "schedule.definition.changed"
 	// AuditActionScheduleRunRequested records an administrator manual run.
 	AuditActionScheduleRunRequested AuditAction = "schedule.run.requested"
-	// AuditActionAliasChanged records a managed destination mapping change.
-	AuditActionAliasChanged AuditAction = "alias.changed"
+	// AuditActionAliasCreated records a new managed destination mapping.
+	AuditActionAliasCreated AuditAction = "alias.created"
+	// AuditActionAliasRetargeted records a managed destination change.
+	AuditActionAliasRetargeted AuditAction = "alias.retargeted"
+	// AuditActionAliasDeleted records removal of a managed destination mapping.
+	AuditActionAliasDeleted AuditAction = "alias.deleted"
 )
 
 // Valid reports whether the action belongs to the bounded security audit vocabulary.
@@ -285,7 +290,7 @@ func (a AuditAction) Valid() bool {
 		AuditActionUserRoleChanged, AuditActionUserStatusChanged, AuditActionCredentialChanged,
 		AuditActionSessionRevoked, AuditActionBindingAttached, AuditActionBindingDetached, AuditActionBindingClaimCreated,
 		AuditActionUserMigrated, AuditActionLoginSucceeded, AuditActionRefreshSucceeded,
-		AuditActionRefreshReplay, AuditActionMFAEnabled, AuditActionMFAReplaced, AuditActionMFADisabled, AuditActionMFARecovered, AuditActionMFAVerified, AuditActionLogout, AuditActionInvitationIssued, AuditActionInvitationRevoked, AuditActionMCPDefinitionChanged, AuditActionMCPAuthorizationChanged, AuditActionMCPCredentialsRenewed, AuditActionScheduleDefinitionChanged, AuditActionScheduleRunRequested, AuditActionAliasChanged:
+		AuditActionRefreshReplay, AuditActionMFAEnabled, AuditActionMFAReplaced, AuditActionMFADisabled, AuditActionMFARecovered, AuditActionMFAVerified, AuditActionLogout, AuditActionInvitationIssued, AuditActionInvitationRevoked, AuditActionMCPDefinitionChanged, AuditActionMCPAuthorizationChanged, AuditActionMCPCredentialsRenewed, AuditActionScheduleDefinitionChanged, AuditActionScheduleRunRequested, AuditActionAliasCreated, AuditActionAliasRetargeted, AuditActionAliasDeleted:
 		return true
 	default:
 		return false

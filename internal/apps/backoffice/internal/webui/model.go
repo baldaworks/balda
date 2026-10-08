@@ -21,12 +21,13 @@ const (
 	LocationAudit     Location = "/audit"
 	LocationMCP       Location = "/mcp"
 	LocationSchedules Location = "/schedules"
+	LocationAliases   Location = "/aliases"
 )
 
 // Valid reports whether a location can be emitted by server navigation.
 func (l Location) Valid() bool {
 	switch l {
-	case LocationLogin, LocationOverview, LocationAccess, LocationAccount, LocationAudit, LocationMCP, LocationSchedules:
+	case LocationLogin, LocationOverview, LocationAccess, LocationAccount, LocationAudit, LocationMCP, LocationSchedules, LocationAliases:
 		return true
 	default:
 		return false
@@ -151,6 +152,7 @@ type MFACeremonyView struct {
 type Page struct {
 	MCP          *MCPView
 	Schedules    *SchedulesView
+	Aliases      *AliasesView
 	RestartURL   string
 	RestartLabel string
 	MFA          *MFAView
@@ -209,6 +211,9 @@ func Navigation(capabilities usercmd.BackofficeCapabilities, current Location) [
 	}
 	if capabilities.ManageSchedules {
 		operations = append(operations, item("Schedules", LocationSchedules, "bi-calendar-event"))
+	}
+	if capabilities.ManageAliases {
+		operations = append(operations, item("Aliases", LocationAliases, "bi-signpost-split"))
 	}
 	if len(operations) > 0 {
 		groups = append(groups, NavGroup{Label: "Operations", ID: "nav-operations", Items: operations})
@@ -278,7 +283,7 @@ func ProjectAudit(event usercmd.AuditEvent) AuditView {
 		ActionLabel: auditActionLabel(event.Action),
 		ActorUserID: safeAuditID(event.ActorUserID), ActorName: actorName,
 		ActorSessionID: safeAuditID(event.ActorSessionID),
-		TargetType:     string(event.TargetType), TargetID: safeAuditID(event.TargetID),
+		TargetType:     string(event.TargetType), TargetID: safeAuditTargetID(event.TargetType, event.TargetID),
 		TargetName: auditTargetLabel(event.TargetType), OccurredAt: event.OccurredAt,
 	}
 }
@@ -323,6 +328,12 @@ func auditActionLabel(action usercmd.AuditAction) string {
 		return "Recovered two-factor access offline"
 	case usercmd.AuditActionLogout:
 		return "Signed out"
+	case usercmd.AuditActionAliasCreated:
+		return "Created alias"
+	case usercmd.AuditActionAliasRetargeted:
+		return "Retargeted alias"
+	case usercmd.AuditActionAliasDeleted:
+		return "Deleted alias"
 	default:
 		return "Security event"
 	}
@@ -340,24 +351,47 @@ func auditTargetLabel(target usercmd.AuditTargetType) string {
 		return "System"
 	case usercmd.AuditTargetMigration:
 		return "Migration"
+	case usercmd.AuditTargetAlias:
+		return "Alias"
 	default:
 		return "Target"
 	}
 }
+
+const redactedAuditID = "[redacted]"
 
 func safeAuditID(value string) string {
 	if value == "" {
 		return ""
 	}
 	if len(value) != 36 || value[8] != '-' || value[13] != '-' || value[18] != '-' || value[23] != '-' {
-		return "[redacted]"
+		return redactedAuditID
 	}
 	for index, character := range value {
 		if index == 8 || index == 13 || index == 18 || index == 23 {
 			continue
 		}
 		if !isHexCharacter(character) {
-			return "[redacted]"
+			return redactedAuditID
+		}
+	}
+	return value
+}
+
+func safeAuditTargetID(target usercmd.AuditTargetType, value string) string {
+	if target != usercmd.AuditTargetAlias {
+		return safeAuditID(value)
+	}
+	if len(value) == 0 || len(value) > 64 || value[0] < 'a' || value[0] > 'z' {
+		return redactedAuditID
+	}
+	for _, character := range value[1:] {
+		if character < 'a' || character > 'z' {
+			if character < '0' || character > '9' {
+				if character != '_' && character != '-' {
+					return redactedAuditID
+				}
+			}
 		}
 	}
 	return value
