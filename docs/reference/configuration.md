@@ -459,10 +459,9 @@ balda:
 - `balda.features.attachments.max_file_bytes`: maximum bytes accepted for one inbound file or one outbound Slack local-file delivery (default: `26214400`, 25 MiB; env: `BALDA_FEATURES_ATTACHMENTS_MAX_FILE_BYTES`)
 - `balda.features.attachments.max_total_bytes`: maximum bytes accepted across one inbound message (default: `52428800`, 50 MiB; env: `BALDA_FEATURES_ATTACHMENTS_MAX_TOTAL_BYTES`)
 - `balda.features.attachments.store.engine`: inbound attachment persistence engine (`local` or `off`; default: `local`; env: `BALDA_FEATURES_ATTACHMENTS_STORE_ENGINE`)
-- `balda.webhooks.enabled`: enable generic inbound webhook receiver (default: `false`)
-- `balda.webhooks.listen_addr`: local inbound webhook listen address (default: `127.0.0.1:8090`)
-- `balda.webhooks.routes`: route table keyed by route name
-  - required when `balda.webhooks.enabled=true`
+- `balda.webhooks.enabled`: enable config-owned inbound webhook routes (default: `false`); Backoffice-managed routes have separate enabled state
+- `balda.webhooks.listen_addr`: local inbound webhook listen address (default: `127.0.0.1:8090`); the listener binds on every `balda start`, even when no route is active. A port collision aborts startup. Keep it on a private interface or behind a trusted gateway.
+- `balda.webhooks.routes`: config-owned route table keyed by route name; entries are read-only in Backoffice and require restart to change
   - each route requires:
     - `path`: local inbound webhook path (for example `/webhook/release`)
     - `prompt_template`: Go `text/template` rendered with `RequestID`, `Path`, `Method`, `RawBody`, and `Headers`
@@ -481,6 +480,21 @@ balda:
   - optional `dedupe`:
     - `source`: `request_id` (default), `header`, or `body_sha256`
     - `header` required for `source=header`
+
+Administrators can create persistent webhook routes at the
+[Backoffice Webhooks page](backoffice.md#webhooks-management). These routes
+are stored in the selected state database, accept new requests immediately
+when enabled, and survive restart independently of `balda.webhooks.enabled`.
+Their names cannot collide with config or archived route names; active paths
+must be unique. Each managed route requires the generated
+`X-Balda-Webhook-Secret` header. Copy its secret at creation or explicit
+rotation because only a verifier is stored and later GETs cannot reveal it.
+Its optional **Report to** field accepts a public locator or managed alias
+without a destination-type selector. Config routes continue to support
+`target=alias` role selectors and their configured authentication. Disabling
+or deleting a route prevents new external admissions while retained request
+history remains readable. An unresolved alias prevents that particular
+request from being admitted; the route definition remains available.
 
 - `balda.scheduler.jobs`: config-owned recurring schedules, each with an `id`, five-field UTC `cron`, and `envelope.content`
   - optional `envelope.report_to` uses `target: locator` or `target: managed_alias` with `key`; omit it to retain output only in run history

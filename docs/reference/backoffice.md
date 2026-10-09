@@ -331,10 +331,10 @@ in normal grid flow. The top bar and sidebar brand share the same height;
 navigation scrolls content below the top bar so page headings remain visible.
 The viewer identity is independent of an inspected user.
 The sidebar groups authorized links by purpose: Workspace contains Overview;
-Operations contains MCP and Schedules; Administration contains Access and Audit.
+Operations contains MCP, Schedules, Webhooks, and Aliases; Administration contains Access and Audit.
 It omits groups with no authorized links. Active administrators see all three;
 active operators see Workspace while Account remains available in the top bar.
-Nested Access, MCP and Schedules pages keep their parent sidebar link active.
+Nested Access, MCP, Schedules, Webhooks, and Aliases pages keep their parent sidebar link active.
 Desktop collapse hides the sidebar and expands content. Mobile navigation uses
 an overlay with backdrop, Escape and focus containment.
 
@@ -746,6 +746,79 @@ management values. `scheduledjobs` owns validation, source reconciliation,
 admission and dispatch policy; `state` owns the SQL rows and transactional
 authority/audit fences. Balda configures the port before the Backoffice
 listener starts, preserving the existing startup order.
+
+## Webhooks management
+
+Administrators can open **Webhooks** at `<base_path>/webhooks`. Operators cannot
+view or change routes. The inventory combines routes from `balda.webhooks.routes`
+and Backoffice, showing **Route name**, **Source**, **Path**, **Report to**, and
+**State**. Config routes are read-only: edit their declarations in
+`.config/balda/config.yaml` and restart Balda. Backoffice-managed definitions
+and enabled state survive restart. The route name is fixed after creation and
+unique across both sources; an active path is also unique. A conflict fails
+explicitly rather than letting one source silently override another.
+
+Use `/webhooks?new=1` to create a managed route. Enter a unique lowercase
+route name, an absolute request path, a nonempty Go text/template prompt, and
+one optional **Report to** value: a public `<channel_type>:<address_key>`
+locator or a managed alias such as `main_chat`. The external address or alias
+mapping may be added later. Without a recipient, output remains in request
+history and no report is sent. Each accepted request runs in a new private
+session, independent of the recipient. **Wait for report delivery before
+acknowledging the POST** requires a Report to value. Choose deduplication by
+request ID, header, or request body hash; header mode also needs a header name.
+The route starts enabled. Confirmed enable, disable, and delete affect new
+requests; work already admitted retains its selected definition and concrete
+recipient. Deletion archives the route and its history, while freeing its
+path. An archived name cannot be used for a new managed route. A removed
+config route is archived on the next restart and can reappear under its
+original config identity. Stale definition versions require reopening the editor.
+
+Creation generates a random secret for `X-Balda-Webhook-Secret`. Copy it from
+the no-store creation response: the secret cannot be read again. A confirmed
+rotation returns a new one-time secret and immediately invalidates the old
+one for new external requests. The database keeps a verifier, not plaintext;
+inventory, detail GETs, history, audit, logs, and browser history do not return
+the secret. Config route authentication remains governed by config and is never
+copied into the managed route table. Protect the listener with a private
+network or trusted gateway even when a route has header authentication.
+
+**Test POST** is available on non-archived config and managed route details.
+It uses the current prompt and admission path with administrator browser authority,
+without revealing or requiring the webhook secret. Testing a disabled route
+requires separate confirmation; archived routes cannot be tested. Retrying the
+same form submission reuses its request key. The newest-first, paginated
+**Request history** includes accepted external and test requests, including
+execution failures, with raw input, execution status, durable output, selected
+Report to locator, and separate delivery state. Rejected requests create no
+history row. Binary request bodies are displayed losslessly as hex. Older
+admissions written before raw-body capture show **Input unavailable for this
+older request**. A successful POST or test response means
+admission; refresh the detail to see later execution or delivery results.
+
+The generic webhook listener binds `balda.webhooks.listen_addr` on every
+`balda start`, even with no enabled route. `balda.webhooks.enabled` controls
+config-route availability only; each managed route has its own enabled state.
+Disabled and unknown paths reject new external POSTs. Managed edits become
+visible to new requests without restart; config edits require restart. A bind
+failure, including a collision with another local listener, aborts startup.
+Route management uses the existing administrator browser session, CSRF and
+same-origin checks, and transactional user, credential, MFA, session, and
+definition-version fences. Audit events omit secret values.
+
+The shared provider applies embedded Goose SQL migrations for SQLite and
+PostgreSQL before ingress. The migrations add route definitions and request
+history input/source columns without erasing older admissions. Back up the
+selected database before upgrading; migration failure aborts startup. Restoring
+an older binary after managed routes or history have been written requires a
+matching pre-upgrade database backup. Backoffice owns the
+`WebhooksOperations` consuming port and escaped views; `webhookbackofficeapp`
+adapts `webhookmanagement` and `webhookapp`. The `webhookroutecmd` contract
+holds neutral management values, `channel/webhook` handles HTTP transport,
+`webhookapp` owns route selection, authentication, templates and admission,
+`webhookfx` composes ingress, and `state` owns SQL persistence and guarded
+authority/audit transactions. See [the runtime contract](job-runtime.md#inbound-webhook-contract-internal)
+and [UI review](backoffice-ui-review.md#webhooks-layout-and-application-gates).
 
 ## Managed locator aliases
 

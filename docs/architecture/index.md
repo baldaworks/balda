@@ -164,6 +164,16 @@ boundary; durable run/admission snapshots, rather than later alias reads, own
 retries and delivery. Webhook HTTP parsing stays in `channel/webhook`, admission
 policy in `webhookapp`, and composition in `webhookfx`.
 
+Backoffice Webhooks pages consume a local `WebhooksOperations` port through
+`webhookbackofficeapp`. `webhookmanagement` owns route validation, generated
+secret rotation, source reconciliation and versioned mutations;
+`webhookroutecmd` carries transport-neutral definitions. `state` owns route
+rows, secret verifiers, request-history queries and administrator authority/audit
+transactions. For each new HTTP request, `webhookapp` selects a current
+managed route through a small store port, then owns authentication, template
+rendering, deduplication and durable admission. `channel/webhook` remains an
+HTTP adapter; `webhookfx` binds it to policy and the shared state provider.
+
 Native worker OAuth stays in the same owners: `mcpmanage.Authorizations` keeps
 bounded transient attempts and composes grant installation with exact revision
 binding outside protocol locks; `state` fences the initiating revision with

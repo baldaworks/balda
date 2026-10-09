@@ -110,15 +110,23 @@ recurring schedules.
 
 ## Inbound webhook contract (internal)
 
-Balda can optionally expose local webhook routes that map path -> route envelope.
+Balda binds the generic webhook listener on every start. It accepts configured
+routes when `balda.webhooks.enabled=true` and individually enabled
+Backoffice-managed routes. With no active route, the listener still binds and
+unknown paths return 404. A bind failure aborts startup. Config routes change
+on restart; managed edits affect the next request without restart.
 
-- Endpoint config: `balda.webhooks.enabled`, `listen_addr`, `routes`.
+- Endpoint config: `balda.webhooks.enabled` for config routes,
+  `listen_addr` for the always-bound listener, and `routes` for config definitions.
+  Managed definitions, enabled state and a verifier for the generated
+  `X-Balda-Webhook-Secret` live in the state database. The secret is shown only
+  on create or explicit rotation; the old one stops authorizing new requests.
 - Security:
   - each route can require shared-header auth (`auth.type=header`, `auth.header`, `auth.value|secret_env`)
   - keep the endpoint private or protected by a trusted gateway even with route auth
 - Method: `POST` only.
 - Route resolution:
-  - request path must match a configured route `path`
+  - request path must match an enabled configured or managed route `path`
   - optional `envelope.report_to` accepts `target=locator`, `managed_alias`, or
     the existing role `alias`, with a `key`; `/locator` prints a public locator
   - no report destination retains the final job output without external delivery
@@ -152,6 +160,9 @@ balda:
 - Prompt generation:
   - request body is treated as opaque raw text
   - route `prompt_template` is rendered with `RequestID`, `Path`, `Method`, `RawBody`, `Headers`
+  - the credential header is removed from template `Headers` and stored history;
+    configured header deduplication retains its retry identity without exposing
+    a credential in the request ID or new deduplication key
   - rendered prompt must be non-empty
 - Private execution and delivery:
   - after admission, ingress publishes one durable JobActor command; JobActor
@@ -178,6 +189,19 @@ balda:
   - default source is `request_id`
   - `dedupe.source=header` uses `dedupe.header` value when present
   - `dedupe.source=body_sha256` uses body hash
+- Backoffice operation and history:
+  - config routes are read-only; managed routes can be created, edited, enabled,
+    disabled, archived and have their secret rotated. Archived names cannot be
+    used for new managed routes, while a returning config route can reclaim its
+    config identity and an archived path can be assigned to another route
+  - Test POST uses administrator authority rather than the webhook secret and
+    follows the same template and durable admission path. Disabled routes need
+    confirmation; archived routes cannot be tested. The form request key makes
+    retries idempotent
+  - newest-first, keyset-paginated history includes accepted external and test
+    requests, with raw input, job output, and separate delivery state. Rejected
+    requests are absent. Admission rows from before raw-body capture say input
+    unavailable; archived routes retain their history
 - Response model (JSON):
   - accepted: `202` with `{status:"accepted", accepted:true, request_id, message_id, duplicate?}`
   - with `ack_on_delivery=true`, `202` means queued or delivery pending; repeat the same idempotent POST until `200` with `status:"delivered"`, `job_id`, and `provider_message_id`

@@ -96,7 +96,7 @@ and hydrated-history boundaries are separately tested in `handlersfx` and
    For navigation changes, check Workspace, Operations and Administration in the
    administrator sidebar, omit empty groups for operators, and verify Account
    appears only in the top bar. Check the active sidebar link on nested Access,
-   MCP and Schedules pages after both HTMX navigation and browser history changes.
+   MCP, Schedules, Webhooks, and Aliases pages after both HTMX navigation and browser history changes.
    Verify that assets load and that browser console errors are absent. Follow
    navigation and tab through forms with the keyboard. Follow **Older active sessions**
    in the browser. Request a `form-*` route as an HTMX fragment and check
@@ -122,6 +122,44 @@ QA authentication bypass.
 Production Backoffice continues to run under `balda start`. Keep `qa_ui: false`
 there. See [Backoffice application](backoffice.md) for deployment, security, and
 rendering contracts.
+
+## Webhooks layout and application gates
+
+Review Webhooks in two ordered browser gates. First run the synthetic gallery
+suite with `npm test` in `qa/backoffice-e2e`. Its Webhooks fixtures reuse the
+production templates and assets for inventory, empty inventory, managed create
+and edit, config read-only detail, disabled and archived details, populated and
+empty history, one-time secret, and 400/409/503 errors. Fixtures use visibly
+invalid values and cannot accept POSTs. At 1440×900, 1024×768, 768×1024 and
+390×844, inspect active Operations navigation, **Report to** labels in the
+form and grid, keyboard focus, placeholder contrast, dedupe-header visibility,
+asset and console errors, document overflow, and horizontal scrolling within
+the table. Record state/viewport results and synthetic screenshots in the
+Beads review comment. Repair and rerun this layout gate before starting the
+authenticated application gate.
+
+After layout passes, run the isolated application gate from the repository
+root with the same Playwright installation:
+
+```bash
+BALDA_BACKOFFICE_BROWSER_TEST=1 go test -race ./internal/apps/balda -run '^(TestBackofficeWebhooksBrowserWorkflow|TestWebhookActorRuntimeFromHTTP)$' -count=1 -v
+```
+
+The browser workflow signs in normally as a synthetic administrator against
+loopback Backoffice, webhook receiver and temporary SQLite. It covers root and
+`/balda`, desktop and mobile, config and managed inventory, route lifecycle,
+one-time secret and rotation, external authentication and rejection, config and
+managed Test POST, history/pagination/archive, and new admission after a fresh
+receiver and database reopen. Its deterministic publisher writes completed
+job and delivery fixtures to keep UI checks isolated; those browser rows alone
+do not prove actor execution. The paired actor test sends an HTTP POST through
+the real receiver, durable bus, JobActor, private SessionActor turn with a
+deterministic provider, DeliveryActor and transport, then checks persisted
+output, frozen recipient and sent delivery. PostgreSQL migration/store behavior
+is verified separately in state integration tests. Use only synthetic values
+and local temporary state; never point this gate at a deployment or capture
+the one-time secret in screenshots. Record its evidence separately from the
+layout gate.
 
 ## Passkey UI and authenticated verification
 
