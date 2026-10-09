@@ -92,6 +92,17 @@ receives the final output. Cron uses UTC. A manual run queues work without movin
 scheduled time; a disabled job requires confirmation. See
 [Schedules management](docs/reference/backoffice.md#schedules-management).
 
+Administrators can open **Webhooks** in Backoffice to inspect config-owned
+routes and manage persistent Backoffice routes. Config routes are read-only;
+managed routes can be created, edited, enabled, disabled and archived without
+restarting Balda. Each managed route has a generated secret shown only on
+creation or rotation. Both sources offer **Test POST** and retained request
+history. An optional **Report to** locator or managed alias receives only the
+final output from each request's new private session. The generic HTTP listener
+always binds; `balda.webhooks.enabled` controls config routes, while managed
+routes have their own enabled state. See
+[Webhooks management](docs/reference/backoffice.md#webhooks-management).
+
 Before storing protected MCP values or worker grants, configure the deployment
 [MCP credential key](docs/reference/configuration.md#protected-values-and-worker-grants)
 and keep it with your database backup. Existing sessions retain their captured
@@ -369,7 +380,7 @@ does not require `/reset`. Custom ACP servers can set `model_config_id` and
 - `balda.mattermost.*` — Mattermost bot credentials (`enabled`, `server_url`,
   `token`, `bot_user_id`, `bot_username`) for websocket event ingress
 - `balda.slack.*` — Slack Agent credentials plus `agent.*` HTTP/streaming config
-- `balda.webhooks.*` — optional inbound webhook routes
+- `balda.webhooks.*` — generic listener and config-owned inbound routes; managed routes are administered in Backoffice. See [Webhooks management](docs/reference/backoffice.md#webhooks-management).
 - `balda.scheduler.jobs` — recurring scheduled jobs owned by host configuration; administrators can also create persistent schedules in Backoffice. See [Schedules management](docs/reference/backoffice.md#schedules-management).
 - `balda.workspace.*` — workspace/worktree behavior for goal execution
 - `balda.permissions.mode` — agent permission policy: `allow_all`, `ask`, or `deny_all`

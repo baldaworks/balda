@@ -125,6 +125,20 @@ components:
     in:
       - internal/apps/balda/schedulecmd
 
+  # Webhook management values are independent of ingress and persistence.
+  webhook_route_contracts:
+    in:
+      - internal/apps/balda/webhookroutecmd
+
+  # Route validation and guarded lifecycle policy stay outside HTTP ingress.
+  webhook_management:
+    in:
+      - internal/apps/balda/webhookmanagement
+
+  webhook_route_wiring:
+    in:
+      - internal/apps/balda/webhookroutefx
+
   alias_contracts:
     in:
       - internal/apps/balda/aliascmd
@@ -252,6 +266,11 @@ components:
   schedule_backoffice_wiring:
     in:
       - internal/apps/balda/schedulebackofficeapp
+
+  # Host adapter exposes webhook policy through Backoffice's consuming port.
+  webhook_backoffice_wiring:
+    in:
+      - internal/apps/balda/webhookbackofficeapp
 
   # Fixed-upstream loopback MCP transport; grant policy stays behind its port.
   # Upstream observation is injected by mcp_wiring; no OAuth SDK/policy belongs
@@ -481,6 +500,28 @@ deps:
       - schedule_contracts
     anyVendorDeps: false
 
+  webhook_route_contracts:
+    mayDependOn:
+      - webhook_route_contracts
+      - user_contracts
+    anyVendorDeps: false
+
+  webhook_management:
+    mayDependOn:
+      - webhook_route_contracts
+      - contracts
+      - user_contracts
+    # Constructor injection otherwise infers a false policy-to-adapter edge;
+    # direct imports remain checked and storage is not an allowed dependency.
+    deepScan: false
+    anyVendorDeps: true
+
+  webhook_route_wiring:
+    mayDependOn:
+      - webhook_route_contracts
+      - storage
+    anyVendorDeps: false
+
   alias_contracts:
     mayDependOn:
       - alias_contracts
@@ -537,6 +578,7 @@ deps:
       - alias_contracts
       - mcp_contracts
       - schedule_contracts
+      - webhook_route_contracts
       - contracts
       - user_contracts
       - user_application
@@ -586,6 +628,7 @@ deps:
       - alias_contracts
       - mcp_contracts
       - schedule_contracts
+      - webhook_route_contracts
       - user_contracts
       - backoffice_webui
     anyVendorDeps: false
@@ -604,6 +647,7 @@ deps:
 
   application:
     mayDependOn:
+      - webhook_route_contracts
       - alias_contracts
       - schedule_contracts
       - schedule_policy
@@ -687,6 +731,17 @@ deps:
       - application
       - schedule_policy
       - schedule_backoffice_wiring
+    deepScan: false
+    anyVendorDeps: false
+
+  webhook_backoffice_wiring:
+    mayDependOn:
+      - webhook_route_contracts
+      - webhook_management
+      - application
+      - contracts
+      - storage
+      - webhook_backoffice_wiring
     deepScan: false
     anyVendorDeps: false
 
@@ -903,6 +958,8 @@ deps:
       - foundation
       - contracts
       - application
+      - webhook_route_contracts
+      - storage
       - webhook_transport
       - webhook_wiring
     anyVendorDeps: true
@@ -929,12 +986,16 @@ deps:
 
   composition_root:
     mayDependOn:
+      - webhook_route_contracts
+      - webhook_management
+      - webhook_route_wiring
       - alias_contracts
       - alias_policy
       - alias_wiring
       - alias_backoffice_wiring
       - mcp_backoffice_wiring
       - schedule_backoffice_wiring
+      - webhook_backoffice_wiring
       - schedule_policy
       - foundation
       - mcp_bridge

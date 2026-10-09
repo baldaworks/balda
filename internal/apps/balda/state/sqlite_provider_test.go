@@ -15,6 +15,24 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+func TestSQLiteWebhookHistoryMigration(t *testing.T) {
+	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	registerBaldaGoMigrations()
+	migrations, err := fs.Sub(baldaMigrationsFS, "migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := goose.NewProvider(goose.DialectSQLite3, db, migrations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkWebhookHistoryMigration(t, db, provider, 58, 59, func(query string) string { return query })
+}
+
 func TestSQLitePrimaryAdministratorUsernameMigration(t *testing.T) {
 	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {

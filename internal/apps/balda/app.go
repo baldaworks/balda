@@ -60,7 +60,10 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookapp"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookbackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookfx"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookmanagement"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookroutefx"
 	"github.com/baldaworks/balda/internal/apps/sessionmcp"
 	"github.com/baldaworks/balda/internal/git"
 	portableapp "github.com/baldaworks/balda/sessionmemory/app"
@@ -391,7 +394,7 @@ func Module(
 				})
 				return provider, nil
 			},
-			func(provider baldastate.Provider, invitations *auth.BindingInvitations, channels *auth.BindingChannels, mcp *mcpbackofficeapp.Operations, schedules *schedulebackofficeapp.Operations, aliases *aliasbackofficeapp.Operations) (*backoffice.Runtime, error) {
+			func(provider baldastate.Provider, invitations *auth.BindingInvitations, channels *auth.BindingChannels, mcp *mcpbackofficeapp.Operations, schedules *schedulebackofficeapp.Operations, aliases *aliasbackofficeapp.Operations, webhooks *webhookbackofficeapp.Operations) (*backoffice.Runtime, error) {
 				runtime, err := backoffice.NewRuntime(backofficeConfig, provider)
 				if err != nil {
 					return nil, err
@@ -403,6 +406,9 @@ func Module(
 					return nil, err
 				}
 				if err := runtime.ConfigureSchedulesOperations(schedules); err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigureWebhooksOperations(webhooks); err != nil {
 					return nil, err
 				}
 				if err := runtime.ConfigureAliasesOperations(aliases); err != nil {
@@ -450,6 +456,7 @@ func Module(
 				return manager
 			},
 			schedulebackofficeapp.New,
+			webhookbackofficeapp.New,
 			aliasbackofficeapp.New,
 			func(provider baldastate.Provider) baldastate.QuestionStore {
 				return provider.Questions()
@@ -805,6 +812,12 @@ func Module(
 		fx.Provide(func(provider baldastate.Provider) webhookapp.AdmissionStore {
 			return provider.WebhookAdmissions()
 		}),
+		fx.Provide(func(provider baldastate.Provider) baldastate.WebhookAdmissionStore {
+			return provider.WebhookAdmissions()
+		}),
+		fx.Provide(func(provider baldastate.Provider) *webhookmanagement.Service {
+			return webhookmanagement.New(webhookroutefx.NewStore(provider))
+		}),
 		fx.Provide(func(provider baldastate.Provider) (*auth.InviteStore, error) {
 			return auth.NewInviteStore(provider.AppKV())
 		}),
@@ -855,6 +868,9 @@ func Module(
 		scheduledjobs.Module,
 		handlersfx.Module,
 		webhookfx.Module,
+		fx.Invoke(func(manager *webhookmanagement.Service) error {
+			return manager.ReconcileConfig(context.Background(), configuredWebhookRoutes(inboundWebhookConfig))
+		}),
 		fx.Provide(
 			internalmcp.NewInternalMCPManager,
 		),

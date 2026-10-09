@@ -44,7 +44,7 @@ func (s *Service) Accept(ctx context.Context, req Request) (Result, error) {
 	if reqID == "" || len(reqID) > webhookcmd.MaxRequestIDBytes ||
 		routeName == "" || len(routeName) > webhookcmd.MaxRouteNameBytes ||
 		dedupeKey == "" || len(dedupeKey) > webhookcmd.MaxDedupeKeyBytes ||
-		prompt == "" || len(prompt) > webhookcmd.MaxPromptBytes {
+		prompt == "" || len(prompt) > webhookcmd.MaxPromptBytes || len(req.RawBody) > webhookcmd.MaxBodyBytes {
 		return Result{}, &InvalidRequestError{Field: "webhook", Message: "required input is empty or too large"}
 	}
 	if s.admissions == nil || s.jobPublisher == nil {
@@ -53,6 +53,14 @@ func (s *Service) Accept(ctx context.Context, req Request) (Result, error) {
 	selected, found, err := s.admissions.Get(ctx, routeName, dedupeKey)
 	if err != nil {
 		return Result{}, &DispatchFailedError{Cause: err}
+	}
+	legacySelected := false
+	if !found && req.LegacyDedupeKey != "" && len(req.LegacyDedupeKey) <= webhookcmd.MaxDedupeKeyBytes {
+		selected, found, err = s.admissions.Get(ctx, routeName, req.LegacyDedupeKey)
+		if err != nil {
+			return Result{}, &DispatchFailedError{Cause: err}
+		}
+		legacySelected = found
 	}
 	created := false
 	if !found {
@@ -78,7 +86,7 @@ func (s *Service) Accept(ctx context.Context, req Request) (Result, error) {
 		}
 	}
 	if selected.MessageID != "" {
-		return resultFromAdmission(selected, true), nil
+		return admissionResult(selected, true, legacySelected, reqID), nil
 	}
 	payload := payloadFromAdmission(selected)
 	receipt, jobID, err := s.jobPublisher.PublishWebhookJob(ctx, payload, selected.RouteName, selected.RequestID)
@@ -98,7 +106,7 @@ func (s *Service) Accept(ctx context.Context, req Request) (Result, error) {
 	if err != nil {
 		return Result{}, &DispatchFailedError{Cause: err}
 	}
-	return resultFromAdmission(selected, !created || receipt.Duplicate), nil
+	return admissionResult(selected, !created || receipt.Duplicate, legacySelected, reqID), nil
 }
 
 func (s *Service) newAdmission(ctx context.Context, req Request, reqID, routeName, dedupeKey, prompt string) (webhookcmd.Admission, error) {
@@ -116,7 +124,12 @@ func (s *Service) newAdmission(ctx context.Context, req Request, reqID, routeNam
 	sessionID := "wh-" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	candidate := webhookcmd.Admission{
 		RouteName: routeName, DedupeKey: dedupeKey, RequestID: reqID,
-		Prompt: prompt, SessionID: sessionID, ReportTo: reportTo, CreatedAt: time.Now().UTC(),
+		Prompt: prompt, RawBody: &req.RawBody, Source: webhookcmd.SourceExternal,
+		TestAuthority: req.TestAuthority,
+		SessionID:     sessionID, ReportTo: reportTo, CreatedAt: time.Now().UTC(),
+	}
+	if req.Test {
+		candidate.Source = webhookcmd.SourceTest
 	}
 	_, jobID, err := turncmd.WebhookJobEnvelope(payloadFromAdmission(candidate), routeName, reqID)
 	if err != nil {
@@ -144,6 +157,14 @@ func payloadFromAdmission(admission webhookcmd.Admission) turncmd.SessionTurnPay
 func resultFromAdmission(admission webhookcmd.Admission, duplicate bool) Result {
 	return Result{RequestID: admission.RequestID, MessageID: admission.MessageID,
 		Duplicate: duplicate, JobID: admission.JobID, Stream: admission.Stream, Sequence: admission.Sequence}
+}
+
+func admissionResult(admission webhookcmd.Admission, duplicate, legacySelected bool, requestID string) Result {
+	result := resultFromAdmission(admission, duplicate)
+	if legacySelected {
+		result.RequestID = requestID
+	}
+	return result
 }
 
 func targetResolutionError(err error) error {

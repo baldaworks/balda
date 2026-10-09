@@ -21,6 +21,7 @@ type postgresProvider struct {
 	management     *sqlScheduleManagementStore
 	aliases        *sqlAliasStore
 	webhook        *sqlWebhookAdmissionStore
+	webhookRoutes  *sqlWebhookRouteStore
 	runs           *sqlScheduleRunStore
 	questions      *postgresQuestionStore
 	runtime        *postgresJobStore
@@ -60,7 +61,8 @@ func initializePostgresProvider(ctx context.Context, db *sql.DB) (Provider, erro
 		jobs:           &postgresScheduledJobStore{db: db},
 		management:     &sqlScheduleManagementStore{users: newPostgresUserStore(db)},
 		aliases:        &sqlAliasStore{users: newPostgresUserStore(db)},
-		webhook:        &sqlWebhookAdmissionStore{db: db, bind: postgresBind, postgres: true},
+		webhook:        &sqlWebhookAdmissionStore{db: db, bind: postgresBind, postgres: true, users: newPostgresUserStore(db)},
+		webhookRoutes:  &sqlWebhookRouteStore{users: newPostgresUserStore(db)},
 		runs:           &sqlScheduleRunStore{db: db, bind: postgresBind, postgres: true},
 		questions:      &postgresQuestionStore{db: db},
 		runtime:        &postgresJobStore{db: db},
@@ -188,6 +190,8 @@ func (p *postgresProvider) ScheduleManagement() ScheduleManagementStore {
 func (p *postgresProvider) Aliases() AliasStore { return p.aliases }
 
 func (p *postgresProvider) WebhookAdmissions() WebhookAdmissionStore { return p.webhook }
+
+func (p *postgresProvider) WebhookRoutes() WebhookRouteStore { return p.webhookRoutes }
 
 func (p *postgresProvider) ScheduleRuns() ScheduleRunStore {
 	return p.runs

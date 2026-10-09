@@ -4,7 +4,7 @@ Thanks for contributing to `balda`.
 
 ## Development Setup
 
-1. Use Go `1.26.6` (see `go.mod`).
+1. Use Go `1.26.9` (see `go.mod`).
 2. Clone the repository and fetch dependencies:
 
 ```bash

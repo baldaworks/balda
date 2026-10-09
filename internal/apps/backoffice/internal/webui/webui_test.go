@@ -89,10 +89,10 @@ func TestRendererGroupsAuthorizedNavigationWithoutDuplicateAccount(t *testing.T)
 			name: "administrator",
 			capabilities: usercmd.BackofficeCapabilities{
 				Overview: true, Account: true, ManageUsers: true,
-				ManageMCP: true, ManageSchedules: true, ManageAliases: true, ViewAudit: true,
+				ManageMCP: true, ManageSchedules: true, ManageWebhooks: true, ManageAliases: true, ViewAudit: true,
 			},
 			wantGroups: []string{"Workspace", "Operations", "Administration"},
-			wantLinks:  []string{"/overview", "/mcp", "/schedules", "/aliases", "/access", "/audit"},
+			wantLinks:  []string{"/overview", "/mcp", "/schedules", "/webhooks", "/aliases", "/access", "/audit"},
 		},
 		{
 			name:         "operator",
@@ -100,7 +100,7 @@ func TestRendererGroupsAuthorizedNavigationWithoutDuplicateAccount(t *testing.T)
 			wantGroups:   []string{"Workspace"},
 			absentGroups: []string{"Operations", "Administration"},
 			wantLinks:    []string{"/overview"},
-			absentLinks:  []string{"/mcp", "/schedules", "/aliases", "/access", "/audit"},
+			absentLinks:  []string{"/mcp", "/schedules", "/webhooks", "/aliases", "/access", "/audit"},
 		},
 	}
 	for _, tt := range tests {

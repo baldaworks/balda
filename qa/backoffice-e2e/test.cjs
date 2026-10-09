@@ -5,6 +5,9 @@ const path = require('node:path');
 const { chromium } = require('playwright');
 
 const routes = [
+  'webhooks', 'webhooks-empty', 'webhooks/new', 'webhooks-managed', 'webhooks-config',
+  'webhooks-disabled', 'webhooks-archived', 'webhooks-history', 'webhooks-history-empty',
+  'webhooks-secret', 'webhooks-invalid', 'webhooks-conflict', 'webhooks-unavailable',
  'mcp-oauth-return',
  'mcp-authorizing', 'mcp-device-issued', 'mcp-device-pending', 'mcp-device-authorized', 'mcp-device-denied', 'mcp-device-expired', 'mcp-device-failed', 'mcp-authorization-unavailable', 'mcp-authorization-retry',
   'mcp-public', 'mcp-auth-required', 'mcp-revoked', 'mcp-stdio', 'mcp-saved-start-failed', 'mcp-retained', 'mcp', 'mcp-empty', 'mcp/new', 'mcp/connections/qa-worker', 'mcp/connections/config:qa-worker', 'mcp-probe', 'mcp-invalid', 'mcp-conflict', 'mcp-unavailable',
@@ -17,6 +20,7 @@ const routes = [
   'form-bad-request', 'form-forbidden', 'form-conflict', 'form-server-error',
 ];
 const expectedStatus = new Map([
+  ['webhooks-invalid', 400], ['webhooks-conflict', 409], ['webhooks-unavailable', 503],
  ['mcp-saved-start-failed',503], ['mcp-authorization-unavailable',503], ['mcp-invalid',400],['mcp-conflict',409],['mcp-unavailable',503],
   ['form-bad-request', 400], ['form-forbidden', 403],
   ['form-conflict', 409], ['form-server-error', 500],
@@ -93,6 +97,124 @@ async function checkMCPTransport(browser, baseURL, viewport) {
   assert.equal(await page.getByLabel('Server URL', { exact: true }).isVisible(), true, 'keyboard transport selection updates the form');
   assert.equal(await page.getByLabel('Command', { exact: true }).isVisible(), false);
   assert.deepEqual(errors, [], 'transport switching has no browser errors');
+  await page.close();
+}
+
+async function checkWebhooks(browser, baseURL, viewport) {
+  const page = await browser.newPage({ viewport });
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  page.on('requestfailed', request => errors.push(`${request.url()}: ${request.failure()?.errorText}`));
+  page.on('response', response => {
+    if (response.url().includes('/assets/') && response.status() >= 400) errors.push(`${response.url()}: ${response.status()}`);
+  });
+  const screenshotDir = process.env.BACKOFFICE_WEBHOOK_SCREENSHOTS;
+  if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
+  async function screenshot(state) {
+    if (screenshotDir) await page.screenshot({ path: path.join(screenshotDir, `webhooks-${state}-${viewport.width}.png`), fullPage: true });
+  }
+  async function checkLayout(state) {
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    assert.ok(overflow <= 1, `${state} document overflow at ${viewport.width}px: ${overflow}px`);
+    await checkTopBar(page, `${state} at ${viewport.width}px`);
+    assert.deepEqual(errors, [], `${state} asset and browser errors at ${viewport.width}px`);
+    await screenshot(state);
+  }
+  async function activeWebhooks(state) {
+    assert.deepEqual(await page.locator('.app-sidebar [data-nav-link][aria-current="page"]').allTextContents(), ['Webhooks'], `${state} active navigation at ${viewport.width}px`);
+  }
+
+  await page.goto(`${baseURL}/qa/ui/webhooks`);
+  await activeWebhooks('inventory');
+  for (const label of ['Route name', 'Source', 'Path', 'Report to', 'State']) {
+    await page.getByRole('columnheader', { name: label, exact: true }).waitFor();
+  }
+  const inventoryTable = page.getByRole('region', { name: /Webhook routes table/ });
+  await inventoryTable.getByRole('link', { name: 'orders' }).waitFor();
+  await inventoryTable.getByRole('link', { name: 'deployed' }).waitFor();
+  if (viewport.width === 390) {
+    assert.ok(await inventoryTable.evaluate(element => element.scrollWidth > element.clientWidth), 'mobile inventory table scrolls within its region');
+    const configuredRow = inventoryTable.locator('tbody tr').filter({ hasText: 'deployed' });
+    for (const cell of [configuredRow.locator('td').nth(1), configuredRow.locator('td').nth(2)]) {
+      assert.equal(await cell.evaluate(element => getComputedStyle(element).whiteSpace), 'nowrap', 'source and path stay intact inside the scrollable table');
+    }
+  }
+  await checkLayout('inventory');
+  if (viewport.width === 390) {
+    await inventoryTable.evaluate(element => { element.scrollLeft = element.scrollWidth - element.clientWidth; });
+    await screenshot('inventory-right');
+  }
+
+  await inventoryTable.getByRole('link', { name: 'orders' }).click();
+  await page.getByRole('heading', { name: 'Edit webhook route' }).waitFor();
+  await activeWebhooks('managed detail after HTMX');
+  assert.equal(await page.getByLabel('Report to (optional)').inputValue(), 'main_chat');
+  await page.getByLabel('Deduplicate by').selectOption('body_sha256');
+  assert.equal(await page.getByLabel('Deduplication header').isVisible(), false, 'inactive header input is hidden');
+  await page.getByLabel('Deduplicate by').selectOption('header');
+  assert.equal(await page.getByLabel('Deduplication header').isVisible(), true, 'header field follows selected dedupe method');
+  await page.getByLabel('Report to (optional)').focus();
+  assert.equal(await page.getByLabel('Report to (optional)').evaluate(element => element === document.activeElement), true, 'recipient can receive keyboard focus');
+  await page.keyboard.press('Tab');
+  assert.equal(await page.getByLabel('Prompt template').evaluate(element => element === document.activeElement), true, 'Tab reaches prompt template');
+  await checkLayout('managed');
+  await page.goBack();
+  await activeWebhooks('inventory after browser Back');
+  await page.getByRole('region', { name: /Webhook routes table/ }).getByRole('link', { name: 'deployed' }).click();
+  await page.getByRole('heading', { name: 'Configuration webhook' }).waitFor();
+  await activeWebhooks('configured detail after HTMX');
+  assert.equal(await page.getByRole('button', { name: 'Save webhook' }).count(), 0, 'configured route cannot be edited');
+  assert.equal(await page.getByRole('button', { name: 'Rotate secret' }).count(), 0, 'configured route has no managed secret');
+  await checkLayout('config');
+
+  await page.getByRole('link', { name: 'All webhooks' }).click();
+  await page.getByRole('link', { name: 'Add webhook' }).click();
+  await page.getByRole('heading', { name: 'New webhook route' }).waitFor();
+  await activeWebhooks('create after HTMX');
+  const fieldLabels = await page.locator('label.form-label').allTextContents();
+  for (const label of ['Route name', 'Path', 'Report to (optional)', 'Prompt template', 'Deduplicate by']) {
+    assert.ok(fieldLabels.includes(label), `create form exposes ${label}`);
+  }
+  await page.getByLabel('Route name').focus();
+  await page.keyboard.press('Tab');
+  assert.equal(await page.getByLabel('Path').evaluate(element => element === document.activeElement), true, 'Tab follows route name with path');
+  const inputAppearance = await page.getByLabel('Path').evaluate(element => ({
+    text: getComputedStyle(element).color,
+    placeholder: getComputedStyle(element, '::placeholder').color,
+    focus: getComputedStyle(element).boxShadow,
+  }));
+  assert.notEqual(inputAppearance.text, inputAppearance.placeholder, 'placeholder differs from entered text');
+  assert.notEqual(inputAppearance.focus, 'none', 'keyboard focus is visible');
+  await checkLayout('create');
+
+  for (const [route, state] of [
+    ['webhooks-empty', 'empty'], ['webhooks-disabled', 'disabled'], ['webhooks-archived', 'archived'],
+    ['webhooks-history-empty', 'history-empty'], ['webhooks-invalid', 'invalid'],
+    ['webhooks-conflict', 'conflict'], ['webhooks-unavailable', 'unavailable'],
+  ]) {
+    await page.goto(`${baseURL}/qa/ui/${route}`);
+    await checkLayout(state);
+  }
+  await page.goto(`${baseURL}/qa/ui/webhooks-history`);
+  const historyTable = page.getByRole('region', { name: /Webhook request history/ });
+  await historyTable.getByText('Test POST', { exact: true }).waitFor();
+  await historyTable.getByText('External', { exact: true }).waitFor();
+  await page.getByRole('heading', { name: 'Request detail' }).waitFor();
+  await page.getByText('Synthetic output for layout review.').waitFor();
+  if (viewport.width === 390) assert.ok(await historyTable.evaluate(element => element.scrollWidth > element.clientWidth), 'mobile history table scrolls within its region');
+  await checkLayout('history');
+  await historyTable.getByRole('link').first().click();
+  await page.getByRole('heading', { name: 'Request detail' }).waitFor();
+  await activeWebhooks('request detail after HTMX');
+
+  await page.goto(`${baseURL}/qa/ui/webhooks-secret`);
+  await page.getByRole('heading', { name: 'Webhook secret · shown once' }).waitFor();
+  assert.match(await page.getByLabel('Generated secret').inputValue(), /^synthetic-invalid-/);
+  assert.equal(new URL(page.url()).pathname, '/qa/ui/webhooks/orders', 'one-time result replaces its browser history URL');
+  await checkLayout('secret');
+  await page.reload();
+  assert.equal(await page.locator('[data-webhook-secret]').count(), 0, 'secret is absent after reloading detail');
+  assert.deepEqual(errors, [], `Webhooks browser errors at ${viewport.width}px`);
   await page.close();
 }
 
@@ -293,6 +415,7 @@ async function checkPage(browser, baseURL, viewport) {
     const browser = await chromium.launch({ headless: true });
     try {
       for (const viewport of [{ width: 1440, height: 900 }, { width: 1024, height: 768 }, { width: 768, height: 1024 }, { width: 390, height: 844 }]) {
+        await checkWebhooks(browser, url, viewport);
         await checkMCPTransport(browser, url, viewport);
         await checkPage(browser, url, viewport);
       }

@@ -31,7 +31,7 @@ can be read, linked, and indexed independently:
 - [Internal packages and startup architecture](reference/internals.md) — owned
   packages, dependency boundaries, architecture layers, and startup order.
 - [Backoffice application](reference/backoffice.md) — application ownership,
-  Web UI foundation, HTMX contracts, and the page-development workflow.
+  Web UI foundation, Schedules and Webhooks management, and the page-development workflow.
 - [Backoffice UI review](reference/backoffice-ui-review.md) — local synthetic
   preview gallery, browser review, and authenticated deployment checks.
 - [Configuration](reference/configuration.md) — the complete runtime, provider,

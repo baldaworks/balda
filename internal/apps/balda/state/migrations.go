@@ -24,6 +24,7 @@ var requiredBaldaStateTables = []string{
 	"balda_runtime_events",
 	"balda_scheduled_jobs",
 	"balda_schedule_runs",
+	"balda_webhook_routes",
 	"balda_managed_aliases",
 	"execution_jobs",
 	"execution_job_events",

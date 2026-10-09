@@ -9,6 +9,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/backoffice/internal/webui"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookroutecmd"
 )
 
 // QAHandler serves synthetic previews without opening Backoffice state.
@@ -25,6 +26,12 @@ func QAHandler(basePath string) (http.Handler, error) {
 	mux.Handle("GET "+basePath+"/assets/", http.StripPrefix(basePath, assets))
 	mux.HandleFunc("GET "+basePath+"/qa/ui/", func(w http.ResponseWriter, r *http.Request) {
 		name := strings.TrimPrefix(r.URL.Path, basePath+"/qa/ui/")
+		if name == "webhooks" && r.URL.Query().Get("new") == "1" {
+			name = "webhooks/new"
+		}
+		if name == "webhooks/orders" && r.URL.Query().Has("job_id") {
+			name = "webhooks-history"
+		}
 		page, templateName, status, ok := qaFixture(name)
 		if !ok {
 			http.NotFound(w, r)
@@ -69,6 +76,49 @@ type qaEntry struct {
 }
 
 var qaEntries = []qaEntry{
+	{name: "webhooks", label: "Webhooks · inventory", templateName: webui.TemplateWebhooks, page: qaWebhooks, gallery: true},
+	{name: "webhooks-empty", label: "Webhooks · empty", templateName: webui.TemplateWebhooks, page: func() webui.Page { p := qaWebhooks(); p.Webhooks.Rows = nil; return p }, gallery: true},
+	{name: "webhooks/new", label: "Webhooks · create", templateName: webui.TemplateWebhooks, page: func() webui.Page { return qaWebhookEditor(webhookroutecmd.Item{}, true) }, gallery: true},
+	{name: "webhooks-managed", label: "Webhooks · edit managed route", templateName: webui.TemplateWebhooks, page: func() webui.Page { return qaWebhookEditor(qaManagedWebhook(), false) }, gallery: true},
+	{name: "webhooks/orders", templateName: webui.TemplateWebhooks, page: func() webui.Page { return qaWebhookEditor(qaManagedWebhook(), false) }},
+	{name: "webhooks-config", label: "Webhooks · configuration read-only", templateName: webui.TemplateWebhooks, page: func() webui.Page { return qaWebhookEditor(qaConfiguredWebhook(), false) }, gallery: true},
+	{name: "webhooks/deployed", templateName: webui.TemplateWebhooks, page: func() webui.Page { return qaWebhookEditor(qaConfiguredWebhook(), false) }},
+	{name: "webhooks-disabled", label: "Webhooks · disabled managed route", templateName: webui.TemplateWebhooks, page: func() webui.Page {
+		item := qaManagedWebhook()
+		item.Enabled = false
+		return qaWebhookEditor(item, false)
+	}, gallery: true},
+	{name: "webhooks-archived", label: "Webhooks · archived route", templateName: webui.TemplateWebhooks, page: func() webui.Page {
+		item := qaManagedWebhook()
+		item.Enabled, item.Deleted = false, true
+		return qaWebhookEditor(item, false)
+	}, gallery: true},
+	{name: "webhooks-history", label: "Webhooks · request history and detail", templateName: webui.TemplateWebhooks, page: qaWebhookHistory, gallery: true},
+	{name: "webhooks-history-empty", label: "Webhooks · empty request history", templateName: webui.TemplateWebhooks, page: func() webui.Page {
+		p := qaWebhookEditor(qaManagedWebhook(), false)
+		p.Webhooks.Editor.HistoryLoaded = true
+		return p
+	}, gallery: true},
+	{name: "webhooks-secret", label: "Webhooks · one-time secret", templateName: webui.TemplateWebhooks, page: func() webui.Page {
+		p := qaWebhookEditor(qaManagedWebhook(), false)
+		p.Webhooks.Editor.Secret = "synthetic-invalid-secret-preview-only"
+		return p
+	}, gallery: true},
+	{name: "webhooks-invalid", label: "Webhooks · invalid definition", templateName: webui.TemplateWebhooks, page: func() webui.Page {
+		p := qaWebhookEditor(webhookroutecmd.Item{}, true)
+		p.Error = &webui.ErrorView{Heading: "Webhook operation could not complete", Message: "Review the route name, path, template and recipient before trying again."}
+		return p
+	}, status: http.StatusBadRequest, gallery: true},
+	{name: "webhooks-conflict", label: "Webhooks · conflicting change", templateName: webui.TemplateWebhooks, page: func() webui.Page {
+		p := qaWebhookEditor(qaManagedWebhook(), false)
+		p.Error = &webui.ErrorView{Heading: "Webhook operation could not complete", Message: "The route name or path is in use, or this route changed. Reopen Webhooks before trying again."}
+		return p
+	}, status: http.StatusConflict, gallery: true},
+	{name: "webhooks-unavailable", label: "Webhooks · unavailable management", templateName: webui.TemplateWebhooks, page: func() webui.Page {
+		p := qaWebhooks()
+		p.Error = &webui.ErrorView{Heading: "Webhook management unavailable", Message: "Reopen Webhooks after the service recovers."}
+		return p
+	}, status: http.StatusServiceUnavailable, gallery: true},
 	{name: "mcp-oauth-return", label: "MCP · native callback continuation", templateName: webui.TemplateOAuthReturn, page: func() webui.Page {
 		return webui.Page{Title: "Continue to MCP · QA", RestartURL: "/mcp"}
 	}, gallery: true},
@@ -217,9 +267,61 @@ func qaFixture(name string) (webui.Page, string, int, bool) {
 
 var qaNow = time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
 
+func qaManagedWebhook() webhookroutecmd.Item {
+	return webhookroutecmd.Item{Definition: webhookroutecmd.Definition{
+		Name: "orders", Path: "/hooks/orders", PromptTemplate: "Review {{.Body}}",
+		ReportTo: "main_chat", DedupeSource: webhookroutecmd.DedupeSourceHeader,
+		DedupeHeader: "X-Event-ID", AckOnDelivery: true,
+	}, Source: webhookroutecmd.SourceManaged, Enabled: true, Version: 2}
+}
+
+func qaConfiguredWebhook() webhookroutecmd.Item {
+	return webhookroutecmd.Item{Definition: webhookroutecmd.Definition{
+		Name: "deployed", Path: "/hooks/deployed", PromptTemplate: "Handle {{.Body}}",
+		ReportTo: "telegram:123456:0", DedupeSource: webhookroutecmd.DedupeSourceRequestID,
+	}, Source: webhookroutecmd.SourceConfig, Enabled: true, AuthType: webhookroutecmd.AuthTypeHeader,
+		AuthHeader: "X-Deploy-Token", Version: 1}
+}
+
+func qaWebhooks() webui.Page {
+	return webui.Page{Title: "Webhooks · QA", Current: webui.LocationWebhooks,
+		Navigation: qaAdminNavigation(webui.LocationWebhooks), CSRFToken: "synthetic-csrf",
+		Webhooks: &webui.WebhooksView{Rows: []webui.WebhookRow{
+			webui.ProjectWebhookRow(qaManagedWebhook()), webui.ProjectWebhookRow(qaConfiguredWebhook()),
+		}}}
+}
+
+func qaWebhookEditor(item webhookroutecmd.Item, create bool) webui.Page {
+	p := qaWebhooks()
+	p.Webhooks = &webui.WebhooksView{Editor: webui.ProjectWebhookEditor(item, create)}
+	if create {
+		p.Title = "Add webhook · QA"
+	} else {
+		p.Title = item.Definition.Name + " · Webhooks · QA"
+	}
+	return p
+}
+
+func qaWebhookHistory() webui.Page {
+	p := qaWebhookEditor(qaManagedWebhook(), false)
+	e := p.Webhooks.Editor
+	e.HistoryLoaded = true
+	e.History = []webui.WebhookHistoryRow{
+		{Requested: "2026-09-23T12:00:00Z", Source: "Test POST", State: "Succeeded", DeliveryState: "Delivered", DetailPath: "/webhooks/orders?job_id=synthetic-test"},
+		{Requested: "2026-09-23T11:00:00Z", Source: "External", State: "Failed", DeliveryState: "Pending", DetailPath: "/webhooks/orders?job_id=synthetic-external"},
+	}
+	e.NextHistoryPath = "/webhooks/orders?before=synthetic-cursor"
+	e.HistoryDetail = &webui.WebhookHistoryDetail{
+		Input: `{"event":"synthetic-preview-only"}`, InputAvailable: true,
+		Output: "Synthetic output for layout review.", HasReportTo: true,
+		ReportTo: "telegram:123456:0", DeliveryState: "Delivered",
+	}
+	return p
+}
+
 func qaAdminNavigation(current webui.Location) []webui.NavGroup {
 	return webui.Navigation(usercmd.BackofficeCapabilities{
-		Overview: true, Account: true, ManageUsers: true, ManageMCP: true, ManageSchedules: true, ViewAudit: true,
+		Overview: true, Account: true, ManageUsers: true, ManageMCP: true, ManageSchedules: true, ManageWebhooks: true, ViewAudit: true,
 	}, current)
 }
 

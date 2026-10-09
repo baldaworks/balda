@@ -113,10 +113,6 @@ func normalizeConfig(cfg Config) (normalizedConfig, error) {
 		return normalized, nil
 	}
 
-	if len(cfg.Routes) == 0 {
-		return normalizedConfig{}, fmt.Errorf("balda.webhooks.routes is required when webhooks are enabled")
-	}
-
 	seenPaths := make(map[string]string, len(cfg.Routes))
 	for rawName, rawRoute := range cfg.Routes {
 		routeName := strings.TrimSpace(rawName)

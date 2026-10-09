@@ -71,6 +71,7 @@ func BackofficeCapabilities(user usercmd.User) usercmd.BackofficeCapabilities {
 			ManageUsers:     true,
 			ManageMCP:       true,
 			ManageSchedules: true,
+			ManageWebhooks:  true,
 			ManageAliases:   true,
 			ViewAudit:       true,
 		}

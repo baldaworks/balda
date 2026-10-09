@@ -391,7 +391,7 @@ func (b *Browser) AdministratorMutation(w http.ResponseWriter, r *http.Request) 
 // AdministratorMutationLimit keeps the same authority guard with a server-chosen
 // bounded intake size for larger editors. Other forms retain their usual limit.
 func (b *Browser) AdministratorMutationLimit(w http.ResponseWriter, r *http.Request, limit int64) (url.Values, Principal, bool) {
-	if limit < 256 || limit > 1<<20 {
+	if limit < 256 || limit > 4<<20 {
 		b.writeHTTPError(w, r, http.StatusBadRequest, "invalid request")
 		return nil, Principal{}, false
 	}
