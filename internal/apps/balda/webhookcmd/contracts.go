@@ -63,6 +63,9 @@ type Request struct {
 	Test      bool
 	ReportTo  *destinationcmd.Target
 	DedupeKey string
+	// LegacyDedupeKey is read only. It may contain an old route credential and
+	// must never be persisted on a new admission or included in output/logs.
+	LegacyDedupeKey string `json:"-"`
 }
 
 // Result is the stable acceptance receipt returned to the HTTP receiver.

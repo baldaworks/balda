@@ -161,12 +161,18 @@ func (i *Ingress) Admit(ctx context.Context, route webhookcmd.PreparedRoute, inb
 		return webhookcmd.Result{}, &webhookcmd.InvalidRequestError{Field: "prompt", Message: "template did not render a valid prompt"}
 	}
 	dedupeBase := strings.TrimSpace(requestID)
+	var legacyDedupeKey string
 	if !inbound.Test && strings.EqualFold(route.AuthHeader, "X-Request-Id") {
 		// The credential used to be the default request-id dedupe value. Keep
 		// retry identity stable without storing the credential itself.
 		if value := strings.TrimSpace(headerValue(inbound.Headers, route.AuthHeader)); value != "" {
 			sum := sha256.Sum256([]byte(value))
 			dedupeBase = hex.EncodeToString(sum[:])
+			if route.DedupeSource == "" || route.DedupeSource == webhookroutecmd.DedupeSourceRequestID {
+				// Before credential scrubbing, this exact value was the default
+				// dedupe key. Consult it only for an existing admission.
+				legacyDedupeKey = strings.Join([]string{"webhook", route.Name, value}, ":")
+			}
 		}
 	}
 	switch route.DedupeSource {
@@ -190,7 +196,8 @@ func (i *Ingress) Admit(ctx context.Context, route webhookcmd.PreparedRoute, inb
 	return i.acceptor.Accept(ctx, webhookcmd.Request{RequestID: requestID,
 		RouteName: route.Name, Prompt: strings.TrimSpace(prompt.String()), RawBody: inbound.RawBody,
 		Test: inbound.Test, ReportTo: route.ReportTo,
-		DedupeKey: strings.Join([]string{keyPrefix, route.Name, dedupeBase}, ":")})
+		DedupeKey:       strings.Join([]string{keyPrefix, route.Name, dedupeBase}, ":"),
+		LegacyDedupeKey: legacyDedupeKey})
 }
 
 func preparedRecord(r webhookroutecmd.Record) (webhookcmd.PreparedRoute, error) {

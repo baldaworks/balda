@@ -224,14 +224,18 @@ func TestIngress_AuthRequestIDIsReplacedBeforeTemplate(t *testing.T) {
 	if got, want := acceptor.request.DedupeKey, "webhook:events:"+hex.EncodeToString(sum[:]); got != want {
 		t.Fatalf("default dedupe key = %q, want %q", got, want)
 	}
+	if got, want := acceptor.request.LegacyDedupeKey, "webhook:events:"+secret; got != want {
+		t.Fatalf("legacy lookup key = %q, want %q", got, want)
+	}
 	prepared, err = ingress.PrepareTest(t.Context(), "events")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ingress.Admit(t.Context(), prepared, webhookcmd.Inbound{
 		RequestID: "test-1", Method: "POST", Path: "/events", Test: true,
-	}); err != nil || acceptor.request.DedupeKey != "webhook-test:events:test-1" {
-		t.Fatalf("test dedupe key = %q err=%v", acceptor.request.DedupeKey, err)
+	}); err != nil || acceptor.request.DedupeKey != "webhook-test:events:test-1" ||
+		acceptor.request.LegacyDedupeKey != "" {
+		t.Fatalf("test lookup keys = %+v err=%v", acceptor.request, err)
 	}
 }
 
@@ -268,6 +272,9 @@ func TestIngress_AuthRequestIDHonorsExplicitDedupeSource(t *testing.T) {
 			}
 			if got, want := acceptor.request.DedupeKey, "webhook:events:"+tc.wantBase; got != want {
 				t.Fatalf("dedupe key = %q, want %q", got, want)
+			}
+			if acceptor.request.LegacyDedupeKey != "" {
+				t.Fatalf("explicit dedupe looked up legacy credential key: %+v", acceptor.request)
 			}
 		})
 	}

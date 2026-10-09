@@ -2,6 +2,8 @@ package webhook
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -12,8 +14,10 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookapp"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookcmd"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 )
 
@@ -121,6 +125,114 @@ func TestReceiver_AuthRequestIDCannotEnterHistory(t *testing.T) {
 	receiver.handleWebhook(deniedResponse, denied)
 	if deniedResponse.Code != http.StatusUnauthorized || strings.Contains(deniedResponse.Body.String(), "wrong-credential") {
 		t.Fatalf("auth rejection reflected credential: status=%d body=%q", deniedResponse.Code, deniedResponse.Body.String())
+	}
+}
+
+func TestReceiver_LegacyCredentialDedupePreservesDeliveredAdmission(t *testing.T) {
+	provider, err := state.NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = provider.Close() })
+	const secret = "pre-upgrade-credential"
+	const routeName = "event"
+	const jobID = "webhook-legacy"
+	legacyKey := "webhook:" + routeName + ":" + secret
+	legacy := webhookcmd.Admission{RouteName: routeName, DedupeKey: legacyKey,
+		RequestID: secret, Prompt: "legacy request=" + secret, JobID: jobID,
+		SessionID: "wh-legacy", CreatedAt: time.Now().UTC()}
+	if _, created, err := provider.WebhookAdmissions().Create(t.Context(), legacy); err != nil || !created {
+		t.Fatalf("seed admission: created=%t err=%v", created, err)
+	}
+	if _, err := provider.WebhookAdmissions().RecordReceipt(t.Context(), routeName, legacyKey,
+		webhookcmd.Receipt{MessageID: "original-receipt", Stream: "balda.cmd.job", Sequence: 7}); err != nil {
+		t.Fatalf("seed receipt: %v", err)
+	}
+	if created, err := provider.Jobs().CreateJob(t.Context(), state.JobRecord{ID: jobID,
+		SessionID: legacy.SessionID, Objective: legacy.Prompt, Status: state.JobStatusCompleted,
+		PrivateRunKind: state.PrivateRunKindWebhook}); err != nil || !created {
+		t.Fatalf("seed job: created=%t err=%v", created, err)
+	}
+	if _, created, err := provider.Jobs().ReserveDelivery(t.Context(), state.DeliveryRecord{
+		ID: "legacy-delivery", DeliveryKey: jobID + ":delivery:final", JobID: jobID,
+		SessionID: legacy.SessionID, Channel: "telegram", AddressKey: "123:0",
+		Kind: "delivery", Payload: "report sent", PayloadHash: "report-hash",
+	}); err != nil || !created {
+		t.Fatalf("seed delivery: created=%t err=%v", created, err)
+	}
+	published := 0
+	publisher := webhookapp.JobPublisherFunc(func(_ context.Context, _ turncmd.SessionTurnPayload, _, _ string) (*actortransport.DispatchReceipt, string, error) {
+		published++
+		return nil, "", errors.New("legacy admission must not be republished")
+	})
+	service := webhookapp.NewService(nil, provider.WebhookAdmissions(), publisher)
+	configured := webhookapp.ConfiguredRoute{Name: routeName, Path: "/event",
+		PromptTemplate: "request={{.RequestID}}", AuthType: "header",
+		AuthHeader: "X-Request-Id", AuthValue: secret, AckOnDelivery: true,
+		ReportToKind: "managed_alias", ReportToKey: "main_chat"}
+	ingress, err := webhookapp.NewIngress([]webhookapp.ConfiguredRoute{configured}, nil, service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receiver, err := NewReceiver(Config{Enabled: true, ListenAddr: "127.0.0.1:0",
+		Routes: map[string]RouteConfig{routeName: {Path: "/event", PromptTemplate: configured.PromptTemplate,
+			Envelope: RouteEnvelopeConfig{AckOnDelivery: true,
+				ReportTo: &RouteTargetConfig{Target: "managed_alias", Key: "main_chat"}},
+			Auth: RouteAuthConfig{Type: "header", Header: "X-Request-Id", Value: secret}}}},
+		ingress, zerolog.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	receiver.SetDeliveryReceipts(provider.Jobs())
+	previousRequestID := ""
+	for attempt := range 2 {
+		response := post(receiver, "/event", "retry body", map[string]string{"X-Request-Id": secret})
+		wantStatus, wantState, wantProviderID := http.StatusAccepted, statusAccepted, ""
+		if attempt == 1 {
+			wantStatus, wantState, wantProviderID = http.StatusOK, statusDelivered, "provider-message"
+		}
+		if response.Code != wantStatus {
+			t.Fatalf("attempt %d status=%d body=%q", attempt, response.Code, response.Body.String())
+		}
+		var got acceptedResponse
+		if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.JobID != jobID || got.MessageID != "original-receipt" ||
+			got.Status != wantState || got.ProviderMessageID != wantProviderID ||
+			!got.Duplicate || got.RequestID == "" || got.RequestID == previousRequestID ||
+			strings.Contains(response.Body.String(), secret) {
+			t.Fatalf("attempt %d changed admission or disclosed credential: %+v", attempt, got)
+		}
+		previousRequestID = got.RequestID
+		if attempt == 0 {
+			if err := provider.Jobs().MarkDeliverySent(t.Context(), jobID+":delivery:final", "provider-message"); err != nil {
+				t.Fatalf("mark delivery sent: %v", err)
+			}
+		}
+	}
+	serviceResult, err := service.Accept(t.Context(), webhookcmd.Request{RequestID: "safe-direct-id",
+		RouteName: routeName, Prompt: "new prompt", DedupeKey: "webhook:" + routeName + ":new",
+		LegacyDedupeKey: legacyKey})
+	if err != nil || serviceResult.RequestID != "safe-direct-id" || serviceResult.JobID != jobID ||
+		serviceResult.MessageID != "original-receipt" || !serviceResult.Duplicate {
+		t.Fatalf("legacy service result: %+v err=%v", serviceResult, err)
+	}
+	if published != 0 {
+		t.Fatalf("legacy admission was published %d times", published)
+	}
+	sum := sha256.Sum256([]byte(secret))
+	if _, found, err := provider.WebhookAdmissions().Get(t.Context(), routeName,
+		"webhook:"+routeName+":"+hex.EncodeToString(sum[:])); err != nil || found {
+		t.Fatalf("new admission: found=%t err=%v", found, err)
+	}
+	history, err := provider.WebhookAdmissions().ListHistory(t.Context(), routeName, time.Time{}, "", 10)
+	if err != nil || len(history) != 1 || history[0].JobID != jobID || history[0].RawBody != nil {
+		t.Fatalf("legacy history: %+v err=%v", history, err)
+	}
+	encoded, err := json.Marshal(history)
+	if err != nil || strings.Contains(string(encoded), secret) {
+		t.Fatalf("legacy history disclosed credential: %s err=%v", encoded, err)
 	}
 }
 
