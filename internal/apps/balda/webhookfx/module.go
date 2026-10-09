@@ -51,37 +51,36 @@ func newIngress(params ingressParams) (*webhookapp.Ingress, error) {
 		store = routeLookup{store: params.Provider.WebhookRoutes()}
 	}
 	configured := make([]webhookapp.ConfiguredRoute, 0, len(params.Config.Routes))
-	if params.Config.Enabled {
-		for name, raw := range params.Config.Routes {
-			path := strings.TrimSpace(raw.Path)
-			if path != "" && !strings.HasPrefix(path, "/") {
-				path = "/" + path
-			}
-			var reportKind, reportKey string
-			if raw.Envelope.ReportTo != nil {
-				reportKind, reportKey = raw.Envelope.ReportTo.Target, raw.Envelope.ReportTo.Key
-			}
-			authType := strings.ToLower(strings.TrimSpace(raw.Auth.Type))
-			if authType == "" {
-				authType = webhookroutecmd.AuthTypeNone
-			}
-			dedupeSource := strings.ToLower(strings.TrimSpace(raw.Dedupe.Source))
-			if dedupeSource == "" && strings.TrimSpace(raw.Dedupe.Header) != "" {
-				dedupeSource = webhookroutecmd.DedupeSourceHeader
-			}
-			if dedupeSource == "" {
-				dedupeSource = webhookroutecmd.DedupeSourceRequestID
-			}
-			configured = append(configured, webhookapp.ConfiguredRoute{
-				Name: strings.TrimSpace(name), Path: path,
-				PromptTemplate: strings.TrimSpace(raw.PromptTemplate),
-				ReportToKind:   reportKind, ReportToKey: reportKey,
-				AckOnDelivery: raw.Envelope.AckOnDelivery,
-				AuthType:      authType, AuthHeader: strings.TrimSpace(raw.Auth.Header),
-				AuthValue:    strings.TrimSpace(raw.Auth.Value),
-				DedupeSource: dedupeSource, DedupeHeader: strings.TrimSpace(raw.Dedupe.Header),
-			})
+	for name, raw := range params.Config.Routes {
+		path := strings.TrimSpace(raw.Path)
+		if path != "" && !strings.HasPrefix(path, "/") {
+			path = "/" + path
 		}
+		var reportKind, reportKey string
+		if raw.Envelope.ReportTo != nil {
+			reportKind, reportKey = raw.Envelope.ReportTo.Target, raw.Envelope.ReportTo.Key
+		}
+		authType := strings.ToLower(strings.TrimSpace(raw.Auth.Type))
+		if authType == "" {
+			authType = webhookroutecmd.AuthTypeNone
+		}
+		dedupeSource := strings.ToLower(strings.TrimSpace(raw.Dedupe.Source))
+		if dedupeSource == "" && strings.TrimSpace(raw.Dedupe.Header) != "" {
+			dedupeSource = webhookroutecmd.DedupeSourceHeader
+		}
+		if dedupeSource == "" {
+			dedupeSource = webhookroutecmd.DedupeSourceRequestID
+		}
+		configured = append(configured, webhookapp.ConfiguredRoute{
+			Name: strings.TrimSpace(name), Path: path,
+			Disabled:       !params.Config.Enabled,
+			PromptTemplate: strings.TrimSpace(raw.PromptTemplate),
+			ReportToKind:   reportKind, ReportToKey: reportKey,
+			AckOnDelivery: raw.Envelope.AckOnDelivery,
+			AuthType:      authType, AuthHeader: strings.TrimSpace(raw.Auth.Header),
+			AuthValue:    strings.TrimSpace(raw.Auth.Value),
+			DedupeSource: dedupeSource, DedupeHeader: strings.TrimSpace(raw.Dedupe.Header),
+		})
 	}
 	return webhookapp.NewIngress(configured, store, params.Service)
 }

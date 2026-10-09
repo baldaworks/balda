@@ -164,3 +164,27 @@ func TestIngress_CredentialHeaderDedupeDoesNotPersistCredential(t *testing.T) {
 		t.Fatalf("dedupe key = %q, want %q", got, want)
 	}
 }
+
+func TestIngress_DisabledConfiguredRouteTestAdmission(t *testing.T) {
+	acceptor := &ingressAcceptor{}
+	ingress, err := NewIngress([]ConfiguredRoute{{Name: "configured", Path: "/configured",
+		PromptTemplate: "event: {{.RawBody}}", Disabled: true}}, nil, acceptor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ingress.PrepareExternal(t.Context(), "/configured", nil); !errors.Is(err, webhookcmd.ErrRouteNotFound) {
+		t.Fatalf("disabled external route: %v", err)
+	}
+	prepared, err := ingress.PrepareTest(t.Context(), "configured")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ingress.Admit(t.Context(), prepared, webhookcmd.Inbound{
+		RequestID: "test-1", Path: "/configured", Method: "POST", RawBody: "hello", Test: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if acceptor.request.Prompt != "event: hello" || acceptor.request.DedupeKey != "webhook-test:configured:test-1" {
+		t.Fatalf("test admission = %+v", acceptor.request)
+	}
+}

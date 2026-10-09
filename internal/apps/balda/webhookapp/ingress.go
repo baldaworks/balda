@@ -16,9 +16,11 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/webhookroutecmd"
 )
 
-// ConfiguredRoute supplies one validated, active config route and its auth value.
+// ConfiguredRoute supplies a config route and its auth value.
+// Disabled routes can be selected for administrator tests but not external POSTs.
 type ConfiguredRoute struct {
 	Name, Path, PromptTemplate string
+	Disabled                   bool
 	ReportToKind, ReportToKey  string
 	AckOnDelivery              bool
 	AuthType, AuthHeader       string
@@ -60,19 +62,27 @@ func NewIngress(configured []ConfiguredRoute, store RouteStore, acceptor Accepto
 	}
 	for _, c := range configured {
 		if c.Name == "" || c.Path == "" || c.PromptTemplate == "" {
+			if c.Disabled {
+				continue
+			}
 			return nil, fmt.Errorf("invalid configured webhook route %q", c.Name)
 		}
-		if _, exists := i.configuredByPath[c.Path]; exists {
+		if _, exists := i.configuredByPath[c.Path]; exists && !c.Disabled {
 			return nil, fmt.Errorf("duplicate configured webhook path %q", c.Path)
 		}
 		prepared, err := prepareRoute(c.Name, c.Path, c.PromptTemplate, c.ReportToKind,
 			c.ReportToKey, c.AckOnDelivery, c.DedupeSource, c.DedupeHeader, c.AuthHeader)
 		if err != nil {
+			if c.Disabled {
+				continue
+			}
 			return nil, err
 		}
 		route := configuredRoute{prepared: prepared, authType: c.AuthType, authValue: c.AuthValue}
-		i.configuredByPath[c.Path] = route
 		i.configuredByName[c.Name] = route
+		if !c.Disabled {
+			i.configuredByPath[c.Path] = route
+		}
 	}
 	return i, nil
 }

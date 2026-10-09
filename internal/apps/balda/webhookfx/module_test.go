@@ -2,11 +2,13 @@ package webhookfx
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/baldaworks/balda/internal/apps/balda/channel/webhook"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookapp"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookcmd"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )
@@ -22,6 +24,33 @@ func TestModuleWiring(t *testing.T) {
 	}
 	if err := app.Stop(context.Background()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestDisabledConfigRouteIsAvailableToTestOnly(t *testing.T) {
+	config := webhook.Config{Routes: map[string]webhook.RouteConfig{
+		"configured":       {Path: "/configured", PromptTemplate: "event: {{.RawBody}}"},
+		"placeholder":      {},
+		"invalid-template": {Path: "/invalid", PromptTemplate: "{{"},
+	}}
+	ingress, err := newIngress(ingressParams{Config: config, Service: webhookapp.NewService(nil, nil, nil)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ingress.PrepareExternal(t.Context(), "/configured", nil); !errors.Is(err, webhookcmd.ErrRouteNotFound) {
+		t.Fatalf("disabled external route: %v", err)
+	}
+	prepared, err := ingress.PrepareTest(t.Context(), "configured")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared.Path != "/configured" || prepared.Name != "configured" {
+		t.Fatalf("test route = %+v", prepared)
+	}
+	for _, name := range []string{"placeholder", "invalid-template"} {
+		if _, err := ingress.PrepareTest(t.Context(), name); !errors.Is(err, webhookcmd.ErrRouteNotFound) {
+			t.Errorf("invalid disabled route %q: %v", name, err)
+		}
 	}
 }
 
