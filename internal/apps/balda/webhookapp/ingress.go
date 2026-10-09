@@ -172,7 +172,8 @@ func (i *Ingress) Admit(ctx context.Context, route webhookcmd.PreparedRoute, inb
 		keyPrefix = "webhook-test"
 	}
 	return i.acceptor.Accept(ctx, webhookcmd.Request{RequestID: inbound.RequestID,
-		RouteName: route.Name, Prompt: strings.TrimSpace(prompt.String()), ReportTo: route.ReportTo,
+		RouteName: route.Name, Prompt: strings.TrimSpace(prompt.String()), RawBody: inbound.RawBody,
+		Test: inbound.Test, ReportTo: route.ReportTo,
 		DedupeKey: strings.Join([]string{keyPrefix, route.Name, dedupeBase}, ":")})
 }
 

@@ -119,6 +119,27 @@ func TestAcceptCreatesPrivateJobWithoutDestination(t *testing.T) {
 	}
 }
 
+func TestAcceptFreezesHistoryInputAndSource(t *testing.T) {
+	store, pub := &admissionMemory{}, &testPublisher{}
+	svc := NewService(nil, store, pub)
+	req := webhookRequest("webhook-test:events:history")
+	req.RawBody = "original request body"
+	req.Test = true
+	if _, err := svc.Accept(t.Context(), req); err != nil {
+		t.Fatal(err)
+	}
+	req.RawBody = "changed duplicate body"
+	req.Test = false
+	if _, err := svc.Accept(t.Context(), req); err != nil {
+		t.Fatal(err)
+	}
+	admission, found, err := store.Get(t.Context(), req.RouteName, req.DedupeKey)
+	if err != nil || !found || admission.RawBody == nil || *admission.RawBody != "original request body" ||
+		admission.Source != webhookcmd.SourceTest {
+		t.Fatalf("frozen history input = %+v found=%t err=%v", admission, found, err)
+	}
+}
+
 func TestAcceptFreezesReportLocatorAcrossRetargetAndRetry(t *testing.T) {
 	original := deliverycmd.Locator{ChannelType: "telegram", AddressKey: "chat:1", AddressJSON: `{}`, SessionID: "tg-1"}
 	resolver := &testResolver{locator: original}

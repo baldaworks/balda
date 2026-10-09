@@ -44,7 +44,7 @@ func (s *Service) Accept(ctx context.Context, req Request) (Result, error) {
 	if reqID == "" || len(reqID) > webhookcmd.MaxRequestIDBytes ||
 		routeName == "" || len(routeName) > webhookcmd.MaxRouteNameBytes ||
 		dedupeKey == "" || len(dedupeKey) > webhookcmd.MaxDedupeKeyBytes ||
-		prompt == "" || len(prompt) > webhookcmd.MaxPromptBytes {
+		prompt == "" || len(prompt) > webhookcmd.MaxPromptBytes || len(req.RawBody) > webhookcmd.MaxBodyBytes {
 		return Result{}, &InvalidRequestError{Field: "webhook", Message: "required input is empty or too large"}
 	}
 	if s.admissions == nil || s.jobPublisher == nil {
@@ -116,7 +116,11 @@ func (s *Service) newAdmission(ctx context.Context, req Request, reqID, routeNam
 	sessionID := "wh-" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	candidate := webhookcmd.Admission{
 		RouteName: routeName, DedupeKey: dedupeKey, RequestID: reqID,
-		Prompt: prompt, SessionID: sessionID, ReportTo: reportTo, CreatedAt: time.Now().UTC(),
+		Prompt: prompt, RawBody: &req.RawBody, Source: webhookcmd.SourceExternal,
+		SessionID: sessionID, ReportTo: reportTo, CreatedAt: time.Now().UTC(),
+	}
+	if req.Test {
+		candidate.Source = webhookcmd.SourceTest
 	}
 	_, jobID, err := turncmd.WebhookJobEnvelope(payloadFromAdmission(candidate), routeName, reqID)
 	if err != nil {

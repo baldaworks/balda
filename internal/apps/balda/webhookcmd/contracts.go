@@ -19,6 +19,10 @@ const (
 	MaxPromptBytes         = 1 << 20
 	MaxReceiptMessageBytes = 512
 	MaxReceiptStreamBytes  = 256
+	// SourceExternal identifies an admitted external webhook request.
+	SourceExternal = "external"
+	// SourceTest identifies an administrator Test POST.
+	SourceTest = "test"
 )
 
 var (
@@ -55,6 +59,8 @@ type Request struct {
 	RequestID string
 	RouteName string
 	Prompt    string
+	RawBody   string
+	Test      bool
 	ReportTo  *destinationcmd.Target
 	DedupeKey string
 }
@@ -77,6 +83,8 @@ type Admission struct {
 	DedupeKey string
 	RequestID string
 	Prompt    string
+	RawBody   *string
+	Source    string
 	JobID     string
 	SessionID string
 	ReportTo  *deliverycmd.Locator

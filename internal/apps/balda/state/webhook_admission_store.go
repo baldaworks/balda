@@ -22,7 +22,7 @@ type sqlWebhookAdmissionStore struct {
 var _ WebhookAdmissionStore = (*sqlWebhookAdmissionStore)(nil)
 
 const webhookAdmissionColumns = `route_name, dedupe_key, request_id, prompt, job_id, session_id,
-	report_locator_json, created_at, message_id, stream, sequence`
+	report_locator_json, created_at, message_id, stream, sequence, raw_body, source`
 
 func (s *sqlWebhookAdmissionStore) Get(ctx context.Context, routeName, dedupeKey string) (webhookcmd.Admission, bool, error) {
 	record, err := scanWebhookAdmission(s.db.QueryRowContext(ctx, s.bind(`SELECT `+webhookAdmissionColumns+`
@@ -49,6 +49,9 @@ func (s *sqlWebhookAdmissionStore) GetByJobID(ctx context.Context, jobID string)
 }
 
 func (s *sqlWebhookAdmissionStore) Create(ctx context.Context, candidate webhookcmd.Admission) (webhookcmd.Admission, bool, error) {
+	if candidate.Source == "" {
+		candidate.Source = WebhookHistorySourceExternal
+	}
 	if err := validateWebhookAdmission(candidate); err != nil {
 		return webhookcmd.Admission{}, false, err
 	}
@@ -61,11 +64,12 @@ func (s *sqlWebhookAdmissionStore) Create(ctx context.Context, candidate webhook
 		reportJSON = string(encoded)
 	}
 	result, err := s.db.ExecContext(ctx, s.bind(`INSERT INTO balda_webhook_admissions
-		(route_name, dedupe_key, request_id, prompt, job_id, session_id, report_locator_json, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		(route_name, dedupe_key, request_id, prompt, job_id, session_id, report_locator_json, created_at, raw_body, source)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (route_name, dedupe_key) DO NOTHING`),
 		candidate.RouteName, candidate.DedupeKey, candidate.RequestID, candidate.Prompt,
-		candidate.JobID, candidate.SessionID, reportJSON, formatUserTime(candidate.CreatedAt))
+		candidate.JobID, candidate.SessionID, reportJSON, formatWebhookHistoryTime(candidate.CreatedAt),
+		candidate.RawBody, candidate.Source)
 	if err != nil {
 		return webhookcmd.Admission{}, false, s.wrapError("create webhook admission", err)
 	}
@@ -121,7 +125,9 @@ func validateWebhookAdmission(a webhookcmd.Admission) error {
 		len(a.DedupeKey) > webhookcmd.MaxDedupeKeyBytes ||
 		len(a.RequestID) > webhookcmd.MaxRequestIDBytes ||
 		len(a.Prompt) > webhookcmd.MaxPromptBytes || strings.TrimSpace(a.JobID) == "" ||
-		!strings.HasPrefix(a.SessionID, "wh-") || a.CreatedAt.IsZero() {
+		!strings.HasPrefix(a.SessionID, "wh-") || a.CreatedAt.IsZero() ||
+		(a.RawBody != nil && len(*a.RawBody) > webhookcmd.MaxBodyBytes) ||
+		(a.Source != WebhookHistorySourceExternal && a.Source != WebhookHistorySourceTest) {
 		return fmt.Errorf("invalid webhook admission")
 	}
 	if a.ReportTo != nil && (a.ReportTo.ChannelType == "" || a.ReportTo.AddressKey == "" ||
@@ -134,17 +140,21 @@ func validateWebhookAdmission(a webhookcmd.Admission) error {
 func scanWebhookAdmission(row interface{ Scan(dest ...any) error }) (webhookcmd.Admission, error) {
 	var record webhookcmd.Admission
 	var reportJSON sql.NullString
+	var rawBody sql.NullString
 	var createdAt string
 	var sequence int64
 	if err := row.Scan(&record.RouteName, &record.DedupeKey, &record.RequestID, &record.Prompt,
 		&record.JobID, &record.SessionID, &reportJSON, &createdAt,
-		&record.MessageID, &record.Stream, &sequence); err != nil {
+		&record.MessageID, &record.Stream, &sequence, &rawBody, &record.Source); err != nil {
 		return webhookcmd.Admission{}, err
 	}
 	if sequence < 0 {
 		return webhookcmd.Admission{}, fmt.Errorf("negative webhook receipt sequence")
 	}
 	record.Sequence = uint64(sequence)
+	if rawBody.Valid {
+		record.RawBody = &rawBody.String
+	}
 	var err error
 	record.CreatedAt, err = parseUserTime(createdAt)
 	if err != nil {

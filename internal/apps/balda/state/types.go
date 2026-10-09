@@ -120,6 +120,32 @@ type WebhookAdmissionStore interface {
 	GetByJobID(ctx context.Context, jobID string) (webhookcmd.Admission, bool, error)
 	Create(ctx context.Context, candidate webhookcmd.Admission) (webhookcmd.Admission, bool, error)
 	RecordReceipt(ctx context.Context, routeName, dedupeKey string, receipt webhookcmd.Receipt) (webhookcmd.Admission, error)
+	ListHistory(ctx context.Context, routeName string, beforeAt time.Time, beforeJobID string, limit int) ([]WebhookHistoryRecord, error)
+	GetHistory(ctx context.Context, routeName, jobID string) (WebhookHistoryRecord, bool, error)
+}
+
+const (
+	// WebhookHistorySourceExternal identifies an admitted external HTTP request.
+	WebhookHistorySourceExternal = webhookcmd.SourceExternal
+	// WebhookHistorySourceTest identifies an administrator Test POST.
+	WebhookHistorySourceTest = webhookcmd.SourceTest
+)
+
+// WebhookHistoryRecord joins one durable admission to its optional job and final delivery.
+// RawBody is nil for admissions created before raw input was stored.
+type WebhookHistoryRecord struct {
+	RouteName       string
+	JobID           string
+	RequestID       string
+	Source          string
+	RawBody         *string
+	Prompt          string
+	ReportTo        *deliverycmd.Locator
+	CreatedAt       time.Time
+	JobStatus       string
+	Output          string
+	DeliveryStatus  string
+	DeliveryPayload string
 }
 
 const (

@@ -20,6 +20,22 @@ import (
 
 var postgresTestSchemaSequence atomic.Uint64
 
+func TestPostgresWebhookHistoryMigration(t *testing.T) {
+	db := newPostgresTestDB(t)
+	migrations, err := fs.Sub(postgresMigrationsFS, "postgres_migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, migrations,
+		goose.WithDisableGlobalRegistry(true),
+		goose.WithGoMigrations(goose.NewGoMigration(10,
+			&goose.GoFunc{RunTx: up00010PostgresUserConversion}, &goose.GoFunc{RunTx: downUserConversion})))
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkWebhookHistoryMigration(t, db, provider, 23, postgresBind)
+}
+
 func TestPostgresUserConversion(t *testing.T) {
 	runUserConversion(t, func(t *testing.T) conversionTestDatabase {
 		db := newPostgresTestDB(t)

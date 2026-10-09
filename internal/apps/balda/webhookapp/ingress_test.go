@@ -68,6 +68,9 @@ func TestIngress_ManagedRouteSnapshotAndScrubbedHeaders(t *testing.T) {
 	if got := acceptor.request.Prompt; got != "new body" {
 		t.Errorf("prompt = %q, want %q", got, "new body")
 	}
+	if acceptor.request.RawBody != "body" || acceptor.request.Test {
+		t.Errorf("history input = %+v", acceptor.request)
+	}
 	if got := acceptor.request.DedupeKey; got != "webhook:events:same" {
 		t.Errorf("dedupe key = %q", got)
 	}
@@ -183,6 +186,9 @@ func TestIngress_DisabledConfiguredRouteTestAdmission(t *testing.T) {
 		RequestID: "test-1", Path: "/configured", Method: "POST", RawBody: "hello", Test: true,
 	}); err != nil {
 		t.Fatal(err)
+	}
+	if !acceptor.request.Test || acceptor.request.RawBody != "hello" {
+		t.Errorf("test history marker and input = %+v", acceptor.request)
 	}
 	if acceptor.request.Prompt != "event: hello" || acceptor.request.DedupeKey != "webhook-test:configured:test-1" {
 		t.Fatalf("test admission = %+v", acceptor.request)
