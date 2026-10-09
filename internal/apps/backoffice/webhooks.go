@@ -13,11 +13,15 @@ import (
 	"github.com/baldaworks/balda/internal/apps/backoffice/internal/webui"
 	"github.com/baldaworks/balda/internal/apps/backoffice/security"
 	"github.com/baldaworks/balda/internal/apps/balda/users"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookroutecmd"
 	"github.com/google/uuid"
 )
 
 const webhookHistoryPageSize = 20
+
+// URL form encoding can turn each raw body byte into three transport bytes.
+const webhookTestFormLimit = 3*webhookcmd.MaxBodyBytes + (4 << 10)
 
 // WebhooksOperations is Backoffice's consuming port for webhook route policy.
 type WebhooksOperations interface {
@@ -140,7 +144,7 @@ func webhookHistoryCursor(query url.Values) (time.Time, string, error) {
 }
 
 func (a *httpApp) webhookTestPost(w http.ResponseWriter, r *http.Request) {
-	form, p, ok := a.browser.AdministratorMutationLimit(w, r, 1<<20)
+	form, p, ok := a.browser.AdministratorMutationLimit(w, r, webhookTestFormLimit)
 	if !ok {
 		return
 	}
@@ -164,6 +168,12 @@ func (a *httpApp) webhookTestPost(w http.ResponseWriter, r *http.Request) {
 		ExpectedVersion: version, ConfirmDisabled: form.Get("confirm_disabled") == checkedFormValue,
 		Authority: a.webhookAuthority(p)}
 	editor.TestBody = request.Body
+	if len(request.Body) > webhookcmd.MaxBodyBytes {
+		page.Error = &webui.ErrorView{Heading: "Test POST body is too large",
+			Message: "The request body must be 1 MiB or smaller."}
+		a.render(w, r, http.StatusBadRequest, webui.TemplateWebhooks, page)
+		return
+	}
 	if _, keyErr := uuid.Parse(request.RequestKey); keyErr == nil {
 		editor.TestRequestKey = request.RequestKey
 	}

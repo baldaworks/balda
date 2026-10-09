@@ -13,6 +13,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/backoffice/security"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookroutecmd"
 )
 
@@ -126,6 +127,21 @@ func TestWebhooksTestPostAndHistory(t *testing.T) {
 	if got := get("/webhooks/archived"); got.Code != http.StatusOK ||
 		strings.Contains(got.Body.String(), "Send test POST") || !strings.Contains(got.Body.String(), "Request history") {
 		t.Fatalf("archived route detail = %d", got.Code)
+	}
+	encodedBody := strings.Repeat("{", 600_000)
+	validForm := url.Values{"request_key": {uuid.NewString()}, "expected_version": {"1"}, "body": {encodedBody}}
+	if encodedSize := len(validForm.Encode()); encodedSize <= webhookcmd.MaxBodyBytes {
+		t.Fatalf("test body did not exercise form encoding growth: %d", encodedSize)
+	}
+	if got := post("/webhooks/configured/test", validForm, admin.csrf); got.Code != http.StatusSeeOther ||
+		len(fixture.tests) != 4 || fixture.tests[3].Body != encodedBody {
+		t.Fatalf("valid encoded Test POST body = %d, admissions = %d", got.Code, len(fixture.tests))
+	}
+	tooLargeBody := strings.Repeat("a", webhookcmd.MaxBodyBytes+1)
+	invalidForm := url.Values{"request_key": {uuid.NewString()}, "expected_version": {"1"}, "body": {tooLargeBody}}
+	if got := post("/webhooks/configured/test", invalidForm, admin.csrf); got.Code != http.StatusBadRequest ||
+		len(fixture.tests) != 4 || !strings.Contains(got.Body.String(), "Test POST body is too large") {
+		t.Fatalf("oversized decoded Test POST body = %d, admissions = %d", got.Code, len(fixture.tests))
 	}
 }
 
