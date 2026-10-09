@@ -24,20 +24,36 @@ type fakeAcceptor struct {
 }
 
 type historyAcceptor struct {
-	store state.WebhookAdmissionStore
-	last  webhookcmd.Request
+	store      state.WebhookAdmissionStore
+	jobs       state.JobStore
+	last       webhookcmd.Request
+	created    int
+	firstJobID string
 }
 
 func (a *historyAcceptor) Accept(ctx context.Context, req webhookcmd.Request) (webhookcmd.Result, error) {
 	a.last = req
 	admission := webhookcmd.Admission{RouteName: req.RouteName, DedupeKey: req.DedupeKey,
 		RequestID: req.RequestID, Prompt: req.Prompt, RawBody: &req.RawBody,
-		Source: webhookcmd.SourceExternal, JobID: "webhook-history-secret",
-		SessionID: "wh-history-secret", CreatedAt: time.Now().UTC()}
-	if _, _, err := a.store.Create(ctx, admission); err != nil {
+		Source: webhookcmd.SourceExternal, JobID: "webhook-" + req.RequestID,
+		SessionID: "wh-" + req.RequestID, CreatedAt: time.Now().UTC()}
+	selected, created, err := a.store.Create(ctx, admission)
+	if err != nil {
 		return webhookcmd.Result{}, err
 	}
-	return webhookcmd.Result{RequestID: req.RequestID, JobID: admission.JobID, MessageID: "msg-1"}, nil
+	if created {
+		a.created++
+		if a.firstJobID == "" {
+			a.firstJobID = selected.JobID
+		}
+		if _, err := a.jobs.CreateJob(ctx, state.JobRecord{ID: selected.JobID,
+			SessionID: selected.SessionID, Objective: selected.Prompt,
+			Status: state.JobStatusCreated, PrivateRunKind: state.PrivateRunKindWebhook}); err != nil {
+			return webhookcmd.Result{}, err
+		}
+	}
+	return webhookcmd.Result{RequestID: selected.RequestID, JobID: selected.JobID,
+		MessageID: "msg-1", Duplicate: !created}, nil
 }
 
 func TestReceiver_AuthRequestIDCannotEnterHistory(t *testing.T) {
@@ -47,7 +63,7 @@ func TestReceiver_AuthRequestIDCannotEnterHistory(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = provider.Close() })
 	const secret = "confidential-route-secret"
-	acceptor := &historyAcceptor{store: provider.WebhookAdmissions()}
+	acceptor := &historyAcceptor{store: provider.WebhookAdmissions(), jobs: provider.Jobs()}
 	configured := webhookapp.ConfiguredRoute{Name: "event", Path: "/event",
 		PromptTemplate: "request={{.RequestID}}", AuthType: "header",
 		AuthHeader: "X-Request-Id", AuthValue: secret}
@@ -71,9 +87,28 @@ func TestReceiver_AuthRequestIDCannotEnterHistory(t *testing.T) {
 		t.Fatalf("credential entered response/admission: status=%d response=%q input=%+v",
 			response.Code, response.Body.String(), acceptor.last)
 	}
-	history, found, err := provider.WebhookAdmissions().GetHistory(t.Context(), "event", "webhook-history-secret")
+	firstRequestID := acceptor.last.RequestID
+	firstDedupeKey := acceptor.last.DedupeKey
+	retry := httptest.NewRequest(http.MethodPost, "/event", strings.NewReader("ordinary input"))
+	retry.Header.Set("X-Request-Id", secret)
+	retryResponse := httptest.NewRecorder()
+	receiver.handleWebhook(retryResponse, retry)
+	if retryResponse.Code != http.StatusAccepted || !strings.Contains(retryResponse.Body.String(), `"duplicate":true`) ||
+		strings.Contains(retryResponse.Body.String(), secret) || acceptor.last.RequestID == firstRequestID ||
+		acceptor.last.DedupeKey != firstDedupeKey || strings.Contains(firstDedupeKey, secret) || acceptor.created != 1 {
+		t.Fatalf("retry created another job or exposed credential: first=%q retry=%q acceptor=%+v",
+			response.Body.String(), retryResponse.Body.String(), acceptor)
+	}
+	history, found, err := provider.WebhookAdmissions().GetHistory(t.Context(), "event", acceptor.firstJobID)
 	if err != nil || !found || history.RawBody == nil || *history.RawBody != "ordinary input" {
 		t.Fatalf("history = %+v found=%t err=%v", history, found, err)
+	}
+	list, err := provider.WebhookAdmissions().ListHistory(t.Context(), "event", time.Time{}, "", 10)
+	if err != nil || len(list) != 1 {
+		t.Fatalf("retry history = %+v err=%v", list, err)
+	}
+	if job, found, err := provider.Jobs().GetJob(t.Context(), acceptor.firstJobID); err != nil || !found || job.ID != acceptor.firstJobID {
+		t.Fatalf("retry job = %+v found=%t err=%v", job, found, err)
 	}
 	encoded, err := json.Marshal(history)
 	if err != nil || strings.Contains(string(encoded), secret) || strings.Contains(string(encoded), "RequestID") ||

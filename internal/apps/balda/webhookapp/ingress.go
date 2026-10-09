@@ -161,6 +161,14 @@ func (i *Ingress) Admit(ctx context.Context, route webhookcmd.PreparedRoute, inb
 		return webhookcmd.Result{}, &webhookcmd.InvalidRequestError{Field: "prompt", Message: "template did not render a valid prompt"}
 	}
 	dedupeBase := strings.TrimSpace(requestID)
+	if !inbound.Test && strings.EqualFold(route.AuthHeader, "X-Request-Id") {
+		// The credential used to be the default request-id dedupe value. Keep
+		// retry identity stable without storing the credential itself.
+		if value := strings.TrimSpace(headerValue(inbound.Headers, route.AuthHeader)); value != "" {
+			sum := sha256.Sum256([]byte(value))
+			dedupeBase = hex.EncodeToString(sum[:])
+		}
+	}
 	switch route.DedupeSource {
 	case webhookroutecmd.DedupeSourceHeader:
 		if value := strings.TrimSpace(headerValue(inbound.Headers, route.DedupeHeader)); value != "" {

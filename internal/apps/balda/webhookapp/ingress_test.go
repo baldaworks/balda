@@ -220,4 +220,55 @@ func TestIngress_AuthRequestIDIsReplacedBeforeTemplate(t *testing.T) {
 		acceptor.request.Prompt != acceptor.request.RequestID {
 		t.Fatalf("credential entered normalized request: %+v", acceptor.request)
 	}
+	sum := sha256.Sum256([]byte(secret))
+	if got, want := acceptor.request.DedupeKey, "webhook:events:"+hex.EncodeToString(sum[:]); got != want {
+		t.Fatalf("default dedupe key = %q, want %q", got, want)
+	}
+	prepared, err = ingress.PrepareTest(t.Context(), "events")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ingress.Admit(t.Context(), prepared, webhookcmd.Inbound{
+		RequestID: "test-1", Method: "POST", Path: "/events", Test: true,
+	}); err != nil || acceptor.request.DedupeKey != "webhook-test:events:test-1" {
+		t.Fatalf("test dedupe key = %q err=%v", acceptor.request.DedupeKey, err)
+	}
+}
+
+func TestIngress_AuthRequestIDHonorsExplicitDedupeSource(t *testing.T) {
+	const secret = "route-secret"
+	bodySum := sha256.Sum256([]byte("body"))
+	secretSum := sha256.Sum256([]byte(secret))
+	for _, tc := range []struct {
+		name, source, header, wantBase string
+	}{
+		{name: "header", source: webhookroutecmd.DedupeSourceHeader, header: "X-Event", wantBase: "event-42"},
+		{name: "credential header", source: webhookroutecmd.DedupeSourceHeader,
+			header: "X-Request-Id", wantBase: hex.EncodeToString(secretSum[:])},
+		{name: "body", source: webhookroutecmd.DedupeSourceBodySHA, wantBase: hex.EncodeToString(bodySum[:])},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			acceptor := &ingressAcceptor{}
+			ingress, err := NewIngress([]ConfiguredRoute{{Name: "events", Path: "/events",
+				PromptTemplate: "constant prompt", AuthType: webhookroutecmd.AuthTypeHeader,
+				AuthHeader: "X-Request-Id", AuthValue: secret,
+				DedupeSource: tc.source, DedupeHeader: tc.header}}, nil, acceptor)
+			if err != nil {
+				t.Fatal(err)
+			}
+			headers := map[string]string{"X-Request-Id": secret, "X-Event": "event-42"}
+			prepared, err := ingress.PrepareExternal(t.Context(), "/events", headers)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := ingress.Admit(t.Context(), prepared, webhookcmd.Inbound{
+				RequestID: "safe-public-id", Method: "POST", Path: "/events", RawBody: "body", Headers: headers,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if got, want := acceptor.request.DedupeKey, "webhook:events:"+tc.wantBase; got != want {
+				t.Fatalf("dedupe key = %q, want %q", got, want)
+			}
+		})
+	}
 }
