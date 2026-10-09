@@ -8,7 +8,7 @@ import (
 )
 
 func backofficeRuntimeConfig(cfg BaldaConfig, database state.DatabaseConfig) (backoffice.ResolvedConfig, error) {
-	server, err := cfg.Backoffice.Resolve()
+	server, err := cfg.ResolveBackofficeServer()
 	if err != nil {
 		return backoffice.ResolvedConfig{}, err
 	}

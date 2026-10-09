@@ -198,6 +198,12 @@ balda:
       password: ""
       sslmode: disable
 
+  # Shared HTTP values fall back to Backoffice settings when omitted.
+  http:
+    listen_addr: ""
+    base_url: ""
+    base_path: null
+
   # Backoffice starts inside `balda start` after schema/data migrations and user
   # readiness, using the same database and canonical users as the bot.
   backoffice:
