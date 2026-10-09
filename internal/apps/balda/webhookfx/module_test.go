@@ -14,7 +14,7 @@ import (
 func TestModuleWiring(t *testing.T) {
 	app := fx.New(
 		fx.NopLogger,
-		fx.Provide(func() webhook.Config { return webhook.Config{} }, zerolog.Nop),
+		fx.Provide(func() webhook.Config { return webhook.Config{ListenAddr: "127.0.0.1:0"} }, zerolog.Nop),
 		Module,
 	)
 	if err := app.Start(context.Background()); err != nil {
@@ -31,12 +31,20 @@ func TestReceiverWiringRequiresReceiptForAcknowledgedRoute(t *testing.T) {
 		Envelope: webhook.RouteEnvelopeConfig{ReportTo: &webhook.RouteTargetConfig{Target: "managed_alias", Key: "main_chat"}, AckOnDelivery: true},
 	}}}
 	service := webhookapp.NewService(nil, nil, nil)
-	_, err := newReceiver(receiverParams{Config: config, Service: service, Logger: zerolog.Nop()})
+	ingress, err := newIngress(ingressParams{Config: config, Service: service})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = newReceiver(receiverParams{Config: config, Ingress: ingress, Logger: zerolog.Nop()})
 	if err == nil || !strings.Contains(err.Error(), "delivery receipt store") {
 		t.Fatalf("newReceiver() = %v", err)
 	}
 	config.Enabled = false
-	if _, err := newReceiver(receiverParams{Config: config, Service: service, Logger: zerolog.Nop()}); err != nil {
+	ingress, err = newIngress(ingressParams{Config: config, Service: service})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := newReceiver(receiverParams{Config: config, Ingress: ingress, Logger: zerolog.Nop()}); err != nil {
 		t.Fatalf("disabled receiver should not need receipts: %v", err)
 	}
 }

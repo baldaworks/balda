@@ -4,6 +4,7 @@ package webhookcmd
 import (
 	"errors"
 	"fmt"
+	"text/template"
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
@@ -11,6 +12,7 @@ import (
 )
 
 const (
+	MaxBodyBytes           = 1 << 20
 	MaxRouteNameBytes      = 128
 	MaxRequestIDBytes      = 512
 	MaxDedupeKeyBytes      = 1024
@@ -18,6 +20,35 @@ const (
 	MaxReceiptMessageBytes = 512
 	MaxReceiptStreamBytes  = 256
 )
+
+var (
+	// ErrRouteNotFound indicates no active route at the requested path.
+	ErrRouteNotFound = errors.New("webhook route not found")
+	// ErrUnauthorized indicates the route credential was absent or invalid.
+	ErrUnauthorized = errors.New("webhook route unauthorized")
+)
+
+// Inbound carries a bounded HTTP request into webhook application policy.
+type Inbound struct {
+	RequestID string
+	Path      string
+	Method    string
+	RawBody   string
+	Headers   map[string]string
+	Test      bool
+}
+
+// PreparedRoute freezes an authorized route before the body is read.
+// The receiver only inspects identity and acknowledgement; policy uses the rest.
+type PreparedRoute struct {
+	Name, Path     string
+	PromptTemplate *template.Template
+	ReportTo       *destinationcmd.Target
+	AckOnDelivery  bool
+	DedupeSource   string
+	DedupeHeader   string
+	AuthHeader     string
+}
 
 // Request is the normalized invocation accepted by webhook application policy.
 type Request struct {

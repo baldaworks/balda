@@ -640,6 +640,7 @@ deps:
 
   application:
     mayDependOn:
+      - webhook_route_contracts
       - alias_contracts
       - schedule_contracts
       - schedule_policy
@@ -939,6 +940,8 @@ deps:
       - foundation
       - contracts
       - application
+      - webhook_route_contracts
+      - storage
       - webhook_transport
       - webhook_wiring
     anyVendorDeps: true
