@@ -21,13 +21,14 @@ const (
 	LocationAudit     Location = "/audit"
 	LocationMCP       Location = "/mcp"
 	LocationSchedules Location = "/schedules"
+	LocationWebhooks  Location = "/webhooks"
 	LocationAliases   Location = "/aliases"
 )
 
 // Valid reports whether a location can be emitted by server navigation.
 func (l Location) Valid() bool {
 	switch l {
-	case LocationLogin, LocationOverview, LocationAccess, LocationAccount, LocationAudit, LocationMCP, LocationSchedules, LocationAliases:
+	case LocationLogin, LocationOverview, LocationAccess, LocationAccount, LocationAudit, LocationMCP, LocationSchedules, LocationWebhooks, LocationAliases:
 		return true
 	default:
 		return false
@@ -152,6 +153,7 @@ type MFACeremonyView struct {
 type Page struct {
 	MCP          *MCPView
 	Schedules    *SchedulesView
+	Webhooks     *WebhooksView
 	Aliases      *AliasesView
 	RestartURL   string
 	RestartLabel string
@@ -211,6 +213,9 @@ func Navigation(capabilities usercmd.BackofficeCapabilities, current Location) [
 	}
 	if capabilities.ManageSchedules {
 		operations = append(operations, item("Schedules", LocationSchedules, "bi-calendar-event"))
+	}
+	if capabilities.ManageWebhooks {
+		operations = append(operations, item("Webhooks", LocationWebhooks, "bi-link-45deg"))
 	}
 	if capabilities.ManageAliases {
 		operations = append(operations, item("Aliases", LocationAliases, "bi-signpost-split"))

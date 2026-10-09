@@ -267,6 +267,11 @@ components:
     in:
       - internal/apps/balda/schedulebackofficeapp
 
+  # Host adapter exposes webhook policy through Backoffice's consuming port.
+  webhook_backoffice_wiring:
+    in:
+      - internal/apps/balda/webhookbackofficeapp
+
   # Fixed-upstream loopback MCP transport; grant policy stays behind its port.
   # Upstream observation is injected by mcp_wiring; no OAuth SDK/policy belongs
   # in the bridge's dependency set. Exact endpoint credential observations
@@ -573,6 +578,7 @@ deps:
       - alias_contracts
       - mcp_contracts
       - schedule_contracts
+      - webhook_route_contracts
       - contracts
       - user_contracts
       - user_application
@@ -622,6 +628,7 @@ deps:
       - alias_contracts
       - mcp_contracts
       - schedule_contracts
+      - webhook_route_contracts
       - user_contracts
       - backoffice_webui
     anyVendorDeps: false
@@ -724,6 +731,14 @@ deps:
       - application
       - schedule_policy
       - schedule_backoffice_wiring
+    deepScan: false
+    anyVendorDeps: false
+
+  webhook_backoffice_wiring:
+    mayDependOn:
+      - webhook_route_contracts
+      - webhook_management
+      - webhook_backoffice_wiring
     deepScan: false
     anyVendorDeps: false
 
@@ -977,6 +992,7 @@ deps:
       - alias_backoffice_wiring
       - mcp_backoffice_wiring
       - schedule_backoffice_wiring
+      - webhook_backoffice_wiring
       - schedule_policy
       - foundation
       - mcp_bridge

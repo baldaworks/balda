@@ -119,6 +119,7 @@ type BackofficeCapabilities struct {
 	Account         bool
 	ManageMCP       bool
 	ManageSchedules bool
+	ManageWebhooks  bool
 	ManageAliases   bool
 	ManageUsers     bool
 	ViewAudit       bool

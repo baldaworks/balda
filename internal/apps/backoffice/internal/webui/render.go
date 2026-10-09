@@ -23,6 +23,7 @@ const (
 	TemplateAudit       = "audit"
 	TemplateMCP         = "mcp"
 	TemplateSchedules   = "schedules"
+	TemplateWebhooks    = "webhooks"
 	TemplateAliases     = "aliases"
 	TemplateOAuthReturn = "oauth-return"
 	TemplateError       = "error"
@@ -41,6 +42,7 @@ var templateFiles = map[string]string{
 	TemplateRefresh: "templates/refresh.tmpl", TemplatePassword: "templates/password.tmpl",
 	TemplateMCP:         "templates/mcp.tmpl",
 	TemplateSchedules:   "templates/schedules.tmpl",
+	TemplateWebhooks:    "templates/webhooks.tmpl",
 	TemplateAliases:     "templates/aliases.tmpl",
 	TemplateOAuthReturn: "templates/oauth-return.tmpl",
 	TemplateGallery:     "templates/gallery.tmpl",

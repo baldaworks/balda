@@ -11,9 +11,22 @@ function syncMCPTransport() {
   });
 }
 syncMCPTransport();
+function syncWebhookDedupe() {
+  document.querySelectorAll("select[data-webhook-dedupe]").forEach(function (select) {
+    const field = select.form?.querySelector("[data-webhook-dedupe-header]");
+    const input = field?.querySelector("input");
+    if (!field || !input) return;
+    const active = select.value === "header";
+    field.hidden = !active;
+    input.disabled = !active;
+    input.required = active;
+  });
+}
+syncWebhookDedupe();
 document.addEventListener("change", function (event) {
   if (event.target instanceof HTMLSelectElement && event.target.name === "transport" &&
       event.target.form?.matches("[data-mcp-create]")) syncMCPTransport();
+  if (event.target instanceof HTMLSelectElement && event.target.matches("[data-webhook-dedupe]")) syncWebhookDedupe();
 });
 
 function closeMobileSidebar() {
@@ -110,6 +123,7 @@ function syncNavigation() {
       (path.endsWith("/access") && location.pathname.startsWith(path + "/users/")) ||
       (path.endsWith("/mcp") && location.pathname.startsWith(path + "/")) ||
       (path.endsWith("/schedules") && location.pathname.startsWith(path + "/")) ||
+      (path.endsWith("/webhooks") && location.pathname.startsWith(path + "/")) ||
       (path.endsWith("/aliases") && location.pathname.startsWith(path + "/"));
     link.classList.toggle("active", current);
     if (current) link.setAttribute("aria-current", "page");
@@ -126,6 +140,7 @@ window.addEventListener("popstate", syncNavigation);
 document.addEventListener("htmx:afterSwap", function (event) {
   if (event.detail.target && event.detail.target.id === "main-content") {
     syncMCPTransport();
+    syncWebhookDedupe();
     const feedback = document.getElementById("request-error");
     if (feedback) {
       feedback.hidden = true;
@@ -138,6 +153,7 @@ document.addEventListener("htmx:afterSwap", function (event) {
 
 document.addEventListener("htmx:historyRestore", function () {
   syncMCPTransport();
+  syncWebhookDedupe();
   syncNavigation();
   document.getElementById("main-content")?.focus({ preventScroll: true });
 });
@@ -146,7 +162,7 @@ document.addEventListener("click", async function (event) {
   const button = event.target.closest("[data-binding-copy]");
   if (!button) return;
   const field = document.getElementById(button.dataset.bindingCopy);
-  if (!field || !field.matches("input[data-binding-secret]")) return;
+  if (!field || !field.matches("input[data-binding-secret], input[data-webhook-secret]")) return;
   field.select();
   const status = button.closest("[data-binding-reveal]")?.querySelector("[data-binding-copy-status]");
   try {
@@ -163,7 +179,7 @@ function clearMCPInstructions() {
 
 window.addEventListener("pagehide", function () {
   clearMCPInstructions();
-  document.querySelectorAll("[data-binding-secret], [data-mcp-secret]").forEach(function (element) {
+  document.querySelectorAll("[data-binding-secret], [data-mcp-secret], [data-webhook-secret]").forEach(function (element) {
     if (element instanceof HTMLInputElement) {
       element.value = "";
       element.removeAttribute("value");
@@ -175,9 +191,14 @@ window.addEventListener("pagehide", function () {
 
 window.addEventListener("pageshow", function (event) {
   syncMCPTransport();
+  syncWebhookDedupe();
   if (event.persisted) clearMCPInstructions();
   if (event.persisted) document.querySelectorAll("[data-mcp-secret]").forEach(function (input) { input.value = ""; });
+  if (event.persisted) document.querySelectorAll("[data-webhook-secret]").forEach(function (input) { input.value = ""; input.removeAttribute("value"); });
 });
+
+const oneTimeWebhook = document.querySelector("[data-webhook-once]");
+if (oneTimeWebhook) history.replaceState(null, "", oneTimeWebhook.dataset.webhookOnce);
 
 document.addEventListener("htmx:afterRequest", function (event) {
   const form = event.detail.elt?.closest("form");

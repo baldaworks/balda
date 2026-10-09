@@ -33,6 +33,7 @@ type httpApp struct {
 	bindingChannels   BindingChannels
 	mcp               MCPOperations
 	schedules         SchedulesOperations
+	webhooks          WebhooksOperations
 	aliases           AliasesOperations
 	mcpAuthorizations MCPAuthorizations
 	qa                bool
@@ -114,6 +115,14 @@ func (a *httpApp) handler() (http.Handler, error) {
 	mux.HandleFunc("POST "+a.path("/schedules/{schedule_id}/selection"), a.scheduleSelection)
 	mux.HandleFunc("POST "+a.path("/schedules/{schedule_id}/delete"), a.scheduleDelete)
 	mux.HandleFunc("POST "+a.path("/schedules/{schedule_id}/runs"), a.scheduleRunNow)
+	for _, route := range []string{"/webhooks", "/webhooks/{webhook_name}"} {
+		mux.Handle("GET "+a.path(route), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.webhooksPage))))
+	}
+	mux.HandleFunc("POST "+a.path("/webhooks"), a.webhookCreate)
+	mux.HandleFunc("POST "+a.path("/webhooks/{webhook_name}"), a.webhookUpdate)
+	mux.HandleFunc("POST "+a.path("/webhooks/{webhook_name}/selection"), a.webhookSelection)
+	mux.HandleFunc("POST "+a.path("/webhooks/{webhook_name}/delete"), a.webhookDelete)
+	mux.HandleFunc("POST "+a.path("/webhooks/{webhook_name}/rotate"), a.webhookRotate)
 	for _, route := range []string{"/aliases", "/aliases/{alias_name}"} {
 		mux.Handle("GET "+a.path(route), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.aliasesPage))))
 	}
