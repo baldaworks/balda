@@ -49,8 +49,23 @@ async function externalPost(pathname, secret, body, requestID) {
         assert.ok((await page.getByRole('region', { name: /Webhook request history/ }).locator('tbody tr').count()) > 0);
         assert.equal(await page.getByRole('button', { name: 'Save webhook' }).count(), 0);
       }
+      const persistent = await page.goto(`${baseURL}/webhooks/persistent`);
+      assert.equal(persistent.status(), 200);
+      await page.getByRole('heading', { name: 'Edit webhook route' }).waitFor();
+      assert.equal(await page.getByLabel('Generated secret').count(), 0);
+      assert.equal(await page.getByLabel('Path').inputValue(), '/hooks/persistent');
+      const admitted = await externalPost('/hooks/persistent', process.env.BALDA_WEBHOOK_RESTART_SECRET,
+        'after restart', 'persistent-after-restart');
+      assert.equal(admitted.status, 202);
+      assert.equal(admitted.body.accepted, true);
+      await page.reload();
+      await page.getByRole('region', { name: /Webhook request history/ }).locator('tbody tr a').first().click();
+      await page.getByRole('heading', { name: 'Request detail' }).waitFor();
+      await page.getByText('after restart', { exact: true }).waitFor();
+      await page.getByText('Processed: Persistent: after restart', { exact: true }).waitFor();
+      await capture(page, 'persistent-after-restart', 'desktop');
       await context.close();
-      console.log('Webhooks archive and history remain readable after SQLite/application restart');
+      console.log('Webhooks live route admits and history remains readable after SQLite/application restart');
       return;
     }
     for (const viewport of [{ width: 1440, height: 900, name: 'desktop' }, { width: 390, height: 844, name: 'mobile' }]) {
@@ -81,6 +96,14 @@ async function externalPost(pathname, secret, body, requestID) {
       assert.equal(configuredResponse.status, 202);
       await page.reload();
       await page.getByRole('region', { name: /Webhook request history/ }).getByText('External').first().waitFor();
+      await page.getByLabel('Request body').fill('config test input');
+      await page.getByRole('button', { name: 'Send test POST' }).click();
+      await page.getByRole('heading', { name: 'Request detail' }).waitFor();
+      await page.getByText('config test input', { exact: true }).waitFor();
+      await page.getByText('Processed: Configured: config test input', { exact: true }).waitFor();
+      await page.getByRole('region', { name: /Webhook request history/ }).getByText('Test POST').first().waitFor();
+      assert.equal(await page.getByLabel('Generated secret').count(), 0);
+      await capture(page, 'configured-test-history', viewport.name);
 
       const routeName = `browser-${viewport.name}`;
       await page.goto(`${baseURL}/webhooks?new=1`);
@@ -206,6 +229,22 @@ async function externalPost(pathname, secret, body, requestID) {
       assert.deepEqual(errors, [], `${viewport.name} browser console errors`);
       await context.close();
     }
+    const persistentContext = await browser.newContext();
+    const persistentPage = await persistentContext.newPage();
+    await signIn(persistentPage, 'administrator');
+    await persistentPage.goto(`${baseURL}/webhooks?new=1`);
+    await persistentPage.getByLabel('Route name').fill('persistent');
+    await persistentPage.getByLabel('Path').fill('/hooks/persistent');
+    await persistentPage.getByLabel('Prompt template').fill('Persistent: {{.RawBody}}');
+    await persistentPage.getByRole('button', { name: 'Create webhook' }).click();
+    await persistentPage.getByRole('heading', { name: 'Webhook secret · shown once' }).waitFor();
+    const persistentSecret = await persistentPage.getByLabel('Generated secret').inputValue();
+    assert.ok(persistentSecret.length >= 32);
+    fs.writeFileSync(process.argv[5], persistentSecret, { mode: 0o600, flag: 'wx' });
+    await persistentPage.goto(`${baseURL}/webhooks/persistent`);
+    assert.equal(await persistentPage.getByLabel('Generated secret').count(), 0);
+    await capture(persistentPage, 'persistent-before-restart', 'desktop');
+    await persistentContext.close();
     const operatorContext = await browser.newContext();
     const operatorPage = await operatorContext.newPage();
     await signIn(operatorPage, 'operator');

@@ -57,6 +57,39 @@ func browserLoopbackAddress(t *testing.T) string {
 	return listener.Addr().String()
 }
 
+func browserWebhookPublisher(provider state.Provider) webhookapp.JobPublisher {
+	return webhookapp.JobPublisherFunc(func(ctx context.Context, payload turncmd.SessionTurnPayload,
+		routeName, requestID string) (*actortransport.DispatchReceipt, string, error) {
+		_, jobID, err := turncmd.WebhookJobEnvelope(payload, routeName, requestID)
+		if err != nil {
+			return nil, "", err
+		}
+		if _, err := provider.Jobs().CreateJob(ctx, state.JobRecord{ID: jobID,
+			SessionID: payload.Locator.SessionID, Objective: payload.Text,
+			Status: state.JobStatusCompleted, PrivateRunKind: state.PrivateRunKindWebhook}); err != nil {
+			return nil, "", err
+		}
+		if err := provider.Jobs().RecordPrivateOutput(ctx, jobID, "Processed: "+payload.Text, false); err != nil {
+			return nil, "", err
+		}
+		if payload.ReportTo != nil {
+			deliveryKey := jobID + ":delivery:final"
+			if _, _, err := provider.Jobs().ReserveDelivery(ctx, state.DeliveryRecord{
+				ID: "browser-" + jobID, DeliveryKey: deliveryKey, JobID: jobID,
+				SessionID: payload.Locator.SessionID, Channel: payload.ReportTo.ChannelType,
+				AddressKey: payload.ReportTo.AddressKey, Kind: "delivery",
+				Payload: "Processed: " + payload.Text, PayloadHash: jobID,
+			}); err != nil {
+				return nil, "", err
+			}
+			if err := provider.Jobs().MarkDeliverySent(ctx, deliveryKey, "synthetic-provider-message"); err != nil {
+				return nil, "", err
+			}
+		}
+		return &actortransport.DispatchReceipt{MsgID: "browser-" + jobID, Stream: "balda.cmd.job", Sequence: 1}, jobID, nil
+	})
+}
+
 // TestBackofficeWebhooksBrowserWorkflow checks the live HTTP and durable route
 // seams through ordinary administrator login. Only the model job publisher is
 // replaced so the browser gate does not depend on an external model provider.
@@ -98,36 +131,7 @@ func TestBackofficeWebhooksBrowserWorkflow(t *testing.T) {
 			if err := manager.ReconcileConfig(t.Context(), []webhookroutecmd.ConfiguredRoute{configured}); err != nil {
 				t.Fatal(err)
 			}
-			publisher := webhookapp.JobPublisherFunc(func(ctx context.Context, payload turncmd.SessionTurnPayload,
-				routeName, requestID string) (*actortransport.DispatchReceipt, string, error) {
-				_, jobID, err := turncmd.WebhookJobEnvelope(payload, routeName, requestID)
-				if err != nil {
-					return nil, "", err
-				}
-				if _, err := provider.Jobs().CreateJob(ctx, state.JobRecord{ID: jobID,
-					SessionID: payload.Locator.SessionID, Objective: payload.Text,
-					Status: state.JobStatusCompleted, PrivateRunKind: state.PrivateRunKindWebhook}); err != nil {
-					return nil, "", err
-				}
-				if err := provider.Jobs().RecordPrivateOutput(ctx, jobID, "Processed: "+payload.Text, false); err != nil {
-					return nil, "", err
-				}
-				if payload.ReportTo != nil {
-					deliveryKey := jobID + ":delivery:final"
-					if _, _, err := provider.Jobs().ReserveDelivery(ctx, state.DeliveryRecord{
-						ID: "browser-" + jobID, DeliveryKey: deliveryKey, JobID: jobID,
-						SessionID: payload.Locator.SessionID, Channel: payload.ReportTo.ChannelType,
-						AddressKey: payload.ReportTo.AddressKey, Kind: "delivery",
-						Payload: "Processed: " + payload.Text, PayloadHash: jobID,
-					}); err != nil {
-						return nil, "", err
-					}
-					if err := provider.Jobs().MarkDeliverySent(ctx, deliveryKey, "synthetic-provider-message"); err != nil {
-						return nil, "", err
-					}
-				}
-				return &actortransport.DispatchReceipt{MsgID: "browser-" + jobID, Stream: "balda.cmd.job", Sequence: 1}, jobID, nil
-			})
+			publisher := browserWebhookPublisher(provider)
 			resolver := webhookapp.TargetResolverFunc(func(_ context.Context, target envelopetarget.Target) (envelopetarget.Resolved, error) {
 				if target.Target != "locator" || target.Key != "telegram:9001:0" {
 					return envelopetarget.Resolved{}, errors.New("unknown synthetic report locator")
@@ -178,12 +182,20 @@ func TestBackofficeWebhooksBrowserWorkflow(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			secretPath := filepath.Join(t.TempDir(), "restart-secret")
 			command := exec.CommandContext(t.Context(), "node", "qa/backoffice-e2e/webhooks.cjs",
-				"http://"+backofficeAddress+basePath, "http://"+webhookAddress)
+				"http://"+backofficeAddress+basePath, "http://"+webhookAddress, "initial", secretPath)
 			command.Dir = root
 			output, err := command.CombinedOutput()
 			if err != nil {
 				t.Fatalf("Webhooks browser workflow: %v\n%s", err, output)
+			}
+			restartSecret, err := os.ReadFile(secretPath)
+			if err != nil || len(restartSecret) < 32 {
+				t.Fatalf("read one-time restart fixture secret: %v", err)
+			}
+			if err := os.Remove(secretPath); err != nil {
+				t.Fatal(err)
 			}
 			for _, name := range []string{"browser-desktop", "browser-mobile"} {
 				route, found, err := provider.WebhookRoutes().Get(t.Context(), name)
@@ -194,6 +206,10 @@ func TestBackofficeWebhooksBrowserWorkflow(t *testing.T) {
 				if err != nil || len(history) < 2 {
 					t.Fatalf("route %q history: %d entries, err=%v", name, len(history), err)
 				}
+			}
+			persistent, found, err := provider.WebhookRoutes().Get(t.Context(), "persistent")
+			if err != nil || !found || !persistent.Enabled || persistent.Deleted || persistent.Source != state.WebhookRouteSourceManaged {
+				t.Fatalf("live restart route = %+v, found=%t, err=%v", persistent, found, err)
 			}
 			t.Log(string(output))
 			if err := runtime.Stop(context.Background()); err != nil {
@@ -219,10 +235,21 @@ func TestBackofficeWebhooksBrowserWorkflow(t *testing.T) {
 				AuthType: configured.AuthType, AuthHeader: configured.AuthHeader,
 				AuthValue: "synthetic-config-secret", DedupeSource: configured.DedupeSource}},
 				browserWebhookRoutes{store: reopened.WebhookRoutes()},
-				webhookapp.NewService(nil, reopened.WebhookAdmissions(), nil))
+				webhookapp.NewService(resolver, reopened.WebhookAdmissions(), browserWebhookPublisher(reopened)))
 			if err != nil {
 				t.Fatal(err)
 			}
+			reopenedReceiver, err := webhook.NewReceiver(webhook.Config{Enabled: true, ListenAddr: webhookAddress,
+				Routes: map[string]webhook.RouteConfig{"configured": {Path: configured.Path,
+					PromptTemplate: configured.PromptTemplate, Auth: webhook.RouteAuthConfig{Type: "header",
+						Header: configured.AuthHeader, Value: "synthetic-config-secret"}}}}, reopenedIngress, zerolog.Nop())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := reopenedReceiver.Start(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = reopenedReceiver.Stop(context.Background()) })
 			reopenedRuntime, err := backoffice.NewRuntime(backoffice.ResolvedConfig{Server: backoffice.ResolvedServerConfig{
 				ListenAddr: backofficeAddress, PublicURL: "http://" + backofficeAddress, BasePath: basePath,
 				AccessTokenTTL: 15 * time.Minute, RefreshTokenTTL: time.Hour}}, reopened)
@@ -240,6 +267,7 @@ func TestBackofficeWebhooksBrowserWorkflow(t *testing.T) {
 			restartCommand := exec.CommandContext(t.Context(), "node", "qa/backoffice-e2e/webhooks.cjs",
 				"http://"+backofficeAddress+basePath, "http://"+webhookAddress, "restart")
 			restartCommand.Dir = root
+			restartCommand.Env = append(os.Environ(), "BALDA_WEBHOOK_RESTART_SECRET="+string(restartSecret))
 			restartOutput, err := restartCommand.CombinedOutput()
 			if err != nil {
 				t.Fatalf("Webhooks restart browser workflow: %v\n%s", err, restartOutput)
