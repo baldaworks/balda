@@ -194,3 +194,30 @@ func TestIngress_DisabledConfiguredRouteTestAdmission(t *testing.T) {
 		t.Fatalf("test admission = %+v", acceptor.request)
 	}
 }
+
+func TestIngress_AuthRequestIDIsReplacedBeforeTemplate(t *testing.T) {
+	const secret = "credential-used-as-request-id"
+	acceptor := &ingressAcceptor{}
+	ingress, err := NewIngress([]ConfiguredRoute{{Name: "events", Path: "/events",
+		PromptTemplate: "{{.RequestID}}", AuthType: webhookroutecmd.AuthTypeHeader,
+		AuthHeader: "X-Request-Id", AuthValue: secret}}, nil, acceptor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	headers := map[string]string{"X-Request-Id": secret}
+	prepared, err := ingress.PrepareExternal(t.Context(), "/events", headers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = ingress.Admit(t.Context(), prepared, webhookcmd.Inbound{
+		RequestID: secret, Method: "POST", Path: "/events", Headers: headers,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if acceptor.request.RequestID == secret || acceptor.request.Prompt == secret ||
+		strings.Contains(acceptor.request.DedupeKey, secret) ||
+		acceptor.request.Prompt != acceptor.request.RequestID {
+		t.Fatalf("credential entered normalized request: %+v", acceptor.request)
+	}
+}

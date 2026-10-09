@@ -33,7 +33,7 @@ func TestPostgresWebhookHistoryMigration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	checkWebhookHistoryMigration(t, db, provider, 23, postgresBind)
+	checkWebhookHistoryMigration(t, db, provider, 23, 24, postgresBind)
 }
 
 func TestPostgresUserConversion(t *testing.T) {

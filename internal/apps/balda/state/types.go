@@ -136,10 +136,8 @@ const (
 type WebhookHistoryRecord struct {
 	RouteName       string
 	JobID           string
-	RequestID       string
 	Source          string
 	RawBody         *string
-	Prompt          string
 	ReportTo        *deliverycmd.Locator
 	CreatedAt       time.Time
 	JobStatus       string

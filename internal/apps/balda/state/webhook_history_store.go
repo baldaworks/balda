@@ -20,8 +20,8 @@ func formatWebhookHistoryTime(value time.Time) string {
 
 // The admission is the history row. Optional joins describe work that may still
 // be queued, and a delivery that may never exist when Report to is empty.
-const webhookHistoryColumns = `a.route_name, a.job_id, a.request_id, a.source, a.raw_body,
-	a.prompt, a.report_locator_json, a.created_at,
+const webhookHistoryColumns = `a.route_name, a.job_id, a.source, a.raw_body,
+	a.report_locator_json, a.created_at,
 	COALESCE(j.status, ''), COALESCE(j.result, j.result_json, ''),
 	CASE WHEN final.status = 'sent' THEN final.status
 		WHEN terminal.status = 'sent' THEN terminal.status
@@ -94,15 +94,17 @@ func (s *sqlWebhookAdmissionStore) GetHistory(
 
 func scanWebhookHistory(row interface{ Scan(dest ...any) error }) (WebhookHistoryRecord, error) {
 	var record WebhookHistoryRecord
-	var rawBody, reportJSON sql.NullString
+	var rawBody sql.Null[[]byte]
+	var reportJSON sql.NullString
 	var createdAt string
-	if err := row.Scan(&record.RouteName, &record.JobID, &record.RequestID, &record.Source,
-		&rawBody, &record.Prompt, &reportJSON, &createdAt, &record.JobStatus,
+	if err := row.Scan(&record.RouteName, &record.JobID, &record.Source,
+		&rawBody, &reportJSON, &createdAt, &record.JobStatus,
 		&record.Output, &record.DeliveryStatus, &record.DeliveryPayload); err != nil {
 		return WebhookHistoryRecord{}, err
 	}
 	if rawBody.Valid {
-		record.RawBody = &rawBody.String
+		body := string(rawBody.V)
+		record.RawBody = &body
 	}
 	var err error
 	record.CreatedAt, err = parseUserTime(createdAt)

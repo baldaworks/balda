@@ -12,9 +12,9 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/webhookcmd"
+	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 )
 
@@ -184,10 +184,7 @@ func (r *Receiver) RoutePaths() []string {
 }
 
 func (r *Receiver) handleWebhook(w http.ResponseWriter, req *http.Request) {
-	requestID := strings.TrimSpace(req.Header.Get("X-Request-Id"))
-	if requestID == "" {
-		requestID = fmt.Sprintf("inbound-%d", time.Now().UnixNano())
-	}
+	requestID := "inbound-" + uuid.NewString()
 	if req.Method != http.MethodPost {
 		r.writeError(w, requestID, &httpError{
 			status:  http.StatusMethodNotAllowed,
@@ -207,6 +204,13 @@ func (r *Receiver) handleWebhook(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		r.writeIngressError(w, requestID, err)
 		return
+	}
+	// A route may use X-Request-Id as its credential. Its value must never
+	// become a response ID, template input, log field, or durable admission ID.
+	if !strings.EqualFold(rt.AuthHeader, "X-Request-Id") {
+		if supplied := strings.TrimSpace(req.Header.Get("X-Request-Id")); supplied != "" {
+			requestID = supplied
+		}
 	}
 	defer func() { _ = req.Body.Close() }()
 	bodyBytes, err := io.ReadAll(io.LimitReader(req.Body, MaxBodyBytes+1))

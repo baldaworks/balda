@@ -6,9 +6,12 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookapp"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookcmd"
 	"github.com/rs/zerolog"
@@ -18,6 +21,72 @@ type fakeAcceptor struct {
 	lastReq webhookcmd.Request
 	result  webhookcmd.Result
 	err     error
+}
+
+type historyAcceptor struct {
+	store state.WebhookAdmissionStore
+	last  webhookcmd.Request
+}
+
+func (a *historyAcceptor) Accept(ctx context.Context, req webhookcmd.Request) (webhookcmd.Result, error) {
+	a.last = req
+	admission := webhookcmd.Admission{RouteName: req.RouteName, DedupeKey: req.DedupeKey,
+		RequestID: req.RequestID, Prompt: req.Prompt, RawBody: &req.RawBody,
+		Source: webhookcmd.SourceExternal, JobID: "webhook-history-secret",
+		SessionID: "wh-history-secret", CreatedAt: time.Now().UTC()}
+	if _, _, err := a.store.Create(ctx, admission); err != nil {
+		return webhookcmd.Result{}, err
+	}
+	return webhookcmd.Result{RequestID: req.RequestID, JobID: admission.JobID, MessageID: "msg-1"}, nil
+}
+
+func TestReceiver_AuthRequestIDCannotEnterHistory(t *testing.T) {
+	provider, err := state.NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = provider.Close() })
+	const secret = "confidential-route-secret"
+	acceptor := &historyAcceptor{store: provider.WebhookAdmissions()}
+	configured := webhookapp.ConfiguredRoute{Name: "event", Path: "/event",
+		PromptTemplate: "request={{.RequestID}}", AuthType: "header",
+		AuthHeader: "X-Request-Id", AuthValue: secret}
+	ingress, err := webhookapp.NewIngress([]webhookapp.ConfiguredRoute{configured}, nil, acceptor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receiver, err := NewReceiver(Config{Enabled: true, ListenAddr: "127.0.0.1:0",
+		Routes: map[string]RouteConfig{"event": {Path: "/event", PromptTemplate: configured.PromptTemplate,
+			Auth: RouteAuthConfig{Type: "header", Header: "X-Request-Id", Value: secret}}}},
+		ingress, zerolog.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/event", strings.NewReader("ordinary input"))
+	request.Header.Set("X-Request-Id", secret)
+	response := httptest.NewRecorder()
+	receiver.handleWebhook(response, request)
+	if response.Code != http.StatusAccepted || strings.Contains(response.Body.String(), secret) ||
+		strings.Contains(acceptor.last.RequestID, secret) || strings.Contains(acceptor.last.Prompt, secret) {
+		t.Fatalf("credential entered response/admission: status=%d response=%q input=%+v",
+			response.Code, response.Body.String(), acceptor.last)
+	}
+	history, found, err := provider.WebhookAdmissions().GetHistory(t.Context(), "event", "webhook-history-secret")
+	if err != nil || !found || history.RawBody == nil || *history.RawBody != "ordinary input" {
+		t.Fatalf("history = %+v found=%t err=%v", history, found, err)
+	}
+	encoded, err := json.Marshal(history)
+	if err != nil || strings.Contains(string(encoded), secret) || strings.Contains(string(encoded), "RequestID") ||
+		strings.Contains(string(encoded), "Prompt") {
+		t.Fatalf("history exposed credential or legacy fields: %s err=%v", encoded, err)
+	}
+	denied := httptest.NewRequest(http.MethodPost, "/event", strings.NewReader("ordinary input"))
+	denied.Header.Set("X-Request-Id", "wrong-credential")
+	deniedResponse := httptest.NewRecorder()
+	receiver.handleWebhook(deniedResponse, denied)
+	if deniedResponse.Code != http.StatusUnauthorized || strings.Contains(deniedResponse.Body.String(), "wrong-credential") {
+		t.Fatalf("auth rejection reflected credential: status=%d body=%q", deniedResponse.Code, deniedResponse.Body.String())
+	}
 }
 
 func (f *fakeAcceptor) Accept(_ context.Context, req webhookcmd.Request) (webhookcmd.Result, error) {

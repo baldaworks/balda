@@ -30,7 +30,7 @@ func TestSQLiteWebhookHistoryMigration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	checkWebhookHistoryMigration(t, db, provider, 58, func(query string) string { return query })
+	checkWebhookHistoryMigration(t, db, provider, 58, 59, func(query string) string { return query })
 }
 
 func TestSQLitePrimaryAdministratorUsernameMigration(t *testing.T) {

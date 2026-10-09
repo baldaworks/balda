@@ -63,13 +63,17 @@ func (s *sqlWebhookAdmissionStore) Create(ctx context.Context, candidate webhook
 		}
 		reportJSON = string(encoded)
 	}
+	var rawBody any
+	if candidate.RawBody != nil {
+		rawBody = []byte(*candidate.RawBody)
+	}
 	result, err := s.db.ExecContext(ctx, s.bind(`INSERT INTO balda_webhook_admissions
 		(route_name, dedupe_key, request_id, prompt, job_id, session_id, report_locator_json, created_at, raw_body, source)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (route_name, dedupe_key) DO NOTHING`),
 		candidate.RouteName, candidate.DedupeKey, candidate.RequestID, candidate.Prompt,
 		candidate.JobID, candidate.SessionID, reportJSON, formatWebhookHistoryTime(candidate.CreatedAt),
-		candidate.RawBody, candidate.Source)
+		rawBody, candidate.Source)
 	if err != nil {
 		return webhookcmd.Admission{}, false, s.wrapError("create webhook admission", err)
 	}
@@ -140,7 +144,7 @@ func validateWebhookAdmission(a webhookcmd.Admission) error {
 func scanWebhookAdmission(row interface{ Scan(dest ...any) error }) (webhookcmd.Admission, error) {
 	var record webhookcmd.Admission
 	var reportJSON sql.NullString
-	var rawBody sql.NullString
+	var rawBody sql.Null[[]byte]
 	var createdAt string
 	var sequence int64
 	if err := row.Scan(&record.RouteName, &record.DedupeKey, &record.RequestID, &record.Prompt,
@@ -153,7 +157,8 @@ func scanWebhookAdmission(row interface{ Scan(dest ...any) error }) (webhookcmd.
 	}
 	record.Sequence = uint64(sequence)
 	if rawBody.Valid {
-		record.RawBody = &rawBody.String
+		body := string(rawBody.V)
+		record.RawBody = &body
 	}
 	var err error
 	record.CreatedAt, err = parseUserTime(createdAt)

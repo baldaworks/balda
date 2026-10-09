@@ -14,6 +14,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/destinationcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookroutecmd"
+	"github.com/google/uuid"
 )
 
 // ConfiguredRoute supplies a config route and its auth value.
@@ -146,13 +147,20 @@ func (i *Ingress) Admit(ctx context.Context, route webhookcmd.PreparedRoute, inb
 		}
 		headers[name] = value
 	}
+	requestID := inbound.RequestID
+	if strings.EqualFold(route.AuthHeader, "X-Request-Id") &&
+		strings.TrimSpace(requestID) == strings.TrimSpace(headerValue(inbound.Headers, route.AuthHeader)) {
+		// Other adapters can call Admit directly; do not trust them to replace
+		// an ID that is actually the route credential.
+		requestID = "inbound-" + uuid.NewString()
+	}
 	var prompt boundedPromptBuffer
-	err := route.PromptTemplate.Execute(&prompt, templateData{RequestID: inbound.RequestID,
+	err := route.PromptTemplate.Execute(&prompt, templateData{RequestID: requestID,
 		Path: inbound.Path, Method: inbound.Method, RawBody: inbound.RawBody, Headers: headers})
 	if err != nil || strings.TrimSpace(prompt.String()) == "" {
 		return webhookcmd.Result{}, &webhookcmd.InvalidRequestError{Field: "prompt", Message: "template did not render a valid prompt"}
 	}
-	dedupeBase := strings.TrimSpace(inbound.RequestID)
+	dedupeBase := strings.TrimSpace(requestID)
 	switch route.DedupeSource {
 	case webhookroutecmd.DedupeSourceHeader:
 		if value := strings.TrimSpace(headerValue(inbound.Headers, route.DedupeHeader)); value != "" {
@@ -171,7 +179,7 @@ func (i *Ingress) Admit(ctx context.Context, route webhookcmd.PreparedRoute, inb
 	if inbound.Test {
 		keyPrefix = "webhook-test"
 	}
-	return i.acceptor.Accept(ctx, webhookcmd.Request{RequestID: inbound.RequestID,
+	return i.acceptor.Accept(ctx, webhookcmd.Request{RequestID: requestID,
 		RouteName: route.Name, Prompt: strings.TrimSpace(prompt.String()), RawBody: inbound.RawBody,
 		Test: inbound.Test, ReportTo: route.ReportTo,
 		DedupeKey: strings.Join([]string{keyPrefix, route.Name, dedupeBase}, ":")})

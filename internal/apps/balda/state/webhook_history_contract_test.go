@@ -34,6 +34,24 @@ func checkProvider_WebhookHistory(t *testing.T, open contractOpener) {
 			t.Fatalf("create admission %s: created=%t err=%v", admission.RequestID, created, err)
 		}
 	}
+	for _, sample := range []struct {
+		name string
+		body string
+	}{
+		{name: "binary", body: string([]byte{'a', 0, 0xff, 'b'})},
+		{name: "empty", body: ""},
+	} {
+		admission := webhookcmd.Admission{RouteName: sample.name, DedupeKey: "webhook:" + sample.name,
+			RequestID: sample.name, Prompt: "constant prompt", RawBody: &sample.body,
+			JobID: "webhook-" + sample.name, SessionID: "wh-" + sample.name, CreatedAt: base}
+		if _, created, err := p.WebhookAdmissions().Create(t.Context(), admission); err != nil || !created {
+			t.Fatalf("create %s body: created=%t err=%v", sample.name, created, err)
+		}
+		got, found, err := p.WebhookAdmissions().GetHistory(t.Context(), sample.name, admission.JobID)
+		if err != nil || !found || got.RawBody == nil || *got.RawBody != sample.body {
+			t.Fatalf("round-trip %s body: %+v found=%t err=%v", sample.name, got, found, err)
+		}
+	}
 	changed := admissions[1]
 	changedBody := "duplicate body must not replace input"
 	changed.RawBody = &changedBody
