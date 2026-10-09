@@ -2,6 +2,8 @@ package backoffice
 
 import (
 	"context"
+	"fmt"
+	"github.com/google/uuid"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -15,13 +17,140 @@ import (
 )
 
 type webhooksHTTPFixture struct {
-	items      map[string]webhookroutecmd.Item
-	creates    []webhookroutecmd.Create
-	updates    []webhookroutecmd.Update
-	selections []webhookroutecmd.ChangeSelection
-	deletes    []webhookroutecmd.Delete
-	rotates    []webhookroutecmd.Rotate
-	updateErr  error
+	items              map[string]webhookroutecmd.Item
+	creates            []webhookroutecmd.Create
+	updates            []webhookroutecmd.Update
+	selections         []webhookroutecmd.ChangeSelection
+	deletes            []webhookroutecmd.Delete
+	rotates            []webhookroutecmd.Rotate
+	updateErr          error
+	tests              []webhookroutecmd.TestPost
+	history            []webhookroutecmd.HistoryItem
+	historyLimit       int
+	historyBeforeAt    time.Time
+	historyBeforeJobID string
+	testErr            error
+}
+
+func TestWebhooksTestPostAndHistory(t *testing.T) {
+	provider, config := newHTTPAppTestState(t)
+	now := time.Now().UTC()
+	createAccessTestUser(t, provider.Users(), usercmd.User{ID: "admin", Username: "admin",
+		NormalizedUsername: "admin", DisplayName: "admin", Role: usercmd.RoleAdministrator,
+		Status: usercmd.StatusActive, Primary: true,
+		Credential: usercmd.Credential{State: usercmd.CredentialStateActive, Version: 1},
+		Version:    1, CreatedAt: now, UpdatedAt: now})
+	app, err := newHTTPApp(provider.Users(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture := &webhooksHTTPFixture{items: map[string]webhookroutecmd.Item{
+		"configured": {Definition: webhookroutecmd.Definition{Name: "configured", Path: "/hooks/configured"},
+			Source: webhookroutecmd.SourceConfig, Enabled: true, Version: 1},
+		"disabled": {Definition: webhookroutecmd.Definition{Name: "disabled", Path: "/hooks/disabled"},
+			Source: webhookroutecmd.SourceManaged, Version: 2},
+		"archived": {Definition: webhookroutecmd.Definition{Name: "archived", Path: "/hooks/archived"},
+			Source: webhookroutecmd.SourceManaged, Deleted: true, Version: 3},
+	}}
+	for i := 0; i < 21; i++ {
+		fixture.history = append(fixture.history, webhookroutecmd.HistoryItem{
+			JobID: fmt.Sprintf("job-%02d", i), Source: "external", CreatedAt: now.Add(-time.Duration(i) * time.Minute),
+			Input: "<unsafe>", InputAvailable: true, Output: "<output>", JobStatus: "succeeded",
+		})
+	}
+	app.webhooks = fixture
+	handler, err := app.handler()
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin := loginHTTPAppSession(t, handler, config, "admin")
+	get := func(path string) *httptest.ResponseRecorder {
+		t.Helper()
+		r := httptest.NewRequest(http.MethodGet, path, nil)
+		r.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: admin.access})
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		return w
+	}
+	post := func(path string, form url.Values, csrf string) *httptest.ResponseRecorder {
+		t.Helper()
+		form.Set("csrf_token", csrf)
+		return performAccessMutation(t, handler, config, path, form, admin.access, csrf, false)
+	}
+	page := get("/webhooks/configured")
+	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "Send test POST") ||
+		!strings.Contains(page.Body.String(), "Older requests") || fixture.historyLimit != 21 ||
+		strings.Contains(page.Body.String(), "job-20") {
+		t.Fatalf("configured history page = %d, limit = %d", page.Code, fixture.historyLimit)
+	}
+	if got := get("/webhooks/configured?before_at=bad&before_job_id=job-01").Code; got != http.StatusBadRequest {
+		t.Fatalf("invalid history cursor = %d", got)
+	}
+	detail := get("/webhooks/configured?job_id=job-00")
+	if detail.Code != http.StatusOK || !strings.Contains(detail.Body.String(), "&lt;unsafe&gt;") ||
+		!strings.Contains(detail.Body.String(), "&lt;output&gt;") || strings.Contains(detail.Body.String(), "<unsafe>") {
+		t.Fatalf("history detail unsafe or missing: %d", detail.Code)
+	}
+	fixture.history[0].InputAvailable = false
+	if got := get("/webhooks/configured?job_id=job-00"); got.Code != http.StatusOK ||
+		!strings.Contains(got.Body.String(), "Input unavailable for this older request.") {
+		t.Fatalf("pre-upgrade input = %d", got.Code)
+	}
+	key := uuid.NewString()
+	form := url.Values{"request_key": {key}, "expected_version": {"1"}, "body": {"test body"}}
+	if got := post("/webhooks/configured/test", form, "invalid").Code; got != http.StatusForbidden || len(fixture.tests) != 0 {
+		t.Fatalf("invalid CSRF reached Test POST: %d", got)
+	}
+	if got := post("/webhooks/configured/test", form, admin.csrf); got.Code != http.StatusSeeOther ||
+		len(fixture.tests) != 1 || fixture.tests[0].Body != "test body" || fixture.tests[0].RequestKey != key ||
+		fixture.tests[0].Authority.SessionID == "" {
+		t.Fatalf("configured Test POST = %d", got.Code)
+	}
+	fixture.testErr = webhookroutecmd.ErrUnavailable
+	failed := post("/webhooks/configured/test", form, admin.csrf)
+	if failed.Code != http.StatusServiceUnavailable ||
+		!strings.Contains(failed.Body.String(), `name="request_key" value="`+key+`"`) ||
+		!strings.Contains(failed.Body.String(), `>test body</textarea>`) {
+		t.Fatalf("uncertain Test POST response lost retry input: %d", failed.Code)
+	}
+	fixture.testErr = nil
+	if got := post("/webhooks/disabled/test", url.Values{"request_key": {key}, "expected_version": {"2"}}, admin.csrf); got.Code != http.StatusBadRequest || len(fixture.tests) != 2 {
+		t.Fatalf("unconfirmed disabled Test POST = %d", got.Code)
+	}
+	if got := post("/webhooks/disabled/test", url.Values{"request_key": {key}, "expected_version": {"2"}, "confirm_disabled": {"yes"}}, admin.csrf); got.Code != http.StatusSeeOther || len(fixture.tests) != 3 || !fixture.tests[2].ConfirmDisabled {
+		t.Fatalf("confirmed disabled Test POST = %d", got.Code)
+	}
+	if got := post("/webhooks/archived/test", url.Values{"request_key": {key}, "expected_version": {"3"}}, admin.csrf).Code; got != http.StatusNotFound || len(fixture.tests) != 3 {
+		t.Fatalf("archived route test = %d", got)
+	}
+	if got := get("/webhooks/archived"); got.Code != http.StatusOK ||
+		strings.Contains(got.Body.String(), "Send test POST") || !strings.Contains(got.Body.String(), "Request history") {
+		t.Fatalf("archived route detail = %d", got.Code)
+	}
+}
+
+func (f *webhooksHTTPFixture) TestPost(_ context.Context, request webhookroutecmd.TestPost) (webhookroutecmd.TestResult, error) {
+	f.tests = append(f.tests, request)
+	if f.testErr != nil {
+		return webhookroutecmd.TestResult{}, f.testErr
+	}
+	return webhookroutecmd.TestResult{JobID: "test-job"}, nil
+}
+
+func (f *webhooksHTTPFixture) History(_ context.Context, _ string, beforeAt time.Time, beforeJobID string, limit int,
+	_ webhookroutecmd.Authority) ([]webhookroutecmd.HistoryItem, error) {
+	f.historyLimit, f.historyBeforeAt, f.historyBeforeJobID = limit, beforeAt, beforeJobID
+	return f.history, nil
+}
+
+func (f *webhooksHTTPFixture) HistoryDetail(_ context.Context, _, jobID string,
+	_ webhookroutecmd.Authority) (webhookroutecmd.HistoryItem, error) {
+	for _, item := range f.history {
+		if item.JobID == jobID {
+			return item, nil
+		}
+	}
+	return webhookroutecmd.HistoryItem{}, webhookroutecmd.ErrNotFound
 }
 
 func (f *webhooksHTTPFixture) Inventory(context.Context, webhookroutecmd.Authority) ([]webhookroutecmd.Item, error) {
@@ -148,7 +277,8 @@ func TestWebhooksBrowserManagement(t *testing.T) {
 			}
 			configured := get("/webhooks/configured", admin.access)
 			if configured.Code != http.StatusOK || !strings.Contains(configured.Body.String(), "Configuration webhook") ||
-				strings.Contains(configured.Body.String(), `name="expected_version"`) ||
+				strings.Contains(configured.Body.String(), "Save webhook") ||
+				!strings.Contains(configured.Body.String(), "Send test POST") ||
 				strings.Contains(configured.Body.String(), "<script>ignored</script>") {
 				t.Fatalf("configuration route was editable or unescaped: %d", configured.Code)
 			}

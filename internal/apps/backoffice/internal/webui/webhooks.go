@@ -2,6 +2,7 @@ package webui
 
 import (
 	"net/url"
+	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/webhookroutecmd"
 )
@@ -30,7 +31,46 @@ type WebhookEditor struct {
 	DedupeSource, DedupeHeader                   string
 	AuthLabel                                    string
 	// Secret is populated only by create and rotate POST responses.
-	Secret string
+	Secret                                    string
+	TestRequestKey, TestBody, NextHistoryPath string
+	History                                   []WebhookHistoryRow
+	HistoryDetail                             *WebhookHistoryDetail
+	HistoryLoaded                             bool
+}
+
+// WebhookHistoryRow contains one admitted request's summary.
+type WebhookHistoryRow struct {
+	Source, Requested, State, DeliveryState, DetailPath string
+}
+
+// WebhookHistoryDetail contains safe input, output and delivery information.
+type WebhookHistoryDetail struct {
+	Input, Output, ReportTo, DeliveryState, DeliveryPayload string
+	InputAvailable, HasReportTo                             bool
+}
+
+// ProjectWebhookHistoryRow presents a durable admission without private identifiers.
+func ProjectWebhookHistoryRow(item webhookroutecmd.HistoryItem, routePath string) WebhookHistoryRow {
+	source := "External"
+	if item.Source == "test" {
+		source = "Test POST"
+	}
+	delivery := item.DeliveryStatus
+	if !item.HasReportTo {
+		delivery = "No report"
+	} else if delivery == "" {
+		delivery = "Pending"
+	}
+	return WebhookHistoryRow{Source: source, Requested: item.CreatedAt.UTC().Format(time.RFC3339),
+		State: item.JobStatus, DeliveryState: delivery,
+		DetailPath: routePath + "?job_id=" + url.QueryEscape(item.JobID)}
+}
+
+// ProjectWebhookHistoryDetail displays exact valid text or a lossless hex input.
+func ProjectWebhookHistoryDetail(item webhookroutecmd.HistoryItem) *WebhookHistoryDetail {
+	return &WebhookHistoryDetail{Input: item.Input, InputAvailable: item.InputAvailable,
+		Output: item.Output, HasReportTo: item.HasReportTo, ReportTo: item.ReportTo,
+		DeliveryState: item.DeliveryStatus, DeliveryPayload: item.DeliveryPayload}
 }
 
 // ProjectWebhookRow omits instruction content and all authentication values.

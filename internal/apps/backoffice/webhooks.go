@@ -14,7 +14,10 @@ import (
 	"github.com/baldaworks/balda/internal/apps/backoffice/security"
 	"github.com/baldaworks/balda/internal/apps/balda/users"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookroutecmd"
+	"github.com/google/uuid"
 )
+
+const webhookHistoryPageSize = 20
 
 // WebhooksOperations is Backoffice's consuming port for webhook route policy.
 type WebhooksOperations interface {
@@ -25,6 +28,11 @@ type WebhooksOperations interface {
 	SetEnabled(ctx context.Context, request webhookroutecmd.ChangeSelection) (webhookroutecmd.Item, error)
 	Delete(ctx context.Context, request webhookroutecmd.Delete) (webhookroutecmd.Item, error)
 	Rotate(ctx context.Context, request webhookroutecmd.Rotate) (webhookroutecmd.SecretResult, error)
+	TestPost(ctx context.Context, request webhookroutecmd.TestPost) (webhookroutecmd.TestResult, error)
+	History(ctx context.Context, name string, beforeAt time.Time, beforeJobID string, limit int,
+		authority webhookroutecmd.Authority) ([]webhookroutecmd.HistoryItem, error)
+	HistoryDetail(ctx context.Context, name, jobID string,
+		authority webhookroutecmd.Authority) (webhookroutecmd.HistoryItem, error)
 }
 
 // ConfigureWebhooksOperations binds host policy before Backoffice starts.
@@ -67,6 +75,40 @@ func (a *httpApp) webhooksView(r *http.Request, p security.Principal) (webui.Pag
 		}
 		page.Title = item.Definition.Name + " · Webhooks · Balda"
 		page.Webhooks = &webui.WebhooksView{Editor: webui.ProjectWebhookEditor(item, false)}
+		page.Webhooks.Editor.TestRequestKey = uuid.NewString()
+		if r.Method == http.MethodGet {
+			beforeAt, beforeJobID, err := webhookHistoryCursor(r.URL.Query())
+			if err != nil {
+				return page, err
+			}
+			history, err := a.webhooks.History(r.Context(), name, beforeAt, beforeJobID,
+				webhookHistoryPageSize+1, a.webhookAuthority(p))
+			if err != nil {
+				return page, err
+			}
+			if len(history) > webhookHistoryPageSize {
+				last := history[webhookHistoryPageSize-1]
+				page.Webhooks.Editor.NextHistoryPath = page.Webhooks.Editor.Row.DetailPath +
+					"?before_at=" + url.QueryEscape(last.CreatedAt.UTC().Format(time.RFC3339Nano)) +
+					"&before_job_id=" + url.QueryEscape(last.JobID)
+				history = history[:webhookHistoryPageSize]
+			}
+			for _, record := range history {
+				page.Webhooks.Editor.History = append(page.Webhooks.Editor.History,
+					webui.ProjectWebhookHistoryRow(record, page.Webhooks.Editor.Row.DetailPath))
+			}
+			if jobID := r.URL.Query().Get("job_id"); jobID != "" {
+				if len(jobID) > 256 {
+					return page, webhookroutecmd.ErrInvalid
+				}
+				record, err := a.webhooks.HistoryDetail(r.Context(), name, jobID, a.webhookAuthority(p))
+				if err != nil {
+					return page, err
+				}
+				page.Webhooks.Editor.HistoryDetail = webui.ProjectWebhookHistoryDetail(record)
+			}
+			page.Webhooks.Editor.HistoryLoaded = true
+		}
 		return page, nil
 	}
 	if r.Method == http.MethodPost || r.URL.Query().Get("new") == "1" {
@@ -83,6 +125,69 @@ func (a *httpApp) webhooksView(r *http.Request, p security.Principal) (webui.Pag
 		page.Webhooks.Rows = append(page.Webhooks.Rows, webui.ProjectWebhookRow(item))
 	}
 	return page, nil
+}
+
+func webhookHistoryCursor(query url.Values) (time.Time, string, error) {
+	if query.Get("before_at") == "" && query.Get("before_job_id") == "" {
+		return time.Time{}, "", nil
+	}
+	beforeAt, err := time.Parse(time.RFC3339Nano, query.Get("before_at"))
+	jobID := query.Get("before_job_id")
+	if err != nil || beforeAt.IsZero() || jobID == "" || len(jobID) > 256 {
+		return time.Time{}, "", webhookroutecmd.ErrInvalid
+	}
+	return beforeAt.UTC(), jobID, nil
+}
+
+func (a *httpApp) webhookTestPost(w http.ResponseWriter, r *http.Request) {
+	form, p, ok := a.browser.AdministratorMutationLimit(w, r, 1<<20)
+	if !ok {
+		return
+	}
+	page, err := a.webhooksView(r, p)
+	if err != nil {
+		a.webhookError(w, r, page, err)
+		return
+	}
+	editor := page.Webhooks.Editor
+	if editor == nil || editor.Row.Deleted {
+		a.webhookError(w, r, page, webhookroutecmd.ErrNotFound)
+		return
+	}
+	version, err := webhookVersion(form)
+	if err != nil {
+		a.webhookError(w, r, page, err)
+		return
+	}
+	request := webhookroutecmd.TestPost{Name: r.PathValue("webhook_name"),
+		Body: form.Get("body"), RequestKey: form.Get("request_key"),
+		ExpectedVersion: version, ConfirmDisabled: form.Get("confirm_disabled") == checkedFormValue,
+		Authority: a.webhookAuthority(p)}
+	editor.TestBody = request.Body
+	if _, keyErr := uuid.Parse(request.RequestKey); keyErr == nil {
+		editor.TestRequestKey = request.RequestKey
+	}
+	if !editor.Row.Enabled && !request.ConfirmDisabled {
+		page.Error = &webui.ErrorView{Heading: "Confirm disabled webhook test",
+			Message: "Confirm that you want to send a Test POST through this disabled route."}
+		a.render(w, r, http.StatusBadRequest, webui.TemplateWebhooks, page)
+		return
+	}
+	result, err := a.webhooks.TestPost(r.Context(), request)
+	if err != nil {
+		if errors.Is(err, webhookroutecmd.ErrUnavailable) {
+			page.Error = &webui.ErrorView{Heading: "Test POST state unavailable",
+				Message: "The request may have been admitted. Retry with the same request key, or check request history before starting another test."}
+			a.render(w, r, http.StatusServiceUnavailable, webui.TemplateWebhooks, page)
+			return
+		}
+		a.webhookError(w, r, page, err)
+		return
+	}
+	location := a.path(editor.Row.DetailPath) + "?job_id=" + url.QueryEscape(result.JobID)
+	if err := webui.RespondMutationPath(w, r, location); err != nil {
+		a.webhookError(w, r, page, webhookroutecmd.ErrUnavailable)
+	}
 }
 
 func (a *httpApp) webhookAuthority(p security.Principal) webhookroutecmd.Authority {

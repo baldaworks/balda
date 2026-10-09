@@ -123,6 +123,7 @@ func (a *httpApp) handler() (http.Handler, error) {
 	mux.HandleFunc("POST "+a.path("/webhooks/{webhook_name}/selection"), a.webhookSelection)
 	mux.HandleFunc("POST "+a.path("/webhooks/{webhook_name}/delete"), a.webhookDelete)
 	mux.HandleFunc("POST "+a.path("/webhooks/{webhook_name}/rotate"), a.webhookRotate)
+	mux.HandleFunc("POST "+a.path("/webhooks/{webhook_name}/test"), a.webhookTestPost)
 	for _, route := range []string{"/aliases", "/aliases/{alias_name}"} {
 		mux.Handle("GET "+a.path(route), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.aliasesPage))))
 	}

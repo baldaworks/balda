@@ -70,6 +70,29 @@ type Item struct {
 	UpdatedAt    time.Time
 }
 
+// TestPost requests one administrator-authorized synthetic webhook admission.
+type TestPost struct {
+	Name            string
+	Body            string
+	RequestKey      string
+	ExpectedVersion uint64
+	ConfirmDisabled bool
+	Authority       Authority
+}
+
+// TestResult identifies the admitted job, including an idempotent retry.
+type TestResult struct {
+	JobID     string
+	Duplicate bool
+}
+
+// HistoryItem exposes only safe admission, execution, and delivery fields.
+type HistoryItem struct {
+	JobID, Source, Input, JobStatus, Output, ReportTo, DeliveryStatus, DeliveryPayload string
+	InputAvailable, HasReportTo                                                        bool
+	CreatedAt                                                                          time.Time
+}
+
 // Create requests a managed route with a generated shared secret.
 type Create struct {
 	Definition Definition

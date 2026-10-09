@@ -738,6 +738,9 @@ deps:
     mayDependOn:
       - webhook_route_contracts
       - webhook_management
+      - application
+      - contracts
+      - storage
       - webhook_backoffice_wiring
     deepScan: false
     anyVendorDeps: false

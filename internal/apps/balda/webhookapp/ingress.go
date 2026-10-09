@@ -175,19 +175,23 @@ func (i *Ingress) Admit(ctx context.Context, route webhookcmd.PreparedRoute, inb
 			}
 		}
 	}
-	switch route.DedupeSource {
-	case webhookroutecmd.DedupeSourceHeader:
-		if value := strings.TrimSpace(headerValue(inbound.Headers, route.DedupeHeader)); value != "" {
-			if credentialHeader(route.DedupeHeader, route.AuthHeader) {
-				sum := sha256.Sum256([]byte(value))
-				dedupeBase = hex.EncodeToString(sum[:])
-			} else {
-				dedupeBase = value
+	// A Test POST uses its form request key across retries, independently of
+	// the external sender's configured deduplication source.
+	if !inbound.Test {
+		switch route.DedupeSource {
+		case webhookroutecmd.DedupeSourceHeader:
+			if value := strings.TrimSpace(headerValue(inbound.Headers, route.DedupeHeader)); value != "" {
+				if credentialHeader(route.DedupeHeader, route.AuthHeader) {
+					sum := sha256.Sum256([]byte(value))
+					dedupeBase = hex.EncodeToString(sum[:])
+				} else {
+					dedupeBase = value
+				}
 			}
+		case webhookroutecmd.DedupeSourceBodySHA:
+			sum := sha256.Sum256([]byte(inbound.RawBody))
+			dedupeBase = hex.EncodeToString(sum[:])
 		}
-	case webhookroutecmd.DedupeSourceBodySHA:
-		sum := sha256.Sum256([]byte(inbound.RawBody))
-		dedupeBase = hex.EncodeToString(sum[:])
 	}
 	keyPrefix := "webhook"
 	if inbound.Test {
@@ -195,7 +199,7 @@ func (i *Ingress) Admit(ctx context.Context, route webhookcmd.PreparedRoute, inb
 	}
 	return i.acceptor.Accept(ctx, webhookcmd.Request{RequestID: requestID,
 		RouteName: route.Name, Prompt: strings.TrimSpace(prompt.String()), RawBody: inbound.RawBody,
-		Test: inbound.Test, ReportTo: route.ReportTo,
+		Test: inbound.Test, TestAuthority: inbound.TestAuthority, ReportTo: route.ReportTo,
 		DedupeKey:       strings.Join([]string{keyPrefix, route.Name, dedupeBase}, ":"),
 		LegacyDedupeKey: legacyDedupeKey})
 }
@@ -206,6 +210,7 @@ func preparedRecord(r webhookroutecmd.Record) (webhookcmd.PreparedRoute, error) 
 	if err != nil {
 		return webhookcmd.PreparedRoute{}, &webhookcmd.DispatchFailedError{Cause: err}
 	}
+	prepared.Version = r.Version
 	return prepared, nil
 }
 

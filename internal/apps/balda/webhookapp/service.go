@@ -125,7 +125,8 @@ func (s *Service) newAdmission(ctx context.Context, req Request, reqID, routeNam
 	candidate := webhookcmd.Admission{
 		RouteName: routeName, DedupeKey: dedupeKey, RequestID: reqID,
 		Prompt: prompt, RawBody: &req.RawBody, Source: webhookcmd.SourceExternal,
-		SessionID: sessionID, ReportTo: reportTo, CreatedAt: time.Now().UTC(),
+		TestAuthority: req.TestAuthority,
+		SessionID:     sessionID, ReportTo: reportTo, CreatedAt: time.Now().UTC(),
 	}
 	if req.Test {
 		candidate.Source = webhookcmd.SourceTest

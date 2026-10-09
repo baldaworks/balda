@@ -61,7 +61,7 @@ func initializePostgresProvider(ctx context.Context, db *sql.DB) (Provider, erro
 		jobs:           &postgresScheduledJobStore{db: db},
 		management:     &sqlScheduleManagementStore{users: newPostgresUserStore(db)},
 		aliases:        &sqlAliasStore{users: newPostgresUserStore(db)},
-		webhook:        &sqlWebhookAdmissionStore{db: db, bind: postgresBind, postgres: true},
+		webhook:        &sqlWebhookAdmissionStore{db: db, bind: postgresBind, postgres: true, users: newPostgresUserStore(db)},
 		webhookRoutes:  &sqlWebhookRouteStore{users: newPostgresUserStore(db)},
 		runs:           &sqlScheduleRunStore{db: db, bind: postgresBind, postgres: true},
 		questions:      &postgresQuestionStore{db: db},

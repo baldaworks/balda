@@ -812,6 +812,9 @@ func Module(
 		fx.Provide(func(provider baldastate.Provider) webhookapp.AdmissionStore {
 			return provider.WebhookAdmissions()
 		}),
+		fx.Provide(func(provider baldastate.Provider) baldastate.WebhookAdmissionStore {
+			return provider.WebhookAdmissions()
+		}),
 		fx.Provide(func(provider baldastate.Provider) *webhookmanagement.Service {
 			return webhookmanagement.New(webhookroutefx.NewStore(provider))
 		}),

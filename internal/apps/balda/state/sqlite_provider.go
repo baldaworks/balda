@@ -172,7 +172,7 @@ func NewSQLiteProvider(ctx context.Context, path string) (Provider, error) {
 		jobs:           &sqliteScheduledJobStore{db: db},
 		management:     &sqlScheduleManagementStore{users: newSQLiteUserStore(db)},
 		aliases:        &sqlAliasStore{users: newSQLiteUserStore(db)},
-		webhook:        &sqlWebhookAdmissionStore{db: db, bind: func(query string) string { return query }},
+		webhook:        &sqlWebhookAdmissionStore{db: db, bind: func(query string) string { return query }, users: newSQLiteUserStore(db)},
 		webhookRoutes:  &sqlWebhookRouteStore{users: newSQLiteUserStore(db)},
 		runs:           &sqlScheduleRunStore{db: db, bind: func(query string) string { return query }},
 		questions:      &sqliteQuestionStore{db: db},
