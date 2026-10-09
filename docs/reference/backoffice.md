@@ -318,7 +318,7 @@ The pinned stack is:
 
 | Component | Version | Responsibility |
 | --- | --- | --- |
-| Go `html/template` | Go 1.26.6 | Authoritative SSR and HTML fragments |
+| Go `html/template` | Go 1.26.9 | Authoritative SSR and HTML fragments |
 | AdminLTE | 4.9.1 | Shell and UI components |
 | HTMX | 2.0.10 | Browser navigation and fragment updates |
 | Bootstrap Icons | 1.13.1 | Local icons |
