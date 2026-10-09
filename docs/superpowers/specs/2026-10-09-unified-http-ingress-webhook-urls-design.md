@@ -18,31 +18,37 @@ browser authorization, or chat transports behave.
 - `balda.backoffice.public_url` remains the configured public **origin** with
   no path. It supplies the origin displayed for managed webhook URLs; request
   routing never trusts an inbound `Host` or forwarded header to construct it.
-- `balda.backoffice.base_path` applies only to Backoffice pages, assets,
-  browser cookies, and callbacks. On asus it remains `/balda`; it does not
-  prefix generic webhook routes.
+- `balda.backoffice.base_path` supplies the public path prefix for Backoffice
+  and new managed ingress routes. It also scopes browser pages, assets,
+  cookies, and callbacks. On asus it remains `/balda`. An empty value mounts
+  these routes at the origin root for local installations. Existing routes
+  with explicit paths remain exceptions for compatibility.
 - A new Backoffice-managed route named `orders` is stored at the canonical
-  path `/webhooks/orders`. Its displayed and copyable URL on asus is
-  `https://lab.metalagman.dev/webhooks/orders`. The name is immutable. Neither
-  create nor edit accepts an independently chosen path for a new managed route.
+  path `<base_path>/inbound/webhooks/orders`, which is
+  `/balda/inbound/webhooks/orders` on asus. Its displayed and copyable URL is
+  `https://lab.metalagman.dev/balda/inbound/webhooks/orders`. The
+  `inbound` segment separates external POSTs from Backoffice management at
+  `/balda/webhooks/{name}`. The name is immutable. Neither create nor edit
+  accepts an independently chosen path for a new managed route.
 - A managed route created before this change retains its stored path. Its
   current URL remains visible and copyable, and editing other fields never
   rewrites that path. Config-owned routes retain their explicit `path` and are
   still read-only in Backoffice. This needs no database migration.
-- `/gateway/...` denotes a chat transport callback namespace, not generic
-  application webhooks. Existing configured transport paths remain valid;
-  this change does not silently move Slack, Telegram, Zulip, or Mattermost
-  callbacks. A later callback URL migration can use `/gateway/...` explicitly.
+- `<base_path>/gateway/...` denotes a chat transport callback namespace, not
+  generic application webhooks. Existing configured transport paths remain
+  valid; this change does not silently move Slack, Telegram, Zulip, or
+  Mattermost callbacks. A later callback URL migration can use that namespace
+  explicitly.
 
 The Webhooks inventory and detail use **Webhook URL** for the full address.
 The creation form has Route name and a read-only live URL preview, followed by
 the existing prompt, optional Report to, delivery, and deduplication controls.
 The editor shows the stored URL as read-only. Its secret continues to appear
 only after creation or explicit rotation. The preview is computed from the
-configured public origin and the validated route name; the service, rather
-than browser JavaScript, enforces the canonical stored path. JavaScript updates
-the preview while typing and enables copying, but the server-rendered response
-is authoritative.
+configured public origin, base path, and validated route name; the service,
+rather than browser JavaScript, enforces the canonical stored path. JavaScript
+updates the preview while typing and enables copying, but the server-rendered
+response is authoritative.
 
 ## HTTP ownership and routing
 
@@ -115,10 +121,11 @@ reconcile the assistant chart/Terragrunt inputs with the running release;
 record the live image digest and all live HTTPRoute matches. Set
 `balda.http.listen_addr` to `0.0.0.0:8095`, remove obsolete per-adapter bind
 settings, and expose one Service port 8095. Point the existing Slack callback
-matches at 8095 and add `/webhooks` to 8095 while preserving `/balda` on
-8095. Apply the image and routing together so current Slack URLs remain
-reachable. Verify Backoffice assets/auth, Slack event and command challenge
-responses, a managed webhook test POST, and the public `/webhooks/<name>` URL.
+matches at 8095; the existing `/balda` PathPrefix then covers new managed
+webhook URLs too. Apply the image and routing together so current Slack URLs
+remain reachable. Verify Backoffice assets/auth, Slack event and command challenge
+responses, a managed webhook test POST, and the public
+`/balda/inbound/webhooks/<name>` URL.
 Roll back image, values, Service, and HTTPRoute as one unit if health or
 ingress checks fail; no database rollback is needed for this change.
 
