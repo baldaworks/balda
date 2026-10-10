@@ -8,10 +8,12 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/baldaworks/balda/internal/apps/backoffice"
 	"github.com/baldaworks/balda/internal/apps/balda/httpfx"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookbackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookmanagement"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookroutecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookroutefx"
 )
 
@@ -22,14 +24,43 @@ func TestSharedHTTPLayoutBrowser(t *testing.T) {
 		t.Skip("enable BALDA_BACKOFFICE_BROWSER_TEST with Playwright installed")
 	}
 	for _, test := range []struct {
-		name     string
-		basePath string
-	}{{name: "asus prefix", basePath: "/balda"}, {name: "root prefix"}} {
+		name          string
+		basePath      string
+		missingOrigin bool
+	}{
+		{name: "asus prefix", basePath: "/balda"},
+		{name: "root prefix"},
+		{name: "asus prefix without public origin", basePath: "/balda", missingOrigin: true},
+		{name: "root prefix without public origin", missingOrigin: true},
+	} {
 		t.Run(test.name, func(t *testing.T) {
 			address := freeTestAddress(t)
 			params := sharedHTTPTestParamsWithBasePath(t, address, test.basePath)
+			originMode := "public"
+			if test.missingOrigin {
+				originMode = "missing"
+				params.Config.HTTP.BaseURL = ""
+				params.Config.Backoffice.PublicURL = "http://" + address
+				config, err := backofficeRuntimeConfig(params.Config, state.DatabaseConfig{})
+				if err != nil {
+					t.Fatal(err)
+				}
+				emptyOrigin := ""
+				config.Server.WebhookPublicOrigin = &emptyOrigin
+				params.Backoffice, err = backoffice.NewRuntime(config, params.StateProvider)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
 			callbackPath := test.basePath + "/webhooks/orders"
 			manager := webhookmanagement.New(webhookroutefx.NewStore(params.StateProvider))
+			if err := manager.ReconcileConfig(t.Context(), []webhookroutecmd.ConfiguredRoute{{
+				Name: "configured", PromptTemplate: "Configured: {{.RawBody}}", Enabled: true,
+				AuthType: webhookroutecmd.AuthTypeHeader, AuthHeader: "X-Configured-Secret",
+				DedupeSource: webhookroutecmd.DedupeSourceRequestID,
+			}}); err != nil {
+				t.Fatal(err)
+			}
 			if err := params.Backoffice.ConfigureWebhooksOperations(webhookbackofficeapp.New(
 				manager, nil, params.StateProvider.WebhookAdmissions())); err != nil {
 				t.Fatal(err)
@@ -61,7 +92,7 @@ func TestSharedHTTPLayoutBrowser(t *testing.T) {
 				t.Fatal(err)
 			}
 			command := exec.CommandContext(t.Context(), "node", "qa/backoffice-e2e/shared-http-layout.cjs",
-				"http://"+address, test.basePath)
+				"http://"+address, test.basePath, originMode)
 			command.Dir = root
 			output, err := command.CombinedOutput()
 			if err != nil {
