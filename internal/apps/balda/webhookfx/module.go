@@ -139,6 +139,7 @@ var Module = fx.Module("balda_webhook",
 		newIngress,
 		fx.Annotate(func(ingress *webhookapp.Ingress) webhook.Ingress { return ingress }),
 		newReceiver,
+		newHTTPContribution,
 	),
 	fx.Invoke(func(*webhook.Receiver) {}),
 )

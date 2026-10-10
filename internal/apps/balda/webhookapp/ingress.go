@@ -88,6 +88,22 @@ func NewIngress(configured []ConfiguredRoute, store RouteStore, acceptor Accepto
 	return i, nil
 }
 
+// IsActivePath reports whether external intake can select a route at this exact path.
+// It does not authenticate a request; PrepareExternal retains that responsibility.
+func (i *Ingress) IsActivePath(ctx context.Context, path string) (bool, error) {
+	if _, ok := i.configuredByPath[path]; ok {
+		return true, nil
+	}
+	if i.store == nil {
+		return false, nil
+	}
+	route, found, err := i.store.LookupByPath(ctx, path)
+	if err != nil {
+		return false, err
+	}
+	return found && route.Source == webhookroutecmd.SourceManaged && route.Enabled && !route.Deleted, nil
+}
+
 // PrepareExternal authenticates the current route before its body is read.
 func (i *Ingress) PrepareExternal(ctx context.Context, path string, headers map[string]string) (webhookcmd.PreparedRoute, error) {
 	if route, ok := i.configuredByPath[path]; ok {

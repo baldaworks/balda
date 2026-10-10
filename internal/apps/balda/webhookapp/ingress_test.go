@@ -114,6 +114,40 @@ func TestIngress_DisabledRotatedAndUnavailable(t *testing.T) {
 	}
 }
 
+func TestIngress_IsActivePathTracksManagedSelection(t *testing.T) {
+	store := &ingressStore{route: webhookroutecmd.Record{
+		Name: "orders", Source: webhookroutecmd.SourceManaged, Path: "/orders/old", Enabled: false,
+	}}
+	ingress, err := NewIngress([]ConfiguredRoute{{Name: "config", Path: "/custom/config", PromptTemplate: "{{.RawBody}}"}}, store, &ingressAcceptor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	active, err := ingress.IsActivePath(t.Context(), "/custom/config")
+	if err != nil || !active {
+		t.Fatalf("configured route = %t, %v", active, err)
+	}
+	for _, path := range []string{"/orders/old", "/unknown"} {
+		active, err := ingress.IsActivePath(t.Context(), path)
+		if err != nil || active {
+			t.Errorf("inactive %q = %t, %v", path, active, err)
+		}
+	}
+	store.route.Enabled = true
+	active, err = ingress.IsActivePath(t.Context(), "/orders/old")
+	if err != nil || !active {
+		t.Fatalf("enabled legacy route = %t, %v", active, err)
+	}
+	store.route.Source = webhookroutecmd.SourceConfig
+	active, err = ingress.IsActivePath(t.Context(), "/orders/old")
+	if err != nil || active {
+		t.Fatalf("store config route = %t, %v", active, err)
+	}
+	store.err = errors.New("database unavailable")
+	if _, err := ingress.IsActivePath(t.Context(), "/orders/old"); err == nil {
+		t.Fatal("store failure hidden")
+	}
+}
+
 func TestIngress_ConfigRouteAndTestBypass(t *testing.T) {
 	acceptor := &ingressAcceptor{}
 	ingress, err := NewIngress([]ConfiguredRoute{{Name: "configured", Path: "/configured",

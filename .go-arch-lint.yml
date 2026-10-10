@@ -965,6 +965,7 @@ deps:
 
   webhook_wiring:
     mayDependOn:
+      - http_composition
       - foundation
       - contracts
       - application

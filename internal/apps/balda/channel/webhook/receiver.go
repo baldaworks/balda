@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/webhookcmd"
 	"github.com/google/uuid"
@@ -96,6 +97,14 @@ func (r *Receiver) Start(ctx context.Context) error {
 // Stop gracefully shuts down the inbound webhook receiver.
 func (r *Receiver) Stop(ctx context.Context) error {
 	return r.stop(ctx)
+}
+
+// Handler serves webhook requests through the receiver's existing checks without binding a socket.
+func (r *Receiver) Handler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(ReadTimeout))
+		r.handleWebhook(w, request)
+	})
 }
 
 func (r *Receiver) start(_ context.Context) error {
