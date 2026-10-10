@@ -40,6 +40,7 @@ const testWebhookPublicOrigin = "https://lab.metalagman.dev"
 
 func TestWebhooksCreateWithRealManagedRoutePolicy(t *testing.T) {
 	t.Run("shared", func(t *testing.T) {
+		const routeName = "orders"
 		provider, config := newHTTPAppTestState(t)
 		config.Server.BasePath = testBackofficeBasePath + "/backoffice"
 		sharedPath := testBackofficeBasePath
@@ -61,29 +62,28 @@ func TestWebhooksCreateWithRealManagedRoutePolicy(t *testing.T) {
 			t.Fatal(err)
 		}
 		admin := loginHTTPAppSession(t, handler, config, "admin")
-		form := url.Values{"name": {"orders"}, "prompt_template": {"Handle {{.RawBody}}"},
+		form := url.Values{"name": {routeName}, "prompt_template": {"Handle {{.RawBody}}"},
 			"dedupe_source": {"request_id"}, "csrf_token": {admin.csrf}}
 		response := performAccessMutation(t, handler, config, config.Server.BasePath+"/webhooks",
 			form, admin.access, admin.csrf, false)
 		if response.Code != http.StatusOK {
 			t.Fatalf("create without editable path = %d", response.Code)
 		}
-		stored, found, err := provider.WebhookRoutes().Get(t.Context(), "orders")
-		if err != nil || !found || stored.Name != "orders" {
+		stored, found, err := provider.WebhookRoutes().Get(t.Context(), routeName)
+		if err != nil || !found || stored.Name != routeName {
 			t.Fatalf("stored route = %+v, found %v, error %v", stored, found, err)
 		}
 		update := url.Values{"expected_version": {"1"}, "prompt_template": {"Updated {{.RawBody}}"},
 			"dedupe_source": {"request_id"}, "csrf_token": {admin.csrf}}
-		response = performAccessMutation(t, handler, config, config.Server.BasePath+"/webhooks/orders",
+		response = performAccessMutation(t, handler, config, config.Server.BasePath+"/webhooks/"+routeName,
 			update, admin.access, admin.csrf, false)
 		if response.Code != http.StatusSeeOther {
 			t.Fatalf("update without editable path = %d", response.Code)
 		}
-		stored, found, err = provider.WebhookRoutes().Get(t.Context(), "orders")
-		if err != nil || !found || stored.Name != "orders" || stored.PromptTemplate != "Updated {{.RawBody}}" {
+		stored, found, err = provider.WebhookRoutes().Get(t.Context(), routeName)
+		if err != nil || !found || stored.Name != routeName || stored.PromptTemplate != "Updated {{.RawBody}}" {
 			t.Fatalf("updated route = %+v, found %v, error %v", stored, found, err)
 		}
-
 	})
 }
 

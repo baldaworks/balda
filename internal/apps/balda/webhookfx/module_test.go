@@ -45,7 +45,6 @@ func TestDisabledConfigRouteIsAvailableToTestOnly(t *testing.T) {
 	if prepared.Path != "/webhooks/configured" || prepared.Name != "configured" {
 		t.Fatalf("test route = %+v", prepared)
 	}
-
 }
 
 func TestReceiverWiringRequiresReceiptForAcknowledgedRoute(t *testing.T) {
