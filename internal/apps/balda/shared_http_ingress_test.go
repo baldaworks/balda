@@ -224,13 +224,16 @@ func TestUnexpectedTelegramRunFailureRequestsShutdown(t *testing.T) {
 }
 
 func sharedHTTPTestParams(t *testing.T, sharedAddress string) applicationLifecycleParams {
+	return sharedHTTPTestParamsWithBasePath(t, sharedAddress, "/balda")
+}
+
+func sharedHTTPTestParamsWithBasePath(t *testing.T, sharedAddress, basePath string) applicationLifecycleParams {
 	t.Helper()
 	provider, err := state.NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = provider.Close() })
-	basePath := "/balda"
 	config := BaldaConfig{HTTP: HTTPConfig{ListenAddr: sharedAddress, BaseURL: "http://" + sharedAddress, BasePath: &basePath}}
 	backofficeConfig, err := backofficeRuntimeConfig(config, state.DatabaseConfig{})
 	if err != nil {
@@ -252,7 +255,7 @@ func sharedHTTPTestParams(t *testing.T, sharedAddress string) applicationLifecyc
 	callback := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusAccepted) })
 	return applicationLifecycleParams{
 		Config: config, HTTPConfig: ResolvedHTTPConfig{ListenAddr: sharedAddress, BaseURL: "http://" + sharedAddress, BasePath: basePath},
-		Backoffice: runtime, HTTPRegistry: registry,
+		Backoffice: runtime, HTTPRegistry: registry, StateProvider: provider,
 		GatewayCallbacks: []httpfx.GatewayCallbackProvider{func(context.Context) ([]httpfx.GatewayCallback, error) {
 			return []httpfx.GatewayCallback{{Owner: "slack events", Transport: "slack", Endpoint: "events", LegacyPath: "/old/slack/events", Handler: callback}}, nil
 		}},
