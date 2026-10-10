@@ -87,59 +87,87 @@ func TestWebhooksCreateWithRealManagedRoutePolicy(t *testing.T) {
 	})
 }
 
-func TestWebhooksShowPublicCallbackURL(t *testing.T) {
-	provider, config := newHTTPAppTestState(t)
-	config.Server.PublicURL = testWebhookPublicOrigin
-	config.Server.BasePath = "/balda/backoffice"
-	config.Server.SecureCookies = true
-	sharedPath := testBackofficeBasePath
-	config.Server.WebhookURLBasePath = &sharedPath
-	now := time.Now().UTC()
-	createAccessTestUser(t, provider.Users(), usercmd.User{ID: "admin", Username: "admin",
-		NormalizedUsername: "admin", DisplayName: "admin", Role: usercmd.RoleAdministrator,
-		Status: usercmd.StatusActive, Primary: true,
-		Credential: usercmd.Credential{State: usercmd.CredentialStateActive, Version: 1},
-		Version:    1, CreatedAt: now, UpdatedAt: now})
-	app, err := newHTTPApp(provider.Users(), config)
-	if err != nil {
-		t.Fatal(err)
-	}
-	app.webhooks = &webhooksHTTPFixture{items: map[string]webhookroutecmd.Item{
-		"orders": {Definition: webhookroutecmd.Definition{Name: "orders"},
-			Source: webhookroutecmd.SourceManaged, Enabled: true, Version: 1},
-		"configured": {Definition: webhookroutecmd.Definition{Name: "configured"},
-			Source: webhookroutecmd.SourceConfig, Enabled: true, Version: 1},
-	}}
-	handler, err := app.handler()
-	if err != nil {
-		t.Fatal(err)
-	}
-	admin := loginHTTPAppSession(t, handler, config, "admin")
-	get := func(path string) string {
-		t.Helper()
-		request := httptest.NewRequest(http.MethodGet, config.Server.BasePath+path, nil)
-		request.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: admin.access})
-		response := httptest.NewRecorder()
-		handler.ServeHTTP(response, request)
-		if response.Code != http.StatusOK {
-			t.Fatalf("GET %s = %d", path, response.Code)
+func TestWebhooksShowCanonicalCallbackURL(t *testing.T) {
+	for _, basePath := range []string{"", "/balda"} {
+		for _, originMode := range []string{"public", "missing", "standalone"} {
+			t.Run(basePath+"/"+originMode, func(t *testing.T) {
+				provider, config := newHTTPAppTestState(t)
+				config.Server.BasePath = "/admin"
+				config.Server.WebhookURLBasePath = &basePath
+				origin := ""
+				switch originMode {
+				case "public":
+					origin = testWebhookPublicOrigin
+					config.Server.WebhookPublicOrigin = &origin
+				case "missing":
+					config.Server.WebhookPublicOrigin = &origin
+				case "standalone":
+					origin = config.Server.PublicURL
+				}
+				now := time.Now().UTC()
+				createAccessTestUser(t, provider.Users(), usercmd.User{ID: "admin", Username: "admin",
+					NormalizedUsername: "admin", DisplayName: "admin", Role: usercmd.RoleAdministrator,
+					Status: usercmd.StatusActive, Primary: true,
+					Credential: usercmd.Credential{State: usercmd.CredentialStateActive, Version: 1},
+					Version:    1, CreatedAt: now, UpdatedAt: now})
+				app, err := newHTTPApp(provider.Users(), config)
+				if err != nil {
+					t.Fatal(err)
+				}
+				app.webhooks = &webhooksHTTPFixture{items: map[string]webhookroutecmd.Item{
+					"orders": {Definition: webhookroutecmd.Definition{Name: "orders"},
+						Source: webhookroutecmd.SourceManaged, Enabled: true, Version: 1},
+					"configured": {Definition: webhookroutecmd.Definition{Name: "configured"},
+						Source: webhookroutecmd.SourceConfig, Enabled: true, Version: 1},
+					"archived": {Definition: webhookroutecmd.Definition{Name: "archived"},
+						Source: webhookroutecmd.SourceManaged, Deleted: true, Version: 1},
+				}}
+				handler, err := app.handler()
+				if err != nil {
+					t.Fatal(err)
+				}
+				admin := loginHTTPAppSession(t, handler, config, "admin")
+				get := func(path string) string {
+					t.Helper()
+					request := httptest.NewRequest(http.MethodGet, config.Server.BasePath+path, nil)
+					request.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: admin.access})
+					response := httptest.NewRecorder()
+					handler.ServeHTTP(response, request)
+					if response.Code != http.StatusOK {
+						t.Fatalf("GET %s = %d", path, response.Code)
+					}
+					body := response.Body.String()
+					missingOrigin := strings.Contains(body, "A full public webhook URL requires")
+					if missingOrigin != (origin == "") {
+						t.Fatalf("GET %s missing-origin explanation = %t, origin = %q", path, missingOrigin, origin)
+					}
+					return body
+				}
+				create := get("/webhooks?new=1")
+				prefix := origin + webhookroutecmd.CanonicalPath(basePath, "")
+				if !strings.Contains(create, `data-webhook-url-prefix="`+prefix+`"`) ||
+					!strings.Contains(create, `id="webhook-url" value="" readonly`) {
+					t.Fatalf("create preview omitted canonical prefix %q", prefix)
+				}
+				inventory := get("/webhooks")
+				for _, name := range []string{"orders", "configured"} {
+					callback := origin + webhookroutecmd.CanonicalPath(basePath, name)
+					if !strings.Contains(inventory, "<code>"+callback+"</code>") {
+						t.Fatalf("inventory omitted %s callback %q", name, callback)
+					}
+				}
+				for _, name := range []string{"orders", "configured", "archived"} {
+					detail := get("/webhooks/" + name)
+					callback := origin + webhookroutecmd.CanonicalPath(basePath, name)
+					if !strings.Contains(detail, "<code>"+callback+"</code>") {
+						t.Fatalf("detail omitted %s callback %q", name, callback)
+					}
+					if name == "orders" && !strings.Contains(detail, `id="webhook-url" value="`+callback+`" readonly`) {
+						t.Fatalf("managed editor omitted readonly callback %q", callback)
+					}
+				}
+			})
 		}
-		return response.Body.String()
-	}
-	create := get("/webhooks?new=1")
-	if !strings.Contains(create, `data-webhook-url-prefix="https://lab.metalagman.dev/balda/webhooks/"`) ||
-		!strings.Contains(create, `id="webhook-url"`) || strings.Contains(create, `name="path"`) {
-		t.Fatal("create form must show a derived, read-only callback URL")
-	}
-	inventory := get("/webhooks")
-	if !strings.Contains(inventory, "Webhook URL</th>") ||
-		!strings.Contains(inventory, "https://lab.metalagman.dev/balda/webhooks/orders") ||
-		!strings.Contains(inventory, "https://lab.metalagman.dev/balda/webhooks/configured") {
-		t.Fatal("inventory must show derived public callback URLs")
-	}
-	configured := get("/webhooks/configured")
-	if !strings.Contains(configured, "https://lab.metalagman.dev/balda/webhooks/configured") || strings.Contains(configured, `name="path"`) {
-		t.Fatal("configured detail must show its derived callback URL")
 	}
 }
 
