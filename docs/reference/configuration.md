@@ -69,7 +69,7 @@ overrides are `BALDA_HTTP_LISTEN_ADDR`, `BALDA_HTTP_BASE_URL`, and
 `BALDA_HTTP_BASE_PATH`.
 
 The three sibling areas are `<base_path>/backoffice/` for the browser,
-`<base_path>/webhooks/<name>` for new managed generic webhooks, and
+`<base_path>/webhooks/<name>` for every config and managed generic webhook, and
 `<base_path>/gateway/<transport>/...` for chat transport callbacks. The
 Backoffice Webhooks management page is under `/backoffice/webhooks`; it is
 separate from the inbound `/webhooks` area. For the agreed **illustrative** asus
@@ -87,7 +87,7 @@ balda:
 | --- | --- |
 | Backoffice | `https://lab.metalagman.dev/balda/backoffice/` |
 | Webhook management | `https://lab.metalagman.dev/balda/backoffice/webhooks` |
-| New managed webhook `orders` | `https://lab.metalagman.dev/balda/webhooks/orders` |
+| Config or managed webhook `orders` | `https://lab.metalagman.dev/balda/webhooks/orders` |
 | Slack Events | `https://lab.metalagman.dev/balda/gateway/slack/events` |
 | Slack Commands | `https://lab.metalagman.dev/balda/gateway/slack/commands` |
 
@@ -98,9 +98,13 @@ The local `listen_addr` does not appear in those public URLs. With an empty
 default. Set `balda.http.*` explicitly in new configurations. Old per-area
 listen-address fields are ignored for binding once the shared listener is in
 use; the old Backoffice address fields do not create a separate browser mount.
-Stored custom paths for existing config-owned or managed webhooks remain exact
-root-relative paths and are not rewritten. Chat transport callbacks use only
-their canonical `/gateway` paths.
+Every generic webhook derives its callback path from the current shared prefix
+and immutable route name; changing `base_path` moves all route addresses after
+restart without rewriting route rows. For generic webhook display, only an
+explicit `balda.http.base_url` supplies the public origin. If it is omitted,
+Backoffice shows the canonical root-relative callback path and an explanation,
+even when browser authentication uses a fallback `balda.backoffice.public_url`.
+Chat transport callbacks use only their canonical `/gateway` paths.
 
 The live asus ingress, deployment, and Telegram/Slack/external callback
 registrations are unchanged by this Story. The table is an application URL
@@ -524,9 +528,11 @@ balda:
 - `balda.features.attachments.store.engine`: inbound attachment persistence engine (`local` or `off`; default: `local`; env: `BALDA_FEATURES_ATTACHMENTS_STORE_ENGINE`)
 - `balda.webhooks.enabled`: enable config-owned inbound webhook routes (default: `false`); Backoffice-managed routes have separate enabled state
 - `balda.webhooks.listen_addr`: legacy bind setting; ignored in favor of `balda.http.listen_addr`. The shared listener binds on every `balda start`, even when no route is active. Keep it on a private interface or behind a trusted gateway.
-- `balda.webhooks.routes`: config-owned route table keyed by route name; entries are read-only in Backoffice and require restart to change
+- `balda.webhooks.routes`: config-owned route table keyed by immutable route name; entries are read-only in Backoffice and require restart to change
+  - names use `^[a-z0-9][a-z0-9_-]{0,63}$`: 1–64 lowercase letters, digits, underscores or hyphens, beginning with a lowercase letter or digit
+  - every route receives `<balda.http.base_path>/webhooks/<name>`; with an empty prefix this is `/webhooks/<name>`
+  - a declared `path`, including an empty value or a disabled route, fails startup with `balda.webhooks.routes.<name>.path`; remove that field and update the sender URL
   - each route requires:
-    - `path`: exact root-relative inbound webhook path (for example `/webhook/release`); existing paths are not prefixed or rewritten
     - `prompt_template`: Go `text/template` rendered with `RequestID`, `Path`, `Method`, `RawBody`, and `Headers`
   - optional `envelope.report_to`: final-report destination with `target` and `key`
     - `target=locator`: public `<channel_type>:<address_key>` ref; `/locator` prints one
@@ -548,8 +554,8 @@ Administrators can create persistent webhook routes at the
 [Backoffice Webhooks page](backoffice.md#webhooks-management). These routes
 are stored in the selected state database, accept new requests immediately
 when enabled, and survive restart independently of `balda.webhooks.enabled`.
-Their names cannot collide with config or archived route names; active paths
-must be unique. Each managed route requires the generated
+Their names cannot collide with config or archived route names. Each managed
+route requires the generated
 `X-Balda-Webhook-Secret` header. Copy its secret at creation or explicit
 rotation because only a verifier is stored and later GETs cannot reveal it.
 Its optional **Report to** field accepts a public locator or managed alias
@@ -558,6 +564,14 @@ without a destination-type selector. Config routes continue to support
 or deleting a route prevents new external admissions while retained request
 history remains readable. An unresolved alias prevents that particular
 request from being admitted; the route definition remains available.
+
+The SQLite and PostgreSQL upgrade uses embedded SQL migrations to remove the
+route path column and its active-path index. It preserves route names, source,
+state, versions, prompt/report settings, managed secret verifiers and request
+input/output history. Existing routes immediately use their canonical URLs;
+old custom URLs no longer accept requests. Back up the database before upgrading,
+update external senders, and restore that backup with an older binary if a
+downgrade is needed; removed custom paths cannot be reconstructed.
 
 - `balda.scheduler.jobs`: config-owned recurring schedules, each with an `id`, five-field UTC `cron`, and `envelope.content`
   - optional `envelope.report_to` uses `target: locator` or `target: managed_alias` with `key`; omit it to retain output only in run history
@@ -579,7 +593,6 @@ balda:
     enabled: true
     routes:
       release:
-        path: /webhook/release
         prompt_template: '{{ .RawBody }}'
         envelope:
           report_to:

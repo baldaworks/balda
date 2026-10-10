@@ -97,7 +97,10 @@ routes and manage persistent Backoffice routes. Config routes are read-only;
 managed routes can be created, edited, enabled, disabled and archived without
 restarting Balda. Each managed route has a generated secret shown only on
 creation or rotation. Both sources offer **Test POST** and retained request
-history. An optional **Report to** locator or managed alias receives only the
+history. Every config and managed route uses its immutable name as the slug at
+`<balda.http.base_path>/webhooks/<name>`; there is no per-route path setting.
+Changing the shared prefix changes every callback address after restart.
+An optional **Report to** locator or managed alias receives only the
 final output from each request's new private session. The shared HTTP listener
 always binds; `balda.webhooks.enabled` controls config routes, while managed
 routes have their own enabled state. See
@@ -107,12 +110,15 @@ routes have their own enabled state. See
 webhooks, and enabled chat transport callbacks. `balda.http.base_url` is its
 public origin, and `balda.http.base_path` is the shared prefix. With
 `base_url: https://lab.metalagman.dev` and `base_path: /balda`, Backoffice is
-`https://lab.metalagman.dev/balda/backoffice/`, a new `orders` webhook is
+`https://lab.metalagman.dev/balda/backoffice/`, any `orders` webhook is
 `https://lab.metalagman.dev/balda/webhooks/orders`, and Slack callbacks use
 `/balda/gateway/slack/events` and `/balda/gateway/slack/commands`. This is a URL
 example; the live asus ingress and callback registrations have not changed.
 See [shared HTTP configuration](docs/reference/configuration.md#shared-http-listener-and-public-urls)
-for the five complete URLs and migration details.
+for the five complete URLs and migration details. Without an explicit
+`balda.http.base_url`, Webhooks displays the canonical path and explains that
+no public origin is configured. Upgrades remove custom webhook paths: update
+external senders to the canonical URLs and remove `path` from config routes.
 
 Before storing protected MCP values or worker grants, configure the deployment
 [MCP credential key](docs/reference/configuration.md#protected-values-and-worker-grants)

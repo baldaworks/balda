@@ -169,11 +169,13 @@ policy in `webhookapp`, and composition in `webhookfx`.
 Backoffice Webhooks pages consume a local `WebhooksOperations` port through
 `webhookbackofficeapp`. `webhookmanagement` owns route validation, generated
 secret rotation, source reconciliation and versioned mutations;
-`webhookroutecmd` carries transport-neutral definitions. `state` owns route
-rows, secret verifiers, request-history queries and administrator authority/audit
-transactions. For each new HTTP request, `webhookapp` selects a current
-managed route through a small store port, then owns authentication, template
-rendering, deduplication and durable admission. `channel/webhook` remains an
+`webhookroutecmd` carries transport-neutral definitions plus the shared slug
+validation and canonical-path formatter; definitions contain no per-route path.
+`state` owns route rows, secret verifiers, request-history queries and
+administrator authority/audit transactions. For each new HTTP request,
+`webhookapp` selects the current config definition or looks up an active managed
+route by canonical slug through a small store port, then owns authentication,
+template rendering, deduplication and durable admission. `channel/webhook` remains an
 HTTP adapter; `webhookfx` binds it to policy and the shared state provider.
 
 Native worker OAuth stays in the same owners: `mcpmanage.Authorizations` keeps

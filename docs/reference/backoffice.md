@@ -122,7 +122,7 @@ the configured paths unchanged.
 For an illustrative asus configuration, set `balda.http.base_url` to
 `https://lab.metalagman.dev` and `balda.http.base_path` to `/balda`. The public
 URLs are `https://lab.metalagman.dev/balda/backoffice/`, its management page at
-`https://lab.metalagman.dev/balda/backoffice/webhooks`, a new `orders` callback
+`https://lab.metalagman.dev/balda/backoffice/webhooks`, an `orders` callback
 at `https://lab.metalagman.dev/balda/webhooks/orders`, and Slack callbacks at
 `https://lab.metalagman.dev/balda/gateway/slack/events` and
 `https://lab.metalagman.dev/balda/gateway/slack/commands`. These addresses are
@@ -782,7 +782,8 @@ and Backoffice, showing **Route name**, **Source**, **Webhook URL**, **Report to
 **State**. Config routes are read-only: edit their declarations in
 `.config/balda/config.yaml` and restart Balda. Backoffice-managed definitions
 and enabled state survive restart. The route name is fixed after creation and
-unique across both sources; an active path is also unique. A conflict fails
+unique across both sources. Names use `^[a-z0-9][a-z0-9_-]{0,63}$` for both
+config and managed definitions. A name conflict fails
 explicitly rather than letting one source silently override another.
 
 Use `/webhooks?new=1` within Backoffice to create a managed route. Enter a
@@ -791,17 +792,20 @@ one optional **Report to** value: a public `<channel_type>:<address_key>`
 locator or a managed alias such as `main_chat`. The external address or alias
 mapping may be added later. Without a recipient, output remains in request
 history and no report is sent. The read-only **Webhook URL** updates as the name
-is entered; a new `orders` route uses `<base_path>/webhooks/orders` for inbound
-POSTs. Existing managed and config-owned custom paths keep their stored value,
-and their details show the corresponding full URL. Each accepted request runs
-in a new private session, independent of the recipient. **Wait for report delivery before
-acknowledging the POST** requires a Report to value. Choose deduplication by
+is entered. Every route, whether config-owned or managed, existing or new,
+uses `<balda.http.base_path>/webhooks/<name>` for inbound POSTs. There is no
+editable or persisted per-route path. With explicit `balda.http.base_url`, the
+inventory and detail show the complete public URL; otherwise they show the
+canonical root-relative path and explain that the public origin is missing.
+The browser authentication origin does not fill in the missing webhook origin.
+Changing `base_path` changes every route address after restart. Each accepted
+request runs in a new private session, independent of the recipient.
+**Wait for report delivery before acknowledging the POST** requires a Report to value. Choose deduplication by
 request ID, header, or request body hash; header mode also needs a header name.
 The route starts enabled. Confirmed enable, disable, and delete affect new
 requests; work already admitted retains its selected definition and concrete
-recipient. Deletion archives the route and its history, while freeing its
-path. An archived name cannot be used for a new managed route. A removed
-config route is archived on the next restart and can reappear under its
+recipient. Deletion archives the route and its history. An archived name cannot
+be used for a new managed route. A removed config route is archived on the next restart and can reappear under its
 original config identity. Stale definition versions require reopening the editor.
 
 Creation generates a random secret for `X-Balda-Webhook-Secret`. Copy it from
@@ -829,9 +833,9 @@ admission; refresh the detail to see later execution or delivery results.
 The shared listener binds `balda.http.listen_addr` on every `balda start`, even
 with no enabled generic route. `balda.webhooks.enabled` controls
 config-route availability only; each managed route has its own enabled state.
-Disabled and unknown paths reject new external POSTs. Managed edits become
+Unknown, disabled and archived names reject new external POSTs. Managed edits become
 visible to new requests without restart; config edits require restart. A bind
-failure or active route-path conflict aborts startup. Generic webhook routes
+failure or a route-name conflict aborts startup. Generic webhook routes
 are separate from chat transport callbacks under `/gateway`; they keep their
 own authentication and admission rules.
 Route management uses the existing administrator browser session, CSRF and
@@ -839,11 +843,15 @@ same-origin checks, and transactional user, credential, MFA, session, and
 definition-version fences. Audit events omit secret values.
 
 The shared provider applies embedded Goose SQL migrations for SQLite and
-PostgreSQL before ingress. The migrations add route definitions and request
-history input/source columns without erasing older admissions. Back up the
+PostgreSQL before ingress. The slug upgrade removes the route path column and
+active-path index while preserving names, source, state, versions, prompt/report
+settings, secret verifiers and request input/output history. Existing custom URLs
+stop working; update senders to the canonical URL. Config declarations containing
+`path` fail startup even when disabled, identifying
+`balda.webhooks.routes.<name>.path`. Back up the
 selected database before upgrading; migration failure aborts startup. Restoring
-an older binary after managed routes or history have been written requires a
-matching pre-upgrade database backup. Backoffice owns the
+an older binary requires a matching pre-upgrade database backup; the removed
+custom paths cannot be reconstructed. Backoffice owns the
 `WebhooksOperations` consuming port and escaped views; `webhookbackofficeapp`
 adapts `webhookmanagement` and `webhookapp`. The `webhookroutecmd` contract
 holds neutral management values, `channel/webhook` handles HTTP transport,
