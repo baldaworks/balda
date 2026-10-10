@@ -163,7 +163,7 @@ func TestManagedLegacyPathConflictLeavesRowUnchanged(t *testing.T) {
 	if err := registry.AddBackoffice("browser", http.NotFoundHandler()); err != nil {
 		t.Fatal(err)
 	}
-	if err := registry.AddGateway("slack legacy alias", "/old/slack", http.NotFoundHandler()); err != nil {
+	if err := registry.AddGateway("slack events", "/balda/gateway/slack/events", http.NotFoundHandler()); err != nil {
 		t.Fatal(err)
 	}
 	if err := registry.AddWebhook("config webhook legacy", "/old/config", http.NotFoundHandler()); err != nil {
@@ -172,7 +172,6 @@ func TestManagedLegacyPathConflictLeavesRowUnchanged(t *testing.T) {
 	for _, test := range []struct{ name, path, owner string }{
 		{"browser", "/balda/backoffice/hidden", "browser"},
 		{"gateway", "/balda/gateway/slack/events", "gateway"},
-		{"gateway alias", "/old/slack", "slack legacy alias"},
 		{"config webhook", "/old/config", "config webhook legacy"},
 	} {
 		t.Run(test.name, func(t *testing.T) {

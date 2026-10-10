@@ -150,39 +150,25 @@ func TestHTTPContributionRoutesCurrentManagedAndLegacyPaths(t *testing.T) {
 }
 
 func TestHTTPContributionRejectsStoredPathConflict(t *testing.T) {
-	for _, test := range []struct {
-		name, path, competingOwner string
-		addCompeting               bool
-	}{
-		{"reserved gateway subtree", "/balda/gateway/slack/events", "gateway", false},
-		{"exact gateway alias", "/custom", "slack legacy", true},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			routes := &contributionRoutes{records: map[string]state.WebhookRouteRecord{
-				"legacy": {Name: "legacy", Source: state.WebhookRouteSourceManaged, Path: test.path, Enabled: true},
-			}}
-			ingress, err := webhookapp.NewIngress(nil, routes, &contributionAcceptor{})
-			if err != nil {
-				t.Fatal(err)
-			}
-			receiver, err := webhook.NewReceiver(webhook.Config{}, ingress, zerolog.Nop())
-			if err != nil {
-				t.Fatal(err)
-			}
-			registry, err := httpfx.NewRegistry("/balda")
-			if err != nil {
-				t.Fatal(err)
-			}
-			if test.addCompeting {
-				if err := registry.AddGateway(test.competingOwner, test.path, http.NotFoundHandler()); err != nil {
-					t.Fatal(err)
-				}
-			}
-			err = NewHTTPContribution(webhook.Config{}, receiver, ingress, routes)(t.Context(), registry)
-			if err == nil || !strings.Contains(err.Error(), test.path) || !strings.Contains(err.Error(), "legacy") || !strings.Contains(err.Error(), test.competingOwner) {
-				t.Errorf("conflict = %v, want path and owners", err)
-			}
-		})
+	const path = "/balda/gateway/slack/events"
+	routes := &contributionRoutes{records: map[string]state.WebhookRouteRecord{
+		"legacy": {Name: "legacy", Source: state.WebhookRouteSourceManaged, Path: path, Enabled: true},
+	}}
+	ingress, err := webhookapp.NewIngress(nil, routes, &contributionAcceptor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	receiver, err := webhook.NewReceiver(webhook.Config{}, ingress, zerolog.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry, err := httpfx.NewRegistry("/balda")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = NewHTTPContribution(webhook.Config{}, receiver, ingress, routes)(t.Context(), registry)
+	if err == nil || !strings.Contains(err.Error(), path) || !strings.Contains(err.Error(), "legacy") || !strings.Contains(err.Error(), "gateway") {
+		t.Errorf("conflict = %v, want path and owners", err)
 	}
 }
 

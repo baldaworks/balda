@@ -43,38 +43,35 @@ func TestGatewayCallbackKeepsTransportDeadlines(t *testing.T) {
 	}
 }
 
-func TestAddGatewayCallbacksPreservesCanonicalAndLegacyPaths(t *testing.T) {
+func TestAddGatewayCallbacksRoutesCanonicalPath(t *testing.T) {
 	registry, err := NewRegistry("/balda")
 	if err != nil {
 		t.Fatal(err)
 	}
 	callback := GatewayCallback{
 		Owner: "slack events", Transport: "slack", Endpoint: "events",
-		LegacyPath: "/slack/agent/events",
-		Handler:    http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusAccepted) }),
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusAccepted) }),
 	}
 	if err := registry.AddGatewayCallbacks([]GatewayCallback{callback}); err != nil {
 		t.Fatal(err)
 	}
-	for _, routePath := range []string{"/balda/gateway/slack/events", "/slack/agent/events"} {
-		recorder := httptest.NewRecorder()
-		registry.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, routePath, nil))
-		if recorder.Code != http.StatusAccepted {
-			t.Errorf("%s: status = %d, want 202", routePath, recorder.Code)
-		}
+	recorder := httptest.NewRecorder()
+	registry.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/balda/gateway/slack/events", nil))
+	if recorder.Code != http.StatusAccepted {
+		t.Errorf("status = %d, want 202", recorder.Code)
 	}
 }
 
-func TestAddGatewayCallbacksDetectsAliasConflicts(t *testing.T) {
+func TestAddGatewayCallbacksDetectsCanonicalConflicts(t *testing.T) {
 	registry, err := NewRegistry("/balda")
 	if err != nil {
 		t.Fatal(err)
 	}
 	callbacks := []GatewayCallback{
-		{Owner: "slack events", Transport: "slack", Endpoint: "events", LegacyPath: "/shared", Handler: http.NotFoundHandler()},
-		{Owner: "zulip", Transport: "zulip", Endpoint: "webhook", LegacyPath: "/shared", Handler: http.NotFoundHandler()},
+		{Owner: "slack events", Transport: "slack", Endpoint: "events", Handler: http.NotFoundHandler()},
+		{Owner: "other slack events", Transport: "slack", Endpoint: "events", Handler: http.NotFoundHandler()},
 	}
-	if err := registry.AddGatewayCallbacks(callbacks); err == nil || !strings.Contains(err.Error(), "/shared") || !strings.Contains(err.Error(), "slack events") || !strings.Contains(err.Error(), "zulip") {
+	if err := registry.AddGatewayCallbacks(callbacks); err == nil || !strings.Contains(err.Error(), "/balda/gateway/slack/events") || !strings.Contains(err.Error(), "slack events") || !strings.Contains(err.Error(), "other slack events") {
 		t.Fatalf("AddGatewayCallbacks() error = %v, want named conflict", err)
 	}
 }

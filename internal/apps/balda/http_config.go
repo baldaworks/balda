@@ -132,21 +132,14 @@ func resolveTelegramWebhookConfig(config tgbotkit.Config, shared ResolvedHTTPCon
 		return config, nil
 	}
 	canonical := shared.GatewayPath("telegram", "webhook")
-	legacy := strings.TrimSpace(config.Webhook.Path)
-	if legacy == "" {
-		legacy = "/telegram/webhook"
-	}
-	if !strings.HasPrefix(legacy, "/") {
-		legacy = "/" + legacy
-	}
 	callback := strings.TrimSpace(config.Webhook.URL)
 	if callback == "" {
 		config.Webhook.URL = shared.PublicURL(canonical)
 		return config, nil
 	}
 	parsed, err := url.Parse(callback)
-	if err != nil || parsed.Host == "" || (parsed.Scheme != httpsScheme && parsed.Scheme != "http") || (parsed.Path != canonical && parsed.Path != legacy) {
-		return tgbotkit.Config{}, fmt.Errorf("balda.telegram.webhook.url path must match a mounted callback path %q or %q", canonical, legacy)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != httpsScheme && parsed.Scheme != "http") || parsed.Path != canonical {
+		return tgbotkit.Config{}, fmt.Errorf("balda.telegram.webhook.url path must match the mounted callback path %q", canonical)
 	}
 	config.Webhook.URL = callback
 	return config, nil

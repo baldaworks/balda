@@ -38,8 +38,6 @@ func TestGatewayCallbacksRouteSignedEventsAndCommands(t *testing.T) {
 		{path: "/balda/gateway/slack/events", body: `{"type":"url_verification","challenge":"ok"}`, secret: "wrong", want: http.StatusUnauthorized},
 		{path: "/balda/gateway/slack/commands", body: "command=%2Fbalda&text=unknown&team_id=T123&channel_id=C456&user_id=U789", secret: "secret", want: http.StatusOK},
 		{path: "/balda/gateway/slack/commands", body: "command=%2Fbalda&text=unknown&team_id=T123&channel_id=C456&user_id=U789", secret: "wrong", want: http.StatusUnauthorized},
-		{path: "/slack/agent/events", body: `{"type":"url_verification","challenge":"ok"}`, secret: "secret", want: http.StatusOK},
-		{path: "/slack/commands", body: "command=%2Fbalda&text=unknown&team_id=T123&channel_id=C456&user_id=U789", secret: "secret", want: http.StatusOK},
 	} {
 		recorder := httptest.NewRecorder()
 		request := httptest.NewRequest(http.MethodPost, test.path, strings.NewReader(test.body))

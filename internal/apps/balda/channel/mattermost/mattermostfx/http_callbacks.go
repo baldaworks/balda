@@ -10,13 +10,13 @@ import (
 // NewGatewayCallbackProvider adapts the checked Mattermost command receiver.
 func NewGatewayCallbackProvider(server *mattermost.CommandServer) httpfx.GatewayCallbackProvider {
 	return func(ctx context.Context) ([]httpfx.GatewayCallback, error) {
-		handler, legacyPath, err := server.HTTPCallback(ctx)
+		handler, _, err := server.HTTPCallback(ctx)
 		if err != nil || handler == nil {
 			return nil, err
 		}
 		return []httpfx.GatewayCallback{{
 			Owner: "mattermost commands", Transport: "mattermost", Endpoint: "commands",
-			LegacyPath: legacyPath, Handler: handler, ReadTimeout: mattermost.HTTPCallbackReadTimeout, WriteTimeout: mattermost.HTTPCallbackWriteTimeout,
+			Handler: handler, ReadTimeout: mattermost.HTTPCallbackReadTimeout, WriteTimeout: mattermost.HTTPCallbackWriteTimeout,
 		}}, nil
 	}
 }

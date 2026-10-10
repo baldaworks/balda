@@ -100,7 +100,7 @@ func TestRegistryRejectsConflictingRoutes(t *testing.T) {
 			owners: []string{"config route", "managed route"}, path: "/orders",
 		},
 		{
-			name: "gateway alias under webhooks",
+			name: "gateway under webhooks",
 			first: func(r *Registry) error {
 				return r.SetWebhookLookup("webhook area", http.NotFoundHandler(), func(context.Context, string) (bool, error) { return false, nil })
 			},
@@ -138,7 +138,7 @@ func TestRegistryReportsNonWebhookOwnersForManagement(t *testing.T) {
 	if err := registry.AddBackoffice("browser", http.NotFoundHandler()); err != nil {
 		t.Fatal(err)
 	}
-	if err := registry.AddGateway("slack legacy alias", "/events/slack", http.NotFoundHandler()); err != nil {
+	if err := registry.AddGateway("slack events", "/balda/gateway/slack/events", http.NotFoundHandler()); err != nil {
 		t.Fatal(err)
 	}
 	if err := registry.AddWebhook("config webhook", "/legacy/orders", http.NotFoundHandler()); err != nil {
@@ -150,7 +150,7 @@ func TestRegistryReportsNonWebhookOwnersForManagement(t *testing.T) {
 	for _, test := range []struct{ path, owner string }{
 		{"/balda/backoffice/webhooks", "browser"},
 		{"/balda/gateway/unknown", "gateway"},
-		{"/events/slack", "slack legacy alias"},
+		{"/balda/gateway/slack/events", "slack events"},
 		{"/legacy/orders", "config webhook"},
 		{"/legacy/own", ""},
 		{"/balda/webhooks/orders", ""},

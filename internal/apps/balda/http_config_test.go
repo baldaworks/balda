@@ -22,10 +22,10 @@ func TestTelegramWebhookURLUsesMountedSharedRoute(t *testing.T) {
 	if want := "https://lab.metalagman.dev/balda/gateway/telegram/webhook"; resolved.Webhook.URL != want {
 		t.Fatalf("webhook URL = %q, want %q", resolved.Webhook.URL, want)
 	}
-	config.Webhook.URL = "https://legacy.example/telegram/old"
+	config.Webhook.URL = "https://external.example/balda/gateway/telegram/webhook"
 	resolved, err = resolveTelegramWebhookConfig(config, shared)
 	if err != nil || resolved.Webhook.URL != config.Webhook.URL {
-		t.Fatalf("legacy URL = %q, error = %v", resolved.Webhook.URL, err)
+		t.Fatalf("explicit URL = %q, error = %v", resolved.Webhook.URL, err)
 	}
 	config.Webhook.URL = "https://legacy.example/unmounted"
 	if _, err := resolveTelegramWebhookConfig(config, shared); err == nil || !strings.Contains(err.Error(), "balda.telegram.webhook.url") {

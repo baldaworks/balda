@@ -57,7 +57,7 @@ func (r *Registry) AddBackoffice(owner string, handler http.Handler) error {
 	return nil
 }
 
-// AddGateway registers one exact callback path, including an existing alias.
+// AddGateway registers one exact callback path.
 func (r *Registry) AddGateway(owner, routePath string, handler http.Handler) error {
 	if err := validateContribution(owner, handler); err != nil {
 		return err
