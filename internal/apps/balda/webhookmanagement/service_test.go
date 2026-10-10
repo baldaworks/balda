@@ -207,3 +207,36 @@ func TestConfigOwnedRouteIsReadOnly(t *testing.T) {
 		t.Fatalf("config route mutated %d times", len(store.mutations))
 	}
 }
+
+func TestManagedNameIsImmutable(t *testing.T) {
+	store := &memoryStore{routes: make(map[string]webhookroutecmd.Record)}
+	service := New(store)
+	authority := testAuthority()
+	created, err := service.Create(t.Context(), webhookroutecmd.Create{Definition: testDefinition(), Authority: authority})
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition := testDefinition()
+	definition.Name = "renamed"
+	_, err = service.Update(t.Context(), webhookroutecmd.Update{Name: "events", ExpectedVersion: created.Item.Version, Definition: definition, Authority: authority})
+	if !errors.Is(err, webhookroutecmd.ErrInvalid) {
+		t.Fatalf("rename = %v, want invalid", err)
+	}
+	if len(store.mutations) != 1 || store.routes["events"].Version != 1 {
+		t.Fatal("rename mutated original route")
+	}
+}
+
+func TestDisabledConfigRequiresValidDefinition(t *testing.T) {
+	for _, route := range []webhookroutecmd.ConfiguredRoute{
+		{Name: "invalid/slug", PromptTemplate: "{{.RawBody}}"},
+		{Name: "orders", PromptTemplate: "{{"},
+		{Name: "orders"},
+	} {
+		store := &memoryStore{routes: make(map[string]webhookroutecmd.Record)}
+		err := New(store).ReconcileConfig(t.Context(), []webhookroutecmd.ConfiguredRoute{route})
+		if !errors.Is(err, webhookroutecmd.ErrInvalid) || len(store.reconciled) != 0 {
+			t.Fatalf("invalid disabled config = %v, reconciled=%v", err, store.reconciled)
+		}
+	}
+}

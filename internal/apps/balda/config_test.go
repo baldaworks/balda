@@ -116,23 +116,18 @@ func TestAttachmentsConfigLimits(t *testing.T) {
 
 func TestWebhookConfigSlugIdentity(t *testing.T) {
 	for _, tt := range []struct {
-		name         string
-		key          string
-		path         any
-		declaresPath bool
-		enabled      bool
-		wantErr      string
+		name    string
+		key     string
+		enabled bool
+		wantErr string
 	}{
-		{name: "path-free route", key: "orders"},
-		{name: "invalid slug", key: "orders/events", wantErr: "orders/events"},
-		{name: "enabled explicit path", key: "orders", path: "/custom", declaresPath: true, enabled: true, wantErr: "balda.webhooks.routes.orders.path"},
-		{name: "disabled empty path", key: "orders", path: "", declaresPath: true, wantErr: "balda.webhooks.routes.orders.path"},
+		{name: "disabled path-free route", key: "orders"},
+		{name: "enabled path-free route", key: "orders", enabled: true},
+		{name: "disabled invalid slug", key: "orders/events", wantErr: "orders/events"},
+		{name: "enabled invalid slug", key: "orders/events", enabled: true, wantErr: "orders/events"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			route := map[string]any{"prompt_template": "{{.RawBody}}"}
-			if tt.declaresPath {
-				route["path"] = tt.path
-			}
 			var decoded struct {
 				Balda BaldaConfig `mapstructure:"balda"`
 			}
