@@ -20,7 +20,6 @@ import (
 	"github.com/google/uuid"
 )
 
-var routeName = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 var aliasName = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
 
 // Store is the durable route and administrator-authority port used by policy.
@@ -301,7 +300,7 @@ func project(r webhookroutecmd.Record) webhookroutecmd.Item {
 
 func managedRecord(d webhookroutecmd.Definition, routePath string, derived bool) (webhookroutecmd.Record, error) {
 	name := strings.TrimSpace(d.Name)
-	if name != d.Name || !routeName.MatchString(name) {
+	if name != d.Name || !webhookroutecmd.ValidName(name) {
 		return webhookroutecmd.Record{}, webhookroutecmd.ErrInvalid
 	}
 	if derived && d.Path != "" && d.Path != routePath {
