@@ -23,7 +23,9 @@ func checkWebhookSlugMigration(t *testing.T, db *sql.DB, migrations *goose.Provi
 	}{
 		{"managed", "managed", strings.Repeat("a", 64), 1, 0},
 		{"disabled", "managed", strings.Repeat("b", 64), 0, 0},
+		{"configured", "config", "", 1, 0},
 		{"archived", "config", "", 0, 1},
+		{"archived-managed", "managed", strings.Repeat("c", 64), 0, 1},
 	} {
 		_, err := db.ExecContext(t.Context(), bind(`INSERT INTO balda_webhook_routes (`+columns+`, path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`), row.name, row.source, "prompt", "alias", "main", 1, "header", "X-Request-ID", "header", "X-Token", row.verifier, row.enabled, row.deleted, 7, "2026-10-09T12:00:00Z", "2026-10-10T12:00:00Z", "/custom/"+row.name)
 		if err != nil {
@@ -71,6 +73,12 @@ func checkWebhookSlugMigration(t *testing.T, db *sql.DB, migrations *goose.Provi
 	}
 	if indexes != 0 {
 		t.Fatalf("path indexes = %d, want 0", indexes)
+	}
+	if _, err := migrations.Down(t.Context()); err == nil {
+		t.Fatal("downgrade unexpectedly reconstructed discarded callback paths")
+	}
+	if after := webhookMigrationRows(t, db, `SELECT `+columns+` FROM balda_webhook_routes ORDER BY name`); !reflect.DeepEqual(before, after) {
+		t.Fatal("refused downgrade changed route metadata")
 	}
 }
 
