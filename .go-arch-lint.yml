@@ -383,6 +383,12 @@ components:
     in:
       - internal/apps/balda/webhookfx
 
+  # Shared HTTP routing and socket lifecycle are composition only; the package
+  # receives secured area handlers through standard-library interfaces.
+  http_composition:
+    in:
+      - internal/apps/balda/httpfx
+
   # Product state persistence, read models, and durable outbox storage.
   storage:
     in:
@@ -964,6 +970,11 @@ deps:
       - webhook_wiring
     anyVendorDeps: true
 
+  http_composition:
+    mayDependOn:
+      - http_composition
+    anyVendorDeps: false
+
   storage:
     mayDependOn:
       - alias_contracts
@@ -1032,6 +1043,7 @@ deps:
       - mattermost_wiring
       - webhook_transport
       - webhook_wiring
+      - http_composition
       - storage
       - infrastructure
       - composition_root
