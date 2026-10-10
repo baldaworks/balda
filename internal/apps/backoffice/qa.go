@@ -294,7 +294,7 @@ func qaWebhooks() webui.Page {
 func qaWebhookEditor(item webhookroutecmd.Item, create bool) webui.Page {
 	p := qaWebhooks()
 	p.Webhooks = &webui.WebhooksView{Editor: webui.ProjectWebhookEditor(item, create)}
-	p.Webhooks.Editor.Row = qaWebhookRow(item)
+	p.Webhooks.Editor.Row.URL = qaWebhookRow(item).URL
 	p.Webhooks.Editor.URLPrefix = webhookroutecmd.CanonicalPath("", "")
 	if create {
 		p.Title = "Add webhook · QA"
