@@ -1,14 +1,56 @@
 package balda
 
 import (
+	"context"
+	"net/http"
 	"strings"
 
 	"github.com/baldaworks/balda/internal/apps/backoffice"
+	"github.com/baldaworks/balda/internal/apps/balda/catalogapp"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpbackofficeapp"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpfx"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 )
 
+func backofficeSharedHandler(ctx context.Context, runtime *backoffice.Runtime, cfg BaldaConfig, mcp *mcpbackofficeapp.Operations) (http.Handler, error) {
+	server, err := cfg.ResolveSharedBackofficeServer()
+	if err != nil {
+		return nil, err
+	}
+	services := backoffice.HandlerServices{}
+	if mcp != nil {
+		services.MCP, services.MCPAuthorizations = mcp, mcp
+	}
+	return runtime.Handler(ctx, server, services)
+}
+
+func newSharedBackofficeMCP(cfg BaldaConfig, grants *mcpmanage.Grants, definitions *mcpmanage.Definitions, catalog *catalogapp.Runtime) (*mcpbackofficeapp.Operations, *mcpmanage.Authorizations, error) {
+	server, err := cfg.ResolveSharedBackofficeServer()
+	if err != nil {
+		return nil, nil, err
+	}
+	callback, err := mcpfx.MCPCallbackURL(server.PublicURL, server.BasePath)
+	if err != nil {
+		return nil, nil, err
+	}
+	authorizations, err := mcpmanage.NewAuthorizations(grants, callback, definitions)
+	if err != nil {
+		return nil, nil, err
+	}
+	operations := mcpbackofficeapp.New(definitions, catalog)
+	if err := operations.ConfigureAuthorizations(authorizations); err != nil {
+		authorizations.Close()
+		return nil, nil, err
+	}
+	return operations, authorizations, nil
+}
+
 func backofficeRuntimeConfig(cfg BaldaConfig, database state.DatabaseConfig) (backoffice.ResolvedConfig, error) {
-	server, err := cfg.Backoffice.Resolve()
+	if _, err := cfg.ResolveHTTP(); err != nil {
+		return backoffice.ResolvedConfig{}, err
+	}
+	server, err := cfg.ResolveSharedBackofficeServer()
 	if err != nil {
 		return backoffice.ResolvedConfig{}, err
 	}

@@ -52,6 +52,38 @@ func newTestCommandServer(recorder *commandRecorder) *CommandServer {
 	return server
 }
 
+func TestCommandHTTPCallbackChecksIdentityAndToken(t *testing.T) {
+	server := newTestCommandServer(&commandRecorder{})
+	server.client = newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(User{ID: "bot-1", Username: "balda"})
+	}))
+	server.config.BotUserID = "bot-1"
+	server.config.BotUsername = "balda"
+	handler, legacyPath, err := server.HTTPCallback(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if legacyPath != "/mattermost/commands" {
+		t.Fatalf("legacy path = %q", legacyPath)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/balda/gateway/mattermost/commands", strings.NewReader(url.Values{
+		"token": {"wrong-token"}, "command": {"/locator"}, "channel_id": {testChannelID}, "user_id": {testUserID},
+	}.Encode()))
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", recorder.Code)
+	}
+}
+
+func TestCommandHTTPCallbackDisabled(t *testing.T) {
+	server := NewCommandServer(CommandServerParams{})
+	handler, legacyPath, err := server.HTTPCallback(context.Background())
+	if err != nil || handler != nil || legacyPath != "" {
+		t.Fatalf("HTTPCallback() = (%v, %q, %v), want no route", handler, legacyPath, err)
+	}
+}
+
 func commandRequest(form url.Values) (*http.Request, *httptest.ResponseRecorder) {
 	request := httptest.NewRequest(http.MethodPost, "/mattermost/commands", strings.NewReader(form.Encode()))
 	return request, httptest.NewRecorder()

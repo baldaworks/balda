@@ -78,7 +78,7 @@ func (a *httpApp) webhooksView(r *http.Request, p security.Principal) (webui.Pag
 			return page, err
 		}
 		page.Title = item.Definition.Name + " · Webhooks · Balda"
-		page.Webhooks = &webui.WebhooksView{Editor: webui.ProjectWebhookEditor(item, false)}
+		page.Webhooks = &webui.WebhooksView{Editor: a.projectWebhookEditor(item, false)}
 		page.Webhooks.Editor.TestRequestKey = uuid.NewString()
 		if r.Method == http.MethodGet {
 			beforeAt, beforeJobID, err := webhookHistoryCursor(r.URL.Query())
@@ -117,7 +117,7 @@ func (a *httpApp) webhooksView(r *http.Request, p security.Principal) (webui.Pag
 	}
 	if r.Method == http.MethodPost || r.URL.Query().Get("new") == "1" {
 		page.Title = "Add webhook · Balda"
-		page.Webhooks = &webui.WebhooksView{Editor: webui.ProjectWebhookEditor(webhookroutecmd.Item{}, true)}
+		page.Webhooks = &webui.WebhooksView{Editor: a.projectWebhookEditor(webhookroutecmd.Item{}, true)}
 		return page, nil
 	}
 	items, err := a.webhooks.Inventory(r.Context(), a.webhookAuthority(p))
@@ -126,9 +126,25 @@ func (a *httpApp) webhooksView(r *http.Request, p security.Principal) (webui.Pag
 	}
 	page.Webhooks = &webui.WebhooksView{}
 	for _, item := range items {
-		page.Webhooks.Rows = append(page.Webhooks.Rows, webui.ProjectWebhookRow(item))
+		row := webui.ProjectWebhookRow(item)
+		row.URL = a.webhookURL(item.Definition.Path)
+		page.Webhooks.Rows = append(page.Webhooks.Rows, row)
 	}
 	return page, nil
+}
+
+func (a *httpApp) webhookURL(routePath string) string {
+	if routePath == "" {
+		return ""
+	}
+	return a.publicOrigin + routePath
+}
+
+func (a *httpApp) projectWebhookEditor(item webhookroutecmd.Item, create bool) *webui.WebhookEditor {
+	editor := webui.ProjectWebhookEditor(item, create)
+	editor.Row.URL = a.webhookURL(item.Definition.Path)
+	editor.URLPrefix = a.webhookURLPrefix
+	return editor
 }
 
 func webhookHistoryCursor(query url.Values) (time.Time, string, error) {
@@ -243,8 +259,9 @@ func (a *httpApp) webhookCreate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	definition := webhookDefinition(form, form.Get("name"))
 	result, err := a.webhooks.Create(r.Context(), webhookroutecmd.Create{
-		Definition: webhookDefinition(form, form.Get("name")), Authority: authority})
+		Definition: definition, Authority: authority})
 	if err != nil {
 		a.webhookError(w, r, page, err)
 		return
@@ -263,8 +280,9 @@ func (a *httpApp) webhookUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := r.PathValue("webhook_name")
+	definition := webhookDefinition(form, name)
 	item, err := a.webhooks.Update(r.Context(), webhookroutecmd.Update{
-		Name: name, ExpectedVersion: version, Definition: webhookDefinition(form, name), Authority: authority})
+		Name: name, ExpectedVersion: version, Definition: definition, Authority: authority})
 	a.webhookResult(w, r, page, item, err, false)
 }
 
@@ -328,7 +346,7 @@ func webhookConfirmedVersion(form url.Values) (uint64, error) {
 
 func (a *httpApp) webhookSecretResult(w http.ResponseWriter, r *http.Request, page webui.Page, result webhookroutecmd.SecretResult) {
 	page.Title = result.Item.Definition.Name + " · Webhooks · Balda"
-	page.Webhooks = &webui.WebhooksView{Editor: webui.ProjectWebhookEditor(result.Item, false)}
+	page.Webhooks = &webui.WebhooksView{Editor: a.projectWebhookEditor(result.Item, false)}
 	page.Webhooks.Editor.Secret = result.Secret
 	// The secret exists only in this POST response. A subsequent GET uses Get,
 	// whose Item cannot carry a secret.
@@ -364,13 +382,13 @@ func (a *httpApp) webhookError(w http.ResponseWriter, r *http.Request, page webu
 func webhookOperationFailure(err error) (int, string) {
 	switch {
 	case errors.Is(err, webhookroutecmd.ErrInvalid):
-		return http.StatusBadRequest, "Review the route name, path, prompt template, Report to and deduplication fields."
+		return http.StatusBadRequest, "Review the route name, prompt template, Report to and deduplication fields."
 	case errors.Is(err, webhookroutecmd.ErrForbidden):
 		return http.StatusForbidden, "This route is read-only or your administrator authority changed."
 	case errors.Is(err, webhookroutecmd.ErrNotFound):
 		return http.StatusNotFound, "This webhook route is no longer available. Reopen Webhooks."
 	case errors.Is(err, webhookroutecmd.ErrConflict):
-		return http.StatusConflict, "The route name or path is in use, or this route changed. Reopen Webhooks before trying again."
+		return http.StatusConflict, "The route name or Webhook URL is in use, or this route changed. Reopen Webhooks before trying again."
 	default:
 		return http.StatusServiceUnavailable, "The operation could not be completed. Reopen Webhooks and check its current state before retrying."
 	}

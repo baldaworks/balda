@@ -62,6 +62,12 @@ const (
 	commandUsageTemplate = "Usage: /%s"
 )
 
+// HTTPCallbackReadTimeout preserves the standalone Mattermost request read limit.
+const HTTPCallbackReadTimeout = commandServerReadTimeout
+
+// HTTPCallbackWriteTimeout preserves the standalone Mattermost response write limit.
+const HTTPCallbackWriteTimeout = commandServerWriteTimeout
+
 // CommandServerConfig holds the HTTP slash-command receiver settings.
 type CommandServerConfig struct {
 	// Enabled turns the receiver on. It is independent from the websocket
@@ -130,28 +136,40 @@ func (s *CommandServer) Start(ctx context.Context) error { return s.onStart(ctx)
 // Stop shuts the receiver down.
 func (s *CommandServer) Stop(ctx context.Context) error { return s.onStop(ctx) }
 
+// HTTPCallback validates the enabled receiver and exposes its checked handler.
+func (s *CommandServer) HTTPCallback(ctx context.Context) (http.Handler, string, error) {
+	if !s.config.Enabled {
+		return nil, "", nil
+	}
+	if s.processor == nil {
+		return nil, "", fmt.Errorf("mattermost slash commands require an inbound processor")
+	}
+	if s.commands == nil {
+		return nil, "", fmt.Errorf("mattermost slash commands require a command registry")
+	}
+	path, err := normalizeCommandPath(s.config.Path)
+	if err != nil {
+		return nil, "", err
+	}
+	if strings.TrimSpace(s.config.Token) == "" {
+		return nil, "", fmt.Errorf("mattermost slash command token is required when slash commands are enabled")
+	}
+	if s.client == nil {
+		return nil, "", fmt.Errorf("mattermost slash commands require a client")
+	}
+	if err := s.client.ValidateIdentity(ctx, s.config.BotUserID, s.config.BotUsername); err != nil {
+		return nil, "", err
+	}
+	return http.HandlerFunc(s.handleCommand), path, nil
+}
+
 func (s *CommandServer) onStart(ctx context.Context) error {
 	if !s.config.Enabled {
 		s.logger.Debug().Msg("mattermost slash commands disabled; skipping command server start")
 		return nil
 	}
-	if s.processor == nil {
-		return fmt.Errorf("mattermost slash commands require an inbound processor")
-	}
-	if s.commands == nil {
-		return fmt.Errorf("mattermost slash commands require a command registry")
-	}
-	path, err := normalizeCommandPath(s.config.Path)
+	handler, path, err := s.HTTPCallback(ctx)
 	if err != nil {
-		return err
-	}
-	if strings.TrimSpace(s.config.Token) == "" {
-		return fmt.Errorf("mattermost slash command token is required when slash commands are enabled")
-	}
-	if s.client == nil {
-		return fmt.Errorf("mattermost slash commands require a client")
-	}
-	if err := s.client.ValidateIdentity(ctx, s.config.BotUserID, s.config.BotUsername); err != nil {
 		return err
 	}
 	listenAddr := strings.TrimSpace(s.config.ListenAddr)
@@ -159,7 +177,7 @@ func (s *CommandServer) onStart(ctx context.Context) error {
 		listenAddr = ":8093"
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc(path, s.handleCommand)
+	mux.Handle(path, handler)
 	server := &http.Server{
 		Addr:              listenAddr,
 		Handler:           mux,

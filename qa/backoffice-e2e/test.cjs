@@ -126,7 +126,7 @@ async function checkWebhooks(browser, baseURL, viewport) {
 
   await page.goto(`${baseURL}/qa/ui/webhooks`);
   await activeWebhooks('inventory');
-  for (const label of ['Route name', 'Source', 'Path', 'Report to', 'State']) {
+  for (const label of ['Route name', 'Source', 'Webhook URL', 'Report to', 'State']) {
     await page.getByRole('columnheader', { name: label, exact: true }).waitFor();
   }
   const inventoryTable = page.getByRole('region', { name: /Webhook routes table/ });
@@ -135,9 +135,10 @@ async function checkWebhooks(browser, baseURL, viewport) {
   if (viewport.width === 390) {
     assert.ok(await inventoryTable.evaluate(element => element.scrollWidth > element.clientWidth), 'mobile inventory table scrolls within its region');
     const configuredRow = inventoryTable.locator('tbody tr').filter({ hasText: 'deployed' });
-    for (const cell of [configuredRow.locator('td').nth(1), configuredRow.locator('td').nth(2)]) {
-      assert.equal(await cell.evaluate(element => getComputedStyle(element).whiteSpace), 'nowrap', 'source and path stay intact inside the scrollable table');
-    }
+    assert.equal(await configuredRow.locator('td').nth(1).evaluate(element => getComputedStyle(element).whiteSpace),
+      'nowrap', 'source stays intact inside the scrollable table');
+    assert.equal(await configuredRow.locator('td').nth(2).evaluate(element => getComputedStyle(element).whiteSpace),
+      'normal', 'long webhook URL may wrap inside its cell');
   }
   await checkLayout('inventory');
   if (viewport.width === 390) {
@@ -172,13 +173,14 @@ async function checkWebhooks(browser, baseURL, viewport) {
   await page.getByRole('heading', { name: 'New webhook route' }).waitFor();
   await activeWebhooks('create after HTMX');
   const fieldLabels = await page.locator('label.form-label').allTextContents();
-  for (const label of ['Route name', 'Path', 'Report to (optional)', 'Prompt template', 'Deduplicate by']) {
+  for (const label of ['Route name', 'Webhook URL', 'Report to (optional)', 'Prompt template', 'Deduplicate by']) {
     assert.ok(fieldLabels.includes(label), `create form exposes ${label}`);
   }
   await page.getByLabel('Route name').focus();
   await page.keyboard.press('Tab');
-  assert.equal(await page.getByLabel('Path').evaluate(element => element === document.activeElement), true, 'Tab follows route name with path');
-  const inputAppearance = await page.getByLabel('Path').evaluate(element => ({
+  assert.equal(await page.getByLabel('Webhook URL').evaluate(element => element === document.activeElement), true, 'Tab follows route name with URL');
+  assert.equal(await page.getByLabel('Webhook URL').isEditable(), false, 'callback URL is derived');
+  const inputAppearance = await page.getByLabel('Route name').evaluate(element => ({
     text: getComputedStyle(element).color,
     placeholder: getComputedStyle(element, '::placeholder').color,
     focus: getComputedStyle(element).boxShadow,

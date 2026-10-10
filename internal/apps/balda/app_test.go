@@ -141,7 +141,7 @@ func TestValidateRuntimeConfigLint_AllowsAlwaysOnRuntimeConfig(t *testing.T) {
 		},
 		Events: baldaexecution.EventStreamConfig{Stream: "BALDA_EVENTS"},
 		DLQ:    baldaexecution.DLQConfig{Stream: "BALDA_DLQ"},
-	}, webhook.Config{}); err != nil {
+	}, "127.0.0.1:8095", webhook.Config{}); err != nil {
 		t.Fatalf("validateExecutionConfigLint() error = %v, want nil", err)
 	}
 }
@@ -156,7 +156,7 @@ func TestValidateRuntimeConfigLint_RejectsInvalidAndDuplicateRuntimeNames(t *tes
 		},
 		Events: baldaexecution.EventStreamConfig{Stream: "BALDA_EVENTS"},
 		DLQ:    baldaexecution.DLQConfig{Stream: "BALDA_EVENTS"},
-	}, webhook.Config{})
+	}, "127.0.0.1:8095", webhook.Config{})
 	if err == nil {
 		t.Fatal("validateExecutionConfigLint() error = nil, want non-nil")
 	}
@@ -182,9 +182,9 @@ func TestValidateRuntimeConfigLint_RejectsPublicWebhookWithoutRouteAuth(t *testi
 		},
 		Events: baldaexecution.EventStreamConfig{Stream: "BALDA_EVENTS"},
 		DLQ:    baldaexecution.DLQConfig{Stream: "BALDA_DLQ"},
-	}, webhook.Config{
+	}, "0.0.0.0:8095", webhook.Config{
 		Enabled:    true,
-		ListenAddr: "0.0.0.0:8090",
+		ListenAddr: "127.0.0.1:8090",
 		Routes: map[string]webhook.RouteConfig{
 			"release": {
 				Auth: webhook.RouteAuthConfig{Type: "none"},
@@ -194,7 +194,7 @@ func TestValidateRuntimeConfigLint_RejectsPublicWebhookWithoutRouteAuth(t *testi
 	if err == nil {
 		t.Fatal("validateExecutionConfigLint() error = nil, want non-nil")
 	}
-	if !strings.Contains(err.Error(), "must configure auth.type=header") {
+	if !strings.Contains(err.Error(), "balda.http.listen_addr") || !strings.Contains(err.Error(), "must configure auth.type=header") {
 		t.Fatalf("validateExecutionConfigLint() error = %v, want auth marker", err)
 	}
 }
@@ -209,7 +209,7 @@ func TestValidateRuntimeConfigLint_AllowsLoopbackWebhookWithoutRouteAuth(t *test
 		},
 		Events: baldaexecution.EventStreamConfig{Stream: "BALDA_EVENTS"},
 		DLQ:    baldaexecution.DLQConfig{Stream: "BALDA_DLQ"},
-	}, webhook.Config{
+	}, "127.0.0.1:8095", webhook.Config{
 		Enabled:    true,
 		ListenAddr: "127.0.0.1:8090",
 		Routes: map[string]webhook.RouteConfig{

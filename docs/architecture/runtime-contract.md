@@ -5,7 +5,8 @@ Status: active
 
 ## Invariants
 
-- Startup order stays strict: config -> bundled MCP -> runtime contribution catalog reconstruction -> provider runtime -> session/mailbox and durable actor infrastructure -> scheduler/webhook/Zulip/Telegram/Slackagent ingress. Shutdown runs these stages in reverse.
+- Startup order stays strict: config -> bundled MCP -> runtime contribution catalog reconstruction -> provider runtime -> session/mailbox and durable actor infrastructure -> scheduler -> checked shared HTTP listener -> enabled Telegram/Zulip/Slackagent ingress. Shutdown runs these stages in reverse.
+- The shared HTTP listener binds `balda.http.listen_addr` once after Backoffice, generic webhook, and enabled gateway handlers are prepared. `httpfx` reserves `<base_path>/backoffice`, `<base_path>/webhooks`, and `<base_path>/gateway`, rejects active path conflicts before binding, and forwards each request to its owning handler without replacing browser, webhook, or transport authorization. Existing exact callback and webhook paths remain aliases where configured or stored.
 - Scheduler startup reconciles only config-owned recurring definitions; managed definitions survive restart. A source ID collision fails startup. Due and manual runs have separate durable keys and preserve their exact definition snapshots; manual runs do not advance the cron cursor.
 - `catalogapp` owns current MCP authorization startup recovery and exact
   authorization retry. `mcpruntime` carries bounded attachment evidence and

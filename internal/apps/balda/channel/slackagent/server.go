@@ -34,6 +34,12 @@ const (
 	signatureVersion          = "v0"
 )
 
+// HTTPCallbackReadTimeout preserves the standalone Slack request read limit.
+const HTTPCallbackReadTimeout = webhookReadTimeout
+
+// HTTPCallbackWriteTimeout preserves the standalone Slack response write limit.
+const HTTPCallbackWriteTimeout = webhookWriteTimeout
+
 type Config struct {
 	Enabled       bool
 	ListenAddr    string
@@ -56,6 +62,14 @@ type Server struct {
 	ln         net.Listener
 	processSem chan struct{}
 	processWG  sync.WaitGroup
+}
+
+// HTTPCallbacks exposes the existing checked handlers to a shared listener.
+type HTTPCallbacks struct {
+	Events             http.Handler
+	Commands           http.Handler
+	EventsLegacyPath   string
+	CommandsLegacyPath string
 }
 
 type InboundProcessor interface {
@@ -117,21 +131,42 @@ func (h *Server) onStart(context.Context) error {
 }
 
 func (h *Server) httpHandler() (http.Handler, string, string, error) {
-	eventsPath, err := normalizePath(h.config.EventsPath, "/slack/agent/events")
+	callbacks, err := h.callbackHandlers()
 	if err != nil {
 		return nil, "", "", err
+	}
+	mux := http.NewServeMux()
+	mux.Handle(callbacks.EventsLegacyPath, callbacks.Events)
+	mux.Handle(callbacks.CommandsLegacyPath, callbacks.Commands)
+	return mux, callbacks.EventsLegacyPath, callbacks.CommandsLegacyPath, nil
+}
+
+// HTTPCallbacks returns no handlers when Slack Agent HTTP ingress is disabled.
+func (h *Server) HTTPCallbacks() (HTTPCallbacks, error) {
+	if !h.config.Enabled {
+		return HTTPCallbacks{}, nil
+	}
+	return h.callbackHandlers()
+}
+
+func (h *Server) callbackHandlers() (HTTPCallbacks, error) {
+	eventsPath, err := normalizePath(h.config.EventsPath, "/slack/agent/events")
+	if err != nil {
+		return HTTPCallbacks{}, err
 	}
 	commandsPath, err := normalizePath(h.config.CommandsPath, "/slack/commands")
 	if err != nil {
-		return nil, "", "", err
+		return HTTPCallbacks{}, err
 	}
 	if eventsPath == commandsPath {
-		return nil, "", "", fmt.Errorf("slack agent events and commands paths must differ")
+		return HTTPCallbacks{}, fmt.Errorf("slack agent events and commands paths must differ")
 	}
-	mux := http.NewServeMux()
-	mux.HandleFunc(eventsPath, h.handleEvents)
-	mux.HandleFunc(commandsPath, h.handleCommands)
-	return mux, eventsPath, commandsPath, nil
+	return HTTPCallbacks{
+		Events:             http.HandlerFunc(h.handleEvents),
+		Commands:           http.HandlerFunc(h.handleCommands),
+		EventsLegacyPath:   eventsPath,
+		CommandsLegacyPath: commandsPath,
+	}, nil
 }
 
 func (h *Server) onStop(ctx context.Context) error {

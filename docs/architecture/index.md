@@ -53,6 +53,7 @@ Use this map to find the authoritative runtime contracts.
 - `session` owns session lifecycle and restore semantics, but does not own transport delivery contracts.
 - `channel/*` packages are concrete transport adapters only. They must not define shared cross-transport contracts and must not import Balda application/session internals for convenience.
 - `chatapp` owns conversational ingress preconditions and durable session publication. `webhookapp` owns webhook admission and private job publication behind a port consumed by `channel/webhook`; `webhookfx` composes them. `commandfx` owns command publication; `handlersfx` binds conversational transport ports to concrete provider runtimes.
+- `internal/apps/balda/httpfx` owns only the checked shared HTTP listener and route registry. Backoffice, generic webhook, and chat transport packages keep their own handlers, authentication, and admission policy. `balda.http.base_path` places them in sibling `/backoffice`, `/webhooks`, and `/gateway` areas.
 - `locatorref` owns the public `<channel_type>:<address_key>` reference form and must stay independent from concrete transport adapter packages.
 - Use-case packages such as `sessionturn` and MCP surfaces own local ports and depend on small interfaces; composition/wiring code provides concrete adapters.
 - `sessionturn` owns queued-turn restoration and delegates provider iteration through a narrow executor port.
@@ -112,6 +113,7 @@ neutral MCP adapter returns bounded untrusted references.
 - `internal/apps/balda/channel/webhook`
 - `internal/apps/balda/webhookapp`
 - `internal/apps/balda/webhookfx`
+- `internal/apps/balda/httpfx`
 - `internal/apps/balda/aliases`
 - `internal/apps/balda/aliasfx`
 - `internal/apps/balda/handlersfx`

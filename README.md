@@ -98,10 +98,21 @@ managed routes can be created, edited, enabled, disabled and archived without
 restarting Balda. Each managed route has a generated secret shown only on
 creation or rotation. Both sources offer **Test POST** and retained request
 history. An optional **Report to** locator or managed alias receives only the
-final output from each request's new private session. The generic HTTP listener
+final output from each request's new private session. The shared HTTP listener
 always binds; `balda.webhooks.enabled` controls config routes, while managed
 routes have their own enabled state. See
 [Webhooks management](docs/reference/backoffice.md#webhooks-management).
+
+`balda.http.listen_addr` binds one local HTTP server for Backoffice, generic
+webhooks, and enabled chat transport callbacks. `balda.http.base_url` is its
+public origin, and `balda.http.base_path` is the shared prefix. With
+`base_url: https://lab.metalagman.dev` and `base_path: /balda`, Backoffice is
+`https://lab.metalagman.dev/balda/backoffice/`, a new `orders` webhook is
+`https://lab.metalagman.dev/balda/webhooks/orders`, and Slack callbacks use
+`/balda/gateway/slack/events` and `/balda/gateway/slack/commands`. This is a URL
+example; the live asus ingress and callback registrations have not changed.
+See [shared HTTP configuration](docs/reference/configuration.md#shared-http-listener-and-public-urls)
+for the five complete URLs and migration details.
 
 Before storing protected MCP values or worker grants, configure the deployment
 [MCP credential key](docs/reference/configuration.md#protected-values-and-worker-grants)
@@ -380,7 +391,8 @@ does not require `/reset`. Custom ACP servers can set `model_config_id` and
 - `balda.mattermost.*` — Mattermost bot credentials (`enabled`, `server_url`,
   `token`, `bot_user_id`, `bot_username`) for websocket event ingress
 - `balda.slack.*` — Slack Agent credentials plus `agent.*` HTTP/streaming config
-- `balda.webhooks.*` — generic listener and config-owned inbound routes; managed routes are administered in Backoffice. See [Webhooks management](docs/reference/backoffice.md#webhooks-management).
+- `balda.http.*` — one local HTTP bind, public origin, and shared path prefix. See [shared HTTP configuration](docs/reference/configuration.md#shared-http-listener-and-public-urls).
+- `balda.webhooks.*` — config-owned inbound routes; managed routes are administered in Backoffice. See [Webhooks management](docs/reference/backoffice.md#webhooks-management).
 - `balda.scheduler.jobs` — recurring scheduled jobs owned by host configuration; administrators can also create persistent schedules in Backoffice. See [Schedules management](docs/reference/backoffice.md#schedules-management).
 - `balda.workspace.*` — workspace/worktree behavior for goal execution
 - `balda.permissions.mode` — agent permission policy: `allow_all`, `ask`, or `deny_all`

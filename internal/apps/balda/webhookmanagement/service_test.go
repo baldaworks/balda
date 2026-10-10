@@ -5,10 +5,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/httpfx"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookroutecmd"
 )
 
@@ -18,6 +21,11 @@ type memoryStore struct {
 	reconciled   []webhookroutecmd.Record
 	authorityErr error
 }
+
+const (
+	legacyManagedPath = "/old/orders"
+	legacyEditedPath  = "/events-v2"
+)
 
 func (s *memoryStore) Get(_ context.Context, name string) (webhookroutecmd.Record, bool, error) {
 	r, ok := s.routes[name]
@@ -73,6 +81,225 @@ func testDefinition() webhookroutecmd.Definition {
 		PromptTemplate: "{{ .RawBody }}", ReportTo: "main_chat", DedupeSource: webhookroutecmd.DedupeSourceBodySHA}
 }
 
+func TestManagedPathIsDerivedAndPostedOverrideRejected(t *testing.T) {
+	store := &memoryStore{routes: make(map[string]webhookroutecmd.Record)}
+	service := New(store, ManagedPaths{Prefix: "/balda/webhooks"})
+	definition := testDefinition()
+	definition.Name, definition.Path = "orders", ""
+	created, err := service.Create(t.Context(), webhookroutecmd.Create{Definition: definition, Authority: testAuthority()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := created.Item.Definition.Path, "/balda/webhooks/orders"; got != want {
+		t.Fatalf("created path = %q, want %q", got, want)
+	}
+	if got := store.routes["orders"].Path; got != "/balda/webhooks/orders" {
+		t.Fatalf("stored path = %q", got)
+	}
+	definition.Name, definition.Path = "other", "/orders"
+	if _, err := service.Create(t.Context(), webhookroutecmd.Create{Definition: definition, Authority: testAuthority()}); !errors.Is(err, webhookroutecmd.ErrInvalid) {
+		t.Fatalf("divergent posted path error = %v, want invalid", err)
+	}
+	if _, found := store.routes["other"]; found {
+		t.Fatal("divergent path created a route")
+	}
+}
+
+func TestLegacyConstructorAcceptsSubmittedFormPaths(t *testing.T) {
+	store := &memoryStore{routes: make(map[string]webhookroutecmd.Record)}
+	service := New(store)
+	definition := testDefinition()
+	definition.Path = " /events "
+	created, err := service.Create(t.Context(), webhookroutecmd.Create{Definition: definition, Authority: testAuthority()})
+	if err != nil || created.Item.Definition.Path != "/events" {
+		t.Fatalf("legacy create = %+v, %v", created.Item, err)
+	}
+	definition.Path = legacyEditedPath
+	updated, err := service.Update(t.Context(), webhookroutecmd.Update{Name: "events", ExpectedVersion: 1,
+		Definition: definition, Authority: testAuthority()})
+	if err != nil || updated.Definition.Path != legacyEditedPath {
+		t.Fatalf("legacy update = %+v, %v", updated, err)
+	}
+}
+
+func TestManagedLegacyPathIsPreservedOnUpdate(t *testing.T) {
+	registry, err := httpfx.NewRegistry("/balda")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.AddManagedWebhook("legacy", legacyManagedPath, http.NotFoundHandler()); err != nil {
+		t.Fatal(err)
+	}
+	store := &memoryStore{routes: map[string]webhookroutecmd.Record{
+		"legacy": {Name: "legacy", Path: legacyManagedPath, Source: webhookroutecmd.SourceManaged,
+			Enabled: true, Version: 4, PromptTemplate: "{{.RawBody}}"},
+	}}
+	service := New(store, ManagedPaths{Prefix: "/balda/webhooks", Ownership: registry})
+	definition := testDefinition()
+	definition.Name, definition.Path, definition.PromptTemplate = "legacy", "", "updated {{.RawBody}}"
+	updated, err := service.Update(t.Context(), webhookroutecmd.Update{Name: "legacy", ExpectedVersion: 4,
+		Definition: definition, Authority: testAuthority()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := updated.Definition.Path; got != legacyManagedPath {
+		t.Fatalf("updated path = %q, want retained legacy path", got)
+	}
+	definition.Path = "/balda/webhooks/legacy"
+	if _, err := service.Update(t.Context(), webhookroutecmd.Update{Name: "legacy", ExpectedVersion: 5,
+		Definition: definition, Authority: testAuthority()}); !errors.Is(err, webhookroutecmd.ErrInvalid) {
+		t.Fatalf("divergent update path error = %v, want invalid", err)
+	}
+	if got := store.routes["legacy"]; got.Path != legacyManagedPath || got.Version != 5 {
+		t.Fatalf("rejected update changed row: %+v", got)
+	}
+}
+
+func TestManagedLegacyPathConflictLeavesRowUnchanged(t *testing.T) {
+	registry, err := httpfx.NewRegistry("/balda")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.AddBackoffice("browser", http.NotFoundHandler()); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.AddGateway("slack legacy alias", "/old/slack", http.NotFoundHandler()); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.AddWebhook("config webhook legacy", "/old/config", http.NotFoundHandler()); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct{ name, path, owner string }{
+		{"browser", "/balda/backoffice/hidden", "browser"},
+		{"gateway", "/balda/gateway/slack/events", "gateway"},
+		{"gateway alias", "/old/slack", "slack legacy alias"},
+		{"config webhook", "/old/config", "config webhook legacy"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			store := &memoryStore{routes: map[string]webhookroutecmd.Record{
+				"legacy": {Name: "legacy", Path: test.path, Source: webhookroutecmd.SourceManaged,
+					Version: 3, PromptTemplate: "{{.RawBody}}"},
+			}}
+			service := New(store, ManagedPaths{Prefix: "/balda/webhooks", Ownership: registry})
+			definition := testDefinition()
+			definition.Name, definition.Path = "legacy", ""
+			_, err := service.Update(t.Context(), webhookroutecmd.Update{Name: "legacy", ExpectedVersion: 3,
+				Definition: definition, Authority: testAuthority()})
+			if !errors.Is(err, webhookroutecmd.ErrConflict) || !strings.Contains(err.Error(), test.path) ||
+				!strings.Contains(err.Error(), test.owner) {
+				t.Fatalf("update error = %v, want path and owner conflict", err)
+			}
+			if len(store.mutations) != 0 || store.routes["legacy"].Version != 3 {
+				t.Fatal("conflicting update changed stored row")
+			}
+			_, err = service.SetEnabled(t.Context(), webhookroutecmd.ChangeSelection{Name: "legacy",
+				ExpectedVersion: 3, Enabled: true, Authority: testAuthority()})
+			if !errors.Is(err, webhookroutecmd.ErrConflict) || !strings.Contains(err.Error(), test.path) ||
+				!strings.Contains(err.Error(), test.owner) {
+				t.Fatalf("enable error = %v, want path and owner conflict", err)
+			}
+			if len(store.mutations) != 0 || store.routes["legacy"].Enabled {
+				t.Fatal("conflicting enable changed stored row")
+			}
+		})
+	}
+}
+
+func TestManagedCreateConflictsWithActiveConfigPath(t *testing.T) {
+	registry, err := httpfx.NewRegistry("/balda")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.AddWebhook("config webhook orders", "/balda/webhooks/orders", http.NotFoundHandler()); err != nil {
+		t.Fatal(err)
+	}
+	store := &memoryStore{routes: make(map[string]webhookroutecmd.Record)}
+	service := New(store, ManagedPaths{Prefix: "/balda/webhooks", Ownership: registry})
+	definition := testDefinition()
+	definition.Name, definition.Path = "orders", ""
+	_, err = service.Create(t.Context(), webhookroutecmd.Create{Definition: definition, Authority: testAuthority()})
+	if !errors.Is(err, webhookroutecmd.ErrConflict) || !strings.Contains(err.Error(), "/balda/webhooks/orders") ||
+		!strings.Contains(err.Error(), "config webhook orders") {
+		t.Fatalf("create error = %v, want path and config owner", err)
+	}
+	if len(store.mutations) != 0 || len(store.routes) != 0 {
+		t.Fatal("conflicting create changed stored rows")
+	}
+}
+
+func TestManagedLegacyPathBecomesLiveAfterEnable(t *testing.T) {
+	store := &memoryStore{routes: map[string]webhookroutecmd.Record{
+		"legacy": {Name: "legacy", Path: legacyManagedPath, Source: webhookroutecmd.SourceManaged,
+			Version: 2, PromptTemplate: "{{.RawBody}}"},
+	}}
+	registry, err := httpfx.NewRegistry("/balda")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.SetWebhookLookup("generic webhooks", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	}), func(_ context.Context, path string) (bool, error) {
+		route := store.routes["legacy"]
+		return route.Enabled && route.Path == path, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	handler := registry.Handler()
+	status := func() int {
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, legacyManagedPath, nil))
+		return recorder.Code
+	}
+	if got := status(); got != http.StatusNotFound {
+		t.Fatalf("disabled route status = %d, want 404", got)
+	}
+	service := New(store, ManagedPaths{Prefix: "/balda/webhooks", Ownership: registry})
+	item, err := service.SetEnabled(t.Context(), webhookroutecmd.ChangeSelection{Name: "legacy",
+		ExpectedVersion: 2, Enabled: true, Authority: testAuthority()})
+	if err != nil || !item.Enabled || item.Definition.Path != legacyManagedPath {
+		t.Fatalf("enable = %+v, %v", item, err)
+	}
+	if got := status(); got != http.StatusAccepted {
+		t.Errorf("enabled route status = %d, want 202", got)
+	}
+}
+
+func TestManagedPathCanBeReclaimedAfterDisableOrDelete(t *testing.T) {
+	for _, action := range []string{"disable", "delete"} {
+		t.Run(action, func(t *testing.T) {
+			const reclaimedPath = "/balda/webhooks/new"
+			registry, err := httpfx.NewRegistry("/balda")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := registry.AddManagedWebhook("old", reclaimedPath, http.NotFoundHandler()); err != nil {
+				t.Fatal(err)
+			}
+			store := &memoryStore{routes: map[string]webhookroutecmd.Record{
+				"old": {Name: "old", Path: reclaimedPath, Source: webhookroutecmd.SourceManaged,
+					Enabled: true, Version: 1, PromptTemplate: "{{.RawBody}}"},
+			}}
+			service := New(store, ManagedPaths{Prefix: "/balda/webhooks", Ownership: registry})
+			if action == "disable" {
+				_, err = service.SetEnabled(t.Context(), webhookroutecmd.ChangeSelection{Name: "old", ExpectedVersion: 1,
+					Enabled: false, Authority: testAuthority()})
+			} else {
+				_, err = service.Delete(t.Context(), webhookroutecmd.Delete{Name: "old", ExpectedVersion: 1,
+					Authority: testAuthority()})
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			definition := testDefinition()
+			definition.Name, definition.Path = "new", ""
+			created, err := service.Create(t.Context(), webhookroutecmd.Create{Definition: definition, Authority: testAuthority()})
+			if err != nil || created.Item.Definition.Path != reclaimedPath {
+				t.Fatalf("reclaim = %+v, %v", created.Item, err)
+			}
+		})
+	}
+}
+
 func TestManagedRouteLifecycleAndOneTimeSecret(t *testing.T) {
 	store := &memoryStore{routes: make(map[string]webhookroutecmd.Record)}
 	service := New(store)
@@ -100,7 +327,7 @@ func TestManagedRouteLifecycleAndOneTimeSecret(t *testing.T) {
 		t.Fatalf("GET = %+v, %v", item, err)
 	}
 	definition := testDefinition()
-	definition.Path = "/events-v2"
+	definition.Path = legacyEditedPath
 	definition.ReportTo = "telegram:-1003953132277:0"
 	updated, err := service.Update(t.Context(), webhookroutecmd.Update{Name: "events", ExpectedVersion: 1,
 		Definition: definition, Authority: authority})

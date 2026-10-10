@@ -57,7 +57,7 @@ func TestMCPBrowserAuthorizationReturnsWithCallbackCredential(t *testing.T) {
 			cleared = true
 		}
 	}
-	if !cleared || response.Header().Get("Cache-Control") != noStoreCacheControl || response.Header().Get("Referrer-Policy") != "no-referrer" {
+	if !cleared || response.Header().Get("Cache-Control") != noStoreCacheControl || response.Header().Get("Referrer-Policy") != noReferrerPolicy {
 		t.Fatal("callback did not clear its credential or retain private response policy")
 	}
 	for _, secret := range []string{"private-state", "private-code", admin.access} {
@@ -90,7 +90,7 @@ func TestMCPOAuthReturnCommitsNativeMetadataDocument(t *testing.T) {
 		if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "<!doctype html>") || !strings.Contains(w.Body.String(), `href="/balda/mcp?oauth_result=denied" hx-boost="false">Continue to MCP</a>`) || !strings.Contains(w.Body.String(), `hx-history="false"`) {
 			t.Fatalf("native landing did not commit a safe document: status=%d", w.Code)
 		}
-		if w.Header().Get("Cache-Control") != noStoreCacheControl || w.Header().Get("Referrer-Policy") != "no-referrer" || len(w.Result().Cookies()) != 0 {
+		if w.Header().Get("Cache-Control") != noStoreCacheControl || w.Header().Get("Referrer-Policy") != noReferrerPolicy || len(w.Result().Cookies()) != 0 {
 			t.Fatal("landing modified credentials or lost its private response policy")
 		}
 		for _, secret := range []string{"private-state", "private-code", "private-input"} {

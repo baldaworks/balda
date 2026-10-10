@@ -23,6 +23,16 @@ function syncWebhookDedupe() {
   });
 }
 syncWebhookDedupe();
+function syncWebhookURL() {
+  document.querySelectorAll("input[data-webhook-url-prefix]").forEach(function (field) {
+    const name = field.form?.querySelector("input[data-webhook-url-name]")?.value || "";
+    field.value = /^[a-z0-9][a-z0-9_-]{0,63}$/.test(name) ? field.dataset.webhookUrlPrefix + name : "";
+  });
+}
+syncWebhookURL();
+document.addEventListener("input", function (event) {
+  if (event.target instanceof HTMLInputElement && event.target.matches("[data-webhook-url-name]")) syncWebhookURL();
+});
 document.addEventListener("change", function (event) {
   if (event.target instanceof HTMLSelectElement && event.target.name === "transport" &&
       event.target.form?.matches("[data-mcp-create]")) syncMCPTransport();
@@ -141,6 +151,7 @@ document.addEventListener("htmx:afterSwap", function (event) {
   if (event.detail.target && event.detail.target.id === "main-content") {
     syncMCPTransport();
     syncWebhookDedupe();
+    syncWebhookURL();
     const feedback = document.getElementById("request-error");
     if (feedback) {
       feedback.hidden = true;
@@ -154,6 +165,7 @@ document.addEventListener("htmx:afterSwap", function (event) {
 document.addEventListener("htmx:historyRestore", function () {
   syncMCPTransport();
   syncWebhookDedupe();
+  syncWebhookURL();
   syncNavigation();
   document.getElementById("main-content")?.focus({ preventScroll: true });
 });
@@ -192,6 +204,7 @@ window.addEventListener("pagehide", function () {
 window.addEventListener("pageshow", function (event) {
   syncMCPTransport();
   syncWebhookDedupe();
+  syncWebhookURL();
   if (event.persisted) clearMCPInstructions();
   if (event.persisted) document.querySelectorAll("[data-mcp-secret]").forEach(function (input) { input.value = ""; });
   if (event.persisted) document.querySelectorAll("[data-webhook-secret]").forEach(function (input) { input.value = ""; input.removeAttribute("value"); });

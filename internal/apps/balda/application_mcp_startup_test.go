@@ -20,10 +20,12 @@ import (
 	"github.com/baldaworks/balda/internal/apps/backoffice/security"
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
 	"github.com/baldaworks/balda/internal/apps/balda/catalogapp"
+	"github.com/baldaworks/balda/internal/apps/balda/httpfx"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpbridge"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
 	"github.com/baldaworks/balda/internal/apps/balda/pluginapp"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookfx"
 	"github.com/normahq/runtime/v2/agentconfig"
 	"github.com/normahq/runtime/v2/agentfactory"
 	runtimeconfig "github.com/normahq/runtime/v2/appconfig"
@@ -112,11 +114,19 @@ func TestMCPAuthorizationStartupKeepsAuthenticatedManagementReachable(t *testing
 				}
 				builder := baldaagent.NewBuilder(baldaagent.BuilderParams{Factory: agentfactory.New(config.Providers, registry), ScopedFactory: catalogapp.NewProviderFactory(config.Providers, registry), NormaCfg: config})
 				manager := baldaagent.NewRuntimeManager(baldaagent.RuntimeManagerParams{Builder: builder, BaldaProviderID: "alpha", WorkingDir: stateDir, StateDir: stateDir, CapabilityBinder: binder, MCPRegistry: registry, Logger: zerolog.Nop()})
-				params := applicationLifecycleParams{Catalog: lifecycle, CatalogRuntime: catalog, Runtime: manager, Backoffice: management, StateProvider: provider, MCPManagement: credentials, MCPBridge: bridge, Logger: zerolog.Nop()}
+				httpRegistry, err := httpfx.NewRegistry("")
+				if err != nil {
+					t.Fatal(err)
+				}
+				params := applicationLifecycleParams{Catalog: lifecycle, CatalogRuntime: catalog, Runtime: manager, Backoffice: management, StateProvider: provider, MCPManagement: credentials, MCPBridge: bridge, Logger: zerolog.Nop(),
+					Config:     BaldaConfig{HTTP: HTTPConfig{ListenAddr: address, BaseURL: "http://" + address}},
+					HTTPConfig: ResolvedHTTPConfig{ListenAddr: address, BaseURL: "http://" + address}, HTTPRegistry: httpRegistry,
+					WebhookHTTP: webhookfx.HTTPContribution(func(context.Context, *httpfx.Registry) error { return nil }),
+				}
 				var stages []lifecycleStage
 				for _, stage := range applicationLifecycleStages(params, &telegramLifecycle{}) {
 					switch stage.name {
-					case "user readiness", "managed MCP credential readiness", "MCP credential bridge", "runtime contribution catalog", "provider runtime", "Backoffice HTTP":
+					case "user readiness", "managed MCP credential readiness", "MCP credential bridge", "runtime contribution catalog", "provider runtime", sharedHTTPIngressStage:
 						stages = append(stages, stage)
 					}
 				}
@@ -144,7 +154,7 @@ func TestMCPAuthorizationStartupKeepsAuthenticatedManagementReachable(t *testing
 				if err != nil || len(captures) != 0 {
 					t.Fatal("startup captured OAuth without administrator action")
 				}
-				verifyAuthenticatedMCPManagement(t, "http://"+address)
+				verifyAuthenticatedMCPManagement(t, "http://"+address+"/backoffice")
 			})
 		}
 	}
@@ -167,7 +177,7 @@ func verifyAuthenticatedMCPManagement(t *testing.T, origin string) {
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("login GET = %d", response.StatusCode)
 	}
-	u, _ := url.Parse(origin)
+	u, _ := url.Parse(origin + "/login")
 	var csrf string
 	for _, cookie := range jar.Cookies(u) {
 		if cookie.Name == security.CSRFCookieName {
@@ -183,7 +193,7 @@ func verifyAuthenticatedMCPManagement(t *testing.T, origin string) {
 		t.Fatal(err)
 	}
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	request.Header.Set("Origin", origin)
+	request.Header.Set("Origin", u.Scheme+"://"+u.Host)
 	request.Header.Set("Sec-Fetch-Site", "same-origin")
 	response, err = client.Do(request)
 	if err != nil {

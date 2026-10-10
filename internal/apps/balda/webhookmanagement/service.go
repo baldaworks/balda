@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"fmt"
 	"math"
 	"regexp"
 	"strings"
@@ -31,11 +32,31 @@ type Store interface {
 	Save(ctx context.Context, mutation webhookroutecmd.Mutation) error
 }
 
+// ManagedPaths supplies the shared webhook prefix and HTTP route ownership.
+type ManagedPaths struct {
+	Prefix    string
+	Ownership RouteOwnership
+}
+
+// RouteOwnership identifies reserved paths and gateway callback aliases.
+type RouteOwnership interface {
+	ConflictingOwner(path string) string
+}
+
 // Service validates route changes and delegates versioned writes to Store.
-type Service struct{ store Store }
+type Service struct {
+	store Store
+	paths ManagedPaths
+}
 
 // New composes webhook management with its durable store.
-func New(store Store) *Service { return &Service{store: store} }
+func New(store Store, paths ...ManagedPaths) *Service {
+	service := &Service{store: store}
+	if len(paths) != 0 {
+		service.paths = paths[0]
+	}
+	return service
+}
 
 // Inventory returns current config and managed routes after checking authority.
 func (s *Service) Inventory(ctx context.Context, authority webhookroutecmd.Authority) ([]webhookroutecmd.Item, error) {
@@ -88,8 +109,15 @@ func (s *Service) Create(ctx context.Context, request webhookroutecmd.Create) (w
 	if err := s.checkAuthority(ctx, request.Authority); err != nil {
 		return webhookroutecmd.SecretResult{}, err
 	}
-	r, err := managedRecord(request.Definition)
+	routePath := strings.TrimSpace(request.Definition.Path)
+	if s.paths.Prefix != "" {
+		routePath = s.paths.Prefix + "/" + request.Definition.Name
+	}
+	r, err := managedRecord(request.Definition, routePath, s.paths.Prefix != "")
 	if err != nil {
+		return webhookroutecmd.SecretResult{}, err
+	}
+	if err := s.checkPathOwnership(r.Path); err != nil {
 		return webhookroutecmd.SecretResult{}, err
 	}
 	secret, verifier, err := newSecret()
@@ -117,8 +145,15 @@ func (s *Service) Update(ctx context.Context, request webhookroutecmd.Update) (w
 	if request.Definition.Name != request.Name {
 		return webhookroutecmd.Item{}, webhookroutecmd.ErrInvalid
 	}
-	r, err := managedRecord(request.Definition)
+	routePath := strings.TrimSpace(request.Definition.Path)
+	if s.paths.Prefix != "" {
+		routePath = previous.Path
+	}
+	r, err := managedRecord(request.Definition, routePath, s.paths.Prefix != "")
 	if err != nil {
+		return webhookroutecmd.Item{}, err
+	}
+	if err := s.checkPathOwnership(r.Path); err != nil {
 		return webhookroutecmd.Item{}, err
 	}
 	r.Source, r.Enabled, r.Version = webhookroutecmd.SourceManaged, previous.Enabled, previous.Version+1
@@ -141,6 +176,11 @@ func (s *Service) SetEnabled(ctx context.Context, request webhookroutecmd.Change
 	}
 	r.Enabled, r.Version = request.Enabled, r.Version+1
 	r.UpdatedAt = request.Authority.At
+	if r.Enabled {
+		if err := s.checkPathOwnership(r.Path); err != nil {
+			return webhookroutecmd.Item{}, err
+		}
+	}
 	if err := s.save(ctx, webhookroutecmd.MutationSelection, r, request.ExpectedVersion, request.Authority); err != nil {
 		return webhookroutecmd.Item{}, err
 	}
@@ -217,6 +257,16 @@ func (s *Service) checkAuthority(ctx context.Context, authority webhookroutecmd.
 	return s.store.CheckAuthority(ctx, authority)
 }
 
+func (s *Service) checkPathOwnership(routePath string) error {
+	if s.paths.Ownership == nil {
+		return nil
+	}
+	if owner := s.paths.Ownership.ConflictingOwner(routePath); owner != "" {
+		return fmt.Errorf("%w: webhook path %q conflicts with %q", webhookroutecmd.ErrConflict, routePath, owner)
+	}
+	return nil
+}
+
 func (s *Service) save(ctx context.Context, kind webhookroutecmd.MutationKind, r webhookroutecmd.Record,
 	version uint64, authority webhookroutecmd.Authority) error {
 	audit := usercmd.AuditEvent{ID: uuid.NewString(), Action: usercmd.AuditActionWebhookRouteChanged,
@@ -249,12 +299,15 @@ func project(r webhookroutecmd.Record) webhookroutecmd.Item {
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt}
 }
 
-func managedRecord(d webhookroutecmd.Definition) (webhookroutecmd.Record, error) {
+func managedRecord(d webhookroutecmd.Definition, routePath string, derived bool) (webhookroutecmd.Record, error) {
 	name := strings.TrimSpace(d.Name)
 	if name != d.Name || !routeName.MatchString(name) {
 		return webhookroutecmd.Record{}, webhookroutecmd.ErrInvalid
 	}
-	r := webhookroutecmd.Record{Name: name, Path: strings.TrimSpace(d.Path),
+	if derived && d.Path != "" && d.Path != routePath {
+		return webhookroutecmd.Record{}, webhookroutecmd.ErrInvalid
+	}
+	r := webhookroutecmd.Record{Name: name, Path: routePath,
 		PromptTemplate: strings.TrimSpace(d.PromptTemplate), AckOnDelivery: d.AckOnDelivery}
 	if err := validateManagedBody(r.Path, r.PromptTemplate); err != nil {
 		return webhookroutecmd.Record{}, err

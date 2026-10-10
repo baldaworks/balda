@@ -239,6 +239,65 @@ func TestWebhookUpdateSource_StartServesConfiguredPathAndToken(t *testing.T) {
 	}
 }
 
+func TestWebhookUpdateSourceSharedModeRegistersAfterListenerStarts(t *testing.T) {
+	var registered bool
+	telegramAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "setWebhook") {
+			registered = true
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
+	}))
+	defer telegramAPI.Close()
+	client, err := client.NewClientWithResponses(telegramAPI.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceAny, err := NewUpdateSource(Config{Webhook: WebhookConfig{
+		Enabled: true, Path: "/telegram/webhook", URL: "https://example.com/telegram/webhook", AuthToken: "secret",
+	}}, client, nil, zerolog.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := sourceAny.(SharedWebhookSource)
+	handler, legacyPath := source.HTTPCallback()
+	if legacyPath != "/telegram/webhook" || handler == nil {
+		t.Fatalf("HTTPCallback() = (%v, %q)", handler, legacyPath)
+	}
+	listener := httptest.NewServer(handler)
+	defer listener.Close()
+	if registered {
+		t.Fatal("webhook registered before shared listener was ready")
+	}
+	if err := source.UseSharedListener(); err != nil {
+		t.Fatal(err)
+	}
+	if err := source.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = source.Stop(context.Background()) })
+	if !registered {
+		t.Fatal("webhook registration was not observed after listener start")
+	}
+	concrete := sourceAny.(*webhookUpdateSource)
+	if concrete.listener != nil || concrete.server != nil {
+		t.Fatal("shared mode opened a standalone listener")
+	}
+	request, err := http.NewRequest(http.MethodPost, listener.URL, strings.NewReader(`{"update_id":1}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("X-Telegram-Bot-Api-Secret-Token", "wrong")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("invalid token status = %d, want 401", response.StatusCode)
+	}
+}
+
 func newTestTelegramClient(t *testing.T) client.ClientWithResponsesInterface {
 	t.Helper()
 

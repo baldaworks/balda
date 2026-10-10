@@ -192,7 +192,7 @@ func prepareBaldaCommand(ctx context.Context, requireUserReady bool) (preparedBa
 		return preparedBaldaCommand{}, fmt.Errorf("bootstrap balda owner token: %w", err)
 	}
 	if requireUserReady {
-		server, err := prepared.baldaCfg.Balda.Backoffice.Resolve()
+		server, err := prepared.baldaCfg.Balda.ResolveBackofficeServer()
 		if err != nil {
 			return preparedBaldaCommand{}, err
 		}
@@ -233,6 +233,7 @@ func loadBaldaCommandConfig(requireChannel bool) (preparedBaldaCommand, error) {
 	if err != nil {
 		return preparedBaldaCommand{}, err
 	}
+	applyHTTPBasePathEnv(&doc.Balda)
 	if err := applyBaldaLogging(doc.Balda.Logger); err != nil {
 		return preparedBaldaCommand{}, fmt.Errorf("configure balda logging: %w", err)
 	}
@@ -256,7 +257,10 @@ func loadBaldaCommandConfig(requireChannel bool) (preparedBaldaCommand, error) {
 	if err != nil {
 		return preparedBaldaCommand{}, err
 	}
-	if _, err := baldaCfg.Balda.Backoffice.Resolve(); err != nil {
+	if _, err := baldaCfg.Balda.ResolveHTTP(); err != nil {
+		return preparedBaldaCommand{}, err
+	}
+	if _, err := baldaCfg.Balda.ResolveSharedBackofficeServer(); err != nil {
 		return preparedBaldaCommand{}, err
 	}
 	return preparedBaldaCommand{
@@ -267,6 +271,14 @@ func loadBaldaCommandConfig(requireChannel bool) (preparedBaldaCommand, error) {
 		runtimeLoadOpts: runtimeLoadOpts,
 		database:        database,
 	}, nil
+}
+
+func applyHTTPBasePathEnv(cfg *balda.BaldaConfig) {
+	// appconfig drops null defaults before applying env overrides; LookupEnv also
+	// preserves an explicitly empty value, which selects the origin root.
+	if basePath, ok := os.LookupEnv("BALDA_HTTP_BASE_PATH"); ok {
+		cfg.HTTP.BasePath = &basePath
+	}
 }
 
 func validateBaldaChannelConfiguration(workingDir string, cfg balda.Config) error {

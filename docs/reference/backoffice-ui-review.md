@@ -21,8 +21,8 @@ and generic error previews. It also links to empty and error states where those
 states exist. For example, `/qa/ui/access-list`, `/qa/ui/access-empty`, and
 `/qa/ui/access-error` show three access states. The standalone preview uses the
 root path. When `qa_ui: true` is set on a private, configured development
-instance, the gallery uses that instance's `base_path` (for example
-`/balda/qa/ui/`).
+instance, the gallery uses that instance's Backoffice mount path (for example
+`/balda/backoffice/qa/ui/`).
 
 Use `/qa/ui/account-many` and its **Older active sessions** link to review
 pagination. `/qa/ui/account-session-states` deliberately combines active,

@@ -38,6 +38,8 @@ type httpApp struct {
 	mcpAuthorizations MCPAuthorizations
 	qa                bool
 	basePath          string
+	publicOrigin      string
+	webhookURLPrefix  string
 }
 
 func newHTTPApp(store usercmd.Store, config ResolvedConfig) (*httpApp, error) {
@@ -53,7 +55,12 @@ func newHTTPApp(store usercmd.Store, config ResolvedConfig) (*httpApp, error) {
 		return nil, err
 	}
 	bindingChoices := configuredBindingChannels(config.Balda)
-	app := &httpApp{renderer: renderer, security: service, access: access.NewService(store), auditLog: audit.NewService(store), cards: ProjectCapabilityCards(config.Balda), bindingChoices: bindingChoices, qa: config.Server.QAUI, basePath: config.Server.BasePath}
+	webhookURLBasePath := config.Server.BasePath
+	if config.Server.WebhookURLBasePath != nil {
+		webhookURLBasePath = *config.Server.WebhookURLBasePath
+	}
+	app := &httpApp{renderer: renderer, security: service, access: access.NewService(store), auditLog: audit.NewService(store), cards: ProjectCapabilityCards(config.Balda), bindingChoices: bindingChoices, qa: config.Server.QAUI, basePath: config.Server.BasePath, publicOrigin: config.Server.PublicURL,
+		webhookURLPrefix: config.Server.PublicURL + webhookURLBasePath + "/webhooks/"}
 	browser, err := security.NewBrowser(service, security.HTTPConfig{
 		TrustedOrigin: config.Server.PublicURL, SecureCookies: config.Server.SecureCookies, BasePath: config.Server.BasePath,
 		ErrorHandler:      app.renderSecurityError,

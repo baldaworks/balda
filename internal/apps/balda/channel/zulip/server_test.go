@@ -24,6 +24,31 @@ type mockInboundProcessor struct {
 	blockInbound chan struct{}
 }
 
+func TestHTTPCallbackUsesExistingTokenCheck(t *testing.T) {
+	server := &Server{enabled: true, webhookToken: "expected-token", logger: zerolog.Nop()}
+	handler, legacyPath, err := server.HTTPCallback()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if legacyPath != "/zulip/webhook" {
+		t.Fatalf("legacy path = %q", legacyPath)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/balda/gateway/zulip/webhook", strings.NewReader(`{"token":"wrong-token"}`))
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", recorder.Code)
+	}
+}
+
+func TestHTTPCallbackDisabled(t *testing.T) {
+	server := &Server{}
+	handler, legacyPath, err := server.HTTPCallback()
+	if err != nil || handler != nil || legacyPath != "" {
+		t.Fatalf("HTTPCallback() = (%v, %q, %v), want no route", handler, legacyPath, err)
+	}
+}
+
 func (m *mockInboundProcessor) ProcessInbound(_ context.Context, msg InboundMessage) (turncmd.InboundSettlement, error) {
 	if m.blockInbound != nil {
 		<-m.blockInbound
