@@ -260,7 +260,7 @@ func loadBaldaCommandConfig(requireChannel bool) (preparedBaldaCommand, error) {
 	if _, err := baldaCfg.Balda.ResolveHTTP(); err != nil {
 		return preparedBaldaCommand{}, err
 	}
-	if _, err := baldaCfg.Balda.ResolveBackofficeServer(); err != nil {
+	if _, err := baldaCfg.Balda.ResolveSharedBackofficeServer(); err != nil {
 		return preparedBaldaCommand{}, err
 	}
 	return preparedBaldaCommand{

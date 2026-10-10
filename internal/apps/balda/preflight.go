@@ -91,7 +91,11 @@ func PreflightRuntime(
 	}
 	inboundWebhookConfig := buildInboundWebhookConfig(cfg.Balda)
 	executionConfig := executionConfigFromBalda(cfg.Balda)
-	if err := validateExecutionConfigLint(executionConfig, inboundWebhookConfig); err != nil {
+	sharedHTTP, err := cfg.Balda.ResolveHTTP()
+	if err != nil {
+		return err
+	}
+	if err := validateExecutionConfigLint(executionConfig, sharedHTTP.ListenAddr, inboundWebhookConfig); err != nil {
 		return err
 	}
 	if err := validateSessionMemoryConfig(cfg.Balda.SessionMemory); err != nil {

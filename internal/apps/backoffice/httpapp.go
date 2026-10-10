@@ -39,9 +39,7 @@ type httpApp struct {
 	qa                bool
 	basePath          string
 	publicOrigin      string
-	webhookPathPrefix string
 	webhookURLPrefix  string
-	legacyWebhookPath bool
 }
 
 func newHTTPApp(store usercmd.Store, config ResolvedConfig) (*httpApp, error) {
@@ -62,8 +60,7 @@ func newHTTPApp(store usercmd.Store, config ResolvedConfig) (*httpApp, error) {
 		webhookURLBasePath = *config.Server.WebhookURLBasePath
 	}
 	app := &httpApp{renderer: renderer, security: service, access: access.NewService(store), auditLog: audit.NewService(store), cards: ProjectCapabilityCards(config.Balda), bindingChoices: bindingChoices, qa: config.Server.QAUI, basePath: config.Server.BasePath, publicOrigin: config.Server.PublicURL,
-		webhookPathPrefix: webhookURLBasePath + "/webhooks/", webhookURLPrefix: config.Server.PublicURL + webhookURLBasePath + "/webhooks/",
-		legacyWebhookPath: config.Server.WebhookURLBasePath == nil}
+		webhookURLPrefix: config.Server.PublicURL + webhookURLBasePath + "/webhooks/"}
 	browser, err := security.NewBrowser(service, security.HTTPConfig{
 		TrustedOrigin: config.Server.PublicURL, SecureCookies: config.Server.SecureCookies, BasePath: config.Server.BasePath,
 		ErrorHandler:      app.renderSecurityError,

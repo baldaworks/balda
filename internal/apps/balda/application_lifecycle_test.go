@@ -2,6 +2,7 @@ package balda
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"net"
 	"path/filepath"
@@ -11,9 +12,56 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/backoffice"
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpfx"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/rs/zerolog"
 )
+
+type lifecycleGrantStore struct{}
+
+func (lifecycleGrantStore) CheckMCPAuthority(context.Context, mcpcmd.Authority) error { return nil }
+func (lifecycleGrantStore) GetMCPGrant(context.Context, mcpcmd.AuthBinding) (mcpcmd.Grant, bool, error) {
+	return mcpcmd.Grant{}, false, nil
+}
+func (lifecycleGrantStore) ListMCPGrants(context.Context) ([]mcpcmd.Grant, error)    { return nil, nil }
+func (lifecycleGrantStore) SaveGrant(context.Context, mcpmanage.GrantMutation) error { return nil }
+
+type lifecycleAuthorizationBinding struct{}
+
+func (lifecycleAuthorizationBinding) BindAuthorization(context.Context, mcpcmd.SelectAuthorization) (mcpcmd.Item, error) {
+	return mcpcmd.Item{}, nil
+}
+
+func TestMCPAuthorizationsCloseWhenEarlyStartupFails(t *testing.T) {
+	credentials, err := mcpmanage.New(base64.StdEncoding.EncodeToString(make([]byte, 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	grants, err := mcpmanage.NewGrants(credentials, lifecycleGrantStore{}, mcpfx.NewOAuthProvider(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	authorizations, err := mcpmanage.NewAuthorizations(grants, "https://example.test/backoffice/mcp/oauth/callback", lifecycleAuthorizationBinding{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stages := applicationLifecycleStages(applicationLifecycleParams{MCPAuthorizations: authorizations}, &telegramLifecycle{})
+	if stages[0].name != "MCP authorization attempts" {
+		t.Fatalf("first lifecycle stage = %q, want authorization cleanup", stages[0].name)
+	}
+	coordinator := newApplicationLifecycle(zerolog.Nop(), []lifecycleStage{stages[0], {
+		name: "user readiness", start: func(context.Context) error { return errors.New("administrator missing") },
+	}})
+	if err := coordinator.Start(t.Context()); err == nil {
+		t.Fatal("early startup unexpectedly succeeded")
+	}
+	_, err = authorizations.BeginBrowser(t.Context(), mcpcmd.Revision{ConnectionID: "protected"}, "", mcpmanage.OAuthClient{}, mcpcmd.Authority{})
+	if !errors.Is(err, mcpcmd.ErrUnavailable) {
+		t.Fatalf("authorization after startup rollback = %v, want unavailable", err)
+	}
+}
 
 func TestApplicationLifecycleStartsInOrderAndStopsInReverse(t *testing.T) {
 	t.Parallel()
@@ -76,12 +124,12 @@ func TestApplicationLifecycleStagesStartQuestionProjectorAfterTransport(t *testi
 	}
 
 	want := []string{
+		"MCP authorization attempts",
 		"user readiness",
 		"bundled MCP",
 		"managed MCP credential readiness",
 		"MCP credential bridge",
 		"runtime contribution catalog",
-		"MCP authorization attempts",
 		"session-memory runtime",
 		"provider runtime",
 		"session manager",
@@ -95,8 +143,7 @@ func TestApplicationLifecycleStagesStartQuestionProjectorAfterTransport(t *testi
 		"actor host",
 		"webhook run finalizer",
 		"scheduled jobs",
-		"Backoffice HTTP",
-		"inbound webhooks",
+		sharedHTTPIngressStage,
 		"zulip ingress",
 		"slack agent ingress",
 		"telegram ingress",

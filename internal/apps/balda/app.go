@@ -37,6 +37,7 @@ import (
 	natsbus "github.com/baldaworks/balda/internal/apps/balda/eventbus/nats"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	"github.com/baldaworks/balda/internal/apps/balda/handlersfx"
+	"github.com/baldaworks/balda/internal/apps/balda/httpfx"
 	"github.com/baldaworks/balda/internal/apps/balda/internalmcp"
 	"github.com/baldaworks/balda/internal/apps/balda/jobexec"
 	baldajobs "github.com/baldaworks/balda/internal/apps/balda/jobs"
@@ -183,6 +184,34 @@ func Module(
 	if err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
+	sharedHTTP, err := cfg.Balda.ResolveHTTP()
+	if err != nil {
+		return fx.Module("balda", fx.Error(err))
+	}
+	tgbotkitCfg, err = resolveTelegramWebhookConfig(tgbotkitCfg, sharedHTTP)
+	if err != nil {
+		return fx.Module("balda", fx.Error(err))
+	}
+	for _, old := range []struct{ field, address string }{
+		{"balda.telegram.webhook.listen_addr", cfg.Balda.Telegram.Webhook.ListenAddr},
+		{"balda.zulip.webhook.listen_addr", cfg.Balda.Zulip.Webhook.ListenAddr},
+		{"balda.slack.listen_addr", cfg.Balda.Slack.ListenAddr},
+		{"balda.slack.agent.listen_addr", cfg.Balda.Slack.Agent.ListenAddr},
+		{"balda.mattermost.commands_listen_addr", cfg.Balda.Mattermost.CommandsListenAddr},
+		{"balda.webhooks.listen_addr", cfg.Balda.Webhooks.ListenAddr},
+	} {
+		if strings.TrimSpace(old.address) == "" {
+			continue
+		}
+		logger.Warn().Str("obsolete_field", old.field).Str("configured_address", old.address).
+			Str("active_field", "balda.http.listen_addr").Str("active_address", sharedHTTP.ListenAddr).
+			Msg("old HTTP listen address is ignored; configure balda.http.listen_addr")
+	}
+	if cfg.Balda.HTTP.ListenAddr != "" && cfg.Balda.Backoffice.ListenAddr != "" {
+		logger.Warn().Str("obsolete_field", "balda.backoffice.listen_addr").Str("configured_address", cfg.Balda.Backoffice.ListenAddr).
+			Str("active_field", "balda.http.listen_addr").Str("active_address", sharedHTTP.ListenAddr).
+			Msg("old HTTP listen address is ignored; configure balda.http.listen_addr")
+	}
 	sessionPersistence, err := validateSessionPersistence(cfg.Balda.Sessions.Persistence)
 	if err != nil {
 		return fx.Module("balda", fx.Error(err))
@@ -237,7 +266,7 @@ func Module(
 	if err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
-	if err := validateExecutionConfigLint(executionConfig, inboundWebhookConfig); err != nil {
+	if err := validateExecutionConfigLint(executionConfig, sharedHTTP.ListenAddr, inboundWebhookConfig); err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
 	if err := validateSessionMemoryConfig(cfg.Balda.SessionMemory); err != nil {
@@ -275,6 +304,8 @@ func Module(
 
 	return fx.Module("balda",
 		fx.Supply(
+			cfg.Balda,
+			sharedHTTP,
 			tgbotkitCfg,
 			logger,
 			normaCfg,
@@ -294,13 +325,6 @@ func Module(
 			func(grants *mcpmanage.Grants) *mcpbridge.Bridge {
 				return mcpbridge.New(mcpfx.GrantCredentials{Grants: grants}, nil)
 			},
-			func(grants *mcpmanage.Grants, definitions *mcpmanage.Definitions) (*mcpmanage.Authorizations, error) {
-				callback, err := mcpfx.MCPCallbackURL(backofficeConfig.Server.PublicURL, backofficeConfig.Server.BasePath)
-				if err != nil {
-					return nil, err
-				}
-				return mcpmanage.NewAuthorizations(grants, callback, definitions)
-			},
 			func(credentials *mcpmanage.Service, provider baldastate.Provider, catalog *catalogapp.Runtime, bridge *mcpbridge.Bridge) (*mcpmanage.Definitions, error) {
 				probe, err := mcpfx.NewManagedProbe(credentials, mcpfx.NewClientLauncher(), bridge)
 				if err != nil {
@@ -309,13 +333,10 @@ func Module(
 				configured := mcpfx.NewConfiguredDefinitions(normaCfg.MCPServers, normaCfg.Providers, cfg.Balda.Provider, cfg.Balda.MCPServers)
 				return mcpmanage.NewDefinitions(credentials, mcpfx.NewDefinitionStore(provider.MCP()), configured, catalog, probe)
 			},
-			func(definitions *mcpmanage.Definitions, catalog *catalogapp.Runtime, authorizations *mcpmanage.Authorizations) (*mcpbackofficeapp.Operations, error) {
-				operations := mcpbackofficeapp.New(definitions, catalog)
-				if err := operations.ConfigureAuthorizations(authorizations); err != nil {
-					return nil, err
-				}
-				return operations, nil
+			func(grants *mcpmanage.Grants, definitions *mcpmanage.Definitions, catalog *catalogapp.Runtime) (*mcpbackofficeapp.Operations, *mcpmanage.Authorizations, error) {
+				return newSharedBackofficeMCP(cfg.Balda, grants, definitions, catalog)
 			},
+			func() (*httpfx.Registry, error) { return httpfx.NewRegistry(sharedHTTP.BasePath) },
 			sessionmemorymcp.NewContextBroker,
 			fx.Annotate(
 				func() bool { return cfg.Balda.SessionMemory.Enabled },
@@ -815,8 +836,10 @@ func Module(
 		fx.Provide(func(provider baldastate.Provider) baldastate.WebhookAdmissionStore {
 			return provider.WebhookAdmissions()
 		}),
-		fx.Provide(func(provider baldastate.Provider) *webhookmanagement.Service {
-			return webhookmanagement.New(webhookroutefx.NewStore(provider))
+		fx.Provide(func(provider baldastate.Provider, registry *httpfx.Registry) *webhookmanagement.Service {
+			return webhookmanagement.New(webhookroutefx.NewStore(provider), webhookmanagement.ManagedPaths{
+				Prefix: sharedHTTP.BasePath + "/webhooks", Ownership: registry,
+			})
 		}),
 		fx.Provide(func(provider baldastate.Provider) (*auth.InviteStore, error) {
 			return auth.NewInviteStore(provider.AppKV())
@@ -990,7 +1013,7 @@ func validateSessionPersistence(raw string) (string, error) {
 	}
 }
 
-func validateExecutionConfigLint(executionCfg baldaexecution.Config, webhookCfg webhook.Config) error {
+func validateExecutionConfigLint(executionCfg baldaexecution.Config, sharedListenAddr string, webhookCfg webhook.Config) error {
 	errs := make([]string, 0)
 
 	streamNames := map[string]string{
@@ -1043,7 +1066,7 @@ func validateExecutionConfigLint(executionCfg baldaexecution.Config, webhookCfg 
 	}
 
 	if webhookCfg.Enabled {
-		host := strings.TrimSpace(webhookCfg.ListenAddr)
+		host := strings.TrimSpace(sharedListenAddr)
 		publicListenAddress := false
 		if host != "" {
 			if parsedHost, _, err := net.SplitHostPort(host); err == nil {
@@ -1073,8 +1096,8 @@ func validateExecutionConfigLint(executionCfg baldaexecution.Config, webhookCfg 
 			if len(unsecuredRoutes) > 0 {
 				sort.Strings(unsecuredRoutes)
 				errs = append(errs, fmt.Sprintf(
-					"balda.webhooks.listen_addr %q is publicly reachable; routes %s must configure auth.type=header with a non-empty auth value",
-					webhookCfg.ListenAddr,
+					"balda.http.listen_addr %q is publicly reachable; routes %s must configure auth.type=header with a non-empty auth value",
+					sharedListenAddr,
 					strings.Join(unsecuredRoutes, ", "),
 				))
 			}

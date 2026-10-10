@@ -246,24 +246,6 @@ func webhookDefinition(form url.Values, name string) webhookroutecmd.Definition 
 		DedupeSource:  form.Get("dedupe_source"), DedupeHeader: form.Get("dedupe_header")}
 }
 
-func (a *httpApp) webhookMutationDefinition(form url.Values, name, retainedPath string) (webhookroutecmd.Definition, error) {
-	definition := webhookDefinition(form, name)
-	if !a.legacyWebhookPath {
-		return definition, nil
-	}
-	// Standalone route management still requires a submitted path. Remove this
-	// bridge when every manager uses the shared derived-path policy.
-	path := retainedPath
-	if path == "" {
-		path = a.webhookPathPrefix + name
-	}
-	if definition.Path != "" && definition.Path != path {
-		return webhookroutecmd.Definition{}, webhookroutecmd.ErrInvalid
-	}
-	definition.Path = path
-	return definition, nil
-}
-
 func webhookVersion(form url.Values) (uint64, error) {
 	version, err := strconv.ParseUint(strings.TrimSpace(form.Get("expected_version")), 10, 64)
 	if err != nil || version == 0 {
@@ -277,11 +259,7 @@ func (a *httpApp) webhookCreate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	definition, err := a.webhookMutationDefinition(form, form.Get("name"), "")
-	if err != nil {
-		a.webhookError(w, r, page, err)
-		return
-	}
+	definition := webhookDefinition(form, form.Get("name"))
 	result, err := a.webhooks.Create(r.Context(), webhookroutecmd.Create{
 		Definition: definition, Authority: authority})
 	if err != nil {
@@ -302,11 +280,7 @@ func (a *httpApp) webhookUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := r.PathValue("webhook_name")
-	definition, err := a.webhookMutationDefinition(form, name, page.Webhooks.Editor.Path)
-	if err != nil {
-		a.webhookError(w, r, page, err)
-		return
-	}
+	definition := webhookDefinition(form, name)
 	item, err := a.webhooks.Update(r.Context(), webhookroutecmd.Update{
 		Name: name, ExpectedVersion: version, Definition: definition, Authority: authority})
 	a.webhookResult(w, r, page, item, err, false)

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/baldaworks/balda/internal/apps/backoffice"
+	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
 )
 
 // HTTPConfig controls Balda's shared HTTP bind and public URL prefix.
@@ -17,6 +18,8 @@ type HTTPConfig struct {
 	BaseURL    string  `mapstructure:"base_url"`
 	BasePath   *string `mapstructure:"base_path"`
 }
+
+const httpsScheme = "https"
 
 // ResolvedHTTPConfig holds validated shared HTTP settings.
 type ResolvedHTTPConfig struct {
@@ -63,10 +66,10 @@ func (c BaldaConfig) ResolveHTTP() (ResolvedHTTPConfig, error) {
 	if err != nil || parsedURL.Host == "" || parsedURL.User != nil || baseURL != parsedURL.Scheme+"://"+parsedURL.Host {
 		return ResolvedHTTPConfig{}, fmt.Errorf("balda.http.base_url must be an origin without credentials, query, fragment, or path")
 	}
-	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != httpsScheme {
 		return ResolvedHTTPConfig{}, fmt.Errorf("balda.http.base_url must use http or https")
 	}
-	if !isHTTPBindLoopback(host) && parsedURL.Scheme != "https" {
+	if !isHTTPBindLoopback(host) && parsedURL.Scheme != httpsScheme {
 		return ResolvedHTTPConfig{}, fmt.Errorf("balda.http.base_url must use HTTPS for a non-loopback balda.http.listen_addr")
 	}
 
@@ -96,7 +99,12 @@ func (c BaldaConfig) ResolveSharedBackofficeServer() (backoffice.ResolvedServerC
 	server.ListenAddr = httpConfig.ListenAddr
 	server.PublicURL = httpConfig.BaseURL
 	server.BasePath = httpConfig.BrowserPath()
-	return server.Resolve()
+	resolved, err := server.Resolve()
+	if err != nil {
+		return backoffice.ResolvedServerConfig{}, err
+	}
+	resolved.WebhookURLBasePath = &httpConfig.BasePath
+	return resolved, nil
 }
 
 // BrowserPath returns the Backoffice mount path without a trailing slash.
@@ -117,6 +125,31 @@ func (c ResolvedHTTPConfig) GatewayPath(transport, endpoint string) string {
 // PublicURL attaches a root-relative route path to the public origin.
 func (c ResolvedHTTPConfig) PublicURL(routePath string) string {
 	return c.BaseURL + routePath
+}
+
+func resolveTelegramWebhookConfig(config tgbotkit.Config, shared ResolvedHTTPConfig) (tgbotkit.Config, error) {
+	if !config.Webhook.Enabled {
+		return config, nil
+	}
+	canonical := shared.GatewayPath("telegram", "webhook")
+	legacy := strings.TrimSpace(config.Webhook.Path)
+	if legacy == "" {
+		legacy = "/telegram/webhook"
+	}
+	if !strings.HasPrefix(legacy, "/") {
+		legacy = "/" + legacy
+	}
+	callback := strings.TrimSpace(config.Webhook.URL)
+	if callback == "" {
+		config.Webhook.URL = shared.PublicURL(canonical)
+		return config, nil
+	}
+	parsed, err := url.Parse(callback)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != httpsScheme && parsed.Scheme != "http") || (parsed.Path != canonical && parsed.Path != legacy) {
+		return tgbotkit.Config{}, fmt.Errorf("balda.telegram.webhook.url path must match a mounted callback path %q or %q", canonical, legacy)
+	}
+	config.Webhook.URL = callback
+	return config, nil
 }
 
 func isHTTPBindLoopback(host string) bool {

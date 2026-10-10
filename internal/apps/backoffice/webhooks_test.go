@@ -40,98 +40,63 @@ const testWebhookPublicOrigin = "https://lab.metalagman.dev"
 const testManagedCallbackPath = "/balda/webhooks/orders"
 
 func TestWebhooksCreateWithRealManagedRoutePolicy(t *testing.T) {
-	for _, shared := range []bool{false, true} {
-		name := "standalone"
-		if shared {
-			name = "shared"
+	t.Run("shared", func(t *testing.T) {
+		provider, config := newHTTPAppTestState(t)
+		config.Server.BasePath = testBackofficeBasePath + "/backoffice"
+		sharedPath := testBackofficeBasePath
+		config.Server.WebhookURLBasePath = &sharedPath
+		manager := webhookmanagement.New(webhookroutefx.NewStore(provider),
+			webhookmanagement.ManagedPaths{Prefix: "/balda/webhooks"})
+		now := time.Now().UTC()
+		createAccessTestUser(t, provider.Users(), usercmd.User{ID: "admin", Username: "admin",
+			NormalizedUsername: "admin", DisplayName: "admin", Role: usercmd.RoleAdministrator,
+			Status: usercmd.StatusActive, Primary: true,
+			Credential: usercmd.Credential{State: usercmd.CredentialStateActive, Version: 1},
+			Version:    1, CreatedAt: now, UpdatedAt: now})
+		app, err := newHTTPApp(provider.Users(), config)
+		if err != nil {
+			t.Fatal(err)
 		}
-		t.Run(name, func(t *testing.T) {
-			provider, config := newHTTPAppTestState(t)
-			config.Server.BasePath = testBackofficeBasePath
-			manager := webhookmanagement.New(webhookroutefx.NewStore(provider))
-			if shared {
-				config.Server.BasePath += "/backoffice"
-				sharedPath := testBackofficeBasePath
-				config.Server.WebhookURLBasePath = &sharedPath
-				manager = webhookmanagement.New(webhookroutefx.NewStore(provider),
-					webhookmanagement.ManagedPaths{Prefix: "/balda/webhooks"})
-			}
-			now := time.Now().UTC()
-			createAccessTestUser(t, provider.Users(), usercmd.User{ID: "admin", Username: "admin",
-				NormalizedUsername: "admin", DisplayName: "admin", Role: usercmd.RoleAdministrator,
-				Status: usercmd.StatusActive, Primary: true,
-				Credential: usercmd.Credential{State: usercmd.CredentialStateActive, Version: 1},
-				Version:    1, CreatedAt: now, UpdatedAt: now})
-			app, err := newHTTPApp(provider.Users(), config)
-			if err != nil {
-				t.Fatal(err)
-			}
-			app.webhooks = webhookbackofficeapp.New(manager, nil, nil)
-			handler, err := app.handler()
-			if err != nil {
-				t.Fatal(err)
-			}
-			admin := loginHTTPAppSession(t, handler, config, "admin")
-			form := url.Values{"name": {"orders"}, "prompt_template": {"Handle {{.RawBody}}"},
-				"dedupe_source": {"request_id"}, "csrf_token": {admin.csrf}}
-			response := performAccessMutation(t, handler, config, config.Server.BasePath+"/webhooks",
-				form, admin.access, admin.csrf, false)
-			if response.Code != http.StatusOK {
-				t.Fatalf("create without editable path = %d", response.Code)
-			}
-			stored, found, err := provider.WebhookRoutes().Get(t.Context(), "orders")
-			if err != nil || !found || stored.Path != testManagedCallbackPath {
-				t.Fatalf("stored route = %+v, found %v, error %v", stored, found, err)
-			}
-			update := url.Values{"expected_version": {"1"}, "prompt_template": {"Updated {{.RawBody}}"},
-				"dedupe_source": {"request_id"}, "csrf_token": {admin.csrf}}
-			response = performAccessMutation(t, handler, config, config.Server.BasePath+"/webhooks/orders",
-				update, admin.access, admin.csrf, false)
-			if response.Code != http.StatusSeeOther {
-				t.Fatalf("update without editable path = %d", response.Code)
-			}
-			stored, found, err = provider.WebhookRoutes().Get(t.Context(), "orders")
-			if err != nil || !found || stored.Path != testManagedCallbackPath || stored.PromptTemplate != "Updated {{.RawBody}}" {
-				t.Fatalf("updated route = %+v, found %v, error %v", stored, found, err)
-			}
-			update.Set("expected_version", "2")
-			update.Set("path", "/forged")
-			response = performAccessMutation(t, handler, config, config.Server.BasePath+"/webhooks/orders",
-				update, admin.access, admin.csrf, false)
-			if response.Code != http.StatusBadRequest {
-				t.Fatalf("forged read-only path update = %d", response.Code)
-			}
-			stored, found, err = provider.WebhookRoutes().Get(t.Context(), "orders")
-			if err != nil || !found || stored.Path != testManagedCallbackPath || stored.Version != 2 {
-				t.Fatalf("route changed after forged path: %+v, found %v, error %v", stored, found, err)
-			}
-			if !shared {
-				principal, err := app.security.ValidateAccess(t.Context(), admin.access)
-				if err != nil {
-					t.Fatal(err)
-				}
-				_, err = manager.Create(t.Context(), webhookroutecmd.Create{
-					Definition: webhookroutecmd.Definition{Name: "legacy", Path: "/old/events",
-						PromptTemplate: "Legacy {{.RawBody}}", DedupeSource: webhookroutecmd.DedupeSourceRequestID},
-					Authority: app.webhookAuthority(principal),
-				})
-				if err != nil {
-					t.Fatal(err)
-				}
-				legacyUpdate := url.Values{"expected_version": {"1"}, "prompt_template": {"Retained {{.RawBody}}"},
-					"dedupe_source": {"request_id"}, "csrf_token": {admin.csrf}}
-				response = performAccessMutation(t, handler, config, config.Server.BasePath+"/webhooks/legacy",
-					legacyUpdate, admin.access, admin.csrf, false)
-				if response.Code != http.StatusSeeOther {
-					t.Fatalf("legacy custom-path update = %d", response.Code)
-				}
-				legacy, found, err := provider.WebhookRoutes().Get(t.Context(), "legacy")
-				if err != nil || !found || legacy.Path != "/old/events" || legacy.PromptTemplate != "Retained {{.RawBody}}" {
-					t.Fatalf("legacy route after edit = %+v, found %v, error %v", legacy, found, err)
-				}
-			}
-		})
-	}
+		app.webhooks = webhookbackofficeapp.New(manager, nil, nil)
+		handler, err := app.handler()
+		if err != nil {
+			t.Fatal(err)
+		}
+		admin := loginHTTPAppSession(t, handler, config, "admin")
+		form := url.Values{"name": {"orders"}, "prompt_template": {"Handle {{.RawBody}}"},
+			"dedupe_source": {"request_id"}, "csrf_token": {admin.csrf}}
+		response := performAccessMutation(t, handler, config, config.Server.BasePath+"/webhooks",
+			form, admin.access, admin.csrf, false)
+		if response.Code != http.StatusOK {
+			t.Fatalf("create without editable path = %d", response.Code)
+		}
+		stored, found, err := provider.WebhookRoutes().Get(t.Context(), "orders")
+		if err != nil || !found || stored.Path != testManagedCallbackPath {
+			t.Fatalf("stored route = %+v, found %v, error %v", stored, found, err)
+		}
+		update := url.Values{"expected_version": {"1"}, "prompt_template": {"Updated {{.RawBody}}"},
+			"dedupe_source": {"request_id"}, "csrf_token": {admin.csrf}}
+		response = performAccessMutation(t, handler, config, config.Server.BasePath+"/webhooks/orders",
+			update, admin.access, admin.csrf, false)
+		if response.Code != http.StatusSeeOther {
+			t.Fatalf("update without editable path = %d", response.Code)
+		}
+		stored, found, err = provider.WebhookRoutes().Get(t.Context(), "orders")
+		if err != nil || !found || stored.Path != testManagedCallbackPath || stored.PromptTemplate != "Updated {{.RawBody}}" {
+			t.Fatalf("updated route = %+v, found %v, error %v", stored, found, err)
+		}
+		update.Set("expected_version", "2")
+		update.Set("path", "/forged")
+		response = performAccessMutation(t, handler, config, config.Server.BasePath+"/webhooks/orders",
+			update, admin.access, admin.csrf, false)
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("forged read-only path update = %d", response.Code)
+		}
+		stored, found, err = provider.WebhookRoutes().Get(t.Context(), "orders")
+		if err != nil || !found || stored.Path != testManagedCallbackPath || stored.Version != 2 {
+			t.Fatalf("route changed after forged path: %+v, found %v, error %v", stored, found, err)
+		}
+	})
 }
 
 func TestWebhooksShowPublicCallbackURL(t *testing.T) {
@@ -361,6 +326,9 @@ func (f *webhooksHTTPFixture) Update(_ context.Context, request webhookroutecmd.
 		return webhookroutecmd.Item{}, f.updateErr
 	}
 	item := f.items[request.Name]
+	if request.Definition.Path == "" {
+		request.Definition.Path = item.Definition.Path
+	}
 	item.Definition = request.Definition
 	item.Version++
 	f.items[request.Name] = item
@@ -485,7 +453,7 @@ func TestWebhooksBrowserManagement(t *testing.T) {
 				!strings.Contains(created.Body.String(), "created-secret-example") ||
 				!strings.Contains(created.Body.String(), `data-webhook-once="`+base+`/webhooks/new_route"`) ||
 				len(fixture.creates) != 1 || fixture.creates[0].Authority.SessionID == "" ||
-				fixture.creates[0].Definition.Path != base+"/webhooks/new_route" {
+				fixture.creates[0].Definition.Path != "" {
 				t.Fatalf("create did not return one-time secret safely: %d", created.Code)
 			}
 			if got := get("/webhooks/new_route", admin.access); got.Code != http.StatusOK || strings.Contains(got.Body.String(), "created-secret-example") {
@@ -498,7 +466,7 @@ func TestWebhooksBrowserManagement(t *testing.T) {
 				"report_to": {"telegram:123456:0"}, "prompt_template": {"updated"}, "dedupe_source": {"body_sha256"}}
 			if got := mutation("/webhooks/managed", update); got.Code != http.StatusSeeOther ||
 				fixture.updates[0].ExpectedVersion != 2 || fixture.updates[0].Definition.ReportTo != "telegram:123456:0" ||
-				fixture.updates[0].Definition.Path != "/hooks/managed" {
+				fixture.updates[0].Definition.Path != "" {
 				t.Fatalf("update failed: %d", got.Code)
 			}
 			fixture.updateErr = webhookroutecmd.ErrConflict

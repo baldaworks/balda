@@ -50,7 +50,7 @@ func backofficeRuntimeConfig(cfg BaldaConfig, database state.DatabaseConfig) (ba
 	if _, err := cfg.ResolveHTTP(); err != nil {
 		return backoffice.ResolvedConfig{}, err
 	}
-	server, err := cfg.ResolveBackofficeServer()
+	server, err := cfg.ResolveSharedBackofficeServer()
 	if err != nil {
 		return backoffice.ResolvedConfig{}, err
 	}

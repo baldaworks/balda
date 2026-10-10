@@ -101,16 +101,6 @@ var Module = fx.Module(
 		// this receiver maps them onto the same InboundCommand contract.
 		NewCommandServer,
 		fx.Annotate(NewGatewayCallbackProvider, fx.ResultTags(`group:"balda_http_gateway_callback_providers"`)),
-		fx.Annotate(
-			func(server *mattermost.CommandServer) appports.TransportLifecycleStage {
-				return appports.TransportLifecycleStage{
-					Name:  "mattermost slash commands",
-					Start: server.Start,
-					Stop:  server.Stop,
-				}
-			},
-			fx.ResultTags(`group:"balda_transport_lifecycle_stage"`),
-		),
 
 		// Inbound websocket ingress requires the canonical processor whenever
 		// Mattermost is enabled; startup fails closed when it is absent.

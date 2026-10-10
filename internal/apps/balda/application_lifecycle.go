@@ -11,12 +11,13 @@ import (
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	"github.com/baldaworks/balda/internal/apps/balda/catalogapp"
-	"github.com/baldaworks/balda/internal/apps/balda/channel/webhook"
 	natsbus "github.com/baldaworks/balda/internal/apps/balda/eventbus/nats"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
+	"github.com/baldaworks/balda/internal/apps/balda/httpfx"
 	"github.com/baldaworks/balda/internal/apps/balda/internalmcp"
 	"github.com/baldaworks/balda/internal/apps/balda/jobexec"
 	baldajobs "github.com/baldaworks/balda/internal/apps/balda/jobs"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpbackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpbridge"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
@@ -25,6 +26,8 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
 	"github.com/baldaworks/balda/internal/apps/balda/shutdown"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookfx"
 	portableapp "github.com/baldaworks/balda/sessionmemory/app"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/runtime"
@@ -36,6 +39,8 @@ type lifecycleStage struct {
 	start func(context.Context) error
 	stop  func(context.Context) error
 }
+
+const sharedHTTPIngressStage = "shared HTTP ingress"
 
 type applicationLifecycle struct {
 	logger zerolog.Logger
@@ -95,29 +100,43 @@ func (l *applicationLifecycle) stopStarted(ctx context.Context, count int) error
 }
 
 type telegramLifecycle struct {
-	enabled bool
-	bot     *runtime.Bot
-	logger  zerolog.Logger
+	enabled    bool
+	source     runtime.UpdateSource
+	run        func(context.Context) error
+	shutdowner fx.Shutdowner
+	logger     zerolog.Logger
 
 	cancel context.CancelFunc
 	done   chan struct{}
 }
 
-func (t *telegramLifecycle) Start(context.Context) error {
+func (t *telegramLifecycle) Start(ctx context.Context) error {
 	if !t.enabled {
 		return nil
+	}
+	if _, ok := t.source.(tgbotkit.SharedWebhookSource); ok {
+		// The shared socket is already serving. Register synchronously so an
+		// upstream failure unwinds that listener during startup.
+		if err := t.source.Start(ctx); err != nil {
+			return fmt.Errorf("register Telegram webhook: %w", err)
+		}
 	}
 	runCtx, cancel := context.WithCancel(context.Background())
 	t.cancel = cancel
 	t.done = make(chan struct{})
 	go func() {
 		defer close(t.done)
-		if err := t.bot.Run(runCtx); err != nil {
+		if err := t.run(runCtx); err != nil {
 			if shutdown.IsExpected(err) {
 				t.logger.Debug().Err(err).Msg("telegram runtime stopped during shutdown")
 				return
 			}
 			t.logger.Error().Err(err).Msg("telegram runtime stopped")
+			if t.shutdowner != nil {
+				if shutdownErr := t.shutdowner.Shutdown(fx.ExitCode(1)); shutdownErr != nil {
+					t.logger.Error().Err(shutdownErr).Msg("request Balda shutdown after Telegram runtime failure")
+				}
+			}
 		}
 	}()
 	return nil
@@ -144,7 +163,14 @@ type applicationLifecycleParams struct {
 	LC                   fx.Lifecycle
 	Shutdowner           fx.Shutdowner
 	Logger               zerolog.Logger
+	Config               BaldaConfig
+	HTTPConfig           ResolvedHTTPConfig
+	HTTPRegistry         *httpfx.Registry
+	WebhookHTTP          webhookfx.HTTPContribution
+	GatewayCallbacks     []httpfx.GatewayCallbackProvider `group:"balda_http_gateway_callback_providers"`
+	TelegramSource       runtime.UpdateSource
 	Backoffice           *backoffice.Runtime
+	BackofficeMCP        *mcpbackofficeapp.Operations
 	MCP                  *internalmcp.InternalMCPManager
 	MCPManagement        *mcpmanage.Service
 	MCPBridge            *mcpbridge.Bridge
@@ -165,7 +191,6 @@ type applicationLifecycleParams struct {
 	TurnDispatcher       *actors.TurnDispatcher
 	Scheduler            *scheduledjobs.ScheduledJobScheduler
 	WebhookRunFinalizer  *jobexec.WebhookRunFinalizer
-	InboundWebhook       *webhook.Receiver
 	TransportStages      []appports.TransportLifecycleStage `group:"balda_transport_lifecycle_stage"`
 	TelegramBot          *runtime.Bot
 	TelegramEnabled      bool `name:"balda_telegram_enabled"`
@@ -173,16 +198,22 @@ type applicationLifecycleParams struct {
 
 func registerApplicationLifecycle(p applicationLifecycleParams) {
 	telegram := &telegramLifecycle{
-		enabled: p.TelegramEnabled,
-		bot:     p.TelegramBot,
-		logger:  p.Logger.With().Str("component", "balda.telegram_runtime").Logger(),
+		enabled:    p.TelegramEnabled,
+		source:     p.TelegramSource,
+		run:        p.TelegramBot.Run,
+		shutdowner: p.Shutdowner,
+		logger:     p.Logger.With().Str("component", "balda.telegram_runtime").Logger(),
 	}
 	coordinator := newApplicationLifecycle(p.Logger, applicationLifecycleStages(p, telegram))
 	p.LC.Append(fx.Hook{OnStart: coordinator.Start, OnStop: coordinator.Stop})
 }
 
 func applicationLifecycleStages(p applicationLifecycleParams, telegram *telegramLifecycle) []lifecycleStage {
+	var sharedServer *httpfx.Server
 	stages := []lifecycleStage{
+		// FX constructs this before Start. Register cleanup first so every failed
+		// startup stage also closes pending browser authorization attempts.
+		{name: "MCP authorization attempts", stop: func(context.Context) error { p.MCPAuthorizations.Close(); return nil }},
 		{name: "user readiness", start: p.Backoffice.ValidateReady},
 		{name: "bundled MCP", start: p.MCP.EnsureStarted, stop: p.MCP.Stop},
 		{name: "managed MCP credential readiness", start: func(ctx context.Context) error {
@@ -190,7 +221,6 @@ func applicationLifecycleStages(p applicationLifecycleParams, telegram *telegram
 		}},
 		{name: "MCP credential bridge", start: p.MCPBridge.Start, stop: p.MCPBridge.Close},
 		{name: "runtime contribution catalog", start: p.Catalog.Start, stop: p.Catalog.Stop},
-		{name: "MCP authorization attempts", stop: func(context.Context) error { p.MCPAuthorizations.Close(); return nil }},
 		{name: "session-memory runtime", start: func(ctx context.Context) error {
 			return startSessionMemoryRuntime(ctx, p.SessionMemoryRuntime)
 		}, stop: func(ctx context.Context) error {
@@ -221,22 +251,28 @@ func applicationLifecycleStages(p applicationLifecycleParams, telegram *telegram
 		{name: "actor host", start: p.ActorHost.Start, stop: p.ActorHost.Stop},
 		{name: "webhook run finalizer", start: p.WebhookRunFinalizer.Start, stop: p.WebhookRunFinalizer.Stop},
 		{name: "scheduled jobs", start: p.Scheduler.Start, stop: p.Scheduler.Stop},
-		{name: "Backoffice HTTP", start: func(ctx context.Context) error {
-			if err := p.Backoffice.Start(ctx); err != nil {
+		{name: sharedHTTPIngressStage, start: func(ctx context.Context) error {
+			server, err := startSharedHTTPIngress(ctx, p)
+			if err != nil {
 				return err
 			}
+			sharedServer = server
 			go func() {
-				<-p.Backoffice.Done()
-				if err := p.Backoffice.Err(); err != nil {
-					p.Logger.Error().Err(err).Msg("Backoffice HTTP stopped unexpectedly")
+				<-sharedServer.Done()
+				if err := sharedServer.Err(); err != nil {
+					p.Logger.Error().Err(err).Msg("shared HTTP ingress stopped unexpectedly")
 					if shutdownErr := p.Shutdowner.Shutdown(fx.ExitCode(1)); shutdownErr != nil {
-						p.Logger.Error().Err(shutdownErr).Msg("request Balda shutdown after Backoffice failure")
+						p.Logger.Error().Err(shutdownErr).Msg("request Balda shutdown after shared HTTP failure")
 					}
 				}
 			}()
 			return nil
-		}, stop: p.Backoffice.Stop},
-		{name: "inbound webhooks", start: p.InboundWebhook.Start, stop: p.InboundWebhook.Stop},
+		}, stop: func(ctx context.Context) error {
+			if sharedServer == nil {
+				return nil
+			}
+			return sharedServer.Stop(ctx)
+		}},
 	}
 	for _, stage := range p.TransportStages {
 		stages = append(stages, lifecycleStage{
@@ -247,6 +283,38 @@ func applicationLifecycleStages(p applicationLifecycleParams, telegram *telegram
 	}
 	stages = append(stages, lifecycleStage{name: "telegram ingress", start: telegram.Start, stop: telegram.Stop})
 	return stages
+}
+
+func startSharedHTTPIngress(ctx context.Context, p applicationLifecycleParams) (*httpfx.Server, error) {
+	handler, err := backofficeSharedHandler(ctx, p.Backoffice, p.Config, p.BackofficeMCP)
+	if err != nil {
+		return nil, err
+	}
+	if err := p.HTTPRegistry.AddBackoffice("backoffice", handler); err != nil {
+		return nil, err
+	}
+	for _, provider := range p.GatewayCallbacks {
+		callbacks, err := provider(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("prepare gateway callbacks: %w", err)
+		}
+		if err := p.HTTPRegistry.AddGatewayCallbacks(callbacks); err != nil {
+			return nil, err
+		}
+	}
+	if err := p.WebhookHTTP(ctx, p.HTTPRegistry); err != nil {
+		return nil, fmt.Errorf("prepare generic webhooks: %w", err)
+	}
+	if source, ok := p.TelegramSource.(tgbotkit.SharedWebhookSource); ok {
+		if err := source.UseSharedListener(); err != nil {
+			return nil, fmt.Errorf("prepare Telegram webhook source: %w", err)
+		}
+	}
+	server := httpfx.NewServer(p.HTTPConfig.ListenAddr, p.HTTPRegistry.Handler())
+	if err := server.Start(); err != nil {
+		return nil, err
+	}
+	return server, nil
 }
 
 type sessionMemoryRuntime interface {

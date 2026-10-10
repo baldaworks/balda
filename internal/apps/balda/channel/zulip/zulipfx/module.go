@@ -3,7 +3,6 @@ package zulipfx
 import (
 	"time"
 
-	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/zulip"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfx"
@@ -60,16 +59,6 @@ var Module = fx.Module(
 		fx.Annotate(
 			NewGoalOutcomeStructuredRegistrar,
 			fx.ResultTags(`group:"balda_delivery_structured_registrar"`),
-		),
-		fx.Annotate(
-			func(handler *zulip.Server) appports.TransportLifecycleStage {
-				return appports.TransportLifecycleStage{
-					Name:  "zulip ingress",
-					Start: handler.Start,
-					Stop:  handler.Stop,
-				}
-			},
-			fx.ResultTags(`group:"balda_transport_lifecycle_stage"`),
 		),
 	),
 )

@@ -6,10 +6,32 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/backoffice"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpfx"
+	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
 	"github.com/normahq/runtime/v2/appconfig"
 )
 
 const testHTTPListenAddr = "127.0.0.1:18095"
+
+func TestTelegramWebhookURLUsesMountedSharedRoute(t *testing.T) {
+	shared := ResolvedHTTPConfig{BaseURL: "https://lab.metalagman.dev", BasePath: "/balda"}
+	config := tgbotkit.Config{Webhook: tgbotkit.WebhookConfig{Enabled: true, Path: "/telegram/old"}}
+	resolved, err := resolveTelegramWebhookConfig(config, shared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "https://lab.metalagman.dev/balda/gateway/telegram/webhook"; resolved.Webhook.URL != want {
+		t.Fatalf("webhook URL = %q, want %q", resolved.Webhook.URL, want)
+	}
+	config.Webhook.URL = "https://legacy.example/telegram/old"
+	resolved, err = resolveTelegramWebhookConfig(config, shared)
+	if err != nil || resolved.Webhook.URL != config.Webhook.URL {
+		t.Fatalf("legacy URL = %q, error = %v", resolved.Webhook.URL, err)
+	}
+	config.Webhook.URL = "https://legacy.example/unmounted"
+	if _, err := resolveTelegramWebhookConfig(config, shared); err == nil || !strings.Contains(err.Error(), "balda.telegram.webhook.url") {
+		t.Fatalf("unmounted webhook URL error = %v", err)
+	}
+}
 
 func TestResolvedHTTPURLs(t *testing.T) {
 	for _, tt := range []struct {
@@ -109,7 +131,7 @@ func TestResolveHTTPAcceptsExplicitEmptyBasePathFromConfig(t *testing.T) {
 }
 
 func TestResolveSharedBackofficeServerUsesSharedBrowserPath(t *testing.T) {
-	basePath := "/balda"
+	basePath := sharedTestBasePath
 	cfg := BaldaConfig{HTTP: HTTPConfig{
 		ListenAddr: testHTTPListenAddr, BaseURL: "https://lab.metalagman.dev", BasePath: &basePath,
 	}}
