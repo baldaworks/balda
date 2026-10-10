@@ -47,6 +47,28 @@ func checkProvider_WebhookRouteManagement(t *testing.T, open contractOpener) {
 	if got, found, err := s.LookupByPath(t.Context(), r.Path); err != nil || !found || got.SecretVerifier != r.SecretVerifier {
 		t.Fatalf("ingress verifier = %q, found=%t, err=%v", got.SecretVerifier, found, err)
 	}
+	inactive := m
+	inactive.Record.Name, inactive.Record.Path = "inactive", "/old/inactive"
+	inactive.Audit.ID, inactive.Audit.TargetID = "webhook-inactive-create", inactive.Record.Name
+	if err := s.Save(t.Context(), inactive); err != nil {
+		t.Fatal(err)
+	}
+	inactive.Kind, inactive.ExpectedVersion = WebhookRouteSelection, 1
+	inactive.Record.Enabled, inactive.Record.Version = false, 2
+	inactive.Audit.ID = "webhook-inactive-disable"
+	if err := s.Save(t.Context(), inactive); err != nil {
+		t.Fatal(err)
+	}
+	inactive.Kind, inactive.ExpectedVersion = WebhookRouteEdit, 2
+	inactive.Record.Path, inactive.Record.Version = r.Path, 3
+	inactive.Audit.ID = "webhook-inactive-edit"
+	if err := s.Save(t.Context(), inactive); !errors.Is(err, ErrWebhookRouteConflict) ||
+		!strings.Contains(err.Error(), r.Path) || !strings.Contains(err.Error(), r.Name) {
+		t.Fatalf("disabled route edit over active managed path = %v, want named conflict", err)
+	}
+	if got, found, err := s.Get(t.Context(), "inactive"); err != nil || !found || got.Path != "/old/inactive" || got.Version != 2 {
+		t.Fatalf("conflicting edit changed inactive row = %+v, found=%t, err=%v", got, found, err)
+	}
 	if err := s.Save(t.Context(), m); !errors.Is(err, ErrWebhookRouteConflict) {
 		t.Fatalf("duplicate name = %v, want conflict", err)
 	}

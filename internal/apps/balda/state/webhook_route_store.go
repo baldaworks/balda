@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"math"
 	"strings"
 	"time"
@@ -199,6 +200,18 @@ func (s *sqlWebhookRouteStore) Save(ctx context.Context, m WebhookRouteMutation)
 	}
 	now := formatUserTime(time.Now().UTC())
 	r := m.Record
+	if m.Kind == WebhookRouteCreate || m.Kind == WebhookRouteEdit ||
+		m.Kind == WebhookRouteSelection && r.Enabled {
+		var owner string
+		err := tx.QueryRowContext(ctx, s.users.bind(`SELECT name FROM balda_webhook_routes
+			WHERE path = ? AND enabled = 1 AND deleted = 0 AND name <> ? LIMIT 1`), r.Path, r.Name).Scan(&owner)
+		if err == nil {
+			return fmt.Errorf("%w: path %q conflicts with active route %q", ErrWebhookRouteConflict, r.Path, owner)
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return ErrWebhookRouteUnavailable
+		}
+	}
 	var result sql.Result
 	switch m.Kind {
 	case WebhookRouteCreate:

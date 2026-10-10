@@ -53,7 +53,7 @@ func NewHTTPContribution(config webhook.Config, receiver *webhook.Receiver, ingr
 			if route.Source != state.WebhookRouteSourceManaged || !route.Enabled || route.Deleted {
 				continue
 			}
-			if err := registry.AddWebhook("managed webhook "+route.Name, route.Path, handler); err != nil {
+			if err := registry.AddManagedWebhook(route.Name, route.Path, handler); err != nil {
 				return err
 			}
 		}

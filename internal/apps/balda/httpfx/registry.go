@@ -17,6 +17,7 @@ type WebhookLookup func(context.Context, string) (bool, error)
 type route struct {
 	owner   string
 	handler http.Handler
+	managed bool
 }
 
 // Registry checks path ownership before assembling the shared HTTP handler.
@@ -73,12 +74,24 @@ func (r *Registry) AddGateway(owner, routePath string, handler http.Handler) err
 	if within(routePath, r.webhookPath) {
 		return routeConflict(routePath, owner, areaOwner(r.webhooks.owner, "webhooks"))
 	}
-	return r.addExact(owner, routePath, handler)
+	return r.addExact(owner, routePath, handler, false)
 }
 
 // AddWebhook registers an active exact path, including a retained custom path.
 // The supplied handler keeps its existing authentication and admission checks.
 func (r *Registry) AddWebhook(owner, routePath string, handler http.Handler) error {
+	return r.addWebhook(owner, routePath, handler, false)
+}
+
+// AddManagedWebhook registers an active managed route by its stable name.
+func (r *Registry) AddManagedWebhook(name, routePath string, handler http.Handler) error {
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("managed webhook name is required")
+	}
+	return r.addWebhook("managed webhook "+name, routePath, handler, true)
+}
+
+func (r *Registry) addWebhook(owner, routePath string, handler http.Handler, managed bool) error {
 	if err := validateContribution(owner, handler); err != nil {
 		return err
 	}
@@ -94,7 +107,7 @@ func (r *Registry) AddWebhook(owner, routePath string, handler http.Handler) err
 	if within(routePath, r.gatewayPath) {
 		return routeConflict(routePath, owner, "gateway")
 	}
-	return r.addExact(owner, routePath, handler)
+	return r.addExact(owner, routePath, handler, managed)
 }
 
 // SetWebhookLookup routes newly active canonical and legacy paths without
@@ -113,12 +126,31 @@ func (r *Registry) SetWebhookLookup(owner string, handler http.Handler, lookup W
 	return nil
 }
 
-func (r *Registry) addExact(owner, routePath string, handler http.Handler) error {
+func (r *Registry) addExact(owner, routePath string, handler http.Handler, managed bool) error {
 	if existing, exists := r.exact[routePath]; exists {
 		return routeConflict(routePath, owner, existing.owner)
 	}
-	r.exact[routePath] = route{owner: owner, handler: handler}
+	r.exact[routePath] = route{owner: owner, handler: handler, managed: managed}
 	return nil
+}
+
+// ConflictingOwner reports a stable reserved, gateway, or config-owned path.
+// Managed path availability is checked by the database because managed routes
+// can be disabled or deleted after this startup registry is assembled.
+func (r *Registry) ConflictingOwner(routePath string) string {
+	if within(routePath, r.backofficePath) {
+		return areaOwner(r.backoffice.owner, "backoffice")
+	}
+	if exact, exists := r.exact[routePath]; exists {
+		if exact.managed {
+			return ""
+		}
+		return exact.owner
+	}
+	if within(routePath, r.gatewayPath) {
+		return "gateway"
+	}
+	return ""
 }
 
 // Handler returns the composed router. It preserves URL.Path for each owner.

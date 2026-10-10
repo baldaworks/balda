@@ -3,6 +3,8 @@ package webhookroutefx
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -74,5 +76,15 @@ func TestRouteStoreErrorMapping(t *testing.T) {
 		if got := storeError(tc.input); !errors.Is(got, tc.want) {
 			t.Errorf("storeError(%v) = %v, want %v", tc.input, got, tc.want)
 		}
+	}
+}
+
+func TestRouteStorePreservesPathConflictDetails(t *testing.T) {
+	stateErr := fmt.Errorf("%w: path %q conflicts with active route %q", state.ErrWebhookRouteConflict,
+		"/old/shared", "managed-b")
+	err := storeError(stateErr)
+	if !errors.Is(err, webhookroutecmd.ErrConflict) || !strings.Contains(err.Error(), "/old/shared") ||
+		!strings.Contains(err.Error(), "managed-b") {
+		t.Fatalf("mapped path conflict = %v, want typed conflict with path and owner", err)
 	}
 }

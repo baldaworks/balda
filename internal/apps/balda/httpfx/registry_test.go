@@ -130,6 +130,37 @@ func TestRegistryRejectsConflictingRoutes(t *testing.T) {
 	}
 }
 
+func TestRegistryReportsNonWebhookOwnersForManagement(t *testing.T) {
+	registry, err := NewRegistry("/balda")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.AddBackoffice("browser", http.NotFoundHandler()); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.AddGateway("slack legacy alias", "/events/slack", http.NotFoundHandler()); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.AddWebhook("config webhook", "/legacy/orders", http.NotFoundHandler()); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.AddManagedWebhook("own", "/legacy/own", http.NotFoundHandler()); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct{ path, owner string }{
+		{"/balda/backoffice/webhooks", "browser"},
+		{"/balda/gateway/unknown", "gateway"},
+		{"/events/slack", "slack legacy alias"},
+		{"/legacy/orders", "config webhook"},
+		{"/legacy/own", ""},
+		{"/balda/webhooks/orders", ""},
+	} {
+		if got := registry.ConflictingOwner(test.path); got != test.owner {
+			t.Errorf("owner of %q = %q, want %q", test.path, got, test.owner)
+		}
+	}
+}
+
 func TestRegistryWebhookLookupFailureDoesNotAdmit(t *testing.T) {
 	registry, err := NewRegistry("")
 	if err != nil {

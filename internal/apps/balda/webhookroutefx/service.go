@@ -4,6 +4,7 @@ package webhookroutefx
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookroutecmd"
@@ -90,7 +91,7 @@ func storeError(err error) error {
 	case errors.Is(err, state.ErrWebhookRouteNotFound):
 		return webhookroutecmd.ErrNotFound
 	case errors.Is(err, state.ErrWebhookRouteConflict):
-		return webhookroutecmd.ErrConflict
+		return fmt.Errorf("%w: %v", webhookroutecmd.ErrConflict, err)
 	default:
 		return webhookroutecmd.ErrUnavailable
 	}
