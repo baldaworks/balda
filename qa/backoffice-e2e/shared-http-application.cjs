@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
+const path = require('node:path');
 const { chromium } = require('playwright');
 
 const origin = process.argv[2];
@@ -8,7 +9,20 @@ const phase = process.argv[3];
 const secretPath = process.argv[4];
 assert.equal(new URL(origin).hostname, '127.0.0.1');
 assert.ok(phase === 'initial' || phase === 'restart');
-const browserRoot = `${origin}/balda/backoffice`;
+const basePath = process.argv[5] || '';
+assert.ok(basePath === '' || basePath === '/balda');
+const browserRoot = `${origin}${basePath}/backoffice`;
+const callbackPath = name => `${basePath}/webhooks/${name}`;
+
+async function capture(page, name) {
+  const root = process.env.BALDA_WEBHOOKS_RUNTIME_SCREENSHOTS;
+  if (!root) return;
+  const dir = path.join(root, `shared-${phase}`);
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `${name}.png`);
+  await page.screenshot({ path: file, fullPage: true });
+  console.log(`Screenshot: ${file}`);
+}
 
 async function post(path, body, headers = {}) {
   return fetch(`${origin}${path}`, { method: 'POST', body, headers });
@@ -29,7 +43,7 @@ async function signedSlackPost() {
   const timestamp = Math.floor(Date.now() / 1000).toString();
   const signature = `v0=${crypto.createHmac('sha256', 'slack-signing-secret')
     .update(`v0:${timestamp}:${body}`).digest('hex')}`;
-  const response = await post('/balda/gateway/slack/events', body, {
+  const response = await post(`${basePath}/gateway/slack/events`, body, {
     'X-Slack-Request-Timestamp': timestamp, 'X-Slack-Signature': signature,
   });
   assert.equal(response.status, 200);
@@ -47,10 +61,12 @@ async function signedSlackPost() {
 
     const configured = await page.goto(`${browserRoot}/webhooks/configured`);
     assert.equal(configured.status(), 200);
-    await page.getByText(`${origin}/legacy/configured`, { exact: true }).first().waitFor();
-    const legacy = await page.goto(`${browserRoot}/webhooks/legacy`);
-    assert.equal(legacy.status(), 200);
-    assert.equal(await page.getByLabel('Webhook URL').inputValue(), `${origin}/legacy/orders`);
+    await page.getByText(`${origin}${callbackPath('configured')}`, { exact: true }).first().waitFor();
+    const retained = await page.goto(`${browserRoot}/webhooks/retained`);
+    assert.equal(retained.status(), 200);
+    assert.equal(await page.getByLabel('Webhook URL').inputValue(), `${origin}${callbackPath('retained')}`);
+
+    await capture(page, 'retained-route');
 
     const secret = phase === 'initial' ? null : fs.readFileSync(secretPath, 'utf8');
     if (phase === 'initial') {
@@ -63,9 +79,9 @@ async function signedSlackPost() {
       assert.ok(createdSecret.length >= 32);
       fs.writeFileSync(secretPath, createdSecret, { mode: 0o600, flag: 'wx' });
       await page.goto(`${browserRoot}/webhooks/orders`);
-      assert.equal(await page.getByLabel('Webhook URL').inputValue(), `${origin}/balda/webhooks/orders`);
-      assert.equal((await post('/balda/webhooks/orders', 'bad', { 'X-Balda-Webhook-Secret': 'wrong' })).status, 401);
-      assert.equal((await post('/balda/webhooks/orders', 'first input', {
+      assert.equal(await page.getByLabel('Webhook URL').inputValue(), `${origin}${callbackPath('orders')}`);
+      assert.equal((await post(callbackPath('orders'), 'bad', { 'X-Balda-Webhook-Secret': 'wrong' })).status, 401);
+      assert.equal((await post(callbackPath('orders'), 'first input', {
         'X-Balda-Webhook-Secret': createdSecret, 'X-Request-Id': 'shared-first',
       })).status, 202);
       await page.reload();
@@ -78,7 +94,7 @@ async function signedSlackPost() {
       ]);
       await page.reload();
       assert.equal(await page.getByLabel('Prompt template').inputValue(), 'Edited: {{.RawBody}}');
-      assert.equal((await post('/balda/webhooks/orders', 'edited input', {
+      assert.equal((await post(callbackPath('orders'), 'edited input', {
         'X-Balda-Webhook-Secret': createdSecret, 'X-Request-Id': 'shared-edited',
       })).status, 202);
       await page.reload();
@@ -87,62 +103,71 @@ async function signedSlackPost() {
       const csrfDenied = await page.evaluate(async path => (await fetch(path, {
         method: 'POST', credentials: 'same-origin',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'prompt_template=blocked',
-      })).status, '/balda/backoffice/webhooks/orders');
+      })).status, `${basePath}/backoffice/webhooks/orders`);
       assert.equal(csrfDenied, 403);
       await page.getByLabel(/Confirm disabling this webhook route/).check();
       await page.getByRole('button', { name: 'Disable webhook' }).click();
       await page.getByRole('button', { name: 'Enable webhook' }).waitFor();
-      assert.equal((await post('/balda/webhooks/orders', 'disabled', {
+      assert.equal((await post(callbackPath('orders'), 'disabled', {
         'X-Balda-Webhook-Secret': createdSecret,
       })).status, 404);
       await page.getByLabel(/Confirm enabling this webhook route/).check();
       await page.getByRole('button', { name: 'Enable webhook' }).click();
       await page.getByRole('button', { name: 'Disable webhook' }).waitFor();
-      assert.equal((await post('/balda/webhooks/orders', 'reenabled', {
+      assert.equal((await post(callbackPath('orders'), 'reenabled', {
         'X-Balda-Webhook-Secret': createdSecret, 'X-Request-Id': 'shared-reenabled',
       })).status, 202);
     } else {
       const detail = await page.goto(`${browserRoot}/webhooks/orders`);
       assert.equal(detail.status(), 200);
-      assert.equal(await page.getByLabel('Webhook URL').inputValue(), `${origin}/balda/webhooks/orders`);
-      assert.equal((await post('/balda/webhooks/orders', 'after restart', {
+      assert.equal(await page.getByLabel('Webhook URL').inputValue(), `${origin}${callbackPath('orders')}`);
+      assert.equal((await post(callbackPath('orders'), 'after restart', {
         'X-Balda-Webhook-Secret': secret, 'X-Request-Id': 'shared-after-restart',
       })).status, 202);
       await page.reload();
       await page.getByRole('region', { name: /Webhook request history/ }).locator('tbody tr a').first().click();
       await page.getByText('Processed: Edited: after restart', { exact: true }).first().waitFor();
+      await capture(page, 'after-prefix-change');
+      await page.goto(`${browserRoot}/webhooks/orders`);
+      const prior = page.getByRole('region', { name: /Webhook request history/ });
+      assert.equal(await prior.locator('tbody tr').count(), 4, 'prefix change preserves prior managed admissions');
+      await prior.locator('tbody tr').last().locator('a').first().click();
+      await page.getByText('first input', { exact: true }).first().waitFor();
+      await page.getByText('Processed: New: first input', { exact: true }).first().waitFor();
+      await capture(page, 'preserved-history');
     }
 
-    assert.equal((await post('/legacy/orders', 'legacy input', {
-      'X-Balda-Webhook-Secret': 'legacy-secret', 'X-Request-Id': `legacy-${phase}`,
+    assert.equal((await post(callbackPath('retained'), 'retained input', {
+      'X-Balda-Webhook-Secret': 'retained-secret', 'X-Request-Id': `retained-${phase}`,
     })).status, 202);
-    assert.equal((await post('/legacy/configured', 'configured input', {
+    assert.equal((await post(callbackPath('configured'), 'configured input', {
       'X-Configured-Secret': 'configured-secret', 'X-Request-Id': `configured-${phase}`,
     })).status, 202);
     for (const [name, output] of [
-      ['legacy', 'Processed: Legacy: legacy input'],
+      ['retained', 'Processed: Retained: retained input'],
       ['configured', 'Processed: Configured: configured input'],
     ]) {
       await page.goto(`${browserRoot}/webhooks/${name}`);
       await page.getByRole('region', { name: /Webhook request history/ }).locator('tbody tr a').first().click();
       await page.getByText(output, { exact: true }).first().waitFor();
     }
-    assert.equal((await post('/balda/webhooks/unknown', 'unknown')).status, 404);
-    assert.equal((await post('/balda/gateway/webhooks/orders', 'wrong area')).status, 404);
-    assert.equal((await post('/balda/gateway/slack/events', '{}', {
+    await capture(page, 'config-history');
+    assert.equal((await post(callbackPath('unknown'), 'unknown')).status, 404);
+    assert.equal((await post(`${basePath}/gateway/webhooks/orders`, 'wrong area')).status, 404);
+    assert.equal((await post(`${basePath}/gateway/slack/events`, '{}', {
       'X-Slack-Request-Timestamp': Math.floor(Date.now() / 1000).toString(), 'X-Slack-Signature': 'v0=invalid',
     })).status, 401);
     await signedSlackPost();
     const zulipPayload = token => JSON.stringify({ token, data: 'hello',
       message: { id: 100, sender_id: 7, sender_email: 'alice@example.com', type: 'private', content: 'hello' } });
-    assert.equal((await post('/balda/gateway/zulip/webhook', zulipPayload('wrong'))).status, 401);
-    assert.equal((await post('/balda/gateway/zulip/webhook', zulipPayload('zulip-secret'))).status, 200);
+    assert.equal((await post(`${basePath}/gateway/zulip/webhook`, zulipPayload('wrong'))).status, 401);
+    assert.equal((await post(`${basePath}/gateway/zulip/webhook`, zulipPayload('zulip-secret'))).status, 200);
     const mattermostPayload = token => new URLSearchParams({ token, command: '/locator',
       channel_id: 'channel-1', user_id: 'user-1', trigger_id: `shared-${phase}` }).toString();
-    assert.equal((await post('/balda/gateway/mattermost/commands', mattermostPayload('wrong'))).status, 401);
-    assert.equal((await post('/balda/gateway/mattermost/commands', mattermostPayload('mattermost-secret'))).status, 200);
-    assert.equal((await post('/balda/gateway/telegram/webhook', '{"update_id":1}')).status, 401);
-    assert.equal((await post('/balda/gateway/telegram/webhook', '{"update_id":1}', {
+    assert.equal((await post(`${basePath}/gateway/mattermost/commands`, mattermostPayload('wrong'))).status, 401);
+    assert.equal((await post(`${basePath}/gateway/mattermost/commands`, mattermostPayload('mattermost-secret'))).status, 200);
+    assert.equal((await post(`${basePath}/gateway/telegram/webhook`, '{"update_id":1}')).status, 401);
+    assert.equal((await post(`${basePath}/gateway/telegram/webhook`, '{"update_id":1}', {
       'X-Telegram-Bot-Api-Secret-Token': 'telegram-secret',
     })).status, 200);
     await context.close();

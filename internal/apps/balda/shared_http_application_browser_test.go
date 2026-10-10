@@ -93,14 +93,18 @@ func TestSharedHTTPApplicationBrowser(t *testing.T) {
 			t.Fatal(err)
 		}
 		if restart == 0 {
-			seedLegacyManagedWebhook(t, databasePath)
+			seedRetainedManagedWebhook(t, databasePath)
 		}
-		ingress := startApplicationBrowserIngress(t, provider, address, restart == 0)
+		basePath := "/balda"
+		if restart != 0 {
+			basePath = ""
+		}
+		ingress := startApplicationBrowserIngress(t, provider, address, basePath, restart == 0)
 		phase := "initial"
 		if restart != 0 {
 			phase = "restart"
 		}
-		command := exec.CommandContext(t.Context(), "node", "qa/backoffice-e2e/shared-http-application.cjs", "http://"+address, phase, secretPath)
+		command := exec.CommandContext(t.Context(), "node", "qa/backoffice-e2e/shared-http-application.cjs", "http://"+address, phase, secretPath, basePath)
 		command.Dir = root
 		output, err := command.CombinedOutput()
 		if err != nil {
@@ -116,7 +120,7 @@ func TestSharedHTTPApplicationBrowser(t *testing.T) {
 		case <-time.After(time.Second):
 			t.Fatal("valid Telegram callback did not enqueue an update")
 		}
-		for _, name := range []string{"legacy", "configured"} {
+		for _, name := range []string{"retained", "configured"} {
 			route, found, err := provider.WebhookRoutes().Get(t.Context(), name)
 			if err != nil || !found || route.Name != name {
 				t.Fatalf("route %q = %+v, found=%t, error=%v", name, route, found, err)
@@ -131,9 +135,8 @@ func TestSharedHTTPApplicationBrowser(t *testing.T) {
 	}
 }
 
-func startApplicationBrowserIngress(t *testing.T, provider state.Provider, address string, bootstrap bool) applicationBrowserIngress {
+func startApplicationBrowserIngress(t *testing.T, provider state.Provider, address, basePath string, bootstrap bool) applicationBrowserIngress {
 	t.Helper()
-	basePath := "/balda"
 	config := BaldaConfig{HTTP: HTTPConfig{ListenAddr: address, BaseURL: "http://" + address, BasePath: &basePath}}
 	backofficeConfig, err := backofficeRuntimeConfig(config, state.DatabaseConfig{})
 	if err != nil {
@@ -240,19 +243,19 @@ func startApplicationBrowserIngress(t *testing.T, provider state.Provider, addre
 		mattermost: mattermostProcessor, telegram: telegramSource.UpdateChan()}
 }
 
-func seedLegacyManagedWebhook(t *testing.T, databasePath string) {
+func seedRetainedManagedWebhook(t *testing.T, databasePath string) {
 	t.Helper()
 	db, err := sql.Open("sqlite", databasePath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = db.Close() }()
-	secret := sha256.Sum256([]byte("legacy-secret"))
+	secret := sha256.Sum256([]byte("retained-secret"))
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	_, err = db.ExecContext(t.Context(), `INSERT INTO balda_webhook_routes
 		(name, source, prompt_template, auth_type, auth_header, secret_verifier, enabled, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, "legacy", state.WebhookRouteSourceManaged,
-		"Legacy: {{.RawBody}}", webhookroutecmd.AuthTypeHeader, webhookroutecmd.ManagedSecretHeader,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, "retained", state.WebhookRouteSourceManaged,
+		"Retained: {{.RawBody}}", webhookroutecmd.AuthTypeHeader, webhookroutecmd.ManagedSecretHeader,
 		hex.EncodeToString(secret[:]), 1, now, now)
 	if err != nil {
 		t.Fatal(err)
