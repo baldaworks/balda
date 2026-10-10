@@ -3,7 +3,6 @@ package backoffice
 import (
 	"context"
 	"fmt"
-	"github.com/google/uuid"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -18,6 +17,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/webhookmanagement"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookroutecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookroutefx"
+	"github.com/google/uuid"
 )
 
 type webhooksHTTPFixture struct {
@@ -37,7 +37,6 @@ type webhooksHTTPFixture struct {
 }
 
 const testWebhookPublicOrigin = "https://lab.metalagman.dev"
-const testManagedCallbackPath = "/balda/webhooks/orders"
 
 func TestWebhooksCreateWithRealManagedRoutePolicy(t *testing.T) {
 	t.Run("shared", func(t *testing.T) {
@@ -45,8 +44,7 @@ func TestWebhooksCreateWithRealManagedRoutePolicy(t *testing.T) {
 		config.Server.BasePath = testBackofficeBasePath + "/backoffice"
 		sharedPath := testBackofficeBasePath
 		config.Server.WebhookURLBasePath = &sharedPath
-		manager := webhookmanagement.New(webhookroutefx.NewStore(provider),
-			webhookmanagement.ManagedPaths{Prefix: "/balda/webhooks"})
+		manager := webhookmanagement.New(webhookroutefx.NewStore(provider))
 		now := time.Now().UTC()
 		createAccessTestUser(t, provider.Users(), usercmd.User{ID: "admin", Username: "admin",
 			NormalizedUsername: "admin", DisplayName: "admin", Role: usercmd.RoleAdministrator,
@@ -71,7 +69,7 @@ func TestWebhooksCreateWithRealManagedRoutePolicy(t *testing.T) {
 			t.Fatalf("create without editable path = %d", response.Code)
 		}
 		stored, found, err := provider.WebhookRoutes().Get(t.Context(), "orders")
-		if err != nil || !found || stored.Path != testManagedCallbackPath {
+		if err != nil || !found || stored.Name != "orders" {
 			t.Fatalf("stored route = %+v, found %v, error %v", stored, found, err)
 		}
 		update := url.Values{"expected_version": {"1"}, "prompt_template": {"Updated {{.RawBody}}"},
@@ -82,20 +80,10 @@ func TestWebhooksCreateWithRealManagedRoutePolicy(t *testing.T) {
 			t.Fatalf("update without editable path = %d", response.Code)
 		}
 		stored, found, err = provider.WebhookRoutes().Get(t.Context(), "orders")
-		if err != nil || !found || stored.Path != testManagedCallbackPath || stored.PromptTemplate != "Updated {{.RawBody}}" {
+		if err != nil || !found || stored.Name != "orders" || stored.PromptTemplate != "Updated {{.RawBody}}" {
 			t.Fatalf("updated route = %+v, found %v, error %v", stored, found, err)
 		}
-		update.Set("expected_version", "2")
-		update.Set("path", "/forged")
-		response = performAccessMutation(t, handler, config, config.Server.BasePath+"/webhooks/orders",
-			update, admin.access, admin.csrf, false)
-		if response.Code != http.StatusBadRequest {
-			t.Fatalf("forged read-only path update = %d", response.Code)
-		}
-		stored, found, err = provider.WebhookRoutes().Get(t.Context(), "orders")
-		if err != nil || !found || stored.Path != testManagedCallbackPath || stored.Version != 2 {
-			t.Fatalf("route changed after forged path: %+v, found %v, error %v", stored, found, err)
-		}
+
 	})
 }
 
@@ -117,10 +105,10 @@ func TestWebhooksShowPublicCallbackURL(t *testing.T) {
 		t.Fatal(err)
 	}
 	app.webhooks = &webhooksHTTPFixture{items: map[string]webhookroutecmd.Item{
-		"orders": {Definition: webhookroutecmd.Definition{Name: "orders", Path: "/balda/webhooks/orders"},
+		"orders": {Definition: webhookroutecmd.Definition{Name: "orders"},
 			Source: webhookroutecmd.SourceManaged, Enabled: true, Version: 1},
-		"legacy": {Definition: webhookroutecmd.Definition{Name: "legacy", Path: "/old/events"},
-			Source: webhookroutecmd.SourceManaged, Enabled: true, Version: 1},
+		"configured": {Definition: webhookroutecmd.Definition{Name: "configured"},
+			Source: webhookroutecmd.SourceConfig, Enabled: true, Version: 1},
 	}}
 	handler, err := app.handler()
 	if err != nil {
@@ -146,12 +134,12 @@ func TestWebhooksShowPublicCallbackURL(t *testing.T) {
 	inventory := get("/webhooks")
 	if !strings.Contains(inventory, "Webhook URL</th>") ||
 		!strings.Contains(inventory, "https://lab.metalagman.dev/balda/webhooks/orders") ||
-		!strings.Contains(inventory, "https://lab.metalagman.dev/old/events") {
-		t.Fatal("inventory must show exact public callback URLs")
+		!strings.Contains(inventory, "https://lab.metalagman.dev/balda/webhooks/configured") {
+		t.Fatal("inventory must show derived public callback URLs")
 	}
-	legacy := get("/webhooks/legacy")
-	if !strings.Contains(legacy, "https://lab.metalagman.dev/old/events") || strings.Contains(legacy, `name="path"`) {
-		t.Fatal("legacy detail must show its stored path without editing it")
+	configured := get("/webhooks/configured")
+	if !strings.Contains(configured, "https://lab.metalagman.dev/balda/webhooks/configured") || strings.Contains(configured, `name="path"`) {
+		t.Fatal("configured detail must show its derived callback URL")
 	}
 }
 
@@ -168,11 +156,11 @@ func TestWebhooksTestPostAndHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	fixture := &webhooksHTTPFixture{items: map[string]webhookroutecmd.Item{
-		"configured": {Definition: webhookroutecmd.Definition{Name: "configured", Path: "/hooks/configured"},
+		"configured": {Definition: webhookroutecmd.Definition{Name: "configured"},
 			Source: webhookroutecmd.SourceConfig, Enabled: true, Version: 1},
-		"disabled": {Definition: webhookroutecmd.Definition{Name: "disabled", Path: "/hooks/disabled"},
+		"disabled": {Definition: webhookroutecmd.Definition{Name: "disabled"},
 			Source: webhookroutecmd.SourceManaged, Version: 2},
-		"archived": {Definition: webhookroutecmd.Definition{Name: "archived", Path: "/hooks/archived"},
+		"archived": {Definition: webhookroutecmd.Definition{Name: "archived"},
 			Source: webhookroutecmd.SourceManaged, Deleted: true, Version: 3},
 	}}
 	for i := 0; i < 21; i++ {
@@ -326,9 +314,6 @@ func (f *webhooksHTTPFixture) Update(_ context.Context, request webhookroutecmd.
 		return webhookroutecmd.Item{}, f.updateErr
 	}
 	item := f.items[request.Name]
-	if request.Definition.Path == "" {
-		request.Definition.Path = item.Definition.Path
-	}
 	item.Definition = request.Definition
 	item.Version++
 	f.items[request.Name] = item
@@ -378,10 +363,10 @@ func TestWebhooksBrowserManagement(t *testing.T) {
 				t.Fatal(err)
 			}
 			fixture := &webhooksHTTPFixture{items: map[string]webhookroutecmd.Item{
-				"configured": {Definition: webhookroutecmd.Definition{Name: "configured", Path: "/hooks/configured",
+				"configured": {Definition: webhookroutecmd.Definition{Name: "configured",
 					PromptTemplate: "config <script>ignored</script>", ReportTo: "telegram:123456:0"},
 					Source: webhookroutecmd.SourceConfig, Enabled: true, Version: 1},
-				"managed": {Definition: webhookroutecmd.Definition{Name: "managed", Path: "/hooks/managed",
+				"managed": {Definition: webhookroutecmd.Definition{Name: "managed",
 					PromptTemplate: "handle {{.Body}}", ReportTo: "main_chat"},
 					Source: webhookroutecmd.SourceManaged, Enabled: true, Version: 2},
 			}}
@@ -452,8 +437,7 @@ func TestWebhooksBrowserManagement(t *testing.T) {
 			if created.Code != http.StatusOK || created.Header().Get("Cache-Control") != "no-store" ||
 				!strings.Contains(created.Body.String(), "created-secret-example") ||
 				!strings.Contains(created.Body.String(), `data-webhook-once="`+base+`/webhooks/new_route"`) ||
-				len(fixture.creates) != 1 || fixture.creates[0].Authority.SessionID == "" ||
-				fixture.creates[0].Definition.Path != "" {
+				len(fixture.creates) != 1 || fixture.creates[0].Authority.SessionID == "" {
 				t.Fatalf("create did not return one-time secret safely: %d", created.Code)
 			}
 			if got := get("/webhooks/new_route", admin.access); got.Code != http.StatusOK || strings.Contains(got.Body.String(), "created-secret-example") {
@@ -465,8 +449,7 @@ func TestWebhooksBrowserManagement(t *testing.T) {
 			update := url.Values{"expected_version": {"2"},
 				"report_to": {"telegram:123456:0"}, "prompt_template": {"updated"}, "dedupe_source": {"body_sha256"}}
 			if got := mutation("/webhooks/managed", update); got.Code != http.StatusSeeOther ||
-				fixture.updates[0].ExpectedVersion != 2 || fixture.updates[0].Definition.ReportTo != "telegram:123456:0" ||
-				fixture.updates[0].Definition.Path != "" {
+				fixture.updates[0].ExpectedVersion != 2 || fixture.updates[0].Definition.ReportTo != "telegram:123456:0" {
 				t.Fatalf("update failed: %d", got.Code)
 			}
 			fixture.updateErr = webhookroutecmd.ErrConflict

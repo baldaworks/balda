@@ -45,7 +45,7 @@ func TestReceiver_MapsLookupFailureBeforeBodyRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := httptest.NewRequest(http.MethodPost, "/managed", strings.NewReader("body"))
+	req := httptest.NewRequest(http.MethodPost, "/webhooks/managed", strings.NewReader("body"))
 	rec := httptest.NewRecorder()
 	r.handleWebhook(rec, req)
 	if rec.Code != http.StatusServiceUnavailable {
@@ -59,13 +59,13 @@ func TestReceiver_MapsLookupFailureBeforeBodyRead(t *testing.T) {
 func TestReceiver_PassesBoundedBodyToIngress(t *testing.T) {
 	const body = "body"
 	probe := &ingressProbe{prepared: webhookcmd.PreparedRoute{
-		Name: "managed", Path: "/managed", PromptTemplate: template.Must(template.New("x").Parse("{{.RawBody}}")),
+		Name: "managed", Path: "/webhooks/managed", PromptTemplate: template.Must(template.New("x").Parse("{{.RawBody}}")),
 	}}
 	r, err := NewReceiver(Config{ListenAddr: "127.0.0.1:0"}, probe, zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := httptest.NewRequest(http.MethodPost, "/managed", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/webhooks/managed", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	r.handleWebhook(rec, req)
 	if rec.Code != http.StatusAccepted || probe.input.RawBody != body {
@@ -77,7 +77,7 @@ func TestReceiver_HandlerServesWithoutBinding(t *testing.T) {
 	probe := &ingressProbe{prepared: webhookcmd.PreparedRoute{
 		Name: "orders", Path: "/balda/webhooks/orders", PromptTemplate: template.Must(template.New("orders").Parse("{{.RawBody}}")),
 	}}
-	receiver, err := NewReceiver(Config{ListenAddr: "127.0.0.1:0"}, probe, zerolog.Nop())
+	receiver, err := NewReceiver(Config{BasePath: "/balda", ListenAddr: "127.0.0.1:0"}, probe, zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}

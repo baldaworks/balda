@@ -17,11 +17,11 @@ type ingressStore struct {
 	err   error
 }
 
-func (s *ingressStore) LookupByPath(_ context.Context, path string) (webhookroutecmd.Record, bool, error) {
+func (s *ingressStore) LookupActiveManagedByName(_ context.Context, name string) (webhookroutecmd.Record, bool, error) {
 	if s.err != nil {
 		return webhookroutecmd.Record{}, false, s.err
 	}
-	return s.route, s.route.Enabled && !s.route.Deleted && s.route.Path == path, nil
+	return s.route, s.route.Enabled && !s.route.Deleted && s.route.Source == webhookroutecmd.SourceManaged && s.route.Name == name, nil
 }
 
 func (s *ingressStore) Get(_ context.Context, name string) (webhookroutecmd.Record, bool, error) {
@@ -42,26 +42,26 @@ func TestIngress_ManagedRouteSnapshotAndScrubbedHeaders(t *testing.T) {
 	secret := "test-secret"
 	sum := sha256.Sum256([]byte(secret))
 	store := &ingressStore{route: webhookroutecmd.Record{
-		Name: "events", Source: webhookroutecmd.SourceManaged, Path: "/events",
+		Name: "events", Source: webhookroutecmd.SourceManaged,
 		PromptTemplate: "{{index .Headers \"X-Event\"}} {{.RawBody}}", Enabled: true,
 		AuthType: webhookroutecmd.AuthTypeHeader, AuthHeader: webhookroutecmd.ManagedSecretHeader,
 		SecretVerifier: hex.EncodeToString(sum[:]), DedupeSource: webhookroutecmd.DedupeSourceHeader,
 		DedupeHeader: "X-Dedupe", ReportToKind: "managed_alias", ReportToKey: "main_chat",
 	}}
 	acceptor := &ingressAcceptor{}
-	ingress, err := NewIngress(nil, store, acceptor)
+	ingress, err := NewIngress("", nil, store, acceptor)
 	if err != nil {
 		t.Fatal(err)
 	}
 	headers := map[string]string{"X-Balda-Webhook-Secret": secret, "X-Event": "new", "X-Dedupe": "same"}
-	prepared, err := ingress.PrepareExternal(t.Context(), "/events", headers)
+	prepared, err := ingress.PrepareExternal(t.Context(), "/webhooks/events", headers)
 	if err != nil {
 		t.Fatal(err)
 	}
 	store.route.PromptTemplate = "changed"
 	store.route.ReportToKey = "other_chat"
 	if _, err := ingress.Admit(t.Context(), prepared, webhookcmd.Inbound{
-		RequestID: "req-1", Method: "POST", Path: "/events", Headers: headers, RawBody: "body",
+		RequestID: "req-1", Method: "POST", Path: "/webhooks/events", Headers: headers, RawBody: "body",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -78,11 +78,11 @@ func TestIngress_ManagedRouteSnapshotAndScrubbedHeaders(t *testing.T) {
 		t.Errorf("report recipient = %+v", acceptor.request.ReportTo)
 	}
 	store.route.PromptTemplate = "{{index .Headers \"X-Balda-Webhook-Secret\"}}"
-	prepared, err = ingress.PrepareExternal(t.Context(), "/events", headers)
+	prepared, err = ingress.PrepareExternal(t.Context(), "/webhooks/events", headers)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = ingress.Admit(t.Context(), prepared, webhookcmd.Inbound{RequestID: "req-2", Method: "POST", Path: "/events", Headers: headers, RawBody: "body"})
+	_, err = ingress.Admit(t.Context(), prepared, webhookcmd.Inbound{RequestID: "req-2", Method: "POST", Path: "/webhooks/events", Headers: headers, RawBody: "body"})
 	if err == nil || !webhookcmd.IsInvalidRequest(err) {
 		t.Fatalf("credential header reached template: %v", err)
 	}
@@ -90,81 +90,81 @@ func TestIngress_ManagedRouteSnapshotAndScrubbedHeaders(t *testing.T) {
 
 func TestIngress_DisabledRotatedAndUnavailable(t *testing.T) {
 	store := &ingressStore{route: webhookroutecmd.Record{Name: "events", Source: webhookroutecmd.SourceManaged,
-		Path: "/events", PromptTemplate: "{{.RawBody}}", AuthType: webhookroutecmd.AuthTypeHeader,
+		PromptTemplate: "{{.RawBody}}", AuthType: webhookroutecmd.AuthTypeHeader,
 		AuthHeader: webhookroutecmd.ManagedSecretHeader, Enabled: true}}
-	ingress, err := NewIngress(nil, store, &ingressAcceptor{})
+	ingress, err := NewIngress("", nil, store, &ingressAcceptor{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	sum := sha256.Sum256([]byte("fresh"))
 	store.route.SecretVerifier = hex.EncodeToString(sum[:])
-	if _, err := ingress.PrepareExternal(t.Context(), "/events", map[string]string{"X-Balda-Webhook-Secret": "stale"}); !errors.Is(err, webhookcmd.ErrUnauthorized) {
+	if _, err := ingress.PrepareExternal(t.Context(), "/webhooks/events", map[string]string{"X-Balda-Webhook-Secret": "stale"}); !errors.Is(err, webhookcmd.ErrUnauthorized) {
 		t.Fatalf("stale secret: %v", err)
 	}
-	if _, err := ingress.PrepareExternal(t.Context(), "/events", map[string]string{"X-Balda-Webhook-Secret": "fresh"}); err != nil {
+	if _, err := ingress.PrepareExternal(t.Context(), "/webhooks/events", map[string]string{"X-Balda-Webhook-Secret": "fresh"}); err != nil {
 		t.Fatal(err)
 	}
 	store.route.Enabled = false
-	if _, err := ingress.PrepareExternal(t.Context(), "/events", map[string]string{"X-Balda-Webhook-Secret": "fresh"}); !errors.Is(err, webhookcmd.ErrRouteNotFound) {
+	if _, err := ingress.PrepareExternal(t.Context(), "/webhooks/events", map[string]string{"X-Balda-Webhook-Secret": "fresh"}); !errors.Is(err, webhookcmd.ErrRouteNotFound) {
 		t.Fatalf("disabled route: %v", err)
 	}
 	store.err = errors.New("database unavailable")
-	if _, err := ingress.PrepareExternal(t.Context(), "/events", nil); !webhookcmd.IsDispatchFailed(err) {
+	if _, err := ingress.PrepareExternal(t.Context(), "/webhooks/events", nil); !webhookcmd.IsDispatchFailed(err) {
 		t.Fatalf("lookup failure: %v", err)
 	}
 }
 
 func TestIngress_IsActivePathTracksManagedSelection(t *testing.T) {
 	store := &ingressStore{route: webhookroutecmd.Record{
-		Name: "orders", Source: webhookroutecmd.SourceManaged, Path: "/orders/old", Enabled: false,
+		Name: "orders", Source: webhookroutecmd.SourceManaged, Enabled: false,
 	}}
-	ingress, err := NewIngress([]ConfiguredRoute{{Name: "config", Path: "/custom/config", PromptTemplate: "{{.RawBody}}"}}, store, &ingressAcceptor{})
+	ingress, err := NewIngress("", []ConfiguredRoute{{Name: "config", PromptTemplate: "{{.RawBody}}"}}, store, &ingressAcceptor{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	active, err := ingress.IsActivePath(t.Context(), "/custom/config")
+	active, err := ingress.IsActivePath(t.Context(), "/webhooks/config")
 	if err != nil || !active {
 		t.Fatalf("configured route = %t, %v", active, err)
 	}
-	for _, path := range []string{"/orders/old", "/unknown"} {
+	for _, path := range []string{"/webhooks/orders", "/webhooks/unknown"} {
 		active, err := ingress.IsActivePath(t.Context(), path)
 		if err != nil || active {
 			t.Errorf("inactive %q = %t, %v", path, active, err)
 		}
 	}
 	store.route.Enabled = true
-	active, err = ingress.IsActivePath(t.Context(), "/orders/old")
+	active, err = ingress.IsActivePath(t.Context(), "/webhooks/orders")
 	if err != nil || !active {
-		t.Fatalf("enabled legacy route = %t, %v", active, err)
+		t.Fatalf("enabled managed route = %t, %v", active, err)
 	}
 	store.route.Source = webhookroutecmd.SourceConfig
-	active, err = ingress.IsActivePath(t.Context(), "/orders/old")
+	active, err = ingress.IsActivePath(t.Context(), "/webhooks/orders")
 	if err != nil || active {
 		t.Fatalf("store config route = %t, %v", active, err)
 	}
 	store.err = errors.New("database unavailable")
-	if _, err := ingress.IsActivePath(t.Context(), "/orders/old"); err == nil {
+	if _, err := ingress.IsActivePath(t.Context(), "/webhooks/orders"); err == nil {
 		t.Fatal("store failure hidden")
 	}
 }
 
 func TestIngress_ConfigRouteAndTestBypass(t *testing.T) {
 	acceptor := &ingressAcceptor{}
-	ingress, err := NewIngress([]ConfiguredRoute{{Name: "configured", Path: "/configured",
+	ingress, err := NewIngress("", []ConfiguredRoute{{Name: "configured",
 		PromptTemplate: "{{.RawBody}}", AuthType: webhookroutecmd.AuthTypeHeader,
 		AuthHeader: "Authorization", AuthValue: "Bearer configured", DedupeSource: webhookroutecmd.DedupeSourceBodySHA}},
 		&ingressStore{}, acceptor)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ingress.PrepareExternal(t.Context(), "/configured", nil); !errors.Is(err, webhookcmd.ErrUnauthorized) {
+	if _, err := ingress.PrepareExternal(t.Context(), "/webhooks/configured", nil); !errors.Is(err, webhookcmd.ErrUnauthorized) {
 		t.Fatalf("missing config auth: %v", err)
 	}
 	prepared, err := ingress.PrepareTest(t.Context(), "configured")
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = ingress.Admit(t.Context(), prepared, webhookcmd.Inbound{RequestID: "test-1", Method: "POST", Path: "/configured", RawBody: "body"})
+	_, err = ingress.Admit(t.Context(), prepared, webhookcmd.Inbound{RequestID: "test-1", Method: "POST", Path: "/webhooks/configured", RawBody: "body"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +175,7 @@ func TestIngress_ConfigRouteAndTestBypass(t *testing.T) {
 
 func TestIngress_CredentialHeaderDedupeDoesNotPersistCredential(t *testing.T) {
 	acceptor := &ingressAcceptor{}
-	ingress, err := NewIngress([]ConfiguredRoute{{Name: "configured", Path: "/configured",
+	ingress, err := NewIngress("", []ConfiguredRoute{{Name: "configured",
 		PromptTemplate: "{{.RawBody}}", AuthType: webhookroutecmd.AuthTypeHeader,
 		AuthHeader: "Authorization", AuthValue: "Bearer configured",
 		DedupeSource: webhookroutecmd.DedupeSourceHeader, DedupeHeader: "Authorization"}}, nil, acceptor)
@@ -183,12 +183,12 @@ func TestIngress_CredentialHeaderDedupeDoesNotPersistCredential(t *testing.T) {
 		t.Fatal(err)
 	}
 	headers := map[string]string{"Authorization": "Bearer configured"}
-	prepared, err := ingress.PrepareExternal(t.Context(), "/configured", headers)
+	prepared, err := ingress.PrepareExternal(t.Context(), "/webhooks/configured", headers)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ingress.Admit(t.Context(), prepared, webhookcmd.Inbound{
-		RequestID: "request-1", Path: "/configured", Method: "POST",
+		RequestID: "request-1", Path: "/webhooks/configured", Method: "POST",
 		RawBody: "body", Headers: headers,
 	}); err != nil {
 		t.Fatal(err)
@@ -204,12 +204,12 @@ func TestIngress_CredentialHeaderDedupeDoesNotPersistCredential(t *testing.T) {
 
 func TestIngress_DisabledConfiguredRouteTestAdmission(t *testing.T) {
 	acceptor := &ingressAcceptor{}
-	ingress, err := NewIngress([]ConfiguredRoute{{Name: "configured", Path: "/configured",
+	ingress, err := NewIngress("", []ConfiguredRoute{{Name: "configured",
 		PromptTemplate: "event: {{.RawBody}}", Disabled: true}}, nil, acceptor)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ingress.PrepareExternal(t.Context(), "/configured", nil); !errors.Is(err, webhookcmd.ErrRouteNotFound) {
+	if _, err := ingress.PrepareExternal(t.Context(), "/webhooks/configured", nil); !errors.Is(err, webhookcmd.ErrRouteNotFound) {
 		t.Fatalf("disabled external route: %v", err)
 	}
 	prepared, err := ingress.PrepareTest(t.Context(), "configured")
@@ -217,7 +217,7 @@ func TestIngress_DisabledConfiguredRouteTestAdmission(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := ingress.Admit(t.Context(), prepared, webhookcmd.Inbound{
-		RequestID: "test-1", Path: "/configured", Method: "POST", RawBody: "hello", Test: true,
+		RequestID: "test-1", Path: "/webhooks/configured", Method: "POST", RawBody: "hello", Test: true,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -232,19 +232,19 @@ func TestIngress_DisabledConfiguredRouteTestAdmission(t *testing.T) {
 func TestIngress_AuthRequestIDIsReplacedBeforeTemplate(t *testing.T) {
 	const secret = "credential-used-as-request-id"
 	acceptor := &ingressAcceptor{}
-	ingress, err := NewIngress([]ConfiguredRoute{{Name: "events", Path: "/events",
+	ingress, err := NewIngress("", []ConfiguredRoute{{Name: "events",
 		PromptTemplate: "{{.RequestID}}", AuthType: webhookroutecmd.AuthTypeHeader,
 		AuthHeader: "X-Request-Id", AuthValue: secret}}, nil, acceptor)
 	if err != nil {
 		t.Fatal(err)
 	}
 	headers := map[string]string{"X-Request-Id": secret}
-	prepared, err := ingress.PrepareExternal(t.Context(), "/events", headers)
+	prepared, err := ingress.PrepareExternal(t.Context(), "/webhooks/events", headers)
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, err = ingress.Admit(t.Context(), prepared, webhookcmd.Inbound{
-		RequestID: secret, Method: "POST", Path: "/events", Headers: headers,
+		RequestID: secret, Method: "POST", Path: "/webhooks/events", Headers: headers,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -266,7 +266,7 @@ func TestIngress_AuthRequestIDIsReplacedBeforeTemplate(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := ingress.Admit(t.Context(), prepared, webhookcmd.Inbound{
-		RequestID: "test-1", Method: "POST", Path: "/events", Test: true,
+		RequestID: "test-1", Method: "POST", Path: "/webhooks/events", Test: true,
 	}); err != nil || acceptor.request.DedupeKey != "webhook-test:events:test-1" ||
 		acceptor.request.LegacyDedupeKey != "" {
 		t.Fatalf("test lookup keys = %+v err=%v", acceptor.request, err)
@@ -287,7 +287,7 @@ func TestIngress_AuthRequestIDHonorsExplicitDedupeSource(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			acceptor := &ingressAcceptor{}
-			ingress, err := NewIngress([]ConfiguredRoute{{Name: "events", Path: "/events",
+			ingress, err := NewIngress("", []ConfiguredRoute{{Name: "events",
 				PromptTemplate: "constant prompt", AuthType: webhookroutecmd.AuthTypeHeader,
 				AuthHeader: "X-Request-Id", AuthValue: secret,
 				DedupeSource: tc.source, DedupeHeader: tc.header}}, nil, acceptor)
@@ -295,12 +295,12 @@ func TestIngress_AuthRequestIDHonorsExplicitDedupeSource(t *testing.T) {
 				t.Fatal(err)
 			}
 			headers := map[string]string{"X-Request-Id": secret, "X-Event": "event-42"}
-			prepared, err := ingress.PrepareExternal(t.Context(), "/events", headers)
+			prepared, err := ingress.PrepareExternal(t.Context(), "/webhooks/events", headers)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if _, err := ingress.Admit(t.Context(), prepared, webhookcmd.Inbound{
-				RequestID: "safe-public-id", Method: "POST", Path: "/events", RawBody: "body", Headers: headers,
+				RequestID: "safe-public-id", Method: "POST", Path: "/webhooks/events", RawBody: "body", Headers: headers,
 			}); err != nil {
 				t.Fatal(err)
 			}
@@ -309,6 +309,34 @@ func TestIngress_AuthRequestIDHonorsExplicitDedupeSource(t *testing.T) {
 			}
 			if acceptor.request.LegacyDedupeKey != "" {
 				t.Fatalf("explicit dedupe looked up legacy credential key: %+v", acceptor.request)
+			}
+		})
+	}
+}
+
+func TestIngress_CanonicalPathsUseCurrentBasePath(t *testing.T) {
+	for _, basePath := range []string{"", "/balda"} {
+		t.Run(basePath, func(t *testing.T) {
+			store := &ingressStore{route: webhookroutecmd.Record{Name: "managed", Source: webhookroutecmd.SourceManaged,
+				PromptTemplate: "{{.RawBody}}", Enabled: true}}
+			ingress, err := NewIngress(basePath, []ConfiguredRoute{{Name: "configured", PromptTemplate: "{{.RawBody}}"}}, store, &ingressAcceptor{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, name := range []string{"configured", "managed"} {
+				want := basePath + "/webhooks/" + name
+				if active, err := ingress.IsActivePath(t.Context(), want); err != nil || !active {
+					t.Fatalf("canonical route %q: active=%t err=%v", want, active, err)
+				}
+				prepared, err := ingress.PrepareTest(t.Context(), name)
+				if err != nil || prepared.Path != want {
+					t.Fatalf("prepared route %q: path=%q want=%q err=%v", name, prepared.Path, want, err)
+				}
+			}
+			for _, path := range []string{basePath + "/webhooks/", basePath + "/webhooks/managed/extra", basePath + "/backoffice/managed", basePath + "/webhooks/missing"} {
+				if _, err := ingress.PrepareExternal(t.Context(), path, nil); !errors.Is(err, webhookcmd.ErrRouteNotFound) {
+					t.Fatalf("unmatched path %q: err=%v", path, err)
+				}
 			}
 		})
 	}

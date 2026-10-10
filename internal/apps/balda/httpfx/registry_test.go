@@ -36,9 +36,6 @@ func TestRegistryDispatchesOnlyOwnedRoutes(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := registry.AddWebhook("legacy orders", "/orders/old", webhookHandler); err != nil {
-		t.Fatal(err)
-	}
 	handler := registry.Handler()
 	tests := []struct {
 		path string
@@ -48,7 +45,6 @@ func TestRegistryDispatchesOnlyOwnedRoutes(t *testing.T) {
 		{"/balda/backoffice/webhooks", http.StatusOK},
 		{"/balda/gateway/slack/events", http.StatusAccepted},
 		{"/balda/webhooks/orders", http.StatusAccepted},
-		{"/orders/old", http.StatusAccepted},
 		{"/balda/webhooks/missing", http.StatusNotFound},
 		{"/balda/gateway/webhooks/orders", http.StatusNotFound},
 		{"/balda/gateway/slack/missing", http.StatusNotFound},
@@ -62,8 +58,8 @@ func TestRegistryDispatchesOnlyOwnedRoutes(t *testing.T) {
 			t.Errorf("GET %s: status = %d, want %d", test.path, recorder.Code, test.want)
 		}
 	}
-	if browser != 2 || gateway != 1 || webhook != 2 {
-		t.Errorf("handler calls = browser %d, gateway %d, webhook %d; want 2, 1, 2", browser, gateway, webhook)
+	if browser != 2 || gateway != 1 || webhook != 1 {
+		t.Errorf("handler calls = browser %d, gateway %d, webhook %d; want 2, 1, 1", browser, gateway, webhook)
 	}
 }
 
@@ -75,30 +71,6 @@ func TestRegistryRejectsConflictingRoutes(t *testing.T) {
 		owners []string
 		path   string
 	}{
-		{
-			name:  "webhook under browser",
-			first: func(r *Registry) error { return r.AddBackoffice("browser", http.NotFoundHandler()) },
-			second: func(r *Registry) error {
-				return r.AddWebhook("legacy", "/balda/backoffice/custom", http.NotFoundHandler())
-			},
-			owners: []string{"legacy", "browser"}, path: "/balda/backoffice/custom",
-		},
-		{
-			name: "webhook under gateway",
-			first: func(r *Registry) error {
-				return r.AddGateway("slack", "/balda/gateway/slack/events", http.NotFoundHandler())
-			},
-			second: func(r *Registry) error {
-				return r.AddWebhook("legacy", "/balda/gateway/slack/events", http.NotFoundHandler())
-			},
-			owners: []string{"legacy", "slack"}, path: "/balda/gateway/slack/events",
-		},
-		{
-			name:   "duplicate legacy path",
-			first:  func(r *Registry) error { return r.AddWebhook("config route", "/orders", http.NotFoundHandler()) },
-			second: func(r *Registry) error { return r.AddWebhook("managed route", "/orders", http.NotFoundHandler()) },
-			owners: []string{"config route", "managed route"}, path: "/orders",
-		},
 		{
 			name: "gateway under webhooks",
 			first: func(r *Registry) error {
@@ -130,37 +102,6 @@ func TestRegistryRejectsConflictingRoutes(t *testing.T) {
 	}
 }
 
-func TestRegistryReportsNonWebhookOwnersForManagement(t *testing.T) {
-	registry, err := NewRegistry("/balda")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := registry.AddBackoffice("browser", http.NotFoundHandler()); err != nil {
-		t.Fatal(err)
-	}
-	if err := registry.AddGateway("slack events", "/balda/gateway/slack/events", http.NotFoundHandler()); err != nil {
-		t.Fatal(err)
-	}
-	if err := registry.AddWebhook("config webhook", "/legacy/orders", http.NotFoundHandler()); err != nil {
-		t.Fatal(err)
-	}
-	if err := registry.AddManagedWebhook("own", "/legacy/own", http.NotFoundHandler()); err != nil {
-		t.Fatal(err)
-	}
-	for _, test := range []struct{ path, owner string }{
-		{"/balda/backoffice/webhooks", "browser"},
-		{"/balda/gateway/unknown", "gateway"},
-		{"/balda/gateway/slack/events", "slack events"},
-		{"/legacy/orders", "config webhook"},
-		{"/legacy/own", ""},
-		{"/balda/webhooks/orders", ""},
-	} {
-		if got := registry.ConflictingOwner(test.path); got != test.owner {
-			t.Errorf("owner of %q = %q, want %q", test.path, got, test.owner)
-		}
-	}
-}
-
 func TestRegistryWebhookLookupFailureDoesNotAdmit(t *testing.T) {
 	registry, err := NewRegistry("")
 	if err != nil {
@@ -179,7 +120,7 @@ func TestRegistryWebhookLookupFailureDoesNotAdmit(t *testing.T) {
 	}
 }
 
-func TestRegistryActivatesLegacyWebhookWithoutRestart(t *testing.T) {
+func TestRegistryActivatesWebhookWithoutRestart(t *testing.T) {
 	registry, err := NewRegistry("/balda")
 	if err != nil {
 		t.Fatal(err)
@@ -194,7 +135,7 @@ func TestRegistryActivatesLegacyWebhookWithoutRestart(t *testing.T) {
 		w.WriteHeader(http.StatusAccepted)
 	}), func(_ context.Context, routePath string) (bool, error) {
 		lookupCalls++
-		return active && routePath == "/orders/old", nil
+		return active && routePath == "/balda/webhooks/orders", nil
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -204,18 +145,18 @@ func TestRegistryActivatesLegacyWebhookWithoutRestart(t *testing.T) {
 		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, routePath, nil))
 		return recorder.Code
 	}
-	if status := request("/orders/old"); status != http.StatusNotFound {
-		t.Fatalf("disabled legacy route status = %d, want 404", status)
+	if status := request("/balda/webhooks/orders"); status != http.StatusNotFound {
+		t.Fatalf("disabled route status = %d, want 404", status)
 	}
 	active = true
-	if status := request("/orders/old"); status != http.StatusAccepted {
-		t.Errorf("enabled legacy route status = %d, want 202", status)
+	if status := request("/balda/webhooks/orders"); status != http.StatusAccepted {
+		t.Errorf("enabled route status = %d, want 202", status)
 	}
-	if status := request("/orders/missing"); status != http.StatusNotFound {
-		t.Errorf("unknown legacy route status = %d, want 404", status)
+	if status := request("/balda/webhooks/missing"); status != http.StatusNotFound {
+		t.Errorf("unknown route status = %d, want 404", status)
 	}
 	lookupsBeforeReserved := lookupCalls
-	for _, routePath := range []string{"/balda/backoffice/missing", "/balda/gateway/webhooks/orders"} {
+	for _, routePath := range []string{"/balda/backoffice/missing", "/balda/gateway/webhooks/orders", "/unrelated/orders"} {
 		if status := request(routePath); status != http.StatusNotFound {
 			t.Errorf("reserved path %s status = %d, want 404", routePath, status)
 		}

@@ -29,8 +29,7 @@ func TestSharedHTTPLayoutBrowser(t *testing.T) {
 			address := freeTestAddress(t)
 			params := sharedHTTPTestParamsWithBasePath(t, address, test.basePath)
 			callbackPath := test.basePath + "/webhooks/orders"
-			manager := webhookmanagement.New(webhookroutefx.NewStore(params.StateProvider),
-				webhookmanagement.ManagedPaths{Prefix: test.basePath + "/webhooks", Ownership: params.HTTPRegistry})
+			manager := webhookmanagement.New(webhookroutefx.NewStore(params.StateProvider))
 			if err := params.Backoffice.ConfigureWebhooksOperations(webhookbackofficeapp.New(
 				manager, nil, params.StateProvider.WebhookAdmissions())); err != nil {
 				t.Fatal(err)
@@ -71,7 +70,7 @@ func TestSharedHTTPLayoutBrowser(t *testing.T) {
 			for _, name := range []string{"orders", "mobile_orders"} {
 				stored, found, err := params.StateProvider.WebhookRoutes().Get(t.Context(), name)
 				if err != nil || !found || stored.Source != state.WebhookRouteSourceManaged ||
-					stored.Path != test.basePath+"/webhooks/"+name {
+					stored.Name != name {
 					t.Fatalf("saved managed route %q = %+v, found=%t, error=%v", name, stored, found, err)
 				}
 			}

@@ -11,8 +11,9 @@ const webhookSourceConfiguration = "Configuration"
 
 // WebhooksView is a route inventory or one guarded route detail.
 type WebhooksView struct {
-	Rows   []WebhookRow
-	Editor *WebhookEditor
+	MissingPublicOrigin bool
+	Rows                []WebhookRow
+	Editor              *WebhookEditor
 }
 
 // WebhookRow contains secret-free inventory metadata.
@@ -24,13 +25,13 @@ type WebhookRow struct {
 
 // WebhookEditor contains the definition shown on one guarded detail page.
 type WebhookEditor struct {
-	Row                                          WebhookRow
-	New                                          bool
-	Name, Path, PromptTemplate, ReportTo, Action string
-	URLPrefix                                    string
-	AckOnDelivery                                bool
-	DedupeSource, DedupeHeader                   string
-	AuthLabel                                    string
+	Row                                    WebhookRow
+	New                                    bool
+	Name, PromptTemplate, ReportTo, Action string
+	URLPrefix                              string
+	AckOnDelivery                          bool
+	DedupeSource, DedupeHeader             string
+	AuthLabel                              string
 	// Secret is populated only by create and rotate POST responses.
 	Secret                                    string
 	TestRequestKey, TestBody, NextHistoryPath string
@@ -99,7 +100,7 @@ func ProjectWebhookRow(item webhookroutecmd.Item) WebhookRow {
 func ProjectWebhookEditor(item webhookroutecmd.Item, create bool) *WebhookEditor {
 	d := item.Definition
 	e := &WebhookEditor{Row: ProjectWebhookRow(item), New: create,
-		Name: d.Name, Path: d.Path, PromptTemplate: d.PromptTemplate, ReportTo: d.ReportTo,
+		Name: d.Name, PromptTemplate: d.PromptTemplate, ReportTo: d.ReportTo,
 		AckOnDelivery: d.AckOnDelivery, DedupeSource: d.DedupeSource,
 		DedupeHeader: d.DedupeHeader, Action: "/webhooks/" + url.PathEscape(d.Name),
 		AuthLabel: "Generated secret in X-Balda-Webhook-Secret"}

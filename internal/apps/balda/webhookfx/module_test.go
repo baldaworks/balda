@@ -29,35 +29,29 @@ func TestModuleWiring(t *testing.T) {
 
 func TestDisabledConfigRouteIsAvailableToTestOnly(t *testing.T) {
 	config := webhook.Config{Routes: map[string]webhook.RouteConfig{
-		"configured":       {Path: "/configured", PromptTemplate: "event: {{.RawBody}}"},
-		"placeholder":      {},
-		"invalid-template": {Path: "/invalid", PromptTemplate: "{{"},
+		"configured": {PromptTemplate: "event: {{.RawBody}}"},
 	}}
 	ingress, err := newIngress(ingressParams{Config: config, Service: webhookapp.NewService(nil, nil, nil)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ingress.PrepareExternal(t.Context(), "/configured", nil); !errors.Is(err, webhookcmd.ErrRouteNotFound) {
+	if _, err := ingress.PrepareExternal(t.Context(), "/webhooks/configured", nil); !errors.Is(err, webhookcmd.ErrRouteNotFound) {
 		t.Fatalf("disabled external route: %v", err)
 	}
 	prepared, err := ingress.PrepareTest(t.Context(), "configured")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if prepared.Path != "/configured" || prepared.Name != "configured" {
+	if prepared.Path != "/webhooks/configured" || prepared.Name != "configured" {
 		t.Fatalf("test route = %+v", prepared)
 	}
-	for _, name := range []string{"placeholder", "invalid-template"} {
-		if _, err := ingress.PrepareTest(t.Context(), name); !errors.Is(err, webhookcmd.ErrRouteNotFound) {
-			t.Errorf("invalid disabled route %q: %v", name, err)
-		}
-	}
+
 }
 
 func TestReceiverWiringRequiresReceiptForAcknowledgedRoute(t *testing.T) {
 	config := webhook.Config{Enabled: true, Routes: map[string]webhook.RouteConfig{"event": {
-		Path: "/event", PromptTemplate: "{{.RawBody}}",
-		Envelope: webhook.RouteEnvelopeConfig{ReportTo: &webhook.RouteTargetConfig{Target: "managed_alias", Key: "main_chat"}, AckOnDelivery: true},
+		PromptTemplate: "{{.RawBody}}",
+		Envelope:       webhook.RouteEnvelopeConfig{ReportTo: &webhook.RouteTargetConfig{Target: "managed_alias", Key: "main_chat"}, AckOnDelivery: true},
 	}}}
 	service := webhookapp.NewService(nil, nil, nil)
 	ingress, err := newIngress(ingressParams{Config: config, Service: service})

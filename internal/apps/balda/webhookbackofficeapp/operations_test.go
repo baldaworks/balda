@@ -22,13 +22,9 @@ func (s *testRouteStore) Get(_ context.Context, name string) (webhookroutecmd.Re
 	r, ok := s.routes[name]
 	return r, ok, nil
 }
-func (s *testRouteStore) LookupByPath(_ context.Context, path string) (webhookroutecmd.Record, bool, error) {
-	for _, route := range s.routes {
-		if route.Path == path {
-			return route, true, nil
-		}
-	}
-	return webhookroutecmd.Record{}, false, nil
+func (s *testRouteStore) LookupActiveManagedByName(_ context.Context, name string) (webhookroutecmd.Record, bool, error) {
+	r, ok := s.routes[name]
+	return r, ok && r.Source == webhookroutecmd.SourceManaged && r.Enabled && !r.Deleted, nil
 }
 func (s *testRouteStore) List(context.Context) ([]webhookroutecmd.Record, error)          { return nil, nil }
 func (s *testRouteStore) ReconcileConfig(context.Context, []webhookroutecmd.Record) error { return nil }
@@ -49,16 +45,16 @@ func (a *testAcceptor) Accept(_ context.Context, request webhookcmd.Request) (we
 
 func TestPostUsesCurrentRouteAndFormKey(t *testing.T) {
 	store := &testRouteStore{routes: map[string]webhookroutecmd.Record{
-		"configured": {Name: "configured", Source: webhookroutecmd.SourceConfig, Path: "/hooks/configured",
+		"configured": {Name: "configured", Source: webhookroutecmd.SourceConfig,
 			PromptTemplate: "{{.RawBody}}", DedupeSource: webhookroutecmd.DedupeSourceBodySHA,
 			Enabled: true, Version: 1},
-		"disabled": {Name: "disabled", Source: webhookroutecmd.SourceManaged, Path: "/hooks/disabled",
+		"disabled": {Name: "disabled", Source: webhookroutecmd.SourceManaged,
 			PromptTemplate: "{{.RawBody}}", Version: 2},
-		"archived": {Name: "archived", Source: webhookroutecmd.SourceManaged, Path: "/hooks/archived",
+		"archived": {Name: "archived", Source: webhookroutecmd.SourceManaged,
 			PromptTemplate: "{{.RawBody}}", Deleted: true, Version: 3},
 	}}
 	acceptor := &testAcceptor{}
-	ingress, err := webhookapp.NewIngress([]webhookapp.ConfiguredRoute{{Name: "configured", Path: "/hooks/configured",
+	ingress, err := webhookapp.NewIngress("", []webhookapp.ConfiguredRoute{{Name: "configured",
 		PromptTemplate: "{{.RawBody}}", DedupeSource: webhookroutecmd.DedupeSourceBodySHA}}, store, acceptor)
 	if err != nil {
 		t.Fatal(err)

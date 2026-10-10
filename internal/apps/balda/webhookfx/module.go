@@ -52,10 +52,6 @@ func newIngress(params ingressParams) (*webhookapp.Ingress, error) {
 	}
 	configured := make([]webhookapp.ConfiguredRoute, 0, len(params.Config.Routes))
 	for name, raw := range params.Config.Routes {
-		path := strings.TrimSpace(raw.Path)
-		if path != "" && !strings.HasPrefix(path, "/") {
-			path = "/" + path
-		}
 		var reportKind, reportKey string
 		if raw.Envelope.ReportTo != nil {
 			reportKind, reportKey = raw.Envelope.ReportTo.Target, raw.Envelope.ReportTo.Key
@@ -72,7 +68,7 @@ func newIngress(params ingressParams) (*webhookapp.Ingress, error) {
 			dedupeSource = webhookroutecmd.DedupeSourceRequestID
 		}
 		configured = append(configured, webhookapp.ConfiguredRoute{
-			Name: strings.TrimSpace(name), Path: path,
+			Name:           name,
 			Disabled:       !params.Config.Enabled,
 			PromptTemplate: strings.TrimSpace(raw.PromptTemplate),
 			ReportToKind:   reportKind, ReportToKey: reportKey,
@@ -82,13 +78,13 @@ func newIngress(params ingressParams) (*webhookapp.Ingress, error) {
 			DedupeSource: dedupeSource, DedupeHeader: strings.TrimSpace(raw.Dedupe.Header),
 		})
 	}
-	return webhookapp.NewIngress(configured, store, params.Service)
+	return webhookapp.NewIngress(params.Config.BasePath, configured, store, params.Service)
 }
 
 type routeLookup struct{ store state.WebhookRouteStore }
 
-func (l routeLookup) LookupByPath(ctx context.Context, path string) (webhookroutecmd.Record, bool, error) {
-	r, found, err := l.store.LookupByPath(ctx, path)
+func (l routeLookup) LookupActiveManagedByName(ctx context.Context, name string) (webhookroutecmd.Record, bool, error) {
+	r, found, err := l.store.LookupActiveManagedByName(ctx, name)
 	return routeRecord(r), found, err
 }
 
@@ -98,7 +94,7 @@ func (l routeLookup) Get(ctx context.Context, name string) (webhookroutecmd.Reco
 }
 
 func routeRecord(r state.WebhookRouteRecord) webhookroutecmd.Record {
-	return webhookroutecmd.Record{Name: r.Name, Source: r.Source, Path: r.Path,
+	return webhookroutecmd.Record{Name: r.Name, Source: r.Source,
 		PromptTemplate: r.PromptTemplate, ReportToKind: r.ReportToKind,
 		ReportToKey: r.ReportToKey, AckOnDelivery: r.AckOnDelivery,
 		DedupeSource: r.DedupeSource, DedupeHeader: r.DedupeHeader,

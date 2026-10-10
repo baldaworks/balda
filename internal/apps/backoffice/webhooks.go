@@ -78,7 +78,7 @@ func (a *httpApp) webhooksView(r *http.Request, p security.Principal) (webui.Pag
 			return page, err
 		}
 		page.Title = item.Definition.Name + " · Webhooks · Balda"
-		page.Webhooks = &webui.WebhooksView{Editor: a.projectWebhookEditor(item, false)}
+		page.Webhooks = &webui.WebhooksView{MissingPublicOrigin: a.publicOrigin == "", Editor: a.projectWebhookEditor(item, false)}
 		page.Webhooks.Editor.TestRequestKey = uuid.NewString()
 		if r.Method == http.MethodGet {
 			beforeAt, beforeJobID, err := webhookHistoryCursor(r.URL.Query())
@@ -117,32 +117,32 @@ func (a *httpApp) webhooksView(r *http.Request, p security.Principal) (webui.Pag
 	}
 	if r.Method == http.MethodPost || r.URL.Query().Get("new") == "1" {
 		page.Title = "Add webhook · Balda"
-		page.Webhooks = &webui.WebhooksView{Editor: a.projectWebhookEditor(webhookroutecmd.Item{}, true)}
+		page.Webhooks = &webui.WebhooksView{MissingPublicOrigin: a.publicOrigin == "", Editor: a.projectWebhookEditor(webhookroutecmd.Item{}, true)}
 		return page, nil
 	}
 	items, err := a.webhooks.Inventory(r.Context(), a.webhookAuthority(p))
 	if err != nil {
 		return page, err
 	}
-	page.Webhooks = &webui.WebhooksView{}
+	page.Webhooks = &webui.WebhooksView{MissingPublicOrigin: a.publicOrigin == ""}
 	for _, item := range items {
 		row := webui.ProjectWebhookRow(item)
-		row.URL = a.webhookURL(item.Definition.Path)
+		row.URL = a.webhookURL(item.Definition.Name)
 		page.Webhooks.Rows = append(page.Webhooks.Rows, row)
 	}
 	return page, nil
 }
 
-func (a *httpApp) webhookURL(routePath string) string {
-	if routePath == "" {
+func (a *httpApp) webhookURL(name string) string {
+	if name == "" {
 		return ""
 	}
-	return a.publicOrigin + routePath
+	return a.webhookURLPrefix + name
 }
 
 func (a *httpApp) projectWebhookEditor(item webhookroutecmd.Item, create bool) *webui.WebhookEditor {
 	editor := webui.ProjectWebhookEditor(item, create)
-	editor.Row.URL = a.webhookURL(item.Definition.Path)
+	editor.Row.URL = a.webhookURL(item.Definition.Name)
 	editor.URLPrefix = a.webhookURLPrefix
 	return editor
 }
@@ -240,7 +240,7 @@ func (a *httpApp) webhookMutation(w http.ResponseWriter, r *http.Request) (url.V
 }
 
 func webhookDefinition(form url.Values, name string) webhookroutecmd.Definition {
-	return webhookroutecmd.Definition{Name: name, Path: form.Get("path"),
+	return webhookroutecmd.Definition{Name: name,
 		PromptTemplate: form.Get("prompt_template"), ReportTo: form.Get("report_to"),
 		AckOnDelivery: form.Get("ack_on_delivery") == checkedFormValue,
 		DedupeSource:  form.Get("dedupe_source"), DedupeHeader: form.Get("dedupe_header")}
@@ -346,7 +346,7 @@ func webhookConfirmedVersion(form url.Values) (uint64, error) {
 
 func (a *httpApp) webhookSecretResult(w http.ResponseWriter, r *http.Request, page webui.Page, result webhookroutecmd.SecretResult) {
 	page.Title = result.Item.Definition.Name + " · Webhooks · Balda"
-	page.Webhooks = &webui.WebhooksView{Editor: a.projectWebhookEditor(result.Item, false)}
+	page.Webhooks = &webui.WebhooksView{MissingPublicOrigin: a.publicOrigin == "", Editor: a.projectWebhookEditor(result.Item, false)}
 	page.Webhooks.Editor.Secret = result.Secret
 	// The secret exists only in this POST response. A subsequent GET uses Get,
 	// whose Item cannot carry a secret.
@@ -388,7 +388,7 @@ func webhookOperationFailure(err error) (int, string) {
 	case errors.Is(err, webhookroutecmd.ErrNotFound):
 		return http.StatusNotFound, "This webhook route is no longer available. Reopen Webhooks."
 	case errors.Is(err, webhookroutecmd.ErrConflict):
-		return http.StatusConflict, "The route name or Webhook URL is in use, or this route changed. Reopen Webhooks before trying again."
+		return http.StatusConflict, "The route name is in use, or this route changed. Reopen Webhooks before trying again."
 	default:
 		return http.StatusServiceUnavailable, "The operation could not be completed. Reopen Webhooks and check its current state before retrying."
 	}

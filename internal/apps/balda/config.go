@@ -148,9 +148,9 @@ type WebhooksConfig struct {
 	Routes     map[string]WebhookRouteConfig `mapstructure:"routes"`
 }
 
-// WebhookRouteConfig binds a webhook path to route envelope/auth/dedupe policy.
+// WebhookRouteConfig binds a webhook slug to route envelope/auth/dedupe policy.
 type WebhookRouteConfig struct {
-	Path           string                     `mapstructure:"path"`
+	Unsupported    map[string]any             `mapstructure:",remain"`
 	PromptTemplate string                     `mapstructure:"prompt_template"`
 	Envelope       WebhookRouteEnvelopeConfig `mapstructure:"envelope"`
 	Auth           WebhookRouteAuthConfig     `mapstructure:"auth"`

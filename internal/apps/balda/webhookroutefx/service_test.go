@@ -3,8 +3,6 @@ package webhookroutefx
 import (
 	"context"
 	"errors"
-	"fmt"
-	"strings"
 	"testing"
 	"time"
 
@@ -25,7 +23,7 @@ func (s *fakeStore) List(context.Context) ([]state.WebhookRouteRecord, error) {
 	return []state.WebhookRouteRecord{s.record}, nil
 }
 
-func (s *fakeStore) LookupByPath(context.Context, string) (state.WebhookRouteRecord, bool, error) {
+func (s *fakeStore) LookupActiveManagedByName(context.Context, string) (state.WebhookRouteRecord, bool, error) {
 	return state.WebhookRouteRecord{}, false, nil
 }
 
@@ -43,7 +41,7 @@ func TestRouteStorePreservesGuardedMutation(t *testing.T) {
 	store := &fakeStore{}
 	adapter := &routeStore{store: store}
 	record := webhookroutecmd.Record{Name: "events", Source: webhookroutecmd.SourceManaged,
-		Path: "/events", PromptTemplate: "{{.RawBody}}", ReportToKind: "managed_alias",
+		PromptTemplate: "{{.RawBody}}", ReportToKind: "managed_alias",
 		ReportToKey: "main_chat", DedupeSource: "body_sha256", AuthType: "header",
 		AuthHeader: webhookroutecmd.ManagedSecretHeader, SecretVerifier: "verifier",
 		Enabled: true, Version: 2, CreatedAt: at, UpdatedAt: at}
@@ -76,15 +74,5 @@ func TestRouteStoreErrorMapping(t *testing.T) {
 		if got := storeError(tc.input); !errors.Is(got, tc.want) {
 			t.Errorf("storeError(%v) = %v, want %v", tc.input, got, tc.want)
 		}
-	}
-}
-
-func TestRouteStorePreservesPathConflictDetails(t *testing.T) {
-	stateErr := fmt.Errorf("%w: path %q conflicts with active route %q", state.ErrWebhookRouteConflict,
-		"/old/shared", "managed-b")
-	err := storeError(stateErr)
-	if !errors.Is(err, webhookroutecmd.ErrConflict) || !strings.Contains(err.Error(), "/old/shared") ||
-		!strings.Contains(err.Error(), "managed-b") {
-		t.Fatalf("mapped path conflict = %v, want typed conflict with path and owner", err)
 	}
 }

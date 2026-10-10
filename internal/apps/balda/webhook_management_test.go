@@ -9,7 +9,7 @@ import (
 func TestConfiguredWebhookRoutesKeepDisabledMetadataWithoutSecrets(t *testing.T) {
 	routes := configuredWebhookRoutes(webhook.Config{Routes: map[string]webhook.RouteConfig{
 		"events": {
-			Path: "events", PromptTemplate: "{{ .RawBody }}",
+			PromptTemplate: "{{ .RawBody }}",
 			Envelope: webhook.RouteEnvelopeConfig{ReportTo: &webhook.RouteTargetConfig{
 				Target: "alias", Key: "owner",
 			}},
@@ -20,7 +20,7 @@ func TestConfiguredWebhookRoutesKeepDisabledMetadataWithoutSecrets(t *testing.T)
 		t.Fatalf("routes = %d, want 1", len(routes))
 	}
 	r := routes[0]
-	if r.Enabled || r.Path != "/events" || r.ReportToKind != "alias" || r.AuthHeader != "X-Token" {
+	if r.Enabled || r.Name != "events" || r.ReportToKind != "alias" || r.AuthHeader != "X-Token" {
 		t.Fatalf("disabled config metadata = %+v", r)
 	}
 }

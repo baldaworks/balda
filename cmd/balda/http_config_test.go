@@ -165,3 +165,31 @@ balda:
 		})
 	}
 }
+
+func TestLoadedDefaultsDoNotAdvertiseWebhookPublicOrigin(t *testing.T) {
+	workingDir := t.TempDir()
+	if err := writeFile(filepath.Join(workingDir, ".config", "balda", "config.yaml"), `runtime:
+  providers:
+    balda_agent:
+      type: opencode_acp
+      opencode_acp:
+        model: opencode/big-pickle
+`); err != nil {
+		t.Fatal(err)
+	}
+	var doc baldaConfigDocument
+	_, err := appconfig.LoadConfigDocument(appconfig.RuntimeLoadOptions{WorkingDir: workingDir}, appconfig.AppLoadOptions{AppName: "balda", DefaultsYAML: defaultBaldaConfig, UseDotConfigAppDir: true}, &doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := doc.Balda.ResolveSharedBackofficeServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if server.WebhookPublicOrigin == nil || *server.WebhookPublicOrigin != "" {
+		t.Fatalf("default public webhook origin = %v, want explicit empty", server.WebhookPublicOrigin)
+	}
+	if server.PublicURL == "" {
+		t.Fatal("missing browser security origin")
+	}
+}

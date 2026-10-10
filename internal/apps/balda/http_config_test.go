@@ -192,3 +192,25 @@ func TestResolveHTTPRejectsInvalidFields(t *testing.T) {
 }
 
 func stringPtr(value string) *string { return &value }
+
+func TestSharedWebhookDisplayOriginIsOptional(t *testing.T) {
+	cfg := BaldaConfig{}
+	server, err := cfg.ResolveSharedBackofficeServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if server.WebhookPublicOrigin == nil || *server.WebhookPublicOrigin != "" {
+		t.Fatalf("unconfigured webhook display origin = %v, want explicit empty origin", server.WebhookPublicOrigin)
+	}
+	if server.PublicURL == "" {
+		t.Fatal("browser authentication origin must remain resolved")
+	}
+	cfg.HTTP.BaseURL = "https://lab.metalagman.dev"
+	server, err = cfg.ResolveSharedBackofficeServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if server.WebhookPublicOrigin == nil || *server.WebhookPublicOrigin != cfg.HTTP.BaseURL {
+		t.Fatalf("webhook public origin = %v", server.WebhookPublicOrigin)
+	}
+}

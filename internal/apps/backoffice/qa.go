@@ -269,7 +269,7 @@ var qaNow = time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
 
 func qaManagedWebhook() webhookroutecmd.Item {
 	return webhookroutecmd.Item{Definition: webhookroutecmd.Definition{
-		Name: "orders", Path: "/hooks/orders", PromptTemplate: "Review {{.Body}}",
+		Name: "orders", PromptTemplate: "Review {{.Body}}",
 		ReportTo: "main_chat", DedupeSource: webhookroutecmd.DedupeSourceHeader,
 		DedupeHeader: "X-Event-ID", AckOnDelivery: true,
 	}, Source: webhookroutecmd.SourceManaged, Enabled: true, Version: 2}
@@ -277,7 +277,7 @@ func qaManagedWebhook() webhookroutecmd.Item {
 
 func qaConfiguredWebhook() webhookroutecmd.Item {
 	return webhookroutecmd.Item{Definition: webhookroutecmd.Definition{
-		Name: "deployed", Path: "/hooks/deployed", PromptTemplate: "Handle {{.Body}}",
+		Name: "deployed", PromptTemplate: "Handle {{.Body}}",
 		ReportTo: "telegram:123456:0", DedupeSource: webhookroutecmd.DedupeSourceRequestID,
 	}, Source: webhookroutecmd.SourceConfig, Enabled: true, AuthType: webhookroutecmd.AuthTypeHeader,
 		AuthHeader: "X-Deploy-Token", Version: 1}
@@ -287,13 +287,15 @@ func qaWebhooks() webui.Page {
 	return webui.Page{Title: "Webhooks · QA", Current: webui.LocationWebhooks,
 		Navigation: qaAdminNavigation(webui.LocationWebhooks), CSRFToken: "synthetic-csrf",
 		Webhooks: &webui.WebhooksView{Rows: []webui.WebhookRow{
-			webui.ProjectWebhookRow(qaManagedWebhook()), webui.ProjectWebhookRow(qaConfiguredWebhook()),
+			qaWebhookRow(qaManagedWebhook()), qaWebhookRow(qaConfiguredWebhook()),
 		}}}
 }
 
 func qaWebhookEditor(item webhookroutecmd.Item, create bool) webui.Page {
 	p := qaWebhooks()
 	p.Webhooks = &webui.WebhooksView{Editor: webui.ProjectWebhookEditor(item, create)}
+	p.Webhooks.Editor.Row = qaWebhookRow(item)
+	p.Webhooks.Editor.URLPrefix = webhookroutecmd.CanonicalPath("", "")
 	if create {
 		p.Title = "Add webhook · QA"
 	} else {
@@ -696,4 +698,12 @@ func qaMCPDevice(status mcpcmd.DeviceStatus, instructions bool) webui.Page {
 	p.Title = "Worker authorization · synthetic preview"
 	p.MCP = &webui.MCPView{Device: webui.ProjectMCPDevice(mcpcmd.DeviceAuthorization{ID: "qa-attempt", ConnectionID: "qa-worker", Status: status, UserCode: "INVALID-QA-CODE", VerificationURI: "https://issuer.example.test/verify", VerificationURIComplete: "https://issuer.example.test/verify?code=invalid-qa", ExpiresAt: time.Date(2026, 8, 1, 12, 10, 0, 0, time.UTC)}, instructions)}
 	return p
+}
+
+func qaWebhookRow(item webhookroutecmd.Item) webui.WebhookRow {
+	row := webui.ProjectWebhookRow(item)
+	if item.Definition.Name != "" {
+		row.URL = webhookroutecmd.CanonicalPath("", item.Definition.Name)
+	}
+	return row
 }

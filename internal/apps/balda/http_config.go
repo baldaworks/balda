@@ -10,6 +10,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/backoffice"
 	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookroutecmd"
 )
 
 // HTTPConfig controls Balda's shared HTTP bind and public URL prefix.
@@ -104,6 +105,8 @@ func (c BaldaConfig) ResolveSharedBackofficeServer() (backoffice.ResolvedServerC
 		return backoffice.ResolvedServerConfig{}, err
 	}
 	resolved.WebhookURLBasePath = &httpConfig.BasePath
+	webhookOrigin := strings.TrimSpace(c.HTTP.BaseURL)
+	resolved.WebhookPublicOrigin = &webhookOrigin
 	return resolved, nil
 }
 
@@ -114,7 +117,7 @@ func (c ResolvedHTTPConfig) BrowserPath() string {
 
 // ManagedWebhookPath returns the callback path for a validated route name.
 func (c ResolvedHTTPConfig) ManagedWebhookPath(name string) string {
-	return c.BasePath + "/webhooks/" + name
+	return webhookroutecmd.CanonicalPath(c.BasePath, name)
 }
 
 // GatewayPath returns the callback path for validated transport and endpoint segments.
