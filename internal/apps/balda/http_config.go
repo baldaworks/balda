@@ -81,8 +81,13 @@ func (c BaldaConfig) ResolveHTTP() (ResolvedHTTPConfig, error) {
 	return ResolvedHTTPConfig{ListenAddr: listenAddr, BaseURL: baseURL, BasePath: basePath}, nil
 }
 
-// ResolveBackofficeServer applies the shared HTTP settings to the browser server.
+// ResolveBackofficeServer preserves the standalone Backoffice settings until cutover.
 func (c BaldaConfig) ResolveBackofficeServer() (backoffice.ResolvedServerConfig, error) {
+	return c.Backoffice.Resolve()
+}
+
+// ResolveSharedBackofficeServer prepares the browser handler for the shared listener.
+func (c BaldaConfig) ResolveSharedBackofficeServer() (backoffice.ResolvedServerConfig, error) {
 	httpConfig, err := c.ResolveHTTP()
 	if err != nil {
 		return backoffice.ResolvedServerConfig{}, err

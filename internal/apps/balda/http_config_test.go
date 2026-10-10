@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/baldaworks/balda/internal/apps/backoffice"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpfx"
 	"github.com/normahq/runtime/v2/appconfig"
 )
 
@@ -107,17 +108,39 @@ func TestResolveHTTPAcceptsExplicitEmptyBasePathFromConfig(t *testing.T) {
 	}
 }
 
-func TestResolveBackofficeServerUsesSharedBrowserPath(t *testing.T) {
+func TestResolveSharedBackofficeServerUsesSharedBrowserPath(t *testing.T) {
 	basePath := "/balda"
 	cfg := BaldaConfig{HTTP: HTTPConfig{
 		ListenAddr: testHTTPListenAddr, BaseURL: "https://lab.metalagman.dev", BasePath: &basePath,
 	}}
-	server, err := cfg.ResolveBackofficeServer()
+	server, err := cfg.ResolveSharedBackofficeServer()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if server.ListenAddr != testHTTPListenAddr || server.PublicURL != "https://lab.metalagman.dev" || server.BasePath != "/balda/backoffice" {
 		t.Fatalf("Backoffice server = %+v", server)
+	}
+	callback, err := mcpfx.MCPCallbackURL(server.PublicURL, server.BasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if callback != "https://lab.metalagman.dev/balda/backoffice/mcp/oauth/callback" {
+		t.Errorf("MCP OAuth callback = %q", callback)
+	}
+}
+
+func TestResolveBackofficeServerKeepsLegacyRouteAndSocketUntilCutover(t *testing.T) {
+	basePath := "/balda"
+	cfg := BaldaConfig{
+		Backoffice: backoffice.ServerConfig{ListenAddr: "127.0.0.1:19095", PublicURL: "https://old.example.test", BasePath: "/old"},
+		HTTP:       HTTPConfig{ListenAddr: testHTTPListenAddr, BaseURL: "https://lab.metalagman.dev", BasePath: &basePath},
+	}
+	server, err := cfg.ResolveBackofficeServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if server.ListenAddr != "127.0.0.1:19095" || server.PublicURL != "https://old.example.test" || server.BasePath != "/old" {
+		t.Fatalf("legacy Backoffice server = %+v", server)
 	}
 }
 

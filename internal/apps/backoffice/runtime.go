@@ -41,6 +41,12 @@ type Runtime struct {
 	bindingChannels   BindingChannels
 }
 
+// HandlerServices supplies operations whose OAuth attempts belong to the shared handler.
+type HandlerServices struct {
+	MCP               MCPOperations
+	MCPAuthorizations MCPAuthorizations
+}
+
 // NewRuntime constructs Backoffice over a provider owned by its host.
 func NewRuntime(config ResolvedConfig, provider state.Provider) (*Runtime, error) {
 	if err := webui.VerifyAssets(); err != nil {
@@ -112,20 +118,9 @@ func (r *Runtime) Start(ctx context.Context) error {
 	if err := r.ValidateReady(ctx); err != nil {
 		return err
 	}
-	httpApplication, err := newHTTPApp(r.provider.Users(), r.config)
+	handler, err := r.handler(r.config.Server, HandlerServices{MCP: r.mcp, MCPAuthorizations: r.mcpAuthorizations})
 	if err != nil {
-		return fmt.Errorf("construct Backoffice HTTP application: %w", err)
-	}
-	httpApplication.mcp = r.mcp
-	httpApplication.schedules = r.schedules
-	httpApplication.webhooks = r.webhooks
-	httpApplication.aliases = r.aliases
-	httpApplication.mcpAuthorizations = r.mcpAuthorizations
-	httpApplication.invitations = r.invitations
-	httpApplication.bindingChannels = r.bindingChannels
-	handler, err := httpApplication.handler()
-	if err != nil {
-		return fmt.Errorf("construct Backoffice HTTP routes: %w", err)
+		return err
 	}
 	listener, err := net.Listen("tcp", r.config.Server.ListenAddr)
 	if err != nil {
@@ -151,6 +146,41 @@ func (r *Runtime) Start(ctx context.Context) error {
 		r.mu.Unlock()
 	}()
 	return nil
+}
+
+// Handler returns the secured Backoffice browser handler for a shared listener.
+// The browser config is independent of the standalone listener until cutover.
+func (r *Runtime) Handler(ctx context.Context, browserConfig ResolvedServerConfig, services HandlerServices) (http.Handler, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.ValidateReady(ctx); err != nil {
+		return nil, err
+	}
+	if (r.mcp != nil && services.MCP == nil) || (r.mcpAuthorizations != nil && services.MCPAuthorizations == nil) {
+		return nil, fmt.Errorf("shared Backoffice handler requires its own MCP services")
+	}
+	return r.handler(browserConfig, services)
+}
+
+func (r *Runtime) handler(browserConfig ResolvedServerConfig, services HandlerServices) (http.Handler, error) {
+	config := r.config
+	config.Server = browserConfig
+	httpApplication, err := newHTTPApp(r.provider.Users(), config)
+	if err != nil {
+		return nil, fmt.Errorf("construct Backoffice HTTP application: %w", err)
+	}
+	httpApplication.mcp = services.MCP
+	httpApplication.schedules = r.schedules
+	httpApplication.webhooks = r.webhooks
+	httpApplication.aliases = r.aliases
+	httpApplication.mcpAuthorizations = services.MCPAuthorizations
+	httpApplication.invitations = r.invitations
+	httpApplication.bindingChannels = r.bindingChannels
+	handler, err := httpApplication.handler()
+	if err != nil {
+		return nil, fmt.Errorf("construct Backoffice HTTP routes: %w", err)
+	}
+	return handler, nil
 }
 
 // Done closes when the HTTP serving loop exits; Err reports its failure.

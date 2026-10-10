@@ -257,6 +257,9 @@ func loadBaldaCommandConfig(requireChannel bool) (preparedBaldaCommand, error) {
 	if err != nil {
 		return preparedBaldaCommand{}, err
 	}
+	if _, err := baldaCfg.Balda.ResolveHTTP(); err != nil {
+		return preparedBaldaCommand{}, err
+	}
 	if _, err := baldaCfg.Balda.ResolveBackofficeServer(); err != nil {
 		return preparedBaldaCommand{}, err
 	}
