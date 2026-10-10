@@ -37,14 +37,17 @@ type ServerConfig struct {
 
 // ResolvedServerConfig contains validated runtime values.
 type ResolvedServerConfig struct {
-	ListenAddr      string
-	PublicURL       string
-	BasePath        string
-	AccessTokenTTL  time.Duration
-	RefreshTokenTTL time.Duration
-	CeremonyTTL     time.Duration
-	SecureCookies   bool
-	QAUI            bool
+	ListenAddr string
+	PublicURL  string
+	BasePath   string
+	// WebhookURLBasePath is the shared public prefix, independent of the browser mount.
+	// Nil keeps the standalone listener's legacy base path until shared cutover.
+	WebhookURLBasePath *string
+	AccessTokenTTL     time.Duration
+	RefreshTokenTTL    time.Duration
+	CeremonyTTL        time.Duration
+	SecureCookies      bool
+	QAUI               bool
 }
 
 // Resolve validates listener exposure, public URL, and bounded token lifetimes.

@@ -17,9 +17,9 @@ type WebhooksView struct {
 
 // WebhookRow contains secret-free inventory metadata.
 type WebhookRow struct {
-	Name, DetailPath, Source, Path, ReportTo, State string
-	Enabled, ReadOnly, Deleted                      bool
-	Version                                         uint64
+	Name, DetailPath, Source, URL, ReportTo, State string
+	Enabled, ReadOnly, Deleted                     bool
+	Version                                        uint64
 }
 
 // WebhookEditor contains the definition shown on one guarded detail page.
@@ -27,6 +27,7 @@ type WebhookEditor struct {
 	Row                                          WebhookRow
 	New                                          bool
 	Name, Path, PromptTemplate, ReportTo, Action string
+	URLPrefix                                    string
 	AckOnDelivery                                bool
 	DedupeSource, DedupeHeader                   string
 	AuthLabel                                    string
@@ -75,7 +76,7 @@ func ProjectWebhookHistoryDetail(item webhookroutecmd.HistoryItem) *WebhookHisto
 
 // ProjectWebhookRow omits instruction content and all authentication values.
 func ProjectWebhookRow(item webhookroutecmd.Item) WebhookRow {
-	row := WebhookRow{Name: item.Definition.Name, Path: item.Definition.Path,
+	row := WebhookRow{Name: item.Definition.Name,
 		DetailPath: "/webhooks/" + url.PathEscape(item.Definition.Name), ReportTo: item.Definition.ReportTo,
 		Enabled: item.Enabled, Deleted: item.Deleted, Version: item.Version,
 		ReadOnly: item.Source != webhookroutecmd.SourceManaged, Source: "Backoffice", State: "Enabled"}
