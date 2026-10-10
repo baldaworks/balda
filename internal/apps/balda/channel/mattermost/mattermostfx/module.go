@@ -100,6 +100,7 @@ var Module = fx.Module(
 		// requests rather than posts, so the websocket ingress cannot see them;
 		// this receiver maps them onto the same InboundCommand contract.
 		NewCommandServer,
+		fx.Annotate(NewGatewayCallbackProvider, fx.ResultTags(`group:"balda_http_gateway_callback_providers"`)),
 		fx.Annotate(
 			func(server *mattermost.CommandServer) appports.TransportLifecycleStage {
 				return appports.TransportLifecycleStage{

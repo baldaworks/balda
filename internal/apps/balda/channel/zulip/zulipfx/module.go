@@ -30,6 +30,7 @@ var Module = fx.Module(
 			fx.ResultTags(`group:"balda_command_advertisements"`),
 		),
 		zulip.NewServer,
+		fx.Annotate(NewGatewayCallbackProvider, fx.ResultTags(`group:"balda_http_gateway_callback_providers"`)),
 		func(client *zulip.Client, logger zerolog.Logger) *zulip.Adapter {
 			adapter := zulip.NewAdapter(client, logger)
 			adapter.SetTypingThrottleInterval(4 * time.Second)

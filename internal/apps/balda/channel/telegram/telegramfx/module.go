@@ -32,6 +32,7 @@ var Module = fx.Module(
 			fx.ResultTags(`group:"balda_command_advertisements"`),
 		),
 		telegram.NewServer,
+		fx.Annotate(NewGatewayCallbackProvider, fx.ResultTags(`group:"balda_http_gateway_callback_providers"`)),
 		fx.Annotate(
 			func(
 				tgClient client.ClientWithResponsesInterface,

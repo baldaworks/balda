@@ -28,6 +28,12 @@ const (
 	zulipWebhookMaxConcurrentTasks = 16
 )
 
+// HTTPCallbackReadTimeout preserves the standalone Zulip request read limit.
+const HTTPCallbackReadTimeout = zulipWebhookReadTimeout
+
+// HTTPCallbackWriteTimeout preserves the standalone Zulip response write limit.
+const HTTPCallbackWriteTimeout = zulipWebhookWriteTimeout
+
 // Server handles inbound Zulip webhook HTTP requests.
 type Server struct {
 	processor    InboundProcessor
@@ -76,6 +82,18 @@ func (s *Server) Start(ctx context.Context) error { return s.onStart(ctx) }
 // Stop gracefully shuts down the Zulip receiver.
 func (s *Server) Stop(ctx context.Context) error { return s.onStop(ctx) }
 
+// HTTPCallback exposes the checked receiver and its current path without binding.
+func (s *Server) HTTPCallback() (http.Handler, string, error) {
+	if !s.enabled {
+		return nil, "", nil
+	}
+	path, err := normalizeZulipWebhookPath(s.webhookPath)
+	if err != nil {
+		return nil, "", err
+	}
+	return http.HandlerFunc(s.handleWebhook), path, nil
+}
+
 func (s *Server) onStart(_ context.Context) error {
 	if !s.enabled {
 		s.logger.Info().Msg("zulip webhook disabled; skipping server start")
@@ -85,7 +103,7 @@ func (s *Server) onStart(_ context.Context) error {
 		s.processSem = make(chan struct{}, zulipWebhookMaxConcurrentTasks)
 	}
 
-	path, err := normalizeZulipWebhookPath(s.webhookPath)
+	handler, path, err := s.HTTPCallback()
 	if err != nil {
 		return err
 	}
@@ -95,7 +113,7 @@ func (s *Server) onStart(_ context.Context) error {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc(path, s.handleWebhook)
+	mux.Handle(path, handler)
 	s.server = &http.Server{
 		Addr:              listenAddr,
 		Handler:           mux,

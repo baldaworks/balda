@@ -40,6 +40,10 @@ var Module = fx.Module(
 			fx.ResultTags(`group:"balda_session_boundary_observer"`),
 		),
 		newBindingServer,
+		fx.Annotate(
+			NewGatewayCallbackProvider,
+			fx.ResultTags(`group:"balda_http_gateway_callback_providers"`),
+		),
 		func(client *slackagent.Client) slackagent.MessageClient { return client },
 		func(client *slackagent.Client) slackagent.ThreadHistoryReader { return client },
 		func(client *slackagent.Client) slackagent.FileClient { return client },

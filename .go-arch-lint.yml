@@ -876,6 +876,7 @@ deps:
 
   telegram_wiring:
     mayDependOn:
+      - http_composition
       - foundation
       - contracts
       - neutral_registry
@@ -897,6 +898,7 @@ deps:
 
   zulip_wiring:
     mayDependOn:
+      - http_composition
       - user_contracts
       - foundation
       - contracts
@@ -920,6 +922,7 @@ deps:
 
   slackagent_wiring:
     mayDependOn:
+      - http_composition
       - user_contracts
       - contracts
       - neutral_registry
@@ -941,6 +944,7 @@ deps:
 
   mattermost_wiring:
     mayDependOn:
+      - http_composition
       - user_contracts
       - foundation
       - contracts
