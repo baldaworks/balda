@@ -32,9 +32,9 @@ For a newly managed route, its name determines the `/webhooks/<name>` path;
 there is no second editable Path field. Existing route paths are not rewritten
 merely by displaying this scheme.
 
-This is the proposed configuration contract and URL example, not the current
-Balda configuration. The current application has
-`balda.backoffice.public_url` and `balda.backoffice.base_path`; a shared
-`balda.http.base_url` / `balda.http.base_path` requires a separate code change.
-The current ingress, reverse proxy, and asus deployment are outside this
-design example's scope.
+This design's application configuration and URL layout are implemented by the
+public HTTP URL Story; see the current
+[configuration reference](../../reference/configuration.md#shared-http-listener-and-public-urls).
+The live ingress, reverse proxy, and asus deployment remain outside this
+Story's scope. The table is illustrative until those external paths and callback
+registrations are rolled out separately.

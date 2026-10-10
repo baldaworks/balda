@@ -36,10 +36,10 @@ revision. These older revisions never recorded binding values or targeting:
 they keep host-file values and provider-default selection. New snapshots retain
 full-value hashes and exact targeting. Missing or mismatched pins still abort
 restoration; no automatic reset or live state repair is required.
-The lifecycle checks canonical administrator bootstrap before
-MCP or ingress, then binds Backoffice HTTP before enabling inbound transports.
-A failed prerequisite or listener bind aborts startup. Shutdown closes ingress
-before HTTP and the shared provider.
+The lifecycle checks canonical administrator bootstrap before MCP or ingress,
+then binds one shared HTTP listener before enabling inbound transports. A failed
+prerequisite, route conflict, or listener bind aborts startup. Shutdown stops
+inbound transports and the shared HTTP listener before the shared provider.
 
 The selected provider may remain explicitly unavailable while authenticated
 management starts for three current MCP authorization states: a valid selected
@@ -76,29 +76,31 @@ Commands:
   administrator bootstrap before binding any listener or ingress. Migration
   failures also abort startup.
 
-The safe defaults are loopback `127.0.0.1:8095`, public URL
-`http://127.0.0.1:8095`, a 15-minute opaque access-token lifetime, and a
-30-day rolling refresh-token lifetime. `access_token_ttl` must be
+The safe shared HTTP defaults are loopback `127.0.0.1:8095`, public origin
+`http://127.0.0.1:8095`, and an empty deployment prefix. Backoffice starts at
+`http://127.0.0.1:8095/backoffice/`. Its defaults include a 15-minute opaque
+access-token lifetime and a 30-day rolling refresh-token lifetime.
+`access_token_ttl` must be
 positive and shorter than `refresh_token_ttl`; both are bounded. A
-non-loopback listener requires an HTTPS public URL.
+non-loopback listener requires an HTTPS public origin.
 
 Configure Backoffice in the existing Balda file; do not create a second
 configuration or database section:
 
 ```yaml
 balda:
-  backoffice:
+  http:
     listen_addr: "127.0.0.1:8095"
-    public_url: "http://127.0.0.1:8095"
+    base_url: "http://127.0.0.1:8095"
     base_path: ""
+  backoffice:
     access_token_ttl: "15m"
     refresh_token_ttl: "720h"
     qa_ui: false
 ```
 
 Every field has the normal `BALDA_*` environment override, for example
-`BALDA_BACKOFFICE_LISTEN_ADDR`, `BALDA_BACKOFFICE_PUBLIC_URL`,
-`BALDA_BACKOFFICE_BASE_PATH`,
+`BALDA_HTTP_LISTEN_ADDR`, `BALDA_HTTP_BASE_URL`, `BALDA_HTTP_BASE_PATH`,
 `BALDA_BACKOFFICE_ACCESS_TOKEN_TTL`,
 `BALDA_BACKOFFICE_REFRESH_TOKEN_TTL`, and `BALDA_BACKOFFICE_QA_UI`. Access
 tokens may live from 1 minute through 1 hour. Refresh families must outlive
@@ -107,11 +109,31 @@ plus `refresh_token_ttl`; the default is 30 elapsed days (`720h`), rather than a
 calendar month. Explicit YAML and environment values continue to override the
 default.
 
-`base_path` is an optional canonical absolute path without a trailing slash,
-for example `/balda`. Leave `public_url` as the HTTPS origin without a path.
-Backoffice serves its browser pages, assets, and session endpoints beneath the
-base path and scopes browser cookies to it. The empty default preserves root
-URLs for existing installations. A reverse proxy must forward the path unchanged.
+`balda.http.listen_addr` is the one local bind for Backoffice, generic webhooks,
+and enabled HTTP transport callbacks. `base_url` is the public origin, without
+a path or trailing slash; it is independent of that bind. `base_path` is an
+optional canonical absolute deployment prefix without a trailing slash, for
+example `/balda`; an explicit empty value selects the origin root. Backoffice
+serves pages, assets, OAuth callbacks, and browser/session endpoints under
+`<base_path>/backoffice/`. Browser cookies are scoped to that browser subtree,
+not the sibling `/webhooks` or `/gateway` routes. A reverse proxy must forward
+the configured paths unchanged.
+
+For an illustrative asus configuration, set `balda.http.base_url` to
+`https://lab.metalagman.dev` and `balda.http.base_path` to `/balda`. The public
+URLs are `https://lab.metalagman.dev/balda/backoffice/`, its management page at
+`https://lab.metalagman.dev/balda/backoffice/webhooks`, a new `orders` callback
+at `https://lab.metalagman.dev/balda/webhooks/orders`, and Slack callbacks at
+`https://lab.metalagman.dev/balda/gateway/slack/events` and
+`https://lab.metalagman.dev/balda/gateway/slack/commands`. These addresses are
+an application URL example; the live asus ingress, deployment, and external
+callback registrations are unchanged by this Story. They will be externally
+reachable only after a separate ingress and callback-registration rollout.
+
+If a `balda.http` field is omitted, it falls back to its corresponding
+`balda.backoffice.listen_addr`, `public_url`, or `base_path` value and then the
+default. Set the shared fields explicitly for new deployments. The former
+Backoffice address fields do not create a second listener or browser mount.
 
 ## Deployment and first administrator
 
@@ -458,9 +480,10 @@ One passkey is active at a time. Use a browser with JavaScript and WebAuthn supp
 and an authenticator that supports user verification (PIN or biometric).
 Password-only accounts also use the JavaScript-enabled Backoffice browser.
 
-Set `balda.backoffice.public_url` to the exact HTTPS origin, for example
+Set `balda.http.base_url` to the exact HTTPS origin, for example
 `https://lab.example.org`, or `http://localhost:8095` for local development.
-`base_path: /balda` remains a separate setting. The RP ID is the origin's hostname;
+`balda.http.base_path: /balda` remains a separate setting. The RP ID is the
+origin's hostname;
 only that exact origin is accepted. IP origins, including the existing default
 `http://127.0.0.1:8095`, cannot enroll keys. The default still starts and supports
 password sign-in, and Account explains the unavailable enrollment capability.
@@ -470,9 +493,10 @@ password-only access when verification is unavailable.
 
 ```yaml
 balda:
-  backoffice:
-    public_url: https://lab.example.org
+  http:
+    base_url: https://lab.example.org
     base_path: /balda
+  backoffice:
     ceremony_ttl: 5m
 ```
 
@@ -614,8 +638,9 @@ show an error; use browser authorization when the service supports that flow.
 Browser authorization requires the issuer to advertise S256 PKCE and
 `authorization_response_iss_parameter_supported`; the callback's `iss` value must
 match the trusted issuer. The browser callback is
-`<public_url><base_path>/mcp/oauth/callback`; register that exact URL with the issuer.
-Use the configured public origin, including any reverse-proxy base path.
+`<balda.http.base_url><balda.http.base_path>/backoffice/mcp/oauth/callback`;
+register that exact URL with the issuer. Use the configured public origin and
+shared deployment prefix.
 
 Begin, cancel, disconnect and retry are native forms with the existing normal
 administrator, current assurance, CSRF and same-origin checks. The callback uses
@@ -666,7 +691,8 @@ in logs, URLs used for recovery, exported read models or browser history caches.
 ## Schedules management
 
 Administrators with a normal browser session can open **Schedules** at
-`<base_path>/schedules`. Operators cannot view or mutate schedules. The
+`<balda.http.base_path>/backoffice/schedules`. Operators cannot view or mutate
+schedules. The
 inventory lists recurring definitions from both `balda.scheduler.jobs` and
 Backoffice, with source, UTC cron, a **Report to** column for the configured alias or locator,
 enabled/runtime state, and next/last run times. Internal `@once` timers are not
@@ -745,26 +771,30 @@ Backoffice owns the `SchedulesOperations` consuming port and SSR views;
 management values. `scheduledjobs` owns validation, source reconciliation,
 admission and dispatch policy; `state` owns the SQL rows and transactional
 authority/audit fences. Balda configures the port before the Backoffice
-listener starts, preserving the existing startup order.
+route starts on the shared listener, preserving the existing startup order.
 
 ## Webhooks management
 
-Administrators can open **Webhooks** at `<base_path>/webhooks`. Operators cannot
-view or change routes. The inventory combines routes from `balda.webhooks.routes`
-and Backoffice, showing **Route name**, **Source**, **Path**, **Report to**, and
+Administrators can open **Webhooks** at
+`<balda.http.base_path>/backoffice/webhooks`. Operators cannot view or change
+routes. The inventory combines routes from `balda.webhooks.routes`
+and Backoffice, showing **Route name**, **Source**, **Webhook URL**, **Report to**, and
 **State**. Config routes are read-only: edit their declarations in
 `.config/balda/config.yaml` and restart Balda. Backoffice-managed definitions
 and enabled state survive restart. The route name is fixed after creation and
 unique across both sources; an active path is also unique. A conflict fails
 explicitly rather than letting one source silently override another.
 
-Use `/webhooks?new=1` to create a managed route. Enter a unique lowercase
-route name, an absolute request path, a nonempty Go text/template prompt, and
+Use `/webhooks?new=1` within Backoffice to create a managed route. Enter a
+unique lowercase route name, a nonempty Go text/template prompt, and
 one optional **Report to** value: a public `<channel_type>:<address_key>`
 locator or a managed alias such as `main_chat`. The external address or alias
 mapping may be added later. Without a recipient, output remains in request
-history and no report is sent. Each accepted request runs in a new private
-session, independent of the recipient. **Wait for report delivery before
+history and no report is sent. The read-only **Webhook URL** updates as the name
+is entered; a new `orders` route uses `<base_path>/webhooks/orders` for inbound
+POSTs. Existing managed and config-owned custom paths keep their stored value,
+and their details show the corresponding full URL. Each accepted request runs
+in a new private session, independent of the recipient. **Wait for report delivery before
 acknowledging the POST** requires a Report to value. Choose deduplication by
 request ID, header, or request body hash; header mode also needs a header name.
 The route starts enabled. Confirmed enable, disable, and delete affect new
@@ -796,12 +826,14 @@ admissions written before raw-body capture show **Input unavailable for this
 older request**. A successful POST or test response means
 admission; refresh the detail to see later execution or delivery results.
 
-The generic webhook listener binds `balda.webhooks.listen_addr` on every
-`balda start`, even with no enabled route. `balda.webhooks.enabled` controls
+The shared listener binds `balda.http.listen_addr` on every `balda start`, even
+with no enabled generic route. `balda.webhooks.enabled` controls
 config-route availability only; each managed route has its own enabled state.
 Disabled and unknown paths reject new external POSTs. Managed edits become
 visible to new requests without restart; config edits require restart. A bind
-failure, including a collision with another local listener, aborts startup.
+failure or active route-path conflict aborts startup. Generic webhook routes
+are separate from chat transport callbacks under `/gateway`; they keep their
+own authentication and admission rules.
 Route management uses the existing administrator browser session, CSRF and
 same-origin checks, and transactional user, credential, MFA, session, and
 definition-version fences. Audit events omit secret values.
@@ -822,8 +854,9 @@ and [UI review](backoffice-ui-review.md#webhooks-layout-and-application-gates).
 
 ## Managed locator aliases
 
-Administrators can open **Aliases** at `<base_path>/aliases` to create, inspect,
-retarget, and delete named report destinations. Operators cannot view or mutate
+Administrators can open **Aliases** at
+`<balda.http.base_path>/backoffice/aliases` to create, inspect, retarget, and
+delete named report destinations. Operators cannot view or mutate
 them. A name such as `main_chat` maps to one public locator such as
 `telegram:-1003953132277:0`. Names use lowercase letters, digits, underscores,
 and hyphens, begin with a letter, and cannot be `owner`, `collaborator`, or a

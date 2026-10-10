@@ -30,8 +30,8 @@ balda:
 
     # Optional webhook configuration
     webhook:
-      # Register outgoing Telegram webhook URL.
-      # Required when webhook.enabled=true.
+      # Optional Telegram registration URL. When empty in webhook mode, use
+      # balda.http.base_url + balda.http.base_path + /gateway/telegram/webhook.
       url: ""
       # Telegram webhook auth token protection.
       # Required when webhook.enabled=true.
@@ -39,9 +39,9 @@ balda:
       # Enable local HTTP endpoint for incoming Telegram webhook updates.
       # If false, balda uses polling mode.
       enabled: false
-      # Local bind address for webhook endpoint.
+      # Legacy bind setting; balda.http.listen_addr owns the shared socket.
       listen_addr: "0.0.0.0:8080"
-      # Local HTTP path that receives webhook updates.
+      # Exact legacy callback alias alongside /gateway/telegram/webhook.
       path: "/telegram/webhook"
 
   zulip:
@@ -60,25 +60,24 @@ balda:
     webhook_token: ""
     webhook:
       # Enable inbound Zulip webhook receiver.
-      # Zulip outgoing webhook bot must target: http://<host>:8090/zulip/webhook
+      # New callbacks use <base_path>/gateway/zulip/webhook on the shared listener.
       # Set via BALDA_ZULIP_WEBHOOK_ENABLED env var
       enabled: false
-      # Local bind address for Zulip webhook endpoint.
+      # Legacy bind setting; balda.http.listen_addr owns the shared socket.
       # Set via BALDA_ZULIP_WEBHOOK_LISTEN_ADDR env var
       listen_addr: "0.0.0.0:8090"
-      # HTTP path that receives Zulip webhook payloads.
+      # Exact legacy callback alias.
       # Set via BALDA_ZULIP_WEBHOOK_PATH env var
       path: "/zulip/webhook"
 
   mattermost:
-    # Mattermost slash commands are delivered as HTTP requests, not posts, so
-    # they need a separate receiver from the websocket ingress. Enable it and
-    # point a Mattermost slash command's Request URL at this path, using the
-    # same token the integration shows you.
+    # Mattermost slash commands arrive over shared HTTP, separate from
+    # websocket events. Register /gateway/mattermost/commands beneath the
+    # configured base_path with the token the integration shows you.
     commands_enabled: false
-    # Local address the slash-command receiver listens on.
+    # Legacy bind setting; balda.http.listen_addr owns the shared socket.
     commands_listen_addr: ":8093"
-    # Local HTTP path for slash requests; must start with "/".
+    # Exact legacy slash-command alias; must start with "/".
     commands_path: "/mattermost/commands"
     # Mattermost slash-command token used to authenticate incoming requests.
     commands_token: ""
@@ -110,11 +109,11 @@ balda:
     # Slack signing secret used to verify incoming Events API and slash requests.
     # Set via BALDA_SLACK_SIGNING_SECRET env var
     signing_secret: ""
-    # Local HTTP bind address for Slack endpoints.
+    # Legacy bind setting; balda.http.listen_addr owns the shared socket.
     listen_addr: "0.0.0.0:8091"
-    # Local HTTP path for Slack Events API requests.
+    # Retained Slack Events setting; Slack Agent uses agent.events_path.
     events_path: "/slack/events"
-    # Local HTTP path for /balda slash requests. Slack Agent routes these into
+    # Exact legacy /balda slash-command alias. Slack Agent routes these into
     # the shared transport-neutral command handler.
     commands_path: "/slack/commands"
     # If true, process private channel message events when the Slack app has
@@ -124,9 +123,9 @@ balda:
       # Enable separate Slack AI Agents ingress/runtime wiring.
       # This is distinct from balda.slack.enabled, which keeps the current Slack chat mode.
       enabled: false
-      # Local HTTP bind address for Slack agent events.
+      # Legacy bind setting; balda.http.listen_addr owns the shared socket.
       listen_addr: "0.0.0.0:8092"
-      # Local HTTP path for Slack agent ingress requests.
+      # Exact legacy Slack Agent Events alias.
       events_path: "/slack/agent/events"
       # Optional richer UX toggles. These do not affect current slack_chat behavior.
       enable_streaming: false
@@ -135,7 +134,7 @@ balda:
   webhooks:
     # Enable generic inbound webhook ingestion.
     enabled: false
-    # Local bind address for inbound webhook endpoint.
+    # Legacy bind setting; balda.http.listen_addr owns the shared socket.
     listen_addr: "127.0.0.1:8090"
     # Route table for inbound webhook events.
     # Each route binds:
@@ -198,7 +197,9 @@ balda:
       password: ""
       sslmode: disable
 
-  # Shared HTTP values fall back to Backoffice settings when omitted.
+  # One local HTTP bind and one public origin/prefix for sibling
+  # /backoffice, /webhooks, and /gateway areas. Values fall back to the old
+  # Backoffice address settings when omitted.
   http:
     listen_addr: ""
     base_url: ""
@@ -207,8 +208,8 @@ balda:
   # Backoffice starts inside `balda start` after schema/data migrations and user
   # readiness, using the same database and canonical users as the bot.
   backoffice:
-    # Loopback is the safe default. A non-loopback listener requires an HTTPS
-    # public_url (typically through a trusted reverse proxy).
+    # Legacy fallback address fields. Use balda.http.* for new deployments.
+    # A non-loopback shared bind requires an HTTPS public origin.
     listen_addr: "127.0.0.1:8095"
     public_url: "http://127.0.0.1:8095"
     # Opaque access credentials are short-lived. Single-use rotating refresh

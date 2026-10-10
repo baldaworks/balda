@@ -17,15 +17,16 @@ Example `.env`:
 ```dotenv
 BALDA_TELEGRAM_TOKEN=123456:ABCDEF
 BALDA_TELEGRAM_FORMATTING_MODE=rich_markdown
-BALDA_TELEGRAM_WEBHOOK_ENABLED=true
-BALDA_TELEGRAM_WEBHOOK_URL=https://example.com/telegram/webhook
+BALDA_HTTP_BASE_URL=https://example.com
+BALDA_HTTP_BASE_PATH=/balda
 ```
 
-Slack Agent deployments use plain HTTP inside Balda. Public HTTPS Request URLs,
-certificates, reverse proxies, ingress, and tunnels are deployment
-infrastructure outside Balda. Forward the signed Slack Events API traffic to
-`balda.slack.agent.events_path` and `/balda` slash-command traffic to
-`balda.slack.commands_path` without changing the raw request body.
+Balda binds one local HTTP listener for Backoffice, generic webhooks, and
+enabled HTTP transport callbacks. Public HTTPS Request URLs, certificates,
+reverse proxies, ingress, and tunnels are deployment infrastructure outside
+Balda. Forward requests to the shared listener with the original path and raw
+request body. The handlers keep their existing browser, webhook-secret, and
+transport-signature checks.
 
 Config shape:
 
@@ -37,6 +38,10 @@ runtime:
   mcp_servers: {}
 balda:
   provider: <provider_id>
+  http:
+    listen_addr: "127.0.0.1:8095"
+    base_url: "http://127.0.0.1:8095"
+    base_path: ""
   session_memory:
     enabled: true
     provider: ""  # optional extraction provider; empty falls back to balda.provider
@@ -48,6 +53,60 @@ profiles:
     balda:
       provider: <provider_id>
 ```
+
+### Shared HTTP listener and public URLs
+
+`balda.http.listen_addr` is the local `host:port` bind for all HTTP-facing
+areas. It defaults to `127.0.0.1:8095`; a port collision aborts startup even
+when no webhook route is enabled. `balda.http.base_url` is the public origin
+used to display and register callbacks. It must contain only `http://` or
+`https://` plus the authority, without credentials, path, trailing slash,
+query, or fragment. A non-loopback bind requires an HTTPS origin.
+`balda.http.base_path` is an optional canonical root-relative deployment prefix:
+empty or an absolute path such as `/balda`, without a trailing slash. Invalid
+values fail configuration validation before the listener binds. Environment
+overrides are `BALDA_HTTP_LISTEN_ADDR`, `BALDA_HTTP_BASE_URL`, and
+`BALDA_HTTP_BASE_PATH`.
+
+The three sibling areas are `<base_path>/backoffice/` for the browser,
+`<base_path>/webhooks/<name>` for new managed generic webhooks, and
+`<base_path>/gateway/<transport>/...` for chat transport callbacks. The
+Backoffice Webhooks management page is under `/backoffice/webhooks`; it is
+separate from the inbound `/webhooks` area. For the agreed **illustrative** asus
+values:
+
+```yaml
+balda:
+  http:
+    listen_addr: "127.0.0.1:8095"
+    base_url: https://lab.metalagman.dev
+    base_path: /balda
+```
+
+| Area | Public URL |
+| --- | --- |
+| Backoffice | `https://lab.metalagman.dev/balda/backoffice/` |
+| Webhook management | `https://lab.metalagman.dev/balda/backoffice/webhooks` |
+| New managed webhook `orders` | `https://lab.metalagman.dev/balda/webhooks/orders` |
+| Slack Events | `https://lab.metalagman.dev/balda/gateway/slack/events` |
+| Slack Commands | `https://lab.metalagman.dev/balda/gateway/slack/commands` |
+
+The local `listen_addr` does not appear in those public URLs. With an empty
+`base_path`, the same area paths start at `/backoffice`, `/webhooks`, and
+`/gateway`. If a shared field is omitted, it falls back to the corresponding
+`balda.backoffice.listen_addr`, `public_url`, or `base_path` value, then the
+default. Set `balda.http.*` explicitly in new configurations. Old per-area
+listen-address fields are ignored for binding once the shared listener is in
+use; the old Backoffice address fields do not create a separate browser mount.
+Stored custom paths for existing config-owned or managed webhooks remain exact
+root-relative paths and are not rewritten. Configured gateway callback paths
+remain accepted as exact legacy aliases alongside canonical `/gateway` paths.
+
+The live asus ingress, deployment, and Telegram/Slack/external callback
+registrations are unchanged by this Story. The table is an application URL
+example, not a claim that those addresses are already publicly reachable;
+external exposure needs a separate ingress and callback-registration rollout.
+See [Backoffice startup and browser security](backoffice.md#startup-and-configuration).
 
 ### Docker Compose Runtime
 
@@ -209,11 +268,15 @@ The published image is released from Git tags through `release.yml` and is
 currently tagged only as `latest`. OCI labels still record the release tag,
 commit SHA, source repository, and build timestamp.
 
-Polling mode is the default and does not require a published port. Webhook mode
-requires `balda.telegram.webhook.enabled=true`,
-`balda.telegram.webhook.url=https://.../telegram/webhook`, and a published local
-listener such as `8080:8080`; TLS and public routing should be handled outside
-the Balda process.
+Polling mode is the default. The bundled Compose file publishes no HTTP port.
+With `balda.telegram.webhook.enabled=true`, an omitted
+`balda.telegram.webhook.url` is composed from `balda.http.base_url` and
+`balda.http.base_path` at `<base_path>/gateway/telegram/webhook`. Telegram
+callbacks enter the shared `balda.http.listen_addr` listener; the old Telegram
+bind setting is ignored. The shared bind defaults to loopback
+`127.0.0.1:8095`, which is local to the container in Compose. Any container
+port exposure, public routing, and TLS termination belong to the deployment,
+outside this Story's unchanged ingress and Compose configuration.
 
 ### MCP Server Configuration
 
@@ -251,7 +314,7 @@ Replacing it is not a key rotation operation: no automatic re-encryption or
 lost-key recovery is provided. Run one active Balda grant writer. Pending
 authorization attempts are process-local and must be restarted after a host
 restart; saved encrypted grants persist. Register the browser callback as
-`<public_url><base_path>/mcp/oauth/callback`, and use a supported pre-registered
+`<balda.http.base_url><balda.http.base_path>/backoffice/mcp/oauth/callback`, and use a supported pre-registered
 client for device authorization. Browser authorization requires the issuer to
 advertise S256 PKCE and `authorization_response_iss_parameter_supported`, with a
 callback `iss` value matching the trusted issuer. Use browser authorization after
@@ -421,10 +484,10 @@ balda:
   - `true`: public chats/topics send a plain-text message for each distinct plan snapshot
   - `false`: plan progress remains hidden; Balda still emits progress activity, sends typing indicators, and keeps DM thinking drafts instead of plan snapshots
 - `balda.telegram.webhook.enabled`: enable local HTTP webhook endpoint (`true` => webhook mode, `false` => polling mode; default: `false`)
-- `balda.telegram.webhook.url`: outgoing Telegram webhook URL (required when `balda.telegram.webhook.enabled=true`)
+- `balda.telegram.webhook.url`: Telegram registration URL; when omitted in webhook mode, Balda composes `<balda.http.base_url><balda.http.base_path>/gateway/telegram/webhook`. An explicit URL must use that canonical path or the configured legacy path.
 - `balda.telegram.webhook.auth_token`: webhook auth token required when `balda.telegram.webhook.enabled=true`; Telegram sends it as `X-Telegram-Bot-Api-Secret-Token`
-- `balda.telegram.webhook.listen_addr`: local webhook listen address (default: `0.0.0.0:8080`)
-- `balda.telegram.webhook.path`: local webhook path (default: `/telegram/webhook`)
+- `balda.telegram.webhook.listen_addr`: legacy bind setting; ignored in favor of `balda.http.listen_addr`
+- `balda.telegram.webhook.path`: exact legacy callback alias (default: `/telegram/webhook`); canonical path is `<base_path>/gateway/telegram/webhook`
 - Telegram polling holds the persisted update offset until the provider event
   has completed runtime settlement. Accepted and terminal events advance the
   offset; retryable handler failures leave it unchanged so Telegram replays the
@@ -436,23 +499,23 @@ balda:
 - `balda.zulip.server_url`: Zulip server base URL, absolute `http://` or `https://` (required when `balda.zulip.webhook.enabled=true`; env: `BALDA_ZULIP_SERVER_URL`)
 - `balda.zulip.webhook_token`: Zulip outgoing webhook token that must match the incoming payload token (required when `balda.zulip.webhook.enabled=true`; env: `BALDA_ZULIP_WEBHOOK_TOKEN`)
 - `balda.zulip.webhook.enabled`: enable local Zulip outgoing webhook receiver (`true` => Zulip channel enabled; default: `false`; env: `BALDA_ZULIP_WEBHOOK_ENABLED`)
-- `balda.zulip.webhook.listen_addr`: local Zulip webhook listen address (default: `0.0.0.0:8090`; env: `BALDA_ZULIP_WEBHOOK_LISTEN_ADDR`)
-- `balda.zulip.webhook.path`: local Zulip webhook path, which must start with `/` (default: `/zulip/webhook`; env: `BALDA_ZULIP_WEBHOOK_PATH`)
+- `balda.zulip.webhook.listen_addr`: legacy bind setting; ignored in favor of `balda.http.listen_addr` (env: `BALDA_ZULIP_WEBHOOK_LISTEN_ADDR`)
+- `balda.zulip.webhook.path`: exact legacy callback alias, which must start with `/` (default: `/zulip/webhook`; env: `BALDA_ZULIP_WEBHOOK_PATH`); canonical path is `<base_path>/gateway/zulip/webhook`
 - `balda.mattermost.enabled`: enable the Mattermost bot-account websocket transport (`true` => Mattermost channel enabled; default: `false`; env: `BALDA_MATTERMOST_ENABLED`)
 - `balda.mattermost.server_url`: Mattermost server base URL, absolute `http://` or `https://` (required when the Mattermost transport is enabled; env: `BALDA_MATTERMOST_SERVER_URL`)
 - `balda.mattermost.token`: Mattermost bot account personal access token (required when the Mattermost transport is enabled; env: `BALDA_MATTERMOST_TOKEN`)
 - `balda.mattermost.bot_user_id`: Mattermost bot account user id, used to ignore the bot's own posts (required when the Mattermost transport is enabled; env: `BALDA_MATTERMOST_BOT_USER_ID`)
 - `balda.mattermost.bot_username`: Mattermost bot account username, used to detect `@mention` activation in public and private channels (required when the Mattermost transport is enabled; env: `BALDA_MATTERMOST_BOT_USERNAME`)
 - `balda.mattermost.commands_enabled`: enable the Mattermost HTTP slash-command receiver (requires `balda.mattermost.enabled=true`; default: `false`; env: `BALDA_MATTERMOST_COMMANDS_ENABLED`)
-- `balda.mattermost.commands_listen_addr`: local slash-command receiver address (default: `:8093`; env: `BALDA_MATTERMOST_COMMANDS_LISTEN_ADDR`)
-- `balda.mattermost.commands_path`: local slash-command receiver path, beginning with `/` (default: `/mattermost/commands`; env: `BALDA_MATTERMOST_COMMANDS_PATH`)
+- `balda.mattermost.commands_listen_addr`: legacy bind setting; ignored in favor of `balda.http.listen_addr` (env: `BALDA_MATTERMOST_COMMANDS_LISTEN_ADDR`)
+- `balda.mattermost.commands_path`: exact legacy slash-command alias, beginning with `/` (default: `/mattermost/commands`; env: `BALDA_MATTERMOST_COMMANDS_PATH`); canonical path is `<base_path>/gateway/mattermost/commands`
 - `balda.mattermost.commands_token`: Mattermost root slash-command integration token (required when `commands_enabled=true`; env: `BALDA_MATTERMOST_COMMANDS_TOKEN`)
 - `balda.slack.bot_token`: Bot OAuth Token used for Slack Agent Session and chat methods (required when Slack Agent is enabled; env: `BALDA_SLACK_BOT_TOKEN`)
 - `balda.slack.signing_secret`: signing secret used to verify exact Events API and slash-command requests (required when Slack Agent is enabled; env: `BALDA_SLACK_SIGNING_SECRET`)
-- `balda.slack.commands_path`: local `/balda` slash-command path, which must start with `/` and differ from the Agent Events path (default: `/slack/commands`; env: `BALDA_SLACK_COMMANDS_PATH`)
+- `balda.slack.commands_path`: exact legacy `/balda` slash-command alias, which must start with `/` and differ from the Agent Events path (default: `/slack/commands`; env: `BALDA_SLACK_COMMANDS_PATH`); canonical path is `<base_path>/gateway/slack/commands`
 - `balda.slack.agent.enabled`: enable Slack Agent HTTP ingress (default: `false`; env: `BALDA_SLACK_AGENT_ENABLED`)
-- `balda.slack.agent.listen_addr`: local Agent Events listener (default: `0.0.0.0:8092`; env: `BALDA_SLACK_AGENT_LISTEN_ADDR`)
-- `balda.slack.agent.events_path`: local Agent Events path, which must start with `/` (default: `/slack/agent/events`; env: `BALDA_SLACK_AGENT_EVENTS_PATH`)
+- `balda.slack.agent.listen_addr`: legacy bind setting; ignored in favor of `balda.http.listen_addr` (env: `BALDA_SLACK_AGENT_LISTEN_ADDR`)
+- `balda.slack.agent.events_path`: exact legacy Agent Events alias, which must start with `/` (default: `/slack/agent/events`; env: `BALDA_SLACK_AGENT_EVENTS_PATH`); canonical path is `<base_path>/gateway/slack/events`
 - `balda.slack.agent.enable_streaming`: deliver responses through Slack streaming methods instead of `chat.postMessage` (default: `false`; env: `BALDA_SLACK_AGENT_ENABLE_STREAMING`)
 - `balda.slack.agent.suggested_prompts`: enable Slack Agent suggested prompts (default: `false`; env: `BALDA_SLACK_AGENT_SUGGESTED_PROMPTS`)
 - `balda.features.attachments.max_files_per_message`: maximum files accepted in one inbound attachment set (default: `10`; env: `BALDA_FEATURES_ATTACHMENTS_MAX_FILES_PER_MESSAGE`); a Slack thread turn shares this count between current-message and historical files
@@ -460,10 +523,10 @@ balda:
 - `balda.features.attachments.max_total_bytes`: maximum bytes accepted across one inbound message (default: `52428800`, 50 MiB; env: `BALDA_FEATURES_ATTACHMENTS_MAX_TOTAL_BYTES`)
 - `balda.features.attachments.store.engine`: inbound attachment persistence engine (`local` or `off`; default: `local`; env: `BALDA_FEATURES_ATTACHMENTS_STORE_ENGINE`)
 - `balda.webhooks.enabled`: enable config-owned inbound webhook routes (default: `false`); Backoffice-managed routes have separate enabled state
-- `balda.webhooks.listen_addr`: local inbound webhook listen address (default: `127.0.0.1:8090`); the listener binds on every `balda start`, even when no route is active. A port collision aborts startup. Keep it on a private interface or behind a trusted gateway.
+- `balda.webhooks.listen_addr`: legacy bind setting; ignored in favor of `balda.http.listen_addr`. The shared listener binds on every `balda start`, even when no route is active. Keep it on a private interface or behind a trusted gateway.
 - `balda.webhooks.routes`: config-owned route table keyed by route name; entries are read-only in Backoffice and require restart to change
   - each route requires:
-    - `path`: local inbound webhook path (for example `/webhook/release`)
+    - `path`: exact root-relative inbound webhook path (for example `/webhook/release`); existing paths are not prefixed or rewritten
     - `prompt_template`: Go `text/template` rendered with `RequestID`, `Path`, `Method`, `RawBody`, and `Headers`
   - optional `envelope.report_to`: final-report destination with `target` and `key`
     - `target=locator`: public `<channel_type>:<address_key>` ref; `/locator` prints one
