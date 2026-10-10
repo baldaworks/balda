@@ -47,7 +47,6 @@ type Authority struct {
 // ReportTo is one optional public locator or managed alias name.
 type Definition struct {
 	Name           string
-	Path           string
 	PromptTemplate string
 	ReportTo       string
 	AckOnDelivery  bool
@@ -140,7 +139,6 @@ type SecretResult struct {
 // Its auth value deliberately has no field here.
 type ConfiguredRoute struct {
 	Name           string
-	Path           string
 	PromptTemplate string
 	ReportToKind   string
 	ReportToKey    string
@@ -162,15 +160,15 @@ const (
 // Record is the durable route value shared by management and its store port.
 // SecretVerifier is populated only for ingress lookup, not List or Get.
 type Record struct {
-	Name, Source, Path, PromptTemplate string
-	ReportToKind, ReportToKey          string
-	AckOnDelivery                      bool
-	DedupeSource, DedupeHeader         string
-	AuthType, AuthHeader               string
-	SecretVerifier                     string
-	Enabled, Deleted                   bool
-	Version                            uint64
-	CreatedAt, UpdatedAt               time.Time
+	Name, Source, PromptTemplate string
+	ReportToKind, ReportToKey    string
+	AckOnDelivery                bool
+	DedupeSource, DedupeHeader   string
+	AuthType, AuthHeader         string
+	SecretVerifier               string
+	Enabled, Deleted             bool
+	Version                      uint64
+	CreatedAt, UpdatedAt         time.Time
 }
 
 // MutationKind identifies a guarded managed route write.

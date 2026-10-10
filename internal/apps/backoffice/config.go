@@ -43,11 +43,13 @@ type ResolvedServerConfig struct {
 	// WebhookURLBasePath is the shared public prefix, independent of the browser mount.
 	// Nil keeps the standalone listener's legacy base path until shared cutover.
 	WebhookURLBasePath *string
-	AccessTokenTTL     time.Duration
-	RefreshTokenTTL    time.Duration
-	CeremonyTTL        time.Duration
-	SecureCookies      bool
-	QAUI               bool
+	// WebhookPublicOrigin overrides only callback display; empty means no public origin.
+	WebhookPublicOrigin *string
+	AccessTokenTTL      time.Duration
+	RefreshTokenTTL     time.Duration
+	CeremonyTTL         time.Duration
+	SecureCookies       bool
+	QAUI                bool
 }
 
 // Resolve validates listener exposure, public URL, and bounded token lifetimes.

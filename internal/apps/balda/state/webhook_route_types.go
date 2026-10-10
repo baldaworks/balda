@@ -22,17 +22,17 @@ var (
 )
 
 // WebhookRouteRecord is durable route metadata. SecretVerifier is set only by
-// LookupByPath and must never be rendered in a Backoffice read model.
+// LookupActiveManagedByName and must never be rendered in a Backoffice read model.
 type WebhookRouteRecord struct {
-	Name, Source, Path, PromptTemplate string
-	ReportToKind, ReportToKey          string
-	AckOnDelivery                      bool
-	DedupeSource, DedupeHeader         string
-	AuthType, AuthHeader               string
-	SecretVerifier                     string
-	Enabled, Deleted                   bool
-	Version                            uint64
-	CreatedAt, UpdatedAt               time.Time
+	Name, Source, PromptTemplate string
+	ReportToKind, ReportToKey    string
+	AckOnDelivery                bool
+	DedupeSource, DedupeHeader   string
+	AuthType, AuthHeader         string
+	SecretVerifier               string
+	Enabled, Deleted             bool
+	Version                      uint64
+	CreatedAt, UpdatedAt         time.Time
 }
 
 // WebhookRouteAuthority fences an administrator browser family at commit time.
@@ -66,7 +66,7 @@ type WebhookRouteMutation struct {
 type WebhookRouteStore interface {
 	Get(ctx context.Context, name string) (WebhookRouteRecord, bool, error)
 	List(ctx context.Context) ([]WebhookRouteRecord, error)
-	LookupByPath(ctx context.Context, path string) (WebhookRouteRecord, bool, error)
+	LookupActiveManagedByName(ctx context.Context, name string) (WebhookRouteRecord, bool, error)
 	ReconcileConfig(ctx context.Context, routes []WebhookRouteRecord) error
 	CheckAuthority(ctx context.Context, authority WebhookRouteAuthority) error
 	Save(ctx context.Context, mutation WebhookRouteMutation) error

@@ -55,7 +55,7 @@ func (s *routeStore) Save(ctx context.Context, m webhookroutecmd.Mutation) error
 }
 
 func fromStateRecord(r state.WebhookRouteRecord) webhookroutecmd.Record {
-	return webhookroutecmd.Record{Name: r.Name, Source: r.Source, Path: r.Path,
+	return webhookroutecmd.Record{Name: r.Name, Source: r.Source,
 		PromptTemplate: r.PromptTemplate, ReportToKind: r.ReportToKind,
 		ReportToKey: r.ReportToKey, AckOnDelivery: r.AckOnDelivery,
 		DedupeSource: r.DedupeSource, DedupeHeader: r.DedupeHeader,
@@ -65,7 +65,7 @@ func fromStateRecord(r state.WebhookRouteRecord) webhookroutecmd.Record {
 }
 
 func toStateRecord(r webhookroutecmd.Record) state.WebhookRouteRecord {
-	return state.WebhookRouteRecord{Name: r.Name, Source: r.Source, Path: r.Path,
+	return state.WebhookRouteRecord{Name: r.Name, Source: r.Source,
 		PromptTemplate: r.PromptTemplate, ReportToKind: r.ReportToKind,
 		ReportToKey: r.ReportToKey, AckOnDelivery: r.AckOnDelivery,
 		DedupeSource: r.DedupeSource, DedupeHeader: r.DedupeHeader,

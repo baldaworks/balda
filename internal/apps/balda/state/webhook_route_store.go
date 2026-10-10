@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"math"
 	"strings"
 	"time"
@@ -19,7 +18,7 @@ type sqlWebhookRouteStore struct{ users *sqlUserStore }
 
 var _ WebhookRouteStore = (*sqlWebhookRouteStore)(nil)
 
-const webhookRouteColumns = `name, source, path, prompt_template, report_to_kind, report_to_key,
+const webhookRouteColumns = `name, source, prompt_template, report_to_kind, report_to_key,
 	ack_on_delivery, dedupe_source, dedupe_header, auth_type, auth_header,
 	enabled, deleted, definition_version, created_at, updated_at`
 
@@ -56,14 +55,14 @@ func (s *sqlWebhookRouteStore) List(ctx context.Context) ([]WebhookRouteRecord, 
 	return routes, nil
 }
 
-// LookupByPath is for ingress only. It returns a managed secret verifier, never plaintext.
-func (s *sqlWebhookRouteStore) LookupByPath(ctx context.Context, path string) (WebhookRouteRecord, bool, error) {
+// LookupActiveManagedByName is for ingress only. It returns a managed secret verifier, never plaintext.
+func (s *sqlWebhookRouteStore) LookupActiveManagedByName(ctx context.Context, name string) (WebhookRouteRecord, bool, error) {
 	var r WebhookRouteRecord
 	var ack, enabled, deleted int
 	var created, updated string
 	err := s.users.db.QueryRowContext(ctx, s.users.bind(`SELECT `+webhookRouteColumns+`, secret_verifier
-		FROM balda_webhook_routes WHERE path = ? AND enabled = 1 AND deleted = 0`), path).
-		Scan(&r.Name, &r.Source, &r.Path, &r.PromptTemplate, &r.ReportToKind, &r.ReportToKey,
+		FROM balda_webhook_routes WHERE name = ? AND source = 'managed' AND enabled = 1 AND deleted = 0`), name).
+		Scan(&r.Name, &r.Source, &r.PromptTemplate, &r.ReportToKind, &r.ReportToKey,
 			&ack, &r.DedupeSource, &r.DedupeHeader, &r.AuthType, &r.AuthHeader,
 			&enabled, &deleted, &r.Version, &created, &updated, &r.SecretVerifier)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -82,7 +81,7 @@ func scanWebhookRoute(row interface{ Scan(dest ...any) error }) (WebhookRouteRec
 	var r WebhookRouteRecord
 	var ack, enabled, deleted int
 	var created, updated string
-	err := row.Scan(&r.Name, &r.Source, &r.Path, &r.PromptTemplate, &r.ReportToKind, &r.ReportToKey,
+	err := row.Scan(&r.Name, &r.Source, &r.PromptTemplate, &r.ReportToKind, &r.ReportToKey,
 		&ack, &r.DedupeSource, &r.DedupeHeader, &r.AuthType, &r.AuthHeader,
 		&enabled, &deleted, &r.Version, &created, &updated)
 	if err != nil {
@@ -121,8 +120,7 @@ func (s *sqlWebhookRouteStore) ReconcileConfig(ctx context.Context, routes []Web
 	}
 	defer func() { _ = tx.Rollback() }()
 	now := formatUserTime(time.Now().UTC())
-	// Disable first so an existing config path can be renamed without a
-	// transient uniqueness collision. The transaction hides the intermediate state.
+	// Archive absent config definitions; matching config names are revived below.
 	if _, err := tx.ExecContext(ctx, s.users.bind(`UPDATE balda_webhook_routes
 		SET enabled = 0, deleted = 1, updated_at = ?
 		WHERE source = 'config' AND deleted = 0`), now); err != nil {
@@ -130,12 +128,12 @@ func (s *sqlWebhookRouteStore) ReconcileConfig(ctx context.Context, routes []Web
 	}
 	for _, r := range routes {
 		result, err := tx.ExecContext(ctx, s.users.bind(`INSERT INTO balda_webhook_routes
-			(name, source, path, prompt_template, report_to_kind, report_to_key, ack_on_delivery,
+			(name, source, prompt_template, report_to_kind, report_to_key, ack_on_delivery,
 			dedupe_source, dedupe_header, auth_type, auth_header, secret_verifier,
 			enabled, deleted, definition_version, created_at, updated_at)
-			VALUES (?, 'config', ?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, 0, 1, ?, ?)
+			VALUES (?, 'config', ?, ?, ?, ?, ?, ?, ?, ?, '', ?, 0, 1, ?, ?)
 			ON CONFLICT(name) DO UPDATE SET
-				path = excluded.path, prompt_template = excluded.prompt_template,
+				prompt_template = excluded.prompt_template,
 				report_to_kind = excluded.report_to_kind, report_to_key = excluded.report_to_key,
 				ack_on_delivery = excluded.ack_on_delivery, dedupe_source = excluded.dedupe_source,
 				dedupe_header = excluded.dedupe_header, auth_type = excluded.auth_type,
@@ -144,7 +142,7 @@ func (s *sqlWebhookRouteStore) ReconcileConfig(ctx context.Context, routes []Web
 				definition_version = balda_webhook_routes.definition_version + 1,
 				updated_at = excluded.updated_at
 			WHERE balda_webhook_routes.source = 'config'`),
-			r.Name, r.Path, r.PromptTemplate, r.ReportToKind, r.ReportToKey,
+			r.Name, r.PromptTemplate, r.ReportToKind, r.ReportToKey,
 			boolInt(r.AckOnDelivery), r.DedupeSource, r.DedupeHeader, r.AuthType,
 			r.AuthHeader, boolInt(r.Enabled), now, now)
 		if err != nil {
@@ -200,36 +198,24 @@ func (s *sqlWebhookRouteStore) Save(ctx context.Context, m WebhookRouteMutation)
 	}
 	now := formatUserTime(time.Now().UTC())
 	r := m.Record
-	if m.Kind == WebhookRouteCreate || m.Kind == WebhookRouteEdit ||
-		m.Kind == WebhookRouteSelection && r.Enabled {
-		var owner string
-		err := tx.QueryRowContext(ctx, s.users.bind(`SELECT name FROM balda_webhook_routes
-			WHERE path = ? AND enabled = 1 AND deleted = 0 AND name <> ? LIMIT 1`), r.Path, r.Name).Scan(&owner)
-		if err == nil {
-			return fmt.Errorf("%w: path %q conflicts with active route %q", ErrWebhookRouteConflict, r.Path, owner)
-		}
-		if !errors.Is(err, sql.ErrNoRows) {
-			return ErrWebhookRouteUnavailable
-		}
-	}
 	var result sql.Result
 	switch m.Kind {
 	case WebhookRouteCreate:
 		result, err = tx.ExecContext(ctx, s.users.bind(`INSERT INTO balda_webhook_routes
-			(name, source, path, prompt_template, report_to_kind, report_to_key, ack_on_delivery,
+			(name, source, prompt_template, report_to_kind, report_to_key, ack_on_delivery,
 			dedupe_source, dedupe_header, auth_type, auth_header, secret_verifier,
 			enabled, deleted, definition_version, created_at, updated_at)
-			VALUES (?, 'managed', ?, ?, ?, ?, ?, ?, ?, 'header', ?, ?, 1, 0, 1, ?, ?)
-			ON CONFLICT(name) DO NOTHING`), r.Name, r.Path, r.PromptTemplate,
+			VALUES (?, 'managed', ?, ?, ?, ?, ?, ?, 'header', ?, ?, 1, 0, 1, ?, ?)
+			ON CONFLICT(name) DO NOTHING`), r.Name, r.PromptTemplate,
 			r.ReportToKind, r.ReportToKey, boolInt(r.AckOnDelivery), r.DedupeSource,
 			r.DedupeHeader, r.AuthHeader, r.SecretVerifier, now, now)
 	case WebhookRouteEdit:
 		result, err = tx.ExecContext(ctx, s.users.bind(`UPDATE balda_webhook_routes SET
-			path = ?, prompt_template = ?, report_to_kind = ?, report_to_key = ?,
+			prompt_template = ?, report_to_kind = ?, report_to_key = ?,
 			ack_on_delivery = ?, dedupe_source = ?, dedupe_header = ?,
 			definition_version = definition_version + 1, updated_at = ?
 			WHERE name = ? AND source = 'managed' AND deleted = 0 AND definition_version = ?`),
-			r.Path, r.PromptTemplate, r.ReportToKind, r.ReportToKey, boolInt(r.AckOnDelivery),
+			r.PromptTemplate, r.ReportToKind, r.ReportToKey, boolInt(r.AckOnDelivery),
 			r.DedupeSource, r.DedupeHeader, now, r.Name, m.ExpectedVersion)
 	case WebhookRouteSelection:
 		result, err = tx.ExecContext(ctx, s.users.bind(`UPDATE balda_webhook_routes SET
@@ -320,8 +306,7 @@ func validWebhookRouteAuthority(a WebhookRouteAuthority) bool {
 }
 
 func validWebhookRoute(r WebhookRouteRecord) bool {
-	if strings.TrimSpace(r.Name) == "" || strings.TrimSpace(r.Path) == "" ||
-		!strings.HasPrefix(r.Path, "/") || strings.TrimSpace(r.PromptTemplate) == "" ||
+	if strings.TrimSpace(r.Name) == "" || strings.TrimSpace(r.PromptTemplate) == "" ||
 		(r.ReportToKind == "") != (r.ReportToKey == "") ||
 		(r.DedupeSource == "header" && r.DedupeHeader == "") || r.AckOnDelivery && r.ReportToKey == "" {
 		return false

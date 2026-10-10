@@ -8,6 +8,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/destinationcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/locatorref"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookroutecmd"
 )
 
 const (
@@ -33,7 +34,6 @@ const (
 
 // RouteConfig configures one inbound webhook route.
 type RouteConfig struct {
-	Path           string
 	PromptTemplate string
 	Envelope       RouteEnvelopeConfig
 	Auth           RouteAuthConfig
@@ -67,6 +67,7 @@ type RouteDedupeConfig struct {
 
 // Config controls inbound webhook routing and dispatch behavior.
 type Config struct {
+	BasePath   string
 	Enabled    bool
 	ListenAddr string
 	Routes     map[string]RouteConfig
@@ -109,28 +110,12 @@ func normalizeConfig(cfg Config) (normalizedConfig, error) {
 		ListenAddr: listenAddr,
 		Routes:     make(map[string]route),
 	}
-	if !cfg.Enabled {
-		return normalized, nil
-	}
-
-	seenPaths := make(map[string]string, len(cfg.Routes))
 	for rawName, rawRoute := range cfg.Routes {
-		routeName := strings.TrimSpace(rawName)
-		if routeName == "" {
-			return normalizedConfig{}, fmt.Errorf("balda.webhooks.routes key is required")
+		routeName := rawName
+		if !webhookroutecmd.ValidName(routeName) {
+			return normalizedConfig{}, fmt.Errorf("balda.webhooks.routes.%s: invalid route slug", routeName)
 		}
-
-		path := strings.TrimSpace(rawRoute.Path)
-		if path == "" {
-			return normalizedConfig{}, fmt.Errorf("balda.webhooks.routes.%s.path: path is required", routeName)
-		}
-		if !strings.HasPrefix(path, "/") {
-			path = "/" + path
-		}
-		if existingName, exists := seenPaths[path]; exists {
-			return normalizedConfig{}, fmt.Errorf("balda.webhooks.routes.%s.path duplicates route %q", routeName, existingName)
-		}
-		seenPaths[path] = routeName
+		path := webhookroutecmd.CanonicalPath(cfg.BasePath, routeName)
 
 		templateText := strings.TrimSpace(rawRoute.PromptTemplate)
 		if templateText == "" {

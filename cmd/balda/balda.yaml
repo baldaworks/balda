@@ -137,8 +137,10 @@ balda:
     # Legacy bind setting; balda.http.listen_addr owns the shared socket.
     listen_addr: "127.0.0.1:8090"
     # Route table for inbound webhook events.
-    # Each route binds:
-    # - path: incoming webhook path
+    # Keys are immutable URL slugs: ^[a-z0-9][a-z0-9_-]{0,63}$.
+    # Every config and managed route uses <balda.http.base_path>/webhooks/<name>.
+    # Do not declare path; even disabled declarations fail startup if it is present.
+    # Each route defines:
     # - prompt_template: Go text/template rendered with request data
     # - envelope: optional final report destination
     #   - report_to.target: locator|managed_alias|alias
@@ -154,7 +156,6 @@ balda:
     # Example:
     # routes:
     #   release_notes:
-    #     path: "/webhook/release-notes"
     #     prompt_template: |
     #       Request {{.RequestID}} on {{.Path}}
     #       Body:

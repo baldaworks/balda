@@ -64,6 +64,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/webhookbackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookfx"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookmanagement"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookroutecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookroutefx"
 	"github.com/baldaworks/balda/internal/apps/sessionmcp"
 	"github.com/baldaworks/balda/internal/git"
@@ -244,6 +245,7 @@ func Module(
 		return fx.Module("balda", fx.Error(err))
 	}
 	inboundWebhookConfig := buildInboundWebhookConfig(cfg.Balda)
+	inboundWebhookConfig.BasePath = sharedHTTP.BasePath
 	executionConfig := baldaexecution.Config{
 		Commands: baldaexecution.CommandConfig{
 			Stream:        strings.TrimSpace(cfg.Balda.Execution.Commands.Stream),
@@ -836,10 +838,8 @@ func Module(
 		fx.Provide(func(provider baldastate.Provider) baldastate.WebhookAdmissionStore {
 			return provider.WebhookAdmissions()
 		}),
-		fx.Provide(func(provider baldastate.Provider, registry *httpfx.Registry) *webhookmanagement.Service {
-			return webhookmanagement.New(webhookroutefx.NewStore(provider), webhookmanagement.ManagedPaths{
-				Prefix: sharedHTTP.BasePath + "/webhooks", Ownership: registry,
-			})
+		fx.Provide(func(provider baldastate.Provider) *webhookmanagement.Service {
+			return webhookmanagement.New(webhookroutefx.NewStore(provider))
 		}),
 		fx.Provide(func(provider baldastate.Provider) (*auth.InviteStore, error) {
 			return auth.NewInviteStore(provider.AppKV())
@@ -1214,7 +1214,6 @@ func buildInboundWebhookConfig(cfg BaldaConfig) webhook.Config {
 			}
 		}
 		routes[strings.TrimSpace(routeName)] = webhook.RouteConfig{
-			Path:           strings.TrimSpace(route.Path),
 			PromptTemplate: strings.TrimSpace(route.PromptTemplate),
 			Envelope: webhook.RouteEnvelopeConfig{
 				ReportTo:      reportTo,
@@ -1240,7 +1239,13 @@ func buildInboundWebhookConfig(cfg BaldaConfig) webhook.Config {
 }
 
 func validateWebhookRawConfig(cfg WebhooksConfig) error {
-	for _, route := range cfg.Routes {
+	for name, route := range cfg.Routes {
+		if !webhookroutecmd.ValidName(name) {
+			return fmt.Errorf("balda.webhooks.routes.%s: invalid route slug", name)
+		}
+		if _, exists := route.Unsupported["path"]; exists {
+			return fmt.Errorf("balda.webhooks.routes.%s.path is obsolete; use the route name as slug", name)
+		}
 		if len(route.Envelope.Unsupported) > 0 {
 			return fmt.Errorf("balda.webhooks.routes envelope contains unsupported fields; use optional report_to and ack_on_delivery")
 		}

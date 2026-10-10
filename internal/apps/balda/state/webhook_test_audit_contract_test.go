@@ -20,7 +20,7 @@ func checkProvider_WebhookTestAudit(t *testing.T, open contractOpener) {
 	}
 	defer func() { closeContractProvider(t, p) }()
 	if err := p.WebhookRoutes().ReconcileConfig(t.Context(), []WebhookRouteRecord{{
-		Name: "configured", Source: WebhookRouteSourceConfig, Path: "/configured",
+		Name: "configured", Source: WebhookRouteSourceConfig,
 		PromptTemplate: "{{.RawBody}}", DedupeSource: "request_id", Enabled: true,
 	}}); err != nil {
 		t.Fatal(err)
@@ -81,7 +81,7 @@ func checkProvider_WebhookTestAudit(t *testing.T, open contractOpener) {
 		t.Fatalf("rejected test persisted: found=%t err=%v", found, err)
 	}
 	if err := p.WebhookRoutes().ReconcileConfig(t.Context(), []WebhookRouteRecord{{
-		Name: route.Name, Source: WebhookRouteSourceConfig, Path: route.Path,
+		Name: route.Name, Source: WebhookRouteSourceConfig,
 		PromptTemplate: "{{.RawBody}}", DedupeSource: "request_id", Enabled: false,
 	}}); err != nil {
 		t.Fatal(err)

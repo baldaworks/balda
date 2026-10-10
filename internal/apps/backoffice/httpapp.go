@@ -16,6 +16,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/users"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookroutecmd"
 )
 
 const checkedFormValue = "yes"
@@ -59,8 +60,12 @@ func newHTTPApp(store usercmd.Store, config ResolvedConfig) (*httpApp, error) {
 	if config.Server.WebhookURLBasePath != nil {
 		webhookURLBasePath = *config.Server.WebhookURLBasePath
 	}
-	app := &httpApp{renderer: renderer, security: service, access: access.NewService(store), auditLog: audit.NewService(store), cards: ProjectCapabilityCards(config.Balda), bindingChoices: bindingChoices, qa: config.Server.QAUI, basePath: config.Server.BasePath, publicOrigin: config.Server.PublicURL,
-		webhookURLPrefix: config.Server.PublicURL + webhookURLBasePath + "/webhooks/"}
+	webhookOrigin := config.Server.PublicURL
+	if config.Server.WebhookPublicOrigin != nil {
+		webhookOrigin = *config.Server.WebhookPublicOrigin
+	}
+	app := &httpApp{renderer: renderer, security: service, access: access.NewService(store), auditLog: audit.NewService(store), cards: ProjectCapabilityCards(config.Balda), bindingChoices: bindingChoices, qa: config.Server.QAUI, basePath: config.Server.BasePath, publicOrigin: webhookOrigin,
+		webhookURLPrefix: webhookOrigin + webhookroutecmd.CanonicalPath(webhookURLBasePath, "")}
 	browser, err := security.NewBrowser(service, security.HTTPConfig{
 		TrustedOrigin: config.Server.PublicURL, SecureCookies: config.Server.SecureCookies, BasePath: config.Server.BasePath,
 		ErrorHandler:      app.renderSecurityError,

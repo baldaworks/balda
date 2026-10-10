@@ -12,17 +12,13 @@ import (
 func configuredWebhookRoutes(cfg webhook.Config) []webhookroutecmd.ConfiguredRoute {
 	routes := make([]webhookroutecmd.ConfiguredRoute, 0, len(cfg.Routes))
 	for name, raw := range cfg.Routes {
-		path := strings.TrimSpace(raw.Path)
-		if path != "" && !strings.HasPrefix(path, "/") {
-			path = "/" + path
-		}
 		var reportToKind, reportToKey string
 		if raw.Envelope.ReportTo != nil {
 			reportToKind = raw.Envelope.ReportTo.Target
 			reportToKey = raw.Envelope.ReportTo.Key
 		}
 		routes = append(routes, webhookroutecmd.ConfiguredRoute{
-			Name: name, Path: path, PromptTemplate: raw.PromptTemplate,
+			Name: name, PromptTemplate: raw.PromptTemplate,
 			ReportToKind: reportToKind, ReportToKey: reportToKey,
 			AckOnDelivery: raw.Envelope.AckOnDelivery,
 			DedupeSource:  raw.Dedupe.Source, DedupeHeader: raw.Dedupe.Header,

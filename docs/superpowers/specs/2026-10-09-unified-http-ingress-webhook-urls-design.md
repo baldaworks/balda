@@ -27,10 +27,12 @@ area path. The example yields:
 | Slack Events callback | `https://lab.metalagman.dev/balda/gateway/slack/events` |
 | Slack Commands callback | `https://lab.metalagman.dev/balda/gateway/slack/commands` |
 
-The Backoffice webhook page displays the complete incoming URL for each route.
-For a newly managed route, its name determines the `/webhooks/<name>` path;
-there is no second editable Path field. Existing route paths are not rewritten
-merely by displaying this scheme.
+**Generic webhook rules superseded by Story `balda-z4p8`:** the original design
+retained existing custom paths and derived paths only for newly managed routes.
+Every config and managed route now derives `<base_path>/webhooks/<immutable-name>`;
+old custom URLs stop working. The Backoffice page shows a complete public URL
+only when `balda.http.base_url` is explicit; otherwise it shows the canonical
+path and an explanation. There is no editable or persisted per-route path.
 
 This design's application configuration and URL layout are implemented by the
 public HTTP URL Story; see the current

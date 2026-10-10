@@ -492,8 +492,8 @@ func TestBuildInboundWebhookConfig(t *testing.T) {
 			Enabled:    true,
 			ListenAddr: " 127.0.0.1:8091 ",
 			Routes: map[string]WebhookRouteConfig{
-				" webhook1 ": {
-					Path:           " webhook1 ",
+				"webhook1": {
+
 					PromptTemplate: " {{.RawBody}} ",
 					Envelope: WebhookRouteEnvelopeConfig{
 						ReportTo: &WebhookRouteEnvelopeTargetConfig{
@@ -521,7 +521,7 @@ func TestBuildInboundWebhookConfig(t *testing.T) {
 		ListenAddr: "127.0.0.1:8091",
 		Routes: map[string]webhook.RouteConfig{
 			"webhook1": {
-				Path:           "webhook1",
+
 				PromptTemplate: "{{.RawBody}}",
 				Envelope: webhook.RouteEnvelopeConfig{
 					ReportTo: &webhook.RouteTargetConfig{
@@ -563,7 +563,7 @@ func TestBuildInboundWebhookConfig_UsesSecretEnvAuthValue(t *testing.T) {
 			Enabled: true,
 			Routes: map[string]WebhookRouteConfig{
 				"webhook1": {
-					Path:           "/webhook1",
+
 					PromptTemplate: "{{.RawBody}}",
 					Auth: WebhookRouteAuthConfig{
 						Type:      "header",

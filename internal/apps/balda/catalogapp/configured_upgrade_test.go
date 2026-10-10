@@ -41,6 +41,7 @@ import (
 )
 
 func TestConfiguredUpgradeRequiresMarkedMatchingDefinition(t *testing.T) {
+	registerConfiguredUpgradeFixtureMigrations(t)
 	config := agentconfig.MCPServerConfig{Type: agentconfig.MCPServerTypeStdio, Cmd: []string{"/usr/bin/upgrade-tools", "--stdio"}, Args: []string{"a b"}, WorkingDir: "/workspace", Env: map[string]string{"Z": "secret-z", "A": "secret-a"}}
 	// This literal is SHA-256 of the independently checked 4685c92a producer
 	// projection: {"type":"stdio","cmd":["/usr/bin/upgrade-tools","--stdio"],"args":["a b"],"working_dir":"/workspace","env_keys":["A","Z"]}.
@@ -107,22 +108,18 @@ func TestConfiguredUpgradeRequiresMarkedMatchingDefinition(t *testing.T) {
 			}
 			dir := t.TempDir()
 			path := filepath.Join(dir, "state.db")
-			p, err := state.NewSQLiteProvider(t.Context(), path)
-			if err != nil {
-				t.Fatal(err)
-			}
+			db := prepareConfiguredUpgradeDatabase(t, path)
 			if tc.marked {
 				snapshot, err := runtimecatalog.NewCompiler().CompileApplication([]runtimecatalogcmd.Source{{Descriptor: runtimecatalogcmd.SourceDescriptor{ID: pin.ID.Source, Revision: pin.Revision}, MCPServers: []runtimecatalogcmd.MCPServerDescriptor{pin}}})
 				if err != nil {
 					t.Fatal(err)
 				}
-				persistUpgradeSnapshot(t, p, snapshot)
+				persistUpgradeSnapshot(t, db, snapshot)
 			}
-			if err := p.Close(); err != nil {
+			if err := db.Close(); err != nil {
 				t.Fatal(err)
 			}
-			prepareConfiguredUpgradeVersion(t, path)
-			p, err = state.NewSQLiteProvider(t.Context(), path)
+			p, err := state.NewSQLiteProvider(t.Context(), path)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -168,6 +165,7 @@ func TestConfiguredUpgradeRequiresMarkedMatchingDefinition(t *testing.T) {
 // This exercises the supported upgrade path: persisted pre-upgrade pins must
 // survive provider-open migrations and restore with their original history.
 func TestConfiguredSessionUpgradeRestoresPersistedPin(t *testing.T) {
+	registerConfiguredUpgradeFixtureMigrations(t)
 	for _, transport := range []agentconfig.MCPServerType{agentconfig.MCPServerTypeHTTP, agentconfig.MCPServerTypeSSE, agentconfig.MCPServerTypeStdio} {
 		t.Run(string(transport), func(t *testing.T) {
 			config := configuredUpgradeServer(t, transport)
@@ -176,35 +174,22 @@ func TestConfiguredSessionUpgradeRestoresPersistedPin(t *testing.T) {
 			dir := t.TempDir()
 			path := filepath.Join(dir, "state.db")
 			workspace := t.TempDir()
-			p, err := state.NewSQLiteProvider(t.Context(), path)
-			if err != nil {
-				t.Fatal(err)
-			}
+			db := prepareConfiguredUpgradeDatabase(t, path)
 			record := state.SessionRecord{SessionID: "tg-upgrade", UserID: "fixture-user", ChannelType: "telegram", AddressKey: "1:0", AddressJSON: `{"chat_id":1,"topic_id":0}`, AgentName: "auto", WorkspaceDir: workspace, RuntimeSnapshotID: string(snapshot.ID), Status: state.SessionStatusActive}
-			if err := p.Sessions().Upsert(t.Context(), record); err != nil {
-				t.Fatal(err)
-			}
-			persistUpgradeSnapshot(t, p, snapshot)
-			before, _, err := p.AppKV().GetJSON(t.Context(), snapshotKeyPrefix+string(snapshot.ID))
-			if err != nil {
-				t.Fatal(err)
-			}
-			created, err := p.RuntimeSessions().Create(t.Context(), &adksession.CreateRequest{AppName: "norma-balda", UserID: record.UserID, SessionID: record.SessionID})
-			if err != nil {
-				t.Fatal(err)
-			}
+			persistUpgradeSnapshot(t, db, snapshot)
 			event := adksession.NewEvent(t.Context(), "before-upgrade")
 			event.Author = "user"
 			event.Content = genai.NewContentFromText("remember upgrade history", genai.RoleUser)
-			if err := p.RuntimeSessions().AppendEvent(t.Context(), created.Session, event); err != nil {
-				t.Fatal(err)
-			}
-			if err := p.Close(); err != nil {
+			persistUpgradeSession(t, db, record, event)
+			if err := db.Close(); err != nil {
 				t.Fatal(err)
 			}
 			originalBytes := configuredUpgradeBytes(t, path, string(snapshot.ID), record.SessionID)
-			prepareConfiguredUpgradeVersion(t, path)
-			p, err = state.NewSQLiteProvider(t.Context(), path)
+			var before any
+			if err := json.Unmarshal([]byte(originalBytes[0]), &before); err != nil {
+				t.Fatal(err)
+			}
+			p, err := state.NewSQLiteProvider(t.Context(), path)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -416,7 +401,7 @@ func mustUpgradeJSON(t *testing.T, value any) []byte {
 	return data
 }
 
-func persistUpgradeSnapshot(t *testing.T, p state.Provider, snapshot runtimecatalogcmd.Snapshot) {
+func persistUpgradeSnapshot(t *testing.T, db *sql.DB, snapshot runtimecatalogcmd.Snapshot) {
 	t.Helper()
 	record := snapshotRecord{ID: snapshot.ID, Scope: snapshot.Scope}
 	for _, source := range snapshot.Sources {
@@ -425,25 +410,66 @@ func persistUpgradeSnapshot(t *testing.T, p state.Provider, snapshot runtimecata
 	for _, server := range snapshot.MCPServers {
 		record.MCPServers = append(record.MCPServers, server)
 	}
-	if err := p.AppKV().SetJSON(t.Context(), snapshotKeyPrefix+string(snapshot.ID), record); err != nil {
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO balda_app_kv
+		(namespace, key, value_json, updated_at) VALUES ('balda.app', ?, ?, ?)`,
+		snapshotKeyPrefix+string(snapshot.ID), string(mustUpgradeJSON(t, record)), time.Now().UTC().Format(time.RFC3339)); err != nil {
 		t.Fatal(err)
 	}
 }
 
-// Restore the pre-upgrade schema and Goose version using the SQL migrations.
-// Removing only the version markers would replay later schema changes twice.
-func prepareConfiguredUpgradeVersion(t *testing.T, path string) {
+// The provider registers the actual historical Go migrations in Goose's global
+// registry. Use an unrelated scratch database so the upgrade fixture itself
+// starts at version 49 rather than downgrading a current database.
+func registerConfiguredUpgradeFixtureMigrations(t *testing.T) {
+	t.Helper()
+	provider, err := state.NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "migration-registration.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := provider.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Build the historical schema directly so the upgrade proof does not depend on
+// newer migrations having a reversible downgrade.
+func prepareConfiguredUpgradeDatabase(t *testing.T, path string) *sql.DB {
 	t.Helper()
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = db.Close() }()
+	t.Cleanup(func() { _ = db.Close() })
 	provider, err := goose.NewProvider(goose.DialectSQLite3, db, os.DirFS("../state/migrations"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := provider.DownTo(t.Context(), 49); err != nil {
+	if _, err := provider.UpTo(t.Context(), 49); err != nil {
+		t.Fatal(err)
+	}
+	return db
+}
+
+func persistUpgradeSession(t *testing.T, db *sql.DB, record state.SessionRecord, event *adksession.Event) {
+	t.Helper()
+	updatedAt := event.Timestamp.UTC().Format(time.RFC3339Nano)
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO balda_session_metadata
+		(session_id, user_id, chat_id, topic_id, channel_type, address_key, address_json,
+		 agent_name, workspace_dir, branch_name, runtime_snapshot_id, status, updated_at)
+		VALUES (?, ?, 1, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, record.SessionID, record.UserID,
+		record.ChannelType, record.AddressKey, record.AddressJSON, record.AgentName,
+		record.WorkspaceDir, record.BranchName, record.RuntimeSnapshotID, record.Status, updatedAt); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO balda_runtime_sessions
+		(app_name, user_id, session_id, state_json, updated_at) VALUES ('norma-balda', ?, ?, '{}', ?)`,
+		record.UserID, record.SessionID, updatedAt); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO balda_runtime_events
+		(app_name, user_id, session_id, event_id, ordinal, timestamp, event_json)
+		VALUES ('norma-balda', ?, ?, ?, 1, ?, ?)`, record.UserID, record.SessionID,
+		event.ID, updatedAt, string(mustUpgradeJSON(t, event))); err != nil {
 		t.Fatal(err)
 	}
 }

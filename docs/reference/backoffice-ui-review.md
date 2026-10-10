@@ -138,11 +138,22 @@ the table. Record state/viewport results and synthetic screenshots in the
 Beads review comment. Repair and rerun this layout gate before starting the
 authenticated application gate.
 
-After layout passes, run the isolated application gate from the repository
-root with the same Playwright installation:
+After the gallery passes, run the shared-listener layout proof before any
+application E2E. It checks canonical URLs for config and managed routes,
+readonly URL fields, valid/invalid slug live preview, optional public origin,
+empty and `/balda` prefixes, and desktop/mobile layout. The following optional
+screenshot variable captures list, config detail, valid create preview and
+saved managed detail after the one-time secret is cleared:
 
 ```bash
-BALDA_BACKOFFICE_BROWSER_TEST=1 go test -race ./internal/apps/balda -run '^(TestBackofficeWebhooksBrowserWorkflow|TestWebhookActorRuntimeFromHTTP)$' -count=1 -v
+BALDA_BACKOFFICE_BROWSER_TEST=1 BALDA_WEBHOOKS_LAYOUT_SCREENSHOTS=/tmp/balda-webhook-slug-screens/layout go test ./internal/apps/balda -run '^TestSharedHTTPLayoutBrowser$' -count=1 -v
+```
+
+After both layout checks pass, run the isolated application gate from the
+repository root with the same Playwright installation:
+
+```bash
+BALDA_BACKOFFICE_BROWSER_TEST=1 BALDA_WEBHOOKS_RUNTIME_SCREENSHOTS=/tmp/balda-webhook-slug-screens/application go test -race ./internal/apps/balda -run '^(TestSharedHTTPApplicationBrowser|TestBackofficeWebhooksBrowserWorkflow|TestWebhookActorRuntimeFromHTTP)$' -count=1 -v
 ```
 
 The browser workflow signs in normally as a synthetic administrator against
@@ -150,7 +161,13 @@ loopback Backoffice, webhook receiver and temporary SQLite. It covers root and
 `/balda`, desktop and mobile, config and managed inventory, route lifecycle,
 one-time secret and rotation, external authentication and rejection, config and
 managed Test POST, history/pagination/archive, and new admission after a fresh
-receiver and database reopen. Its deterministic publisher writes completed
+receiver and database reopen. The shared-listener workflow changes the prefix
+from `/balda` to empty on restart, then checks the new canonical config/managed
+URLs, unchanged secrets, and preserved initial input/output history. No route
+has an editable path; each uses `<base_path>/webhooks/<name>`. Without explicit
+`balda.http.base_url`, the UI shows the canonical path and its missing-origin
+explanation rather than advertising the browser's authentication origin.
+Its deterministic publisher writes completed
 job and delivery fixtures to keep UI checks isolated; those browser rows alone
 do not prove actor execution. The paired actor test sends an HTTP POST through
 the real receiver, durable bus, JobActor, private SessionActor turn with a

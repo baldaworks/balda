@@ -7,6 +7,8 @@ const baseURL = process.argv[2];
 const webhookURL = process.argv[3];
 assert.equal(new URL(baseURL).hostname, '127.0.0.1');
 assert.equal(new URL(webhookURL).hostname, '127.0.0.1');
+const callbackPrefix = `${new URL(baseURL).pathname.replace(/\/$/, '')}/webhooks`;
+const callbackPath = name => `${callbackPrefix}/${name}`;
 const screenshotDir = process.env.BALDA_WEBHOOKS_RUNTIME_SCREENSHOTS;
 if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
 
@@ -53,8 +55,8 @@ async function externalPost(pathname, secret, body, requestID) {
       assert.equal(persistent.status(), 200);
       await page.getByRole('heading', { name: 'Edit webhook route' }).waitFor();
       assert.equal(await page.getByLabel('Generated secret').count(), 0);
-      assert.equal(await page.getByLabel('Path').inputValue(), '/hooks/persistent');
-      const admitted = await externalPost('/hooks/persistent', process.env.BALDA_WEBHOOK_RESTART_SECRET,
+      assert.equal(await page.getByLabel('Webhook URL').inputValue(), `${baseURL}/webhooks/persistent`);
+      const admitted = await externalPost(callbackPath('persistent'), process.env.BALDA_WEBHOOK_RESTART_SECRET,
         'after restart', 'persistent-after-restart');
       assert.equal(admitted.status, 202);
       assert.equal(admitted.body.accepted, true);
@@ -87,11 +89,11 @@ async function externalPost(pathname, secret, body, requestID) {
       assert.equal(await page.getByRole('button', { name: 'Rotate secret' }).count(), 0);
       await capture(page, 'configured', viewport.name);
 
-      let result = await externalPost('/hooks/configured', '', 'denied', `configured-denied-${viewport.name}`);
+      let result = await externalPost(callbackPath('configured'), '', 'denied', `configured-denied-${viewport.name}`);
       assert.equal(result.status, 401);
-      result = await externalPost('/hooks/configured', 'wrong', 'denied', `configured-wrong-${viewport.name}`);
+      result = await externalPost(callbackPath('configured'), 'wrong', 'denied', `configured-wrong-${viewport.name}`);
       assert.equal(result.status, 401);
-      const configuredResponse = await fetch(`${webhookURL}/hooks/configured`, { method: 'POST',
+      const configuredResponse = await fetch(`${webhookURL}${callbackPath('configured')}`, { method: 'POST',
         headers: { 'X-Configured-Secret': 'synthetic-config-secret', 'X-Request-Id': `configured-${viewport.name}` }, body: 'config input' });
       assert.equal(configuredResponse.status, 202);
       await page.reload();
@@ -108,7 +110,6 @@ async function externalPost(pathname, secret, body, requestID) {
       const routeName = `browser-${viewport.name}`;
       await page.goto(`${baseURL}/webhooks?new=1`);
       await page.getByLabel('Route name').fill(routeName);
-      await page.getByLabel('Path').fill(`/hooks/${routeName}`);
       await page.getByLabel('Prompt template').fill('Browser: {{.RawBody}}');
       if (viewport.name === 'desktop') await page.getByLabel('Report to (optional)').fill('telegram:9001:0');
       await capture(page, 'create', viewport.name);
@@ -122,13 +123,13 @@ async function externalPost(pathname, secret, body, requestID) {
       await page.getByRole('heading', { name: 'Edit webhook route' }).waitFor();
       await capture(page, 'edit', viewport.name);
 
-      result = await externalPost(`/hooks/${routeName}`, '', 'unauthorized', `${routeName}-denied`);
+      result = await externalPost(callbackPath(routeName), '', 'unauthorized', `${routeName}-denied`);
       assert.equal(result.status, 401);
-      result = await externalPost(`/hooks/${routeName}`, firstSecret, 'first input', `${routeName}-first`);
+      result = await externalPost(callbackPath(routeName), firstSecret, 'first input', `${routeName}-first`);
       assert.equal(result.status, 202);
       assert.equal(result.body.accepted, true);
       const firstJobID = result.body.job_id;
-      const duplicate = await externalPost(`/hooks/${routeName}`, firstSecret, 'changed duplicate input', `${routeName}-first`);
+      const duplicate = await externalPost(callbackPath(routeName), firstSecret, 'changed duplicate input', `${routeName}-first`);
       assert.equal(duplicate.status, 202);
       assert.equal(duplicate.body.duplicate, true);
       assert.equal(duplicate.body.job_id, firstJobID);
@@ -163,7 +164,7 @@ async function externalPost(pathname, secret, body, requestID) {
       ]);
       await page.reload();
       assert.equal(await page.getByLabel('Prompt template').inputValue(), 'Edited: {{.RawBody}}');
-      result = await externalPost(`/hooks/${routeName}`, firstSecret, 'edited input', `${routeName}-edited`);
+      result = await externalPost(callbackPath(routeName), firstSecret, 'edited input', `${routeName}-edited`);
       assert.equal(result.status, 202);
       await page.reload();
       await page.getByRole('region', { name: /Webhook request history/ }).locator('tbody tr a').first().click();
@@ -175,9 +176,9 @@ async function externalPost(pathname, secret, body, requestID) {
       await page.getByRole('heading', { name: 'Webhook secret · shown once' }).waitFor();
       const rotatedSecret = await page.getByLabel('Generated secret').inputValue();
       assert.notEqual(rotatedSecret, firstSecret);
-      result = await externalPost(`/hooks/${routeName}`, firstSecret, 'old secret', `${routeName}-old-secret`);
+      result = await externalPost(callbackPath(routeName), firstSecret, 'old secret', `${routeName}-old-secret`);
       assert.equal(result.status, 401);
-      result = await externalPost(`/hooks/${routeName}`, rotatedSecret, 'new secret', `${routeName}-new-secret`);
+      result = await externalPost(callbackPath(routeName), rotatedSecret, 'new secret', `${routeName}-new-secret`);
       assert.equal(result.status, 202);
       await page.goto(`${baseURL}/webhooks/${routeName}`);
       assert.equal(await page.getByLabel('Generated secret').count(), 0);
@@ -185,16 +186,16 @@ async function externalPost(pathname, secret, body, requestID) {
       await page.getByLabel(/Confirm disabling this webhook route/).check();
       await page.getByRole('button', { name: 'Disable webhook' }).click();
       await page.getByRole('button', { name: 'Enable webhook' }).waitFor();
-      result = await externalPost(`/hooks/${routeName}`, rotatedSecret, 'disabled', `${routeName}-disabled`);
+      result = await externalPost(callbackPath(routeName), rotatedSecret, 'disabled', `${routeName}-disabled`);
       assert.equal(result.status, 404);
       await page.getByLabel(/Confirm enabling this webhook route/).check();
       await page.getByRole('button', { name: 'Enable webhook' }).click();
       await page.getByRole('button', { name: 'Disable webhook' }).waitFor();
-      result = await externalPost(`/hooks/${routeName}`, rotatedSecret, 'reenabled', `${routeName}-reenabled`);
+      result = await externalPost(callbackPath(routeName), rotatedSecret, 'reenabled', `${routeName}-reenabled`);
       assert.equal(result.status, 202);
       if (viewport.name === 'desktop') {
         for (let i = 0; i < 21; i++) {
-          result = await externalPost(`/hooks/${routeName}`, rotatedSecret, `page input ${i}`, `${routeName}-page-${i}`);
+          result = await externalPost(callbackPath(routeName), rotatedSecret, `page input ${i}`, `${routeName}-page-${i}`);
           assert.equal(result.status, 202);
         }
         await page.reload();
@@ -208,7 +209,7 @@ async function externalPost(pathname, secret, body, requestID) {
       // A same-origin administrator session without the CSRF field cannot mutate.
       const blocked = await page.evaluate(async currentPath => {
         const response = await fetch(currentPath, { method: 'POST', credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'path=%2Fhooks%2Fblocked' });
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'prompt_template=blocked' });
         return response.status;
       }, new URL(page.url()).pathname);
       assert.equal(blocked, 403);
@@ -223,7 +224,7 @@ async function externalPost(pathname, secret, body, requestID) {
       await page.getByRole('heading', { name: 'Archived webhook' }).waitFor();
       await page.getByRole('region', { name: /Webhook request history/ }).locator('tbody tr a').first().waitFor();
       assert.equal(await page.getByRole('button', { name: 'Send test POST' }).count(), 0);
-      result = await externalPost(`/hooks/${routeName}`, rotatedSecret, 'archived', `${routeName}-archived`);
+      result = await externalPost(callbackPath(routeName), rotatedSecret, 'archived', `${routeName}-archived`);
       assert.equal(result.status, 404);
       await capture(page, 'archived', viewport.name);
       assert.deepEqual(errors, [], `${viewport.name} browser console errors`);
@@ -234,7 +235,6 @@ async function externalPost(pathname, secret, body, requestID) {
     await signIn(persistentPage, 'administrator');
     await persistentPage.goto(`${baseURL}/webhooks?new=1`);
     await persistentPage.getByLabel('Route name').fill('persistent');
-    await persistentPage.getByLabel('Path').fill('/hooks/persistent');
     await persistentPage.getByLabel('Prompt template').fill('Persistent: {{.RawBody}}');
     await persistentPage.getByRole('button', { name: 'Create webhook' }).click();
     await persistentPage.getByRole('heading', { name: 'Webhook secret · shown once' }).waitFor();

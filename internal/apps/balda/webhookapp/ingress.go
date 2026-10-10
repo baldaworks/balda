@@ -20,7 +20,7 @@ import (
 // ConfiguredRoute supplies a config route and its auth value.
 // Disabled routes can be selected for administrator tests but not external POSTs.
 type ConfiguredRoute struct {
-	Name, Path, PromptTemplate string
+	Name, PromptTemplate       string
 	Disabled                   bool
 	ReportToKind, ReportToKey  string
 	AckOnDelivery              bool
@@ -31,7 +31,7 @@ type ConfiguredRoute struct {
 
 // RouteStore reads one current managed definition for each new request.
 type RouteStore interface {
-	LookupByPath(ctx context.Context, path string) (webhookroutecmd.Record, bool, error)
+	LookupActiveManagedByName(ctx context.Context, name string) (webhookroutecmd.Record, bool, error)
 	Get(ctx context.Context, name string) (webhookroutecmd.Record, bool, error)
 }
 
@@ -50,39 +50,34 @@ type configuredRoute struct {
 type Ingress struct {
 	configuredByPath map[string]configuredRoute
 	configuredByName map[string]configuredRoute
+	basePath         string
 	store            RouteStore
 	acceptor         Acceptor
 }
 
 // NewIngress compiles immutable config routes and attaches the live managed store.
-func NewIngress(configured []ConfiguredRoute, store RouteStore, acceptor Acceptor) (*Ingress, error) {
-	i := &Ingress{configuredByPath: make(map[string]configuredRoute, len(configured)),
+func NewIngress(basePath string, configured []ConfiguredRoute, store RouteStore, acceptor Acceptor) (*Ingress, error) {
+	i := &Ingress{basePath: basePath, configuredByPath: make(map[string]configuredRoute, len(configured)),
 		configuredByName: make(map[string]configuredRoute, len(configured)), store: store, acceptor: acceptor}
 	if acceptor == nil {
 		return nil, fmt.Errorf("webhook admission service is required")
 	}
 	for _, c := range configured {
-		if c.Name == "" || c.Path == "" || c.PromptTemplate == "" {
-			if c.Disabled {
-				continue
-			}
+		if !webhookroutecmd.ValidName(c.Name) || c.PromptTemplate == "" {
 			return nil, fmt.Errorf("invalid configured webhook route %q", c.Name)
 		}
-		if _, exists := i.configuredByPath[c.Path]; exists && !c.Disabled {
-			return nil, fmt.Errorf("duplicate configured webhook path %q", c.Path)
+		if _, exists := i.configuredByName[c.Name]; exists && !c.Disabled {
+			return nil, fmt.Errorf("duplicate configured webhook name %q", c.Name)
 		}
-		prepared, err := prepareRoute(c.Name, c.Path, c.PromptTemplate, c.ReportToKind,
+		prepared, err := prepareRoute(c.Name, webhookroutecmd.CanonicalPath(basePath, c.Name), c.PromptTemplate, c.ReportToKind,
 			c.ReportToKey, c.AckOnDelivery, c.DedupeSource, c.DedupeHeader, c.AuthHeader)
 		if err != nil {
-			if c.Disabled {
-				continue
-			}
 			return nil, err
 		}
 		route := configuredRoute{prepared: prepared, authType: c.AuthType, authValue: c.AuthValue}
 		i.configuredByName[c.Name] = route
 		if !c.Disabled {
-			i.configuredByPath[c.Path] = route
+			i.configuredByPath[route.prepared.Path] = route
 		}
 	}
 	return i, nil
@@ -91,13 +86,17 @@ func NewIngress(configured []ConfiguredRoute, store RouteStore, acceptor Accepto
 // IsActivePath reports whether external intake can select a route at this exact path.
 // It does not authenticate a request; PrepareExternal retains that responsibility.
 func (i *Ingress) IsActivePath(ctx context.Context, path string) (bool, error) {
+	name, valid := i.routeName(path)
+	if !valid {
+		return false, nil
+	}
 	if _, ok := i.configuredByPath[path]; ok {
 		return true, nil
 	}
 	if i.store == nil {
 		return false, nil
 	}
-	route, found, err := i.store.LookupByPath(ctx, path)
+	route, found, err := i.store.LookupActiveManagedByName(ctx, name)
 	if err != nil {
 		return false, err
 	}
@@ -106,6 +105,10 @@ func (i *Ingress) IsActivePath(ctx context.Context, path string) (bool, error) {
 
 // PrepareExternal authenticates the current route before its body is read.
 func (i *Ingress) PrepareExternal(ctx context.Context, path string, headers map[string]string) (webhookcmd.PreparedRoute, error) {
+	name, valid := i.routeName(path)
+	if !valid {
+		return webhookcmd.PreparedRoute{}, webhookcmd.ErrRouteNotFound
+	}
 	if route, ok := i.configuredByPath[path]; ok {
 		if route.authType == webhookroutecmd.AuthTypeHeader {
 			if value := headerValue(headers, route.prepared.AuthHeader); value == "" ||
@@ -118,7 +121,7 @@ func (i *Ingress) PrepareExternal(ctx context.Context, path string, headers map[
 	if i.store == nil {
 		return webhookcmd.PreparedRoute{}, webhookcmd.ErrRouteNotFound
 	}
-	r, found, err := i.store.LookupByPath(ctx, path)
+	r, found, err := i.store.LookupActiveManagedByName(ctx, name)
 	if err != nil {
 		return webhookcmd.PreparedRoute{}, &webhookcmd.DispatchFailedError{Cause: err}
 	}
@@ -128,7 +131,7 @@ func (i *Ingress) PrepareExternal(ctx context.Context, path string, headers map[
 	if !verifyManagedSecret(headerValue(headers, webhookroutecmd.ManagedSecretHeader), r.SecretVerifier) {
 		return webhookcmd.PreparedRoute{}, webhookcmd.ErrUnauthorized
 	}
-	return preparedRecord(r)
+	return i.preparedRecord(r)
 }
 
 // PrepareTest selects a route by name for administrator-authorized test input.
@@ -147,7 +150,7 @@ func (i *Ingress) PrepareTest(ctx context.Context, name string) (webhookcmd.Prep
 	if !found || r.Deleted || r.Source != webhookroutecmd.SourceManaged {
 		return webhookcmd.PreparedRoute{}, webhookcmd.ErrRouteNotFound
 	}
-	return preparedRecord(r)
+	return i.preparedRecord(r)
 }
 
 // Admit renders the authorized immutable snapshot and uses durable admission.
@@ -220,8 +223,8 @@ func (i *Ingress) Admit(ctx context.Context, route webhookcmd.PreparedRoute, inb
 		LegacyDedupeKey: legacyDedupeKey})
 }
 
-func preparedRecord(r webhookroutecmd.Record) (webhookcmd.PreparedRoute, error) {
-	prepared, err := prepareRoute(r.Name, r.Path, r.PromptTemplate, r.ReportToKind,
+func (i *Ingress) preparedRecord(r webhookroutecmd.Record) (webhookcmd.PreparedRoute, error) {
+	prepared, err := prepareRoute(r.Name, webhookroutecmd.CanonicalPath(i.basePath, r.Name), r.PromptTemplate, r.ReportToKind,
 		r.ReportToKey, r.AckOnDelivery, r.DedupeSource, r.DedupeHeader, r.AuthHeader)
 	if err != nil {
 		return webhookcmd.PreparedRoute{}, &webhookcmd.DispatchFailedError{Cause: err}
@@ -288,4 +291,11 @@ func (b *boundedPromptBuffer) Write(p []byte) (int, error) {
 		return 0, fmt.Errorf("rendered prompt exceeds %d bytes", webhookcmd.MaxPromptBytes)
 	}
 	return b.Buffer.Write(p)
+}
+
+// routeName accepts exactly one validated slug under the current webhook prefix.
+func (i *Ingress) routeName(path string) (string, bool) {
+	prefix := webhookroutecmd.CanonicalPath(i.basePath, "")
+	name, found := strings.CutPrefix(path, prefix)
+	return name, found && webhookroutecmd.ValidName(name)
 }

@@ -29,8 +29,8 @@ import (
 
 type browserWebhookRoutes struct{ store state.WebhookRouteStore }
 
-func (r browserWebhookRoutes) LookupByPath(ctx context.Context, path string) (webhookroutecmd.Record, bool, error) {
-	record, found, err := r.store.LookupByPath(ctx, path)
+func (r browserWebhookRoutes) LookupActiveManagedByName(ctx context.Context, name string) (webhookroutecmd.Record, bool, error) {
+	record, found, err := r.store.LookupActiveManagedByName(ctx, name)
 	return browserWebhookRecord(record), found, err
 }
 
@@ -40,7 +40,7 @@ func (r browserWebhookRoutes) Get(ctx context.Context, name string) (webhookrout
 }
 
 func browserWebhookRecord(r state.WebhookRouteRecord) webhookroutecmd.Record {
-	return webhookroutecmd.Record{Name: r.Name, Source: r.Source, Path: r.Path,
+	return webhookroutecmd.Record{Name: r.Name, Source: r.Source,
 		PromptTemplate: r.PromptTemplate, ReportToKind: r.ReportToKind, ReportToKey: r.ReportToKey,
 		AckOnDelivery: r.AckOnDelivery, DedupeSource: r.DedupeSource, DedupeHeader: r.DedupeHeader,
 		AuthType: r.AuthType, AuthHeader: r.AuthHeader, SecretVerifier: r.SecretVerifier,
@@ -125,7 +125,7 @@ func TestBackofficeWebhooksBrowserWorkflow(t *testing.T) {
 				}
 			}
 			manager := webhookmanagement.New(webhookroutefx.NewStore(provider))
-			configured := webhookroutecmd.ConfiguredRoute{Name: "configured", Path: "/hooks/configured",
+			configured := webhookroutecmd.ConfiguredRoute{Name: "configured",
 				PromptTemplate: "Configured: {{.RawBody}}", DedupeSource: webhookroutecmd.DedupeSourceRequestID,
 				AuthType: webhookroutecmd.AuthTypeHeader, AuthHeader: "X-Configured-Secret", Enabled: true}
 			if err := manager.ReconcileConfig(t.Context(), []webhookroutecmd.ConfiguredRoute{configured}); err != nil {
@@ -143,17 +143,17 @@ func TestBackofficeWebhooksBrowserWorkflow(t *testing.T) {
 				return envelopetarget.Resolved{Locator: locator}, nil
 			})
 			service := webhookapp.NewService(resolver, provider.WebhookAdmissions(), publisher)
-			ingress, err := webhookapp.NewIngress([]webhookapp.ConfiguredRoute{{Name: configured.Name,
-				Path: configured.Path, PromptTemplate: configured.PromptTemplate,
-				AuthType: configured.AuthType, AuthHeader: configured.AuthHeader,
+			ingress, err := webhookapp.NewIngress(basePath, []webhookapp.ConfiguredRoute{{Name: configured.Name,
+				PromptTemplate: configured.PromptTemplate,
+				AuthType:       configured.AuthType, AuthHeader: configured.AuthHeader,
 				AuthValue: "synthetic-config-secret", DedupeSource: configured.DedupeSource}},
 				browserWebhookRoutes{store: provider.WebhookRoutes()}, service)
 			if err != nil {
 				t.Fatal(err)
 			}
 			webhookAddress := browserLoopbackAddress(t)
-			receiver, err := webhook.NewReceiver(webhook.Config{Enabled: true, ListenAddr: webhookAddress,
-				Routes: map[string]webhook.RouteConfig{"configured": {Path: configured.Path,
+			receiver, err := webhook.NewReceiver(webhook.Config{Enabled: true, BasePath: basePath, ListenAddr: webhookAddress,
+				Routes: map[string]webhook.RouteConfig{"configured": {
 					PromptTemplate: configured.PromptTemplate, Auth: webhook.RouteAuthConfig{Type: "header",
 						Header: configured.AuthHeader, Value: "synthetic-config-secret"}}}}, ingress, zerolog.Nop())
 			if err != nil {
@@ -230,17 +230,17 @@ func TestBackofficeWebhooksBrowserWorkflow(t *testing.T) {
 			if err := reopenedManager.ReconcileConfig(t.Context(), []webhookroutecmd.ConfiguredRoute{configured}); err != nil {
 				t.Fatal(err)
 			}
-			reopenedIngress, err := webhookapp.NewIngress([]webhookapp.ConfiguredRoute{{Name: configured.Name,
-				Path: configured.Path, PromptTemplate: configured.PromptTemplate,
-				AuthType: configured.AuthType, AuthHeader: configured.AuthHeader,
+			reopenedIngress, err := webhookapp.NewIngress(basePath, []webhookapp.ConfiguredRoute{{Name: configured.Name,
+				PromptTemplate: configured.PromptTemplate,
+				AuthType:       configured.AuthType, AuthHeader: configured.AuthHeader,
 				AuthValue: "synthetic-config-secret", DedupeSource: configured.DedupeSource}},
 				browserWebhookRoutes{store: reopened.WebhookRoutes()},
 				webhookapp.NewService(resolver, reopened.WebhookAdmissions(), browserWebhookPublisher(reopened)))
 			if err != nil {
 				t.Fatal(err)
 			}
-			reopenedReceiver, err := webhook.NewReceiver(webhook.Config{Enabled: true, ListenAddr: webhookAddress,
-				Routes: map[string]webhook.RouteConfig{"configured": {Path: configured.Path,
+			reopenedReceiver, err := webhook.NewReceiver(webhook.Config{Enabled: true, BasePath: basePath, ListenAddr: webhookAddress,
+				Routes: map[string]webhook.RouteConfig{"configured": {
 					PromptTemplate: configured.PromptTemplate, Auth: webhook.RouteAuthConfig{Type: "header",
 						Header: configured.AuthHeader, Value: "synthetic-config-secret"}}}}, reopenedIngress, zerolog.Nop())
 			if err != nil {

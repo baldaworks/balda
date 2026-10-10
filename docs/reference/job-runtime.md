@@ -110,14 +110,15 @@ recurring schedules.
 
 ## Inbound webhook contract (internal)
 
-Balda binds the generic webhook listener on every start. It accepts configured
+Balda binds the shared HTTP listener on every start. It accepts configured
 routes when `balda.webhooks.enabled=true` and individually enabled
 Backoffice-managed routes. With no active route, the listener still binds and
 unknown paths return 404. A bind failure aborts startup. Config routes change
 on restart; managed edits affect the next request without restart.
 
 - Endpoint config: `balda.webhooks.enabled` for config routes,
-  `listen_addr` for the always-bound listener, and `routes` for config definitions.
+  `balda.http.listen_addr` for the always-bound shared listener, and `routes`
+  for config definitions.
   Managed definitions, enabled state and a verifier for the generated
   `X-Balda-Webhook-Secret` live in the state database. The secret is shown only
   on create or explicit rotation; the old one stops authorizing new requests.
@@ -126,7 +127,15 @@ on restart; managed edits affect the next request without restart.
   - keep the endpoint private or protected by a trusted gateway even with route auth
 - Method: `POST` only.
 - Route resolution:
-  - request path must match an enabled configured or managed route `path`
+  - every config and managed route uses its immutable name as the slug at
+    `<balda.http.base_path>/webhooks/<name>`; the empty prefix yields
+    `/webhooks/<name>`
+  - config map keys and managed names use `^[a-z0-9][a-z0-9_-]{0,63}$`
+  - `webhookapp` parses the canonical path and selects an enabled configured
+    or active managed definition by slug. Unknown, disabled and
+    archived names return 404 without creating work or request history
+  - no per-route path is stored. Declaring `path` in config fails startup even
+    for disabled routes. A prefix change moves all callback addresses after restart
   - optional `envelope.report_to` accepts `target=locator`, `managed_alias`, or
     the existing role `alias`, with a `key`; `/locator` prints a public locator
   - no report destination retains the final job output without external delivery
@@ -142,9 +151,9 @@ For an authenticated event source that reports to `main_chat`:
 ```yaml
 balda:
   webhooks:
+    enabled: true
     routes:
       broker_events:
-        path: /webhook/broker-events
         prompt_template: '{{ .RawBody }}'
         auth:
           type: header
@@ -156,6 +165,14 @@ balda:
             target: managed_alias
             key: main_chat
 ```
+
+The example receives requests at `<base_path>/webhooks/broker_events`. Only
+explicit `balda.http.base_url` adds a public origin to displayed generic webhook
+URLs; otherwise Backoffice shows that canonical path and an explanation.
+The SQLite/PostgreSQL SQL upgrade drops stored route paths and preserves route
+metadata, secret verifiers and request input/output history. External senders
+must use the canonical URL; old custom URLs no longer work. Downgrading requires
+the matching pre-upgrade database backup.
 
 - Prompt generation:
   - request body is treated as opaque raw text

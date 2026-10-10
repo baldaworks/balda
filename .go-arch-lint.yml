@@ -960,6 +960,7 @@ deps:
     mayDependOn:
       - foundation
       - contracts
+      - webhook_route_contracts
       - webhook_transport
     anyVendorDeps: true
 

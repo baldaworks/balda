@@ -68,21 +68,21 @@ func TestReceiver_AuthRequestIDCannotEnterHistory(t *testing.T) {
 	t.Cleanup(func() { _ = provider.Close() })
 	const secret = "confidential-route-secret"
 	acceptor := &historyAcceptor{store: provider.WebhookAdmissions(), jobs: provider.Jobs()}
-	configured := webhookapp.ConfiguredRoute{Name: "event", Path: "/event",
+	configured := webhookapp.ConfiguredRoute{Name: "event",
 		PromptTemplate: "request={{.RequestID}}", AuthType: "header",
 		AuthHeader: "X-Request-Id", AuthValue: secret}
-	ingress, err := webhookapp.NewIngress([]webhookapp.ConfiguredRoute{configured}, nil, acceptor)
+	ingress, err := webhookapp.NewIngress("", []webhookapp.ConfiguredRoute{configured}, nil, acceptor)
 	if err != nil {
 		t.Fatal(err)
 	}
 	receiver, err := NewReceiver(Config{Enabled: true, ListenAddr: "127.0.0.1:0",
-		Routes: map[string]RouteConfig{"event": {Path: "/event", PromptTemplate: configured.PromptTemplate,
+		Routes: map[string]RouteConfig{"event": {PromptTemplate: configured.PromptTemplate,
 			Auth: RouteAuthConfig{Type: "header", Header: "X-Request-Id", Value: secret}}}},
 		ingress, zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := httptest.NewRequest(http.MethodPost, "/event", strings.NewReader("ordinary input"))
+	request := httptest.NewRequest(http.MethodPost, "/webhooks/event", strings.NewReader("ordinary input"))
 	request.Header.Set("X-Request-Id", secret)
 	response := httptest.NewRecorder()
 	receiver.handleWebhook(response, request)
@@ -93,7 +93,7 @@ func TestReceiver_AuthRequestIDCannotEnterHistory(t *testing.T) {
 	}
 	firstRequestID := acceptor.last.RequestID
 	firstDedupeKey := acceptor.last.DedupeKey
-	retry := httptest.NewRequest(http.MethodPost, "/event", strings.NewReader("ordinary input"))
+	retry := httptest.NewRequest(http.MethodPost, "/webhooks/event", strings.NewReader("ordinary input"))
 	retry.Header.Set("X-Request-Id", secret)
 	retryResponse := httptest.NewRecorder()
 	receiver.handleWebhook(retryResponse, retry)
@@ -119,7 +119,7 @@ func TestReceiver_AuthRequestIDCannotEnterHistory(t *testing.T) {
 		strings.Contains(string(encoded), "Prompt") {
 		t.Fatalf("history exposed credential or legacy fields: %s err=%v", encoded, err)
 	}
-	denied := httptest.NewRequest(http.MethodPost, "/event", strings.NewReader("ordinary input"))
+	denied := httptest.NewRequest(http.MethodPost, "/webhooks/event", strings.NewReader("ordinary input"))
 	denied.Header.Set("X-Request-Id", "wrong-credential")
 	deniedResponse := httptest.NewRecorder()
 	receiver.handleWebhook(deniedResponse, denied)
@@ -166,16 +166,16 @@ func TestReceiver_LegacyCredentialDedupePreservesDeliveredAdmission(t *testing.T
 		return nil, "", errors.New("legacy admission must not be republished")
 	})
 	service := webhookapp.NewService(nil, provider.WebhookAdmissions(), publisher)
-	configured := webhookapp.ConfiguredRoute{Name: routeName, Path: "/event",
+	configured := webhookapp.ConfiguredRoute{Name: routeName,
 		PromptTemplate: "request={{.RequestID}}", AuthType: "header",
 		AuthHeader: "X-Request-Id", AuthValue: secret, AckOnDelivery: true,
 		ReportToKind: "managed_alias", ReportToKey: "main_chat"}
-	ingress, err := webhookapp.NewIngress([]webhookapp.ConfiguredRoute{configured}, nil, service)
+	ingress, err := webhookapp.NewIngress("", []webhookapp.ConfiguredRoute{configured}, nil, service)
 	if err != nil {
 		t.Fatal(err)
 	}
 	receiver, err := NewReceiver(Config{Enabled: true, ListenAddr: "127.0.0.1:0",
-		Routes: map[string]RouteConfig{routeName: {Path: "/event", PromptTemplate: configured.PromptTemplate,
+		Routes: map[string]RouteConfig{routeName: {PromptTemplate: configured.PromptTemplate,
 			Envelope: RouteEnvelopeConfig{AckOnDelivery: true,
 				ReportTo: &RouteTargetConfig{Target: "managed_alias", Key: "main_chat"}},
 			Auth: RouteAuthConfig{Type: "header", Header: "X-Request-Id", Value: secret}}}},
@@ -186,7 +186,7 @@ func TestReceiver_LegacyCredentialDedupePreservesDeliveredAdmission(t *testing.T
 	receiver.SetDeliveryReceipts(provider.Jobs())
 	previousRequestID := ""
 	for attempt := range 2 {
-		response := post(receiver, "/event", "retry body", map[string]string{"X-Request-Id": secret})
+		response := post(receiver, "/webhooks/event", "retry body", map[string]string{"X-Request-Id": secret})
 		wantStatus, wantState, wantProviderID := http.StatusAccepted, statusAccepted, ""
 		if attempt == 1 {
 			wantStatus, wantState, wantProviderID = http.StatusOK, statusDelivered, "provider-message"
@@ -265,7 +265,7 @@ func testReceiver(t *testing.T, svc *fakeAcceptor, route webhookapp.ConfiguredRo
 	routes := map[string]RouteConfig{}
 	configured := []webhookapp.ConfiguredRoute{}
 	if route.Name != "" {
-		routes[route.Name] = RouteConfig{Path: route.Path, PromptTemplate: route.PromptTemplate,
+		routes[route.Name] = RouteConfig{PromptTemplate: route.PromptTemplate,
 			Envelope: RouteEnvelopeConfig{AckOnDelivery: route.AckOnDelivery},
 			Auth:     RouteAuthConfig{Type: route.AuthType, Header: route.AuthHeader, Value: route.AuthValue},
 			Dedupe:   RouteDedupeConfig{Source: route.DedupeSource, Header: route.DedupeHeader}}
@@ -276,7 +276,7 @@ func testReceiver(t *testing.T, svc *fakeAcceptor, route webhookapp.ConfiguredRo
 		}
 		configured = append(configured, route)
 	}
-	ingress, err := webhookapp.NewIngress(configured, nil, svc)
+	ingress, err := webhookapp.NewIngress("", configured, nil, svc)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -313,13 +313,13 @@ func assertErrorResponse(t *testing.T, rec *httptest.ResponseRecorder, status in
 
 func TestReceiver_ConfigAuthenticationAndAdmission(t *testing.T) {
 	svc := &fakeAcceptor{}
-	route := webhookapp.ConfiguredRoute{Name: "event", Path: "/event", PromptTemplate: "{{.RawBody}}",
+	route := webhookapp.ConfiguredRoute{Name: "event", PromptTemplate: "{{.RawBody}}",
 		AuthType: AuthTypeHeader, AuthHeader: "Authorization", AuthValue: "Bearer secret",
 		ReportToKind: "managed_alias", ReportToKey: "main_chat", DedupeSource: DedupeSourceHeader,
 		DedupeHeader: "X-Dedupe"}
 	r := testReceiver(t, svc, route)
-	assertErrorResponse(t, post(r, "/event", "body", nil), http.StatusUnauthorized, codeUnauthorized)
-	rec := post(r, "/event", "body", map[string]string{
+	assertErrorResponse(t, post(r, "/webhooks/event", "body", nil), http.StatusUnauthorized, codeUnauthorized)
+	rec := post(r, "/webhooks/event", "body", map[string]string{
 		"Authorization": "Bearer secret", "X-Dedupe": "same", "X-Request-Id": "req-1"})
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
@@ -331,7 +331,7 @@ func TestReceiver_ConfigAuthenticationAndAdmission(t *testing.T) {
 }
 
 func TestReceiver_HTTPErrorMapping(t *testing.T) {
-	route := webhookapp.ConfiguredRoute{Name: "event", Path: "/event", PromptTemplate: "{{.RawBody}}"}
+	route := webhookapp.ConfiguredRoute{Name: "event", PromptTemplate: "{{.RawBody}}"}
 	for _, tc := range []struct {
 		name       string
 		path       string
@@ -341,12 +341,12 @@ func TestReceiver_HTTPErrorMapping(t *testing.T) {
 		wantStatus int
 		wantCode   string
 	}{
-		{name: "method", path: "/event", method: http.MethodGet, wantStatus: http.StatusMethodNotAllowed, wantCode: codeInvalidMethod},
-		{name: "missing", path: "/missing", wantStatus: http.StatusNotFound, wantCode: codeRouteNotFound},
-		{name: "oversized", path: "/event", body: strings.Repeat("x", MaxBodyBytes+1), wantStatus: http.StatusBadRequest, wantCode: codeInvalidPayload},
-		{name: "target", path: "/event", body: "body", serviceErr: &webhookcmd.TargetNotFoundError{Cause: errors.New("missing")}, wantStatus: http.StatusNotFound, wantCode: codeDestinationNotFound},
-		{name: "queue", path: "/event", body: "body", serviceErr: &webhookcmd.QueueFullError{Cause: errors.New("full")}, wantStatus: http.StatusTooManyRequests, wantCode: codeQueueFull},
-		{name: "dispatch", path: "/event", body: "body", serviceErr: &webhookcmd.DispatchFailedError{Cause: errors.New("down")}, wantStatus: http.StatusServiceUnavailable, wantCode: codeDispatchFailed},
+		{name: "method", path: "/webhooks/event", method: http.MethodGet, wantStatus: http.StatusMethodNotAllowed, wantCode: codeInvalidMethod},
+		{name: "missing", path: "/webhooks/missing", wantStatus: http.StatusNotFound, wantCode: codeRouteNotFound},
+		{name: "oversized", path: "/webhooks/event", body: strings.Repeat("x", MaxBodyBytes+1), wantStatus: http.StatusBadRequest, wantCode: codeInvalidPayload},
+		{name: "target", path: "/webhooks/event", body: "body", serviceErr: &webhookcmd.TargetNotFoundError{Cause: errors.New("missing")}, wantStatus: http.StatusNotFound, wantCode: codeDestinationNotFound},
+		{name: "queue", path: "/webhooks/event", body: "body", serviceErr: &webhookcmd.QueueFullError{Cause: errors.New("full")}, wantStatus: http.StatusTooManyRequests, wantCode: codeQueueFull},
+		{name: "dispatch", path: "/webhooks/event", body: "body", serviceErr: &webhookcmd.DispatchFailedError{Cause: errors.New("down")}, wantStatus: http.StatusServiceUnavailable, wantCode: codeDispatchFailed},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			svc := &fakeAcceptor{err: tc.serviceErr}
@@ -366,12 +366,12 @@ func TestReceiver_HTTPErrorMapping(t *testing.T) {
 func TestReceiver_TemplateErrorAndPromptLimit(t *testing.T) {
 	for _, prompt := range []string{"{{.Missing}}", "{{.RawBody}}{{.RawBody}}"} {
 		svc := &fakeAcceptor{}
-		r := testReceiver(t, svc, webhookapp.ConfiguredRoute{Name: "event", Path: "/event", PromptTemplate: prompt})
+		r := testReceiver(t, svc, webhookapp.ConfiguredRoute{Name: "event", PromptTemplate: prompt})
 		body := "body"
 		if strings.Contains(prompt, "RawBody") {
 			body = strings.Repeat("x", MaxBodyBytes/2+1)
 		}
-		assertErrorResponse(t, post(r, "/event", body, nil), http.StatusBadRequest, codeInvalidPayload)
+		assertErrorResponse(t, post(r, "/webhooks/event", body, nil), http.StatusBadRequest, codeInvalidPayload)
 		if svc.lastReq.RequestID != "" {
 			t.Fatal("invalid prompt was admitted")
 		}
@@ -380,15 +380,15 @@ func TestReceiver_TemplateErrorAndPromptLimit(t *testing.T) {
 
 func TestReceiver_AckOnDelivery(t *testing.T) {
 	svc := &fakeAcceptor{}
-	r := testReceiver(t, svc, webhookapp.ConfiguredRoute{Name: "event", Path: "/event",
+	r := testReceiver(t, svc, webhookapp.ConfiguredRoute{Name: "event",
 		PromptTemplate: "{{.RawBody}}", ReportToKind: "managed_alias", ReportToKey: "main_chat", AckOnDelivery: true})
 	receipts := &fakeDeliveryReceipts{}
 	r.SetDeliveryReceipts(receipts)
-	if rec := post(r, "/event", "body", nil); rec.Code != http.StatusAccepted {
+	if rec := post(r, "/webhooks/event", "body", nil); rec.Code != http.StatusAccepted {
 		t.Fatalf("pending status = %d", rec.Code)
 	}
 	receipts.sent, receipts.messageID = true, "provider-1"
-	rec := post(r, "/event", "body", nil)
+	rec := post(r, "/webhooks/event", "body", nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("delivered status = %d", rec.Code)
 	}
@@ -409,13 +409,10 @@ func TestNormalizeConfig_CurrentRouteContract(t *testing.T) {
 	}{
 		{name: "no active routes", cfg: Config{Enabled: true}},
 		{name: "optional report", cfg: Config{Enabled: true, Routes: map[string]RouteConfig{
-			"event": {Path: "/event", PromptTemplate: "{{.RawBody}}"},
+			"event": {PromptTemplate: "{{.RawBody}}"},
 		}}},
 		{name: "ack needs report", cfg: Config{Enabled: true, Routes: map[string]RouteConfig{
-			"event": {Path: "/event", PromptTemplate: "body", Envelope: RouteEnvelopeConfig{AckOnDelivery: true}},
-		}}, wantError: true},
-		{name: "duplicate path", cfg: Config{Enabled: true, Routes: map[string]RouteConfig{
-			"first": {Path: "/event", PromptTemplate: "a"}, "second": {Path: "/event", PromptTemplate: "b"},
+			"event": {PromptTemplate: "body", Envelope: RouteEnvelopeConfig{AckOnDelivery: true}},
 		}}, wantError: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

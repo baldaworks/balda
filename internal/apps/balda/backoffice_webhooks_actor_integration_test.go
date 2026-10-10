@@ -166,19 +166,18 @@ func TestWebhookActorRuntimeFromHTTP(t *testing.T) {
 		return envelopetarget.Resolved{Locator: locator}, err
 	})
 	service := webhookapp.NewService(resolver, provider.WebhookAdmissions(), publisher)
-	configured := webhookapp.ConfiguredRoute{Name: "actor", Path: "/hooks/actor",
+	configured := webhookapp.ConfiguredRoute{Name: "actor",
 		PromptTemplate: "Actor: {{.RawBody}}", ReportToKind: "locator", ReportToKey: "telegram:9001:0",
 		AuthType: webhookroutecmd.AuthTypeHeader, AuthHeader: "X-Actor-Secret", AuthValue: "synthetic-actor-secret",
 		DedupeSource: webhookroutecmd.DedupeSourceRequestID}
-	ingress, err := webhookapp.NewIngress([]webhookapp.ConfiguredRoute{configured}, nil, service)
+	ingress, err := webhookapp.NewIngress("", []webhookapp.ConfiguredRoute{configured}, nil, service)
 	if err != nil {
 		t.Fatal(err)
 	}
 	address := browserLoopbackAddress(t)
 	receiver, err := webhook.NewReceiver(webhook.Config{Enabled: true, ListenAddr: address,
-		Routes: map[string]webhook.RouteConfig{"actor": {Path: configured.Path,
-			PromptTemplate: configured.PromptTemplate, Envelope: webhook.RouteEnvelopeConfig{
-				ReportTo: &webhook.RouteTargetConfig{Target: "locator", Key: "telegram:9001:0"}},
+		Routes: map[string]webhook.RouteConfig{"actor": {PromptTemplate: configured.PromptTemplate, Envelope: webhook.RouteEnvelopeConfig{
+			ReportTo: &webhook.RouteTargetConfig{Target: "locator", Key: "telegram:9001:0"}},
 			Auth: webhook.RouteAuthConfig{Type: "header", Header: configured.AuthHeader,
 				Value: configured.AuthValue}}}}, ingress, zerolog.Nop())
 	if err != nil {
@@ -188,7 +187,7 @@ func TestWebhookActorRuntimeFromHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = receiver.Stop(context.Background()) })
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+address+configured.Path,
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+address+"/webhooks/actor",
 		bytes.NewBufferString("actor input"))
 	if err != nil {
 		t.Fatal(err)

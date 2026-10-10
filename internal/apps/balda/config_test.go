@@ -113,3 +113,38 @@ func TestAttachmentsConfigLimits(t *testing.T) {
 		})
 	}
 }
+
+func TestWebhookConfigSlugIdentity(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		key     string
+		enabled bool
+		wantErr string
+	}{
+		{name: "disabled path-free route", key: "orders"},
+		{name: "enabled path-free route", key: "orders", enabled: true},
+		{name: "disabled invalid slug", key: "orders/events", wantErr: "orders/events"},
+		{name: "enabled invalid slug", key: "orders/events", enabled: true, wantErr: "orders/events"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			route := map[string]any{"prompt_template": "{{.RawBody}}"}
+			var decoded struct {
+				Balda BaldaConfig `mapstructure:"balda"`
+			}
+			settings := map[string]any{"balda": map[string]any{"webhooks": map[string]any{"enabled": tt.enabled, "routes": map[string]any{tt.key: route}}}}
+			if err := appconfig.DecodeSettings(settings, &decoded); err != nil {
+				t.Fatal(err)
+			}
+			err := validateWebhookRawConfig(decoded.Balda.Webhooks)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("validation = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+}
