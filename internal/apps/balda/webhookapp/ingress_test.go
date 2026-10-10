@@ -341,3 +341,31 @@ func TestIngress_CanonicalPathsUseCurrentBasePath(t *testing.T) {
 		})
 	}
 }
+
+func TestIngressRechecksManagedEligibilityBeforeAuthentication(t *testing.T) {
+	for _, basePath := range []string{"", "/balda"} {
+		for _, archive := range []bool{false, true} {
+			store := &ingressStore{route: webhookroutecmd.Record{Name: "orders", Source: webhookroutecmd.SourceManaged, Enabled: true, PromptTemplate: "{{.RawBody}}"}}
+			acceptor := &ingressAcceptor{}
+			ingress, err := NewIngress(basePath, nil, store, acceptor)
+			if err != nil {
+				t.Fatal(err)
+			}
+			path := webhookroutecmd.CanonicalPath(basePath, "orders")
+			if active, err := ingress.IsActivePath(t.Context(), path); err != nil || !active {
+				t.Fatalf("active=%v err=%v", active, err)
+			}
+			if archive {
+				store.route.Deleted = true
+			} else {
+				store.route.Enabled = false
+			}
+			if _, err := ingress.PrepareExternal(t.Context(), path, nil); !errors.Is(err, webhookcmd.ErrRouteNotFound) {
+				t.Fatalf("changed eligibility = %v, want not found", err)
+			}
+			if acceptor.request.RouteName != "" {
+				t.Fatal("changed route admitted work")
+			}
+		}
+	}
+}
