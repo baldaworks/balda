@@ -99,8 +99,8 @@ default. Set `balda.http.*` explicitly in new configurations. Old per-area
 listen-address fields are ignored for binding once the shared listener is in
 use; the old Backoffice address fields do not create a separate browser mount.
 Stored custom paths for existing config-owned or managed webhooks remain exact
-root-relative paths and are not rewritten. Configured gateway callback paths
-remain accepted as exact legacy aliases alongside canonical `/gateway` paths.
+root-relative paths and are not rewritten. Chat transport callbacks use only
+their canonical `/gateway` paths.
 
 The live asus ingress, deployment, and Telegram/Slack/external callback
 registrations are unchanged by this Story. The table is an application URL
@@ -484,10 +484,10 @@ balda:
   - `true`: public chats/topics send a plain-text message for each distinct plan snapshot
   - `false`: plan progress remains hidden; Balda still emits progress activity, sends typing indicators, and keeps DM thinking drafts instead of plan snapshots
 - `balda.telegram.webhook.enabled`: enable local HTTP webhook endpoint (`true` => webhook mode, `false` => polling mode; default: `false`)
-- `balda.telegram.webhook.url`: Telegram registration URL; when omitted in webhook mode, Balda composes `<balda.http.base_url><balda.http.base_path>/gateway/telegram/webhook`. An explicit URL must use that canonical path or the configured legacy path.
+- `balda.telegram.webhook.url`: Telegram registration URL; when omitted in webhook mode, Balda composes `<balda.http.base_url><balda.http.base_path>/gateway/telegram/webhook`. An explicit URL must use that canonical path.
 - `balda.telegram.webhook.auth_token`: webhook auth token required when `balda.telegram.webhook.enabled=true`; Telegram sends it as `X-Telegram-Bot-Api-Secret-Token`
 - `balda.telegram.webhook.listen_addr`: legacy bind setting; ignored in favor of `balda.http.listen_addr`
-- `balda.telegram.webhook.path`: exact legacy callback alias (default: `/telegram/webhook`); canonical path is `<base_path>/gateway/telegram/webhook`
+- `balda.telegram.webhook.path`: obsolete path setting; the shared listener uses `<base_path>/gateway/telegram/webhook`
 - Telegram polling holds the persisted update offset until the provider event
   has completed runtime settlement. Accepted and terminal events advance the
   offset; retryable handler failures leave it unchanged so Telegram replays the
@@ -500,7 +500,7 @@ balda:
 - `balda.zulip.webhook_token`: Zulip outgoing webhook token that must match the incoming payload token (required when `balda.zulip.webhook.enabled=true`; env: `BALDA_ZULIP_WEBHOOK_TOKEN`)
 - `balda.zulip.webhook.enabled`: enable local Zulip outgoing webhook receiver (`true` => Zulip channel enabled; default: `false`; env: `BALDA_ZULIP_WEBHOOK_ENABLED`)
 - `balda.zulip.webhook.listen_addr`: legacy bind setting; ignored in favor of `balda.http.listen_addr` (env: `BALDA_ZULIP_WEBHOOK_LISTEN_ADDR`)
-- `balda.zulip.webhook.path`: exact legacy callback alias, which must start with `/` (default: `/zulip/webhook`; env: `BALDA_ZULIP_WEBHOOK_PATH`); canonical path is `<base_path>/gateway/zulip/webhook`
+- `balda.zulip.webhook.path`: obsolete path setting; the shared listener uses `<base_path>/gateway/zulip/webhook` (env: `BALDA_ZULIP_WEBHOOK_PATH`)
 - `balda.mattermost.enabled`: enable the Mattermost bot-account websocket transport (`true` => Mattermost channel enabled; default: `false`; env: `BALDA_MATTERMOST_ENABLED`)
 - `balda.mattermost.server_url`: Mattermost server base URL, absolute `http://` or `https://` (required when the Mattermost transport is enabled; env: `BALDA_MATTERMOST_SERVER_URL`)
 - `balda.mattermost.token`: Mattermost bot account personal access token (required when the Mattermost transport is enabled; env: `BALDA_MATTERMOST_TOKEN`)
@@ -508,14 +508,14 @@ balda:
 - `balda.mattermost.bot_username`: Mattermost bot account username, used to detect `@mention` activation in public and private channels (required when the Mattermost transport is enabled; env: `BALDA_MATTERMOST_BOT_USERNAME`)
 - `balda.mattermost.commands_enabled`: enable the Mattermost HTTP slash-command receiver (requires `balda.mattermost.enabled=true`; default: `false`; env: `BALDA_MATTERMOST_COMMANDS_ENABLED`)
 - `balda.mattermost.commands_listen_addr`: legacy bind setting; ignored in favor of `balda.http.listen_addr` (env: `BALDA_MATTERMOST_COMMANDS_LISTEN_ADDR`)
-- `balda.mattermost.commands_path`: exact legacy slash-command alias, beginning with `/` (default: `/mattermost/commands`; env: `BALDA_MATTERMOST_COMMANDS_PATH`); canonical path is `<base_path>/gateway/mattermost/commands`
+- `balda.mattermost.commands_path`: obsolete path setting; the shared listener uses `<base_path>/gateway/mattermost/commands` (env: `BALDA_MATTERMOST_COMMANDS_PATH`)
 - `balda.mattermost.commands_token`: Mattermost root slash-command integration token (required when `commands_enabled=true`; env: `BALDA_MATTERMOST_COMMANDS_TOKEN`)
 - `balda.slack.bot_token`: Bot OAuth Token used for Slack Agent Session and chat methods (required when Slack Agent is enabled; env: `BALDA_SLACK_BOT_TOKEN`)
 - `balda.slack.signing_secret`: signing secret used to verify exact Events API and slash-command requests (required when Slack Agent is enabled; env: `BALDA_SLACK_SIGNING_SECRET`)
-- `balda.slack.commands_path`: exact legacy `/balda` slash-command alias, which must start with `/` and differ from the Agent Events path (default: `/slack/commands`; env: `BALDA_SLACK_COMMANDS_PATH`); canonical path is `<base_path>/gateway/slack/commands`
+- `balda.slack.commands_path`: obsolete path setting; the shared listener uses `<base_path>/gateway/slack/commands` (env: `BALDA_SLACK_COMMANDS_PATH`)
 - `balda.slack.agent.enabled`: enable Slack Agent HTTP ingress (default: `false`; env: `BALDA_SLACK_AGENT_ENABLED`)
 - `balda.slack.agent.listen_addr`: legacy bind setting; ignored in favor of `balda.http.listen_addr` (env: `BALDA_SLACK_AGENT_LISTEN_ADDR`)
-- `balda.slack.agent.events_path`: exact legacy Agent Events alias, which must start with `/` (default: `/slack/agent/events`; env: `BALDA_SLACK_AGENT_EVENTS_PATH`); canonical path is `<base_path>/gateway/slack/events`
+- `balda.slack.agent.events_path`: obsolete path setting; the shared listener uses `<base_path>/gateway/slack/events` (env: `BALDA_SLACK_AGENT_EVENTS_PATH`)
 - `balda.slack.agent.enable_streaming`: deliver responses through Slack streaming methods instead of `chat.postMessage` (default: `false`; env: `BALDA_SLACK_AGENT_ENABLE_STREAMING`)
 - `balda.slack.agent.suggested_prompts`: enable Slack Agent suggested prompts (default: `false`; env: `BALDA_SLACK_AGENT_SUGGESTED_PROMPTS`)
 - `balda.features.attachments.max_files_per_message`: maximum files accepted in one inbound attachment set (default: `10`; env: `BALDA_FEATURES_ATTACHMENTS_MAX_FILES_PER_MESSAGE`); a Slack thread turn shares this count between current-message and historical files

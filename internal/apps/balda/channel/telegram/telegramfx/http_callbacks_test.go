@@ -40,11 +40,9 @@ func TestGatewayCallbackKeepsTelegramTokenCheck(t *testing.T) {
 	if err := registry.AddGatewayCallbacks(callbacks); err != nil {
 		t.Fatal(err)
 	}
-	for _, routePath := range []string{"/balda/gateway/telegram/webhook", "/telegram/webhook"} {
-		recorder := httptest.NewRecorder()
-		registry.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, routePath, strings.NewReader(`{"update_id":1}`)))
-		if recorder.Code != http.StatusUnauthorized {
-			t.Errorf("%s: status = %d, want 401", routePath, recorder.Code)
-		}
+	recorder := httptest.NewRecorder()
+	registry.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/balda/gateway/telegram/webhook", strings.NewReader(`{"update_id":1}`)))
+	if recorder.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401", recorder.Code)
 	}
 }

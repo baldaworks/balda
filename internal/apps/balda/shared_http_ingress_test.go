@@ -75,7 +75,6 @@ func TestSharedHTTPIngressUsesOnlySharedSocket(t *testing.T) {
 	for path, want := range map[string]int{
 		"/balda/backoffice/login":        http.StatusOK,
 		"/balda/gateway/slack/events":    http.StatusAccepted,
-		"/old/slack/events":              http.StatusAccepted,
 		"/balda/webhooks/orders":         http.StatusAccepted,
 		"/balda/webhooks/unknown":        http.StatusNotFound,
 		"/balda/gateway/webhooks/orders": http.StatusNotFound,
@@ -102,9 +101,11 @@ func TestSharedHTTPIngressRejectsBusyBindAndRouteConflict(t *testing.T) {
 	params = sharedHTTPTestParams(t, available)
 	params.GatewayCallbacks = []httpfx.GatewayCallbackProvider{func(context.Context) ([]httpfx.GatewayCallback, error) {
 		return []httpfx.GatewayCallback{{Owner: "colliding gateway", Transport: "slack", Endpoint: "events",
-			LegacyPath: "/balda/backoffice/login", Handler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})}}, nil
+			Handler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})},
+			{Owner: "duplicate gateway", Transport: "slack", Endpoint: "events",
+				Handler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})}}, nil
 	}}
-	if _, err := startSharedHTTPIngress(t.Context(), params); err == nil || !strings.Contains(err.Error(), "colliding gateway") || !strings.Contains(err.Error(), "backoffice") {
+	if _, err := startSharedHTTPIngress(t.Context(), params); err == nil || !strings.Contains(err.Error(), "colliding gateway") || !strings.Contains(err.Error(), "duplicate gateway") {
 		t.Fatalf("route conflict error = %v", err)
 	}
 	listener, err := net.Listen("tcp", available)
@@ -147,8 +148,8 @@ func TestTelegramRegistrationFollowsSharedBindAndUnwindsOnFailure(t *testing.T) 
 			}
 			params.TelegramSource = source
 			params.GatewayCallbacks = append(params.GatewayCallbacks, func(context.Context) ([]httpfx.GatewayCallback, error) {
-				handler, legacyPath := source.HTTPCallback()
-				return []httpfx.GatewayCallback{{Owner: "Telegram webhook", Transport: "telegram", Endpoint: "webhook", LegacyPath: legacyPath, Handler: handler}}, nil
+				handler, _ := source.HTTPCallback()
+				return []httpfx.GatewayCallback{{Owner: "Telegram webhook", Transport: "telegram", Endpoint: "webhook", Handler: handler}}, nil
 			})
 			runCalled := make(chan struct{}, 1)
 			telegram := &telegramLifecycle{enabled: true, source: source, logger: zerolog.Nop(), run: func(ctx context.Context) error {
@@ -257,7 +258,7 @@ func sharedHTTPTestParamsWithBasePath(t *testing.T, sharedAddress, basePath stri
 		Config: config, HTTPConfig: ResolvedHTTPConfig{ListenAddr: sharedAddress, BaseURL: "http://" + sharedAddress, BasePath: basePath},
 		Backoffice: runtime, HTTPRegistry: registry, StateProvider: provider,
 		GatewayCallbacks: []httpfx.GatewayCallbackProvider{func(context.Context) ([]httpfx.GatewayCallback, error) {
-			return []httpfx.GatewayCallback{{Owner: "slack events", Transport: "slack", Endpoint: "events", LegacyPath: "/old/slack/events", Handler: callback}}, nil
+			return []httpfx.GatewayCallback{{Owner: "slack events", Transport: "slack", Endpoint: "events", Handler: callback}}, nil
 		}},
 		WebhookHTTP: func(_ context.Context, routes *httpfx.Registry) error {
 			return routes.SetWebhookLookup("generic webhooks", callback, func(_ context.Context, path string) (bool, error) {

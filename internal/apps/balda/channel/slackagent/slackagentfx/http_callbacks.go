@@ -18,8 +18,8 @@ func NewGatewayCallbackProvider(server *slackagent.Server) httpfx.GatewayCallbac
 			return nil, nil
 		}
 		return []httpfx.GatewayCallback{
-			{Owner: "slack agent events", Transport: "slack", Endpoint: "events", LegacyPath: callbacks.EventsLegacyPath, Handler: callbacks.Events, ReadTimeout: slackagent.HTTPCallbackReadTimeout, WriteTimeout: slackagent.HTTPCallbackWriteTimeout},
-			{Owner: "slack agent commands", Transport: "slack", Endpoint: "commands", LegacyPath: callbacks.CommandsLegacyPath, Handler: callbacks.Commands, ReadTimeout: slackagent.HTTPCallbackReadTimeout, WriteTimeout: slackagent.HTTPCallbackWriteTimeout},
+			{Owner: "slack agent events", Transport: "slack", Endpoint: "events", Handler: callbacks.Events, ReadTimeout: slackagent.HTTPCallbackReadTimeout, WriteTimeout: slackagent.HTTPCallbackWriteTimeout},
+			{Owner: "slack agent commands", Transport: "slack", Endpoint: "commands", Handler: callbacks.Commands, ReadTimeout: slackagent.HTTPCallbackReadTimeout, WriteTimeout: slackagent.HTTPCallbackWriteTimeout},
 		}, nil
 	}
 }

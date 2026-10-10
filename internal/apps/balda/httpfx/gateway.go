@@ -16,13 +16,12 @@ type GatewayCallback struct {
 	Owner        string
 	Transport    string
 	Endpoint     string
-	LegacyPath   string
 	Handler      http.Handler
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
 }
 
-// AddGatewayCallbacks registers canonical gateway paths and explicit legacy aliases.
+// AddGatewayCallbacks registers canonical gateway paths.
 func (r *Registry) AddGatewayCallbacks(callbacks []GatewayCallback) error {
 	for _, callback := range callbacks {
 		if !validGatewaySegment(callback.Transport) || !validGatewaySegment(callback.Endpoint) {
@@ -32,11 +31,6 @@ func (r *Registry) AddGatewayCallbacks(callbacks []GatewayCallback) error {
 		handler := callbackDeadlineHandler(callback.Handler, callback.ReadTimeout, callback.WriteTimeout)
 		if err := r.AddGateway(callback.Owner, canonical, handler); err != nil {
 			return err
-		}
-		if callback.LegacyPath != "" && callback.LegacyPath != canonical {
-			if err := r.AddGateway(callback.Owner+" legacy alias", callback.LegacyPath, handler); err != nil {
-				return err
-			}
 		}
 	}
 	return nil

@@ -15,10 +15,10 @@ func NewGatewayCallbackProvider(source runtime.UpdateSource) httpfx.GatewayCallb
 		if !ok {
 			return nil, nil
 		}
-		handler, legacyPath := webhookSource.HTTPCallback()
+		handler, _ := webhookSource.HTTPCallback()
 		return []httpfx.GatewayCallback{{
 			Owner: "telegram webhook", Transport: "telegram", Endpoint: "webhook",
-			LegacyPath: legacyPath, Handler: handler, ReadTimeout: tgbotkit.HTTPCallbackReadTimeout, WriteTimeout: tgbotkit.HTTPCallbackWriteTimeout,
+			Handler: handler, ReadTimeout: tgbotkit.HTTPCallbackReadTimeout, WriteTimeout: tgbotkit.HTTPCallbackWriteTimeout,
 		}}, nil
 	}
 }
