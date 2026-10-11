@@ -168,3 +168,5 @@ summary:not(.btn) { color: var(--accent); font-weight: 500; }
 .binding-copy-row button { flex: 0 0 auto; }
 .binding-unavailable { padding: 1rem; }
 @media (max-width: 991.98px) { .binding-grid { grid-template-columns: minmax(0, 1fr); } }
+
+#plugin-marketplace-name::placeholder, #plugin-marketplace-source::placeholder, #plugin-marketplace-ref::placeholder, #plugin-marketplace-sparse::placeholder { color: var(--input-placeholder); opacity: 1; }

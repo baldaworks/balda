@@ -663,6 +663,7 @@ deps:
 
   backoffice_webui:
     mayDependOn:
+      - contracts
       - memory_contracts
       - alias_contracts
       - mcp_contracts

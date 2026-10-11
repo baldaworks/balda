@@ -1,5 +1,18 @@
 "use strict";
 
+function syncPluginMarketplaceSource() {
+  document.querySelectorAll("form[data-plugin-marketplace-create]").forEach(function (form) {
+    const source = form.querySelector("[data-plugin-source]")?.value.trim() || "";
+    const git = /^[a-z][a-z0-9+.-]*:\/\//i.test(source) || /^[^/\s:]+@?[^/\s:]*:.+/.test(source);
+    const fields = form.querySelector("[data-plugin-git-fields]");
+    if (fields) { fields.hidden = !git; fields.disabled = !git; }
+  });
+}
+syncPluginMarketplaceSource();
+document.addEventListener("input", function (event) {
+  if (event.target instanceof HTMLInputElement && event.target.matches("[data-plugin-source]")) syncPluginMarketplaceSource();
+});
+
 function syncMCPTransport() {
   document.querySelectorAll("form[data-mcp-create]").forEach(function (form) {
     const transport = form.querySelector('[name="transport"]').value;
@@ -36,6 +49,7 @@ document.addEventListener("input", function (event) {
 document.addEventListener("change", function (event) {
   if (event.target instanceof HTMLSelectElement && event.target.name === "transport" &&
       event.target.form?.matches("[data-mcp-create]")) syncMCPTransport();
+  syncPluginMarketplaceSource();
   if (event.target instanceof HTMLSelectElement && event.target.matches("[data-webhook-dedupe]")) syncWebhookDedupe();
 });
 
@@ -156,6 +170,7 @@ window.addEventListener("popstate", syncNavigation);
 document.addEventListener("htmx:afterSwap", function (event) {
   if (event.detail.target && event.detail.target.id === "main-content") {
     syncMCPTransport();
+    syncPluginMarketplaceSource();
     syncWebhookDedupe();
     syncWebhookURL();
     const feedback = document.getElementById("request-error");
@@ -170,6 +185,7 @@ document.addEventListener("htmx:afterSwap", function (event) {
 
 document.addEventListener("htmx:historyRestore", function () {
   syncMCPTransport();
+  syncPluginMarketplaceSource();
   syncWebhookDedupe();
   syncWebhookURL();
   syncNavigation();
@@ -197,7 +213,7 @@ function clearMCPInstructions() {
 
 window.addEventListener("pagehide", function () {
   clearMCPInstructions();
-  document.querySelectorAll("[data-binding-secret], [data-mcp-secret], [data-webhook-secret]").forEach(function (element) {
+  document.querySelectorAll("[data-binding-secret], [data-mcp-secret], [data-webhook-secret], [data-plugin-source]").forEach(function (element) {
     if (element instanceof HTMLInputElement) {
       element.value = "";
       element.removeAttribute("value");
@@ -208,7 +224,9 @@ window.addEventListener("pagehide", function () {
 });
 
 window.addEventListener("pageshow", function (event) {
+  if (event.persisted) document.querySelectorAll("[data-plugin-source]").forEach(function (input) { input.value = ""; });
   syncMCPTransport();
+  syncPluginMarketplaceSource();
   syncWebhookDedupe();
   syncWebhookURL();
   if (event.persisted) clearMCPInstructions();
@@ -221,5 +239,6 @@ if (oneTimeWebhook) history.replaceState(null, "", oneTimeWebhook.dataset.webhoo
 
 document.addEventListener("htmx:afterRequest", function (event) {
   const form = event.detail.elt?.closest("form");
-  form?.querySelectorAll("[data-mcp-secret]").forEach(function (input) { input.value = ""; });
+  form?.querySelectorAll("[data-mcp-secret], [data-plugin-source]").forEach(function (input) { input.value = ""; });
+  syncPluginMarketplaceSource();
 });

@@ -150,6 +150,13 @@ func (a *httpApp) handler() (http.Handler, error) {
 	mux.HandleFunc("POST "+a.path("/memory"), a.factMemoryMutation)
 	mux.HandleFunc("POST "+a.path("/memory/{fact_id}"), a.factMemoryMutation)
 	mux.HandleFunc("POST "+a.path("/memory/{fact_id}/delete"), a.factMemoryDelete)
+	mux.Handle("GET "+a.path("/plugins"), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.pluginsPage))))
+	for _, route := range []string{pluginMarketplacesPath, pluginMarketplaceNewPath, pluginMarketplaceDefinitionsPath + "{marketplace_name}"} {
+		mux.Handle("GET "+a.path(route), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.pluginMarketplacesPage))))
+	}
+	mux.HandleFunc("POST "+a.path(pluginMarketplacesPath), a.pluginMarketplaceCreate)
+	mux.HandleFunc("POST "+a.path(pluginMarketplaceDefinitionsPath+"{marketplace_name}/refresh"), a.pluginMarketplaceRefresh)
+	mux.HandleFunc("POST "+a.path(pluginMarketplaceDefinitionsPath+"{marketplace_name}/remove"), a.pluginMarketplaceRemove)
 	a.mcpAuthorizationRoutes(mux)
 	mux.Handle("GET "+a.path("/audit"), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.audit))))
 	mux.Handle("GET "+a.path("/access"), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.accessList))))

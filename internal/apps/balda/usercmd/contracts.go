@@ -121,6 +121,7 @@ type BackofficeCapabilities struct {
 	ManageSchedules  bool
 	ManageWebhooks   bool
 	ManageAliases    bool
+	ManagePlugins    bool
 	ManageFactMemory bool
 	ManageUsers      bool
 	ViewAudit        bool
