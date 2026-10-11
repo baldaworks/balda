@@ -43,10 +43,11 @@ type Fact struct {
 
 // Inventory is a consistent view of the one global memory source.
 type Inventory struct {
-	Enabled   bool
-	Version   int64
-	UpdatedAt string
-	Facts     []Fact
+	Enabled    bool
+	Version    int64
+	UpdatedAt  string
+	TotalFacts int
+	Facts      []Fact
 }
 
 // Editor binds a selected fact to its loaded global version.

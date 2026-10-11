@@ -271,6 +271,11 @@ components:
     in:
       - internal/apps/balda/mcpbackofficeapp
 
+  # Shared fact memory is adapted to the browser port without constructing a Store.
+  memory_backoffice_wiring:
+    in:
+      - internal/apps/balda/memorybackofficeapp
+
   # Host adapter exposes schedule policy through Backoffice's consuming port.
   schedule_backoffice_wiring:
     in:
@@ -603,6 +608,7 @@ deps:
 
   backoffice_application:
     mayDependOn:
+      - memory_contracts
       - alias_contracts
       - mcp_contracts
       - schedule_contracts
@@ -653,6 +659,7 @@ deps:
 
   backoffice_webui:
     mayDependOn:
+      - memory_contracts
       - alias_contracts
       - mcp_contracts
       - schedule_contracts
@@ -752,6 +759,13 @@ deps:
       - mcp_management
       - catalog_wiring
       - mcp_backoffice_wiring
+    deepScan: false
+    anyVendorDeps: false
+
+  memory_backoffice_wiring:
+    mayDependOn:
+      - memory_contracts
+      - memory_policy
     deepScan: false
     anyVendorDeps: false
 
@@ -1031,6 +1045,7 @@ deps:
 
   composition_root:
     mayDependOn:
+      - memory_backoffice_wiring
       - memory_policy
       - webhook_route_contracts
       - webhook_management

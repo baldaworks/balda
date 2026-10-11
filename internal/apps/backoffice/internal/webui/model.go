@@ -15,21 +15,22 @@ import (
 type Location string
 
 const (
-	LocationLogin     Location = "/login"
-	LocationOverview  Location = "/overview"
-	LocationAccess    Location = "/access"
-	LocationAccount   Location = "/account"
-	LocationAudit     Location = "/audit"
-	LocationMCP       Location = "/mcp"
-	LocationSchedules Location = "/schedules"
-	LocationWebhooks  Location = "/webhooks"
-	LocationAliases   Location = "/aliases"
+	LocationLogin      Location = "/login"
+	LocationOverview   Location = "/overview"
+	LocationAccess     Location = "/access"
+	LocationAccount    Location = "/account"
+	LocationAudit      Location = "/audit"
+	LocationMCP        Location = "/mcp"
+	LocationSchedules  Location = "/schedules"
+	LocationWebhooks   Location = "/webhooks"
+	LocationAliases    Location = "/aliases"
+	LocationFactMemory Location = "/memory"
 )
 
 // Valid reports whether a location can be emitted by server navigation.
 func (l Location) Valid() bool {
 	switch l {
-	case LocationLogin, LocationOverview, LocationAccess, LocationAccount, LocationAudit, LocationMCP, LocationSchedules, LocationWebhooks, LocationAliases:
+	case LocationLogin, LocationOverview, LocationAccess, LocationAccount, LocationAudit, LocationMCP, LocationSchedules, LocationWebhooks, LocationAliases, LocationFactMemory:
 		return true
 	default:
 		return false
@@ -156,6 +157,7 @@ type Page struct {
 	Schedules    *SchedulesView
 	Webhooks     *WebhooksView
 	Aliases      *AliasesView
+	FactMemory   *FactMemoryView
 	RestartURL   string
 	RestartLabel string
 	MFA          *MFAView
@@ -220,6 +222,9 @@ func Navigation(capabilities usercmd.BackofficeCapabilities, current Location) [
 	}
 	if capabilities.ManageAliases {
 		operations = append(operations, item("Aliases", LocationAliases, "bi-signpost-split"))
+	}
+	if capabilities.ManageFactMemory {
+		operations = append(operations, item("Fact memory", LocationFactMemory, "bi-journal-text"))
 	}
 	if len(operations) > 0 {
 		groups = append(groups, NavGroup{Label: "Operations", ID: "nav-operations", Items: operations})

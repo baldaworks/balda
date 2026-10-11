@@ -46,6 +46,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/mcpfx"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
 	"github.com/baldaworks/balda/internal/apps/balda/memory"
+	"github.com/baldaworks/balda/internal/apps/balda/memorybackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/paths"
 	"github.com/baldaworks/balda/internal/apps/balda/permissions"
 	"github.com/baldaworks/balda/internal/apps/balda/pluginapp"
@@ -417,7 +418,7 @@ func Module(
 				})
 				return provider, nil
 			},
-			func(provider baldastate.Provider, invitations *auth.BindingInvitations, channels *auth.BindingChannels, mcp *mcpbackofficeapp.Operations, schedules *schedulebackofficeapp.Operations, aliases *aliasbackofficeapp.Operations, webhooks *webhookbackofficeapp.Operations) (*backoffice.Runtime, error) {
+			func(provider baldastate.Provider, invitations *auth.BindingInvitations, channels *auth.BindingChannels, mcp *mcpbackofficeapp.Operations, schedules *schedulebackofficeapp.Operations, aliases *aliasbackofficeapp.Operations, webhooks *webhookbackofficeapp.Operations, facts *memorybackofficeapp.Operations) (*backoffice.Runtime, error) {
 				runtime, err := backoffice.NewRuntime(backofficeConfig, provider)
 				if err != nil {
 					return nil, err
@@ -435,6 +436,9 @@ func Module(
 					return nil, err
 				}
 				if err := runtime.ConfigureAliasesOperations(aliases); err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigureFactMemoryOperations(facts); err != nil {
 					return nil, err
 				}
 				if err := runtime.ConfigureMCPAuthorizations(mcp); err != nil {
@@ -481,6 +485,10 @@ func Module(
 			schedulebackofficeapp.New,
 			webhookbackofficeapp.New,
 			aliasbackofficeapp.New,
+			memorybackofficeapp.New,
+			func(store *memory.Store, provider baldastate.Provider) *memory.Management {
+				return memory.NewManagement(store, provider.MemoryManagement())
+			},
 			func(provider baldastate.Provider) baldastate.QuestionStore {
 				return provider.Questions()
 			},

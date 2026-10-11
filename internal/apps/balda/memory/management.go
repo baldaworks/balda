@@ -49,7 +49,7 @@ func (m *Management) Inventory(ctx context.Context, query string, a memorycmd.Au
 	if err != nil {
 		return memorycmd.Inventory{}, memorycmd.ErrUnavailable
 	}
-	inv := memorycmd.Inventory{Enabled: true, Version: rec.Version, UpdatedAt: rec.UpdatedAt}
+	inv := memorycmd.Inventory{Enabled: true, Version: rec.Version, UpdatedAt: rec.UpdatedAt, TotalFacts: len(rec.Entries)}
 	query = strings.ToLower(strings.TrimSpace(query))
 	for _, entry := range rec.Entries {
 		if strings.Contains(strings.ToLower(entry.Fact), query) {

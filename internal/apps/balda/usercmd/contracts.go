@@ -115,14 +115,15 @@ const (
 
 // BackofficeCapabilities is the server-authoritative navigation and action set.
 type BackofficeCapabilities struct {
-	Overview        bool
-	Account         bool
-	ManageMCP       bool
-	ManageSchedules bool
-	ManageWebhooks  bool
-	ManageAliases   bool
-	ManageUsers     bool
-	ViewAudit       bool
+	Overview         bool
+	Account          bool
+	ManageMCP        bool
+	ManageSchedules  bool
+	ManageWebhooks   bool
+	ManageAliases    bool
+	ManageFactMemory bool
+	ManageUsers      bool
+	ViewAudit        bool
 }
 
 // BindingClaim scopes one transport verification to one user and channel.

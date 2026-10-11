@@ -36,6 +36,7 @@ type httpApp struct {
 	schedules         SchedulesOperations
 	webhooks          WebhooksOperations
 	aliases           AliasesOperations
+	factMemory        FactMemoryOperations
 	mcpAuthorizations MCPAuthorizations
 	qa                bool
 	basePath          string
@@ -142,6 +143,12 @@ func (a *httpApp) handler() (http.Handler, error) {
 	mux.HandleFunc("POST "+a.path("/aliases"), a.aliasCreate)
 	mux.HandleFunc("POST "+a.path("/aliases/{alias_name}"), a.aliasRetarget)
 	mux.HandleFunc("POST "+a.path("/aliases/{alias_name}/delete"), a.aliasDelete)
+	for _, route := range []string{"/memory", "/memory/{fact_id}"} {
+		mux.Handle("GET "+a.path(route), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.factMemoryPage))))
+	}
+	mux.HandleFunc("POST "+a.path("/memory"), a.factMemoryMutation)
+	mux.HandleFunc("POST "+a.path("/memory/{fact_id}"), a.factMemoryMutation)
+	mux.HandleFunc("POST "+a.path("/memory/{fact_id}/delete"), a.factMemoryDelete)
 	a.mcpAuthorizationRoutes(mux)
 	mux.Handle("GET "+a.path("/audit"), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.audit))))
 	mux.Handle("GET "+a.path("/access"), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.accessList))))
@@ -600,6 +607,9 @@ func (a *httpApp) renderSecurityError(w http.ResponseWriter, r *http.Request, st
 	}
 	if status == http.StatusConflict && r.URL.Path == a.path(security.RefreshPath) {
 		message = "Another request has just refreshed this session. Reopen the page in a moment."
+	}
+	if status == http.StatusBadRequest && (r.URL.Path == a.path("/memory") || strings.HasPrefix(r.URL.Path, a.path("/memory/"))) {
+		message = "The form could not be read. Shorten the fact and reopen Fact memory before retrying."
 	}
 	page := webui.Page{Title: http.StatusText(status) + " · Balda", Error: &webui.ErrorView{Heading: http.StatusText(status), Message: message}}
 	templateName := webui.TemplateError
