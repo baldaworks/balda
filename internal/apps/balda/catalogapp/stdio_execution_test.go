@@ -136,7 +136,7 @@ func testStdioActualProviders(t *testing.T, forceACP bool) {
 					t.Fatal(err)
 				}
 			}
-			snapshot, err := catalog.PreparePluginCandidate(t.Context(), nil)
+			snapshot, err := catalog.PreparePluginCandidate(t.Context(), nil, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

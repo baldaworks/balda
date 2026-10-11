@@ -20,6 +20,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/mcpfx"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpruntime"
+	"github.com/baldaworks/balda/internal/apps/balda/pluginapp"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalog"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
@@ -143,9 +144,17 @@ func (r *Runtime) MCP() *mcpruntime.Reconciler { return r.mcp }
 func (r *Runtime) Advertisements() *commandfx.AdvertisementProjector { return r.ads }
 
 // PreparePluginCandidate compiles all host sources and enabled plugin sources.
-func (r *Runtime) PreparePluginCandidate(ctx context.Context, plugins []runtimecatalogcmd.Source) (runtimecatalogcmd.Snapshot, error) {
+func (r *Runtime) PreparePluginCandidate(ctx context.Context, plugins []runtimecatalogcmd.Source, prepared *pluginapp.PreparedPluginSource) (runtimecatalogcmd.Snapshot, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if prepared != nil {
+		if err := validatePreparedPlugin(plugins, *prepared); err != nil {
+			return runtimecatalogcmd.Snapshot{}, err
+		}
+		if err := r.retainPreparedPlugin(ctx, *prepared); err != nil {
+			return runtimecatalogcmd.Snapshot{}, err
+		}
+	}
 	sources := []runtimecatalogcmd.Source{r.builtin}
 	configured, err := r.currentConfiguredMCPSources(ctx)
 	if err != nil {
@@ -182,8 +191,10 @@ func (r *Runtime) PreparePluginCandidate(ctx context.Context, plugins []runtimec
 		sources = append(sources, loaded...)
 	}
 	for _, source := range plugins {
-		if err := r.retainPlugin(ctx, source.Descriptor); err != nil {
-			return runtimecatalogcmd.Snapshot{}, err
+		if prepared == nil || source.Descriptor != prepared.Descriptor {
+			if err := r.retainPlugin(ctx, source.Descriptor); err != nil {
+				return runtimecatalogcmd.Snapshot{}, err
+			}
 		}
 		sources = append(sources, source)
 	}
@@ -303,23 +314,22 @@ func (r *Runtime) PluginDataRoot(ctx context.Context, source runtimecatalogcmd.S
 	if err != nil {
 		return "", err
 	}
+	relativeRoot := install.DataRelativePath
 	if !found {
-		return "", runtimecatalogcmd.ErrRevisionUnavailable
+		if !runtimecatalog.ValidPluginName(source.Name) {
+			return "", runtimecatalogcmd.ErrRevisionUnavailable
+		}
+		relativeRoot = filepath.ToSlash(filepath.Join("plugin-data", source.Name))
 	}
-	root := filepath.Join(r.stateDir, filepath.FromSlash(install.DataRelativePath))
-	resolvedState, err := filepath.EvalSymlinks(r.stateDir)
+	root, err := containedStatePath(r.stateDir, relativeRoot)
 	if err != nil {
 		return "", errors.New("plugin data is unavailable")
 	}
-	resolvedRoot, err := filepath.EvalSymlinks(root)
-	if err != nil {
+	info, err := os.Stat(root)
+	if err != nil || !info.IsDir() {
 		return "", errors.New("plugin data is unavailable")
 	}
-	relative, err := filepath.Rel(resolvedState, resolvedRoot)
-	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		return "", errors.New("plugin data is unavailable")
-	}
-	return resolvedRoot, nil
+	return root, nil
 }
 
 func (r *Runtime) effectiveSnapshot(ctx context.Context, workspace, scopeName string) (runtimecatalogcmd.Snapshot, error) {
@@ -562,4 +572,42 @@ func containedStatePath(stateDir, relative string) (string, error) {
 		return "", errors.New("state path escapes root")
 	}
 	return target, nil
+}
+
+// Only the lifecycle's explicit new revision may compile before its SQL record
+// exists. Other sources continue to require their accepted durable revision.
+func validatePreparedPlugin(sources []runtimecatalogcmd.Source, prepared pluginapp.PreparedPluginSource) error {
+	descriptor := prepared.Descriptor
+	if descriptor.ID.Kind != runtimecatalogcmd.SourceKindPlugin || !runtimecatalog.ValidPluginName(descriptor.ID.Name) || descriptor.Revision == "" {
+		return runtimecatalogcmd.ErrRevisionUnavailable
+	}
+	expected := filepath.ToSlash(filepath.Join("plugin-revisions", descriptor.ID.Name, string(descriptor.Revision)))
+	if prepared.RelativeRoot != expected {
+		return runtimecatalogcmd.ErrRevisionUnavailable
+	}
+	matches := 0
+	for _, source := range sources {
+		if source.Descriptor.ID == descriptor.ID {
+			if source.Descriptor != descriptor {
+				return runtimecatalogcmd.ErrRevisionUnavailable
+			}
+			matches++
+		}
+	}
+	if matches > 1 {
+		return runtimecatalogcmd.ErrRevisionUnavailable
+	}
+	return nil
+}
+
+func (r *Runtime) retainPreparedPlugin(ctx context.Context, prepared pluginapp.PreparedPluginSource) error {
+	root, err := containedStatePath(r.stateDir, prepared.RelativeRoot)
+	if err != nil {
+		return runtimecatalogcmd.ErrRevisionUnavailable
+	}
+	loaded, err := r.loader.LoadPlugin(root)
+	if err != nil || loaded.Descriptor != prepared.Descriptor {
+		return runtimecatalogcmd.ErrRevisionUnavailable
+	}
+	return r.archive.Retain(ctx, root, prepared.Descriptor)
 }

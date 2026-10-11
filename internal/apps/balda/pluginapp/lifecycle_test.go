@@ -36,6 +36,7 @@ func (a *recordingActivator) LockCatalogMutation(ctx context.Context) (func(), e
 func (a *recordingActivator) PreparePluginCandidate(
 	_ context.Context,
 	sources []runtimecatalogcmd.Source,
+	_ *PreparedPluginSource,
 ) (runtimecatalogcmd.Snapshot, error) {
 	a.compiled = append(a.compiled, append([]runtimecatalogcmd.Source(nil), sources...))
 	if a.compileErr != nil {

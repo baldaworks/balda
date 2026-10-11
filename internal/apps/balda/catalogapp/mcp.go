@@ -126,7 +126,7 @@ func (r *Runtime) PublishMCP(ctx context.Context, commit func() error) error {
 	if err != nil {
 		return err
 	}
-	snapshot, err := r.PreparePluginCandidate(ctx, sources)
+	snapshot, err := r.PreparePluginCandidate(ctx, sources, nil)
 	if err != nil {
 		return err
 	}

@@ -43,7 +43,7 @@ func testConfiguredOAuthRecovery(t *testing.T, original *Runtime, worker *worker
 		if err := recovered.configureProviderMCP(providers, "beta", nil); err != nil {
 			t.Fatal(err)
 		}
-		current, err := recovered.PreparePluginCandidate(t.Context(), nil)
+		current, err := recovered.PreparePluginCandidate(t.Context(), nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

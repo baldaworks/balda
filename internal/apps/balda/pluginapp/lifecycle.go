@@ -35,11 +35,18 @@ type PluginStore interface {
 	PurgePluginRevision(ctx context.Context, pluginID, revisionID string) error
 }
 
+// PreparedPluginSource identifies an already validated, materialized new revision.
+// Its SQL record is committed atomically with selection after compilation.
+type PreparedPluginSource struct {
+	Descriptor   runtimecatalogcmd.SourceDescriptor
+	RelativeRoot string
+}
+
 // CatalogActivator combines enabled plugin sources with host-owned non-plugin
 // sources, compiles the complete application snapshot, and publishes it.
 type CatalogActivator interface {
 	LockCatalogMutation(ctx context.Context) (release func(), err error)
-	PreparePluginCandidate(ctx context.Context, enabledPlugins []runtimecatalogcmd.Source) (runtimecatalogcmd.Snapshot, error)
+	PreparePluginCandidate(ctx context.Context, enabledPlugins []runtimecatalogcmd.Source, prepared *PreparedPluginSource) (runtimecatalogcmd.Snapshot, error)
 	PublishCandidate(ctx context.Context, snapshot runtimecatalogcmd.Snapshot) error
 }
 
@@ -149,7 +156,7 @@ func (m *managedLifecycle) adoptOriginLocked(ctx context.Context, plugin Availab
 	if err != nil {
 		return err
 	}
-	snapshot, err := m.activator.PreparePluginCandidate(ctx, sources)
+	snapshot, err := m.activator.PreparePluginCandidate(ctx, sources, nil)
 	if err != nil {
 		return fmt.Errorf("compile origin adoption candidate: %w", err)
 	}
@@ -400,7 +407,11 @@ func (m *managedLifecycle) activate(ctx context.Context, operation, fromRevision
 	if err != nil {
 		return err
 	}
-	snapshot, err := m.activator.PreparePluginCandidate(ctx, sources)
+	var prepared *PreparedPluginSource
+	if revision != nil {
+		prepared = &PreparedPluginSource{Descriptor: proposed.Descriptor, RelativeRoot: revision.RelativeRoot}
+	}
+	snapshot, err := m.activator.PreparePluginCandidate(ctx, sources, prepared)
 	if err != nil {
 		return fmt.Errorf("compile plugin candidate: %w", err)
 	}
@@ -713,7 +724,7 @@ func (m *managedLifecycle) removeLocked(ctx context.Context, pluginID string, ac
 	if err != nil {
 		return err
 	}
-	snapshot, err := m.activator.PreparePluginCandidate(ctx, sources)
+	snapshot, err := m.activator.PreparePluginCandidate(ctx, sources, nil)
 	if err != nil {
 		return err
 	}
@@ -747,7 +758,7 @@ func (m *managedLifecycle) recoverLocked(ctx context.Context) error {
 		}
 		sources = append(sources, source)
 	}
-	snapshot, err := m.activator.PreparePluginCandidate(ctx, sources)
+	snapshot, err := m.activator.PreparePluginCandidate(ctx, sources, nil)
 	if err != nil {
 		return err
 	}

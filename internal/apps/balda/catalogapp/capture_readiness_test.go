@@ -61,7 +61,7 @@ func TestConfiguredCaptureTransitionsKeepRetainedIdentity(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer func() { _ = restarted.MCP().Shutdown(t.Context()) }()
-			snapshot, err := restarted.PreparePluginCandidate(t.Context(), nil)
+			snapshot, err := restarted.PreparePluginCandidate(t.Context(), nil, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

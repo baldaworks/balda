@@ -81,7 +81,7 @@ func TestBackofficeMCPBrowserWorkflow(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = catalog.MCP().Shutdown(context.Background()) })
-	snapshot, err := catalog.PreparePluginCandidate(t.Context(), nil)
+	snapshot, err := catalog.PreparePluginCandidate(t.Context(), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
