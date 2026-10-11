@@ -226,3 +226,7 @@ func (p *postgresProvider) Users() usercmd.Store { return p.users }
 func (p *postgresProvider) Close() error {
 	return p.db.Close()
 }
+
+func (p *postgresProvider) MemoryManagement() MemoryManagementStore {
+	return &sqlMemoryManagementStore{users: newPostgresUserStore(p.db)}
+}

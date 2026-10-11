@@ -353,3 +353,26 @@ func TestMutationDetailPathSafety(t *testing.T) {
 		t.Fatalf("scoped user detail redirect = %v %v", response.Header(), err)
 	}
 }
+
+func TestAuditProjectionNamesFactOperation(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		action usercmd.AuditAction
+		label  string
+	}{
+		{usercmd.AuditActionMemoryFactCreated, "Created fact"},
+		{usercmd.AuditActionMemoryFactEdited, "Edited fact"},
+		{usercmd.AuditActionMemoryFactDeleted, "Deleted fact"},
+	} {
+		view := ProjectAudit(usercmd.AuditEvent{Action: tc.action, TargetType: usercmd.AuditTargetMemoryFact, TargetID: "42"})
+		if view.ActionLabel != tc.label || view.TargetName != "Fact" || view.TargetID != "42" {
+			t.Errorf("ProjectAudit(%s) = %+v", tc.action, view)
+		}
+	}
+	for _, id := range []string{"<script>", "01", "-1", "9223372036854775808"} {
+		view := ProjectAudit(usercmd.AuditEvent{Action: usercmd.AuditActionMemoryFactEdited, TargetType: usercmd.AuditTargetMemoryFact, TargetID: id})
+		if view.TargetID != redactedAuditID {
+			t.Fatalf("untrusted fact target=%q", view.TargetID)
+		}
+	}
+}

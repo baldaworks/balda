@@ -34,6 +34,8 @@ const secondPluginRevision = "rev-2"
 type contractOpener func(context.Context, string) (Provider, error)
 
 func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) {
+	t.Run("MemoryAuthorityFences", func(t *testing.T) { checkMemoryAuthorityFences(t, factory) })
+	t.Run("MemoryManagement", func(t *testing.T) { checkMemoryManagement(t, factory(t)) })
 	t.Run("WebhookTurnClaimSurvivesRestart", func(t *testing.T) { checkWebhookTurnClaimSurvivesRestart(t, factory(t)) })
 	t.Run("MCPAuthorityWhileWaitingForConnection", func(t *testing.T) { checkMCPAuthorityWhileWaitingForConnection(t, factory) })
 	t.Run("MCPGrantsSurviveRestart", func(t *testing.T) { checkMCPGrantsSurviveRestart(t, factory(t)) })

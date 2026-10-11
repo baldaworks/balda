@@ -276,6 +276,12 @@ const (
 	AuditActionScheduleDefinitionChanged AuditAction = "schedule.definition.changed"
 	// AuditActionScheduleRunRequested records an administrator manual run.
 	AuditActionScheduleRunRequested AuditAction = "schedule.run.requested"
+	// AuditActionMemoryFactCreated records an explicit global fact creation.
+	AuditActionMemoryFactCreated AuditAction = "memory.fact.created"
+	// AuditActionMemoryFactEdited records an explicit global fact edit.
+	AuditActionMemoryFactEdited AuditAction = "memory.fact.edited"
+	// AuditActionMemoryFactDeleted records an explicit global fact deletion.
+	AuditActionMemoryFactDeleted AuditAction = "memory.fact.deleted"
 	// AuditActionAliasCreated records a new managed destination mapping.
 	AuditActionAliasCreated AuditAction = "alias.created"
 	// AuditActionAliasRetargeted records a managed destination change.
@@ -295,7 +301,7 @@ func (a AuditAction) Valid() bool {
 		AuditActionUserRoleChanged, AuditActionUserStatusChanged, AuditActionCredentialChanged,
 		AuditActionSessionRevoked, AuditActionBindingAttached, AuditActionBindingDetached, AuditActionBindingClaimCreated,
 		AuditActionUserMigrated, AuditActionLoginSucceeded, AuditActionRefreshSucceeded,
-		AuditActionRefreshReplay, AuditActionMFAEnabled, AuditActionMFAReplaced, AuditActionMFADisabled, AuditActionMFARecovered, AuditActionMFAVerified, AuditActionLogout, AuditActionInvitationIssued, AuditActionInvitationRevoked, AuditActionMCPDefinitionChanged, AuditActionMCPAuthorizationChanged, AuditActionMCPCredentialsRenewed, AuditActionScheduleDefinitionChanged, AuditActionScheduleRunRequested, AuditActionAliasCreated, AuditActionAliasRetargeted, AuditActionAliasDeleted, AuditActionWebhookRouteChanged, AuditActionWebhookTestRequested:
+		AuditActionRefreshReplay, AuditActionMFAEnabled, AuditActionMFAReplaced, AuditActionMFADisabled, AuditActionMFARecovered, AuditActionMFAVerified, AuditActionLogout, AuditActionInvitationIssued, AuditActionInvitationRevoked, AuditActionMCPDefinitionChanged, AuditActionMCPAuthorizationChanged, AuditActionMCPCredentialsRenewed, AuditActionScheduleDefinitionChanged, AuditActionScheduleRunRequested, AuditActionMemoryFactCreated, AuditActionMemoryFactEdited, AuditActionMemoryFactDeleted, AuditActionAliasCreated, AuditActionAliasRetargeted, AuditActionAliasDeleted, AuditActionWebhookRouteChanged, AuditActionWebhookTestRequested:
 		return true
 	default:
 		return false
@@ -335,6 +341,8 @@ const (
 	AuditTargetMCP AuditTargetType = "mcp"
 	// AuditTargetSchedule identifies a recurring schedule without content.
 	AuditTargetSchedule AuditTargetType = "schedule"
+	// AuditTargetMemoryFact identifies one global fact without exposing its body.
+	AuditTargetMemoryFact AuditTargetType = "memory_fact"
 	// AuditTargetAlias identifies a managed destination name without exposing its address.
 	AuditTargetAlias AuditTargetType = "alias"
 	// AuditTargetWebhookRoute identifies a webhook route without its secret or input.
@@ -344,7 +352,7 @@ const (
 // Valid reports whether the audit target type is supported.
 func (t AuditTargetType) Valid() bool {
 	switch t {
-	case AuditTargetUser, AuditTargetSession, AuditTargetBinding, AuditTargetSystem, AuditTargetMigration, AuditTargetMCP, AuditTargetSchedule, AuditTargetAlias, AuditTargetWebhookRoute:
+	case AuditTargetUser, AuditTargetSession, AuditTargetBinding, AuditTargetSystem, AuditTargetMigration, AuditTargetMCP, AuditTargetSchedule, AuditTargetMemoryFact, AuditTargetAlias, AuditTargetWebhookRoute:
 		return true
 	default:
 		return false

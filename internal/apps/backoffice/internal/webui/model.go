@@ -4,6 +4,7 @@ package webui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -333,6 +334,12 @@ func auditActionLabel(action usercmd.AuditAction) string {
 		return "Recovered two-factor access offline"
 	case usercmd.AuditActionLogout:
 		return "Signed out"
+	case usercmd.AuditActionMemoryFactCreated:
+		return "Created fact"
+	case usercmd.AuditActionMemoryFactEdited:
+		return "Edited fact"
+	case usercmd.AuditActionMemoryFactDeleted:
+		return "Deleted fact"
 	case usercmd.AuditActionAliasCreated:
 		return "Created alias"
 	case usercmd.AuditActionAliasRetargeted:
@@ -356,6 +363,8 @@ func auditTargetLabel(target usercmd.AuditTargetType) string {
 		return "System"
 	case usercmd.AuditTargetMigration:
 		return "Migration"
+	case usercmd.AuditTargetMemoryFact:
+		return "Fact"
 	case usercmd.AuditTargetAlias:
 		return "Alias"
 	default:
@@ -384,6 +393,13 @@ func safeAuditID(value string) string {
 }
 
 func safeAuditTargetID(target usercmd.AuditTargetType, value string) string {
+	if target == usercmd.AuditTargetMemoryFact {
+		id, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || id <= 0 || strconv.FormatInt(id, 10) != value {
+			return redactedAuditID
+		}
+		return value
+	}
 	if target != usercmd.AuditTargetAlias {
 		return safeAuditID(value)
 	}

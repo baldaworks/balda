@@ -994,6 +994,7 @@ deps:
 
   storage:
     mayDependOn:
+      - memory_contracts
       - alias_contracts
       - foundation
       - contracts

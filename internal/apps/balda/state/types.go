@@ -98,6 +98,7 @@ type Provider interface {
 	ScheduleManagement() ScheduleManagementStore
 	ScheduleRuns() ScheduleRunStore
 	Aliases() AliasStore
+	MemoryManagement() MemoryManagementStore
 	WebhookAdmissions() WebhookAdmissionStore
 	WebhookRoutes() WebhookRouteStore
 	Questions() QuestionStore
