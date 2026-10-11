@@ -36,6 +36,7 @@ type Runtime struct {
 	schedules         SchedulesOperations
 	webhooks          WebhooksOperations
 	aliases           AliasesOperations
+	factMemory        FactMemoryOperations
 	mcpAuthorizations MCPAuthorizations
 	invitations       BindingInvitations
 	bindingChannels   BindingChannels
@@ -173,6 +174,7 @@ func (r *Runtime) handler(browserConfig ResolvedServerConfig, services HandlerSe
 	httpApplication.schedules = r.schedules
 	httpApplication.webhooks = r.webhooks
 	httpApplication.aliases = r.aliases
+	httpApplication.factMemory = r.factMemory
 	httpApplication.mcpAuthorizations = services.MCPAuthorizations
 	httpApplication.invitations = r.invitations
 	httpApplication.bindingChannels = r.bindingChannels

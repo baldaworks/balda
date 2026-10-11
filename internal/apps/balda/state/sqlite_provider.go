@@ -264,3 +264,7 @@ func (p *sqliteProvider) Users() usercmd.Store { return p.users }
 func (p *sqliteProvider) Close() error {
 	return p.db.Close()
 }
+
+func (p *sqliteProvider) MemoryManagement() MemoryManagementStore {
+	return &sqlMemoryManagementStore{users: newSQLiteUserStore(p.db)}
+}

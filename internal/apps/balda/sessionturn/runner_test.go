@@ -278,6 +278,26 @@ func TestRunnerMissingCursorPerformsFullRefresh(t *testing.T) {
 	}
 }
 
+func TestRunnerRefreshesInitializedEmptyMemory(t *testing.T) {
+	t.Parallel()
+	executor := &testExecutor{}
+	runner := newMemoryTestRunner(&testActiveSession{}, executor, testMemoryProvider{
+		snapshot: MemorySnapshot{Version: 2, UpdatedAt: testMemoryUpdatedAt},
+	})
+	payload := testTurnPayload()
+	payload.Metadata = &turncmd.SessionTurnMetadata{LatestMemoryAt: testPriorMemoryAt}
+	if err := runner.RunSessionTurnPayload(t.Context(), payload); err != nil {
+		t.Fatal(err)
+	}
+	request := executor.singleRequest(t)
+	if request.MemoryRefresh.Content != "" || request.MemoryRefresh.UpdatedAt != testMemoryUpdatedAt || len(request.MemoryRunOptions) != 1 {
+		t.Fatalf("initialized empty refresh = %+v, options=%d", request.MemoryRefresh, len(request.MemoryRunOptions))
+	}
+	if request.Payload.Metadata == nil || request.Payload.Metadata.LatestMemoryAt != testMemoryUpdatedAt {
+		t.Fatal("empty refresh did not advance the memory cursor")
+	}
+}
+
 func TestRunnerDisabledOrEmptyMemoryLeavesTurnUnchanged(t *testing.T) {
 	t.Parallel()
 

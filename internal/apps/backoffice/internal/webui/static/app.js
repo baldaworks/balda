@@ -111,6 +111,11 @@ document.addEventListener("htmx:beforeSwap", function (event) {
     const explanation = heading?.nextElementSibling;
     const feedback = document.getElementById("request-error");
     if (!feedback || !main) return;
+    if (event.detail.target.hasAttribute("data-fact-memory") && main.hasAttribute("data-fact-memory")) {
+      event.detail.shouldSwap = true;
+      event.detail.isError = false;
+      return;
+    }
     if (event.detail.requestConfig?.elt?.closest(".binding-panel") && main.querySelector(".binding-panel")) {
       event.detail.shouldSwap = true;
       event.detail.isError = false;
@@ -134,7 +139,8 @@ function syncNavigation() {
       (path.endsWith("/mcp") && location.pathname.startsWith(path + "/")) ||
       (path.endsWith("/schedules") && location.pathname.startsWith(path + "/")) ||
       (path.endsWith("/webhooks") && location.pathname.startsWith(path + "/")) ||
-      (path.endsWith("/aliases") && location.pathname.startsWith(path + "/"));
+      (path.endsWith("/aliases") && location.pathname.startsWith(path + "/")) ||
+      (path.endsWith("/memory") && location.pathname.startsWith(path + "/"));
     link.classList.toggle("active", current);
     if (current) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");

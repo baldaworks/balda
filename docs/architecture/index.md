@@ -65,8 +65,8 @@ Use this map to find the authoritative runtime contracts.
   `sessionmemory/index/bleve` is a rebuildable projection. Neither adapter
   owns Balda transport or global fact-memory policy.
 - `internal/apps/balda/memory` remains the separate owner of global
-  `balda.memory.read` and `balda.memory.remember`; session-memory migration
-  work must not move or delete that subsystem.
+  `balda.memory.read`, `balda.memory.remember` and explicit fact management;
+  session-memory migration work must not move or delete that subsystem.
 - The neutral bundled MCP names are `session_memory.search` and
   `session_memory.trace`. Scope is injected by Balda's authenticated context;
   locators are not tool arguments.
@@ -144,6 +144,17 @@ Backoffice application does not import either host policy owner. Runtime
 failure evidence remains in `mcpruntime`, while recovery classification remains
 in the catalog owner. Browser input does not supply configuration captures or
 worker authorization evidence.
+
+Backoffice Fact memory pages consume a local `FactMemoryOperations` port through
+`memorybackofficeapp`. The `memory` owner uses the existing global Store shared
+with MCP, the memory actor and runtime snapshot readers; its mutex serializes
+accepted writes in this process. `memorycmd` carries neutral values, while
+`state` guards UI changes against current administrator browser authority and
+the persisted global version in the same app-KV/audit transaction. There is no
+separate memory source or schema migration. Edit/delete preserve creation IDs
+and require the loaded global version. The runtime consumes complete current
+snapshots, including initialized empty records, without resetting sessions or
+removing historical messages.
 
 Backoffice Schedules pages consume a local `SchedulesOperations` port. The
 `schedulebackofficeapp` composition adapter connects it to `scheduledjobs`,

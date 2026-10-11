@@ -4,6 +4,7 @@ package webui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,21 +15,22 @@ import (
 type Location string
 
 const (
-	LocationLogin     Location = "/login"
-	LocationOverview  Location = "/overview"
-	LocationAccess    Location = "/access"
-	LocationAccount   Location = "/account"
-	LocationAudit     Location = "/audit"
-	LocationMCP       Location = "/mcp"
-	LocationSchedules Location = "/schedules"
-	LocationWebhooks  Location = "/webhooks"
-	LocationAliases   Location = "/aliases"
+	LocationLogin      Location = "/login"
+	LocationOverview   Location = "/overview"
+	LocationAccess     Location = "/access"
+	LocationAccount    Location = "/account"
+	LocationAudit      Location = "/audit"
+	LocationMCP        Location = "/mcp"
+	LocationSchedules  Location = "/schedules"
+	LocationWebhooks   Location = "/webhooks"
+	LocationAliases    Location = "/aliases"
+	LocationFactMemory Location = "/memory"
 )
 
 // Valid reports whether a location can be emitted by server navigation.
 func (l Location) Valid() bool {
 	switch l {
-	case LocationLogin, LocationOverview, LocationAccess, LocationAccount, LocationAudit, LocationMCP, LocationSchedules, LocationWebhooks, LocationAliases:
+	case LocationLogin, LocationOverview, LocationAccess, LocationAccount, LocationAudit, LocationMCP, LocationSchedules, LocationWebhooks, LocationAliases, LocationFactMemory:
 		return true
 	default:
 		return false
@@ -155,6 +157,7 @@ type Page struct {
 	Schedules    *SchedulesView
 	Webhooks     *WebhooksView
 	Aliases      *AliasesView
+	FactMemory   *FactMemoryView
 	RestartURL   string
 	RestartLabel string
 	MFA          *MFAView
@@ -219,6 +222,9 @@ func Navigation(capabilities usercmd.BackofficeCapabilities, current Location) [
 	}
 	if capabilities.ManageAliases {
 		operations = append(operations, item("Aliases", LocationAliases, "bi-signpost-split"))
+	}
+	if capabilities.ManageFactMemory {
+		operations = append(operations, item("Fact memory", LocationFactMemory, "bi-journal-text"))
 	}
 	if len(operations) > 0 {
 		groups = append(groups, NavGroup{Label: "Operations", ID: "nav-operations", Items: operations})
@@ -333,6 +339,12 @@ func auditActionLabel(action usercmd.AuditAction) string {
 		return "Recovered two-factor access offline"
 	case usercmd.AuditActionLogout:
 		return "Signed out"
+	case usercmd.AuditActionMemoryFactCreated:
+		return "Created fact"
+	case usercmd.AuditActionMemoryFactEdited:
+		return "Edited fact"
+	case usercmd.AuditActionMemoryFactDeleted:
+		return "Deleted fact"
 	case usercmd.AuditActionAliasCreated:
 		return "Created alias"
 	case usercmd.AuditActionAliasRetargeted:
@@ -356,6 +368,8 @@ func auditTargetLabel(target usercmd.AuditTargetType) string {
 		return "System"
 	case usercmd.AuditTargetMigration:
 		return "Migration"
+	case usercmd.AuditTargetMemoryFact:
+		return "Fact"
 	case usercmd.AuditTargetAlias:
 		return "Alias"
 	default:
@@ -384,6 +398,13 @@ func safeAuditID(value string) string {
 }
 
 func safeAuditTargetID(target usercmd.AuditTargetType, value string) string {
+	if target == usercmd.AuditTargetMemoryFact {
+		id, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || id <= 0 || strconv.FormatInt(id, 10) != value {
+			return redactedAuditID
+		}
+		return value
+	}
 	if target != usercmd.AuditTargetAlias {
 		return safeAuditID(value)
 	}

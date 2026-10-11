@@ -120,6 +120,16 @@ components:
     in:
       - internal/apps/balda/mcpcmd
 
+  # Global fact policy owns serialized mutations; persistence stays behind a port.
+  memory_policy:
+    in:
+      - internal/apps/balda/memory
+
+  # Global fact-memory values preserve the existing KV record contract.
+  memory_contracts:
+    in:
+      - internal/apps/balda/memorycmd
+
   # Schedule management values do not depend on HTTP, state, or transports.
   schedule_contracts:
     in:
@@ -213,7 +223,6 @@ components:
       - internal/apps/balda/jobs
       - internal/apps/balda/jobexec
       - internal/apps/balda/ingressapp
-      - internal/apps/balda/memory
       - internal/apps/balda/questions
       - internal/apps/balda/permissions
       - internal/apps/balda/pluginapp
@@ -261,6 +270,11 @@ components:
   mcp_backoffice_wiring:
     in:
       - internal/apps/balda/mcpbackofficeapp
+
+  # Shared fact memory is adapted to the browser port without constructing a Store.
+  memory_backoffice_wiring:
+    in:
+      - internal/apps/balda/memorybackofficeapp
 
   # Host adapter exposes schedule policy through Backoffice's consuming port.
   schedule_backoffice_wiring:
@@ -501,6 +515,19 @@ deps:
       - mcp_contracts
     anyVendorDeps: false
 
+  memory_policy:
+    mayDependOn:
+      - memory_contracts
+      - user_contracts
+    # Concrete persistence is injected at composition, never imported here.
+    deepScan: false
+    anyVendorDeps: true
+
+  memory_contracts:
+    mayDependOn:
+      - user_contracts
+    anyVendorDeps: false
+
   schedule_contracts:
     mayDependOn:
       - schedule_contracts
@@ -581,6 +608,7 @@ deps:
 
   backoffice_application:
     mayDependOn:
+      - memory_contracts
       - alias_contracts
       - mcp_contracts
       - schedule_contracts
@@ -631,6 +659,7 @@ deps:
 
   backoffice_webui:
     mayDependOn:
+      - memory_contracts
       - alias_contracts
       - mcp_contracts
       - schedule_contracts
@@ -653,6 +682,8 @@ deps:
 
   application:
     mayDependOn:
+      - memory_policy
+      - memory_contracts
       - webhook_route_contracts
       - alias_contracts
       - schedule_contracts
@@ -731,6 +762,13 @@ deps:
     deepScan: false
     anyVendorDeps: false
 
+  memory_backoffice_wiring:
+    mayDependOn:
+      - memory_contracts
+      - memory_policy
+    deepScan: false
+    anyVendorDeps: false
+
   schedule_backoffice_wiring:
     mayDependOn:
       - schedule_contracts
@@ -779,6 +817,7 @@ deps:
 
   domain:
     mayDependOn:
+      - memory_policy
       - foundation
       - contracts
       - user_contracts
@@ -799,6 +838,7 @@ deps:
 
   ingress_wiring:
     mayDependOn:
+      - memory_policy
       - auth_payload
       - contracts
       - user_contracts
@@ -815,6 +855,7 @@ deps:
 
   actor_wiring:
     mayDependOn:
+      - memory_policy
       - contracts
       - neutral_registry
       - application
@@ -983,6 +1024,7 @@ deps:
 
   storage:
     mayDependOn:
+      - memory_contracts
       - alias_contracts
       - foundation
       - contracts
@@ -1003,6 +1045,8 @@ deps:
 
   composition_root:
     mayDependOn:
+      - memory_backoffice_wiring
+      - memory_policy
       - webhook_route_contracts
       - webhook_management
       - webhook_route_wiring

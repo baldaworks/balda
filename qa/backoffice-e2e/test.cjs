@@ -5,6 +5,9 @@ const path = require('node:path');
 const { chromium } = require('playwright');
 
 const routes = [
+  'memory', 'memory-long', 'memory-search', 'memory-no-results', 'memory-empty', 'memory-disabled',
+  'memory/new', 'memory/1', 'memory-delete', 'memory-invalid', 'memory-forbidden', 'memory-missing', 'memory-conflict', 'memory-unavailable',
+
   'webhooks', 'webhooks-empty', 'webhooks/new', 'webhooks-managed', 'webhooks-config',
   'webhooks-disabled', 'webhooks-archived', 'webhooks-history', 'webhooks-history-empty',
   'webhooks-secret', 'webhooks-invalid', 'webhooks-conflict', 'webhooks-unavailable',
@@ -20,6 +23,8 @@ const routes = [
   'form-bad-request', 'form-forbidden', 'form-conflict', 'form-server-error',
 ];
 const expectedStatus = new Map([
+  ['memory-invalid', 400], ['memory-forbidden', 403], ['memory-missing', 404], ['memory-conflict', 409], ['memory-unavailable', 503],
+
   ['webhooks-invalid', 400], ['webhooks-conflict', 409], ['webhooks-unavailable', 503],
  ['mcp-saved-start-failed',503], ['mcp-authorization-unavailable',503], ['mcp-invalid',400],['mcp-conflict',409],['mcp-unavailable',503],
   ['form-bad-request', 400], ['form-forbidden', 403],

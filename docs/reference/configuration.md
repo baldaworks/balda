@@ -180,7 +180,7 @@ project:
 - `.config/balda/state.db` persists owner auth, session metadata, task
   read-model state, MCP KV, durable memory, and Telegram polling offsets on the host.
 - Existing `.config/balda/MEMORY.md` content is imported into state DB memory once
-  when `balda.memory.enabled=true` and KV memory is empty.
+  when `balda.memory.enabled=true` and no initialized KV memory record exists.
 - `.git` stays visible to `balda.workspace.mode=auto|on`, so workspace mode sees
   the same repository as host execution.
 - `balda-home` persists provider CLI auth/config written under `/home/node`.
@@ -437,10 +437,15 @@ the timestamp carried by that turn (falling back to runtime session state) with
 one current memory snapshot. A missing or different timestamp refreshes session
 state and prepends the complete current global-memory snapshot to that same user
 prompt inside an `[application-memory]` block. The block identifies remembered
-text as durable context data, not a new user command. An equal timestamp, empty
-memory, or disabled memory leaves the user prompt unchanged. The global fact
-store is expected to remain small, so changed turns inject the full snapshot,
-not only facts written since the previous timestamp.
+text as durable context data, not a new user command, and supersedes earlier
+application-memory snapshots. An equal timestamp, never-initialized memory, or
+disabled memory leaves the user prompt unchanged. An initialized empty record
+refreshes the cursor and explicitly states that there are no current facts;
+deleting the final fact therefore clears current context without resetting the
+session or deleting historical messages. The global fact store is expected to
+remain small, so changed turns inject the full snapshot, not only facts written
+since the previous timestamp. Administrators can manage this same global source
+in [Backoffice Fact memory](backoffice.md#fact-memory-management).
 
 ### Agent permission review
 
@@ -679,6 +684,8 @@ or non-regular paths return a stable build error.
   - `memory`: conversation/runtime state is process-local; only Balda metadata is persisted.
 - `balda.memory.enabled`: enable internal durable memory (default `true`)
   - when disabled, Balda does not snapshot durable memory or register `balda.memory.*` MCP tools.
+  - Backoffice Fact memory shows the disabled state and rejects mutations; it
+    does not expose session-memory management.
 - `balda.session_memory`: optional durable conversation-memory integration (default disabled)
   - `enabled`: starts the serialized JetStream consumer and enables the neutral locator-scoped `session_memory.search` and `session_memory.trace` tools.
   - `provider`: optional ID from `runtime.providers` for isolated extraction; empty falls back to `balda.provider` while enabled.
@@ -708,11 +715,17 @@ or non-regular paths return a stable build error.
 - internal durable memory uses app KV in the selected database when `balda.memory.enabled=true`
   - `balda.memory.read` reads memory from MCP.
   - `balda.memory.remember` appends facts from MCP.
+  - Backoffice administrators search, add, edit and delete entries in the same
+    global record; there are no per-session or per-fact scopes.
   - every write advances the latest-memory timestamp.
   - on the next turn after a write, active or restored sessions inject the
     complete current snapshot into the provider user prompt and advance the
     turn/session timestamp boundary; unchanged timestamps do not inject memory.
-  - existing `${balda.state_dir}/MEMORY.md` content is imported once when KV memory is empty.
+  - deleting the final entry retains the initialized empty record and refreshes
+    current context on the next turn; conversation history remains.
+  - existing `${balda.state_dir}/MEMORY.md` content is imported as one entry only
+    before a memory record is initialized. An initialized empty record is not
+    imported again.
 - owner auth token is generated during `balda init`, persisted in the selected database, and reused by `balda start`
   - if token is missing in existing state, `balda start` backfills one-time and persists it
   - if no owner is registered yet, `balda start` logs the owner bootstrap command and auth link again to help finish first-time onboarding

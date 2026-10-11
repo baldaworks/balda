@@ -47,13 +47,16 @@ html, body { color: var(--ink); background: var(--canvas); }
 .card-body { min-width: 0; padding: 1.25rem; }
 .form-label { font-weight: 600; }
 .form-control, .form-select, .form-check-input { color: var(--ink); background-color: var(--surface-raised); border-color: var(--border); }
-#alias-name::placeholder, #alias-locator::placeholder { color: var(--input-placeholder); opacity: 1; }
+#alias-name::placeholder, #alias-locator::placeholder, #fact-query::placeholder, #fact-text::placeholder { color: var(--input-placeholder); opacity: 1; }
 .form-control:focus, .form-select:focus { background-color: var(--surface-raised); color: var(--ink); }
 .form-text { color: var(--muted); }
 .btn-outline-secondary { --bs-btn-color: var(--ink); --bs-btn-border-color: var(--muted); }
 .btn-outline-primary { --bs-btn-color: var(--accent); --bs-btn-border-color: var(--accent); }
 .btn-outline-danger { --bs-btn-color: var(--bs-danger-text-emphasis); --bs-btn-border-color: var(--bs-danger-text-emphasis); }
 .invalid-feedback { color: var(--bs-danger-text-emphasis); }
+.fact-memory-table { table-layout: fixed; width: 100%; }
+.fact-memory-table th:last-child { width: 5.5rem; }
+.fact-text-value { white-space: pre-wrap; overflow-wrap: anywhere; }
 .action-row { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem; }
 .detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 1.25rem; }
 .detail-grid > * { min-width: 0; }

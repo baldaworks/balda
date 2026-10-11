@@ -304,7 +304,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 			return fmt.Errorf("compose message format prompt: %w", err)
 		}
 	}
-	providerText = composeApplicationMemoryPrompt(providerText, req.MemoryRefresh.Content)
+	providerText = composeApplicationMemoryPrompt(providerText, req.MemoryRefresh)
 	providerText = composeSelectedSkillPrompt(providerText, req.SelectedSkill)
 	userContent, err := buildUserContent(providerText, req.Attachments)
 	if err != nil {

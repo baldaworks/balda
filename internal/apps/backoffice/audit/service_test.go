@@ -50,6 +50,22 @@ type fakeStore struct {
 	events []usercmd.AuditEvent
 }
 
+func TestServiceFiltersFactMutationEvents(t *testing.T) {
+	t.Parallel()
+	store := &fakeStore{events: []usercmd.AuditEvent{
+		{ID: "fact-created", Action: usercmd.AuditActionMemoryFactCreated, TargetType: usercmd.AuditTargetMemoryFact, TargetID: "1"},
+		{ID: "fact-edited", Action: usercmd.AuditActionMemoryFactEdited, TargetType: usercmd.AuditTargetMemoryFact, TargetID: "1"},
+		{ID: "fact-deleted", Action: usercmd.AuditActionMemoryFactDeleted, TargetType: usercmd.AuditTargetMemoryFact, TargetID: "1"},
+	}}
+	admin := usercmd.User{Status: usercmd.StatusActive, Role: usercmd.RoleAdministrator}
+	page, err := NewService(store).List(t.Context(), admin, Request{
+		Action: usercmd.AuditActionMemoryFactEdited, TargetType: usercmd.AuditTargetMemoryFact,
+	})
+	if err != nil || len(page.Events) != 1 || page.Events[0].ID != "fact-edited" {
+		t.Fatalf("fact audit filter = %+v, %v", page, err)
+	}
+}
+
 func (s *fakeStore) ListAuditEvents(_ context.Context, page usercmd.PageRequest) (usercmd.AuditPage, error) {
 	start := 0
 	for start < len(s.events) && s.events[start].ID <= page.AfterID {

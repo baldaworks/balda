@@ -96,7 +96,7 @@ and hydrated-history boundaries are separately tested in `handlersfx` and
    For navigation changes, check Workspace, Operations and Administration in the
    administrator sidebar, omit empty groups for operators, and verify Account
    appears only in the top bar. Check the active sidebar link on nested Access,
-   MCP, Schedules, Webhooks, and Aliases pages after both HTMX navigation and browser history changes.
+   MCP, Schedules, Webhooks, Aliases, and Fact memory pages after both HTMX navigation and browser history changes.
    Verify that assets load and that browser console errors are absent. Follow
    navigation and tab through forms with the keyboard. Follow **Older active sessions**
    in the browser. Request a `form-*` route as an HTMX fragment and check
@@ -177,6 +177,62 @@ is verified separately in state integration tests. Use only synthetic values
 and local temporary state; never point this gate at a deployment or capture
 the one-time secret in screenshots. Record its evidence separately from the
 layout gate.
+
+## Fact memory layout and application gates
+
+Run the synthetic layout gate before the authenticated application gate. Both
+require the optional Playwright installation described above and use only
+isolated loopback listeners and synthetic facts; neither targets a deployment.
+
+```bash
+BALDA_BACKOFFICE_BROWSER_TEST=1 BALDA_FACT_MEMORY_LAYOUT_SCREENSHOTS=/tmp/balda-fact-memory-screens/layout go test ./internal/apps/backoffice -run '^TestFactMemoryLayoutBrowser$' -count=1 -v
+```
+
+The gallery fixtures use production templates/assets for inventory, long and
+multiline facts, search/no matches, empty/disabled, add/edit/delete confirmation,
+and 400/403/404/409/503 responses. Review root and `/balda/backoffice` at
+1440×900, 1024×768, 768×1024 and 390×844. The browser checks full/HTMX shell and
+statuses, prefixed assets, **Fact** form/grid labels, Operations navigation,
+escaping, wrapping/overflow, distinct placeholder colors, keyboard focus and
+mobile sidebar. It also navigates to a nested editor through HTMX, renders an
+actual 409 fragment with retained text/version, and follows **Reopen this fact**.
+Inspect the actual desktop/mobile screenshots, including
+`<base>/<viewport>/memory-long.png` and `memory-conflict-htmx.png`; passing HTTP
+or markup tests alone is not layout evidence. Fix and rerun this gate before
+starting application verification.
+
+After independent layout acceptance, run:
+
+```bash
+BALDA_BACKOFFICE_BROWSER_TEST=1 BALDA_FACT_MEMORY_APPLICATION_SCREENSHOTS=/tmp/balda-fact-memory-screens/application go test -race ./internal/apps/backoffice -run '^TestFactMemoryApplicationBrowser$' -count=1 -v
+go test -race ./internal/apps/balda/sessionturnapp -run '^TestGlobalFactChangesRefreshActiveAndRestoredSession$' -count=1 -v
+go test -race ./internal/apps/balda -run '^TestMemorySnapshotReaderPreservesCurrentBoundary$' -count=1 -v
+```
+
+The application workflow signs in normally as synthetic administrator/operator
+accounts against real temporary SQLite. It covers root/prefixed desktop/mobile
+CRUD/search, a complete multiline file imported as one fact, validation,
+confirmation/cancel, actual MCP and MemoryActor appends to the UI's shared Store,
+stale editor recovery, CSRF/origin/operator/revoked-session denials, safe backend
+failure and a genuinely disabled memory service. It asserts persisted versions,
+body-free audit, initialized final-empty state and no reimport after reopening
+the Store. Failure injection and writer triggers exist only in the test harness.
+Screenshots contain synthetic facts, never login credentials or tokens.
+
+The paired queued-turn test uses a deterministic ADK provider/session fixture to
+prove next-turn create/edit/final-delete refresh, lazy restore, unchanged empty
+cursor behavior and retained history. The production adapter regression uses
+real SQLite to prove content/version/timestamp forwarding for nonempty and
+initialized empty records. These are separate runtime proofs, not claims that
+the browser drives a live assistant or external transport. PostgreSQL/SQLite
+guarded authority and persistence contracts run separately under the database
+integration gates.
+
+Record exact commands, current logs, layout-before-application timestamps,
+screenshots and independent findings in Beads. The feature's initial evidence is
+tracked in `balda-foyr.6` (layout), `balda-foyr.7` (application/runtime) and
+`balda-foyr.2` (both persistence providers). Re-run affected ordered gates after
+repairs; old screenshots do not prove a changed implementation.
 
 ## Passkey UI and authenticated verification
 

@@ -295,7 +295,7 @@ func prepareMemory(
 		return memoryPreparation{}, fmt.Errorf("snapshot balda memory: %w", err)
 	}
 	content := strings.TrimSpace(snapshot.Content)
-	if content == "" {
+	if content == "" && snapshot.Version == 0 && strings.TrimSpace(snapshot.UpdatedAt) == "" {
 		return memoryPreparation{}, nil
 	}
 	cursor, err := memoryCursor(ctx, topicSession, metadata)

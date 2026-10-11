@@ -89,10 +89,10 @@ func TestRendererGroupsAuthorizedNavigationWithoutDuplicateAccount(t *testing.T)
 			name: "administrator",
 			capabilities: usercmd.BackofficeCapabilities{
 				Overview: true, Account: true, ManageUsers: true,
-				ManageMCP: true, ManageSchedules: true, ManageWebhooks: true, ManageAliases: true, ViewAudit: true,
+				ManageMCP: true, ManageSchedules: true, ManageWebhooks: true, ManageAliases: true, ManageFactMemory: true, ViewAudit: true,
 			},
 			wantGroups: []string{"Workspace", "Operations", "Administration"},
-			wantLinks:  []string{"/overview", "/mcp", "/schedules", "/webhooks", "/aliases", "/access", "/audit"},
+			wantLinks:  []string{"/overview", "/mcp", "/schedules", "/webhooks", "/aliases", "/memory", "/access", "/audit"},
 		},
 		{
 			name:         "operator",
@@ -100,7 +100,7 @@ func TestRendererGroupsAuthorizedNavigationWithoutDuplicateAccount(t *testing.T)
 			wantGroups:   []string{"Workspace"},
 			absentGroups: []string{"Operations", "Administration"},
 			wantLinks:    []string{"/overview"},
-			absentLinks:  []string{"/mcp", "/schedules", "/webhooks", "/aliases", "/access", "/audit"},
+			absentLinks:  []string{"/mcp", "/schedules", "/webhooks", "/aliases", "/memory", "/access", "/audit"},
 		},
 	}
 	for _, tt := range tests {
@@ -351,5 +351,28 @@ func TestMutationDetailPathSafety(t *testing.T) {
 	response := httptest.NewRecorder()
 	if err := RespondMutationPath(response, httptest.NewRequest(http.MethodPost, "/balda/access", nil), "/balda/access/users/user%2Fname"); err != nil || response.Header().Get("Location") != "/balda/access/users/user%2Fname" {
 		t.Fatalf("scoped user detail redirect = %v %v", response.Header(), err)
+	}
+}
+
+func TestAuditProjectionNamesFactOperation(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		action usercmd.AuditAction
+		label  string
+	}{
+		{usercmd.AuditActionMemoryFactCreated, "Created fact"},
+		{usercmd.AuditActionMemoryFactEdited, "Edited fact"},
+		{usercmd.AuditActionMemoryFactDeleted, "Deleted fact"},
+	} {
+		view := ProjectAudit(usercmd.AuditEvent{Action: tc.action, TargetType: usercmd.AuditTargetMemoryFact, TargetID: "42"})
+		if view.ActionLabel != tc.label || view.TargetName != "Fact" || view.TargetID != "42" {
+			t.Errorf("ProjectAudit(%s) = %+v", tc.action, view)
+		}
+	}
+	for _, id := range []string{"<script>", "01", "-1", "9223372036854775808"} {
+		view := ProjectAudit(usercmd.AuditEvent{Action: usercmd.AuditActionMemoryFactEdited, TargetType: usercmd.AuditTargetMemoryFact, TargetID: id})
+		if view.TargetID != redactedAuditID {
+			t.Fatalf("untrusted fact target=%q", view.TargetID)
+		}
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/memory"
+	"github.com/baldaworks/balda/internal/apps/balda/memorycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/normahq/runtime/v2/agentconfig"
 	"github.com/normahq/runtime/v2/agentfactory"
@@ -836,4 +837,26 @@ func TestGetAgentMetadata_ExtractsModelAndReasoningEffort(t *testing.T) {
 			t.Errorf("expected empty metadata, got %+v", meta)
 		}
 	})
+}
+
+func TestCreateRuntimeSessionRetainsInitializedEmptyMemory(t *testing.T) {
+	t.Parallel()
+	kv := newBuilderMemoryKV()
+	const updatedAt = "2026-10-11T06:00:00Z"
+	if err := kv.SetJSON(t.Context(), memorycmd.Key, memorycmd.Record{Version: 2, UpdatedAt: updatedAt, Entries: []memorycmd.Entry{}}); err != nil {
+		t.Fatal(err)
+	}
+	providers := map[string]agentconfig.Config{"alpha": {Type: "llm"}}
+	builder := &Builder{factory: agentfactory.New(providers, mcpregistry.New(nil)), normaCfg: runtimeconfig.RuntimeConfig{Providers: providers}, memoryEnabled: true, memorySnapshotReader: builderMemorySnapshotReader{store: memory.NewStore(kv, "", true)}}
+	runtime := &BuiltRuntime{SessionSvc: adksession.InMemoryService(), AppName: "norma-balda"}
+	sess, err := builder.CreateRuntimeSession(t.Context(), runtime, "alpha", "user-1", "s-1", t.TempDir(), RuntimeSessionContext{BaldaSessionID: "tg-1-2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, want := range map[string]string{memory.MemoryStateKey: "", memory.MemoryVersionStateKey: "2", memory.MemoryUpdatedAtStateKey: updatedAt} {
+		got, err := sess.State().Get(key)
+		if err != nil || got != want {
+			t.Fatalf("state%s=%v,error=%v,want%q", key, got, err, want)
+		}
+	}
 }

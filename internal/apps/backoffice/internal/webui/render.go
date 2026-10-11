@@ -25,6 +25,7 @@ const (
 	TemplateSchedules   = "schedules"
 	TemplateWebhooks    = "webhooks"
 	TemplateAliases     = "aliases"
+	TemplateFactMemory  = "fact-memory"
 	TemplateOAuthReturn = "oauth-return"
 	TemplateError       = "error"
 	TemplateRefresh     = "refresh"
@@ -44,6 +45,7 @@ var templateFiles = map[string]string{
 	TemplateSchedules:   "templates/schedules.tmpl",
 	TemplateWebhooks:    "templates/webhooks.tmpl",
 	TemplateAliases:     "templates/aliases.tmpl",
+	TemplateFactMemory:  "templates/fact-memory.tmpl",
 	TemplateOAuthReturn: "templates/oauth-return.tmpl",
 	TemplateGallery:     "templates/gallery.tmpl",
 	TemplateStyleGuide:  "templates/style-guide.tmpl", TemplateLayout: "templates/layout.tmpl",
