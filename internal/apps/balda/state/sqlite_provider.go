@@ -268,3 +268,7 @@ func (p *sqliteProvider) Close() error {
 func (p *sqliteProvider) MemoryManagement() MemoryManagementStore {
 	return &sqlMemoryManagementStore{users: newSQLiteUserStore(p.db)}
 }
+
+func (p *sqliteProvider) PluginManagement() PluginManagementStore {
+	return &sqlPluginManagementStore{users: newSQLiteUserStore(p.db)}
+}

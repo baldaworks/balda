@@ -277,6 +277,28 @@ const (
 	AuditActionScheduleDefinitionChanged AuditAction = "schedule.definition.changed"
 	// AuditActionScheduleRunRequested records an administrator manual run.
 	AuditActionScheduleRunRequested AuditAction = "schedule.run.requested"
+	// AuditActionPluginInstalled records accepted plugin management.
+	AuditActionPluginInstalled AuditAction = "plugin.installed"
+	// AuditActionPluginUpgraded records accepted plugin management.
+	AuditActionPluginUpgraded AuditAction = "plugin.upgraded"
+	// AuditActionPluginEnabled records accepted plugin management.
+	AuditActionPluginEnabled AuditAction = "plugin.enabled"
+	// AuditActionPluginDisabled records accepted plugin management.
+	AuditActionPluginDisabled AuditAction = "plugin.disabled"
+	// AuditActionPluginRolledBack records accepted plugin management.
+	AuditActionPluginRolledBack AuditAction = "plugin.rolled_back"
+	// AuditActionPluginRemoved records accepted plugin management.
+	AuditActionPluginRemoved AuditAction = "plugin.removed"
+	// AuditActionPluginMarketplaceAdded records accepted plugin management.
+	AuditActionPluginMarketplaceAdded AuditAction = "plugin.marketplace.added"
+	// AuditActionPluginMarketplaceRefreshed records accepted plugin management.
+	AuditActionPluginMarketplaceRefreshed AuditAction = "plugin.marketplace.refreshed"
+	// AuditActionPluginMarketplaceRefreshFailed records accepted failed discovery evidence.
+	AuditActionPluginMarketplaceRefreshFailed AuditAction = "plugin.marketplace.refresh_failed"
+	// AuditActionPluginOriginAdopted records trusted origin adoption.
+	AuditActionPluginOriginAdopted AuditAction = "plugin.origin.adopted"
+	// AuditActionPluginMarketplaceRemoved records accepted plugin management.
+	AuditActionPluginMarketplaceRemoved AuditAction = "plugin.marketplace.removed"
 	// AuditActionMemoryFactCreated records an explicit global fact creation.
 	AuditActionMemoryFactCreated AuditAction = "memory.fact.created"
 	// AuditActionMemoryFactEdited records an explicit global fact edit.
@@ -298,7 +320,7 @@ const (
 // Valid reports whether the action belongs to the bounded security audit vocabulary.
 func (a AuditAction) Valid() bool {
 	switch a {
-	case AuditActionUserCreated, AuditActionUserUpdated, AuditActionUserAccessChanged,
+	case AuditActionPluginMarketplaceRefreshFailed, AuditActionPluginOriginAdopted, AuditActionPluginInstalled, AuditActionPluginUpgraded, AuditActionPluginEnabled, AuditActionPluginDisabled, AuditActionPluginRolledBack, AuditActionPluginRemoved, AuditActionPluginMarketplaceAdded, AuditActionPluginMarketplaceRefreshed, AuditActionPluginMarketplaceRemoved, AuditActionUserCreated, AuditActionUserUpdated, AuditActionUserAccessChanged,
 		AuditActionUserRoleChanged, AuditActionUserStatusChanged, AuditActionCredentialChanged,
 		AuditActionSessionRevoked, AuditActionBindingAttached, AuditActionBindingDetached, AuditActionBindingClaimCreated,
 		AuditActionUserMigrated, AuditActionLoginSucceeded, AuditActionRefreshSucceeded,
@@ -328,6 +350,10 @@ func (o AuditOutcome) Valid() bool {
 type AuditTargetType string
 
 const (
+	// AuditTargetPlugin identifies a logical plugin without package/source content.
+	AuditTargetPlugin AuditTargetType = "plugin"
+	// AuditTargetPluginMarketplace identifies a named source without credentials.
+	AuditTargetPluginMarketplace AuditTargetType = "plugin_marketplace"
 	// AuditTargetUser identifies a canonical user.
 	AuditTargetUser AuditTargetType = "user"
 	// AuditTargetSession identifies a browser session family.
@@ -353,7 +379,7 @@ const (
 // Valid reports whether the audit target type is supported.
 func (t AuditTargetType) Valid() bool {
 	switch t {
-	case AuditTargetUser, AuditTargetSession, AuditTargetBinding, AuditTargetSystem, AuditTargetMigration, AuditTargetMCP, AuditTargetSchedule, AuditTargetMemoryFact, AuditTargetAlias, AuditTargetWebhookRoute:
+	case AuditTargetPlugin, AuditTargetPluginMarketplace, AuditTargetUser, AuditTargetSession, AuditTargetBinding, AuditTargetSystem, AuditTargetMigration, AuditTargetMCP, AuditTargetSchedule, AuditTargetMemoryFact, AuditTargetAlias, AuditTargetWebhookRoute:
 		return true
 	default:
 		return false
