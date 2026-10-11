@@ -272,6 +272,10 @@ components:
       - internal/apps/balda/mcpbackofficeapp
 
   # Shared fact memory is adapted to the browser port without constructing a Store.
+  plugin_backoffice_wiring:
+    in:
+      - internal/apps/balda/pluginbackofficeapp
+
   memory_backoffice_wiring:
     in:
       - internal/apps/balda/memorybackofficeapp
@@ -762,6 +766,13 @@ deps:
     deepScan: false
     anyVendorDeps: false
 
+  plugin_backoffice_wiring:
+    mayDependOn:
+      - contracts
+      - plugin_backoffice_wiring
+    deepScan: false
+    anyVendorDeps: false
+
   memory_backoffice_wiring:
     mayDependOn:
       - memory_contracts
@@ -1045,6 +1056,7 @@ deps:
 
   composition_root:
     mayDependOn:
+      - plugin_backoffice_wiring
       - memory_backoffice_wiring
       - memory_policy
       - webhook_route_contracts

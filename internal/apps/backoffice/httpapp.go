@@ -37,6 +37,7 @@ type httpApp struct {
 	webhooks          WebhooksOperations
 	aliases           AliasesOperations
 	factMemory        FactMemoryOperations
+	plugins           PluginsOperations
 	mcpAuthorizations MCPAuthorizations
 	qa                bool
 	basePath          string

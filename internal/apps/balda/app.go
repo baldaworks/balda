@@ -50,6 +50,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/paths"
 	"github.com/baldaworks/balda/internal/apps/balda/permissions"
 	"github.com/baldaworks/balda/internal/apps/balda/pluginapp"
+	"github.com/baldaworks/balda/internal/apps/balda/pluginbackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
 	"github.com/baldaworks/balda/internal/apps/balda/schedulebackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/scheduledjobs"
@@ -419,7 +420,7 @@ func Module(
 				})
 				return provider, nil
 			},
-			func(provider baldastate.Provider, invitations *auth.BindingInvitations, channels *auth.BindingChannels, mcp *mcpbackofficeapp.Operations, schedules *schedulebackofficeapp.Operations, aliases *aliasbackofficeapp.Operations, webhooks *webhookbackofficeapp.Operations, facts *memorybackofficeapp.Operations) (*backoffice.Runtime, error) {
+			func(provider baldastate.Provider, invitations *auth.BindingInvitations, channels *auth.BindingChannels, mcp *mcpbackofficeapp.Operations, schedules *schedulebackofficeapp.Operations, aliases *aliasbackofficeapp.Operations, webhooks *webhookbackofficeapp.Operations, facts *memorybackofficeapp.Operations, plugins *pluginbackofficeapp.Operations) (*backoffice.Runtime, error) {
 				runtime, err := backoffice.NewRuntime(backofficeConfig, provider)
 				if err != nil {
 					return nil, err
@@ -437,6 +438,9 @@ func Module(
 					return nil, err
 				}
 				if err := runtime.ConfigureAliasesOperations(aliases); err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigurePluginsOperations(plugins); err != nil {
 					return nil, err
 				}
 				if err := runtime.ConfigureFactMemoryOperations(facts); err != nil {
@@ -487,6 +491,9 @@ func Module(
 			webhookbackofficeapp.New,
 			aliasbackofficeapp.New,
 			memorybackofficeapp.New,
+			func(plugins *pluginapp.Service, catalog *catalogapp.Runtime) *pluginbackofficeapp.Operations {
+				return pluginbackofficeapp.New(plugins, pluginbackofficeapp.CatalogHealth{Catalog: catalog})
+			},
 			func(store *memory.Store, provider baldastate.Provider) *memory.Management {
 				return memory.NewManagement(store, provider.MemoryManagement())
 			},

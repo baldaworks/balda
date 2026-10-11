@@ -67,6 +67,7 @@ type CapabilityDiff struct {
 
 // RuntimeStatus is bounded runtime-catalog and projection health.
 type RuntimeStatus struct {
+	RevisionCurrent     bool
 	SnapshotID          string
 	SnapshotSequence    uint64
 	ProjectionLag       uint64
