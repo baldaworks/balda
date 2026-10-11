@@ -8,6 +8,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/backoffice/internal/webui"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/memorycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookroutecmd"
 )
@@ -26,6 +27,15 @@ func QAHandler(basePath string) (http.Handler, error) {
 	mux.Handle("GET "+basePath+"/assets/", http.StripPrefix(basePath, assets))
 	mux.HandleFunc("GET "+basePath+"/qa/ui/", func(w http.ResponseWriter, r *http.Request) {
 		name := strings.TrimPrefix(r.URL.Path, basePath+"/qa/ui/")
+		if name == "memory" && r.URL.Query().Get("new") == "1" {
+			name = "memory/new"
+		}
+		if name == "memory" && r.URL.Query().Get("q") != "" {
+			name = "memory-no-results"
+			if r.URL.Query().Get("q") == "concise" {
+				name = "memory-search"
+			}
+		}
 		if name == "webhooks" && r.URL.Query().Get("new") == "1" {
 			name = "webhooks/new"
 		}
@@ -48,6 +58,9 @@ func QAHandler(basePath string) (http.Handler, error) {
 		}
 		if page.RestartURL != "" {
 			page.RestartURL = basePath + "/qa/ui/mcp"
+			if strings.HasPrefix(name, "memory") {
+				page.RestartURL = basePath + "/qa/ui/memory"
+			}
 		}
 		if r.Method == http.MethodHead {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -76,6 +89,35 @@ type qaEntry struct {
 }
 
 var qaEntries = []qaEntry{
+	{name: "memory", label: "Fact memory · inventory", templateName: webui.TemplateFactMemory, page: qaFactMemory, gallery: true},
+	{name: "memory-long", label: "Fact memory · long multiline fact", templateName: webui.TemplateFactMemory, page: func() webui.Page {
+		p := qaFactMemory()
+		p.FactMemory.Rows[1].Fact = "Synthetic multiline fact:\n  Keep indentation.\n" + strings.Repeat("long-synthetic-word", 90)
+		return p
+	}, gallery: true},
+	{name: "memory-search", label: "Fact memory · search", templateName: webui.TemplateFactMemory, page: func() webui.Page {
+		p := qaFactMemory()
+		p.FactMemory.Query = "concise"
+		p.FactMemory.Rows = p.FactMemory.Rows[:1]
+		return p
+	}, gallery: true},
+	{name: "memory-no-results", label: "Fact memory · no search results", templateName: webui.TemplateFactMemory, page: func() webui.Page {
+		p := qaFactMemory()
+		p.FactMemory.Query = "missing"
+		p.FactMemory.Rows = nil
+		return p
+	}, gallery: true},
+	{name: "memory-empty", label: "Fact memory · empty", templateName: webui.TemplateFactMemory, page: func() webui.Page { p := qaFactMemory(); p.FactMemory.Rows = nil; p.FactMemory.TotalFacts = 0; return p }, gallery: true},
+	{name: "memory-disabled", label: "Fact memory · disabled", templateName: webui.TemplateFactMemory, page: func() webui.Page { p := qaFactMemory(); p.FactMemory = &webui.FactMemoryView{}; return p }, gallery: true},
+	{name: "memory/new", label: "Fact memory · add", templateName: webui.TemplateFactMemory, page: func() webui.Page { return qaFactEditor(true) }, gallery: true},
+	{name: "memory/1", label: "Fact memory · edit", templateName: webui.TemplateFactMemory, page: func() webui.Page { return qaFactEditor(false) }, gallery: true},
+	{name: "memory-delete", label: "Fact memory · delete confirmation", templateName: webui.TemplateFactMemory, page: func() webui.Page { return qaFactEditor(false) }, gallery: true},
+	{name: "memory-invalid", label: "Fact memory · invalid (400)", templateName: webui.TemplateFactMemory, page: func() webui.Page { return qaFactFailure(memorycmd.ErrInvalid, true) }, gallery: true, status: http.StatusBadRequest},
+	{name: "memory-forbidden", label: "Fact memory · authority changed (403)", templateName: webui.TemplateFactMemory, page: func() webui.Page { return qaFactFailure(memorycmd.ErrForbidden, true) }, gallery: true, status: http.StatusForbidden},
+	{name: "memory-missing", label: "Fact memory · missing fact (404)", templateName: webui.TemplateError, page: func() webui.Page { return qaFactFailure(memorycmd.ErrNotFound, false) }, gallery: true, status: http.StatusNotFound},
+	{name: "memory-conflict", label: "Fact memory · conflict (409)", templateName: webui.TemplateFactMemory, page: func() webui.Page { return qaFactFailure(memorycmd.ErrConflict, true) }, gallery: true, status: http.StatusConflict},
+	{name: "memory-unavailable", label: "Fact memory · unavailable (503)", templateName: webui.TemplateFactMemory, page: func() webui.Page { return qaFactFailure(memorycmd.ErrUnavailable, true) }, gallery: true, status: http.StatusServiceUnavailable},
+
 	{name: "webhooks", label: "Webhooks · inventory", templateName: webui.TemplateWebhooks, page: qaWebhooks, gallery: true},
 	{name: "webhooks-empty", label: "Webhooks · empty", templateName: webui.TemplateWebhooks, page: func() webui.Page { p := qaWebhooks(); p.Webhooks.Rows = nil; return p }, gallery: true},
 	{name: "webhooks/new", label: "Webhooks · create", templateName: webui.TemplateWebhooks, page: func() webui.Page { return qaWebhookEditor(webhookroutecmd.Item{}, true) }, gallery: true},
@@ -323,7 +365,7 @@ func qaWebhookHistory() webui.Page {
 
 func qaAdminNavigation(current webui.Location) []webui.NavGroup {
 	return webui.Navigation(usercmd.BackofficeCapabilities{
-		Overview: true, Account: true, ManageUsers: true, ManageMCP: true, ManageSchedules: true, ManageWebhooks: true, ViewAudit: true,
+		Overview: true, Account: true, ManageUsers: true, ManageMCP: true, ManageSchedules: true, ManageWebhooks: true, ManageFactMemory: true, ViewAudit: true,
 	}, current)
 }
 
@@ -706,4 +748,37 @@ func qaWebhookRow(item webhookroutecmd.Item) webui.WebhookRow {
 		row.URL = webhookroutecmd.CanonicalPath("", item.Definition.Name)
 	}
 	return row
+}
+
+func qaFactMemory() webui.Page {
+	inv := memorycmd.Inventory{Enabled: true, Version: 3, TotalFacts: 2, Facts: []memorycmd.Fact{
+		{ID: 1, Fact: "Prefers concise replies."},
+		{ID: 2, Fact: "Synthetic deployment notes:\n  Review staging first.\n<script>window.syntheticFactExecuted = true</script>"},
+	}}
+	return webui.Page{Title: "Fact memory · QA", Current: webui.LocationFactMemory, Navigation: qaAdminNavigation(webui.LocationFactMemory), FactMemory: webui.ProjectFactInventory(inv, "")}
+}
+
+func qaFactEditor(create bool) webui.Page {
+	p := qaFactMemory()
+	ed := memorycmd.Editor{Fact: memorycmd.Fact{ID: 1, Fact: "Prefers concise replies.\nSynthetic second line."}, ExpectedVersion: 3}
+	if create {
+		ed = memorycmd.Editor{}
+		p.Title = "Add fact · QA"
+	} else {
+		p.Title = "Edit fact · QA"
+	}
+	p.FactMemory.Editor = webui.ProjectFactEditor(ed, create)
+	return p
+}
+
+func qaFactFailure(err error, editor bool) webui.Page {
+	p := qaFactEditor(false)
+	_, message := factMemoryFailure(err)
+	p.Error = &webui.ErrorView{Heading: "Fact memory operation could not complete", Message: message}
+	if !editor {
+		p.FactMemory = nil
+		p.RestartURL = "/memory"
+		p.RestartLabel = "Open Fact memory"
+	}
+	return p
 }
