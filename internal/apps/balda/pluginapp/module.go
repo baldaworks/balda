@@ -9,7 +9,7 @@ var Module = fx.Module("balda_pluginapp",
 	fx.Provide(
 		fx.Annotate(
 			func(stateDir string, provider baldastate.Provider, activator CatalogActivator) (*Service, error) {
-				return NewManaged(stateDir, provider.AppKV(), provider.Plugins(), activator)
+				return NewManaged(stateDir, provider.AppKV(), provider.Plugins(), activator, provider.PluginManagement())
 			},
 			fx.ParamTags(`name:"balda_state_dir"`, ``, ``),
 		),
