@@ -120,6 +120,11 @@ components:
     in:
       - internal/apps/balda/mcpcmd
 
+  # Global fact-memory values preserve the existing KV record contract.
+  memory_contracts:
+    in:
+      - internal/apps/balda/memorycmd
+
   # Schedule management values do not depend on HTTP, state, or transports.
   schedule_contracts:
     in:
@@ -501,6 +506,11 @@ deps:
       - mcp_contracts
     anyVendorDeps: false
 
+  memory_contracts:
+    mayDependOn:
+      - user_contracts
+    anyVendorDeps: false
+
   schedule_contracts:
     mayDependOn:
       - schedule_contracts
@@ -653,6 +663,7 @@ deps:
 
   application:
     mayDependOn:
+      - memory_contracts
       - webhook_route_contracts
       - alias_contracts
       - schedule_contracts
