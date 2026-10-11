@@ -96,7 +96,7 @@ and hydrated-history boundaries are separately tested in `handlersfx` and
    For navigation changes, check Workspace, Operations and Administration in the
    administrator sidebar, omit empty groups for operators, and verify Account
    appears only in the top bar. Check the active sidebar link on nested Access,
-   MCP, Schedules, Webhooks, Aliases, and Fact memory pages after both HTMX navigation and browser history changes.
+   Plugins, MCP, Schedules, Webhooks, Aliases, and Fact memory pages after both HTMX navigation and browser history changes.
    Verify that assets load and that browser console errors are absent. Follow
    navigation and tab through forms with the keyboard. Follow **Older active sessions**
    in the browser. Request a `form-*` route as an HTMX fragment and check
@@ -326,3 +326,66 @@ stdio subprocess/environment and hosted/ACP invocation coverage remains in
 Its private protocol inputs are excluded from diagnostics; no real
 administrator, deployment or transport credentials are used. Synthetic gallery
 results remain separate from this authenticated runtime evidence.
+
+## Plugins layout and application gates
+
+Run Plugins verification in this order, using the same optional Playwright
+installation described above. First run the synthetic layout gate:
+
+```bash
+BALDA_BACKOFFICE_BROWSER_TEST=1 BALDA_PLUGINS_LAYOUT_SCREENSHOTS=/tmp/balda-plugins-screens/layout go test ./internal/apps/backoffice -run '^TestPluginsLayoutBrowser$' -count=1 -v
+```
+
+It checks 21 states at 1440×900, 1024×768, 768×1024 and 390×844, at the root
+and `/balda/backoffice` mounts. Inspect installed/marketplace inventory,
+Name/Source/Ref/Sparse Add, discovery, install/upgrade review, safe contributions,
+retained rollback, confirmations, empty/long content, validation, conflict,
+failed discovery and pending activation. The gate checks actual assets,
+placeholder contrast, table scrolling, keyboard/focus, single-main HTMX
+rendering, private history and settled nested Plugins navigation. Captures are
+under the selected directory by mount/viewport. These fixed preview models
+cannot mutate an application.
+
+After accepting the layout and screens, run the real owner/session contracts:
+
+```bash
+go test -race ./internal/apps/balda -run '^TestBackofficePluginsRuntimeContracts$' -count=1 -v
+```
+
+This uses the production shared Fx plugin owner, catalog and session
+create/restore/reset composition, real SQLite, isolated local/file-Git packages
+and a loopback MCP SDK server. It verifies exact retained commands, lazy skill
+bytes, MCP descriptors and actual tools after upgrade/disable/remove and
+database/process-owner reopen. Ordinary Reset selects the current catalog.
+Fault proofs distinguish preparation from durable acceptance and recovery;
+no live provider, transport account or deployment is involved.
+
+Then run the authenticated application browser gate:
+
+```bash
+BALDA_BACKOFFICE_BROWSER_TEST=1 BALDA_PLUGINS_RUNTIME_SCREENSHOTS=/tmp/balda-plugins-screens/application go test -race ./internal/apps/balda -run '^TestBackofficePluginsBrowserWorkflow$' -count=1 -v
+```
+
+Four cases cover root and `/balda/backoffice` at 1440×900 and 390×844, using
+local and deterministic Git sources. Normal login exercises administrator and
+operator authorization, anonymous entry, actual access rotation returning to
+Plugins without step-up, CSRF/origin rejection, cleared/redacted Source and
+escaped descriptions. Browser actions cover Add/Refresh/install/inspect/upgrade,
+enable/disable, exact retained rollback, confirmed removal and valid names
+`install`, `marketplaces` and `new`. Lifecycle checkpoints compare real SQL
+and current catalog contributions while a real older session keeps its pin.
+
+Verify contextual errors after `htmx:afterSettle`: 400 clears Source; 409 exposes
+the exact reopen link; 503 distinguishes audit rollback from accepted pending
+state and suppresses replay; revocation while waiting on the real catalog gate
+returns 403 without changing durable state or the application snapshot. Failed
+Refresh shows last-attempt failure separately from stale successful discovery,
+and candidate review recovers only after successful Refresh.
+
+Application captures use names such as `root-390-installed-v1.png`,
+`prefixed-390-accepted-pending.png`, `prefixed-390-failed-refresh.png` and
+`prefixed-1440-upgrade-review.png`. The harness captures only after Source is
+cleared and outside credential forms. Keep timestamps, actual commands/results,
+reviewed screenshots and defect/reopen evidence in Beads. If an implementation
+defect changes rendered behavior, repair its owning task and rerun the affected
+layout gate before the application gate. No SSH/asus or live data is used.

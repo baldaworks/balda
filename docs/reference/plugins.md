@@ -5,6 +5,44 @@ Balda-specific command extension, and session capability lifetime. Marketplace
 repository layout is documented separately in the
 [marketplace format ADR](../architecture/plugin-marketplace-format.md).
 
+## Backoffice package management
+
+Administrators manage the global package catalog through **Operations →
+Plugins**, with **Installed** and **Marketplaces** tabs. Add a named local or
+Git marketplace, explicitly **Refresh marketplace**, then review the qualified
+package and exact revision before **Install plugin**. A page read does not fetch
+a source. Failed refresh keeps the last successful discovery visible as stale
+reference and disables candidate review until a successful refresh.
+
+The configured marketplace name is the selection identity; it can differ from
+the index's manifest name. Upgrade resolves the proven installation origin and
+cannot switch to another publisher merely because it offers the same package
+name. Ref and newline-separated Sparse paths apply only to Git sources. Source
+is never refilled, and stored browser projections redact credentials and local
+paths. See [Backoffice Plugins management](backoffice.md#plugins-management)
+for exact fields and outcomes.
+
+Enable/disable and rollback affect new catalog selections. Rollback chooses an
+exact retained package revision and preserves Enabled. Remove deactivates the
+installation without purging plugin data or revision archives; removing its
+marketplace definition also preserves those resources. Disabled packages can
+still be inspected. Runtime health, selected/current revision and Enabled are
+separate states.
+
+Installation stages immutable bytes and prepares the complete catalog before
+guarded durable acceptance. SQL acceptance records state and audit together;
+filesystem staging and catalog publication are separate steps. An accepted
+intent whose publication/completion fails remains **Accepted; recovery pending**
+until ordinary recovery reconciles it. Reopen the detail before retrying a
+conflict or pending operation. One process must own the state directory; its
+catalog lock does not provide coordination across independently running Balda
+processes.
+
+Management does not reset existing sessions or change their pins. New sessions
+select the current catalog; an existing conversation adopts current
+capabilities at its explicit normal `/reset` boundary. Exact retained snapshot
+and MCP restoration semantics are described below.
+
 ## Package boundaries
 
 An installed package uses the Agent Plugins 1.0 `plugin.json` as its portable
