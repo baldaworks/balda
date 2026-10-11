@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/plugincmd"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalog"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
@@ -34,11 +35,18 @@ type PluginStore interface {
 	PurgePluginRevision(ctx context.Context, pluginID, revisionID string) error
 }
 
+// PreparedPluginSource identifies an already validated, materialized new revision.
+// Its SQL record is committed atomically with selection after compilation.
+type PreparedPluginSource struct {
+	Descriptor   runtimecatalogcmd.SourceDescriptor
+	RelativeRoot string
+}
+
 // CatalogActivator combines enabled plugin sources with host-owned non-plugin
 // sources, compiles the complete application snapshot, and publishes it.
 type CatalogActivator interface {
 	LockCatalogMutation(ctx context.Context) (release func(), err error)
-	PreparePluginCandidate(ctx context.Context, enabledPlugins []runtimecatalogcmd.Source) (runtimecatalogcmd.Snapshot, error)
+	PreparePluginCandidate(ctx context.Context, enabledPlugins []runtimecatalogcmd.Source, prepared *PreparedPluginSource) (runtimecatalogcmd.Snapshot, error)
 	PublishCandidate(ctx context.Context, snapshot runtimecatalogcmd.Snapshot) error
 }
 
@@ -57,13 +65,14 @@ type CapabilityDiff struct {
 }
 
 type managedLifecycle struct {
-	mu        sync.Mutex
-	stateDir  string
-	store     PluginStore
-	kv        baldastate.KVStore
-	activator CatalogActivator
-	loader    *runtimecatalog.SourceLoader
-	now       func() time.Time
+	mu         sync.Mutex
+	stateDir   string
+	store      PluginStore
+	kv         baldastate.KVStore
+	activator  CatalogActivator
+	loader     *runtimecatalog.SourceLoader
+	management ManagementStore
+	now        func() time.Time
 }
 
 const originUnknown = "origin-unknown"
@@ -78,7 +87,7 @@ func (m *managedLifecycle) install(ctx context.Context, plugin AvailablePlugin) 
 		return err
 	}
 	defer release()
-	return m.installLocked(ctx, plugin, false)
+	return m.installLocked(ctx, plugin, false, nil)
 }
 
 func (m *managedLifecycle) upgrade(ctx context.Context, plugin AvailablePlugin) error {
@@ -89,7 +98,7 @@ func (m *managedLifecycle) upgrade(ctx context.Context, plugin AvailablePlugin) 
 		return err
 	}
 	defer release()
-	return m.installLocked(ctx, plugin, true)
+	return m.installLocked(ctx, plugin, true, nil)
 }
 
 func (m *managedLifecycle) adoptOrigin(ctx context.Context, plugin AvailablePlugin) error {
@@ -100,9 +109,20 @@ func (m *managedLifecycle) adoptOrigin(ctx context.Context, plugin AvailablePlug
 		return err
 	}
 	defer release()
+
+	return m.adoptOriginLocked(ctx, plugin, nil)
+}
+
+func (m *managedLifecycle) adoptOriginLocked(ctx context.Context, plugin AvailablePlugin, acceptance *pluginAcceptance) error {
 	if _, err := m.reconcilePending(ctx, plugin.Name); err != nil {
 		return fmt.Errorf("reconcile plugin before origin adoption: %w", err)
 	}
+	var baselineErr error
+	acceptance, baselineErr = m.trustedBaseline(ctx, plugin.Name, acceptance)
+	if baselineErr != nil {
+		return baselineErr
+	}
+
 	install, found, err := m.store.GetPluginInstall(ctx, plugin.Name)
 	if err != nil {
 		return err
@@ -136,32 +156,23 @@ func (m *managedLifecycle) adoptOrigin(ctx context.Context, plugin AvailablePlug
 	if err != nil {
 		return err
 	}
-	snapshot, err := m.activator.PreparePluginCandidate(ctx, sources)
+	snapshot, err := m.activator.PreparePluginCandidate(ctx, sources, nil)
 	if err != nil {
 		return fmt.Errorf("compile origin adoption candidate: %w", err)
 	}
-	intentID := uuid.NewString()
-	intent := baldastate.PluginActivationIntent{
-		IntentID: intentID, PluginID: install.PluginID, FromRevisionID: install.ActiveRevisionID,
-		ToRevisionID: install.ActiveRevisionID, Operation: "adopt-origin", State: baldastate.PluginActivationIntentPending,
-		CreatedAt: install.UpdatedAt, UpdatedAt: install.UpdatedAt,
-	}
-	if err := m.store.AdoptPluginOrigin(ctx, intent, install); err != nil {
-		return err
-	}
-	if err := m.activator.PublishCandidate(ctx, snapshot); err != nil {
-		return fmt.Errorf("publish adopted plugin origin: %w", err)
-	}
-	if err := m.store.CompletePluginActivation(ctx, intentID, m.now().UTC()); err != nil {
-		return err
-	}
-	return nil
+	return m.acceptAndPublish(ctx, "adopt-origin", install.PluginID, install.ActiveRevisionID, install.ActiveRevisionID, &install, nil, snapshot, acceptance)
 }
 
-func (m *managedLifecycle) installLocked(ctx context.Context, plugin AvailablePlugin, requireInstalled bool) error {
+func (m *managedLifecycle) installLocked(ctx context.Context, plugin AvailablePlugin, requireInstalled bool, acceptance *pluginAcceptance) error {
 	if _, err := m.reconcilePending(ctx, plugin.Name); err != nil {
 		return err
 	}
+	var baselineErr error
+	acceptance, baselineErr = m.trustedBaseline(ctx, plugin.Name, acceptance)
+	if baselineErr != nil {
+		return baselineErr
+	}
+
 	existing, found, err := m.store.GetPluginInstall(ctx, plugin.Name)
 	if err != nil {
 		return err
@@ -198,6 +209,9 @@ func (m *managedLifecycle) installLocked(ctx context.Context, plugin AvailablePl
 		return fmt.Errorf("validate plugin package: %w", err)
 	}
 	source := pluginPackage.Source
+	if acceptance != nil && acceptance.revision != "" && string(source.Descriptor.Revision) != acceptance.revision {
+		return plugincmd.ErrConflict
+	}
 	if source.Descriptor.ID.Name != plugin.Name {
 		return errors.New("marketplace and manifest plugin names differ")
 	}
@@ -246,8 +260,10 @@ func (m *managedLifecycle) installLocked(ctx context.Context, plugin AvailablePl
 			Description:  pluginPackage.Description,
 			RelativeRoot: relativeRoot, CapabilityJSON: capabilities, CreatedAt: now,
 		}
-		if err := m.store.PutPluginRevision(ctx, revision); err != nil {
-			return err
+		if m.management == nil {
+			if err := m.store.PutPluginRevision(ctx, revision); err != nil {
+				return err
+			}
 		}
 	} else if revision.RelativeRoot != relativeRoot || revision.CapabilityJSON != capabilities ||
 		revision.Version != pluginPackage.Version || revision.Description != pluginPackage.Description {
@@ -270,7 +286,11 @@ func (m *managedLifecycle) installLocked(ctx context.Context, plugin AvailablePl
 		return fmt.Errorf("create plugin data root: %w", err)
 	}
 	install := baldastate.PluginInstallRecord{PluginID: plugin.Name, OriginMarketplace: plugin.Marketplace, OriginSource: originSource, OriginPath: originPath, ActiveRevisionID: revisionID, Enabled: enabled, Version: revision.Version, Description: revision.Description, CapabilityJSON: capabilities, DataRelativePath: dataPath, UpdatedAt: now}
-	return m.activate(ctx, operation, fromRevision, install, source)
+	var newRevision *baldastate.PluginRevisionRecord
+	if !revisionFound {
+		newRevision = &revision
+	}
+	return m.activate(ctx, operation, fromRevision, install, source, newRevision, acceptance)
 }
 
 func (m *managedLifecycle) migrateLegacy(ctx context.Context) error {
@@ -354,7 +374,7 @@ func (m *managedLifecycle) migrateLegacyRoot(ctx context.Context, legacyRoot *os
 		if err := m.installLocked(ctx, AvailablePlugin{
 			Name: name, Version: pkg.Version, Description: pkg.Description,
 			Marketplace: originUnknown, SourceRoot: stage, PluginPath: packageRoot,
-		}, false); err != nil {
+		}, false, nil); err != nil {
 			return fmt.Errorf("migrate legacy plugin %q: %w", name, err)
 		}
 		if err := m.kv.Set(ctx, migrationKey, string(pkg.Source.Descriptor.Revision)); err != nil {
@@ -382,27 +402,20 @@ func (m *managedLifecycle) verifyRevisionRoot(root, revisionID string) error {
 	return nil
 }
 
-func (m *managedLifecycle) activate(ctx context.Context, operation, fromRevision string, install baldastate.PluginInstallRecord, proposed runtimecatalogcmd.Source) error {
+func (m *managedLifecycle) activate(ctx context.Context, operation, fromRevision string, install baldastate.PluginInstallRecord, proposed runtimecatalogcmd.Source, revision *baldastate.PluginRevisionRecord, acceptance *pluginAcceptance) error {
 	sources, err := m.candidateSources(ctx, install, proposed)
 	if err != nil {
 		return err
 	}
-	snapshot, err := m.activator.PreparePluginCandidate(ctx, sources)
+	var prepared *PreparedPluginSource
+	if revision != nil {
+		prepared = &PreparedPluginSource{Descriptor: proposed.Descriptor, RelativeRoot: revision.RelativeRoot}
+	}
+	snapshot, err := m.activator.PreparePluginCandidate(ctx, sources, prepared)
 	if err != nil {
 		return fmt.Errorf("compile plugin candidate: %w", err)
 	}
-	intentID := uuid.NewString()
-	intent := baldastate.PluginActivationIntent{IntentID: intentID, PluginID: install.PluginID, FromRevisionID: fromRevision, ToRevisionID: install.ActiveRevisionID, Operation: operation, State: baldastate.PluginActivationIntentPending, CreatedAt: install.UpdatedAt, UpdatedAt: install.UpdatedAt}
-	if err := m.store.ActivatePlugin(ctx, intent, install); err != nil {
-		return err
-	}
-	if err := m.activator.PublishCandidate(ctx, snapshot); err != nil {
-		return fmt.Errorf("publish plugin candidate: %w", err)
-	}
-	if err := m.store.CompletePluginActivation(ctx, intentID, m.now().UTC()); err != nil {
-		return err
-	}
-	return nil
+	return m.acceptAndPublish(ctx, operation, install.PluginID, fromRevision, install.ActiveRevisionID, &install, revision, snapshot, acceptance)
 }
 
 func (m *managedLifecycle) candidateSources(ctx context.Context, proposedInstall baldastate.PluginInstallRecord, proposed runtimecatalogcmd.Source) ([]runtimecatalogcmd.Source, error) {
@@ -581,9 +594,19 @@ func (m *managedLifecycle) setEnabled(ctx context.Context, pluginID string, enab
 	}
 	defer release()
 
+	return m.setEnabledLocked(ctx, pluginID, enabled, nil)
+}
+
+func (m *managedLifecycle) setEnabledLocked(ctx context.Context, pluginID string, enabled bool, acceptance *pluginAcceptance) error {
 	if _, err := m.reconcilePending(ctx, pluginID); err != nil {
 		return err
 	}
+	var baselineErr error
+	acceptance, baselineErr = m.trustedBaseline(ctx, pluginID, acceptance)
+	if baselineErr != nil {
+		return baselineErr
+	}
+
 	install, found, err := m.store.GetPluginInstall(ctx, pluginID)
 	if err != nil {
 		return err
@@ -604,7 +627,7 @@ func (m *managedLifecycle) setEnabled(ctx context.Context, pluginID string, enab
 	if !enabled {
 		operation = "disable"
 	}
-	return m.activate(ctx, operation, install.ActiveRevisionID, install, source)
+	return m.activate(ctx, operation, install.ActiveRevisionID, install, source, nil, acceptance)
 }
 
 func (m *managedLifecycle) rollback(ctx context.Context, pluginID, revisionID string) error {
@@ -616,9 +639,19 @@ func (m *managedLifecycle) rollback(ctx context.Context, pluginID, revisionID st
 	}
 	defer release()
 
+	return m.rollbackLocked(ctx, pluginID, revisionID, nil)
+}
+
+func (m *managedLifecycle) rollbackLocked(ctx context.Context, pluginID, revisionID string, acceptance *pluginAcceptance) error {
 	if _, err := m.reconcilePending(ctx, pluginID); err != nil {
 		return err
 	}
+	var baselineErr error
+	acceptance, baselineErr = m.trustedBaseline(ctx, pluginID, acceptance)
+	if baselineErr != nil {
+		return baselineErr
+	}
+
 	install, found, err := m.store.GetPluginInstall(ctx, pluginID)
 	if err != nil {
 		return err
@@ -646,7 +679,7 @@ func (m *managedLifecycle) rollback(ctx context.Context, pluginID, revisionID st
 	if err != nil {
 		return err
 	}
-	return m.activate(ctx, "rollback", install.ActiveRevisionID, target, source)
+	return m.activate(ctx, "rollback", install.ActiveRevisionID, target, source, nil, acceptance)
 }
 
 func (m *managedLifecycle) remove(ctx context.Context, pluginID string) error {
@@ -658,10 +691,19 @@ func (m *managedLifecycle) remove(ctx context.Context, pluginID string) error {
 	}
 	defer release()
 
+	return m.removeLocked(ctx, pluginID, nil)
+}
+
+func (m *managedLifecycle) removeLocked(ctx context.Context, pluginID string, acceptance *pluginAcceptance) error {
 	reconciled, err := m.reconcilePending(ctx, pluginID)
 	if err != nil {
 		return err
 	}
+	acceptance, err = m.trustedBaseline(ctx, pluginID, acceptance)
+	if err != nil {
+		return err
+	}
+
 	install, found, err := m.store.GetPluginInstall(ctx, pluginID)
 	if err != nil {
 		return err
@@ -682,24 +724,11 @@ func (m *managedLifecycle) remove(ctx context.Context, pluginID string) error {
 	if err != nil {
 		return err
 	}
-	snapshot, err := m.activator.PreparePluginCandidate(ctx, sources)
+	snapshot, err := m.activator.PreparePluginCandidate(ctx, sources, nil)
 	if err != nil {
 		return err
 	}
-	now := m.now().UTC()
-	intentID := uuid.NewString()
-	intent := baldastate.PluginActivationIntent{
-		IntentID: intentID, PluginID: pluginID, FromRevisionID: install.ActiveRevisionID,
-		ToRevisionID: install.ActiveRevisionID, Operation: "remove",
-		State: baldastate.PluginActivationIntentPending, CreatedAt: now, UpdatedAt: now,
-	}
-	if err := m.store.DeactivatePlugin(ctx, intent); err != nil {
-		return err
-	}
-	if err := m.activator.PublishCandidate(ctx, snapshot); err != nil {
-		return err
-	}
-	return m.store.CompletePluginActivation(ctx, intentID, m.now().UTC())
+	return m.acceptAndPublish(ctx, "remove", pluginID, install.ActiveRevisionID, install.ActiveRevisionID, nil, nil, snapshot, acceptance)
 }
 
 func (m *managedLifecycle) recover(ctx context.Context) error {
@@ -729,7 +758,7 @@ func (m *managedLifecycle) recoverLocked(ctx context.Context) error {
 		}
 		sources = append(sources, source)
 	}
-	snapshot, err := m.activator.PreparePluginCandidate(ctx, sources)
+	snapshot, err := m.activator.PreparePluginCandidate(ctx, sources, nil)
 	if err != nil {
 		return err
 	}
@@ -799,9 +828,15 @@ func (m *managedLifecycle) purge(ctx context.Context, pluginID, revisionID strin
 	}
 	defer release()
 
-	if _, err := m.reconcilePending(ctx, pluginID); err != nil {
-		return err
+	var expected string
+	if m.management != nil {
+		observed, err := m.management.ObservePlugin(ctx, pluginID)
+		if err != nil {
+			return err
+		}
+		expected = observed.Token()
 	}
+
 	revision, found, err := m.store.GetPluginRevision(ctx, pluginID, revisionID)
 	if err != nil {
 		return err
@@ -853,7 +888,13 @@ func (m *managedLifecycle) purge(ctx context.Context, pluginID, revisionID strin
 			return fmt.Errorf("prepare purged plugin revision deletion: %w", err)
 		}
 	}
-	if err := m.store.PurgePluginRevision(ctx, pluginID, revisionID); err != nil {
+	var purgeErr error
+	if m.management != nil {
+		purgeErr = m.management.PurgePluginRevisionTrusted(ctx, pluginID, revisionID, expected, uuid.NewString(), m.now().UTC())
+	} else {
+		purgeErr = m.store.PurgePluginRevision(ctx, pluginID, revisionID)
+	}
+	if err := purgeErr; err != nil {
 		if !moved {
 			return err
 		}

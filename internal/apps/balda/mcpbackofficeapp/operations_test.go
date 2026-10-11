@@ -181,7 +181,7 @@ func TestOperationsInventoryRecoveryReadsNeverLaunch(t *testing.T) {
 	origin = upstream.URL
 	configured := map[string]agentconfig.MCPServerConfig{"file-worker": {Type: agentconfig.MCPServerTypeHTTP, URL: origin}}
 	operations, p, catalog, _, authority := operationsFixture(t, configured)
-	snapshot, err := catalog.PreparePluginCandidate(t.Context(), nil)
+	snapshot, err := catalog.PreparePluginCandidate(t.Context(), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

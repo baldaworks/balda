@@ -242,10 +242,25 @@ an explicit option. A package change discovered outside a managed operation is
 reported as drift and is not activated automatically. This prevents a file or
 marketplace refresh from silently starting a new executable.
 
+`pluginapp` supplies explicit `PreparedPluginSource` evidence for a newly
+validated and materialized revision while compiling a managed operation.
+`catalogapp` verifies its identity, contained canonical revision root, and
+content digest before retaining it. Other plugin sources require their durable
+revision records. Preparation neither inserts SQL metadata nor publishes a
+snapshot: the new revision, selection, activation intent, generation, and audit
+commit together before publication. A disabled upgrade retains its prepared
+revision without selecting its contributions.
+
 Disable removes a plugin's contributions from the next snapshot without
 deleting its package or `${PLUGIN_DATA}`. Remove disables first, retires the
 revision, and handles package data according to the explicit remove or purge
 operation.
+
+Removal retains revision archives and existing plugin data for pinned sessions.
+Restoring a historical MCP descriptor first verifies its exact archived
+revision; its data resolver can then use the existing contained
+`plugin-data/<plugin-name>` directory after the install selection is removed.
+This read creates no directory and does not select a current revision.
 
 Health is observed state and does not change snapshot identity. A temporary
 MCP connection failure cannot make commands or skills appear and disappear

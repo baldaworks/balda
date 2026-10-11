@@ -54,7 +54,7 @@ func TestCurrentStartupAuthorizationReadiness(t *testing.T) {
 					if err := r.configureProviderMCP(map[string]agentconfig.Config{"alpha": {MCPServers: selected}}, "alpha", nil); err != nil {
 						t.Fatal(err)
 					}
-					snapshot, err := r.PreparePluginCandidate(t.Context(), nil)
+					snapshot, err := r.PreparePluginCandidate(t.Context(), nil, nil)
 					if err != nil {
 						t.Fatal(err)
 					}

@@ -56,7 +56,9 @@ func QAHandler(basePath string) (http.Handler, error) {
 		if page.ReturnTo != "" {
 			page.ReturnTo = basePath + "/qa/ui/overview"
 		}
-		if page.RestartURL != "" {
+		if page.RestartURL != "" && strings.HasPrefix(name, "plugins") {
+			page.RestartURL = basePath + "/qa/ui" + page.RestartURL
+		} else if page.RestartURL != "" {
 			page.RestartURL = basePath + "/qa/ui/mcp"
 			if strings.HasPrefix(name, "memory") {
 				page.RestartURL = basePath + "/qa/ui/memory"
@@ -88,7 +90,7 @@ type qaEntry struct {
 	status       int
 }
 
-var qaEntries = []qaEntry{
+var qaEntries = append(append(pluginMarketplaceQAEntries, pluginLifecycleQAEntries...), []qaEntry{
 	{name: "memory", label: "Fact memory · inventory", templateName: webui.TemplateFactMemory, page: qaFactMemory, gallery: true},
 	{name: "memory-long", label: "Fact memory · long multiline fact", templateName: webui.TemplateFactMemory, page: func() webui.Page {
 		p := qaFactMemory()
@@ -283,7 +285,7 @@ var qaEntries = []qaEntry{
 	{name: "form-forbidden", label: "Form · permission denied (403)", templateName: webui.TemplateError, page: qaFormForbidden, gallery: true, status: http.StatusForbidden},
 	{name: "form-conflict", label: "Form · conflicting update (409)", templateName: webui.TemplateAccess, page: qaFormConflict, gallery: true, status: http.StatusConflict},
 	{name: "form-server-error", label: "Form · service error (500)", templateName: webui.TemplateError, page: qaError, gallery: true, status: http.StatusInternalServerError},
-}
+}...)
 
 func qaFixture(name string) (webui.Page, string, int, bool) {
 	if name == "" {
@@ -365,7 +367,7 @@ func qaWebhookHistory() webui.Page {
 
 func qaAdminNavigation(current webui.Location) []webui.NavGroup {
 	return webui.Navigation(usercmd.BackofficeCapabilities{
-		Overview: true, Account: true, ManageUsers: true, ManageMCP: true, ManageSchedules: true, ManageWebhooks: true, ManageFactMemory: true, ViewAudit: true,
+		Overview: true, Account: true, ManageUsers: true, ManageMCP: true, ManageSchedules: true, ManageWebhooks: true, ManageFactMemory: true, ManagePlugins: true, ViewAudit: true,
 	}, current)
 }
 

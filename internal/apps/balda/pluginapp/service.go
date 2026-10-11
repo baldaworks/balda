@@ -10,12 +10,13 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/plugincmd"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalog"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
-	baldagit "github.com/baldaworks/balda/internal/git"
 )
 
 type PluginSummary struct {
@@ -39,9 +40,11 @@ type AvailablePlugin struct {
 }
 
 type Service struct {
-	stateDir string
-	kv       baldastate.KVStore
-	managed  *managedLifecycle
+	stateDir   string
+	kv         baldastate.KVStore
+	managed    *managedLifecycle
+	management ManagementStore
+	ownerMu    sync.Mutex
 }
 
 // InstalledState is the application-owned durable plugin state exposed only
@@ -117,7 +120,10 @@ func New(stateDir string, kv baldastate.KVStore) (*Service, error) {
 }
 
 // NewManaged creates the durable plugin lifecycle service.
-func NewManaged(stateDir string, kv baldastate.KVStore, store PluginStore, activator CatalogActivator) (*Service, error) {
+func NewManaged(stateDir string, kv baldastate.KVStore, store PluginStore, activator CatalogActivator, management ...ManagementStore) (*Service, error) {
+	if len(management) > 1 || (len(management) == 1 && management[0] == nil) {
+		return nil, fmt.Errorf("exactly one nonnil management store is supported")
+	}
 	service, err := New(stateDir, kv)
 	if err != nil {
 		return nil, err
@@ -132,7 +138,10 @@ func NewManaged(stateDir string, kv baldastate.KVStore, store PluginStore, activ
 	if err := os.MkdirAll(service.stateDir, 0o700); err != nil {
 		return nil, fmt.Errorf("create plugin state directory: %w", err)
 	}
-	service.managed = &managedLifecycle{stateDir: service.stateDir, store: store, kv: kv, activator: activator, loader: loader, now: time.Now}
+	if len(management) == 1 {
+		service.management = management[0]
+	}
+	service.managed = &managedLifecycle{stateDir: service.stateDir, store: store, kv: kv, activator: activator, loader: loader, now: time.Now, management: service.management}
 	return service, nil
 }
 
@@ -250,7 +259,7 @@ func (p marketplacePlugin) packagePath() (string, bool) {
 	if path := strings.TrimSpace(p.Path); path != "" {
 		return path, false
 	}
-	if strings.TrimSpace(p.Source.Source) != "local" {
+	if strings.TrimSpace(p.Source.Source) != string(marketplaceSourceKindLocal) {
 		return "", false
 	}
 	return strings.TrimSpace(p.Source.Path), true
@@ -291,6 +300,10 @@ func (s *Service) ListMarketplaces(ctx context.Context) ([]MarketplaceSource, er
 }
 
 func (s *Service) ListMarketplaceStatuses(ctx context.Context) ([]MarketplaceStatus, error) {
+	if s.management != nil {
+		unlock := s.lockOwner()
+		defer unlock()
+	}
 	sources, err := s.ListMarketplaces(ctx)
 	if err != nil {
 		return nil, err
@@ -307,6 +320,10 @@ func (s *Service) ListMarketplaceStatuses(ctx context.Context) ([]MarketplaceSta
 }
 
 func (s *Service) GetMarketplaceStatus(ctx context.Context, name string) (MarketplaceStatus, bool, error) {
+	if s.management != nil {
+		unlock := s.lockOwner()
+		defer unlock()
+	}
 	trimmed := strings.TrimSpace(name)
 	if trimmed == "" {
 		return MarketplaceStatus{}, false, nil
@@ -329,6 +346,9 @@ func (s *Service) GetMarketplaceStatus(ctx context.Context, name string) (Market
 }
 
 func (s *Service) AddMarketplace(ctx context.Context, src MarketplaceSource) error {
+	if s.management != nil {
+		return s.addMarketplaceTrusted(ctx, src)
+	}
 	if s.kv == nil {
 		return fmt.Errorf("marketplace store is unavailable")
 	}
@@ -343,6 +363,9 @@ func (s *Service) AddMarketplace(ctx context.Context, src MarketplaceSource) err
 }
 
 func (s *Service) RemoveMarketplace(ctx context.Context, name string) error {
+	if s.management != nil {
+		return s.removeMarketplaceTrusted(ctx, name)
+	}
 	if s.kv == nil {
 		return fmt.Errorf("marketplace store is unavailable")
 	}
@@ -354,6 +377,9 @@ func (s *Service) RemoveMarketplace(ctx context.Context, name string) error {
 }
 
 func (s *Service) UpgradeMarketplaces(ctx context.Context, name string) ([]MarketplaceUpgradeResult, error) {
+	if s.management != nil {
+		return s.refreshMarketplacesTrusted(ctx, name)
+	}
 	sources, err := s.ListMarketplaces(ctx)
 	if err != nil {
 		return nil, err
@@ -461,6 +487,14 @@ func normalizeSource(src MarketplaceSource) MarketplaceSource {
 }
 
 func (s *Service) ListAvailable(ctx context.Context) ([]AvailablePlugin, error) {
+	if s.management != nil {
+		unlock := s.lockOwner()
+		defer unlock()
+	}
+	return s.listAvailableLocked(ctx)
+}
+
+func (s *Service) listAvailableLocked(ctx context.Context) ([]AvailablePlugin, error) {
 	sources, err := s.ListMarketplaces(ctx)
 	if err != nil {
 		return nil, err
@@ -526,6 +560,9 @@ func (s *Service) GetAvailable(ctx context.Context, selector string) (AvailableP
 }
 
 func (s *Service) Install(ctx context.Context, selector string) error {
+	if s.management != nil {
+		return s.mutatePluginTrusted(ctx, selector, "install")
+	}
 	plugin, ok, err := s.GetAvailable(ctx, selector)
 	if err != nil {
 		return err
@@ -616,6 +653,9 @@ func (s *Service) Enable(ctx context.Context, name string) error {
 
 // Upgrade validates and atomically upgrades an existing managed installation.
 func (s *Service) Upgrade(ctx context.Context, selector string) error {
+	if s.management != nil {
+		return s.mutatePluginTrusted(ctx, selector, string(plugincmd.Upgrade))
+	}
 	if s.managed == nil {
 		return errors.New("managed plugin lifecycle is unavailable")
 	}
@@ -632,6 +672,9 @@ func (s *Service) Upgrade(ctx context.Context, selector string) error {
 // AdoptOrigin explicitly locks an origin-unknown migrated install to one
 // unambiguous marketplace package before its first managed upgrade.
 func (s *Service) AdoptOrigin(ctx context.Context, selector string) error {
+	if s.management != nil {
+		return s.mutatePluginTrusted(ctx, selector, pluginAdoptOrigin)
+	}
 	if s.managed == nil {
 		return errors.New("managed plugin lifecycle is unavailable")
 	}
@@ -750,6 +793,9 @@ func (s *Service) readMarketplacePlugins(ctx context.Context, src MarketplaceSou
 	if err := json.Unmarshal(data, &index); err != nil {
 		return nil, err
 	}
+	if duplicateMarketplaceNames(index.Plugins) {
+		return nil, fmt.Errorf("duplicate marketplace plugin name")
+	}
 	marketplaceName := strings.TrimSpace(index.Name)
 	if marketplaceName == "" {
 		marketplaceName = strings.TrimSpace(src.Name)
@@ -837,10 +883,13 @@ func (s *Service) materializeMarketplaceSource(ctx context.Context, src Marketpl
 			return "", fmt.Errorf("create marketplace cache root: %w", err)
 		}
 		if _, err := os.Stat(filepath.Join(spec.RepoRoot, ".git")); err == nil {
-			if err := updateGitMarketplaceCheckout(ctx, spec); err != nil {
-				return "", err
+			remote, remoteErr := marketplaceGitOutput(ctx, spec.RepoRoot, "remote", "get-url", "origin")
+			if remoteErr == nil && strings.TrimSpace(remote) == spec.GitURL {
+				if err := updateGitMarketplaceCheckout(ctx, spec); err != nil {
+					return "", err
+				}
+				return spec.RepoRoot, nil
 			}
-			return spec.RepoRoot, nil
 		}
 		if err := os.RemoveAll(spec.RepoRoot); err != nil {
 			return "", fmt.Errorf("reset marketplace repo root: %w", err)
@@ -911,7 +960,7 @@ func (s *Service) marketplaceStatus(ctx context.Context, src MarketplaceSource) 
 			status.ManifestPresent = true
 			status.LastRefreshedAt = info.ModTime().UTC().Format(time.RFC3339)
 		}
-		resolved, err := baldagit.GitRunCmdOutput(ctx, spec.RepoRoot, "git", "rev-parse", "HEAD")
+		resolved, err := marketplaceGitOutput(ctx, spec.RepoRoot, "rev-parse", "HEAD")
 		if err == nil {
 			status.ResolvedRef = strings.TrimSpace(resolved)
 		}
@@ -951,7 +1000,7 @@ func cloneGitMarketplaceSource(ctx context.Context, spec marketplaceSourceSpec) 
 		args = append(args, "--no-checkout", "--filter=blob:none")
 	}
 	args = append(args, spec.GitURL, spec.RepoRoot)
-	if err := baldagit.GitRunCmdErr(ctx, parent, "git", args...); err != nil {
+	if err := marketplaceGitRun(ctx, parent, args...); err != nil {
 		return fmt.Errorf("clone marketplace %q: %w", spec.Name, err)
 	}
 	if len(spec.Sparse) > 0 {
@@ -966,7 +1015,7 @@ func cloneGitMarketplaceSource(ctx context.Context, spec marketplaceSourceSpec) 
 }
 
 func updateGitMarketplaceCheckout(ctx context.Context, spec marketplaceSourceSpec) error {
-	if err := baldagit.GitRunCmdErr(ctx, spec.RepoRoot, "git", "fetch", "--all", "--tags", "--prune"); err != nil {
+	if err := marketplaceGitRun(ctx, spec.RepoRoot, "fetch", "--all", "--tags", "--prune"); err != nil {
 		return fmt.Errorf("fetch marketplace %q: %w", spec.Name, err)
 	}
 	if len(spec.Sparse) > 0 {
@@ -981,12 +1030,12 @@ func updateGitMarketplaceCheckout(ctx context.Context, spec marketplaceSourceSpe
 }
 
 func configureSparseCheckout(ctx context.Context, repoRoot string, sparse []string) error {
-	if err := baldagit.GitRunCmdErr(ctx, repoRoot, "git", "sparse-checkout", "init", "--cone"); err != nil {
+	if err := marketplaceGitRun(ctx, repoRoot, "sparse-checkout", "init", "--cone"); err != nil {
 		return fmt.Errorf("init sparse checkout: %w", err)
 	}
 	args := []string{"sparse-checkout", "set"}
 	args = append(args, sparse...)
-	if err := baldagit.GitRunCmdErr(ctx, repoRoot, "git", args...); err != nil {
+	if err := marketplaceGitRun(ctx, repoRoot, args...); err != nil {
 		return fmt.Errorf("set sparse checkout: %w", err)
 	}
 	return nil
@@ -996,12 +1045,17 @@ func checkoutGitMarketplaceRef(ctx context.Context, repoRoot string, ref string)
 	trimmedRef := strings.TrimSpace(ref)
 	if trimmedRef == "" {
 		trimmedRef = "origin/HEAD"
+	} else {
+		remoteRef := "refs/remotes/origin/" + trimmedRef
+		if resolved, err := marketplaceGitOutput(ctx, repoRoot, "rev-parse", "--verify", remoteRef); err == nil {
+			trimmedRef = strings.TrimSpace(resolved)
+		}
 	}
-	if err := baldagit.GitRunCmdErr(ctx, repoRoot, "git", "checkout", "--force", trimmedRef); err == nil {
+	if err := marketplaceGitRun(ctx, repoRoot, "checkout", "--force", trimmedRef); err == nil {
 		return nil
 	}
 	if trimmedRef == "origin/HEAD" {
-		symbolic, symErr := baldagit.GitRunCmdOutput(ctx, repoRoot, "git", "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD")
+		symbolic, symErr := marketplaceGitOutput(ctx, repoRoot, "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD")
 		if symErr != nil {
 			return fmt.Errorf("resolve remote HEAD: %w", symErr)
 		}
@@ -1009,7 +1063,7 @@ func checkoutGitMarketplaceRef(ctx context.Context, repoRoot string, ref string)
 		if resolved == "" {
 			return fmt.Errorf("resolve remote HEAD: empty ref")
 		}
-		if err := baldagit.GitRunCmdErr(ctx, repoRoot, "git", "checkout", "--force", resolved); err != nil {
+		if err := marketplaceGitRun(ctx, repoRoot, "checkout", "--force", resolved); err != nil {
 			return fmt.Errorf("checkout marketplace ref %q: %w", resolved, err)
 		}
 		return nil
@@ -1033,7 +1087,7 @@ func readPluginSummary(root string, manifestPath string) (PluginSummary, error) 
 		if err != nil {
 			return PluginSummary{}, err
 		}
-		data, err = os.ReadFile(manifestFile)
+		data, err = readBoundedMarketplaceFile(manifestFile)
 		if err == nil {
 			break
 		}
@@ -1094,7 +1148,7 @@ func resolveLocalMarketplaceRoot(source string) string {
 	if trimmed == "" {
 		return ""
 	}
-	if strings.Contains(trimmed, "://") {
+	if strings.Contains(trimmed, "://") || scpMarketplaceSource(trimmed) {
 		return ""
 	}
 	if strings.Contains(trimmed, "/") || strings.HasPrefix(trimmed, ".") {

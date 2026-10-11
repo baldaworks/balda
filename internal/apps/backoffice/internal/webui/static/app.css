@@ -168,3 +168,20 @@ summary:not(.btn) { color: var(--accent); font-weight: 500; }
 .binding-copy-row button { flex: 0 0 auto; }
 .binding-unavailable { padding: 1rem; }
 @media (max-width: 991.98px) { .binding-grid { grid-template-columns: minmax(0, 1fr); } }
+
+#plugin-marketplace-name::placeholder, #plugin-marketplace-source::placeholder, #plugin-marketplace-ref::placeholder, #plugin-marketplace-sparse::placeholder { color: var(--input-placeholder); opacity: 1; }
+
+[data-plugins] .preserve-lines { white-space: pre-wrap; }
+[data-plugins] .plugins-discovery-table { min-width: 40rem; }
+[data-plugins] .plugins-discovery-table :is(th, td):first-child { min-width: 5rem; }
+[data-plugins] .plugins-revisions-table { min-width: 48rem; }
+[data-plugins] .plugins-revisions-table :is(th, td):nth-child(2) { min-width: 10rem; }
+[data-plugins] .plugins-revisions-table :is(th, td):nth-child(4) { min-width: 8rem; }
+[data-plugins] .plugins-revisions-table :is(th, td):nth-child(5) { min-width: 13.75rem; }
+
+[data-plugins] .plugins-discovery-table :is(th, td):nth-child(5) { min-width: 9rem; }
+[data-plugins] .plugins-marketplaces-table { min-width: 72rem; }
+[data-plugins] .plugins-marketplaces-table :is(th, td):nth-child(2) { min-width: 12rem; }
+[data-plugins] .plugins-marketplaces-table :is(th, td):nth-child(3) { min-width: 5rem; }
+[data-plugins] .plugins-marketplaces-table :is(th, td):nth-child(4) { min-width: 10rem; }
+[data-plugins] .plugins-marketplaces-table :is(th, td):nth-child(5) { min-width: 14rem; }

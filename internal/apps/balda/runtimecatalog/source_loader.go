@@ -245,7 +245,7 @@ func validatePluginManifest(data []byte) (pluginManifest, []string, json.RawMess
 	if err := decodeRequired(fields, "$schema", &schema); err != nil || schema != pluginSchemaV1 {
 		return pluginManifest{}, nil, nil, fmt.Errorf("unsupported $schema")
 	}
-	if err := decodeRequired(fields, "name", &name); err != nil || !validPluginName(name) {
+	if err := decodeRequired(fields, "name", &name); err != nil || !ValidPluginName(name) {
 		return pluginManifest{}, nil, nil, fmt.Errorf("invalid plugin name")
 	}
 	values := make(map[string]string)
@@ -291,7 +291,8 @@ func validatePluginManifest(data []byte) (pluginManifest, []string, json.RawMess
 	return pluginManifest{Name: name, Version: values["version"], Description: values["description"]}, ignored, extensionRaw, nil
 }
 
-func validPluginName(name string) bool {
+// ValidPluginName reports whether name is a portable plugin identity.
+func ValidPluginName(name string) bool {
 	return len(name) <= 64 && pluginNamePattern.MatchString(name) && !strings.Contains(name, "--") && !strings.Contains(name, "..")
 }
 

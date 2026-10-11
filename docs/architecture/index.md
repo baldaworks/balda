@@ -204,3 +204,17 @@ binding. ACP projections expose only the local endpoint and capability.
 Deployment-key validation includes retained revisions and grants before provider
 startup. `state` owns native SQLite file URI normalization and durable reopen;
 the existing native platform workflow exercises real files and MCP contracts.
+
+Backoffice Plugins pages consume a local `PluginsOperations` port through
+`pluginbackofficeapp`, bound to the same global `pluginapp.Service` used by chat.
+`pluginapp` owns accepted discovery, locked origins, staged lifecycle and retained
+contribution inspection; `state` owns browser authority, full-state comparisons,
+generation tombstones and atomic audit/activation persistence. Browser reads do
+not fetch sources or change discovery/cache state. Command and skill projections
+contain only names/descriptions; MCP projections contain only names/transports.
+Disabled plugins remain inspectable from their retained revision. Catalog-owner
+status reaches the adapter through a narrow read port and remains separate from
+Enabled and pending durable activation. Backoffice does not import plugin policy,
+catalog implementations or command wiring. Publication failures retain the
+accepted intent for ordinary recovery; operations never reset session pins or
+remove retained packages.

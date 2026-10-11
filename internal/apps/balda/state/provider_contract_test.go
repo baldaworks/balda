@@ -34,6 +34,11 @@ const secondPluginRevision = "rev-2"
 type contractOpener func(context.Context, string) (Provider, error)
 
 func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) {
+	t.Run("PluginManagementAuthorityWait", func(t *testing.T) { checkPluginManagementAuthorityWhileWaiting(t, factory(t)) })
+	t.Run("PluginManagementStateFences", func(t *testing.T) { checkPluginManagementStateFences(t, factory) })
+	t.Run("PluginManagementPurge", func(t *testing.T) { checkPluginManagementPurge(t, factory(t)) })
+	t.Run("PluginManagement", func(t *testing.T) { checkPluginManagement(t, factory(t)) })
+	t.Run("PluginMarketplaceManagement", func(t *testing.T) { checkPluginMarketplaceManagement(t, factory(t)) })
 	t.Run("MemoryAuthorityFences", func(t *testing.T) { checkMemoryAuthorityFences(t, factory) })
 	t.Run("MemoryManagement", func(t *testing.T) { checkMemoryManagement(t, factory(t)) })
 	t.Run("WebhookTurnClaimSurvivesRestart", func(t *testing.T) { checkWebhookTurnClaimSurvivesRestart(t, factory(t)) })

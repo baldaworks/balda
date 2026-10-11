@@ -231,7 +231,7 @@ func TestRuntimeDiscoversGlobalSkills(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	snapshot, err := runtime.PreparePluginCandidate(ctx, nil)
+	snapshot, err := runtime.PreparePluginCandidate(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("PreparePluginCandidate() error = %v", err)
 	}
@@ -339,7 +339,7 @@ func TestRuntimeIsolatesUnsafeGlobalSkill(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	snapshot, err := runtime.PreparePluginCandidate(ctx, nil)
+	snapshot, err := runtime.PreparePluginCandidate(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("PreparePluginCandidate() error = %v", err)
 	}
@@ -398,7 +398,7 @@ func TestRuntimeGlobalSkillRootFallbacks(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			snapshot, err := runtime.PreparePluginCandidate(ctx, nil)
+			snapshot, err := runtime.PreparePluginCandidate(ctx, nil, nil)
 			if err != nil {
 				t.Fatalf("PreparePluginCandidate() error = %v", err)
 			}

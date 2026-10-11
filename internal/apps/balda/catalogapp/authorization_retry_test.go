@@ -200,7 +200,7 @@ func TestConfiguredAuthorizationRetryAndRecaptureInvokeActualProviders(t *testin
 				return catalog, registry, definitions
 			}
 			catalog, registry, definitions := newCatalog(configured, providers)
-			fresh, err := catalog.PreparePluginCandidate(t.Context(), nil)
+			fresh, err := catalog.PreparePluginCandidate(t.Context(), nil, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -255,7 +255,7 @@ func TestConfiguredAuthorizationRetryAndRecaptureInvokeActualProviders(t *testin
 			changed := map[string]agentconfig.MCPServerConfig{"worker-tools": {Type: agentconfig.MCPServerType(transport), URL: second.server.URL, Headers: map[string]string{"X-Worker-Secret": "changed-private-header"}}}
 			providers["gamma"] = agentconfig.Config{MCPServers: []string{"worker-tools"}}
 			restarted, nextRegistry, nextDefinitions := newCatalog(changed, providers)
-			pending, err := restarted.PreparePluginCandidate(t.Context(), nil)
+			pending, err := restarted.PreparePluginCandidate(t.Context(), nil, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -361,7 +361,7 @@ func TestBoundAuthorizationStartupRecovery(t *testing.T) {
 				}
 			}
 			restarted, _ := newCatalog()
-			snapshot, err := restarted.PreparePluginCandidate(t.Context(), nil)
+			snapshot, err := restarted.PreparePluginCandidate(t.Context(), nil, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

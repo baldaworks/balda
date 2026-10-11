@@ -230,3 +230,7 @@ func (p *postgresProvider) Close() error {
 func (p *postgresProvider) MemoryManagement() MemoryManagementStore {
 	return &sqlMemoryManagementStore{users: newPostgresUserStore(p.db)}
 }
+
+func (p *postgresProvider) PluginManagement() PluginManagementStore {
+	return &sqlPluginManagementStore{users: newPostgresUserStore(p.db)}
+}

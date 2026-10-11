@@ -353,10 +353,10 @@ in normal grid flow. The top bar and sidebar brand share the same height;
 navigation scrolls content below the top bar so page headings remain visible.
 The viewer identity is independent of an inspected user.
 The sidebar groups authorized links by purpose: Workspace contains Overview;
-Operations contains MCP, Schedules, Webhooks, Aliases, and Fact memory; Administration contains Access and Audit.
+Operations contains Plugins, MCP, Schedules, Webhooks, Aliases, and Fact memory; Administration contains Access and Audit.
 It omits groups with no authorized links. Active administrators see all three;
 active operators see Workspace while Account remains available in the top bar.
-Nested Access, MCP, Schedules, Webhooks, Aliases, and Fact memory pages keep their parent sidebar link active.
+Nested Access, Plugins, MCP, Schedules, Webhooks, Aliases, and Fact memory pages keep their parent sidebar link active.
 Desktop collapse hides the sidebar and expands content. Mobile navigation uses
 an overlay with backdrop, Escape and focus containment.
 
@@ -543,6 +543,85 @@ with the existing password and register a replacement key from Account.
 Factor transitions and verification appear in Audit. The verifier dependency
 and source reuse are documented in the
 [WebAuthn dependency review](backoffice-webauthn-dependency-review.md).
+
+## Plugins management
+
+Administrators open **Operations → Plugins** at `<backoffice_path>/plugins`.
+The **Installed** and **Marketplaces** tabs manage the global package catalog
+shared with chat. Operators cannot read these pages or submit their actions.
+Management uses the ordinary browser session; access refresh returns to the
+requested Plugins page without an additional passkey prompt. The browser needs
+JavaScript.
+
+**Installed** lists **Name**, **Version**, **Marketplace**, **Enabled** and
+**Actions**. Open a package to inspect its exact selected revision, origin
+availability, activation outcome and runtime catalog/health independently.
+Commands and skills expose names/descriptions; MCP servers expose
+names/transports. Inspection uses retained metadata and never invokes a command
+or test tool. Disabled packages remain inspectable.
+
+**Marketplaces → Add marketplace** accepts these fields:
+
+| Field | Meaning |
+| --- | --- |
+| **Name** | Unique configured marketplace identity used for selection. |
+| **Source** | Existing supported local directory or Git repository source. |
+| **Ref** | Optional Git branch or tag selector; unavailable for local sources. |
+| **Sparse** | Optional Git-relative checkout paths, one per line; unavailable for local sources. |
+
+Git fields appear when the Source is a Git source. Source is a transient write
+input: it is cleared after submission and on browser history restoration, never
+refilled on validation errors. Saved Source projections omit URL userinfo,
+query and fragment values; local sources use a logical label rather than a host
+path. Adding a definition does not fetch or install packages. These forms do
+not provision Git credentials.
+
+Use **Refresh marketplace** to materialize discovery. Opening a page does not
+fetch Git or update discovery. **Last attempt** records the latest accepted
+attempt, separately from **Last successful refresh**. A failed attempt displays
+its bounded failure label and keeps earlier discovery as stale reference;
+candidate review stays unavailable until Refresh succeeds. Duplicate plugin
+names make discovery fail rather than selecting an arbitrary package. The
+discovery table uses **Name**, **Version**, **Description**, **Installed** and
+**Actions**. **Review install** selects the configured marketplace and
+package explicitly, even when another marketplace publishes the same name.
+
+**Install plugin** and **Upgrade plugin** review an exact candidate revision;
+source/content changes after review require reopening. Upgrade stays bound to
+the installation's proven origin and preserves Enabled. Removing a marketplace
+does not remove installed packages, but Upgrade becomes unavailable when its
+origin cannot be resolved. An unprovable origin is unavailable with a bounded
+explanation; the UI does not adopt a replacement origin.
+
+**Disable plugin**, **Rollback** and **Remove plugin** require confirmation;
+**Cancel** performs no mutation. Rollback selects an exact retained revision
+and preserves Enabled. Remove excludes the installation from future catalog
+selection while retaining revision archives and plugin data. Existing sessions
+keep their exact command, skill and MCP snapshot through restore. No management
+action resets a session: new sessions select the current catalog, and ordinary
+`/reset` explicitly recreates an existing session with current capabilities.
+
+Enabled describes selection policy, rather than readiness. Current catalog,
+runtime health and **Activation outcome** remain separate. If durable acceptance
+succeeds but publication/completion fails, the page shows **Accepted; recovery
+pending**, effective state and a reopen link; it suppresses mutation replay.
+Ordinary lifecycle recovery reconciles the retained activation intent. A stale
+form returns 409 with **Reopen plugin** or **Reopen marketplace** guidance.
+Contextual HTMX errors preserve the error status and replace only a Plugins
+main region, so validation, conflicts and pending state remain actionable.
+
+Backoffice consumes its local `PluginsOperations` port through
+`pluginbackofficeapp`, using the same global `pluginapp.Service` and catalog
+serialization as chat. `plugincmd` owns neutral management values; `state` owns
+full-state comparisons, generation fences and current browser authority plus
+body-free audit at durable logical acceptance. Filesystem staging and runtime
+publication happen outside that SQL transaction. One Balda process owns a state
+directory; the in-process catalog lock does not coordinate independent processes
+sharing its filesystem. No additional schema migration or listener is needed.
+
+See [Plugins and session capabilities](plugins.md), the
+[runtime contribution catalog](../architecture/runtime-contribution-catalog.md)
+and [ordered browser review gates](backoffice-ui-review.md#plugins-layout-and-application-gates).
 
 ## MCP management
 

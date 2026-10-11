@@ -110,7 +110,7 @@ func TestSharedBackofficeMCPBrowserOAuthUsesSharedCallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = catalog.MCP().Shutdown(context.Background()) })
-	candidate, err := catalog.PreparePluginCandidate(t.Context(), nil)
+	candidate, err := catalog.PreparePluginCandidate(t.Context(), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

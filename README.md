@@ -360,6 +360,14 @@ See [Plugins and session capabilities](docs/reference/plugins.md) for the
 `dev.baldaworks.balda` extension schema and the session-bound command, skill,
 and MCP lifecycle.
 
+Administrators can manage packages in **Operations → Plugins** in Backoffice.
+The **Installed** and **Marketplaces** tabs provide explicit discovery,
+installation, upgrade, enable/disable, retained revision rollback and removal.
+Changes affect new sessions; use the ordinary `/reset` boundary to update an
+existing conversation. Removal retains package revisions and plugin data.
+See [Backoffice Plugins management](docs/reference/backoffice.md#plugins-management)
+for the forms, discovery failures and recovery behavior.
+
 ## Configuration
 
 Balda loads `.config/balda/config.yaml` and then applies `BALDA_*` environment
