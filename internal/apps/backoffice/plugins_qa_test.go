@@ -69,3 +69,15 @@ func TestPluginLifecycleRenderRecoveryLinks(t *testing.T) {
 		}
 	}
 }
+
+func TestPluginLifecycleRenderDisabledRuntime(t *testing.T) {
+	handler, err := QAHandler("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/qa/ui/plugins-disabled", nil))
+	if strings.Contains(response.Body.String(), "MCP attachments ready") || !strings.Contains(response.Body.String(), "Unknown") {
+		t.Fatal("disabled preview presents readiness without current revision evidence")
+	}
+}

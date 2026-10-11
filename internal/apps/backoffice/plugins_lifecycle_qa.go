@@ -43,10 +43,11 @@ var pluginLifecycleQAEntries = []qaEntry{
 		return p
 	}, gallery: true},
 	{name: "plugins-disabled", label: "Plugins · Disabled retained plugin", templateName: webui.TemplatePlugins, page: func() webui.Page {
-		p := qaInstalledDetail()
-		p.Plugins.PluginDetail.Enabled = false
-		p.Plugins.PluginDetail.CurrentCatalog = "Selected revision is not current"
-		p.Plugins.PluginDetail.RuntimeHealth = "Unknown"
+		item := qaInstalledPlugin()
+		item.Enabled = false
+		item.Runtime.RevisionCurrent = false
+		p := qaPlugins()
+		p.Plugins.PluginDetail = webui.ProjectPluginDetail(item)
 		return p
 	}, gallery: true},
 	{name: "plugins-degraded", label: "Plugins · Degraded runtime", templateName: webui.TemplatePlugins, page: func() webui.Page {

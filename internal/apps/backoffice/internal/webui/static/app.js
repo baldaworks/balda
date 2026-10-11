@@ -151,6 +151,7 @@ function syncNavigation() {
     const current = location.pathname === path ||
       (path.endsWith("/access") && location.pathname.startsWith(path + "/users/")) ||
       (path.endsWith("/mcp") && location.pathname.startsWith(path + "/")) ||
+      (path.endsWith("/plugins") && location.pathname.startsWith(path + "/")) ||
       (path.endsWith("/schedules") && location.pathname.startsWith(path + "/")) ||
       (path.endsWith("/webhooks") && location.pathname.startsWith(path + "/")) ||
       (path.endsWith("/aliases") && location.pathname.startsWith(path + "/")) ||
