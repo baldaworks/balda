@@ -14,6 +14,8 @@ import (
 
 const managementTestVersion = "1.0.0"
 
+const managementFixtureLoginAuditID = "login"
+
 func newMarketplaceManagementTestService(t *testing.T) (*Service, state.Provider, plugincmd.Authority, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -29,7 +31,7 @@ func newMarketplaceManagementTestService(t *testing.T) (*Service, state.Provider
 		t.Fatal(err)
 	}
 	f := usercmd.SessionFamily{ID: "browser", UserID: u.ID, Assurance: usercmd.SessionAssuranceNormal, CredentialVersion: 1, Access: usercmd.AccessCredential{Selector: "access", VerifierDigest: []byte("access"), ExpiresAt: now.Add(time.Hour)}, CSRFVerifierDigest: []byte("csrf"), CreatedAt: now, LastSeenAt: now, RefreshExpiresAt: now.Add(24 * time.Hour), Version: 1, RefreshTokens: []usercmd.RefreshToken{{Selector: "refresh", VerifierDigest: []byte("refresh"), Generation: 1, State: usercmd.RefreshTokenStateActive, IssuedAt: now, ExpiresAt: now.Add(24 * time.Hour)}}}
-	audit.ID, audit.Action, audit.TargetID = "login", usercmd.AuditActionLoginSucceeded, f.ID
+	audit.ID, audit.Action, audit.TargetID = managementFixtureLoginAuditID, usercmd.AuditActionLoginSucceeded, f.ID
 	if err := p.Users().CreateSession(t.Context(), f, audit); err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +85,7 @@ func TestMarketplaceManagementGitRefreshAndCacheIdentity(t *testing.T) {
 	if len(first.Candidates) != 1 || first.Candidates[0].Version != managementTestVersion || first.Candidates[0].CandidateToken == "" {
 		t.Fatalf("git discovery: %+v", first)
 	}
-	writeManagedPlugin(t, root, "2.0.0", false)
+	writeManagedPlugin(t, root, managementUpgradeVersion, false)
 	runGit(t, root, "add", ".")
 	runGit(t, root, "commit", "-m", "fixture two")
 	unchanged, err := s.ManagementMarketplace(t.Context(), added.Name, a)
@@ -97,7 +99,7 @@ func TestMarketplaceManagementGitRefreshAndCacheIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if second.Candidates[0].Version != "2.0.0" || second.ResolvedRevision == first.ResolvedRevision {
+	if second.Candidates[0].Version != managementUpgradeVersion || second.ResolvedRevision == first.ResolvedRevision {
 		t.Fatalf("refresh did not advance branch: %+v", second)
 	}
 	// Chat definition replacement must not refresh the former cached Git origin.

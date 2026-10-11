@@ -85,7 +85,7 @@ func TestMarketplaceManagementRejectsLateAuthorityAndAuditFailure(t *testing.T) 
 			hook := marketplaceAcceptanceHook{PluginManagementStore: p.PluginManagement(), before: func(m *state.MarketplaceCommit) {
 				reached = true
 				if failure == "audit" {
-					m.AuditID = "login"
+					m.AuditID = managementFixtureLoginAuditID
 					return
 				}
 				now := time.Now().UTC()

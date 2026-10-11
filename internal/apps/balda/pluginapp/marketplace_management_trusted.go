@@ -73,9 +73,9 @@ func (s *Service) refreshMarketplacesTrusted(ctx context.Context, name string) (
 		now := time.Now().UTC()
 		metadata := acceptedDiscovery(old, success, code, now)
 		raw, _ := json.Marshal(metadata)
-		operation := "refresh"
+		operation := marketplaceRefresh
 		if code != "" {
-			operation = "refresh-failed"
+			operation = marketplaceRefreshFailed
 		}
 		if err := s.management.CommitMarketplaceTrusted(ctx, state.MarketplaceCommit{Name: src.Name, ExpectedState: observed.Token(), DefinitionJSON: observed.DefinitionJSON, MetadataJSON: raw, Operation: operation, AuditID: uuid.NewString(), At: now}); err != nil {
 			return nil, err

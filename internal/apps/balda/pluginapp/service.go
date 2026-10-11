@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/plugincmd"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalog"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
@@ -140,7 +141,7 @@ func NewManaged(stateDir string, kv baldastate.KVStore, store PluginStore, activ
 	if len(management) == 1 {
 		service.management = management[0]
 	}
-	service.managed = &managedLifecycle{stateDir: service.stateDir, store: store, kv: kv, activator: activator, loader: loader, now: time.Now}
+	service.managed = &managedLifecycle{stateDir: service.stateDir, store: store, kv: kv, activator: activator, loader: loader, now: time.Now, management: service.management}
 	return service, nil
 }
 
@@ -559,6 +560,9 @@ func (s *Service) GetAvailable(ctx context.Context, selector string) (AvailableP
 }
 
 func (s *Service) Install(ctx context.Context, selector string) error {
+	if s.management != nil {
+		return s.mutatePluginTrusted(ctx, selector, "install")
+	}
 	plugin, ok, err := s.GetAvailable(ctx, selector)
 	if err != nil {
 		return err
@@ -649,6 +653,9 @@ func (s *Service) Enable(ctx context.Context, name string) error {
 
 // Upgrade validates and atomically upgrades an existing managed installation.
 func (s *Service) Upgrade(ctx context.Context, selector string) error {
+	if s.management != nil {
+		return s.mutatePluginTrusted(ctx, selector, string(plugincmd.Upgrade))
+	}
 	if s.managed == nil {
 		return errors.New("managed plugin lifecycle is unavailable")
 	}
@@ -665,6 +672,9 @@ func (s *Service) Upgrade(ctx context.Context, selector string) error {
 // AdoptOrigin explicitly locks an origin-unknown migrated install to one
 // unambiguous marketplace package before its first managed upgrade.
 func (s *Service) AdoptOrigin(ctx context.Context, selector string) error {
+	if s.management != nil {
+		return s.mutatePluginTrusted(ctx, selector, pluginAdoptOrigin)
+	}
 	if s.managed == nil {
 		return errors.New("managed plugin lifecycle is unavailable")
 	}

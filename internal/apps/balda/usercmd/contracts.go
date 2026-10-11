@@ -289,6 +289,8 @@ const (
 	AuditActionPluginRolledBack AuditAction = "plugin.rolled_back"
 	// AuditActionPluginRemoved records accepted plugin management.
 	AuditActionPluginRemoved AuditAction = "plugin.removed"
+	// AuditActionPluginRevisionPurged records a trusted retained-revision purge.
+	AuditActionPluginRevisionPurged AuditAction = "plugin.revision.purged"
 	// AuditActionPluginMarketplaceAdded records accepted plugin management.
 	AuditActionPluginMarketplaceAdded AuditAction = "plugin.marketplace.added"
 	// AuditActionPluginMarketplaceRefreshed records accepted plugin management.
@@ -320,7 +322,7 @@ const (
 // Valid reports whether the action belongs to the bounded security audit vocabulary.
 func (a AuditAction) Valid() bool {
 	switch a {
-	case AuditActionPluginMarketplaceRefreshFailed, AuditActionPluginOriginAdopted, AuditActionPluginInstalled, AuditActionPluginUpgraded, AuditActionPluginEnabled, AuditActionPluginDisabled, AuditActionPluginRolledBack, AuditActionPluginRemoved, AuditActionPluginMarketplaceAdded, AuditActionPluginMarketplaceRefreshed, AuditActionPluginMarketplaceRemoved, AuditActionUserCreated, AuditActionUserUpdated, AuditActionUserAccessChanged,
+	case AuditActionPluginRevisionPurged, AuditActionPluginMarketplaceRefreshFailed, AuditActionPluginOriginAdopted, AuditActionPluginInstalled, AuditActionPluginUpgraded, AuditActionPluginEnabled, AuditActionPluginDisabled, AuditActionPluginRolledBack, AuditActionPluginRemoved, AuditActionPluginMarketplaceAdded, AuditActionPluginMarketplaceRefreshed, AuditActionPluginMarketplaceRemoved, AuditActionUserCreated, AuditActionUserUpdated, AuditActionUserAccessChanged,
 		AuditActionUserRoleChanged, AuditActionUserStatusChanged, AuditActionCredentialChanged,
 		AuditActionSessionRevoked, AuditActionBindingAttached, AuditActionBindingDetached, AuditActionBindingClaimCreated,
 		AuditActionUserMigrated, AuditActionLoginSucceeded, AuditActionRefreshSucceeded,

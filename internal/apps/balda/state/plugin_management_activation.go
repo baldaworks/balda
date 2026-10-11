@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 
 	"github.com/baldaworks/balda/internal/apps/balda/plugincmd"
@@ -66,6 +67,19 @@ func (s *sqlPluginManagementStore) commitPlugin(ctx context.Context, m PluginCom
 		if err := validatePluginTransition(m, observed); err != nil {
 			return err
 		}
+		if m.OriginIdentity != nil && observed.Install != nil && m.Intent.Operation != pluginOpAdoptOrigin {
+			return plugincmd.ErrConflict
+		}
+		if m.Install == nil {
+			if err := s.putPrivateJSON(ctx, tx, pluginOriginIdentityPrefix+m.PluginID, nil, m.Intent.UpdatedAt); err != nil {
+				return err
+			}
+		} else if m.OriginIdentity != nil {
+			raw, _ := json.Marshal(*m.OriginIdentity)
+			if err := s.putPrivateJSON(ctx, tx, pluginOriginIdentityPrefix+m.PluginID, raw, m.Intent.UpdatedAt); err != nil {
+				return err
+			}
+		}
 		if m.Revision != nil {
 			if err := s.putRevision(ctx, tx, *m.Revision); err != nil {
 				return err
@@ -95,6 +109,13 @@ func (s *sqlPluginManagementStore) commitPlugin(ctx context.Context, m PluginCom
 func (s *sqlPluginManagementStore) observePlugin(ctx context.Context, tx *sql.Tx, id string) (PluginObservation, error) {
 	result := PluginObservation{PluginID: id}
 	var err error
+	raw, err := s.readPrivateJSON(ctx, tx, pluginOriginIdentityPrefix+id)
+	if err != nil {
+		return result, err
+	}
+	if raw != nil && (json.Unmarshal(raw, &result.OriginIdentity) != nil || !validPluginOriginIdentity(result.OriginIdentity)) {
+		return result, plugincmd.ErrUnavailable
+	}
 	result.Generation, err = s.readGeneration(ctx, tx, pluginGenerationPrefix+id)
 	if err != nil {
 		return result, err
@@ -195,6 +216,9 @@ func (s *sqlPluginManagementStore) putIntent(ctx context.Context, tx *sql.Tx, r 
 }
 
 func validatePluginCommit(m PluginCommit) error {
+	if m.OriginIdentity != nil && (!validPluginOriginIdentity(*m.OriginIdentity) || m.Install == nil || (m.Intent.Operation != pluginOpInstall && m.Intent.Operation != pluginOpAdoptOrigin)) {
+		return plugincmd.ErrInvalid
+	}
 	if !normalizedID(m.PluginID) || m.PluginID != m.Intent.PluginID || m.ExpectedState == "" || !normalizedID(m.AuditID) {
 		return plugincmd.ErrInvalid
 	}
@@ -281,4 +305,18 @@ func pluginAuditAction(operation string) usercmd.AuditAction {
 	default:
 		return usercmd.AuditActionPluginRemoved
 	}
+}
+
+const pluginOriginIdentityPrefix = "plugin_origin_identity:"
+
+func validPluginOriginIdentity(identity string) bool {
+	if len(identity) != 64 {
+		return false
+	}
+	for _, c := range identity {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
 }

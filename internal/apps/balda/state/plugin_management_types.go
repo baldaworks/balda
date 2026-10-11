@@ -11,11 +11,12 @@ import (
 // PluginObservation is the complete durable comparison baseline for one plugin.
 // Private source and archive fields must never be projected to browser DTOs.
 type PluginObservation struct {
-	PluginID   string
-	Install    *PluginInstallRecord
-	Revisions  []PluginRevisionRecord
-	Pending    []PluginActivationIntent
-	Generation uint64
+	OriginIdentity string
+	PluginID       string
+	Install        *PluginInstallRecord
+	Revisions      []PluginRevisionRecord
+	Pending        []PluginActivationIntent
+	Generation     uint64
 }
 
 // Token hashes the complete private baseline, including absence and generations.
@@ -50,6 +51,7 @@ type PluginCommit struct {
 	Install                  *PluginInstallRecord
 	Revision                 *PluginRevisionRecord
 	Intent                   PluginActivationIntent
+	OriginIdentity           *string
 	AuditID                  string
 }
 
@@ -74,6 +76,7 @@ type PluginManagementStore interface {
 	ObserveMarketplace(ctx context.Context, name string) (MarketplaceObservation, error)
 	CommitPlugin(ctx context.Context, mutation PluginCommit) error
 	CommitPluginTrusted(ctx context.Context, mutation PluginCommit) error
+	PurgePluginRevisionTrusted(ctx context.Context, pluginID, revisionID, expectedState, auditID string, at time.Time) error
 	CommitMarketplace(ctx context.Context, mutation MarketplaceCommit) error
 	CommitMarketplaceTrusted(ctx context.Context, mutation MarketplaceCommit) error
 }

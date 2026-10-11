@@ -21,7 +21,11 @@ type ManagementStore interface {
 	ObservePlugin(ctx context.Context, name string) (state.PluginObservation, error)
 	CommitPlugin(ctx context.Context, mutation state.PluginCommit) error
 	CommitPluginTrusted(ctx context.Context, mutation state.PluginCommit) error
+	PurgePluginRevisionTrusted(ctx context.Context, pluginID, revisionID, expectedState, auditID string, at time.Time) error
 }
+
+const marketplaceRefresh = "refresh"
+const marketplaceRefreshFailed = "refresh-failed"
 
 const discoverySucceeded = "succeeded"
 const discoveryFailed = "failed"
@@ -156,9 +160,9 @@ func (s *Service) ManagementRefreshMarketplace(ctx context.Context, r plugincmd.
 	a.At = time.Now().UTC()
 	metadata := acceptedDiscovery(old, success, code, a.At)
 	raw, _ := json.Marshal(metadata)
-	operation := "refresh"
+	operation := marketplaceRefresh
 	if code != "" {
-		operation = "refresh-failed"
+		operation = marketplaceRefreshFailed
 	}
 	if err := s.management.CommitMarketplace(ctx, state.MarketplaceCommit{Authority: &a, Name: r.Name, ExpectedState: observed.Token(), DefinitionJSON: observed.DefinitionJSON, MetadataJSON: raw, Operation: operation, AuditID: uuid.NewString(), At: a.At}); err != nil {
 		return plugincmd.MarketplaceDetail{}, err
