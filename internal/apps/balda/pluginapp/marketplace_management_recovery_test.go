@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/baldaworks/balda/internal/apps/balda/plugincmd"
+	"github.com/baldaworks/balda/internal/apps/balda/state"
 )
 
 func TestMarketplaceDiscoveryFailureSurvivesReopen(t *testing.T) {
@@ -28,6 +29,14 @@ func TestMarketplaceDiscoveryFailureSurvivesReopen(t *testing.T) {
 	if failed.LastSuccessfulAt != good.LastSuccessfulAt || failed.ExpectedState == good.ExpectedState || len(failed.Candidates) != 1 || failed.Candidates[0].CandidateToken != "" {
 		t.Fatal("failed refresh lost prior success or kept actionable candidates")
 	}
+	if err := p.Close(); err != nil {
+		t.Fatal(err)
+	}
+	p, err = state.NewSQLiteProvider(t.Context(), filepath.Join(s.stateDir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = p.Close() })
 	s, err = NewManaged(s.stateDir, p.AppKV(), p.Plugins(), &recordingActivator{}, p.PluginManagement())
 	if err != nil {
 		t.Fatal(err)

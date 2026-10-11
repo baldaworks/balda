@@ -3,6 +3,7 @@ package pluginapp
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -132,8 +133,37 @@ func TestGuardedLifecycleAcceptedRecoveryPending(t *testing.T) {
 			if !errors.Is(err, plugincmd.ErrConflict) || len(activator.published) != published {
 				t.Fatalf("stale request recovered pending work: %v", err)
 			}
+			freshState, err := s.ManagementExpectedState(t.Context(), "demo", a)
+			if err != nil {
+				t.Fatal(err)
+			}
+			now := time.Now().UTC()
+			revoke := usercmd.AuditEvent{ID: "revoke-pending", Action: usercmd.AuditActionSessionRevoked, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetSession, TargetID: a.SessionID, Source: "test", OccurredAt: now}
+			if err := p.Users().RevokeSession(t.Context(), a.SessionID, a.SessionVersion, now, "test", revoke); err != nil {
+				t.Fatal(err)
+			}
+			_, err = s.ManagementMutatePlugin(t.Context(), plugincmd.PluginMutation{Operation: plugincmd.Disable, PluginName: "demo", ExpectedState: freshState, Confirm: true, Authority: a})
+			if !errors.Is(err, plugincmd.ErrForbidden) || len(activator.published) != published {
+				t.Fatalf("revoked fresh request recovered pending work: %v", err)
+			}
+			stillPending, err := p.PluginManagement().ObservePlugin(t.Context(), "demo")
+			if err != nil || stillPending.Token() != accepted.Token() {
+				t.Fatal("revoked fresh request changed accepted plugin state")
+			}
+			// A new database handle and owner perform ordinary startup recovery.
+			if err := p.Close(); err != nil {
+				t.Fatal(err)
+			}
+			p, err = state.NewSQLiteProvider(t.Context(), filepath.Join(s.stateDir, "state.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = p.Close() })
 			activator.publishErr = nil
-			store.fail = false
+			s, err = NewManaged(s.stateDir, p.AppKV(), p.Plugins(), activator, p.PluginManagement())
+			if err != nil {
+				t.Fatal(err)
+			}
 			if err := s.Recover(t.Context()); err != nil {
 				t.Fatal(err)
 			}
