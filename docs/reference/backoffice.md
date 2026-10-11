@@ -566,7 +566,7 @@ or test tool. Disabled packages remain inspectable.
 | --- | --- |
 | **Name** | Unique configured marketplace identity used for selection. |
 | **Source** | Existing supported local directory or Git repository source. |
-| **Ref** | Optional Git branch, tag or commit selector; unavailable for local sources. |
+| **Ref** | Optional Git branch or tag selector; unavailable for local sources. |
 | **Sparse** | Optional Git-relative checkout paths, one per line; unavailable for local sources. |
 
 Git fields appear when the Source is a Git source. Source is a transient write
