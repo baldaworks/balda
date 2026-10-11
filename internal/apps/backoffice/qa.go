@@ -56,7 +56,9 @@ func QAHandler(basePath string) (http.Handler, error) {
 		if page.ReturnTo != "" {
 			page.ReturnTo = basePath + "/qa/ui/overview"
 		}
-		if page.RestartURL != "" {
+		if page.RestartURL != "" && strings.HasPrefix(name, "plugins") {
+			page.RestartURL = basePath + "/qa/ui" + page.RestartURL
+		} else if page.RestartURL != "" {
 			page.RestartURL = basePath + "/qa/ui/mcp"
 			if strings.HasPrefix(name, "memory") {
 				page.RestartURL = basePath + "/qa/ui/memory"

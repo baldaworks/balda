@@ -53,3 +53,19 @@ func TestPluginLifecycleRenderPreviews(t *testing.T) {
 		}
 	}
 }
+
+func TestPluginLifecycleRenderRecoveryLinks(t *testing.T) {
+	for _, base := range []string{"", "/balda/backoffice"} {
+		handler, err := QAHandler(base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, scene := range []string{"plugins-conflict", "plugins-pending-remove"} {
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, base+"/qa/ui/"+scene, nil))
+			if !strings.Contains(response.Body.String(), `href="`+base+`/qa/ui/plugins/installed/demo"`) {
+				t.Fatalf("%s %s recovery does not reopen exact plugin", base, scene)
+			}
+		}
+	}
+}
