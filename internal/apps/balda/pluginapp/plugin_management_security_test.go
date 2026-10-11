@@ -276,6 +276,53 @@ func (s *pluginObservationHook) ObservePlugin(ctx context.Context, name string) 
 	return s.PluginManagementStore.ObservePlugin(ctx, name)
 }
 
+func TestGuardedLifecycleRevokedDuringObservationCannotRecover(t *testing.T) {
+	s, p, a, root := newMarketplaceManagementTestService(t)
+	t.Cleanup(func() { _ = makeTreeWritable(s.stateDir) })
+	request := reviewedManagementInstall(t, s, a, root)
+	activator := &recordingActivator{publishErr: errors.New("synthetic publication failure")}
+	var err error
+	s, err = NewManaged(s.stateDir, p.AppKV(), p.Plugins(), activator, p.PluginManagement())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result, err := s.ManagementMutatePlugin(t.Context(), request); !errors.Is(err, plugincmd.ErrRecoveryPending) || !result.Accepted {
+		t.Fatalf("install=%+v error=%v", result, err)
+	}
+	expected, err := s.ManagementExpectedState(t.Context(), "demo", a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := p.PluginManagement().ObservePlugin(t.Context(), "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	published := len(activator.published)
+	activator.publishErr = nil
+	hook := &pluginObservationHook{PluginManagementStore: p.PluginManagement(), beforeSecond: func() {
+		now := time.Now().UTC()
+		event := usercmd.AuditEvent{ID: "revoke-during-observation", Action: usercmd.AuditActionSessionRevoked, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetSession, TargetID: a.SessionID, Source: "test", OccurredAt: now}
+		if err := p.Users().RevokeSession(t.Context(), a.SessionID, a.SessionVersion, now, "test", event); err != nil {
+			t.Fatal(err)
+		}
+	}}
+	s, err = NewManaged(s.stateDir, p.AppKV(), p.Plugins(), activator, hook)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := s.ManagementMutatePlugin(t.Context(), plugincmd.PluginMutation{Operation: plugincmd.Disable, PluginName: "demo", ExpectedState: expected, Confirm: true, Authority: a})
+	if !errors.Is(err, plugincmd.ErrForbidden) || result.Accepted {
+		t.Fatalf("disable=%+v error=%v", result, err)
+	}
+	after, err := p.PluginManagement().ObservePlugin(t.Context(), "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Token() != before.Token() || len(activator.published) != published {
+		t.Fatal("revoked browser recovered pending publication")
+	}
+}
+
 func TestGuardedLifecycleRejectsInterveningDurableWriter(t *testing.T) {
 	s, p, a, root := newMarketplaceManagementTestService(t)
 	t.Cleanup(func() { _ = makeTreeWritable(s.stateDir) })

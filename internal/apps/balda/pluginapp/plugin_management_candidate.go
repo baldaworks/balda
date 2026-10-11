@@ -45,7 +45,7 @@ func (s *Service) candidateIdentity(src MarketplaceSource, c discoveryCandidate)
 	return hex.EncodeToString(digest[:]), root, nil
 }
 
-func (s *Service) resolveManagementCandidateLocked(ctx context.Context, observed state.PluginObservation, marketplace string) (selectedPluginCandidate, error) {
+func (s *Service) resolveManagementCandidateLocked(ctx context.Context, observed state.PluginObservation, marketplace string, allowManifestName bool) (selectedPluginCandidate, error) {
 	sources, err := s.ListMarketplaces(ctx)
 	if err != nil {
 		return selectedPluginCandidate{}, plugincmd.ErrUnavailable
@@ -60,7 +60,7 @@ func (s *Service) resolveManagementCandidateLocked(ctx context.Context, observed
 		if metadata.LastAttemptStatus != discoverySucceeded || metadata.LastSuccessful == nil {
 			continue
 		}
-		if marketplace != "" && src.Name != marketplace && metadata.LastSuccessful.IndexName != marketplace {
+		if marketplace != "" && src.Name != marketplace && (!allowManifestName || metadata.LastSuccessful.IndexName != marketplace) {
 			continue
 		}
 		for _, c := range metadata.LastSuccessful.Candidates {

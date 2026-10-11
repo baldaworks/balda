@@ -39,6 +39,7 @@ func (s *Service) mutatePluginTrusted(ctx context.Context, selector, operation s
 	if err != nil {
 		return err
 	}
+	var selectedSourceFailed bool
 	for _, src := range sources {
 		record, _, old, err := s.marketplaceStateLocked(ctx, src.Name)
 		if err != nil {
@@ -51,19 +52,20 @@ func (s *Service) mutatePluginTrusted(ctx context.Context, selector, operation s
 		op := marketplaceRefresh
 		if code != "" {
 			op = marketplaceRefreshFailed
+			selectedSourceFailed = selectedSourceFailed || src.Name == marketplace
 		}
 		if err := s.management.CommitMarketplaceTrusted(ctx, state.MarketplaceCommit{Name: src.Name, ExpectedState: record.Token(), DefinitionJSON: record.DefinitionJSON, MetadataJSON: raw, Operation: op, AuditID: uuid.NewString(), At: now}); err != nil {
 			return err
 		}
-		if code != "" {
-			return plugincmd.ErrUnavailable
-		}
+	}
+	if selectedSourceFailed {
+		return plugincmd.ErrUnavailable
 	}
 	selectionObservation := observed
 	if operation == pluginAdoptOrigin {
 		selectionObservation.Install = nil
 	}
-	selected, err := s.resolveManagementCandidateLocked(ctx, selectionObservation, marketplace)
+	selected, err := s.resolveManagementCandidateLocked(ctx, selectionObservation, marketplace, true)
 	if err != nil {
 		return err
 	}

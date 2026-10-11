@@ -35,7 +35,7 @@ func (s *Service) ManagementCandidate(ctx context.Context, name, marketplace str
 	if err != nil {
 		return plugincmd.CandidateView{}, err
 	}
-	selected, err := s.resolveManagementCandidateLocked(ctx, observed, marketplace)
+	selected, err := s.resolveManagementCandidateLocked(ctx, observed, marketplace, false)
 	if err != nil {
 		code := "origin_unavailable"
 		if observed.Install != nil && observed.OriginIdentity == "" {
@@ -80,7 +80,7 @@ func (s *Service) ManagementMutatePlugin(ctx context.Context, r plugincmd.Plugin
 	acceptance := &pluginAcceptance{authority: &r.Authority, expectedSQL: observed.Token(), availability: s.managed.revisionAvailability(observed)}
 	var selected selectedPluginCandidate
 	if r.Operation == plugincmd.Install || r.Operation == plugincmd.Upgrade {
-		selected, err = s.resolveManagementCandidateLocked(ctx, observed, r.MarketplaceName)
+		selected, err = s.resolveManagementCandidateLocked(ctx, observed, r.MarketplaceName, false)
 		if err != nil {
 			return outcome, err
 		}
@@ -101,6 +101,10 @@ func (s *Service) ManagementMutatePlugin(ctx context.Context, r plugincmd.Plugin
 	}
 	if current.Token() != observed.Token() {
 		return outcome, plugincmd.ErrConflict
+	}
+	// Observation and candidate checks can outlive the browser session.
+	if err := s.managementAuthority(ctx, r.Authority); err != nil {
+		return outcome, err
 	}
 	if _, err := s.managed.reconcilePending(ctx, r.PluginName); err != nil {
 		return outcome, plugincmd.ErrRecoveryPending

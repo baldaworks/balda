@@ -134,7 +134,7 @@ func (s *Service) installedViewLocked(ctx context.Context, observed state.Plugin
 	if install.OriginMarketplace == originUnknown {
 		view.Origin = "Unverified"
 	}
-	selected, err := s.resolveManagementCandidateLocked(ctx, observed, "")
+	selected, err := s.resolveManagementCandidateLocked(ctx, observed, "", false)
 	if err == nil {
 		_, root, err := s.candidateIdentity(selected.source, selected.candidate)
 		if err == nil {
