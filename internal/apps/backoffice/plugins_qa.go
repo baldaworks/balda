@@ -18,7 +18,7 @@ func qaPluginMarketplaces() webui.Page {
 	return p
 }
 func qaPluginMarketplace() plugincmd.MarketplaceDetail {
-	return plugincmd.MarketplaceDetail{MarketplaceView: plugincmd.MarketplaceView{Name: "new", Source: "https://example.test/team/plugins.git", Kind: "git", Ref: "main", Sparse: []string{"plugins", ".agents/plugins"}, ExpectedState: "qa-observation", LastAttemptAt: qaNow, LastAttemptStatus: "succeeded", LastSuccessfulAt: qaNow, AvailablePlugins: 1}, Candidates: []plugincmd.CandidateView{{Name: "demo", Version: "1.0.0", Description: "Synthetic plugin for release planning.", CandidateToken: "qa-candidate"}}}
+	return plugincmd.MarketplaceDetail{MarketplaceView: plugincmd.MarketplaceView{Name: "new", Source: "https://example.test/team/plugins.git", Kind: "git", Ref: "main", Sparse: []string{"plugins", ".agents/plugins"}, ExpectedState: "qa-observation", LastAttemptAt: qaNow, LastAttemptStatus: "succeeded", LastSuccessfulAt: qaNow, AvailablePlugins: 2, ResolvedRevision: "synthetic-resolved-revision"}, Candidates: []plugincmd.CandidateView{{Name: "demo", Version: "1.0.0", Description: "Synthetic plugin for release planning.", CandidateToken: "qa-candidate"}, {Name: "installed-demo", Version: "1.0.0", Description: "Synthetic installed plugin.", CandidateToken: "qa-installed"}}}
 }
 func qaPluginMarketplaceDetail(failed bool) webui.Page {
 	p := qaPluginMarketplaces()
@@ -28,7 +28,7 @@ func qaPluginMarketplaceDetail(failed bool) webui.Page {
 		item.LastAttemptAt = qaNow.AddDate(0, 0, 1)
 		item.FailureCode = "invalid_index"
 	}
-	p.Plugins.MarketplaceDetail = webui.ProjectPluginMarketplaceDetail(item)
+	p.Plugins.MarketplaceDetail = webui.ProjectPluginMarketplaceDetail(item, []plugincmd.InstalledView{{PluginStatus: plugincmd.PluginStatus{Name: "installed-demo"}}})
 	return p
 }
 func qaPluginMarketplaceFailure(err error, add bool) webui.Page {

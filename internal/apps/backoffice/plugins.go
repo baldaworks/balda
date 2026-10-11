@@ -13,6 +13,8 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/users"
 )
 
+const reopenPluginLabel = "Reopen plugin"
+
 const pluginMarketplacesPath = "/plugins/marketplaces"
 const pluginMarketplaceNewPath = pluginMarketplacesPath + "/new"
 const pluginMarketplaceDefinitionsPath = pluginMarketplacesPath + "/definitions/"
@@ -28,6 +30,8 @@ func pluginAuthority(p security.Principal) plugincmd.Authority {
 func (a *httpApp) pluginsPage(w http.ResponseWriter, r *http.Request) {
 	p, _ := security.PrincipalFromContext(r.Context())
 	page := a.pluginBasePage(r, p)
+	page.RestartURL = a.path("/plugins")
+	page.RestartLabel = "Reopen Plugins"
 	if a.plugins == nil {
 		a.pluginError(w, r, page, plugincmd.ErrUnavailable)
 		return
@@ -58,7 +62,12 @@ func (a *httpApp) pluginMarketplacesPage(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		page.Title = detail.Name + " · Marketplaces · Balda"
-		page.Plugins.MarketplaceDetail = webui.ProjectPluginMarketplaceDetail(detail)
+		installed, readErr := a.plugins.Inventory(r.Context(), pluginAuthority(p))
+		if readErr != nil {
+			a.pluginError(w, r, page, readErr)
+			return
+		}
+		page.Plugins.MarketplaceDetail = webui.ProjectPluginMarketplaceDetail(detail, installed)
 	case r.URL.Path == a.path(pluginMarketplaceNewPath):
 		page.Title = "Add marketplace · Balda"
 		page.Plugins.MarketplaceAdd = &webui.PluginMarketplaceAdd{}
@@ -128,7 +137,12 @@ func (a *httpApp) pluginMarketplaceMutation(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	detail.ExpectedState = expected
-	page.Plugins.MarketplaceDetail = webui.ProjectPluginMarketplaceDetail(detail)
+	installed, readErr := a.plugins.Inventory(r.Context(), pluginAuthority(p))
+	if readErr != nil {
+		a.pluginError(w, r, page, readErr)
+		return
+	}
+	page.Plugins.MarketplaceDetail = webui.ProjectPluginMarketplaceDetail(detail, installed)
 	request := plugincmd.MarketplaceMutation{Name: name, ExpectedState: expected, Confirm: form.Get("confirm") == checkedFormValue, Authority: pluginAuthority(p)}
 	if expected == "" || remove && !request.Confirm {
 		a.pluginError(w, r, page, plugincmd.ErrInvalid)
@@ -140,7 +154,7 @@ func (a *httpApp) pluginMarketplaceMutation(w http.ResponseWriter, r *http.Reque
 		result, refreshErr := a.plugins.RefreshMarketplace(r.Context(), request)
 		err = refreshErr
 		if result.Name != "" {
-			page.Plugins.MarketplaceDetail = webui.ProjectPluginMarketplaceDetail(result)
+			page.Plugins.MarketplaceDetail = webui.ProjectPluginMarketplaceDetail(result, installed)
 		}
 	}
 	if err != nil {
@@ -162,17 +176,25 @@ func (a *httpApp) pluginResult(w http.ResponseWriter, r *http.Request, page webu
 
 func (a *httpApp) pluginError(w http.ResponseWriter, r *http.Request, page webui.Page, err error) {
 	status, message := pluginOperationFailure(err)
-	if page.Plugins != nil && page.Plugins.MarketplaceAdd == nil && page.Plugins.MarketplaceDetail == nil {
+	if page.Plugins != nil && page.Plugins.MarketplaceAdd == nil && page.Plugins.MarketplaceDetail == nil && page.Plugins.PluginDetail == nil && page.Plugins.Review == nil {
 		page.Plugins.Unavailable = true
 	}
 	page.Error = &webui.ErrorView{Heading: "Plugin operation could not complete", Message: message}
-	if page.Plugins != nil && page.Plugins.MarketplaceDetail != nil {
-		page.RestartURL = a.path(page.Plugins.MarketplaceDetail.Row.DetailPath)
-		page.RestartLabel = "Reopen marketplace"
-	} else {
-		page.RestartURL = a.path(pluginMarketplacesPath)
-		page.RestartLabel = "Reopen marketplaces"
+
+	if page.RestartURL == "" {
+		switch {
+		case page.Plugins != nil && page.Plugins.PluginDetail != nil:
+			page.RestartURL = a.path(page.Plugins.PluginDetail.DetailPath)
+			page.RestartLabel = reopenPluginLabel
+		case page.Plugins != nil && page.Plugins.MarketplaceDetail != nil:
+			page.RestartURL = a.path(page.Plugins.MarketplaceDetail.Row.DetailPath)
+			page.RestartLabel = "Reopen marketplace"
+		default:
+			page.RestartURL = a.path(pluginMarketplacesPath)
+			page.RestartLabel = "Reopen marketplaces"
+		}
 	}
+
 	a.render(w, r, status, webui.TemplatePlugins, page)
 }
 

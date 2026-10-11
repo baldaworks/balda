@@ -150,6 +150,12 @@ func (a *httpApp) handler() (http.Handler, error) {
 	mux.HandleFunc("POST "+a.path("/memory"), a.factMemoryMutation)
 	mux.HandleFunc("POST "+a.path("/memory/{fact_id}"), a.factMemoryMutation)
 	mux.HandleFunc("POST "+a.path("/memory/{fact_id}/delete"), a.factMemoryDelete)
+	for _, route := range []string{pluginInstallPath, pluginInstalledPath + "/upgrade"} {
+		mux.Handle("GET "+a.path(route), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.pluginReviewPage))))
+	}
+	mux.Handle("GET "+a.path(pluginInstalledPath), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.pluginDetailPage))))
+	mux.HandleFunc("POST "+a.path(pluginInstallPath), a.pluginLifecycleMutation)
+	mux.HandleFunc("POST "+a.path(pluginInstalledPath+"/{plugin_operation}"), a.pluginLifecycleMutation)
 	mux.Handle("GET "+a.path("/plugins"), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.pluginsPage))))
 	for _, route := range []string{pluginMarketplacesPath, pluginMarketplaceNewPath, pluginMarketplaceDefinitionsPath + "{marketplace_name}"} {
 		mux.Handle("GET "+a.path(route), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.pluginMarketplacesPage))))

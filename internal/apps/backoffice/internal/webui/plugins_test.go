@@ -44,7 +44,7 @@ func TestPluginsNavigationAndMarketplaceRender(t *testing.T) {
 				t.Fatal("transient source/cancel missing")
 			}
 		} else {
-			for _, label := range []string{"Name", "Source", "Ref", "Sparse"} {
+			for _, label := range []string{"Name", "Source", "Ref", "Sparse", "Discovery", "Available plugins", "Last successful refresh", "Actions"} {
 				if !strings.Contains(body, `<th scope="col">`+label+`</th>`) {
 					t.Fatalf("missing column %s", label)
 				}
@@ -72,7 +72,7 @@ func TestPluginMarketplaceDiscoveryPresentation(t *testing.T) {
 		{name: "failed index", detail: plugincmd.MarketplaceDetail{MarketplaceView: plugincmd.MarketplaceView{Name: "demo", LastAttemptStatus: "failed", FailureCode: "invalid_index"}, Candidates: []plugincmd.CandidateView{{Name: "demo", CandidateToken: "review"}}}, want: []string{"Invalid marketplace index", "Refresh required"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			projected := ProjectPluginMarketplaceDetail(tc.detail)
+			projected := ProjectPluginMarketplaceDetail(tc.detail, nil)
 			response := httptest.NewRecorder()
 			if err := renderer.Render(response, httptest.NewRequest(http.MethodGet, "/plugins/marketplaces/definitions/demo", nil), http.StatusOK, TemplatePlugins, Page{Title: "Plugins", Plugins: &PluginsView{Marketplaces: true, MarketplaceDetail: projected}}); err != nil {
 				t.Fatal(err)
@@ -90,5 +90,27 @@ func TestPluginMarketplaceDiscoveryPresentation(t *testing.T) {
 				t.Fatal("actionable warning classified as invalid")
 			}
 		})
+	}
+}
+
+func TestPluginMarketplaceOperationalRender(t *testing.T) {
+	renderer, err := NewRenderer("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := plugincmd.MarketplaceDetail{MarketplaceView: plugincmd.MarketplaceView{Name: "team", ResolvedRevision: "resolved-exact", AvailablePlugins: 2, LastAttemptStatus: "succeeded"}, Candidates: []plugincmd.CandidateView{{Name: "installed", CandidateToken: "review"}, {Name: "available", CandidateToken: "review"}}}
+	projected := ProjectPluginMarketplaceDetail(item, []plugincmd.InstalledView{{PluginStatus: plugincmd.PluginStatus{Name: "installed"}}})
+	response := httptest.NewRecorder()
+	if err := renderer.Render(response, httptest.NewRequest(http.MethodGet, "/plugins/marketplaces/definitions/team", nil), 200, TemplatePlugins, Page{Title: "Marketplace", Plugins: &PluginsView{Marketplaces: true, MarketplaceDetail: projected}}); err != nil {
+		t.Fatal(err)
+	}
+	body := response.Body.String()
+	for _, want := range []string{"Installed", "Actions", "Open installed", "Review install", "resolved-exact", "Available plugins"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q", want)
+		}
+	}
+	if !projected.Candidates[0].Installed || projected.Candidates[1].Installed {
+		t.Fatal("installed identity not joined by name")
 	}
 }

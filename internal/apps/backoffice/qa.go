@@ -88,7 +88,7 @@ type qaEntry struct {
 	status       int
 }
 
-var qaEntries = append(pluginMarketplaceQAEntries, []qaEntry{
+var qaEntries = append(append(pluginMarketplaceQAEntries, pluginLifecycleQAEntries...), []qaEntry{
 	{name: "memory", label: "Fact memory · inventory", templateName: webui.TemplateFactMemory, page: qaFactMemory, gallery: true},
 	{name: "memory-long", label: "Fact memory · long multiline fact", templateName: webui.TemplateFactMemory, page: func() webui.Page {
 		p := qaFactMemory()

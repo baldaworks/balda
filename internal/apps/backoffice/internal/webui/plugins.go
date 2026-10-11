@@ -9,6 +9,8 @@ import (
 
 // PluginsView contains one local tab of global plugin management.
 type PluginsView struct {
+	PluginDetail      *PluginDetailView
+	Review            *PluginReview
 	Unavailable       bool
 	Marketplaces      bool
 	InstalledRows     []plugincmd.InstalledView
@@ -25,6 +27,8 @@ type PluginMarketplaceRow struct {
 	Name, Source, Ref, Sparse, DetailPath, ExpectedState string
 	Failure, LastAttempt, LastSuccessful                 string
 	Failed                                               bool
+	AvailablePlugins                                     int
+	ResolvedRevision                                     string
 }
 
 // PluginMarketplaceDetail keeps accepted discovery distinct from current attempts.
@@ -37,7 +41,7 @@ type PluginMarketplaceDetail struct {
 
 // ProjectPluginMarketplaceRow retains only safe, already-projected definition data.
 func ProjectPluginMarketplaceRow(item plugincmd.MarketplaceView) PluginMarketplaceRow {
-	row := PluginMarketplaceRow{Name: item.Name, Source: item.Source, Ref: item.Ref, Sparse: strings.Join(item.Sparse, "\n"), ExpectedState: item.ExpectedState, DetailPath: "/plugins/marketplaces/definitions/" + url.PathEscape(item.Name), Failed: item.LastAttemptStatus == "failed"}
+	row := PluginMarketplaceRow{AvailablePlugins: item.AvailablePlugins, ResolvedRevision: item.ResolvedRevision, Name: item.Name, Source: item.Source, Ref: item.Ref, Sparse: strings.Join(item.Sparse, "\n"), ExpectedState: item.ExpectedState, DetailPath: "/plugins/marketplaces/definitions/" + url.PathEscape(item.Name), Failed: item.LastAttemptStatus == "failed"}
 	if row.Failed {
 		row.Failure = pluginDiscoveryFailure(item.FailureCode)
 	}
@@ -54,7 +58,7 @@ func ProjectPluginMarketplaceRow(item plugincmd.MarketplaceView) PluginMarketpla
 }
 
 // ProjectPluginMarketplaceDetail preserves stale evidence without actionable tokens.
-func ProjectPluginMarketplaceDetail(item plugincmd.MarketplaceDetail) *PluginMarketplaceDetail {
+func ProjectPluginMarketplaceDetail(item plugincmd.MarketplaceDetail, installed []plugincmd.InstalledView) *PluginMarketplaceDetail {
 	detail := &PluginMarketplaceDetail{Row: ProjectPluginMarketplaceRow(item.MarketplaceView)}
 	for _, candidate := range item.Candidates {
 		row := PluginMarketplaceCandidate{CandidateView: candidate, ReviewLabel: "Available"}
@@ -66,6 +70,13 @@ func ProjectPluginMarketplaceDetail(item plugincmd.MarketplaceDetail) *PluginMar
 		}
 		if !detail.Row.Failed && candidate.CandidateToken == "" && len(candidate.DiagnosticCodes) > 0 {
 			row.Diagnostic = "This package could not be validated."
+		}
+		for _, plugin := range installed {
+			if plugin.Name == candidate.Name {
+				row.Installed = true
+				row.InstalledPath = PluginDetailPath(plugin.Name)
+				break
+			}
 		}
 		detail.Candidates = append(detail.Candidates, row)
 	}
@@ -85,6 +96,8 @@ func ProjectPluginMarketplaceDetail(item plugincmd.MarketplaceDetail) *PluginMar
 type PluginMarketplaceCandidate struct {
 	plugincmd.CandidateView
 	ReviewLabel, Diagnostic string
+	Installed               bool
+	InstalledPath           string
 }
 
 func pluginDiscoveryFailure(code string) string {

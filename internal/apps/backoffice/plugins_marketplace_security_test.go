@@ -110,7 +110,7 @@ func TestPluginMarketplaceHTTPAuthorityAndCollisions(t *testing.T) {
 			}
 
 			fixture.readErr = errors.New("private-read-error-canary")
-			for _, path := range []string{"/plugins", "/plugins/marketplaces"} {
+			for _, path := range []string{"/plugins", "/plugins/marketplaces", "/plugins/marketplaces/definitions/new"} {
 				for _, fragment := range []bool{false, true} {
 					got := get(path, admin.access, fragment)
 					body := got.Body.String()
