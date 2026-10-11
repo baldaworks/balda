@@ -353,10 +353,10 @@ in normal grid flow. The top bar and sidebar brand share the same height;
 navigation scrolls content below the top bar so page headings remain visible.
 The viewer identity is independent of an inspected user.
 The sidebar groups authorized links by purpose: Workspace contains Overview;
-Operations contains MCP, Schedules, Webhooks, and Aliases; Administration contains Access and Audit.
+Operations contains MCP, Schedules, Webhooks, Aliases, and Fact memory; Administration contains Access and Audit.
 It omits groups with no authorized links. Active administrators see all three;
 active operators see Workspace while Account remains available in the top bar.
-Nested Access, MCP, Schedules, Webhooks, and Aliases pages keep their parent sidebar link active.
+Nested Access, MCP, Schedules, Webhooks, Aliases, and Fact memory pages keep their parent sidebar link active.
 Desktop collapse hides the sidebar and expands content. Mobile navigation uses
 an overlay with backdrop, Escape and focus containment.
 
@@ -888,3 +888,57 @@ the audit event. `aliascmd` carries neutral values. Backoffice owns only the
 `aliasbackofficeapp` before the HTTP listener starts. Current mapping changes
 apply to future admitted schedule runs and webhook requests; accepted work
 retains its selected concrete locator.
+
+## Fact memory management
+
+Administrators open **Operations → Fact memory** at
+`<balda.http.base_path>/backoffice/memory`. This manages the existing single
+global fact source used by all Balda sessions, MCP tools and the memory actor.
+It has no per-fact owners, scopes or grants. Operators do not see the navigation
+link and cannot access its routes. Management uses ordinary Backoffice
+administrator authentication; it adds no passkey ceremony.
+
+The inventory shows **Fact** and **Actions**. **Search facts** filters text
+case-insensitively without changing memory; **Clear** restores the inventory.
+**Add fact** opens `/memory?new=1`, and **Edit** opens `/memory/{fact_id}`.
+Each editor has one **Fact** textarea. Save changes that fact only; Cancel
+leaves memory unchanged. Multiline text stays one entry, including an existing
+whole-file `MEMORY.md` import. Deletion requires **Confirm deleting this fact**.
+There is no bulk clear, import or export action.
+
+POST `/memory` creates a fact; POST `/memory/{fact_id}` edits it; POST
+`/memory/{fact_id}/delete` confirms deletion. These suffixes are relative to the
+Backoffice mount above. Fact IDs remain stable across edits. Edit and delete
+forms carry the global memory version: any intervening accepted write, including
+an MCP or actor append of another fact, makes the form stale. A 409 retains the
+submitted text and old version and offers **Reopen this fact**; reopen and review
+the latest state before saving again. There is no silent overwrite or automatic
+retry of a stale edit.
+
+Empty input returns 400, invalid/revoked authority or disabled memory returns
+403, stale fact or authority versions return 409, a missing fact returns 404,
+and unavailable/corrupt storage returns safe 503 feedback. Expired browser
+authentication can return 401 through ordinary session recovery before the
+feature runs. On an uncertain failure, reopen and check current memory before
+retrying. Empty inventory and a search with no matches have distinct messages.
+When `balda.memory.enabled: false`, the page explains the configuration state
+and exposes no operative form controls.
+
+Writes use existing browser authority, CSRF and same-origin checks. The SQL
+transaction rechecks current user, credential, MFA and session versions, changes
+the existing app-KV record and appends a body-free audit event atomically. Audit
+contains actor, operation, fact ID and time, never the fact or search text.
+Browser responses are private/no-store and do not enter HTMX history caching.
+
+Accepted changes apply on the next active or restored session turn. Deleting
+the last fact retains an initialized empty record, preventing file reimport,
+and sends an explicit superseding empty-memory boundary. It does not reset the
+session or delete historical conversation; historical prompts may still contain
+previous facts. This is separate from optional locator-scoped session memory.
+
+`memory` owns validation, ordered mutations and serialization through the same
+Store used by runtime writers. `memorycmd` carries neutral values; `state`
+owns guarded KV/audit persistence. Backoffice consumes `FactMemoryOperations`
+through `memorybackofficeapp`, bound before startup. This feature adds no table
+or schema migration. Run the ordered synthetic layout and isolated authenticated
+browser checks in the [UI review runbook](backoffice-ui-review.md#fact-memory-layout-and-application-gates).

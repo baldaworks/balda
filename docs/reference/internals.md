@@ -85,7 +85,9 @@ flowchart TB
 | `webhookfx` | `internal/apps/balda/webhookfx` | Composition adapter between HTTP receiver, webhook admission policy and host services | channel/webhook, webhookapp |
 | `aliases` | `internal/apps/balda/aliases` | Administrator-managed public locator names and guarded mutation policy | aliascmd, state port |
 | `internalmcp` | `internal/apps/balda/internalmcp` | Bundled MCP server lifecycle | controlmcp, memory, session |
-| `memory` | `internal/apps/balda/memory` | Global explicit-fact store and `balda.memory.*` MCP tools | (standalone) |
+| `memory` | `internal/apps/balda/memory` | Global explicit-fact Store, management policy and `balda.memory.*` MCP tools | memorycmd, guarded persistence port |
+| `memorycmd` | `internal/apps/balda/memorycmd` | Neutral fact, inventory, mutation and browser-authority values | usercmd |
+| `memorybackofficeapp` | `internal/apps/balda/memorybackofficeapp` | Binding Backoffice's consuming port to the existing memory owner | memory, memorycmd |
 | `session` | `internal/apps/balda/session` | Session management | agent, state |
 | `sessionturn` | `internal/apps/balda/sessionturn` | Queued-turn restoration and execution orchestration | memory, session |
 | `sessionturnapp` | `internal/apps/balda/sessionturnapp` | Queued turn execution wiring, provider-turn execution, progress dispatch, and turn-facing adapters | jobs, memory, session, sessionturn, `github.com/baldaworks/go-actorlayer` |
@@ -124,7 +126,7 @@ Balda treats `actorlayer` as the reusable actor library boundary and never as pr
 - `internal/apps/balda/state`: SQLite/PostgreSQL product state and read models. It owns sessions, scheduler state, job tables, delivery idempotency, and the session-memory ingress outbox/audit records. It does not own canonical session-memory domain state.
 - `internal/apps/balda/aliases`, `aliascmd`, and `aliasfx`: managed destination policy, neutral values, and host resolution wiring. A schedule run or webhook admission stores its selected concrete report locator before actor publication; accepted work does not reread the alias.
 - `internal/apps/balda/schedulecmd`, `scheduledjobs`, and `schedulebackofficeapp`: neutral Schedules management values, host-owned recurring policy/dispatch and optional-delivery-aware run finalization, and the narrow Backoffice port adapter, respectively. `state` persists source-owned definitions, selected report locators, frozen run input, execution job output, and delivery state. Private run sessions are removed through a small session port after execution and any requested delivery settle.
-- `internal/apps/balda/memory`: separate global explicit-fact memory (`balda.memory.read`, `balda.memory.remember`, and `MEMORY.md` import). It is not the session-memory subsystem.
+- `internal/apps/balda/memory`: separate global explicit-fact memory (`balda.memory.read`, `balda.memory.remember`, and `MEMORY.md` import). Backoffice management uses this same Store and its mutex for UI/MCP/actor writes. `memorycmd` carries neutral contracts and `memorybackofficeapp` binds the local Backoffice port; `state` atomically fences UI KV changes and body-free audit with existing administrator browser authority. No new table or migration is required. Final deletion retains an initialized empty boundary for next-turn refresh without resetting history. This is not the session-memory subsystem.
 - `sessionmemory` and `sessionmemory/app`: portable semantic ownership and capability orchestration for exact-scope session memory.
 - `sessionmemory/store/badger`: canonical session-memory state; `sessionmemory/index/bleve`: rebuildable lexical projection.
 - `sessionmemory/mcp`: neutral search/trace tools; Balda's `sessionmemorymcp` supplies authenticated scope context and no transport locator is accepted from tool input.

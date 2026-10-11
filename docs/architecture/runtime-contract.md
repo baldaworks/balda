@@ -8,6 +8,18 @@ Status: active
 - Startup order stays strict: config -> bundled MCP -> runtime contribution catalog reconstruction -> provider runtime -> session/mailbox and durable actor infrastructure -> scheduler -> checked shared HTTP listener -> enabled Telegram/Zulip/Slackagent ingress. Shutdown runs these stages in reverse.
 - The shared HTTP listener binds `balda.http.listen_addr` once after Backoffice, generic webhook, and enabled gateway handlers are prepared. `httpfx` reserves `<base_path>/backoffice`, `<base_path>/webhooks`, and `<base_path>/gateway`, rejects conflicting handler registrations before binding, and forwards each request to its owning handler without replacing browser, webhook, or transport authorization. Transport callbacks use canonical `/gateway` paths. Every generic webhook, whether configured or managed, uses its immutable name as the slug at `<base_path>/webhooks/<name>`; route definitions store no path. `webhookapp` selects by canonical slug and rejects unknown, disabled or archived names before admission. Changing the shared prefix moves every generic callback address after restart without changing its durable identity, secret verifier or history.
 - Scheduler startup reconciles only config-owned recurring definitions; managed definitions survive restart. A source ID collision fails startup. Due and manual runs have separate durable keys and preserve their exact definition snapshots; manual runs do not advance the cron cursor.
+- Global explicit fact memory has one process-shared Store for UI, MCP and actor
+  writers. The `memory` owner serializes ordered writes; `state` atomically
+  fences administrator mutations with current browser authority, the global
+  version and a body-free audit event in the existing app-KV record. Stable fact
+  IDs retain their creation version across edits, and later IDs are not reused.
+  Runtime snapshots preserve content, version and update timestamp through
+  composition adapters. A changed timestamp refreshes the complete current
+  facts on the next active/restored turn; an initialized empty record sends an
+  explicit superseding empty boundary. Final deletion never triggers file
+  reimport, session reset or conversation-history deletion. Historical prompts
+  remain historical data. This contract does not extend to concurrent writers
+  from multiple Balda processes sharing one database.
 - `catalogapp` owns current MCP authorization startup recovery and exact
   authorization retry. `mcpruntime` carries bounded attachment evidence and
   inspects every selected blocker; `mcpfx` observes supported challenges at the

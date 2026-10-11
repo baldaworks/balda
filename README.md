@@ -413,9 +413,13 @@ The bundled `balda.memory.remember` tool stores explicit facts globally for the
 Balda instance. Each update records a latest-memory timestamp. On a subsequent
 session turn, Balda compares that timestamp with the turn's memory cursor. When
 they differ, Balda adds the complete current fact-memory snapshot to that same
-provider user prompt in a delimited application-memory block. Unchanged, empty,
-or disabled memory adds nothing to the prompt. Global fact memory is expected to
-remain small; it is separate from optional durable session memory.
+provider user prompt in a delimited application-memory block. Administrators can
+search, add, edit and delete the same facts in Backoffice **Operations → Fact
+memory**; see [Fact memory management](docs/reference/backoffice.md#fact-memory-management).
+Deleting the last fact sends an explicit empty-current-memory boundary on the
+next turn, without clearing conversation history. Unchanged, never-initialized
+or disabled memory adds nothing to the prompt. Global fact memory is expected
+to remain small; it is separate from optional durable session memory.
 
 ### Knowl sidecar
 
