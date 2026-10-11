@@ -120,6 +120,11 @@ components:
     in:
       - internal/apps/balda/mcpcmd
 
+  # Global fact policy owns serialized mutations; persistence stays behind a port.
+  memory_policy:
+    in:
+      - internal/apps/balda/memory
+
   # Global fact-memory values preserve the existing KV record contract.
   memory_contracts:
     in:
@@ -218,7 +223,6 @@ components:
       - internal/apps/balda/jobs
       - internal/apps/balda/jobexec
       - internal/apps/balda/ingressapp
-      - internal/apps/balda/memory
       - internal/apps/balda/questions
       - internal/apps/balda/permissions
       - internal/apps/balda/pluginapp
@@ -506,6 +510,14 @@ deps:
       - mcp_contracts
     anyVendorDeps: false
 
+  memory_policy:
+    mayDependOn:
+      - memory_contracts
+      - user_contracts
+    # Concrete persistence is injected at composition, never imported here.
+    deepScan: false
+    anyVendorDeps: true
+
   memory_contracts:
     mayDependOn:
       - user_contracts
@@ -663,6 +675,7 @@ deps:
 
   application:
     mayDependOn:
+      - memory_policy
       - memory_contracts
       - webhook_route_contracts
       - alias_contracts
@@ -790,6 +803,7 @@ deps:
 
   domain:
     mayDependOn:
+      - memory_policy
       - foundation
       - contracts
       - user_contracts
@@ -810,6 +824,7 @@ deps:
 
   ingress_wiring:
     mayDependOn:
+      - memory_policy
       - auth_payload
       - contracts
       - user_contracts
@@ -826,6 +841,7 @@ deps:
 
   actor_wiring:
     mayDependOn:
+      - memory_policy
       - contracts
       - neutral_registry
       - application
@@ -1015,6 +1031,7 @@ deps:
 
   composition_root:
     mayDependOn:
+      - memory_policy
       - webhook_route_contracts
       - webhook_management
       - webhook_route_wiring

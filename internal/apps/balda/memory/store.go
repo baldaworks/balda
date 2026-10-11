@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -25,7 +26,7 @@ const (
 	// MemoryUpdatedAtStateKey stores the latest memory update timestamp in ADK session state.
 	MemoryUpdatedAtStateKey = "balda_memory_updated_at"
 
-	kvMemoryKey = "memory/global"
+	kvMemoryKey = memorycmd.Key
 )
 
 // KVStore persists JSON-compatible values by key.
@@ -120,6 +121,9 @@ func (s *Store) Remember(ctx context.Context, fact string) (Snapshot, error) {
 	rec, err := s.loadRecordLocked(ctx)
 	if err != nil {
 		return Snapshot{}, err
+	}
+	if rec.Version == math.MaxInt64 {
+		return Snapshot{}, memorycmd.ErrUnavailable
 	}
 	nextVersion := rec.Version + 1
 	now := nextUpdatedAt(rec.UpdatedAt)
@@ -231,32 +235,32 @@ func (s *Store) importLegacyRecord(ctx context.Context) (memorycmd.Record, bool,
 func normalizeRecord(value any) (memorycmd.Record, error) {
 	data, err := json.Marshal(value)
 	if err != nil {
-		return memorycmd.Record{}, fmt.Errorf("marshal memory record: %w", err)
+		return memorycmd.Record{}, memorycmd.ErrUnavailable
 	}
-	var rec memorycmd.Record
-	if err := json.Unmarshal(data, &rec); err != nil {
-		return memorycmd.Record{}, fmt.Errorf("decode memory record: %w", err)
+	var rec *memorycmd.Record
+	if err := json.Unmarshal(data, &rec); err != nil || rec == nil || rec.Version < 0 {
+		return memorycmd.Record{}, memorycmd.ErrUnavailable
 	}
-	if rec.Version < 0 {
-		rec.Version = 0
-	}
-	if recordHasContent(rec) {
-		updatedAt, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(rec.UpdatedAt))
-		if err != nil {
-			return memorycmd.Record{}, fmt.Errorf("decode memory record updated_at: %w", err)
+	if rec.Version == 0 {
+		if rec.UpdatedAt != "" || len(rec.Entries) != 0 {
+			return memorycmd.Record{}, memorycmd.ErrUnavailable
 		}
-		rec.UpdatedAt = updatedAt.UTC().Format(time.RFC3339Nano)
+		return *rec, nil
 	}
-	return rec, nil
-}
-
-func recordHasContent(rec memorycmd.Record) bool {
-	for _, item := range rec.Entries {
-		if strings.TrimSpace(item.Fact) != "" {
-			return true
+	updated, err := time.Parse(time.RFC3339Nano, rec.UpdatedAt)
+	if err != nil || updated.IsZero() {
+		return memorycmd.Record{}, memorycmd.ErrUnavailable
+	}
+	ids := make(map[int64]bool, len(rec.Entries))
+	for _, entry := range rec.Entries {
+		created, err := time.Parse(time.RFC3339Nano, entry.CreatedAt)
+		if entry.Version <= 0 || entry.Version > rec.Version || ids[entry.Version] || strings.TrimSpace(entry.Fact) == "" || err != nil || created.IsZero() || created.After(updated) {
+			return memorycmd.Record{}, memorycmd.ErrUnavailable
 		}
+		ids[entry.Version] = true
 	}
-	return false
+	rec.UpdatedAt = updated.UTC().Format(time.RFC3339Nano)
+	return *rec, nil
 }
 
 func nextUpdatedAt(previous string) string {
