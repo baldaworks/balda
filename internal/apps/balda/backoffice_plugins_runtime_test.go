@@ -206,6 +206,8 @@ type pluginsRuntimeFixture struct {
 	git                   bool
 	registry              *mcpregistry.MapRegistry
 	management            *pluginsRuntimeManagement
+	completion            *pluginsRuntimeCompletion
+	activation            *pluginsRuntimeActivator
 	runtime               *pluginsFixtureRuntime
 }
 
@@ -253,13 +255,21 @@ func (f *pluginsRuntimeFixture) open(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.management = &pluginsRuntimeManagement{PluginManagementStore: f.provider.PluginManagement()}
+	f.completion = &pluginsRuntimeCompletion{PluginStore: f.provider.Plugins()}
 	var binder baldaagent.SessionCapabilityBinder
 	var lifecycle *catalogapp.Lifecycle
 	config := runtimeconfig.RuntimeConfig{Providers: map[string]agentconfig.Config{pluginsRuntimeFixtureID: {Type: agentconfig.AgentTypeOpenAI, OpenAI: &agentconfig.LocalAPIConfig{Model: pluginsRuntimeFixtureID, APIKey: pluginsRuntimeFixtureID}}}}
 	f.registry = mcpregistry.New(nil)
+	f.activation = &pluginsRuntimeActivator{}
 	container := fx.New(pluginapp.Module, catalogapp.Module, fx.NopLogger,
+		fx.Decorate(func(activator pluginapp.CatalogActivator) pluginapp.CatalogActivator {
+			f.activation.CatalogActivator = activator
+			return f.activation
+		}),
 		fx.Supply(config, f.registry),
-		fx.Provide(func() state.Provider { return pluginsRuntimeProvider{Provider: f.provider, management: f.management} }, func() *mcpmanage.Service { return nil }, func() *mcpbridge.Bridge { return nil },
+		fx.Provide(func() state.Provider {
+			return pluginsRuntimeProvider{Provider: f.provider, management: f.management, completion: f.completion}
+		}, func() *mcpmanage.Service { return nil }, func() *mcpbridge.Bridge { return nil },
 			fx.Annotate(func() string { return f.dir }, fx.ResultTags(`name:"balda_state_dir"`)),
 			fx.Annotate(func() string { return pluginsRuntimeFixtureID }, fx.ResultTags(`name:"balda_provider"`)),
 			fx.Annotate(func() []string { return nil }, fx.ResultTags(`name:"balda_mcp_servers"`)),
@@ -513,6 +523,7 @@ func (s *pluginsRuntimeManagement) CommitPlugin(ctx context.Context, request sta
 type pluginsRuntimeProvider struct {
 	state.Provider
 	management state.PluginManagementStore
+	completion state.PluginStore
 }
 
 func (p pluginsRuntimeProvider) PluginManagement() state.PluginManagementStore { return p.management }
@@ -569,3 +580,5 @@ func exercisePluginsRuntimeAcceptanceRollback(t *testing.T) {
 		}
 	}
 }
+
+func (p pluginsRuntimeProvider) Plugins() state.PluginStore { return p.completion }
