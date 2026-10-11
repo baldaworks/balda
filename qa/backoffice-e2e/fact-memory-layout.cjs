@@ -23,6 +23,7 @@ const viewports = [{ width: 1440, height: 900 }, { width: 1024, height: 768 },
   try {
     for (const viewport of viewports) {
       const page = await browser.newPage({ viewport, javaScriptEnabled: true });
+      page.setDefaultTimeout(10000);
       const failures = [];
       page.on('pageerror', error => failures.push(error.message));
       page.on('requestfailed', request => failures.push(`${request.url()}: ${request.failure()?.errorText}`));
@@ -95,6 +96,21 @@ const viewports = [{ width: 1440, height: 900 }, { width: 1024, height: 768 },
       await page.getByLabel(/^Fact(?: \(required\))?$/).focus();
       await page.keyboard.press('Tab');
       assert.equal(await page.getByRole('button', { name: 'Create fact' }).evaluate(element => element === document.activeElement), true, 'editor keyboard reaches create');
+      await page.getByRole('link', { name: 'Cancel', exact: true }).click();
+      await page.getByRole('link', { name: 'Edit fact 1', exact: true }).click();
+      await page.getByRole('heading', { name: 'Edit fact', exact: true }).waitFor();
+      await page.waitForFunction(() => document.activeElement?.id === 'main-content');
+      assert.deepEqual((await page.locator('.app-sidebar [data-nav-link][aria-current="page"]').allTextContents()).map(text => text.trim()), ['Fact memory'], 'nested HTMX editor keeps active Fact memory navigation');
+      await page.evaluate(conflictPath => window.htmx.ajax('GET', conflictPath, { target: '#main-content', swap: 'outerHTML' }), `${prefix}/memory-conflict`);
+      await page.getByRole('link', { name: 'Reopen this fact', exact: true }).waitFor();
+      assert.equal(await page.locator('input[name="expected_version"]').first().inputValue(), '3', 'HTMX conflict keeps stale version');
+      assert.equal(await page.getByLabel(/^Fact(?: \(required\))?$/).inputValue(), 'Prefers concise replies.\nSynthetic second line.', 'HTMX conflict keeps submitted fact');
+      await page.screenshot({ path: path.join(directory, 'memory-conflict-htmx.png'), fullPage: true });
+      await page.getByRole('link', { name: 'Reopen this fact', exact: true }).click();
+      await page.getByRole('heading', { name: 'Edit fact', exact: true }).waitFor();
+      await page.getByRole('link', { name: 'Reopen this fact', exact: true }).waitFor({ state: 'detached' });
+      await page.waitForFunction(() => document.activeElement?.id === 'main-content');
+      assert.deepEqual((await page.locator('.app-sidebar [data-nav-link][aria-current="page"]').allTextContents()).map(text => text.trim()), ['Fact memory'], 'reopen retains active navigation');
       const toggle = page.getByRole('button', { name: 'Toggle navigation' });
       if (viewport.width < 992) {
         await toggle.click();
