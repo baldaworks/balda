@@ -130,6 +130,11 @@ document.addEventListener("htmx:beforeSwap", function (event) {
       event.detail.isError = false;
       return;
     }
+    if (event.detail.target.hasAttribute("data-plugins") && main.hasAttribute("data-plugins")) {
+      event.detail.shouldSwap = true;
+      event.detail.isError = false;
+      return;
+    }
     if (event.detail.requestConfig?.elt?.closest(".binding-panel") && main.querySelector(".binding-panel")) {
       event.detail.shouldSwap = true;
       event.detail.isError = false;
