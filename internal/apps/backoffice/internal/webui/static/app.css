@@ -54,6 +54,8 @@ html, body { color: var(--ink); background: var(--canvas); }
 .btn-outline-primary { --bs-btn-color: var(--accent); --bs-btn-border-color: var(--accent); }
 .btn-outline-danger { --bs-btn-color: var(--bs-danger-text-emphasis); --bs-btn-border-color: var(--bs-danger-text-emphasis); }
 .invalid-feedback { color: var(--bs-danger-text-emphasis); }
+.fact-memory-table { table-layout: fixed; width: 100%; }
+.fact-memory-table th:last-child { width: 5.5rem; }
 .fact-text-value { white-space: pre-wrap; overflow-wrap: anywhere; }
 .action-row { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem; }
 .detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 1.25rem; }
