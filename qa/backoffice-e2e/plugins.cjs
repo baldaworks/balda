@@ -194,10 +194,13 @@ async function install(page,name) {
   await assertState({version:'1.0.0',enabled:false,revisionCount:2});
   await mutate(page,'Enable plugin',`${detail}/enable`);
   await stage('malformed');await open(page,market);
+  const discoveryReviews=page.locator('.plugins-discovery-table').getByRole('link',{name:'Review install',exact:true});
+  assert.equal(await discoveryReviews.count(),2,'successful discovery offers review for both uninstalled candidates');
   await mutate(page,'Refresh marketplace',`${market}/refresh`,503);
-  assert.equal(await page.getByRole('link',{name:'Review then install',exact:true}).count(),0,'failed refresh cannot review stale candidates');
+  assert.equal(await discoveryReviews.count(),0,'failed refresh cannot review stale candidates');
   await snapshot(page,'failed-refresh');
   await stage('restore-source');await open(page,market);await mutate(page,'Refresh marketplace',`${market}/refresh`);
+  assert.equal(await discoveryReviews.count(),2,'successful refresh restores review for both uninstalled candidates');
   await open(page,detail);await stage('catalog-block');
   await page.getByLabel(/^Confirm disabling runtime-demo for new sessions\.(?: \(required\))?$/).check();
   const blockedMutation=mutate(page,'Disable plugin',`${detail}/disable`,403);
