@@ -15,7 +15,7 @@ import (
 
 func backofficeCommand() *cobra.Command {
 	command := &cobra.Command{Use: "backoffice", Short: "Maintain and review Backoffice"}
-	command.AddCommand(bootstrapAdminCommand(), recover2FACommand(), backofficeQACommand())
+	command.AddCommand(bootstrapAdminCommand(), resetPasswordCommand(), recover2FACommand(), backofficeQACommand())
 	return command
 }
 
@@ -53,10 +53,19 @@ func openBackofficeMaintenance(command *cobra.Command) (*backoffice.Runtime, err
 }
 
 func bootstrapAdminCommand() *cobra.Command {
-	var input backoffice.BootstrapInput
+	return adminPasswordCommand(false)
+}
+
+func resetPasswordCommand() *cobra.Command {
+	return adminPasswordCommand(true)
+}
+
+func adminPasswordCommand(reset bool) *cobra.Command {
+	input := backoffice.BootstrapInput{Reset: reset}
 	command := &cobra.Command{
 		Use:   "bootstrap-admin",
 		Short: "Create or reset administrator credentials with a generated password",
+		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			password, generated, err := bootstrapAdminPassword(command.InOrStdin())
 			if err != nil {
@@ -81,6 +90,11 @@ func bootstrapAdminCommand() *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&input.UserID, "user-id", "", "existing administrator user ID")
+	if reset {
+		command.Use = "reset-password"
+		command.Short = "Reset the administrator password and revoke browser sessions"
+		return command
+	}
 	command.Flags().StringVar(&input.Username, "username", "", "username for a fresh administrator (must be superuser)")
 	command.Flags().StringVar(&input.DisplayName, "display-name", "", "display name for a fresh administrator (must be superuser)")
 	command.Flags().BoolVar(&input.Reset, "reset", false, "replace usable credentials and revoke browser sessions")

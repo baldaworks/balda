@@ -88,8 +88,10 @@ records become canonical users and bindings in the same transaction as the
 Goose version marker. A fresh database needs no conversion; a completed
 conversion preserves existing credentials and browser sessions. Invalid or
 conflicting source data aborts the upgrade without a partial conversion.
-Newly converted users have disabled browser credentials; administrator password
-bootstrap is a separate operation documented in [Backoffice](backoffice.md).
+A following SQL migration sets a temporary `superusersuperuser` password for the
+primary administrator if its browser credential is disabled. First login requires
+replacement; existing usable passwords are preserved. Other converted users retain
+disabled browser credentials. See [Backoffice](backoffice.md) for CLI password reset.
 
 `balda init` retains its refusal to overwrite an existing config. On a fresh
 installation it honors effective database environment settings; keep those

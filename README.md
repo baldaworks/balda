@@ -144,16 +144,21 @@ database, preserving their roles and bot bindings. See the
 
 ```bash
 # Existing installation with owner/collaborator records, after stopping Balda and backing up:
-balda backoffice bootstrap-admin
 balda start
 ```
 
-Conversion does not generate passwords. The converted primary user is named
-`superuser`; `bootstrap-admin` generates and prints its first browser password
-once. Already-converted users retain their credentials and browser sessions.
-If the administrator already has a usable credential, start directly; replacing
-that password requires `bootstrap-admin --reset` and revokes its browser session
-families. Never pass passwords as command arguments.
+The converted primary user is named `superuser`. A SQL migration sets its first
+browser password to `superusersuperuser` and requires replacement on first login.
+Existing usable credentials and browser sessions remain unchanged. No manual
+bootstrap is needed for an upgraded owner. To generate a new password and revoke
+that administrator's browser sessions, run:
+
+```bash
+balda backoffice reset-password
+```
+
+The command prints the generated password once. Never pass passwords as command
+arguments.
 
 Browser refresh tokens default to 30 days (`720h`), renewed after every successful
 refresh. Existing explicit `12h` config or environment overrides must be changed

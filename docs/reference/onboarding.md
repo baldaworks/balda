@@ -54,12 +54,12 @@ CWD `.env` as `BALDA_TELEGRAM_TOKEN`.
 On an existing installation, stop Balda, back up the selected database, and
 deploy the new binary. Goose automatically converts owner/collaborator records
 when the state provider opens. Conversion preserves roles and bot bindings;
-it creates disabled browser credentials without generating passwords.
-Run `balda backoffice bootstrap-admin` to set the converted primary
-administrator's (`superuser`) first browser password, then restart. The command
-generates and prints the password once; optional non-terminal stdin can provide
-an operator-chosen password. Already-converted users retain their passwords;
-replacing a usable administrator password requires `--reset`.
+a following SQL migration sets the primary administrator's (`superuser`) initial
+browser password to `superusersuperuser`, requiring replacement at first login.
+Restart directly without manual bootstrap. Existing usable passwords remain
+unchanged. Run `balda backoffice reset-password` to generate and print a new
+administrator password once and revoke that user's browser sessions. Optional
+non-terminal stdin can provide an operator-chosen password.
 `balda start` applies embedded schema and data migrations and refuses bot ingress
 or Backoffice HTTP until canonical users and administrator credentials are ready.
 
