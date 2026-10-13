@@ -20,15 +20,28 @@ Status: active
   reimport, session reset or conversation-history deletion. Historical prompts
   remain historical data. This contract does not extend to concurrent writers
   from multiple Balda processes sharing one database.
-- `catalogapp` owns current MCP authorization startup recovery and exact
-  authorization retry. `mcpruntime` carries bounded attachment evidence and
-  inspects every selected blocker; `mcpfx` observes supported challenges at the
-  configured upstream, including through the fixed credential bridge. Only
-  valid current authorization-required, fresh configured challenge, and known
-  remote recapture states permit management with an unavailable provider.
-  Any fatal blocker wins. Acquisition remains complete-or-fail; retained pins
-  never become current recovery candidates. Equal-binding retry preserves
-  snapshot/revision identity and every ready runner.
+- Both hosted and ACP provider shells retain every selected exact MCP revision,
+  independently of availability. `catalogapp` owns targeting and local current
+  authorization recovery metadata; `mcpruntime` owns complete configuration
+  leases, revision drain and supervised Balda stdio. `mcpfx` owns concrete SDK,
+  registry and process adapters; `mcpbridge` owns private fixed-upstream credential
+  transport. Runtime policy imports no SDK or credential implementation.
+  HTTP/SSE startup/publication/inventory perform no upstream discovery and no
+  idle retries. Native MCP discovery returns within 10 seconds and calls/reconnect
+  within 120 seconds; ACP initialization and attachment RPCs within 10 seconds, earlier caller
+  deadlines winning. Owned SDK cleanup remains retained after caller return.
+  Local structural/protection errors fail closed; availability never filters
+  acquisition or changes pins/history. Equal-binding retry preserves snapshot,
+  revision and provider identity without remote discovery.
+- Owned stdio workers are scheduled before startup advances and never join
+  handshake readiness. Discovery is bounded to 10 seconds; process exit/failure retries
+  after 1/2/4/8/16/30 seconds with a 60-second stable reset. Final reference drain/shutdown cancel
+  workers and timers, stop with a 5-second graceful budget, force and retain reaping.
+  Catalog discovery and provider-owned execution children remain distinct.
+  Private bridge routes follow config leases and deny unbound OAuth before
+  upstream I/O. Remote catalog health remains unobserved rather than claiming
+  tool readiness. Existing ACP internal MCP behavior is provider-specific;
+  genuine missing-session recovery is preserved without outage-driven recreation.
 - `mcpmanage` owns explicit OAuth selection and scopes for remote connections.
   Native authorization prepares an immutable current revision; ordinary
   connection edits and candidate probes retain trusted authorization settings.

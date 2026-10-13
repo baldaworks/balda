@@ -16,6 +16,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpfx"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpruntime"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/normahq/runtime/v2/agentconfig"
 	"github.com/normahq/runtime/v2/mcpregistry"
@@ -123,6 +124,15 @@ func testStdioActualProviders(t *testing.T, forceACP bool) {
 					retained = append(retained, capture)
 				}
 			}
+			// Preparing configured captures also publishes managed definitions
+			// through the seed catalog. Stop that separate owner before observing
+			// the tested catalog and provider children; its launches are async.
+			if err := original.MCP().Shutdown(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			if health := original.MCP().Health(); len(health) != 0 {
+				t.Fatalf("seed catalog still owns %d MCP instances before process observation", len(health))
+			}
 			registry := mcpregistry.New(nil)
 			processDirectory := t.TempDir()
 			t.Setenv("BALDA_MCP_CATALOG_PROCESS_DIRECTORY", processDirectory)
@@ -143,7 +153,7 @@ func testStdioActualProviders(t *testing.T, forceACP bool) {
 			if err := catalog.PublishCandidate(t.Context(), snapshot); err != nil {
 				t.Fatal(err)
 			}
-			if health := catalog.MCP().Health(); len(health) != 2 || health[0].ToolCount != 1 || health[1].ToolCount != 1 {
+			if health := waitCatalogStdioObservation(t, catalog); len(health) != 2 || health[0].ToolCount != 1 || health[1].ToolCount != 1 {
 				t.Fatal("stdio discovery lost host environment or protected overlay")
 			}
 			for _, capture := range retained {
@@ -178,6 +188,30 @@ func testStdioActualProviders(t *testing.T, forceACP bool) {
 				}
 			}
 		})
+	}
+}
+
+func waitCatalogStdioObservation(t *testing.T, catalog *Runtime) []mcpruntime.Health {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	tick := time.NewTicker(5 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		health := catalog.MCP().Health()
+		pending := false
+		for _, item := range health {
+			pending = pending || item.State == mcpruntime.HealthStarting
+		}
+		if !pending {
+			return health
+		}
+		select {
+		case <-tick.C:
+		case <-ctx.Done():
+			t.Fatalf("stdio fixture did not complete bounded discovery: %v", health)
+			return nil
+		}
 	}
 }
 

@@ -2,7 +2,6 @@ package mcpfx
 
 import (
 	"context"
-	"errors"
 
 	"github.com/baldaworks/balda/internal/apps/balda/mcpbridge"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
@@ -60,14 +59,14 @@ func (r *ManagedResolver) ResolveLaunch(ctx context.Context, descriptor runtimec
 	}
 	binding := revision.Definition.AuthBinding
 	if revision.Definition.OAuth {
-		if binding == nil || binding.ConnectionID != c.ID || binding.Resource != config.URL || binding.Issuer == "" || binding.ClientID == "" {
-			return mcpruntime.LaunchConfig{}, errors.Join(mcpcmd.ErrAuthRequired, &mcpruntime.LaunchError{Reason: mcpruntime.FailureAuthorizationRequired})
+		if binding != nil && (binding.ConnectionID != c.ID || binding.Resource != config.URL || binding.Issuer == "" || binding.ClientID == "") {
+			return mcpruntime.LaunchConfig{}, mcpcmd.ErrInvalid
 		}
 	} else if binding != nil {
 		return mcpruntime.LaunchConfig{}, mcpcmd.ErrInvalid
 	}
 	key := mcpruntime.InstanceKey{Source: descriptor.ID.Source, Revision: descriptor.Revision, Name: descriptor.Name}
-	return BridgeLaunch(r.Bridge, RegistryID(key), config, binding, revision.Definition.Scopes)
+	return bridgeLaunch(r.Bridge, RegistryID(key), config, binding, revision.Definition.Scopes, revision.Definition.OAuth)
 }
 
 // ConfiguredResolver keeps static file launches separate from exact protected

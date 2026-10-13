@@ -79,6 +79,12 @@ uses the current trusted definition, including explicit configured capture;
 saved grants can retry tool attachment without repeating OAuth. See [MCP management](docs/reference/backoffice.md#mcp-management)
 for provider targeting and value operations.
 
+Configured MCP availability does not block startup: both hosted and ACP providers
+retain every selected exact revision. HTTP/SSE attachment starts on invocation;
+Balda-owned stdio starts under supervision without waiting for its handshake.
+See [MCP deadlines and recovery](docs/reference/configuration.md#mcp-availability-and-deadlines)
+for operation bounds and external-agent limitations.
+
 Administrators can open **Schedules** in Backoffice to inspect configured
 recurring jobs and create persistent UI-owned jobs. Configuration entries are
 read-only; either source can be run manually, and both have retained run

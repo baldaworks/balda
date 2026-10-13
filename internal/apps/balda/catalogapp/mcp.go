@@ -78,11 +78,11 @@ func (r *Runtime) MCPHealth(ctx context.Context, c mcpcmd.Connection) (mcpcmd.St
 		if health.Key != key {
 			continue
 		}
+		if r.mcpCredentials != nil && r.mcpCredentials.CredentialsUnavailable(mcpfx.RegistryID(key)) {
+			return mcpcmd.StatusUnavailable, 0, nil
+		}
 		switch health.State {
 		case mcpruntime.HealthReady:
-			if r.mcpCredentials != nil && r.mcpCredentials.CredentialsUnavailable(mcpfx.RegistryID(key)) {
-				return mcpcmd.StatusUnavailable, 0, nil
-			}
 			return mcpcmd.StatusReady, health.ToolCount, nil
 		case mcpruntime.HealthFailed, mcpruntime.HealthDegraded, mcpruntime.HealthStopping:
 			return mcpcmd.StatusUnavailable, 0, nil

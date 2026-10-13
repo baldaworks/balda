@@ -109,7 +109,7 @@ func TestStdioLaunchResolvesHostPATHAndRelativeChildPaths(t *testing.T) {
 	}
 }
 
-func TestStdioLaunchRejectsUnavailableDirectoryAndExecutable(t *testing.T) {
+func TestStdioProjectionRejectsInvalidDirectoryAndEmptyCommand(t *testing.T) {
 	executable, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -122,7 +122,6 @@ func TestStdioLaunchRejectsUnavailableDirectoryAndExecutable(t *testing.T) {
 	for _, test := range []struct{ command, directory string }{
 		{executable, filepath.Join(directory, "missing")},
 		{executable, file},
-		{filepath.Join(directory, "missing-command"), directory},
 		{"", directory},
 	} {
 		registry := mcpregistry.New(nil)
@@ -137,6 +136,27 @@ func TestStdioLaunchRejectsUnavailableDirectoryAndExecutable(t *testing.T) {
 		if _, found := registry.Get(RegistryID(key)); found {
 			t.Fatal("failed launch changed the provider registry")
 		}
+	}
+}
+
+func TestStdioUnavailableExecutableRemainsProjectedUntilInvocation(t *testing.T) {
+	directory := t.TempDir()
+	registry := mcpregistry.New(nil)
+	projector, err := NewRegistryProjector(registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := mcpruntime.InstanceKey{Source: runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindManagedMCP}, Name: "pending-executable"}
+	if _, err := projector.Project(t.Context(), key, mcpruntime.LaunchConfig{Transport: transportStdio, Command: filepath.Join(directory, "unavailable"), WorkingDir: directory}); err != nil {
+		t.Fatalf("unavailable executable prevented local projection: %v", err)
+	}
+	config, found := registry.Get(RegistryID(key))
+	if !found {
+		t.Fatal("exact unavailable configuration missing")
+	}
+	command := exec.CommandContext(t.Context(), config.Cmd[0], config.Args...)
+	if err := command.Run(); err == nil {
+		t.Fatal("unavailable executable invocation succeeded")
 	}
 }
 

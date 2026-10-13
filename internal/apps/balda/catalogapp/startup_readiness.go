@@ -10,47 +10,8 @@ import (
 
 const transportStdio = "stdio"
 
-// MCPAuthorizationPending reports whether every selected startup blocker has
-// trusted current authorization evidence. Execution still fails acquisition.
-func (r *Runtime) MCPAuthorizationPending(ctx context.Context, err error) bool {
-	if err == nil || ctx.Err() != nil {
-		return false
-	}
-	snapshot, snapshotErr := r.store.Application()
-	if snapshotErr != nil {
-		return false
-	}
-	return r.authorizationBlockers(ctx, snapshot, err)
-}
-
-func (r *Runtime) authorizationBlockers(ctx context.Context, snapshot runtimecatalogcmd.Snapshot, err error) bool {
-	switch failure := err.(type) {
-	case *mcpruntime.AttachmentError:
-		for _, descriptor := range snapshot.MCPServers {
-			key := mcpruntime.InstanceKey{Source: descriptor.ID.Source, Revision: descriptor.Revision, Name: descriptor.Name}
-			if key == failure.Key {
-				return r.currentAuthorizationBlocker(ctx, descriptor, failure.Reason)
-			}
-		}
-		return false
-	case interface{ Unwrap() []error }:
-		children := failure.Unwrap()
-		if len(children) == 0 {
-			return false
-		}
-		for _, child := range children {
-			if !r.authorizationBlockers(ctx, snapshot, child) {
-				return false
-			}
-		}
-		return true
-	case interface{ Unwrap() error }:
-		return r.authorizationBlockers(ctx, snapshot, failure.Unwrap())
-	default:
-		return false
-	}
-}
-
+// currentAuthorizationBlocker validates exact local recovery metadata. It does
+// not admit partial provider shells or perform remote availability discovery.
 func (r *Runtime) currentAuthorizationBlocker(ctx context.Context, descriptor runtimecatalogcmd.MCPServerDescriptor, reason mcpruntime.FailureReason) bool {
 	if descriptor.Transport == transportStdio {
 		return false
