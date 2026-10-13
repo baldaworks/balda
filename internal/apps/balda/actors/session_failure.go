@@ -6,17 +6,18 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/baldaworks/go-actorlayer"
 )
 
-const preparationFailureMessage = "Balda could not start this turn. Please retry your message. If it fails again, ask the operator to check the service."
+const terminalFailureMessage = "Balda could not complete this message. Please retry your message. If it fails again, ask the operator to check the service."
 const scheduledFailureMessage = "The scheduled run could not complete. Ask the operator to check Balda."
 const webhookFailureMessage = "The webhook run could not complete. Ask the operator to check Balda."
 
-func (e *SessionActorExecutor) reportPreparationFailure(ctx context.Context, env actorlayer.Envelope, payload SessionTurnPayload, runErr error) error {
+func (e *SessionActorExecutor) reportTerminalFailure(ctx context.Context, env actorlayer.Envelope, payload SessionTurnPayload, runErr error) error {
 	if payload.Source == turncmd.SourceWebhook {
 		return e.reportWebhookFailure(ctx, env, payload, runErr)
 	}
@@ -26,7 +27,11 @@ func (e *SessionActorExecutor) reportPreparationFailure(ctx context.Context, env
 		return nil
 	}
 	recurring := payload.Source == turncmd.SourceSchedule && payload.ScheduleOneShot != nil && !*payload.ScheduleOneShot
-	if !recurring && !errors.As(runErr, &preparation) {
+	var handled *turncmd.FinalOutcomeAcceptedError
+	if conversationalTurn(env, payload) && errors.As(runErr, &handled) {
+		return nil
+	}
+	if !recurring && !errors.As(runErr, &preparation) && !conversationalTurn(env, payload) {
 		return nil
 	}
 	terminal := sessionTurnUsesJobLifecycle(env, payload) || !actorlayer.IsRetryableError(runErr) || actorlayer.RetryExhausted(env.Attempt+1, env.MaxAttempts)
@@ -34,19 +39,19 @@ func (e *SessionActorExecutor) reportPreparationFailure(ctx context.Context, env
 		return nil
 	}
 	if e.dispatcher == nil {
-		return fmt.Errorf("preparation failure delivery dispatcher is unavailable")
+		return fmt.Errorf("terminal failure delivery dispatcher is unavailable")
 	}
 	locator := payload.Locator
-	if payload.ReportTo != nil {
+	if payload.ReportTo != nil && !conversationalTurn(env, payload) {
 		locator = *payload.ReportTo
 	}
-	message, suffix := preparationFailureMessage, "preparation-failure"
+	message, suffix := terminalFailureMessage, "preparation-failure"
 	if recurring {
 		message, suffix = scheduledFailureMessage, "final"
 	}
 	delivery, err := deliverycmd.AgentReplyEnvelopeWithSettlement(payload.JobID, env.To, locator, deliverycmd.SettlementOutbox, message, suffix)
 	if err != nil {
-		return fmt.Errorf("build preparation failure delivery: %w", err)
+		return fmt.Errorf("build terminal failure delivery: %w", err)
 	}
 	// Ordinary chat turns may have no JobID. Preserve one delivery identity
 	// across redelivery/restart without manufacturing a job or exposing input.
@@ -55,8 +60,15 @@ func (e *SessionActorExecutor) reportPreparationFailure(ctx context.Context, env
 		delivery.ID = key
 		delivery.DedupeKey = key
 	}
+	if conversationalTurn(env, payload) {
+		delivery.CausationID = env.ID
+		delivery.CorrelationID = env.CorrelationID
+		if delivery.CorrelationID == "" {
+			delivery.CorrelationID = env.ID
+		}
+	}
 	if _, err := e.dispatcher.Dispatch(ctx, delivery); err != nil {
-		return fmt.Errorf("dispatch preparation failure delivery: %w", err)
+		return fmt.Errorf("dispatch terminal failure delivery: %w", err)
 	}
 	return nil
 }
@@ -123,4 +135,18 @@ func (e *SessionActorExecutor) dispatchWebhookFinal(ctx context.Context, env act
 		return fmt.Errorf("dispatch webhook final delivery: %w", err)
 	}
 	return nil
+}
+
+// conversationalTurn limits terminal feedback to ordinary human conversation.
+// Automatic work and private jobs retain their own outcome policies.
+func conversationalTurn(env actorlayer.Envelope, payload SessionTurnPayload) bool {
+	if env.Namespace != actorcmd.NamespaceHumanInbound {
+		return false
+	}
+	switch payload.Source {
+	case "", turncmd.SourceTelegram, turncmd.SourceSlackAgent, turncmd.SourceZulip, turncmd.SourceMattermost:
+		return true
+	default:
+		return false
+	}
 }

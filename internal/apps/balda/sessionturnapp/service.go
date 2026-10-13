@@ -26,7 +26,6 @@ import (
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/runner"
 	adksession "google.golang.org/adk/v2/session"
@@ -270,7 +269,13 @@ func (s *TurnExecutionService) appendJobEvent(
 	return s.jobEvents.AppendEvent(ctx, jobID, eventType, actor, messageID, payload)
 }
 
-func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest) error {
+func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest) (runErr error) {
+	finalAccepted := false
+	defer func() {
+		if finalAccepted && runErr != nil {
+			runErr = &turncmd.FinalOutcomeAcceptedError{Cause: runErr}
+		}
+	}()
 	if req.Runner == nil {
 		return fmt.Errorf("session turn: no runner in session %s", req.SessionID)
 	}
@@ -730,6 +735,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 					if err := s.dispatchJobDelivery(ctx, req.JobID, req.Locator, req.SessionID, deliveryFormat, responseText, "final"); err != nil {
 						return err
 					}
+					finalAccepted = true
 					if err := s.appendJobEvent(ctx, req.JobID, baldajobs.JobEventAgentResult, "session.actor", "", map[string]any{
 						"text": strings.TrimSpace(responseText),
 					}); err != nil {
@@ -740,8 +746,9 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 						responseSource = "streamed_text"
 					}
 				} else if sendErr := sendAgentReplyWithFormat(ctx, s.dispatcher, req.OutboundFrom, req.Locator, deliveryFormat, responseText); sendErr != nil {
-					log.Warn().Err(sendErr).Int("topic_id", topicID).Msg("failed to send balda response")
+					return fmt.Errorf("publish final response: %w", sendErr)
 				} else {
+					finalAccepted = true
 					responseEmitted = true
 					if responseSource == responseSourceNone {
 						responseSource = "streamed_text"
@@ -770,6 +777,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 						if err := s.dispatchJobDelivery(ctx, req.JobID, req.Locator, req.SessionID, deliveryFormat, terminalMessage, suffix); err != nil {
 							return err
 						}
+						finalAccepted = true
 						if err := s.appendJobEvent(ctx, req.JobID, baldajobs.JobEventAgentResult, "session.actor", "", map[string]any{
 							"text":          strings.TrimSpace(terminalMessage),
 							"finish_reason": strings.TrimSpace(string(terminalFinishReason)),
@@ -780,8 +788,9 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 						responseSource = terminalSource
 						handledEmptyTerminalReason = true
 					} else if sendErr := sendPlain(ctx, s.dispatcher, req.OutboundFrom, req.Locator, terminalMessage); sendErr != nil {
-						log.Warn().Err(sendErr).Int("topic_id", topicID).Msg("failed to send balda terminal finish reason message")
+						return fmt.Errorf("publish terminal response: %w", sendErr)
 					} else {
+						finalAccepted = true
 						responseEmitted = true
 						responseSource = terminalSource
 						handledEmptyTerminalReason = true

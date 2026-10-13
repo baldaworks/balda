@@ -24,13 +24,16 @@ func TestPreparationFailureDeliveryPolicy(t *testing.T) {
 		deliver bool
 		cause   error
 		want    int
+		source  string
 	}{
-		{"retry remains", 3, true, &turncmd.PreparationError{Cause: errors.New("secret")}, 0},
-		{"exhausted", 4, true, &turncmd.PreparationError{Cause: errors.New("secret")}, 1},
-		{"permanent", 0, true, &turncmd.PreparationError{Cause: actorlayer.PermanentError(errors.New("secret"))}, 1},
-		{"provider owns failure", 4, true, errors.New("secret"), 0},
-		{"canceled", 4, true, &turncmd.PreparationError{Cause: context.Canceled}, 0},
-		{"silent invocation", 4, false, &turncmd.PreparationError{Cause: errors.New("secret")}, 0},
+		{"retry remains", 3, true, &turncmd.PreparationError{Cause: errors.New("secret")}, 0, ""},
+		{"exhausted", 4, true, &turncmd.PreparationError{Cause: errors.New("secret")}, 1, ""},
+		{"permanent", 0, true, &turncmd.PreparationError{Cause: actorlayer.PermanentError(errors.New("secret"))}, 1, ""},
+		{"unhandled execution failure", 4, true, errors.New("secret"), 1, ""},
+		{"canceled", 4, true, &turncmd.PreparationError{Cause: context.Canceled}, 0, ""},
+		{"silent invocation", 4, false, &turncmd.PreparationError{Cause: errors.New("secret")}, 0, ""},
+		{"automatic unhandled failure", 4, true, errors.New("secret"), 0, turncmd.SourceAuto},
+		{"schedule unhandled failure", 4, true, errors.New("secret"), 0, turncmd.SourceSchedule},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			bus := &recordingHandlerCommandBus{}
@@ -42,7 +45,10 @@ func TestPreparationFailureDeliveryPolicy(t *testing.T) {
 				t.Fatal(err)
 			}
 			payload.Deliver = test.deliver
-			if err := actor.reportPreparationFailure(context.Background(), env, payload, test.cause); err != nil {
+			if test.source != "" {
+				payload.Source = test.source
+			}
+			if err := actor.reportTerminalFailure(context.Background(), env, payload, test.cause); err != nil {
 				t.Fatal(err)
 			}
 			if len(bus.commands) != test.want {
@@ -55,7 +61,7 @@ func TestPreparationFailureDeliveryPolicy(t *testing.T) {
 			if err := actorlayer.UnmarshalPayload(bus.commands[0].Payload, &delivery); err != nil {
 				t.Fatal(err)
 			}
-			if delivery.Text != preparationFailureMessage || strings.Contains(delivery.Text, "secret") {
+			if delivery.Text != terminalFailureMessage || strings.Contains(delivery.Text, "secret") {
 				t.Fatalf("unsafe failure message: %q", delivery.Text)
 			}
 			if delivery.Settlement != deliverycmd.SettlementOutbox || delivery.Locator != payload.Locator {
@@ -87,7 +93,7 @@ func TestWebhookPreparationFailurePersistsBoundedOutputAndFinalDelivery(t *testi
 		ReportTo: &report}
 	env := testSessionTurnEnvelopeWithJobID(t, nil, jobID, turncmd.SourceWebhook)
 	for range 2 {
-		if err := actor.reportPreparationFailure(ctx, env, payload,
+		if err := actor.reportTerminalFailure(ctx, env, payload,
 			&turncmd.PreparationError{Cause: errors.New("private provider diagnostic")}); err != nil {
 			t.Fatal(err)
 		}
@@ -203,7 +209,7 @@ func TestPreparationFailurePublicationFailureIsNotSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	payload.Deliver = true
-	err := actor.reportPreparationFailure(context.Background(), env, payload, &turncmd.PreparationError{Cause: errors.New("secret")})
+	err := actor.reportTerminalFailure(context.Background(), env, payload, &turncmd.PreparationError{Cause: errors.New("secret")})
 	if err == nil || len(bus.commands) != 0 {
 		t.Fatalf("publication failure = %v, commands = %d", err, len(bus.commands))
 	}
@@ -251,7 +257,7 @@ func TestPreparationFailureDeliverySurvivesRestartWithoutDuplicate(t *testing.T)
 	payload.ReportTo = &reportTo
 	for range 2 {
 		actor := NewSessionActor(SessionActorConfig{Dispatcher: bus})
-		if err := actor.reportPreparationFailure(ctx, env, payload, &turncmd.PreparationError{Cause: errors.New("private diagnostic")}); err != nil {
+		if err := actor.reportTerminalFailure(ctx, env, payload, &turncmd.PreparationError{Cause: errors.New("private diagnostic")}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -262,8 +268,8 @@ func TestPreparationFailureDeliverySurvivesRestartWithoutDuplicate(t *testing.T)
 	if err := actorlayer.UnmarshalPayload(bus.commands[0].Payload, &delivery); err != nil {
 		t.Fatal(err)
 	}
-	if delivery.Locator != reportTo {
-		t.Fatal("failure did not use the exact report target")
+	if delivery.Locator != payload.Locator {
+		t.Fatal("conversational failure did not use the exact originating locator")
 	}
 	path := filepath.Join(t.TempDir(), "delivery.db")
 	store, err := baldastate.NewSQLiteProvider(ctx, path)

@@ -16,3 +16,13 @@ type PreparationError struct {
 
 func (e *PreparationError) Error() string { return e.Cause.Error() }
 func (e *PreparationError) Unwrap() error { return e.Cause }
+
+// FinalOutcomeAcceptedError identifies an error after the normal final response
+// was accepted by delivery. Its cause remains available to operator diagnostics;
+// retrying conversational provider work would repeat an already handled outcome.
+type FinalOutcomeAcceptedError struct {
+	Cause error
+}
+
+func (e *FinalOutcomeAcceptedError) Error() string { return e.Cause.Error() }
+func (e *FinalOutcomeAcceptedError) Unwrap() error { return e.Cause }
