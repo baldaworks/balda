@@ -41,20 +41,20 @@ then binds one shared HTTP listener before enabling inbound transports. A failed
 prerequisite, route conflict, or listener bind aborts startup. Shutdown stops
 inbound transports and the shared HTTP listener before the shared provider.
 
-The selected provider may remain explicitly unavailable while authenticated
-management starts for three current MCP authorization states: a valid selected
-OAuth revision needs worker authorization, a fresh configured remote returns a
-bounded same-origin OAuth challenge, or a changed remote file requires a new
-capture of its valid retained OAuth definition. Tools are never omitted to
-construct a partial runner. Every selected MCP blocker is inspected; an ordinary
-remote failure, malformed or foreign challenge, missing historical revision,
-invalid selected provider, unavailable protection material, or cancellation
-still aborts startup. The credential bridge and catalog retain their existing
-position before provider construction.
+Both hosted and ACP provider shells start with the complete selected MCP
+configuration, including unreachable, unresponsive or unauthorized servers.
+Startup, catalog publication and inventory do not connect to configured HTTP/SSE
+servers. Balda schedules owned stdio discovery before advancing startup, with
+handshake and restart work in supervised workers. MCP failure is an invocation
+or observed-health outcome; it does not remove selected revisions or reset a
+conversation. Missing historical revisions, malformed local/provider settings,
+unavailable protection material and cancellation remain structural errors.
+The credential bridge and catalog keep their position before provider construction.
 
-Saving the same worker authorization retries only its failed exact MCP
-attachments. It preserves the definition revision, capability snapshot, and
-ready runners. A failed retry leaves the saved grant non-ready and retryable.
+Saving the same worker authorization repairs local projection or a previously
+failed credential request. It preserves the definition revision, capability
+snapshot and existing provider runtimes, without MCP discovery or a tool call.
+The next invocation may attempt attachment; saving authorization does not claim readiness.
 A first or changed binding follows ordinary immutable catalog publication.
 Changing a file-owned remote to stdio uses the current stdio declaration;
 removing it excludes it from new selections. Retained remote captures, grants,
@@ -634,9 +634,11 @@ browser forms retain their existing limits.
 
 Inventory combines configured and Backoffice-managed connections. It shows
 source, transport, provider targets, tool availability and OAuth
-status separately. **Available** means the selected revision's tools are available;
-saving or storing an authorized grant does not establish readiness. Recovery
-labels come from the catalog owner's exact current failed attachment evidence.
+status separately. **Available** reflects observed tools for the selected revision;
+saving or storing an authorized grant does not establish readiness. Remote
+connections remain unobserved (**Pending**) in catalog health; provider invocation
+and candidate probe results do not become background discovery authority.
+Recovery labels use exact current grant/capture state and trusted upstream observations.
 Opening inventory does not start a server or discover OAuth metadata.
 
 `/mcp/new` creates a managed server. `/mcp/connections/{connection_id}` shows
@@ -655,7 +657,8 @@ cleared after browser requests and history restoration. Save and reopen to add
 more binding rows. When changing transport, remove incompatible bindings.
 
 **Probe candidate** validates and discovers the proposed revision without
-saving, publishing or selecting it. Successful probing reports a tool count
+saving, publishing or selecting it. Full discovery has a ten-second caller
+deadline, with earlier cancellation honored. Successful probing reports a tool count
 and leaves runtime readiness unchanged. Probe inputs are cleared; enter them
 again before saving. Saves redirect to the current detail. Conflicts return
 409 and require reopening the editor. Errors retain their HTTP status and never
@@ -751,14 +754,16 @@ connection, resource, issuer and client. Reducing scopes can deny tools to
 existing sessions that require the previous scopes. Their revisions stay
 unchanged; restoring sufficient authorization permits access again.
 
-**Authorized** means service authorization was saved; **Available** means its current tools
-are available. Inspect both states on the connection. **Retry tool attachment**
-uses its saved current grant without repeating OAuth, keeps an unchanged binding
-revision and retries the affected failed attachment. It does not restart ready
-runners or change historical pins. A transient OAuth refresh failure makes the
+**Authorized** means service authorization was saved; **Available** reflects
+observed tool readiness. Inspect both states on the connection. **Retry tool attachment**
+uses its saved current grant without repeating OAuth and keeps an unchanged binding
+revision. It repairs local projection or requests current credentials after a
+recorded credential failure; it does not discover MCP tools, restart provider
+runtimes or change historical pins. A transient OAuth refresh failure makes the
 exact connection **Tools unavailable** while retaining its saved authorization.
-A successful subsequent credential request or **Retry tool attachment** restores
-availability without restarting the attached MCP or changing its revision.
+A successful subsequent credential request or **Retry tool attachment** clears
+that credential failure without restarting MCP or changing its revision. It does
+not establish remote discovery readiness; a later invocation may attach again.
 Retry does not dispatch a tool request. **Revoke authorization** requires confirmation
 and revokes every retained worker grant context, including existing sessions.
 Run one active writer for worker grants; keep the deployment credential key with

@@ -453,17 +453,21 @@ version. Balda resolves `${PLUGIN_ROOT}` and `${PLUGIN_DATA}`, enforces
 filesystem containment, treats `command` as one executable token rather than a
 shell string, and enables only supported transports.
 
-Snapshot publication describes desired MCP state. The MCP runtime reconciler
-owns process start, connection, handshake, tool discovery, shutdown, and
-observed health:
+Snapshot publication installs complete local exact-configuration leases.
+HTTP/SSE projection does not connect or discover; provider invocation owns
+attachment. The MCP runtime schedules and supervises Balda-owned stdio discovery
+without blocking startup, and owns revision drain, shutdown and observed health:
 
 ```text
-disabled | starting | ready | degraded | failed | stopping
+disabled | unknown | starting | ready | degraded | failed | stopping
 ```
 
 Connection or authentication failure updates health and diagnostics but does
-not invalidate unrelated contributions. A turn sees only tools ready for its
-pinned source revision. MCP timeouts, process limits, environment filtering,
+not invalidate unrelated contributions or omit selected MCP configuration.
+A provider receives every pinned server, even when its tools are unavailable.
+Remote catalog health remains unknown until there is trusted owned evidence;
+publication and provider invocation do not imply discovery readiness.
+MCP timeouts, process limits, environment filtering,
 logging redaction, and shutdown deadlines are host policy.
 
 MCP runtime instances are keyed by source and revision. During upgrade, an old

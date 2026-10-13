@@ -295,7 +295,50 @@ the selection for standalone members or other pools.
 Existing and restored sessions keep their captured revision and authorization
 binding. Changing a file or saving a managed definition does not update those
 sessions. See [MCP management](backoffice.md#mcp-management) for authorization,
-readiness and retry operations.
+observed status and authorization retry operations.
+
+#### MCP availability and deadlines
+
+Startup and conversation create/restore retain the full selected server set and
+its exact revisions for both native hosted and ACP providers. Unavailable servers
+are never filtered out. Configured HTTP/SSE servers receive no startup,
+publication or inventory discovery requests, and Balda runs no idle remote retry
+loop. A later invocation may make a fresh attachment attempt. Missing retained
+revisions, invalid structural configuration and unreadable protected material
+still fail locally; outage recovery never rewrites pins, history or session IDs.
+
+| Operation | Effective bound |
+| --- | --- |
+| Native ADK MCP initialization and complete tool discovery | 10 seconds |
+| Native ADK MCP tool call, including reconnect | 120 seconds |
+| ACP process initialization and each new/resume attachment RPC | 10 seconds |
+| Explicit candidate probe discovery | 10 seconds |
+| Balda-owned stdio handshake and discovery | 10 seconds |
+| Owned stdio graceful stop | 5 seconds, then forced termination with reaping retained by its owner |
+
+Earlier caller cancellation or deadlines win. These bounds cover MCP setup and
+tool operations, not the lifetime of a model prompt or conversation. Slow servers
+can fail an invocation under these limits. Native SDK cancellation cleanup stays
+owned after a caller returns; concurrent callers wait within their own deadlines
+without starting extra setup workers or replaying an ambiguous tool call.
+
+Balda schedules owned stdio during startup without joining readiness. Launch
+failure, failed discovery and process exit retry after 1, 2, 4, 8, 16 and at most
+30 seconds; a process running stably for 60 seconds resets the delay. Shutdown
+and final revision drain cancel restart timers and stop/reap the owned child.
+The catalog discovery child remains distinct from native-provider or external
+ACP tool-execution children. Those providers keep ownership of their own children.
+
+External ACP executables also own internal MCP tool-call timeouts and recovery.
+Balda defers their launch to invocation and bounds the adapter-visible attachment
+RPCs; it cannot promise recovery for every already-open remote session. Only the
+existing genuine session-not-found path recreates a missing ACP session; an MCP
+outage or ambiguous new-session response does not create an outage-driven duplicate.
+An isolated local probe of **OpenCode v2.0.3** on 2026-10-13 confirmed that
+`session/new` sends MCP initialization and remained pending beyond ten seconds
+against hung peers. Its internal tool deadlines and idle retry behavior were not
+established by that probe. Controlled ACP fixtures verify Balda's adapter bounds;
+confirm the deployed executable's own behavior before relying on stronger recovery.
 
 #### Protected values and worker grants
 
@@ -329,8 +372,11 @@ credential bridge for discovery and execution. External ACP clients receive
 only the local bridge endpoint and its capability, rather than upstream headers
 or OAuth tokens. Headerless connections without OAuth and stdio connections use
 their direct transports. Saving authorization and making tools ready are
-separate outcomes; retry a saved grant's tool attachment from Backoffice when
-publication or discovery failed.
+separate outcomes. An unbound OAuth definition or current file requiring a new
+capture keeps a private denied route; requests fail with a sanitized authorization
+error before any unsigned upstream traffic. The route follows the exact config
+lease, including across discovery failure. Backoffice retry repairs local
+publication or recorded credential failure; fresh remote attachment remains invocation-owned.
 
 #### Transport Types
 
