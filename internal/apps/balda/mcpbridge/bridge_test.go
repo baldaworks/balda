@@ -43,7 +43,10 @@ func TestStaticBridgePreservesRealHTTPAndSSEToolSessions(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer func() {
-				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+				// net/http Shutdown polls active connections and allows up to five
+				// seconds for a newly accepted idle connection to leave StateNew.
+				// This session contract test does not prescribe a one-second drain.
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 				defer cancel()
 				if err := bridge.Close(ctx); err != nil {
 					t.Error(err)

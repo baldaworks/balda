@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -126,8 +127,35 @@ func verifyUnavailableInvocationKeepsRuntime(t *testing.T, builder *baldaagent.B
 	}
 }
 
+// The fixture deliberately selects one missing native stdio executable. If
+// discovery reaches its execution shim, SDK Close waits/reaps and returns that
+// child's exit status. Preserve every other shutdown error, including timeouts.
+func verifyUnavailableStartupShutdown(t *testing.T, err error, hosted bool) {
+	t.Helper()
+	if err == nil {
+		return
+	}
+	switch failure := err.(type) {
+	case interface{ Unwrap() []error }:
+		for _, child := range failure.Unwrap() {
+			verifyUnavailableStartupShutdown(t, child, hosted)
+		}
+	case interface{ Unwrap() error }:
+		verifyUnavailableStartupShutdown(t, failure.Unwrap(), hosted)
+	case *exec.ExitError:
+		if hosted && failure.ProcessState != nil && failure.Exited() && failure.ExitCode() == 1 {
+			t.Log("selected missing stdio execution shim exited and was reaped")
+			return
+		}
+		t.Error(err)
+	default:
+		t.Error(err)
+	}
+}
+
 func TestUnavailableMCPStartupKeepsBothProviderShellsAndManagementRunning(t *testing.T) {
-	for _, providerKind := range []string{"hosted", "acp"} {
+	const hostedProvider = "hosted"
+	for _, providerKind := range []string{hostedProvider, "acp"} {
 		for _, validProvider := range []bool{true, false} {
 			t.Run(fmt.Sprintf("%s/valid-provider=%t", providerKind, validProvider), func(t *testing.T) {
 				var origin string
@@ -221,7 +249,7 @@ func TestUnavailableMCPStartupKeepsBothProviderShellsAndManagementRunning(t *tes
 					},
 				}
 				if !validProvider {
-					if providerKind == "hosted" {
+					if providerKind == hostedProvider {
 						config.Providers["alpha"].OpenAI.APIKey = ""
 					} else {
 						config.Providers["alpha"].GenericACP.Cmd = nil
@@ -275,9 +303,7 @@ func TestUnavailableMCPStartupKeepsBothProviderShellsAndManagementRunning(t *tes
 					t.Fatalf("fresh authorization-required startup: %v", err)
 				}
 				defer func() {
-					if err := coordinator.Stop(context.Background()); err != nil {
-						t.Error(err)
-					}
+					verifyUnavailableStartupShutdown(t, coordinator.Stop(context.Background()), providerKind == hostedProvider)
 				}()
 				built, err := manager.Runtime(t.Context())
 				if err != nil || built == nil {
@@ -300,9 +326,9 @@ func TestUnavailableMCPStartupKeepsBothProviderShellsAndManagementRunning(t *tes
 				if err != nil || len(captures) != 1 {
 					t.Fatal("startup captured OAuth without administrator action")
 				}
-				verifyAuthenticatedMCPManagement(t, "http://"+address+"/backoffice")
+				managementClient := verifyAuthenticatedMCPManagement(t, "http://"+address+"/backoffice")
 				verifyUnavailableInvocationKeepsRuntime(t, builder, manager, built, stateDir)
-				verifyAuthenticatedMCPManagement(t, "http://"+address+"/backoffice")
+				verifyMCPManagementOverview(t, managementClient, "http://"+address+"/backoffice")
 				// Release the deliberately stalled peer before owner shutdown so
 				// the retained SDK cancellation notification can finish its cleanup.
 				close(release)
@@ -312,7 +338,7 @@ func TestUnavailableMCPStartupKeepsBothProviderShellsAndManagementRunning(t *tes
 	}
 }
 
-func verifyAuthenticatedMCPManagement(t *testing.T, origin string) {
+func verifyAuthenticatedMCPManagement(t *testing.T, origin string) *http.Client {
 	t.Helper()
 	jar, err := cookiejar.New(nil)
 	if err != nil {
@@ -355,7 +381,13 @@ func verifyAuthenticatedMCPManagement(t *testing.T, origin string) {
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("authenticated login = %d", response.StatusCode)
 	}
-	response, err = client.Get(origin + "/overview")
+	verifyMCPManagementOverview(t, client, origin)
+	return client
+}
+
+func verifyMCPManagementOverview(t *testing.T, client *http.Client, origin string) {
+	t.Helper()
+	response, err := client.Get(origin + "/overview")
 	if err != nil {
 		t.Fatal(err)
 	}

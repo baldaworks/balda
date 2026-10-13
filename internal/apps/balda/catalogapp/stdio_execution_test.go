@@ -124,6 +124,15 @@ func testStdioActualProviders(t *testing.T, forceACP bool) {
 					retained = append(retained, capture)
 				}
 			}
+			// Preparing configured captures also publishes managed definitions
+			// through the seed catalog. Stop that separate owner before observing
+			// the tested catalog and provider children; its launches are async.
+			if err := original.MCP().Shutdown(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			if health := original.MCP().Health(); len(health) != 0 {
+				t.Fatalf("seed catalog still owns %d MCP instances before process observation", len(health))
+			}
 			registry := mcpregistry.New(nil)
 			processDirectory := t.TempDir()
 			t.Setenv("BALDA_MCP_CATALOG_PROCESS_DIRECTORY", processDirectory)
