@@ -203,7 +203,7 @@ func testRemoteDiscoveryAndExecutionUseSameProtectedBridge(t *testing.T, source 
 			}
 			key := mcpruntime.InstanceKey{Source: descriptor.ID.Source, Revision: descriptor.Revision, Name: descriptor.Name}
 			health := reconciler.Reconcile(t.Context(), runtimecatalogcmd.Snapshot{MCPServers: map[runtimecatalogcmd.ContributionID]runtimecatalogcmd.MCPServerDescriptor{descriptor.ID: descriptor}})
-			if len(health) != 1 || health[0].State != mcpruntime.HealthReady {
+			if len(health) != 1 || health[0].State != mcpruntime.HealthUnknown || health[0].ToolCount != 0 {
 				t.Fatalf("protected managed transport cannot attach: %+v", health)
 			}
 			projected, found := registry.Get(mcpfx.RegistryID(key))
@@ -418,7 +418,7 @@ func TestMCPHealthUsesObservedExactRevisionRatherThanSavedSelection(t *testing.T
 	}
 }
 
-func TestConfiguredHealthReportsRealDiscoveredTools(t *testing.T) {
+func TestConfiguredHealthIsUnobservedBeforeInvocation(t *testing.T) {
 	p, original, _, _, credentials := hybridCatalogFixture(t)
 	server := mcp.NewServer(&mcp.Implementation{Name: "catalog-health", Version: "1"}, nil)
 	mcp.AddTool(server, &mcp.Tool{Name: "echo"}, func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, any, error) {
@@ -439,8 +439,8 @@ func TestConfiguredHealthReportsRealDiscoveredTools(t *testing.T) {
 		t.Fatal(err)
 	}
 	status, count, err := runtime.MCPHealth(t.Context(), mcpcmd.Connection{Source: mcpcmd.SourceConfig, PublicID: "configured", Enabled: true})
-	if err != nil || status != mcpcmd.StatusReady || count != 1 {
-		t.Fatalf("discovered configured MCP health = %s/%d/%v, want ready/1", status, count, err)
+	if err != nil || status != mcpcmd.StatusPending || count != 0 {
+		t.Fatalf("unobserved configured MCP health = %s/%d/%v, want pending/0", status, count, err)
 	}
 }
 

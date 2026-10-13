@@ -64,7 +64,16 @@ func (r *Reconciler) Failure(key InstanceKey) (FailureReason, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	current, found := r.instances[key]
-	if !found || !current.desired || current.health.State != HealthFailed {
+	if !found || !current.desired {
+		return "", false
+	}
+	if current.config.ObservedFailure != nil {
+		reason := boundedReason(current.config.ObservedFailure())
+		if reason != FailureUnavailable {
+			return reason, true
+		}
+	}
+	if current.health.State != HealthFailed {
 		return "", false
 	}
 	return boundedReason(current.failure), true

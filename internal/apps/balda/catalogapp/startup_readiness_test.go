@@ -6,24 +6,26 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpbridge"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
-	"github.com/baldaworks/balda/internal/apps/balda/mcpruntime"
 	"github.com/normahq/runtime/v2/agentconfig"
 	"github.com/normahq/runtime/v2/mcpregistry"
 )
 
-func TestCurrentStartupAuthorizationReadiness(t *testing.T) {
+func TestCurrentRemoteSelectionDoesNotWaitForAvailability(t *testing.T) {
 	for _, transport := range []agentconfig.MCPServerType{agentconfig.MCPServerTypeHTTP, agentconfig.MCPServerTypeSSE} {
 		t.Run(string(transport), func(t *testing.T) {
 			for _, mixed := range []bool{false, true} {
 				t.Run(fmt.Sprint(mixed), func(t *testing.T) {
 					p, original, _, _, credentials := hybridCatalogFixture(t)
 					var origin string
+					var requests atomic.Int32
 					upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+						requests.Add(1)
 						if request.URL.Path == "/fatal" {
 							w.WriteHeader(http.StatusInternalServerError)
 							return
@@ -61,20 +63,15 @@ func TestCurrentStartupAuthorizationReadiness(t *testing.T) {
 					if err := r.PublishCandidate(t.Context(), snapshot); err != nil {
 						t.Fatal(err)
 					}
-					_, lease, err := r.AcquireProviderMCPServerIDs(t.Context(), snapshot.ID, map[string][]string{"alpha": selected})
-					if lease != nil || err == nil {
-						t.Fatal("startup returned incomplete execution capabilities")
+					ids, lease, err := r.AcquireProviderMCPServerIDs(t.Context(), snapshot.ID, map[string][]string{"alpha": selected})
+					if lease == nil || err != nil || len(ids["alpha"]) != len(selected) {
+						t.Fatalf("startup returned incomplete configuration: %v/%v", ids, err)
 					}
-					if got := r.MCPAuthorizationPending(t.Context(), fmt.Errorf("bind provider capabilities: %w", err)); got == mixed {
-						t.Fatalf("pending = %t, want %t; blockers: %v", got, !mixed, err)
-					}
+					lease()
 					for _, name := range selected {
 						item := mcpcmd.Item{Connection: mcpcmd.Connection{ID: "config:" + name, PublicID: name, Source: mcpcmd.SourceConfig, Enabled: true}}
 						recovery, readErr := r.CurrentMCPRecovery(t.Context(), item)
 						want := mcpcmd.RecoveryReason("")
-						if name == "auth" {
-							want = mcpcmd.RecoveryFirstAuthorization
-						}
 						if readErr != nil || recovery != want {
 							t.Fatalf("current recovery %s = %s/%v, want %s", name, recovery, readErr, want)
 						}
@@ -93,19 +90,14 @@ func TestCurrentStartupAuthorizationReadiness(t *testing.T) {
 							t.Fatal("cancellation offered recovery")
 						}
 					}
-					var exact *mcpruntime.AttachmentError
-					if !errors.As(err, &exact) {
-						t.Fatal("startup lost exact bounded MCP failure")
-					}
-					unknown := *exact
-					unknown.Key.Revision += "-missing"
-					if r.MCPAuthorizationPending(t.Context(), &unknown) {
-						t.Fatal("unknown historical revision became recoverable current startup")
-					}
 					canceled, cancel := context.WithCancel(t.Context())
 					cancel()
-					if r.MCPAuthorizationPending(canceled, err) {
-						t.Fatal("cancellation admitted unavailable startup")
+					_, canceledLease, err := r.AcquireProviderMCPServerIDs(canceled, snapshot.ID, map[string][]string{"alpha": selected})
+					if canceledLease != nil || !errors.Is(err, context.Canceled) {
+						t.Fatalf("canceled selection = %v", err)
+					}
+					if requests.Load() != 0 {
+						t.Fatalf("startup/inventory contacted upstream %d times", requests.Load())
 					}
 				})
 			}

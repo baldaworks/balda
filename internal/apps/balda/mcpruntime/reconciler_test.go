@@ -293,15 +293,15 @@ func TestReconcilerDoesNotRestartForRebuildRequiredProjection(t *testing.T) {
 		t.Fatal(err)
 	}
 	health := reconciler.Reconcile(context.Background(), mcpSnapshot("snapshot", descriptor))
-	if len(health) != 1 || health[0].State != HealthDegraded || health[0].Outcome != runtimecatalogcmd.MCPProjectionRebuildRequired {
+	if len(health) != 1 || health[0].State != HealthFailed || health[0].Outcome != runtimecatalogcmd.MCPProjectionRebuildRequired {
 		t.Fatalf("health = %+v, want explicit rebuild-required degradation", health)
 	}
-	if len(launcher.instances) != 1 {
+	if len(launcher.instances) != 0 {
 		t.Fatalf("launcher starts = %d, want no implicit restart", len(launcher.instances))
 	}
 }
 
-func TestReconcilerRetainsReadyRevisionWhenReplacementFails(t *testing.T) {
+func TestReconcilerKeepsLeasedRevisionAcrossUnavailableReplacement(t *testing.T) {
 	t.Parallel()
 
 	oldDescriptor := mcpDescriptor("revision-old")
@@ -316,6 +316,11 @@ func TestReconcilerRetainsReadyRevisionWhenReplacementFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	reconciler.Reconcile(context.Background(), mcpSnapshot("old", oldDescriptor))
+	_, release, err := reconciler.AcquireDescriptors(t.Context(), []runtimecatalogcmd.MCPServerDescriptor{oldDescriptor})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
 	health := reconciler.Reconcile(context.Background(), mcpSnapshot("new", newDescriptor))
 	if len(health) != 2 {
 		t.Fatalf("health = %+v, want ready old and failed replacement", health)
@@ -324,11 +329,16 @@ func TestReconcilerRetainsReadyRevisionWhenReplacementFails(t *testing.T) {
 	if launcher.instances[oldKey].closed != 0 || projector.removed[oldKey] != 0 {
 		t.Fatal("ready old revision drained before replacement became ready")
 	}
-	tools, release, err := reconciler.Acquire([]InstanceKey{oldKey})
+	tools, toolRelease, err := reconciler.Acquire([]InstanceKey{oldKey})
 	if err != nil || len(tools) != 1 {
 		t.Fatalf("Acquire(old) = %+v, %v; want retained ready revision", tools, err)
 	}
-	release()
+	toolRelease()
+	keys, nextRelease, err := reconciler.AcquireDescriptors(t.Context(), []runtimecatalogcmd.MCPServerDescriptor{newDescriptor})
+	if err != nil || len(keys) != 1 {
+		t.Fatalf("unavailable replacement lost exact configuration: %v", err)
+	}
+	nextRelease()
 }
 
 func TestReconcilerRejectsExcessiveToolMetadata(t *testing.T) {
@@ -346,8 +356,8 @@ func TestReconcilerRejectsExcessiveToolMetadata(t *testing.T) {
 	if len(health) != 1 || health[0].State != HealthFailed || health[0].ErrorClass != "tool_limit" {
 		t.Fatalf("health = %+v, want bounded tool failure", health)
 	}
-	if launcher.instances[key].closed != 1 || projector.set[key] != 0 {
-		t.Fatal("oversized tool metadata reached projection")
+	if launcher.instances[key].closed != 1 || projector.removed[key] != 1 {
+		t.Fatal("oversized observed metadata was not stopped and removed")
 	}
 }
 
@@ -405,7 +415,7 @@ func TestReconcilerFailsClosedForUnknownProjectionOutcome(t *testing.T) {
 		t.Fatal(err)
 	}
 	health := reconciler.Reconcile(context.Background(), mcpSnapshot("snapshot", descriptor))
-	if len(health) != 1 || health[0].State != HealthDegraded || health[0].ErrorClass != "projection" {
+	if len(health) != 1 || health[0].State != HealthFailed || health[0].ErrorClass != "configuration" {
 		t.Fatalf("health = %+v, want fail-closed projection degradation", health)
 	}
 }

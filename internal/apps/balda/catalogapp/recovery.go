@@ -50,6 +50,20 @@ func (r *Runtime) CurrentMCPRecovery(ctx context.Context, item mcpcmd.Item) (mcp
 		return "", nil
 	}
 	key := mcpruntime.InstanceKey{Source: descriptor.ID.Source, Revision: descriptor.Revision, Name: descriptor.Name}
+	if c.CurrentRevisionID != "" {
+		if c.Source == mcpcmd.SourceConfig && r.currentAuthorizationBlocker(ctx, descriptor, mcpruntime.FailureCaptureRequired) {
+			return mcpcmd.RecoveryCaptureRequired, nil
+		}
+		status, _, err := r.MCPHealth(ctx, c)
+		if err != nil {
+			return "", err
+		}
+		if status == mcpcmd.StatusAuthRequired || status == mcpcmd.StatusDisconnected {
+			if r.currentAuthorizationBlocker(ctx, descriptor, mcpruntime.FailureAuthorizationRequired) {
+				return mcpcmd.RecoveryAuthorizationRequired, nil
+			}
+		}
+	}
 	reason, found := r.mcp.Failure(key)
 	if !found || !r.currentAuthorizationBlocker(ctx, descriptor, reason) {
 		return "", nil

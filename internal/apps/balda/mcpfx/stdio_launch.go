@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/baldaworks/balda/internal/apps/balda/mcpruntime"
 )
@@ -18,11 +19,16 @@ func RunStdioMode(args []string) (bool, int) {
 	if len(args) == 0 || args[0] != stdioMode {
 		return false, 0
 	}
-	if len(args) < 3 || !filepath.IsAbs(args[1]) || !filepath.IsAbs(args[2]) {
+	if len(args) < 3 || !filepath.IsAbs(args[1]) || args[2] == "" {
 		fmt.Fprintln(os.Stderr, "Error: invalid MCP stdio launch")
 		return true, 1
 	}
-	code, err := runStdioProcess(args[1], args[2], args[3:])
+	directory, executable, err := resolveStdioLaunch(args[2], args[1])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Error: MCP stdio launch failed")
+		return true, 1
+	}
+	code, err := runStdioProcess(directory, executable, args[3:])
 	if err != nil {
 		// Native errors can include command arguments. Keep this boundary
 		// bounded; protected values must never become CLI diagnostics.
@@ -33,15 +39,24 @@ func RunStdioMode(args []string) (bool, int) {
 }
 
 func stdioProviderLaunch(config mcpruntime.LaunchConfig) (mcpruntime.LaunchConfig, error) {
-	directory, executable, err := resolveStdioLaunch(config.Command, config.WorkingDir)
+	if strings.TrimSpace(config.Command) == "" {
+		return mcpruntime.LaunchConfig{}, errors.New("MCP stdio command is required")
+	}
+	directory, err := filepath.Abs(config.WorkingDir)
 	if err != nil {
 		return mcpruntime.LaunchConfig{}, err
+	}
+	info, err := os.Stat(directory)
+	if err != nil || !info.IsDir() {
+		return mcpruntime.LaunchConfig{}, errors.New("MCP stdio directory is unavailable")
 	}
 	balda, err := os.Executable()
 	if err != nil {
 		return mcpruntime.LaunchConfig{}, errors.New("MCP stdio host executable is unavailable")
 	}
+	executable := config.Command
 	config.Command = balda
+	// Executable availability belongs to invocation, not local projection.
 	config.Args = append([]string{stdioMode, directory, executable}, config.Args...)
 	config.WorkingDir = directory
 	return config, nil

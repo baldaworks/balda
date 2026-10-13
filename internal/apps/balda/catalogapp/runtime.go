@@ -108,8 +108,8 @@ func NewRuntime(
 		managedResolver.Values = credentials
 	}
 	runtime.mcp, err = mcpruntime.New(
-		mcpruntime.RoutedResolver{Configured: configuredLaunchResolver{catalog: runtime, fallback: mcpfx.ConfiguredResolver{Static: mcpfx.BridgeResolver{Resolver: configuredUpgradeResolver{catalog: runtime, current: configuredMCPResolver(configured)}, Bridge: bridge}, Retained: managedResolver}}, Managed: managedResolver, Plugin: pluginResolver},
-		mcpfx.BridgeLauncher{Bridge: bridge, Launcher: mcpfx.NewClientLauncher()}, projector, mcpruntime.Limits{},
+		mcpruntime.RoutedResolver{Configured: configuredLaunchResolver{catalog: runtime, bridge: bridge, current: configuredMCPResolver(configured), fallback: mcpfx.ConfiguredResolver{Static: mcpfx.BridgeResolver{Resolver: configuredUpgradeResolver{catalog: runtime, current: configuredMCPResolver(configured)}, Bridge: bridge}, Retained: managedResolver}}, Managed: managedResolver, Plugin: pluginResolver},
+		mcpfx.NewClientLauncher(), mcpfx.BridgeProjector{Projector: projector, Bridge: bridge}, mcpruntime.Limits{},
 	)
 	if err != nil {
 		return nil, err

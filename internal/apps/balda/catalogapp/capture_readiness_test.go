@@ -1,11 +1,13 @@
 package catalogapp
 
 import (
+	"context"
 	"encoding/base64"
 	"errors"
 	"testing"
 
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpbridge"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpfx"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
@@ -56,7 +58,12 @@ func TestConfiguredCaptureTransitionsKeepRetainedIdentity(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			restarted, err := NewRuntime(original.stateDir, "", "", p, nil, current, mcpregistry.New(nil), commandcmd.NewRegistry(), values, nil)
+			bridge := mcpbridge.New(nil, nil)
+			if err := bridge.Start(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = bridge.Close(context.Background()) }()
+			restarted, err := NewRuntime(original.stateDir, "", "", p, nil, current, mcpregistry.New(nil), commandcmd.NewRegistry(), values, bridge)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -90,17 +97,17 @@ func TestConfiguredCaptureTransitionsKeepRetainedIdentity(t *testing.T) {
 						if err := restarted.PublishCandidate(t.Context(), snapshot); err != nil {
 							t.Fatal(err)
 						}
-						_, _, err := restarted.MCP().AcquireDescriptors(t.Context(), []runtimecatalogcmd.MCPServerDescriptor{descriptor})
+						keys, lease, err := restarted.MCP().AcquireDescriptors(t.Context(), []runtimecatalogcmd.MCPServerDescriptor{descriptor})
 						var failure *mcpruntime.AttachmentError
-						want := mcpruntime.FailureCaptureRequired
 						if change == wrongKey {
-							want = mcpruntime.FailureUnavailable
-						}
-						if !errors.As(err, &failure) || failure.Reason != want {
-							t.Fatalf("current attachment = %v, want %s", err, want)
-						}
-						if restarted.MCPAuthorizationPending(t.Context(), err) != (change == remote) {
-							t.Fatal("recapture recovery hid a retained protection failure")
+							if !errors.As(err, &failure) || failure.Reason != mcpruntime.FailureUnavailable || lease != nil {
+								t.Fatalf("missing protection material = %v", err)
+							}
+						} else {
+							if err != nil || len(keys) != 1 || lease == nil {
+								t.Fatalf("recapture-required configuration lease = %v", err)
+							}
+							lease()
 						}
 					}
 				}

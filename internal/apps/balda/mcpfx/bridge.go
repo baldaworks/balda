@@ -41,6 +41,29 @@ type BridgeLauncher struct {
 	Launcher mcpruntime.Launcher
 }
 
+// BridgeProjector ties private endpoints to exact configuration leases rather
+// than discovery success. Resolution installs locally; last drain removes it.
+type BridgeProjector struct {
+	mcpruntime.Projector
+	Bridge *mcpbridge.Bridge
+}
+
+func (p BridgeProjector) Remove(ctx context.Context, key mcpruntime.InstanceKey) error {
+	if err := p.Projector.Remove(ctx, key); err != nil {
+		return err
+	}
+	if p.Bridge != nil {
+		p.Bridge.Remove(RegistryID(key))
+	}
+	return nil
+}
+
+// AuthorizationRequiredLaunch installs a private denied projection for a
+// current file definition requiring a fresh trusted OAuth capture.
+func AuthorizationRequiredLaunch(bridge *mcpbridge.Bridge, id string, config mcpruntime.LaunchConfig) (mcpruntime.LaunchConfig, error) {
+	return bridgeLaunch(bridge, id, config, nil, nil, true)
+}
+
 // Start discovers through the resolved projection and owns its eventual removal.
 func (l BridgeLauncher) Start(ctx context.Context, key mcpruntime.InstanceKey, config mcpruntime.LaunchConfig) (mcpruntime.Instance, error) {
 	if l.Launcher == nil {

@@ -27,7 +27,7 @@ func (r *Runtime) RetryMCPAuthorization(ctx context.Context, binding mcpcmd.Auth
 		id := mcpfx.RegistryID(health.Key)
 		// Retained pins may intentionally require scopes absent from the current
 		// grant. Their denial must not interfere with current-detail recovery.
-		retryCredentials := health.State == mcpruntime.HealthReady && string(health.Key.Revision) == connection.CurrentRevisionID && r.mcpCredentials != nil && r.mcpCredentials.CredentialsUnavailable(id)
+		retryCredentials := string(health.Key.Revision) == connection.CurrentRevisionID && r.mcpCredentials != nil && r.mcpCredentials.CredentialsUnavailable(id)
 		if health.State != mcpruntime.HealthFailed && !retryCredentials {
 			continue
 		}

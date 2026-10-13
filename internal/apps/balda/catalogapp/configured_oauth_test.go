@@ -55,8 +55,8 @@ func testConfiguredOAuthRecovery(t *testing.T, original *Runtime, worker *worker
 			if release != nil {
 				release()
 			}
-			if err == nil || len(ids) != 0 {
-				t.Fatal("edited OAuth file silently became an anonymous current selection")
+			if err != nil || len(ids["beta"]) != 1 {
+				t.Fatal("edited OAuth file lost its denied local configuration")
 			}
 		}
 		selection, release, err := recovered.AcquireProviderMCPServerIDs(t.Context(), pinned.ID, map[string][]string{"alpha": {}, "beta": {}})
