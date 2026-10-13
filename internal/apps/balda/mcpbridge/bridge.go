@@ -33,6 +33,8 @@ type Endpoint struct {
 	Headers   map[string]string `json:"-"`
 	Binding   *mcpcmd.AuthBinding
 	Scopes    []string
+	// RequireAuthorization denies requests until an exact binding is available.
+	RequireAuthorization bool `json:"-"`
 	// Observe receives only upstream responses or worker credential failures,
 	// never an incoming loopback response. It does not change forwarding.
 	Observe func(status int, headers http.Header, err error) `json:"-"`
@@ -195,7 +197,7 @@ func (b *Bridge) RetryCredentials(ctx context.Context, id string) error {
 	if e == nil || e.ctx.Err() != nil {
 		return mcpcmd.ErrUnavailable
 	}
-	if e.config.Binding == nil {
+	if e.config.Binding == nil && !e.config.RequireAuthorization {
 		return nil
 	}
 	ctx, cancel := context.WithCancel(ctx)
@@ -207,6 +209,10 @@ func (b *Bridge) RetryCredentials(ctx context.Context, id string) error {
 }
 
 func (b *Bridge) accessToken(ctx context.Context, e *endpoint) (string, error) {
+	if e.config.Binding == nil {
+		e.credentialFailed.Store(true)
+		return "", mcpcmd.ErrAuthRequired
+	}
 	token, err := b.credentials.AccessToken(ctx, *e.config.Binding, e.config.Scopes)
 	if err == nil && (token == "" || len(token) > 16<<10 || strings.ContainsAny(token, "\x00\r\n")) {
 		err = mcpcmd.ErrUnavailable
@@ -280,7 +286,7 @@ func (b *Bridge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	r = r.Clone(ctx)
 	headers := maps.Clone(e.config.Headers)
-	if e.config.Binding != nil {
+	if e.config.Binding != nil || e.config.RequireAuthorization {
 		token, err := b.accessToken(ctx, e)
 		if err != nil {
 			if e.config.Observe != nil {
@@ -353,7 +359,7 @@ func (t upstreamTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 }
 
 func sameEndpoint(a, b Endpoint) bool {
-	if a.URL != b.URL || a.Transport != b.Transport || !maps.Equal(a.Headers, b.Headers) || !slices.Equal(a.Scopes, b.Scopes) || (a.Binding == nil) != (b.Binding == nil) {
+	if a.URL != b.URL || a.Transport != b.Transport || a.RequireAuthorization != b.RequireAuthorization || !maps.Equal(a.Headers, b.Headers) || !slices.Equal(a.Scopes, b.Scopes) || (a.Binding == nil) != (b.Binding == nil) {
 		return false
 	}
 	return a.Binding == nil || *a.Binding == *b.Binding
@@ -387,7 +393,7 @@ func validateEndpoint(config Endpoint, credentials bool) (*url.URL, error) {
 		case "Host", "Origin", "Connection", "Proxy-Authorization", "Proxy-Connection", "Transfer-Encoding", "Content-Length", "Upgrade", "Trailer", "Te", CapabilityHeader, "Mcp-Session-Id", "Mcp-Protocol-Version":
 			return nil, mcpcmd.ErrInvalid
 		}
-		if key == "Authorization" && config.Binding != nil {
+		if key == "Authorization" && (config.Binding != nil || config.RequireAuthorization) {
 			return nil, mcpcmd.ErrConflict
 		}
 	}

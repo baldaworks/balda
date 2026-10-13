@@ -63,13 +63,12 @@ type bridgeInstance struct {
 }
 
 func (i *bridgeInstance) Close(ctx context.Context) error {
-	if err := i.Instance.Close(ctx); err != nil {
-		return err
-	}
-	if i.bridge != nil {
-		i.bridge.Remove(i.id)
-	}
-	return nil
+	defer func() {
+		if i.bridge != nil {
+			i.bridge.Remove(i.id)
+		}
+	}()
+	return i.Instance.Close(ctx)
 }
 
 // GrantCredentials exposes current worker access tokens solely to the bridge.
@@ -90,13 +89,17 @@ func (a GrantCredentials) AccessToken(ctx context.Context, binding mcpcmd.AuthBi
 // BridgeLaunch projects resolved remote credentials onto one private endpoint.
 // Callers retain the original definition in public snapshots and read models.
 func BridgeLaunch(bridge *mcpbridge.Bridge, id string, config mcpruntime.LaunchConfig, binding *mcpcmd.AuthBinding, scopes []string) (mcpruntime.LaunchConfig, error) {
+	return bridgeLaunch(bridge, id, config, binding, scopes, binding != nil)
+}
+
+func bridgeLaunch(bridge *mcpbridge.Bridge, id string, config mcpruntime.LaunchConfig, binding *mcpcmd.AuthBinding, scopes []string, requireAuthorization bool) (mcpruntime.LaunchConfig, error) {
 	if config.Transport == transportStdio {
-		if binding != nil {
+		if binding != nil || requireAuthorization {
 			return mcpruntime.LaunchConfig{}, mcpcmd.ErrInvalid
 		}
 		return config, nil
 	}
-	if len(config.Headers) == 0 && binding == nil {
+	if len(config.Headers) == 0 && binding == nil && !requireAuthorization {
 		config.EnforceHTTPOrigin = false
 		return config, nil
 	}
@@ -108,7 +111,7 @@ func BridgeLaunch(bridge *mcpbridge.Bridge, id string, config mcpruntime.LaunchC
 		transport = mcpcmd.TransportHTTP
 	}
 	observation := newLaunchObservation(config.URL)
-	projection, err := bridge.Install(id, mcpbridge.Endpoint{URL: config.URL, Transport: transport, Headers: config.Headers, Binding: binding, Scopes: scopes, Observe: observation.observe})
+	projection, err := bridge.Install(id, mcpbridge.Endpoint{URL: config.URL, Transport: transport, Headers: config.Headers, Binding: binding, Scopes: scopes, RequireAuthorization: requireAuthorization, Observe: observation.observe})
 	if err != nil {
 		return mcpruntime.LaunchConfig{}, err
 	}

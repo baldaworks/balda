@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/mcpruntime"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -161,6 +162,13 @@ type headerTransport struct {
 }
 
 func (t headerTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	// SDK session shutdown sends DELETE on its detached connection context.
+	// Bound cleanup without limiting healthy SSE/HTTP streaming requests.
+	if request.Method == http.MethodDelete {
+		ctx, cancel := context.WithTimeout(request.Context(), 5*time.Second)
+		defer cancel()
+		request = request.Clone(ctx)
+	}
 	// SSE endpoint events can create new requests without a redirect. Check
 	// every destination before either inherited or configured headers are sent.
 	if t.origin != nil && !sameHTTPOrigin(request.URL, t.origin) {
