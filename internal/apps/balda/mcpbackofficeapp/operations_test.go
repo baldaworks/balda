@@ -52,7 +52,7 @@ func TestOperationsPersistProtectedEditsAndProbeExactCandidate(t *testing.T) {
 	}
 	request := mcpcmd.CreateDefinition{PublicID: "worker", Enabled: true, Definition: mcpcmd.Definition{Transport: mcpcmd.TransportHTTP, URL: upstream.URL, Targets: mcpcmd.Targets{All: true}}, Values: mcpcmd.ValueEdits{Headers: map[string]mcpcmd.ValueEdit{"X-Worker": {Operation: mcpcmd.ValueSet, Kind: mcpcmd.ValueProtected, Value: "original-private-value"}}}, Authority: authority}
 	created, err := operations.Create(t.Context(), request)
-	if err != nil || created.Status != mcpcmd.StatusReady {
+	if err != nil || created.Status != mcpcmd.StatusPending || created.ToolCount != 0 || requests.Load() != 0 {
 		t.Fatalf("create = %s/%v", created.Status, err)
 	}
 	pinned, err := catalog.Store().Application()
@@ -67,6 +67,9 @@ func TestOperationsPersistProtectedEditsAndProbeExactCandidate(t *testing.T) {
 	candidate, err := operations.ProbeUpdate(t.Context(), update)
 	if err != nil || candidate.Status != mcpcmd.StatusPending || candidate.ToolCount != 1 {
 		t.Fatalf("candidate probe = %s/%d/%v", candidate.Status, candidate.ToolCount, err)
+	}
+	if requests.Load() == 0 {
+		t.Fatal("explicit candidate probe did not reach the protected peer")
 	}
 	current, _ := catalog.Store().Application()
 	revisions, err := p.MCP().ListMCPRevisions(t.Context())
@@ -90,7 +93,7 @@ func TestOperationsPersistProtectedEditsAndProbeExactCandidate(t *testing.T) {
 		t.Fatal("update rewrote retained protected values")
 	}
 	items, err := operations.Inventory(t.Context())
-	if err != nil || len(items) != 1 || items[0].Status != mcpcmd.StatusReady {
+	if err != nil || len(items) != 1 || items[0].Status != mcpcmd.StatusPending || items[0].ToolCount != 0 || requests.Load() != before {
 		t.Fatalf("inventory = %+v/%v", items, err)
 	}
 	encoded, _ := json.Marshal(items)
@@ -190,7 +193,7 @@ func TestOperationsInventoryRecoveryReadsNeverLaunch(t *testing.T) {
 	}
 	before := requests.Load()
 	items, err := operations.Inventory(t.Context())
-	if err != nil || len(items) != 1 || items[0].Recovery != mcpcmd.RecoveryFirstAuthorization || items[0].Authorization != "" {
+	if err != nil || len(items) != 1 || items[0].Status != mcpcmd.StatusPending || items[0].Recovery != "" || items[0].Authorization != "" || before != 0 {
 		t.Fatalf("fresh recovery = %+v/%v", items, err)
 	}
 	if requests.Load() != before {

@@ -874,6 +874,7 @@ func Module(
 				normaCfg.Providers,
 				reg,
 				agentfactory.WithPermissionHandler(baldaagent.NewPermissionHandler(reviewer, logger)),
+				agentfactory.WithAvailabilityIndependentMCP(),
 			)
 		}),
 		fx.Provide(func(reg *mcpregistry.MapRegistry, reviewer *permissions.Service) baldaagent.ScopedRuntimeFactory {

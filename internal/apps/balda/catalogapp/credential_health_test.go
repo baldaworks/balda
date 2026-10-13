@@ -104,7 +104,7 @@ func testTransientRefreshFailureReportsUnavailableAndRecovers(t *testing.T, tran
 	descriptor := managedMCPDescriptor(mutation.Connection, revision)
 	snapshot := runtimecatalogcmd.Snapshot{MCPServers: map[runtimecatalogcmd.ContributionID]runtimecatalogcmd.MCPServerDescriptor{descriptor.ID: descriptor}}
 	health := catalog.MCP().Reconcile(t.Context(), snapshot)
-	if len(health) != 1 || health[0].State != mcpruntime.HealthReady {
+	if len(health) != 1 || health[0].State != mcpruntime.HealthUnknown {
 		t.Fatalf("initial attachment: %+v", health)
 	}
 	key := mcpruntime.InstanceKey{Source: descriptor.ID.Source, Revision: descriptor.Revision, Name: descriptor.Name}
@@ -178,7 +178,7 @@ func testTransientRefreshFailureReportsUnavailableAndRecovers(t *testing.T, tran
 		t.Errorf("credential retry: %v", err)
 	}
 	status, count, err = catalog.MCPHealth(t.Context(), mutation.Connection)
-	if err != nil || status != mcpcmd.StatusReady || count != 1 {
+	if err != nil || status != mcpcmd.StatusPending || count != 0 {
 		t.Errorf("after credential retry = %s/%d/%v", status, count, err)
 	}
 	if worker.renewals.Load() != 1 {

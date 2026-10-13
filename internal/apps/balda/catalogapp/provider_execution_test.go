@@ -93,7 +93,7 @@ func testHostedPoolInvocationWithTools(t *testing.T, catalog *Runtime, registry 
 			message := request.Messages[len(request.Messages)-1]
 			if message.Role == "tool" {
 				if !strings.Contains(string(message.Content), "actual hosted tool") {
-					t.Error("hosted provider did not receive the real MCP tool result")
+					t.Errorf("hosted provider did not receive the real MCP tool result: %s", message.Content)
 					w.WriteHeader(http.StatusBadRequest)
 					return
 				}

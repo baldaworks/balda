@@ -79,13 +79,13 @@ func TestAuthorizationRetryRecoversSavedPendingPublication(t *testing.T) {
 			catalog.kv, catalog.managedMCP = p.AppKV(), p.MCP()
 			request.ExpectedRevisionID = bound.Connection.CurrentRevisionID
 			ready, err := definitions.BindAuthorization(t.Context(), request)
-			if err != nil || ready.Status != mcpcmd.StatusReady || ready.ToolCount != 1 || ready.Connection.PublishedVersion != ready.Connection.Version {
+			if err != nil || ready.Status != mcpcmd.StatusPending || ready.ToolCount != 0 || ready.Connection.PublishedVersion != ready.Connection.Version {
 				t.Fatalf("retry after publication fault cleared = %s/%d/%+v/%v", ready.Status, ready.ToolCount, ready.Connection, err)
 			}
 			if ready.Connection.CurrentRevisionID != bound.Connection.CurrentRevisionID || ready.Connection.Version != bound.Connection.Version {
 				t.Fatal("publication retry fabricated a new definition revision")
 			}
-			if failure == "completion marker" && (connected != 1 || upstream.initializations.Load() != connected) {
+			if connected != 0 || upstream.initializations.Load() != 0 {
 				t.Fatalf("marker recovery MCP initializations = %d -> %d", connected, upstream.initializations.Load())
 			}
 			retained, err := catalog.Store().Get(pinned.ID)
@@ -208,9 +208,10 @@ func TestConfiguredAuthorizationRetryAndRecaptureInvokeActualProviders(t *testin
 				t.Fatal(err)
 			}
 			_, lease, blocked := catalog.AcquireProviderMCPServerIDs(t.Context(), fresh.ID, map[string][]string{"alpha": {"worker-tools"}})
-			if lease != nil || !catalog.MCPAuthorizationPending(t.Context(), blocked) {
+			if lease == nil || blocked != nil {
 				t.Fatalf("fresh capture-free startup: %v", blocked)
 			}
+			lease()
 			capture, err := definitions.PrepareAuthorization(t.Context(), mcpcmd.PrepareAuthorization{ConnectionID: "config:worker-tools", Scopes: []string{"tools:read"}, Authority: mutation.Authority})
 			if err != nil {
 				t.Fatal(err)
@@ -232,8 +233,8 @@ func TestConfiguredAuthorizationRetryAndRecaptureInvokeActualProviders(t *testin
 			}
 			request.ExpectedRevisionID = bound.Connection.CurrentRevisionID
 			failed, err := definitions.BindAuthorization(t.Context(), request)
-			if !errors.Is(err, mcpcmd.ErrUnavailable) || failed.Status == mcpcmd.StatusReady {
-				t.Fatal("retry failure claimed readiness")
+			if err != nil || failed.Status != mcpcmd.StatusPending || first.initializations.Load() != 0 {
+				t.Fatal("local authorization retry performed remote discovery or claimed readiness")
 			}
 			grant, found, err := p.MCP().GetMCPGrant(t.Context(), worker.binding)
 			if err != nil || !found || grant.Status != mcpcmd.GrantAuthorized {
@@ -241,7 +242,7 @@ func TestConfiguredAuthorizationRetryAndRecaptureInvokeActualProviders(t *testin
 			}
 			first.unavailable.Store(false)
 			ready, err := definitions.BindAuthorization(t.Context(), request)
-			if err != nil || ready.Status != mcpcmd.StatusReady || ready.ToolCount != 1 {
+			if err != nil || ready.Status != mcpcmd.StatusPending || ready.ToolCount != 0 {
 				t.Fatalf("same-binding retry = %s/%d/%v", ready.Status, ready.ToolCount, err)
 			}
 			assertCurrentRecovery(t, catalog, definitions, "", mcpcmd.GrantAuthorized)
@@ -263,9 +264,10 @@ func TestConfiguredAuthorizationRetryAndRecaptureInvokeActualProviders(t *testin
 				t.Fatal(err)
 			}
 			_, lease, blocked = restarted.AcquireProviderMCPServerIDs(t.Context(), pending.ID, map[string][]string{"gamma": {"worker-tools"}})
-			if lease != nil || !restarted.MCPAuthorizationPending(t.Context(), blocked) {
+			if lease == nil || blocked != nil {
 				t.Fatalf("trusted recapture startup: %v", blocked)
 			}
+			lease()
 			assertCurrentRecovery(t, restarted, nextDefinitions, mcpcmd.RecoveryCaptureRequired, "")
 			recapture, err := nextDefinitions.PrepareAuthorization(t.Context(), mcpcmd.PrepareAuthorization{ConnectionID: capture.ConnectionID, Authority: mutation.Authority})
 			if err != nil || recapture.ID == capture.ID {
@@ -275,7 +277,7 @@ func TestConfiguredAuthorizationRetryAndRecaptureInvokeActualProviders(t *testin
 			nextWorker.authorize(t)
 			second.worker.Store(nextWorker)
 			next, err := nextDefinitions.BindAuthorization(t.Context(), mcpcmd.SelectAuthorization{ConnectionID: recapture.ConnectionID, ExpectedRevisionID: recapture.ID, Binding: nextWorker.binding, Authority: mutation.Authority})
-			if err != nil || next.Status != mcpcmd.StatusReady {
+			if err != nil || next.Status != mcpcmd.StatusPending {
 				t.Fatalf("new capture/binding publication: %s/%v", next.Status, err)
 			}
 			current, err := restarted.Store().Application()
@@ -345,7 +347,7 @@ func TestBoundAuthorizationStartupRecovery(t *testing.T) {
 				worker.authorize(t)
 				upstream.worker.Store(worker)
 				bound, err := definitions.BindAuthorization(t.Context(), mcpcmd.SelectAuthorization{ConnectionID: capture.ConnectionID, ExpectedRevisionID: capture.ID, Binding: worker.binding, Authority: mutation.Authority})
-				if err != nil || bound.Status != mcpcmd.StatusReady {
+				if err != nil || bound.Status != mcpcmd.StatusPending {
 					t.Fatalf("initial bound connection: %s/%v", bound.Status, err)
 				}
 				if state == "disconnected" {
@@ -369,9 +371,10 @@ func TestBoundAuthorizationStartupRecovery(t *testing.T) {
 				t.Fatal(err)
 			}
 			_, lease, err := restarted.AcquireProviderMCPServerIDs(t.Context(), snapshot.ID, map[string][]string{"alpha": {"worker-tools"}})
-			if lease != nil || !restarted.MCPAuthorizationPending(t.Context(), err) {
+			if lease == nil || err != nil {
 				t.Fatalf("known bound startup state %s = %v", state, err)
 			}
+			lease()
 		})
 	}
 }

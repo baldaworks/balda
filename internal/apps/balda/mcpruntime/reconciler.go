@@ -62,7 +62,7 @@ type Launcher interface {
 	Start(ctx context.Context, key InstanceKey, config LaunchConfig) (Instance, error)
 }
 
-// Projector applies a ready instance to provider runtime configuration.
+// Projector installs exact configuration independently of transport readiness.
 // Project and Remove must honor context cancellation and deadlines.
 type Projector interface {
 	Project(ctx context.Context, key InstanceKey, config LaunchConfig) (runtimecatalogcmd.MCPProjectionOutcome, error)
@@ -74,6 +74,7 @@ type HealthState string
 
 const (
 	HealthDisabled HealthState = "disabled"
+	HealthUnknown  HealthState = "unknown"
 	HealthStarting HealthState = "starting"
 	HealthReady    HealthState = "ready"
 	HealthDegraded HealthState = "degraded"
@@ -115,21 +116,32 @@ type managedInstance struct {
 	desired    bool
 	projected  bool
 	closed     bool
+	valid      bool
+	installing chan struct{}
+	stopping   chan struct{}
+	cancel     context.CancelFunc
+	retiring   bool
+	stopErr    error
+	worker     *stdioWorker
 }
 
 // Reconciler owns revision coexistence, drain, shutdown, and health.
 type Reconciler struct {
-	mu        sync.Mutex
-	resolver  LaunchResolver
-	launcher  Launcher
-	projector Projector
-	limits    Limits
-	instances map[InstanceKey]*managedInstance
-	omissions []Health
+	mu          sync.Mutex
+	resolver    LaunchResolver
+	launcher    ProcessLauncher
+	projector   Projector
+	limits      Limits
+	instances   map[InstanceKey]*managedInstance
+	omissions   []Health
+	stopped     bool
+	generation  uint64
+	desiredKeys map[InstanceKey]bool
+	stdio       stdioPolicy
 }
 
 // New creates an MCP desired-state reconciler.
-func New(resolver LaunchResolver, launcher Launcher, projector Projector, limits Limits) (*Reconciler, error) {
+func New(resolver LaunchResolver, launcher ProcessLauncher, projector Projector, limits Limits) (*Reconciler, error) {
 	if resolver == nil || launcher == nil || projector == nil {
 		return nil, errors.New("MCP resolver, launcher, and projector are required")
 	}
@@ -149,13 +161,18 @@ func New(resolver LaunchResolver, launcher Launcher, projector Projector, limits
 	if limits.MaxServers < 0 || limits.MaxTools < 0 || limits.MaxToolMetadataBytes < 0 || limits.StopTimeout < 0 {
 		return nil, errors.New("MCP limits must be positive")
 	}
-	return &Reconciler{resolver: resolver, launcher: launcher, projector: projector, limits: limits, instances: make(map[InstanceKey]*managedInstance)}, nil
+	return &Reconciler{resolver: resolver, launcher: launcher, projector: projector, limits: limits, instances: make(map[InstanceKey]*managedInstance), stdio: defaultStdioPolicy()}, nil
 }
 
-// Reconcile starts new revisions before draining old revisions.
+// Reconcile installs local exact configurations before draining old revisions.
 func (r *Reconciler) Reconcile(ctx context.Context, snapshot runtimecatalogcmd.Snapshot) []Health {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.stopped || ctx.Err() != nil {
+		return r.healthLocked()
+	}
+	r.generation++
+	generation := r.generation
 	desired := orderedDescriptors(snapshot)
 	r.omissions = nil
 	if len(desired) > r.limits.MaxServers {
@@ -166,40 +183,45 @@ func (r *Reconciler) Reconcile(ctx context.Context, snapshot runtimecatalogcmd.S
 		}
 		desired = desired[:r.limits.MaxServers]
 	}
-	for _, current := range r.instances {
-		current.desired = false
-	}
+	r.desiredKeys = make(map[InstanceKey]bool, len(desired))
 	for _, descriptor := range desired {
-		key := keyFromDescriptor(descriptor)
-		if current, ok := r.instances[key]; ok {
-			current.desired = true
-			switch current.health.State {
-			case HealthFailed:
-				delete(r.instances, key)
-			case HealthStopping:
-				current.desired = false
-				if err := r.cleanupBoundedLocked(ctx, key, current); err != nil {
-					current.desired = true
-					continue
-				}
-			case HealthDegraded:
-				outcome, err := r.projector.Project(ctx, key, cloneLaunchConfig(current.config))
-				current.health.Outcome = outcome
-				if err == nil && (outcome == runtimecatalogcmd.MCPProjectionApplied || outcome == runtimecatalogcmd.MCPProjectionNewRuntimesOnly) {
-					current.health.State, current.health.ErrorClass = HealthReady, ""
-				}
-				continue
-			default:
-				continue
-			}
-		}
-		r.startLocked(ctx, key, descriptor)
+		r.desiredKeys[keyFromDescriptor(descriptor)] = true
 	}
 	for key, current := range r.instances {
-		if current.desired || current.refs > 0 {
-			continue
+		current.desired = r.desiredKeys[key]
+	}
+	for _, descriptor := range desired {
+		if r.stopped || r.generation != generation || ctx.Err() != nil {
+			break
 		}
-		if r.replacementPendingLocked(key) {
+		key := keyFromDescriptor(descriptor)
+		if current := r.instances[key]; current != nil && current.retiring {
+			if err := r.cleanupBoundedLocked(ctx, key, current); err != nil {
+				continue
+			}
+			if r.stopped || r.generation != generation || ctx.Err() != nil {
+				break
+			}
+		}
+		if current, ok := r.instances[key]; ok {
+			current.desired = true
+			if current.valid || current.health.State != HealthFailed || current.refs != 0 {
+				continue
+			}
+			if err := r.cleanupBoundedLocked(ctx, key, current); err != nil {
+				continue
+			}
+			if r.stopped || r.generation != generation || ctx.Err() != nil {
+				break
+			}
+		}
+		r.installLocked(ctx, key, descriptor, true, 0)
+	}
+	if r.stopped || r.generation != generation {
+		return r.healthLocked()
+	}
+	for key, current := range r.instanceSnapshotLocked() {
+		if current.desired || current.refs > 0 {
 			continue
 		}
 		r.stopLocked(ctx, key, current)
@@ -207,67 +229,77 @@ func (r *Reconciler) Reconcile(ctx context.Context, snapshot runtimecatalogcmd.S
 	return r.healthLocked()
 }
 
-func (r *Reconciler) replacementPendingLocked(oldKey InstanceKey) bool {
-	found := false
-	for key, current := range r.instances {
-		if !current.desired || key.Source != oldKey.Source || key.Name != oldKey.Name || key.Revision == oldKey.Revision {
-			continue
-		}
-		found = true
-		if current.health.State == HealthReady {
-			return false
-		}
+func (r *Reconciler) installLocked(ctx context.Context, key InstanceKey, descriptor runtimecatalogcmd.MCPServerDescriptor, desired bool, refs int) *managedInstance {
+	if r.stopped || ctx.Err() != nil {
+		return nil
 	}
-	return found
-}
-
-func (r *Reconciler) startLocked(ctx context.Context, key InstanceKey, descriptor runtimecatalogcmd.MCPServerDescriptor) {
-	current := &managedInstance{descriptor: descriptor, desired: true, health: Health{Key: key, State: HealthStarting}}
+	if r.desiredKeys != nil {
+		desired = r.desiredKeys[key]
+	}
+	current := &managedInstance{descriptor: descriptor, desired: desired, refs: refs, installing: make(chan struct{}), health: Health{Key: key, State: HealthStarting}}
 	r.instances[key] = current
+	ctx, cancel := context.WithCancel(ctx)
+	current.cancel = cancel
+	r.mu.Unlock()
 	config, err := r.resolver.ResolveLaunch(ctx, descriptor)
-	if err != nil {
-		current.health.State, current.health.ErrorClass = HealthFailed, "resolve"
-		current.failure = launchReason(err)
-		return
+	projected := err == nil // Resolution may install a private local endpoint.
+	if err == nil && (descriptor.ID.Kind != runtimecatalogcmd.ContributionKindMCPServer || descriptor.ID.Name != descriptor.Name || key.Revision == "" || config.Transport != descriptor.Transport) {
+		err = runtimecatalogcmd.ErrRevisionUnavailable
 	}
-	instance, err := r.launcher.Start(ctx, key, cloneLaunchConfig(config))
-	if err != nil {
-		current.health.State, current.health.ErrorClass = HealthFailed, "start"
-		current.failure = launchReason(err)
-		return
-	}
-	current.instance = instance
-	tools := cloneTools(instance.Tools())
-	if len(tools) > r.limits.MaxTools || toolMetadataBytes(tools) > r.limits.MaxToolMetadataBytes {
-		if err := instance.Close(ctx); err != nil {
-			current.health.State, current.health.ErrorClass = HealthStopping, errorClassStop
-			return
+	var outcome runtimecatalogcmd.MCPProjectionOutcome
+	if err == nil {
+		projected = true // Remove also rolls back a partially applied projection.
+		outcome, err = r.projector.Project(ctx, key, cloneLaunchConfig(config))
+		if err == nil && outcome != runtimecatalogcmd.MCPProjectionApplied && outcome != runtimecatalogcmd.MCPProjectionNewRuntimesOnly {
+			err = errors.New("MCP projection unavailable")
 		}
-		current.instance, current.closed = nil, true
-		current.health.State, current.health.ErrorClass = HealthFailed, "tool_limit"
-		return
 	}
-	current.projected = true
-	outcome, err := r.projector.Project(ctx, key, cloneLaunchConfig(config))
-	current.config, current.tools = cloneLaunchConfig(config), tools
-	current.health.ToolCount, current.health.Outcome = len(tools), outcome
-	if err != nil || (outcome != runtimecatalogcmd.MCPProjectionApplied && outcome != runtimecatalogcmd.MCPProjectionNewRuntimesOnly) {
-		current.health.State, current.health.ErrorClass = HealthDegraded, "projection"
-		return
+	if err == nil {
+		err = ctx.Err()
 	}
-	current.health.State = HealthReady
+	valid := err == nil
+	state := HealthUnknown
+	errorClass := "configuration"
+	if valid && config.Transport == stdioTransport {
+		state = HealthStarting
+	}
+	cancel()
+	r.mu.Lock()
+	if r.stopped {
+		valid = false
+		if err == nil {
+			err = errors.New("MCP runtime is stopped")
+		}
+	}
+	current.projected, current.valid, current.config, current.health.Outcome = projected, valid, cloneLaunchConfig(config), outcome
+	current.health.State = state
+	if err != nil {
+		current.health.State, current.health.ErrorClass, current.failure = HealthFailed, errorClass, launchReason(err)
+	}
+	if current.retiring {
+		current.health.State = HealthStopping
+	}
+	if valid && config.Transport == stdioTransport && !current.retiring {
+		r.scheduleStdioLocked(key, current)
+	}
+	close(current.installing)
+	current.installing, current.cancel = nil, nil
+	return current
 }
 
-// Acquire pins ready matching tools for one turn.
+// Acquire leases installed configurations and returns only observed tool metadata.
 func (r *Reconciler) Acquire(keys []InstanceKey) ([]Tool, func(), error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.stopped {
+		return nil, nil, errors.New("MCP runtime is stopped")
+	}
 	var selected []*managedInstance
 	var tools []Tool
 	var failures []error
 	for _, key := range keys {
 		current, ok := r.instances[key]
-		if !ok || current.health.State != HealthReady {
+		if !ok || !current.valid || current.installing != nil || current.health.State == HealthStopping {
 			failures = append(failures, attachmentFailure(key, current))
 			continue
 		}
@@ -289,13 +321,16 @@ func (r *Reconciler) Acquire(keys []InstanceKey) ([]Tool, func(), error) {
 	}, nil
 }
 
-// AcquireDescriptors ensures and pins exact revision instances for one owner.
+// AcquireDescriptors installs and leases every exact configuration locally.
 // Non-current revisions are stopped again when that owner releases them.
 func (r *Reconciler) AcquireDescriptors(ctx context.Context, descriptors []runtimecatalogcmd.MCPServerDescriptor) ([]InstanceKey, func(), error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
+	}
+	if r.stopped {
+		return nil, nil, errors.New("MCP runtime is stopped")
 	}
 	if len(descriptors) > r.limits.MaxServers {
 		return nil, nil, errors.New("MCP server selection exceeds configured limit")
@@ -304,29 +339,54 @@ func (r *Reconciler) AcquireDescriptors(ctx context.Context, descriptors []runti
 	keys := make([]InstanceKey, 0, len(descriptors))
 	var failures []error
 	for _, descriptor := range descriptors {
+		if r.stopped {
+			failures = append(failures, errors.New("MCP runtime is stopped"))
+			break
+		}
+		if err := ctx.Err(); err != nil {
+			failures = append(failures, err)
+			break
+		}
 		key := InstanceKey{Source: descriptor.ID.Source, Revision: descriptor.Revision, Name: descriptor.Name}
 		current, ok := r.instances[key]
 		if !ok {
-			r.startLocked(ctx, key, descriptor)
-			current = r.instances[key]
-			current.desired = false
+			current = r.installLocked(ctx, key, descriptor, false, 1)
+		} else {
+			if current.retiring {
+				failures = append(failures, attachmentFailure(key, current))
+				continue
+			}
+			current.refs++
 		}
-		if current.health.State != HealthReady {
+		if current == nil {
+			failures = append(failures, errors.New("MCP configuration installation canceled"))
+			break
+		}
+		selected = append(selected, current)
+		if current.installing != nil {
+			done := current.installing
+			r.mu.Unlock()
+			select {
+			case <-done:
+			case <-ctx.Done():
+			}
+			r.mu.Lock()
+		}
+		if r.stopped || r.instances[key] != current || !current.valid || current.retiring || current.descriptor.Transport != descriptor.Transport || current.descriptor.ConfigRef != descriptor.ConfigRef || current.descriptor.ID != descriptor.ID || descriptor.ID.Kind != runtimecatalogcmd.ContributionKindMCPServer || descriptor.ID.Name != descriptor.Name {
 			failures = append(failures, attachmentFailure(key, current))
 			continue
 		}
-		selected = append(selected, current)
 		keys = append(keys, key)
 	}
 	if err := ctx.Err(); err != nil {
 		failures = append(failures, err)
 	}
 	if len(failures) != 0 {
-		r.cleanupEphemeralLocked(ctx)
+		for _, current := range selected {
+			current.refs--
+		}
+		r.cleanupSelectionLocked(context.WithoutCancel(ctx), selected)
 		return nil, nil, errors.Join(failures...)
-	}
-	for _, current := range selected {
-		current.refs++
 	}
 	var once sync.Once
 	return keys, func() {
@@ -334,10 +394,10 @@ func (r *Reconciler) AcquireDescriptors(ctx context.Context, descriptors []runti
 	}, nil
 }
 
-func (r *Reconciler) cleanupEphemeralLocked(ctx context.Context) {
-	for key, current := range r.instances {
-		if !current.desired && current.refs == 0 {
-			r.stopLocked(ctx, key, current)
+func (r *Reconciler) cleanupSelectionLocked(ctx context.Context, selected []*managedInstance) {
+	for _, current := range selected {
+		if !current.desired && current.refs == 0 && !current.retiring {
+			r.stopLocked(ctx, current.health.Key, current)
 		}
 	}
 }
@@ -350,11 +410,7 @@ func (r *Reconciler) release(selected []*managedInstance) {
 			current.refs--
 		}
 	}
-	for key, current := range r.instances {
-		if !current.desired && current.refs == 0 {
-			r.stopLocked(context.Background(), key, current)
-		}
-	}
+	r.cleanupSelectionLocked(context.Background(), selected)
 }
 
 // Health returns a sorted non-secret observed snapshot.
@@ -376,8 +432,9 @@ func (r *Reconciler) MCPServerReady(source runtimecatalogcmd.SourceID, revision 
 func (r *Reconciler) Shutdown(ctx context.Context) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.stopped = true
 	var errs []error
-	for key, current := range r.instances {
+	for key, current := range r.instanceSnapshotLocked() {
 		if err := r.cleanupBoundedLocked(ctx, key, current); err != nil {
 			errs = append(errs, err)
 		}
@@ -397,30 +454,95 @@ func (r *Reconciler) cleanupBoundedLocked(ctx context.Context, key InstanceKey, 
 }
 
 func (r *Reconciler) cleanupLocked(ctx context.Context, key InstanceKey, current *managedInstance) error {
+	if r.instances[key] != current {
+		return nil
+	}
+	if current.stopping != nil {
+		done := current.stopping
+		r.mu.Unlock()
+		select {
+		case <-done:
+		case <-ctx.Done():
+		}
+		r.mu.Lock()
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return current.stopErr
+	}
+	current.stopping = make(chan struct{})
+	done := current.stopping
+	defer func() { close(done); current.stopping = nil }()
+	current.retiring = true
 	current.health.State = HealthStopping
+	if current.cancel != nil {
+		current.cancel()
+	}
+	if current.worker != nil {
+		current.worker.cancel()
+	}
+	if current.installing != nil {
+		installed := current.installing
+		r.mu.Unlock()
+		select {
+		case <-installed:
+		case <-ctx.Done():
+		}
+		r.mu.Lock()
+		if ctx.Err() != nil {
+			current.stopErr = ctx.Err()
+			return ctx.Err()
+		}
+	}
+	if current.worker != nil {
+		stopped := current.worker.done
+		r.mu.Unlock()
+		select {
+		case <-stopped:
+		case <-ctx.Done():
+		}
+		r.mu.Lock()
+		if ctx.Err() != nil {
+			current.stopErr = ctx.Err()
+			return ctx.Err()
+		}
+	}
+	projected, instance, closed := current.projected, current.instance, current.closed
+	r.mu.Unlock()
 	var errs []error
-	if current.projected {
+	if projected {
 		if err := r.projector.Remove(ctx, key); err != nil {
 			errs = append(errs, errors.New("remove MCP projection"))
 		} else {
-			current.projected = false
+			projected = false
 		}
 	}
-	if current.instance != nil && !current.closed {
-		if err := current.instance.Close(ctx); err != nil {
+	if instance != nil && !closed {
+		if err := instance.Close(ctx); err != nil {
 			errs = append(errs, errors.New("stop MCP instance"))
 		} else {
-			current.closed = true
+			closed = true
 		}
 	}
+	r.mu.Lock()
+	current.projected, current.closed = projected, closed
 	if !current.projected && (current.instance == nil || current.closed) {
 		delete(r.instances, key)
 	}
 	err := errors.Join(errs...)
+	current.stopErr = err
 	if err != nil {
 		current.health.ErrorClass = errorClassStop
 	}
 	return err
+}
+
+func (r *Reconciler) instanceSnapshotLocked() map[InstanceKey]*managedInstance {
+	result := make(map[InstanceKey]*managedInstance, len(r.instances))
+	for key, current := range r.instances {
+		result[key] = current
+	}
+	return result
 }
 
 func (r *Reconciler) healthLocked() []Health {

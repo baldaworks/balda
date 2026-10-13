@@ -5,7 +5,7 @@ import (
 	"errors"
 )
 
-// Retry restarts only named failed exact attachments, preserving ready leases.
+// Retry repairs local projections only, preserving installed configuration leases.
 // The caller owns the authorization event and current selection policy.
 func (r *Reconciler) Retry(ctx context.Context, keys []InstanceKey) error {
 	r.mu.Lock()
@@ -16,7 +16,7 @@ func (r *Reconciler) Retry(ctx context.Context, keys []InstanceKey) error {
 			return err
 		}
 		current := r.instances[key]
-		if current != nil && current.health.State == HealthReady {
+		if current != nil && current.projected && current.health.State != HealthFailed && current.health.State != HealthStopping {
 			continue
 		}
 		if current == nil || current.health.State != HealthFailed || current.refs != 0 {
@@ -28,10 +28,8 @@ func (r *Reconciler) Retry(ctx context.Context, keys []InstanceKey) error {
 			failures = append(failures, attachmentFailure(key, current))
 			continue
 		}
-		r.startLocked(ctx, key, descriptor)
-		current = r.instances[key]
-		current.desired = desired
-		if current.health.State != HealthReady {
+		current = r.installLocked(ctx, key, descriptor, desired, 0)
+		if current == nil || !current.valid {
 			failures = append(failures, attachmentFailure(key, current))
 		}
 	}

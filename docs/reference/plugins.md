@@ -43,6 +43,13 @@ select the current catalog; an existing conversation adopts current
 capabilities at its explicit normal `/reset` boundary. Exact retained snapshot
 and MCP restoration semantics are described below.
 
+MCP availability does not control catalog selection: every selected plugin
+server keeps its exact revision through create/restore and outages. HTTP/SSE
+attachment is invocation-owned, with no startup or idle remote discovery.
+Balda-owned plugin stdio discovery starts asynchronously under bounded
+supervision; provider execution retains its separate child ownership. See
+[MCP deadlines](configuration.md#mcp-availability-and-deadlines) for limits and recovery scope.
+
 ## Package boundaries
 
 An installed package uses the Agent Plugins 1.0 `plugin.json` as its portable
