@@ -403,6 +403,7 @@ func TestMCPHealthUsesObservedExactRevisionRatherThanSavedSelection(t *testing.T
 	if err := plugins.Recover(t.Context()); err != nil {
 		t.Fatal(err)
 	}
+	waitCatalogStdioObservation(t, runtime)
 	c, found, err := p.MCP().GetMCPConnection(t.Context(), mutation.Connection.ID)
 	if err != nil || !found {
 		t.Fatal(err)

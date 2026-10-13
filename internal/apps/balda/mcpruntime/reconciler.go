@@ -122,13 +122,14 @@ type managedInstance struct {
 	cancel     context.CancelFunc
 	retiring   bool
 	stopErr    error
+	worker     *stdioWorker
 }
 
 // Reconciler owns revision coexistence, drain, shutdown, and health.
 type Reconciler struct {
 	mu          sync.Mutex
 	resolver    LaunchResolver
-	launcher    Launcher
+	launcher    ProcessLauncher
 	projector   Projector
 	limits      Limits
 	instances   map[InstanceKey]*managedInstance
@@ -136,10 +137,11 @@ type Reconciler struct {
 	stopped     bool
 	generation  uint64
 	desiredKeys map[InstanceKey]bool
+	stdio       stdioPolicy
 }
 
 // New creates an MCP desired-state reconciler.
-func New(resolver LaunchResolver, launcher Launcher, projector Projector, limits Limits) (*Reconciler, error) {
+func New(resolver LaunchResolver, launcher ProcessLauncher, projector Projector, limits Limits) (*Reconciler, error) {
 	if resolver == nil || launcher == nil || projector == nil {
 		return nil, errors.New("MCP resolver, launcher, and projector are required")
 	}
@@ -159,7 +161,7 @@ func New(resolver LaunchResolver, launcher Launcher, projector Projector, limits
 	if limits.MaxServers < 0 || limits.MaxTools < 0 || limits.MaxToolMetadataBytes < 0 || limits.StopTimeout < 0 {
 		return nil, errors.New("MCP limits must be positive")
 	}
-	return &Reconciler{resolver: resolver, launcher: launcher, projector: projector, limits: limits, instances: make(map[InstanceKey]*managedInstance)}, nil
+	return &Reconciler{resolver: resolver, launcher: launcher, projector: projector, limits: limits, instances: make(map[InstanceKey]*managedInstance), stdio: defaultStdioPolicy()}, nil
 }
 
 // Reconcile installs local exact configurations before draining old revisions.
@@ -256,32 +258,10 @@ func (r *Reconciler) installLocked(ctx context.Context, key InstanceKey, descrip
 		err = ctx.Err()
 	}
 	valid := err == nil
-	var instance Instance
-	var tools []Tool
 	state := HealthUnknown
 	errorClass := "configuration"
-	// Existing stdio discovery remains here until the process-aware worker
-	// takes ownership. Remote configuration never performs discovery.
-	if valid && config.Transport == "stdio" {
-		errorClass = "start"
-		instance, err = r.launcher.Start(ctx, key, cloneLaunchConfig(config))
-		if err == nil {
-			tools = cloneTools(instance.Tools())
-			if len(tools) > r.limits.MaxTools || toolMetadataBytes(tools) > r.limits.MaxToolMetadataBytes {
-				valid, errorClass = false, "tool_limit"
-				err = errors.New("MCP tool metadata exceeds configured limits")
-				cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), r.limits.StopTimeout)
-				if instance.Close(cleanupCtx) == nil {
-					instance = nil
-				}
-				if r.projector.Remove(cleanupCtx, key) == nil {
-					projected = false
-				}
-				cleanupCancel()
-				tools = nil
-			}
-			state = HealthReady
-		}
+	if valid && config.Transport == stdioTransport {
+		state = HealthStarting
 	}
 	cancel()
 	r.mu.Lock()
@@ -292,13 +272,15 @@ func (r *Reconciler) installLocked(ctx context.Context, key InstanceKey, descrip
 		}
 	}
 	current.projected, current.valid, current.config, current.health.Outcome = projected, valid, cloneLaunchConfig(config), outcome
-	current.instance, current.tools, current.health.ToolCount = instance, tools, len(tools)
 	current.health.State = state
 	if err != nil {
 		current.health.State, current.health.ErrorClass, current.failure = HealthFailed, errorClass, launchReason(err)
 	}
 	if current.retiring {
 		current.health.State = HealthStopping
+	}
+	if valid && config.Transport == stdioTransport && !current.retiring {
+		r.scheduleStdioLocked(key, current)
 	}
 	close(current.installing)
 	current.installing, current.cancel = nil, nil
@@ -496,11 +478,27 @@ func (r *Reconciler) cleanupLocked(ctx context.Context, key InstanceKey, current
 	if current.cancel != nil {
 		current.cancel()
 	}
+	if current.worker != nil {
+		current.worker.cancel()
+	}
 	if current.installing != nil {
 		installed := current.installing
 		r.mu.Unlock()
 		select {
 		case <-installed:
+		case <-ctx.Done():
+		}
+		r.mu.Lock()
+		if ctx.Err() != nil {
+			current.stopErr = ctx.Err()
+			return ctx.Err()
+		}
+	}
+	if current.worker != nil {
+		stopped := current.worker.done
+		r.mu.Unlock()
+		select {
+		case <-stopped:
 		case <-ctx.Done():
 		}
 		r.mu.Lock()

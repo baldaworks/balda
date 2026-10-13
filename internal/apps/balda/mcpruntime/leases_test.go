@@ -149,6 +149,11 @@ func (l *unavailableLauncher) Start(context.Context, InstanceKey, LaunchConfig) 
 	return nil, errors.New("unreachable remote")
 }
 
+func (l *unavailableLauncher) Launch(context.Context, InstanceKey, LaunchConfig) (Process, error) {
+	l.starts++
+	return nil, errors.New("unavailable owned process")
+}
+
 type heldLocalResolver struct {
 	entered, release chan struct{}
 	calls            atomic.Int32

@@ -85,6 +85,7 @@ func TestConfiguredCaptureTransitionsKeepRetainedIdentity(t *testing.T) {
 						if err := restarted.PublishCandidate(t.Context(), snapshot); err != nil {
 							t.Fatal(err)
 						}
+						waitCatalogStdioObservation(t, restarted)
 						connection, found, err := p.MCP().GetMCPConnection(t.Context(), capture.ConnectionID)
 						if err != nil || !found {
 							t.Fatal("retained configured identity missing")

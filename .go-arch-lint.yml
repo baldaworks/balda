@@ -247,7 +247,7 @@ components:
     in:
       - internal/apps/balda/runtimecatalog
 
-  # Exact configuration leases, desired/observed MCP process lifecycle, and
+  # Exact configuration leases, supervised Balda-owned stdio workers, and
   # bounded attachment evidence only. No SDK, credentials, or registry adapters.
   # Current authorization recovery policy belongs to catalog_wiring, so this
   # component remains independent of MCP management and concrete SDK adapters.
