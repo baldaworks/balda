@@ -9,7 +9,9 @@ import (
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/baldaworks/go-actorlayer"
+	"github.com/rs/zerolog"
 )
 
 // session_settlement.go owns session turn durable settlement policy. The actor
@@ -45,6 +47,15 @@ func (c sessionSettlementCoordinator) settle(ctx context.Context, env actorlayer
 		return nil
 	}
 	if runErr == nil {
+		return nil
+	}
+	var handled *turncmd.FinalOutcomeAcceptedError
+	if conversationalTurn(env, payload) && errors.As(runErr, &handled) {
+		zerolog.Ctx(ctx).Warn().
+			Str("envelope_id", env.ID).
+			Str("session_id", payload.Locator.SessionID).
+			Str("error_class", "post_final_failure").
+			Msg("settling conversational turn after final outcome acceptance")
 		return nil
 	}
 	// Contract: once task terminal failure is durably recorded, settle command without retry.

@@ -245,7 +245,7 @@ func (e *SessionActorExecutor) enqueueTurn(ctx context.Context, env actorlayer.E
 				return actorlayer.TransientError(err)
 			}
 		}
-		if reportErr := e.reportPreparationFailure(ctx, env, payload, err); reportErr != nil {
+		if reportErr := e.reportTerminalFailure(ctx, env, payload, err); reportErr != nil {
 			return actorlayer.TransientError(reportErr)
 		}
 		return settlement.settle(ctx, env, payload, err)
