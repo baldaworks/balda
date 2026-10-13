@@ -22,7 +22,7 @@ import (
 	"google.golang.org/genai"
 )
 
-var terminalIteratorCause = errors.New("session model is not supported credential=SYNTHETIC_SECRET")
+var errTerminalIterator = errors.New("session model is not supported credential=SYNTHETIC_SECRET")
 
 func terminalIterator(ctx adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
 	return func(yield func(*adksession.Event, error) bool) {
@@ -30,7 +30,7 @@ func terminalIterator(ctx adkagent.InvocationContext) iter.Seq2[*adksession.Even
 		event.Partial = true
 		event.Content = genai.NewContentFromText("working", genai.RoleModel)
 		if yield(event, nil) {
-			yield(nil, terminalIteratorCause)
+			yield(nil, errTerminalIterator)
 		}
 	}
 }
@@ -57,7 +57,7 @@ func TestTerminalFailureNoticeConcreteDeliveryDistinctMessages(t *testing.T) {
 		before := len(terminalNotices(t, bus))
 		for attempt := range 5 {
 			env.Attempt = attempt
-			if err := actor.Handle(t.Context(), env); !errors.Is(err, terminalIteratorCause) {
+			if err := actor.Handle(t.Context(), env); !errors.Is(err, errTerminalIterator) {
 				t.Fatalf("inbound=%s attempt=%d error=%v", env.ID, attempt+1, err)
 			}
 			count := len(terminalNotices(t, bus)) - before
@@ -108,7 +108,7 @@ func TestTerminalFailureNoticeReplayAcrossSQLiteRestart(t *testing.T) {
 			env.ID, env.CorrelationID = "synthetic-inbound-5316", "synthetic-update-5316"
 			env.Attempt, env.MaxAttempts = 4, 5
 			for range 2 {
-				if err := actor.Handle(t.Context(), env); !errors.Is(err, terminalIteratorCause) {
+				if err := actor.Handle(t.Context(), env); !errors.Is(err, errTerminalIterator) {
 					t.Fatal(err)
 				}
 			}
@@ -131,7 +131,7 @@ func TestTerminalFailureNoticeReplayAcrossSQLiteRestart(t *testing.T) {
 			// Reconstruct both product actors and replay the retained inbound/accepted
 			// delivery envelopes, as durable transport redelivery does after restart.
 			restarted, busAfter, _ := executionFailureActor(t, terminalIterator)
-			if err := restarted.Handle(t.Context(), env); !errors.Is(err, terminalIteratorCause) {
+			if err := restarted.Handle(t.Context(), env); !errors.Is(err, errTerminalIterator) {
 				t.Fatal(err)
 			}
 			replay := terminalNotices(t, busAfter)
@@ -163,7 +163,7 @@ func TestTerminalFailureNoticeAmbiguousSendRetainsSendingAcrossRestart(t *testin
 	}
 	env.ID = "synthetic-inbound-ambiguous-5317"
 	env.Attempt, env.MaxAttempts = 4, 5
-	if err := actor.Handle(t.Context(), env); !errors.Is(err, terminalIteratorCause) {
+	if err := actor.Handle(t.Context(), env); !errors.Is(err, errTerminalIterator) {
 		t.Fatal(err)
 	}
 	notices := terminalNotices(t, bus)
@@ -275,7 +275,11 @@ func assertTerminalReceipt(t *testing.T, path string, notice actorlayer.Envelope
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close delivery receipt reader: %v", err)
+		}
+	}()
 	var jobs int
 	if err := db.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM execution_jobs`).Scan(&jobs); err != nil {
 		t.Fatal(err)
@@ -335,8 +339,8 @@ func TestTerminalFailureNoticeExcludesCanceledSilentAutomaticExecution(t *testin
 		settles bool
 	}{
 		{"canceled", context.Canceled, true, turncmd.SourceTelegram, true},
-		{"silent", terminalIteratorCause, false, turncmd.SourceTelegram, false},
-		{"automatic", terminalIteratorCause, true, turncmd.SourceAuto, false},
+		{"silent", errTerminalIterator, false, turncmd.SourceTelegram, false},
+		{"automatic", errTerminalIterator, true, turncmd.SourceAuto, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			calls := 0
