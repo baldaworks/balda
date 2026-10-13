@@ -301,6 +301,7 @@ func PreflightRuntime(
 					normaCfg.Providers,
 					reg,
 					agentfactory.WithPermissionHandler(baldaagent.NewPermissionHandler(permissionReviewer, logger)),
+					agentfactory.WithAvailabilityIndependentMCP(),
 				)
 			},
 			baldaagent.NewBuilder,

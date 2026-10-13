@@ -21,14 +21,15 @@ type ProviderFactory struct {
 	options   []agentfactory.Option
 }
 
-// NewProviderFactory retains host options, including the permission handler.
+// NewProviderFactory retains host options and makes MCP attachment invocation-owned.
 func NewProviderFactory(providers map[string]agentconfig.Config, registry mcpregistry.Reader, options ...agentfactory.Option) *ProviderFactory {
 	copyProviders := maps.Clone(providers)
 	for id, config := range copyProviders {
 		config.MCPServers = slices.Clone(config.MCPServers)
 		copyProviders[id] = config
 	}
-	return &ProviderFactory{providers: copyProviders, registry: registry, options: slices.Clone(options)}
+	factoryOptions := append(slices.Clone(options), agentfactory.WithAvailabilityIndependentMCP())
+	return &ProviderFactory{providers: copyProviders, registry: registry, options: factoryOptions}
 }
 
 // BuildScoped applies selection to private defaults before any member is built.
