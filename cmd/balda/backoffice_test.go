@@ -55,7 +55,7 @@ balda:
 	if primary.ID == "" {
 		t.Fatal("migration produced no primary administrator")
 	}
-	if primary.Credential.State != usercmd.CredentialStateDisabled {
+	if primary.Credential.State != usercmd.CredentialStateTemporary {
 		t.Fatalf("converted credential = %q", primary.Credential.State)
 	}
 	if users.BotCapability(primary) != usercmd.BotCapabilityOwner {
@@ -73,7 +73,7 @@ balda:
 	initialBootstrap.SetIn(strings.NewReader(""))
 	initialBootstrap.SetOut(&bytes.Buffer{})
 	initialBootstrap.SetErr(&bytes.Buffer{})
-	initialBootstrap.SetArgs([]string{"backoffice", "bootstrap-admin"})
+	initialBootstrap.SetArgs([]string{"backoffice", "reset-password"})
 	if err := initialBootstrap.Execute(); err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ balda:
 	bootstrap.SetIn(strings.NewReader(""))
 	bootstrap.SetOut(bootstrapOutput)
 	bootstrap.SetErr(&bytes.Buffer{})
-	bootstrap.SetArgs([]string{"backoffice", "bootstrap-admin", "--reset"})
+	bootstrap.SetArgs([]string{"backoffice", "reset-password"})
 	if err := bootstrap.Execute(); err != nil {
 		t.Fatal(err)
 	}
@@ -386,15 +386,8 @@ balda:
 	}
 	databasePath := filepath.Join(workingDir, ".config", "balda", "state.db")
 	seedUserUpgradeDatabase(t, databasePath, fixture)
-	command, err := newRootCommand()
-	if err != nil {
-		t.Fatal(err)
-	}
-	command.SetOut(&bytes.Buffer{})
-	command.SetErr(&bytes.Buffer{})
-	command.SetArgs([]string{"start"})
-	if err := command.Execute(); err == nil || !strings.Contains(err.Error(), "bootstrap-admin") {
-		t.Fatalf("Start() error = %v, want administrator bootstrap instruction", err)
+	if _, err := prepareBaldaCommand(t.Context(), true); err != nil {
+		t.Fatalf("startup after user migration: %v", err)
 	}
 	provider, err := state.Open(t.Context(), state.DatabaseConfig{
 		Type: "sqlite", SQLite: state.SQLiteConfig{Path: databasePath},
@@ -404,7 +397,7 @@ balda:
 	}
 	defer func() { _ = provider.Close() }()
 	owner, found, err := provider.Users().GetUserByBinding(t.Context(), "telegram", "101")
-	if err != nil || !found || !owner.Primary || owner.Credential.State != usercmd.CredentialStateDisabled {
+	if err != nil || !found || !owner.Primary || owner.Credential.State != usercmd.CredentialStateTemporary {
 		t.Fatalf("owner after startup readiness check = %+v, found=%t, err=%v", owner, found, err)
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
+	"github.com/baldaworks/balda/internal/apps/balda/userpassword"
 	"github.com/pressly/goose/v3"
 )
 
@@ -80,8 +81,12 @@ func runUserConversion(t *testing.T, factory func(*testing.T) conversionTestData
 			if err != nil || !found {
 				t.Fatalf("binding %s:%s: found=%t, err=%v", want.channel, want.principal, found, err)
 			}
+			credentialState := usercmd.CredentialStateDisabled
+			if want.primary {
+				credentialState = usercmd.CredentialStateTemporary
+			}
 			if user.ID != want.id || user.Role != want.role || user.Primary != want.primary || user.Status != usercmd.StatusActive ||
-				user.Credential.State != usercmd.CredentialStateDisabled || user.Credential.MustChange {
+				user.Credential.State != credentialState || user.Credential.MustChange != want.primary {
 				t.Errorf("converted %s:%s = %+v", want.channel, want.principal, user)
 			}
 			if user.Primary && (user.Username != "superuser" || user.DisplayName != "superuser") {
@@ -91,13 +96,13 @@ func runUserConversion(t *testing.T, factory func(*testing.T) conversionTestData
 				t.Errorf("collaborator profile = %+v", user.Binding)
 			}
 			secret, found, err := store.GetCredentialSecret(t.Context(), user.ID)
-			if err != nil || !found || secret.PasswordHash != "" {
+			if err != nil || !found || (want.primary && !userpassword.Verify(secret.PasswordHash, []byte("superusersuperuser"))) || (!want.primary && secret.PasswordHash != "") {
 				t.Errorf("converted credential: found=%t hash=%q err=%v", found, secret.PasswordHash, err)
 			}
 		}
 		fixture.count(t, "balda_users", 4)
 		fixture.count(t, "balda_user_bindings", 4)
-		fixture.count(t, "balda_security_audit_events", 8)
+		fixture.count(t, "balda_security_audit_events", 9)
 		fixture.count(t, "balda_user_migrations", 1)
 		before := fixture.snapshot(t)
 		if _, err := fixture.upgrade(); err != nil {

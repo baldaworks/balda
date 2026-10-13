@@ -7,8 +7,8 @@ Backoffice. Read it before changing `cmd/balda` or
 ## Application boundary
 
 - `cmd/balda` is the sole executable entrypoint. Its `start` command owns the
-  production process lifecycle; `backoffice bootstrap-admin` and
-  `backoffice recover-2fa` are offline
+  production process lifecycle; `backoffice bootstrap-admin`,
+  `backoffice reset-password`, and `backoffice recover-2fa` are offline
   administrator maintenance subcommands.
   `backoffice qa serve` is a local preview command without application state.
 - `internal/apps/balda` composes one state provider for bot and Backoffice.
@@ -72,6 +72,9 @@ Commands:
   configures the selected credential-disabled administrator. Replacing a
   usable credential requires `--reset` and revokes all existing browser
   session families.
+- `balda backoffice reset-password` generates and prints a new primary administrator
+  password, revoking its browser session families. Use `--user-id` to select
+  another administrator, or non-terminal stdin to supply a password.
 - `balda start` applies schema and data migrations, then refuses incomplete
   administrator bootstrap before binding any listener or ingress. Migration
   failures also abort startup.
@@ -164,28 +167,32 @@ session family for that user.
 For an existing installation with legacy owner/collaborator records, stop
 Balda, take a consistent database backup, and deploy the new binary. Opening
 the selected state provider automatically runs the forward-only Goose data
-migration for SQLite or PostgreSQL. The migration preserves users, roles,
-bot bindings, and profiles without generating passwords or credential files.
+migration for SQLite or PostgreSQL. The conversion preserves users, roles,
+bot bindings, and profiles. The following SQL password migration sets the
+initial primary credential without credential files.
 
-Newly converted users have active bot access and disabled browser credentials.
-The primary administrator has username and display name `superuser`.
-Set its first browser password through the separate bootstrap operation:
+Newly converted users have active bot access. A following SQL migration gives
+the primary administrator (`superuser`) the initial password `superusersuperuser`
+and marks it temporary, requiring replacement at first browser login. It also
+repairs already-converted primary administrators whose browser credential is
+still disabled. Start directly after deploying:
 
 ```bash
-./bin/balda backoffice bootstrap-admin
 ./bin/balda start
 ```
 
-The bootstrap command opens the provider, so conversion completes before it
-sets and prints the administrator password once. No `--reset` is needed for
-an administrator whose browser credential is disabled. Other converted users
-can receive browser credentials through the administrator's Access credential
-reset flow.
+Other converted users retain disabled browser credentials and can receive them
+through the administrator's Access credential reset flow. Existing usable primary
+credentials and browser sessions remain unchanged; subsequent starts do not reset
+passwords. To generate and print a new administrator password once, run:
 
-On an already-converted database, the data migration leaves canonical users,
-credentials, and browser sessions unchanged. Start directly when the primary
-administrator is ready. Replacing an existing usable password requires
-`bootstrap-admin --reset`, which revokes that user's browser refresh families.
+```bash
+./bin/balda backoffice reset-password
+```
+
+This revokes that user's browser refresh families. Select another administrator
+with `--user-id`; non-terminal stdin may supply an operator-chosen password.
+The command opens the provider and applies migrations before changing credentials.
 
 Legacy conversion copies a Telegram collaborator's stored username and first
 name into separate optional binding fields. Legacy owner records contain neither
@@ -524,7 +531,7 @@ bound to its browser, CSRF token, purpose, user and current authority.
   they cannot bypass an enrolled factor. Authentication pages and ceremonies
   are native, non-boosted and excluded from HTMX history; responses use no-store.
 
-Password change, Access password reset and `bootstrap-admin --reset` preserve
+Password change, Access password reset and `balda backoffice reset-password` preserve
 an enrolled passkey. Losing the key requires an explicitly confirmed operation
 by an administrator with host/database access, using the normal configuration:
 
