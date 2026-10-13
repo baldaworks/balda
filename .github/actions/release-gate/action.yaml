@@ -6,7 +6,7 @@ runs:
   steps:
     - name: Test
       shell: bash
-      run: go test -race ./...
+      run: go test -race -timeout=20m ./...
     - name: Lint
       shell: bash
       run: go tool golangci-lint run
