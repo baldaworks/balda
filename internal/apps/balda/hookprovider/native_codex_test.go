@@ -103,9 +103,15 @@ func TestCodexNativeDeniesToolBeforeSideEffect(t *testing.T) {
 	for _, arg := range prepared[1:] {
 		arguments = append(arguments, strings.TrimPrefix(arg, "--codex-args="))
 	}
-	arguments = append(arguments, "-c", `model_provider="balda_hook_fixture"`, "-c", `model="gpt-5.4"`, "-c", `features.code_mode=false`, "-c", `model_providers.balda_hook_fixture={name="Balda hook fixture",base_url="`+modelServer.URL+`",wire_api="responses",requires_openai_auth=false}`, "exec", "--json", "--skip-git-repo-check", "--ephemeral", "--sandbox", "workspace-write", "Run one local command.")
+	arguments = append(arguments, "-c", `model_provider="balda_hook_fixture"`, "-c", `model="gpt-5.4"`, "-c", `features.code_mode=false`, "-c", `features.plugins=false`, "-c", `model_providers.balda_hook_fixture={name="Balda hook fixture",base_url="`+modelServer.URL+`",wire_api="responses",requires_openai_auth=false}`, "exec", "--json", "--skip-git-repo-check", "--ephemeral", "--sandbox", "workspace-write", "Run one local command.")
 	command := exec.CommandContext(ctx, "codex", arguments...)
 	command.Dir = directory
+	configureProxyProcess(command)
+	defer func() {
+		if command.Process != nil {
+			_ = killNativeGroup(command.Process.Pid)
+		}
+	}()
 	command.Env = append(os.Environ(), "CODEX_HOME="+nativeConfigDir, bindingEnv+"="+path, executableEnv+"="+binary)
 	output, err := command.CombinedOutput()
 	if err != nil {
