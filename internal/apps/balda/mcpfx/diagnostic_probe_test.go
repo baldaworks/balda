@@ -115,6 +115,43 @@ func TestDiagnosticProbeCompletesMCPPaginationWithResolvedCredentials(t *testing
 	}
 }
 
+func TestDiagnosticProbeUsesTrustedTransientValues(t *testing.T) {
+	const authorization = "Bearer configured-only"
+	peer := mcp.NewServer(&mcp.Implementation{Name: "configured-diagnostic", Version: "1"}, nil)
+	mcp.AddTool(peer, &mcp.Tool{Name: "search"}, func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, any, error) {
+		return &mcp.CallToolResult{}, nil, nil
+	})
+	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return peer }, nil)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != authorization {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		handler.ServeHTTP(w, r)
+	}))
+	defer upstream.Close()
+	probe, err := NewDiagnosticProbe(
+		diagnosticValues{err: errors.New("durable credential resolver called")},
+		diagnosticTokens{},
+		NewClientLauncher(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := probe.DiagnoseMCPWithValues(t.Context(), mcpcmd.Revision{
+		ConnectionID: "config:knowl",
+		ID:           "current-knowl",
+		Definition: mcpcmd.Definition{
+			Transport: mcpcmd.TransportHTTP,
+			URL:       upstream.URL,
+			Headers:   map[string]mcpcmd.ValueBinding{"Authorization": {Kind: mcpcmd.ValueProtected}},
+		},
+	}, mcpcmd.LaunchValues{Headers: map[string]string{"Authorization": authorization}})
+	if result.Outcome != mcpcmd.DiagnosticSucceeded || result.ToolCount != 1 {
+		t.Fatalf("configured diagnostic = %+v", result)
+	}
+}
+
 func TestDiagnosticProbeNeverSendsCredentialsAcrossOrigins(t *testing.T) {
 	const secret = "cross-origin-diagnostic-fixture"
 	var leaked atomic.Bool

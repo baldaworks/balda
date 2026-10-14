@@ -44,6 +44,38 @@ func (s *Definitions) validateRevision(r mcpcmd.Revision, providers []string) er
 // ValidateTransportRevision checks the existing transport and protected-value
 // contract for a retained revision independently of current provider selection.
 func (s *Service) ValidateTransportRevision(r mcpcmd.Revision) error {
+	values, err := s.openRevision(r)
+	if err != nil {
+		return err
+	}
+	return validateTransportRevision(r, values)
+}
+
+// resolveTransientValues validates trusted configured values without creating
+// an encrypted retained revision, then resolves the complete launch values.
+func (s *Service) resolveTransientValues(r mcpcmd.Revision, transient mcpcmd.LaunchValues) (mcpcmd.LaunchValues, error) {
+	values := protectedValues{Env: transient.Env, Headers: transient.Headers}
+	if err := checkProtectedBindings(r.Definition.Env, values.Env); err != nil {
+		return mcpcmd.LaunchValues{}, err
+	}
+	if err := checkProtectedBindings(r.Definition.Headers, values.Headers); err != nil {
+		return mcpcmd.LaunchValues{}, err
+	}
+	if err := validateTransportRevision(r, values); err != nil {
+		return mcpcmd.LaunchValues{}, err
+	}
+	env, err := resolveBindings(r.Definition.Env, values.Env)
+	if err != nil {
+		return mcpcmd.LaunchValues{}, err
+	}
+	headers, err := resolveBindings(r.Definition.Headers, values.Headers)
+	if err != nil {
+		return mcpcmd.LaunchValues{}, err
+	}
+	return mcpcmd.LaunchValues{Env: env, Headers: headers}, nil
+}
+
+func validateTransportRevision(r mcpcmd.Revision, values protectedValues) error {
 	d := r.Definition
 	if len(d.Env) > 128 || len(d.Headers) > 128 || len(d.Args) > 256 || len(d.Scopes) > 64 {
 		return mcpcmd.ErrInvalid
@@ -85,10 +117,6 @@ func (s *Service) ValidateTransportRevision(r mcpcmd.Revision) error {
 		if !d.OAuth || binding.ConnectionID != r.ConnectionID || binding.Resource != d.URL || !validRemoteURL(binding.Issuer) || binding.ClientID == "" || len(binding.ClientID) > 1024 {
 			return mcpcmd.ErrInvalid
 		}
-	}
-	values, err := s.openRevision(r)
-	if err != nil {
-		return err
 	}
 	for name, binding := range d.Env {
 		if !environmentName.MatchString(name) || !validBinding(binding) {

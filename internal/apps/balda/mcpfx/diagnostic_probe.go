@@ -56,6 +56,16 @@ func NewDiagnosticProbe(values managedValueResolver, tokens diagnosticTokenReade
 // DiagnoseMCP checks one exact revision and returns no transport or credential
 // details. A failed result never carries a partial tool count.
 func (p *DiagnosticProbe) DiagnoseMCP(ctx context.Context, revision mcpcmd.Revision) mcpcmd.DiagnosticResult {
+	return p.diagnoseMCP(ctx, revision, nil)
+}
+
+// DiagnoseMCPWithValues checks a configured definition using private values
+// already resolved and validated by its trusted owner.
+func (p *DiagnosticProbe) DiagnoseMCPWithValues(ctx context.Context, revision mcpcmd.Revision, values mcpcmd.LaunchValues) mcpcmd.DiagnosticResult {
+	return p.diagnoseMCP(ctx, revision, &values)
+}
+
+func (p *DiagnosticProbe) diagnoseMCP(ctx context.Context, revision mcpcmd.Revision, values *mcpcmd.LaunchValues) mcpcmd.DiagnosticResult {
 	if p == nil || p.values == nil || p.tokens == nil || p.launcher == nil || ctx.Err() != nil {
 		return failedDiagnostic()
 	}
@@ -65,13 +75,19 @@ func (p *DiagnosticProbe) DiagnoseMCP(ctx context.Context, revision mcpcmd.Revis
 	}
 	operationCtx, cancel := context.WithTimeout(ctx, p.timeout-closeTimeout)
 	defer cancel()
-	return p.diagnose(operationCtx, revision, closeTimeout)
+	return p.diagnose(operationCtx, revision, values, closeTimeout)
 }
 
-func (p *DiagnosticProbe) diagnose(ctx context.Context, revision mcpcmd.Revision, closeTimeout time.Duration) mcpcmd.DiagnosticResult {
-	config, err := ResolveManagedLaunch(revision, p.values)
-	if err != nil {
-		return failedDiagnostic()
+func (p *DiagnosticProbe) diagnose(ctx context.Context, revision mcpcmd.Revision, values *mcpcmd.LaunchValues, closeTimeout time.Duration) mcpcmd.DiagnosticResult {
+	var config mcpruntime.LaunchConfig
+	if values == nil {
+		var err error
+		config, err = ResolveManagedLaunch(revision, p.values)
+		if err != nil {
+			return failedDiagnostic()
+		}
+	} else {
+		config = resolveLaunch(revision, *values)
 	}
 	config.Headers = cloneMap(config.Headers)
 	if !revision.Definition.OAuth {

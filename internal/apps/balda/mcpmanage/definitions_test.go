@@ -281,7 +281,7 @@ func (c *definitionConfigured) ProviderIDs(context.Context) ([]string, error) {
 	return c.providers, nil
 }
 
-func (c *definitionConfigured) MCPAuthorizationDefinition(_ context.Context, id string) (mcpcmd.Definition, mcpcmd.LaunchValues, error) {
+func (c *definitionConfigured) MCPPrivateDefinition(_ context.Context, id string) (mcpcmd.Definition, mcpcmd.LaunchValues, error) {
 	c.authorizationCalls++
 	for _, item := range c.items {
 		if item.Connection.PublicID == id {

@@ -14,7 +14,7 @@ import (
 )
 
 // ConfiguredDefinitions separates redacted inventory metadata from private
-// file values used only to capture protected OAuth revisions.
+// file values used only at trusted capture and transient diagnostic boundaries.
 type ConfiguredDefinitions struct {
 	items     []mcpcmd.Item
 	providers []string
@@ -95,9 +95,9 @@ func cloneDefinition(d mcpcmd.Definition) mcpcmd.Definition {
 	return d
 }
 
-// MCPAuthorizationDefinition returns private values only to trusted consumers
-// that build protected revisions. Ordinary inventory remains redacted.
-func (c *ConfiguredDefinitions) MCPAuthorizationDefinition(ctx context.Context, id string) (mcpcmd.Definition, mcpcmd.LaunchValues, error) {
+// MCPPrivateDefinition returns private values only to trusted consumers that
+// build protected revisions or transient diagnostics. Inventory stays redacted.
+func (c *ConfiguredDefinitions) MCPPrivateDefinition(ctx context.Context, id string) (mcpcmd.Definition, mcpcmd.LaunchValues, error) {
 	if err := ctx.Err(); err != nil {
 		return mcpcmd.Definition{}, mcpcmd.LaunchValues{}, err
 	}

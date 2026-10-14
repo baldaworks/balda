@@ -8,6 +8,15 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
 )
 
+type transientDiagnosticProbe interface {
+	DiagnoseMCPWithValues(ctx context.Context, revision mcpcmd.Revision, values mcpcmd.LaunchValues) mcpcmd.DiagnosticResult
+}
+
+type diagnosticTarget struct {
+	revision mcpcmd.Revision
+	values   *mcpcmd.LaunchValues
+}
+
 // DiagnoseCurrent resolves and checks only the authoritative current
 // definition identified by connectionID. The diagnostic result is ephemeral.
 func (s *Definitions) DiagnoseCurrent(ctx context.Context, connectionID string, authority mcpcmd.Authority) (mcpcmd.DiagnosticResult, error) {
@@ -19,35 +28,43 @@ func (s *Definitions) DiagnoseCurrent(ctx context.Context, connectionID string, 
 		return mcpcmd.DiagnosticResult{}, safeOperationError(err)
 	}
 
-	revision, err := s.currentDiagnosticRevision(ctx, connectionID)
+	target, err := s.currentDiagnosticTarget(ctx, connectionID)
 	if err != nil {
 		return mcpcmd.DiagnosticResult{}, err
 	}
-	return s.diagnostic.DiagnoseMCP(ctx, revision), nil
+	if target.values == nil {
+		return s.diagnostic.DiagnoseMCP(ctx, target.revision), nil
+	}
+	diagnostic, ok := s.diagnostic.(transientDiagnosticProbe)
+	if !ok {
+		return mcpcmd.DiagnosticResult{}, mcpcmd.ErrUnavailable
+	}
+	return diagnostic.DiagnoseMCPWithValues(ctx, target.revision, *target.values), nil
 }
 
-func (s *Definitions) currentDiagnosticRevision(ctx context.Context, connectionID string) (mcpcmd.Revision, error) {
+func (s *Definitions) currentDiagnosticTarget(ctx context.Context, connectionID string) (diagnosticTarget, error) {
 	connection, found, err := s.store.GetMCPConnection(ctx, connectionID)
 	if err != nil {
-		return mcpcmd.Revision{}, safeOperationError(err)
+		return diagnosticTarget{}, safeOperationError(err)
 	}
 	if found {
 		if connection.Deleted {
-			return mcpcmd.Revision{}, mcpcmd.ErrNotFound
+			return diagnosticTarget{}, mcpcmd.ErrNotFound
 		}
 		switch connection.Source {
 		case mcpcmd.SourceManaged:
-			return s.currentManagedDiagnosticRevision(ctx, connection)
+			revision, err := s.currentManagedDiagnosticRevision(ctx, connection)
+			return diagnosticTarget{revision: revision}, err
 		case mcpcmd.SourceConfig:
 			return s.currentConfiguredDiagnosticRevision(ctx, connection.ID, connection.PublicID)
 		default:
-			return mcpcmd.Revision{}, mcpcmd.ErrConflict
+			return diagnosticTarget{}, mcpcmd.ErrConflict
 		}
 	}
 
 	publicID, ok := strings.CutPrefix(connectionID, "config:")
 	if !ok || !validPublicID(publicID) {
-		return mcpcmd.Revision{}, mcpcmd.ErrNotFound
+		return diagnosticTarget{}, mcpcmd.ErrNotFound
 	}
 	return s.currentConfiguredDiagnosticRevision(ctx, connectionID, publicID)
 }
@@ -69,31 +86,26 @@ func (s *Definitions) currentManagedDiagnosticRevision(ctx context.Context, conn
 	return revision, nil
 }
 
-func (s *Definitions) currentConfiguredDiagnosticRevision(ctx context.Context, connectionID, publicID string) (mcpcmd.Revision, error) {
-	configured, ok := s.configured.(configuredAuthorization)
+func (s *Definitions) currentConfiguredDiagnosticRevision(ctx context.Context, connectionID, publicID string) (diagnosticTarget, error) {
+	configured, ok := s.configured.(configuredPrivateDefinition)
 	if !ok {
-		return mcpcmd.Revision{}, mcpcmd.ErrUnavailable
+		return diagnosticTarget{}, mcpcmd.ErrUnavailable
 	}
-	definition, values, err := configured.MCPAuthorizationDefinition(ctx, publicID)
+	definition, values, err := configured.MCPPrivateDefinition(ctx, publicID)
 	if err != nil {
-		return mcpcmd.Revision{}, safeOperationError(err)
+		return diagnosticTarget{}, safeOperationError(err)
 	}
 	if definition.ConfigRevision == "" {
-		return mcpcmd.Revision{}, mcpcmd.ErrInvalid
+		return diagnosticTarget{}, mcpcmd.ErrInvalid
 	}
-	revision, err := s.credentials.PrepareRevision(nil, mcpcmd.Revision{
+	revision := mcpcmd.Revision{
 		ConnectionID: connectionID,
 		ID:           definition.ConfigRevision,
 		Definition:   definition,
-	}, mcpcmd.ValueEdits{
-		Env:     protectedCapture(values.Env),
-		Headers: protectedCapture(values.Headers),
-	})
+	}
+	values, err = s.credentials.resolveTransientValues(revision, values)
 	if err != nil {
-		return mcpcmd.Revision{}, safeOperationError(err)
+		return diagnosticTarget{}, safeOperationError(err)
 	}
-	if err := s.credentials.ValidateTransportRevision(revision); err != nil {
-		return mcpcmd.Revision{}, safeOperationError(err)
-	}
-	return revision, nil
+	return diagnosticTarget{revision: revision, values: &values}, nil
 }

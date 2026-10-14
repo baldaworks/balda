@@ -3,18 +3,27 @@ package mcpmanage
 import (
 	"context"
 	"errors"
+	"maps"
+	"reflect"
 	"testing"
 
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
 )
 
 type recordingDiagnosticProbe struct {
-	revisions []mcpcmd.Revision
-	result    mcpcmd.DiagnosticResult
+	revisions       []mcpcmd.Revision
+	transientValues []mcpcmd.LaunchValues
+	result          mcpcmd.DiagnosticResult
 }
 
 func (p *recordingDiagnosticProbe) DiagnoseMCP(_ context.Context, revision mcpcmd.Revision) mcpcmd.DiagnosticResult {
 	p.revisions = append(p.revisions, revision)
+	return p.result
+}
+
+func (p *recordingDiagnosticProbe) DiagnoseMCPWithValues(_ context.Context, revision mcpcmd.Revision, values mcpcmd.LaunchValues) mcpcmd.DiagnosticResult {
+	p.revisions = append(p.revisions, revision)
+	p.transientValues = append(p.transientValues, mcpcmd.LaunchValues{Env: maps.Clone(values.Env), Headers: maps.Clone(values.Headers)})
 	return p.result
 }
 
@@ -49,8 +58,8 @@ func TestDiagnoseCurrentUsesExactSelectedManagedRevisionWithoutWrites(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result != probe.result || len(probe.revisions) != 1 {
-		t.Fatalf("diagnostic result/calls = %+v/%d", result, len(probe.revisions))
+	if result != probe.result || len(probe.revisions) != 1 || len(probe.transientValues) != 0 {
+		t.Fatalf("diagnostic result/calls/transient calls = %+v/%d/%d", result, len(probe.revisions), len(probe.transientValues))
 	}
 	got := probe.revisions[0]
 	if got.ID != created.Connection.CurrentRevisionID || got.Definition.Command != "worker-mcp" {
@@ -92,22 +101,74 @@ func TestDiagnoseCurrentReloadsConfiguredPrivateValuesAtActionTime(t *testing.T)
 	if result.Outcome != mcpcmd.DiagnosticFailed || result.ToolCount != 0 {
 		t.Fatalf("failed diagnostic result = %+v", result)
 	}
-	if len(probe.revisions) != 2 || len(store.writes) != 0 || len(store.connections) != 1 || len(store.revisions) != 0 {
-		t.Fatalf("configured diagnostic calls/writes = %d/%d", len(probe.revisions), len(store.writes))
+	if len(probe.revisions) != 2 || len(probe.transientValues) != 2 || len(store.writes) != 0 || len(store.connections) != 1 || len(store.revisions) != 0 {
+		t.Fatalf("configured diagnostic calls/values/writes = %d/%d/%d", len(probe.revisions), len(probe.transientValues), len(store.writes))
 	}
-	firstValues, err := s.credentials.ResolveValues(probe.revisions[0])
-	if err != nil {
-		t.Fatal(err)
-	}
-	secondValues, err := s.credentials.ResolveValues(probe.revisions[1])
-	if err != nil {
-		t.Fatal(err)
-	}
+	firstValues := probe.transientValues[0]
+	secondValues := probe.transientValues[1]
 	if probe.revisions[0].Definition.ConfigRevision != "config-one" || firstValues.Headers["Authorization"] != "Bearer first-private-value" {
 		t.Fatal("first diagnostic did not use its action-time configuration")
 	}
 	if probe.revisions[1].Definition.ConfigRevision != "config-two" || probe.revisions[1].Definition.URL != "https://current.example/mcp" || secondValues.Headers["Authorization"] != "Bearer second-private-value" {
 		t.Fatal("second diagnostic reused stale configured values")
+	}
+}
+
+func TestDiagnoseCurrentUsesConfiguredStaticHeaderWithoutCredentialKey(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		connectionID string
+		retain       bool
+	}{
+		{name: "configuration public ID", connectionID: "config:knowl"},
+		{name: "retained configuration ID", connectionID: "retained-knowl", retain: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, store, configured := definitionHarness(t)
+			withoutKey, err := New("")
+			if err != nil {
+				t.Fatal(err)
+			}
+			s.credentials = withoutKey
+			configured.items = []mcpcmd.Item{{
+				Connection: mcpcmd.Connection{ID: "config:knowl", PublicID: "knowl", Source: mcpcmd.SourceConfig, Enabled: true},
+				Definition: mcpcmd.Definition{
+					Transport:      mcpcmd.TransportHTTP,
+					URL:            "https://knowl.example/mcp",
+					ConfigRevision: "current-knowl",
+					Headers:        map[string]mcpcmd.ValueBinding{"Authorization": {Kind: mcpcmd.ValueProtected}},
+				},
+			}}
+			configured.values = mcpcmd.LaunchValues{Headers: map[string]string{"Authorization": "Bearer configured-only"}}
+			if tc.retain {
+				store.connections[tc.connectionID] = mcpcmd.Connection{ID: tc.connectionID, PublicID: "knowl", Source: mcpcmd.SourceConfig, CurrentRevisionID: "obsolete-capture"}
+			}
+			probe := &recordingDiagnosticProbe{result: mcpcmd.DiagnosticResult{Outcome: mcpcmd.DiagnosticSucceeded, ToolCount: 4}}
+			s.diagnostic = probe
+			s.catalog = forbiddenDiagnosticCatalog{}
+			connectionsBefore := maps.Clone(store.connections)
+			revisionsBefore := maps.Clone(store.revisions)
+			grantsBefore := maps.Clone(store.grants)
+			bindingsBefore := maps.Clone(configured.items[0].Definition.Headers)
+			valuesBefore := maps.Clone(configured.values.Headers)
+
+			result, err := s.DiagnoseCurrent(t.Context(), tc.connectionID, definitionCreate().Authority)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result != probe.result || len(probe.revisions) != 1 || len(probe.transientValues) != 1 {
+				t.Fatalf("diagnostic result/calls = %+v/%d/%d", result, len(probe.revisions), len(probe.transientValues))
+			}
+			if got := probe.transientValues[0].Headers["Authorization"]; got != "Bearer configured-only" {
+				t.Fatalf("diagnostic Authorization = %q", got)
+			}
+			if len(probe.revisions[0].ProtectedValues) != 0 {
+				t.Fatal("configured diagnostic created an encrypted capture")
+			}
+			if len(store.writes) != 0 || !reflect.DeepEqual(store.connections, connectionsBefore) || !reflect.DeepEqual(store.revisions, revisionsBefore) || !reflect.DeepEqual(store.grants, grantsBefore) || !reflect.DeepEqual(configured.items[0].Definition.Headers, bindingsBefore) || !reflect.DeepEqual(configured.values.Headers, valuesBefore) {
+				t.Fatal("configured diagnostic mutated configuration or durable MCP state")
+			}
+		})
 	}
 }
 
