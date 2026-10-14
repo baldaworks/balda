@@ -49,9 +49,9 @@ func (l *ClientLauncher) StartDiagnostic(ctx context.Context, key mcpruntime.Ins
 func (*ClientLauncher) start(ctx context.Context, key mcpruntime.InstanceKey, config mcpruntime.LaunchConfig, closeTimeout time.Duration, diagnostic bool) (mcpruntime.Instance, error) {
 	observation := newLaunchObservation(config.URL)
 	requestCloseTimeout := closeTimeout
-	if diagnostic {
-		// Leave time for the SDK to observe the canceled DELETE and finish its
-		// own session close before the diagnostic cleanup bound expires.
+	if diagnostic && config.Transport != transportStreamableHTTP {
+		// Non-HTTP diagnostics retain a separate outer wait budget. HTTP close
+		// is joined below, so its bounded shutdown request may use the full share.
 		requestCloseTimeout /= 2
 	}
 	transport, err := clientTransport(config, observation, requestCloseTimeout, diagnostic)
@@ -66,7 +66,7 @@ func (*ClientLauncher) start(ctx context.Context, key mcpruntime.InstanceKey, co
 	if err != nil {
 		return nil, launchFailure(ctx, observedFailure(config, observation))
 	}
-	instance := &clientInstance{session: session}
+	instance := &clientInstance{session: session, joinClose: diagnostic && config.Transport == transportStreamableHTTP}
 	if err := instance.discover(ctx, key); err != nil {
 		closeCtx, closeCancel := context.WithTimeout(context.WithoutCancel(ctx), closeTimeout)
 		defer closeCancel()
@@ -159,9 +159,15 @@ func clientTransport(config mcpruntime.LaunchConfig, observation *launchObservat
 	}
 }
 
+type clientSession interface {
+	ListTools(ctx context.Context, params *mcp.ListToolsParams) (*mcp.ListToolsResult, error)
+	Close() error
+}
+
 type clientInstance struct {
-	session *mcp.ClientSession
-	tools   []mcpruntime.Tool
+	session   clientSession
+	tools     []mcpruntime.Tool
+	joinClose bool
 }
 
 func (i *clientInstance) discover(ctx context.Context, key mcpruntime.InstanceKey) error {
@@ -193,6 +199,11 @@ func (i *clientInstance) Tools() []mcpruntime.Tool {
 func (i *clientInstance) Close(ctx context.Context) error {
 	if i == nil || i.session == nil {
 		return nil
+	}
+	if i.joinClose {
+		// Diagnostic HTTP bounds its own shutdown request. Join that bounded
+		// close so no cleanup worker survives the request-scoped diagnostic.
+		return i.session.Close()
 	}
 	done := make(chan error, 1)
 	go func() { done <- i.session.Close() }()

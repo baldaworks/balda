@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -251,6 +252,12 @@ func TestDiagnosticProbeHonorsOperationAndCallerCancellation(t *testing.T) {
 }
 
 func TestDiagnosticProbeWaitsForCanceledDiscoverySessionCleanup(t *testing.T) {
+	for iteration := range 12 {
+		t.Run(fmt.Sprintf("iteration-%02d", iteration), testDiagnosticProbeWaitsForCanceledDiscoverySessionCleanup)
+	}
+}
+
+func testDiagnosticProbeWaitsForCanceledDiscoverySessionCleanup(t *testing.T) {
 	peer := mcp.NewServer(&mcp.Implementation{Name: "canceled-discovery", Version: "1"}, &mcp.ServerOptions{PageSize: 1})
 	for _, name := range []string{"first", "second"} {
 		mcp.AddTool(peer, &mcp.Tool{Name: name}, func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, any, error) {
@@ -335,6 +342,53 @@ type diagnosticLauncherFixture struct{ instance mcpruntime.Instance }
 
 func (l diagnosticLauncherFixture) StartDiagnostic(context.Context, mcpruntime.InstanceKey, mcpruntime.LaunchConfig, time.Duration) (mcpruntime.Instance, error) {
 	return l.instance, nil
+}
+
+type blockingCloseSession struct {
+	started  chan struct{}
+	release  chan struct{}
+	finished chan struct{}
+}
+
+func (*blockingCloseSession) ListTools(context.Context, *mcp.ListToolsParams) (*mcp.ListToolsResult, error) {
+	return &mcp.ListToolsResult{}, nil
+}
+
+func (s *blockingCloseSession) Close() error {
+	close(s.started)
+	<-s.release
+	close(s.finished)
+	return nil
+}
+
+func TestDiagnosticClientInstanceJoinsSessionCleanup(t *testing.T) {
+	session := &blockingCloseSession{started: make(chan struct{}), release: make(chan struct{}), finished: make(chan struct{})}
+	instance := &clientInstance{session: session, joinClose: true}
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Millisecond)
+	defer cancel()
+	returned := make(chan error, 1)
+	go func() { returned <- instance.Close(ctx) }()
+	select {
+	case <-session.started:
+	case <-time.After(time.Second):
+		t.Fatal("session cleanup did not start")
+	}
+	select {
+	case err := <-returned:
+		close(session.release)
+		<-session.finished
+		t.Fatalf("diagnostic close returned before session cleanup: %v", err)
+	case <-time.After(30 * time.Millisecond):
+	}
+	close(session.release)
+	if err := <-returned; err != nil {
+		t.Fatalf("joined diagnostic close failed: %v", err)
+	}
+	select {
+	case <-session.finished:
+	default:
+		t.Fatal("diagnostic close returned with cleanup worker active")
+	}
 }
 
 func TestDiagnosticProbeBoundsCleanupAndDiscardsToolCountOnCloseFailure(t *testing.T) {
