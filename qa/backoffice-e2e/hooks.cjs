@@ -1,0 +1,82 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { chromium } = require('playwright');
+const origin = process.argv[2], base = process.argv[3] || '', width = Number(process.argv[4]), script = process.argv[5];
+const url = `${origin}${base}`;
+assert.equal(new URL(origin).hostname, '127.0.0.1', 'isolated loopback fixture');
+(async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const context = await browser.newContext({ viewport: { width, height: width === 390 ? 844 : 900 } });
+    const page = await context.newPage();
+    const failures = [];
+    page.on('pageerror', e => failures.push(e.message));
+    const directory = path.join(process.env.BALDA_HOOKS_APPLICATION_SCREENSHOTS || '/tmp/balda-hooks-screens/application', base ? 'prefixed' : 'root', `${width}`);
+    fs.mkdirSync(directory, { recursive: true });
+    async function screen(name) {
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `${name} overflow`);
+      await page.screenshot({ path: path.join(directory, `${name}.png`), fullPage: true });
+    }
+    async function login(target, username) {
+      await target.goto(`${url}/login`);
+      await target.getByLabel(/^Username/).fill(username);
+      await target.getByLabel(/^Password/).fill('correct horse battery staple');
+      await Promise.all([target.waitForURL(`${url}/overview`), target.getByRole('button', { name: 'Sign in', exact: true }).click()]);
+    }
+    await login(page, 'administrator');
+    await page.goto(`${url}/hooks`);
+    await page.getByRole('link', { name: 'Add hook', exact: true }).click();
+    await page.getByRole('heading', { name: 'Add agent hook', exact: true }).waitFor();
+    await page.getByLabel(/^Name/).fill('guard');
+    await page.getByLabel(/^Executable/).fill('/bin/sh');
+    await page.getByLabel(/^Arguments/).fill(JSON.stringify([script]));
+    await page.getByLabel('Enable this hook', { exact: true }).check();
+    await page.getByRole('button', { name: 'Create hook', exact: true }).click();
+    await page.getByRole('link', { name: 'Edit guard', exact: true }).waitFor();
+    await screen('created');
+    let run = await context.request.post(`${origin}/__hook_test/run`);
+    assert.equal(run.status(), 200, 'actual managed command execution');
+    await page.getByRole('link', { name: 'Edit guard', exact: true }).click();
+    await page.getByRole('heading', { name: 'Edit agent hook', exact: true }).waitFor();
+    const stale = await context.newPage();
+    await stale.goto(`${url}/hooks/guard`);
+    await page.getByLabel('Enable this hook', { exact: true }).uncheck();
+    await page.getByRole('button', { name: 'Save hook', exact: true }).click();
+    await page.getByRole('link', { name: 'Edit guard', exact: true }).waitFor();
+    run = await context.request.post(`${origin}/__hook_test/run`);
+    assert.equal(run.status(), 200, 'disabled hooks leave execution unchanged');
+    await stale.getByLabel(/^Executable/).fill('/bin/false');
+    const conflict = stale.waitForResponse(r => r.url() === `${url}/hooks/guard` && r.request().method() === 'POST');
+    await stale.getByRole('button', { name: 'Save hook', exact: true }).click();
+    assert.equal((await conflict).status(), 409, 'stale edit');
+    await stale.getByRole('link', { name: 'Reopen this hook', exact: true }).waitFor();
+    assert.equal(await stale.getByLabel(/^Executable/).inputValue(), '/bin/false', 'stale draft remains');
+    await stale.close();
+    await page.getByRole('link', { name: 'Edit guard', exact: true }).click();
+    await page.getByRole('heading', { name: 'Edit agent hook', exact: true }).waitFor();
+    await screen('disabled-editor');
+    await page.getByLabel('Confirm deleting this hook.', { exact: true }).check();
+    await page.getByRole('button', { name: 'Delete hook', exact: true }).click();
+    await page.getByText('No agent hooks yet.', { exact: true }).waitFor();
+    await page.getByRole('link', { name: 'Add hook', exact: true }).click();
+    await page.getByRole('heading', { name: 'Add agent hook', exact: true }).waitFor();
+    await page.getByLabel(/^Name/).fill('retained');
+    await page.getByLabel(/^Executable/).fill('/bin/true');
+    await page.getByRole('button', { name: 'Create hook', exact: true }).click();
+    await page.getByRole('link', { name: 'Edit retained', exact: true }).waitFor();
+    await screen('retained');
+    const anonymous = await browser.newContext();
+    assert.equal((await anonymous.request.get(`${url}/hooks`)).status(), 401, 'anonymous denied');
+    await anonymous.close();
+    const operator = await browser.newContext();
+    const operatorPage = await operator.newPage();
+    await login(operatorPage, 'operator');
+    assert.equal((await operator.request.get(`${url}/hooks`)).status(), 403, 'operator denied');
+    assert.equal(await operatorPage.locator(`a[href="${base}/hooks"]`).count(), 0, 'operator navigation');
+    await operator.close();
+    assert.deepEqual(failures, [], 'browser failures');
+    console.log(`PASS ${base || '/'} ${width}: login, real execution, disable, stale edit, delete, retained definition, authorization`);
+    await context.close();
+  } finally { await browser.close(); }
+})().catch(e => { console.error(e); process.exitCode = 1; });

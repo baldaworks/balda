@@ -29,6 +29,8 @@ type TopicSession struct {
 	pendingBoundaries map[BoundaryReason]boundaryAttempt
 	runtimeDeleted    bool
 	runtimeClosed     bool
+	hooksStarted      bool
+	hooksEnded        bool
 }
 
 type boundaryAttempt struct {

@@ -102,6 +102,7 @@ type TurnExecutionService struct {
 	jobEvents      jobEventAppender
 	sessions       runtimeStateReader
 	turnCapture    CompletedTurnCapture
+	hooks          HookRunner
 	privateOutput  PrivateOutputRecorder
 	webhookClaims  WebhookTurnClaimer
 	progressHook   ProgressTransportHook
@@ -119,6 +120,7 @@ func (s *TurnExecutionService) currentTime() time.Time {
 }
 
 type ExecutionRequest struct {
+	WorkspaceDir    string
 	Text            string
 	Attachments     []attachment.Descriptor
 	Runner          *runner.Runner
@@ -293,20 +295,27 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 	if privateRun && req.Deliver && req.DeliveryLocator.ChannelType == "" {
 		return fmt.Errorf("private report locator is required")
 	}
+	hookContext, err := s.submitHooks(ctx, req)
+	if err != nil {
+		return err
+	}
 	providerText := req.Text
+	if hookContext != "" {
+		providerText += "\n\n<balda_hook_context>\n" + hookContext + "\n</balda_hook_context>"
+	}
 	var (
 		formatState *formatStateChange
-		err         error
+		formatErr   error
 	)
 	if !privateRun && s.formatComposer != nil {
-		providerText, formatState, err = s.formatComposer.Compose(
+		providerText, formatState, formatErr = s.formatComposer.Compose(
 			ctx,
 			req.Locator,
 			req.DeliveryOptions.DeliveryFormat,
-			req.Text,
+			providerText,
 		)
-		if err != nil {
-			return fmt.Errorf("compose message format prompt: %w", err)
+		if formatErr != nil {
+			return fmt.Errorf("compose message format prompt: %w", formatErr)
 		}
 	}
 	providerText = composeApplicationMemoryPrompt(providerText, req.MemoryRefresh)
@@ -618,6 +627,9 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 			Int("streamed_text_char_count", streamedText.Len()).
 			Msg("received provider event")
 		if ev.TurnComplete {
+			if err := s.stopHooks(ctx, req, streamedText.String(), string(terminalTurnStatus(ev))); err != nil {
+				return err
+			}
 			sawTurnComplete = true
 			responseText := streamedText.String()
 			memoryResponseText := memoryStreamedText.String()

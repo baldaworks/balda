@@ -528,3 +528,8 @@ npm releases are published from Git tags through the Omnidist workflow. The
 workflow uses npm trusted publishing with GitHub Actions OIDC; it does not use a
 long-lived npm publish token. Each `@baldaworks/balda*` package trusts the
 `baldaworks/balda` repository and the `omnidist-release.yml` workflow.
+
+Administrators configure agent lifecycle hooks in **Operations → Agent hooks**.
+Approved commands can validate a session start, reject a prompt, check a final
+answer, or observe session closure. See [Managed agent hooks](docs/reference/agent-hooks.md)
+for configuration, executable privileges, limits and lifecycle behavior.

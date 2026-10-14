@@ -115,6 +115,7 @@ type Manager struct {
 	sessionsPersistent bool
 	sessionStore       baldastate.SessionStore
 	logger             zerolog.Logger
+	hooks              HookRunner
 	boundaryObserver   BoundaryObserver
 	now                func() time.Time
 
@@ -147,6 +148,7 @@ type ManagerParams struct {
 	SessionsPersistent bool `name:"balda_sessions_persistent"`
 	SessionStore       baldastate.SessionStore
 	BoundaryObserver   BoundaryObserver `optional:"true"`
+	Hooks              HookRunner       `optional:"true"`
 	Logger             zerolog.Logger
 }
 
@@ -168,6 +170,7 @@ func NewManager(p ManagerParams) (*Manager, error) {
 		sessionsPersistent: p.SessionsPersistent,
 		sessionStore:       p.SessionStore,
 		boundaryObserver:   p.BoundaryObserver,
+		hooks:              p.Hooks,
 		logger:             p.Logger.With().Str("component", "balda.session_manager").Logger(),
 		sessions:           make(map[string]*TopicSession),
 		now:                time.Now,
@@ -473,6 +476,14 @@ func (m *Manager) createSession(ctx context.Context, sessionCtx SessionContext, 
 		workspaceDir:      workspaceDir,
 		branchName:        branchName,
 		startupNotice:     startupNotice,
+	}
+	source := "startup"
+	if persisted != nil {
+		source = "resume"
+	}
+	if err := m.startSessionHooks(ctx, ts, baldaProvider, source); err != nil {
+		_ = m.cleanupTopicSession(ctx, ts, sessionCleanupOptions{deleteRuntimeSession: persisted == nil, cleanupWorkspace: persisted == nil})
+		return err
 	}
 
 	if !transient {
@@ -887,6 +898,7 @@ func (m *Manager) newBoundaryID(reason BoundaryReason, sessionID string, occurre
 }
 
 func (m *Manager) cleanupTopicSession(ctx context.Context, ts *TopicSession, opts sessionCleanupOptions) error {
+	m.endSessionHooks(ctx, ts)
 	var firstErr error
 	if opts.deleteRuntimeSession {
 		firstErr = deleteTopicRuntimeSession(ctx, ts)
