@@ -321,7 +321,8 @@ func TestBus_CommandRetryingEventIncludesNextAttemptMetadata(t *testing.T) {
 	if _, err := bus.Dispatch(context.Background(), commandTestEnvelope("retrying-metadata")); err != nil {
 		t.Fatalf("Dispatch() error = %v", err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	// Give the delayed NAK room for host wall-clock corrections.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	var calls atomic.Int32
 	done := make(chan struct{}, 1)
