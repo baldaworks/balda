@@ -119,6 +119,9 @@ async function checkWebhooks(browser, baseURL, viewport) {
     if (screenshotDir) await page.screenshot({ path: path.join(screenshotDir, `webhooks-${state}-${viewport.width}.png`), fullPage: true });
   }
   async function checkLayout(state) {
+    await page.locator('main#main-content:not(.htmx-swapping):not(.htmx-settling)').waitFor();
+    await page.evaluate(() => { document.scrollingElement.scrollTop = 0; });
+    await page.waitForFunction(() => document.scrollingElement.scrollTop === 0);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     assert.ok(overflow <= 1, `${state} document overflow at ${viewport.width}px: ${overflow}px`);
     await checkTopBar(page, `${state} at ${viewport.width}px`);
@@ -238,6 +241,7 @@ async function checkTopBar(page, label) {
       top: bounds.top, bottom: bounds.bottom, center: bounds.top + (bounds.height - 1) / 2,
       brandBottom: brand.bottom, controls,
       headingTop: document.querySelector('h1').getBoundingClientRect().top,
+      scrollY: window.scrollY,
     };
   });
   assert.equal(geometry.top, 0, `${label} top bar stays at viewport top`);
@@ -246,7 +250,7 @@ async function checkTopBar(page, label) {
     assert.equal(control.top >= geometry.top && control.bottom <= geometry.bottom, true, `${label} top bar control is visible`);
     assert.equal(Math.abs(control.center - geometry.center) <= 1, true, `${label} top bar controls are vertically centered`);
   }
-  assert.equal(geometry.headingTop >= geometry.bottom, true, `${label} heading stays below top bar`);
+  assert.equal(geometry.headingTop >= geometry.bottom, true, `${label} heading stays below top bar: ${JSON.stringify(geometry)}`);
 }
 
 async function checkPage(browser, baseURL, viewport) {
