@@ -27,6 +27,11 @@ go tool golangci-lint run
 go tool go-arch-lint check --project-path .
 ```
 
+The CI race and coverage job uses a 20-minute per-package timeout. Backoffice
+tests use a shared low-cost bcrypt hash for fixture users; the production
+password hash still uses cost 12 and is checked in `userpassword` tests. Keep
+real login and password-change assertions when changing those fixtures.
+
 ## Database Integration Checks
 
 State database integration suites are explicitly tagged and run separately:

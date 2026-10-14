@@ -23,7 +23,7 @@ func TestBrowserLoginSetsStrictScopedCookiesAndSafeRedirect(t *testing.T) {
 	}
 	service := &fakeBrowserService{
 		login: func(_ context.Context, username string, password []byte) (Credentials, error) {
-			if username != "admin" || string(password) != testPassword {
+			if username != "admin" || string(password) != validPassword {
 				t.Fatalf("Login() input = %q, %q", username, password)
 			}
 			return want, nil
@@ -31,7 +31,7 @@ func TestBrowserLoginSetsStrictScopedCookiesAndSafeRedirect(t *testing.T) {
 	}
 	browser := newHTTPTestBrowser(t, service, true, 0)
 	request := mutationRequest(http.MethodPost, "/login", url.Values{
-		"username": {"admin"}, "password": {testPassword}, "csrf_token": {"csrf-proof"},
+		"username": {"admin"}, "password": {validPassword}, "csrf_token": {"csrf-proof"},
 		"return_to": {"https://attacker.example/steal"},
 	})
 	request.Header.Set("Origin", "https://backoffice.example")
@@ -61,7 +61,7 @@ func TestBrowserBasePathScopesCookiesAndReturnPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	request := mutationRequest(http.MethodPost, "/balda/login", url.Values{
-		"username": {"admin"}, "password": {testPassword}, "csrf_token": {"csrf-proof"},
+		"username": {"admin"}, "password": {validPassword}, "csrf_token": {"csrf-proof"},
 		"return_to": {"/balda/access?tab=users"},
 	})
 	request.Header.Set("Origin", "https://backoffice.example")
@@ -431,7 +431,7 @@ func TestBrowserMonthlyRefreshUsesCommittedCookieDeadline(t *testing.T) {
 			p, s, now := newSecurityTestService(t)
 			s.config.RefreshTTL = 30 * 24 * time.Hour
 			createSecurityTestUser(t, p.Users(), "admin", "admin", usercmd.CredentialStateActive, usercmd.RoleAdministrator, true, now)
-			initial, err := s.Login(t.Context(), "admin", []byte(testPassword))
+			initial, err := s.Login(t.Context(), "admin", []byte(validPassword))
 			if err != nil {
 				t.Fatal(err)
 			}

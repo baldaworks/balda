@@ -8,7 +8,6 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
-	"github.com/baldaworks/balda/internal/apps/balda/userpassword"
 )
 
 func TestLoginCreatesOpaqueNormalAndRestrictedFamilies(t *testing.T) {
@@ -26,7 +25,7 @@ func TestLoginCreatesOpaqueNormalAndRestrictedFamilies(t *testing.T) {
 			t.Parallel()
 			provider, service, now := newSecurityTestService(t)
 			user := createSecurityTestUser(t, provider.Users(), "user-"+tt.name, "user."+tt.name, tt.state, usercmd.RoleAdministrator, tt.name == "normal", now)
-			credentials, err := service.Login(t.Context(), user.Username, []byte(testPassword))
+			credentials, err := service.Login(t.Context(), user.Username, []byte(validPassword))
 			if err != nil {
 				t.Fatalf("Login() error = %v", err)
 			}
@@ -81,9 +80,9 @@ func TestLoginFailuresAreUniformAndBindingCannotAuthenticate(t *testing.T) {
 		username string
 		password string
 	}{
-		{username: "missing", password: testPassword},
-		{username: "disabled", password: testPassword},
-		{username: "disabled", password: "incorrect password value"},
+		{username: "missing", password: validPassword},
+		{username: "disabled", password: validPassword},
+		{username: "disabled", password: invalidPassword},
 	} {
 		if _, err := service.Login(t.Context(), attempt.username, []byte(attempt.password)); !errors.Is(err, ErrUnauthenticated) {
 			t.Fatalf("Login(%q) error = %v, want ErrUnauthenticated", attempt.username, err)
@@ -95,7 +94,7 @@ func TestRefreshRenewsPairAndReplayRevokesFamily(t *testing.T) {
 	t.Parallel()
 	provider, service, now := newSecurityTestService(t)
 	createSecurityTestUser(t, provider.Users(), "admin", "admin", usercmd.CredentialStateActive, usercmd.RoleAdministrator, true, now)
-	initial, err := service.Login(t.Context(), "admin", []byte(testPassword))
+	initial, err := service.Login(t.Context(), "admin", []byte(validPassword))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +126,7 @@ func TestRoleChangeRevokesPriorSessionAndNewAccessUsesCurrentRole(t *testing.T) 
 	provider, service, now := newSecurityTestService(t)
 	createSecurityTestUser(t, provider.Users(), "primary", "primary", usercmd.CredentialStateActive, usercmd.RoleAdministrator, true, now)
 	operator := createSecurityTestUser(t, provider.Users(), "operator", "operator", usercmd.CredentialStateActive, usercmd.RoleOperator, false, now)
-	credentials, err := service.Login(t.Context(), operator.Username, []byte(testPassword))
+	credentials, err := service.Login(t.Context(), operator.Username, []byte(validPassword))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +142,7 @@ func TestRoleChangeRevokesPriorSessionAndNewAccessUsesCurrentRole(t *testing.T) 
 	if _, err := service.Refresh(t.Context(), credentials.RefreshToken, credentials.CSRFToken); !errors.Is(err, ErrUnauthenticated) {
 		t.Fatalf("Refresh(prior role session) error = %v, want ErrUnauthenticated", err)
 	}
-	credentials, err = service.Login(t.Context(), operator.Username, []byte(testPassword))
+	credentials, err = service.Login(t.Context(), operator.Username, []byte(validPassword))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +161,7 @@ func TestAccessRejectsDisabledCanonicalUser(t *testing.T) {
 	provider, service, now := newSecurityTestService(t)
 	createSecurityTestUser(t, provider.Users(), "primary", "primary", usercmd.CredentialStateActive, usercmd.RoleAdministrator, true, now)
 	operator := createSecurityTestUser(t, provider.Users(), "operator", "operator", usercmd.CredentialStateActive, usercmd.RoleOperator, false, now)
-	credentials, err := service.Login(t.Context(), operator.Username, []byte(testPassword))
+	credentials, err := service.Login(t.Context(), operator.Username, []byte(validPassword))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +182,7 @@ func TestRefreshAfterClockRollbackPreservesLastRenewal(t *testing.T) {
 	createSecurityTestUser(t, provider.Users(), "admin", "admin", usercmd.CredentialStateActive, usercmd.RoleAdministrator, true, now)
 	issuedAt := now.Add(353 * time.Millisecond)
 	service.now = func() time.Time { return issuedAt }
-	credentials, err := service.Login(t.Context(), "admin", []byte(testPassword))
+	credentials, err := service.Login(t.Context(), "admin", []byte(validPassword))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +223,7 @@ func TestRefreshRejectsExpiredFamilyAndWrongCSRF(t *testing.T) {
 	t.Parallel()
 	provider, service, now := newSecurityTestService(t)
 	createSecurityTestUser(t, provider.Users(), "admin", "admin", usercmd.CredentialStateActive, usercmd.RoleAdministrator, true, now)
-	credentials, err := service.Login(t.Context(), "admin", []byte(testPassword))
+	credentials, err := service.Login(t.Context(), "admin", []byte(validPassword))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,15 +240,15 @@ func TestTemporaryPasswordReplacementRevokesOldRefreshAndIssuesNormalFamily(t *t
 	t.Parallel()
 	provider, service, now := newSecurityTestService(t)
 	user := createSecurityTestUser(t, provider.Users(), "temporary", "temporary", usercmd.CredentialStateTemporary, usercmd.RoleAdministrator, true, now)
-	restricted, err := service.Login(t.Context(), user.Username, []byte(testPassword))
+	restricted, err := service.Login(t.Context(), user.Username, []byte(validPassword))
 	if err != nil {
 		t.Fatal(err)
 	}
 	service.now = func() time.Time { return now.Add(time.Minute) }
-	if _, err := service.ReplacePassword(t.Context(), restricted.AccessToken, []byte("incorrect password"), []byte(replacementPassword)); !errors.Is(err, ErrUnauthenticated) {
+	if _, err := service.ReplacePassword(t.Context(), restricted.AccessToken, []byte(invalidPassword), []byte(replacementPassword)); !errors.Is(err, ErrUnauthenticated) {
 		t.Fatalf("ReplacePassword(wrong temporary current) error = %v", err)
 	}
-	normal, err := service.ReplacePassword(t.Context(), restricted.AccessToken, []byte(testPassword), []byte(replacementPassword))
+	normal, err := service.ReplacePassword(t.Context(), restricted.AccessToken, []byte(validPassword), []byte(replacementPassword))
 	if err != nil {
 		t.Fatalf("ReplacePassword() error = %v", err)
 	}
@@ -267,7 +266,7 @@ func TestTemporaryPasswordReplacementRevokesOldRefreshAndIssuesNormalFamily(t *t
 	if err != nil || !found || revoked.Token.State != usercmd.RefreshTokenStateRevoked {
 		t.Fatalf("old refresh = %+v, found=%t, error=%v", revoked, found, err)
 	}
-	if _, err := service.Login(t.Context(), user.Username, []byte(testPassword)); !errors.Is(err, ErrUnauthenticated) {
+	if _, err := service.Login(t.Context(), user.Username, []byte(validPassword)); !errors.Is(err, ErrUnauthenticated) {
 		t.Fatalf("Login(old password) error = %v", err)
 	}
 	if _, err := service.Login(t.Context(), user.Username, []byte(replacementPassword)); err != nil {
@@ -279,20 +278,20 @@ func TestNormalPasswordRotationRequiresCurrentPasswordAndRevokesOldFamily(t *tes
 	t.Parallel()
 	provider, service, now := newSecurityTestService(t)
 	createSecurityTestUser(t, provider.Users(), "admin", "admin", usercmd.CredentialStateActive, usercmd.RoleAdministrator, true, now)
-	initial, err := service.Login(t.Context(), "admin", []byte(testPassword))
+	initial, err := service.Login(t.Context(), "admin", []byte(validPassword))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.ReplacePassword(t.Context(), initial.AccessToken, []byte("incorrect password"), []byte(replacementPassword)); !errors.Is(err, ErrUnauthenticated) {
+	if _, err := service.ReplacePassword(t.Context(), initial.AccessToken, []byte(invalidPassword), []byte(replacementPassword)); !errors.Is(err, ErrUnauthenticated) {
 		t.Fatalf("ReplacePassword(wrong current) error = %v", err)
 	}
-	if _, err := service.ReplacePassword(t.Context(), initial.AccessToken, []byte(testPassword), []byte("short")); !errors.Is(err, usercmd.ErrInvalid) {
+	if _, err := service.ReplacePassword(t.Context(), initial.AccessToken, []byte(validPassword), []byte("short")); !errors.Is(err, usercmd.ErrInvalid) {
 		t.Fatalf("ReplacePassword(short replacement) error = %v", err)
 	}
 	if _, err := service.ValidateAccess(t.Context(), initial.AccessToken); err != nil {
 		t.Fatalf("failed password rotation mutated session: %v", err)
 	}
-	rotated, err := service.ReplacePassword(t.Context(), initial.AccessToken, []byte(testPassword), []byte(replacementPassword))
+	rotated, err := service.ReplacePassword(t.Context(), initial.AccessToken, []byte(validPassword), []byte(replacementPassword))
 	if err != nil {
 		t.Fatalf("ReplacePassword() error = %v", err)
 	}
@@ -314,7 +313,7 @@ func TestLogoutRevokesFamily(t *testing.T) {
 	t.Parallel()
 	provider, service, now := newSecurityTestService(t)
 	createSecurityTestUser(t, provider.Users(), "admin", "admin", usercmd.CredentialStateActive, usercmd.RoleAdministrator, true, now)
-	credentials, err := service.Login(t.Context(), "admin", []byte(testPassword))
+	credentials, err := service.Login(t.Context(), "admin", []byte(validPassword))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -331,11 +330,11 @@ func TestSessionAdministrationHonorsOwnershipAndCurrentConfirmation(t *testing.T
 	provider, service, now := newSecurityTestService(t)
 	createSecurityTestUser(t, provider.Users(), "admin", "admin", usercmd.CredentialStateActive, usercmd.RoleAdministrator, true, now)
 	createSecurityTestUser(t, provider.Users(), "operator", "operator", usercmd.CredentialStateActive, usercmd.RoleOperator, false, now)
-	admin, err := service.Login(t.Context(), "admin", []byte(testPassword))
+	admin, err := service.Login(t.Context(), "admin", []byte(validPassword))
 	if err != nil {
 		t.Fatal(err)
 	}
-	operator, err := service.Login(t.Context(), "operator", []byte(testPassword))
+	operator, err := service.Login(t.Context(), "operator", []byte(validPassword))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -361,10 +360,7 @@ func TestSessionAdministrationHonorsOwnershipAndCurrentConfirmation(t *testing.T
 	}
 }
 
-const (
-	testPassword        = "correct horse battery staple"
-	replacementPassword = "replacement battery staple value"
-)
+const replacementPassword = "replacement battery staple value"
 
 func newSecurityTestService(t *testing.T) (state.Provider, *Service, time.Time) {
 	t.Helper()
@@ -393,10 +389,7 @@ func createSecurityTestUser(
 	now time.Time,
 ) usercmd.User {
 	t.Helper()
-	hash, err := userpassword.Hash([]byte(testPassword))
-	if err != nil {
-		t.Fatal(err)
-	}
+	hash := validPasswordHash(t)
 	user := usercmd.User{
 		ID: id, DisplayName: id, Username: username, NormalizedUsername: username,
 		Status: usercmd.StatusActive, Role: role,
@@ -423,7 +416,7 @@ func TestRefreshRenewsMonthlyAndNearDeadline(t *testing.T) {
 	p, s, now := newSecurityTestService(t)
 	s.config.RefreshTTL = 30 * 24 * time.Hour
 	createSecurityTestUser(t, p.Users(), "admin", "admin", usercmd.CredentialStateActive, usercmd.RoleAdministrator, true, now)
-	c, err := s.Login(t.Context(), "admin", []byte(testPassword))
+	c, err := s.Login(t.Context(), "admin", []byte(validPassword))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -465,11 +458,11 @@ func TestRefreshAdoptsConfiguredLifetimeOnlyWhileValid(t *testing.T) {
 	t.Parallel()
 	p, s, now := newSecurityTestService(t)
 	createSecurityTestUser(t, p.Users(), "admin", "admin", usercmd.CredentialStateActive, usercmd.RoleAdministrator, true, now)
-	live, err := s.Login(t.Context(), "admin", []byte(testPassword))
+	live, err := s.Login(t.Context(), "admin", []byte(validPassword))
 	if err != nil {
 		t.Fatal(err)
 	}
-	expired, err := s.Login(t.Context(), "admin", []byte(testPassword))
+	expired, err := s.Login(t.Context(), "admin", []byte(validPassword))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -15,7 +15,7 @@ func TestBootstrapCreatesFreshPrimaryAdministrator(t *testing.T) {
 	store := &fakeBootstrapStore{}
 	service := newTestBootstrapService(t, store)
 	result, err := service.Bootstrap(t.Context(), BootstrapInput{
-		Password: []byte("correct horse battery staple"),
+		Password: []byte(validPassword),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -34,8 +34,8 @@ func TestBootstrapCreatesFreshPrimaryAdministrator(t *testing.T) {
 func TestBootstrapRejectsDifferentPrimaryIdentity(t *testing.T) {
 	t.Parallel()
 	for _, input := range []BootstrapInput{
-		{Username: "admin", Password: []byte("correct horse battery staple")},
-		{DisplayName: "Administrator", Password: []byte("correct horse battery staple")},
+		{Username: "admin", Password: []byte(validPassword)},
+		{DisplayName: "Administrator", Password: []byte(validPassword)},
 	} {
 		store := &fakeBootstrapStore{}
 		service := newTestBootstrapService(t, store)
@@ -53,7 +53,7 @@ func TestBootstrapExistingCredentialRequiresExplicitReset(t *testing.T) {
 	now := time.Date(2026, 9, 23, 7, 0, 0, 0, time.UTC)
 	store := &fakeBootstrapStore{users: []usercmd.User{bootstrapTestUser("primary", usercmd.CredentialStateTemporary, true, now)}}
 	service := newTestBootstrapService(t, store)
-	input := BootstrapInput{Password: []byte("correct horse battery staple")}
+	input := BootstrapInput{Password: []byte(validPassword)}
 	if _, err := service.Bootstrap(t.Context(), input); !errors.Is(err, ErrCredentialResetRequired) {
 		t.Fatalf("Bootstrap() error = %v, want ErrCredentialResetRequired", err)
 	}
@@ -79,7 +79,7 @@ func TestBootstrapSelectsExplicitAdministrator(t *testing.T) {
 	}}
 	service := newTestBootstrapService(t, store)
 	result, err := service.Bootstrap(t.Context(), BootstrapInput{
-		UserID: "selected", Password: []byte("correct horse battery staple"),
+		UserID: "selected", Password: []byte(validPassword),
 	})
 	if err != nil {
 		t.Fatal(err)
