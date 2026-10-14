@@ -5,6 +5,7 @@ import (
 	"context"
 	"github.com/baldaworks/balda/internal/apps/balda/chatapp"
 	"github.com/baldaworks/balda/internal/apps/balda/commandfx"
+	"github.com/baldaworks/balda/internal/apps/balda/handlersfx"
 	"github.com/baldaworks/balda/internal/apps/balda/jobs/commandoutbox"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
@@ -12,11 +13,12 @@ import (
 	"go.uber.org/fx"
 )
 
-// Module supplies the shared durable admission port to conversational and command ingress.
+// Module supplies shared durable admission to chat, commands and question continuations.
 var Module = fx.Module("balda_command_outbox", fx.Provide(
 	NewDispatcher,
 	fx.Annotate(func(d *commandoutbox.Dispatcher) chatapp.Dispatcher { return d }, fx.ResultTags(`name:"command_ingress"`)),
 	fx.Annotate(func(d *commandoutbox.Dispatcher) commandfx.CommandDispatcher { return d }, fx.ResultTags(`name:"command_ingress"`)),
+	fx.Annotate(func(d *commandoutbox.Dispatcher) handlersfx.QuestionContinuationDispatcher { return d }, fx.ResultTags(`name:"command_ingress"`)),
 ))
 
 // NewDispatcher composes local storage, publication and the host lifecycle.

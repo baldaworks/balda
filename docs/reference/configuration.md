@@ -816,7 +816,8 @@ or non-regular paths return a stable build error.
 
 ### Durable command admission and optional stream budgets
 
-The shared chat handler used by Mattermost and commandfx slash-command ingress
+The shared chat handler used by Mattermost, commandfx slash-command ingress,
+and Telegram question continuations (text replies and inline choices)
 acknowledge local state-DB persistence,
 not a NATS PubAck or task execution. After local admission, bus unavailability
 keeps the original command pending; it does not return a retryable admission

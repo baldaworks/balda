@@ -386,11 +386,12 @@ func newTestHarness(t *testing.T) *testHarness {
 	ch := &fakeTestChannel{}
 
 	handler := newTelegramInboundHandler(telegramInboundHandlerParams{
-		OwnerStore:      ownerStore,
-		SessionManager:  sessions,
-		Dispatcher:      dispatcher,
-		BaldaProviderID: "alpha",
-		Logger:          zerolog.Nop(),
+		OwnerStore:         ownerStore,
+		SessionManager:     sessions,
+		Dispatcher:         dispatcher,
+		QuestionDispatcher: dispatcher,
+		BaldaProviderID:    "alpha",
+		Logger:             zerolog.Nop(),
 	})
 	handler.channel = ch
 	handler.setOwner(101, 9001)

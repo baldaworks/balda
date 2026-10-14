@@ -467,6 +467,7 @@ deps:
     mayDependOn:
       - command_outbox
       - command_wiring
+      - ingress_wiring
       - contracts
       - storage
     anyVendorDeps: true

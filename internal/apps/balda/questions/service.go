@@ -275,7 +275,7 @@ func (s *Service) ResolveSelectionDetailed(ctx context.Context, in questioncmd.I
 	if !selectionContextMatches(record, in) {
 		return SelectionResolution{Record: record, Matched: true, Invalid: true}, nil
 	}
-	if record.Status != questioncmd.StatusPending {
+	if record.Status != questioncmd.StatusPending && record.Status != questioncmd.StatusAnswered {
 		s.clearControls(ctx, record)
 		return SelectionResolution{Record: record, Matched: true, Inactive: true}, nil
 	}
@@ -294,6 +294,10 @@ func (s *Service) ResolveSelectionDetailed(ctx context.Context, in questioncmd.I
 	if !valid {
 		return SelectionResolution{Record: record, Matched: true, Invalid: true}, nil
 	}
+	if record.Status == questioncmd.StatusAnswered {
+		s.clearControls(ctx, record)
+		return replayAnsweredSelection(record, in, option)
+	}
 	answer := questioncmd.Answer{
 		Text:           strings.TrimSpace(option.Label),
 		SelectedOption: strings.TrimSpace(option.ID),
@@ -301,20 +305,31 @@ func (s *Service) ResolveSelectionDetailed(ctx context.Context, in questioncmd.I
 		AnsweredAt:     zeroOrNow(in.ReceivedAt, s.now().UTC()),
 		ProviderMsgID:  strings.TrimSpace(in.ProviderMessageID),
 	}
-	updated, settled, err := s.store.MarkQuestionAnswered(ctx, record.QuestionID, answer)
-	if err == nil {
-		if settled {
-			s.clearControls(ctx, updated)
-			continuation, continuationErr := answeredContinuation(updated)
-			if continuationErr != nil {
-				return SelectionResolution{Record: updated, Matched: true, Settled: true}, continuationErr
-			}
-			return SelectionResolution{Record: updated, Continuation: continuation, Matched: true, Settled: true}, nil
-		} else {
-			s.clearControls(ctx, record)
-		}
+	updated, _, err := s.store.MarkQuestionAnswered(ctx, record.QuestionID, answer)
+	if err != nil {
+		return SelectionResolution{Record: updated, Matched: true}, err
 	}
-	return SelectionResolution{Record: updated, Matched: true, Settled: settled, Inactive: err == nil && !settled}, err
+	s.clearControls(ctx, updated)
+	return replayAnsweredSelection(updated, in, option)
+}
+
+// A repeated selection may recover admission after settlement, including when
+// another delivery won the settlement race. It must not change the saved answer.
+func replayAnsweredSelection(record baldastate.QuestionRecord, in questioncmd.InboundSelection, option questioncmd.Option) (SelectionResolution, error) {
+	result := SelectionResolution{Record: record, Matched: true, Inactive: true}
+	if record.Status != questioncmd.StatusAnswered {
+		return result, nil
+	}
+	var answer questioncmd.Answer
+	if err := json.Unmarshal([]byte(record.AnswerJSON), &answer); err != nil {
+		return result, fmt.Errorf("decode question answer: %w", err)
+	}
+	if strings.TrimSpace(answer.SelectedOption) != strings.TrimSpace(option.ID) ||
+		strings.TrimSpace(answer.AnsweredBy.UserID) != strings.TrimSpace(in.User.UserID) {
+		return result, nil
+	}
+	continuation, err := answeredContinuation(record)
+	return SelectionResolution{Record: record, Continuation: continuation, Matched: true, Settled: true}, err
 }
 
 func answeredContinuation(record baldastate.QuestionRecord) (actorlayer.Envelope, error) {

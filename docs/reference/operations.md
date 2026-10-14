@@ -46,7 +46,8 @@
 
 ## Command admission recovery and NATS storage budgets
 
-For the shared Mattermost chat handler and commandfx ingress, a successful
+For the shared Mattermost chat handler, commandfx ingress and Telegram question
+continuations (text replies and inline choices), a successful
 receipt means the local state database owns the queued
 command. NATS failure after that point is deferred publication, not a failed
 user request. Do not ask the user to resubmit an admitted command; inspect the
@@ -60,6 +61,13 @@ record, including after restart. Its question-based envelope ID and deduplicatio
 key remain stable even if the ingress wrapper ID changes. The retry cannot
 replace the saved answer or become an ordinary turn. A different, later message
 replying to that prompt remains ordinary conversational input.
+
+Telegram inline choices use the same local admission boundary before acknowledging
+the choice as selected. Repeating the saved option as the original responder
+rebuilds its continuation after a failed admission or restart, even when the new
+callback has a different callback query ID. A different option or responder cannot
+replace the persisted answer. NATS publication happens in the background after
+admission; the Telegram adapter never publishes these continuations directly.
 
 Pending commands expire after at most 24 hours. Expired payloads are removed;
 terminal receipts/tombstones are collected after seven days. Recovery logs an

@@ -46,20 +46,26 @@ const (
 
 var serverActorAddress = actorlayer.ActorAddress{Target: "channel", Key: "telegram"}
 
+// QuestionContinuationDispatcher durably admits a settled question's continuation.
+type QuestionContinuationDispatcher interface {
+	Dispatch(ctx context.Context, env actorlayer.Envelope) (*actortransport.DispatchReceipt, error)
+}
+
 type telegramInboundHandler struct {
-	bindings          bindingInvitationAdmitter
-	bindingChannels   bindingChannelRegistry
-	ownerStore        *auth.OwnerStore
-	telegramProfiles  *auth.TelegramProfileService
-	collaboratorStore *auth.CollaboratorStore
-	sessionManager    *baldasession.Manager
-	actorDispatcher   actortransport.Dispatcher
-	questionService   *questions.Service
-	channel           baldatelegram.Channel
-	authToken         string
-	baldaProviderName string
-	logger            zerolog.Logger
-	now               func() time.Time
+	bindings           bindingInvitationAdmitter
+	bindingChannels    bindingChannelRegistry
+	ownerStore         *auth.OwnerStore
+	telegramProfiles   *auth.TelegramProfileService
+	collaboratorStore  *auth.CollaboratorStore
+	sessionManager     *baldasession.Manager
+	actorDispatcher    actortransport.Dispatcher
+	questionDispatcher QuestionContinuationDispatcher
+	questionService    *questions.Service
+	channel            baldatelegram.Channel
+	authToken          string
+	baldaProviderName  string
+	logger             zerolog.Logger
+	now                func() time.Time
 
 	mu          sync.RWMutex
 	bootstrapMu sync.Mutex
@@ -74,16 +80,17 @@ type telegramInboundHandlerParams struct {
 	Bindings        bindingInvitationAdmitter `optional:"true"`
 	BindingChannels bindingChannelRegistry    `optional:"true"`
 
-	OwnerStore        *auth.OwnerStore             `optional:"true"`
-	TelegramProfiles  *auth.TelegramProfileService `optional:"true"`
-	CollaboratorStore *auth.CollaboratorStore      `optional:"true"`
-	SessionManager    *baldasession.Manager        `optional:"true"`
-	Dispatcher        actortransport.Dispatcher    `optional:"true"`
-	QuestionService   *questions.Service           `optional:"true"`
-	Channel           *baldatelegram.Adapter       `optional:"true"`
-	AuthToken         string                       `name:"balda_auth_token" optional:"true"`
-	BaldaProviderID   string                       `name:"balda_provider" optional:"true"`
-	Logger            zerolog.Logger
+	OwnerStore         *auth.OwnerStore               `optional:"true"`
+	TelegramProfiles   *auth.TelegramProfileService   `optional:"true"`
+	CollaboratorStore  *auth.CollaboratorStore        `optional:"true"`
+	SessionManager     *baldasession.Manager          `optional:"true"`
+	Dispatcher         actortransport.Dispatcher      `optional:"true"`
+	QuestionDispatcher QuestionContinuationDispatcher `name:"command_ingress" optional:"true"`
+	QuestionService    *questions.Service             `optional:"true"`
+	Channel            *baldatelegram.Adapter         `optional:"true"`
+	AuthToken          string                         `name:"balda_auth_token" optional:"true"`
+	BaldaProviderID    string                         `name:"balda_provider" optional:"true"`
+	Logger             zerolog.Logger
 }
 
 func newTelegramInboundHandler(params telegramInboundHandlerParams) *telegramInboundHandler {
@@ -93,17 +100,18 @@ func newTelegramInboundHandler(params telegramInboundHandlerParams) *telegramInb
 	}
 	return &telegramInboundHandler{
 		bindings: params.Bindings, bindingChannels: params.BindingChannels,
-		ownerStore:        params.OwnerStore,
-		telegramProfiles:  params.TelegramProfiles,
-		collaboratorStore: params.CollaboratorStore,
-		sessionManager:    params.SessionManager,
-		actorDispatcher:   params.Dispatcher,
-		questionService:   params.QuestionService,
-		channel:           ch,
-		authToken:         strings.TrimSpace(params.AuthToken),
-		baldaProviderName: strings.TrimSpace(params.BaldaProviderID),
-		logger:            params.Logger.With().Str("component", "balda.handlersfx.telegram_ingress").Logger(),
-		now:               time.Now,
+		ownerStore:         params.OwnerStore,
+		telegramProfiles:   params.TelegramProfiles,
+		collaboratorStore:  params.CollaboratorStore,
+		sessionManager:     params.SessionManager,
+		actorDispatcher:    params.Dispatcher,
+		questionDispatcher: params.QuestionDispatcher,
+		questionService:    params.QuestionService,
+		channel:            ch,
+		authToken:          strings.TrimSpace(params.AuthToken),
+		baldaProviderName:  strings.TrimSpace(params.BaldaProviderID),
+		logger:             params.Logger.With().Str("component", "balda.handlersfx.telegram_ingress").Logger(),
+		now:                time.Now,
 	}
 }
 
@@ -278,14 +286,14 @@ func (h *telegramInboundHandler) HandleCallback(ctx context.Context, callback ba
 	case !result.Settled:
 		message = "This request has already been answered."
 	}
-	ackErr := h.channel.AnswerQuestionCallback(ctx, callback.CallbackQueryID, message, alert)
 	if !result.Settled {
-		return ackErr
+		return h.channel.AnswerQuestionCallback(ctx, callback.CallbackQueryID, message, alert)
 	}
-	if dispatchErr := dispatchQuestionContinuation(ctx, h.actorDispatcher, result.Continuation); dispatchErr != nil {
+	if dispatchErr := dispatchQuestionContinuation(ctx, h.questionDispatcher, result.Continuation); dispatchErr != nil {
+		_ = h.channel.AnswerQuestionCallback(ctx, callback.CallbackQueryID, "Could not confirm this choice. Try the same choice again.", true)
 		return dispatchErr
 	}
-	return ackErr
+	return h.channel.AnswerQuestionCallback(ctx, callback.CallbackQueryID, message, alert)
 }
 
 func (h *telegramInboundHandler) HandleForumTopic(ctx context.Context, lifecycle baldatelegram.TopicLifecycleContext) error {
@@ -349,7 +357,7 @@ func (h *telegramInboundHandler) handleQuestionReply(ctx context.Context, messag
 	if !result.Settled {
 		return true, nil
 	}
-	if err := dispatchQuestionContinuation(ctx, h.actorDispatcher, result.Continuation); err != nil {
+	if err := dispatchQuestionContinuation(ctx, h.questionDispatcher, result.Continuation); err != nil {
 		return true, err
 	}
 	return true, nil
@@ -654,12 +662,18 @@ func (h *telegramInboundHandler) getBotIdentity() (int64, string) {
 	return h.botUserID, h.botUsername
 }
 
-func dispatchQuestionContinuation(ctx context.Context, dispatcher actortransport.Dispatcher, env actorlayer.Envelope) error {
+func dispatchQuestionContinuation(ctx context.Context, dispatcher QuestionContinuationDispatcher, env actorlayer.Envelope) error {
 	if dispatcher == nil {
 		return actorlayer.TransientError(fmt.Errorf("runtime is unavailable"))
 	}
-	_, err := dispatcher.Dispatch(ctx, env)
-	return err
+	receipt, err := dispatcher.Dispatch(ctx, env)
+	if err != nil {
+		return err
+	}
+	if receipt == nil {
+		return actorlayer.TransientError(fmt.Errorf("question continuation admission returned no receipt"))
+	}
+	return nil
 }
 
 func sendPlain(ctx context.Context, dispatcher actortransport.Dispatcher, from actorlayer.ActorAddress, locator deliverycmd.Locator, text string) error {

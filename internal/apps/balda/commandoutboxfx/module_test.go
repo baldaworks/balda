@@ -11,6 +11,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/chatapp"
 	"github.com/baldaworks/balda/internal/apps/balda/commandfx"
+	"github.com/baldaworks/balda/internal/apps/balda/handlersfx"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
@@ -26,11 +27,12 @@ func (offlineBus) Dispatch(context.Context, actorlayer.Envelope) (*actortranspor
 
 type ingressPorts struct {
 	fx.In
-	Chat    chatapp.Dispatcher          `name:"command_ingress"`
-	Command commandfx.CommandDispatcher `name:"command_ingress"`
+	Chat     chatapp.Dispatcher                        `name:"command_ingress"`
+	Command  commandfx.CommandDispatcher               `name:"command_ingress"`
+	Question handlersfx.QuestionContinuationDispatcher `name:"command_ingress"`
 }
 
-func TestBothIngressPortsShareLocalDurableAdmission(t *testing.T) {
+func TestIngressPortsShareLocalDurableAdmission(t *testing.T) {
 	ctx := context.Background()
 	provider, err := state.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
@@ -48,6 +50,9 @@ func TestBothIngressPortsShareLocalDurableAdmission(t *testing.T) {
 	if any(ports.Chat) != any(ports.Command) {
 		t.Fatal("ingress ports use separate durable dispatchers")
 	}
+	if any(ports.Question) != any(ports.Chat) {
+		t.Fatal("question continuations bypass shared durable admission")
+	}
 	env := actorlayer.Envelope{ID: "inbound", Namespace: "balda", Kind: "turn", From: actorlayer.SystemAddress("ingress"), To: actorlayer.SystemAddress("session"), DedupeKey: "post", Payload: actorlayer.Payload{Encoding: actorlayer.EncodingJSON, Data: []byte(`{"text":"task"}`)}}
 	receipt, err := ports.Chat.Dispatch(ctx, env)
 	if err != nil || receipt == nil {
@@ -56,6 +61,10 @@ func TestBothIngressPortsShareLocalDurableAdmission(t *testing.T) {
 	receipt, err = ports.Command.Dispatch(ctx, env)
 	if err != nil || receipt == nil || !receipt.Duplicate {
 		t.Fatalf("command admission lost shared receipt: %+v %v", receipt, err)
+	}
+	receipt, err = ports.Question.Dispatch(ctx, env)
+	if err != nil || receipt == nil || !receipt.Duplicate {
+		t.Fatalf("question continuation lost shared receipt: %+v %v", receipt, err)
 	}
 	if err := app.Start(ctx); err != nil {
 		t.Fatal(err)

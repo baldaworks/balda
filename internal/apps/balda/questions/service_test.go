@@ -407,9 +407,9 @@ func TestServiceResolveSelectionRejectsWrongRequesterAndContext(t *testing.T) {
 	}
 }
 
-func TestServiceResolveSelectionReportsInactiveAndRetriesCleanup(t *testing.T) {
+func TestServiceResolveSelectionReportsTimedOutAndRetriesCleanup(t *testing.T) {
 	record := selectableQuestionRecord()
-	record.Status = questioncmd.StatusAnswered
+	record.Status = questioncmd.StatusTimedOut
 	store := &fakeStore{record: record}
 	controls := &fakeControlPublisher{}
 	service := New(store, nil, zerolog.Nop())
@@ -426,6 +426,50 @@ func TestServiceResolveSelectionReportsInactiveAndRetriesCleanup(t *testing.T) {
 	}
 	if len(controls.requests) != 1 {
 		t.Fatalf("cleanup requests = %d, want 1", len(controls.requests))
+	}
+}
+
+func TestServiceResolveSelectionReplaysSavedAnswer(t *testing.T) {
+	record := selectableQuestionRecord()
+	var request questioncmd.Request
+	if err := json.Unmarshal([]byte(record.RequestJSON), &request); err != nil {
+		t.Fatal(err)
+	}
+	request.Responder = questioncmd.ResponderAny
+	record.RequestJSON = mustJSON(request)
+	store := &fakeStore{record: record}
+	selection := questioncmd.InboundSelection{Provider: "telegram", SessionID: "tg-1-0", ConversationKey: "1:0", QuestionID: "question-1", ProviderMessageID: "42", OptionIndex: 1, User: questioncmd.UserRef{UserID: "tg-101"}}
+	original, err := New(store, nil, zerolog.Nop()).ResolveSelectionDetailed(t.Context(), selection)
+	if err != nil || !original.Settled {
+		t.Fatalf("settlement = %+v, error = %v", original, err)
+	}
+	answerJSON := store.record.AnswerJSON
+	for _, test := range []struct {
+		name       string
+		mutate     func(*questioncmd.InboundSelection)
+		wantReplay bool
+	}{
+		{name: "same selection", mutate: func(*questioncmd.InboundSelection) {}, wantReplay: true},
+		{name: "same option by ID", mutate: func(in *questioncmd.InboundSelection) { in.OptionIndex = 0; in.OptionID = "allow" }, wantReplay: true},
+		{name: "different option", mutate: func(in *questioncmd.InboundSelection) { in.OptionIndex = 2 }},
+		{name: "different responder", mutate: func(in *questioncmd.InboundSelection) { in.User.UserID = "tg-202" }},
+		{name: "different conversation", mutate: func(in *questioncmd.InboundSelection) { in.ConversationKey = "2:0" }},
+		{name: "different prompt", mutate: func(in *questioncmd.InboundSelection) { in.ProviderMessageID = "99" }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			in := selection
+			test.mutate(&in)
+			result, err := New(store, nil, zerolog.Nop()).ResolveSelectionDetailed(t.Context(), in)
+			if err != nil || result.Settled != test.wantReplay {
+				t.Fatalf("replay = %+v, error = %v", result, err)
+			}
+			if test.wantReplay && (result.Inactive || result.Continuation.ID != original.Continuation.ID || result.Continuation.DedupeKey != original.Continuation.DedupeKey || string(result.Continuation.Payload.Data) != string(original.Continuation.Payload.Data)) {
+				t.Fatalf("replay changed continuation: %+v", result)
+			}
+			if store.record.AnswerJSON != answerJSON {
+				t.Fatal("replay replaced the persisted answer")
+			}
+		})
 	}
 }
 
