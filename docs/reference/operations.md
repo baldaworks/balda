@@ -41,5 +41,8 @@
     `<channel_type>:<address_key>` form through the registered structured
     renderer and explicit transport format, with no fallback on render failure.
 13. `/close` in a topic resets history and closes that topic; `/close` in a DM main chat resets that chat's current main session.
-14. With `balda.sessions.persistence=sqlite`, process restart restores conversation history and explicit `/reset` or `/close` clears it for the current session.
+14. With `balda.sessions.persistence=sqlite`, an exact process-restart restore
+    preserves conversation history. Explicit `/reset` or `/close` clears it;
+    failed exact restore also clears prior ADK history when automatic
+    fresh-session fallback succeeds.
 15. `balda eval-fixtures` validates deterministic scenario fixtures in `testdata/scenarios` and checks golden event manifests; use `--scenario` and `--actual-events` for event-type comparison.

@@ -423,19 +423,22 @@ One effective `SnapshotID` is selected and persisted before a new or restored
 session is exposed. Command resolution, provider-visible skill metadata,
 explicit skill resolution, and provider MCP identities all derive from that
 same snapshot. A legacy empty pin adopts current state once. A non-empty pin is
-exact and restore fails closed if it is unavailable.
+used for the exact restore attempt. If that attempt fails while the caller and
+service remain active, Balda creates a fresh ADK session with the current
+effective snapshot and persists the new pin before exposure. A failed fallback
+remains an error.
 
-The MCP list is passed to the provider only when its session is created,
-resumed, or loaded. MCP acquisitions live until the Balda session runtime
-closes. Individual prompts and commands neither receive a new MCP list nor
-construct, swap, or close a provider runtime. Every turn uses the existing
-`TopicSession` runner.
+The MCP list is bound only when the ADK session runtime is created or opened.
+MCP acquisitions live until the Balda session runtime closes. Individual
+prompts and commands neither receive a new MCP list nor construct, swap, or
+close a session runtime. Every turn uses the existing `TopicSession` runner.
 
 Publishing a new catalog snapshot never mutates an active session. `/reset`
 closes the old session runtime and creates a replacement without requesting the
-old snapshot. It is therefore the explicit adoption boundary for current
-commands, skills, and MCP servers; successful recreation persists the newly
-selected snapshot.
+old snapshot. It remains the explicit user action for adopting current commands,
+skills, and MCP servers; failed automatic restore can also adopt the current
+snapshot through fresh-session fallback. Successful recreation persists the
+newly selected snapshot.
 
 Metadata budgeting is deterministic. The effective catalog sorts by stable
 source and contribution identity, applies a host-defined total budget, and

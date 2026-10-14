@@ -292,20 +292,26 @@ configuration. Provider targets apply when a session is created or reset.
 When a provider pool is selected, its MCP selection also applies to that pool's
 members for that runtime. It does not change the shared member configuration or
 the selection for standalone members or other pools.
-Existing and restored sessions keep their captured revision and authorization
-binding. Changing a file or saving a managed definition does not update those
-sessions. See [MCP management](backoffice.md#mcp-management) for authorization,
-observed status and authorization retry operations.
+Active sessions keep their captured revision and authorization binding.
+Restored sessions first attempt their captured snapshot exactly. If that restore
+fails while the caller and service remain active, Balda replaces the saved ADK
+session at the same locator with a fresh one using current eligible capabilities
+and persists the current snapshot. Changing a file or saving a managed
+definition does not update a healthy active session. See
+[MCP management](backoffice.md#mcp-management) for authorization, observed
+status and authorization retry operations.
 
 #### MCP availability and deadlines
 
-Startup and conversation create/restore retain the full selected server set and
-its exact revisions for both native hosted and ACP providers. Unavailable servers
-are never filtered out. Configured HTTP/SSE servers receive no startup,
-publication or inventory discovery requests, and Balda runs no idle remote retry
-loop. A later invocation may make a fresh attachment attempt. Missing retained
-revisions, invalid structural configuration and unreadable protected material
-still fail locally; outage recovery never rewrites pins, history or session IDs.
+Startup and conversation creation retain the full selected server set and its
+exact revisions. Restore first attempts the saved snapshot without filtering
+unavailable servers. Configured HTTP/SSE servers receive no startup, publication
+or inventory discovery requests, and Balda runs no idle remote retry loop. A
+later invocation may make a fresh attachment attempt. If exact restore fails,
+Balda attempts a fresh ADK session at the same locator with current eligible
+capabilities; successful fallback replaces the saved snapshot and clears prior
+ADK state and history while retaining the stable session ID. A failed fallback
+remains an error.
 
 | Operation | Effective bound |
 | --- | --- |
@@ -726,7 +732,10 @@ or non-regular paths return a stable build error.
 - `balda.database.postgres`: structured `host`, `port`, `name`, `user`, `password`, and `sslmode` settings.
   See [State database](database.md) for copyable examples, template rules and operations.
 - `balda.sessions.persistence`: `sqlite|memory` (default `sqlite`)
-  - `sqlite`: durable session history in the selected database (SQLite or PostgreSQL), reused after restart until explicitly closed.
+  - `sqlite`: durable session history in the selected database (SQLite or
+    PostgreSQL), reused after restart when exact restore succeeds. Explicit
+    `/reset` or `/close`, and successful automatic fresh-session fallback after
+    exact restore fails, clear prior ADK state and history.
   - `memory`: conversation/runtime state is process-local; only Balda metadata is persisted.
 - `balda.memory.enabled`: enable internal durable memory (default `true`)
   - when disabled, Balda does not snapshot durable memory or register `balda.memory.*` MCP tools.
@@ -790,7 +799,8 @@ or non-regular paths return a stable build error.
     environment/header key set. Their original digest omitted binding values, so
     these pins still use host-file values and configured provider defaults. New pins
     bind full values and captured targeting exactly. Migration leaves snapshot IDs,
-    sessions and history unchanged; reset remains an explicit user action.
+    sessions and history unchanged. `/reset` remains a separate explicit user
+    action; a later failed exact restore can invoke automatic fresh-session fallback.
   - Effective selection also includes enabled, available Backoffice-managed definitions matching the requested provider's targets and applicable enabled plugin contributions.
   - Provider and `balda.mcp_servers` lists reference configured IDs; managed definitions use their Backoffice provider targets and do not require a duplicate YAML declaration or ID-list entry.
 - `balda.global_instruction`: optional balda-wide global instruction applied to all sessions
