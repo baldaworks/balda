@@ -10,7 +10,8 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
 )
 
-// configuredAuthorization exposes current file values only to capture policy.
+// configuredAuthorization exposes current file values only to trusted
+// protected-revision construction.
 type configuredAuthorization interface {
 	MCPAuthorizationDefinition(ctx context.Context, publicID string) (mcpcmd.Definition, mcpcmd.LaunchValues, error)
 }

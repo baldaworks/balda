@@ -30,6 +30,12 @@ import (
 
 // The opt-in browser gate uses the host adapter and durable owners, never an
 // authentication bypass or a management fake. All credentials/state are synthetic.
+type unusedDiagnosticProbe struct{}
+
+func (unusedDiagnosticProbe) DiagnoseMCP(context.Context, mcpcmd.Revision) mcpcmd.DiagnosticResult {
+	return mcpcmd.DiagnosticResult{Outcome: mcpcmd.DiagnosticFailed}
+}
+
 func TestBackofficeMCPBrowserWorkflow(t *testing.T) {
 	if os.Getenv("BALDA_BACKOFFICE_BROWSER_TEST") != "1" {
 		t.Skip("enable BALDA_BACKOFFICE_BROWSER_TEST with Playwright installed")
@@ -92,7 +98,7 @@ func TestBackofficeMCPBrowserWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	definitions, err := mcpmanage.NewDefinitions(credentials, mcpfx.NewDefinitionStore(p.MCP()), mcpfx.NewConfiguredDefinitions(configured, map[string]agentconfig.Config{"hosted": {}}, "hosted", nil), catalog, probe)
+	definitions, err := mcpmanage.NewDefinitions(credentials, mcpfx.NewDefinitionStore(p.MCP()), mcpfx.NewConfiguredDefinitions(configured, map[string]agentconfig.Config{"hosted": {}}, "hosted", nil), catalog, probe, unusedDiagnosticProbe{})
 	if err != nil {
 		t.Fatal(err)
 	}

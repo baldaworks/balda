@@ -46,7 +46,7 @@ func TestAuthorizationRetryRecoversSavedPendingPublication(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			definitions, err := mcpmanage.NewDefinitions(credentials, mcpfx.NewDefinitionStore(p.MCP()), mcpfx.NewConfiguredDefinitions(configured, map[string]agentconfig.Config{"hosted": {}}, "hosted", nil), catalog, probe)
+			definitions, err := mcpmanage.NewDefinitions(credentials, mcpfx.NewDefinitionStore(p.MCP()), mcpfx.NewConfiguredDefinitions(configured, map[string]agentconfig.Config{"hosted": {}}, "hosted", nil), catalog, probe, unusedDiagnosticProbe{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -193,7 +193,7 @@ func TestConfiguredAuthorizationRetryAndRecaptureInvokeActualProviders(t *testin
 				if err != nil {
 					t.Fatal(err)
 				}
-				definitions, err := mcpmanage.NewDefinitions(credentials, mcpfx.NewDefinitionStore(p.MCP()), mcpfx.NewConfiguredDefinitions(configs, targets, "alpha", nil), catalog, probe)
+				definitions, err := mcpmanage.NewDefinitions(credentials, mcpfx.NewDefinitionStore(p.MCP()), mcpfx.NewConfiguredDefinitions(configs, targets, "alpha", nil), catalog, probe, unusedDiagnosticProbe{})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -331,7 +331,7 @@ func TestBoundAuthorizationStartupRecovery(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				definitions, err := mcpmanage.NewDefinitions(credentials, mcpfx.NewDefinitionStore(p.MCP()), mcpfx.NewConfiguredDefinitions(configured, providers, "alpha", nil), r, probe)
+				definitions, err := mcpmanage.NewDefinitions(credentials, mcpfx.NewDefinitionStore(p.MCP()), mcpfx.NewConfiguredDefinitions(configured, providers, "alpha", nil), r, probe, unusedDiagnosticProbe{})
 				if err != nil {
 					t.Fatal(err)
 				}

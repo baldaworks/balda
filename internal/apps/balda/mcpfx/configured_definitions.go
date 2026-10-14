@@ -95,8 +95,8 @@ func cloneDefinition(d mcpcmd.Definition) mcpcmd.Definition {
 	return d
 }
 
-// MCPAuthorizationDefinition returns private values exclusively to the trusted
-// capture port. Ordinary inventory remains redacted and independently cloned.
+// MCPAuthorizationDefinition returns private values only to trusted consumers
+// that build protected revisions. Ordinary inventory remains redacted.
 func (c *ConfiguredDefinitions) MCPAuthorizationDefinition(ctx context.Context, id string) (mcpcmd.Definition, mcpcmd.LaunchValues, error) {
 	if err := ctx.Err(); err != nil {
 		return mcpcmd.Definition{}, mcpcmd.LaunchValues{}, err

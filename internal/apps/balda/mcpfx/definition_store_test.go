@@ -14,6 +14,12 @@ import (
 	"github.com/normahq/runtime/v2/agentconfig"
 )
 
+type unusedDiagnosticProbe struct{}
+
+func (unusedDiagnosticProbe) DiagnoseMCP(context.Context, mcpcmd.Revision) mcpcmd.DiagnosticResult {
+	return mcpcmd.DiagnosticResult{Outcome: mcpcmd.DiagnosticFailed}
+}
+
 func TestDefinitionServiceUsesCanonicalAuthorityAtCommit(t *testing.T) {
 	p, err := state.NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
@@ -41,7 +47,7 @@ func TestDefinitionServiceUsesCanonicalAuthorityAtCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := mcpmanage.NewDefinitions(credentials, NewDefinitionStore(p.MCP()), configured, definitionCommitOnly{}, probe)
+	service, err := mcpmanage.NewDefinitions(credentials, NewDefinitionStore(p.MCP()), configured, definitionCommitOnly{}, probe, unusedDiagnosticProbe{})
 	if err != nil {
 		t.Fatal(err)
 	}

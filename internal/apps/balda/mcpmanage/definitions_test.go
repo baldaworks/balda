@@ -268,9 +268,10 @@ func (s *definitionMemoryStore) GetMCPRevision(_ context.Context, connection, id
 }
 
 type definitionConfigured struct {
-	items     []mcpcmd.Item
-	providers []string
-	values    mcpcmd.LaunchValues
+	items              []mcpcmd.Item
+	providers          []string
+	values             mcpcmd.LaunchValues
+	authorizationCalls int
 }
 
 func (c *definitionConfigured) MCPDefinitions(context.Context) ([]mcpcmd.Item, error) {
@@ -281,6 +282,7 @@ func (c *definitionConfigured) ProviderIDs(context.Context) ([]string, error) {
 }
 
 func (c *definitionConfigured) MCPAuthorizationDefinition(_ context.Context, id string) (mcpcmd.Definition, mcpcmd.LaunchValues, error) {
+	c.authorizationCalls++
 	for _, item := range c.items {
 		if item.Connection.PublicID == id {
 			return item.Definition, c.values, nil
@@ -387,7 +389,7 @@ func definitionHarness(t *testing.T) (*Definitions, *definitionMemoryStore, *def
 	}
 	store := &definitionMemoryStore{connections: make(map[string]mcpcmd.Connection), revisions: make(map[string]mcpcmd.Revision)}
 	configured := &definitionConfigured{providers: []string{"hosted", "acp"}}
-	s, err := NewDefinitions(credentials, store, configured, &definitionCatalog{status: mcpcmd.StatusReady}, definitionProbe{})
+	s, err := NewDefinitions(credentials, store, configured, &definitionCatalog{status: mcpcmd.StatusReady}, definitionProbe{}, &recordingDiagnosticProbe{})
 	if err != nil {
 		t.Fatal(err)
 	}

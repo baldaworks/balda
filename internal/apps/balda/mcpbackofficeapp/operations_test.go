@@ -25,6 +25,12 @@ import (
 	"github.com/normahq/runtime/v2/mcpregistry"
 )
 
+type unusedDiagnosticProbe struct{}
+
+func (unusedDiagnosticProbe) DiagnoseMCP(context.Context, mcpcmd.Revision) mcpcmd.DiagnosticResult {
+	return mcpcmd.DiagnosticResult{Outcome: mcpcmd.DiagnosticFailed}
+}
+
 func TestOperationsPersistProtectedEditsAndProbeExactCandidate(t *testing.T) {
 	var requests atomic.Int64
 	var wantSecret atomic.Value
@@ -165,7 +171,7 @@ func operationsFixture(t *testing.T, configured map[string]agentconfig.MCPServer
 	if err != nil {
 		t.Fatal(err)
 	}
-	definitions, err := mcpmanage.NewDefinitions(credentials, mcpfx.NewDefinitionStore(p.MCP()), mcpfx.NewConfiguredDefinitions(configured, map[string]agentconfig.Config{"hosted": {}}, "hosted", nil), catalog, probe)
+	definitions, err := mcpmanage.NewDefinitions(credentials, mcpfx.NewDefinitionStore(p.MCP()), mcpfx.NewConfiguredDefinitions(configured, map[string]agentconfig.Config{"hosted": {}}, "hosted", nil), catalog, probe, unusedDiagnosticProbe{})
 	if err != nil {
 		t.Fatal(err)
 	}
