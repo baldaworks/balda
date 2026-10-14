@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/baldaworks/balda/internal/apps/balda/redaction"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
 	"github.com/tgbotkit/runtime/events"
@@ -37,7 +38,7 @@ type ServerParams struct {
 	LifecycleHandler BotLifecycleHandler `optional:"true"`
 	AttachmentStore  AttachmentStore     `optional:"true"`
 	TGClient         client.ClientWithResponsesInterface
-	TelegramEnabled  bool                `name:"balda_telegram_enabled"`
+	TelegramEnabled  bool `name:"balda_telegram_enabled"`
 	Logger           zerolog.Logger
 }
 
@@ -176,19 +177,19 @@ func (s *Server) initializeBotUsername(ctx context.Context) error {
 
 	meResp, err := s.tgClient.GetMeWithResponse(ctx)
 	if err != nil {
-		return fmt.Errorf("getMe: %w", err)
+		return fmt.Errorf("getMe: %w", safeTelegramError(err))
 	}
 	if meResp == nil {
 		return fmt.Errorf("getMe response is nil")
 	}
 	if meResp.JSON200 == nil {
 		if meResp.JSON401 != nil {
-			return fmt.Errorf("getMe unauthorized: %s", strings.TrimSpace(meResp.JSON401.Description))
+			return fmt.Errorf("getMe unauthorized: %s", redaction.Secrets(meResp.JSON401.Description))
 		}
 		if meResp.JSON400 != nil {
-			return fmt.Errorf("getMe bad request: %s", strings.TrimSpace(meResp.JSON400.Description))
+			return fmt.Errorf("getMe bad request: %s", redaction.Secrets(meResp.JSON400.Description))
 		}
-		return fmt.Errorf("getMe response missing result (status %s)", strings.TrimSpace(meResp.Status()))
+		return fmt.Errorf("getMe response missing result (status %s)", redaction.Secrets(meResp.Status()))
 	}
 
 	botUserID := meResp.JSON200.Result.Id

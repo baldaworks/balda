@@ -13,6 +13,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/redaction"
 	"github.com/baldaworks/balda/internal/apps/balda/telegramfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/telegramref"
 	"github.com/rs/zerolog"
@@ -1135,10 +1136,10 @@ func (a *Adapter) CreateTopicLocator(ctx context.Context, chatID int64, topicNam
 		Name:   topicName,
 	})
 	if err != nil {
-		return deliverycmd.Locator{}, fmt.Errorf("creating forum topic: %w", err)
+		return deliverycmd.Locator{}, fmt.Errorf("creating forum topic: %w", safeTelegramError(err))
 	}
 	if createTopicResp.JSON200 == nil {
-		return deliverycmd.Locator{}, fmt.Errorf("failed to create forum topic: %s", createTopicResp.Status())
+		return deliverycmd.Locator{}, fmt.Errorf("failed to create forum topic: %s", redaction.Secrets(createTopicResp.Status()))
 	}
 
 	return NewLocator(chatID, createTopicResp.JSON200.Result.MessageThreadId), nil
@@ -1159,10 +1160,10 @@ func (a *Adapter) Close(ctx context.Context, locator deliverycmd.Locator) error 
 		MessageThreadId: topicID,
 	})
 	if err != nil {
-		return fmt.Errorf("removing forum topic: %w", err)
+		return fmt.Errorf("removing forum topic: %w", safeTelegramError(err))
 	}
 	if closeResp.JSON200 == nil {
-		return fmt.Errorf("failed to remove forum topic: %s", closeResp.Status())
+		return fmt.Errorf("failed to remove forum topic: %s", redaction.Secrets(closeResp.Status()))
 	}
 	return nil
 }
