@@ -102,6 +102,7 @@ func (f *fakeTelegramQuestionStore) MarkQuestionAnswered(_ context.Context, ques
 		return baldastate.QuestionRecord{}, false, err
 	}
 	f.record.Status = questioncmd.StatusAnswered
+	f.record.AnswerContinuationPending, f.record.AnswerControlsPending = true, true
 	f.record.AnswerJSON = string(encoded)
 	return f.record, true, nil
 }
@@ -675,4 +676,14 @@ func TestInboundTurnExecutor_SubmitWebhookTask(t *testing.T) {
 	if len(dispatcher.commands) != 1 {
 		t.Fatalf("dispatched commands = %d, want 1", len(dispatcher.commands))
 	}
+}
+
+func (*fakeTelegramQuestionStore) PendingQuestionAnswerIDs(context.Context, string, int) ([]string, error) {
+	return nil, nil
+}
+func (*fakeTelegramQuestionStore) MarkQuestionAnswerAdmitted(context.Context, string) error {
+	return nil
+}
+func (*fakeTelegramQuestionStore) MarkQuestionAnswerControlsCleared(context.Context, string, questioncmd.DeliveryRef) error {
+	return nil
 }

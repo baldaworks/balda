@@ -218,6 +218,12 @@ From there you can:
 
 ### 1. Ordinary chat work
 
+Once a question answer is saved, Balda recovers its continuation after a local
+queue failure or restart without another reply or inline click. Telegram buttons
+are removed through durable cleanup after continuation admission. Upgrading adds
+SQLite migration 63 / PostgreSQL migration 28; take a database backup first.
+Existing answered history is not replayed. See [recovery operations](docs/reference/operations.md#command-admission-recovery-and-nats-storage-budgets).
+
 Send a message in the session where you want work to happen. Balda keeps that
 conversation as the execution context.
 

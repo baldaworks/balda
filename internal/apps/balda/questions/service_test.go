@@ -64,6 +64,7 @@ func (f *fakeStore) MarkQuestionAnswered(_ context.Context, questionID string, a
 		return baldastate.QuestionRecord{}, false, nil
 	}
 	target.Status = questioncmd.StatusAnswered
+	target.AnswerContinuationPending, target.AnswerControlsPending = true, true
 	target.AnswerJSON = mustJSON(answer)
 	return *target, true, nil
 }
@@ -362,6 +363,12 @@ func TestServiceResolveSelectionSettlesPersistedOptionAndClearsControls(t *testi
 	if answer.SelectedOption != "cancel" || answer.Text != "Cancel" {
 		t.Fatalf("answer = %+v, want cancel selection", answer)
 	}
+	if len(controls.requests) != 0 {
+		t.Fatalf("controls removed before durable admission: %+v", controls.requests)
+	}
+	if err := service.ConfirmAnswerAdmission(t.Context(), "question-1"); err != nil {
+		t.Fatal(err)
+	}
 	if len(controls.requests) != 1 || controls.requests[0].QuestionID != "question-1" || controls.requests[0].ProviderMessageID != "42" || controls.requests[0].SelectionText != "Cancel" {
 		t.Fatalf("control cleanup = %+v", controls.requests)
 	}
@@ -476,6 +483,7 @@ func TestServiceResolveSelectionReplaysSavedAnswer(t *testing.T) {
 func TestServiceBindDeliveryCleansControlsIfSelectionWonDeliveryRace(t *testing.T) {
 	record := selectableQuestionRecord()
 	record.Status = questioncmd.StatusAnswered
+	record.AnswerControlsPending = true
 	record.Provider = ""
 	record.ProviderMessageID = ""
 	store := &fakeStore{record: record}
@@ -491,6 +499,25 @@ func TestServiceBindDeliveryCleansControlsIfSelectionWonDeliveryRace(t *testing.
 	}
 	if len(controls.requests) != 1 || controls.requests[0].ProviderMessageID != "42" || controls.requests[0].ControlHandle != "telegram:message:delete" {
 		t.Fatalf("cleanup requests = %+v", controls.requests)
+	}
+}
+
+func TestServiceCompletedAnswerCleanupStaysCompleteOnDeliveryReplay(t *testing.T) {
+	record := selectableQuestionRecord()
+	record.Status = questioncmd.StatusAnswered
+	store := &fakeStore{record: record}
+	controls := &fakeControlPublisher{}
+	service := New(store, nil, zerolog.Nop())
+	service.SetControlPublisher(controls)
+	ref := questioncmd.DeliveryRef{Provider: record.Provider, ConversationKey: record.ConversationKey, ProviderMessageID: record.ProviderMessageID, ControlHandle: record.ControlHandle}
+	if err := service.BindDelivery(t.Context(), record.QuestionID, ref); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.ConfirmAnswerAdmission(t.Context(), record.QuestionID); err != nil {
+		t.Fatal(err)
+	}
+	if len(controls.requests) != 0 {
+		t.Fatalf("completed delivery replay resubmitted cleanup: %+v", controls.requests)
 	}
 }
 
@@ -517,4 +544,32 @@ func selectableQuestionRecord() baldastate.QuestionRecord {
 			Options:   []questioncmd.Option{{ID: "allow", Label: "Allow"}, {ID: "cancel", Label: "Cancel"}},
 		}),
 	}
+}
+
+func (f *fakeStore) PendingQuestionAnswerIDs(_ context.Context, after string, limit int) ([]string, error) {
+	var ids []string
+	for _, record := range []baldastate.QuestionRecord{f.record, f.replyMatch} {
+		if record.QuestionID > after && record.Status == questioncmd.StatusAnswered && (record.AnswerContinuationPending || record.AnswerControlsPending) {
+			ids = append(ids, record.QuestionID)
+		}
+	}
+	return ids, nil
+}
+func (f *fakeStore) MarkQuestionAnswerAdmitted(_ context.Context, id string) error {
+	if f.record.QuestionID == id {
+		f.record.AnswerContinuationPending = false
+	}
+	if f.replyMatch.QuestionID == id {
+		f.replyMatch.AnswerContinuationPending = false
+	}
+	return nil
+}
+func (f *fakeStore) MarkQuestionAnswerControlsCleared(_ context.Context, id string, _ questioncmd.DeliveryRef) error {
+	if f.record.QuestionID == id {
+		f.record.AnswerControlsPending = false
+	}
+	if f.replyMatch.QuestionID == id {
+		f.replyMatch.AnswerControlsPending = false
+	}
+	return nil
 }

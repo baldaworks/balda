@@ -193,7 +193,7 @@ func (h *telegramInboundHandler) HandleMessage(ctx context.Context, messageCtx b
 
 	if handled, err := h.handleQuestionReply(ctx, messageCtx); err != nil {
 		h.logger.Warn().Err(err).Str("session_id", messageCtx.Locator.SessionID).Msg("failed to handle question reply")
-		_ = sendPlain(ctx, h.actorDispatcher, serverActorAddress, messageCtx.Locator, "Could not process this reply right now. Please try again.")
+		_ = sendPlain(ctx, h.actorDispatcher, serverActorAddress, messageCtx.Locator, "Could not confirm this reply. Check the task status before sending another request.")
 		return nil
 	} else if handled {
 		return nil
@@ -290,7 +290,11 @@ func (h *telegramInboundHandler) HandleCallback(ctx context.Context, callback ba
 		return h.channel.AnswerQuestionCallback(ctx, callback.CallbackQueryID, message, alert)
 	}
 	if dispatchErr := dispatchQuestionContinuation(ctx, h.questionDispatcher, result.Continuation); dispatchErr != nil {
-		_ = h.channel.AnswerQuestionCallback(ctx, callback.CallbackQueryID, "Could not confirm this choice. Try the same choice again.", true)
+		message := "Could not confirm this choice. Check the task status."
+		if result.Record.AnswerContinuationPending {
+			message = "Your answer is saved. Processing will resume automatically."
+		}
+		_ = h.channel.AnswerQuestionCallback(ctx, callback.CallbackQueryID, message, true)
 		return dispatchErr
 	}
 	return h.channel.AnswerQuestionCallback(ctx, callback.CallbackQueryID, message, alert)
@@ -358,6 +362,10 @@ func (h *telegramInboundHandler) handleQuestionReply(ctx context.Context, messag
 		return true, nil
 	}
 	if err := dispatchQuestionContinuation(ctx, h.questionDispatcher, result.Continuation); err != nil {
+		if result.Record.AnswerContinuationPending {
+			h.logger.Warn().Err(err).Str("question_id", result.Record.QuestionID).Msg("saved question answer retained for autonomous admission")
+			return true, nil
+		}
 		return true, err
 	}
 	return true, nil

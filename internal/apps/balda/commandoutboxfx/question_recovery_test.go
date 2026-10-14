@@ -92,8 +92,8 @@ func TestAnsweredContinuationRecoversAfterAdmissionFailureAndRestart(t *testing.
 			} else {
 				service := recoveryChatService(t, questionService, d)
 				result, err := service.HandleChat(ctx, request)
-				if err == nil || result.Settlement.Outcome != turncmd.InboundRetry {
-					t.Fatalf("failure was not retryable: %+v %v", result, err)
+				if err != nil || !result.Activated || result.Settlement.Outcome != turncmd.InboundTerminal {
+					t.Fatalf("durable question handoff was rejected: %+v %v", result, err)
 				}
 			}
 			answered, found, err := provider.Questions().GetQuestionByID(ctx, record.QuestionID)

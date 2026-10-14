@@ -824,6 +824,20 @@ keeps the original command pending; it does not return a retryable admission
 failure. The background publisher retries the same envelope and preserves
 per-session order. One Balda process owns publication for its state database.
 
+Question settlement atomically stores the answer and two recovery markers in
+the selected SQL database. A separate job recovers unadmitted continuations
+without another Telegram update, then durably admits control cleanup. Admission
+and cleanup complete independently. The job starts with Balda, scans up to 32
+IDs per pass, and skips past individual invalid answers so others can progress.
+Telegram callback confirmation follows local continuation admission. Controls
+are never cleared merely because the question became `answered`.
+
+The upgrade adds SQLite migration 63 / PostgreSQL migration 28. Existing
+answered history is not automatically replayed; its previous publication cannot
+be inferred safely. Pending questions answered after the upgrade participate in
+recovery. Back up the selected database before upgrading; downgrade requires
+restoring the matching pre-upgrade backup.
+
 Pending admission is capped at 256 commands and 1 MiB per encoded command.
 Commands expire at their earlier envelope deadline or 24 hours after admission.
 Published receipts and expired-command tombstones are retained for seven days

@@ -163,3 +163,11 @@ func TestGoalResumeEnvelope(t *testing.T) {
 		t.Fatalf("to.key = %q, want goal-tg-1-0-123", env.To.Key)
 	}
 }
+
+func (*fakeQuestionStore) PendingQuestionAnswerIDs(context.Context, string, int) ([]string, error) {
+	return nil, nil
+}
+func (*fakeQuestionStore) MarkQuestionAnswerAdmitted(context.Context, string) error { return nil }
+func (*fakeQuestionStore) MarkQuestionAnswerControlsCleared(context.Context, string, questioncmd.DeliveryRef) error {
+	return nil
+}

@@ -379,6 +379,21 @@ func TestService_HandleChat_QuestionReply_SettledActivates(t *testing.T) {
 	}
 }
 
+func TestServiceDurableQuestionHandoffStaysAcceptedWhenAdmissionFails(t *testing.T) {
+	for _, dispatchErr := range []error{nil, errors.New("queue unavailable")} {
+		service, err := NewService(ServiceParams{Sessions: &stubSessionPreparer{}, Dispatcher: &recordingDispatcher{err: dispatchErr}, Questions: &stubQuestionResolver{result: QuestionResolution{Matched: true, Settled: true, RecoveryPending: true, Continuation: actorlayer.Envelope{ID: "answer"}}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := testRequest("saved-answer", "yes")
+		req.QuestionReply = &questioncmd.InboundReply{MessageID: "answer"}
+		result, err := service.HandleChat(t.Context(), req)
+		if err != nil || !result.Activated || result.Settlement.Reason != ReasonAccepted {
+			t.Fatalf("persisted question rejected: %+v %v", result, err)
+		}
+	}
+}
+
 func TestService_HandleChat_QuestionReply_UnsettledTerminatesWithoutActivation(t *testing.T) {
 	t.Parallel()
 

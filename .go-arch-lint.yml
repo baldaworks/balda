@@ -252,6 +252,10 @@ components:
     in:
       - internal/apps/balda/jobs/commandoutbox
 
+  question_outbox:
+    in:
+      - internal/apps/balda/jobs/questionoutbox
+
   # Only this composition adapter binds outbox ports to AppKV and the bus.
   command_outbox_wiring:
     in:
@@ -454,6 +458,14 @@ components:
       - cmd/balda
 
 deps:
+  question_outbox:
+    mayDependOn:
+      - question_outbox
+    anyVendorDeps: false
+    canUse:
+      - command_outbox_runtime
+    deepScan: false
+
   command_outbox:
     mayDependOn:
       - command_outbox
@@ -465,6 +477,8 @@ deps:
 
   command_outbox_wiring:
     mayDependOn:
+      - question_outbox
+      - application
       - command_outbox
       - command_wiring
       - ingress_wiring

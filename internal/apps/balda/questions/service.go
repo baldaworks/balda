@@ -19,6 +19,9 @@ import (
 )
 
 type Store interface {
+	PendingQuestionAnswerIDs(ctx context.Context, afterID string, limit int) ([]string, error)
+	MarkQuestionAnswerAdmitted(ctx context.Context, questionID string) error
+	MarkQuestionAnswerControlsCleared(ctx context.Context, questionID string, ref questioncmd.DeliveryRef) error
 	CreatePendingQuestion(ctx context.Context, record baldastate.QuestionRecord) error
 	BindQuestionDeliveryRef(ctx context.Context, questionID string, ref questioncmd.DeliveryRef) error
 	GetQuestionByID(ctx context.Context, questionID string) (baldastate.QuestionRecord, bool, error)
@@ -510,24 +513,77 @@ func failedEnvelopeFromRecordWithFailure(record baldastate.QuestionRecord, failu
 	return questioncmd.FailedEnvelope(resume, interaction, record.QuestionID, failure)
 }
 
+// PendingQuestionAnswerIDs exposes the durable recovery cursor to the job owner.
+func (s *Service) PendingQuestionAnswerIDs(ctx context.Context, afterID string, limit int) ([]string, error) {
+	if s == nil || s.store == nil {
+		return nil, fmt.Errorf("question store is required")
+	}
+	return s.store.PendingQuestionAnswerIDs(ctx, afterID, limit)
+}
+
+// AnsweredContinuation reconstructs unsettled admission without another inbound.
+func (s *Service) AnsweredContinuation(ctx context.Context, questionID string) (actorlayer.Envelope, bool, error) {
+	if s == nil || s.store == nil {
+		return actorlayer.Envelope{}, false, fmt.Errorf("question store is required")
+	}
+	record, found, err := s.store.GetQuestionByID(ctx, questionID)
+	if err != nil || !found || record.Status != questioncmd.StatusAnswered || !record.AnswerContinuationPending {
+		return actorlayer.Envelope{}, false, err
+	}
+	env, err := answeredContinuation(record)
+	return env, err == nil, err
+}
+
+// ConfirmAnswerAdmission is called only after durable continuation admission.
+// Admission and cleanup have separate markers: a cleanup failure cannot replay
+// an already admitted continuation.
+func (s *Service) ConfirmAnswerAdmission(ctx context.Context, questionID string) error {
+	if s == nil || s.store == nil {
+		return fmt.Errorf("question store is required")
+	}
+	record, found, err := s.store.GetQuestionByID(ctx, questionID)
+	if err != nil {
+		return err
+	}
+	if !found || record.Status != questioncmd.StatusAnswered {
+		return nil
+	}
+	if record.AnswerContinuationPending {
+		if err := s.store.MarkQuestionAnswerAdmitted(ctx, questionID); err != nil {
+			return err
+		}
+	}
+	if !record.AnswerControlsPending {
+		return nil
+	}
+	if err := s.publishControlCleanup(ctx, record); err != nil {
+		return err
+	}
+	return s.store.MarkQuestionAnswerControlsCleared(ctx, questionID, questioncmd.DeliveryRef{Provider: record.Provider, ConversationKey: record.ConversationKey, ProviderMessageID: record.ProviderMessageID, ControlHandle: record.ControlHandle})
+}
+
 func (s *Service) clearControls(ctx context.Context, record baldastate.QuestionRecord) {
-	if s == nil || s.controls == nil || strings.TrimSpace(record.ProviderMessageID) == "" {
+	if record.Status == questioncmd.StatusAnswered && (record.AnswerContinuationPending || !record.AnswerControlsPending) {
 		return
+	}
+	if err := s.publishControlCleanup(ctx, record); err != nil {
+		s.logger.Warn().Err(err).Str("question_id", record.QuestionID).Msg("clear settled question controls")
+	}
+}
+
+func (s *Service) publishControlCleanup(ctx context.Context, record baldastate.QuestionRecord) error {
+	if s == nil || s.controls == nil || strings.TrimSpace(record.ProviderMessageID) == "" {
+		return nil
 	}
 	var interaction questioncmd.InteractionContext
 	if err := json.Unmarshal([]byte(record.InteractionJSON), &interaction); err != nil {
-		s.logger.Warn().Err(err).Str("question_id", record.QuestionID).Msg("decode question interaction for control cleanup")
-		return
+		return fmt.Errorf("decode question interaction for control cleanup: %w", err)
 	}
-	if err := s.controls.ClearQuestionControls(ctx, ControlClearRequest{
-		QuestionID:        strings.TrimSpace(record.QuestionID),
-		Locator:           interaction.Locator,
-		ProviderMessageID: strings.TrimSpace(record.ProviderMessageID),
-		ControlHandle:     strings.TrimSpace(record.ControlHandle),
-		SelectionText:     selectedAnswerText(record.AnswerJSON),
-	}); err != nil {
-		s.logger.Warn().Err(err).Str("question_id", record.QuestionID).Msg("clear settled question controls")
-	}
+	return s.controls.ClearQuestionControls(ctx, ControlClearRequest{
+		QuestionID: strings.TrimSpace(record.QuestionID), Locator: interaction.Locator,
+		ProviderMessageID: strings.TrimSpace(record.ProviderMessageID), ControlHandle: strings.TrimSpace(record.ControlHandle),
+		SelectionText: selectedAnswerText(record.AnswerJSON),
+	})
 }
 
 func selectedAnswerText(answerJSON string) string {

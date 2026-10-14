@@ -239,3 +239,11 @@ func TestAskWaitsForMattermostThreadReplyDecision(t *testing.T) {
 		t.Fatalf("decision = %+v, want Mattermost thread-reply approval", decision)
 	}
 }
+
+func (*reviewQuestionStore) PendingQuestionAnswerIDs(context.Context, string, int) ([]string, error) {
+	return nil, nil
+}
+func (*reviewQuestionStore) MarkQuestionAnswerAdmitted(context.Context, string) error { return nil }
+func (*reviewQuestionStore) MarkQuestionAnswerControlsCleared(context.Context, string, questioncmd.DeliveryRef) error {
+	return nil
+}

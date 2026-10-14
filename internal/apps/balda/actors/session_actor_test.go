@@ -953,3 +953,13 @@ func TestSessionActor_TransportContextInterruptionKeepsEnvelopeRetryable(t *test
 
 	close(rootRelease)
 }
+
+func (*fakeQuestionStoreForTimeout) PendingQuestionAnswerIDs(context.Context, string, int) ([]string, error) {
+	return nil, nil
+}
+func (*fakeQuestionStoreForTimeout) MarkQuestionAnswerAdmitted(context.Context, string) error {
+	return nil
+}
+func (*fakeQuestionStoreForTimeout) MarkQuestionAnswerControlsCleared(context.Context, string, questioncmd.DeliveryRef) error {
+	return nil
+}

@@ -26,6 +26,7 @@ This document defines layer ownership for the Balda application. The goal is to 
 | `internal/apps/balda/actors/goalkeeper` | goal feature actor behavior, goal run lifecycle, goal progress/outcome assembly | generic runtime policy, provider-specific delivery logic |
 | `internal/apps/balda/jobs` | durable job state, events, projection-oriented application services | ingress behavior, transport execution |
 | `internal/apps/balda/jobs/commandoutbox` | durable command admission, retry/FIFO and terminal retention through local ports | ingress parsing, concrete state/provider/runtime wiring |
+| `internal/apps/balda/jobs/questionoutbox` | autonomous recovery of SQL answer handoffs and independent cleanup retries through local ports | inbound update handling, SQL adapters, transport controls |
 | `internal/apps/balda/commandoutboxfx` | composition of chat, command and Telegram question-continuation admission ports, AppKV adapter and bus lifecycle | outbox retry or retention policy |
 | `internal/apps/balda/channel/*` | provider-specific delivery adapters and delivery semantics | product workflow, session use-case policy, application domain dependencies |
 | `internal/apps/balda/state` | storage models and persistence implementation | feature orchestration, delivery policy, auth service dependencies |
