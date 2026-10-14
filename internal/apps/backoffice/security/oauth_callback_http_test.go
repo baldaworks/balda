@@ -119,7 +119,7 @@ func TestOAuthCallbackCredentialRequiresCurrentCanonicalAccess(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			provider, service, now := newSecurityTestService(t)
 			createSecurityTestUser(t, provider.Users(), "admin", "admin", tc.credentialState, tc.role, tc.role == usercmd.RoleAdministrator, now)
-			c, err := service.Login(t.Context(), "admin", []byte(testPassword))
+			c, err := service.Login(t.Context(), "admin", []byte(validPassword))
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -3,6 +3,8 @@ package userpassword
 import (
 	"encoding/base64"
 	"testing"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 func TestGenerate(t *testing.T) {
@@ -30,6 +32,9 @@ func TestHashAndVerify(t *testing.T) {
 	}
 	if string(password) == hash {
 		t.Fatal("Hash() returned plaintext")
+	}
+	if cost, err := bcrypt.Cost([]byte(hash)); err != nil || cost != Cost {
+		t.Fatalf("Hash() bcrypt cost = %d, %v; want %d", cost, err, Cost)
 	}
 	if !Verify(hash, password) {
 		t.Fatal("Verify(correct) = false")

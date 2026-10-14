@@ -133,7 +133,7 @@ func TestMFACeremonyBrowserBindingAndReplay(t *testing.T) {
 	now := time.Now().UTC()
 	s.now = func() time.Time { return now }
 	u := createSecurityTestUser(t, p.Users(), "ceremony-admin", "ceremony-admin", usercmd.CredentialStateActive, usercmd.RoleAdministrator, true, now)
-	credentials, err := s.Login(t.Context(), u.Username, []byte(testPassword))
+	credentials, err := s.Login(t.Context(), u.Username, []byte(validPassword))
 	require.NoError(t, err)
 	principal, err := s.ValidateAccess(t.Context(), credentials.AccessToken)
 	require.NoError(t, err)

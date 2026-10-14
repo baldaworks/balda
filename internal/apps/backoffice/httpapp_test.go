@@ -17,7 +17,6 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
-	"github.com/baldaworks/balda/internal/apps/balda/userpassword"
 )
 
 const noStoreCacheControl = "no-store"
@@ -272,10 +271,7 @@ func TestHTTPAppLoginOverviewAndRefreshContinuation(t *testing.T) {
 	t.Parallel()
 	provider, config := newHTTPAppTestState(t)
 	now := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
-	hash, err := userpassword.Hash([]byte("correct horse battery staple"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	hash := validPasswordHash(t)
 	user := usercmd.User{ID: "admin", DisplayName: "Admin", Username: "admin", NormalizedUsername: "admin", Status: usercmd.StatusActive, Role: usercmd.RoleAdministrator, Credential: usercmd.Credential{State: usercmd.CredentialStateActive, Version: 1}, Primary: true, Version: 1, CreatedAt: now, UpdatedAt: now}
 	audit := usercmd.AuditEvent{ID: "create-admin", Action: usercmd.AuditActionCredentialChanged, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetUser, TargetID: user.ID, Source: "http-test", OccurredAt: now}
 	if err := provider.Users().CreateUser(t.Context(), user, usercmd.CredentialSecret{UserID: user.ID, PasswordHash: hash}, audit); err != nil {
@@ -293,7 +289,7 @@ func TestHTTPAppLoginOverviewAndRefreshContinuation(t *testing.T) {
 	handler.ServeHTTP(loginPage, httptest.NewRequest(http.MethodGet, "/login", nil))
 	cookies := loginPage.Result().Cookies()
 	csrf := cookieValue(cookies, security.CSRFCookieName)
-	form := url.Values{"username": {"admin"}, "password": {"correct horse battery staple"}, "csrf_token": {csrf}}
+	form := url.Values{"username": {"admin"}, "password": {validPassword}, "csrf_token": {csrf}}
 	request := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Origin", config.Server.PublicURL)
@@ -623,11 +619,11 @@ func TestHTTPAppAccountRotationAndCurrentFamilyRevocation(t *testing.T) {
 	}
 
 	rotateForm := url.Values{
-		"csrf_token": {initial.csrf}, "current_password": {"correct horse battery staple"},
+		"csrf_token": {initial.csrf}, "current_password": {validPassword},
 		"new_password": {"replacement password"},
 	}
 	wrongRotateForm := url.Values{
-		"csrf_token": {initial.csrf}, "current_password": {"incorrect password"},
+		"csrf_token": {initial.csrf}, "current_password": {invalidPassword},
 		"new_password": {"replacement password"},
 	}
 	wrongRotation := performAccessMutation(t, handler, config, "/account/password", wrongRotateForm, initial.access, initial.csrf, true)
@@ -729,7 +725,7 @@ func TestHTTPAppAccountActiveSessionPagination(t *testing.T) {
 	oldest := loginHTTPAppSession(t, handler, config, "admin")
 	var otherAccess string
 	for range 21 {
-		credentials, err := app.security.Login(t.Context(), "admin", []byte("correct horse battery staple"))
+		credentials, err := app.security.Login(t.Context(), "admin", []byte(validPassword))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -819,12 +815,12 @@ func TestHTTPAppAuditFilteringPaginationRedactionAndRoleBoundary(t *testing.T) {
 		!strings.Contains(body, "session.login.succeeded") || !strings.Contains(body, "Older events") {
 		t.Fatalf("filtered audit = %d %q", auditResponse.Code, body)
 	}
-	for _, forbidden := range []string{"correct horse battery staple", admin.access, admin.refresh, admin.csrf} {
+	for _, forbidden := range []string{validPassword, admin.access, admin.refresh, admin.csrf} {
 		if strings.Contains(body, forbidden) {
 			t.Fatalf("audit leaked browser secret %q", forbidden)
 		}
 	}
-	if _, err := app.security.Login(t.Context(), "operator", []byte("correct horse battery staple")); err != nil {
+	if _, err := app.security.Login(t.Context(), "operator", []byte(validPassword)); err != nil {
 		t.Fatal(err)
 	}
 	day := time.Now().UTC().Format("2006-01-02")
@@ -874,7 +870,7 @@ func loginHTTPAppSession(t *testing.T, handler http.Handler, config ResolvedConf
 	loginPage := httptest.NewRecorder()
 	handler.ServeHTTP(loginPage, httptest.NewRequest(http.MethodGet, config.Server.BasePath+"/login", nil))
 	csrf := cookieValue(loginPage.Result().Cookies(), security.CSRFCookieName)
-	form := url.Values{"username": {username}, "password": {"correct horse battery staple"}, "csrf_token": {csrf}}
+	form := url.Values{"username": {username}, "password": {validPassword}, "csrf_token": {csrf}}
 	request := httptest.NewRequest(http.MethodPost, config.Server.BasePath+"/login", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Origin", config.Server.PublicURL)

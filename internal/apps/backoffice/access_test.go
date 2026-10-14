@@ -10,7 +10,6 @@ import (
 	"github.com/baldaworks/balda/internal/apps/backoffice/security"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
-	"github.com/baldaworks/balda/internal/apps/balda/userpassword"
 	"github.com/baldaworks/balda/internal/apps/balda/users"
 )
 
@@ -93,7 +92,7 @@ func TestAccessServiceCredentialResetRevokesAccessAndRefreshFamily(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	credentials, err := securityService.Login(t.Context(), "admin", []byte("correct horse battery staple"))
+	credentials, err := securityService.Login(t.Context(), "admin", []byte(validPassword))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +148,7 @@ func TestAccessServiceDisablementPermanentlyRevokesAccessAndRefreshFamily(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	credentials, err := securityService.Login(t.Context(), operator.Username, []byte("correct horse battery staple"))
+	credentials, err := securityService.Login(t.Context(), operator.Username, []byte(validPassword))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,10 +176,7 @@ func TestAccessServiceDisablementPermanentlyRevokesAccessAndRefreshFamily(t *tes
 
 func createAccessTestUser(t *testing.T, store usercmd.Store, user usercmd.User) usercmd.User {
 	t.Helper()
-	hash, err := userpassword.Hash([]byte("correct horse battery staple"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	hash := validPasswordHash(t)
 	audit := usercmd.AuditEvent{
 		ID: "create-" + user.ID, Action: usercmd.AuditActionCredentialChanged, Outcome: usercmd.AuditOutcomeSucceeded,
 		TargetType: usercmd.AuditTargetUser, TargetID: user.ID, Source: "access-test", OccurredAt: user.CreatedAt,
