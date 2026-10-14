@@ -32,6 +32,19 @@ tests use a shared low-cost bcrypt hash for fixture users; the production
 password hash still uses cost 12 and is checked in `userpassword` tests. Keep
 real login and password-change assertions when changing those fixtures.
 
+## Main Branch Checks
+
+GitHub protects `main` with these required GitHub Actions job checks on every
+pull request: `lint`, `test`, `sqlite-integration`, `postgres-integration`,
+`architecture-lint`, `projection-replay`, `jetstream-integration`, and
+`ingress-e2e`. All eight must finish successfully before a PR can merge, including
+when auto-merge is requested. The rule also applies to repository administrators.
+No approving review is required.
+
+The `MCP native execution and persistence` workflow runs only for selected paths,
+so its `native-launch` jobs are additional checks when triggered, not required
+branch checks. Keep every required job enabled for all pull requests to `main`.
+
 ## Database Integration Checks
 
 State database integration suites are explicitly tagged and run separately:
