@@ -47,6 +47,9 @@ func (r *Runner) Run(ctx context.Context, event hookcmd.Event) (hookcmd.Result, 
 	if !event.Name.Valid() || event.SessionID == "" || !filepath.IsAbs(event.CWD) {
 		return hookcmd.Result{}, hookcmd.ErrInvalid
 	}
+	if event.Name.ToolEvent() && (event.ToolName == "" || len(event.ToolName) > 256 || !json.Valid(event.ToolInput)) {
+		return hookcmd.Result{}, hookcmd.ErrInvalid
+	}
 	record, err := r.store.Load(ctx)
 	if err != nil {
 		return hookcmd.Result{}, err
@@ -67,7 +70,11 @@ func (r *Runner) Run(ctx context.Context, event hookcmd.Event) (hookcmd.Result, 
 		if err != nil {
 			return hookcmd.Result{}, hookcmd.ErrUnavailable
 		}
-		if !matcher.MatchString(event.Source) {
+		match := event.Source
+		if event.Name.ToolEvent() {
+			match = event.ToolName
+		}
+		if !matcher.MatchString(match) {
 			continue
 		}
 		result, err := r.execute(eventCtx, definition, event)
@@ -78,7 +85,7 @@ func (r *Runner) Run(ctx context.Context, event hookcmd.Event) (hookcmd.Result, 
 			return hookcmd.Result{}, &hookcmd.DeniedError{Hook: definition.Name, Reason: result.Reason}
 		}
 		if result.AdditionalContext != "" {
-			if event.Name != hookcmd.UserPromptSubmit {
+			if event.Name != hookcmd.UserPromptSubmit && !event.Name.ToolEvent() {
 				return hookcmd.Result{}, hookcmd.ErrExecution
 			}
 			if len(combined.AdditionalContext)+len(result.AdditionalContext)+1 > maxContextBytes {
@@ -88,6 +95,13 @@ func (r *Runner) Run(ctx context.Context, event hookcmd.Event) (hookcmd.Result, 
 				combined.AdditionalContext += "\n"
 			}
 			combined.AdditionalContext += result.AdditionalContext
+		}
+		if len(result.UpdatedInput) != 0 {
+			if event.Name != hookcmd.PreToolUse || !json.Valid(result.UpdatedInput) || len(bytes.TrimSpace(result.UpdatedInput)) == 0 || bytes.TrimSpace(result.UpdatedInput)[0] != '{' {
+				return hookcmd.Result{}, hookcmd.ErrExecution
+			}
+			combined.UpdatedInput = slices.Clone(result.UpdatedInput)
+			event.ToolInput = slices.Clone(result.UpdatedInput)
 		}
 	}
 	return combined, nil

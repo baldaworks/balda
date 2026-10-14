@@ -405,3 +405,8 @@ Then run `BALDA_BACKOFFICE_BROWSER_TEST=1 go test -race ./internal/apps/backoffi
 ordinary synthetic administrator/operator login. It proves actual definitions,
 execution, disablement, conflicts, deletion, authorization and persistence.
 Record both reviews and their screenshot findings in Beads.
+
+Native hook review extends the hook layout gate to 11 states (88 viewport/mount
+combinations), including pre-tool, post-tool and unsupported capability drafts.
+Run the opt-in native engine gate from `agent-hooks.md` after the ordered layout
+and application browser gates when changing provider adapters.

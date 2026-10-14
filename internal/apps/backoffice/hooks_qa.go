@@ -11,6 +11,24 @@ import (
 )
 
 var hooksQAEntries = []qaEntry{
+	{name: "hooks-tool-before", label: "Agent hooks · tool policy", templateName: webui.TemplateHooks, page: func() webui.Page {
+		p := qaHookEditor()
+		p.Hooks.Editor.Definition.Event = hookcmd.PreToolUse
+		p.Hooks.Editor.Definition.Matcher = "^(Bash|exec_command|bash)$"
+		return p
+	}, gallery: true},
+	{name: "hooks-tool-after", label: "Agent hooks · tool result", templateName: webui.TemplateHooks, page: func() webui.Page {
+		p := qaHookEditor()
+		p.Hooks.Editor.Definition.Event = hookcmd.PostToolUse
+		return p
+	}, gallery: true},
+	{name: "hooks-unsupported", label: "Agent hooks · unavailable native adapter", templateName: webui.TemplateHooks, status: http.StatusBadRequest, page: func() webui.Page {
+		p := qaHookEditor()
+		p.Hooks.Editor.Definition.Event = hookcmd.PreToolUse
+		p.Hooks.Capabilities = "Native tool hooks are unavailable for the configured provider. Lifecycle hooks remain available."
+		p.Error = &webui.ErrorView{Heading: "Native tool hooks unavailable", Message: "Review the configured provider before enabling this hook."}
+		return p
+	}, gallery: true},
 	{name: "hooks", label: "Agent hooks · inventory", templateName: webui.TemplateHooks, page: qaHooks, gallery: true},
 	{name: "hooks-empty", label: "Agent hooks · empty", templateName: webui.TemplateHooks, page: func() webui.Page { p := qaHooks(); p.Hooks.Rows = nil; return p }, gallery: true},
 	{name: "hooks-long", label: "Agent hooks · long names", templateName: webui.TemplateHooks, page: func() webui.Page {
@@ -51,6 +69,7 @@ func qaHooks() webui.Page {
 		{Name: "guard", Event: hookcmd.UserPromptSubmit, Enabled: true, Command: "/usr/bin/python3", Args: []string{"/synthetic/hooks/guard.py"}, TimeoutSeconds: 10},
 		{Name: "session-note", Event: hookcmd.SessionEnd, Command: "/usr/bin/true", TimeoutSeconds: 2},
 	}})
+	page.Hooks.Capabilities = "Native PreToolUse and PostToolUse adapters are configured for provider qa-provider. Activation requires a new session: use /reset for an existing session. In-flight tool calls are unaffected. Unsupported native versions fail explicitly."
 	return page
 }
 

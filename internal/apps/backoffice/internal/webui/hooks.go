@@ -8,9 +8,10 @@ import (
 
 // HooksView contains only administrator-authorized configuration projections.
 type HooksView struct {
-	Rows   []HookRow
-	Editor *HookEditor
-	Events []hookcmd.EventName
+	Rows         []HookRow
+	Editor       *HookEditor
+	Events       []hookcmd.EventName
+	Capabilities string
 }
 
 // HookRow is a content-free inventory link to one executable definition.

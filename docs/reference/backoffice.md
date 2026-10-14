@@ -1052,3 +1052,8 @@ optimistic versions, deletion confirmation, existing browser authority and
 body-free transactional audit. Operators cannot read or mutate definitions.
 Changes apply to the next matching event. See [Managed agent hooks](agent-hooks.md)
 for event semantics, executable privileges, failures and ownership.
+
+Native tool events (`PreToolUse`, `PostToolUse`) use the same guarded Agent hooks
+editor. Its capability banner reports configured provider support and explains
+new-session activation. Unsupported configurations return 400 with the submitted
+draft intact. Tool-event matchers apply to the provider-native tool name.

@@ -10,8 +10,11 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/backoffice/security"
 	"github.com/baldaworks/balda/internal/apps/balda/hookbackofficeapp"
+	"github.com/baldaworks/balda/internal/apps/balda/hookcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/hookprovider"
 	"github.com/baldaworks/balda/internal/apps/balda/hooks"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
+	"github.com/normahq/runtime/v2/agentconfig"
 )
 
 func TestHooksHTTPManagement(t *testing.T) {
@@ -27,7 +30,18 @@ func TestHooksHTTPManagement(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			app.hooks = hookbackofficeapp.New(hooks.NewManagement(provider.HookManagement()))
+			management := hooks.NewManagement(provider.HookManagement())
+			native, err := hookprovider.New(hooks.NewRunner(provider.HookManagement()), provider.HookManagement(), "provider", map[string]agentconfig.Config{"provider": {Type: agentconfig.AgentTypeClaudeCodeACP, ClaudeCodeACP: &agentconfig.ACPConfig{Cmd: []string{"fixture-acp"}}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				if err := native.Close(); err != nil {
+					t.Error(err)
+				}
+			})
+			management.ConfigureValidator(native)
+			app.hooks = hookbackofficeapp.New(management)
 			handler, err := app.handler()
 			if err != nil {
 				t.Fatal(err)
@@ -91,6 +105,22 @@ func TestHooksHTTPManagement(t *testing.T) {
 			}
 			if response := get("/hooks/guard", admin.access, false); response.Code != 404 {
 				t.Fatalf("missing hook = %d", response.Code)
+			}
+			toolForm := url.Values{"name": {"tool-guard"}, "event": {string(hookcmd.PreToolUse)}, "command": {"/usr/bin/true"}, "args": {`[]`}, "timeout_seconds": {"10"}, "expected_version": {"3"}, "enabled": {"yes"}, "provider": {"missing"}, "csrf_token": {admin.csrf}}
+			if response := mutate("/hooks", toolForm, true); response.Code != 400 || !strings.Contains(response.Body.String(), "Review the configured provider") || !strings.Contains(response.Body.String(), `value="missing"`) {
+				t.Fatalf("unsupported native draft = %d, %s", response.Code, response.Body.String())
+			}
+			toolForm.Set("provider", "provider")
+			if response := mutate("/hooks", toolForm, false); response.Code != 303 {
+				t.Fatalf("PreToolUse creation = %d: %s", response.Code, response.Body.String())
+			}
+			toolForm.Set("event", string(hookcmd.PostToolUse))
+			toolForm.Set("expected_version", "4")
+			if response := mutate("/hooks/tool-guard", toolForm, true); response.Code != 204 {
+				t.Fatalf("PostToolUse edit = %d", response.Code)
+			}
+			if response := get("/hooks/tool-guard", admin.access, false); response.Code != 200 || !strings.Contains(response.Body.String(), `value="PostToolUse" selected`) || !strings.Contains(response.Body.String(), "use /reset") {
+				t.Fatal("native editor lost event or activation guidance")
 			}
 			for _, failure := range []string{"csrf", "foreign origin"} {
 				request := httptest.NewRequest(http.MethodPost, base+"/hooks", strings.NewReader(form.Encode()))

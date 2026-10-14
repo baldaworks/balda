@@ -533,3 +533,8 @@ Administrators configure agent lifecycle hooks in **Operations → Agent hooks**
 Approved commands can validate a session start, reject a prompt, check a final
 answer, or observe session closure. See [Managed agent hooks](docs/reference/agent-hooks.md)
 for configuration, executable privileges, limits and lifecycle behavior.
+
+Managed `PreToolUse`/`PostToolUse` hooks have adapters for Claude Code, Codex and
+OpenCode ACP on Linux/macOS. Configure them in **Operations → Agent hooks** and
+reset existing sessions to activate native interception. See the
+[agent hook reference](docs/reference/agent-hooks.md) for capability requirements.

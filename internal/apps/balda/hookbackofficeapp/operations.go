@@ -11,6 +11,9 @@ import (
 // Operations adapts guarded management without owning browser or runtime policy.
 type Operations struct{ management *hooks.Management }
 
+// CapabilityDescription projects configured native interception support.
+func (o *Operations) CapabilityDescription() string { return o.management.CapabilityDescription() }
+
 // New binds the application's single hook management owner.
 func New(management *hooks.Management) *Operations { return &Operations{management: management} }
 func (o *Operations) Inventory(ctx context.Context, a hookcmd.Authority) (hookcmd.Record, error) {

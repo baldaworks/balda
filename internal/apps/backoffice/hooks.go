@@ -55,6 +55,9 @@ func (a *httpApp) hooksPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	page.Hooks = webui.ProjectHooks(record)
+	if capabilities, ok := a.hooks.(interface{ CapabilityDescription() string }); ok {
+		page.Hooks.Capabilities = capabilities.CapabilityDescription()
+	}
 	name := r.PathValue("hook_name")
 	if name != "" {
 		index := slices.IndexFunc(record.Definitions, func(d hookcmd.Definition) bool { return d.Name == name })
@@ -88,6 +91,9 @@ func (a *httpApp) hookMutation(w http.ResponseWriter, r *http.Request) {
 	arguments, argsErr := parseHookArguments(form.Get("args"))
 	definition.Args = arguments
 	page.Hooks = webui.ProjectHooks(hookcmd.Record{})
+	if capabilities, ok := a.hooks.(interface{ CapabilityDescription() string }); ok {
+		page.Hooks.Capabilities = capabilities.CapabilityDescription()
+	}
 	page.Hooks.Editor = webui.ProjectHookEditor(definition, version, create)
 	page.Hooks.Editor.ArgsJSON = form.Get("args")
 	if versionErr != nil || version < 0 || !hookcmd.ValidName(name) {
@@ -136,6 +142,8 @@ func (a *httpApp) hookError(w http.ResponseWriter, r *http.Request, page webui.P
 		status, message = http.StatusConflict, "Agent hooks changed. Reopen the hook and review its current configuration before saving."
 	case errors.Is(err, hookcmd.ErrNotFound):
 		status, message = http.StatusNotFound, "This hook is no longer available. Open Agent hooks."
+	case errors.Is(err, hookcmd.ErrUnsupported):
+		status, message = http.StatusBadRequest, "Native tool hooks require a Claude Code, Codex or OpenCode ACP provider. Every pool member must support the adapter. Review the configured provider before enabling this hook."
 	}
 	page.Error = &webui.ErrorView{Heading: "Agent hook operation could not complete", Message: message}
 	name := webui.TemplateHooks
