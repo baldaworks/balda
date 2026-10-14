@@ -3,6 +3,7 @@ package handlersfx
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -208,11 +209,36 @@ func (f *fakeSessionStore) List(context.Context) ([]baldastate.SessionRecord, er
 }
 
 type fakeAgentBuilder struct {
-	metadata baldasession.AgentMetadata
-	err      error
+	metadata   baldasession.AgentMetadata
+	openErr    error
+	freshErr   error
+	openCalls  int
+	freshCalls int
 }
 
 func (f *fakeAgentBuilder) CreateRuntimeSession(
+	ctx context.Context,
+	runtime *baldasession.BuiltRuntime,
+	agentName, userID, sessionID, workspaceDir string,
+	sessionCtx baldasession.RuntimeSessionContext,
+) (adksession.Session, error) {
+	return f.CreateFreshRuntimeSession(ctx, runtime, agentName, userID, sessionID, workspaceDir, sessionCtx)
+}
+
+func (f *fakeAgentBuilder) OpenExistingRuntimeSession(
+	ctx context.Context,
+	runtime *baldasession.BuiltRuntime,
+	agentName, userID, sessionID, workspaceDir string,
+	sessionCtx baldasession.RuntimeSessionContext,
+) (adksession.Session, error) {
+	f.openCalls++
+	if f.openErr != nil {
+		return nil, f.openErr
+	}
+	return f.CreateFreshRuntimeSession(ctx, runtime, agentName, userID, sessionID, workspaceDir, sessionCtx)
+}
+
+func (f *fakeAgentBuilder) CreateFreshRuntimeSession(
 	context.Context,
 	*baldasession.BuiltRuntime,
 	string,
@@ -221,15 +247,22 @@ func (f *fakeAgentBuilder) CreateRuntimeSession(
 	string,
 	baldasession.RuntimeSessionContext,
 ) (adksession.Session, error) {
-	return nil, f.err
+	f.freshCalls++
+	return nil, f.freshErr
 }
 
 func (f *fakeAgentBuilder) GetAgentMetadata(string) baldasession.AgentMetadata { return f.metadata }
 
-type fakeRuntimeManager struct{ providerID string }
+type fakeRuntimeManager struct {
+	providerID string
+	runtime    *baldasession.BuiltRuntime
+}
 
-func (*fakeRuntimeManager) Runtime(context.Context) (*baldasession.BuiltRuntime, error) {
-	return &baldasession.BuiltRuntime{}, nil
+func (f *fakeRuntimeManager) Runtime(context.Context) (*baldasession.BuiltRuntime, error) {
+	if f.runtime != nil {
+		return f.runtime, nil
+	}
+	return &baldasession.BuiltRuntime{AppName: "norma-balda", SessionSvc: adksession.InMemoryService()}, nil
 }
 
 func (f *fakeRuntimeManager) ProviderID() string { return f.providerID }
@@ -348,16 +381,17 @@ func newTestOwnerStore(t *testing.T) *auth.OwnerStore {
 	return store
 }
 
-func newTestSessionManager(t *testing.T, store *fakeSessionStore) *baldasession.Manager {
+func newTestSessionManager(t *testing.T, store *fakeSessionStore) (*baldasession.Manager, *fakeAgentBuilder) {
 	t.Helper()
-	m, err := baldasession.NewManager(baldasession.ManagerParams{
-		AgentBuilder: &fakeAgentBuilder{
-			metadata: baldasession.AgentMetadata{
-				Type:       "opencode_acp",
-				Model:      "gpt-5",
-				MCPServers: []string{"provider_mcp"},
-			},
+	builder := &fakeAgentBuilder{
+		metadata: baldasession.AgentMetadata{
+			Type:       "opencode_acp",
+			Model:      "gpt-5",
+			MCPServers: []string{"provider_mcp"},
 		},
+	}
+	m, err := baldasession.NewManager(baldasession.ManagerParams{
+		AgentBuilder:    builder,
 		RuntimeManager:  &fakeRuntimeManager{providerID: "alpha"},
 		BaldaProviderID: "alpha",
 		SessionStore:    store,
@@ -366,23 +400,25 @@ func newTestSessionManager(t *testing.T, store *fakeSessionStore) *baldasession.
 	if err != nil {
 		t.Fatalf("NewManager() error = %v", err)
 	}
-	return m
+	return m, builder
 }
 
 type testHarness struct {
-	handler    *telegramInboundHandler
-	server     *baldatelegram.Server
-	dispatcher *fakeTurnDispatcher
-	channel    *fakeTestChannel
-	sessions   *baldasession.Manager
-	ownerStore *auth.OwnerStore
+	handler      *telegramInboundHandler
+	server       *baldatelegram.Server
+	dispatcher   *fakeTurnDispatcher
+	channel      *fakeTestChannel
+	sessions     *baldasession.Manager
+	sessionStore *fakeSessionStore
+	agentBuilder *fakeAgentBuilder
+	ownerStore   *auth.OwnerStore
 }
 
 func newTestHarness(t *testing.T) *testHarness {
 	t.Helper()
 	ownerStore := newTestOwnerStore(t)
 	sessionStore := &fakeSessionStore{}
-	sessions := newTestSessionManager(t, sessionStore)
+	sessions, agentBuilder := newTestSessionManager(t, sessionStore)
 	dispatcher := &fakeTurnDispatcher{}
 	ch := &fakeTestChannel{}
 
@@ -408,12 +444,14 @@ func newTestHarness(t *testing.T) *testHarness {
 	})
 
 	return &testHarness{
-		handler:    handler,
-		server:     server,
-		dispatcher: dispatcher,
-		channel:    ch,
-		sessions:   sessions,
-		ownerStore: ownerStore,
+		handler:      handler,
+		server:       server,
+		dispatcher:   dispatcher,
+		channel:      ch,
+		sessions:     sessions,
+		sessionStore: sessionStore,
+		agentBuilder: agentBuilder,
+		ownerStore:   ownerStore,
 	}
 }
 
@@ -618,6 +656,31 @@ func TestTelegramInboundHandler_ActivateOwner(t *testing.T) {
 	ownerID, chatID := h.handler.getOwnerBinding()
 	if ownerID != 101 || chatID != 9001 {
 		t.Fatalf("owner binding = (%d, %d), want (101, 9001)", ownerID, chatID)
+	}
+}
+
+func TestTelegramInboundHandler_ActivateOwnerContinuesAfterRestoreFallback(t *testing.T) {
+	h := newTestHarness(t)
+	locator := baldatelegram.NewLocator(9001, 0)
+	h.sessionStore.record = baldastate.SessionRecord{
+		SessionID: locator.SessionID, UserID: baldatelegram.UserID(101),
+		ChannelType: locator.ChannelType, AddressKey: locator.AddressKey, AddressJSON: locator.AddressJSON,
+		AgentName: ownerSessionLabel, RuntimeSnapshotID: "snapshot-retired", Status: baldastate.SessionStatusActive,
+	}
+	h.sessionStore.foundByAddress = true
+	h.agentBuilder.openErr = errors.New("saved MCP attachment unavailable")
+	if _, found, err := h.sessionStore.GetByAddress(t.Context(), locator.ChannelType, locator.AddressKey); err != nil || !found {
+		t.Fatalf("persisted owner fixture unavailable: found=%t err=%v", found, err)
+	}
+
+	if err := h.handler.ActivateOwner(context.Background(), 101, 9001); err != nil {
+		t.Fatalf("ActivateOwner() error = %v", err)
+	}
+	if h.agentBuilder.openCalls != 1 || h.agentBuilder.freshCalls != 1 {
+		t.Fatalf("builder calls = open %d, fresh %d; want 1, 1", h.agentBuilder.openCalls, h.agentBuilder.freshCalls)
+	}
+	if _, err := h.sessions.GetSession(locator); err != nil {
+		t.Fatalf("owner session was not activated after fallback: %v", err)
 	}
 }
 

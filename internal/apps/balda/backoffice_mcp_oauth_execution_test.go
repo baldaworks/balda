@@ -98,7 +98,7 @@ func verifyOAuthBrowserExecution(t *testing.T, catalog *catalogapp.Runtime, regi
 			cancel()
 			t.Fatalf("%s authorized runtime: %v", id, err)
 		}
-		session, err := builder.CreateRuntimeSession(ctx, runtime, id, "fixture-user", "provider-session", workspace, baldaagent.RuntimeSessionContext{BaldaSessionID: "browser-authorized"})
+		session, err := builder.CreateFreshRuntimeSession(ctx, runtime, id, "fixture-user", "provider-session", workspace, baldaagent.RuntimeSessionContext{BaldaSessionID: "browser-authorized"})
 		if err != nil {
 			_ = manager.Stop(context.Background())
 			cancel()

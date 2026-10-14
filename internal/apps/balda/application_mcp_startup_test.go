@@ -80,7 +80,7 @@ func installPendingStartupOAuth(t *testing.T, provider state.Provider, credentia
 
 func verifyUnavailableInvocationKeepsRuntime(t *testing.T, builder *baldaagent.Builder, manager *baldaagent.RuntimeManager, built *baldaagent.BuiltRuntime, workspace string) {
 	t.Helper()
-	created, err := builder.CreateRuntimeSession(t.Context(), built, "alpha", "startup-user", "startup-session", workspace, baldaagent.RuntimeSessionContext{BaldaSessionID: "preserved-conversation"})
+	created, err := builder.CreateFreshRuntimeSession(t.Context(), built, "alpha", "startup-user", "startup-session", workspace, baldaagent.RuntimeSessionContext{BaldaSessionID: "preserved-conversation"})
 	if err != nil {
 		t.Fatal(err)
 	}

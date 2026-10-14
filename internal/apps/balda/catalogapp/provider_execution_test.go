@@ -163,7 +163,7 @@ func testHostedPoolInvocationWithTools(t *testing.T, catalog *Runtime, registry 
 			cancel()
 			t.Fatalf("hosted %s runtime construction (root=%t): %v", providerID, root, err)
 		}
-		created, err := builder.CreateRuntimeSession(ctx, runtime, providerID, "fixture-user", "provider-session", workspace, baldaagent.RuntimeSessionContext{BaldaSessionID: "hosted-fixture"})
+		created, err := builder.CreateFreshRuntimeSession(ctx, runtime, providerID, "fixture-user", "provider-session", workspace, baldaagent.RuntimeSessionContext{BaldaSessionID: "hosted-fixture"})
 		if err != nil {
 			cancel()
 			_ = manager.Stop(ctx)

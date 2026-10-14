@@ -29,6 +29,7 @@ type WorkspaceManager struct {
 type EnsureWorkspaceResult struct {
 	Dir         string
 	SyncSkipped bool
+	Created     bool
 }
 
 // NewWorkspaceManagerWithSessionsDir creates a WorkspaceManager with a custom sessions dir name.
@@ -52,10 +53,14 @@ func (m *WorkspaceManager) CanonicalWorkspaceDir(key string) string {
 // ForceRemountCanonicalWorkspace forcefully clears the canonical workspace path and remounts it.
 func (m *WorkspaceManager) ForceRemountCanonicalWorkspace(ctx context.Context, key, branchName string) (EnsureWorkspaceResult, error) {
 	workspaceDir := m.CanonicalWorkspaceDir(key)
+	_, statErr := os.Stat(workspaceDir)
+	wasAbsent := os.IsNotExist(statErr)
 	if err := m.forceCleanupWorkspacePath(ctx, workspaceDir); err != nil {
 		return EnsureWorkspaceResult{Dir: workspaceDir}, err
 	}
-	return m.EnsureWorkspace(ctx, key, branchName, workspaceDir)
+	result, err := m.EnsureWorkspace(ctx, key, branchName, workspaceDir)
+	result.Created = result.Created && wasAbsent
+	return result, err
 }
 
 // EnsureWorkspace creates or returns an existing workspace directory.
@@ -120,12 +125,15 @@ func (m *WorkspaceManager) EnsureWorkspace(ctx context.Context, key, branchName,
 	if _, err := git.MountWorktree(ctx, m.workingDir, workspaceDir, branchName, baseBranch); err != nil {
 		return result, fmt.Errorf("mount worktree: %w", err)
 	}
+	result.Created = true
 
 	if !branchExists {
 		return result, nil
 	}
 	if err := m.Import(ctx, workspaceDir); err != nil {
-		return m.recreateWorkspaceWithoutSync(ctx, workspaceDir, branchName, err)
+		recreated, recreateErr := m.recreateWorkspaceWithoutSync(ctx, workspaceDir, branchName, err)
+		recreated.Created = true
+		return recreated, recreateErr
 	}
 
 	return result, nil
