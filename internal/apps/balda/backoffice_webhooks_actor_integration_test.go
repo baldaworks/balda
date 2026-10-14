@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"iter"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -16,8 +16,11 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/actors"
+	"github.com/baldaworks/balda/internal/apps/balda/aliascmd"
+	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/webhook"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryworkflow"
 	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
 	"github.com/baldaworks/balda/internal/apps/balda/eventbus"
@@ -44,14 +47,23 @@ import (
 )
 
 type browserActorTurnRunner struct {
-	executor *sessionturnapp.TurnExecutionService
+	executor    *sessionturnapp.TurnExecutionService
+	sessions    adksession.Service
+	invocations *atomic.Int64
 }
+
+const (
+	browserWebhookAppName   = "webhook-browser-fixture"
+	browserManagedAliasName = "main_chat"
+	browserManagedOutput    = "Processed: Actor: alias input"
+)
 
 func (r browserActorTurnRunner) RunSessionTurnPayload(ctx context.Context, payload turncmd.SessionTurnPayload) error {
 	agent, err := adkagent.New(adkagent.Config{Name: "webhook-browser-fixture",
 		Description: "deterministic private webhook provider",
 		Run: func(invocation adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
 			return func(yield func(*adksession.Event, error) bool) {
+				r.invocations.Add(1)
 				result := adksession.NewEvent(ctx, invocation.InvocationID())
 				result.Content = genai.NewContentFromText("Processed: "+payload.Text, genai.RoleModel)
 				result.TurnComplete = true
@@ -62,13 +74,13 @@ func (r browserActorTurnRunner) RunSessionTurnPayload(ctx context.Context, paylo
 	if err != nil {
 		return err
 	}
-	sessions := adksession.InMemoryService()
-	const appName = "webhook-browser-fixture"
-	runner, err := adkrunner.New(adkrunner.Config{AppName: appName, Agent: agent, SessionService: sessions})
+	runner, err := adkrunner.New(adkrunner.Config{AppName: browserWebhookAppName, Agent: agent, SessionService: r.sessions})
 	if err != nil {
 		return err
 	}
-	session, err := sessions.Create(ctx, &adksession.CreateRequest{AppName: appName, UserID: payload.UserID})
+	session, err := r.sessions.Create(ctx, &adksession.CreateRequest{
+		AppName: browserWebhookAppName, UserID: payload.UserID, SessionID: payload.Locator.SessionID,
+	})
 	if err != nil {
 		return err
 	}
@@ -83,20 +95,29 @@ func (r browserActorTurnRunner) RunSessionTurnPayload(ctx context.Context, paylo
 	return r.executor.Execute(ctx, request)
 }
 
-type browserDeliveryTransport struct{ sent atomic.Int64 }
+type browserDeliveryTransport struct {
+	sent     atomic.Int64
+	payloads chan deliverycmd.Payload
+}
 
 func (d *browserDeliveryTransport) Dispatch(_ context.Context, delivery deliveryworkflow.Delivery) (string, error) {
 	if delivery.Payload.Text == "" {
 		return "", fmt.Errorf("empty test delivery")
 	}
 	d.sent.Add(1)
+	d.payloads <- delivery.Payload
 	return "synthetic-provider-message", nil
 }
 
+type browserRunSessionCloser struct{ sessions adksession.Service }
+
+func (c browserRunSessionCloser) CloseRunSession(ctx context.Context, sessionID, userID string) error {
+	return c.sessions.Delete(ctx, &adksession.DeleteRequest{
+		AppName: browserWebhookAppName, UserID: userID, SessionID: sessionID,
+	})
+}
+
 func TestWebhookActorRuntimeFromHTTP(t *testing.T) {
-	if os.Getenv("BALDA_BACKOFFICE_BROWSER_TEST") != "1" {
-		t.Skip("set BALDA_BACKOFFICE_BROWSER_TEST=1 for the webhook runtime integration gate")
-	}
 	if testing.Short() {
 		t.Skip("embedded actor bus and browser fixture are integration-only")
 	}
@@ -127,12 +148,15 @@ func TestWebhookActorRuntimeFromHTTP(t *testing.T) {
 		zerolog.Nop(), automode.DefaultMaxTurns, nil)
 	turnExecutor.SetPrivateOutputRecorder(lifecycle)
 	turnExecutor.SetWebhookTurnClaimer(lifecycle)
-	delivery := &browserDeliveryTransport{}
+	sessions := adksession.InMemoryService()
+	var invocations atomic.Int64
+	delivery := &browserDeliveryTransport{payloads: make(chan deliverycmd.Payload, 2)}
 	registry := dispatch.NewMemoryRegistry()
 	for _, actor := range []dispatch.Actor{
 		actors.NewJobActorExecutor(jobexec.New(lifecycle, bus)),
 		actors.NewSessionActor(actors.SessionActorConfig{Turns: turns,
-			Runner: browserActorTurnRunner{executor: turnExecutor}, Tasks: lifecycle, Dispatcher: bus}),
+			Runner: browserActorTurnRunner{executor: turnExecutor, sessions: sessions, invocations: &invocations},
+			Tasks:  lifecycle, Dispatcher: bus}),
 		actors.NewJobDeliveryActor(deliveryworkflow.New(delivery, provider.Jobs(), nil, nil, bus, zerolog.Nop())),
 	} {
 		if err := registry.Register(actor); err != nil {
@@ -152,8 +176,13 @@ func TestWebhookActorRuntimeFromHTTP(t *testing.T) {
 	defer stop()
 	runtimeDone := make(chan error, 1)
 	go func() { runtimeDone <- runtime.Run(runCtx, bus) }()
+	var managedRef atomic.Value
+	managedRef.Store("")
 	publisher := webhookapp.JobPublisherFunc(func(ctx context.Context, payload turncmd.SessionTurnPayload,
 		routeName, requestID string) (*actortransport.DispatchReceipt, string, error) {
+		if routeName == "managed" {
+			managedRef.Store("telegram:9003:0")
+		}
 		env, jobID, err := turncmd.WebhookJobEnvelope(payload, routeName, requestID)
 		if err != nil {
 			return nil, "", err
@@ -161,16 +190,25 @@ func TestWebhookActorRuntimeFromHTTP(t *testing.T) {
 		receipt, err := bus.Dispatch(ctx, env)
 		return receipt, jobID, err
 	})
-	resolver := webhookapp.TargetResolverFunc(func(_ context.Context, target envelopetarget.Target) (envelopetarget.Resolved, error) {
-		locator, err := locatorref.Parse(target.Key)
-		return envelopetarget.Resolved{Locator: locator}, err
+	destinations := auth.NewDestinationResolverWithManagedAliases(nil, nil,
+		func(_ context.Context, name string) (deliverycmd.Locator, error) {
+			if name != browserManagedAliasName || managedRef.Load().(string) == "" {
+				return deliverycmd.Locator{}, aliascmd.ErrNotFound
+			}
+			return locatorref.Parse(managedRef.Load().(string))
+		})
+	resolver := webhookapp.TargetResolverFunc(func(ctx context.Context, target envelopetarget.Target) (envelopetarget.Resolved, error) {
+		return envelopetarget.Resolve(ctx, destinations, target)
 	})
 	service := webhookapp.NewService(resolver, provider.WebhookAdmissions(), publisher)
 	configured := webhookapp.ConfiguredRoute{Name: "actor",
 		PromptTemplate: "Actor: {{.RawBody}}", ReportToKind: "locator", ReportToKey: "telegram:9001:0",
 		AuthType: webhookroutecmd.AuthTypeHeader, AuthHeader: "X-Actor-Secret", AuthValue: "synthetic-actor-secret",
 		DedupeSource: webhookroutecmd.DedupeSourceRequestID}
-	ingress, err := webhookapp.NewIngress("", []webhookapp.ConfiguredRoute{configured}, nil, service)
+	managed := configured
+	managed.Name = "managed"
+	managed.ReportToKind, managed.ReportToKey = envelopetarget.TargetManagedAlias, browserManagedAliasName
+	ingress, err := webhookapp.NewIngress("", []webhookapp.ConfiguredRoute{configured, managed}, nil, service)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +217,11 @@ func TestWebhookActorRuntimeFromHTTP(t *testing.T) {
 		Routes: map[string]webhook.RouteConfig{"actor": {PromptTemplate: configured.PromptTemplate, Envelope: webhook.RouteEnvelopeConfig{
 			ReportTo: &webhook.RouteTargetConfig{Target: "locator", Key: "telegram:9001:0"}},
 			Auth: webhook.RouteAuthConfig{Type: "header", Header: configured.AuthHeader,
-				Value: configured.AuthValue}}}}, ingress, zerolog.Nop())
+				Value: configured.AuthValue}},
+			"managed": {PromptTemplate: managed.PromptTemplate, Envelope: webhook.RouteEnvelopeConfig{
+				ReportTo: &webhook.RouteTargetConfig{Target: envelopetarget.TargetManagedAlias, Key: browserManagedAliasName}},
+				Auth: webhook.RouteAuthConfig{Type: "header", Header: managed.AuthHeader,
+					Value: managed.AuthValue}}}}, ingress, zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,17 +229,22 @@ func TestWebhookActorRuntimeFromHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = receiver.Stop(context.Background()) })
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+address+"/webhooks/actor",
-		bytes.NewBufferString("actor input"))
-	if err != nil {
-		t.Fatal(err)
+	post := func(route, requestID, body string) *http.Response {
+		t.Helper()
+		request, err := http.NewRequestWithContext(ctx, http.MethodPost,
+			"http://"+address+"/webhooks/"+route, bytes.NewBufferString(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		request.Header.Set("X-Actor-Secret", configured.AuthValue)
+		request.Header.Set("X-Request-Id", requestID)
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return response
 	}
-	request.Header.Set("X-Actor-Secret", configured.AuthValue)
-	request.Header.Set("X-Request-Id", "actor-request-1")
-	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		t.Fatal(err)
-	}
+	response := post("actor", "actor-request-1", "actor input")
 	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusAccepted {
 		body, _ := io.ReadAll(response.Body)
@@ -230,6 +277,90 @@ func TestWebhookActorRuntimeFromHTTP(t *testing.T) {
 			t.Fatalf("timed out waiting for actor outcome: %+v", history)
 		case <-time.After(25 * time.Millisecond):
 		}
+	}
+	firstDelivery := <-delivery.payloads
+	if firstDelivery.Locator.AddressKey != "9001:0" || invocations.Load() != 1 {
+		t.Fatalf("literal route delivery = %+v, provider calls=%d", firstDelivery, invocations.Load())
+	}
+
+	missing := post("managed", "missing-alias-request", "missing alias input")
+	if missing.StatusCode != http.StatusNotFound {
+		body, _ := io.ReadAll(missing.Body)
+		t.Fatalf("missing alias status = %d, body=%s", missing.StatusCode, body)
+	}
+	if err := missing.Body.Close(); err != nil {
+		t.Fatal(err)
+	}
+	missingHistory, err := provider.WebhookAdmissions().ListHistory(ctx, "managed", time.Time{}, "", 10)
+	if err != nil || len(missingHistory) != 0 || invocations.Load() != 1 {
+		t.Fatalf("missing alias admitted work: history=%+v provider calls=%d err=%v", missingHistory, invocations.Load(), err)
+	}
+
+	managedRef.Store("telegram:9002:0")
+	managedResponse := post("managed", "managed-alias-request", "alias input")
+	defer func() { _ = managedResponse.Body.Close() }()
+	if managedResponse.StatusCode != http.StatusAccepted {
+		body, _ := io.ReadAll(managedResponse.Body)
+		t.Fatalf("managed alias admission status = %d, body=%s", managedResponse.StatusCode, body)
+	}
+	var managedAccepted struct {
+		JobID string `json:"job_id"`
+	}
+	if err := json.NewDecoder(managedResponse.Body).Decode(&managedAccepted); err != nil || managedAccepted.JobID == "" {
+		t.Fatalf("managed alias receipt = %+v, err=%v", managedAccepted, err)
+	}
+	for {
+		history, found, err := provider.WebhookAdmissions().GetHistory(ctx, "managed", managedAccepted.JobID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if found && history.JobStatus == state.JobStatusCompleted && history.DeliveryStatus == state.DeliveryStatusSent {
+			if history.RawBody == nil || *history.RawBody != "alias input" ||
+				history.Output != browserManagedOutput ||
+				history.ReportTo == nil || history.ReportTo.AddressKey != "9002:0" ||
+				!strings.Contains(history.DeliveryPayload, browserManagedOutput) ||
+				managedRef.Load().(string) != "telegram:9003:0" || invocations.Load() != 2 {
+				t.Fatalf("managed alias outcome = %+v, current alias=%s provider calls=%d", history,
+					managedRef.Load().(string), invocations.Load())
+			}
+			break
+		}
+		select {
+		case err := <-runtimeDone:
+			t.Fatalf("actor runtime stopped before managed alias outcome: %v", err)
+		case <-ctx.Done():
+			t.Fatalf("timed out waiting for managed alias outcome: %+v", history)
+		case <-time.After(25 * time.Millisecond):
+		}
+	}
+	managedDelivery := <-delivery.payloads
+	if managedDelivery.Locator.AddressKey != "9002:0" ||
+		managedDelivery.Text != browserManagedOutput || delivery.sent.Load() != 2 {
+		t.Fatalf("managed alias delivery = %+v, sends=%d", managedDelivery, delivery.sent.Load())
+	}
+	admission, found, err := provider.WebhookAdmissions().GetByJobID(ctx, managedAccepted.JobID)
+	if err != nil || !found {
+		t.Fatalf("read managed alias admission: found=%t err=%v", found, err)
+	}
+	if _, err := sessions.Get(ctx, &adksession.GetRequest{
+		AppName: browserWebhookAppName, UserID: admission.SessionID, SessionID: admission.SessionID,
+	}); err != nil {
+		t.Fatalf("private provider session before cleanup: %v", err)
+	}
+	finalizer := jobexec.NewWebhookRunFinalizer(provider.Jobs(), provider.WebhookAdmissions(),
+		provider.Jobs(), browserRunSessionCloser{sessions: sessions}, bus, zerolog.Nop())
+	if err := finalizer.Settle(ctx, 100); err != nil {
+		t.Fatalf("close private webhook sessions: %v", err)
+	}
+	if _, err := sessions.Get(ctx, &adksession.GetRequest{
+		AppName: browserWebhookAppName, UserID: admission.SessionID, SessionID: admission.SessionID,
+	}); !errors.Is(err, adksession.ErrNotFound) {
+		t.Fatalf("private provider session after cleanup: %v", err)
+	}
+	job, found, err := provider.Jobs().GetJob(ctx, managedAccepted.JobID)
+	if err != nil || !found || job.PrivateRunClosedAt == "" ||
+		job.Objective != "Actor: alias input" || job.Result != browserManagedOutput {
+		t.Fatalf("retained managed alias job = %+v, found=%t err=%v", job, found, err)
 	}
 	stop()
 	select {
