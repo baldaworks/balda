@@ -37,9 +37,10 @@ real login and password-change assertions when changing those fixtures.
 GitHub protects `main` with these required GitHub Actions job checks on every
 pull request: `lint`, `test`, `sqlite-integration`, `postgres-integration`,
 `architecture-lint`, `projection-replay`, `jetstream-integration`, and
-`ingress-e2e`. All eight must finish successfully before a PR can merge, including
-when auto-merge is requested. The rule also applies to repository administrators.
-No approving review is required.
+`ingress-e2e`. All eight must finish successfully before a PR can merge. The
+rule also applies to repository administrators. A PR is required, but no
+approving review is required. Auto-merge is currently disabled for this
+repository; enabling it later does not remove these required checks.
 
 The `MCP native execution and persistence` workflow runs only for selected paths,
 so its `native-launch` jobs are additional checks when triggered, not required
