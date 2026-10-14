@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -414,6 +415,95 @@ func TestSendChatAction_ReturnsTelegramErrorResponse(t *testing.T) {
 	}
 }
 
+func TestSendChatActionRedactsBotTokenFromErrorsAndLogs(t *testing.T) {
+	const token = "123456:ABCdefGhIjkLMNopQRST_uvwx"
+	url := "https://api.telegram.org/bot" + token + "/sendChatAction"
+	transportErr := fmt.Errorf("Post %s: %w", url, context.DeadlineExceeded)
+	tgClient := &fakeChatActionClient{chatActionResults: []sendChatActionResult{{err: transportErr}}}
+	m := NewMessenger(tgClient, zerolog.Nop())
+
+	err := m.SendChatAction(context.Background(), 9001, 0, "typing")
+	if err == nil || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("SendChatAction() error = %v, want deadline exceeded", err)
+	}
+	if strings.Contains(err.Error(), token) || !strings.Contains(err.Error(), "sendChatAction") {
+		t.Fatalf("SendChatAction() error = %q, want method without bot token", err)
+	}
+	var log bytes.Buffer
+	logger := zerolog.New(&log)
+	logger.Error().Err(err).Msg("typing failed")
+	if strings.Contains(log.String(), token) {
+		t.Fatalf("structured log contains bot token: %s", log.String())
+	}
+}
+
+func TestSendChatActionRedactsBotTokenFromHTTPDescription(t *testing.T) {
+	const token = "123456:ABCdefGhIjkLMNopQRST_uvwx"
+	tgClient := &fakeChatActionClient{chatActionResults: []sendChatActionResult{{
+		resp: &client.SendChatActionResponse{
+			HTTPResponse: &http.Response{StatusCode: http.StatusBadRequest, Status: "400 Bad Request"},
+			JSON400:      &client.ErrorResponse{Description: "Bad Request: https://api.telegram.org/bot" + token + "/sendChatAction: chat not found"},
+		},
+	}}}
+	m := NewMessenger(tgClient, zerolog.Nop())
+
+	err := m.SendChatAction(context.Background(), 9001, 0, "typing")
+	if err == nil || strings.Contains(err.Error(), token) || !strings.Contains(err.Error(), "chat not found") || !strings.Contains(err.Error(), "HTTP 400") {
+		t.Fatalf("SendChatAction() error = %v, want safe failure context", err)
+	}
+}
+
+func TestSendChatActionReportsOtherHTTPFailuresWithoutBotToken(t *testing.T) {
+	const token = "123456:ABCdefGhIjkLMNopQRST_uvwx"
+	for _, tc := range []struct {
+		name        string
+		status      int
+		description string
+	}{
+		{name: "unauthorized", status: http.StatusUnauthorized, description: "Unauthorized: https://api.telegram.org/bot" + token + "/sendChatAction"},
+		{name: "rate limited", status: http.StatusTooManyRequests},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := &client.SendChatActionResponse{HTTPResponse: &http.Response{StatusCode: tc.status}}
+			if tc.description != "" {
+				resp.JSON401 = &client.ErrorResponse{Description: tc.description}
+			}
+			tgClient := &fakeChatActionClient{chatActionResults: []sendChatActionResult{{resp: resp}}}
+			err := NewMessenger(tgClient, zerolog.Nop()).SendChatAction(t.Context(), 9001, 0, "typing")
+			if err == nil || strings.Contains(err.Error(), token) || !strings.Contains(err.Error(), fmt.Sprintf("HTTP %d", tc.status)) {
+				t.Fatalf("SendChatAction() error = %v, want HTTP status without bot token", err)
+			}
+		})
+	}
+}
+
+func TestPlainTelegramSendsRedactBotToken(t *testing.T) {
+	const token = "123456:ABCdefGhIjkLMNopQRST_uvwx"
+	transportErr := errors.New("Post https://api.telegram.org/bot" + token + "/sendMessage: connection reset")
+	for _, tc := range []struct {
+		name string
+		send func(*Messenger) error
+	}{
+		{name: "reply", send: func(m *Messenger) error {
+			return m.SendPlainReply(context.Background(), 9001, "reply", 0, 12)
+		}},
+		{name: "message", send: func(m *Messenger) error {
+			return m.SendPlain(context.Background(), 9001, "message", 0)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tgClient := &fakeChatActionClient{sendMessageResults: []sendMessageResult{{err: transportErr}}}
+			err := tc.send(NewMessenger(tgClient, zerolog.Nop()))
+			if err == nil || strings.Contains(err.Error(), token) || !strings.Contains(err.Error(), "sendMessage") {
+				t.Fatalf("%s error = %v, want method without bot token", tc.name, err)
+			}
+			if errors.Is(err, transportErr) {
+				t.Fatalf("%s error retains credential-bearing cause", tc.name)
+			}
+		})
+	}
+}
+
 func TestSendMarkdown_DoesNotSplitStandaloneSeparator(t *testing.T) {
 	t.Parallel()
 
@@ -558,8 +648,8 @@ func TestTelegramDeliveryErrorsAreClassifiedAndRedacted(t *testing.T) {
 	if !classified || kind != deliverycmd.ErrorKindAmbiguous {
 		t.Fatalf("transport error = %v, want ambiguous", err)
 	}
-	if !errors.Is(err, cause) {
-		t.Fatalf("transport error = %v, want original cause preserved", err)
+	if errors.Is(err, cause) {
+		t.Fatalf("transport error retains credential-bearing cause: %v", err)
 	}
 	if strings.Contains(err.Error(), token) || !strings.Contains(err.Error(), "[REDACTED_TOKEN]") {
 		t.Fatalf("transport error = %q, want token redacted", err)

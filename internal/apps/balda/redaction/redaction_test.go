@@ -58,6 +58,12 @@ func TestRedactSecrets(t *testing.T) {
 			notContain: []string{"123456:ABCdefGhIjkLMNopQRST_uvwx"},
 		},
 		{
+			name:       "telegram file URL with irregular token shape",
+			in:         "Get https://api.telegram.org/file/bot123:short/documents/file.pdf: timeout",
+			want:       "Get https://api.telegram.org/file/bot[REDACTED_TOKEN]/documents/file.pdf: timeout",
+			notContain: []string{"123:short"},
+		},
+		{
 			name:       "slack token",
 			in:         "slack " + slackToken,
 			want:       "slack [REDACTED_TOKEN]",

@@ -72,6 +72,22 @@ func (e *redactedTransportError) Unwrap() error {
 	return e.cause
 }
 
+// Bot API transport errors can embed the credential in their request URL.
+// Keep only safe cancellation sentinels in the returned error chain.
+func safeTelegramError(err error) error {
+	if err == nil {
+		return nil
+	}
+	safe := &redactedTransportError{message: redaction.Secrets(err.Error())}
+	switch {
+	case errors.Is(err, context.Canceled):
+		safe.cause = context.Canceled
+	case errors.Is(err, context.DeadlineExceeded):
+		safe.cause = context.DeadlineExceeded
+	}
+	return safe
+}
+
 func richTransportError(action string, chatID int64, err error) error {
 	return &richDeliveryError{err: telegramTransportError(action, chatID, err)}
 }
@@ -115,10 +131,7 @@ func telegramTransportError(action string, chatID int64, err error) error {
 	if err == nil {
 		return telegramNoResponseError(action, chatID)
 	}
-	return deliverycmd.AmbiguousError(&redactedTransportError{
-		cause:   err,
-		message: fmt.Sprintf("%s to chat %d: %s", action, chatID, redaction.Secrets(err.Error())),
-	})
+	return deliverycmd.AmbiguousError(fmt.Errorf("%s to chat %d: %w", action, chatID, safeTelegramError(err)))
 }
 
 func telegramNoResponseError(action string, chatID int64) error {
@@ -271,10 +284,10 @@ func (m *Messenger) SendPlainReply(ctx context.Context, chatID int64, text strin
 	defer cancel()
 	resp, err := m.client.SendMessageWithResponse(sendCtx, req)
 	if err != nil {
-		return fmt.Errorf("sending reply to message %d in chat %d: %w", replyToMessageID, chatID, err)
+		return fmt.Errorf("sending reply to message %d in chat %d: %w", replyToMessageID, chatID, safeTelegramError(err))
 	}
 	if resp.JSON400 != nil {
-		return fmt.Errorf("sending reply to message %d in chat %d: %s", replyToMessageID, chatID, resp.JSON400.Description)
+		return fmt.Errorf("sending reply to message %d in chat %d: %s", replyToMessageID, chatID, redaction.Secrets(resp.JSON400.Description))
 	}
 	if resp.JSON200 == nil {
 		return fmt.Errorf("sending reply to message %d in chat %d: no response body", replyToMessageID, chatID)
@@ -292,7 +305,7 @@ func (m *Messenger) sendPlainLegacy(ctx context.Context, chatID int64, text stri
 
 	msg, err := m.responder.SendText(sendCtx, target, text)
 	if err != nil {
-		return 0, fmt.Errorf("sending message to chat %d: %w", chatID, err)
+		return 0, fmt.Errorf("sending message to chat %d: %w", chatID, safeTelegramError(err))
 	}
 	if msg == nil {
 		return 0, nil
@@ -825,7 +838,7 @@ func (m *Messenger) ClearInlineKeyboard(ctx context.Context, chatID int64, messa
 	defer cancel()
 	resp, err := m.client.EditMessageReplyMarkupWithResponse(sendCtx, request)
 	if err != nil {
-		return fmt.Errorf("clear inline keyboard from message %d: %w", messageID, err)
+		return fmt.Errorf("clear inline keyboard from message %d: %w", messageID, safeTelegramError(err))
 	}
 	if resp == nil {
 		return fmt.Errorf("clear inline keyboard from message %d: no response body", messageID)
@@ -835,7 +848,7 @@ func (m *Messenger) ClearInlineKeyboard(ctx context.Context, chatID int64, messa
 		if strings.Contains(strings.ToLower(description), "message is not modified") {
 			return nil
 		}
-		return fmt.Errorf("clear inline keyboard from message %d: %s", messageID, description)
+		return fmt.Errorf("clear inline keyboard from message %d: %s", messageID, redaction.Secrets(description))
 	}
 	if resp.JSON200 == nil {
 		return fmt.Errorf("clear inline keyboard from message %d: no response body", messageID)
@@ -850,7 +863,7 @@ func (m *Messenger) DeleteMessage(ctx context.Context, chatID int64, messageID i
 	defer cancel()
 	resp, err := m.client.DeleteMessageWithResponse(sendCtx, request)
 	if err != nil {
-		return fmt.Errorf("delete message %d: %w", messageID, err)
+		return fmt.Errorf("delete message %d: %w", messageID, safeTelegramError(err))
 	}
 	if resp == nil {
 		return fmt.Errorf("delete message %d: no response body", messageID)
@@ -860,7 +873,7 @@ func (m *Messenger) DeleteMessage(ctx context.Context, chatID int64, messageID i
 		if strings.Contains(strings.ToLower(description), "message to delete not found") {
 			return nil
 		}
-		return fmt.Errorf("delete message %d: %s", messageID, description)
+		return fmt.Errorf("delete message %d: %s", messageID, redaction.Secrets(description))
 	}
 	if resp.JSON200 == nil {
 		return fmt.Errorf("delete message %d: no response body", messageID)
@@ -879,7 +892,7 @@ func (m *Messenger) DeleteEphemeralMessage(ctx context.Context, chatID, receiver
 	defer cancel()
 	resp, err := m.client.DeleteEphemeralMessageWithResponse(sendCtx, request)
 	if err != nil {
-		return fmt.Errorf("delete ephemeral message %d: %w", ephemeralMessageID, err)
+		return fmt.Errorf("delete ephemeral message %d: %w", ephemeralMessageID, safeTelegramError(err))
 	}
 	if resp == nil {
 		return fmt.Errorf("delete ephemeral message %d: no response body", ephemeralMessageID)
@@ -889,7 +902,7 @@ func (m *Messenger) DeleteEphemeralMessage(ctx context.Context, chatID, receiver
 		if strings.Contains(strings.ToLower(description), "message to delete not found") {
 			return nil
 		}
-		return fmt.Errorf("delete ephemeral message %d: %s", ephemeralMessageID, description)
+		return fmt.Errorf("delete ephemeral message %d: %s", ephemeralMessageID, redaction.Secrets(description))
 	}
 	if resp.JSON200 == nil {
 		return fmt.Errorf("delete ephemeral message %d: no response body", ephemeralMessageID)
@@ -910,13 +923,13 @@ func (m *Messenger) AnswerCallbackQuery(ctx context.Context, callbackQueryID, te
 	defer cancel()
 	resp, err := m.client.AnswerCallbackQueryWithResponse(sendCtx, request)
 	if err != nil {
-		return fmt.Errorf("answer callback query: %w", err)
+		return fmt.Errorf("answer callback query: %w", safeTelegramError(err))
 	}
 	if resp == nil {
 		return fmt.Errorf("answer callback query: no response body")
 	}
 	if resp.JSON400 != nil {
-		return fmt.Errorf("answer callback query: %s", resp.JSON400.Description)
+		return fmt.Errorf("answer callback query: %s", redaction.Secrets(resp.JSON400.Description))
 	}
 	if resp.JSON200 == nil {
 		return fmt.Errorf("answer callback query: no response body")
@@ -1099,13 +1112,16 @@ func (m *Messenger) SendChatAction(ctx context.Context, chatID int64, topicID in
 
 	resp, err := m.client.SendChatActionWithResponse(sendCtx, req)
 	if err != nil {
-		return fmt.Errorf("sending chat action %q to chat %d: %w", action, chatID, err)
+		return fmt.Errorf("sending chat action %q to chat %d: %w", action, chatID, safeTelegramError(err))
 	}
 	if resp == nil {
 		return fmt.Errorf("sending chat action %q to chat %d: no response body", action, chatID)
 	}
 	if resp.JSON400 != nil {
-		return fmt.Errorf("sending chat action %q to chat %d: %s", action, chatID, resp.JSON400.Description)
+		return fmt.Errorf("sending chat action %q to chat %d: telegram HTTP %d: %s", action, chatID, http.StatusBadRequest, redaction.Secrets(resp.JSON400.Description))
+	}
+	if resp.JSON401 != nil {
+		return fmt.Errorf("sending chat action %q to chat %d: telegram HTTP %d: %s", action, chatID, http.StatusUnauthorized, redaction.Secrets(resp.JSON401.Description))
 	}
 	if resp.JSON200 == nil {
 		if resp.HTTPResponse != nil && resp.HTTPResponse.StatusCode >= http.StatusOK && resp.HTTPResponse.StatusCode < http.StatusMultipleChoices {
@@ -1115,6 +1131,9 @@ func (m *Messenger) SendChatAction(ctx context.Context, chatID int64, topicID in
 				Str("action", action).
 				Msg("sending chat action succeeded")
 			return nil
+		}
+		if resp.StatusCode() != 0 {
+			return fmt.Errorf("sending chat action %q to chat %d: telegram HTTP %d", action, chatID, resp.StatusCode())
 		}
 		return fmt.Errorf("sending chat action %q to chat %d: no response body", action, chatID)
 	}
