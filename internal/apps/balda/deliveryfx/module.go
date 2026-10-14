@@ -8,7 +8,6 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/progressfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/questionfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"go.uber.org/fx"
 )
 
@@ -45,9 +44,8 @@ var Module = fx.Module("balda_deliveryfx",
 		},
 		NewChannelDispatcher,
 		fx.Annotate(
-			func(dispatcher actortransport.Dispatcher) questions.ControlPublisher {
-				return questionControlPublisher{dispatcher: dispatcher}
-			},
+			NewQuestionControlPublisher,
+			fx.ParamTags(`name:"command_ingress"`),
 			fx.As(new(questions.ControlPublisher)),
 		),
 	),

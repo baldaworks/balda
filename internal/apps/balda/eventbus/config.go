@@ -20,6 +20,7 @@ type Config struct {
 	Port             int      `mapstructure:"port"`
 	MaxMemory        string   `mapstructure:"max_memory"`
 	MaxStore         string   `mapstructure:"max_store"`
+	BoundedStreams   bool     `mapstructure:"bounded_streams"`
 	SyncAlways       bool     `mapstructure:"sync_always"`
 	ExposeMonitoring bool     `mapstructure:"expose_monitoring"`
 }

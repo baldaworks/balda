@@ -173,7 +173,7 @@ func SettleQuestionControlsEnvelope(from actorlayer.ActorAddress, locator Locato
 	if err != nil {
 		return actorlayer.Envelope{}, err
 	}
-	dedupeKey := "question:" + questionID + ":controls:clear"
+	dedupeKey := "question:" + questionID + ":controls:clear:" + strings.TrimSpace(messageID)
 	env.ID = dedupeKey
 	env.DedupeKey = dedupeKey
 	return env, nil

@@ -93,9 +93,11 @@ func (f SessionPreparerFunc) Prepare(ctx context.Context, inbound InboundContext
 
 // QuestionResolution represents the outcome of resolving a question reply.
 type QuestionResolution struct {
-	Matched      bool
-	Settled      bool
-	Continuation actorlayer.Envelope
+	Matched bool
+	Settled bool
+	// RecoveryPending means SQL already owns admission independently of this inbound.
+	RecoveryPending bool
+	Continuation    actorlayer.Envelope
 }
 
 // QuestionResolver resolves question replies to determine if a question was answered.

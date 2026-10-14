@@ -155,14 +155,18 @@ func (s *Service) handleQuestionReply(ctx context.Context, request Request) (boo
 		return true, false, actorlayer.TransientError(fmt.Errorf("runtime is unavailable"))
 	}
 	continuation := resolution.Continuation
-	if inboundID := strings.TrimSpace(string(request.ID)); inboundID != "" {
-		continuation.DedupeKey = inboundID
-	}
 	receipt, err := s.dispatcher.Dispatch(ctx, continuation)
 	if err != nil {
+		if resolution.RecoveryPending {
+			s.logger.Warn().Err(err).Msg("saved question answer retained for autonomous admission")
+			return true, true, nil
+		}
 		return true, false, err
 	}
 	if receipt == nil {
+		if resolution.RecoveryPending {
+			return true, true, nil
+		}
 		return true, false, actorlayer.TransientError(fmt.Errorf("question continuation dispatch returned no receipt"))
 	}
 	return true, true, nil

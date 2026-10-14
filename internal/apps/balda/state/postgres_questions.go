@@ -84,11 +84,15 @@ func (s *postgresQuestionStore) BindQuestionDeliveryRef(ctx context.Context, que
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := s.db.ExecContext(ctx, postgresBind(`
 		UPDATE balda_questions
-		SET provider = ?, conversation_key = ?, provider_message_id = ?, reply_handle = ?, control_handle = ?, updated_at = ?
+		SET provider = ?, conversation_key = ?, provider_message_id = ?, reply_handle = ?, control_handle = ?, answer_controls_pending = CASE WHEN status = 'answered' AND (provider <> ? OR conversation_key <> ? OR provider_message_id <> ? OR control_handle <> ?) THEN TRUE ELSE answer_controls_pending END, updated_at = ?
 		WHERE question_id = ?`), strings.TrimSpace(ref.Provider),
 		strings.TrimSpace(ref.ConversationKey),
 		strings.TrimSpace(ref.ProviderMessageID),
 		strings.TrimSpace(ref.ReplyHandle),
+		strings.TrimSpace(ref.ControlHandle),
+		strings.TrimSpace(ref.Provider),
+		strings.TrimSpace(ref.ConversationKey),
+		strings.TrimSpace(ref.ProviderMessageID),
 		strings.TrimSpace(ref.ControlHandle),
 		now,
 		strings.TrimSpace(questionID),
@@ -105,12 +109,11 @@ func (s *postgresQuestionStore) GetQuestionByID(ctx context.Context, questionID 
 	return record, found, redactPostgresError(err)
 }
 
-func (s *postgresQuestionStore) GetPendingQuestionByReplyRef(ctx context.Context, provider, conversationKey, replyToMessageID string) (QuestionRecord, bool, error) {
+func (s *postgresQuestionStore) GetQuestionByReplyRef(ctx context.Context, provider, conversationKey, replyToMessageID string) (QuestionRecord, bool, error) {
 	row := s.db.QueryRowContext(ctx, postgresBind(questionSelectSQL+`
-	 WHERE provider = ? AND conversation_key = ? AND provider_message_id = ? AND status = ?`), strings.TrimSpace(provider),
+	 WHERE provider = ? AND conversation_key = ? AND provider_message_id = ?`), strings.TrimSpace(provider),
 		strings.TrimSpace(conversationKey),
 		strings.TrimSpace(replyToMessageID),
-		questioncmd.StatusPending,
 	)
 	record, found, err := scanQuestion(row.Scan)
 	return record, found, redactPostgresError(err)
@@ -129,7 +132,7 @@ func (s *postgresQuestionStore) MarkQuestionAnswered(ctx context.Context, questi
 		ctx,
 		questionID,
 		`UPDATE balda_questions
-		SET status = ?, answer_json = ?, answered_at = ?, updated_at = ?
+		SET status = ?, answer_json = ?, answered_at = ?, updated_at = ?, answer_continuation_pending = TRUE, answer_controls_pending = TRUE
 		WHERE question_id = ? AND status = ?`,
 		questioncmd.StatusAnswered,
 		answerJSON,
@@ -219,4 +222,19 @@ func (s *postgresQuestionStore) updateQuestionResolution(
 		return QuestionRecord{}, false, err
 	}
 	return record, affected > 0 && ok, nil
+}
+
+func (s *postgresQuestionStore) PendingQuestionAnswerIDs(ctx context.Context, afterID string, limit int) ([]string, error) {
+	ids, err := pendingQuestionAnswerIDs(ctx, s.db, postgresBind(pendingQuestionAnswerIDsSQL), afterID, limit)
+	return ids, redactPostgresError(err)
+}
+
+func (s *postgresQuestionStore) MarkQuestionAnswerAdmitted(ctx context.Context, questionID string) error {
+	_, err := s.db.ExecContext(ctx, postgresBind(markQuestionAnswerAdmittedSQL), time.Now().UTC().Format(time.RFC3339), strings.TrimSpace(questionID), questioncmd.StatusAnswered)
+	return redactPostgresError(err)
+}
+
+func (s *postgresQuestionStore) MarkQuestionAnswerControlsCleared(ctx context.Context, questionID string, ref questioncmd.DeliveryRef) error {
+	_, err := s.db.ExecContext(ctx, postgresBind(markQuestionAnswerControlsClearedSQL), strings.TrimSpace(questionID), strings.TrimSpace(ref.Provider), strings.TrimSpace(ref.ConversationKey), strings.TrimSpace(ref.ProviderMessageID), strings.TrimSpace(ref.ControlHandle))
+	return redactPostgresError(err)
 }

@@ -448,7 +448,7 @@ func (*fakeQuestionStoreForTimeout) BindQuestionDeliveryRef(context.Context, str
 func (f *fakeQuestionStoreForTimeout) GetQuestionByID(_ context.Context, questionID string) (baldastate.QuestionRecord, bool, error) {
 	return f.record, f.record.QuestionID == questionID, nil
 }
-func (*fakeQuestionStoreForTimeout) GetPendingQuestionByReplyRef(context.Context, string, string, string) (baldastate.QuestionRecord, bool, error) {
+func (*fakeQuestionStoreForTimeout) GetQuestionByReplyRef(context.Context, string, string, string) (baldastate.QuestionRecord, bool, error) {
 	return baldastate.QuestionRecord{}, false, nil
 }
 func (*fakeQuestionStoreForTimeout) MarkQuestionAnswered(context.Context, string, questioncmd.Answer) (baldastate.QuestionRecord, bool, error) {
@@ -952,4 +952,14 @@ func TestSessionActor_TransportContextInterruptionKeepsEnvelopeRetryable(t *test
 	}
 
 	close(rootRelease)
+}
+
+func (*fakeQuestionStoreForTimeout) PendingQuestionAnswerIDs(context.Context, string, int) ([]string, error) {
+	return nil, nil
+}
+func (*fakeQuestionStoreForTimeout) MarkQuestionAnswerAdmitted(context.Context, string) error {
+	return nil
+}
+func (*fakeQuestionStoreForTimeout) MarkQuestionAnswerControlsCleared(context.Context, string, questioncmd.DeliveryRef) error {
+	return nil
 }

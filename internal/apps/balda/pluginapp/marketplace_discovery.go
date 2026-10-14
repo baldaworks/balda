@@ -101,6 +101,12 @@ func (s *Service) discoverMarketplaceLocked(ctx context.Context, src Marketplace
 	if err != nil {
 		return nil, discoveryUnavailable
 	}
+	// Candidate roots are canonicalized by containedMarketplacePath. Compute
+	// relative paths against the same root, including aliased macOS temp dirs.
+	root, err = filepath.EvalSymlinks(root)
+	if err != nil {
+		return nil, discoveryUnavailable
+	}
 	secure, err := os.OpenRoot(root)
 	if err != nil {
 		return nil, discoveryUnavailable

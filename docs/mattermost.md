@@ -1,5 +1,13 @@
 # Mattermost Integration
 
+Prepared conversational and slash commands use shared durable admission before
+NATS publication. Once persisted, a command stays accepted during a bus outage
+and does not generate a retry/resubmit failure message. A failure before durable
+admission uses a neutral receipt-status notice in the original thread. Shared
+retention and optional NATS storage budgets are documented in
+[configuration](reference/configuration.md#durable-command-admission-and-optional-stream-budgets)
+and [operations](reference/operations.md#command-admission-recovery-and-nats-storage-budgets).
+
 Balda integrates with Mattermost through the v4 websocket and REST APIs using a
 bot account and a personal access token. Unlike the Zulip and Slack transports,
 Mattermost does not expose a per-bot outgoing webhook that preserves threads and

@@ -115,6 +115,10 @@ func TestPluginRetainedDataRootIsContainedExistingDirectory(t *testing.T) {
 	if err = os.MkdirAll(data, 0700); err != nil {
 		t.Fatal(err)
 	}
+	data, err = filepath.EvalSymlinks(data)
+	if err != nil {
+		t.Fatal(err)
+	}
 	got, err := catalog.PluginDataRoot(t.Context(), source)
 	if err != nil || got != data {
 		t.Fatalf("retained data=%q %v", got, err)

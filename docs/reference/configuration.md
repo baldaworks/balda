@@ -823,3 +823,46 @@ or non-regular paths return a stable build error.
   or supplied by an applicable enabled plugin. A selected current or retained
   revision that is unavailable fails closed; saving a definition or worker grant
   does not make it **Ready**.
+
+### Durable command admission and optional stream budgets
+
+The shared chat handler used by Mattermost, commandfx slash-command ingress,
+and Telegram question continuations (text replies and inline choices)
+acknowledge local state-DB persistence,
+not a NATS PubAck or task execution. After local admission, bus unavailability
+keeps the original command pending; it does not return a retryable admission
+failure. The background publisher retries the same envelope and preserves
+per-session order across slash commands, chat turns and question continuations.
+Ordering uses the canonical session ID, falling back to the full actor address
+when no session is present. One Balda process owns publication for its state database.
+
+Question settlement atomically stores the answer and two recovery markers in
+the selected SQL database. A separate job recovers unadmitted continuations
+without another Telegram update, then durably admits control cleanup. Admission
+and cleanup complete independently. The job starts with Balda, scans up to 32
+IDs per pass, and skips past individual invalid answers so others can progress.
+Telegram callback confirmation follows local continuation admission. Controls
+are never cleared merely because the question became `answered`.
+
+The upgrade adds SQLite migration 63 / PostgreSQL migration 28. Existing
+answered history is not automatically replayed; its previous publication cannot
+be inferred safely. Pending questions answered after the upgrade participate in
+recovery. Back up the selected database before upgrading; downgrade requires
+restoring the matching pre-upgrade backup.
+
+Pending admission is capped at 256 commands and 1 MiB per encoded command.
+Commands expire at their earlier envelope deadline or 24 hours after admission.
+Published receipts and expired-command tombstones are retained for seven days
+from settlement, with their command payload removed. A periodic bounded value
+scan physically deletes expired terminal records, including after restart;
+pending commands are excluded. Deduplication is bounded by that retention window.
+These records live in AppKV under `command-outbox/` and belong in state backups.
+
+`balda.nats.bounded_streams` defaults to `false`: an upgrade preserves existing
+per-stream storage settings and does not impose the new proportional budgets.
+With explicit `true`, commands receive 3/8 of `max_store`, events 1/4, DLQ and
+memory 1/8 each, leaving 1/8 reserve. Event history discards its oldest messages
+at its cap. An explicit memory cap may use up to 1/4 of `max_store` under this
+policy. Inspect existing stream bytes before activation: if any proposed cap
+is below retained bytes, startup refuses the opt-in instead of trimming history.
+See [operations](operations.md) for activation and rollback.

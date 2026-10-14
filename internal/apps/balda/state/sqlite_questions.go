@@ -86,12 +86,16 @@ func (s *sqliteQuestionStore) BindQuestionDeliveryRef(ctx context.Context, quest
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE balda_questions
-		SET provider = ?, conversation_key = ?, provider_message_id = ?, reply_handle = ?, control_handle = ?, updated_at = ?
+		SET provider = ?, conversation_key = ?, provider_message_id = ?, reply_handle = ?, control_handle = ?, answer_controls_pending = CASE WHEN status = 'answered' AND (provider <> ? OR conversation_key <> ? OR provider_message_id <> ? OR control_handle <> ?) THEN TRUE ELSE answer_controls_pending END, updated_at = ?
 		WHERE question_id = ?`,
 		strings.TrimSpace(ref.Provider),
 		strings.TrimSpace(ref.ConversationKey),
 		strings.TrimSpace(ref.ProviderMessageID),
 		strings.TrimSpace(ref.ReplyHandle),
+		strings.TrimSpace(ref.ControlHandle),
+		strings.TrimSpace(ref.Provider),
+		strings.TrimSpace(ref.ConversationKey),
+		strings.TrimSpace(ref.ProviderMessageID),
 		strings.TrimSpace(ref.ControlHandle),
 		now,
 		strings.TrimSpace(questionID),
@@ -107,13 +111,12 @@ func (s *sqliteQuestionStore) GetQuestionByID(ctx context.Context, questionID st
 	return scanQuestion(row.Scan)
 }
 
-func (s *sqliteQuestionStore) GetPendingQuestionByReplyRef(ctx context.Context, provider, conversationKey, replyToMessageID string) (QuestionRecord, bool, error) {
+func (s *sqliteQuestionStore) GetQuestionByReplyRef(ctx context.Context, provider, conversationKey, replyToMessageID string) (QuestionRecord, bool, error) {
 	row := s.db.QueryRowContext(ctx, questionSelectSQL+`
-	 WHERE provider = ? AND conversation_key = ? AND provider_message_id = ? AND status = ?`,
+	 WHERE provider = ? AND conversation_key = ? AND provider_message_id = ?`,
 		strings.TrimSpace(provider),
 		strings.TrimSpace(conversationKey),
 		strings.TrimSpace(replyToMessageID),
-		questioncmd.StatusPending,
 	)
 	return scanQuestion(row.Scan)
 }
@@ -131,7 +134,7 @@ func (s *sqliteQuestionStore) MarkQuestionAnswered(ctx context.Context, question
 		ctx,
 		questionID,
 		`UPDATE balda_questions
-		SET status = ?, answer_json = ?, answered_at = ?, updated_at = ?
+		SET status = ?, answer_json = ?, answered_at = ?, updated_at = ?, answer_continuation_pending = TRUE, answer_controls_pending = TRUE
 		WHERE question_id = ? AND status = ?`,
 		questioncmd.StatusAnswered,
 		answerJSON,
@@ -229,7 +232,7 @@ const questionSelectSQL = `
 	SELECT question_id, session_id, channel_kind, address_key, address_json,
 	       prompt, status, interaction_json, resume_json, request_json, answer_json, failure_json,
 	       provider, conversation_key, provider_message_id, reply_handle, control_handle,
-	       expires_at, answered_at, failed_at, created_at, updated_at
+	       expires_at, answered_at, failed_at, created_at, updated_at, answer_continuation_pending, answer_controls_pending
 	FROM balda_questions`
 
 func scanQuestion(scan func(dest ...any) error) (QuestionRecord, bool, error) {
@@ -264,6 +267,8 @@ func scanQuestion(scan func(dest ...any) error) (QuestionRecord, bool, error) {
 		&failedAtRaw,
 		&createdAtRaw,
 		&updatedAtRaw,
+		&record.AnswerContinuationPending,
+		&record.AnswerControlsPending,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -311,4 +316,49 @@ func parseOptionalTime(raw string) time.Time {
 		return time.Time{}
 	}
 	return parsed.UTC()
+}
+
+func (s *sqliteQuestionStore) PendingQuestionAnswerIDs(ctx context.Context, afterID string, limit int) ([]string, error) {
+	return pendingQuestionAnswerIDs(ctx, s.db, pendingQuestionAnswerIDsSQL, afterID, limit)
+}
+
+func (s *sqliteQuestionStore) MarkQuestionAnswerAdmitted(ctx context.Context, questionID string) error {
+	_, err := s.db.ExecContext(ctx, markQuestionAnswerAdmittedSQL, time.Now().UTC().Format(time.RFC3339), strings.TrimSpace(questionID), questioncmd.StatusAnswered)
+	if err != nil {
+		return fmt.Errorf("complete question answer admission: %w", err)
+	}
+	return nil
+}
+
+const pendingQuestionAnswerIDsSQL = `SELECT question_id FROM balda_questions WHERE (answer_continuation_pending = TRUE OR answer_controls_pending = TRUE) AND status = 'answered' AND question_id > ? ORDER BY question_id LIMIT ?`
+const markQuestionAnswerAdmittedSQL = `UPDATE balda_questions SET answer_continuation_pending = FALSE, updated_at = ? WHERE question_id = ? AND status = ?`
+
+func pendingQuestionAnswerIDs(ctx context.Context, db *sql.DB, query, afterID string, limit int) ([]string, error) {
+	if limit < 1 || limit > 64 {
+		return nil, fmt.Errorf("question answer batch limit must be between 1 and 64")
+	}
+	rows, err := db.QueryContext(ctx, query, afterID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list pending question answers: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("read pending question answer: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+const markQuestionAnswerControlsClearedSQL = `UPDATE balda_questions SET answer_controls_pending = FALSE WHERE question_id = ? AND answer_continuation_pending = FALSE AND provider = ? AND conversation_key = ? AND provider_message_id = ? AND control_handle = ?`
+
+func (s *sqliteQuestionStore) MarkQuestionAnswerControlsCleared(ctx context.Context, questionID string, ref questioncmd.DeliveryRef) error {
+	_, err := s.db.ExecContext(ctx, markQuestionAnswerControlsClearedSQL, strings.TrimSpace(questionID), strings.TrimSpace(ref.Provider), strings.TrimSpace(ref.ConversationKey), strings.TrimSpace(ref.ProviderMessageID), strings.TrimSpace(ref.ControlHandle))
+	if err != nil {
+		return fmt.Errorf("complete question answer controls: %w", err)
+	}
+	return nil
 }

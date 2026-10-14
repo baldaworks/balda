@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/baldaworks/go-actorlayer"
-	"github.com/google/uuid"
 	"github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/go-actorlayer"
+	"github.com/google/uuid"
 )
 
 const (
@@ -159,8 +159,9 @@ func AnsweredEnvelope(resume ResumeTarget, interaction InteractionContext, answe
 	if err != nil {
 		return actorlayer.Envelope{}, fmt.Errorf("encode answered continuation: %w", err)
 	}
+	dedupeKey := "question:" + strings.TrimSpace(questionID) + ":answered"
 	return actorlayer.Envelope{
-		ID:        uuid.NewString(),
+		ID:        uuid.NewSHA1(uuid.NameSpaceOID, []byte("balda:"+dedupeKey)).String(),
 		Namespace: actorcmd.NamespaceQuestionCommand,
 		Kind:      actorcmd.KindQuestionAnswered,
 		From:      actorlayer.SystemAddress("question"),
@@ -175,7 +176,7 @@ func AnsweredEnvelope(resume ResumeTarget, interaction InteractionContext, answe
 			"answered_at":           answer.AnsweredAt.UTC().Format(time.RFC3339),
 		},
 		Priority:  80,
-		DedupeKey: "question:" + strings.TrimSpace(questionID) + ":answered",
+		DedupeKey: dedupeKey,
 		Payload:   data,
 	}, nil
 }
