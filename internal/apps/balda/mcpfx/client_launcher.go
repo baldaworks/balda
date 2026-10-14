@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/mcpruntime"
@@ -48,25 +49,33 @@ func (l *ClientLauncher) StartDiagnostic(ctx context.Context, key mcpruntime.Ins
 
 func (*ClientLauncher) start(ctx context.Context, key mcpruntime.InstanceKey, config mcpruntime.LaunchConfig, closeTimeout time.Duration, diagnostic bool) (mcpruntime.Instance, error) {
 	observation := newLaunchObservation(config.URL)
+	var requests *diagnosticRequestLifecycle
+	if diagnostic && config.Transport == transportStreamableHTTP {
+		requests = newDiagnosticRequestLifecycle()
+	}
 	requestCloseTimeout := closeTimeout
 	if diagnostic && config.Transport != transportStreamableHTTP {
 		// Non-HTTP diagnostics retain a separate outer wait budget. HTTP close
 		// is joined below, so its bounded shutdown request may use the full share.
 		requestCloseTimeout /= 2
 	}
-	transport, err := clientTransport(config, observation, requestCloseTimeout, diagnostic)
+	transport, err := clientTransport(config, observation, requestCloseTimeout, diagnostic, requests)
 	if err != nil {
 		return nil, err
 	}
+	var connectionClose *diagnosticConnectionClose
 	if diagnostic {
-		transport = cancellationClosingTransport{Transport: transport}
+		connectionClose = newDiagnosticConnectionClose()
+		transport = &cancellationClosingTransport{Transport: transport, close: connectionClose}
 	}
 	client := mcp.NewClient(&mcp.Implementation{Name: "balda-runtime-catalog", Version: "1"}, nil)
 	session, err := client.Connect(ctx, transport, nil)
 	if err != nil {
+		connectionClose.join()
+		requests.join()
 		return nil, launchFailure(ctx, observedFailure(config, observation))
 	}
-	instance := &clientInstance{session: session, joinClose: diagnostic && config.Transport == transportStreamableHTTP}
+	instance := &clientInstance{session: session, connectionClose: connectionClose, requests: requests}
 	if err := instance.discover(ctx, key); err != nil {
 		closeCtx, closeCancel := context.WithTimeout(context.WithoutCancel(ctx), closeTimeout)
 		defer closeCancel()
@@ -79,22 +88,122 @@ func (*ClientLauncher) start(ctx context.Context, key mcpruntime.InstanceKey, co
 // cancellationClosingTransport ties the SDK connection lifetime to the
 // diagnostic context. The SDK otherwise detaches HTTP session state from the
 // connect context before initialize and tools/list complete.
-type cancellationClosingTransport struct{ mcp.Transport }
+type cancellationClosingTransport struct {
+	mcp.Transport
+	close *diagnosticConnectionClose
+}
 
-func (t cancellationClosingTransport) Connect(ctx context.Context) (mcp.Connection, error) {
+func (t *cancellationClosingTransport) Connect(ctx context.Context) (mcp.Connection, error) {
 	connection, err := t.Transport.Connect(ctx)
 	if err != nil {
 		return nil, err
 	}
-	context.AfterFunc(ctx, func() { _ = connection.Close() })
+	t.close.bind(ctx, connection)
 	return connection, nil
 }
 
-func (t cancellationClosingTransport) SupportsProtocolVersion(version string) bool {
+func (t *cancellationClosingTransport) SupportsProtocolVersion(version string) bool {
 	if supporter, ok := t.Transport.(mcp.ProtocolVersionSupporter); ok {
 		return supporter.SupportsProtocolVersion(version)
 	}
 	return true
+}
+
+// diagnosticConnectionClose owns the cancellation callback registered for a
+// detached SDK connection and makes its completion joinable.
+type diagnosticConnectionClose struct {
+	mu         sync.Mutex
+	stop       func() bool
+	connection mcp.Connection
+	done       chan struct{}
+	complete   sync.Once
+}
+
+func newDiagnosticConnectionClose() *diagnosticConnectionClose {
+	return &diagnosticConnectionClose{done: make(chan struct{})}
+}
+
+func (c *diagnosticConnectionClose) bind(ctx context.Context, connection mcp.Connection) {
+	stop := context.AfterFunc(ctx, func() {
+		defer c.finish()
+		_ = connection.Close()
+	})
+	c.mu.Lock()
+	c.stop = stop
+	c.connection = connection
+	c.mu.Unlock()
+}
+
+func (c *diagnosticConnectionClose) join() {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	stop := c.stop
+	connection := c.connection
+	c.mu.Unlock()
+	if stop == nil {
+		c.finish()
+	} else if stop() {
+		_ = connection.Close()
+		c.finish()
+	}
+	<-c.done
+}
+
+func (c *diagnosticConnectionClose) finish() {
+	c.complete.Do(func() { close(c.done) })
+}
+
+// diagnosticRequestLifecycle joins every HTTP RoundTrip started before
+// session shutdown. SDK cancellation may return before those calls unwind.
+type diagnosticRequestLifecycle struct {
+	mu      sync.Mutex
+	active  int
+	closing bool
+	cond    *sync.Cond
+}
+
+func newDiagnosticRequestLifecycle() *diagnosticRequestLifecycle {
+	lifecycle := &diagnosticRequestLifecycle{}
+	lifecycle.cond = sync.NewCond(&lifecycle.mu)
+	return lifecycle
+}
+
+func (l *diagnosticRequestLifecycle) begin() func() {
+	if l == nil {
+		return func() {}
+	}
+	l.mu.Lock()
+	if l.closing {
+		l.mu.Unlock()
+		return nil
+	}
+	l.active++
+	l.mu.Unlock()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			l.mu.Lock()
+			l.active--
+			if l.active == 0 {
+				l.cond.Broadcast()
+			}
+			l.mu.Unlock()
+		})
+	}
+}
+
+func (l *diagnosticRequestLifecycle) join() {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.closing = true
+	for l.active != 0 {
+		l.cond.Wait()
+	}
 }
 
 func observedFailure(config mcpruntime.LaunchConfig, observation *launchObservation) func() mcpruntime.FailureReason {
@@ -104,7 +213,7 @@ func observedFailure(config mcpruntime.LaunchConfig, observation *launchObservat
 	return observation.failure
 }
 
-func clientTransport(config mcpruntime.LaunchConfig, observation *launchObservation, closeTimeout time.Duration, diagnostic bool) (mcp.Transport, error) {
+func clientTransport(config mcpruntime.LaunchConfig, observation *launchObservation, closeTimeout time.Duration, diagnostic bool, requests *diagnosticRequestLifecycle) (mcp.Transport, error) {
 	switch config.Transport {
 	case transportStdio:
 		if strings.TrimSpace(config.Command) == "" {
@@ -135,7 +244,7 @@ func clientTransport(config mcpruntime.LaunchConfig, observation *launchObservat
 		if strings.TrimSpace(config.URL) == "" {
 			return nil, errors.New("MCP URL is required")
 		}
-		client, err := headerClient(config, observation, closeTimeout)
+		client, err := headerClient(config, observation, closeTimeout, requests)
 		if err != nil {
 			return nil, err
 		}
@@ -149,7 +258,7 @@ func clientTransport(config mcpruntime.LaunchConfig, observation *launchObservat
 		if strings.TrimSpace(config.URL) == "" {
 			return nil, errors.New("MCP URL is required")
 		}
-		client, err := headerClient(config, observation, closeTimeout)
+		client, err := headerClient(config, observation, closeTimeout, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -165,9 +274,10 @@ type clientSession interface {
 }
 
 type clientInstance struct {
-	session   clientSession
-	tools     []mcpruntime.Tool
-	joinClose bool
+	session         clientSession
+	tools           []mcpruntime.Tool
+	connectionClose *diagnosticConnectionClose
+	requests        *diagnosticRequestLifecycle
 }
 
 func (i *clientInstance) discover(ctx context.Context, key mcpruntime.InstanceKey) error {
@@ -200,13 +310,19 @@ func (i *clientInstance) Close(ctx context.Context) error {
 	if i == nil || i.session == nil {
 		return nil
 	}
-	if i.joinClose {
-		// Diagnostic HTTP bounds its own shutdown request. Join that bounded
-		// close so no cleanup worker survives the request-scoped diagnostic.
-		return i.session.Close()
+	closeSession := func() error {
+		err := i.session.Close()
+		i.connectionClose.join()
+		i.requests.join()
+		return err
+	}
+	if i.requests != nil {
+		// Diagnostic HTTP bounds each shutdown request. Join the SDK session,
+		// cancellation callback, and all RoundTrips before returning.
+		return closeSession()
 	}
 	done := make(chan error, 1)
-	go func() { done <- i.session.Close() }()
+	go func() { done <- closeSession() }()
 	select {
 	case err := <-done:
 		return err
@@ -234,9 +350,15 @@ type headerTransport struct {
 	origin       *url.URL
 	observation  *launchObservation
 	closeTimeout time.Duration
+	requests     *diagnosticRequestLifecycle
 }
 
 func (t headerTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	finishRequest := t.requests.begin()
+	if finishRequest == nil {
+		return nil, errors.New("MCP diagnostic is closing")
+	}
+	defer finishRequest()
 	// SDK session shutdown and cancellation notifications use detached
 	// contexts. Bound both without limiting healthy MCP requests.
 	if request.Method == http.MethodDelete || isMCPCancellation(request) {
@@ -286,8 +408,8 @@ func sameHTTPOrigin(left, right *url.URL) bool {
 	return strings.EqualFold(left.Scheme, right.Scheme) && strings.EqualFold(left.Host, right.Host)
 }
 
-func headerClient(config mcpruntime.LaunchConfig, observation *launchObservation, closeTimeout time.Duration) (*http.Client, error) {
-	transport := headerTransport{base: http.DefaultTransport, headers: config.Headers, observation: observation, closeTimeout: closeTimeout}
+func headerClient(config mcpruntime.LaunchConfig, observation *launchObservation, closeTimeout time.Duration, requests *diagnosticRequestLifecycle) (*http.Client, error) {
+	transport := headerTransport{base: http.DefaultTransport, headers: config.Headers, observation: observation, closeTimeout: closeTimeout, requests: requests}
 	client := &http.Client{}
 	if config.EnforceHTTPOrigin {
 		origin, err := url.Parse(config.URL)

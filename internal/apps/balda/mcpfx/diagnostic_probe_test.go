@@ -17,6 +17,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpruntime"
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -302,20 +303,36 @@ func testDiagnosticProbeWaitsForCanceledDiscoverySessionCleanup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	probe.timeout = 60 * time.Millisecond
+	probe.timeout = 5 * time.Second
 	probe.closeTimeout = 250 * time.Millisecond
-	result := probe.DiagnoseMCP(t.Context(), mcpcmd.Revision{
-		ConnectionID: "worker",
-		ID:           "exact-revision",
-		Definition:   mcpcmd.Definition{Transport: mcpcmd.TransportHTTP, URL: upstream.URL},
-	})
+	ctx, cancel := context.WithCancel(t.Context())
+	resultCh := make(chan mcpcmd.DiagnosticResult, 1)
+	go func() {
+		resultCh <- probe.DiagnoseMCP(ctx, mcpcmd.Revision{
+			ConnectionID: "worker",
+			ID:           "exact-revision",
+			Definition:   mcpcmd.Definition{Transport: mcpcmd.TransportHTTP, URL: upstream.URL},
+		})
+	}()
+	select {
+	case <-laterPage:
+		cancel()
+	case <-time.After(5 * time.Second):
+		cancel()
+		t.Fatal("later tools page did not start")
+	}
+	var result mcpcmd.DiagnosticResult
+	select {
+	case result = <-resultCh:
+	case <-time.After(time.Second):
+		t.Fatal("canceled diagnostic did not finish cleanup")
+	}
 	if result.Outcome != mcpcmd.DiagnosticFailed || result.ToolCount != 0 {
 		t.Fatalf("canceled discovery diagnostic = %+v", result)
 	}
 	for name, signal := range map[string]<-chan struct{}{
-		"later tools page": laterPage,
-		"tools request":    pageDrained,
-		"session delete":   deleteDrained,
+		"tools request":  pageDrained,
+		"session delete": deleteDrained,
 	} {
 		select {
 		case <-signal:
@@ -344,50 +361,106 @@ func (l diagnosticLauncherFixture) StartDiagnostic(context.Context, mcpruntime.I
 	return l.instance, nil
 }
 
-type blockingCloseSession struct {
+type cancelingCloseSession struct {
+	cancel context.CancelFunc
+}
+
+func (*cancelingCloseSession) ListTools(context.Context, *mcp.ListToolsParams) (*mcp.ListToolsResult, error) {
+	return &mcp.ListToolsResult{}, nil
+}
+
+func (s *cancelingCloseSession) Close() error {
+	s.cancel()
+	return nil
+}
+
+type blockingDiagnosticConnection struct {
 	started  chan struct{}
 	release  chan struct{}
 	finished chan struct{}
 }
 
-func (*blockingCloseSession) ListTools(context.Context, *mcp.ListToolsParams) (*mcp.ListToolsResult, error) {
-	return &mcp.ListToolsResult{}, nil
+func (*blockingDiagnosticConnection) Read(context.Context) (jsonrpc.Message, error) {
+	return nil, io.EOF
 }
 
-func (s *blockingCloseSession) Close() error {
-	close(s.started)
-	<-s.release
-	close(s.finished)
+func (*blockingDiagnosticConnection) Write(context.Context, jsonrpc.Message) error { return nil }
+
+func (c *blockingDiagnosticConnection) Close() error {
+	close(c.started)
+	<-c.release
+	close(c.finished)
 	return nil
 }
 
-func TestDiagnosticClientInstanceJoinsSessionCleanup(t *testing.T) {
-	session := &blockingCloseSession{started: make(chan struct{}), release: make(chan struct{}), finished: make(chan struct{})}
-	instance := &clientInstance{session: session, joinClose: true}
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Millisecond)
+func (*blockingDiagnosticConnection) SessionID() string { return "diagnostic-session" }
+
+func TestDiagnosticHTTPClientInstanceJoinsCancellationLifecycle(t *testing.T) {
+	requestCtx, cancelRequest := context.WithCancel(t.Context())
+	connectionCtx, cancelConnection := context.WithCancel(t.Context())
+	session := &cancelingCloseSession{cancel: func() {
+		cancelRequest()
+		cancelConnection()
+	}}
+	requests := newDiagnosticRequestLifecycle()
+	finishRequest := requests.begin()
+	requestStarted := make(chan struct{})
+	requestRelease := make(chan struct{})
+	requestFinished := make(chan struct{})
+	go func() {
+		<-requestCtx.Done()
+		close(requestStarted)
+		<-requestRelease
+		finishRequest()
+		close(requestFinished)
+	}()
+	connection := &blockingDiagnosticConnection{started: make(chan struct{}), release: make(chan struct{}), finished: make(chan struct{})}
+	connectionClose := newDiagnosticConnectionClose()
+	connectionClose.bind(connectionCtx, connection)
+	instance := &clientInstance{session: session, connectionClose: connectionClose, requests: requests}
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
 	returned := make(chan error, 1)
 	go func() { returned <- instance.Close(ctx) }()
-	select {
-	case <-session.started:
-	case <-time.After(time.Second):
-		t.Fatal("session cleanup did not start")
+	for name, started := range map[string]<-chan struct{}{"connection callback": connection.started, "request drain": requestStarted} {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatalf("%s did not start", name)
+		}
 	}
 	select {
 	case err := <-returned:
-		close(session.release)
-		<-session.finished
-		t.Fatalf("diagnostic close returned before session cleanup: %v", err)
-	case <-time.After(30 * time.Millisecond):
+		close(connection.release)
+		close(requestRelease)
+		<-connection.finished
+		<-requestFinished
+		t.Fatalf("diagnostic close returned before cancellation cleanup: %v", err)
+	default:
 	}
-	close(session.release)
+	close(connection.release)
+	<-connection.finished
+	select {
+	case err := <-returned:
+		close(requestRelease)
+		<-requestFinished
+		t.Fatalf("diagnostic close returned before request drain: %v", err)
+	default:
+	}
+	close(requestRelease)
 	if err := <-returned; err != nil {
 		t.Fatalf("joined diagnostic close failed: %v", err)
 	}
-	select {
-	case <-session.finished:
-	default:
-		t.Fatal("diagnostic close returned with cleanup worker active")
+	for name, finished := range map[string]<-chan struct{}{"connection callback": connection.finished, "request drain": requestFinished} {
+		select {
+		case <-finished:
+		default:
+			t.Fatalf("diagnostic close returned with %s active", name)
+		}
+	}
+	if finish := requests.begin(); finish != nil {
+		finish()
+		t.Fatal("request lifecycle accepted work after diagnostic close")
 	}
 }
 
