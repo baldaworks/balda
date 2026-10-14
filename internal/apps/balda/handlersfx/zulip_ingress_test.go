@@ -1,7 +1,11 @@
 package handlersfx
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -10,8 +14,10 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/automodecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/zulip"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/commandfx"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
+	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
@@ -39,6 +45,12 @@ type recordingZulipDispatcher struct {
 }
 
 type recordingZulipCommandIngress struct{ requests []commandcmd.Request }
+
+type fixedZulipSnapshotResolver struct{}
+
+func (fixedZulipSnapshotResolver) ResolveEffectiveSnapshot(context.Context, commandfx.SnapshotRequest) (runtimecatalogcmd.SnapshotID, error) {
+	return "snapshot-1", nil
+}
 
 func (r *recordingZulipCommandIngress) PublishCommand(_ context.Context, req commandcmd.Request) error {
 	r.requests = append(r.requests, req)
@@ -76,6 +88,79 @@ func TestZulipInboundHandlerPublishesActorOwnedCommands(t *testing.T) {
 				t.Fatalf("skill args = %q, want %q", got.Payload.Args, args)
 			}
 		})
+	}
+}
+
+func TestZulipWebhookPublishesProjectedCommand(t *testing.T) {
+	ownerStore, err := auth.NewOwnerStore(&fakeZulipOwnerKVStore{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ownerStore.RegisterOwnerSubject(auth.ZulipSubject(101)); err != nil {
+		t.Fatal(err)
+	}
+	registry := commandcmd.NewRegistry()
+	registry.Replace(zulip.ChannelType, commandcmd.AdvertisementProjection{
+		Commands: []commandcmd.ProjectedCommand{{Name: "deploy"}},
+	})
+	dispatcher := &recordingZulipDispatcher{}
+	inbound := &zulipInboundHandler{
+		ownerStore:      ownerStore,
+		actorDispatcher: dispatcher,
+		commandIngress:  commandfx.NewCommandIngress(dispatcher, fixedZulipSnapshotResolver{}),
+		logger:          zerolog.Nop(),
+		ownerID:         101,
+	}
+	server := zulip.NewServer(zulip.ServerParams{
+		Processor: inbound, Commands: registry,
+		ZulipWebhookToken: "synthetic-token", ZulipEnabled: true, Logger: zerolog.Nop(),
+	})
+	webhook, _, err := server.HTTPCallback()
+	if err != nil {
+		t.Fatal(err)
+	}
+	send := func(messageID int, text string) {
+		t.Helper()
+		body, err := json.Marshal(zulip.WebhookPayload{
+			Token: "synthetic-token", Data: text,
+			Message: zulip.WebhookMessage{
+				ID: messageID, SenderID: 101, SenderEmail: "owner@example.com",
+				Type: "private", Content: text,
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		recorder := httptest.NewRecorder()
+		webhook.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/zulip/webhook", bytes.NewReader(body)))
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("webhook status for %q = %d, want 200", text, recorder.Code)
+		}
+	}
+
+	send(88, "/DePlOy release  candidate")
+	if len(dispatcher.commands) != 1 {
+		t.Fatalf("dispatched envelopes = %d, want 1", len(dispatcher.commands))
+	}
+	envelope := dispatcher.commands[0]
+	if envelope.ID != "zulip:command:88" || envelope.DedupeKey != envelope.ID || envelope.To.Target != baldaexecution.ActorTypeCommand {
+		t.Fatalf("command envelope = %+v", envelope)
+	}
+	payload, err := commandcmd.Decode(envelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if payload.Name != "deploy" || payload.Args != "release candidate" || payload.SnapshotID != "snapshot-1" || payload.Transport != zulip.ChannelType || payload.Principal != "zulip-101" || !payload.Access.Owner || !payload.Conversation.Direct {
+		t.Fatalf("command payload = %+v", payload)
+	}
+
+	send(89, "/missing")
+	if len(dispatcher.commands) != 2 {
+		t.Fatalf("dispatched envelopes = %d, want command and unknown reply", len(dispatcher.commands))
+	}
+	replies := zulipDeliveryPayloads(t, dispatcher.commands)
+	if len(replies) != 1 || replies[0].Text != "Unknown command: /missing" {
+		t.Fatalf("unknown command replies = %+v", replies)
 	}
 }
 
