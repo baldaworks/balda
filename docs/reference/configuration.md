@@ -822,7 +822,9 @@ acknowledge local state-DB persistence,
 not a NATS PubAck or task execution. After local admission, bus unavailability
 keeps the original command pending; it does not return a retryable admission
 failure. The background publisher retries the same envelope and preserves
-per-session order. One Balda process owns publication for its state database.
+per-session order across slash commands, chat turns and question continuations.
+Ordering uses the canonical session ID, falling back to the full actor address
+when no session is present. One Balda process owns publication for its state database.
 
 Question settlement atomically stores the answer and two recovery markers in
 the selected SQL database. A separate job recovers unadmitted continuations

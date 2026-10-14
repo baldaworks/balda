@@ -469,6 +469,7 @@ deps:
   command_outbox:
     mayDependOn:
       - command_outbox
+      - contracts
     anyVendorDeps: false
     canUse:
       - command_outbox_runtime

@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
@@ -211,15 +212,16 @@ func (d *Dispatcher) Flush(ctx context.Context) error {
 			return ctx.Err()
 		}
 		record := item.record
-		if blocked[item.env.To] {
+		scope := publicationScope(item.env)
+		if blocked[scope] {
 			continue
 		}
 		if record.NextAttempt.After(d.now()) {
-			blocked[item.env.To] = true
+			blocked[scope] = true
 			continue
 		}
 		if _, err := d.publish(ctx, item.key, &record); err != nil {
-			blocked[item.env.To] = true
+			blocked[scope] = true
 		}
 		attempts++
 		if attempts >= 32 {
@@ -227,6 +229,13 @@ func (d *Dispatcher) Flush(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func publicationScope(env actorlayer.Envelope) actorlayer.ActorAddress {
+	if sessionID := actorcmd.EnvelopeSessionID(env); sessionID != "" {
+		return actorlayer.ActorAddress{Target: actorcmd.ActorTypeSession, Key: sessionID}
+	}
+	return env.To
 }
 
 type pendingIngress struct {
