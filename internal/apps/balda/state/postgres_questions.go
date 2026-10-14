@@ -105,12 +105,11 @@ func (s *postgresQuestionStore) GetQuestionByID(ctx context.Context, questionID 
 	return record, found, redactPostgresError(err)
 }
 
-func (s *postgresQuestionStore) GetPendingQuestionByReplyRef(ctx context.Context, provider, conversationKey, replyToMessageID string) (QuestionRecord, bool, error) {
+func (s *postgresQuestionStore) GetQuestionByReplyRef(ctx context.Context, provider, conversationKey, replyToMessageID string) (QuestionRecord, bool, error) {
 	row := s.db.QueryRowContext(ctx, postgresBind(questionSelectSQL+`
-	 WHERE provider = ? AND conversation_key = ? AND provider_message_id = ? AND status = ?`), strings.TrimSpace(provider),
+	 WHERE provider = ? AND conversation_key = ? AND provider_message_id = ?`), strings.TrimSpace(provider),
 		strings.TrimSpace(conversationKey),
 		strings.TrimSpace(replyToMessageID),
-		questioncmd.StatusPending,
 	)
 	record, found, err := scanQuestion(row.Scan)
 	return record, found, redactPostgresError(err)

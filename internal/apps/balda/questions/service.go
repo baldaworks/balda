@@ -22,7 +22,7 @@ type Store interface {
 	CreatePendingQuestion(ctx context.Context, record baldastate.QuestionRecord) error
 	BindQuestionDeliveryRef(ctx context.Context, questionID string, ref questioncmd.DeliveryRef) error
 	GetQuestionByID(ctx context.Context, questionID string) (baldastate.QuestionRecord, bool, error)
-	GetPendingQuestionByReplyRef(ctx context.Context, provider, conversationKey, replyToMessageID string) (baldastate.QuestionRecord, bool, error)
+	GetQuestionByReplyRef(ctx context.Context, provider, conversationKey, replyToMessageID string) (baldastate.QuestionRecord, bool, error)
 	MarkQuestionAnswered(ctx context.Context, questionID string, answer questioncmd.Answer) (baldastate.QuestionRecord, bool, error)
 	MarkQuestionTimedOut(ctx context.Context, questionID string, timedOutAt time.Time) (baldastate.QuestionRecord, bool, error)
 }
@@ -185,9 +185,12 @@ func (s *Service) ResolveReplyDetailed(ctx context.Context, in questioncmd.Inbou
 	if s.store == nil {
 		return ReplyResolution{}, fmt.Errorf("question store is required")
 	}
-	record, ok, err := s.store.GetPendingQuestionByReplyRef(ctx, strings.TrimSpace(in.Provider), strings.TrimSpace(in.ConversationKey), strings.TrimSpace(in.ReplyToMessageID))
+	record, ok, err := s.store.GetQuestionByReplyRef(ctx, strings.TrimSpace(in.Provider), strings.TrimSpace(in.ConversationKey), strings.TrimSpace(in.ReplyToMessageID))
 	if err != nil || !ok {
 		return ReplyResolution{Record: record, Matched: ok}, err
+	}
+	if record.Status != questioncmd.StatusPending {
+		return replayAnsweredReply(record, in)
 	}
 	request, err := decodeRequest(record)
 	if err != nil {
@@ -220,7 +223,31 @@ func (s *Service) ResolveReplyDetailed(ctx context.Context, in questioncmd.Inbou
 		}
 		return ReplyResolution{Record: updated, Continuation: continuation, Matched: true, Settled: true}, nil
 	}
+	if err == nil && updated.Status == questioncmd.StatusAnswered {
+		// Another delivery may have settled this answer after our lookup.
+		return replayAnsweredReply(updated, in)
+	}
 	return ReplyResolution{Record: updated, Matched: true, Settled: settled}, err
+}
+
+// An answered record is the durable recovery source if admission fails after
+// settlement. Only the original provider message may replay its continuation;
+// later replies to the same prompt remain ordinary conversational input.
+func replayAnsweredReply(record baldastate.QuestionRecord, in questioncmd.InboundReply) (ReplyResolution, error) {
+	result := ReplyResolution{Record: record}
+	if record.Status != questioncmd.StatusAnswered || strings.TrimSpace(in.MessageID) == "" {
+		return result, nil
+	}
+	var answer questioncmd.Answer
+	if err := json.Unmarshal([]byte(record.AnswerJSON), &answer); err != nil {
+		return ReplyResolution{Record: record, Matched: true}, fmt.Errorf("decode question answer: %w", err)
+	}
+	if strings.TrimSpace(answer.ProviderMsgID) != strings.TrimSpace(in.MessageID) ||
+		strings.TrimSpace(answer.AnsweredBy.UserID) != strings.TrimSpace(in.User.UserID) {
+		return result, nil
+	}
+	continuation, err := answeredContinuation(record)
+	return ReplyResolution{Record: record, Continuation: continuation, Matched: true, Settled: true}, err
 }
 
 // SelectionResolution reports whether a structured selection matched and

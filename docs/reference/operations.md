@@ -54,6 +54,13 @@ user request. Do not ask the user to resubmit an admitted command; inspect the
 original envelope, with its original identity. This is an at-least-once handoff;
 execution consumers must retain their existing command-identity deduplication.
 
+If a question answer settles before continuation admission fails, retrying the
+same provider message rebuilds the continuation from the persisted `answered`
+record, including after restart. Its question-based envelope ID and deduplication
+key remain stable even if the ingress wrapper ID changes. The retry cannot
+replace the saved answer or become an ordinary turn. A different, later message
+replying to that prompt remains ordinary conversational input.
+
 Pending commands expire after at most 24 hours. Expired payloads are removed;
 terminal receipts/tombstones are collected after seven days. Recovery logs an
 expired unpublished command; local admission is not a promise of execution or

@@ -87,8 +87,8 @@ func (f *fakeTelegramQuestionStore) GetQuestionByID(_ context.Context, questionI
 	return f.record, f.record.QuestionID == questionID, nil
 }
 
-func (f *fakeTelegramQuestionStore) GetPendingQuestionByReplyRef(_ context.Context, provider, conversationKey, replyToMessageID string) (baldastate.QuestionRecord, bool, error) {
-	found := f.record.Status == questioncmd.StatusPending && f.record.Provider == provider &&
+func (f *fakeTelegramQuestionStore) GetQuestionByReplyRef(_ context.Context, provider, conversationKey, replyToMessageID string) (baldastate.QuestionRecord, bool, error) {
+	found := f.record.Provider == provider &&
 		f.record.ConversationKey == conversationKey && f.record.ProviderMessageID == replyToMessageID
 	return f.record, found, nil
 }

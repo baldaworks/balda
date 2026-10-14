@@ -155,9 +155,6 @@ func (s *Service) handleQuestionReply(ctx context.Context, request Request) (boo
 		return true, false, actorlayer.TransientError(fmt.Errorf("runtime is unavailable"))
 	}
 	continuation := resolution.Continuation
-	if inboundID := strings.TrimSpace(string(request.ID)); inboundID != "" {
-		continuation.DedupeKey = inboundID
-	}
 	receipt, err := s.dispatcher.Dispatch(ctx, continuation)
 	if err != nil {
 		return true, false, err

@@ -326,6 +326,7 @@ func TestService_HandleChat_QuestionReply_SettledActivates(t *testing.T) {
 
 	continuationEnv := actorlayer.Envelope{
 		ID:        "env-cont-1",
+		DedupeKey: "question:question-1:answered",
 		Namespace: "session",
 		Kind:      "continuation",
 	}
@@ -369,8 +370,8 @@ func TestService_HandleChat_QuestionReply_SettledActivates(t *testing.T) {
 	if len(dispatcher.envelopes) != 1 {
 		t.Fatalf("dispatched = %d, want 1", len(dispatcher.envelopes))
 	}
-	if dispatcher.envelopes[0].DedupeKey != "in-q1" {
-		t.Fatalf("dedupeKey = %q, want %q", dispatcher.envelopes[0].DedupeKey, "in-q1")
+	if dispatcher.envelopes[0].DedupeKey != continuationEnv.DedupeKey {
+		t.Fatalf("dedupeKey = %q, want %q", dispatcher.envelopes[0].DedupeKey, continuationEnv.DedupeKey)
 	}
 	// Session preparer must not be called when handled via question
 	if sessions.calls != 0 {

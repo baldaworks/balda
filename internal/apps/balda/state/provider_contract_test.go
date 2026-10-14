@@ -744,12 +744,12 @@ func checkProvider_QuestionStoreRoundTrip(t *testing.T, open contractOpener) {
 	}); err != nil {
 		t.Fatalf("BindQuestionDeliveryRef() error = %v", err)
 	}
-	got, ok, err := store.GetPendingQuestionByReplyRef(ctx, "telegram", "1:0", "42")
+	got, ok, err := store.GetQuestionByReplyRef(ctx, "telegram", "1:0", "42")
 	if err != nil {
-		t.Fatalf("GetPendingQuestionByReplyRef() error = %v", err)
+		t.Fatalf("GetQuestionByReplyRef() error = %v", err)
 	}
 	if !ok {
-		t.Fatal("GetPendingQuestionByReplyRef() found = false, want true")
+		t.Fatal("GetQuestionByReplyRef() found = false, want true")
 	}
 	if got.QuestionID != record.QuestionID {
 		t.Fatalf("question_id = %q, want %q", got.QuestionID, record.QuestionID)
@@ -766,6 +766,10 @@ func checkProvider_QuestionStoreRoundTrip(t *testing.T, open contractOpener) {
 	}
 	if answered.Status != questioncmd.StatusAnswered {
 		t.Fatalf("status = %q, want answered", answered.Status)
+	}
+	got, ok, err = store.GetQuestionByReplyRef(ctx, "telegram", "1:0", "42")
+	if err != nil || !ok || got.AnswerJSON != answered.AnswerJSON {
+		t.Fatalf("answered question unavailable for continuation recovery: %+v %v %v", got, ok, err)
 	}
 }
 

@@ -38,7 +38,7 @@ func (s *reviewQuestionStore) BindQuestionDeliveryRef(_ context.Context, questio
 func (s *reviewQuestionStore) GetQuestionByID(_ context.Context, questionID string) (baldastate.QuestionRecord, bool, error) {
 	return s.record, s.record.QuestionID == questionID, nil
 }
-func (*reviewQuestionStore) GetPendingQuestionByReplyRef(context.Context, string, string, string) (baldastate.QuestionRecord, bool, error) {
+func (*reviewQuestionStore) GetQuestionByReplyRef(context.Context, string, string, string) (baldastate.QuestionRecord, bool, error) {
 	return baldastate.QuestionRecord{}, false, nil
 }
 func (*reviewQuestionStore) MarkQuestionAnswered(context.Context, string, questioncmd.Answer) (baldastate.QuestionRecord, bool, error) {

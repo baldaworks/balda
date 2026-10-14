@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/baldaworks/go-actorlayer"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 )
 
@@ -49,7 +49,7 @@ func (f *fakeStore) BindQuestionDeliveryRef(_ context.Context, questionID string
 func (f *fakeStore) GetQuestionByID(_ context.Context, questionID string) (baldastate.QuestionRecord, bool, error) {
 	return f.record, f.record.QuestionID == questionID, nil
 }
-func (f *fakeStore) GetPendingQuestionByReplyRef(_ context.Context, provider, conversationKey, replyToMessageID string) (baldastate.QuestionRecord, bool, error) {
+func (f *fakeStore) GetQuestionByReplyRef(_ context.Context, provider, conversationKey, replyToMessageID string) (baldastate.QuestionRecord, bool, error) {
 	if f.replyMatch.Provider == provider && f.replyMatch.ConversationKey == conversationKey && f.replyMatch.ProviderMessageID == replyToMessageID {
 		return f.replyMatch, true, nil
 	}
@@ -66,6 +66,30 @@ func (f *fakeStore) MarkQuestionAnswered(_ context.Context, questionID string, a
 	target.Status = questioncmd.StatusAnswered
 	target.AnswerJSON = mustJSON(answer)
 	return *target, true, nil
+}
+
+func TestAnsweredReplyReplaysOnlyOriginalProviderMessage(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		messageID string
+		userID    string
+		wantMatch bool
+	}{
+		{name: "original", messageID: "answer-1", userID: "user-1", wantMatch: true},
+		{name: "later reply", messageID: "answer-2", userID: "user-1"},
+		{name: "different responder", messageID: "answer-1", userID: "user-2"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			record := selectableQuestionRecord()
+			record.Status = questioncmd.StatusAnswered
+			record.AnswerJSON = mustJSON(questioncmd.Answer{Text: "original answer", ProviderMsgID: "answer-1", AnsweredBy: questioncmd.UserRef{UserID: "user-1"}})
+			service := New(&fakeStore{replyMatch: record}, nil, zerolog.Nop())
+			result, err := service.ResolveReplyDetailed(t.Context(), questioncmd.InboundReply{Provider: record.Provider, ConversationKey: record.ConversationKey, ReplyToMessageID: record.ProviderMessageID, MessageID: test.messageID, User: questioncmd.UserRef{UserID: test.userID}})
+			if err != nil || result.Matched != test.wantMatch || result.Settled != test.wantMatch {
+				t.Fatalf("replay resolution = %+v, error = %v", result, err)
+			}
+		})
+	}
 }
 
 type fakeControlPublisher struct {

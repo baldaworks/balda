@@ -107,13 +107,12 @@ func (s *sqliteQuestionStore) GetQuestionByID(ctx context.Context, questionID st
 	return scanQuestion(row.Scan)
 }
 
-func (s *sqliteQuestionStore) GetPendingQuestionByReplyRef(ctx context.Context, provider, conversationKey, replyToMessageID string) (QuestionRecord, bool, error) {
+func (s *sqliteQuestionStore) GetQuestionByReplyRef(ctx context.Context, provider, conversationKey, replyToMessageID string) (QuestionRecord, bool, error) {
 	row := s.db.QueryRowContext(ctx, questionSelectSQL+`
-	 WHERE provider = ? AND conversation_key = ? AND provider_message_id = ? AND status = ?`,
+	 WHERE provider = ? AND conversation_key = ? AND provider_message_id = ?`,
 		strings.TrimSpace(provider),
 		strings.TrimSpace(conversationKey),
 		strings.TrimSpace(replyToMessageID),
-		questioncmd.StatusPending,
 	)
 	return scanQuestion(row.Scan)
 }
