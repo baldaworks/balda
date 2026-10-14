@@ -169,7 +169,7 @@ func TestModule_ProvidesChatHandler(t *testing.T) {
 		fx.NopLogger,
 		fx.Provide(
 			func() *baldasession.Manager { return newTestSessionManager(t) },
-			func() actortransport.Dispatcher { return &fakeDispatcher{} },
+			fx.Annotate(func() chatapp.Dispatcher { return &fakeDispatcher{} }, fx.ResultTags(`name:"command_ingress"`)),
 			zerolog.Nop,
 		),
 		Module,

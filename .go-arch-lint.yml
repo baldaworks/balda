@@ -11,6 +11,12 @@ exclude:
   - .config
 
 vendors:
+  command_outbox_runtime:
+    in:
+      - github.com/baldaworks/go-actorlayer
+      - github.com/baldaworks/go-actorlayer/transport
+      - github.com/rs/zerolog
+
   state_adapters:
     in:
       - github.com/jackc/pgx/v5
@@ -240,6 +246,17 @@ components:
     in:
       - internal/apps/balda/scheduledjobs
 
+  # Job-owned command admission/publication policy has consumer-owned ports
+  # and cannot import storage, ingress, provider or composition implementations.
+  command_outbox:
+    in:
+      - internal/apps/balda/jobs/commandoutbox
+
+  # Only this composition adapter binds outbox ports to AppKV and the bus.
+  command_outbox_wiring:
+    in:
+      - internal/apps/balda/commandoutboxfx
+
   # Runtime contribution compilation and bounded source/content reads. Agent,
   # command, and MCP consumers depend on contracts or local ports; this owner
   # must not reach into their application implementations.
@@ -437,6 +454,24 @@ components:
       - cmd/balda
 
 deps:
+  command_outbox:
+    mayDependOn:
+      - command_outbox
+    anyVendorDeps: false
+    canUse:
+      - command_outbox_runtime
+    # Storage and transport implementations are injected through local ports.
+    deepScan: false
+
+  command_outbox_wiring:
+    mayDependOn:
+      - command_outbox
+      - command_wiring
+      - contracts
+      - storage
+    anyVendorDeps: true
+    deepScan: false
+
   session_memory_core:
     mayDependOn:
       - session_memory_core
@@ -1058,6 +1093,7 @@ deps:
 
   composition_root:
     mayDependOn:
+      - command_outbox_wiring
       - plugin_backoffice_wiring
       - memory_backoffice_wiring
       - memory_policy

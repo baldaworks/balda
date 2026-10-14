@@ -31,6 +31,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/channel/zulip/zulipfx"
 	"github.com/baldaworks/balda/internal/apps/balda/chatfx"
 	"github.com/baldaworks/balda/internal/apps/balda/commandfx"
+	"github.com/baldaworks/balda/internal/apps/balda/commandoutboxfx"
 	"github.com/baldaworks/balda/internal/apps/balda/controlapp"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfx"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryworkflow"
@@ -898,6 +899,7 @@ func Module(
 		mattermostfx.Module,
 		catalogapp.Module,
 		deliveryworkflow.Module,
+		commandoutboxfx.Module,
 		commandfx.Module,
 		chatfx.Module,
 		fx.Provide(fx.Annotate(

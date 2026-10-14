@@ -5,19 +5,20 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorycmd"
 	"github.com/baldaworks/go-actorlayer"
 	actorengine "github.com/baldaworks/go-actorlayer/engine"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/google/uuid"
 	"github.com/nats-io/nats.go/jetstream"
-	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
-	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorycmd"
 	"github.com/rs/zerolog"
 )
 
@@ -371,6 +372,21 @@ func ensureStreams(ctx context.Context, js jetstream.JetStream, cfg resolvedConf
 		streams = append(streams, streamConfig(cfg.Execution.Memory.Stream, []string{sessionmemorycmd.SubjectAll}, jetstream.WorkQueuePolicy, cfg.Memory))
 	}
 	for _, stream := range streams {
+		if stream.MaxBytes > 0 {
+			existing, err := js.Stream(ctx, stream.Name)
+			if err != nil && !errors.Is(err, jetstream.ErrStreamNotFound) {
+				return fmt.Errorf("inspect stream %s before retention change: %w", stream.Name, err)
+			}
+			if err == nil {
+				info, err := existing.Info(ctx)
+				if err != nil {
+					return fmt.Errorf("inspect stream %s before retention change: %w", stream.Name, err)
+				}
+				if info.State.Bytes > uint64(stream.MaxBytes) {
+					return fmt.Errorf("stream %s retains more than its new storage cap; archive history before reducing retention", stream.Name)
+				}
+			}
+		}
 		if _, err := js.CreateOrUpdateStream(ctx, stream); err != nil {
 			return fmt.Errorf("create or update stream %s: %w", stream.Name, err)
 		}

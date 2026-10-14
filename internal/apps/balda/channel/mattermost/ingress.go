@@ -2,6 +2,8 @@ package mattermost
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -587,6 +589,7 @@ func (s *Ingress) processInboundWithRetry(ctx context.Context, postID string, me
 		}
 		if attempt == websocketProcessMaxAttempts {
 			s.logger.Warn().Err(err).Int("attempts", attempt).Str("post_id", postID).Msg("mattermost inbound retry budget exhausted")
+			s.notifyInboundFailure(ctx, postID, message)
 			return
 		}
 		timer := time.NewTimer(time.Duration(attempt) * websocketProcessRetryBackoff)
@@ -601,6 +604,27 @@ func (s *Ingress) processInboundWithRetry(ctx context.Context, postID string, me
 			}
 			return
 		}
+	}
+}
+
+func (s *Ingress) notifyInboundFailure(ctx context.Context, postID string, message InboundMessage) {
+	if s.client == nil {
+		return
+	}
+	address, ok, err := DecodeLocator(message.Locator)
+	if err != nil || !ok {
+		return
+	}
+	root := message.RootID
+	if root == "" {
+		root = postID
+	}
+	digest := sha256.Sum256([]byte("balda-ingress-failure/" + postID))
+	callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	_, err = s.client.createPost(callCtx, address.ChannelID, root, "Command receipt could not be confirmed. Check the task status before submitting another request.", hex.EncodeToString(digest[:13]))
+	if err != nil {
+		s.logger.Error().Err(err).Str("post_id", postID).Msg("failed to deliver ingress failure")
 	}
 }
 

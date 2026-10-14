@@ -66,6 +66,14 @@ func resolveConfig(natsCfg baldaeventbus.Config, executionCfg baldaexecution.Con
 	out.Events = streamSpec{MaxAge: 30 * 24 * time.Hour, MaxBytes: -1, MaxMsgSize: -1, Discard: "old"}
 	out.DLQ = streamSpec{MaxAge: 30 * 24 * time.Hour, MaxBytes: -1, MaxMsgSize: -1, Discard: "new"}
 	out.Memory = streamSpec{MaxAge: 7 * 24 * time.Hour, MaxBytes: -1, MaxMsgSize: -1, Discard: "new"}
+	// Reserve capacity for commands and the DLQ. Event history must never be
+	// allowed to consume the entire account and prevent new command admission.
+	if normalizedNATS.BoundedStreams && out.MaxStore > 0 {
+		out.Commands.MaxBytes = out.MaxStore * 3 / 8
+		out.Events.MaxBytes = out.MaxStore / 4
+		out.DLQ.MaxBytes = out.MaxStore / 8
+		out.Memory.MaxBytes = out.MaxStore / 8
+	}
 	out.AckWait, err = parseDuration(normalizedExecution.Commands.AckWait)
 	if err != nil {
 		return resolvedConfig{}, fmt.Errorf("balda.execution.commands.ack_wait: %w", err)
@@ -85,6 +93,12 @@ func resolveConfig(natsCfg baldaeventbus.Config, executionCfg baldaexecution.Con
 		}
 		if out.Memory.MaxBytes == 0 || out.Memory.MaxBytes < -1 {
 			return resolvedConfig{}, fmt.Errorf("balda.session_memory.max_bytes must be positive or -1")
+		}
+		if normalizedNATS.BoundedStreams && out.Memory.MaxBytes == -1 && out.MaxStore > 0 {
+			out.Memory.MaxBytes = out.MaxStore / 8
+		}
+		if normalizedNATS.BoundedStreams && out.MaxStore > 0 && out.Memory.MaxBytes > out.MaxStore/4 {
+			return resolvedConfig{}, fmt.Errorf("session memory storage exceeds reserved NATS capacity")
 		}
 		maxMsgSize, msgErr := parseBytes(normalizedExecution.Memory.MaxMsgSize)
 		if msgErr != nil {

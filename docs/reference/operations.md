@@ -43,3 +43,38 @@
 13. `/close` in a topic resets history and closes that topic; `/close` in a DM main chat resets that chat's current main session.
 14. With `balda.sessions.persistence=sqlite`, process restart restores conversation history and explicit `/reset` or `/close` clears it for the current session.
 15. `balda eval-fixtures` validates deterministic scenario fixtures in `testdata/scenarios` and checks golden event manifests; use `--scenario` and `--actual-events` for event-type comparison.
+
+## Command admission recovery and NATS storage budgets
+
+For the shared Mattermost chat handler and commandfx ingress, a successful
+receipt means the local state database owns the queued
+command. NATS failure after that point is deferred publication, not a failed
+user request. Do not ask the user to resubmit an admitted command; inspect the
+`command-outbox/pending/` records and publication logs. Recovery republishes the
+original envelope, with its original identity. This is an at-least-once handoff;
+execution consumers must retain their existing command-identity deduplication.
+
+Pending commands expire after at most 24 hours. Expired payloads are removed;
+terminal receipts/tombstones are collected after seven days. Recovery logs an
+expired unpublished command; local admission is not a promise of execution or
+a terminal task result. Deduplication of the same inbound identity is guaranteed
+only within the documented retention window. Back up AppKV with the state DB.
+
+Existing installations keep `balda.nats.bounded_streams: false`. To opt in:
+
+1. Stop admission, take a consistent backup of state and NATS storage, and inspect
+   each stream's retained bytes through the configured monitoring/operator tools.
+2. Select `max_store` so all current streams fit their proposed budgets. If
+   history must be reduced, archive it through a separate explicit operator
+   action first. Enabling this setting never silently archives or deletes it.
+3. Set `balda.nats.bounded_streams: true`, restart, and verify command admission,
+   event retention and pending recovery. A cap below retained data rejects startup
+   before that stream is reduced.
+4. If activation is rejected, set `bounded_streams: false` and restart with the
+   prior resource configuration. Rejection preserves existing history; it does
+   not require deleting streams or reinitializing application state.
+
+A pre-admission transport/DB failure may still produce a neutral Mattermost
+receipt-status message in the original thread. Private diagnostics stay in logs.
+A persisted command with an unavailable NATS publisher follows the accepted path
+and does not produce that failure message.
