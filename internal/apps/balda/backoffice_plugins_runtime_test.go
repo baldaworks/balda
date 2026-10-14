@@ -171,15 +171,21 @@ func exercisePluginsRuntimeContracts(t *testing.T, git bool) {
 		t.Fatalf("retained revisions=%+v %v", revisions, err)
 	}
 
-	// Reopen the actual SQLite provider and Fx catalog owners. Restore must use
-	// the durable snapshot, although both install and external source are gone.
+	// Reopen the actual SQLite provider and Fx catalog owners. The retained
+	// snapshot can no longer attach the removed plugin, so restore starts fresh
+	// with the current catalog and updates the saved snapshot.
 	f.reopen(t)
 	restored, err := f.sessions.RestoreSession(t.Context(), session.SessionContext{Locator: oldLocator})
-	if err != nil || restored.GetRuntimeSnapshotID() != oldRecord.RuntimeSnapshotID {
+	if err != nil || restored.GetRuntimeSnapshotID() == oldRecord.RuntimeSnapshotID {
 		t.Fatalf("restore=%+v %v", restored, err)
 	}
-	f.assertPinned(t, oldLocator, oldRecord, oldSnapshot)
-	f.assertMCPBinding(t, oldLocator, oldSnapshot)
+	recovered := f.record(t, oldLocator)
+	if recovered.RuntimeSnapshotID != restored.GetRuntimeSnapshotID() {
+		t.Fatalf("recovered metadata snapshot = %q, want %q", recovered.RuntimeSnapshotID, restored.GetRuntimeSnapshotID())
+	}
+	f.assertAbsent(t, f.snapshot(t, recovered.RuntimeSnapshotID))
+	f.assertNoMCPBinding(t, oldLocator)
+	f.assertVersion(t, oldSnapshot, "1.0.0")
 	if err = f.sessions.ResetSession(t.Context(), oldLocator); err != nil {
 		t.Fatal(err)
 	}

@@ -3,14 +3,14 @@
 ## Overview
 
 Balda chat selects one app-scoped provider configuration per process
-(`balda.provider`) and creates an isolated provider runtime/session for each
-Balda topic session. Enabled session memory may use a separate provider from
+(`balda.provider`) and creates an isolated ADK session runtime for each Balda
+topic session. Enabled session memory may use a separate provider from
 `runtime.providers` for extraction; that provider never changes chat or
 GoalKeeper sessions.
 
 - The provider is initialized before message handling.
 - The owner main-DM session (`topic_id=0` in the owner DM) is bootstrapped for the owner chat during activation.
-- On restart, that owner main-DM session follows the same restore path as regular sessions: restore persisted metadata first, then fall back to fresh create only when no persisted record exists.
+- On restart, that owner main-DM session follows the same restore path as regular sessions: Balda first opens the saved ADK session with its exact runtime snapshot. If that restore fails while startup is still active, Balda attempts a fresh ADK session at the same locator with current capabilities.
 - Other direct-message main-chat sessions and public/topic sessions are restored or created lazily on demand. They use the same configured provider but not a shared mutable runtime.
 
 ## Manual session control
@@ -65,16 +65,27 @@ package ownership is documented in the
 ## Session restore/create behavior
 
 - Balda restores persisted session metadata on first message after restart.
-- When `balda.sessions.persistence=sqlite`, restore reuses the stable session ID and prior session history/state.
+- When `balda.sessions.persistence=sqlite`, exact restore reuses the stable session ID and prior session history/state.
 - Session metadata includes one non-empty runtime catalog snapshot ID. Restore
-  reuses that exact pin; an unavailable non-empty pin fails closed instead of
-  silently adopting current capabilities.
+  first uses that exact pin. If binding the snapshot or opening the saved ADK
+  session fails, Balda attempts a fresh session at the same validated locator
+  with the current eligible capabilities. Caller cancellation and shutdown stop
+  this fallback.
+- Fresh fallback keeps the stable ADK session ID, applies the session rotation
+  boundary, and replaces the saved ADK session with Delete/Create. This clears
+  its prior ADK state and history. After creation succeeds, Balda persists the
+  current snapshot; an ordinary restart then opens that snapshot exactly.
+- If binding, deletion, creation, or persistence for the fresh fallback fails,
+  restore remains an error and Balda does not expose a partially restored
+  session.
 - A legacy record without a pin selects and persists current capabilities once.
 - Provider construction receives skill metadata and the MCP list from the same
-  pinned snapshot. MCP is supplied at provider session create/restore, not with
-  each prompt. Commands and explicit skills also resolve from that pin.
-- Every turn reuses the session's existing runner. `/reset` closes it and
-  creates a new runtime from the current catalog snapshot.
+  pinned snapshot. MCP is supplied when the ADK session runtime is created or
+  restored, not with each prompt. Commands and explicit skills also resolve
+  from that pin.
+- Every turn reuses the session's existing runner. `/reset` remains a separate
+  explicit action: it closes the runner and creates a new runtime from the
+  current catalog snapshot.
 - Persisted session label is reused as-is for restore; if missing, balda falls back to label `auto`.
 - In workspace mode, restore first tries to sync the session branch with the configured base branch.
 - If that sync conflicts, balda recreates a clean worktree on the persisted session branch, restores the session anyway, and sends a short warning that the workspace was reset to the saved session-branch state and Balda can retry the sync later.

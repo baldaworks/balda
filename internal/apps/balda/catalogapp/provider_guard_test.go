@@ -56,7 +56,7 @@ func testActualProviderOriginGuard(t *testing.T, catalog *Runtime, registry *mcp
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		runtime, err := manager.RuntimeForSession(ctx, baldaagent.SessionRuntimeRequest{RuntimeSnapshotID: string(snapshotID)})
 		if err == nil {
-			created, createErr := builder.CreateRuntimeSession(ctx, runtime, "alpha", "fixture-user", "guard-session", workspace, baldaagent.RuntimeSessionContext{BaldaSessionID: "guard-fixture"})
+			created, createErr := builder.CreateFreshRuntimeSession(ctx, runtime, "alpha", "fixture-user", "guard-session", workspace, baldaagent.RuntimeSessionContext{BaldaSessionID: "guard-fixture"})
 			err = createErr
 			if err == nil {
 				_, err = runProviderTurn(ctx, runtime, created.ID(), "invoke worker")

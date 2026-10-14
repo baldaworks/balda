@@ -10,7 +10,12 @@ Session key:
 - The owner session is bootstrapped for the bound owner DM chat (`topic_id=0`) during activation/startup when an owner is already registered.
 
 Balda always persists session metadata in `state.db` for lazy restore.
-By default, Balda also persists session history and state in `state.db` until the session is explicitly closed. Set `balda.sessions.persistence=memory` to keep conversation/runtime state process-local while retaining Balda session metadata for lazy restore.
+By default, Balda also persists session history and state in `state.db`. Exact
+restore reuses them after restart. Explicit `/reset` or `/close`, and successful
+automatic fresh-session fallback after exact restore fails, clear prior ADK
+state and history. Set `balda.sessions.persistence=memory` to keep
+conversation/runtime state process-local while retaining Balda session metadata
+for lazy restore.
 
 ## Message flow
 

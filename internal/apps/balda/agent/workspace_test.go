@@ -225,6 +225,9 @@ func TestEnsureWorkspace_UsesStateDirSessionsRoot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureWorkspace() error = %v", err)
 	}
+	if !got.Created {
+		t.Fatal("EnsureWorkspace() Created = false, want true for newly mounted workspace")
+	}
 	workspaceDir := got.Dir
 	t.Cleanup(func() {
 		_ = runGitAllowError(ctx, workingDir, "worktree", "remove", "--force", workspaceDir)
@@ -236,6 +239,13 @@ func TestEnsureWorkspace_UsesStateDirSessionsRoot(t *testing.T) {
 	}
 	if _, err := os.Stat(workspaceDir); err != nil {
 		t.Fatalf("stat workspaceDir %q: %v", workspaceDir, err)
+	}
+	reused, err := m.EnsureWorkspace(ctx, sessionID, branchName, workspaceDir)
+	if err != nil {
+		t.Fatalf("EnsureWorkspace(reused) error = %v", err)
+	}
+	if reused.Created {
+		t.Fatal("EnsureWorkspace(reused) Created = true, want false")
 	}
 }
 

@@ -30,9 +30,10 @@ Status: active
   idle retries. Native MCP discovery returns within 10 seconds and calls/reconnect
   within 120 seconds; ACP initialization and attachment RPCs within 10 seconds, earlier caller
   deadlines winning. Owned SDK cleanup remains retained after caller return.
-  Local structural/protection errors fail closed; availability never filters
-  acquisition or changes pins/history. Equal-binding retry preserves snapshot,
-  revision and provider identity without remote discovery.
+  Local structural/protection errors fail the exact operation; availability
+  never filters acquisition. Normal invocation and equal-binding retry preserve
+  snapshot, history, revision and provider identity without remote discovery.
+  Failed ADK session restore follows the fresh-session fallback below.
 - Owned stdio workers are scheduled before startup advances and never join
   handshake readiness. Discovery is bounded to 10 seconds; process exit/failure retries
   after 1/2/4/8/16/30 seconds with a 60-second stable reset. Final reference drain/shutdown cancel
@@ -86,9 +87,19 @@ Status: active
 - Session boundaries are explicit: `session` owns create/restore/reset/lifecycle semantics and may consume shared delivery contracts, but it must not become the home of transport delivery contract types.
 - Each session persists one runtime catalog snapshot before exposure. Command
   lookup and skill metadata/selection use that exact snapshot; MCP identities
-  are supplied only when the provider session is created or restored. Every
-  turn reuses `TopicSession`'s runner. Restore fails closed for an unavailable
-  non-empty pin, while reset deliberately selects current capabilities.
+  are supplied only when the ADK session runtime is created or restored. Every
+  turn reuses `TopicSession`'s runner. Restore first validates the persisted
+  metadata, active status, and locator identity; those validation failures
+  remain errors. It then binds the exact persisted snapshot and opens and
+  validates the existing ADK session. Failure to bind that snapshot or
+  open/validate that session, except caller cancellation or shutdown,
+  automatically attempts a fresh ADK session at the same validated locator with
+  current eligible capabilities. The fallback uses the stable ADK session ID,
+  applies the rotation boundary, replaces the old ADK session with
+  Delete/Create, and therefore clears its prior ADK state and history. Balda
+  persists the current snapshot before exposing the replacement; any fallback
+  failure remains an error. `/reset` remains a separate explicit action that
+  deliberately selects current capabilities.
 - Provider-open Goose SQL migrations mark persisted configured MCP descriptors
   from the pre-targeting catalog format without rewriting snapshots, session
   pins or history. `catalogapp` consumes those exact markers at restore and
@@ -98,9 +109,9 @@ Status: active
   original environment/header **key-only** revision contract; historical private
   values were never persisted and cannot be verified. New snapshots keep full-value
   revisions and retained targeting. Missing markers or changed structural/key
-  definitions fail closed. There is no application-lifecycle migration or restore
-  write. This temporary format adapter can be removed when old session pins have
-  aged out through normal explicit reset; upgrades never reset sessions.
+  definitions fail the exact restore attempt. The migration itself performs no
+  application-lifecycle reset or restore write. Failed restore can subsequently
+  replace the saved ADK session through the ordinary fresh-session fallback.
 - Adapter boundaries are explicit: transport/use-case integrations should prefer package-local ports with composition-root adapters instead of reaching directly into concrete runtime or transport implementations.
 - Ingress construction is fail-fast: formatting/registry validation and all downstream runtime dependencies must resolve before any ingress lifecycle stage can accept work.
 - Telegram polling settlement is explicit: the provider-owned offset boundary advances only after accepted or terminal event processing; retryable handler outcomes preserve the previous offset for stable-ID replay, while webhook settlement remains request-local.
