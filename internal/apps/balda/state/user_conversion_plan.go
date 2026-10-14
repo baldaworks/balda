@@ -15,7 +15,10 @@ import (
 	"github.com/google/uuid"
 )
 
-const channelTelegram = "telegram"
+const (
+	channelTelegram   = "telegram"
+	channelSlackAgent = "slackagent"
+)
 
 // Preserve the identity namespace and fingerprint format of completed upgrades.
 var userConversionNamespace = uuid.MustParse("90af3ae2-6775-50e3-b4fc-54fc0d011a55")
@@ -209,7 +212,7 @@ func parseConversionSubject(raw string) (string, string, error) {
 		if err != nil || value <= 0 {
 			return "", "", fmt.Errorf("legacy subject %q has invalid numeric principal", raw)
 		}
-	case "slackagent":
+	case channelSlackAgent:
 		team, userID, ok := strings.Cut(principal, ":")
 		if !ok || strings.TrimSpace(team) == "" || strings.TrimSpace(userID) == "" {
 			return "", "", fmt.Errorf("legacy subject %q has invalid Slack principal", raw)

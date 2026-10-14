@@ -11,6 +11,7 @@ import (
 
 	"testing"
 
+	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/pressly/goose/v3"
 	_ "modernc.org/sqlite"
 )
@@ -71,7 +72,7 @@ func TestSQLitePrimaryAdministratorUsernameMigration(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	if username != "superuser" || normalized != "superuser" || displayName != "superuser" || role != "administrator" ||
+	if username != usercmd.PrimaryUsername || normalized != usercmd.PrimaryUsername || displayName != usercmd.PrimaryUsername || role != "administrator" ||
 		passwordHash != "hash" || userVersion != 3 || credentialVersion != 1 {
 		t.Fatalf("migrated primary = %q/%q/%q %q hash=%q versions=%d/%d", username, normalized, displayName, role, passwordHash, userVersion, credentialVersion)
 	}
@@ -110,7 +111,7 @@ func TestSQLiteTelegramBindingProfileBackfill(t *testing.T) {
 	if _, err := provider.UpTo(t.Context(), 40); err != nil {
 		t.Fatal(err)
 	}
-	insertSQLiteUser(t, db, "admin-1", "superuser", true)
+	insertSQLiteUser(t, db, "admin-1", usercmd.PrimaryUsername, true)
 	insertSQLiteUser(t, db, "operator-1", "operator", false)
 	if _, err := db.ExecContext(t.Context(), `INSERT INTO balda_user_migrations
 		(migration_id, source_fingerprint, generated_user_count, generated_binding_count, primary_user_id, completed_at)
@@ -393,7 +394,6 @@ func TestSQLiteProvider_MigratesPreviousSchemaAtVersion8(t *testing.T) {
 	if jobID != "previous-daily-review" || content != "Review previous queue" {
 		t.Fatalf("migrated scheduled job = %q/%q, want previous-daily-review/Review previous queue", jobID, content)
 	}
-
 }
 
 func TestSQLiteProvider_Migration11BackfillsBuggyTelegramAddressColumns(t *testing.T) {
@@ -827,7 +827,7 @@ func TestSQLiteRollingRefreshUpgrade(t *testing.T) {
 	if _, err := p.UpTo(t.Context(), 46); err != nil {
 		t.Fatal(err)
 	}
-	insertSQLiteUser(t, db, "admin-1", "superuser", true)
+	insertSQLiteUser(t, db, "admin-1", usercmd.PrimaryUsername, true)
 	insertSQLiteSession(t, db)
 	insertSQLiteRefresh(t, db, "refresh-1", 1, "active", "", "2026-09-24T00:00:00Z")
 	if _, err := p.Up(t.Context()); err != nil {

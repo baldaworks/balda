@@ -121,7 +121,7 @@ func validateMCPGrantMutation(m MCPGrantMutation) error {
 		return mcpcmd.ErrInvalid
 	}
 	switch g.TokenEndpointAuthMethod {
-	case "none", "client_secret_basic", "client_secret_post":
+	case "none", mcpcmd.ClientAuthSecretBasic, "client_secret_post":
 	default:
 		return mcpcmd.ErrInvalid
 	}
