@@ -123,7 +123,14 @@ func clientTransport(config mcpruntime.LaunchConfig, observation *launchObservat
 		if config.InheritEnvironment {
 			command.Env = append(os.Environ(), command.Env...)
 		}
-		return &mcp.CommandTransport{Command: command}, nil
+		transport := &mcp.CommandTransport{Command: command}
+		if diagnostic {
+			// CommandTransport can wait after stdin close, SIGTERM, and SIGKILL.
+			// Divide the transport share so all phases and cmd.Wait finish before
+			// the diagnostic cleanup context expires.
+			transport.TerminateDuration = max(closeTimeout/3, time.Nanosecond)
+		}
+		return transport, nil
 	case transportStreamableHTTP:
 		if strings.TrimSpace(config.URL) == "" {
 			return nil, errors.New("MCP URL is required")
