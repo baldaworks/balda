@@ -72,6 +72,11 @@ func (m *Manager) EnsureTransientSession(ctx context.Context, sessionCtx Session
 func (m *Manager) RestoreSession(ctx context.Context, sessionCtx SessionContext) (*TopicSession, error) {
 	locator := sessionCtx.Locator
 	sessionID := strings.TrimSpace(locator.SessionID)
+	endLifecycle, err := m.beginLifecycleOperation(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer endLifecycle()
 
 	unlock := m.lockSessionOperation(sessionID)
 	m.mu.RLock()
@@ -115,12 +120,15 @@ func (m *Manager) RestoreSession(ctx context.Context, sessionCtx SessionContext)
 	// still uses the old ID for the same address.
 	lookupID := strings.TrimSpace(recordLocator.SessionID)
 	unlock = m.lockSessionOperation(lookupID)
+	defer unlock()
 	m.mu.RLock()
 	active := m.sessions[lookupID]
 	m.mu.RUnlock()
-	unlock()
 	if active != nil {
 		return active, nil
+	}
+	if err := m.lifecycleInterruption(ctx); err != nil {
+		return nil, err
 	}
 
 	restoredCtx := SessionContext{
@@ -130,10 +138,16 @@ func (m *Manager) RestoreSession(ctx context.Context, sessionCtx SessionContext)
 	if userID := strings.TrimSpace(record.UserID); userID != "" {
 		restoredCtx.UserID = userID
 	}
-	if err := m.createSession(ctx, restoredCtx, sessionLabel, &record, false); err != nil {
+	if err := m.createSessionLocked(ctx, restoredCtx, sessionLabel, &record, false); err != nil {
 		return nil, err
 	}
-	return m.GetSession(recordLocator)
+	m.mu.RLock()
+	restored := m.sessions[lookupID]
+	m.mu.RUnlock()
+	if restored == nil {
+		return nil, fmt.Errorf("restored session %q was not published", lookupID)
+	}
+	return restored, nil
 }
 
 func (m *Manager) RuntimeStateValue(ctx context.Context, locator SessionLocator, key string) (any, bool, error) {

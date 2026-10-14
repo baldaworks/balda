@@ -100,7 +100,7 @@ func testACPInvocationWithServers(t *testing.T, catalog *Runtime, registry *mcpr
 			cancel()
 			t.Fatal(err)
 		}
-		created, err := builder.CreateRuntimeSession(ctx, runtime, providerID, "fixture-user", "provider-session", workspace, baldaagent.RuntimeSessionContext{BaldaSessionID: "ACP-fixture"})
+		created, err := builder.CreateFreshRuntimeSession(ctx, runtime, providerID, "fixture-user", "provider-session", workspace, baldaagent.RuntimeSessionContext{BaldaSessionID: "ACP-fixture"})
 		if err != nil {
 			cancel()
 			_ = manager.Stop(context.Background())

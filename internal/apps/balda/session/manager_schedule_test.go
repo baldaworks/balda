@@ -6,25 +6,27 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/rs/zerolog"
 	adksession "google.golang.org/adk/v2/session"
 )
 
 type cleanupWorkspaceFixture struct {
-	root    string
-	cleaned string
-	deleted string
+	root         string
+	ensureResult EnsureWorkspaceResult
+	cleaned      string
+	deleted      string
 }
 
 func (w *cleanupWorkspaceFixture) CanonicalWorkspaceDir(key string) string {
 	return filepath.Join(w.root, key)
 }
 
-func (*cleanupWorkspaceFixture) ForceRemountCanonicalWorkspace(context.Context, string, string) (EnsureWorkspaceResult, error) {
-	return EnsureWorkspaceResult{}, nil
+func (w *cleanupWorkspaceFixture) ForceRemountCanonicalWorkspace(context.Context, string, string) (EnsureWorkspaceResult, error) {
+	return w.ensureResult, nil
 }
 
-func (*cleanupWorkspaceFixture) EnsureWorkspace(context.Context, string, string, string) (EnsureWorkspaceResult, error) {
-	return EnsureWorkspaceResult{}, nil
+func (w *cleanupWorkspaceFixture) EnsureWorkspace(context.Context, string, string, string) (EnsureWorkspaceResult, error) {
+	return w.ensureResult, nil
 }
 
 func (*cleanupWorkspaceFixture) Import(context.Context, string) error                 { return nil }
@@ -38,6 +40,40 @@ func (w *cleanupWorkspaceFixture) CleanupWorkspace(_ context.Context, path strin
 func (w *cleanupWorkspaceFixture) DeleteBranch(_ context.Context, branchName string) error {
 	w.deleted = branchName
 	return nil
+}
+
+func TestFailedSessionCreationPreservesReusedWorkspace(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "existing")
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	workspaces := &cleanupWorkspaceFixture{
+		root:         filepath.Dir(path),
+		ensureResult: EnsureWorkspaceResult{Dir: path, Created: false},
+	}
+	manager := &Manager{
+		baldaProviderName: "balda-provider",
+		runtimeManager:    &fakeBaldaRuntimeManager{runtimeErr: context.Canceled},
+		agentBuilder:      &fakeAgentBuilder{},
+		workingDir:        t.TempDir(),
+		workspaces:        workspaces,
+		workspaceEnabled:  true,
+		logger:            zerolog.Nop(),
+		sessions:          make(map[string]*TopicSession),
+		sessionStore:      &fakeSessionStore{},
+	}
+
+	if _, err := manager.EnsureSession(t.Context(), SessionContext{
+		Locator: testTelegramLocator(10, 42), UserID: "tg-101",
+	}, "topic"); err == nil {
+		t.Fatal("EnsureSession() error = nil, want runtime failure")
+	}
+	if workspaces.cleaned != "" {
+		t.Fatalf("reused workspace was cleaned: %q", workspaces.cleaned)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("reused workspace stat error = %v", err)
+	}
 }
 
 func TestCloseRunSessionAfterRestartCleansWorkspace(t *testing.T) {

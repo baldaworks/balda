@@ -53,6 +53,24 @@ type fakeAgentBuilder struct {
 }
 
 func (f *fakeAgentBuilder) CreateRuntimeSession(
+	ctx context.Context,
+	runtime *baldasession.BuiltRuntime,
+	agentName, userID, sessionID, workspaceDir string,
+	sessionCtx baldasession.RuntimeSessionContext,
+) (adksession.Session, error) {
+	return f.CreateFreshRuntimeSession(ctx, runtime, agentName, userID, sessionID, workspaceDir, sessionCtx)
+}
+
+func (f *fakeAgentBuilder) OpenExistingRuntimeSession(
+	ctx context.Context,
+	runtime *baldasession.BuiltRuntime,
+	agentName, userID, sessionID, workspaceDir string,
+	sessionCtx baldasession.RuntimeSessionContext,
+) (adksession.Session, error) {
+	return f.CreateFreshRuntimeSession(ctx, runtime, agentName, userID, sessionID, workspaceDir, sessionCtx)
+}
+
+func (f *fakeAgentBuilder) CreateFreshRuntimeSession(
 	context.Context,
 	*baldasession.BuiltRuntime,
 	string,

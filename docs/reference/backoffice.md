@@ -34,8 +34,10 @@ Restoration accepts those markers only when the configured source, transport,
 command/arguments, directory, URL and environment/header keys match the original
 revision. These older revisions never recorded binding values or targeting:
 they keep host-file values and provider-default selection. New snapshots retain
-full-value hashes and exact targeting. Missing or mismatched pins still abort
-restoration; no automatic reset or live state repair is required.
+full-value hashes and exact targeting. Restore first attempts those pins
+exactly. If that attempt fails while the caller and service remain active,
+Balda replaces the saved ADK session at the same locator with a fresh one using
+current eligible capabilities; fallback failure still aborts restoration.
 The lifecycle checks canonical administrator bootstrap before MCP or ingress,
 then binds one shared HTTP listener before enabling inbound transports. A failed
 prerequisite, route conflict, or listener bind aborts startup. Shutdown stops
@@ -46,9 +48,11 @@ configuration, including unreachable, unresponsive or unauthorized servers.
 Startup, catalog publication and inventory do not connect to configured HTTP/SSE
 servers. Balda schedules owned stdio discovery before advancing startup, with
 handshake and restart work in supervised workers. MCP failure is an invocation
-or observed-health outcome; it does not remove selected revisions or reset a
-conversation. Missing historical revisions, malformed local/provider settings,
-unavailable protection material and cancellation remain structural errors.
+or observed-health outcome; during a healthy active session it does not remove
+selected revisions or reset a conversation. Missing historical revisions,
+malformed local settings, and unavailable protection material fail exact
+restore and can trigger the fresh-session fallback described above. Caller
+cancellation and shutdown stop that fallback.
 The credential bridge and catalog keep their position before provider construction.
 
 Saving the same worker authorization repairs local projection or a previously
@@ -612,10 +616,12 @@ explanation; the UI does not adopt a replacement origin.
 **Disable plugin**, **Rollback** and **Remove plugin** require confirmation;
 **Cancel** performs no mutation. Rollback selects an exact retained revision
 and preserves Enabled. Remove excludes the installation from future catalog
-selection while retaining revision archives and plugin data. Existing sessions
-keep their exact command, skill and MCP snapshot through restore. No management
-action resets a session: new sessions select the current catalog, and ordinary
-`/reset` explicitly recreates an existing session with current capabilities.
+selection while retaining revision archives and plugin data. Existing active
+sessions keep their exact command, skill and MCP snapshot. Restore first tries
+that snapshot; on failure, Balda may replace the saved ADK session with a fresh
+one using current eligible capabilities. No management action itself resets a
+session: new sessions select the current catalog, and ordinary `/reset`
+explicitly recreates an existing session with current capabilities.
 
 Enabled describes selection policy, rather than readiness. Current catalog,
 runtime health and **Activation outcome** remain separate. If durable acceptance

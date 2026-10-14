@@ -129,7 +129,10 @@ external senders to the canonical URLs and remove `path` from config routes.
 Before storing protected MCP values or worker grants, configure the deployment
 [MCP credential key](docs/reference/configuration.md#protected-values-and-worker-grants)
 and keep it with your database backup. Existing sessions retain their captured
-MCP revision; create or reset a session to activate changed definitions.
+MCP revision while active. Create a session, or explicitly `/reset` a healthy
+active session, to activate changed definitions. If an exact persisted snapshot
+cannot restore, automatic fresh-session fallback may instead adopt current
+eligible capabilities.
 
 `balda init` creates `.config/balda/config.yaml`, initializes
 `.config/balda/state.db` by default, detects available provider CLIs, and prints

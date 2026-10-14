@@ -33,6 +33,7 @@ import (
 	"github.com/normahq/runtime/v2/agentfactory"
 	runtimeconfig "github.com/normahq/runtime/v2/appconfig"
 	"github.com/normahq/runtime/v2/mcpregistry"
+	"github.com/normahq/runtime/v2/sessionstate"
 	"github.com/pressly/goose/v3"
 	"github.com/rs/zerolog"
 	adkagent "google.golang.org/adk/v2/agent"
@@ -162,9 +163,10 @@ func TestConfiguredUpgradeRequiresMarkedMatchingDefinition(t *testing.T) {
 	}
 }
 
-// This exercises the supported upgrade path: persisted pre-upgrade pins must
-// survive provider-open migrations and restore with their original history.
-func TestConfiguredSessionUpgradeRestoresPersistedPin(t *testing.T) {
+// This exercises the supported upgrade path: provider-open migrations retain
+// the saved pin, then restore replaces an ADK session that lacks required
+// current state through the ordinary fresh-start path.
+func TestConfiguredSessionUpgradeFreshensIncompleteADKState(t *testing.T) {
 	registerConfiguredUpgradeFixtureMigrations(t)
 	for _, transport := range []agentconfig.MCPServerType{agentconfig.MCPServerTypeHTTP, agentconfig.MCPServerTypeSSE, agentconfig.MCPServerTypeStdio} {
 		t.Run(string(transport), func(t *testing.T) {
@@ -245,11 +247,13 @@ func TestConfiguredSessionUpgradeRestoresPersistedPin(t *testing.T) {
 				t.Fatalf("RestoreSession after SQL upgrade: %v", err)
 			}
 			t.Cleanup(func() { _ = manager.Stop(context.Background()) })
-			if restored.GetSessionID() != record.SessionID || restored.GetAgentSessionID() != record.SessionID || restored.GetRuntimeSnapshotID() != string(snapshot.ID) {
-				t.Fatal("restore changed persisted session or capability identity")
+			if restored.GetSessionID() != record.SessionID || restored.GetAgentSessionID() != record.SessionID || restored.GetRuntimeSnapshotID() == "" {
+				t.Fatal("fresh start changed persisted session or capability identity")
 			}
 			afterRecord, found, err := p.Sessions().GetBySessionID(t.Context(), record.SessionID)
-			if err != nil || !found || afterRecord != record {
+			wantRecord := record
+			wantRecord.RuntimeSnapshotID = restored.GetRuntimeSnapshotID()
+			if err != nil || !found || afterRecord != wantRecord {
 				t.Fatalf("session metadata changed: %+v / %v", afterRecord, err)
 			}
 			after, _, err := p.AppKV().GetJSON(t.Context(), snapshotKeyPrefix+string(snapshot.ID))
@@ -257,12 +261,11 @@ func TestConfiguredSessionUpgradeRestoresPersistedPin(t *testing.T) {
 				t.Fatal("upgrade rewrote immutable snapshot")
 			}
 			history, err := p.RuntimeSessions().Get(t.Context(), &adksession.GetRequest{AppName: "norma-balda", UserID: record.UserID, SessionID: record.SessionID})
-			if err != nil || history.Session.Events().Len() != 1 || history.Session.Events().At(0).ID != event.ID {
-				t.Fatal("restore replaced existing session history")
+			if err != nil || history.Session.Events().Len() != 0 {
+				t.Fatalf("fresh ADK session history = %v, %v; want empty", history, err)
 			}
-			restoredBytes := configuredUpgradeBytes(t, path, string(snapshot.ID), record.SessionID)
-			if restoredBytes[0] != originalBytes[0] || restoredBytes[2] != originalBytes[2] {
-				t.Fatal("restore changed snapshot or historical event bytes")
+			if cwd, err := history.Session.State().Get(sessionstate.CWDKey); err != nil || cwd != workspace {
+				t.Fatalf("fresh ADK cwd state = %v, %v; want %q", cwd, err, workspace)
 			}
 			var final strings.Builder
 			ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
@@ -309,9 +312,6 @@ func configuredUpgradeModel(t *testing.T) {
 			}
 			_, _ = io.WriteString(w, `{"choices":[{"message":{"role":"assistant","content":"upgraded tool completed"}}]}`)
 			return
-		}
-		if !strings.Contains(string(mustUpgradeJSON(t, request)), "remember upgrade history") {
-			t.Error("restored provider lost pre-upgrade conversation")
 		}
 		_, _ = io.WriteString(w, `{"choices":[{"message":{"role":"assistant","tool_calls":[{"id":"upgrade-call","type":"function","function":{"name":"echo","arguments":"{\"text\":\"actual hosted tool\"}"}}]}}]}`)
 	}))
