@@ -22,19 +22,25 @@ type diagnosticTokenReader interface {
 	DiagnosticAccessToken(ctx context.Context, binding mcpcmd.AuthBinding, scopes []string) (string, error)
 }
 
+// diagnosticLauncher owns cleanup of a partially started SDK session before
+// returning from cancellation or discovery failure.
+type diagnosticLauncher interface {
+	StartDiagnostic(ctx context.Context, key mcpruntime.InstanceKey, config mcpruntime.LaunchConfig, closeTimeout time.Duration) (mcpruntime.Instance, error)
+}
+
 // DiagnosticProbe performs one bounded, read-only MCP handshake and complete
 // tool discovery without publishing the connection into a runtime catalog.
 type DiagnosticProbe struct {
 	values       managedValueResolver
 	tokens       diagnosticTokenReader
-	launcher     mcpruntime.Launcher
+	launcher     diagnosticLauncher
 	timeout      time.Duration
 	closeTimeout time.Duration
 }
 
 // NewDiagnosticProbe binds private value resolution, read-only OAuth access,
 // and the SDK launcher used by ordinary MCP discovery.
-func NewDiagnosticProbe(values managedValueResolver, tokens diagnosticTokenReader, launcher mcpruntime.Launcher) (*DiagnosticProbe, error) {
+func NewDiagnosticProbe(values managedValueResolver, tokens diagnosticTokenReader, launcher diagnosticLauncher) (*DiagnosticProbe, error) {
 	if values == nil || tokens == nil || launcher == nil {
 		return nil, mcpcmd.ErrInvalid
 	}
@@ -53,24 +59,16 @@ func (p *DiagnosticProbe) DiagnoseMCP(ctx context.Context, revision mcpcmd.Revis
 	if p == nil || p.values == nil || p.tokens == nil || p.launcher == nil || ctx.Err() != nil {
 		return failedDiagnostic()
 	}
-	operationCtx, cancel := context.WithTimeout(ctx, p.timeout)
-	defer cancel()
-	done := make(chan mcpcmd.DiagnosticResult, 1)
-	go func() {
-		done <- p.diagnose(operationCtx, revision)
-	}()
-	select {
-	case result := <-done:
-		if operationCtx.Err() != nil {
-			return failedDiagnostic()
-		}
-		return result
-	case <-operationCtx.Done():
+	closeTimeout := p.effectiveCloseTimeout()
+	if closeTimeout <= 0 || p.timeout <= closeTimeout {
 		return failedDiagnostic()
 	}
+	operationCtx, cancel := context.WithTimeout(ctx, p.timeout-closeTimeout)
+	defer cancel()
+	return p.diagnose(operationCtx, revision, closeTimeout)
 }
 
-func (p *DiagnosticProbe) diagnose(ctx context.Context, revision mcpcmd.Revision) mcpcmd.DiagnosticResult {
+func (p *DiagnosticProbe) diagnose(ctx context.Context, revision mcpcmd.Revision, closeTimeout time.Duration) mcpcmd.DiagnosticResult {
 	config, err := ResolveManagedLaunch(revision, p.values)
 	if err != nil {
 		return failedDiagnostic()
@@ -98,17 +96,27 @@ func (p *DiagnosticProbe) diagnose(ctx context.Context, revision mcpcmd.Revision
 		Name:     revision.ConnectionID,
 		Revision: runtimecatalogcmd.RevisionID(revision.ID),
 	}
-	instance, err := p.launcher.Start(ctx, key, config)
+	instance, err := p.launcher.StartDiagnostic(ctx, key, config, closeTimeout)
 	if err != nil || instance == nil {
 		return failedDiagnostic()
 	}
 	count := len(instance.Tools())
-	closeCtx, closeCancel := context.WithTimeout(context.WithoutCancel(ctx), p.closeTimeout)
+	closeCtx, closeCancel := context.WithTimeout(context.WithoutCancel(ctx), closeTimeout)
 	defer closeCancel()
 	if err := instance.Close(closeCtx); err != nil {
 		return failedDiagnostic()
 	}
+	if ctx.Err() != nil {
+		return failedDiagnostic()
+	}
 	return mcpcmd.DiagnosticResult{Outcome: mcpcmd.DiagnosticSucceeded, ToolCount: count}
+}
+
+func (p *DiagnosticProbe) effectiveCloseTimeout() time.Duration {
+	if p.closeTimeout < p.timeout/2 {
+		return p.closeTimeout
+	}
+	return p.timeout / 2
 }
 
 func hasAuthorizationHeader(headers map[string]string) bool {

@@ -250,6 +250,74 @@ func TestDiagnosticProbeHonorsOperationAndCallerCancellation(t *testing.T) {
 	}
 }
 
+func TestDiagnosticProbeWaitsForCanceledDiscoverySessionCleanup(t *testing.T) {
+	peer := mcp.NewServer(&mcp.Implementation{Name: "canceled-discovery", Version: "1"}, &mcp.ServerOptions{PageSize: 1})
+	for _, name := range []string{"first", "second"} {
+		mcp.AddTool(peer, &mcp.Tool{Name: name}, func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, any, error) {
+			return &mcp.CallToolResult{}, nil, nil
+		})
+	}
+	normal := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return peer }, nil)
+	laterPage := make(chan struct{})
+	pageDrained := make(chan struct{})
+	deleteDrained := make(chan struct{})
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			time.Sleep(10 * time.Millisecond)
+			w.WriteHeader(http.StatusAccepted)
+			close(deleteDrained)
+			return
+		}
+		if r.Method == http.MethodPost {
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			var request struct {
+				Method string `json:"method"`
+				Params struct {
+					Cursor string `json:"cursor"`
+				} `json:"params"`
+			}
+			if err := json.Unmarshal(body, &request); err == nil && request.Method == diagnosticListToolsMethod && request.Params.Cursor != "" {
+				close(laterPage)
+				<-r.Context().Done()
+				close(pageDrained)
+				return
+			}
+		}
+		normal.ServeHTTP(w, r)
+	}))
+	defer upstream.Close()
+	probe, err := NewDiagnosticProbe(diagnosticValues{}, diagnosticTokens{}, NewClientLauncher())
+	if err != nil {
+		t.Fatal(err)
+	}
+	probe.timeout = 60 * time.Millisecond
+	probe.closeTimeout = 250 * time.Millisecond
+	result := probe.DiagnoseMCP(t.Context(), mcpcmd.Revision{
+		ConnectionID: "worker",
+		ID:           "exact-revision",
+		Definition:   mcpcmd.Definition{Transport: mcpcmd.TransportHTTP, URL: upstream.URL},
+	})
+	if result.Outcome != mcpcmd.DiagnosticFailed || result.ToolCount != 0 {
+		t.Fatalf("canceled discovery diagnostic = %+v", result)
+	}
+	for name, signal := range map[string]<-chan struct{}{
+		"later tools page": laterPage,
+		"tools request":    pageDrained,
+		"session delete":   deleteDrained,
+	} {
+		select {
+		case <-signal:
+		default:
+			t.Errorf("diagnostic returned before %s terminated", name)
+		}
+	}
+}
+
 type diagnosticInstance struct {
 	closed chan struct{}
 	tools  []mcpruntime.Tool
@@ -263,9 +331,9 @@ func (i diagnosticInstance) Close(ctx context.Context) error {
 	return errors.New("private close failure")
 }
 
-type diagnosticLauncher struct{ instance mcpruntime.Instance }
+type diagnosticLauncherFixture struct{ instance mcpruntime.Instance }
 
-func (l diagnosticLauncher) Start(context.Context, mcpruntime.InstanceKey, mcpruntime.LaunchConfig) (mcpruntime.Instance, error) {
+func (l diagnosticLauncherFixture) StartDiagnostic(context.Context, mcpruntime.InstanceKey, mcpruntime.LaunchConfig, time.Duration) (mcpruntime.Instance, error) {
 	return l.instance, nil
 }
 
@@ -274,7 +342,7 @@ func TestDiagnosticProbeBoundsCleanupAndDiscardsToolCountOnCloseFailure(t *testi
 	probe, err := NewDiagnosticProbe(
 		diagnosticValues{},
 		diagnosticTokens{},
-		diagnosticLauncher{instance: diagnosticInstance{closed: closed, tools: []mcpruntime.Tool{{Name: "one"}, {Name: "two"}}}},
+		diagnosticLauncherFixture{instance: diagnosticInstance{closed: closed, tools: []mcpruntime.Tool{{Name: "one"}, {Name: "two"}}}},
 	)
 	if err != nil {
 		t.Fatal(err)
