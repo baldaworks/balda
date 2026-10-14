@@ -68,6 +68,30 @@ func TestMarketplaceManagementAcceptedDiscovery(t *testing.T) {
 	}
 }
 
+func TestMarketplaceManagementInstallsThroughSymlinkedRoot(t *testing.T) {
+	s, _, authority, root := newMarketplaceManagementTestService(t)
+	t.Cleanup(func() { _ = makeTreeWritable(s.stateDir) })
+	alias := filepath.Join(t.TempDir(), "marketplace")
+	if err := os.Symlink(root, alias); err != nil {
+		t.Fatal(err)
+	}
+	added, err := s.ManagementAddMarketplace(t.Context(), plugincmd.MarketplaceAdd{Name: "market", Source: alias, Authority: authority})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ManagementRefreshMarketplace(t.Context(), plugincmd.MarketplaceMutation{Name: added.Name, ExpectedState: added.ExpectedState, Authority: authority}); err != nil {
+		t.Fatal(err)
+	}
+	candidate, err := s.ManagementCandidate(t.Context(), "demo", "market", authority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := s.ManagementMutatePlugin(t.Context(), plugincmd.PluginMutation{Operation: plugincmd.Install, PluginName: "demo", MarketplaceName: "market", CandidateToken: candidate.CandidateToken, ExpectedState: candidate.ExpectedState, Authority: authority})
+	if err != nil || !result.Accepted {
+		t.Fatalf("install from aliased root: %+v %v", result, err)
+	}
+}
+
 func TestMarketplaceDiscoveryKeepsDeclarationWithAcceptedCandidate(t *testing.T) {
 	s, _, a, root := newMarketplaceManagementTestService(t)
 	pluginRoot := filepath.Join(root, "plugins", "demo")

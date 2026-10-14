@@ -71,6 +71,7 @@ func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) 
 	t.Run("Provider_SessionStoreRoundTrip", func(t *testing.T) { checkProvider_SessionStoreRoundTrip(t, factory(t)) })
 	t.Run("Provider_SessionStoreUpsert_AllowsMultipleTelegramSessions", func(t *testing.T) { checkProvider_SessionStoreUpsert_AllowsMultipleTelegramSessions(t, factory(t)) })
 	t.Run("Provider_QuestionStoreRoundTrip", func(t *testing.T) { checkProvider_QuestionStoreRoundTrip(t, factory(t)) })
+	t.Run("QuestionAnswerHandoffSurvivesRestart", func(t *testing.T) { checkQuestionAnswerHandoffSurvivesRestart(t, factory(t)) })
 	t.Run("Provider_SessionStoreUpsert_DoesNotDecodeAddressJSON", func(t *testing.T) { checkProvider_SessionStoreUpsert_DoesNotDecodeAddressJSON(t, factory(t)) })
 	t.Run("Provider_ScheduledJobStoreRoundTrip", func(t *testing.T) { checkProvider_ScheduledJobStoreRoundTrip(t, factory(t)) })
 	t.Run("Provider_ScheduleManagementAuthorityAndVersion", func(t *testing.T) { checkProvider_ScheduleManagementAuthorityAndVersion(t, factory(t)) })
@@ -744,12 +745,12 @@ func checkProvider_QuestionStoreRoundTrip(t *testing.T, open contractOpener) {
 	}); err != nil {
 		t.Fatalf("BindQuestionDeliveryRef() error = %v", err)
 	}
-	got, ok, err := store.GetPendingQuestionByReplyRef(ctx, "telegram", "1:0", "42")
+	got, ok, err := store.GetQuestionByReplyRef(ctx, "telegram", "1:0", "42")
 	if err != nil {
-		t.Fatalf("GetPendingQuestionByReplyRef() error = %v", err)
+		t.Fatalf("GetQuestionByReplyRef() error = %v", err)
 	}
 	if !ok {
-		t.Fatal("GetPendingQuestionByReplyRef() found = false, want true")
+		t.Fatal("GetQuestionByReplyRef() found = false, want true")
 	}
 	if got.QuestionID != record.QuestionID {
 		t.Fatalf("question_id = %q, want %q", got.QuestionID, record.QuestionID)
@@ -766,6 +767,97 @@ func checkProvider_QuestionStoreRoundTrip(t *testing.T, open contractOpener) {
 	}
 	if answered.Status != questioncmd.StatusAnswered {
 		t.Fatalf("status = %q, want answered", answered.Status)
+	}
+	got, ok, err = store.GetQuestionByReplyRef(ctx, "telegram", "1:0", "42")
+	if err != nil || !ok || got.AnswerJSON != answered.AnswerJSON {
+		t.Fatalf("answered question unavailable for continuation recovery: %+v %v %v", got, ok, err)
+	}
+}
+
+func checkQuestionAnswerHandoffSurvivesRestart(t *testing.T, open contractOpener) {
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), "state.db")
+	p, err := open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := QuestionRecord{QuestionID: "handoff", SessionID: "session", ChannelKind: "telegram", AddressKey: "1:0", AddressJSON: `{"chat_id":1}`, Prompt: "Allow?", Status: questioncmd.StatusPending, InteractionJSON: `{}`, ResumeJSON: `{}`, RequestJSON: `{}`}
+	if err := p.Questions().CreatePendingQuestion(ctx, record); err != nil {
+		t.Fatal(err)
+	}
+	answer := questioncmd.Answer{Text: "Allow", SelectedOption: "allow", AnsweredBy: questioncmd.UserRef{UserID: "user"}}
+	settled, changed, err := p.Questions().MarkQuestionAnswered(ctx, record.QuestionID, answer)
+	if err != nil || !changed || !settled.AnswerContinuationPending || !settled.AnswerControlsPending {
+		t.Fatalf("answer/marker not atomic: %+v %v", settled, err)
+	}
+	closeContractProvider(t, p)
+	p, err = open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeContractProvider(t, p)
+	store := p.Questions()
+	ids, err := store.PendingQuestionAnswerIDs(ctx, "", 32)
+	if err != nil || len(ids) != 1 || ids[0] != record.QuestionID {
+		t.Fatalf("restart lost pending answer: %v %v", ids, err)
+	}
+	if err := store.MarkQuestionAnswerControlsCleared(ctx, record.QuestionID, questioncmd.DeliveryRef{}); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := store.GetQuestionByID(ctx, record.QuestionID)
+	if err != nil || !got.AnswerControlsPending {
+		t.Fatal("cleanup completed before continuation admission")
+	}
+	if err := store.MarkQuestionAnswerAdmitted(ctx, record.QuestionID); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err = store.GetQuestionByID(ctx, record.QuestionID)
+	if err != nil || got.AnswerContinuationPending || !got.AnswerControlsPending || got.AnswerJSON != settled.AnswerJSON {
+		t.Fatalf("admission changed answer or lost cleanup: %+v %v", got, err)
+	}
+	ids, err = store.PendingQuestionAnswerIDs(ctx, "", 32)
+	if err != nil || len(ids) != 1 {
+		t.Fatal("cleanup recovery was not retained")
+	}
+	if err := store.MarkQuestionAnswerControlsCleared(ctx, record.QuestionID, questioncmd.DeliveryRef{}); err != nil {
+		t.Fatal(err)
+	}
+	ids, err = store.PendingQuestionAnswerIDs(ctx, "", 32)
+	if err != nil || len(ids) != 0 {
+		t.Fatalf("completed handoff retained: %v %v", ids, err)
+	}
+	_, changed, err = store.MarkQuestionAnswered(ctx, record.QuestionID, questioncmd.Answer{Text: "changed"})
+	if err != nil || changed {
+		t.Fatal("duplicate settlement replaced answer")
+	}
+	ids, err = store.PendingQuestionAnswerIDs(ctx, "", 32)
+	if err != nil || len(ids) != 0 {
+		t.Fatal("duplicate settlement reopened admission")
+	}
+	ref := questioncmd.DeliveryRef{Provider: "telegram", ConversationKey: "1:0", ProviderMessageID: "42"}
+	if err := store.BindQuestionDeliveryRef(ctx, record.QuestionID, ref); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.MarkQuestionAnswerControlsCleared(ctx, record.QuestionID, questioncmd.DeliveryRef{}); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err = store.GetQuestionByID(ctx, record.QuestionID)
+	if err != nil || got.AnswerContinuationPending || !got.AnswerControlsPending {
+		t.Fatal("late binding lost cleanup or reopened continuation")
+	}
+	if err := store.MarkQuestionAnswerControlsCleared(ctx, record.QuestionID, ref); err != nil {
+		t.Fatal(err)
+	}
+	ids, err = store.PendingQuestionAnswerIDs(ctx, "", 32)
+	if err != nil || len(ids) != 0 {
+		t.Fatal("matching cleanup did not complete")
+	}
+	if err := store.BindQuestionDeliveryRef(ctx, record.QuestionID, ref); err != nil {
+		t.Fatal(err)
+	}
+	ids, err = store.PendingQuestionAnswerIDs(ctx, "", 32)
+	if err != nil || len(ids) != 0 {
+		t.Fatal("identical delivery replay reopened completed cleanup")
 	}
 }
 

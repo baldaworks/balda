@@ -218,6 +218,12 @@ From there you can:
 
 ### 1. Ordinary chat work
 
+Once a question answer is saved, Balda recovers its continuation after a local
+queue failure or restart without another reply or inline click. Telegram buttons
+are removed through durable cleanup after continuation admission. Upgrading adds
+SQLite migration 63 / PostgreSQL migration 28; take a database backup first.
+Existing answered history is not replayed. See [recovery operations](docs/reference/operations.md#command-admission-recovery-and-nats-storage-budgets).
+
 Send a message in the session where you want work to happen. Balda keeps that
 conversation as the execution context.
 
@@ -404,6 +410,11 @@ balda:
 Common settings:
 
 - `balda.provider` — which configured provider runtime to use
+- `balda.nats.bounded_streams` — opt in to per-stream storage budgets (default
+  `false`; environment override `BALDA_NATS_BOUNDED_STREAMS`). Back up NATS and
+  check retained stream sizes before enabling it; startup refuses a budget below
+  existing usage. See [configuration](docs/reference/configuration.md#durable-command-admission-and-optional-stream-budgets)
+  and [upgrade and rollback steps](docs/reference/operations.md#command-admission-recovery-and-nats-storage-budgets).
 - `balda.telegram.token` — Telegram bot token
 
 Explicit `model` and `reasoning_effort` values on an ACP provider are reapplied

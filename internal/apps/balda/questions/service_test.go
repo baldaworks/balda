@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/baldaworks/go-actorlayer"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 )
 
@@ -49,7 +49,7 @@ func (f *fakeStore) BindQuestionDeliveryRef(_ context.Context, questionID string
 func (f *fakeStore) GetQuestionByID(_ context.Context, questionID string) (baldastate.QuestionRecord, bool, error) {
 	return f.record, f.record.QuestionID == questionID, nil
 }
-func (f *fakeStore) GetPendingQuestionByReplyRef(_ context.Context, provider, conversationKey, replyToMessageID string) (baldastate.QuestionRecord, bool, error) {
+func (f *fakeStore) GetQuestionByReplyRef(_ context.Context, provider, conversationKey, replyToMessageID string) (baldastate.QuestionRecord, bool, error) {
 	if f.replyMatch.Provider == provider && f.replyMatch.ConversationKey == conversationKey && f.replyMatch.ProviderMessageID == replyToMessageID {
 		return f.replyMatch, true, nil
 	}
@@ -64,8 +64,33 @@ func (f *fakeStore) MarkQuestionAnswered(_ context.Context, questionID string, a
 		return baldastate.QuestionRecord{}, false, nil
 	}
 	target.Status = questioncmd.StatusAnswered
+	target.AnswerContinuationPending, target.AnswerControlsPending = true, true
 	target.AnswerJSON = mustJSON(answer)
 	return *target, true, nil
+}
+
+func TestAnsweredReplyReplaysOnlyOriginalProviderMessage(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		messageID string
+		userID    string
+		wantMatch bool
+	}{
+		{name: "original", messageID: "answer-1", userID: "user-1", wantMatch: true},
+		{name: "later reply", messageID: "answer-2", userID: "user-1"},
+		{name: "different responder", messageID: "answer-1", userID: "user-2"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			record := selectableQuestionRecord()
+			record.Status = questioncmd.StatusAnswered
+			record.AnswerJSON = mustJSON(questioncmd.Answer{Text: "original answer", ProviderMsgID: "answer-1", AnsweredBy: questioncmd.UserRef{UserID: "user-1"}})
+			service := New(&fakeStore{replyMatch: record}, nil, zerolog.Nop())
+			result, err := service.ResolveReplyDetailed(t.Context(), questioncmd.InboundReply{Provider: record.Provider, ConversationKey: record.ConversationKey, ReplyToMessageID: record.ProviderMessageID, MessageID: test.messageID, User: questioncmd.UserRef{UserID: test.userID}})
+			if err != nil || result.Matched != test.wantMatch || result.Settled != test.wantMatch {
+				t.Fatalf("replay resolution = %+v, error = %v", result, err)
+			}
+		})
+	}
 }
 
 type fakeControlPublisher struct {
@@ -338,6 +363,12 @@ func TestServiceResolveSelectionSettlesPersistedOptionAndClearsControls(t *testi
 	if answer.SelectedOption != "cancel" || answer.Text != "Cancel" {
 		t.Fatalf("answer = %+v, want cancel selection", answer)
 	}
+	if len(controls.requests) != 0 {
+		t.Fatalf("controls removed before durable admission: %+v", controls.requests)
+	}
+	if err := service.ConfirmAnswerAdmission(t.Context(), "question-1"); err != nil {
+		t.Fatal(err)
+	}
 	if len(controls.requests) != 1 || controls.requests[0].QuestionID != "question-1" || controls.requests[0].ProviderMessageID != "42" || controls.requests[0].SelectionText != "Cancel" {
 		t.Fatalf("control cleanup = %+v", controls.requests)
 	}
@@ -383,9 +414,9 @@ func TestServiceResolveSelectionRejectsWrongRequesterAndContext(t *testing.T) {
 	}
 }
 
-func TestServiceResolveSelectionReportsInactiveAndRetriesCleanup(t *testing.T) {
+func TestServiceResolveSelectionReportsTimedOutAndRetriesCleanup(t *testing.T) {
 	record := selectableQuestionRecord()
-	record.Status = questioncmd.StatusAnswered
+	record.Status = questioncmd.StatusTimedOut
 	store := &fakeStore{record: record}
 	controls := &fakeControlPublisher{}
 	service := New(store, nil, zerolog.Nop())
@@ -405,9 +436,54 @@ func TestServiceResolveSelectionReportsInactiveAndRetriesCleanup(t *testing.T) {
 	}
 }
 
+func TestServiceResolveSelectionReplaysSavedAnswer(t *testing.T) {
+	record := selectableQuestionRecord()
+	var request questioncmd.Request
+	if err := json.Unmarshal([]byte(record.RequestJSON), &request); err != nil {
+		t.Fatal(err)
+	}
+	request.Responder = questioncmd.ResponderAny
+	record.RequestJSON = mustJSON(request)
+	store := &fakeStore{record: record}
+	selection := questioncmd.InboundSelection{Provider: "telegram", SessionID: "tg-1-0", ConversationKey: "1:0", QuestionID: "question-1", ProviderMessageID: "42", OptionIndex: 1, User: questioncmd.UserRef{UserID: "tg-101"}}
+	original, err := New(store, nil, zerolog.Nop()).ResolveSelectionDetailed(t.Context(), selection)
+	if err != nil || !original.Settled {
+		t.Fatalf("settlement = %+v, error = %v", original, err)
+	}
+	answerJSON := store.record.AnswerJSON
+	for _, test := range []struct {
+		name       string
+		mutate     func(*questioncmd.InboundSelection)
+		wantReplay bool
+	}{
+		{name: "same selection", mutate: func(*questioncmd.InboundSelection) {}, wantReplay: true},
+		{name: "same option by ID", mutate: func(in *questioncmd.InboundSelection) { in.OptionIndex = 0; in.OptionID = "allow" }, wantReplay: true},
+		{name: "different option", mutate: func(in *questioncmd.InboundSelection) { in.OptionIndex = 2 }},
+		{name: "different responder", mutate: func(in *questioncmd.InboundSelection) { in.User.UserID = "tg-202" }},
+		{name: "different conversation", mutate: func(in *questioncmd.InboundSelection) { in.ConversationKey = "2:0" }},
+		{name: "different prompt", mutate: func(in *questioncmd.InboundSelection) { in.ProviderMessageID = "99" }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			in := selection
+			test.mutate(&in)
+			result, err := New(store, nil, zerolog.Nop()).ResolveSelectionDetailed(t.Context(), in)
+			if err != nil || result.Settled != test.wantReplay {
+				t.Fatalf("replay = %+v, error = %v", result, err)
+			}
+			if test.wantReplay && (result.Inactive || result.Continuation.ID != original.Continuation.ID || result.Continuation.DedupeKey != original.Continuation.DedupeKey || string(result.Continuation.Payload.Data) != string(original.Continuation.Payload.Data)) {
+				t.Fatalf("replay changed continuation: %+v", result)
+			}
+			if store.record.AnswerJSON != answerJSON {
+				t.Fatal("replay replaced the persisted answer")
+			}
+		})
+	}
+}
+
 func TestServiceBindDeliveryCleansControlsIfSelectionWonDeliveryRace(t *testing.T) {
 	record := selectableQuestionRecord()
 	record.Status = questioncmd.StatusAnswered
+	record.AnswerControlsPending = true
 	record.Provider = ""
 	record.ProviderMessageID = ""
 	store := &fakeStore{record: record}
@@ -423,6 +499,25 @@ func TestServiceBindDeliveryCleansControlsIfSelectionWonDeliveryRace(t *testing.
 	}
 	if len(controls.requests) != 1 || controls.requests[0].ProviderMessageID != "42" || controls.requests[0].ControlHandle != "telegram:message:delete" {
 		t.Fatalf("cleanup requests = %+v", controls.requests)
+	}
+}
+
+func TestServiceCompletedAnswerCleanupStaysCompleteOnDeliveryReplay(t *testing.T) {
+	record := selectableQuestionRecord()
+	record.Status = questioncmd.StatusAnswered
+	store := &fakeStore{record: record}
+	controls := &fakeControlPublisher{}
+	service := New(store, nil, zerolog.Nop())
+	service.SetControlPublisher(controls)
+	ref := questioncmd.DeliveryRef{Provider: record.Provider, ConversationKey: record.ConversationKey, ProviderMessageID: record.ProviderMessageID, ControlHandle: record.ControlHandle}
+	if err := service.BindDelivery(t.Context(), record.QuestionID, ref); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.ConfirmAnswerAdmission(t.Context(), record.QuestionID); err != nil {
+		t.Fatal(err)
+	}
+	if len(controls.requests) != 0 {
+		t.Fatalf("completed delivery replay resubmitted cleanup: %+v", controls.requests)
 	}
 }
 
@@ -449,4 +544,32 @@ func selectableQuestionRecord() baldastate.QuestionRecord {
 			Options:   []questioncmd.Option{{ID: "allow", Label: "Allow"}, {ID: "cancel", Label: "Cancel"}},
 		}),
 	}
+}
+
+func (f *fakeStore) PendingQuestionAnswerIDs(_ context.Context, after string, limit int) ([]string, error) {
+	var ids []string
+	for _, record := range []baldastate.QuestionRecord{f.record, f.replyMatch} {
+		if record.QuestionID > after && record.Status == questioncmd.StatusAnswered && (record.AnswerContinuationPending || record.AnswerControlsPending) {
+			ids = append(ids, record.QuestionID)
+		}
+	}
+	return ids, nil
+}
+func (f *fakeStore) MarkQuestionAnswerAdmitted(_ context.Context, id string) error {
+	if f.record.QuestionID == id {
+		f.record.AnswerContinuationPending = false
+	}
+	if f.replyMatch.QuestionID == id {
+		f.replyMatch.AnswerContinuationPending = false
+	}
+	return nil
+}
+func (f *fakeStore) MarkQuestionAnswerControlsCleared(_ context.Context, id string, _ questioncmd.DeliveryRef) error {
+	if f.record.QuestionID == id {
+		f.record.AnswerControlsPending = false
+	}
+	if f.replyMatch.QuestionID == id {
+		f.replyMatch.AnswerControlsPending = false
+	}
+	return nil
 }

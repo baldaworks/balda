@@ -87,8 +87,8 @@ func (f *fakeTelegramQuestionStore) GetQuestionByID(_ context.Context, questionI
 	return f.record, f.record.QuestionID == questionID, nil
 }
 
-func (f *fakeTelegramQuestionStore) GetPendingQuestionByReplyRef(_ context.Context, provider, conversationKey, replyToMessageID string) (baldastate.QuestionRecord, bool, error) {
-	found := f.record.Status == questioncmd.StatusPending && f.record.Provider == provider &&
+func (f *fakeTelegramQuestionStore) GetQuestionByReplyRef(_ context.Context, provider, conversationKey, replyToMessageID string) (baldastate.QuestionRecord, bool, error) {
+	found := f.record.Provider == provider &&
 		f.record.ConversationKey == conversationKey && f.record.ProviderMessageID == replyToMessageID
 	return f.record, found, nil
 }
@@ -102,6 +102,7 @@ func (f *fakeTelegramQuestionStore) MarkQuestionAnswered(_ context.Context, ques
 		return baldastate.QuestionRecord{}, false, err
 	}
 	f.record.Status = questioncmd.StatusAnswered
+	f.record.AnswerContinuationPending, f.record.AnswerControlsPending = true, true
 	f.record.AnswerJSON = string(encoded)
 	return f.record, true, nil
 }
@@ -386,11 +387,12 @@ func newTestHarness(t *testing.T) *testHarness {
 	ch := &fakeTestChannel{}
 
 	handler := newTelegramInboundHandler(telegramInboundHandlerParams{
-		OwnerStore:      ownerStore,
-		SessionManager:  sessions,
-		Dispatcher:      dispatcher,
-		BaldaProviderID: "alpha",
-		Logger:          zerolog.Nop(),
+		OwnerStore:         ownerStore,
+		SessionManager:     sessions,
+		Dispatcher:         dispatcher,
+		QuestionDispatcher: dispatcher,
+		BaldaProviderID:    "alpha",
+		Logger:             zerolog.Nop(),
 	})
 	handler.channel = ch
 	handler.setOwner(101, 9001)
@@ -674,4 +676,14 @@ func TestInboundTurnExecutor_SubmitWebhookTask(t *testing.T) {
 	if len(dispatcher.commands) != 1 {
 		t.Fatalf("dispatched commands = %d, want 1", len(dispatcher.commands))
 	}
+}
+
+func (*fakeTelegramQuestionStore) PendingQuestionAnswerIDs(context.Context, string, int) ([]string, error) {
+	return nil, nil
+}
+func (*fakeTelegramQuestionStore) MarkQuestionAnswerAdmitted(context.Context, string) error {
+	return nil
+}
+func (*fakeTelegramQuestionStore) MarkQuestionAnswerControlsCleared(context.Context, string, questioncmd.DeliveryRef) error {
+	return nil
 }

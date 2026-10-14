@@ -95,7 +95,7 @@ func TestClearQuestionControlsEnvelopeIsIdempotentlyKeyed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ClearQuestionControlsEnvelope() error = %v", err)
 	}
-	if env.DedupeKey != "question:question-1:controls:clear" {
+	if env.DedupeKey != "question:question-1:controls:clear:42" {
 		t.Fatalf("dedupe key = %q", env.DedupeKey)
 	}
 	var payload Payload

@@ -298,6 +298,8 @@ balda:
     port: -1
     max_memory: "256mb"
     max_store: "2gb"
+    # Opt in after inspecting retained stream bytes; legacy limits stay unchanged by default.
+    bounded_streams: false
     sync_always: false
     expose_monitoring: false
 

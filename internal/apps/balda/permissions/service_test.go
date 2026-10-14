@@ -38,7 +38,7 @@ func (s *reviewQuestionStore) BindQuestionDeliveryRef(_ context.Context, questio
 func (s *reviewQuestionStore) GetQuestionByID(_ context.Context, questionID string) (baldastate.QuestionRecord, bool, error) {
 	return s.record, s.record.QuestionID == questionID, nil
 }
-func (*reviewQuestionStore) GetPendingQuestionByReplyRef(context.Context, string, string, string) (baldastate.QuestionRecord, bool, error) {
+func (*reviewQuestionStore) GetQuestionByReplyRef(context.Context, string, string, string) (baldastate.QuestionRecord, bool, error) {
 	return baldastate.QuestionRecord{}, false, nil
 }
 func (*reviewQuestionStore) MarkQuestionAnswered(context.Context, string, questioncmd.Answer) (baldastate.QuestionRecord, bool, error) {
@@ -238,4 +238,12 @@ func TestAskWaitsForMattermostThreadReplyDecision(t *testing.T) {
 	if decision := <-result; decision.OptionID != permissionAllowOptionID || decision.Source != "thread_reply" {
 		t.Fatalf("decision = %+v, want Mattermost thread-reply approval", decision)
 	}
+}
+
+func (*reviewQuestionStore) PendingQuestionAnswerIDs(context.Context, string, int) ([]string, error) {
+	return nil, nil
+}
+func (*reviewQuestionStore) MarkQuestionAnswerAdmitted(context.Context, string) error { return nil }
+func (*reviewQuestionStore) MarkQuestionAnswerControlsCleared(context.Context, string, questioncmd.DeliveryRef) error {
+	return nil
 }

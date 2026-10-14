@@ -6,8 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/baldaworks/go-actorlayer"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/goalkeepercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/goalresultcmd"
@@ -15,6 +13,8 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 )
 
@@ -48,7 +48,7 @@ func (f *fakeQuestionStore) GetQuestionByID(_ context.Context, questionID string
 	return f.record, f.record.QuestionID == questionID, nil
 }
 
-func (*fakeQuestionStore) GetPendingQuestionByReplyRef(_ context.Context, _, _, _ string) (baldastate.QuestionRecord, bool, error) {
+func (*fakeQuestionStore) GetQuestionByReplyRef(_ context.Context, _, _, _ string) (baldastate.QuestionRecord, bool, error) {
 	return baldastate.QuestionRecord{}, false, nil
 }
 
@@ -162,4 +162,12 @@ func TestGoalResumeEnvelope(t *testing.T) {
 	if env.To.Key != "goal-tg-1-0-123" {
 		t.Fatalf("to.key = %q, want goal-tg-1-0-123", env.To.Key)
 	}
+}
+
+func (*fakeQuestionStore) PendingQuestionAnswerIDs(context.Context, string, int) ([]string, error) {
+	return nil, nil
+}
+func (*fakeQuestionStore) MarkQuestionAnswerAdmitted(context.Context, string) error { return nil }
+func (*fakeQuestionStore) MarkQuestionAnswerControlsCleared(context.Context, string, questioncmd.DeliveryRef) error {
+	return nil
 }

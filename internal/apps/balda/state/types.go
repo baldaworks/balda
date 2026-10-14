@@ -389,35 +389,40 @@ type ScheduleRunStore interface {
 }
 
 type QuestionRecord struct {
-	QuestionID        string
-	SessionID         string
-	ChannelKind       string
-	AddressKey        string
-	AddressJSON       string
-	Prompt            string
-	Status            string
-	InteractionJSON   string
-	ResumeJSON        string
-	RequestJSON       string
-	AnswerJSON        string
-	FailureJSON       string
-	Provider          string
-	ConversationKey   string
-	ProviderMessageID string
-	ReplyHandle       string
-	ControlHandle     string
-	ExpiresAt         time.Time
-	AnsweredAt        time.Time
-	FailedAt          time.Time
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	AnswerContinuationPending bool
+	AnswerControlsPending     bool
+	QuestionID                string
+	SessionID                 string
+	ChannelKind               string
+	AddressKey                string
+	AddressJSON               string
+	Prompt                    string
+	Status                    string
+	InteractionJSON           string
+	ResumeJSON                string
+	RequestJSON               string
+	AnswerJSON                string
+	FailureJSON               string
+	Provider                  string
+	ConversationKey           string
+	ProviderMessageID         string
+	ReplyHandle               string
+	ControlHandle             string
+	ExpiresAt                 time.Time
+	AnsweredAt                time.Time
+	FailedAt                  time.Time
+	CreatedAt                 time.Time
+	UpdatedAt                 time.Time
 }
 
 type QuestionStore interface {
+	PendingQuestionAnswerIDs(ctx context.Context, afterID string, limit int) ([]string, error)
+	MarkQuestionAnswerAdmitted(ctx context.Context, questionID string) error
+	MarkQuestionAnswerControlsCleared(ctx context.Context, questionID string, ref questioncmd.DeliveryRef) error
 	CreatePendingQuestion(ctx context.Context, record QuestionRecord) error
 	BindQuestionDeliveryRef(ctx context.Context, questionID string, ref questioncmd.DeliveryRef) error
 	GetQuestionByID(ctx context.Context, questionID string) (QuestionRecord, bool, error)
-	GetPendingQuestionByReplyRef(ctx context.Context, provider, conversationKey, replyToMessageID string) (QuestionRecord, bool, error)
+	GetQuestionByReplyRef(ctx context.Context, provider, conversationKey, replyToMessageID string) (QuestionRecord, bool, error)
 	MarkQuestionAnswered(ctx context.Context, questionID string, answer questioncmd.Answer) (QuestionRecord, bool, error)
 	MarkQuestionTimedOut(ctx context.Context, questionID string, timedOutAt time.Time) (QuestionRecord, bool, error)
 	MarkQuestionFailed(ctx context.Context, questionID string, failure questioncmd.Failure) (QuestionRecord, bool, error)

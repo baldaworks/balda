@@ -41,6 +41,10 @@ func TestManagementCandidateUsesConfiguredMarketplace(t *testing.T) {
 			if marketplace == "B" {
 				wantRoot = rootB
 			}
+			wantRoot, pathErr := filepath.EvalSymlinks(wantRoot)
+			if pathErr != nil {
+				t.Fatal(pathErr)
+			}
 			if err != nil || observed.Install == nil || observed.Install.OriginMarketplace != marketplace || observed.Install.OriginSource != wantRoot || observed.OriginIdentity == "" {
 				t.Fatalf("configured origin=%+v proof=%q err=%v", observed.Install, observed.OriginIdentity, err)
 			}
@@ -59,7 +63,11 @@ func TestGuardedLifecycleTrustedManifestSelector(t *testing.T) {
 		t.Fatalf("trusted manifest selector: %v", err)
 	}
 	observed, err := p.PluginManagement().ObservePlugin(t.Context(), testPluginName)
-	if err != nil || observed.Install == nil || observed.Install.OriginMarketplace != "configured" || observed.Install.OriginSource != root {
+	wantRoot, pathErr := filepath.EvalSymlinks(root)
+	if pathErr != nil {
+		t.Fatal(pathErr)
+	}
+	if err != nil || observed.Install == nil || observed.Install.OriginMarketplace != "configured" || observed.Install.OriginSource != wantRoot {
 		t.Fatalf("trusted selected origin=%+v err=%v", observed.Install, err)
 	}
 }

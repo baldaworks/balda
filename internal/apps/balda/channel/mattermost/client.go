@@ -181,6 +181,10 @@ type channelMember struct {
 // CreatePost creates a channel post. An empty rootID posts at channel level;
 // a non-empty rootID creates a reply inside that thread.
 func (c *Client) CreatePost(ctx context.Context, channelID, rootID, message string) (Post, error) {
+	return c.createPost(ctx, channelID, rootID, message, "")
+}
+
+func (c *Client) createPost(ctx context.Context, channelID, rootID, message, pendingID string) (Post, error) {
 	if strings.TrimSpace(channelID) == "" {
 		return Post{}, fmt.Errorf("mattermost create post requires channel_id")
 	}
@@ -190,6 +194,9 @@ func (c *Client) CreatePost(ctx context.Context, channelID, rootID, message stri
 	body := map[string]string{
 		"channel_id": strings.TrimSpace(channelID),
 		"message":    message,
+	}
+	if pendingID != "" {
+		body["pending_post_id"] = pendingID
 	}
 	if root := strings.TrimSpace(rootID); root != "" {
 		body["root_id"] = root

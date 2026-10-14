@@ -28,8 +28,9 @@ func (a *QuestionAdapter) ResolveQuestionReply(ctx context.Context, reply questi
 		return chatapp.QuestionResolution{Matched: res.Matched}, err
 	}
 	return chatapp.QuestionResolution{
-		Matched:      res.Matched,
-		Settled:      res.Settled,
-		Continuation: res.Continuation,
+		Matched:         res.Matched,
+		Settled:         res.Settled,
+		RecoveryPending: res.Record.AnswerContinuationPending,
+		Continuation:    res.Continuation,
 	}, nil
 }

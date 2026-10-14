@@ -326,6 +326,7 @@ func TestService_HandleChat_QuestionReply_SettledActivates(t *testing.T) {
 
 	continuationEnv := actorlayer.Envelope{
 		ID:        "env-cont-1",
+		DedupeKey: "question:question-1:answered",
 		Namespace: "session",
 		Kind:      "continuation",
 	}
@@ -369,12 +370,27 @@ func TestService_HandleChat_QuestionReply_SettledActivates(t *testing.T) {
 	if len(dispatcher.envelopes) != 1 {
 		t.Fatalf("dispatched = %d, want 1", len(dispatcher.envelopes))
 	}
-	if dispatcher.envelopes[0].DedupeKey != "in-q1" {
-		t.Fatalf("dedupeKey = %q, want %q", dispatcher.envelopes[0].DedupeKey, "in-q1")
+	if dispatcher.envelopes[0].DedupeKey != continuationEnv.DedupeKey {
+		t.Fatalf("dedupeKey = %q, want %q", dispatcher.envelopes[0].DedupeKey, continuationEnv.DedupeKey)
 	}
 	// Session preparer must not be called when handled via question
 	if sessions.calls != 0 {
 		t.Fatalf("sessions called = %d, want 0", sessions.calls)
+	}
+}
+
+func TestServiceDurableQuestionHandoffStaysAcceptedWhenAdmissionFails(t *testing.T) {
+	for _, dispatchErr := range []error{nil, errors.New("queue unavailable")} {
+		service, err := NewService(ServiceParams{Sessions: &stubSessionPreparer{}, Dispatcher: &recordingDispatcher{err: dispatchErr}, Questions: &stubQuestionResolver{result: QuestionResolution{Matched: true, Settled: true, RecoveryPending: true, Continuation: actorlayer.Envelope{ID: "answer"}}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := testRequest("saved-answer", "yes")
+		req.QuestionReply = &questioncmd.InboundReply{MessageID: "answer"}
+		result, err := service.HandleChat(t.Context(), req)
+		if err != nil || !result.Activated || result.Settlement.Reason != ReasonAccepted {
+			t.Fatalf("persisted question rejected: %+v %v", result, err)
+		}
 	}
 }
 
