@@ -22,7 +22,9 @@ are the existing turn source values. `Stop.source` is `success`, `failed` or
 terminal event does not emit `Stop`.
 
 A denied start never exposes the candidate session. Denial during restore
-preserves its existing workspace and persisted runtime history. A denied `Stop`
+preserves a successfully restored runtime's workspace and history. If upstream
+restore recovery had already created a fresh replacement, denial removes that
+candidate and retains the previous session metadata. A denied `Stop`
 fails the current turn; it does not start an automatic retry or undo earlier
 provider actions or streamed progress. `SessionEnd` failure is logged without
 command output and cannot prevent reset, close or shutdown cleanup.
