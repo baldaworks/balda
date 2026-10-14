@@ -51,15 +51,17 @@ type discoverySuccess struct {
 }
 
 type discoveryCandidate struct {
-	Installable     bool
-	Name            string
-	Version         string
-	Description     string
-	RelativePath    string
-	ManifestPath    string
-	Revision        string
-	Capabilities    plugincmd.CapabilitySummary
-	DiagnosticCodes []string
+	Installable  bool
+	Name         string
+	Version      string
+	Description  string
+	RelativePath string
+	ManifestPath string
+	Revision     string
+	// Omit false to preserve candidate tokens for snapshots written before this field existed.
+	DeclaresBaldaExtension bool `json:",omitempty"`
+	Capabilities           plugincmd.CapabilitySummary
+	DiagnosticCodes        []string
 }
 
 func (s *Service) lockOwner() func() {
@@ -245,7 +247,7 @@ func (s *Service) marketplaceDetailLocked(ctx context.Context, name string) (plu
 		if metadata.LastAttemptStatus == discoverySucceeded && candidate.Installable {
 			token = discoveryCandidateToken(observed, candidate)
 		}
-		detail.Candidates = append(detail.Candidates, plugincmd.CandidateView{Name: candidate.Name, Version: candidate.Version, Description: candidate.Description, Marketplace: src.Name, Revision: candidate.Revision, CandidateToken: token, Capabilities: candidate.Capabilities, DiagnosticCodes: append([]string(nil), candidate.DiagnosticCodes...)})
+		detail.Candidates = append(detail.Candidates, plugincmd.CandidateView{Name: candidate.Name, Version: candidate.Version, Description: candidate.Description, Marketplace: src.Name, Revision: candidate.Revision, CandidateToken: token, DeclaresBaldaExtension: candidate.DeclaresBaldaExtension, Capabilities: candidate.Capabilities, DiagnosticCodes: append([]string(nil), candidate.DiagnosticCodes...)})
 	}
 	return detail, nil
 }

@@ -114,3 +114,49 @@ func TestPluginMarketplaceOperationalRender(t *testing.T) {
 		t.Fatal("installed identity not joined by name")
 	}
 }
+
+func TestPluginsDeclarationMarkerBesidePackageNames(t *testing.T) {
+	renderer, err := NewRenderer("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const name = "demo <tag>"
+	installed := plugincmd.InstalledView{PluginStatus: plugincmd.PluginStatus{Name: name}, DeclaresBaldaExtension: true}
+	candidate := plugincmd.CandidateView{Name: name, DeclaresBaldaExtension: true}
+	detail := plugincmd.PluginDetail{InstalledView: installed}
+	tests := []struct {
+		name string
+		view *PluginsView
+		want string
+	}{
+		{name: "installed", view: &PluginsView{InstalledRows: []plugincmd.InstalledView{installed}}, want: `<td class="text-break">demo &lt;tag&gt; <span class="badge text-bg-secondary ms-2">Balda extension</span></td>`},
+		{name: "discovered", view: &PluginsView{Marketplaces: true, MarketplaceDetail: ProjectPluginMarketplaceDetail(plugincmd.MarketplaceDetail{MarketplaceView: plugincmd.MarketplaceView{Name: "market"}, Candidates: []plugincmd.CandidateView{candidate}}, nil)}, want: `<td class="text-break">demo &lt;tag&gt; <span class="badge text-bg-secondary ms-2">Balda extension</span></td>`},
+		{name: "detail", view: &PluginsView{PluginDetail: ProjectPluginDetail(detail)}, want: `<dd class="col-sm-9 text-break">demo &lt;tag&gt; <span class="badge text-bg-secondary ms-2">Balda extension</span></dd>`},
+		{name: "installed without declaration", view: &PluginsView{InstalledRows: []plugincmd.InstalledView{{PluginStatus: plugincmd.PluginStatus{Name: name}}}}},
+		{name: "discovered without declaration", view: &PluginsView{Marketplaces: true, MarketplaceDetail: ProjectPluginMarketplaceDetail(plugincmd.MarketplaceDetail{MarketplaceView: plugincmd.MarketplaceView{Name: "market"}, Candidates: []plugincmd.CandidateView{{Name: name}}}, nil)}},
+		{name: "detail without declaration", view: &PluginsView{PluginDetail: ProjectPluginDetail(plugincmd.PluginDetail{InstalledView: plugincmd.InstalledView{PluginStatus: plugincmd.PluginStatus{Name: name}}})}},
+		{name: "review keeps action screen unchanged", view: &PluginsView{Review: &PluginReview{Candidate: &candidate}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			if err := renderer.Render(response, httptest.NewRequest(http.MethodGet, "/plugins", nil), http.StatusOK, TemplatePlugins, Page{Title: "Plugins", Plugins: tt.view}); err != nil {
+				t.Fatal(err)
+			}
+			body := response.Body.String()
+			if strings.Contains(body, "<tag>") || !strings.Contains(body, "demo &lt;tag&gt;") {
+				t.Fatal("package name was not HTML escaped")
+			}
+			if tt.want != "" && !strings.Contains(body, tt.want) {
+				t.Fatalf("marker missing beside package name in %s", tt.name)
+			}
+			want := 0
+			if tt.want != "" {
+				want = 1
+			}
+			if got := strings.Count(body, ">Balda extension</span>"); got != want {
+				t.Fatalf("marker count = %d, want %d", got, want)
+			}
+		})
+	}
+}

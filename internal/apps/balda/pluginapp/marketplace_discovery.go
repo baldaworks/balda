@@ -173,7 +173,7 @@ func (s *Service) discoverMarketplaceLocked(ctx context.Context, src Marketplace
 			invalid = true
 			continue
 		}
-		candidate := discoveryCandidate{Name: name, Version: summary.Version, Description: summary.Description, RelativePath: filepath.ToSlash(relative), ManifestPath: strings.TrimSpace(entry.ManifestPath), Revision: string(revision)}
+		candidate := discoveryCandidate{Name: name, Version: summary.Version, Description: summary.Description, RelativePath: filepath.ToSlash(relative), ManifestPath: strings.TrimSpace(entry.ManifestPath), Revision: string(revision), DeclaresBaldaExtension: summary.DeclaresBaldaExtension}
 		if packageErr == nil && pkg.Version == summary.Version && pkg.Source.Descriptor.ID.Name == name {
 			candidate.Installable = true
 			c := capabilitySummary(pkg.Source)

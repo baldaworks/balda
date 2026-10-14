@@ -64,9 +64,10 @@ type SourceLoader struct {
 
 // PluginPackage is one validated plugin source plus manifest display metadata.
 type PluginPackage struct {
-	Source      runtimecatalogcmd.Source
-	Version     string
-	Description string
+	Source                 runtimecatalogcmd.Source
+	Version                string
+	Description            string
+	DeclaresBaldaExtension bool
 }
 
 // NewSourceLoader creates a bounded loader. Empty limits use safe defaults.
@@ -117,7 +118,7 @@ func (l *SourceLoader) LoadPluginPackage(root string) (PluginPackage, error) {
 	if err != nil {
 		return PluginPackage{}, err
 	}
-	return PluginPackage{Source: source, Version: manifest.Version, Description: manifest.Description}, nil
+	return PluginPackage{Source: source, Version: manifest.Version, Description: manifest.Description, DeclaresBaldaExtension: manifest.DeclaresBaldaExtension}, nil
 }
 
 // InspectRevision returns the bounded content identity without projecting components.
@@ -172,7 +173,7 @@ func (l *SourceLoader) materializeCapturedPlugin(revision runtimecatalogcmd.Revi
 	if err != nil {
 		return PluginPackage{}, err
 	}
-	return PluginPackage{Source: source, Version: manifest.Version, Description: manifest.Description}, nil
+	return PluginPackage{Source: source, Version: manifest.Version, Description: manifest.Description, DeclaresBaldaExtension: manifest.DeclaresBaldaExtension}, nil
 }
 
 func (l *SourceLoader) loadCapturedPlugin(revision runtimecatalogcmd.RevisionID, tree capturedTree) (runtimecatalogcmd.Source, error) {
@@ -223,9 +224,10 @@ func (l *SourceLoader) LoadSkillSource(root string, id runtimecatalogcmd.SourceI
 }
 
 type pluginManifest struct {
-	Name        string
-	Version     string
-	Description string
+	Name                   string
+	Version                string
+	Description            string
+	DeclaresBaldaExtension bool
 }
 
 func validatePluginManifest(data []byte) (pluginManifest, []string, json.RawMessage, error) {
@@ -280,15 +282,16 @@ func validatePluginManifest(data []byte) (pluginManifest, []string, json.RawMess
 		}
 	}
 	var extensionRaw json.RawMessage
+	declaresBaldaExtension := false
 	if raw, ok := fields["extensions"]; ok {
 		var extensions map[string]json.RawMessage
 		if err := decodeJSONObject(raw, &extensions); err == nil {
-			extensionRaw = extensions[baldaExtension]
+			extensionRaw, declaresBaldaExtension = extensions[baldaExtension]
 		} else {
 			ignored = append(ignored, "extensions")
 		}
 	}
-	return pluginManifest{Name: name, Version: values["version"], Description: values["description"]}, ignored, extensionRaw, nil
+	return pluginManifest{Name: name, Version: values["version"], Description: values["description"], DeclaresBaldaExtension: declaresBaldaExtension}, ignored, extensionRaw, nil
 }
 
 // ValidPluginName reports whether name is a portable plugin identity.

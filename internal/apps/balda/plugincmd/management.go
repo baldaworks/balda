@@ -148,9 +148,10 @@ type RetainedRevision struct {
 type InstalledView struct {
 	Removed bool
 	PluginStatus
-	ExpectedState   string
-	OriginAvailable bool
-	RecoveryPending bool
+	ExpectedState          string
+	OriginAvailable        bool
+	RecoveryPending        bool
+	DeclaresBaldaExtension bool
 }
 
 // PluginDetail adds safe retained contributions and revision choices.
@@ -165,15 +166,16 @@ type PluginDetail struct {
 
 // CandidateView binds review to a particular configured source and content.
 type CandidateView struct {
-	Name            string
-	Version         string
-	Description     string
-	Marketplace     string
-	Revision        string
-	CandidateToken  string
-	ExpectedState   string
-	Capabilities    CapabilitySummary
-	DiagnosticCodes []string
+	Name                   string
+	Version                string
+	Description            string
+	Marketplace            string
+	Revision               string
+	CandidateToken         string
+	ExpectedState          string
+	DeclaresBaldaExtension bool
+	Capabilities           CapabilitySummary
+	DiagnosticCodes        []string
 }
 
 // MarketplaceView projects accepted refresh evidence without filesystem data.

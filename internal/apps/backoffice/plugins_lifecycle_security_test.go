@@ -21,18 +21,20 @@ const pluginLifecycleCandidateToken = "reviewed-content"
 
 type pluginLifecycleSecurityFixture struct {
 	PluginsOperations
-	mutations   []plugincmd.PluginMutation
-	err         error
-	outcome     plugincmd.MutationOutcome
-	removed     bool
-	unavailable bool
+	mutations          []plugincmd.PluginMutation
+	err                error
+	outcome            plugincmd.MutationOutcome
+	removed            bool
+	unavailable        bool
+	installedDeclared  bool
+	discoveredDeclared bool
 }
 
 func (f *pluginLifecycleSecurityFixture) Inventory(context.Context, plugincmd.Authority) ([]plugincmd.InstalledView, error) {
-	return []plugincmd.InstalledView{{PluginStatus: plugincmd.PluginStatus{Name: "install", Version: "1", Marketplace: pluginLifecycleMarketplace, Enabled: true}}}, nil
+	return []plugincmd.InstalledView{{PluginStatus: plugincmd.PluginStatus{Name: "install", Version: "1", Marketplace: pluginLifecycleMarketplace, Enabled: true}, DeclaresBaldaExtension: f.installedDeclared}}, nil
 }
 func (f *pluginLifecycleSecurityFixture) Detail(_ context.Context, name string, _ plugincmd.Authority) (plugincmd.PluginDetail, error) {
-	return plugincmd.PluginDetail{InstalledView: plugincmd.InstalledView{PluginStatus: plugincmd.PluginStatus{Name: name, Version: "1", Marketplace: pluginLifecycleMarketplace, Revision: pluginLifecycleCurrent, Enabled: !f.removed, Runtime: plugincmd.RuntimeStatus{RevisionCurrent: true, SnapshotID: "published-snapshot"}}, ExpectedState: pluginLifecycleExpected, OriginAvailable: !f.removed, RecoveryPending: f.removed, Removed: f.removed}, Commands: []plugincmd.Contribution{{Name: "ship", Description: "<script>window.pluginCanary=true</script>"}}, Revisions: []plugincmd.RetainedRevision{{Version: "1", Revision: pluginLifecycleCurrent, Available: true, Current: !f.removed}, {Version: "0", Revision: "r0", Available: true}}}, nil
+	return plugincmd.PluginDetail{InstalledView: plugincmd.InstalledView{PluginStatus: plugincmd.PluginStatus{Name: name, Version: "1", Marketplace: pluginLifecycleMarketplace, Revision: pluginLifecycleCurrent, Enabled: !f.removed, Runtime: plugincmd.RuntimeStatus{RevisionCurrent: true, SnapshotID: "published-snapshot"}}, ExpectedState: pluginLifecycleExpected, OriginAvailable: !f.removed, RecoveryPending: f.removed, Removed: f.removed, DeclaresBaldaExtension: f.installedDeclared}, Commands: []plugincmd.Contribution{{Name: "ship", Description: "<script>window.pluginCanary=true</script>"}}, Revisions: []plugincmd.RetainedRevision{{Version: "1", Revision: pluginLifecycleCurrent, Available: true, Current: !f.removed}, {Version: "0", Revision: "r0", Available: true}}}, nil
 }
 func (f *pluginLifecycleSecurityFixture) Marketplaces(context.Context, plugincmd.Authority) ([]plugincmd.MarketplaceView, error) {
 	return []plugincmd.MarketplaceView{{Name: pluginLifecycleMarketplace, Source: "local", LastAttemptStatus: "succeeded"}}, nil
@@ -42,7 +44,7 @@ func (f *pluginLifecycleSecurityFixture) Marketplace(_ context.Context, name str
 	if f.unavailable {
 		token = ""
 	}
-	return plugincmd.MarketplaceDetail{MarketplaceView: plugincmd.MarketplaceView{Name: name, LastAttemptStatus: "succeeded"}, Candidates: []plugincmd.CandidateView{{Name: "demo", Marketplace: name, Version: "2", Revision: "r2", CandidateToken: token, ExpectedState: pluginLifecycleExpected}}}, nil
+	return plugincmd.MarketplaceDetail{MarketplaceView: plugincmd.MarketplaceView{Name: name, LastAttemptStatus: "succeeded"}, Candidates: []plugincmd.CandidateView{{Name: "demo", Marketplace: name, Version: "2", Revision: "r2", CandidateToken: token, ExpectedState: pluginLifecycleExpected, DeclaresBaldaExtension: f.discoveredDeclared}}}, nil
 }
 func (f *pluginLifecycleSecurityFixture) Candidate(_ context.Context, name, marketplace string, _ plugincmd.Authority) (plugincmd.CandidateView, error) {
 	if f.unavailable {
@@ -91,6 +93,37 @@ func TestPluginLifecycleHTTPRoutesActionsAndRecovery(t *testing.T) {
 				handler.ServeHTTP(w, r)
 				return w
 			}
+			for _, state := range []struct {
+				installed, discovered bool
+			}{
+				{installed: true},
+				{discovered: true},
+			} {
+				fixture.installedDeclared = state.installed
+				fixture.discoveredDeclared = state.discovered
+				for _, page := range []struct {
+					path string
+					want bool
+				}{
+					{path: "/plugins", want: state.installed},
+					{path: "/plugins/installed/install", want: state.installed},
+					{path: "/plugins/marketplaces/definitions/team", want: state.discovered},
+				} {
+					got := get(page.path, admin.access)
+					wantCount := 0
+					if page.want {
+						wantCount = 1
+					}
+					if got.Code != http.StatusOK || strings.Count(got.Body.String(), ">Balda extension</span>") != wantCount {
+						t.Fatalf("declaration GET %s: status=%d, marker count=%d, want=%d", page.path, got.Code, strings.Count(got.Body.String(), ">Balda extension</span>"), wantCount)
+					}
+				}
+			}
+			if len(fixture.mutations) != 0 {
+				t.Fatal("declaration GET mutated plugin state")
+			}
+			fixture.installedDeclared = false
+			fixture.discoveredDeclared = false
 			mutation := func(path string, form url.Values, access, csrf string, fragment bool) *httptest.ResponseRecorder {
 				form.Set("csrf_token", csrf)
 				return performAccessMutation(t, handler, config, base+path, form, access, csrf, fragment)

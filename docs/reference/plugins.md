@@ -14,6 +14,13 @@ package and exact revision before **Install plugin**. A page read does not fetch
 a source. Failed refresh keeps the last successful discovery visible as stale
 reference and disables candidate review until a successful refresh.
 
+Installed and discovered package names carry a **Balda extension** marker when
+the displayed revision's `plugin.json` declares
+`extensions["dev.baldaworks.balda"]`. It reports declaration even if the
+extension is invalid or supplies no usable commands. Enabled state, extension
+diagnostics, and runtime health remain separate; stale discovery shows the
+last successful candidate's declaration until another successful refresh.
+
 The configured marketplace name is the selection identity; it can differ from
 the index's manifest name. Upgrade resolves the proven installation origin and
 cannot switch to another publisher merely because it offers the same package

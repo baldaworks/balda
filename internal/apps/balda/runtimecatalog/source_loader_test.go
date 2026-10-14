@@ -106,6 +106,39 @@ func TestSourceLoaderValidatesBundledBaldaExtensionSchema(t *testing.T) {
 	}
 }
 
+func TestPluginPackageReportsBaldaExtensionDeclaration(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name         string
+		extensions   string
+		wantDeclared bool
+		wantInvalid  bool
+	}{
+		{name: "absent"},
+		{name: "other extension", extensions: `,"extensions":{"other":{}}`},
+		{name: "malformed extensions", extensions: `,"extensions":[]`},
+		{name: "valid but no commands", extensions: `,"extensions":{"dev.baldaworks.balda":{"schema_version":1,"commands":[]}}`, wantDeclared: true},
+		{name: "invalid declaration", extensions: `,"extensions":{"dev.baldaworks.balda":{}}`, wantDeclared: true, wantInvalid: true},
+		{name: "null declaration", extensions: `,"extensions":{"dev.baldaworks.balda":null}`, wantDeclared: true, wantInvalid: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeSourceFile(t, root, "plugin.json", `{"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json","name":"demo"`+tt.extensions+`}`)
+			pkg, err := newTestSourceLoader(t).LoadPluginPackage(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if pkg.DeclaresBaldaExtension != tt.wantDeclared {
+				t.Errorf("DeclaresBaldaExtension = %t, want %t", pkg.DeclaresBaldaExtension, tt.wantDeclared)
+			}
+			if got := containsDiagnostic(pkg.Source.Diagnostics, runtimecatalogcmd.DiagnosticExtensionInvalid); got != tt.wantInvalid {
+				t.Errorf("extension invalid diagnostic = %t, want %t", got, tt.wantInvalid)
+			}
+		})
+	}
+}
+
 func TestSourceLoaderRejectsFatalManifestAndTreeFailures(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
