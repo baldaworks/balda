@@ -11,6 +11,8 @@ import (
 // GetSession returns the in-memory session for the given locator.
 func (m *Manager) GetSession(locator SessionLocator) (*TopicSession, error) {
 	sessionID := strings.TrimSpace(locator.SessionID)
+	unlock := m.lockSessionOperation(sessionID)
+	defer unlock()
 
 	m.mu.RLock()
 	ts := m.sessions[sessionID]
@@ -34,9 +36,11 @@ func (m *Manager) GetSession(locator SessionLocator) (*TopicSession, error) {
 func (m *Manager) EnsureSession(ctx context.Context, sessionCtx SessionContext, agentName string) (*TopicSession, error) {
 	sessionID := strings.TrimSpace(sessionCtx.Locator.SessionID)
 
+	unlock := m.lockSessionOperation(sessionID)
 	m.mu.RLock()
 	ts := m.sessions[sessionID]
 	m.mu.RUnlock()
+	unlock()
 
 	if ts != nil {
 		m.logger.Debug().Str("session_id", sessionID).Msg("returning existing session")
@@ -69,12 +73,14 @@ func (m *Manager) RestoreSession(ctx context.Context, sessionCtx SessionContext)
 	locator := sessionCtx.Locator
 	sessionID := strings.TrimSpace(locator.SessionID)
 
+	unlock := m.lockSessionOperation(sessionID)
 	m.mu.RLock()
-	if ts := m.sessions[sessionID]; ts != nil {
-		m.mu.RUnlock()
+	ts := m.sessions[sessionID]
+	m.mu.RUnlock()
+	unlock()
+	if ts != nil {
 		return ts, nil
 	}
-	m.mu.RUnlock()
 
 	record, ok, err := m.sessionStore.GetByAddress(ctx, locator.ChannelType, locator.AddressKey)
 	if err != nil {
@@ -107,9 +113,12 @@ func (m *Manager) RestoreSession(ctx context.Context, sessionCtx SessionContext)
 	// matters when a transport changes its deterministic session-ID format:
 	// the inbound locator can have a new ID while the active in-memory session
 	// still uses the old ID for the same address.
+	lookupID := strings.TrimSpace(recordLocator.SessionID)
+	unlock = m.lockSessionOperation(lookupID)
 	m.mu.RLock()
-	active := m.sessions[strings.TrimSpace(recordLocator.SessionID)]
+	active := m.sessions[lookupID]
 	m.mu.RUnlock()
+	unlock()
 	if active != nil {
 		return active, nil
 	}

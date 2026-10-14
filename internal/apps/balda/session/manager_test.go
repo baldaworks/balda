@@ -9,7 +9,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/rs/zerolog"
@@ -47,6 +49,122 @@ func TestStopAllWithContext_CleansWorkspaceWhenRootContextCanceled(t *testing.T)
 
 	if _, err := os.Stat(workspaceDir); !os.IsNotExist(err) {
 		t.Fatalf("workspace still exists after StopAll; stat err = %v", err)
+	}
+}
+
+func TestStopAllHidesEverySessionBeforeCleanup(t *testing.T) {
+	first := testTelegramLocator(10, 42)
+	second := testTelegramLocator(11, 43)
+	cleanupStarted := make(chan string, 1)
+	releaseCleanup := make(chan struct{})
+	closeRuntime := func(sessionID string) func() error {
+		return func() error {
+			cleanupStarted <- sessionID
+			<-releaseCleanup
+			return nil
+		}
+	}
+	m := &Manager{
+		logger: zerolog.Nop(),
+		sessions: map[string]*TopicSession{
+			first.SessionID:  {sessionID: first.SessionID, locator: first, runtimeClose: closeRuntime(first.SessionID)},
+			second.SessionID: {sessionID: second.SessionID, locator: second, runtimeClose: closeRuntime(second.SessionID)},
+		},
+	}
+	stopped := make(chan struct{})
+	go func() {
+		m.stopAllWithContext(context.Background())
+		close(stopped)
+	}()
+	var waitingOn string
+	select {
+	case waitingOn = <-cleanupStarted:
+	case <-time.After(time.Second):
+		t.Fatal("shutdown cleanup did not start")
+	}
+	other := first
+	if waitingOn == first.SessionID {
+		other = second
+	}
+	_, lookupErr := m.GetSession(other)
+	if lookupErr == nil {
+		t.Error("session remained visible after shutdown cleanup began")
+	}
+	close(releaseCleanup)
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("shutdown cleanup did not settle")
+	}
+}
+
+func TestStopAllDoesNotRepeatCompletedResetCleanup(t *testing.T) {
+	ctx := context.Background()
+	locator := testTelegramLocator(10, 42)
+	service := &blockingDeleteSessionService{
+		Service:      adksession.InMemoryService(),
+		firstEntered: make(chan struct{}),
+		releaseFirst: make(chan struct{}),
+	}
+	created, err := service.Create(ctx, &adksession.CreateRequest{
+		AppName: baldaRuntimeAppName, UserID: "tg-101", SessionID: locator.SessionID,
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	var closeCalls atomic.Int32
+	observer := &fakeBoundaryObserver{}
+	m := &Manager{
+		logger: zerolog.Nop(), sessionStore: &fakeSessionStore{}, boundaryObserver: observer,
+		sessions: map[string]*TopicSession{locator.SessionID: {
+			sessionID: locator.SessionID, userID: "tg-101", locator: locator,
+			sessionSvc: service, sess: created.Session,
+			runtimeClose: func() error { closeCalls.Add(1); return nil },
+		}},
+	}
+	resetDone := make(chan error, 1)
+	go func() { resetDone <- m.ResetSession(ctx, locator) }()
+	select {
+	case <-service.firstEntered:
+	case <-time.After(time.Second):
+		t.Fatal("reset did not start runtime deletion")
+	}
+	stopDone := make(chan struct{})
+	go func() {
+		m.stopAllWithContext(ctx)
+		close(stopDone)
+	}()
+	deadline := time.After(time.Second)
+	for {
+		m.mu.RLock()
+		remaining := len(m.sessions)
+		m.mu.RUnlock()
+		if remaining == 0 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("shutdown did not hide the active session")
+		case <-time.After(time.Millisecond):
+		}
+	}
+	close(service.releaseFirst)
+	if err := <-resetDone; err != nil {
+		t.Fatalf("ResetSession() error = %v", err)
+	}
+	select {
+	case <-stopDone:
+	case <-time.After(time.Second):
+		t.Fatal("shutdown cleanup did not settle")
+	}
+	if got := service.deleteCalls.Load(); got != 1 {
+		t.Fatalf("runtime deletes = %d, want 1", got)
+	}
+	if got := closeCalls.Load(); got != 1 {
+		t.Fatalf("scoped runtime closes = %d, want 1", got)
+	}
+	if len(observer.boundaries) != 1 || observer.boundaries[0].Reason != BoundaryReasonReset {
+		t.Fatalf("boundaries after completed reset and shutdown = %+v, want one reset", observer.boundaries)
 	}
 }
 
@@ -167,6 +285,310 @@ func TestResetSession_DeletesRuntimeHistoryAndPreservesMetadata(t *testing.T) {
 	}); err == nil {
 		t.Fatal("runtime session still exists after ResetSession")
 	}
+}
+
+func TestResetSessionDeleteTimeoutKeepsSessionForRetry(t *testing.T) {
+	ctx := context.Background()
+	locator := testTelegramLocator(10, 42)
+	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteProvider() error = %v", err)
+	}
+	t.Cleanup(func() { _ = provider.Close() })
+	service := &timeoutOnceSessionService{Service: provider.RuntimeSessions()}
+	created, err := service.Create(ctx, &adksession.CreateRequest{
+		AppName: baldaRuntimeAppName, UserID: "tg-101", SessionID: locator.SessionID,
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	event := adksession.NewEvent(ctx, "old-turn")
+	event.Author = "user"
+	if err := service.AppendEvent(ctx, created.Session, event); err != nil {
+		t.Fatalf("AppendEvent() error = %v", err)
+	}
+	closed := false
+	active := &TopicSession{
+		sessionID:      locator.SessionID,
+		agentSessionID: locator.SessionID,
+		userID:         "tg-101",
+		locator:        locator,
+		sessionSvc:     service,
+		sess:           created.Session,
+		runtimeClose:   func() error { closed = true; return nil },
+	}
+	observer := &fakeBoundaryObserver{}
+	m := &Manager{
+		logger:           zerolog.Nop(),
+		sessionStore:     &fakeSessionStore{},
+		boundaryObserver: observer,
+		sessions:         map[string]*TopicSession{locator.SessionID: active},
+	}
+
+	if err := m.ResetSession(ctx, locator); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("first ResetSession() error = %v, want deadline exceeded", err)
+	}
+	got, err := m.GetSession(locator)
+	if err != nil || got != active {
+		t.Fatalf("GetSession() after failed reset = %p, %v; want original %p", got, err, active)
+	}
+	if closed {
+		t.Fatal("scoped runtime closed after failed reset")
+	}
+	oldSession, err := service.Get(ctx, &adksession.GetRequest{
+		AppName: baldaRuntimeAppName, UserID: "tg-101", SessionID: locator.SessionID,
+	})
+	if err != nil {
+		t.Fatalf("runtime session after failed reset: %v", err)
+	}
+	if got := oldSession.Session.Events().Len(); got != 1 {
+		t.Fatalf("events after failed reset = %d, want 1", got)
+	}
+
+	if err := m.ResetSession(ctx, locator); err != nil {
+		t.Fatalf("second ResetSession() error = %v", err)
+	}
+	if _, err := m.GetSession(locator); err == nil {
+		t.Fatal("session still active after successful retry")
+	}
+	if !closed {
+		t.Fatal("scoped runtime not closed after successful retry")
+	}
+	if _, err := service.Get(ctx, &adksession.GetRequest{
+		AppName: baldaRuntimeAppName, UserID: "tg-101", SessionID: locator.SessionID,
+	}); err == nil {
+		t.Fatal("old runtime session still exists after retry")
+	}
+	recreated, err := service.Create(ctx, &adksession.CreateRequest{
+		AppName: baldaRuntimeAppName, UserID: "tg-101", SessionID: locator.SessionID,
+	})
+	if err != nil {
+		t.Fatalf("Create() after retry error = %v", err)
+	}
+	if got := recreated.Session.Events().Len(); got != 0 {
+		t.Fatalf("events in fresh session = %d, want 0", got)
+	}
+	if len(service.deleteRequests) != 2 {
+		t.Fatalf("Delete() calls = %d, want 2", len(service.deleteRequests))
+	}
+	if len(observer.boundaries) != 1 {
+		t.Fatalf("reset boundaries = %d, want 1", len(observer.boundaries))
+	}
+	for _, req := range service.deleteRequests {
+		if req.AppName != baldaRuntimeAppName || req.UserID != "tg-101" || req.SessionID != locator.SessionID {
+			t.Fatalf("Delete() request = %+v, want original runtime identity", req)
+		}
+	}
+}
+
+type timeoutOnceSessionService struct {
+	adksession.Service
+	deleteRequests []adksession.DeleteRequest
+}
+
+func TestConcurrentResetsDoNotDeleteTheSameActiveRuntimeTogether(t *testing.T) {
+	ctx := context.Background()
+	locator := testTelegramLocator(10, 42)
+	service := &blockingDeleteSessionService{
+		Service:       adksession.InMemoryService(),
+		firstEntered:  make(chan struct{}),
+		releaseFirst:  make(chan struct{}),
+		secondEntered: make(chan struct{}),
+	}
+	created, err := service.Create(ctx, &adksession.CreateRequest{
+		AppName: baldaRuntimeAppName, UserID: "tg-101", SessionID: locator.SessionID,
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	m := &Manager{
+		logger:       zerolog.Nop(),
+		sessionStore: &fakeSessionStore{},
+		sessions: map[string]*TopicSession{locator.SessionID: {
+			sessionID: locator.SessionID, userID: "tg-101", locator: locator,
+			sessionSvc: service, sess: created.Session,
+		}},
+	}
+	firstDone := make(chan error, 1)
+	go func() { firstDone <- m.ResetSession(ctx, locator) }()
+	select {
+	case <-service.firstEntered:
+	case <-time.After(time.Second):
+		t.Fatal("first reset did not start runtime deletion")
+	}
+	secondStarted := make(chan struct{})
+	secondDone := make(chan error, 1)
+	go func() {
+		close(secondStarted)
+		secondDone <- m.ResetSession(ctx, locator)
+	}()
+	<-secondStarted
+	select {
+	case <-service.secondEntered:
+		t.Fatal("second reset started deleting the active runtime before the first completed")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(service.releaseFirst)
+	if err := <-firstDone; err != nil {
+		t.Fatalf("first ResetSession() error = %v", err)
+	}
+	select {
+	case <-secondDone:
+	case <-time.After(time.Second):
+		t.Fatal("second reset did not settle")
+	}
+}
+
+func TestSessionLookupWaitsForFailedResetDeletion(t *testing.T) {
+	ctx := context.Background()
+	locator := testTelegramLocator(10, 42)
+	service := &blockingDeleteSessionService{
+		Service:      adksession.InMemoryService(),
+		firstEntered: make(chan struct{}),
+		releaseFirst: make(chan struct{}),
+		firstErr:     context.DeadlineExceeded,
+	}
+	created, err := service.Create(ctx, &adksession.CreateRequest{
+		AppName: baldaRuntimeAppName, UserID: "tg-101", SessionID: locator.SessionID,
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	active := &TopicSession{
+		sessionID: locator.SessionID, userID: "tg-101", locator: locator,
+		sessionSvc: service, sess: created.Session,
+	}
+	m := &Manager{
+		logger: zerolog.Nop(), sessionStore: &fakeSessionStore{},
+		sessions: map[string]*TopicSession{locator.SessionID: active},
+	}
+	resetDone := make(chan error, 1)
+	go func() { resetDone <- m.ResetSession(ctx, locator) }()
+	select {
+	case <-service.firstEntered:
+	case <-time.After(time.Second):
+		t.Fatal("reset did not start runtime deletion")
+	}
+	type lookupResult struct {
+		session *TopicSession
+		err     error
+	}
+	lookupDone := make(chan lookupResult, 1)
+	lookupStarted := make(chan struct{})
+	go func() {
+		close(lookupStarted)
+		session, err := m.GetSession(locator)
+		lookupDone <- lookupResult{session: session, err: err}
+	}()
+	<-lookupStarted
+	select {
+	case <-lookupDone:
+		t.Fatal("GetSession returned while reset deletion was unresolved")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(service.releaseFirst)
+	if err := <-resetDone; !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("ResetSession() error = %v, want deadline exceeded", err)
+	}
+	select {
+	case result := <-lookupDone:
+		if result.err != nil || result.session != active {
+			t.Fatalf("GetSession() = %p, %v; want original %p", result.session, result.err, active)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("GetSession did not resume after failed deletion")
+	}
+}
+
+func TestStopSessionWaitsForResetDeletion(t *testing.T) {
+	ctx := context.Background()
+	locator := testTelegramLocator(10, 42)
+	service := &blockingDeleteSessionService{
+		Service:      adksession.InMemoryService(),
+		firstEntered: make(chan struct{}),
+		releaseFirst: make(chan struct{}),
+		firstErr:     context.DeadlineExceeded,
+	}
+	created, err := service.Create(ctx, &adksession.CreateRequest{
+		AppName: baldaRuntimeAppName, UserID: "tg-101", SessionID: locator.SessionID,
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	closed := false
+	m := &Manager{
+		logger: zerolog.Nop(), sessionStore: &fakeSessionStore{}, sessionsPersistent: true,
+		sessions: map[string]*TopicSession{locator.SessionID: {
+			sessionID: locator.SessionID, userID: "tg-101", locator: locator,
+			sessionSvc: service, sess: created.Session,
+			runtimeClose: func() error { closed = true; return nil },
+		}},
+	}
+	resetDone := make(chan error, 1)
+	go func() { resetDone <- m.ResetSession(ctx, locator) }()
+	select {
+	case <-service.firstEntered:
+	case <-time.After(time.Second):
+		t.Fatal("reset did not start runtime deletion")
+	}
+	stopStarted := make(chan struct{})
+	stopDone := make(chan struct{})
+	go func() {
+		close(stopStarted)
+		m.StopSession(locator)
+		close(stopDone)
+	}()
+	<-stopStarted
+	select {
+	case <-stopDone:
+		t.Fatal("StopSession completed while reset deletion was unresolved")
+	case <-time.After(100 * time.Millisecond):
+	}
+	if closed {
+		t.Fatal("scoped runtime closed while reset deletion was unresolved")
+	}
+	close(service.releaseFirst)
+	if err := <-resetDone; !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("ResetSession() error = %v, want deadline exceeded", err)
+	}
+	select {
+	case <-stopDone:
+	case <-time.After(time.Second):
+		t.Fatal("StopSession did not settle after reset deletion")
+	}
+	if !closed {
+		t.Fatal("scoped runtime remained open after StopSession")
+	}
+}
+
+type blockingDeleteSessionService struct {
+	adksession.Service
+	firstEntered  chan struct{}
+	releaseFirst  chan struct{}
+	secondEntered chan struct{}
+	deleteCalls   atomic.Int32
+	firstErr      error
+}
+
+func (s *blockingDeleteSessionService) Delete(ctx context.Context, req *adksession.DeleteRequest) error {
+	if s.deleteCalls.Add(1) == 1 {
+		close(s.firstEntered)
+		<-s.releaseFirst
+		if s.firstErr != nil {
+			return s.firstErr
+		}
+	} else if s.secondEntered != nil {
+		close(s.secondEntered)
+	}
+	return s.Service.Delete(ctx, req)
+}
+
+func (s *timeoutOnceSessionService) Delete(ctx context.Context, req *adksession.DeleteRequest) error {
+	s.deleteRequests = append(s.deleteRequests, *req)
+	if len(s.deleteRequests) == 1 {
+		return context.DeadlineExceeded
+	}
+	return s.Service.Delete(ctx, req)
 }
 
 func TestResetSessionPublishesBoundaryBeforeRuntimeDeletion(t *testing.T) {

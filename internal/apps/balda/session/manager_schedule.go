@@ -17,6 +17,8 @@ func (m *Manager) CloseRunSession(ctx context.Context, sessionID, userID string)
 	if !isPrivateScheduleSessionID(sessionID) && !isPrivateWebhookSessionID(sessionID) || userID == "" {
 		return fmt.Errorf("private run session and user ids are required")
 	}
+	unlock := m.lockSessionOperation(sessionID)
+	defer unlock()
 	m.mu.RLock()
 	active := m.sessions[sessionID]
 	m.mu.RUnlock()

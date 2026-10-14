@@ -123,6 +123,13 @@ type Manager struct {
 	agentSessionSeq    uint64
 	boundarySeq        uint64
 	shutdownBoundaries map[string]string
+	operationMu        sync.Mutex
+	operations         map[string]*sessionOperation
+}
+
+type sessionOperation struct {
+	mu   sync.Mutex
+	refs int
 }
 
 // ManagerParams provides dependencies for Manager.
@@ -291,6 +298,8 @@ func (m *Manager) createSession(ctx context.Context, sessionCtx SessionContext, 
 	}
 
 	sessionID := strings.TrimSpace(locator.SessionID)
+	unlock := m.lockSessionOperation(sessionID)
+	defer unlock()
 	m.mu.RLock()
 	builder := m.agentBuilder
 	m.mu.RUnlock()
@@ -512,6 +521,8 @@ func (m *Manager) TakeStartupNotice(sessionID string) string {
 // StopSession removes a session from memory and cleans up.
 func (m *Manager) StopSession(locator SessionLocator) {
 	sessionID := strings.TrimSpace(locator.SessionID)
+	unlock := m.lockSessionOperation(sessionID)
+	defer unlock()
 	if m.sessionsPersistent {
 		m.logger.Info().
 			Str("session_id", sessionID).
@@ -546,6 +557,8 @@ func (m *Manager) resetSessionWithReason(ctx context.Context, locator SessionLoc
 	if sessionID == "" {
 		return fmt.Errorf("session_id is required")
 	}
+	unlock := m.lockSessionOperation(sessionID)
+	defer unlock()
 
 	m.logger.Info().
 		Str("session_id", sessionID).
@@ -554,7 +567,7 @@ func (m *Manager) resetSessionWithReason(ctx context.Context, locator SessionLoc
 		Str("boundary_reason", string(reason)).
 		Msg("resetting session")
 
-	if removed, boundaryErr := m.removeActiveSession(ctx, locator, sessionCleanupOptions{deleteRuntimeSession: true}, reason); removed {
+	if removed, boundaryErr := m.resetActiveSession(ctx, locator, reason); removed {
 		return boundaryErr
 	}
 
@@ -649,17 +662,21 @@ func (m *Manager) stopAllWithContext(ctx context.Context) {
 		if ts == nil {
 			continue
 		}
-		if err := m.notifyBoundary(ctx, SessionBoundary{
-			Locator:        ts.locator,
-			SessionID:      ts.sessionID,
-			AgentSessionID: ts.GetAgentSessionID(),
-			Reason:         BoundaryReasonShutdown,
-		}); err != nil {
-			m.logger.Warn().Err(err).Str("session_id", ts.sessionID).Msg("session shutdown boundary failed")
+		unlock := m.lockSessionOperation(ts.sessionID)
+		if !ts.runtimeDeleted && !ts.runtimeClosed {
+			if err := m.notifyBoundary(ctx, SessionBoundary{
+				Locator:        ts.locator,
+				SessionID:      ts.sessionID,
+				AgentSessionID: ts.GetAgentSessionID(),
+				Reason:         BoundaryReasonShutdown,
+			}); err != nil {
+				m.logger.Warn().Err(err).Str("session_id", ts.sessionID).Msg("session shutdown boundary failed")
+			}
 		}
 		if err := m.cleanupTopicSession(ctx, ts, opts); err != nil {
 			m.logger.Warn().Err(err).Str("session_id", ts.sessionID).Msg("failed to close topic session")
 		}
+		unlock()
 	}
 
 	m.logger.Info().Msg("all sessions stopped")
@@ -668,6 +685,79 @@ func (m *Manager) stopAllWithContext(ctx context.Context) {
 type sessionCleanupOptions struct {
 	deleteRuntimeSession bool
 	cleanupWorkspace     bool
+}
+
+func (m *Manager) resetActiveSession(ctx context.Context, locator SessionLocator, reason BoundaryReason) (bool, error) {
+	sessionID := strings.TrimSpace(locator.SessionID)
+	m.mu.RLock()
+	ts := m.sessions[sessionID]
+	m.mu.RUnlock()
+	if ts == nil {
+		return false, nil
+	}
+	if ts.pendingBoundaries == nil {
+		ts.pendingBoundaries = make(map[BoundaryReason]boundaryAttempt)
+	}
+	attempt, ok := ts.pendingBoundaries[reason]
+	if !ok {
+		occurredAt := m.currentTime()
+		attempt.boundary = SessionBoundary{
+			Locator:        ts.locator,
+			SessionID:      ts.sessionID,
+			AgentSessionID: ts.GetAgentSessionID(),
+			Reason:         reason,
+			OccurredAt:     occurredAt,
+			TransitionID:   m.newBoundaryID(reason, ts.sessionID, occurredAt),
+		}
+		ts.pendingBoundaries[reason] = attempt
+	}
+	var boundaryErr error
+	if !attempt.published {
+		boundaryErr = m.notifyBoundary(ctx, attempt.boundary)
+		if boundaryErr == nil {
+			attempt.published = true
+			ts.pendingBoundaries[reason] = attempt
+		}
+	}
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
+	defer cancel()
+	// Keep the active runtime available if storage cannot delete its history.
+	if err := deleteTopicRuntimeSession(cleanupCtx, ts); err != nil {
+		return true, errors.Join(boundaryErr, err)
+	}
+	m.mu.Lock()
+	if m.sessions[sessionID] == ts {
+		delete(m.sessions, sessionID)
+	}
+	m.mu.Unlock()
+	if err := m.cleanupTopicSession(cleanupCtx, ts, sessionCleanupOptions{}); err != nil {
+		return true, errors.Join(boundaryErr, err)
+	}
+	return true, boundaryErr
+}
+
+func (m *Manager) lockSessionOperation(sessionID string) func() {
+	m.operationMu.Lock()
+	if m.operations == nil {
+		m.operations = make(map[string]*sessionOperation)
+	}
+	op := m.operations[sessionID]
+	if op == nil {
+		op = &sessionOperation{}
+		m.operations[sessionID] = op
+	}
+	op.refs++
+	m.operationMu.Unlock()
+	op.mu.Lock()
+	return func() {
+		op.mu.Unlock()
+		m.operationMu.Lock()
+		op.refs--
+		if op.refs == 0 {
+			delete(m.operations, sessionID)
+		}
+		m.operationMu.Unlock()
+	}
 }
 
 func (m *Manager) removeActiveSession(ctx context.Context, locator SessionLocator, opts sessionCleanupOptions, reason BoundaryReason) (bool, error) {
@@ -798,39 +888,55 @@ func (m *Manager) newBoundaryID(reason BoundaryReason, sessionID string, occurre
 
 func (m *Manager) cleanupTopicSession(ctx context.Context, ts *TopicSession, opts sessionCleanupOptions) error {
 	var firstErr error
-	if opts.deleteRuntimeSession && ts != nil && ts.sessionSvc != nil {
-		sessionID := strings.TrimSpace(ts.GetAgentSessionID())
-		userID := strings.TrimSpace(ts.userID)
-		appName := baldaRuntimeAppName
-		if ts.sess != nil {
-			if sessionAppName := strings.TrimSpace(ts.sess.AppName()); sessionAppName != "" {
-				appName = sessionAppName
-			}
-			if sessionUserID := strings.TrimSpace(ts.sess.UserID()); sessionUserID != "" {
-				userID = sessionUserID
-			}
-		}
-		if sessionID != "" && userID != "" {
-			if err := ts.sessionSvc.Delete(ctx, &adksession.DeleteRequest{
-				AppName:   appName,
-				UserID:    userID,
-				SessionID: sessionID,
-			}); err != nil {
-				firstErr = fmt.Errorf("delete runtime session: %w", err)
-			}
-		}
+	if opts.deleteRuntimeSession {
+		firstErr = deleteTopicRuntimeSession(ctx, ts)
 	}
 	if opts.cleanupWorkspace && ts != nil && m.workspaceEnabled && ts.workspaceDir != "" {
 		if err := m.workspaces.CleanupWorkspace(ctx, ts.workspaceDir); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
-	if ts != nil && ts.runtimeClose != nil {
-		if err := ts.runtimeClose(); err != nil && firstErr == nil {
-			firstErr = fmt.Errorf("close scoped runtime: %w", err)
+	if ts != nil && !ts.runtimeClosed {
+		if ts.runtimeClose != nil {
+			if err := ts.runtimeClose(); err != nil {
+				if firstErr == nil {
+					firstErr = fmt.Errorf("close scoped runtime: %w", err)
+				}
+				return firstErr
+			}
 		}
+		ts.runtimeClosed = true
 	}
 	return firstErr
+}
+
+func deleteTopicRuntimeSession(ctx context.Context, ts *TopicSession) error {
+	if ts == nil || ts.sessionSvc == nil || ts.runtimeDeleted {
+		return nil
+	}
+	sessionID := strings.TrimSpace(ts.GetAgentSessionID())
+	userID := strings.TrimSpace(ts.userID)
+	appName := baldaRuntimeAppName
+	if ts.sess != nil {
+		if sessionAppName := strings.TrimSpace(ts.sess.AppName()); sessionAppName != "" {
+			appName = sessionAppName
+		}
+		if sessionUserID := strings.TrimSpace(ts.sess.UserID()); sessionUserID != "" {
+			userID = sessionUserID
+		}
+	}
+	if sessionID == "" || userID == "" {
+		return nil
+	}
+	if err := ts.sessionSvc.Delete(ctx, &adksession.DeleteRequest{
+		AppName:   appName,
+		UserID:    userID,
+		SessionID: sessionID,
+	}); err != nil {
+		return fmt.Errorf("delete runtime session: %w", err)
+	}
+	ts.runtimeDeleted = true
+	return nil
 }
 
 func (m *Manager) persistSessionRecord(ctx context.Context, ts *TopicSession, status string) error {
