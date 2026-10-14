@@ -26,6 +26,14 @@ type TopicSession struct {
 	workspaceDir      string
 	branchName        string
 	startupNotice     string
+	pendingBoundaries map[BoundaryReason]boundaryAttempt
+	runtimeDeleted    bool
+	runtimeClosed     bool
+}
+
+type boundaryAttempt struct {
+	boundary  SessionBoundary
+	published bool
 }
 
 func (s *TopicSession) GetRunner() *runner.Runner {
