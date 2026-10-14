@@ -639,6 +639,20 @@ func ensureNoErrorSignal(t *testing.T, ch <-chan error, wait time.Duration, labe
 	}
 }
 
+type observedSteeringQueue struct {
+	*TurnDispatcher
+	enqueued chan struct{}
+}
+
+func (q *observedSteeringQueue) Enqueue(ctx context.Context, task TurnTask) (<-chan error, int, error) {
+	result, position, err := q.TurnDispatcher.Enqueue(ctx, task)
+	if err == nil && task.SessionTurn != nil && task.SessionTurn.ReplyToMessageID > 0 {
+		// Enqueue has finished merging the steering turn under the dispatcher lock.
+		q.enqueued <- struct{}{}
+	}
+	return result, position, err
+}
+
 func TestSessionActor_SteeringEnvelopesDoNotAcknowledgeBeforeExecutionBegins(t *testing.T) {
 	t.Parallel()
 
@@ -820,8 +834,9 @@ func TestSessionActor_SimulatedRestartWithUnacknowledgedEnvelopesReplaysAllSteer
 			return nil
 		},
 	}
+	observedQueue := &observedSteeringQueue{TurnDispatcher: dispatcher2, enqueued: make(chan struct{}, 3)}
 	exec2 := &sessionActorExecutor{
-		turns:  dispatcher2,
+		turns:  observedQueue,
 		runner: runner2,
 	}
 
@@ -837,19 +852,19 @@ func TestSessionActor_SimulatedRestartWithUnacknowledgedEnvelopesReplaysAllSteer
 	go func() {
 		replayedSteer1Done <- exec2.enqueueTurn(context.Background(), steer1Env)
 	}()
-	time.Sleep(30 * time.Millisecond)
+	waitForSignal(t, observedQueue.enqueued, "first replayed steering enqueue")
 
 	replayedSteer1DupDone := make(chan error, 1)
 	go func() {
 		replayedSteer1DupDone <- exec2.enqueueTurn(context.Background(), steer1Env)
 	}()
-	time.Sleep(30 * time.Millisecond)
+	waitForSignal(t, observedQueue.enqueued, "duplicate replayed steering enqueue")
 
 	replayedSteer2Done := make(chan error, 1)
 	go func() {
 		replayedSteer2Done <- exec2.enqueueTurn(context.Background(), steer2Env)
 	}()
-	time.Sleep(30 * time.Millisecond)
+	waitForSignal(t, observedQueue.enqueued, "successor replayed steering enqueue")
 
 	// Release root execution to let the merged steering batch run.
 	close(replayedRootRelease)
