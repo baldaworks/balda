@@ -168,11 +168,6 @@ func (s *sqliteRuntimeSessionService) List(ctx context.Context, req *adksession.
 	}
 	defer func() { _ = rows.Close() }()
 
-	appState, err := fetchRuntimeAppState(ctx, s.db, appName)
-	if err != nil {
-		return nil, err
-	}
-
 	type listedSession struct {
 		userID     string
 		sessionID  string
@@ -192,6 +187,10 @@ func (s *sqliteRuntimeSessionService) List(ctx context.Context, req *adksession.
 	}
 	if err := rows.Close(); err != nil {
 		return nil, fmt.Errorf("close runtime session rows: %w", err)
+	}
+	appState, err := fetchRuntimeAppState(ctx, s.db, appName)
+	if err != nil {
+		return nil, err
 	}
 
 	out := make([]adksession.Session, 0, len(listed))
