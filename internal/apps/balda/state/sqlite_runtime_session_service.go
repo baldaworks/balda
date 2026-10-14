@@ -535,7 +535,7 @@ func fetchRuntimeSessionState(ctx context.Context, q dbQueryer, key runtimeSessi
 	).Scan(&stateJSON, &updatedRaw)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, time.Time{}, fmt.Errorf("runtime session %q not found", key.sessionID)
+			return nil, time.Time{}, fmt.Errorf("runtime session %q: %w", key.sessionID, adksession.ErrNotFound)
 		}
 		return nil, time.Time{}, fmt.Errorf("fetch runtime session %q: %w", key.sessionID, err)
 	}

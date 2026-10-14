@@ -32,16 +32,54 @@ func (a SessionAgentBuilderAdapter) CreateRuntimeSession(
 	if a.Builder == nil {
 		return nil, errors.New("agent builder is required")
 	}
-	return a.Builder.CreateRuntimeSession(ctx, &baldaagent.BuiltRuntime{
+	return a.Builder.CreateRuntimeSession(ctx, agentRuntime(runtime), agentName, userID, sessionID, workspaceDir, agentSessionContext(sessionCtx))
+}
+
+func (a SessionAgentBuilderAdapter) OpenExistingRuntimeSession(
+	ctx context.Context,
+	runtime *baldasession.BuiltRuntime,
+	agentName string,
+	userID string,
+	sessionID string,
+	workspaceDir string,
+	sessionCtx baldasession.RuntimeSessionContext,
+) (adksession.Session, error) {
+	if a.Builder == nil {
+		return nil, errors.New("agent builder is required")
+	}
+	return a.Builder.OpenExistingRuntimeSession(ctx, agentRuntime(runtime), agentName, userID, sessionID, workspaceDir, agentSessionContext(sessionCtx))
+}
+
+func (a SessionAgentBuilderAdapter) CreateFreshRuntimeSession(
+	ctx context.Context,
+	runtime *baldasession.BuiltRuntime,
+	agentName string,
+	userID string,
+	sessionID string,
+	workspaceDir string,
+	sessionCtx baldasession.RuntimeSessionContext,
+) (adksession.Session, error) {
+	if a.Builder == nil {
+		return nil, errors.New("agent builder is required")
+	}
+	return a.Builder.CreateFreshRuntimeSession(ctx, agentRuntime(runtime), agentName, userID, sessionID, workspaceDir, agentSessionContext(sessionCtx))
+}
+
+func agentRuntime(runtime *baldasession.BuiltRuntime) *baldaagent.BuiltRuntime {
+	return &baldaagent.BuiltRuntime{
 		Agent:             runtime.Agent,
 		Runner:            runtime.Runner,
 		SessionSvc:        runtime.SessionSvc,
 		AppName:           runtime.AppName,
 		RuntimeSnapshotID: runtime.RuntimeSnapshotID,
-	}, agentName, userID, sessionID, workspaceDir, baldaagent.RuntimeSessionContext{
+	}
+}
+
+func agentSessionContext(sessionCtx baldasession.RuntimeSessionContext) baldaagent.RuntimeSessionContext {
+	return baldaagent.RuntimeSessionContext{
 		BaldaSessionID: sessionCtx.BaldaSessionID,
 		SessionBranch:  sessionCtx.SessionBranch,
-	})
+	}
 }
 
 func (a SessionAgentBuilderAdapter) GetAgentMetadata(agentName string) baldasession.AgentMetadata {
@@ -153,12 +191,12 @@ func (a SessionWorkspaceManagerAdapter) CanonicalWorkspaceDir(key string) string
 
 func (a SessionWorkspaceManagerAdapter) ForceRemountCanonicalWorkspace(ctx context.Context, key, branchName string) (baldasession.EnsureWorkspaceResult, error) {
 	result, err := a.Manager.ForceRemountCanonicalWorkspace(ctx, key, branchName)
-	return baldasession.EnsureWorkspaceResult{Dir: result.Dir, SyncSkipped: result.SyncSkipped}, translateWorkspaceError(err)
+	return baldasession.EnsureWorkspaceResult{Dir: result.Dir, SyncSkipped: result.SyncSkipped, Created: result.Created}, translateWorkspaceError(err)
 }
 
 func (a SessionWorkspaceManagerAdapter) EnsureWorkspace(ctx context.Context, key, branchName, existingPath string) (baldasession.EnsureWorkspaceResult, error) {
 	result, err := a.Manager.EnsureWorkspace(ctx, key, branchName, existingPath)
-	return baldasession.EnsureWorkspaceResult{Dir: result.Dir, SyncSkipped: result.SyncSkipped}, translateWorkspaceError(err)
+	return baldasession.EnsureWorkspaceResult{Dir: result.Dir, SyncSkipped: result.SyncSkipped, Created: result.Created}, translateWorkspaceError(err)
 }
 
 func (a SessionWorkspaceManagerAdapter) Import(ctx context.Context, workspaceDir string) error {
