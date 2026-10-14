@@ -472,11 +472,11 @@ func (m *Manager) createSessionLocked(ctx context.Context, sessionCtx SessionCon
 		startupNotice:     startupNotice,
 	}
 	source := "startup"
-	if persisted != nil {
+	if persisted != nil && !createdFresh {
 		source = "resume"
 	}
 	if err := m.startSessionHooks(ctx, ts, baldaProvider, source); err != nil {
-		_ = m.cleanupTopicSession(ctx, ts, sessionCleanupOptions{deleteRuntimeSession: persisted == nil, cleanupWorkspace: persisted == nil})
+		_ = m.cleanupTopicSession(ctx, ts, sessionCleanupOptions{deleteRuntimeSession: createdFresh, cleanupWorkspace: cleanupWorkspace})
 		return err
 	}
 
