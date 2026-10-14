@@ -20,9 +20,10 @@ import (
 )
 
 type PluginSummary struct {
-	Name        string
-	Version     string
-	Description string
+	Name                   string
+	Version                string
+	Description            string
+	DeclaresBaldaExtension bool
 }
 
 type AvailablePlugin struct {
@@ -1099,10 +1100,11 @@ func readPluginSummary(root string, manifestPath string) (PluginSummary, error) 
 		return PluginSummary{}, err
 	}
 	var manifest struct {
-		Schema      string `json:"$schema"`
-		Name        string `json:"name"`
-		Version     string `json:"version"`
-		Description string `json:"description"`
+		Schema      string          `json:"$schema"`
+		Name        string          `json:"name"`
+		Version     string          `json:"version"`
+		Description string          `json:"description"`
+		Extensions  json.RawMessage `json:"extensions"`
 	}
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		return PluginSummary{}, err
@@ -1113,10 +1115,16 @@ func readPluginSummary(root string, manifestPath string) (PluginSummary, error) 
 	if strings.TrimSpace(manifest.Name) == "" {
 		return PluginSummary{}, fmt.Errorf("plugin name is required")
 	}
+	var extensions map[string]json.RawMessage
+	if err := json.Unmarshal(manifest.Extensions, &extensions); err != nil {
+		extensions = nil
+	}
+	_, declaresBaldaExtension := extensions["dev.baldaworks.balda"]
 	return PluginSummary{
-		Name:        strings.TrimSpace(manifest.Name),
-		Version:     strings.TrimSpace(manifest.Version),
-		Description: strings.TrimSpace(manifest.Description),
+		Name:                   strings.TrimSpace(manifest.Name),
+		Version:                strings.TrimSpace(manifest.Version),
+		Description:            strings.TrimSpace(manifest.Description),
+		DeclaresBaldaExtension: declaresBaldaExtension,
 	}, nil
 }
 

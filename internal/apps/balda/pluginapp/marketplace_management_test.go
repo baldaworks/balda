@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -64,6 +65,56 @@ func TestMarketplaceManagementAcceptedDiscovery(t *testing.T) {
 	}
 	if len(refreshed.Candidates) != 1 || refreshed.Candidates[0].Marketplace != "market" || refreshed.Candidates[0].CandidateToken == "" {
 		t.Fatalf("accepted candidates: %+v", refreshed)
+	}
+}
+
+func TestMarketplaceDiscoveryKeepsDeclarationWithAcceptedCandidate(t *testing.T) {
+	s, _, a, root := newMarketplaceManagementTestService(t)
+	pluginRoot := filepath.Join(root, "plugins", "demo")
+	manifest := func(extension string) {
+		t.Helper()
+		mustWriteFile(t, filepath.Join(pluginRoot, "plugin.json"), `{"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json","name":"demo","version":"1.0.0"`+extension+`}`)
+	}
+	manifest(`,"extensions":{"other":{}}`)
+	added, err := s.ManagementAddMarketplace(t.Context(), plugincmd.MarketplaceAdd{Name: "market", Source: root, Authority: a})
+	if err != nil {
+		t.Fatal(err)
+	}
+	refresh := func(expected string) plugincmd.MarketplaceDetail {
+		t.Helper()
+		detail, err := s.ManagementRefreshMarketplace(t.Context(), plugincmd.MarketplaceMutation{Name: "market", ExpectedState: expected, Authority: a})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return detail
+	}
+	first := refresh(added.ExpectedState)
+	if len(first.Candidates) != 1 || first.Candidates[0].DeclaresBaldaExtension {
+		t.Fatalf("nondeclaring candidate = %+v", first.Candidates)
+	}
+	manifest(`,"extensions":{"dev.baldaworks.balda":{}}`)
+	unchanged, err := s.ManagementMarketplace(t.Context(), "market", a)
+	if err != nil || unchanged.Candidates[0].DeclaresBaldaExtension || unchanged.ExpectedState != first.ExpectedState {
+		t.Fatalf("unrefreshed candidate = %+v, error %v", unchanged, err)
+	}
+	declared := refresh(first.ExpectedState)
+	if !declared.Candidates[0].DeclaresBaldaExtension || declared.Candidates[0].Revision == first.Candidates[0].Revision || declared.Candidates[0].Capabilities.Commands != 0 || !slices.Contains(declared.Candidates[0].DiagnosticCodes, "plugin_extension_invalid") {
+		t.Fatalf("declaring candidate = %+v", declared.Candidates)
+	}
+	manifest(`,"extensions":[]`)
+	stale, err := s.ManagementMarketplace(t.Context(), "market", a)
+	if err != nil || !stale.Candidates[0].DeclaresBaldaExtension {
+		t.Fatalf("stale candidate before refresh = %+v, error %v", stale, err)
+	}
+	mustWriteFile(t, filepath.Join(root, marketplaceManifestPath), `{"plugins":[{"name":"demo","path":"plugins/demo"},{"name":"DEMO","path":"missing"}]}`)
+	failed, err := s.ManagementRefreshMarketplace(t.Context(), plugincmd.MarketplaceMutation{Name: "market", ExpectedState: declared.ExpectedState, Authority: a})
+	if !errors.Is(err, plugincmd.ErrUnavailable) || len(failed.Candidates) != 1 || !failed.Candidates[0].DeclaresBaldaExtension || failed.Candidates[0].CandidateToken != "" {
+		t.Fatalf("failed refresh candidate = %+v, error %v", failed.Candidates, err)
+	}
+	mustWriteFile(t, filepath.Join(root, marketplaceManifestPath), `{"plugins":[{"name":"demo","path":"plugins/demo"}]}`)
+	cleared := refresh(failed.ExpectedState)
+	if cleared.Candidates[0].DeclaresBaldaExtension {
+		t.Fatalf("malformed extensions retained prior flag: %+v", cleared.Candidates[0])
 	}
 }
 

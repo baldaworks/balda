@@ -79,6 +79,72 @@ func TestManagementProjectionEmptyAndRetainedContributions(t *testing.T) {
 	}
 }
 
+func TestManagementProjectionUsesSelectedRetainedDeclaration(t *testing.T) {
+	s, p, a, root := newMarketplaceManagementTestService(t)
+	t.Cleanup(func() { _ = makeTreeWritable(s.stateDir) })
+	request := reviewedManagementInstall(t, s, a, root)
+	if _, err := s.ManagementMutatePlugin(t.Context(), request); err != nil {
+		t.Fatal(err)
+	}
+	first, found, err := p.Plugins().GetPluginInstall(t.Context(), "demo")
+	if err != nil || !found {
+		t.Fatalf("first install = %+v, found %t, error %v", first, found, err)
+	}
+	check := func(want bool) {
+		t.Helper()
+		inventory, err := s.ManagementInventory(t.Context(), a)
+		if err != nil || len(inventory) != 1 {
+			t.Fatalf("inventory = %+v, error %v", inventory, err)
+		}
+		detail, err := s.ManagementDetail(t.Context(), "demo", a)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if inventory[0].DeclaresBaldaExtension != want || detail.DeclaresBaldaExtension != want {
+			t.Fatalf("declaration: inventory = %t, detail = %t, want %t", inventory[0].DeclaresBaldaExtension, detail.DeclaresBaldaExtension, want)
+		}
+	}
+	check(false)
+	if err := s.Disable(t.Context(), "demo"); err != nil {
+		t.Fatal(err)
+	}
+	writeManagedPlugin(t, root, "2.0.0", true)
+	if err := s.Upgrade(t.Context(), "demo@market"); err != nil {
+		t.Fatal(err)
+	}
+	check(true)
+	second, found, err := p.Plugins().GetPluginInstall(t.Context(), "demo")
+	if err != nil || !found {
+		t.Fatalf("second install = %+v, found %t, error %v", second, found, err)
+	}
+	if err := s.Rollback(t.Context(), "demo", first.ActiveRevisionID); err != nil {
+		t.Fatal(err)
+	}
+	check(false)
+	if err := s.Rollback(t.Context(), "demo", second.ActiveRevisionID); err != nil {
+		t.Fatal(err)
+	}
+	check(true)
+	selected, found, err := p.Plugins().GetPluginInstall(t.Context(), "demo")
+	if err != nil || !found {
+		t.Fatalf("selected install = %+v, found %t, error %v", selected, found, err)
+	}
+	revision, found, err := p.Plugins().GetPluginRevision(t.Context(), "demo", selected.ActiveRevisionID)
+	if err != nil || !found {
+		t.Fatalf("selected revision = %+v, found %t, error %v", revision, found, err)
+	}
+	revisionRoot := filepath.Join(s.stateDir, filepath.FromSlash(revision.RelativeRoot))
+	if err := os.Chmod(revisionRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	mustWriteFile(t, filepath.Join(revisionRoot, "drifted"), "changed")
+	check(false)
+	drifted, err := s.ManagementDetail(t.Context(), "demo", a)
+	if err != nil || !drifted.Drifted || len(drifted.DiagnosticCodes) == 0 || drifted.DiagnosticCodes[0] != "revision_unavailable" {
+		t.Fatalf("drifted detail = %+v, error %v", drifted, err)
+	}
+}
+
 func TestManagementProjectionRequiresCurrentAuthority(t *testing.T) {
 	s, p, a, _ := newMarketplaceManagementTestService(t)
 	now := time.Now().UTC()

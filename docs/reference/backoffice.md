@@ -567,6 +567,12 @@ Commands and skills expose names/descriptions; MCP servers expose
 names/transports. Inspection uses retained metadata and never invokes a command
 or test tool. Disabled packages remain inspectable.
 
+A **Balda extension** marker beside an installed package name in the list and
+detail means its selected revision's `plugin.json` declares
+`extensions["dev.baldaworks.balda"]`. The marker can remain visible for a
+disabled package or one with extension diagnostics. It does not indicate that
+commands are usable or that the runtime is healthy.
+
 **Marketplaces → Add marketplace** accepts these fields:
 
 | Field | Meaning |
@@ -592,6 +598,9 @@ names make discovery fail rather than selecting an arbitrary package. The
 discovery table uses **Name**, **Version**, **Description**, **Installed** and
 **Actions**. **Review install** selects the configured marketplace and
 package explicitly, even when another marketplace publishes the same name.
+The same **Balda extension** marker beside a discovered package name describes
+that row's candidate revision. A stale row keeps the marker from its last
+successful discovery until a successful refresh replaces it.
 
 **Install plugin** and **Upgrade plugin** review an exact candidate revision;
 source/content changes after review require reopening. Upgrade stays bound to

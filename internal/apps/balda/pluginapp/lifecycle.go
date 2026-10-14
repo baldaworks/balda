@@ -450,25 +450,30 @@ func (m *managedLifecycle) candidateSources(ctx context.Context, proposedInstall
 }
 
 func (m *managedLifecycle) loadRevision(ctx context.Context, install baldastate.PluginInstallRecord) (runtimecatalogcmd.Source, error) {
+	pkg, err := m.loadRevisionPackage(ctx, install)
+	return pkg.Source, err
+}
+
+func (m *managedLifecycle) loadRevisionPackage(ctx context.Context, install baldastate.PluginInstallRecord) (runtimecatalog.PluginPackage, error) {
 	revision, found, err := m.store.GetPluginRevision(ctx, install.PluginID, install.ActiveRevisionID)
 	if err != nil {
-		return runtimecatalogcmd.Source{}, err
+		return runtimecatalog.PluginPackage{}, err
 	}
 	if !found {
-		return runtimecatalogcmd.Source{}, errors.New("active plugin revision is unavailable")
+		return runtimecatalog.PluginPackage{}, errors.New("active plugin revision is unavailable")
 	}
 	root, err := resolveContainedPath(m.stateDir, filepath.FromSlash(revision.RelativeRoot))
 	if err != nil {
-		return runtimecatalogcmd.Source{}, fmt.Errorf("resolve active plugin revision: %w", err)
+		return runtimecatalog.PluginPackage{}, fmt.Errorf("resolve active plugin revision: %w", err)
 	}
-	source, err := m.loader.LoadPlugin(root)
+	pkg, err := m.loader.LoadPluginPackage(root)
 	if err != nil {
-		return runtimecatalogcmd.Source{}, err
+		return runtimecatalog.PluginPackage{}, err
 	}
-	if string(source.Descriptor.Revision) != revision.RevisionID {
-		return runtimecatalogcmd.Source{}, errors.New("active plugin revision drift detected")
+	if string(pkg.Source.Descriptor.Revision) != revision.RevisionID {
+		return runtimecatalog.PluginPackage{}, errors.New("active plugin revision drift detected")
 	}
-	return source, nil
+	return pkg, nil
 }
 
 func marketplaceRelativePath(plugin AvailablePlugin) (string, error) {

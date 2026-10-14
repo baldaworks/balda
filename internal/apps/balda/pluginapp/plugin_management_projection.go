@@ -100,6 +100,7 @@ func (s *Service) ManagementDetail(ctx context.Context, name string, a plugincmd
 	}
 	source, err := s.managed.loadRevision(ctx, *sourceInstall)
 	if err != nil {
+		detail.DeclaresBaldaExtension = false
 		detail.DiagnosticCodes = append(detail.DiagnosticCodes, "revision_unavailable")
 		return detail, nil
 	}
@@ -142,8 +143,10 @@ func (s *Service) installedViewLocked(ctx context.Context, observed state.Plugin
 			view.OriginAvailable = err == nil && info.IsDir()
 		}
 	}
-	if _, err := s.managed.loadRevision(ctx, *install); err != nil {
+	if pkg, err := s.managed.loadRevisionPackage(ctx, *install); err != nil {
 		view.Drifted = true
+	} else {
+		view.DeclaresBaldaExtension = pkg.DeclaresBaldaExtension
 	}
 	return view, nil
 }
