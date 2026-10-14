@@ -61,6 +61,10 @@ func TestOperationsPersistProtectedEditsAndProbeExactCandidate(t *testing.T) {
 	if err != nil || created.Status != mcpcmd.StatusPending || created.ToolCount != 0 || requests.Load() != 0 {
 		t.Fatalf("create = %s/%v", created.Status, err)
 	}
+	diagnostic, err := operations.DiagnoseCurrent(t.Context(), created.Connection.ID, authority)
+	if err != nil || diagnostic.Outcome != mcpcmd.DiagnosticFailed || requests.Load() != 0 {
+		t.Fatalf("current diagnostic delegation = %+v/%v", diagnostic, err)
+	}
 	pinned, err := catalog.Store().Application()
 	if err != nil {
 		t.Fatal(err)

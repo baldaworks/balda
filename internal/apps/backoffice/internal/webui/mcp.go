@@ -13,7 +13,14 @@ type MCPView struct {
 	Rows         []MCPRow
 	Editor       *MCPEditor
 	Device       *MCPDevice
+	Diagnostic   *MCPDiagnosticView
 	ProbeMessage string
+}
+
+// MCPDiagnosticView is one response's secret-free explicit check result.
+type MCPDiagnosticView struct {
+	Succeeded bool
+	ToolCount int
 }
 
 // MCPRow keeps stored authorization separate from observed runtime readiness.
@@ -48,7 +55,10 @@ func ProjectMCPRow(item mcpcmd.Item) MCPRow {
 	case mcpcmd.StatusReady:
 		row.Status = "Available"
 	case mcpcmd.StatusPending:
-		row.Status = "Checking connection"
+		row.Status = "Not checked"
+		if item.Definition.Transport == mcpcmd.TransportStdio {
+			row.Status = "Starting"
+		}
 	case mcpcmd.StatusDisabled:
 		row.Status = "Disabled"
 	case mcpcmd.StatusDeleted:
@@ -58,40 +68,48 @@ func ProjectMCPRow(item mcpcmd.Item) MCPRow {
 	default:
 		row.Status = "Tools unavailable"
 	}
-	if item.Definition.Transport == mcpcmd.TransportHTTP || item.Definition.Transport == mcpcmd.TransportSSE {
+	if mcpOAuthApplicable(item) {
 		row.Authorization = "Not configured"
-	}
-	switch item.Authorization {
-	case mcpcmd.GrantAuthorized:
-		row.Authorization = "Authorized"
-	case mcpcmd.GrantAuthRequired:
-		row.Authorization = "Authorization required"
-	case mcpcmd.GrantDisconnected:
-		row.Authorization = "Revoked"
-	}
-	switch item.Recovery {
-	case mcpcmd.RecoveryAuthorizationRequired:
-		row.Recovery = "Authorize again to restore access to tools."
-	case mcpcmd.RecoveryFirstAuthorization:
-		row.Recovery = "This server requires authorization. Sign in below."
-	case mcpcmd.RecoveryCaptureRequired:
-		row.Recovery = "The server configuration changed. Authorize the current address below."
-	}
-	if row.Recovery == "" {
 		switch item.Authorization {
+		case mcpcmd.GrantAuthorized:
+			row.Authorization = "Authorized"
 		case mcpcmd.GrantAuthRequired:
-			row.Recovery = "Authorize again to restore access to tools."
+			row.Authorization = "Authorization required"
 		case mcpcmd.GrantDisconnected:
-			row.Recovery = "Authorization was revoked. Sign in again if this server requires OAuth."
+			row.Authorization = "Revoked"
+		}
+		switch item.Recovery {
+		case mcpcmd.RecoveryAuthorizationRequired:
+			row.Recovery = "Authorize again to restore access to tools."
+		case mcpcmd.RecoveryFirstAuthorization:
+			row.Recovery = "This server requires authorization. Sign in below."
+		case mcpcmd.RecoveryCaptureRequired:
+			row.Recovery = "The server configuration changed. Authorize the current address below."
+		}
+		if row.Recovery == "" {
+			switch item.Authorization {
+			case mcpcmd.GrantAuthRequired:
+				row.Recovery = "Authorize again to restore access to tools."
+			case mcpcmd.GrantDisconnected:
+				row.Recovery = "Authorization was revoked. Sign in again if this server requires OAuth."
+			}
 		}
 	}
 	return row
+}
+
+func mcpOAuthApplicable(item mcpcmd.Item) bool {
+	transport := item.Definition.Transport
+	return item.Connection.Source == mcpcmd.SourceManaged &&
+		!item.Connection.Deleted && item.Definition.OAuth &&
+		(transport == mcpcmd.TransportHTTP || transport == mcpcmd.TransportSSE)
 }
 
 // MCPEditor contains definition metadata only. All binding inputs are blank.
 type MCPEditor struct {
 	Row                                                                  MCPRow
 	New                                                                  bool
+	DiagnosticAvailable                                                  bool
 	AuthorizationAvailable                                               bool
 	CanDisconnect                                                        bool
 	CanRetry                                                             bool
@@ -114,8 +132,10 @@ func ProjectMCPEditor(item mcpcmd.Item, providers []string, create bool) *MCPEdi
 	if d.AuthBinding != nil {
 		e.ClientID = d.AuthBinding.ClientID
 	}
-	e.CanDisconnect = item.Authorization != ""
-	e.CanRetry = !item.Connection.Deleted && item.Connection.Enabled && item.Connection.CurrentRevisionID != "" && item.Authorization == mcpcmd.GrantAuthorized && (item.Status == mcpcmd.StatusUnavailable || item.Status == mcpcmd.StatusPending)
+	oauthApplicable := mcpOAuthApplicable(item)
+	e.DiagnosticAvailable = !create && !item.Connection.Deleted
+	e.CanDisconnect = oauthApplicable && item.Authorization != ""
+	e.CanRetry = oauthApplicable && item.Connection.Enabled && item.Connection.CurrentRevisionID != "" && item.Authorization == mcpcmd.GrantAuthorized && (item.Status == mcpcmd.StatusUnavailable || item.Status == mcpcmd.StatusPending)
 	if create {
 		e.Transport = "stdio"
 		e.Enabled = true
@@ -123,7 +143,7 @@ func ProjectMCPEditor(item mcpcmd.Item, providers []string, create bool) *MCPEdi
 		e.Row.ReadOnly = false
 		e.Action = "/mcp/connections"
 	}
-	e.AuthorizationAvailable = !create && !item.Connection.Deleted && (d.Transport == mcpcmd.TransportHTTP || d.Transport == mcpcmd.TransportSSE)
+	e.AuthorizationAvailable = !create && oauthApplicable
 	for _, id := range providers {
 		selected := false
 		for _, target := range d.Targets.Providers {

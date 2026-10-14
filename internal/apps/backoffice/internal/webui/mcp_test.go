@@ -26,27 +26,72 @@ func TestMCPDeletedDetailRetainsMetadataWithoutMutationForms(t *testing.T) {
 	}
 }
 
-func TestMCPRemoteOAuthIsAvailableWithoutRecovery(t *testing.T) {
-	for _, source := range []mcpcmd.Source{mcpcmd.SourceManaged, mcpcmd.SourceConfig} {
-		for _, transport := range []mcpcmd.Transport{mcpcmd.TransportHTTP, mcpcmd.TransportSSE} {
-			item := mcpcmd.Item{Connection: mcpcmd.Connection{ID: "remote", PublicID: "public-tools", Source: source}, Definition: mcpcmd.Definition{Transport: transport, URL: "https://tools.example/mcp"}, Status: mcpcmd.StatusReady, ToolCount: 2}
+func TestMCPOAuthProjectionRequiresEligibleManagedDefinition(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		source     mcpcmd.Source
+		transport  mcpcmd.Transport
+		oauth      bool
+		deleted    bool
+		applicable bool
+	}{
+		{"managed HTTP OAuth", mcpcmd.SourceManaged, mcpcmd.TransportHTTP, true, false, true},
+		{"managed SSE OAuth", mcpcmd.SourceManaged, mcpcmd.TransportSSE, true, false, true},
+		{"managed OAuth disabled", mcpcmd.SourceManaged, mcpcmd.TransportHTTP, false, false, false},
+		{"configuration OAuth", mcpcmd.SourceConfig, mcpcmd.TransportHTTP, true, false, false},
+		{"managed stdio", mcpcmd.SourceManaged, mcpcmd.TransportStdio, true, false, false},
+		{"deleted managed OAuth", mcpcmd.SourceManaged, mcpcmd.TransportHTTP, true, true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			item := mcpcmd.Item{
+				Connection:    mcpcmd.Connection{ID: "remote", PublicID: "public-tools", Source: tc.source, Deleted: tc.deleted, Enabled: true, CurrentRevisionID: "revision"},
+				Definition:    mcpcmd.Definition{Transport: tc.transport, URL: "https://tools.example/mcp", OAuth: tc.oauth},
+				Status:        mcpcmd.StatusUnavailable,
+				Authorization: mcpcmd.GrantAuthorized,
+				Recovery:      mcpcmd.RecoveryAuthorizationRequired,
+			}
 			e := ProjectMCPEditor(item, nil, false)
-			if !e.AuthorizationAvailable || e.Row.Authorization != "Not configured" || e.Row.Status != "Available" || e.Row.Recovery != "" {
-				t.Fatalf("public remote must offer optional OAuth and truthful availability: %+v", e.Row)
+			if e.AuthorizationAvailable != tc.applicable || e.CanDisconnect != tc.applicable || e.CanRetry != tc.applicable {
+				t.Fatalf("OAuth controls = available %t, disconnect %t, retry %t; want %t", e.AuthorizationAvailable, e.CanDisconnect, e.CanRetry, tc.applicable)
 			}
-			renderer, err := NewRenderer("/balda")
-			if err != nil {
-				t.Fatal(err)
-			}
-			w := httptest.NewRecorder()
-			if err := renderer.Render(w, httptest.NewRequest(http.MethodGet, "/balda/mcp/connections/remote", nil), 200, TemplateMCP, Page{Title: "MCP", MCP: &MCPView{Editor: e}}); err != nil {
-				t.Fatal(err)
-			}
-			for _, visible := range []string{"Client settings — optional", "Authorize in browser", "Authorize with device", "Not configured", "2 tools"} {
-				if !strings.Contains(w.Body.String(), visible) {
-					t.Errorf("missing remote OAuth/availability control %q", visible)
+			if tc.applicable {
+				if e.Row.Authorization != "Authorized" || e.Row.Recovery == "" {
+					t.Fatalf("eligible OAuth metadata missing: %+v", e.Row)
 				}
+			} else if e.Row.Authorization != "" || e.Row.Recovery != "" {
+				t.Fatalf("inapplicable OAuth metadata was projected: %+v", e.Row)
 			}
+		})
+	}
+}
+
+func TestMCPPendingPresentationDependsOnTransport(t *testing.T) {
+	for _, tc := range []struct {
+		transport mcpcmd.Transport
+		want      string
+	}{
+		{mcpcmd.TransportHTTP, "Not checked"},
+		{mcpcmd.TransportSSE, "Not checked"},
+		{mcpcmd.TransportStdio, "Starting"},
+	} {
+		item := mcpcmd.Item{Definition: mcpcmd.Definition{Transport: tc.transport}, Status: mcpcmd.StatusPending}
+		if got := ProjectMCPRow(item).Status; got != tc.want {
+			t.Errorf("%s Pending = %q, want %q", tc.transport, got, tc.want)
+		}
+	}
+	for _, tc := range []struct {
+		status mcpcmd.Status
+		want   string
+	}{
+		{mcpcmd.StatusReady, "Available"},
+		{mcpcmd.StatusDisabled, "Disabled"},
+		{mcpcmd.StatusDeleted, "Deleted"},
+		{mcpcmd.StatusConflict, "Conflict"},
+		{mcpcmd.StatusUnavailable, "Tools unavailable"},
+	} {
+		item := mcpcmd.Item{Definition: mcpcmd.Definition{Transport: mcpcmd.TransportHTTP}, Status: tc.status}
+		if got := ProjectMCPRow(item).Status; got != tc.want {
+			t.Errorf("%s = %q, want %q", tc.status, got, tc.want)
 		}
 	}
 }
@@ -76,7 +121,7 @@ func TestMCPAttachmentRetryMatchesRecoverableAvailability(t *testing.T) {
 		{mcpcmd.StatusUnavailable, true}, {mcpcmd.StatusPending, true}, {mcpcmd.StatusReady, false}, {mcpcmd.StatusDisabled, false}, {mcpcmd.StatusConflict, false},
 	} {
 		t.Run(string(tc.status), func(t *testing.T) {
-			item := mcpcmd.Item{Connection: mcpcmd.Connection{ID: "saved", PublicID: "tools", Source: mcpcmd.SourceConfig, Enabled: true, CurrentRevisionID: "revision"}, Definition: mcpcmd.Definition{Transport: mcpcmd.TransportHTTP}, Status: tc.status, Authorization: mcpcmd.GrantAuthorized}
+			item := mcpcmd.Item{Connection: mcpcmd.Connection{ID: "saved", PublicID: "tools", Source: mcpcmd.SourceManaged, Enabled: true, CurrentRevisionID: "revision"}, Definition: mcpcmd.Definition{Transport: mcpcmd.TransportHTTP, OAuth: true}, Status: tc.status, Authorization: mcpcmd.GrantAuthorized}
 			renderer, err := NewRenderer("")
 			if err != nil {
 				t.Fatal(err)
