@@ -2,10 +2,10 @@ package chatfx
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/baldaworks/balda/internal/apps/balda/chatapp"
+	"github.com/baldaworks/balda/internal/apps/balda/ingressapp"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/go-actorlayer"
 )
@@ -14,7 +14,8 @@ const autoSessionLabel = "auto"
 
 // SessionAdapter adapts baldasession.Manager to chatapp.SessionPreparer.
 type SessionAdapter struct {
-	sessions *baldasession.Manager
+	sessions    *baldasession.Manager
+	directLabel string
 }
 
 // NewSessionAdapter constructs a SessionAdapter backed by baldasession.Manager.
@@ -33,11 +34,23 @@ func (a *SessionAdapter) Prepare(ctx context.Context, inbound chatapp.InboundCon
 		AddressJSON: inbound.AddressJSON,
 		SessionID:   inbound.SessionID,
 	}
-	topicSession, err := a.getOrCreateSession(ctx, locator, inbound.UserID)
+	existing, _ := a.sessions.GetSession(locator)
+	label := autoSessionLabel
+	if inbound.Direct && inbound.TopicID == 0 && a.directLabel != "" {
+		label = a.directLabel
+	}
+	topicSession, err := a.sessions.EnsureSession(ctx, baldasession.SessionContext{Locator: locator, UserID: inbound.UserID}, label)
 	if err != nil {
 		return chatapp.SessionPreparation{}, err
 	}
+	metadata := a.sessions.GetAgentMetadata(a.sessions.BaldaProviderID())
 	return chatapp.SessionPreparation{
+		Activated:     existing == nil,
+		SessionID:     topicSession.GetSessionID(),
+		SessionLabel:  topicSession.GetAgentName(),
+		StartupNotice: a.sessions.TakeStartupNotice(topicSession.GetSessionID()),
+		AgentType:     metadata.Type, Model: metadata.Model, ReasoningEffort: metadata.ReasoningEffort,
+		MCPServers:        metadata.MCPServers,
 		Ready:             true,
 		UserID:            topicSession.GetUserID(),
 		RequesterUserID:   inbound.UserID,
@@ -48,16 +61,28 @@ func (a *SessionAdapter) Prepare(ctx context.Context, inbound chatapp.InboundCon
 	}, nil
 }
 
-func (a *SessionAdapter) getOrCreateSession(ctx context.Context, locator baldasession.SessionLocator, subject string) (*baldasession.TopicSession, error) {
-	if existing, _ := a.sessions.GetSession(locator); existing != nil {
-		return existing, nil
-	}
-	topicSession, err := a.sessions.RestoreSession(ctx, baldasession.SessionContext{Locator: locator, UserID: subject})
-	if err == nil && topicSession != nil {
-		return topicSession, nil
-	}
-	if err != nil && !errors.Is(err, baldasession.ErrNoPersistedSession) {
-		return nil, err
-	}
-	return a.sessions.EnsureSession(ctx, baldasession.SessionContext{Locator: locator, UserID: subject}, autoSessionLabel)
+// IngressSessionAdapter projects the shared preparation into the ingressapp port.
+type IngressSessionAdapter struct{ shared *SessionAdapter }
+
+// NewIngressSessionAdapter uses the same session preparation as chatapp, with
+// the existing main-DM label default supplied at this composition boundary.
+func NewIngressSessionAdapter(sessions *baldasession.Manager) ingressapp.SessionPreparer {
+	return &IngressSessionAdapter{shared: &SessionAdapter{sessions: sessions, directLabel: "balda"}}
+}
+
+// Prepare delegates lifecycle preparation and only converts neutral port values.
+func (a *IngressSessionAdapter) Prepare(ctx context.Context, inbound ingressapp.InboundContext) (ingressapp.SessionPreparation, error) {
+	prep, err := a.shared.Prepare(ctx, chatapp.InboundContext{
+		InboundID: inbound.InboundID, SessionID: inbound.SessionID, ChannelType: inbound.ChannelType,
+		AddressKey: inbound.AddressKey, AddressJSON: inbound.AddressJSON, UserID: inbound.UserID,
+		TopicID: inbound.TopicID, Direct: inbound.Direct, Source: inbound.Source,
+	})
+	return ingressapp.SessionPreparation{
+		Activated: prep.Activated, SessionID: prep.SessionID, SessionLabel: prep.SessionLabel,
+		StartupNotice: prep.StartupNotice, AgentType: prep.AgentType, Model: prep.Model,
+		ReasoningEffort: prep.ReasoningEffort, MCPServers: prep.MCPServers,
+		Ready: prep.Ready, Reason: prep.Reason, UserID: prep.UserID, RequesterUserID: prep.RequesterUserID,
+		AgentSessionID: prep.AgentSessionID, TopicID: prep.TopicID, WorkspaceDir: prep.WorkspaceDir,
+		RuntimeSnapshotID: prep.RuntimeSnapshotID,
+	}, err
 }

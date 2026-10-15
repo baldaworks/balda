@@ -85,6 +85,22 @@ Status: active
 - Presentation routing is explicit: model-authored text stays on the prompt-formatting path, while system-authored service messages use typed structured message contracts with deterministic per-transport renderers. Where those structured messages are durable/runtime-facing contracts, their schema identity belongs in AsyncAPI rather than in channel formatter registrations.
 - Slackagent behavior lives in a dedicated `slackagent` path with its own ingress and response contracts. `internal/apps/balda/channel/slackagent` owns the channel boundary, and `internal/apps/balda/channel/slackagent/slackagentfx` is the composition/DI boundary exported to the rest of the app. See [Slackagent mode](slack-agent-mode.md).
 - Session boundaries are explicit: `session` owns create/restore/reset/lifecycle semantics and may consume shared delivery contracts, but it must not become the home of transport delivery contract types.
+- Ordinary conversational intake consumes one shared session preparation adapter
+  through the consuming service's `SessionPreparer` port. Telegram, Zulip,
+  Slack and Mattermost handlers do not choose create versus restore. `chatfx`
+  projects the same preparation into the existing conversational ports;
+  transport presentation receives neutral activation/identity/notice values,
+  never an ADK session or runner. Authorization precedes preparation; the
+  prepared snapshot is available before explicit skill pinning and durable
+  publication. A preparation error retains its normal retry classification.
+- `session.Manager.EnsureSession` returns an active session, otherwise restores
+  saved metadata, otherwise creates only when metadata is absent. Saved locator,
+  session ID, user, label and snapshot are authoritative. It serializes
+  preparation and publication under the canonical session operation lock and
+  shares the exact-restore/fresh-fallback path with restore-only
+  `RestoreSession`. Explicit `CreateSession` remains the fresh-creation path for
+  reset/topic commands; private runs retain their own lifecycle.
+
 - Each session persists one runtime catalog snapshot before exposure. Command
   lookup and skill metadata/selection use that exact snapshot; MCP identities
   are supplied only when the ADK session runtime is created or restored. Every

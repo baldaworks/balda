@@ -61,6 +61,16 @@ func (f AuthorizerFunc) Authorize(ctx context.Context, inbound InboundContext) (
 // SessionPreparation contains runtime session identity established before
 // durable acceptance. Locator ownership remains with the normalized inbound.
 type SessionPreparation struct {
+	// Activated indicates that preparation found no active in-memory session.
+	Activated       bool
+	SessionID       string
+	SessionLabel    string
+	StartupNotice   string
+	AgentType       string
+	Model           string
+	ReasoningEffort string
+	MCPServers      []string
+
 	Ready             bool
 	Reason            string
 	UserID            string
@@ -191,6 +201,9 @@ func (s *Service) Process(ctx context.Context, inbound turncmd.NormalizedInbound
 		return s.finish(logContext, terminalResult(result, firstNonEmpty(preparation.Reason, ReasonSessionRejected)), ReasonSessionRejected, nil)
 	}
 
+	if preparation.SessionID != "" {
+		payload.Locator.SessionID = preparation.SessionID
+	}
 	payload.UserID = firstNonEmpty(preparation.UserID, payload.UserID)
 	payload.RequesterUserID = firstNonEmpty(preparation.RequesterUserID, inbound.UserID)
 	payload.AgentSessionID = strings.TrimSpace(preparation.AgentSessionID)

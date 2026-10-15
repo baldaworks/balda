@@ -59,6 +59,16 @@ func (f AuthorizerFunc) Authorize(ctx context.Context, inbound InboundContext) (
 // SessionPreparation contains runtime session identity established before
 // durable acceptance.
 type SessionPreparation struct {
+	// Activated indicates that preparation found no active in-memory session.
+	Activated       bool
+	SessionID       string
+	SessionLabel    string
+	StartupNotice   string
+	AgentType       string
+	Model           string
+	ReasoningEffort string
+	MCPServers      []string
+
 	Ready             bool
 	Reason            string
 	UserID            string
