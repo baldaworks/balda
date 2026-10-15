@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/hookcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/hooknative"
 	"github.com/baldaworks/balda/internal/apps/balda/hookprovider"
 	"github.com/baldaworks/balda/internal/apps/balda/hooks"
 	"github.com/normahq/runtime/v2/agentconfig"
@@ -47,7 +49,7 @@ func TestNativeActivationRequiresSessionBinding(t *testing.T) {
 	if err := service.VerifySession(t.Context(), "session"); !errors.Is(err, hookcmd.ErrSessionReset) {
 		t.Fatalf("unbound session = %v", err)
 	}
-	_, release, err := service.Prepare(t.Context(), "session", "provider", t.TempDir(), service.providers)
+	_, release, err := prepareProvider(t, service, "session", t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,17 +66,14 @@ func TestNativeActivationRequiresSessionBinding(t *testing.T) {
 
 func TestDisabledNativeHooksPreserveProviderLaunch(t *testing.T) {
 	service := testService(t, hookcmd.Definition{})
-	prepared, release, err := service.Prepare(t.Context(), "session", "provider", t.TempDir(), service.providers)
+	required, err := service.Required(t.Context(), "provider")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if prepared["provider"].Type != service.providers["provider"].Type || prepared["provider"].ClaudeCodeACP.Cmd[0] != "fixture-acp" {
-		t.Fatal("disabled native hooks changed launch")
+	if required {
+		t.Fatal("disabled native hooks requested launch preparation")
 	}
 	if err := service.VerifySession(t.Context(), "session"); err != nil {
-		t.Fatal(err)
-	}
-	if err := release(); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -224,6 +223,23 @@ func testServiceWithStore(t *testing.T, store configurationFixture) *Service {
 	return service
 }
 
+func prepareProvider(t testing.TB, service *Service, sessionID, cwd string) (map[string]agentconfig.Config, func() error, error) {
+	t.Helper()
+	prepared, err := service.Prepare(t.Context(), hooknative.LeafRequest{
+		SessionID:  sessionID,
+		ProviderID: "provider",
+		LeafID:     "provider",
+		CWD:        cwd,
+		Config:     service.providers["provider"],
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	providers := maps.Clone(service.providers)
+	providers["provider"] = prepared.Config
+	return providers, prepared.Release, nil
+}
+
 func TestBridgeBindsTrustedSessionContextAndReleasesCapabilities(t *testing.T) {
 	if !hookprovider.NativePlatformSupported() {
 		t.Skip("native launch preparation requires Linux or macOS")
@@ -231,7 +247,7 @@ func TestBridgeBindsTrustedSessionContextAndReleasesCapabilities(t *testing.T) {
 	service := testService(t, nativeDefinition(t, "inspect"))
 	for _, sessionID := range []string{"session-a", "session-b"} {
 		cwd := t.TempDir()
-		prepared, release, err := service.Prepare(t.Context(), sessionID, "provider", cwd, service.providers)
+		prepared, release, err := prepareProvider(t, service, sessionID, cwd)
 		if err != nil {
 			t.Fatal(err)
 		}

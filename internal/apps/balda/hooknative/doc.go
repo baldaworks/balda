@@ -1,2 +1,2 @@
-// Package hooknative defines the native hook adapter registry boundary.
+// Package hooknative selects one provider-owned adapter for a native ACP leaf.
 package hooknative

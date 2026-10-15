@@ -901,7 +901,7 @@ func Module(
 		fx.Provide(func(reg *mcpregistry.MapRegistry, reviewer *permissions.Service, native *hooknativecompat.Service) baldaagent.ScopedRuntimeFactory {
 			factory := catalogapp.NewProviderFactory(normaCfg.Providers, reg,
 				agentfactory.WithPermissionHandler(baldaagent.NewPermissionHandler(reviewer, logger)))
-			factory.ConfigureLaunchHooks(native)
+			factory.ConfigureNativeHooks(native)
 			return factory
 		}),
 		tgbotkit.Module,

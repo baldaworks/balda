@@ -2,15 +2,14 @@ package hooknativecompat
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"maps"
 	"os"
-	"slices"
 	"strings"
 	"sync"
 
 	"github.com/baldaworks/balda/internal/apps/balda/hookcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/hooknative"
 	"github.com/baldaworks/balda/internal/apps/balda/hookprovider"
 	"github.com/normahq/runtime/v2/agentconfig"
 )
@@ -28,6 +27,7 @@ type Service struct {
 	root       string
 	providers  map[string]agentconfig.Config
 	executable string
+	registry   *hooknative.Registry
 	mu         sync.Mutex
 	sessions   map[string]int
 }
@@ -46,7 +46,13 @@ func New(runner hookprovider.Runner, records Configuration, root string, provide
 		_ = bindings.Close()
 		return nil, err
 	}
-	return &Service{bindings: bindings, records: records, root: root, providers: maps.Clone(providers), executable: executable, sessions: make(map[string]int)}, nil
+	service := &Service{bindings: bindings, records: records, root: root, providers: maps.Clone(providers), executable: executable, sessions: make(map[string]int)}
+	service.registry, err = hooknative.NewRegistry(compatAdapter{service: service})
+	if err != nil {
+		_ = bindings.Close()
+		return nil, err
+	}
+	return service, nil
 }
 
 func providerKind(kind string) string {
@@ -62,47 +68,6 @@ func providerKind(kind string) string {
 	}
 }
 
-func leaves(providers map[string]agentconfig.Config, root, executable string) ([]string, error) {
-	var ids []string
-	visiting := make(map[string]bool)
-	visited := make(map[string]bool)
-	var visit func(string) error
-	visit = func(id string) error {
-		if visiting[id] {
-			return hookcmd.ErrUnsupported
-		}
-		if visited[id] {
-			return nil
-		}
-		config, ok := providers[id]
-		if !ok {
-			return hookcmd.ErrUnsupported
-		}
-		resolved, err := agentconfig.NormalizeConfig(config, executable)
-		if err != nil {
-			return hookcmd.ErrUnsupported
-		}
-		visiting[id] = true
-		if agentconfig.IsPoolType(config.Type) {
-			for _, member := range resolved.PoolMembers {
-				if err := visit(member); err != nil {
-					return err
-				}
-			}
-		} else {
-			ids = append(ids, id)
-		}
-		delete(visiting, id)
-		visited[id] = true
-		return nil
-	}
-	if err := visit(root); err != nil {
-		return nil, err
-	}
-	slices.Sort(ids)
-	return ids, nil
-}
-
 // ValidateDefinition rejects native interception unsupported by the current launch adapter.
 func (s *Service) ValidateDefinition(_ context.Context, definition hookcmd.Definition) error {
 	if !definition.Event.ToolEvent() || !definition.Enabled {
@@ -111,103 +76,93 @@ func (s *Service) ValidateDefinition(_ context.Context, definition hookcmd.Defin
 	if !hookprovider.NativePlatformSupported() || definition.Provider != "" && definition.Provider != s.root {
 		return hookcmd.ErrUnsupported
 	}
-	ids, err := leaves(s.providers, s.root, s.executable)
-	if err != nil || len(ids) == 0 {
+	config, ok := s.providers[s.root]
+	if !ok {
 		return hookcmd.ErrUnsupported
 	}
-	for _, id := range ids {
-		if providerKind(s.providers[id].Type) == "" {
-			return hookcmd.ErrUnsupported
-		}
+	// catalogapp owns traversal for pools; leaf capability is checked by the
+	// registry when a session is prepared.
+	if !agentconfig.IsPoolType(config.Type) && (!agentconfig.IsACPType(config.Type) || providerKind(config.Type) == "") {
+		return hookcmd.ErrUnsupported
 	}
 	return nil
 }
 
-// Prepare installs the transitional provider-owned proxy around selected leaves.
-func (s *Service) Prepare(ctx context.Context, sessionID, providerID, cwd string, providers map[string]agentconfig.Config) (map[string]agentconfig.Config, func() error, error) {
-	if sessionID == "" || strings.TrimSpace(cwd) == "" {
-		return nil, nil, hookcmd.ErrInvalid
-	}
-	ids, err := leaves(providers, providerID, s.executable)
-	if err != nil {
-		return nil, nil, err
-	}
+// Required reports whether the selected root has active native tool policy.
+func (s *Service) Required(ctx context.Context, providerID string) (bool, error) {
 	record, err := s.records.Load(ctx)
 	if err != nil || record.Validate() != nil {
-		return nil, nil, hookcmd.ErrUnavailable
+		return false, hookcmd.ErrUnavailable
 	}
-	nativeRequired := false
 	for _, definition := range record.Definitions {
-		if !definition.Enabled || !definition.Event.ToolEvent() || definition.Provider != "" && definition.Provider != providerID {
-			continue
-		}
-		nativeRequired = true
-		for _, id := range ids {
-			if providerKind(providers[id].Type) == "" {
-				return nil, nil, hookcmd.ErrUnsupported
-			}
+		if definition.Enabled && definition.Event.ToolEvent() && (definition.Provider == "" || definition.Provider == providerID) {
+			return true, nil
 		}
 	}
-	if !nativeRequired {
-		return maps.Clone(providers), func() error { return nil }, nil
+	return false, nil
+}
+
+// Prepare selects the compatibility adapter for one catalog-owned ACP leaf.
+func (s *Service) Prepare(ctx context.Context, request hooknative.LeafRequest) (hooknative.PreparedLeaf, error) {
+	return s.registry.Prepare(ctx, request)
+}
+
+type compatAdapter struct{ service *Service }
+
+func (compatAdapter) Name() string { return "compat" }
+
+func (compatAdapter) Supports(config agentconfig.Config) bool { return providerKind(config.Type) != "" }
+
+func (a compatAdapter) Prepare(ctx context.Context, request hooknative.LeafRequest) (hooknative.PreparedLeaf, error) {
+	return a.service.PrepareAdapter(ctx, request)
+}
+
+// PrepareAdapter installs the transitional proxy for one ACP leaf.
+func (s *Service) PrepareAdapter(ctx context.Context, request hooknative.LeafRequest) (hooknative.PreparedLeaf, error) {
+	if request.SessionID == "" || strings.TrimSpace(request.CWD) == "" || request.LeafID == "" {
+		return hooknative.PreparedLeaf{}, hookcmd.ErrInvalid
 	}
 	if !hookprovider.NativePlatformSupported() {
-		return nil, nil, hookcmd.ErrUnsupported
+		return hooknative.PreparedLeaf{}, hookcmd.ErrUnsupported
 	}
-	copyProviders := maps.Clone(providers)
-	var bindings []*hookprovider.Binding
+	resolved, err := agentconfig.NormalizeConfig(request.Config, s.executable)
+	if err != nil {
+		return hooknative.PreparedLeaf{}, err
+	}
+	binding, err := s.bindings.Bind(ctx, hookprovider.BindingScope{SessionID: request.SessionID, Provider: request.ProviderID, CWD: request.CWD})
+	if err != nil {
+		return hooknative.PreparedLeaf{}, err
+	}
+	if err := os.WriteFile(binding.Reference()+".kind", []byte(providerKind(request.Config.Type)), 0600); err != nil {
+		_ = binding.Release()
+		return hooknative.PreparedLeaf{}, err
+	}
+	if err := os.WriteFile(binding.Reference()+".owner-proof", []byte(binding.OwnerProof()), 0600); err != nil {
+		_ = binding.Release()
+		return hooknative.PreparedLeaf{}, err
+	}
+	s.mu.Lock()
+	s.sessions[request.SessionID]++
+	s.mu.Unlock()
 	var once sync.Once
 	var releaseErr error
 	release := func() error {
 		once.Do(func() {
-			for _, binding := range bindings {
-				releaseErr = errors.Join(releaseErr, binding.Release())
-			}
+			releaseErr = binding.Release()
 			s.mu.Lock()
-			s.sessions[sessionID] -= len(bindings)
-			if s.sessions[sessionID] <= 0 {
-				delete(s.sessions, sessionID)
+			s.sessions[request.SessionID]--
+			if s.sessions[request.SessionID] <= 0 {
+				delete(s.sessions, request.SessionID)
 			}
 			s.mu.Unlock()
 		})
 		return releaseErr
 	}
-	for _, id := range ids {
-		config := providers[id]
-		kind := providerKind(config.Type)
-		if kind == "" {
-			continue
-		}
-		resolved, err := agentconfig.NormalizeConfig(config, s.executable)
-		if err != nil {
-			_ = release()
-			return nil, nil, err
-		}
-		binding, err := s.bindings.Bind(ctx, hookprovider.BindingScope{SessionID: sessionID, Provider: providerID, CWD: cwd})
-		if err != nil {
-			_ = release()
-			return nil, nil, err
-		}
-		if err := os.WriteFile(binding.Reference()+".kind", []byte(kind), 0600); err != nil {
-			_ = binding.Release()
-			_ = release()
-			return nil, nil, err
-		}
-		if err := os.WriteFile(binding.Reference()+".owner-proof", []byte(binding.OwnerProof()), 0600); err != nil {
-			_ = binding.Release()
-			_ = release()
-			return nil, nil, err
-		}
-		bindings = append(bindings, binding)
-		config.Type = agentconfig.AgentTypeGenericACP
-		config.GenericACP = &agentconfig.ACPConfig{Cmd: append([]string{s.executable, "agent-hooks", "proxy", binding.Reference(), binding.OwnerProof(), "--"}, resolved.Command...), Model: resolved.Model, ModelConfigID: resolved.ModelConfigID, ReasoningEffort: resolved.ReasoningEffort, ReasoningEffortConfigID: resolved.ReasoningEffortConfigID, Mode: resolved.Mode}
-		config.ClaudeCodeACP, config.CodexACP, config.OpenCodeACP = nil, nil, nil
-		copyProviders[id] = config
-	}
-	s.mu.Lock()
-	s.sessions[sessionID] += len(bindings)
-	s.mu.Unlock()
-	return copyProviders, release, nil
+	config := request.Config
+	config.Type = agentconfig.AgentTypeGenericACP
+	config.GenericACP = &agentconfig.ACPConfig{Cmd: append([]string{s.executable, "agent-hooks", "proxy", binding.Reference(), binding.OwnerProof(), "--"}, resolved.Command...), Model: resolved.Model, ModelConfigID: resolved.ModelConfigID, ReasoningEffort: resolved.ReasoningEffort, ReasoningEffortConfigID: resolved.ReasoningEffortConfigID, Mode: resolved.Mode}
+	config.ClaudeCodeACP, config.CodexACP, config.OpenCodeACP = nil, nil, nil
+	return hooknative.PreparedLeaf{Config: config, Release: release}, nil
 }
 
 func (s *Service) bind(kind string, event hookcmd.Event) (string, func() error, error) {

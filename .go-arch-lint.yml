@@ -671,6 +671,7 @@ deps:
     mayDependOn:
       - hook_contracts
       - native_hook_bindings
+      - native_hook_registry
     deepScan: false
     anyVendorDeps: false
     canUse:
@@ -679,7 +680,6 @@ deps:
   native_hook_registry:
     mayDependOn:
       - hook_contracts
-      - native_hook_bindings
     deepScan: false
     anyVendorDeps: false
     canUse:
