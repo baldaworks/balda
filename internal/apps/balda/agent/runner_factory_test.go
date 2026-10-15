@@ -79,8 +79,8 @@ func TestRunnerFactoryPreservesCallerConfigAndCreatesFreshPlugins(t *testing.T) 
 	if prepared.PluginConfig.CloseTimeout != cfg.PluginConfig.CloseTimeout {
 		t.Fatalf("CloseTimeout = %v, want %v", prepared.PluginConfig.CloseTimeout, cfg.PluginConfig.CloseTimeout)
 	}
-	if len(prepared.PluginConfig.Plugins) != 2 || prepared.PluginConfig.Plugins[0] != callerPlugin {
-		t.Fatalf("prepared plugins = %#v, want caller plugin followed by host plugin", prepared.PluginConfig.Plugins)
+	if len(prepared.PluginConfig.Plugins) != 2 || prepared.PluginConfig.Plugins[1] != callerPlugin {
+		t.Fatalf("prepared plugins = %#v, want host plugin followed by caller plugin", prepared.PluginConfig.Plugins)
 	}
 	if len(cfg.PluginConfig.Plugins) != 1 || cfg.PluginConfig.Plugins[0] != callerPlugin || callerPlugins[:cap(callerPlugins)][1] != nil {
 		t.Fatalf("caller plugins were mutated: %#v", callerPlugins[:cap(callerPlugins)])
@@ -88,7 +88,7 @@ func TestRunnerFactoryPreservesCallerConfigAndCreatesFreshPlugins(t *testing.T) 
 	if len(host.plugins) != 2 || host.plugins[0] == host.plugins[1] {
 		t.Fatalf("host plugins = %#v, want two fresh instances", host.plugins)
 	}
-	if prepared.PluginConfig.Plugins[1] != host.plugins[0] || preparedAgain.PluginConfig.Plugins[1] != host.plugins[1] {
+	if prepared.PluginConfig.Plugins[0] != host.plugins[0] || preparedAgain.PluginConfig.Plugins[0] != host.plugins[1] {
 		t.Fatalf("prepared configs do not contain their newly-created host plugins")
 	}
 }

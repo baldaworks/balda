@@ -60,7 +60,11 @@ func (f *RunnerFactory) prepareConfig(cfg runner.Config, scope ToolHookScope) (r
 		if hostPlugin == nil {
 			return runner.Config{}, fmt.Errorf("creating host tool plugin: factory returned nil")
 		}
-		cfg.PluginConfig.Plugins = append(cfg.PluginConfig.Plugins, hostPlugin)
+		// ADK stops a callback chain at the first non-nil result. Run Balda first
+		// so it evaluates model/provider input and can stop denied calls before
+		// trusted in-process extensions. Nil paths deliberately continue to
+		// extensions that may transform accepted arguments afterward.
+		cfg.PluginConfig.Plugins = append([]*plugin.Plugin{hostPlugin}, cfg.PluginConfig.Plugins...)
 	}
 	return cfg, nil
 }

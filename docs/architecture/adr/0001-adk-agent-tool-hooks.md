@@ -75,10 +75,8 @@ func (f *RunnerFactory) New(cfg runner.Config) (*runner.Runner, error) {
     if err != nil {
         return nil, err
     }
-    cfg.PluginConfig.Plugins = append(
-        slices.Clone(cfg.PluginConfig.Plugins),
-        hostPlugins...,
-    )
+    plugins := slices.Clone(hostPlugins)
+    cfg.PluginConfig.Plugins = append(plugins, cfg.PluginConfig.Plugins...)
     return runner.New(cfg)
 }
 ```
@@ -86,7 +84,14 @@ func (f *RunnerFactory) New(cfg runner.Config) (*runner.Runner, error) {
 The factory preserves caller plugins and `PluginConfig.CloseTimeout` and does
 not mutate caller-owned slices. A fresh host plugin set per runner avoids
 sharing plugin lifecycle state unless the ADK contract is explicitly verified
-to permit sharing.
+to permit sharing. Balda host plugins precede caller plugins because pinned ADK
+stops a callback chain at the first non-nil result. Balda therefore evaluates
+model/provider arguments before trusted in-process extension callbacks and a
+deny or failure stops the chain. Allow, rewrite, and unchanged paths return nil
+so trusted caller or agent callbacks continue and may deliberately transform
+the accepted arguments afterward. Stock ADK has no second host callback after
+those callbacks, so Balda does not claim to inspect the final effective
+arguments in that configuration.
 
 The following Balda-owned user-facing construction sites use it:
 
@@ -123,6 +128,12 @@ For `BeforeToolCallback`:
   `(nil, nil)`;
 - `deny` returns a bounded structured result, causing ADK to skip the tool;
 - timeout, malformed output, or executable failure fails closed.
+
+The callback evaluates the arguments supplied by the model/provider. Later
+in-process caller and agent callbacks are trusted extension code. They observe
+the accepted or rewritten map and may intentionally modify it before tool
+execution; this boundary does not treat those callbacks as untrusted input or
+claim that Balda revalidates their final transformation.
 
 For `AfterToolCallback`, the hook may retain or replace the tool result. A
 post-execution decision cannot undo a completed side effect and is never
@@ -418,12 +429,16 @@ architecture decision.
 ## Validation contract
 
 - `agentfactory.Factory` still returns only `agent.Agent`.
-- `RunnerFactory` preserves caller configuration, creates host plugins with the
-  agreed lifetime, and does not mutate caller-owned slices.
+- `RunnerFactory` preserves caller configuration, prepends fresh host plugins
+  with the agreed lifetime, and does not mutate caller-owned slices. Nil host
+  callback results continue through caller plugins.
 - Main, child, and GoalKeeper runners receive the plugin; dedicated internal
   runners do not unless explicitly opted in.
 - An ADK-managed function tool can be allowed, denied before execution, have its
-  arguments rewritten in place, and have its result replaced.
+  model/provider arguments rewritten in place, and have its result replaced.
+  Trusted downstream callbacks observe accepted/rewritten arguments and may
+  transform them further; Balda does not validate the final effective arguments
+  after those callbacks.
 - A custom agent without ADK-managed tools runs normally and produces no false
   tool-hook events.
 - Concrete native adapter integration tests retain the existing Claude, Codex,

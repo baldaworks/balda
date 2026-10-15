@@ -27,6 +27,12 @@ vendors:
     in:
       - go.uber.org/fx
 
+  adk_hook_dependencies:
+    in:
+      - google.golang.org/adk/v2/agent
+      - google.golang.org/adk/v2/plugin
+      - google.golang.org/adk/v2/tool
+
   command_outbox_runtime:
     in:
       - github.com/baldaworks/go-actorlayer
@@ -150,6 +156,12 @@ components:
   hook_policy:
     in:
       - internal/apps/balda/hooks
+
+  # Provider-neutral adapter from stock ADK callbacks to normalized hook
+  # events. Provider configuration and execution policy stay outside it.
+  adk_hook_adapter:
+    in:
+      - internal/apps/balda/hookadk
 
   hook_backoffice_wiring:
     in:
@@ -739,6 +751,7 @@ deps:
 
   hook_wiring:
     mayDependOn:
+      - adk_hook_adapter
       - native_hook_app
       - hook_contracts
       - hook_policy
@@ -749,6 +762,15 @@ deps:
     anyVendorDeps: false
     canUse:
       - hook_wiring_dependencies
+      - adk_hook_dependencies
+
+  adk_hook_adapter:
+    mayDependOn:
+      - hook_contracts
+    deepScan: false
+    anyVendorDeps: false
+    canUse:
+      - adk_hook_dependencies
 
   memory_policy:
     mayDependOn:
