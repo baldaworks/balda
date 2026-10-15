@@ -48,6 +48,7 @@ const (
 
 type browserMCPRecord struct {
 	Order         int    `json:"order"`
+	Category      string `json:"category"`
 	Operation     string `json:"operation"`
 	HeaderMatched bool   `json:"headerMatched"`
 }
@@ -79,27 +80,45 @@ func (r *browserMCPRecorder) ServeHTTP(w http.ResponseWriter, request *http.Requ
 		return
 	}
 	body, err := io.ReadAll(io.LimitReader(request.Body, (1<<20)+1))
+	headerMatched := request.Header.Get("Authorization") == r.expectedAuthorization
+	record := sanitizeBrowserMCPRequest(request.Method, body, headerMatched)
+	r.mu.Lock()
+	record.Order = len(r.records) + 1
+	r.records = append(r.records, record)
+	r.mu.Unlock()
 	if err != nil || len(body) > 1<<20 {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 	_ = request.Body.Close()
 	request.Body = io.NopCloser(bytes.NewReader(body))
-	var message struct {
-		Method string `json:"method"`
-	}
-	_ = json.Unmarshal(body, &message)
-	headerMatched := request.Header.Get("Authorization") == r.expectedAuthorization
-	if message.Method == "initialize" || message.Method == "tools/list" {
-		r.mu.Lock()
-		r.records = append(r.records, browserMCPRecord{Order: len(r.records) + 1, Operation: message.Method, HeaderMatched: headerMatched})
-		r.mu.Unlock()
-	}
-	if r.reject.Load() || !headerMatched {
+	if request.URL.Path == "/knowl" && (r.reject.Load() || !headerMatched) {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
 	r.handler.ServeHTTP(w, request)
+}
+
+func sanitizeBrowserMCPRequest(method string, body []byte, headerMatched bool) browserMCPRecord {
+	record := browserMCPRecord{Category: "http", Operation: "other", HeaderMatched: headerMatched}
+	switch method {
+	case http.MethodGet, http.MethodPost, http.MethodDelete, http.MethodHead, http.MethodOptions:
+		record.Operation = method
+	}
+	var message struct {
+		Method string `json:"method"`
+	}
+	if json.Unmarshal(body, &message) != nil || message.Method == "" {
+		return record
+	}
+	record.Category = "jsonrpc"
+	switch message.Method {
+	case "server/discover", "initialize", "notifications/initialized", "notifications/cancelled", "tools/list":
+		record.Operation = message.Method
+	default:
+		record.Operation = "other"
+	}
+	return record
 }
 
 func TestBackofficeMCPRecorderKeepsOnlySanitizedProtocolFacts(t *testing.T) {
@@ -111,15 +130,23 @@ func TestBackofficeMCPRecorderKeepsOnlySanitizedProtocolFacts(t *testing.T) {
 	request.Header.Set("Authorization", "Bearer private-fixture-value")
 	response := httptest.NewRecorder()
 	recorder.ServeHTTP(response, request)
+	discovery := httptest.NewRequest(http.MethodGet, "/private-discovery?credential=private-query", nil)
+	discovery.Header.Set("Authorization", "Bearer private-fixture-value")
+	recorder.ServeHTTP(httptest.NewRecorder(), discovery)
+	unknown := httptest.NewRequest(http.MethodPost, "/knowl?credential=private-query", bytes.NewBufferString(`{"jsonrpc":"2.0","method":"private/unknown","params":{"secret":"private-payload"}}`))
+	unknown.Header.Set("Authorization", "Bearer private-fixture-value")
+	recorder.ServeHTTP(httptest.NewRecorder(), unknown)
 	encoded, err := json.Marshal(recorder.records)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if response.Code != http.StatusNoContent || string(encoded) != `[{"order":1,"operation":"initialize","headerMatched":true}]` {
+	if response.Code != http.StatusNoContent || string(encoded) != `[{"order":1,"category":"jsonrpc","operation":"initialize","headerMatched":true},{"order":2,"category":"http","operation":"GET","headerMatched":true},{"order":3,"category":"jsonrpc","operation":"other","headerMatched":true}]` {
 		t.Fatalf("sanitized record = %s, status %d", encoded, response.Code)
 	}
-	if bytes.Contains(encoded, []byte("private-fixture-value")) || bytes.Contains(encoded, []byte("private-payload")) {
-		t.Fatal("recorder retained credential or payload material")
+	for _, private := range []string{"private-fixture-value", "private-payload", "private-discovery", "private-query", "private/unknown"} {
+		if bytes.Contains(encoded, []byte(private)) {
+			t.Fatalf("recorder retained private material %q", private)
+		}
 	}
 }
 
@@ -154,18 +181,15 @@ func TestBackofficeMCPBrowserWorkflow(t *testing.T) {
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "synthetic-result"}}}, nil, nil
 	})
 	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return sdk }, nil)
-	recorder := &browserMCPRecorder{handler: handler, expectedAuthorization: "Bearer " + mcpBrowserBearer}
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/knowl" || r.URL.Path == "/__recorder" || r.URL.Path == "/__recorder/reset" {
-			recorder.ServeHTTP(w, r)
-			return
-		}
+	recorder := &browserMCPRecorder{expectedAuthorization: "Bearer " + mcpBrowserBearer}
+	recorder.handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/managed" && r.Header.Get("X-Worker") != "synthetic-browser-protected-value" {
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
 		handler.ServeHTTP(w, r)
-	}))
+	})
+	upstream := httptest.NewServer(recorder)
 	t.Cleanup(upstream.Close)
 	credentials, err := mcpmanage.New(base64.StdEncoding.EncodeToString(make([]byte, 32)))
 	if err != nil {

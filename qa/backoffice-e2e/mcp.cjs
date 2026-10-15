@@ -121,9 +121,12 @@ async function configuredDiagnostic(browser) {
   await page.getByText('Check succeeded', {exact:true}).waitFor();
   assert.equal(await page.getByText(/2 tools\. This one-time check/).count(), 1, 'diagnostic displays the exact tool count');
   assert.deepEqual(await records(page), [
-    {order: 1, operation: 'initialize', headerMatched: true},
-    {order: 2, operation: 'tools/list', headerMatched: true},
-  ], 'diagnostic performs authenticated initialize then tools/list');
+    {order: 1, category: 'jsonrpc', operation: 'server/discover', headerMatched: true},
+    {order: 2, category: 'jsonrpc', operation: 'initialize', headerMatched: true},
+    {order: 3, category: 'jsonrpc', operation: 'notifications/initialized', headerMatched: true},
+    {order: 4, category: 'jsonrpc', operation: 'tools/list', headerMatched: true},
+    {order: 5, category: 'http', operation: 'DELETE', headerMatched: true},
+  ], 'diagnostic performs authenticated initialization, tools/list and bounded cleanup');
   await assertNoCredentials(page);
 
   await recorder(page);
@@ -138,7 +141,8 @@ async function configuredDiagnostic(browser) {
   assert.equal(await page.getByText(/Unauthorized|401|Bearer/).count(), 0, 'failure is sanitized');
   assert.equal(await page.getByRole('heading', {name:'OAuth', exact:true}).count(), 0, 'failure does not offer OAuth remediation');
   assert.deepEqual(await records(page), [
-    {order: 1, operation: 'initialize', headerMatched: true},
+    {order: 1, category: 'jsonrpc', operation: 'server/discover', headerMatched: true},
+    {order: 2, category: 'jsonrpc', operation: 'initialize', headerMatched: true},
   ], 'controlled authentication failure is terminal');
   await assertNoCredentials(page);
 
