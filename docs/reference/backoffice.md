@@ -651,23 +651,31 @@ Administrators with a normal browser session can open **MCP** at `/mcp`.
 Operators do not receive MCP navigation and cannot open the pages or submit
 mutations. All forms use the current session CSRF token and same-origin guard;
 the host rechecks current user, credential, MFA and browser-family versions
-at the durable write boundary. MCP form intake is bounded to 1 MiB; other
-browser forms retain their existing limits.
+at the durable write boundary. MCP definition form intake is bounded to 1 MiB;
+other browser forms retain their existing limits. The **Refresh state** form
+has a separate 4 KiB limit because it accepts only the CSRF token.
 
 Inventory combines configured and Backoffice-managed connections. It shows
 source, transport, provider targets, tool availability and OAuth
 status separately. **Available** reflects observed tools for the selected revision;
-saving or storing an authorized grant does not establish readiness. Remote
-connections remain unobserved (**Pending**) in catalog health; provider invocation
-and candidate probe results do not become background discovery authority.
-Recovery labels use exact current grant/capture state and trusted upstream observations.
-Opening inventory does not start a server or discover OAuth metadata.
+saving or storing an authorized grant does not establish readiness. An ordinary
+Pending state is shown as **Not checked** for HTTP and SSE because no current
+runtime observation establishes readiness. Pending stdio is shown as
+**Starting**, where a local process may actually be starting. Inventory and
+detail use the same transport-aware labels; established non-Pending meanings are
+unchanged. Provider invocation, candidate probes, and explicit diagnostics do
+not become background discovery authority. Recovery labels use exact current
+grant/capture state and trusted upstream observations. Opening, reloading, or
+navigating between inventory and detail with GET is passive: it does not connect
+to an MCP server, run `initialize` or `tools/list`, discover OAuth metadata,
+retry authorization, poll health, or write MCP state.
 
 `/mcp/new` creates a managed server. `/mcp/connections/{connection_id}` shows
 its current state and editor. The immutable server ID must be unique across
 both sources. Stdio uses a direct command, working directory and one argument
 per line; HTTP and SSE use a URL and headers. Their OAuth settings are
-managed separately in Backoffice, including for configuration-owned servers.
+managed separately in Backoffice when the definition is an eligible
+Backoffice-managed remote with OAuth enabled.
 The new-server form shows only the selected transport's fields
 and excludes inactive draft fields from submission. Switching back retains the
 draft until navigation or submission clears write-only values.
@@ -691,32 +699,60 @@ state fails, the error response explicitly reports the saved change and offers
 **Open saved connection**. Use that record to check its state instead of repeating
 creation; the error status and write-only input clearing are preserved.
 
+**Refresh state** on an existing, non-deleted detail is an explicit diagnostic
+POST. It is available only through the normal authenticated administrator
+session and requires the current same-origin CSRF token. The request supplies
+only that token and the connection ID in the route; the server resolves the
+authoritative current configuration definition or selected managed revision at
+action time. The bounded check performs a protocol-valid `initialize` followed
+by complete `tools/list` discovery, reports the exact tool count on success, and
+always closes its transport and process resources. Connection, authentication,
+protocol, timeout, cancellation, and cleanup failures produce the same fixed,
+secret-free failure presentation.
+
+The result is confined to that action response. It does not save readiness,
+tools, failures, revisions, grants, or credentials; change catalog/runtime
+health or provider/session attachment; or start OAuth discovery, authorization,
+token refresh, or grant writes. A later GET again shows the ordinary
+runtime-derived state, such as **Not checked** when a remote has no current
+runtime observation.
+
 Configuration-owned entries are read-only: browser editing, selection changes,
-probe edits and deletion are rejected. Change their definition in the host
-configuration. The dedicated **Enable/Disable connection** and **Delete connection**
-controls require explicit confirmation. New managed connections start enabled
-for their selected providers. **Save definition** preserves the connection's
-enabled or disabled state. Selection changes affect new
-sessions; existing sessions retain their exact revision until release.
-Deletion tombstones the connection and does not erase
-retained revisions. Deleted connection details expose retained metadata without
-edit, probe or selection forms. Worker OAuth completion and configuration recapture are
-separate operations from definition editing.
+probe edits, lifecycle changes, deletion, and OAuth actions are rejected. Their
+only action is the read-only **Refresh state** diagnostic; change their
+definition or credentials in the host configuration. The dedicated
+**Enable/Disable connection** and **Delete connection** controls apply only to
+managed connections and require explicit confirmation. New managed connections
+start enabled for their selected providers. **Save definition** preserves the
+connection's enabled or disabled state. Selection changes affect new sessions;
+existing sessions retain their exact revision until release. Deletion
+tombstones the managed connection and does not erase retained revisions. Deleted
+connection details expose retained metadata without edit, probe, diagnostic,
+selection, or OAuth forms.
 
 Backoffice owns the `MCPOperations` and `MCPAuthorizations` consuming ports and its HTML views.
 `internal/apps/balda/mcpbackofficeapp` adapts the host's definition and catalog
 owners to that port. Validation, encrypted values, durable authority fences and
 readiness policy remain in their existing owners. Balda configures the port
 before the Backoffice HTTP listener starts; startup stage ordering is unchanged.
+The opt-in browser acceptance gate signs in through the existing `/login` form
+with one-off administrator test credentials. It adds no token command,
+credential issuer, pre-authenticated browser state, or login bypass, and keeps
+those credentials out of rendered HTML, logs, traces, screenshots, and test
+output.
 
 ### OAuth authorization
 
-Every non-deleted HTTP/SSE detail offers an **OAuth** section, including public
-servers and configuration-owned entries. **Not configured** is neutral: a
-working public or header-only server does not require sign-in. Availability
-shows whether tools can be used; authorization status shows the saved service
-authorization. Required-login guidance comes from current attachment or grant
-evidence, not merely an empty grant.
+The **OAuth** section, status, and authorization actions appear only for a
+non-deleted Backoffice-managed HTTP/SSE definition with OAuth explicitly
+enabled. Managed definitions with OAuth disabled and every configuration-owned
+definition are OAuth-neutral: they show no **Not configured** or
+**Authorization required** status, no OAuth actions, and no OAuth remediation
+after a diagnostic failure. A public or static-header server does not require
+sign-in. For an eligible managed definition, availability shows whether tools
+can be used while authorization status shows the saved service authorization.
+Required-login guidance comes from current attachment or grant evidence, not
+merely an empty grant.
 
 When adding an HTTP/SSE server, use **Create and authorize in browser** or
 **Create with device code** to save once and start authorization. **Create
@@ -724,13 +760,11 @@ server** and **Probe candidate** remain available for public/header-only
 connections. If authorization cannot start after saving, **Open saved
 connection** returns to that connection for retry; do not create it again.
 
-On a saved remote connection, **Authorize in browser** or **Authorize with
-device** starts a native flow from its current trusted definition. Configuration entries
-remain read-only. Starting explicitly captures current file values when needed;
-changing the file never silently changes an existing session's captured revision.
-A static `Authorization` header conflicts with worker OAuth and must be removed
-in its definition before authorization (the host configuration for file-owned
-servers, the editor for managed servers).
+On an eligible saved managed remote, **Authorize in browser** or **Authorize
+with device** starts a native flow from its current trusted definition. A static
+`Authorization` header conflicts with worker OAuth and must be removed in the
+managed definition before authorization. Configuration-owned definitions never
+enter this Backoffice OAuth flow.
 
 Open **Client settings — optional** when the service requires a client ID,
 authentication method, client secret or scopes. The operator enters service

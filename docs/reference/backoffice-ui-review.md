@@ -309,16 +309,18 @@ BALDA_BACKOFFICE_BROWSER_TEST=1 go test -race ./internal/apps/balda -run '^TestB
 
 It uses ordinary login, the real host owners and temporary SQLite with controlled
 OAuth and HTTP/SSE MCP servers on a different browser site from Backoffice. The
-matrix covers configured public servers without a recovery prerequisite,
-successful managed create-and-authorize, saved creation followed by a discovery
-failure and retry without duplicates, and authorization of a previously static
-managed server. It exercises optional browser client registration, confidential
-client settings, and account/password entry at the external issuer only.
+matrix covers configuration-owned servers as read-only, OAuth-neutral entries,
+managed servers with OAuth disabled as OAuth-neutral entries, successful managed
+create-and-authorize, and saved managed creation followed by a discovery failure
+and retry without duplicates. It exercises optional browser client registration,
+confidential client settings, and account/password entry at the external issuer
+only for managed servers with OAuth enabled.
 It also covers browser/device flows, the native callback continuation with Strict
 session cookies, root and
 `/balda`, desktop/mobile and JavaScript enabled/disabled, denial/cancellation,
-saved-grant attachment retry, changed/empty scopes, changed-file recapture and
-actual hosted/ACP tool execution. Historical revision payloads remain unchanged.
+saved-grant attachment retry, changed/empty scopes, changed-file configuration
+remaining OAuth-neutral, and actual hosted/ACP tool execution. Historical managed
+revision payloads remain unchanged.
 Narrowed shared grants fail incompatible retained scopes closed; restoring
 authorization permits the original snapshot to invoke tools again. Existing
 stdio subprocess/environment and hosted/ACP invocation coverage remains in

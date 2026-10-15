@@ -66,13 +66,13 @@ func TestMCPRoutesRequireCurrentAdministrator(t *testing.T) {
 	}
 	fixture := &mcpHTTPFixture{items: []mcpcmd.Item{{Connection: mcpcmd.Connection{ID: "fixture", Source: mcpcmd.SourceManaged, Version: 1}}}}
 	app.mcp = fixture
-	for _, route := range []string{"/mcp/connections", "/mcp/connections/fixture", "/mcp/connections/fixture/selection", "/mcp/connections/fixture/delete"} {
+	for _, route := range []string{"/mcp/connections", "/mcp/connections/fixture", "/mcp/connections/fixture/selection", "/mcp/connections/fixture/delete", "/mcp/connections/fixture/diagnostic"} {
 		for _, tc := range []struct {
 			access, csrf string
 			status       int
 		}{{"", "anonymous", 401}, {operator.access, operator.csrf, 403}} {
 			w := performAccessMutation(t, handler, config, route, url.Values{"csrf_token": {tc.csrf}}, tc.access, tc.csrf, false)
-			if w.Code != tc.status || len(fixture.creates)+len(fixture.updates)+len(fixture.selections)+fixture.probes != 0 {
+			if w.Code != tc.status || len(fixture.creates)+len(fixture.updates)+len(fixture.selections)+fixture.probes+len(fixture.diagnosticIDs) != 0 {
 				t.Fatal("unauthorized mutation reached MCP owner")
 			}
 		}
@@ -113,10 +113,13 @@ func TestMCPInventoryUsesSafeSharedRendering(t *testing.T) {
 			if response.Code != http.StatusOK {
 				t.Fatalf("inventory = %d", response.Code)
 			}
-			for _, visible := range []string{"worker-tools", "protected", "alpha", "Authorized", "Tools unavailable", "This server requires authorization", "Configuration"} {
+			for _, visible := range []string{"worker-tools", "protected", "alpha", "Authorized", "Tools unavailable", "Not checked", "Configuration"} {
 				if !strings.Contains(body, visible) {
 					t.Errorf("missing visible %q", visible)
 				}
+			}
+			if strings.Contains(body, "This server requires authorization") {
+				t.Fatal("configuration-owned entry exposed OAuth recovery")
 			}
 			if strings.Count(body, `id="main-content"`) != 1 || response.Header().Get("Cache-Control") != noStoreCacheControl {
 				t.Fatal("inventory lost shared rendering/cache policy")
@@ -132,13 +135,17 @@ func TestMCPInventoryUsesSafeSharedRendering(t *testing.T) {
 }
 
 type mcpHTTPFixture struct {
-	inventoryErr error
-	items        []mcpcmd.Item
-	err          error
-	creates      []mcpcmd.CreateDefinition
-	updates      []mcpcmd.UpdateDefinition
-	selections   []mcpcmd.ChangeSelection
-	probes       int
+	inventoryErr          error
+	items                 []mcpcmd.Item
+	err                   error
+	creates               []mcpcmd.CreateDefinition
+	updates               []mcpcmd.UpdateDefinition
+	selections            []mcpcmd.ChangeSelection
+	probes                int
+	diagnosticIDs         []string
+	diagnosticAuthorities []mcpcmd.Authority
+	diagnosticResult      mcpcmd.DiagnosticResult
+	diagnosticErr         error
 }
 
 func (f *mcpHTTPFixture) result() (mcpcmd.Item, error) {
@@ -177,6 +184,122 @@ func (f *mcpHTTPFixture) Probe(context.Context, mcpcmd.CreateDefinition) (mcpcmd
 func (f *mcpHTTPFixture) ProbeUpdate(context.Context, mcpcmd.UpdateDefinition) (mcpcmd.Item, error) {
 	f.probes++
 	return f.result()
+}
+func (f *mcpHTTPFixture) DiagnoseCurrent(_ context.Context, id string, authority mcpcmd.Authority) (mcpcmd.DiagnosticResult, error) {
+	f.diagnosticIDs = append(f.diagnosticIDs, id)
+	f.diagnosticAuthorities = append(f.diagnosticAuthorities, authority)
+	return f.diagnosticResult, f.diagnosticErr
+}
+
+func TestMCPDiagnosticUsesProtectedServerAuthorityAndEphemeralResult(t *testing.T) {
+	provider, config := newHTTPAppTestState(t)
+	now := time.Now().UTC()
+	for _, role := range []usercmd.Role{usercmd.RoleAdministrator, usercmd.RoleOperator} {
+		createAccessTestUser(t, provider.Users(), usercmd.User{
+			ID: string(role), Username: string(role), NormalizedUsername: string(role), DisplayName: string(role), Role: role,
+			Status: usercmd.StatusActive, Primary: role == usercmd.RoleAdministrator,
+			Credential: usercmd.Credential{State: usercmd.CredentialStateActive, Version: 1}, Version: 1, CreatedAt: now, UpdatedAt: now,
+		})
+	}
+	app, err := newHTTPApp(provider.Users(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture := &mcpHTTPFixture{
+		items: []mcpcmd.Item{{
+			Connection: mcpcmd.Connection{ID: "config:knowl", PublicID: "knowl", Source: mcpcmd.SourceConfig, Enabled: true},
+			Definition: mcpcmd.Definition{Transport: mcpcmd.TransportHTTP, URL: "https://knowl.example/mcp", OAuth: false, Headers: map[string]mcpcmd.ValueBinding{"Authorization": {Kind: mcpcmd.ValueProtected}}},
+			Status:     mcpcmd.StatusPending, Authorization: mcpcmd.GrantAuthRequired, Recovery: mcpcmd.RecoveryAuthorizationRequired,
+		}},
+		diagnosticResult: mcpcmd.DiagnosticResult{Outcome: mcpcmd.DiagnosticSucceeded, ToolCount: 3},
+	}
+	app.mcp = fixture
+	authorizations := &mcpAuthorizationFixture{item: fixture.items[0]}
+	app.mcpAuthorizations = authorizations
+	handler, err := app.handler()
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin := loginHTTPAppSession(t, handler, config, string(usercmd.RoleAdministrator))
+	operator := loginHTTPAppSession(t, handler, config, string(usercmd.RoleOperator))
+
+	get := httptest.NewRequest(http.MethodGet, "/mcp/connections/config:knowl", nil)
+	get.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: admin.access})
+	getResponse := httptest.NewRecorder()
+	handler.ServeHTTP(getResponse, get)
+	if getResponse.Code != http.StatusOK || len(fixture.diagnosticIDs) != 0 || authorizations.currentReads != 0 {
+		t.Fatal("passive configuration detail invoked diagnostic or OAuth status")
+	}
+	for _, visible := range []string{"Not checked", "Refresh state", `action="/mcp/connections/config:knowl/diagnostic"`} {
+		if !strings.Contains(getResponse.Body.String(), visible) {
+			t.Errorf("configured detail missing %q", visible)
+		}
+	}
+	for _, absent := range []string{"Authorize in browser", "Retry tool attachment", "Revoke authorization", "Not configured", "Authorization required", "name=\"expected_version\""} {
+		if strings.Contains(getResponse.Body.String(), absent) {
+			t.Errorf("configured static-auth detail exposed inapplicable control %q", absent)
+		}
+	}
+
+	path := "/mcp/connections/config:knowl/diagnostic"
+	for _, tc := range []struct {
+		name, access, csrf string
+		status             int
+	}{
+		{"anonymous", "", "anonymous", http.StatusUnauthorized},
+		{"operator", operator.access, operator.csrf, http.StatusForbidden},
+		{"invalid CSRF", admin.access, "invalid", http.StatusForbidden},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := performAccessMutation(t, handler, config, path, url.Values{"csrf_token": {tc.csrf}}, tc.access, tc.csrf, true)
+			if w.Code != tc.status || len(fixture.diagnosticIDs) != 0 {
+				t.Fatal("rejected diagnostic reached MCP owner")
+			}
+		})
+	}
+
+	form := url.Values{
+		"csrf_token": {admin.csrf},
+		"url":        {"https://attacker.example/mcp"},
+		"header":     {"write-only-canary"},
+		"revision":   {"attacker-revision"},
+	}
+	w := performAccessMutation(t, handler, config, path, form, admin.access, admin.csrf, true)
+	if w.Code != http.StatusOK || len(fixture.diagnosticIDs) != 1 || fixture.diagnosticIDs[0] != "config:knowl" {
+		t.Fatalf("diagnostic = status %d, IDs %v", w.Code, fixture.diagnosticIDs)
+	}
+	authority := fixture.diagnosticAuthorities[0]
+	if authority.UserID != string(usercmd.RoleAdministrator) || authority.SessionID == "" || authority.SessionVersion == 0 {
+		t.Fatalf("diagnostic authority = %+v", authority)
+	}
+	for _, visible := range []string{"Check succeeded", "3 tools", "one-time check"} {
+		if !strings.Contains(w.Body.String(), visible) {
+			t.Errorf("successful diagnostic missing %q", visible)
+		}
+	}
+	if strings.Contains(w.Body.String(), "write-only-canary") || strings.Contains(w.Body.String(), "attacker.example") || strings.Contains(w.Body.String(), "attacker-revision") {
+		t.Fatal("browser connection material was reflected")
+	}
+
+	get = httptest.NewRequest(http.MethodGet, "/mcp/connections/config:knowl", nil)
+	get.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: admin.access})
+	getResponse = httptest.NewRecorder()
+	handler.ServeHTTP(getResponse, get)
+	if getResponse.Code != http.StatusOK || len(fixture.diagnosticIDs) != 1 || authorizations.currentReads != 0 || !strings.Contains(getResponse.Body.String(), "Not checked") || strings.Contains(getResponse.Body.String(), "Check succeeded") {
+		t.Fatal("later passive GET retained or reran diagnostic")
+	}
+
+	fixture.diagnosticResult = mcpcmd.DiagnosticResult{Outcome: mcpcmd.DiagnosticFailed}
+	w = performAccessMutation(t, handler, config, path, url.Values{"csrf_token": {admin.csrf}}, admin.access, admin.csrf, true)
+	if w.Code != http.StatusOK || len(fixture.diagnosticIDs) != 2 || !strings.Contains(w.Body.String(), "Check failed") || strings.Contains(w.Body.String(), "3 tools") {
+		t.Fatal("failed diagnostic was not terminal and sanitized")
+	}
+
+	oversized := url.Values{"csrf_token": {admin.csrf}, "padding": {strings.Repeat("x", (4<<10)+1)}}
+	w = performAccessMutation(t, handler, config, path, oversized, admin.access, admin.csrf, true)
+	if w.Code != http.StatusBadRequest || len(fixture.diagnosticIDs) != 2 {
+		t.Fatal("oversized diagnostic form reached MCP owner")
+	}
 }
 
 func TestMCPFormsFenceAuthorityAndNeverReflectValues(t *testing.T) {

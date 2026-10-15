@@ -70,13 +70,15 @@ show configuration, not a live health check. See the
 
 Administrators can open **MCP** in Backoffice to inspect configured servers and
 create, edit, probe, disable or delete managed connections. Configuration entries
-are read-only. HTTP/SSE servers offer OAuth on creation and detail, with optional
-client settings; enter service account credentials at the external service.
-OAuth is managed in Backoffice even for configuration-owned addresses. Protected
-values are write-only, and **Available** tools are shown separately from OAuth
-status. Native browser/device authorization
-uses the current trusted definition, including explicit configured capture;
-saved grants can retry tool attachment without repeating OAuth. See [MCP management](docs/reference/backoffice.md#mcp-management)
+are read-only except for the explicit **Refresh state** diagnostic; passive page
+loads do not probe them, and the diagnostic result is not saved as readiness.
+OAuth onboarding and later status/actions apply only to eligible
+Backoffice-managed HTTP/SSE connections with OAuth enabled. Configuration-owned
+entries and managed connections with OAuth disabled remain OAuth-neutral.
+Protected values are write-only, and **Available** tools are shown separately
+from OAuth status. Native browser/device authorization uses the current trusted
+managed definition; saved grants can retry tool attachment without repeating
+OAuth. See [MCP management](docs/reference/backoffice.md#mcp-management)
 for provider targeting and value operations.
 
 Configured MCP availability does not block startup: both hosted and ACP providers
