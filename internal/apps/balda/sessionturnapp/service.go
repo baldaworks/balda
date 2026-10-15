@@ -26,7 +26,6 @@ import (
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/runner"
 	adksession "google.golang.org/adk/v2/session"
@@ -35,6 +34,16 @@ import (
 
 type jobEventAppender interface {
 	AppendEvent(ctx context.Context, jobID string, eventType string, actor string, messageID string, payload any) error
+}
+
+// PrivateOutputRecorder keeps one private run result before optional delivery.
+type PrivateOutputRecorder interface {
+	RecordPrivateOutput(ctx context.Context, jobID, output string, failed bool) error
+}
+
+// WebhookTurnClaimer durably marks the first provider invocation for a webhook job.
+type WebhookTurnClaimer interface {
+	ClaimWebhookTurn(ctx context.Context, jobID string) (bool, error)
 }
 
 type runtimeStateReader interface {
@@ -93,6 +102,9 @@ type TurnExecutionService struct {
 	jobEvents      jobEventAppender
 	sessions       runtimeStateReader
 	turnCapture    CompletedTurnCapture
+	hooks          HookRunner
+	privateOutput  PrivateOutputRecorder
+	webhookClaims  WebhookTurnClaimer
 	progressHook   ProgressTransportHook
 	formatComposer *FormatPromptComposer
 	logger         zerolog.Logger
@@ -108,6 +120,7 @@ func (s *TurnExecutionService) currentTime() time.Time {
 }
 
 type ExecutionRequest struct {
+	WorkspaceDir    string
 	Text            string
 	Attachments     []attachment.Descriptor
 	Runner          *runner.Runner
@@ -117,6 +130,7 @@ type ExecutionRequest struct {
 	JobID           string
 	AgentSessionID  string
 	Locator         baldasession.SessionLocator
+	DeliveryLocator baldasession.SessionLocator
 	MessageID       int
 	DeliveryOptions deliveryfmt.Options
 	Deliver         bool
@@ -198,6 +212,20 @@ func (s *TurnExecutionService) SetCompletedTurnCapture(capture CompletedTurnCapt
 	s.turnCapture = capture
 }
 
+// SetPrivateOutputRecorder binds the durable result writer at composition time.
+func (s *TurnExecutionService) SetPrivateOutputRecorder(recorder PrivateOutputRecorder) {
+	if s != nil {
+		s.privateOutput = recorder
+	}
+}
+
+// SetWebhookTurnClaimer binds the durable webhook invocation guard at composition time.
+func (s *TurnExecutionService) SetWebhookTurnClaimer(claimer WebhookTurnClaimer) {
+	if s != nil {
+		s.webhookClaims = claimer
+	}
+}
+
 func (s *TurnExecutionService) SetProgressTransportHook(hook ProgressTransportHook) {
 	if s == nil {
 		return
@@ -243,7 +271,13 @@ func (s *TurnExecutionService) appendJobEvent(
 	return s.jobEvents.AppendEvent(ctx, jobID, eventType, actor, messageID, payload)
 }
 
-func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest) error {
+func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest) (runErr error) {
+	finalAccepted := false
+	defer func() {
+		if finalAccepted && runErr != nil {
+			runErr = &turncmd.FinalOutcomeAcceptedError{Cause: runErr}
+		}
+	}()
 	if req.Runner == nil {
 		return fmt.Errorf("session turn: no runner in session %s", req.SessionID)
 	}
@@ -257,23 +291,34 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 	}
 
 	req.DeliveryOptions = deliveryfmt.NormalizeOptions(req.DeliveryOptions)
+	privateRun := turncmd.IsPrivateRun(req.TurnSource, req.SessionID)
+	if privateRun && req.Deliver && req.DeliveryLocator.ChannelType == "" {
+		return fmt.Errorf("private report locator is required")
+	}
+	hookContext, err := s.submitHooks(ctx, req)
+	if err != nil {
+		return err
+	}
 	providerText := req.Text
+	if hookContext != "" {
+		providerText += "\n\n<balda_hook_context>\n" + hookContext + "\n</balda_hook_context>"
+	}
 	var (
 		formatState *formatStateChange
-		err         error
+		formatErr   error
 	)
-	if s.formatComposer != nil {
-		providerText, formatState, err = s.formatComposer.Compose(
+	if !privateRun && s.formatComposer != nil {
+		providerText, formatState, formatErr = s.formatComposer.Compose(
 			ctx,
 			req.Locator,
 			req.DeliveryOptions.DeliveryFormat,
-			req.Text,
+			providerText,
 		)
-		if err != nil {
-			return fmt.Errorf("compose message format prompt: %w", err)
+		if formatErr != nil {
+			return fmt.Errorf("compose message format prompt: %w", formatErr)
 		}
 	}
-	providerText = composeApplicationMemoryPrompt(providerText, req.MemoryRefresh.Content)
+	providerText = composeApplicationMemoryPrompt(providerText, req.MemoryRefresh)
 	providerText = composeSelectedSkillPrompt(providerText, req.SelectedSkill)
 	userContent, err := buildUserContent(providerText, req.Attachments)
 	if err != nil {
@@ -331,8 +376,10 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 		Int("input_file_data_part_count", inputFileDataPartCount).
 		Strs("input_inline_data_mime_types", inlineMIMETypes).
 		Msg("assembled provider user content")
-	if err := s.startAutoCycleIfNeeded(ctx, req); err != nil {
-		return err
+	if !privateRun {
+		if err := s.startAutoCycleIfNeeded(ctx, req); err != nil {
+			return err
+		}
 	}
 	requesterUserID := strings.TrimSpace(req.RequesterUserID)
 	if requesterUserID == "" {
@@ -340,16 +387,20 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 	}
 	permissionOutcomes := &permissionOutcomeRecorder{}
 	runCtx = permissioncmd.WithOutcomeSink(runCtx, permissionOutcomes)
-	runCtx = permissioncmd.WithInteraction(runCtx, questioncmd.InteractionContext{
-		SessionID:   req.SessionID,
-		ChannelKind: req.Locator.ChannelType,
-		Locator:     req.Locator,
-		RequestedBy: questioncmd.UserRef{UserID: requesterUserID},
-		Origin:      questioncmd.InteractionOrigin{RootJobID: strings.TrimSpace(req.JobID)},
-	})
+	if !privateRun {
+		runCtx = permissioncmd.WithInteraction(runCtx, questioncmd.InteractionContext{
+			SessionID:   req.SessionID,
+			ChannelKind: req.Locator.ChannelType,
+			Locator:     req.Locator,
+			RequestedBy: questioncmd.UserRef{UserID: requesterUserID},
+			Origin:      questioncmd.InteractionOrigin{RootJobID: strings.TrimSpace(req.JobID)},
+		})
+	}
 
 	progressEmitter := req.ProgressEmitter
-	if progressEmitter == nil && s.dispatcher != nil {
+	if privateRun {
+		progressEmitter = nil
+	} else if progressEmitter == nil && req.Deliver && s.dispatcher != nil {
 		progressEmitter = NewSessionProgressDispatcher(
 			s.dispatcher,
 			req.OutboundFrom,
@@ -371,6 +422,18 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 	terminalErrorCode := ""
 	terminalErrorMessage := ""
 	lastNonRetryErrorMessage := ""
+	if req.TurnSource == turncmd.SourceWebhook {
+		if s.webhookClaims == nil {
+			return fmt.Errorf("%w: claimer is unavailable", turncmd.ErrWebhookTurnClaimUnavailable)
+		}
+		claimed, err := s.webhookClaims.ClaimWebhookTurn(ctx, req.JobID)
+		if err != nil {
+			return fmt.Errorf("%w: %w", turncmd.ErrWebhookTurnClaimUnavailable, err)
+		}
+		if !claimed {
+			return turncmd.ErrWebhookTurnAlreadyClaimed
+		}
+	}
 
 	for ev, err := range req.Runner.Run(runCtx, req.UserID, req.AgentSessionID, userContent, agent.RunConfig{}, req.RunOptions...) {
 		if err != nil {
@@ -439,7 +502,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 			if err != nil {
 				return err
 			}
-			if jobBackedDelivery && result.DispatchedPlanText != "" {
+			if jobBackedDelivery && !privateRun && result.DispatchedPlanText != "" {
 				if err := s.appendJobEvent(ctx, req.JobID, baldajobs.JobEventAgentProgress, "session.actor", "", map[string]any{
 					"kind": "plan",
 					"text": result.DispatchedPlanText,
@@ -564,15 +627,18 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 			Int("streamed_text_char_count", streamedText.Len()).
 			Msg("received provider event")
 		if ev.TurnComplete {
+			if err := s.stopHooks(ctx, req, streamedText.String(), string(terminalTurnStatus(ev))); err != nil {
+				return err
+			}
 			sawTurnComplete = true
 			responseText := streamedText.String()
 			memoryResponseText := memoryStreamedText.String()
-			if formatState != nil && successfulFormatTurn(ev, responseText) {
+			if !privateRun && formatState != nil && successfulFormatTurn(ev, responseText) {
 				if err := s.formatComposer.Commit(ctx, req.Locator, *formatState); err != nil {
 					return err
 				}
 			}
-			if s.turnCapture != nil && shouldCaptureTerminalTurn(ev, req.Text, memoryResponseText) {
+			if !privateRun && s.turnCapture != nil && shouldCaptureTerminalTurn(ev, req.Text, memoryResponseText) {
 				if sourceTurnID := completedTurnSourceID(req); sourceTurnID != "" {
 					captureErr := s.turnCapture.CaptureCompletedTurn(ctx, CompletedTurn{
 						UserText:       req.Text,
@@ -592,6 +658,53 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 							Msg("failed to publish completed turn to session memory")
 					}
 				}
+			}
+			if privateRun {
+				if s.privateOutput == nil {
+					return fmt.Errorf("private output recorder is unavailable")
+				}
+				providerFailed := ev.Interrupted || terminalTurnStatus(ev) != TerminalStatusSuccess
+				failureText := ""
+				if providerFailed {
+					failureText = privateRunFailureMessage(req.TurnSource)
+				}
+				if failureText == "" {
+					failureText = permissionOutcomeTurnMessage(permissionOutcomes.Latest())
+				}
+				if failureText == "" && strings.TrimSpace(responseText) == "" {
+					failureText = terminalTurnMessage(terminalFinishReason)
+				}
+				failed := providerFailed || failureText != ""
+				output := responseText
+				if failed && failureText != "" {
+					output = failureText
+				}
+				if strings.TrimSpace(output) == "" {
+					output = privateRunEmptyMessage(req.TurnSource)
+					failed = true
+				}
+				if err := s.privateOutput.RecordPrivateOutput(ctx, req.JobID, output, failed); err != nil {
+					return fmt.Errorf("record private output: %w", err)
+				}
+				if req.Deliver {
+					if !jobBackedDelivery {
+						return fmt.Errorf("private report dispatcher is unavailable")
+					}
+					if err := s.dispatchJobDelivery(ctx, req.JobID, req.DeliveryLocator, req.SessionID,
+						deliveryFormat, output, "final"); err != nil {
+						return err
+					}
+				}
+				if failed {
+					if req.Deliver {
+						if req.TurnSource == turncmd.SourceWebhook {
+							return fmt.Errorf("%w: provider execution failed", turncmd.ErrWebhookReportQueued)
+						}
+						return fmt.Errorf("%w: provider execution failed", turncmd.ErrScheduledReportQueued)
+					}
+					return fmt.Errorf("private provider execution failed")
+				}
+				break
 			}
 			responseEmitted := false
 			responseSource := responseSourceNone
@@ -634,6 +747,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 					if err := s.dispatchJobDelivery(ctx, req.JobID, req.Locator, req.SessionID, deliveryFormat, responseText, "final"); err != nil {
 						return err
 					}
+					finalAccepted = true
 					if err := s.appendJobEvent(ctx, req.JobID, baldajobs.JobEventAgentResult, "session.actor", "", map[string]any{
 						"text": strings.TrimSpace(responseText),
 					}); err != nil {
@@ -644,8 +758,9 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 						responseSource = "streamed_text"
 					}
 				} else if sendErr := sendAgentReplyWithFormat(ctx, s.dispatcher, req.OutboundFrom, req.Locator, deliveryFormat, responseText); sendErr != nil {
-					log.Warn().Err(sendErr).Int("topic_id", topicID).Msg("failed to send balda response")
+					return fmt.Errorf("publish final response: %w", sendErr)
 				} else {
+					finalAccepted = true
 					responseEmitted = true
 					if responseSource == responseSourceNone {
 						responseSource = "streamed_text"
@@ -667,9 +782,14 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 				}
 				if terminalMessage != "" {
 					if jobBackedDelivery {
-						if err := s.dispatchJobDelivery(ctx, req.JobID, req.Locator, req.SessionID, deliveryFormat, terminalMessage, "terminal"); err != nil {
+						suffix := "terminal"
+						if privateRun {
+							suffix = "final"
+						}
+						if err := s.dispatchJobDelivery(ctx, req.JobID, req.Locator, req.SessionID, deliveryFormat, terminalMessage, suffix); err != nil {
 							return err
 						}
+						finalAccepted = true
 						if err := s.appendJobEvent(ctx, req.JobID, baldajobs.JobEventAgentResult, "session.actor", "", map[string]any{
 							"text":          strings.TrimSpace(terminalMessage),
 							"finish_reason": strings.TrimSpace(string(terminalFinishReason)),
@@ -680,8 +800,9 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 						responseSource = terminalSource
 						handledEmptyTerminalReason = true
 					} else if sendErr := sendPlain(ctx, s.dispatcher, req.OutboundFrom, req.Locator, terminalMessage); sendErr != nil {
-						log.Warn().Err(sendErr).Int("topic_id", topicID).Msg("failed to send balda terminal finish reason message")
+						return fmt.Errorf("publish terminal response: %w", sendErr)
 					} else {
+						finalAccepted = true
 						responseEmitted = true
 						responseSource = terminalSource
 						handledEmptyTerminalReason = true
@@ -696,8 +817,10 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 				Bool("terminal_has_error_message", terminalErrorMessage != "").
 				Bool("handled_empty_terminal_reason", handledEmptyTerminalReason).
 				Msg("processed turn complete event")
-			if err := s.maybeScheduleAutoTurn(ctx, req, responseSource, strings.TrimSpace(responseText)); err != nil {
-				return err
+			if !privateRun {
+				if err := s.maybeScheduleAutoTurn(ctx, req, responseSource, strings.TrimSpace(responseText)); err != nil {
+					return err
+				}
 			}
 			break
 		}
@@ -707,8 +830,25 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 			Int("streamed_text_char_count", streamedText.Len()).
 			Msg("provider event stream ended without turn complete; suppressing balda response")
 	}
+	if privateRun && !sawTurnComplete {
+		return fmt.Errorf("private run ended without turn completion")
+	}
 
 	return nil
+}
+
+func privateRunFailureMessage(source string) string {
+	if source == turncmd.SourceWebhook {
+		return "The webhook run could not complete. Ask the operator to check Balda."
+	}
+	return "The scheduled run could not complete. Ask the operator to check Balda."
+}
+
+func privateRunEmptyMessage(source string) string {
+	if source == turncmd.SourceWebhook {
+		return "The webhook run produced no output. Ask the operator to check Balda."
+	}
+	return "The scheduled run produced no report. Ask the operator to check Balda."
 }
 
 func successfulFormatTurn(event *adksession.Event, responseText string) bool {

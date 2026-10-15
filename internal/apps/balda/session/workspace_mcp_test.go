@@ -18,6 +18,7 @@ func TestWorkspaceMCPImport_UsesPersistedSessionMetadata(t *testing.T) {
 	writeFile(t, filepath.Join(workingDir, "base.txt"), "base\n")
 	runGit(t, ctx, workingDir, "add", "base.txt")
 	runGit(t, ctx, workingDir, "commit", "-m", "chore: seed")
+	baseBranch := currentBranch(t, ctx, workingDir)
 
 	workspaceDir := filepath.Join(t.TempDir(), "balda-workspace")
 	branchName := "norma/balda/tg-1-2"
@@ -43,7 +44,7 @@ func TestWorkspaceMCPImport_UsesPersistedSessionMetadata(t *testing.T) {
 	}
 
 	manager := &Manager{
-		workspaces:       newTestWorkspaceManager(workingDir, t.TempDir(), "master"),
+		workspaces:       newTestWorkspaceManager(workingDir, t.TempDir(), baseBranch),
 		workspaceEnabled: true,
 		logger:           zerolog.Nop(),
 		sessionStore:     store,
@@ -68,6 +69,7 @@ func TestWorkspaceMCPExport_UsesPersistedSessionMetadata(t *testing.T) {
 	writeFile(t, filepath.Join(workingDir, "base.txt"), "base\n")
 	runGit(t, ctx, workingDir, "add", "base.txt")
 	runGit(t, ctx, workingDir, "commit", "-m", "chore: seed")
+	baseBranch := currentBranch(t, ctx, workingDir)
 
 	workspaceDir := filepath.Join(t.TempDir(), "balda-workspace")
 	branchName := "norma/balda/tg-3-4"
@@ -93,7 +95,7 @@ func TestWorkspaceMCPExport_UsesPersistedSessionMetadata(t *testing.T) {
 	}
 
 	manager := &Manager{
-		workspaces:       newTestWorkspaceManager(workingDir, t.TempDir(), "master"),
+		workspaces:       newTestWorkspaceManager(workingDir, t.TempDir(), baseBranch),
 		workspaceEnabled: true,
 		logger:           zerolog.Nop(),
 		sessionStore:     store,

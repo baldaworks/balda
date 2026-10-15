@@ -141,7 +141,7 @@ func TestValidateRuntimeConfigLint_AllowsAlwaysOnRuntimeConfig(t *testing.T) {
 		},
 		Events: baldaexecution.EventStreamConfig{Stream: "BALDA_EVENTS"},
 		DLQ:    baldaexecution.DLQConfig{Stream: "BALDA_DLQ"},
-	}, webhook.Config{}); err != nil {
+	}, "127.0.0.1:8095", webhook.Config{}); err != nil {
 		t.Fatalf("validateExecutionConfigLint() error = %v, want nil", err)
 	}
 }
@@ -156,7 +156,7 @@ func TestValidateRuntimeConfigLint_RejectsInvalidAndDuplicateRuntimeNames(t *tes
 		},
 		Events: baldaexecution.EventStreamConfig{Stream: "BALDA_EVENTS"},
 		DLQ:    baldaexecution.DLQConfig{Stream: "BALDA_EVENTS"},
-	}, webhook.Config{})
+	}, "127.0.0.1:8095", webhook.Config{})
 	if err == nil {
 		t.Fatal("validateExecutionConfigLint() error = nil, want non-nil")
 	}
@@ -182,9 +182,9 @@ func TestValidateRuntimeConfigLint_RejectsPublicWebhookWithoutRouteAuth(t *testi
 		},
 		Events: baldaexecution.EventStreamConfig{Stream: "BALDA_EVENTS"},
 		DLQ:    baldaexecution.DLQConfig{Stream: "BALDA_DLQ"},
-	}, webhook.Config{
+	}, "0.0.0.0:8095", webhook.Config{
 		Enabled:    true,
-		ListenAddr: "0.0.0.0:8090",
+		ListenAddr: "127.0.0.1:8090",
 		Routes: map[string]webhook.RouteConfig{
 			"release": {
 				Auth: webhook.RouteAuthConfig{Type: "none"},
@@ -194,7 +194,7 @@ func TestValidateRuntimeConfigLint_RejectsPublicWebhookWithoutRouteAuth(t *testi
 	if err == nil {
 		t.Fatal("validateExecutionConfigLint() error = nil, want non-nil")
 	}
-	if !strings.Contains(err.Error(), "must configure auth.type=header") {
+	if !strings.Contains(err.Error(), "balda.http.listen_addr") || !strings.Contains(err.Error(), "must configure auth.type=header") {
 		t.Fatalf("validateExecutionConfigLint() error = %v, want auth marker", err)
 	}
 }
@@ -209,7 +209,7 @@ func TestValidateRuntimeConfigLint_AllowsLoopbackWebhookWithoutRouteAuth(t *test
 		},
 		Events: baldaexecution.EventStreamConfig{Stream: "BALDA_EVENTS"},
 		DLQ:    baldaexecution.DLQConfig{Stream: "BALDA_DLQ"},
-	}, webhook.Config{
+	}, "127.0.0.1:8095", webhook.Config{
 		Enabled:    true,
 		ListenAddr: "127.0.0.1:8090",
 		Routes: map[string]webhook.RouteConfig{
@@ -299,6 +299,39 @@ func TestValidateZulipConfigRequiresWebhookAuthAndReplyCredentials(t *testing.T)
 				t.Fatalf("validateZulipConfig() error = %v, want marker %q", err, tt.wantError)
 			}
 		})
+	}
+}
+
+func TestValidateMattermostConfig(t *testing.T) {
+	valid := MattermostConfig{
+		Enabled:         true,
+		ServerURL:       "https://mattermost.example.test",
+		Token:           "bot-token",
+		BotUserID:       "bot-user",
+		BotUsername:     "balda",
+		CommandsEnabled: true,
+		CommandsToken:   "command-token",
+	}
+	if err := validateMattermostConfig(valid); err != nil {
+		t.Fatalf("validateMattermostConfig(valid) error = %v", err)
+	}
+
+	withoutTransport := valid
+	withoutTransport.Enabled = false
+	if err := validateMattermostConfig(withoutTransport); err == nil {
+		t.Fatal("validateMattermostConfig() error = nil when commands are enabled without the transport")
+	}
+
+	withoutCommandToken := valid
+	withoutCommandToken.CommandsToken = ""
+	if err := validateMattermostConfig(withoutCommandToken); err == nil {
+		t.Fatal("validateMattermostConfig() error = nil when commands token is empty")
+	}
+
+	withoutBotUsername := valid
+	withoutBotUsername.BotUsername = ""
+	if err := validateMattermostConfig(withoutBotUsername); err == nil {
+		t.Fatal("validateMattermostConfig() error = nil when bot username is empty")
 	}
 }
 
@@ -459,16 +492,13 @@ func TestBuildInboundWebhookConfig(t *testing.T) {
 			Enabled:    true,
 			ListenAddr: " 127.0.0.1:8091 ",
 			Routes: map[string]WebhookRouteConfig{
-				" webhook1 ": {
-					Path:           " webhook1 ",
+				"webhook1": {
+
 					PromptTemplate: " {{.RawBody}} ",
 					Envelope: WebhookRouteEnvelopeConfig{
-						Target: " alias ",
-						Key:    " owner ",
-						Mode:   " task ",
 						ReportTo: &WebhookRouteEnvelopeTargetConfig{
-							Target: " alias ",
-							Key:    " owner ",
+							Target: " managed_alias ",
+							Key:    " main_chat ",
 						},
 					},
 					Auth: WebhookRouteAuthConfig{
@@ -491,15 +521,12 @@ func TestBuildInboundWebhookConfig(t *testing.T) {
 		ListenAddr: "127.0.0.1:8091",
 		Routes: map[string]webhook.RouteConfig{
 			"webhook1": {
-				Path:           "webhook1",
+
 				PromptTemplate: "{{.RawBody}}",
 				Envelope: webhook.RouteEnvelopeConfig{
-					Target: "alias",
-					Key:    "owner",
-					Mode:   "task",
 					ReportTo: &webhook.RouteTargetConfig{
-						Target: "alias",
-						Key:    "owner",
+						Target: "managed_alias",
+						Key:    "main_chat",
 					},
 				},
 				Auth: webhook.RouteAuthConfig{
@@ -536,7 +563,7 @@ func TestBuildInboundWebhookConfig_UsesSecretEnvAuthValue(t *testing.T) {
 			Enabled: true,
 			Routes: map[string]WebhookRouteConfig{
 				"webhook1": {
-					Path:           "/webhook1",
+
 					PromptTemplate: "{{.RawBody}}",
 					Auth: WebhookRouteAuthConfig{
 						Type:      "header",
@@ -560,14 +587,14 @@ func TestResolveWorkspaceBaseBranch_ConfigPreferredWhenValid(t *testing.T) {
 	repoDir := t.TempDir()
 	initGitRepoForBalda(t, ctx, repoDir)
 
-	runGitForBalda(t, ctx, repoDir, "branch", "main")
+	runGitForBalda(t, ctx, repoDir, "branch", "configured-base")
 
-	branch, source, err := resolveWorkspaceBaseBranch(ctx, repoDir, "main", true)
+	branch, source, err := resolveWorkspaceBaseBranch(ctx, repoDir, "configured-base", true)
 	if err != nil {
 		t.Fatalf("resolveWorkspaceBaseBranch returned error: %v", err)
 	}
-	if branch != "main" {
-		t.Fatalf("branch = %q, want main", branch)
+	if branch != "configured-base" {
+		t.Fatalf("branch = %q, want configured-base", branch)
 	}
 	if source != testWorkspaceBaseBranchSourceConfig {
 		t.Fatalf("source = %q, want %s", source, testWorkspaceBaseBranchSourceConfig)

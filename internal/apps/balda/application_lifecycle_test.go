@@ -2,13 +2,66 @@ package balda
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
+	"net"
+	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
+	"github.com/baldaworks/balda/internal/apps/backoffice"
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpfx"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
+	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/rs/zerolog"
 )
+
+type lifecycleGrantStore struct{}
+
+func (lifecycleGrantStore) CheckMCPAuthority(context.Context, mcpcmd.Authority) error { return nil }
+func (lifecycleGrantStore) GetMCPGrant(context.Context, mcpcmd.AuthBinding) (mcpcmd.Grant, bool, error) {
+	return mcpcmd.Grant{}, false, nil
+}
+func (lifecycleGrantStore) ListMCPGrants(context.Context) ([]mcpcmd.Grant, error)    { return nil, nil }
+func (lifecycleGrantStore) SaveGrant(context.Context, mcpmanage.GrantMutation) error { return nil }
+
+type lifecycleAuthorizationBinding struct{}
+
+func (lifecycleAuthorizationBinding) BindAuthorization(context.Context, mcpcmd.SelectAuthorization) (mcpcmd.Item, error) {
+	return mcpcmd.Item{}, nil
+}
+
+func TestMCPAuthorizationsCloseWhenEarlyStartupFails(t *testing.T) {
+	credentials, err := mcpmanage.New(base64.StdEncoding.EncodeToString(make([]byte, 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	grants, err := mcpmanage.NewGrants(credentials, lifecycleGrantStore{}, mcpfx.NewOAuthProvider(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	authorizations, err := mcpmanage.NewAuthorizations(grants, "https://example.test/backoffice/mcp/oauth/callback", lifecycleAuthorizationBinding{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stages := applicationLifecycleStages(applicationLifecycleParams{MCPAuthorizations: authorizations}, &telegramLifecycle{})
+	if stages[0].name != "MCP authorization attempts" {
+		t.Fatalf("first lifecycle stage = %q, want authorization cleanup", stages[0].name)
+	}
+	coordinator := newApplicationLifecycle(zerolog.Nop(), []lifecycleStage{stages[0], {
+		name: "user readiness", start: func(context.Context) error { return errors.New("administrator missing") },
+	}})
+	if err := coordinator.Start(t.Context()); err == nil {
+		t.Fatal("early startup unexpectedly succeeded")
+	}
+	_, err = authorizations.BeginBrowser(t.Context(), mcpcmd.Revision{ConnectionID: "protected"}, "", mcpmanage.OAuthClient{}, mcpcmd.Authority{})
+	if !errors.Is(err, mcpcmd.ErrUnavailable) {
+		t.Fatalf("authorization after startup rollback = %v, want unavailable", err)
+	}
+}
 
 func TestApplicationLifecycleStartsInOrderAndStopsInReverse(t *testing.T) {
 	t.Parallel()
@@ -71,7 +124,11 @@ func TestApplicationLifecycleStagesStartQuestionProjectorAfterTransport(t *testi
 	}
 
 	want := []string{
+		"MCP authorization attempts",
+		"user readiness",
 		"bundled MCP",
+		"managed MCP credential readiness",
+		"MCP credential bridge",
 		"runtime contribution catalog",
 		"session-memory runtime",
 		"provider runtime",
@@ -84,14 +141,63 @@ func TestApplicationLifecycleStagesStartQuestionProjectorAfterTransport(t *testi
 		"job event projector",
 		"job event outbox",
 		"actor host",
+		"webhook run finalizer",
 		"scheduled jobs",
-		"inbound webhooks",
+		sharedHTTPIngressStage,
 		"zulip ingress",
 		"slack agent ingress",
 		"telegram ingress",
 	}
 	if !reflect.DeepEqual(names, want) {
 		t.Fatalf("lifecycle stages = %v, want %v", names, want)
+	}
+}
+
+func TestBackofficeReadinessAndRollbackBeforeIngress(t *testing.T) {
+	provider, err := state.NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = provider.Close() }()
+	reserved, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := reserved.Addr().String()
+	if err := reserved.Close(); err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := backoffice.NewRuntime(backoffice.ResolvedConfig{Server: backoffice.ResolvedServerConfig{
+		ListenAddr: address, PublicURL: "http://127.0.0.1:8095",
+		AccessTokenTTL: 15 * time.Minute, RefreshTokenTTL: 12 * time.Hour,
+	}}, provider)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ingressStarted := false
+	coordinator := newApplicationLifecycle(zerolog.Nop(), []lifecycleStage{
+		{name: "user readiness", start: runtime.ValidateReady},
+		{name: "Backoffice HTTP", start: runtime.Start, stop: runtime.Stop},
+		{name: "ingress", start: func(context.Context) error {
+			ingressStarted = true
+			return errors.New("ingress failed")
+		}},
+	})
+	if err := coordinator.Start(t.Context()); err == nil || ingressStarted {
+		t.Fatalf("startup without admin = %v, ingress started = %t", err, ingressStarted)
+	}
+	if _, err := runtime.BootstrapAdmin(t.Context(), backoffice.BootstrapInput{
+		Username: "superuser", Password: []byte("correct horse battery staple"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := coordinator.Start(t.Context()); err == nil || !ingressStarted {
+		t.Fatalf("later ingress failure = %v, ingress started = %t", err, ingressStarted)
+	}
+	connection, err := net.DialTimeout("tcp", address, time.Second)
+	if err == nil {
+		_ = connection.Close()
+		t.Fatal("Backoffice listener remained open after ingress rollback")
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/authcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	adksession "google.golang.org/adk/v2/session"
 )
 
@@ -17,11 +18,18 @@ type postgresProvider struct {
 	runtimeSession *postgresRuntimeSessionService
 	session        *postgresSessionStore
 	jobs           *postgresScheduledJobStore
+	management     *sqlScheduleManagementStore
+	aliases        *sqlAliasStore
+	webhook        *sqlWebhookAdmissionStore
+	webhookRoutes  *sqlWebhookRouteStore
+	runs           *sqlScheduleRunStore
 	questions      *postgresQuestionStore
 	runtime        *postgresJobStore
 	ingress        *postgresSessionMemoryIngressOutboxStore
 	offset         *postgresOffsetStore
 	plugins        *postgresPluginStore
+	users          usercmd.Store
+	mcp            *sqlMCPStore
 }
 
 var _ Provider = (*postgresProvider)(nil)
@@ -51,11 +59,18 @@ func initializePostgresProvider(ctx context.Context, db *sql.DB) (Provider, erro
 		runtimeSession: &postgresRuntimeSessionService{db: db},
 		session:        &postgresSessionStore{db: db},
 		jobs:           &postgresScheduledJobStore{db: db},
+		management:     &sqlScheduleManagementStore{users: newPostgresUserStore(db)},
+		aliases:        &sqlAliasStore{users: newPostgresUserStore(db)},
+		webhook:        &sqlWebhookAdmissionStore{db: db, bind: postgresBind, postgres: true, users: newPostgresUserStore(db)},
+		webhookRoutes:  &sqlWebhookRouteStore{users: newPostgresUserStore(db)},
+		runs:           &sqlScheduleRunStore{db: db, bind: postgresBind, postgres: true},
 		questions:      &postgresQuestionStore{db: db},
 		runtime:        &postgresJobStore{db: db},
 		ingress:        &postgresSessionMemoryIngressOutboxStore{db: db},
 		offset:         &postgresOffsetStore{db: db},
 		plugins:        &postgresPluginStore{db: db},
+		users:          newPostgresUserStore(db),
+		mcp:            &sqlMCPStore{users: newPostgresUserStore(db)},
 	}, nil
 }
 
@@ -168,6 +183,20 @@ func (p *postgresProvider) ScheduledJobs() ScheduledJobStore {
 	return p.jobs
 }
 
+func (p *postgresProvider) ScheduleManagement() ScheduleManagementStore {
+	return p.management
+}
+
+func (p *postgresProvider) Aliases() AliasStore { return p.aliases }
+
+func (p *postgresProvider) WebhookAdmissions() WebhookAdmissionStore { return p.webhook }
+
+func (p *postgresProvider) WebhookRoutes() WebhookRouteStore { return p.webhookRoutes }
+
+func (p *postgresProvider) ScheduleRuns() ScheduleRunStore {
+	return p.runs
+}
+
 func (p *postgresProvider) Questions() QuestionStore {
 	return p.questions
 }
@@ -190,6 +219,22 @@ func (p *postgresProvider) Collaborators() CollaboratorStore {
 
 func (p *postgresProvider) Plugins() PluginStore { return p.plugins }
 
+func (p *postgresProvider) MCP() MCPStore { return p.mcp }
+
+func (p *postgresProvider) Users() usercmd.Store { return p.users }
+
 func (p *postgresProvider) Close() error {
 	return p.db.Close()
+}
+
+func (p *postgresProvider) HookManagement() HookManagementStore {
+	return &sqlHookManagementStore{users: newPostgresUserStore(p.db)}
+}
+
+func (p *postgresProvider) MemoryManagement() MemoryManagementStore {
+	return &sqlMemoryManagementStore{users: newPostgresUserStore(p.db)}
+}
+
+func (p *postgresProvider) PluginManagement() PluginManagementStore {
+	return &sqlPluginManagementStore{users: newPostgresUserStore(p.db)}
 }

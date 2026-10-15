@@ -79,15 +79,19 @@ flowchart TB
 | `commandfx` | `internal/apps/balda/commandfx` | CommandActor registration and port wiring | actors/command, session, runtime interfaces |
 | `auth` | `internal/apps/balda/auth` | Owner authentication store | state (interface) |
 | `channel/telegram` | `internal/apps/balda/channel/telegram` | Telegram transport package: adapter, delivery formatting, and message sending | session, `tgbotkit/client` |
-| `channel/webhook` | `internal/apps/balda/channel/webhook` | HTTP webhook receiver, authentication, body parsing, deduplication, and HTTP responses | webhookapp |
+| `channel/webhook` | `internal/apps/balda/channel/webhook` | HTTP webhook receiver, authentication, body parsing, deduplication, and HTTP responses | webhookcmd, local admission port |
 | `chatapp` | `internal/apps/balda/chatapp` | Conversational ingress orchestration, question settlement, and SessionActor publication | actorcmd, session, turncmd |
-| `webhookapp` | `internal/apps/balda/webhookapp` | Webhook target resolution and job/session publication use-case | actorcmd, appports, commandcmd |
+| `webhookapp` | `internal/apps/balda/webhookapp` | Frozen webhook admission, report selection, and private JobActor publication policy | webhookcmd, destination resolver port, actorcmd |
+| `webhookfx` | `internal/apps/balda/webhookfx` | Composition adapter between HTTP receiver, webhook admission policy and host services | channel/webhook, webhookapp |
+| `aliases` | `internal/apps/balda/aliases` | Administrator-managed public locator names and guarded mutation policy | aliascmd, state port |
 | `internalmcp` | `internal/apps/balda/internalmcp` | Bundled MCP server lifecycle | controlmcp, memory, session |
-| `memory` | `internal/apps/balda/memory` | Global explicit-fact store and `balda.memory.*` MCP tools | (standalone) |
+| `memory` | `internal/apps/balda/memory` | Global explicit-fact Store, management policy and `balda.memory.*` MCP tools | memorycmd, guarded persistence port |
+| `memorycmd` | `internal/apps/balda/memorycmd` | Neutral fact, inventory, mutation and browser-authority values | usercmd |
+| `memorybackofficeapp` | `internal/apps/balda/memorybackofficeapp` | Binding Backoffice's consuming port to the existing memory owner | memory, memorycmd |
 | `session` | `internal/apps/balda/session` | Session management | agent, state |
 | `sessionturn` | `internal/apps/balda/sessionturn` | Queued-turn restoration and execution orchestration | memory, session |
 | `sessionturnapp` | `internal/apps/balda/sessionturnapp` | Queued turn execution wiring, provider-turn execution, progress dispatch, and turn-facing adapters | jobs, memory, session, sessionturn, `github.com/baldaworks/go-actorlayer` |
-| `state` | `internal/apps/balda/state` | SQLite state persistence | `modernc.org/sqlite` |
+| `state` | `internal/apps/balda/state` | SQLite/PostgreSQL state persistence and read models | SQL drivers, Goose migrations |
 | `sessionmemory` | `sessionmemory` | Portable session-memory semantic core and canonical contracts | standard library |
 | `sessionmemory/app` | `sessionmemory/app` | Portable runtime, typed ingest, recall, trace, forget, and lifecycle ports | `sessionmemory` |
 | `sessionmemory/store/badger` | `sessionmemory/store/badger` | Canonical Badger persistence and maintenance | `sessionmemory`, `sessionmemory/app`, Badger |
@@ -116,11 +120,13 @@ Balda treats `actorlayer` as the reusable actor library boundary and never as pr
 - `internal/apps/balda/sessionturnapp`: queued turn execution wiring, provider execution, progress dispatch, and turn-specific adapters.
 - `internal/apps/balda/internalmcp`: bundled MCP construction and lifecycle.
 - `internal/apps/balda/chatapp` and `internal/apps/balda/chatfx`: conversational intake, question resolution, and SessionActor publication.
-- `internal/apps/balda/channel/webhook` and `internal/apps/balda/webhookapp`: webhook HTTP receiver and application target resolution.
+- `internal/apps/balda/channel/webhook`, `webhookapp`, and `webhookfx`: HTTP receiver, frozen report admission/private-job policy, and composition adapter, respectively. The concrete receiver consumes a local port and neutral webhook contracts.
 - `internal/apps/balda/handlersfx`: composition-root adapters that bind transport-owned ports to concrete provider runtimes.
 - `internal/apps/balda/channel/*`: concrete channel delivery semantics. They adapt provider-specific messaging APIs behind Balda delivery commands.
-- `internal/apps/balda/state`: SQLite-backed product state and read models. It owns sessions, scheduler state, job tables, delivery idempotency, and the session-memory ingress outbox/audit records. It does not own canonical session-memory domain state.
-- `internal/apps/balda/memory`: separate global explicit-fact memory (`balda.memory.read`, `balda.memory.remember`, and `MEMORY.md` import). It is not the session-memory subsystem.
+- `internal/apps/balda/state`: SQLite/PostgreSQL product state and read models. It owns sessions, scheduler state, job tables, delivery idempotency, and the session-memory ingress outbox/audit records. It does not own canonical session-memory domain state.
+- `internal/apps/balda/aliases`, `aliascmd`, and `aliasfx`: managed destination policy, neutral values, and host resolution wiring. A schedule run or webhook admission stores its selected concrete report locator before actor publication; accepted work does not reread the alias.
+- `internal/apps/balda/schedulecmd`, `scheduledjobs`, and `schedulebackofficeapp`: neutral Schedules management values, host-owned recurring policy/dispatch and optional-delivery-aware run finalization, and the narrow Backoffice port adapter, respectively. `state` persists source-owned definitions, selected report locators, frozen run input, execution job output, and delivery state. Private run sessions are removed through a small session port after execution and any requested delivery settle.
+- `internal/apps/balda/memory`: separate global explicit-fact memory (`balda.memory.read`, `balda.memory.remember`, and `MEMORY.md` import). Backoffice management uses this same Store and its mutex for UI/MCP/actor writes. `memorycmd` carries neutral contracts and `memorybackofficeapp` binds the local Backoffice port; `state` atomically fences UI KV changes and body-free audit with existing administrator browser authority. No new table or migration is required. Final deletion retains an initialized empty boundary for next-turn refresh without resetting history. This is not the session-memory subsystem.
 - `sessionmemory` and `sessionmemory/app`: portable semantic ownership and capability orchestration for exact-scope session memory.
 - `sessionmemory/store/badger`: canonical session-memory state; `sessionmemory/index/bleve`: rebuildable lexical projection.
 - `sessionmemory/mcp`: neutral search/trace tools; Balda's `sessionmemorymcp` supplies authenticated scope context and no transport locator is accepted from tool input.
@@ -158,7 +164,7 @@ Balda's actorlayer integration is intentionally direct:
 - `internal/apps/balda/eventbus/nats`: adapts transport publish, fetch, ack, retry, in-progress heartbeat, terminal dead-letter, and event-stream publishing into actorlayer source/delivery/dispatch contracts.
 - `internal/apps/balda/agent`: owns the single app-scoped provider runtime selected by `balda.provider`, root runtime construction, isolated goal runtime preparation, and runtime-adjacent workspace support.
 - `internal/apps/balda/session`: owns per-session lifecycle state, restore/ensure semantics, and runtime/session binding.
-- `internal/apps/balda/state`: owns SQLite product/read-model state for sessions, jobs, projections, global-memory KV, delivery outbox rows, and session-memory ingress/audit rows. Canonical session-memory records live in the public Badger adapter.
+- `internal/apps/balda/state`: owns selected SQLite/PostgreSQL product/read-model state and embedded schema migrations for sessions, jobs, projections, global-memory KV, delivery outbox rows, and session-memory ingress/audit rows. Canonical session-memory records live in the public Badger adapter.
 - `sessionmemory/app` and `internal/apps/balda/sessionmemoryapp`: own typed semantic processing versus Balda capture/redaction/outbox/worker wiring respectively.
 
 Do not add extra Balda-local actor adapter packages or execution/delivery selector
@@ -169,15 +175,20 @@ and Balda keeps product policy in Balda.
 
 Balda startup order is strict:
 
-1. Load runtime + Balda config, then construct and validate the immutable delivery-format registry.
-2. Start internal MCP lifecycle manager.
-3. Start the enabled portable session-memory runtime (canonical Badger, Bleve projection, and model lifecycle).
-4. Start Balda provider runtime via `RuntimeManager.EnsureRuntime(...)`.
-5. Start session/mailbox and durable actor infrastructure: event projector, job-event outbox publisher, and actor host.
-6. Bootstrap Telegram owner state, then start scheduler, inbound webhooks, Zulip, Slack, and Telegram ingress.
+1. Load one runtime + Balda config snapshot, resolve the selected database,
+   open the shared state provider, and apply its embedded schema migrations.
+2. Require completed legacy-user conversion and an active administrator before
+   any listener or ingress becomes ready.
+3. Start internal MCP, the runtime contribution catalog, the enabled portable
+   session-memory runtime, and Balda provider runtime in that order.
+4. Start session/mailbox and durable actor infrastructure: event projector,
+   job-event outbox publisher, actor host, and scheduler.
+5. Bind Backoffice HTTP over the same state provider and canonical users.
+6. Start inbound webhooks and enabled Zulip, Slack, and Telegram ingress.
 
-One composition-root coordinator owns this order. Configuration or registry
-errors fail before any ingress stage can become ready. Shutdown runs the same
-stages in reverse, so ingress stops before actor/provider/MCP resources.
+One composition-root coordinator owns this order. Migration, readiness,
+configuration, or registry errors fail before any ingress stage can become
+ready. Shutdown runs stages in reverse, so ingress and Backoffice HTTP stop
+before the actor/provider/MCP resources and shared state provider.
 
 Internal MCP v1 scope is config + lifecycle plumbing; server implementations can be added incrementally.

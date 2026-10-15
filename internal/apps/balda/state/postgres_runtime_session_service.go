@@ -381,7 +381,7 @@ func postgresFetchRuntimeSessionState(ctx context.Context, q dbQueryer, key runt
 	).Scan(&stateJSON, &updatedRaw)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, time.Time{}, postgresErrorf("runtime session %q not found", key.sessionID)
+			return nil, time.Time{}, postgresErrorf("runtime session %q: %w", key.sessionID, adksession.ErrNotFound)
 		}
 		return nil, time.Time{}, postgresErrorf("fetch runtime session %q: %w", key.sessionID, err)
 	}

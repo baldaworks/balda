@@ -3,20 +3,109 @@ package mcpruntime
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 )
 
 type fakeLaunchResolver struct {
-	fail map[InstanceKey]bool
+	fail   map[InstanceKey]bool
+	causes map[InstanceKey]error
 }
 
 func (r fakeLaunchResolver) ResolveLaunch(_ context.Context, descriptor runtimecatalogcmd.MCPServerDescriptor) (LaunchConfig, error) {
+	if err := r.causes[keyFromDescriptor(descriptor)]; err != nil {
+		return LaunchConfig{}, err
+	}
 	if r.fail[keyFromDescriptor(descriptor)] {
 		return LaunchConfig{}, errors.New("secret value must not escape")
 	}
 	return LaunchConfig{Transport: descriptor.Transport, Command: "server"}, nil
+}
+
+func TestAcquireDescriptorsReportsEveryExactBlocker(t *testing.T) {
+	for _, reversed := range []bool{false, true} {
+		t.Run(fmt.Sprint(reversed), func(t *testing.T) {
+			auth, fatal := mcpDescriptor("auth"), mcpDescriptor("fatal")
+			descriptors := []runtimecatalogcmd.MCPServerDescriptor{auth, fatal}
+			if reversed {
+				descriptors[0], descriptors[1] = descriptors[1], descriptors[0]
+			}
+			launcher := &fakeLauncher{instances: make(map[InstanceKey]*fakeInstance)}
+			projector := &fakeProjector{outcome: runtimecatalogcmd.MCPProjectionApplied, set: make(map[InstanceKey]int), removed: make(map[InstanceKey]int)}
+			r, err := New(fakeLaunchResolver{causes: map[InstanceKey]error{
+				keyFromDescriptor(auth):  &LaunchError{Reason: FailureAuthorizationRequired},
+				keyFromDescriptor(fatal): errors.New("private transport detail"),
+			}}, launcher, projector, Limits{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, release, err := r.AcquireDescriptors(t.Context(), descriptors)
+			if release != nil || err == nil {
+				t.Fatalf("AcquireDescriptors lease/error = %t, %v; want no lease and both blockers", release != nil, err)
+			}
+			joined, ok := err.(interface{ Unwrap() []error })
+			if !ok || len(joined.Unwrap()) != 2 {
+				t.Fatalf("blockers = %v, want both exact failures", err)
+			}
+			for i, child := range joined.Unwrap() {
+				failure, ok := child.(*AttachmentError)
+				if !ok || failure.Key != keyFromDescriptor(descriptors[i]) {
+					t.Fatalf("failure = %v, want exact descriptor identity", child)
+				}
+				want := FailureUnavailable
+				if failure.Key == keyFromDescriptor(auth) {
+					want = FailureAuthorizationRequired
+				}
+				if failure.Reason != want {
+					t.Errorf("reason = %s, want %s", failure.Reason, want)
+				}
+			}
+			if strings.Contains(err.Error(), "private transport detail") {
+				t.Fatalf("raw resolver detail escaped: %v", err)
+			}
+		})
+	}
+}
+
+func TestRetryPreservesReadyLeaseAndRetriesExactFailure(t *testing.T) {
+	ready, blocked := mcpDescriptor("ready"), mcpDescriptor("blocked")
+	blocked.Name, blocked.ID.Name = "blocked", "blocked"
+	readyKey, blockedKey := keyFromDescriptor(ready), keyFromDescriptor(blocked)
+	causes := map[InstanceKey]error{blockedKey: &LaunchError{Reason: FailureAuthorizationRequired}}
+	launcher := &fakeLauncher{instances: make(map[InstanceKey]*fakeInstance)}
+	projector := &fakeProjector{outcome: runtimecatalogcmd.MCPProjectionApplied, set: make(map[InstanceKey]int), removed: make(map[InstanceKey]int)}
+	r, err := New(fakeLaunchResolver{causes: causes}, launcher, projector, Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := mcpSnapshot("immutable-snapshot", ready, blocked)
+	reconcileObserved(t, r, t.Context(), snapshot)
+	_, release, err := r.Acquire([]InstanceKey{readyKey})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	retained := launcher.instances[readyKey]
+	causes[blockedKey] = errors.New("saved grant, remote still unavailable")
+	if err := r.Retry(t.Context(), []InstanceKey{blockedKey}); err == nil {
+		t.Fatal("failed retry reported ready")
+	}
+	delete(causes, blockedKey)
+	if err := r.Retry(t.Context(), []InstanceKey{readyKey, blockedKey}); err != nil {
+		t.Fatalf("exact authorization retry: %v", err)
+	}
+	awaitObserved(t, r)
+	if !r.MCPServerReady(blockedKey.Source, blockedKey.Revision, blockedKey.Name) {
+		t.Fatal("saved grant did not enable exact failed attachment")
+	}
+	if launcher.instances[readyKey] != retained || retained.closed != 0 || projector.set[readyKey] != 1 || snapshot.ID != "immutable-snapshot" {
+		t.Fatal("retry replaced ready lease/projection or immutable snapshot")
+	}
 }
 
 type fakeInstance struct {
@@ -42,17 +131,72 @@ func (i *fakeInstance) Close(ctx context.Context) error {
 }
 
 type fakeLauncher struct {
+	mu        sync.Mutex
 	instances map[InstanceKey]*fakeInstance
 	fail      map[InstanceKey]bool
 }
 
 func (l *fakeLauncher) Start(_ context.Context, key InstanceKey, _ LaunchConfig) (Instance, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	if l.fail[key] {
 		return nil, errors.New("private process error")
 	}
 	instance := &fakeInstance{tools: []Tool{{Name: "inspect"}}}
 	l.instances[key] = instance
 	return instance, nil
+}
+
+type fakeOwnedProcess struct {
+	instance *fakeInstance
+	done     chan struct{}
+	once     sync.Once
+}
+
+func (p *fakeOwnedProcess) Discover(context.Context) ([]Tool, error) { return p.instance.Tools(), nil }
+func (p *fakeOwnedProcess) Done() <-chan struct{}                    { return p.done }
+func (p *fakeOwnedProcess) Stop(ctx context.Context) error {
+	err := p.instance.Close(ctx)
+	p.once.Do(func() { close(p.done) })
+	return err
+}
+func (l *fakeLauncher) Launch(ctx context.Context, key InstanceKey, config LaunchConfig) (Process, error) {
+	instance, err := l.Start(ctx, key, config)
+	if err != nil {
+		return nil, err
+	}
+	return &fakeOwnedProcess{instance: instance.(*fakeInstance), done: make(chan struct{})}, nil
+}
+
+func reconcileObserved(t *testing.T, r *Reconciler, ctx context.Context, snapshot runtimecatalogcmd.Snapshot) []Health {
+	t.Helper()
+	t.Cleanup(func() { _ = r.Shutdown(context.Background()) })
+	r.Reconcile(ctx, snapshot)
+	return awaitObserved(t, r)
+}
+
+func awaitObserved(t *testing.T, r *Reconciler) []Health {
+	t.Helper()
+	timer := time.NewTimer(2 * time.Second)
+	defer timer.Stop()
+	tick := time.NewTicker(time.Millisecond)
+	defer tick.Stop()
+	for {
+		health := r.Health()
+		pending := false
+		for _, entry := range health {
+			pending = pending || entry.State == HealthStarting
+		}
+		if !pending {
+			return health
+		}
+		select {
+		case <-tick.C:
+		case <-timer.C:
+			t.Fatal("stdio fixture did not report its first observation")
+			return nil
+		}
+	}
 }
 
 type fakeProjector struct {
@@ -85,7 +229,7 @@ func TestReconcilerKeepsPinnedOldRevisionUntilTurnDrain(t *testing.T) {
 	newDescriptor := mcpDescriptor("revision-new")
 	oldSnapshot := mcpSnapshot("snapshot-old", oldDescriptor)
 	newSnapshot := mcpSnapshot("snapshot-new", newDescriptor)
-	if health := reconciler.Reconcile(context.Background(), oldSnapshot); len(health) != 1 || health[0].State != HealthReady {
+	if health := reconcileObserved(t, reconciler, context.Background(), oldSnapshot); len(health) != 1 || health[0].State != HealthReady {
 		t.Fatalf("old health = %+v, want ready", health)
 	}
 	oldKey := keyFromDescriptor(oldDescriptor)
@@ -96,7 +240,7 @@ func TestReconcilerKeepsPinnedOldRevisionUntilTurnDrain(t *testing.T) {
 	if len(tools) != 1 || tools[0].Key != oldKey {
 		t.Fatalf("old tools = %+v, want revision-qualified tool", tools)
 	}
-	if health := reconciler.Reconcile(context.Background(), newSnapshot); len(health) != 2 {
+	if health := reconcileObserved(t, reconciler, context.Background(), newSnapshot); len(health) != 2 {
 		t.Fatalf("upgrade health = %+v, want old and new revisions", health)
 	}
 	if launcher.instances[oldKey].closed != 0 {
@@ -125,8 +269,8 @@ func TestReconcilerReacquiresRetainedRevisionForDurableRetry(t *testing.T) {
 	}
 	oldDescriptor := mcpDescriptor("revision-old")
 	newDescriptor := mcpDescriptor("revision-new")
-	reconciler.Reconcile(ctx, mcpSnapshot("snapshot-old", oldDescriptor))
-	reconciler.Reconcile(ctx, mcpSnapshot("snapshot-new", newDescriptor))
+	reconcileObserved(t, reconciler, ctx, mcpSnapshot("snapshot-old", oldDescriptor))
+	reconcileObserved(t, reconciler, ctx, mcpSnapshot("snapshot-new", newDescriptor))
 	oldKey := keyFromDescriptor(oldDescriptor)
 	if projector.removed[oldKey] != 1 {
 		t.Fatalf("old projection removals = %d, want initial drain", projector.removed[oldKey])
@@ -135,6 +279,7 @@ func TestReconcilerReacquiresRetainedRevisionForDurableRetry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AcquireDescriptors(old) error = %v", err)
 	}
+	awaitObserved(t, reconciler)
 	if len(keys) != 1 || keys[0] != oldKey || projector.set[oldKey] != 2 {
 		t.Fatalf("reacquired keys/projections = (%+v, %d), want exact old revision projected twice", keys, projector.set[oldKey])
 	}
@@ -155,6 +300,7 @@ func TestReconcilerRejectsOverLimitRetainedSelectionBeforeLaunch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	awaitObserved(t, reconciler)
 	first := mcpDescriptor("revision-one")
 	second := mcpDescriptor("revision-two")
 	second.Name = "second"
@@ -180,7 +326,7 @@ func TestReconcilerIsolatesFailureAndReportsProjectionOutcome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	health := reconciler.Reconcile(context.Background(), mcpSnapshot("snapshot", failed, ready))
+	health := reconcileObserved(t, reconciler, context.Background(), mcpSnapshot("snapshot", failed, ready))
 	if len(health) != 2 {
 		t.Fatalf("health = %+v, want isolated statuses", health)
 	}
@@ -188,7 +334,7 @@ func TestReconcilerIsolatesFailureAndReportsProjectionOutcome(t *testing.T) {
 	for _, status := range health {
 		states[status.Key.Name] = status
 	}
-	if states["failed"].State != HealthFailed || states["failed"].ErrorClass != "start" {
+	if states["failed"].State != HealthFailed || states["failed"].ErrorClass != "launch" {
 		t.Fatalf("failed status = %+v", states["failed"])
 	}
 	if states["server"].State != HealthReady || states["server"].Outcome != runtimecatalogcmd.MCPProjectionNewRuntimesOnly {
@@ -206,16 +352,16 @@ func TestReconcilerDoesNotRestartForRebuildRequiredProjection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	health := reconciler.Reconcile(context.Background(), mcpSnapshot("snapshot", descriptor))
-	if len(health) != 1 || health[0].State != HealthDegraded || health[0].Outcome != runtimecatalogcmd.MCPProjectionRebuildRequired {
+	health := reconcileObserved(t, reconciler, context.Background(), mcpSnapshot("snapshot", descriptor))
+	if len(health) != 1 || health[0].State != HealthFailed || health[0].Outcome != runtimecatalogcmd.MCPProjectionRebuildRequired {
 		t.Fatalf("health = %+v, want explicit rebuild-required degradation", health)
 	}
-	if len(launcher.instances) != 1 {
+	if len(launcher.instances) != 0 {
 		t.Fatalf("launcher starts = %d, want no implicit restart", len(launcher.instances))
 	}
 }
 
-func TestReconcilerRetainsReadyRevisionWhenReplacementFails(t *testing.T) {
+func TestReconcilerKeepsLeasedRevisionAcrossUnavailableReplacement(t *testing.T) {
 	t.Parallel()
 
 	oldDescriptor := mcpDescriptor("revision-old")
@@ -229,8 +375,13 @@ func TestReconcilerRetainsReadyRevisionWhenReplacementFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reconciler.Reconcile(context.Background(), mcpSnapshot("old", oldDescriptor))
-	health := reconciler.Reconcile(context.Background(), mcpSnapshot("new", newDescriptor))
+	reconcileObserved(t, reconciler, context.Background(), mcpSnapshot("old", oldDescriptor))
+	_, release, err := reconciler.AcquireDescriptors(t.Context(), []runtimecatalogcmd.MCPServerDescriptor{oldDescriptor})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	health := reconcileObserved(t, reconciler, context.Background(), mcpSnapshot("new", newDescriptor))
 	if len(health) != 2 {
 		t.Fatalf("health = %+v, want ready old and failed replacement", health)
 	}
@@ -238,14 +389,19 @@ func TestReconcilerRetainsReadyRevisionWhenReplacementFails(t *testing.T) {
 	if launcher.instances[oldKey].closed != 0 || projector.removed[oldKey] != 0 {
 		t.Fatal("ready old revision drained before replacement became ready")
 	}
-	tools, release, err := reconciler.Acquire([]InstanceKey{oldKey})
+	tools, toolRelease, err := reconciler.Acquire([]InstanceKey{oldKey})
 	if err != nil || len(tools) != 1 {
 		t.Fatalf("Acquire(old) = %+v, %v; want retained ready revision", tools, err)
 	}
-	release()
+	toolRelease()
+	keys, nextRelease, err := reconciler.AcquireDescriptors(t.Context(), []runtimecatalogcmd.MCPServerDescriptor{newDescriptor})
+	if err != nil || len(keys) != 1 {
+		t.Fatalf("unavailable replacement lost exact configuration: %v", err)
+	}
+	nextRelease()
 }
 
-func TestReconcilerRejectsExcessiveToolMetadata(t *testing.T) {
+func TestStdioMetadataLimitStopsDiscoveryAndPreservesConfiguration(t *testing.T) {
 	t.Parallel()
 
 	descriptor := mcpDescriptor("revision")
@@ -256,13 +412,18 @@ func TestReconcilerRejectsExcessiveToolMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	health := reconciler.Reconcile(context.Background(), mcpSnapshot("snapshot", descriptor))
+	health := reconcileObserved(t, reconciler, context.Background(), mcpSnapshot("snapshot", descriptor))
 	if len(health) != 1 || health[0].State != HealthFailed || health[0].ErrorClass != "tool_limit" {
 		t.Fatalf("health = %+v, want bounded tool failure", health)
 	}
-	if launcher.instances[key].closed != 1 || projector.set[key] != 0 {
-		t.Fatal("oversized tool metadata reached projection")
+	if launcher.instances[key].closed != 1 || projector.removed[key] != 0 {
+		t.Fatal("oversized discovery was not stopped or dropped configuration")
 	}
+	keys, release, err := reconciler.AcquireDescriptors(t.Context(), []runtimecatalogcmd.MCPServerDescriptor{descriptor})
+	if err != nil || len(keys) != 1 {
+		t.Fatalf("metadata failure lost exact configuration: %v", err)
+	}
+	release()
 }
 
 func TestReconcilerShutdownRemovesProjectionAndClosesInstance(t *testing.T) {
@@ -276,7 +437,7 @@ func TestReconcilerShutdownRemovesProjectionAndClosesInstance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reconciler.Reconcile(context.Background(), mcpSnapshot("snapshot", descriptor))
+	reconcileObserved(t, reconciler, context.Background(), mcpSnapshot("snapshot", descriptor))
 	if err := reconciler.Shutdown(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -296,7 +457,7 @@ func TestReconcilerCachesBoundedHandshakeTools(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reconciler.Reconcile(context.Background(), mcpSnapshot("snapshot", descriptor))
+	reconcileObserved(t, reconciler, context.Background(), mcpSnapshot("snapshot", descriptor))
 	launcher.instances[key].nextTools = []Tool{{Name: "changed-after-handshake"}, {Name: "extra"}}
 	tools, release, err := reconciler.Acquire([]InstanceKey{key})
 	if err != nil {
@@ -318,8 +479,8 @@ func TestReconcilerFailsClosedForUnknownProjectionOutcome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	health := reconciler.Reconcile(context.Background(), mcpSnapshot("snapshot", descriptor))
-	if len(health) != 1 || health[0].State != HealthDegraded || health[0].ErrorClass != "projection" {
+	health := reconcileObserved(t, reconciler, context.Background(), mcpSnapshot("snapshot", descriptor))
+	if len(health) != 1 || health[0].State != HealthFailed || health[0].ErrorClass != "configuration" {
 		t.Fatalf("health = %+v, want fail-closed projection degradation", health)
 	}
 }
@@ -335,10 +496,10 @@ func TestReconcilerRetainsFailedCleanupForRetry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reconciler.Reconcile(context.Background(), mcpSnapshot("snapshot", descriptor))
+	reconcileObserved(t, reconciler, context.Background(), mcpSnapshot("snapshot", descriptor))
 	launcher.instances[key].closeErr = errors.New("private close failure")
 	projector.removeErr = errors.New("private remove failure")
-	health := reconciler.Reconcile(context.Background(), mcpSnapshot("empty"))
+	health := reconcileObserved(t, reconciler, context.Background(), mcpSnapshot("empty"))
 	if len(health) != 1 || health[0].State != HealthStopping || health[0].ErrorClass != errorClassStop {
 		t.Fatalf("failed cleanup health = %+v", health)
 	}
@@ -347,7 +508,7 @@ func TestReconcilerRetainsFailedCleanupForRetry(t *testing.T) {
 	}
 	launcher.instances[key].closeErr = nil
 	projector.removeErr = nil
-	if health := reconciler.Reconcile(context.Background(), mcpSnapshot("empty")); len(health) != 0 {
+	if health := reconcileObserved(t, reconciler, context.Background(), mcpSnapshot("empty")); len(health) != 0 {
 		t.Fatalf("retry cleanup health = %+v, want removed", health)
 	}
 }

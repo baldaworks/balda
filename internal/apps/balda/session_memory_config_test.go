@@ -2,6 +2,7 @@ package balda
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -189,7 +190,7 @@ func sessionMemoryTestProviderConfig(model string) agentconfig.Config {
 }
 
 func TestCanonicalSessionMemoryRuntimeComposesPortableCapabilities(t *testing.T) {
-	stateDir := t.TempDir()
+	stateDir := resolvedTempDir(t)
 	runtime, err := newCanonicalSessionMemoryRuntime(SessionMemoryConfig{Enabled: true}, &baldaagent.Builder{}, "provider", t.TempDir(), stateDir)
 	if err != nil {
 		t.Fatalf("newCanonicalSessionMemoryRuntime() error = %v", err)
@@ -210,6 +211,18 @@ func TestCanonicalSessionMemoryRuntimeComposesPortableCapabilities(t *testing.T)
 	if err := store.Close(); err != nil {
 		t.Fatalf("reopened canonical store Close() error = %v", err)
 	}
+}
+
+// resolvedTempDir returns a temp directory without symlink components. macOS
+// exposes its standard temporary directory under /var, a symlink to /private/var.
+// Session-memory intentionally rejects symlinked state paths.
+func resolvedTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolve temporary directory: %v", err)
+	}
+	return dir
 }
 
 func TestSessionMemoryConfigValidationRejectsInvalidValues(t *testing.T) {

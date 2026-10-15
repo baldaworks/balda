@@ -13,6 +13,16 @@ import (
 
 const contextQueryParameter = "balda_context"
 
+// BundledDedupKey marks every registration of the bundled Balda MCP endpoint as
+// one tool namespace. Balda registers that endpoint twice — the plain bundled
+// server and a session-scoped binding of the same listener whose URL carries
+// the context token — and ADK aborts a turn when two toolsets expose the same
+// tool name.
+//
+// The runtime deliberately does not infer this equivalence from the URL, so
+// both sides must set the same explicit key. See agentconfig.MCPServerConfig.
+const BundledDedupKey = "balda-bundled-mcp"
+
 // ContextBinding is an opaque, authenticated internal MCP endpoint binding.
 // The URL contains only a random capability; the locator and session identity
 // remain server-side and are injected by ContextBroker before dispatch.

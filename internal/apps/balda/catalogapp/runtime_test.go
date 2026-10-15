@@ -41,7 +41,7 @@ func TestLifecycleMigratesLegacyPluginAndReconstructsCatalog(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = provider.Close() })
 	commands := commandcmd.NewRegistry()
-	runtime, err := NewRuntime(stateDir, "", "", provider, []commandcmd.Advertisement{{Transport: "telegram", Enabled: true, Names: []string{"plugin", "reset"}}}, nil, mcpregistry.New(nil), commands)
+	runtime, err := NewRuntime(stateDir, "", "", provider, []commandcmd.Advertisement{{Transport: "telegram", Enabled: true, Names: []string{"plugin", "reset"}}}, nil, mcpregistry.New(nil), commands, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,6 +76,30 @@ func TestLifecycleMigratesLegacyPluginAndReconstructsCatalog(t *testing.T) {
 	if current.ID == snapshot.ID {
 		t.Fatal("workspace catalog did not produce a distinct current snapshot")
 	}
+	// Fresh ingress selects the application skill before lazy session creation.
+	ingressID, err := runtime.ResolveEffectiveSnapshot(ctx, commandfx.SnapshotRequest{SessionID: "new-session"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := baldaagent.NewSkillManager(runtime, runtime, baldaagent.SkillMetadataBudget{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bound, err := manager.BindSnapshot(ctx, ingressID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selection, err := bound.Resolve(baldaagent.SkillSelector{Name: "deploy"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := manager.LoadPinnedForSession(ctx, selection, current.ID, nil)
+	if err != nil {
+		t.Fatalf("first skill turn after workspace creation: %v", err)
+	}
+	if !strings.Contains(loaded.Instructions, "# Secret body") || loaded.Ref != selection.Ref {
+		t.Fatalf("first skill turn loaded wrong revision: %+v", loaded)
+	}
 	if err := provider.Sessions().Upsert(ctx, baldastate.SessionRecord{
 		SessionID: "pinned-session", ChannelType: "telegram", AddressKey: "1:0", AddressJSON: `{"chat_id":1,"topic_id":0}`,
 		WorkspaceDir: workspace, RuntimeSnapshotID: string(snapshot.ID),
@@ -104,7 +128,7 @@ func TestRuntimeBuildsIsolatedWorkspaceOverlayAndReadsPinnedSkill(t *testing.T) 
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = provider.Close() })
-	runtime, err := NewRuntime(stateDir, "", "", provider, []commandcmd.Advertisement{{Transport: "telegram", Enabled: true, Names: []string{"reset"}}}, nil, mcpregistry.New(nil), commandcmd.NewRegistry())
+	runtime, err := NewRuntime(stateDir, "", "", provider, []commandcmd.Advertisement{{Transport: "telegram", Enabled: true, Names: []string{"reset"}}}, nil, mcpregistry.New(nil), commandcmd.NewRegistry(), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +176,7 @@ func TestRuntimeBuildsIsolatedWorkspaceOverlayAndReadsPinnedSkill(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimeAfterRestart, err := NewRuntime(stateDir, "", "", provider, []commandcmd.Advertisement{{Transport: "telegram", Enabled: true, Names: []string{"reset"}}}, nil, mcpregistry.New(nil), commandcmd.NewRegistry())
+	runtimeAfterRestart, err := NewRuntime(stateDir, "", "", provider, []commandcmd.Advertisement{{Transport: "telegram", Enabled: true, Names: []string{"reset"}}}, nil, mcpregistry.New(nil), commandcmd.NewRegistry(), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,11 +227,11 @@ func TestRuntimeDiscoversGlobalSkills(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = provider.Close() })
-	runtime, err := NewRuntime(stateDir, agentSkillDir, codexSkillDir, provider, nil, nil, mcpregistry.New(nil), commandcmd.NewRegistry())
+	runtime, err := NewRuntime(stateDir, agentSkillDir, codexSkillDir, provider, nil, nil, mcpregistry.New(nil), commandcmd.NewRegistry(), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	snapshot, err := runtime.PreparePluginCandidate(ctx, nil)
+	snapshot, err := runtime.PreparePluginCandidate(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("PreparePluginCandidate() error = %v", err)
 	}
@@ -311,11 +335,11 @@ func TestRuntimeIsolatesUnsafeGlobalSkill(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = provider.Close() })
-	runtime, err := NewRuntime(stateDir, globalSkillDir, "", provider, nil, nil, mcpregistry.New(nil), commandcmd.NewRegistry())
+	runtime, err := NewRuntime(stateDir, globalSkillDir, "", provider, nil, nil, mcpregistry.New(nil), commandcmd.NewRegistry(), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	snapshot, err := runtime.PreparePluginCandidate(ctx, nil)
+	snapshot, err := runtime.PreparePluginCandidate(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("PreparePluginCandidate() error = %v", err)
 	}
@@ -370,11 +394,11 @@ func TestRuntimeGlobalSkillRootFallbacks(t *testing.T) {
 			if test.codexRoot != nil {
 				codexRoot = test.codexRoot(stateDir)
 			}
-			runtime, err := NewRuntime(stateDir, agentRoot, codexRoot, provider, nil, nil, mcpregistry.New(nil), commandcmd.NewRegistry())
+			runtime, err := NewRuntime(stateDir, agentRoot, codexRoot, provider, nil, nil, mcpregistry.New(nil), commandcmd.NewRegistry(), nil, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
-			snapshot, err := runtime.PreparePluginCandidate(ctx, nil)
+			snapshot, err := runtime.PreparePluginCandidate(ctx, nil, nil)
 			if err != nil {
 				t.Fatalf("PreparePluginCandidate() error = %v", err)
 			}
@@ -438,7 +462,7 @@ func TestSessionCapabilityBinderUsesExactRetainedSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = provider.Close() })
-	runtime, err := NewRuntime(stateDir, "", "", provider, nil, nil, mcpregistry.New(nil), commandcmd.NewRegistry())
+	runtime, err := NewRuntime(stateDir, "", "", provider, nil, nil, mcpregistry.New(nil), commandcmd.NewRegistry(), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -461,7 +485,7 @@ func TestSessionCapabilityBinderUsesExactRetainedSnapshot(t *testing.T) {
 	}
 	binder := &sessionCapabilityBinder{catalog: runtime, skills: manager}
 
-	binding, err := binder.BindSessionCapabilities(ctx, baldaagent.SessionRuntimeRequest{
+	binding, err := binder.BindSessionCapabilities(ctx, "", baldaagent.SessionRuntimeRequest{
 		WorkspaceDir:      workspace,
 		RuntimeSnapshotID: string(retained.ID),
 	})
@@ -480,7 +504,7 @@ func TestSessionCapabilityBinderUsesExactRetainedSnapshot(t *testing.T) {
 	if err := binding.Close(); err != nil {
 		t.Fatalf("second Close() error = %v", err)
 	}
-	_, err = binder.BindSessionCapabilities(ctx, baldaagent.SessionRuntimeRequest{RuntimeSnapshotID: "snapshot-missing"})
+	_, err = binder.BindSessionCapabilities(ctx, "", baldaagent.SessionRuntimeRequest{RuntimeSnapshotID: "snapshot-missing"})
 	if !errors.Is(err, runtimecatalogcmd.ErrSnapshotUnavailable) {
 		t.Fatalf("BindSessionCapabilities(missing) error = %v, want ErrSnapshotUnavailable", err)
 	}

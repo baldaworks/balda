@@ -43,71 +43,198 @@ Ordinary conversational turns from Telegram, Slack, and Zulip do not create
 
 ## Scheduled job runtime semantics (internal)
 
-Balda includes an internal scheduler backed by `balda_scheduled_tasks`.
-Scheduled jobs are managed from config on startup using `balda.scheduler.jobs`.
-Each configured job has `id`, `cron`, and an `envelope` with `target`, `key`,
-`content`, and optional `report_to`.
+Balda includes an internal scheduler backed by `balda_scheduled_jobs` and a
+durable run ledger in `balda_schedule_runs`. Recurring definitions have two
+owners: host configuration (`balda.scheduler.jobs`) and Backoffice. Each has
+an ID, a five-field UTC cron expression, content, and an optional report
+destination: a public locator or a Backoffice-managed alias.
+Backoffice creates managed definitions through the
+administrator-only [Schedules page](backoffice.md#schedules-management).
+Internal one-shot `@once` timers share the job store but are never listed as
+recurring schedules.
 
-- Eligibility: only `status=active` tasks with `next_run_at <= now` are polled.
-- Dispatch path: due tasks resolve the envelope target by `target`/`key`, persist its canonical locator (`channel_type`, `address_key`, `address_json`, `session_id`), and publish a durable job command. Session restore and execution happen after command delivery.
-- Locator target form: `target=locator`, `key=<channel_type>:<address_key>`;
-  `/locator` returns the paste-ready value in a transport-formatted structured
-  response. See the [locator command contract](../commands.md#locator).
-- Alias target form: `target=alias`, `key=owner` (or `owner@<channel_type>`);
-  resolves through the transport-neutral destination resolver across active
-  channels (Telegram, Slack, Zulip) with deterministic default selection and
-  fallback to registered Telegram owner data.
-- Delivery: scheduled jobs are fire-and-forget by default. If `envelope.report_to` is set, the session turn delivers progress/final replies to that locator.
-- Idempotency key: each due slot uses deterministic `last_dispatch_key = <job_id>@<due_next_run_at_rfc3339nano>`.
-- Startup reconciliation: configured job IDs are upserted, and persisted jobs not present in config are deleted from the scheduler state.
-- Publish-before-mark: scheduler publishes the command first, then writes `last_dispatch_key` and advances `next_run_at`, so a failed publish does not mark work dispatched.
+- Eligibility: only enabled, non-deleted, `status=active` recurring jobs with
+  `next_run_at <= now` are selected. A manual run can be requested for either
+  source without changing the cron cursor; a disabled job requires explicit
+  confirmation.
+- Dispatch path: admitted runs retain an exact definition snapshot and publish
+  a durable job command. Execution starts in a new private session derived from
+  the run's execution job identity, independent of any recipient chat. Pending
+  or retrying runs survive restart.
+- Optional report form: omit `envelope.report_to` for no external report, or
+  provide `target=locator` with `key=<channel_type>:<address_key>` or
+  `target=managed_alias` with a managed name. An existing literal
+  `envelope.target=locator` plus `envelope.key` remains accepted. `/locator`
+  returns a paste-ready public ref. A locator's external address need not exist;
+  an alias may be referenced before its mapping exists.
+- Admission selection: cron and manual runs resolve the report reference before
+  publication and durably store the concrete selected locator with the run.
+  Retargeting or deleting the alias affects future runs only. A missing alias
+  creates a failed run without command publication. A failed cron slot advances
+  its cursor while the definition stays active; a manual failure changes no
+  cron cursor. Resolver storage errors use the bounded retry policy.
+- Output and delivery: the execution job stores the provider output, and the
+  run snapshot stores its input. If a destination is selected, Balda offers that
+  output (or a bounded failure message) through the durable delivery outbox.
+  Progress and interactive permission questions never go to the report locator;
+  permission requests that require a live conversation fail closed.
+  No destination means no external delivery. The private runtime session, its events,
+  and its ephemeral workspace branch are deleted after execution and, when
+  applicable, final delivery settles, even if workspace mode changed during a
+  restart. A canceled run with no queued report
+  closes without waiting for a delivery that will never be created.
+  An ambiguous external send stays pending and is not automatically retried.
+- Idempotency key: each due slot uses deterministic `last_dispatch_key = <job_id>@<due_next_run_at_rfc3339nano>`. A manual request has a separate request key; retrying the same request returns the same run.
+- Startup reconciliation: configuration updates only config-owned rows. A removed
+  config entry is archived for retained history; managed rows survive unchanged.
+  A configured ID colliding with a managed or internal ID aborts startup.
+- Publication: a due slot is admitted with a version and selection check before
+  publication. A publishing lease allows recovery after a crash, using the same
+  dispatch key. Successful publication advances the cron cursor only while its
+  selected version still matches. An edit, disable, or delete cannot be undone
+  by a concurrent dispatch. Manual runs never advance that cursor.
 - Success after actor execution: `last_run_at` is updated, `last_error` is cleared, `retry_count` is reset to `0`, and the job remains `active`.
-- Pre-publish failure: target resolution, invalid schedule, or transport publish failure increments `retry_count`, records `last_error`, and may pause the task after `max_retries`.
+- Pre-publication failure: the run ledger records a safe failure code and increments
+  that run's attempt count. Retryable failures wait 1, 2 and 3 seconds before
+  further attempts; the next failure is terminal. Only a terminal failed cron
+  run updates the still-selected definition's `retry_count` and `last_error`
+  and pauses it. Manual-run failures leave recurring definition diagnostics and
+  cursor unchanged.
 - Execution failure after transport delivery: `last_run_at` and `last_error` are recorded for visibility, but scheduler retry fields and `next_run_at` are not changed. Transport owns command retry, redelivery, and DLQ after publish.
-- Pre-publish retry delay policy: linear backoff in seconds (`1s`, `2s`, `3s`, ...) capped at `60s`.
+- Run history is newest first and retains both scheduled and manual attempts,
+  including failures before publication and terminal execution outcomes.
+  Archived schedules retain readable history. Browser inventory exposes bounded
+  status/failure labels without instruction content. Guarded run detail exposes
+  the selected concrete locator, frozen input and durable output, regardless of
+  report delivery.
 
 ## Inbound webhook contract (internal)
 
-Balda can optionally expose local webhook routes that map path -> route envelope.
+Balda binds the shared HTTP listener on every start. It accepts configured
+routes when `balda.webhooks.enabled=true` and individually enabled
+Backoffice-managed routes. With no active route, the listener still binds and
+unknown paths return 404. A bind failure aborts startup. Config routes change
+on restart; managed edits affect the next request without restart.
 
-- Endpoint config: `balda.webhooks.enabled`, `listen_addr`, `routes`.
+- Endpoint config: `balda.webhooks.enabled` for config routes,
+  `balda.http.listen_addr` for the always-bound shared listener, and `routes`
+  for config definitions.
+  Managed definitions, enabled state and a verifier for the generated
+  `X-Balda-Webhook-Secret` live in the state database. The secret is shown only
+  on create or explicit rotation; the old one stops authorizing new requests.
 - Security:
   - each route can require shared-header auth (`auth.type=header`, `auth.header`, `auth.value|secret_env`)
   - keep the endpoint private or protected by a trusted gateway even with route auth
 - Method: `POST` only.
 - Route resolution:
-  - request path must match a configured route `path`
-  - destination comes from route `envelope.target` + `envelope.key` (default `alias:owner`)
-  - `target=locator` accepts `<channel_type>:<address_key>` in `key`; obtain the
-    current value from the [locator command](../commands.md#locator)
-  - route `envelope.mode` decides publish target:
-    - `task` (default): publish webhook job command; job execution later emits the session command
-    - `session`: publish session command directly
+  - every config and managed route uses its immutable name as the slug at
+    `<balda.http.base_path>/webhooks/<name>`; the empty prefix yields
+    `/webhooks/<name>`
+  - config map keys and managed names use `^[a-z0-9][a-z0-9_-]{0,63}$`
+  - `webhookapp` parses the canonical path and selects an enabled configured
+    or active managed definition by slug. Unknown, disabled and
+    archived names return 404 without creating work or request history
+  - no per-route path is stored. Declaring `path` in config fails startup even
+    for disabled routes. A prefix change moves all callback addresses after restart
+  - optional `envelope.report_to` accepts `target=locator`, `managed_alias`, or
+    the existing role `alias`, with a `key`; `/locator` prints a public locator
+  - no report destination retains the final job output without external delivery
+  - a new request resolves `report_to` when admitted and stores the concrete
+    locator in its durable admission row. Duplicates, retries and restarted
+    publication use that selection even after an alias changes or is deleted.
+    A missing destination rejects new admission without publishing work.
+  - every accepted request publishes a JobActor command for a new private
+    `wh-` session; it never restores the recipient's conversation session
+
+For an authenticated event source that reports to `main_chat`:
+
+```yaml
+balda:
+  webhooks:
+    enabled: true
+    routes:
+      broker_events:
+        prompt_template: '{{ .RawBody }}'
+        auth:
+          type: header
+          header: Authorization
+          secret_env: BROKER_WEBHOOK_AUTHORIZATION
+        envelope:
+          ack_on_delivery: true
+          report_to:
+            target: managed_alias
+            key: main_chat
+```
+
+The example receives requests at `<base_path>/webhooks/broker_events`. Only
+explicit `balda.http.base_url` adds a public origin to displayed generic webhook
+URLs; otherwise Backoffice shows that canonical path and an explanation.
+The SQLite/PostgreSQL SQL upgrade drops stored route paths and preserves route
+metadata, secret verifiers and request input/output history. External senders
+must use the canonical URL; old custom URLs no longer work. Downgrading requires
+the matching pre-upgrade database backup.
+
 - Prompt generation:
   - request body is treated as opaque raw text
   - route `prompt_template` is rendered with `RequestID`, `Path`, `Method`, `RawBody`, `Headers`
+  - the credential header is removed from template `Headers` and stored history;
+    configured header deduplication retains its retry identity without exposing
+    a credential in the request ID or new deduplication key
   - rendered prompt must be non-empty
-- Session resolution:
-  - ingress resolves route target locator and user id from owner store aliases
-  - ingress publishes a durable command after prompt rendering
-  - job mode: the job command later emits the session command for execution
-  - session mode: ingress command is already a session command
-  - the runtime lazily restores the persisted session when inactive in memory and creates the owner session when no persisted session exists
-  - webhook acceptance therefore depends on transport publish, not on synchronous session restore
-  - uses `deliver=false` by default; route `envelope.report_to` enables progress/final delivery to that destination
+- Private execution and delivery:
+  - after admission, ingress publishes one durable JobActor command; JobActor
+    republishes the stable SessionActor turn if interrupted after job creation
+  - immediately before provider invocation, the private turn atomically claims
+    its webhook job in durable state. A replay before this claim may start the
+    turn; a replay after it cannot invoke the provider again, even beyond the
+    broker's duplicate window. If the process stops after the claim but before
+    recording output, Balda reports an indeterminate execution failure rather
+    than risking a duplicate provider or tool side effect
+  - during upgrade, active webhook jobs created before this claim existed are
+    treated as indeterminate on replay because prior provider execution cannot
+    be proven absent
+  - the provider executes in a transient private session independent of the
+    selected report locator; progress, session memory, automatic turns and
+    interactive questions do not enter this path
+  - job input and final output remain in durable job state. Only the final plain
+    text output or bounded terminal failure is sent through DeliveryActor and
+    the outbox when `report_to` is configured
+  - after terminal delivery settles, cleanup removes the private session,
+    runtime events and ephemeral workspace state; interrupted cleanup retries
+    after restart without resending the report
 - Dedupe:
   - default source is `request_id`
   - `dedupe.source=header` uses `dedupe.header` value when present
   - `dedupe.source=body_sha256` uses body hash
+- Backoffice operation and history:
+  - config routes are read-only; managed routes can be created, edited, enabled,
+    disabled, archived and have their secret rotated. Archived names cannot be
+    used for new managed routes, while a returning config route can reclaim its
+    config identity and an archived path can be assigned to another route
+  - Test POST uses administrator authority rather than the webhook secret and
+    follows the same template and durable admission path. Disabled routes need
+    confirmation; archived routes cannot be tested. The form request key makes
+    retries idempotent
+  - newest-first, keyset-paginated history includes accepted external and test
+    requests, with raw input, job output, and separate delivery state. Rejected
+    requests are absent. Admission rows from before raw-body capture say input
+    unavailable; archived routes retain their history
 - Response model (JSON):
   - accepted: `202` with `{status:"accepted", accepted:true, request_id, message_id, duplicate?}`
+  - with `ack_on_delivery=true`, `202` means queued or delivery pending; repeat the same idempotent POST until `200` with `status:"delivered"`, `job_id`, and `provider_message_id`
+  - `200` is returned only after the final reply's durable outbox entry records a provider message ID
   - route not found: `404` + `error.code="route_not_found"` + message `could not accept request`
   - invalid method: `405` + `error.code="invalid_method"` + message `could not accept request`
   - auth reject: `401` + `error.code="unauthorized"` + message `could not accept request`
   - invalid body/template render: `400` + `error.code="invalid_payload"` + message `could not accept request`
-  - unresolved/restore-failed session: `404` + `error.code="session_not_found"` + message `could not accept request`
+  - unavailable report destination: `404` + `error.code="destination_not_found"` + message `could not accept request`
   - queue pressure: `429` + `error.code="queue_full"` + message `temporarily busy`
   - transport publish/internal failures: `503` + `error.code="dispatch_failed"` + message `temporarily busy`
 - Observability:
   - logs keep request routing and transport metadata internal; public responses stay limited to request id, message id, status, acceptance, and stable error code/message values
   - internal outcome counters track accepted, invalid, not-found, queue-full, and dispatch-failure events
+
+Older webhook route fields that selected an execution target (`target`, `key`,
+`mode`, `key_from_body`, `fallback_to`) are rejected at startup. Replace them
+with optional `envelope.report_to`; the route now executes a new private job
+instead of continuing an existing session.

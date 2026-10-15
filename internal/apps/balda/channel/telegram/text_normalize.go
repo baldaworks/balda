@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"fmt"
+	"github.com/baldaworks/balda/internal/apps/balda/authpayload"
 	"sort"
 	"strings"
 
@@ -11,8 +12,8 @@ import (
 const telegramMentionEntityType = "mention"
 
 func NormalizePublicText(messageCtx MessageContext, botUserID int64, botUsername string) (string, bool) {
-	replyContent := strings.TrimSpace(messageCtx.ReplyContent)
-	forwardedContent := strings.TrimSpace(messageCtx.ForwardedContent)
+	replyContent := safeContextText(messageCtx.ReplyContent)
+	forwardedContent := safeContextText(messageCtx.ForwardedContent)
 
 	if botUsername != "" {
 		mentionRanges := botMentionEntityRanges(messageCtx.Text, messageCtx.Entities, botUsername)
@@ -43,12 +44,19 @@ func NormalizeDMText(messageCtx MessageContext) string {
 	}
 	if normalized, ok := composeContextAwareInput(
 		strings.TrimSpace(messageCtx.Text),
-		strings.TrimSpace(messageCtx.ReplyContent),
-		strings.TrimSpace(messageCtx.ForwardedContent),
+		safeContextText(messageCtx.ReplyContent),
+		safeContextText(messageCtx.ForwardedContent),
 	); ok {
 		return normalized
 	}
 	return messageCtx.Text
+}
+
+func safeContextText(text string) string {
+	if authpayload.Contains(text) {
+		return ""
+	}
+	return strings.TrimSpace(text)
 }
 
 func composeContextAwareInput(userMessage, replyContent, forwardedContent string) (string, bool) {

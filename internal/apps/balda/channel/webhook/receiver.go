@@ -1,10 +1,7 @@
 package webhook
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,38 +14,46 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/baldaworks/balda/internal/apps/balda/webhookapp"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookcmd"
+	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 )
 
 const (
-	statusAccepted = "accepted"
-	statusError    = "error"
+	statusAccepted  = "accepted"
+	statusDelivered = "delivered"
+	statusError     = "error"
 
-	codeInvalidMethod   = "invalid_method"
-	codeRouteNotFound   = "route_not_found"
-	codeUnauthorized    = "unauthorized"
-	codeInvalidPayload  = "invalid_payload"
-	codeSessionNotFound = "session_not_found"
-	codeQueueFull       = "queue_full"
-	codeDispatchFailed  = "dispatch_failed"
+	codeInvalidMethod       = "invalid_method"
+	codeRouteNotFound       = "route_not_found"
+	codeUnauthorized        = "unauthorized"
+	codeInvalidPayload      = "invalid_payload"
+	codeDestinationNotFound = "destination_not_found"
+	codeQueueFull           = "queue_full"
+	codeDispatchFailed      = "dispatch_failed"
 
 	messageCouldNotAccept  = "could not accept request"
 	messageTemporarilyBusy = "temporarily busy"
 )
 
-// Service defines the application service interface required by the webhook receiver.
-type Service interface {
-	Accept(ctx context.Context, req webhookapp.Request) (webhookapp.Result, error)
+// Ingress is the consuming port for route policy and durable admission.
+type Ingress interface {
+	PrepareExternal(ctx context.Context, path string, headers map[string]string) (webhookcmd.PreparedRoute, error)
+	Admit(ctx context.Context, route webhookcmd.PreparedRoute, inbound webhookcmd.Inbound) (webhookcmd.Result, error)
 }
 
-// Receiver receives inbound HTTP webhook events and dispatches them via webhookapp.Service.
+// DeliveryReceipts reads provider receipts from the durable delivery outbox.
+type DeliveryReceipts interface {
+	SentFinalDelivery(ctx context.Context, jobID string) (string, bool, error)
+}
+
+// Receiver receives inbound HTTP webhook events and dispatches normalized input.
 type Receiver struct {
-	enabled    bool
-	listenAddr string
-	routes     map[string]route
-	service    Service
-	logger     zerolog.Logger
+	listenAddr       string
+	routes           map[string]route
+	ingress          Ingress
+	deliveryReceipts DeliveryReceipts
+	logger           zerolog.Logger
 
 	metrics metrics
 
@@ -58,26 +63,27 @@ type Receiver struct {
 	started  bool
 }
 
+// SetDeliveryReceipts supplies the outbox used by ack_on_delivery routes.
+func (r *Receiver) SetDeliveryReceipts(store DeliveryReceipts) {
+	r.deliveryReceipts = store
+}
+
 // NewReceiver creates a new inbound webhook HTTP receiver.
-func NewReceiver(cfg Config, svc Service, logger zerolog.Logger) (*Receiver, error) {
+func NewReceiver(cfg Config, ingress Ingress, logger zerolog.Logger) (*Receiver, error) {
 	normalized, err := normalizeConfig(cfg)
 	if err != nil {
 		return nil, err
 	}
 
 	receiver := &Receiver{
-		enabled:    normalized.Enabled,
 		listenAddr: normalized.ListenAddr,
 		routes:     normalized.Routes,
-		service:    svc,
+		ingress:    ingress,
 		logger:     logger.With().Str("component", "balda.channel.webhook").Logger(),
 	}
 
-	if !receiver.enabled {
-		return receiver, nil
-	}
-	if receiver.service == nil {
-		return nil, fmt.Errorf("webhook application service is required when webhooks are enabled")
+	if receiver.ingress == nil {
+		return nil, fmt.Errorf("webhook application ingress is required")
 	}
 
 	return receiver, nil
@@ -93,8 +99,16 @@ func (r *Receiver) Stop(ctx context.Context) error {
 	return r.stop(ctx)
 }
 
+// Handler serves webhook requests through the receiver's existing checks without binding a socket.
+func (r *Receiver) Handler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(ReadTimeout))
+		r.handleWebhook(w, request)
+	})
+}
+
 func (r *Receiver) start(_ context.Context) error {
-	if r == nil || !r.enabled {
+	if r == nil {
 		return nil
 	}
 
@@ -138,7 +152,7 @@ func (r *Receiver) start(_ context.Context) error {
 }
 
 func (r *Receiver) stop(ctx context.Context) error {
-	if r == nil || !r.enabled {
+	if r == nil {
 		return nil
 	}
 
@@ -179,10 +193,7 @@ func (r *Receiver) RoutePaths() []string {
 }
 
 func (r *Receiver) handleWebhook(w http.ResponseWriter, req *http.Request) {
-	requestID := strings.TrimSpace(req.Header.Get("X-Request-Id"))
-	if requestID == "" {
-		requestID = fmt.Sprintf("inbound-%d", time.Now().UnixNano())
-	}
+	requestID := "inbound-" + uuid.NewString()
 	if req.Method != http.MethodPost {
 		r.writeError(w, requestID, &httpError{
 			status:  http.StatusMethodNotAllowed,
@@ -192,182 +203,108 @@ func (r *Receiver) handleWebhook(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	rt, ok := r.routes[req.URL.Path]
-	if !ok {
-		r.metrics.notFound.Add(1)
-		r.writeError(w, requestID, &httpError{
-			status:  http.StatusNotFound,
-			code:    codeRouteNotFound,
-			message: messageCouldNotAccept,
-		})
-		return
-	}
-	if authErr := authorizeRequest(req, rt.Auth); authErr != nil {
-		r.metrics.unauthorized.Add(1)
-		r.writeError(w, requestID, &httpError{
-			status:  http.StatusUnauthorized,
-			code:    codeUnauthorized,
-			message: messageCouldNotAccept,
-			cause:   authErr,
-		})
-		return
-	}
-
-	defer func() { _ = req.Body.Close() }()
-	bodyBytes, readErr := io.ReadAll(io.LimitReader(req.Body, MaxBodyBytes+1))
-	if readErr != nil {
-		r.metrics.invalid.Add(1)
-		r.writeError(w, requestID, &httpError{
-			status:  http.StatusBadRequest,
-			code:    codeInvalidPayload,
-			message: messageCouldNotAccept,
-			cause:   readErr,
-		})
-		return
-	}
-	if len(bodyBytes) > MaxBodyBytes {
-		r.metrics.invalid.Add(1)
-		r.writeError(w, requestID, &httpError{
-			status:  http.StatusBadRequest,
-			code:    codeInvalidPayload,
-			message: messageCouldNotAccept,
-			cause:   fmt.Errorf("request body exceeds %d bytes", MaxBodyBytes),
-		})
-		return
-	}
-	rawBody := string(bodyBytes)
-
 	headers := make(map[string]string, len(req.Header))
 	for name, values := range req.Header {
-		if len(values) == 0 {
-			headers[name] = ""
-			continue
+		if len(values) > 0 {
+			headers[name] = values[0]
 		}
-		headers[name] = values[0]
 	}
-
-	var promptBuf bytes.Buffer
-	renderErr := rt.PromptTemplate.Execute(&promptBuf, templateData{
-		RequestID: requestID,
-		Path:      req.URL.Path,
-		Method:    req.Method,
-		RawBody:   rawBody,
-		Headers:   headers,
-	})
-	if renderErr != nil {
-		r.metrics.invalid.Add(1)
-		r.writeError(w, requestID, &httpError{
-			status:  http.StatusBadRequest,
-			code:    codeInvalidPayload,
-			message: messageCouldNotAccept,
-			cause:   renderErr,
-		})
+	rt, err := r.ingress.PrepareExternal(req.Context(), req.URL.Path, headers)
+	if err != nil {
+		r.writeIngressError(w, requestID, err)
 		return
 	}
-	prompt := strings.TrimSpace(promptBuf.String())
-	if prompt == "" {
+	// A route may use X-Request-Id as its credential. Its value must never
+	// become a response ID, template input, log field, or durable admission ID.
+	if !strings.EqualFold(rt.AuthHeader, "X-Request-Id") {
+		if supplied := strings.TrimSpace(req.Header.Get("X-Request-Id")); supplied != "" {
+			requestID = supplied
+		}
+	}
+	defer func() { _ = req.Body.Close() }()
+	bodyBytes, err := io.ReadAll(io.LimitReader(req.Body, MaxBodyBytes+1))
+	if err == nil && len(bodyBytes) > MaxBodyBytes {
+		err = fmt.Errorf("request body exceeds %d bytes", MaxBodyBytes)
+	}
+	if err != nil {
 		r.metrics.invalid.Add(1)
-		r.writeError(w, requestID, &httpError{
-			status:  http.StatusBadRequest,
-			code:    codeInvalidPayload,
-			message: messageCouldNotAccept,
-			cause:   fmt.Errorf("rendered prompt is empty"),
-		})
+		r.writeError(w, requestID, &httpError{status: http.StatusBadRequest,
+			code: codeInvalidPayload, message: messageCouldNotAccept, cause: err})
 		return
 	}
-
-	dedupeBase := strings.TrimSpace(requestID)
-	switch rt.Dedupe.Source {
-	case DedupeSourceHeader:
-		if header := strings.TrimSpace(req.Header.Get(rt.Dedupe.Header)); header != "" {
-			dedupeBase = header
-		}
-	case DedupeSourceBodySHA:
-		sum := sha256.Sum256([]byte(rawBody))
-		dedupeBase = fmt.Sprintf("%x", sum[:])
-	}
-	dedupeKey := strings.Join([]string{"webhook", strings.TrimSpace(rt.Name), dedupeBase}, ":")
-
-	result, err := r.service.Accept(req.Context(), webhookapp.Request{
-		RequestID: requestID,
-		RouteName: rt.Name,
-		Prompt:    prompt,
-		Target:    rt.Target,
-		ReportTo:  rt.ReportTo,
-		Mode:      rt.Mode,
-		DedupeKey: dedupeKey,
+	result, err := r.ingress.Admit(req.Context(), rt, webhookcmd.Inbound{
+		RequestID: requestID, Path: req.URL.Path, Method: req.Method,
+		RawBody: string(bodyBytes), Headers: headers,
 	})
 	if err != nil {
-		if webhookapp.IsTargetNotFound(err) {
-			r.metrics.notFound.Add(1)
-			r.writeError(w, requestID, &httpError{
-				status:  http.StatusNotFound,
-				code:    codeSessionNotFound,
-				message: messageCouldNotAccept,
-				cause:   err,
-			})
-			return
-		}
-		if webhookapp.IsQueueFull(err) {
-			r.metrics.queueFull.Add(1)
-			r.writeError(w, requestID, &httpError{
-				status:  http.StatusTooManyRequests,
-				code:    codeQueueFull,
-				message: messageTemporarilyBusy,
-				cause:   err,
-			})
-			return
-		}
-		r.metrics.dispatchErr.Add(1)
-		r.writeError(w, requestID, &httpError{
-			status:  http.StatusServiceUnavailable,
-			code:    codeDispatchFailed,
-			message: messageTemporarilyBusy,
-			cause:   err,
-		})
+		r.writeIngressError(w, requestID, err)
 		return
 	}
-
 	r.metrics.accepted.Add(1)
 	r.logger.Info().
 		Str("request_id", requestID).
 		Str("route", rt.Name).
 		Str("path", rt.Path).
-		Str("session_id", result.Target.Locator.SessionID).
-		Str("channel_type", result.Target.Locator.ChannelType).
-		Str("address_key", result.Target.Locator.AddressKey).
-		Str("mode", rt.Mode).
-		Str("dedupe_key", dedupeKey).
 		Str("stream", result.Stream).
 		Uint64("sequence", result.Sequence).
 		Str("job_id", result.JobID).
 		Msg("inbound webhook accepted")
 
-	writeJSON(w, http.StatusAccepted, acceptedResponse{
-		Status:    statusAccepted,
-		Accepted:  true,
-		RequestID: requestID,
-		MessageID: result.MessageID,
-		Duplicate: result.Duplicate,
+	statusCode := http.StatusAccepted
+	status := statusAccepted
+	providerMessageID := ""
+	if rt.AckOnDelivery {
+		if r.deliveryReceipts == nil || result.JobID == "" {
+			r.writeError(w, requestID, &httpError{status: http.StatusServiceUnavailable, code: codeDispatchFailed, message: messageTemporarilyBusy,
+				cause: fmt.Errorf("delivery receipt lookup unavailable")})
+			return
+		}
+		var sent bool
+		providerMessageID, sent, err = r.deliveryReceipts.SentFinalDelivery(req.Context(), result.JobID)
+		if err != nil {
+			r.writeError(w, requestID, &httpError{status: http.StatusServiceUnavailable, code: codeDispatchFailed, message: messageTemporarilyBusy, cause: err})
+			return
+		}
+		if sent {
+			statusCode = http.StatusOK
+			status = statusDelivered
+		}
+	}
+	writeJSON(w, statusCode, acceptedResponse{
+		Status:             status,
+		Accepted:           true,
+		RequestID:          requestID,
+		MessageID:          result.MessageID,
+		Duplicate:          result.Duplicate,
+		JobID:              result.JobID,
+		ProviderMessageID:  providerMessageID,
+		DeliveryAckEnabled: rt.AckOnDelivery,
 	})
 }
 
-func authorizeRequest(req *http.Request, policy authPolicy) error {
-	switch policy.Type {
-	case "", AuthTypeNone:
-		return nil
-	case AuthTypeHeader:
-		provided := req.Header.Get(policy.Header)
-		if provided == "" {
-			return fmt.Errorf("missing authorization header %q", policy.Header)
-		}
-		if subtle.ConstantTimeCompare([]byte(provided), []byte(policy.Value)) != 1 {
-			return fmt.Errorf("invalid authorization header value for %q", policy.Header)
-		}
-		return nil
+func (r *Receiver) writeIngressError(w http.ResponseWriter, requestID string, err error) {
+	var response *httpError
+	switch {
+	case errors.Is(err, webhookcmd.ErrRouteNotFound):
+		r.metrics.notFound.Add(1)
+		response = &httpError{status: http.StatusNotFound, code: codeRouteNotFound, message: messageCouldNotAccept, cause: err}
+	case errors.Is(err, webhookcmd.ErrUnauthorized):
+		r.metrics.unauthorized.Add(1)
+		response = &httpError{status: http.StatusUnauthorized, code: codeUnauthorized, message: messageCouldNotAccept, cause: err}
+	case webhookcmd.IsInvalidRequest(err):
+		r.metrics.invalid.Add(1)
+		response = &httpError{status: http.StatusBadRequest, code: codeInvalidPayload, message: messageCouldNotAccept, cause: err}
+	case webhookcmd.IsTargetNotFound(err):
+		r.metrics.notFound.Add(1)
+		response = &httpError{status: http.StatusNotFound, code: codeDestinationNotFound, message: messageCouldNotAccept, cause: err}
+	case webhookcmd.IsQueueFull(err):
+		r.metrics.queueFull.Add(1)
+		response = &httpError{status: http.StatusTooManyRequests, code: codeQueueFull, message: messageTemporarilyBusy, cause: err}
 	default:
-		return fmt.Errorf("unsupported auth type %q", policy.Type)
+		r.metrics.dispatchErr.Add(1)
+		response = &httpError{status: http.StatusServiceUnavailable, code: codeDispatchFailed, message: messageTemporarilyBusy, cause: err}
 	}
+	r.writeError(w, requestID, response)
 }
 
 type metrics struct {
@@ -379,20 +316,15 @@ type metrics struct {
 	dispatchErr  atomic.Uint64
 }
 
-type templateData struct {
-	RequestID string
-	Path      string
-	Method    string
-	RawBody   string
-	Headers   map[string]string
-}
-
 type acceptedResponse struct {
-	Status    string `json:"status"`
-	Accepted  bool   `json:"accepted"`
-	RequestID string `json:"request_id"`
-	MessageID string `json:"message_id"`
-	Duplicate bool   `json:"duplicate,omitempty"`
+	Status             string `json:"status"`
+	Accepted           bool   `json:"accepted"`
+	RequestID          string `json:"request_id"`
+	MessageID          string `json:"message_id"`
+	Duplicate          bool   `json:"duplicate,omitempty"`
+	JobID              string `json:"job_id,omitempty"`
+	ProviderMessageID  string `json:"provider_message_id,omitempty"`
+	DeliveryAckEnabled bool   `json:"delivery_ack_enabled,omitempty"`
 }
 
 type errorResponse struct {

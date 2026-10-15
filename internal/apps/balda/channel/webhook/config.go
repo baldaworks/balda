@@ -6,8 +6,9 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
-	"github.com/baldaworks/balda/internal/apps/balda/webhookapp"
+	"github.com/baldaworks/balda/internal/apps/balda/destinationcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/locatorref"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookroutecmd"
 )
 
 const (
@@ -18,11 +19,6 @@ const (
 	WriteTimeout      = 30 * time.Second
 	IdleTimeout       = 60 * time.Second
 	MaxBodyBytes      = 1 << 20
-)
-
-const (
-	RouteModeJob     = webhookapp.ModeJob
-	RouteModeSession = webhookapp.ModeSession
 )
 
 const (
@@ -38,19 +34,16 @@ const (
 
 // RouteConfig configures one inbound webhook route.
 type RouteConfig struct {
-	Path           string
 	PromptTemplate string
 	Envelope       RouteEnvelopeConfig
 	Auth           RouteAuthConfig
 	Dedupe         RouteDedupeConfig
 }
 
-// RouteEnvelopeConfig configures the destination envelope for a webhook route.
+// RouteEnvelopeConfig configures optional final report delivery.
 type RouteEnvelopeConfig struct {
-	Target   string
-	Key      string
-	Mode     string
-	ReportTo *RouteTargetConfig
+	ReportTo      *RouteTargetConfig
+	AckOnDelivery bool
 }
 
 // RouteTargetConfig configures a destination target reference.
@@ -74,6 +67,7 @@ type RouteDedupeConfig struct {
 
 // Config controls inbound webhook routing and dispatch behavior.
 type Config struct {
+	BasePath   string
 	Enabled    bool
 	ListenAddr string
 	Routes     map[string]RouteConfig
@@ -83,9 +77,8 @@ type route struct {
 	Name           string
 	Path           string
 	PromptTemplate *template.Template
-	Target         envelopetarget.Target
-	Mode           string
-	ReportTo       *envelopetarget.Target
+	ReportTo       *destinationcmd.Target
+	AckOnDelivery  bool
 	Auth           authPolicy
 	Dedupe         dedupePolicy
 }
@@ -117,32 +110,12 @@ func normalizeConfig(cfg Config) (normalizedConfig, error) {
 		ListenAddr: listenAddr,
 		Routes:     make(map[string]route),
 	}
-	if !cfg.Enabled {
-		return normalized, nil
-	}
-
-	if len(cfg.Routes) == 0 {
-		return normalizedConfig{}, fmt.Errorf("balda.webhooks.routes is required when webhooks are enabled")
-	}
-
-	seenPaths := make(map[string]string, len(cfg.Routes))
 	for rawName, rawRoute := range cfg.Routes {
-		routeName := strings.TrimSpace(rawName)
-		if routeName == "" {
-			return normalizedConfig{}, fmt.Errorf("balda.webhooks.routes key is required")
+		routeName := rawName
+		if !webhookroutecmd.ValidName(routeName) {
+			return normalizedConfig{}, fmt.Errorf("balda.webhooks.routes.%s: invalid route slug", routeName)
 		}
-
-		path := strings.TrimSpace(rawRoute.Path)
-		if path == "" {
-			return normalizedConfig{}, fmt.Errorf("balda.webhooks.routes.%s.path: path is required", routeName)
-		}
-		if !strings.HasPrefix(path, "/") {
-			path = "/" + path
-		}
-		if existingName, exists := seenPaths[path]; exists {
-			return normalizedConfig{}, fmt.Errorf("balda.webhooks.routes.%s.path duplicates route %q", routeName, existingName)
-		}
-		seenPaths[path] = routeName
+		path := webhookroutecmd.CanonicalPath(cfg.BasePath, routeName)
 
 		templateText := strings.TrimSpace(rawRoute.PromptTemplate)
 		if templateText == "" {
@@ -152,40 +125,27 @@ func normalizeConfig(cfg Config) (normalizedConfig, error) {
 		if err != nil {
 			return normalizedConfig{}, fmt.Errorf("invalid balda.webhooks.routes.%s.prompt_template: %w", routeName, err)
 		}
-		target := envelopetarget.Target{
-			Target: strings.TrimSpace(rawRoute.Envelope.Target),
-			Key:    strings.TrimSpace(rawRoute.Envelope.Key),
-		}
-		if target.Target == "" && target.Key == "" {
-			target = envelopetarget.Target{Target: envelopetarget.TargetAlias, Key: envelopetarget.AliasOwner}
-		}
-		if target.Target == "" {
-			return normalizedConfig{}, fmt.Errorf("balda.webhooks.routes.%s.envelope.target is required", routeName)
-		}
-		if target.Key == "" {
-			return normalizedConfig{}, fmt.Errorf("balda.webhooks.routes.%s.envelope.key is required", routeName)
-		}
-		var reportTo *envelopetarget.Target
+		var reportTo *destinationcmd.Target
 		if rawRoute.Envelope.ReportTo != nil {
-			reportTo = &envelopetarget.Target{
+			reportTo = &destinationcmd.Target{
 				Target: strings.TrimSpace(rawRoute.Envelope.ReportTo.Target),
 				Key:    strings.TrimSpace(rawRoute.Envelope.ReportTo.Key),
-			}
-			if reportTo.Target == "" {
-				return normalizedConfig{}, fmt.Errorf("balda.webhooks.routes.%s.envelope.report_to.target is required", routeName)
 			}
 			if reportTo.Key == "" {
 				return normalizedConfig{}, fmt.Errorf("balda.webhooks.routes.%s.envelope.report_to.key is required", routeName)
 			}
+			switch reportTo.Target {
+			case destinationcmd.TargetAlias, destinationcmd.TargetManagedAlias:
+			case destinationcmd.TargetLocator:
+				if _, err := locatorref.Parse(reportTo.Key); err != nil {
+					return normalizedConfig{}, fmt.Errorf("balda.webhooks.routes.%s.envelope.report_to.key: invalid public locator", routeName)
+				}
+			default:
+				return normalizedConfig{}, fmt.Errorf("balda.webhooks.routes.%s.envelope.report_to.target must be alias, managed_alias, or locator", routeName)
+			}
 		}
-		mode := strings.ToLower(strings.TrimSpace(rawRoute.Envelope.Mode))
-		if mode == "" {
-			mode = RouteModeJob
-		}
-		switch mode {
-		case RouteModeJob, RouteModeSession:
-		default:
-			return normalizedConfig{}, fmt.Errorf("balda.webhooks.routes.%s.envelope.mode: unsupported mode %q", routeName, rawRoute.Envelope.Mode)
+		if rawRoute.Envelope.AckOnDelivery && reportTo == nil {
+			return normalizedConfig{}, fmt.Errorf("balda.webhooks.routes.%s.envelope.ack_on_delivery requires report_to", routeName)
 		}
 		authPol := authPolicy{
 			Type:   strings.ToLower(strings.TrimSpace(rawRoute.Auth.Type)),
@@ -232,9 +192,8 @@ func normalizeConfig(cfg Config) (normalizedConfig, error) {
 			Name:           routeName,
 			Path:           path,
 			PromptTemplate: tmpl,
-			Target:         target,
-			Mode:           mode,
 			ReportTo:       reportTo,
+			AckOnDelivery:  rawRoute.Envelope.AckOnDelivery,
 			Auth:           authPol,
 			Dedupe:         dedupePol,
 		}

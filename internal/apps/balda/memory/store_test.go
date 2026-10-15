@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/baldaworks/balda/internal/apps/balda/memorycmd"
 )
 
 type testKV struct {
@@ -114,10 +116,10 @@ func TestStoreDoesNotImportLegacyFileWhenKVExists(t *testing.T) {
 	}
 	kv := newTestKV()
 	now := time.Now().UTC().Format(time.RFC3339Nano)
-	if err := kv.SetJSON(context.Background(), kvMemoryKey, record{
+	if err := kv.SetJSON(context.Background(), kvMemoryKey, memorycmd.Record{
 		Version:   1,
 		UpdatedAt: now,
-		Entries: []entry{{
+		Entries: []memorycmd.Entry{{
 			Version:   1,
 			CreatedAt: now,
 			Fact:      "kv fact",
@@ -155,10 +157,10 @@ func TestStoreSnapshotRejectsInvalidTimestampWithoutExposingFact(t *testing.T) {
 
 	kv := newTestKV()
 	const fact = "private fact"
-	if err := kv.SetJSON(context.Background(), kvMemoryKey, record{
+	if err := kv.SetJSON(context.Background(), kvMemoryKey, memorycmd.Record{
 		Version:   1,
 		UpdatedAt: "not-a-timestamp",
-		Entries:   []entry{{Version: 1, Fact: fact}},
+		Entries:   []memorycmd.Entry{{Version: 1, Fact: fact}},
 	}); err != nil {
 		t.Fatalf("prepopulate kv: %v", err)
 	}

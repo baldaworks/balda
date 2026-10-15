@@ -1,0 +1,36 @@
+package mcpfx
+
+import (
+	"maps"
+
+	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpruntime"
+)
+
+type managedValueResolver interface {
+	ResolveValues(revision mcpcmd.Revision) (mcpcmd.LaunchValues, error)
+}
+
+// ResolveManagedLaunch resolves credentials only at the trusted launch boundary.
+func ResolveManagedLaunch(revision mcpcmd.Revision, resolver managedValueResolver) (mcpruntime.LaunchConfig, error) {
+	if resolver == nil {
+		return mcpruntime.LaunchConfig{}, mcpcmd.ErrInvalid
+	}
+	values, err := resolver.ResolveValues(revision)
+	if err != nil {
+		return mcpruntime.LaunchConfig{}, err
+	}
+	return resolveLaunch(revision, values), nil
+}
+
+func resolveLaunch(revision mcpcmd.Revision, values mcpcmd.LaunchValues) mcpruntime.LaunchConfig {
+	definition := revision.Definition
+	transport := string(definition.Transport)
+	if definition.Transport == mcpcmd.TransportHTTP {
+		transport = transportStreamableHTTP
+	}
+	return mcpruntime.LaunchConfig{Transport: transport, Command: definition.Command, Args: append([]string(nil), definition.Args...),
+		WorkingDir: definition.Directory, URL: definition.URL, Env: maps.Clone(values.Env), Headers: maps.Clone(values.Headers),
+		InheritEnvironment: definition.Transport == mcpcmd.TransportStdio,
+		EnforceHTTPOrigin:  definition.Transport != mcpcmd.TransportStdio}
+}

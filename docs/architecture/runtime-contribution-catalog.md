@@ -242,10 +242,25 @@ an explicit option. A package change discovered outside a managed operation is
 reported as drift and is not activated automatically. This prevents a file or
 marketplace refresh from silently starting a new executable.
 
+`pluginapp` supplies explicit `PreparedPluginSource` evidence for a newly
+validated and materialized revision while compiling a managed operation.
+`catalogapp` verifies its identity, contained canonical revision root, and
+content digest before retaining it. Other plugin sources require their durable
+revision records. Preparation neither inserts SQL metadata nor publishes a
+snapshot: the new revision, selection, activation intent, generation, and audit
+commit together before publication. A disabled upgrade retains its prepared
+revision without selecting its contributions.
+
 Disable removes a plugin's contributions from the next snapshot without
 deleting its package or `${PLUGIN_DATA}`. Remove disables first, retires the
 revision, and handles package data according to the explicit remove or purge
 operation.
+
+Removal retains revision archives and existing plugin data for pinned sessions.
+Restoring a historical MCP descriptor first verifies its exact archived
+revision; its data resolver can then use the existing contained
+`plugin-data/<plugin-name>` directory after the install selection is removed.
+This read creates no directory and does not select a current revision.
 
 Health is observed state and does not change snapshot identity. A temporary
 MCP connection failure cannot make commands or skills appear and disappear
@@ -408,19 +423,22 @@ One effective `SnapshotID` is selected and persisted before a new or restored
 session is exposed. Command resolution, provider-visible skill metadata,
 explicit skill resolution, and provider MCP identities all derive from that
 same snapshot. A legacy empty pin adopts current state once. A non-empty pin is
-exact and restore fails closed if it is unavailable.
+used for the exact restore attempt. If that attempt fails while the caller and
+service remain active, Balda creates a fresh ADK session with the current
+effective snapshot and persists the new pin before exposure. A failed fallback
+remains an error.
 
-The MCP list is passed to the provider only when its session is created,
-resumed, or loaded. MCP acquisitions live until the Balda session runtime
-closes. Individual prompts and commands neither receive a new MCP list nor
-construct, swap, or close a provider runtime. Every turn uses the existing
-`TopicSession` runner.
+The MCP list is bound only when the ADK session runtime is created or opened.
+MCP acquisitions live until the Balda session runtime closes. Individual
+prompts and commands neither receive a new MCP list nor construct, swap, or
+close a session runtime. Every turn uses the existing `TopicSession` runner.
 
 Publishing a new catalog snapshot never mutates an active session. `/reset`
 closes the old session runtime and creates a replacement without requesting the
-old snapshot. It is therefore the explicit adoption boundary for current
-commands, skills, and MCP servers; successful recreation persists the newly
-selected snapshot.
+old snapshot. It remains the explicit user action for adopting current commands,
+skills, and MCP servers; failed automatic restore can also adopt the current
+snapshot through fresh-session fallback. Successful recreation persists the
+newly selected snapshot.
 
 Metadata budgeting is deterministic. The effective catalog sorts by stable
 source and contribution identity, applies a host-defined total budget, and
@@ -438,17 +456,21 @@ version. Balda resolves `${PLUGIN_ROOT}` and `${PLUGIN_DATA}`, enforces
 filesystem containment, treats `command` as one executable token rather than a
 shell string, and enables only supported transports.
 
-Snapshot publication describes desired MCP state. The MCP runtime reconciler
-owns process start, connection, handshake, tool discovery, shutdown, and
-observed health:
+Snapshot publication installs complete local exact-configuration leases.
+HTTP/SSE projection does not connect or discover; provider invocation owns
+attachment. The MCP runtime schedules and supervises Balda-owned stdio discovery
+without blocking startup, and owns revision drain, shutdown and observed health:
 
 ```text
-disabled | starting | ready | degraded | failed | stopping
+disabled | unknown | starting | ready | degraded | failed | stopping
 ```
 
 Connection or authentication failure updates health and diagnostics but does
-not invalidate unrelated contributions. A turn sees only tools ready for its
-pinned source revision. MCP timeouts, process limits, environment filtering,
+not invalidate unrelated contributions or omit selected MCP configuration.
+A provider receives every pinned server, even when its tools are unavailable.
+Remote catalog health remains unknown until there is trusted owned evidence;
+publication and provider invocation do not imply discovery readiness.
+MCP timeouts, process limits, environment filtering,
 logging redaction, and shutdown deadlines are host policy.
 
 MCP runtime instances are keyed by source and revision. During upgrade, an old

@@ -21,12 +21,12 @@ func (m testWorkspaceManager) CanonicalWorkspaceDir(key string) string {
 
 func (m testWorkspaceManager) ForceRemountCanonicalWorkspace(ctx context.Context, key, branchName string) (EnsureWorkspaceResult, error) {
 	result, err := m.inner.ForceRemountCanonicalWorkspace(ctx, key, branchName)
-	return EnsureWorkspaceResult{Dir: result.Dir, SyncSkipped: result.SyncSkipped}, translateTestWorkspaceError(err)
+	return EnsureWorkspaceResult{Dir: result.Dir, SyncSkipped: result.SyncSkipped, Created: result.Created}, translateTestWorkspaceError(err)
 }
 
 func (m testWorkspaceManager) EnsureWorkspace(ctx context.Context, key, branchName, existingPath string) (EnsureWorkspaceResult, error) {
 	result, err := m.inner.EnsureWorkspace(ctx, key, branchName, existingPath)
-	return EnsureWorkspaceResult{Dir: result.Dir, SyncSkipped: result.SyncSkipped}, translateTestWorkspaceError(err)
+	return EnsureWorkspaceResult{Dir: result.Dir, SyncSkipped: result.SyncSkipped, Created: result.Created}, translateTestWorkspaceError(err)
 }
 
 func (m testWorkspaceManager) Import(ctx context.Context, workspaceDir string) error {
@@ -39,6 +39,10 @@ func (m testWorkspaceManager) Export(ctx context.Context, workspaceDir, branchNa
 
 func (m testWorkspaceManager) CleanupWorkspace(ctx context.Context, workspaceDir string) error {
 	return m.inner.CleanupWorkspace(ctx, workspaceDir)
+}
+
+func (m testWorkspaceManager) DeleteBranch(ctx context.Context, branchName string) error {
+	return m.inner.DeleteBranch(ctx, branchName)
 }
 
 func translateTestWorkspaceError(err error) error {

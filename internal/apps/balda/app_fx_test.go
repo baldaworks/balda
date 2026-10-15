@@ -2,6 +2,9 @@ package balda
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	runtimeconfig "github.com/normahq/runtime/v2/appconfig"
@@ -44,6 +47,31 @@ func TestValidateApp(t *testing.T) {
 	)
 
 	require.NoError(t, err)
+}
+
+func TestAppStartMigratesStateBeforeUserReadiness(t *testing.T) {
+	workingDir := t.TempDir()
+	config := Config{Balda: BaldaConfig{
+		WorkingDir: workingDir, StateDir: ".config/balda",
+		Workspace: WorkspaceConfig{Mode: string(WorkspaceModeOff)},
+		Features: FeaturesConfig{Attachments: AttachmentsConfig{
+			MaxFilesPerMessage: defaultAttachmentMaxFilesPerMessage,
+			MaxFileBytes:       defaultAttachmentMaxFileBytes,
+			MaxTotalBytes:      defaultAttachmentMaxTotalBytes,
+		}},
+	}}
+	app := App(config, runtimeconfig.RuntimeConfig{}, "test-owner-token", runtimeconfig.RuntimeLoadOptions{WorkingDir: workingDir}, nil)
+	if err := app.Err(); err != nil {
+		t.Fatal(err)
+	}
+	err := app.Start(t.Context())
+	if err == nil || !strings.Contains(err.Error(), "user readiness") {
+		t.Fatalf("Start() error = %v, want user readiness failure", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(workingDir, ".config", "balda", "state.db")); statErr != nil {
+		t.Fatalf("selected database was not migrated before readiness: %v", statErr)
+	}
+	_ = app.Stop(t.Context())
 }
 
 func TestValidateApp_InvalidTelegramFormattingModeFails(t *testing.T) {

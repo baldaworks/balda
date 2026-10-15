@@ -1,6 +1,8 @@
 package turncmd
 
 import (
+	"crypto/sha256"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -8,6 +10,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/locatorref"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/baldaworks/go-actorlayer"
 	"github.com/google/uuid"
@@ -17,10 +20,17 @@ const (
 	SourceTelegram   = "telegram"
 	SourceSlackAgent = "slackagent"
 	SourceZulip      = "zulip"
+	SourceMattermost = "mattermost"
 	SourceWebhook    = "webhook"
 	SourceSchedule   = "schedule"
 	SourceAuto       = "auto"
 )
+
+// ErrScheduledReportQueued marks a failed run whose bounded final report is already queued.
+var ErrScheduledReportQueued = errors.New("scheduled report queued")
+
+// ErrWebhookReportQueued marks a failed private webhook run with a final report queued.
+var ErrWebhookReportQueued = errors.New("webhook report queued")
 
 type SessionTurnPayload struct {
 	JobID            string                            `json:"job_id,omitempty"`
@@ -33,6 +43,7 @@ type SessionTurnPayload struct {
 	RequesterUserID  string                            `json:"requester_user_id,omitempty"`
 	AgentSessionID   string                            `json:"agent_session_id,omitempty"`
 	ScheduledJobID   string                            `json:"scheduled_job_id,omitempty"`
+	ScheduleOneShot  *bool                             `json:"schedule_one_shot,omitempty"`
 	MessageID        int                               `json:"message_id,omitempty"`
 	ReplyToMessageID int                               `json:"reply_to_message_id,omitempty"`
 	ReceivedAt       string                            `json:"received_at,omitempty"`
@@ -148,6 +159,7 @@ type scheduledJobPayload struct {
 	ParentJobID string               `json:"parent_job_id,omitempty"`
 	UserID      string               `json:"user_id"`
 	TopicID     int                  `json:"topic_id,omitempty"`
+	OneShot     *bool                `json:"one_shot,omitempty"`
 }
 
 const (
@@ -202,8 +214,6 @@ func SessionTurnEnvelope(payload SessionTurnPayload) (actorlayer.Envelope, error
 
 func WebhookJobEnvelope(payload SessionTurnPayload, routeName string, requestID string) (actorlayer.Envelope, string, error) {
 	dedupeBase := strings.TrimSpace(payload.DedupeKey)
-	dedupeBase = strings.TrimSuffix(dedupeBase, ":task")
-	dedupeBase = strings.TrimSuffix(dedupeBase, ":session")
 	if dedupeBase == "" {
 		dedupeBase = strings.Join([]string{"webhook", strings.TrimSpace(routeName), strings.TrimSpace(requestID)}, ":")
 	}
@@ -243,7 +253,7 @@ func WebhookJobEnvelope(payload SessionTurnPayload, routeName string, requestID 
 		return actorlayer.Envelope{}, "", fmt.Errorf("encode webhook job payload: %w", err)
 	}
 	return actorlayer.Envelope{
-		ID:        uuid.NewString(),
+		ID:        jobID + ":job",
 		Namespace: baldaexecution.NamespaceWebhookInbound,
 		Kind:      baldaexecution.KindWebhookEvent,
 		From:      actorlayer.ActorAddress{Target: "webhook", Key: firstNonEmpty(routeName, requestID, "inbound")},
@@ -264,6 +274,17 @@ func ScheduledJobEnvelope(
 	topicID int,
 	dispatchKey string,
 ) (actorlayer.Envelope, error) {
+	return scheduledJobEnvelope(scheduledJobID, content, locator, reportTo, userID, topicID, dispatchKey, false)
+}
+
+// InternalOneShotEnvelope preserves the existing ordinary-session timer behavior.
+func InternalOneShotEnvelope(scheduledJobID, content string, locator deliverycmd.Locator,
+	reportTo *deliverycmd.Locator, userID string, topicID int, dispatchKey string) (actorlayer.Envelope, error) {
+	return scheduledJobEnvelope(scheduledJobID, content, locator, reportTo, userID, topicID, dispatchKey, true)
+}
+
+func scheduledJobEnvelope(scheduledJobID, content string, locator deliverycmd.Locator,
+	reportTo *deliverycmd.Locator, userID string, topicID int, dispatchKey string, oneShot bool) (actorlayer.Envelope, error) {
 	payload := jobEnvelopePayload{
 		Kind: jobPayloadKindScheduledJob,
 		ScheduledJob: &scheduledJobPayload{
@@ -273,6 +294,7 @@ func ScheduledJobEnvelope(
 			ReportTo: reportTo,
 			UserID:   strings.TrimSpace(userID),
 			TopicID:  topicID,
+			OneShot:  &oneShot,
 		},
 	}
 	data, err := actorlayer.MarshalPayload(payload)
@@ -280,16 +302,78 @@ func ScheduledJobEnvelope(
 		return actorlayer.Envelope{}, fmt.Errorf("encode scheduled job payload: %w", err)
 	}
 	jobID := "scheduled-" + strings.TrimSpace(scheduledJobID) + "-" + strings.TrimSpace(dispatchKey)
+	executionSessionID := ScheduledExecutionSessionID(jobID)
+	if oneShot {
+		executionSessionID = locator.SessionID
+	}
 	return actorlayer.Envelope{
 		ID:        uuid.NewString(),
 		Namespace: baldaexecution.NamespaceScheduleInbound,
 		Kind:      baldaexecution.KindScheduledJob,
 		From:      actorlayer.ActorAddress{Target: "schedule", Key: strings.TrimSpace(scheduledJobID)},
 		To:        actorlayer.ActorAddress{Target: baldaexecution.ActorTypeJob, Key: jobID},
-		Meta:      baldaexecution.WithSessionIDMeta(baldaexecution.WithJobIDMeta(nil, jobID), locator.SessionID),
+		Meta:      baldaexecution.WithSessionIDMeta(baldaexecution.WithJobIDMeta(nil, jobID), executionSessionID),
 		DedupeKey: strings.TrimSpace(dispatchKey),
 		Payload:   data,
 	}, nil
+}
+
+// ScheduledExecutionSessionID isolates a run from the recipient's chat and is stable on replay.
+func ScheduledExecutionSessionID(jobID string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(jobID)))
+	return fmt.Sprintf("sch-%x", sum[:16])
+}
+
+// IsPrivateRun identifies an isolated schedule or webhook execution session.
+func IsPrivateRun(source, sessionID string) bool {
+	prefix := ""
+	switch source {
+	case SourceSchedule:
+		prefix = "sch-"
+	case SourceWebhook:
+		prefix = "wh-"
+	default:
+		return false
+	}
+	if len(sessionID) != len(prefix)+32 || !strings.HasPrefix(sessionID, prefix) {
+		return false
+	}
+	for _, digit := range sessionID[len(prefix):] {
+		if digit < '0' || digit > '9' {
+			if digit < 'a' || digit > 'f' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// PrivateScheduledTurn isolates a recurring run from every delivery address.
+func PrivateScheduledTurn(payload SessionTurnPayload) (SessionTurnPayload, error) {
+	if strings.TrimSpace(payload.JobID) == "" || strings.TrimSpace(payload.ScheduledJobID) == "" {
+		return SessionTurnPayload{}, fmt.Errorf("scheduled turn requires job and schedule ids")
+	}
+	var report *deliverycmd.Locator
+	if payload.ReportTo != nil {
+		canonical, err := locatorref.Parse(locatorref.Format(*payload.ReportTo))
+		if err != nil {
+			return SessionTurnPayload{}, fmt.Errorf("scheduled report locator: %w", err)
+		}
+		report = &canonical
+	}
+	sessionID := ScheduledExecutionSessionID(payload.JobID)
+	private, err := deliverycmd.NewLocator(SourceSchedule, sessionID,
+		fmt.Sprintf(`{"run_id":%q}`, sessionID), sessionID)
+	if err != nil {
+		return SessionTurnPayload{}, err
+	}
+	payload.Locator = private
+	payload.ReportTo = report
+	payload.Deliver = report != nil
+	if strings.TrimSpace(payload.UserID) == "" {
+		payload.UserID = "schedule-" + private.SessionID
+	}
+	return payload, nil
 }
 
 func NormalizeSessionDeliveryOptions(payload SessionTurnPayload) deliveryfmt.Options {

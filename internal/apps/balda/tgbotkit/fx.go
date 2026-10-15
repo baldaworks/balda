@@ -47,6 +47,12 @@ const (
 	webhookIdleTimeout        = 60 * time.Second
 )
 
+// HTTPCallbackReadTimeout preserves the standalone Telegram request read limit.
+const HTTPCallbackReadTimeout = webhookReadTimeout
+
+// HTTPCallbackWriteTimeout preserves the standalone Telegram response write limit.
+const HTTPCallbackWriteTimeout = webhookWriteTimeout
+
 var telegramAllowedUpdates = []string{"message", "callback_query"}
 
 // NewClient creates a new Telegram API client.
@@ -166,8 +172,34 @@ type webhookUpdateSource struct {
 	server   *http.Server
 	listener net.Listener
 	started  bool
+	shared   bool
 
 	secretEnabled bool
+}
+
+// SharedWebhookSource exposes Telegram's checked callback and defers remote
+// registration until Start is called after the shared listener is serving.
+type SharedWebhookSource interface {
+	runtime.UpdateSource
+	HTTPCallback() (http.Handler, string)
+	UseSharedListener() error
+}
+
+// HTTPCallback returns the existing token-checking webhook handler and legacy path.
+func (s *webhookUpdateSource) HTTPCallback() (http.Handler, string) {
+	return s.webhookSource, s.path
+}
+
+// UseSharedListener makes Start register Telegram without opening a local socket.
+// The caller must start the shared HTTP listener before calling Start.
+func (s *webhookUpdateSource) UseSharedListener() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.started {
+		return fmt.Errorf("telegram webhook source already started")
+	}
+	s.shared = true
+	return nil
 }
 
 func (s *webhookUpdateSource) UpdateChan() <-chan client.Update {
@@ -180,10 +212,17 @@ func (s *webhookUpdateSource) Start(ctx context.Context) error {
 		s.mu.Unlock()
 		return nil
 	}
+	shared := s.shared
 	s.mu.Unlock()
 
 	if err := s.webhookSource.Start(ctx); err != nil {
 		return err
+	}
+	if shared {
+		s.mu.Lock()
+		s.started = true
+		s.mu.Unlock()
+		return nil
 	}
 
 	listener, err := net.Listen("tcp", s.listenAddr)

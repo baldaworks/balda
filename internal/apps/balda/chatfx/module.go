@@ -4,7 +4,6 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/chatapp"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )
@@ -14,7 +13,7 @@ type ChatServiceParams struct {
 	fx.In
 
 	SessionManager *baldasession.Manager
-	Dispatcher     actortransport.Dispatcher
+	Dispatcher     chatapp.Dispatcher  `name:"command_ingress"`
 	Questions      *questions.Service  `optional:"true"`
 	SkillPinner    chatapp.SkillPinner `optional:"true"`
 	Logger         zerolog.Logger
@@ -39,5 +38,6 @@ func NewChatService(params ChatServiceParams) (chatapp.Handler, error) {
 var Module = fx.Module("balda_chatfx",
 	fx.Provide(
 		NewChatService,
+		NewIngressSessionAdapter,
 	),
 )

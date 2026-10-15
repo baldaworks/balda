@@ -9,7 +9,7 @@ endpoint, and Balda replies via the Zulip REST API.
 ```
 User → Zulip stream/topic or DM
            ↓  outgoing webhook POST
-       Balda HTTP endpoint (:8090/zulip/webhook)
+       Shared Balda HTTP endpoint (<base_path>/gateway/zulip/webhook)
            ↓  process message
        Zulip REST API (POST /api/v1/messages)
            ↓
@@ -32,7 +32,8 @@ Open **Settings → Bots** and click **Add a new bot**. Choose:
 - **Bot type**: Outgoing webhook
 - **Full name**: any name (e.g. `Balda`)
 - **Bot email**: becomes the bot's email address
-- **Endpoint URL**: `http://<your-host>:8090/zulip/webhook`
+- **Endpoint URL**: `<balda.http.base_url><balda.http.base_path>/gateway/zulip/webhook`
+  (for example, `https://assistant.example.com/balda/gateway/zulip/webhook`)
 
 After creation, copy two values:
 - **API key** — used by Balda to send messages back via the Zulip REST API
@@ -57,6 +58,10 @@ Or in `config.yaml`:
 
 ```yaml
 balda:
+  http:
+    listen_addr: "127.0.0.1:8095"
+    base_url: "https://assistant.example.com"
+    base_path: "/balda"
   zulip:
     bot_email: "my-bot@zulip.example.com"
     api_key: "<api-key>"
@@ -64,8 +69,6 @@ balda:
     webhook_token: "<token>"
     webhook:
       enabled: true
-      listen_addr: "0.0.0.0:8090"
-      path: "/zulip/webhook"
 ```
 
 ### 3. Authenticate as owner
@@ -119,16 +122,14 @@ while they are migrated separately.
 
 ## Network Access
 
-Balda's Zulip webhook server listens on `:8090` by default. Zulip must be able
-to reach this address. Options:
-
-- **Direct**: expose port 8090 on the host running Balda
-- **Reverse proxy**: front with nginx/caddy, terminate TLS, forward to `:8090`
-- **Tunnel**: use a tunnel service for development
-
-Set `balda.zulip.webhook.listen_addr` to change the bind address.
-If you customize `balda.zulip.webhook.path`, set it to an absolute HTTP path
-starting with `/`, for example `/zulip/webhook`.
+Balda uses one shared HTTP listener at `balda.http.listen_addr` for Zulip,
+other enabled callbacks, generic webhooks, and Backoffice. Its default bind is
+`127.0.0.1:8095`. Make the public callback URL reachable from Zulip, for
+example by forwarding it through a TLS-terminating reverse proxy to the shared
+listener. The callback path is always
+`<balda.http.base_path>/gateway/zulip/webhook`; with an empty base path it is
+`/gateway/zulip/webhook`. The old `balda.zulip.webhook.listen_addr` and
+`balda.zulip.webhook.path` settings do not change the shared bind or route.
 
 ## Differences from Telegram
 
@@ -148,12 +149,13 @@ starting with `/`, for example `/zulip/webhook`.
 - **Webhook token mismatch**: verify `balda.zulip.webhook_token` matches the
   token shown in the Zulip bot's outgoing webhook settings.
 - **Webhook returns 405 Method Not Allowed**: Zulip must send `POST` requests
-  to the configured webhook path. Balda replies with `Allow: POST` for other
+  to the canonical callback path. Balda replies with `Allow: POST` for other
   methods so proxies and probes can diagnose the mismatch.
 - **401 Unauthorized from Zulip API**: check `balda.zulip.bot_email` and
   `balda.zulip.api_key`.
-- **Bot not responding**: ensure Balda's `:8090` is reachable from the Zulip
-  server; check firewall and NAT rules.
+- **Bot not responding**: ensure Zulip can reach the public callback URL and
+  that its proxy forwards to `balda.http.listen_addr`; check firewall and NAT
+  rules.
 - **Bot responds to all messages, not just mentions**: outgoing webhook bots in
   Zulip fire on every message unless scoped by stream subscription; consider
   restricting the bot's stream access.
@@ -200,3 +202,19 @@ starting with `/`, for example `/zulip/webhook`.
 - **Bot ignores first message in a new topic**: this was a bug where the HTTP
   request context was cancelled before the goroutine finished processing.
   Fixed in `zulip_handler.go` by using `context.WithoutCancel`.
+
+## Connect an existing Backoffice account
+
+Select an existing user in Backoffice Access and use that user's Zulip binding
+form. Balda verifies its configured bot with `GET /api/v1/users/me`. Open that
+bot's direct conversation and send the generated `bind_<token>` message or
+`/start bind_<token>`. The invitation is single use and expires in 24 hours.
+Refresh bindings in Backoffice to see the confirmed sender. No owner token is
+needed, and the target user's role is preserved.
+
+Stream messages, wrong bot/realm invitations, malformed payloads, used or expired
+invitations and account conflicts grant no access. Invitation text is handled
+before command publication and conversational processing. The webhook adapter
+does not fetch provider history; quoted invitation text in later webhook
+messages is also quarantined. Retry unavailable bot identity from its own binding
+interface.

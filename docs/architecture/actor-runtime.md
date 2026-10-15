@@ -13,6 +13,7 @@ Status: active
 - Transport delivery context interruptions on waiting steering constituents remain retryable rather than falsely settled.
 - Retry/permanent failure handling is explicit and classified.
 - Product actors own Balda behavior: session turns, webhook/scheduled work routing, `/goalkeeper` execution, outbound delivery, and cancellation.
+- A webhook JobActor command replays an interrupted SessionActor publication with its stable admitted identity. Webhook and schedule jobs execute in transient private sessions; DeliveryActor receives only the final report addressed to the concrete locator frozen at admission.
 - CommandActor is registered independently at wildcard address `command:*`.
   Transport ingress publishes `balda.v1.cmd.command`; the runtime serializes
   it on `command:<session_id>`, and the actor routes by exact command name.
@@ -87,7 +88,7 @@ Status: active
 - Actor dispatch and lane execution are composed in `internal/apps/balda/execution/host.go`, backed by `github.com/baldaworks/go-actorlayer/engine.DispatchRuntime`. Balda keeps its runtime ownership explicit inside `execution` through focused files for the host loop (`host.go`), lane/address policy (`lane_policy.go`), heartbeat visibility policy (`heartbeat.go`), dead-letter side effects (`deadletter.go`), and delivery wrapping/context (`delivery_wrapper.go`).
 - Balda product actor definitions live in `internal/apps/balda/actors` using plain constructors and consumer-owned interfaces, and are composed and registered through `internal/apps/balda/actorsfx.Module`.
 - Queued session restoration and execution orchestration lives in `internal/apps/balda/sessionturn`; `sessionturnapp` composes its provider-turn executor adapter.
-- Conversational ingress lives in `internal/apps/balda/chatapp`, command publication in `internal/apps/balda/commandfx`, and webhook ingress in `internal/apps/balda/channel/webhook` and `internal/apps/balda/webhookapp`. Transport ingress adapters and concrete provider-runtime bindings live in `internal/apps/balda/handlersfx`.
+- Conversational ingress lives in `internal/apps/balda/chatapp`, command publication in `internal/apps/balda/commandfx`, and webhook HTTP receipt in `internal/apps/balda/channel/webhook`. `webhookapp` owns webhook admission and `webhookfx` binds its policy port to the HTTP adapter. Transport ingress adapters and concrete provider-runtime bindings live in `internal/apps/balda/handlersfx`.
 - Session/provider runtime ownership lives in `internal/apps/balda/agent` and `internal/apps/balda/session`; all sessions use the configured `balda.provider`.
 - Command delivery and settlement live in `internal/apps/balda/eventbus/nats` behind actorlayer `Source`/`Delivery` and actorlayer transport contracts.
 - The NATS adapter is the only concrete transport owner. It exposes small interfaces from one bus instance: actorlayer transport `Dispatcher`, `EventPublisher`, `EventConsumer`, `Drainer`, plus actorlayer `Source`.

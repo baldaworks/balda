@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 )
 
 type recordingActivator struct {
+	mu         sync.Mutex
 	compileErr error
 	publishErr error
 	compiled   [][]runtimecatalogcmd.Source
@@ -23,9 +25,18 @@ type recordingActivator struct {
 	release    chan struct{}
 }
 
+func (a *recordingActivator) LockCatalogMutation(ctx context.Context) (func(), error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	a.mu.Lock()
+	return a.mu.Unlock, nil
+}
+
 func (a *recordingActivator) PreparePluginCandidate(
 	_ context.Context,
 	sources []runtimecatalogcmd.Source,
+	_ *PreparedPluginSource,
 ) (runtimecatalogcmd.Snapshot, error) {
 	a.compiled = append(a.compiled, append([]runtimecatalogcmd.Source(nil), sources...))
 	if a.compileErr != nil {

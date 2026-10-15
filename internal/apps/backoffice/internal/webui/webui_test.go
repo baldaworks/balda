@@ -1,0 +1,378 @@
+package webui
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
+)
+
+func TestVerifyAssets(t *testing.T) {
+	t.Parallel()
+	if err := VerifyAssets(); err != nil {
+		t.Fatalf("VerifyAssets() error = %v", err)
+	}
+}
+
+func TestRendererFullFragmentAndHistoryContracts(t *testing.T) {
+	t.Parallel()
+	renderer, err := NewRenderer("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := Page{
+		Title: "Overview · Balda", Current: LocationOverview,
+		Navigation:   Navigation(usercmd.BackofficeCapabilities{Overview: true, Account: true}, LocationOverview),
+		Capabilities: []CapabilityCard{{ID: "telegram", Name: "Telegram", Mode: "webhook", Endpoint: "/telegram"}},
+	}
+	tests := []struct {
+		name        string
+		headers     map[string]string
+		wantFull    bool
+		wantNavItem string
+	}{
+		{name: "document", wantFull: true, wantNavItem: "Account"},
+		{name: "fragment", headers: map[string]string{"HX-Request": "true", "HX-Target": "main-content"}},
+		{name: "wrong target", headers: map[string]string{"HX-Request": "true", "HX-Target": "sidebar"}, wantFull: true},
+		{name: "history restore", headers: map[string]string{"HX-Request": "true", "HX-Target": "main-content", "HX-History-Restore-Request": "true"}, wantFull: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, "/overview", nil)
+			for key, value := range tt.headers {
+				request.Header.Set(key, value)
+			}
+			response := httptest.NewRecorder()
+			if err := renderer.Render(response, request, http.StatusOK, TemplateOverview, page); err != nil {
+				t.Fatal(err)
+			}
+			body := response.Body.String()
+			if strings.Count(body, `id="main-content"`) != 1 {
+				t.Fatalf("main-content count in %q = %d", body, strings.Count(body, `id="main-content"`))
+			}
+			full := strings.Contains(body, "<!doctype html>")
+			if full != tt.wantFull {
+				t.Fatalf("full document = %t, want %t: %q", full, tt.wantFull, body)
+			}
+			if !tt.wantFull && !strings.HasPrefix(body, "<title>Overview · Balda</title><main") {
+				t.Fatalf("fragment shape = %q", body)
+			}
+			if tt.wantNavItem != "" && !strings.Contains(body, tt.wantNavItem) {
+				t.Fatalf("authorized navigation %q absent", tt.wantNavItem)
+			}
+			if strings.Contains(body, "http://") || strings.Contains(body, "https://") {
+				t.Fatalf("rendered document has remote runtime asset: %q", body)
+			}
+		})
+	}
+}
+
+func TestRendererGroupsAuthorizedNavigationWithoutDuplicateAccount(t *testing.T) {
+	t.Parallel()
+	renderer, err := NewRenderer("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name         string
+		capabilities usercmd.BackofficeCapabilities
+		wantGroups   []string
+		absentGroups []string
+		wantLinks    []string
+		absentLinks  []string
+	}{
+		{
+			name: "administrator",
+			capabilities: usercmd.BackofficeCapabilities{
+				Overview: true, Account: true, ManageUsers: true,
+				ManageMCP: true, ManageSchedules: true, ManageWebhooks: true, ManageAliases: true, ManageFactMemory: true, ViewAudit: true,
+			},
+			wantGroups: []string{"Workspace", "Operations", "Administration"},
+			wantLinks:  []string{"/overview", "/mcp", "/schedules", "/webhooks", "/aliases", "/memory", "/access", "/audit"},
+		},
+		{
+			name:         "operator",
+			capabilities: usercmd.BackofficeCapabilities{Overview: true, Account: true},
+			wantGroups:   []string{"Workspace"},
+			absentGroups: []string{"Operations", "Administration"},
+			wantLinks:    []string{"/overview"},
+			absentLinks:  []string{"/mcp", "/schedules", "/webhooks", "/aliases", "/memory", "/access", "/audit"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			page := Page{Title: "Overview", Navigation: Navigation(tt.capabilities, LocationOverview)}
+			response := httptest.NewRecorder()
+			if err := renderer.Render(response, httptest.NewRequest(http.MethodGet, "/overview", nil), http.StatusOK, TemplateOverview, page); err != nil {
+				t.Fatal(err)
+			}
+			body := response.Body.String()
+			if got := strings.Count(body, `href="/account"`); got != 1 {
+				t.Errorf("Account link count = %d, want 1", got)
+			}
+			for _, group := range tt.wantGroups {
+				if !strings.Contains(body, ">"+group+"</h2>") {
+					t.Errorf("group heading %q is missing", group)
+				}
+			}
+			for _, group := range tt.absentGroups {
+				if strings.Contains(body, ">"+group+"</h2>") {
+					t.Errorf("empty group heading %q is present", group)
+				}
+			}
+			for _, href := range tt.wantLinks {
+				if !strings.Contains(body, `href="`+href+`"`) {
+					t.Errorf("navigation link %q is missing", href)
+				}
+			}
+			for _, href := range tt.absentLinks {
+				if strings.Contains(body, `href="`+href+`"`) {
+					t.Errorf("unauthorized navigation link %q is present", href)
+				}
+			}
+		})
+	}
+}
+
+func TestRendererPreservesErrorStatusAndDoesNotCommitRejectedModel(t *testing.T) {
+	t.Parallel()
+	renderer, err := NewRenderer("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/access", nil)
+	request.Header.Set("HX-Request", "true")
+	request.Header.Set("HX-Target", "main-content")
+	response := httptest.NewRecorder()
+	page := Page{Title: "Forbidden", Current: LocationAccess, Error: &ErrorView{Heading: "Forbidden", Message: "Access denied."}}
+	if err := renderer.Render(response, request, http.StatusForbidden, TemplateError, page); err != nil {
+		t.Fatal(err)
+	}
+	if response.Code != http.StatusForbidden || strings.Contains(response.Body.String(), "<!doctype") {
+		t.Fatalf("error response = %d %q", response.Code, response.Body.String())
+	}
+
+	rejected := httptest.NewRecorder()
+	if err := renderer.Render(rejected, request, http.StatusOK, "not-allowlisted", page); err == nil {
+		t.Fatal("Render(not-allowlisted) error = nil")
+	}
+	if rejected.Code != http.StatusOK || rejected.Body.Len() != 0 || len(rejected.Header()) != 0 {
+		t.Fatalf("rejected render committed response: code=%d headers=%v body=%q", rejected.Code, rejected.Header(), rejected.Body.String())
+	}
+}
+
+func TestRespondMutation(t *testing.T) {
+	t.Parallel()
+	ordinaryRequest := httptest.NewRequest(http.MethodPost, "/account", nil)
+	ordinary := httptest.NewRecorder()
+	if err := RespondMutation(ordinary, ordinaryRequest, LocationAccount); err != nil {
+		t.Fatal(err)
+	}
+	if ordinary.Code != http.StatusSeeOther || ordinary.Header().Get("Location") != "/account" {
+		t.Fatalf("ordinary mutation = %d %v", ordinary.Code, ordinary.Header())
+	}
+	htmxRequest := httptest.NewRequest(http.MethodPost, "/account", nil)
+	htmxRequest.Header.Set("HX-Request", "true")
+	htmxRequest.Header.Set("HX-Target", "main-content")
+	htmx := httptest.NewRecorder()
+	if err := RespondMutation(htmx, htmxRequest, LocationAccount); err != nil {
+		t.Fatal(err)
+	}
+	var location struct{ Path, Target, Swap string }
+	if err := json.Unmarshal([]byte(htmx.Header().Get("HX-Location")), &location); err != nil {
+		t.Fatal(err)
+	}
+	if htmx.Code != http.StatusNoContent || location.Path != "/account" || location.Target != "#main-content" || location.Swap != "outerHTML" || htmx.Body.Len() != 0 {
+		t.Fatalf("HTMX mutation = %d %v %q", htmx.Code, htmx.Header(), htmx.Body.String())
+	}
+}
+
+func TestSafeViewProjectionUsesOneBindingAndFamilyLevelSessions(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
+	user := usercmd.User{
+		ID: "user-1", DisplayName: "Admin", Username: "admin", Status: usercmd.StatusActive,
+		Role: usercmd.RoleAdministrator, Credential: usercmd.Credential{State: usercmd.CredentialStateTemporary, MustChange: true},
+		Binding: &usercmd.Binding{ChannelType: "telegram", Principal: "42", DisplayName: "Admin TG", Provenance: "legacy"},
+	}
+	view := ProjectUser(user)
+	if view.ID != user.ID || view.Role != "administrator" || view.Binding == nil || view.Binding.ChannelType != "telegram" || !view.MustChange {
+		t.Fatalf("ProjectUser() = %+v", view)
+	}
+	session := ProjectSession(usercmd.SessionSummary{
+		ID: "family-1", Assurance: usercmd.SessionAssuranceRestricted, CreatedAt: now,
+		LastSeenAt: now.Add(time.Minute), ExpiresAt: now.Add(time.Hour), Version: 3,
+	}, "family-1", now)
+	if session.ID != "family-1" || !session.Current || session.Assurance != "restricted" || session.Version != 3 {
+		t.Fatalf("ProjectSession() = %+v", session)
+	}
+}
+
+func TestAuditProjectionDoesNotRenderFreeFormReason(t *testing.T) {
+	t.Parallel()
+	renderer, err := NewRenderer("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	event := usercmd.AuditEvent{
+		ID: "event-selector-secret", Action: usercmd.AuditActionRefreshReplay, Outcome: usercmd.AuditOutcomeDenied,
+		ActorSessionID: "refresh-selector-secret", TargetType: usercmd.AuditTargetSession,
+		TargetID:   "11111111-1111-4111-8111-111111111111",
+		Reason:     "password=hunter2 refresh_selector=secret csrf=secret cookie=secret",
+		OccurredAt: time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC),
+	}
+	request := httptest.NewRequest(http.MethodGet, "/audit", nil)
+	response := httptest.NewRecorder()
+	if err := renderer.Render(response, request, http.StatusOK, TemplateAudit, Page{Title: "Audit", Audit: []AuditView{ProjectAudit(event)}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{"hunter2", "refresh_selector", "refresh-selector-secret", "event-selector-secret", "csrf=", "cookie="} {
+		if strings.Contains(response.Body.String(), secret) {
+			t.Fatalf("audit response leaked %q: %q", secret, response.Body.String())
+		}
+	}
+	if !strings.Contains(response.Body.String(), "11111111-1111-4111-8111-111111111111") {
+		t.Fatalf("safe family ID missing: %q", response.Body.String())
+	}
+	for _, element := range []string{"<table", "<th scope=\"col\">Time (UTC)</th>", "<th scope=\"col\">Action</th>", "<th scope=\"col\">Actor</th>", "<th scope=\"col\">Target</th>", "<th scope=\"col\">Outcome</th>", "<details>"} {
+		if !strings.Contains(response.Body.String(), element) {
+			t.Fatalf("audit table missing %q", element)
+		}
+	}
+}
+
+func TestAuditProjectionNamesManagedAliasOperation(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		action usercmd.AuditAction
+		label  string
+	}{
+		{usercmd.AuditActionAliasCreated, "Created alias"},
+		{usercmd.AuditActionAliasRetargeted, "Retargeted alias"},
+		{usercmd.AuditActionAliasDeleted, "Deleted alias"},
+	} {
+		view := ProjectAudit(usercmd.AuditEvent{Action: tt.action, TargetType: usercmd.AuditTargetAlias, TargetID: "main_chat"})
+		if view.ActionLabel != tt.label || view.TargetName != "Alias" || view.TargetID != "main_chat" {
+			t.Errorf("ProjectAudit(%s) = %+v", tt.action, view)
+		}
+	}
+	view := ProjectAudit(usercmd.AuditEvent{Action: usercmd.AuditActionAliasCreated, TargetType: usercmd.AuditTargetAlias, TargetID: "<script>"})
+	if view.TargetID != "[redacted]" {
+		t.Fatalf("untrusted alias target = %q", view.TargetID)
+	}
+}
+
+func TestEmbeddedAssetsServeOffline(t *testing.T) {
+	t.Parallel()
+	handler, err := Assets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/assets/vendor/htmx/htmx.min.js", nil)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || response.Body.Len() == 0 || response.Header().Get("Cache-Control") == "" {
+		t.Fatalf("asset response = %d %v (%d bytes)", response.Code, response.Header(), response.Body.Len())
+	}
+}
+
+func TestRenderedAssetsUseContentVersions(t *testing.T) {
+	t.Parallel()
+	renderer, err := NewRenderer("/balda")
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := Assets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	versioned, _, err := versionedAssets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	if err := renderer.Render(response, httptest.NewRequest(http.MethodGet, "/balda/login", nil),
+		http.StatusOK, TemplateLogin, Page{Title: "Login"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"app.css", "app.js"} {
+		assetPath := versioned["/assets/"+name]
+		if !strings.Contains(response.Body.String(), "/balda"+assetPath) {
+			t.Errorf("rendered page does not reference %s", assetPath)
+		}
+		assetResponse := httptest.NewRecorder()
+		handler.ServeHTTP(assetResponse, httptest.NewRequest(http.MethodGet, assetPath, nil))
+		contents, err := embedded.ReadFile("static/" + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if assetResponse.Code != http.StatusOK || assetResponse.Body.String() != string(contents) ||
+			assetResponse.Header().Get("Cache-Control") != "public, max-age=31536000, immutable" {
+			t.Errorf("versioned %s response: status=%d, cache=%q", name, assetResponse.Code,
+				assetResponse.Header().Get("Cache-Control"))
+		}
+	}
+}
+
+func TestShellShowsViewerIndependentlyOfInspectedUser(t *testing.T) {
+	t.Parallel()
+	renderer, err := NewRenderer("/balda")
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := Page{Title: "Access", ViewerUsername: "signed-in-admin", CSRFToken: "test-csrf", Navigation: Navigation(usercmd.BackofficeCapabilities{Overview: true, Account: true}, LocationAccount), User: &UserView{Username: "inspected-operator"}}
+	response := httptest.NewRecorder()
+	if err := renderer.Render(response, httptest.NewRequest(http.MethodGet, "/balda/access", nil), http.StatusOK, TemplateOverview, page); err != nil {
+		t.Fatal(err)
+	}
+	body := response.Body.String()
+	for _, want := range []string{`<html lang="en" data-bs-theme="dark" data-lte-color-mode="off">`, `aria-label="Toggle navigation"`, `<strong title="signed-in-admin">signed-in-admin</strong>`, `action="/balda/logout"`, `class="app-footer"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("shell missing %q", want)
+		}
+	}
+	if strings.Contains(body, "Signed in as <strong>inspected-operator</strong>") {
+		t.Error("shell exposes inspected user as viewer")
+	}
+}
+
+func TestMutationDetailPathSafety(t *testing.T) {
+	t.Parallel()
+	for _, location := range []string{"https://other.example/account", "//other.example/account", `/\other.example/account`} {
+		response := httptest.NewRecorder()
+		if err := RespondMutationPath(response, httptest.NewRequest(http.MethodPost, "/account", nil), location); err == nil || response.Header().Get("Location") != "" {
+			t.Fatalf("unsafe mutation path accepted: %q", location)
+		}
+	}
+	response := httptest.NewRecorder()
+	if err := RespondMutationPath(response, httptest.NewRequest(http.MethodPost, "/balda/access", nil), "/balda/access/users/user%2Fname"); err != nil || response.Header().Get("Location") != "/balda/access/users/user%2Fname" {
+		t.Fatalf("scoped user detail redirect = %v %v", response.Header(), err)
+	}
+}
+
+func TestAuditProjectionNamesFactOperation(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		action usercmd.AuditAction
+		label  string
+	}{
+		{usercmd.AuditActionMemoryFactCreated, "Created fact"},
+		{usercmd.AuditActionMemoryFactEdited, "Edited fact"},
+		{usercmd.AuditActionMemoryFactDeleted, "Deleted fact"},
+	} {
+		view := ProjectAudit(usercmd.AuditEvent{Action: tc.action, TargetType: usercmd.AuditTargetMemoryFact, TargetID: "42"})
+		if view.ActionLabel != tc.label || view.TargetName != "Fact" || view.TargetID != "42" {
+			t.Errorf("ProjectAudit(%s) = %+v", tc.action, view)
+		}
+	}
+	for _, id := range []string{"<script>", "01", "-1", "9223372036854775808"} {
+		view := ProjectAudit(usercmd.AuditEvent{Action: usercmd.AuditActionMemoryFactEdited, TargetType: usercmd.AuditTargetMemoryFact, TargetID: id})
+		if view.TargetID != redactedAuditID {
+			t.Fatalf("untrusted fact target=%q", view.TargetID)
+		}
+	}
+}

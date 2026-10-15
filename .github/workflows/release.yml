@@ -126,6 +126,7 @@ jobs:
           set -euo pipefail
 
           docker run --rm balda-release:test --help >/dev/null
+          docker run --rm balda-release:test backoffice --help >/dev/null
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -150,7 +151,7 @@ jobs:
             BUILD_DATE=${{ env.build_date }}
           labels: |
             org.opencontainers.image.title=balda
-            org.opencontainers.image.description=Balda binary carrier image for downstream bot builds
+            org.opencontainers.image.description=Balda application with embedded Backoffice
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.url=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}

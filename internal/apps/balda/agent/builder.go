@@ -47,7 +47,9 @@ const (
 )
 
 type Builder struct {
+	providerMCPSelections    map[string][]string
 	factory                  runtimeFactory
+	scopedFactory            ScopedRuntimeFactory
 	dedicatedFactory         dedicatedRuntimeFactory
 	normaCfg                 runtimeconfig.RuntimeConfig
 	workingDir               string
@@ -197,6 +199,7 @@ type BuilderParams struct {
 	fx.In
 
 	Factory                  *agentfactory.Factory
+	ScopedFactory            ScopedRuntimeFactory `optional:"true"`
 	NormaCfg                 runtimeconfig.RuntimeConfig
 	WorkingDir               string
 	WorkspaceEnabled         bool               `name:"balda_workspace_enabled"`
@@ -219,6 +222,7 @@ func NewBuilder(params BuilderParams) *Builder {
 	}
 	return &Builder{
 		factory:                  factory,
+		scopedFactory:            params.ScopedFactory,
 		dedicatedFactory:         dedicatedFactory,
 		normaCfg:                 params.NormaCfg,
 		workingDir:               strings.TrimSpace(params.WorkingDir),
@@ -302,7 +306,12 @@ func (b *Builder) buildRuntimeWithCapabilities(
 		MCPServerIDs:     b.buildAgentMCPServerIDs(agentName, bundledMCPServerIDs, extraMCPServerIDs),
 	}
 
-	ag, err := b.factory.Build(ctx, req)
+	var ag agent.Agent
+	if sessionFactory, ok := b.scopedFactory.(SessionRuntimeFactory); ok && instructionContext.SessionID != "" {
+		ag, err = sessionFactory.BuildSession(ctx, req, b.providerMCPSelections, instructionContext.SessionID)
+	} else {
+		ag, err = b.factory.Build(ctx, req)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("creating agent %q: %w", agentName, err)
 	}
@@ -376,6 +385,8 @@ func (b *Builder) BuildDedicatedRuntime(
 	}, nil
 }
 
+// CreateRuntimeSession retains the get-or-create behavior used by private
+// child runtimes whose lifecycle does not restore persistent chat sessions.
 func (b *Builder) CreateRuntimeSession(
 	ctx context.Context,
 	runtime *BuiltRuntime,
@@ -385,6 +396,136 @@ func (b *Builder) CreateRuntimeSession(
 	workspaceDir string,
 	sessionCtx RuntimeSessionContext,
 ) (adksession.Session, error) {
+	req, err := b.runtimeSessionRequest(runtime, agentName, userID, sessionID, workspaceDir)
+	if err != nil {
+		return nil, err
+	}
+	state, err := b.buildSessionState(ctx, agentName, workspaceDir, sessionCtx)
+	if err != nil {
+		return nil, err
+	}
+	req.State = state
+	getResp, getErr := runtime.SessionSvc.Get(ctx, &adksession.GetRequest{
+		AppName: req.AppName, UserID: req.UserID, SessionID: req.SessionID,
+	})
+	if getErr == nil {
+		if updater, ok := runtime.SessionSvc.(interface {
+			UpdateSessionState(
+				ctx context.Context,
+				appName, userID, sessionID string,
+				state map[string]any,
+			) (adksession.Session, error)
+		}); ok {
+			return updater.UpdateSessionState(ctx, req.AppName, req.UserID, req.SessionID, state)
+		}
+		return getResp.Session, nil
+	}
+	resp, err := runtime.SessionSvc.Create(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("creating session: %w", err)
+	}
+	return resp.Session, nil
+}
+
+// OpenExistingRuntimeSession opens an existing ADK session without creating one.
+func (b *Builder) OpenExistingRuntimeSession(
+	ctx context.Context,
+	runtime *BuiltRuntime,
+	agentName string,
+	userID string,
+	sessionID string,
+	workspaceDir string,
+	sessionCtx RuntimeSessionContext,
+) (adksession.Session, error) {
+	req, err := b.runtimeSessionRequest(runtime, agentName, userID, sessionID, workspaceDir)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := runtime.SessionSvc.Get(ctx, &adksession.GetRequest{
+		AppName:   req.AppName,
+		UserID:    req.UserID,
+		SessionID: req.SessionID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("opening existing session: %w", err)
+	}
+	if resp == nil || resp.Session == nil {
+		return nil, fmt.Errorf("opening existing session: empty response")
+	}
+	expectedCWD, err := resolveSessionWorkspaceDir(workspaceDir)
+	if err != nil {
+		return nil, err
+	}
+	expected := map[string]string{
+		sessionstate.CWDKey:        expectedCWD,
+		BaldaSessionIDStateKey:     strings.TrimSpace(sessionCtx.BaldaSessionID),
+		BaldaSessionBranchStateKey: b.normalizedSessionBranch(sessionCtx.SessionBranch),
+	}
+	for key, want := range expected {
+		got, err := sessionStateString(resp.Session, key)
+		if err != nil {
+			return nil, fmt.Errorf("opening existing session: %w", err)
+		}
+		if got != want {
+			return nil, fmt.Errorf("opening existing session: state %q = %q, want %q", key, got, want)
+		}
+	}
+	if _, err := sessionStateString(resp.Session, BaldaRepoBranchAtStartStateKey); err != nil {
+		return nil, fmt.Errorf("opening existing session: %w", err)
+	}
+	return resp.Session, nil
+}
+
+func sessionStateString(sess adksession.Session, key string) (string, error) {
+	value, err := sess.State().Get(key)
+	if err != nil {
+		return "", fmt.Errorf("required state %q: %w", key, err)
+	}
+	stringValue, ok := value.(string)
+	if !ok {
+		return "", fmt.Errorf("required state %q has type %T, want string", key, value)
+	}
+	return stringValue, nil
+}
+
+// CreateFreshRuntimeSession creates a new ADK session without opening an existing one.
+func (b *Builder) CreateFreshRuntimeSession(
+	ctx context.Context,
+	runtime *BuiltRuntime,
+	agentName string,
+	userID string,
+	sessionID string,
+	workspaceDir string,
+	sessionCtx RuntimeSessionContext,
+) (adksession.Session, error) {
+	req, err := b.runtimeSessionRequest(runtime, agentName, userID, sessionID, workspaceDir)
+	if err != nil {
+		return nil, err
+	}
+	state, err := b.buildSessionState(ctx, agentName, workspaceDir, sessionCtx)
+	if err != nil {
+		return nil, err
+	}
+	if len(state) > 0 {
+		req.State = state
+	}
+	sess, err := runtime.SessionSvc.Create(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("creating session: %w", err)
+	}
+	if sess == nil || sess.Session == nil {
+		return nil, fmt.Errorf("creating session: empty response")
+	}
+	return sess.Session, nil
+}
+
+func (b *Builder) runtimeSessionRequest(
+	runtime *BuiltRuntime,
+	agentName string,
+	userID string,
+	sessionID string,
+	workspaceDir string,
+) (*adksession.CreateRequest, error) {
 	if runtime == nil {
 		return nil, fmt.Errorf("runtime is required")
 	}
@@ -403,42 +544,16 @@ func (b *Builder) CreateRuntimeSession(
 	if strings.TrimSpace(workspaceDir) == "" {
 		return nil, fmt.Errorf("workspace dir is required")
 	}
-	state, err := b.buildSessionState(ctx, agentName, workspaceDir, sessionCtx)
-	if err != nil {
-		return nil, err
-	}
 
 	appName := strings.TrimSpace(runtime.AppName)
 	if appName == "" {
 		appName = defaultRuntimeAppName
 	}
-	req := &adksession.CreateRequest{
+	return &adksession.CreateRequest{
 		AppName:   appName,
 		UserID:    strings.TrimSpace(userID),
 		SessionID: strings.TrimSpace(sessionID),
-	}
-	if len(state) > 0 {
-		req.State = state
-	}
-	getResp, getErr := runtime.SessionSvc.Get(ctx, &adksession.GetRequest{
-		AppName:   req.AppName,
-		UserID:    req.UserID,
-		SessionID: req.SessionID,
-	})
-	if getErr == nil {
-		if updater, ok := runtime.SessionSvc.(interface {
-			UpdateSessionState(ctx context.Context, appName string, userID string, sessionID string, state map[string]any) (adksession.Session, error)
-		}); ok {
-			return updater.UpdateSessionState(ctx, req.AppName, req.UserID, req.SessionID, state)
-		}
-		return getResp.Session, nil
-	}
-	sess, err := runtime.SessionSvc.Create(ctx, req)
-	if err != nil {
-		return nil, fmt.Errorf("creating session: %w", err)
-	}
-
-	return sess.Session, nil
+	}, nil
 }
 
 func (b *Builder) currentRepoBranch(ctx context.Context) string {
@@ -594,14 +709,7 @@ func (b *Builder) buildSessionState(ctx context.Context, agentName, workspaceDir
 	if baldaSessionID == "" {
 		return nil, fmt.Errorf("balda session id is required")
 	}
-	sessionBranch := strings.TrimSpace(sessionCtx.SessionBranch)
-	if sessionBranch == "" {
-		if b.workspaceEnabled {
-			sessionBranch = workspaceBranchUnknown
-		} else {
-			sessionBranch = workspaceBranchNA
-		}
-	}
+	sessionBranch := b.normalizedSessionBranch(sessionCtx.SessionBranch)
 	repoBranchAtStart := b.currentRepoBranch(ctx)
 
 	var state map[string]any
@@ -621,6 +729,17 @@ func (b *Builder) buildSessionState(ctx context.Context, agentName, workspaceDir
 	state[BaldaSessionBranchStateKey] = sessionBranch
 	state[BaldaRepoBranchAtStartStateKey] = repoBranchAtStart
 	return b.addMemorySnapshot(ctx, state)
+}
+
+func (b *Builder) normalizedSessionBranch(branch string) string {
+	trimmed := strings.TrimSpace(branch)
+	if trimmed != "" {
+		return trimmed
+	}
+	if b.workspaceEnabled {
+		return workspaceBranchUnknown
+	}
+	return workspaceBranchNA
 }
 
 func (b *Builder) buildRootRuntimeInstruction(ctx context.Context, agentName, workspaceDir string, projection SkillMetadataProjection, input SessionInstructionContext) (string, error) {

@@ -30,8 +30,8 @@ balda:
 
     # Optional webhook configuration
     webhook:
-      # Register outgoing Telegram webhook URL.
-      # Required when webhook.enabled=true.
+      # Optional Telegram registration URL. When empty in webhook mode, use
+      # balda.http.base_url + balda.http.base_path + /gateway/telegram/webhook.
       url: ""
       # Telegram webhook auth token protection.
       # Required when webhook.enabled=true.
@@ -39,9 +39,9 @@ balda:
       # Enable local HTTP endpoint for incoming Telegram webhook updates.
       # If false, balda uses polling mode.
       enabled: false
-      # Local bind address for webhook endpoint.
+      # Legacy bind setting; balda.http.listen_addr owns the shared socket.
       listen_addr: "0.0.0.0:8080"
-      # Local HTTP path that receives webhook updates.
+      # Obsolete path setting; shared HTTP uses <base_path>/gateway/telegram/webhook.
       path: "/telegram/webhook"
 
   zulip:
@@ -60,15 +60,43 @@ balda:
     webhook_token: ""
     webhook:
       # Enable inbound Zulip webhook receiver.
-      # Zulip outgoing webhook bot must target: http://<host>:8090/zulip/webhook
+      # New callbacks use <base_path>/gateway/zulip/webhook on the shared listener.
       # Set via BALDA_ZULIP_WEBHOOK_ENABLED env var
       enabled: false
-      # Local bind address for Zulip webhook endpoint.
+      # Legacy bind setting; balda.http.listen_addr owns the shared socket.
       # Set via BALDA_ZULIP_WEBHOOK_LISTEN_ADDR env var
       listen_addr: "0.0.0.0:8090"
-      # HTTP path that receives Zulip webhook payloads.
+      # Obsolete path setting; shared HTTP uses <base_path>/gateway/zulip/webhook.
       # Set via BALDA_ZULIP_WEBHOOK_PATH env var
       path: "/zulip/webhook"
+
+  mattermost:
+    # Mattermost slash commands arrive over shared HTTP, separate from
+    # websocket events. Register /gateway/mattermost/commands beneath the
+    # configured base_path with the token the integration shows you.
+    commands_enabled: false
+    # Legacy bind setting; balda.http.listen_addr owns the shared socket.
+    commands_listen_addr: ":8093"
+    # Obsolete path setting; shared HTTP uses <base_path>/gateway/mattermost/commands.
+    commands_path: "/mattermost/commands"
+    # Mattermost slash-command token used to authenticate incoming requests.
+    commands_token: ""
+    # Mattermost bot-account transport over the v4 websocket/REST API.
+    # Enable to connect this bot account and receive channel/DM events.
+    # Set via BALDA_MATTERMOST_ENABLED env var
+    enabled: false
+    # Mattermost server base URL (e.g. https://mm.example.com).
+    # Set via BALDA_MATTERMOST_SERVER_URL env var
+    server_url: ""
+    # Bot account personal access token.
+    # Set via BALDA_MATTERMOST_TOKEN env var
+    token: ""
+    # Bot account user id, used to ignore the bot's own posts.
+    # Set via BALDA_MATTERMOST_BOT_USER_ID env var
+    bot_user_id: ""
+    # Bot username, used for @mention detection in channels.
+    # Set via BALDA_MATTERMOST_BOT_USERNAME env var
+    bot_username: ""
 
   slack:
     # Enable inbound Slack HTTP receiver.
@@ -81,12 +109,11 @@ balda:
     # Slack signing secret used to verify incoming Events API and slash requests.
     # Set via BALDA_SLACK_SIGNING_SECRET env var
     signing_secret: ""
-    # Local HTTP bind address for Slack endpoints.
+    # Legacy bind setting; balda.http.listen_addr owns the shared socket.
     listen_addr: "0.0.0.0:8091"
-    # Local HTTP path for Slack Events API requests.
+    # Retained Slack Events setting; Slack Agent uses agent.events_path.
     events_path: "/slack/events"
-    # Local HTTP path for /balda slash requests. Slack Agent routes these into
-    # the shared transport-neutral command handler.
+    # Obsolete path setting; shared HTTP uses <base_path>/gateway/slack/commands.
     commands_path: "/slack/commands"
     # If true, process private channel message events when the Slack app has
     # groups:history. Public channel and DM support does not require this.
@@ -95,9 +122,9 @@ balda:
       # Enable separate Slack AI Agents ingress/runtime wiring.
       # This is distinct from balda.slack.enabled, which keeps the current Slack chat mode.
       enabled: false
-      # Local HTTP bind address for Slack agent events.
+      # Legacy bind setting; balda.http.listen_addr owns the shared socket.
       listen_addr: "0.0.0.0:8092"
-      # Local HTTP path for Slack agent ingress requests.
+      # Obsolete path setting; shared HTTP uses <base_path>/gateway/slack/events.
       events_path: "/slack/agent/events"
       # Optional richer UX toggles. These do not affect current slack_chat behavior.
       enable_streaming: false
@@ -106,16 +133,18 @@ balda:
   webhooks:
     # Enable generic inbound webhook ingestion.
     enabled: false
-    # Local bind address for inbound webhook endpoint.
+    # Legacy bind setting; balda.http.listen_addr owns the shared socket.
     listen_addr: "127.0.0.1:8090"
     # Route table for inbound webhook events.
-    # Each route binds:
-    # - path: incoming webhook path
+    # Keys are immutable URL slugs: ^[a-z0-9][a-z0-9_-]{0,63}$.
+    # Every config and managed route uses <balda.http.base_path>/webhooks/<name>.
+    # Do not declare path; even disabled declarations fail startup if it is present.
+    # Each route defines:
     # - prompt_template: Go text/template rendered with request data
-    # - envelope: explicit destination and mode
-    #   - target/key: destination address (default alias/owner)
-    #   - mode: job|session (default job)
-    #   - report_to: optional destination for progress/final replies
+    # - envelope: optional final report destination
+    #   - report_to.target: locator|managed_alias|alias
+    #   - report_to.key: public locator or managed/role alias name
+    #   - ack_on_delivery: wait for a sent final report receipt
     # - auth: route auth policy
     #   - type: none|header
     #   - header/value: required for type=header
@@ -126,15 +155,14 @@ balda:
     # Example:
     # routes:
     #   release_notes:
-    #     path: "/webhook/release-notes"
     #     prompt_template: |
     #       Request {{.RequestID}} on {{.Path}}
     #       Body:
     #       {{.RawBody}}
     #     envelope:
-    #       target: "alias"
-    #       key: "owner"
-    #       mode: "task"
+    #       report_to:
+    #         target: "managed_alias"
+    #         key: "main_chat"
     #     auth:
     #       type: "header"
     #       header: "X-Webhook-Token"
@@ -168,6 +196,28 @@ balda:
       user: balda
       password: ""
       sslmode: disable
+
+  # One local HTTP bind and one public origin/prefix for sibling
+  # /backoffice, /webhooks, and /gateway areas. Values fall back to the old
+  # Backoffice address settings when omitted.
+  http:
+    listen_addr: ""
+    base_url: ""
+    base_path: null
+
+  # Backoffice starts inside `balda start` after schema/data migrations and user
+  # readiness, using the same database and canonical users as the bot.
+  backoffice:
+    # Legacy fallback address fields. Use balda.http.* for new deployments.
+    # A non-loopback shared bind requires an HTTPS public origin.
+    listen_addr: "127.0.0.1:8095"
+    public_url: "http://127.0.0.1:8095"
+    # Opaque access credentials are short-lived. Single-use rotating refresh
+    # credentials renew the session-family deadline on successful refresh.
+    access_token_ttl: "15m"
+    refresh_token_ttl: "720h"
+    ceremony_ttl: "5m"
+    qa_ui: false
 
   sessions:
     # Conversation/session persistence:
@@ -247,6 +297,8 @@ balda:
     port: -1
     max_memory: "256mb"
     max_store: "2gb"
+    # Opt in after inspecting retained stream bytes; legacy limits stay unchanged by default.
+    bounded_streams: false
     sync_always: false
     expose_monitoring: false
 
@@ -287,6 +339,8 @@ balda:
   # Effective MCP IDs are: bundled default `balda` + agent mcp_servers + balda.mcp_servers.
   # Use the built-in `balda` server ID for Balda workspace/state tools.
   mcp_servers: []
+  mcp_management:
+    credential_key: ""
 
   # Optional balda-wide global instruction applied to all sessions.
   # Applied before runtime.providers.<provider_id>.system_instructions when both are set.

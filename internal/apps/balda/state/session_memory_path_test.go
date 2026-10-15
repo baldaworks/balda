@@ -36,7 +36,7 @@ func TestSessionMemoryPaths_GroupBackendsUnderStateRoot(t *testing.T) {
 }
 
 func TestMigrateSessionMemoryLayout_MovesDirectoriesAndIsIdempotent(t *testing.T) {
-	stateDir := t.TempDir()
+	stateDir := resolvedTempDir(t)
 	legacyCanonical := filepath.Join(stateDir, legacySessionMemoryCanonicalName)
 	legacyProjection := filepath.Join(stateDir, legacySessionMemoryProjectionName)
 	if err := os.MkdirAll(legacyCanonical, 0o700); err != nil {
@@ -75,7 +75,7 @@ func TestMigrateSessionMemoryLayout_MovesDirectoriesAndIsIdempotent(t *testing.T
 }
 
 func TestMigrateSessionMemoryLayout_FreshStateDoesNotCreateRoot(t *testing.T) {
-	stateDir := t.TempDir()
+	stateDir := resolvedTempDir(t)
 	if err := MigrateSessionMemoryLayout(stateDir); err != nil {
 		t.Fatalf("MigrateSessionMemoryLayout() error = %v", err)
 	}
@@ -94,7 +94,7 @@ func TestMigrateSessionMemoryLayout_FreshStateDoesNotCreateRoot(t *testing.T) {
 }
 
 func TestMigrateSessionMemoryLayout_ConflictsFailClosed(t *testing.T) {
-	stateDir := t.TempDir()
+	stateDir := resolvedTempDir(t)
 	paths := SessionMemoryPaths(stateDir)
 	legacyCanonical := filepath.Join(stateDir, legacySessionMemoryCanonicalName)
 	if err := os.MkdirAll(legacyCanonical, 0o700); err != nil {
@@ -120,7 +120,7 @@ func TestMigrateSessionMemoryLayout_ConflictsFailClosed(t *testing.T) {
 }
 
 func TestMigrateSessionMemoryLayout_InvalidLegacyMetadataFailsClosed(t *testing.T) {
-	stateDir := t.TempDir()
+	stateDir := resolvedTempDir(t)
 	legacyCanonical := filepath.Join(stateDir, legacySessionMemoryCanonicalName)
 	if err := os.WriteFile(legacyCanonical, []byte("not a directory"), 0o600); err != nil {
 		t.Fatalf("write invalid legacy canonical path: %v", err)
@@ -143,7 +143,7 @@ func TestMigrateSessionMemoryLayout_SymbolicLinkFailsClosed(t *testing.T) {
 			name = "existing-leaf"
 		}
 		t.Run(name, func(t *testing.T) {
-			stateDir := t.TempDir()
+			stateDir := resolvedTempDir(t)
 			outsideDir := t.TempDir()
 			root := SessionMemoryRootPath(stateDir)
 			if withTarget {
@@ -179,6 +179,18 @@ func TestMigrateSessionMemoryLayout_SymbolicLinkFailsClosed(t *testing.T) {
 			}
 		})
 	}
+}
+
+// resolvedTempDir returns a temporary directory without symlink components.
+// macOS exposes its standard temporary directory under /var, a symlink to
+// /private/var, while this package deliberately rejects symlinked state paths.
+func resolvedTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolve temporary directory: %v", err)
+	}
+	return dir
 }
 
 func assertPathMissing(t *testing.T, path string) {

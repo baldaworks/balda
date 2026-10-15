@@ -13,6 +13,29 @@ import (
 	"testing"
 )
 
+var sqliteV36Tables = []string{
+	"balda_app_kv",
+	"balda_session_metadata",
+	"balda_telegram_offsets",
+	"balda_collaborators",
+	"balda_runtime_app_state",
+	"balda_runtime_user_state",
+	"balda_runtime_sessions",
+	"balda_runtime_events",
+	"balda_scheduled_jobs",
+	"execution_jobs",
+	"execution_job_events",
+	"execution_job_event_outbox",
+	"execution_delivery_outbox",
+	"execution_agent_steps",
+	"balda_questions",
+	"session_memory_ingress_outbox",
+	"session_memory_ingress_audit",
+	"balda_plugin_revisions",
+	"balda_plugin_installs",
+	"balda_plugin_activation_intents",
+}
+
 func TestDatabaseDefaultPreservesExistingSQLite(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -30,7 +53,8 @@ func TestDatabaseDefaultPreservesExistingSQLite(t *testing.T) {
 		t.Fatal(err)
 	}
 	seedSQLiteCompatibilityFixture(t, db)
-	before := snapshotSQLiteFixture(t, db)
+	columns := sqliteFixtureColumns(t, db)
+	before := snapshotSQLiteFixture(t, db, columns)
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -58,12 +82,13 @@ func TestDatabaseDefaultPreservesExistingSQLite(t *testing.T) {
 	if !os.SameFile(originalFile, reopenedFile) {
 		t.Fatal("opening the default database replaced the existing file")
 	}
-	after := snapshotSQLiteFixture(t, p.(*sqliteProvider).db)
+	after := snapshotSQLiteFixture(t, p.(*sqliteProvider).db, columns)
 	if !reflect.DeepEqual(before, after) {
-		t.Fatal("opening the default database changed existing rows or migration history")
+		t.Fatal("opening the default database changed existing rows")
 	}
-	user, found, err := p.Collaborators().GetCollaborator(t.Context(), "fixture")
-	if err != nil || !found || user.UserID != "fixture" {
+	assertRequiredBaldaSQLiteTables(t, t.Context(), p.(*sqliteProvider).db)
+	user, found, err := p.Collaborators().GetCollaborator(t.Context(), "202")
+	if err != nil || !found || user.UserID != "202" {
 		t.Fatalf("existing collaborator was not preserved: found=%t err=%v", found, err)
 	}
 	var foreignKeys int
@@ -89,7 +114,7 @@ func seedSQLiteCompatibilityFixture(t *testing.T, db *sql.DB) {
 	if _, err := tx.ExecContext(t.Context(), "PRAGMA defer_foreign_keys=ON"); err != nil {
 		t.Fatal(err)
 	}
-	for _, table := range requiredBaldaStateTables {
+	for _, table := range sqliteV36Tables {
 		rows, err := tx.QueryContext(t.Context(), "PRAGMA table_info("+table+")")
 		if err != nil {
 			t.Fatal(err)
@@ -118,12 +143,19 @@ func seedSQLiteCompatibilityFixture(t *testing.T, db *sql.DB) {
 			t.Fatalf("seed %s: %v", table, err)
 		}
 	}
+	if _, err := tx.ExecContext(t.Context(), `INSERT INTO balda_app_kv (namespace, key, value_json, updated_at)
+		VALUES ('balda.app', 'owner', '{"user_id":101}', '2026-09-18T00:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func sqliteFixtureValue(table, column, kind string) any {
+	if table == "balda_collaborators" && column == "user_id" {
+		return "202"
+	}
 	if kind == "INTEGER" {
 		return 1
 	}
@@ -139,16 +171,38 @@ func sqliteFixtureValue(table, column, kind string) any {
 	return "fixture"
 }
 
-func snapshotSQLiteFixture(t *testing.T, db *sql.DB) map[string][]string {
+func sqliteFixtureColumns(t *testing.T, db *sql.DB) map[string][]string {
 	t.Helper()
-	snapshot := make(map[string][]string)
-	tables := append([]string{"goose_db_version"}, requiredBaldaStateTables...)
-	for _, table := range tables {
-		rows, err := db.QueryContext(t.Context(), "SELECT * FROM "+table+" ORDER BY 1") //nolint:unqueryvet // The compatibility snapshot must compare every stored column.
+	columnsByTable := make(map[string][]string, len(sqliteV36Tables))
+	for _, table := range sqliteV36Tables {
+		rows, err := db.QueryContext(t.Context(), "SELECT * FROM "+table+" LIMIT 0") //nolint:unqueryvet // Capture the fixture's pre-upgrade columns.
 		if err != nil {
 			t.Fatal(err)
 		}
 		columns, err := rows.Columns()
+		if err != nil {
+			_ = rows.Close()
+			t.Fatal(err)
+		}
+		if err := rows.Close(); err != nil {
+			t.Fatal(err)
+		}
+		columnsByTable[table] = columns
+	}
+	return columnsByTable
+}
+
+func snapshotSQLiteFixture(t *testing.T, db *sql.DB, columnsByTable map[string][]string) map[string][]string {
+	t.Helper()
+	snapshot := make(map[string][]string)
+	for _, table := range sqliteV36Tables {
+		columns := columnsByTable[table]
+		query := `SELECT "` + strings.Join(columns, `","`) + `" FROM ` + table + " ORDER BY 1"
+		rows, err := db.QueryContext(t.Context(), query) //nolint:unqueryvet // Compare every pre-upgrade column, excluding columns added by migrations.
+		if err != nil {
+			t.Fatal(err)
+		}
+		columns, err = rows.Columns()
 		if err != nil {
 			t.Fatal(err)
 		}

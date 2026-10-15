@@ -16,8 +16,11 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/commandfx"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpbridge"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpfx"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpruntime"
+	"github.com/baldaworks/balda/internal/apps/balda/pluginapp"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalog"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
@@ -27,25 +30,31 @@ import (
 
 const builtinRevisionSeed = "balda-builtin-commands-v1"
 const snapshotKeyPrefix = "runtime_catalog_snapshot:"
+const transportStreamableHTTP = "streamable-http"
 
 // Runtime owns compilation, retention, scope overlays, and projection fanout.
 type Runtime struct {
-	mu            sync.Mutex
-	stateDir      string
-	agentSkillDir string
-	codexSkillDir string
-	compiler      *runtimecatalog.Compiler
-	store         *runtimecatalog.Store
-	loader        *runtimecatalog.SourceLoader
-	archive       *runtimecatalog.RevisionArchive
-	reader        *runtimecatalog.SkillReader
-	plugins       baldastate.PluginStore
-	sessions      baldastate.SessionStore
-	kv            baldastate.KVStore
-	builtin       runtimecatalogcmd.Source
-	configuredMCP []runtimecatalogcmd.Source
-	mcp           *mcpruntime.Reconciler
-	ads           *commandfx.AdvertisementProjector
+	mutation                   sync.Mutex
+	mu                         sync.Mutex
+	stateDir                   string
+	agentSkillDir              string
+	codexSkillDir              string
+	compiler                   *runtimecatalog.Compiler
+	store                      *runtimecatalog.Store
+	loader                     *runtimecatalog.SourceLoader
+	archive                    *runtimecatalog.RevisionArchive
+	reader                     *runtimecatalog.SkillReader
+	plugins                    baldastate.PluginStore
+	managedMCP                 baldastate.MCPStore
+	credentials                *mcpmanage.Service
+	sessions                   baldastate.SessionStore
+	kv                         baldastate.KVStore
+	builtin                    runtimecatalogcmd.Source
+	configuredMCP              []runtimecatalogcmd.Source
+	configuredUpgradeRevisions map[runtimecatalogcmd.ContributionID]runtimecatalogcmd.RevisionID
+	mcp                        *mcpruntime.Reconciler
+	mcpCredentials             mcpCredentialHealth
+	ads                        *commandfx.AdvertisementProjector
 }
 
 // NewRuntime creates the application catalog without publishing mutable state.
@@ -58,6 +67,8 @@ func NewRuntime(
 	configured map[string]agentconfig.MCPServerConfig,
 	registry *mcpregistry.MapRegistry,
 	commands *commandcmd.Registry,
+	credentials *mcpmanage.Service,
+	bridge *mcpbridge.Bridge,
 ) (*Runtime, error) {
 	stateDir = strings.TrimSpace(stateDir)
 	if stateDir == "" || provider == nil || registry == nil || commands == nil {
@@ -77,8 +88,12 @@ func NewRuntime(
 	}
 	runtime := &Runtime{
 		stateDir: stateDir, agentSkillDir: strings.TrimSpace(agentSkillDir), codexSkillDir: strings.TrimSpace(codexSkillDir), compiler: runtimecatalog.NewCompiler(), store: runtimecatalog.NewStore(),
-		loader: loader, archive: archive, reader: reader, plugins: provider.Plugins(), sessions: provider.Sessions(), kv: provider.AppKV(),
-		builtin: builtinSource(advertisements), configuredMCP: configuredMCPSources(configured),
+		loader: loader, archive: archive, reader: reader, plugins: provider.Plugins(), managedMCP: provider.MCP(), sessions: provider.Sessions(), kv: provider.AppKV(),
+		builtin: builtinSource(advertisements), configuredMCP: configuredMCPSources(configured), credentials: credentials,
+		configuredUpgradeRevisions: configuredUpgradeRevisions(configured),
+	}
+	if bridge != nil {
+		runtime.mcpCredentials = bridge
 	}
 	pluginResolver, err := mcpruntime.NewPluginResolver(archive, runtime, nil, mcpruntime.PluginPolicy{})
 	if err != nil {
@@ -88,9 +103,13 @@ func NewRuntime(
 	if err != nil {
 		return nil, err
 	}
+	managedResolver := &mcpfx.ManagedResolver{Store: provider.MCP(), Bridge: bridge}
+	if credentials != nil {
+		managedResolver.Values = credentials
+	}
 	runtime.mcp, err = mcpruntime.New(
-		mcpruntime.RoutedResolver{Configured: configuredMCPResolver(configured), Plugin: pluginResolver},
-		mcpfx.NewClientLauncher(), projector, mcpruntime.Limits{},
+		mcpruntime.RoutedResolver{Configured: configuredLaunchResolver{catalog: runtime, bridge: bridge, current: configuredMCPResolver(configured), fallback: mcpfx.ConfiguredResolver{Static: mcpfx.BridgeResolver{Resolver: configuredUpgradeResolver{catalog: runtime, current: configuredMCPResolver(configured)}, Bridge: bridge}, Retained: managedResolver}}, Managed: managedResolver, Plugin: pluginResolver},
+		mcpfx.NewClientLauncher(), mcpfx.BridgeProjector{Projector: projector, Bridge: bridge}, mcpruntime.Limits{},
 	)
 	if err != nil {
 		return nil, err
@@ -125,11 +144,28 @@ func (r *Runtime) MCP() *mcpruntime.Reconciler { return r.mcp }
 func (r *Runtime) Advertisements() *commandfx.AdvertisementProjector { return r.ads }
 
 // PreparePluginCandidate compiles all host sources and enabled plugin sources.
-func (r *Runtime) PreparePluginCandidate(ctx context.Context, plugins []runtimecatalogcmd.Source) (runtimecatalogcmd.Snapshot, error) {
+func (r *Runtime) PreparePluginCandidate(ctx context.Context, plugins []runtimecatalogcmd.Source, prepared *pluginapp.PreparedPluginSource) (runtimecatalogcmd.Snapshot, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if prepared != nil {
+		if err := validatePreparedPlugin(plugins, *prepared); err != nil {
+			return runtimecatalogcmd.Snapshot{}, err
+		}
+		if err := r.retainPreparedPlugin(ctx, *prepared); err != nil {
+			return runtimecatalogcmd.Snapshot{}, err
+		}
+	}
 	sources := []runtimecatalogcmd.Source{r.builtin}
-	sources = append(sources, r.configuredMCP...)
+	configured, err := r.currentConfiguredMCPSources(ctx)
+	if err != nil {
+		return runtimecatalogcmd.Snapshot{}, err
+	}
+	sources = append(sources, configured...)
+	managed, err := r.managedMCPSources(ctx)
+	if err != nil {
+		return runtimecatalogcmd.Snapshot{}, err
+	}
+	sources = append(sources, managed...)
 	skillRoots := []struct {
 		dir  string
 		name string
@@ -155,8 +191,10 @@ func (r *Runtime) PreparePluginCandidate(ctx context.Context, plugins []runtimec
 		sources = append(sources, loaded...)
 	}
 	for _, source := range plugins {
-		if err := r.retainPlugin(ctx, source.Descriptor); err != nil {
-			return runtimecatalogcmd.Snapshot{}, err
+		if prepared == nil || source.Descriptor != prepared.Descriptor {
+			if err := r.retainPlugin(ctx, source.Descriptor); err != nil {
+				return runtimecatalogcmd.Snapshot{}, err
+			}
 		}
 		sources = append(sources, source)
 	}
@@ -181,7 +219,7 @@ func (r *Runtime) PublishCandidate(ctx context.Context, snapshot runtimecatalogc
 			return err
 		}
 	}
-	return nil
+	return r.markMCPPublished(ctx, retained)
 }
 
 // ResolveEffectiveSnapshot pins command ingress to its trusted session scope.
@@ -244,7 +282,7 @@ func (r *Runtime) ReadSkill(ctx context.Context, request runtimecatalogcmd.Skill
 	return r.reader.ReadSkill(ctx, request)
 }
 
-// AcquireMCPServerIDs pins ready plugin MCP instances from one exact retained
+// AcquireMCPServerIDs pins ready MCP instances from one exact retained
 // snapshot for the lifetime of a provider session.
 func (r *Runtime) AcquireMCPServerIDs(ctx context.Context, snapshotID runtimecatalogcmd.SnapshotID) ([]string, func(), error) {
 	snapshot, err := r.retainedSnapshot(ctx, snapshotID)
@@ -253,9 +291,7 @@ func (r *Runtime) AcquireMCPServerIDs(ctx context.Context, snapshotID runtimecat
 	}
 	descriptors := make([]runtimecatalogcmd.MCPServerDescriptor, 0, len(snapshot.MCPServers))
 	for _, descriptor := range snapshot.MCPServers {
-		if descriptor.ID.Source.Kind == runtimecatalogcmd.SourceKindPlugin {
-			descriptors = append(descriptors, descriptor)
-		}
+		descriptors = append(descriptors, descriptor)
 	}
 	keys, release, err := r.mcp.AcquireDescriptors(ctx, descriptors)
 	if err != nil {
@@ -278,23 +314,22 @@ func (r *Runtime) PluginDataRoot(ctx context.Context, source runtimecatalogcmd.S
 	if err != nil {
 		return "", err
 	}
+	relativeRoot := install.DataRelativePath
 	if !found {
-		return "", runtimecatalogcmd.ErrRevisionUnavailable
+		if !runtimecatalog.ValidPluginName(source.Name) {
+			return "", runtimecatalogcmd.ErrRevisionUnavailable
+		}
+		relativeRoot = filepath.ToSlash(filepath.Join("plugin-data", source.Name))
 	}
-	root := filepath.Join(r.stateDir, filepath.FromSlash(install.DataRelativePath))
-	resolvedState, err := filepath.EvalSymlinks(r.stateDir)
+	root, err := containedStatePath(r.stateDir, relativeRoot)
 	if err != nil {
 		return "", errors.New("plugin data is unavailable")
 	}
-	resolvedRoot, err := filepath.EvalSymlinks(root)
-	if err != nil {
+	info, err := os.Stat(root)
+	if err != nil || !info.IsDir() {
 		return "", errors.New("plugin data is unavailable")
 	}
-	relative, err := filepath.Rel(resolvedState, resolvedRoot)
-	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		return "", errors.New("plugin data is unavailable")
-	}
-	return resolvedRoot, nil
+	return root, nil
 }
 
 func (r *Runtime) effectiveSnapshot(ctx context.Context, workspace, scopeName string) (runtimecatalogcmd.Snapshot, error) {
@@ -471,12 +506,12 @@ func configuredMCPSources(configs map[string]agentconfig.MCPServerConfig) []runt
 		id := runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindConfiguredMCP, Name: name}
 		revision := configuredMCPRevision(config)
 		transport := string(config.Type)
-		if transport == "http" {
-			transport = "streamable-http"
+		if config.Type == agentconfig.MCPServerTypeHTTP {
+			transport = transportStreamableHTTP
 		}
 		sources = append(sources, runtimecatalogcmd.Source{
 			Descriptor: runtimecatalogcmd.SourceDescriptor{ID: id, Revision: revision},
-			MCPServers: []runtimecatalogcmd.MCPServerDescriptor{{ID: runtimecatalogcmd.ContributionID{Source: id, Kind: runtimecatalogcmd.ContributionKindMCPServer, Name: name}, Revision: revision, Name: name, Transport: transport}},
+			MCPServers: []runtimecatalogcmd.MCPServerDescriptor{{ID: runtimecatalogcmd.ContributionID{Source: id, Kind: runtimecatalogcmd.ContributionKindMCPServer, Name: name}, Revision: revision, Name: name, Transport: transport, TargetingKnown: true}},
 		})
 	}
 	return sources
@@ -488,8 +523,8 @@ func configuredMCPResolver(configs map[string]agentconfig.MCPServerConfig) *mcpr
 		source := runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindConfiguredMCP, Name: name}
 		id := runtimecatalogcmd.ContributionID{Source: source, Kind: runtimecatalogcmd.ContributionKindMCPServer, Name: name}
 		transport := string(config.Type)
-		if transport == "http" {
-			transport = "streamable-http"
+		if config.Type == agentconfig.MCPServerTypeHTTP {
+			transport = transportStreamableHTTP
 		}
 		command := ""
 		args := append([]string(nil), config.Args...)
@@ -505,33 +540,12 @@ func configuredMCPResolver(configs map[string]agentconfig.MCPServerConfig) *mcpr
 }
 
 func configuredMCPRevision(config agentconfig.MCPServerConfig) runtimecatalogcmd.RevisionID {
-	envKeys := sortedKeys(config.Env)
-	headerKeys := sortedKeys(config.Headers)
-	value := struct {
-		Type       agentconfig.MCPServerType `json:"type"`
-		Cmd        []string                  `json:"cmd,omitempty"`
-		Args       []string                  `json:"args,omitempty"`
-		WorkingDir string                    `json:"working_dir,omitempty"`
-		URL        string                    `json:"url,omitempty"`
-		EnvKeys    []string                  `json:"env_keys,omitempty"`
-		HeaderKeys []string                  `json:"header_keys,omitempty"`
-	}{config.Type, config.Cmd, config.Args, config.WorkingDir, config.URL, envKeys, headerKeys}
-	data, _ := json.Marshal(value)
-	return hashValue(string(data))
+	return runtimecatalogcmd.RevisionID(mcpfx.ConfiguredRevision(config))
 }
 
 func hashValue(value string) runtimecatalogcmd.RevisionID {
 	digest := sha256.Sum256([]byte(value))
 	return runtimecatalogcmd.RevisionID(hex.EncodeToString(digest[:]))
-}
-
-func sortedKeys(values map[string]string) []string {
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 func workspaceScopeName(workspace string) string { return string(hashValue(filepath.Clean(workspace))) }
@@ -558,4 +572,42 @@ func containedStatePath(stateDir, relative string) (string, error) {
 		return "", errors.New("state path escapes root")
 	}
 	return target, nil
+}
+
+// Only the lifecycle's explicit new revision may compile before its SQL record
+// exists. Other sources continue to require their accepted durable revision.
+func validatePreparedPlugin(sources []runtimecatalogcmd.Source, prepared pluginapp.PreparedPluginSource) error {
+	descriptor := prepared.Descriptor
+	if descriptor.ID.Kind != runtimecatalogcmd.SourceKindPlugin || !runtimecatalog.ValidPluginName(descriptor.ID.Name) || descriptor.Revision == "" {
+		return runtimecatalogcmd.ErrRevisionUnavailable
+	}
+	expected := filepath.ToSlash(filepath.Join("plugin-revisions", descriptor.ID.Name, string(descriptor.Revision)))
+	if prepared.RelativeRoot != expected {
+		return runtimecatalogcmd.ErrRevisionUnavailable
+	}
+	matches := 0
+	for _, source := range sources {
+		if source.Descriptor.ID == descriptor.ID {
+			if source.Descriptor != descriptor {
+				return runtimecatalogcmd.ErrRevisionUnavailable
+			}
+			matches++
+		}
+	}
+	if matches > 1 {
+		return runtimecatalogcmd.ErrRevisionUnavailable
+	}
+	return nil
+}
+
+func (r *Runtime) retainPreparedPlugin(ctx context.Context, prepared pluginapp.PreparedPluginSource) error {
+	root, err := containedStatePath(r.stateDir, prepared.RelativeRoot)
+	if err != nil {
+		return runtimecatalogcmd.ErrRevisionUnavailable
+	}
+	loaded, err := r.loader.LoadPlugin(root)
+	if err != nil || loaded.Descriptor != prepared.Descriptor {
+		return runtimecatalogcmd.ErrRevisionUnavailable
+	}
+	return r.archive.Retain(ctx, root, prepared.Descriptor)
 }

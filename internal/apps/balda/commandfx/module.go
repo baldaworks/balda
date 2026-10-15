@@ -171,7 +171,7 @@ type commandActorParams struct {
 
 type commandIngressParams struct {
 	fx.In
-	Dispatcher actortransport.Dispatcher
+	Dispatcher CommandDispatcher         `name:"command_ingress"`
 	Snapshots  EffectiveSnapshotResolver `optional:"true"`
 }
 

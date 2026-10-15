@@ -6,6 +6,6 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 
 cd "${REPO_ROOT}"
 
-PATTERN='TestEventProjectorReplayAfterRestartRemainsIdempotent|TestEventProjectorProjectsTaskEventIdempotently|TestEventProjectorProjectsCommandEventForTask|TestEventProjectorProjectsCommandDecodeFailedEventForTask'
+PATTERN='^TestEventProjector(Replay|Projects)'
 
-exec go test ./internal/apps/balda/swarm -run "${PATTERN}" "$@"
+exec go test ./internal/apps/balda/jobs -run "${PATTERN}" "$@"

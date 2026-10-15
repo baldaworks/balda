@@ -2,14 +2,21 @@ package handlersfx
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"github.com/baldaworks/balda/internal/apps/balda/chatfx"
+	"github.com/baldaworks/balda/internal/apps/balda/ingressapp"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/questions"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
@@ -21,6 +28,122 @@ import (
 	"github.com/tgbotkit/runtime/messagetype"
 	adksession "google.golang.org/adk/v2/session"
 )
+
+type fakeCollaboratorBackend struct {
+	collaborators map[string]auth.Collaborator
+	lookups       []string
+	getErr        error
+}
+
+func newTestCollaboratorStore(subjects ...string) (*auth.CollaboratorStore, *fakeCollaboratorBackend) {
+	backend := &fakeCollaboratorBackend{collaborators: make(map[string]auth.Collaborator)}
+	for _, subject := range subjects {
+		backend.collaborators[subject] = auth.Collaborator{UserID: subject}
+	}
+	return auth.NewCollaboratorStore(backend), backend
+}
+
+func (f *fakeCollaboratorBackend) AddCollaborator(_ context.Context, collaborator auth.Collaborator) error {
+	f.collaborators[collaborator.UserID] = collaborator
+	return nil
+}
+
+func (f *fakeCollaboratorBackend) RemoveCollaborator(_ context.Context, userID string) error {
+	delete(f.collaborators, userID)
+	return nil
+}
+
+func (f *fakeCollaboratorBackend) GetCollaborator(_ context.Context, userID string) (*auth.Collaborator, bool, error) {
+	f.lookups = append(f.lookups, userID)
+	if f.getErr != nil {
+		return nil, false, f.getErr
+	}
+	collaborator, found := f.collaborators[userID]
+	return &collaborator, found, nil
+}
+
+func (f *fakeCollaboratorBackend) ListCollaborators(context.Context) ([]auth.Collaborator, error) {
+	result := make([]auth.Collaborator, 0, len(f.collaborators))
+	for _, collaborator := range f.collaborators {
+		result = append(result, collaborator)
+	}
+	return result, nil
+}
+
+type fakeTelegramQuestionStore struct {
+	record baldastate.QuestionRecord
+}
+
+func (f *fakeTelegramQuestionStore) CreatePendingQuestion(_ context.Context, record baldastate.QuestionRecord) error {
+	f.record = record
+	return nil
+}
+
+func (f *fakeTelegramQuestionStore) BindQuestionDeliveryRef(_ context.Context, _ string, ref questioncmd.DeliveryRef) error {
+	f.record.Provider = ref.Provider
+	f.record.ConversationKey = ref.ConversationKey
+	f.record.ProviderMessageID = ref.ProviderMessageID
+	return nil
+}
+
+func (f *fakeTelegramQuestionStore) GetQuestionByID(_ context.Context, questionID string) (baldastate.QuestionRecord, bool, error) {
+	return f.record, f.record.QuestionID == questionID, nil
+}
+
+func (f *fakeTelegramQuestionStore) GetQuestionByReplyRef(_ context.Context, provider, conversationKey, replyToMessageID string) (baldastate.QuestionRecord, bool, error) {
+	found := f.record.Provider == provider &&
+		f.record.ConversationKey == conversationKey && f.record.ProviderMessageID == replyToMessageID
+	return f.record, found, nil
+}
+
+func (f *fakeTelegramQuestionStore) MarkQuestionAnswered(_ context.Context, questionID string, answer questioncmd.Answer) (baldastate.QuestionRecord, bool, error) {
+	if f.record.QuestionID != questionID || f.record.Status != questioncmd.StatusPending {
+		return baldastate.QuestionRecord{}, false, nil
+	}
+	encoded, err := json.Marshal(answer)
+	if err != nil {
+		return baldastate.QuestionRecord{}, false, err
+	}
+	f.record.Status = questioncmd.StatusAnswered
+	f.record.AnswerContinuationPending, f.record.AnswerControlsPending = true, true
+	f.record.AnswerJSON = string(encoded)
+	return f.record, true, nil
+}
+
+func (f *fakeTelegramQuestionStore) MarkQuestionTimedOut(_ context.Context, _ string, _ time.Time) (baldastate.QuestionRecord, bool, error) {
+	return baldastate.QuestionRecord{}, false, nil
+}
+
+func testTelegramQuestionRecord(t *testing.T, userID int64) baldastate.QuestionRecord {
+	t.Helper()
+	encode := func(value any) string {
+		data, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+	locator := baldatelegram.NewLocator(9001, 0)
+	return baldastate.QuestionRecord{
+		QuestionID:        "q1",
+		SessionID:         locator.SessionID,
+		Status:            questioncmd.StatusPending,
+		Provider:          "telegram",
+		ConversationKey:   locator.AddressKey,
+		ProviderMessageID: "42",
+		InteractionJSON: encode(questioncmd.InteractionContext{
+			SessionID:   locator.SessionID,
+			Locator:     locator,
+			RequestedBy: questioncmd.UserRef{UserID: baldatelegram.UserID(userID)},
+		}),
+		ResumeJSON: encode(questioncmd.ResumeTarget{To: "permission:review-1"}),
+		RequestJSON: encode(questioncmd.Request{
+			Responder:     questioncmd.ResponderRequester,
+			AllowFreeText: true,
+			Options:       []questioncmd.Option{{ID: "allow", Label: "Allow"}},
+		}),
+	}
+}
 
 type fakeTurnDispatcher struct {
 	commandsMu sync.Mutex
@@ -88,11 +211,36 @@ func (f *fakeSessionStore) List(context.Context) ([]baldastate.SessionRecord, er
 }
 
 type fakeAgentBuilder struct {
-	metadata baldasession.AgentMetadata
-	err      error
+	metadata   baldasession.AgentMetadata
+	openErr    error
+	freshErr   error
+	openCalls  int
+	freshCalls int
 }
 
 func (f *fakeAgentBuilder) CreateRuntimeSession(
+	ctx context.Context,
+	runtime *baldasession.BuiltRuntime,
+	agentName, userID, sessionID, workspaceDir string,
+	sessionCtx baldasession.RuntimeSessionContext,
+) (adksession.Session, error) {
+	return f.CreateFreshRuntimeSession(ctx, runtime, agentName, userID, sessionID, workspaceDir, sessionCtx)
+}
+
+func (f *fakeAgentBuilder) OpenExistingRuntimeSession(
+	ctx context.Context,
+	runtime *baldasession.BuiltRuntime,
+	agentName, userID, sessionID, workspaceDir string,
+	sessionCtx baldasession.RuntimeSessionContext,
+) (adksession.Session, error) {
+	f.openCalls++
+	if f.openErr != nil {
+		return nil, f.openErr
+	}
+	return f.CreateFreshRuntimeSession(ctx, runtime, agentName, userID, sessionID, workspaceDir, sessionCtx)
+}
+
+func (f *fakeAgentBuilder) CreateFreshRuntimeSession(
 	context.Context,
 	*baldasession.BuiltRuntime,
 	string,
@@ -101,15 +249,22 @@ func (f *fakeAgentBuilder) CreateRuntimeSession(
 	string,
 	baldasession.RuntimeSessionContext,
 ) (adksession.Session, error) {
-	return nil, f.err
+	f.freshCalls++
+	return nil, f.freshErr
 }
 
 func (f *fakeAgentBuilder) GetAgentMetadata(string) baldasession.AgentMetadata { return f.metadata }
 
-type fakeRuntimeManager struct{ providerID string }
+type fakeRuntimeManager struct {
+	providerID string
+	runtime    *baldasession.BuiltRuntime
+}
 
-func (*fakeRuntimeManager) Runtime(context.Context) (*baldasession.BuiltRuntime, error) {
-	return &baldasession.BuiltRuntime{}, nil
+func (f *fakeRuntimeManager) Runtime(context.Context) (*baldasession.BuiltRuntime, error) {
+	if f.runtime != nil {
+		return f.runtime, nil
+	}
+	return &baldasession.BuiltRuntime{AppName: "norma-balda", SessionSvc: adksession.InMemoryService()}, nil
 }
 
 func (f *fakeRuntimeManager) ProviderID() string { return f.providerID }
@@ -228,16 +383,17 @@ func newTestOwnerStore(t *testing.T) *auth.OwnerStore {
 	return store
 }
 
-func newTestSessionManager(t *testing.T, store *fakeSessionStore) *baldasession.Manager {
+func newTestSessionManager(t *testing.T, store *fakeSessionStore) (*baldasession.Manager, *fakeAgentBuilder) {
 	t.Helper()
-	m, err := baldasession.NewManager(baldasession.ManagerParams{
-		AgentBuilder: &fakeAgentBuilder{
-			metadata: baldasession.AgentMetadata{
-				Type:       "opencode_acp",
-				Model:      "gpt-5",
-				MCPServers: []string{"provider_mcp"},
-			},
+	builder := &fakeAgentBuilder{
+		metadata: baldasession.AgentMetadata{
+			Type:       "opencode_acp",
+			Model:      "gpt-5",
+			MCPServers: []string{"provider_mcp"},
 		},
+	}
+	m, err := baldasession.NewManager(baldasession.ManagerParams{
+		AgentBuilder:    builder,
 		RuntimeManager:  &fakeRuntimeManager{providerID: "alpha"},
 		BaldaProviderID: "alpha",
 		SessionStore:    store,
@@ -246,32 +402,36 @@ func newTestSessionManager(t *testing.T, store *fakeSessionStore) *baldasession.
 	if err != nil {
 		t.Fatalf("NewManager() error = %v", err)
 	}
-	return m
+	return m, builder
 }
 
 type testHarness struct {
-	handler    *telegramInboundHandler
-	server     *baldatelegram.Server
-	dispatcher *fakeTurnDispatcher
-	channel    *fakeTestChannel
-	sessions   *baldasession.Manager
-	ownerStore *auth.OwnerStore
+	handler      *telegramInboundHandler
+	server       *baldatelegram.Server
+	dispatcher   *fakeTurnDispatcher
+	channel      *fakeTestChannel
+	sessions     *baldasession.Manager
+	sessionStore *fakeSessionStore
+	agentBuilder *fakeAgentBuilder
+	ownerStore   *auth.OwnerStore
 }
 
 func newTestHarness(t *testing.T) *testHarness {
 	t.Helper()
 	ownerStore := newTestOwnerStore(t)
 	sessionStore := &fakeSessionStore{}
-	sessions := newTestSessionManager(t, sessionStore)
+	sessions, agentBuilder := newTestSessionManager(t, sessionStore)
 	dispatcher := &fakeTurnDispatcher{}
 	ch := &fakeTestChannel{}
 
 	handler := newTelegramInboundHandler(telegramInboundHandlerParams{
-		OwnerStore:      ownerStore,
-		SessionManager:  sessions,
-		Dispatcher:      dispatcher,
-		BaldaProviderID: "alpha",
-		Logger:          zerolog.Nop(),
+		OwnerStore:         ownerStore,
+		SessionManager:     sessions,
+		SessionPreparer:    chatfx.NewIngressSessionAdapter(sessions),
+		Dispatcher:         dispatcher,
+		QuestionDispatcher: dispatcher,
+		BaldaProviderID:    "alpha",
+		Logger:             zerolog.Nop(),
 	})
 	handler.channel = ch
 	handler.setOwner(101, 9001)
@@ -287,12 +447,14 @@ func newTestHarness(t *testing.T) *testHarness {
 	})
 
 	return &testHarness{
-		handler:    handler,
-		server:     server,
-		dispatcher: dispatcher,
-		channel:    ch,
-		sessions:   sessions,
-		ownerStore: ownerStore,
+		handler:      handler,
+		server:       server,
+		dispatcher:   dispatcher,
+		channel:      ch,
+		sessions:     sessions,
+		sessionStore: sessionStore,
+		agentBuilder: agentBuilder,
+		ownerStore:   ownerStore,
 	}
 }
 
@@ -331,6 +493,10 @@ func TestTelegramInboundHandler_HandleMessage_PublishesTurn(t *testing.T) {
 
 func TestTelegramInboundHandler_HandleMessage_IgnoresUnauthorizedUser(t *testing.T) {
 	h := newTestHarness(t)
+	h.handler.sessionPreparer = ingressapp.SessionPreparerFunc(func(context.Context, ingressapp.InboundContext) (ingressapp.SessionPreparation, error) {
+		t.Fatal("unauthorized input reached session preparation")
+		return ingressapp.SessionPreparation{}, nil
+	})
 
 	msgText := "unauthorized hello"
 	event := &events.MessageEvent{
@@ -352,6 +518,96 @@ func TestTelegramInboundHandler_HandleMessage_IgnoresUnauthorizedUser(t *testing
 	if len(h.dispatcher.commands) != 0 {
 		t.Fatalf("dispatched commands = %d, want 0 for unauthorized user", len(h.dispatcher.commands))
 	}
+}
+
+func TestTelegramInboundHandler_CollaboratorMessages(t *testing.T) {
+	tests := []struct {
+		name    string
+		context baldatelegram.MessageContext
+	}{
+		{
+			name: "direct message",
+			context: baldatelegram.MessageContext{
+				Locator: baldatelegram.NewLocator(9303, 0), ChatID: 9303, MessageID: 10,
+				UserID: 303, Text: "hello", IsDM: true,
+			},
+		},
+		{
+			name: "group mention",
+			context: baldatelegram.MessageContext{
+				Locator: baldatelegram.NewLocator(-9303, 0), ChatID: -9303, MessageID: 11,
+				UserID: 303, Text: "@testbot hello",
+				Entities: []client.MessageEntity{{Type: "mention", Offset: 0, Length: len("@testbot")}},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newTestHarness(t)
+			collaborators, backend := newTestCollaboratorStore(auth.TelegramSubject(303))
+			h.handler.collaboratorStore = collaborators
+
+			if err := h.handler.HandleMessage(context.Background(), tt.context); err != nil {
+				t.Fatalf("HandleMessage() error = %v", err)
+			}
+			if len(h.dispatcher.commands) == 0 {
+				t.Fatal("HandleMessage() dispatched no collaborator work")
+			}
+			if len(backend.lookups) == 0 || backend.lookups[0] != "telegram:303" {
+				t.Fatalf("collaborator lookups = %v, want telegram:303", backend.lookups)
+			}
+		})
+	}
+}
+
+func TestTelegramInboundHandler_CollaboratorAnswersQuestions(t *testing.T) {
+	t.Run("free text", func(t *testing.T) {
+		h := newTestHarness(t)
+		collaborators, _ := newTestCollaboratorStore(auth.TelegramSubject(303))
+		h.handler.collaboratorStore = collaborators
+		questionStore := &fakeTelegramQuestionStore{record: testTelegramQuestionRecord(t, 303)}
+		h.handler.questionService = questions.New(questionStore, nil, zerolog.Nop())
+
+		err := h.handler.HandleMessage(context.Background(), baldatelegram.MessageContext{
+			Locator: baldatelegram.NewLocator(9001, 0), ChatID: 9001, MessageID: 43,
+			ReplyToMessageID: 42, UserID: 303, Text: "allow", IsDM: true,
+		})
+		if err != nil {
+			t.Fatalf("HandleMessage() error = %v", err)
+		}
+		if questionStore.record.Status != questioncmd.StatusAnswered {
+			t.Fatalf("question status = %q, want answered", questionStore.record.Status)
+		}
+		if len(h.dispatcher.commands) != 1 {
+			t.Fatalf("continuations = %d, want 1", len(h.dispatcher.commands))
+		}
+	})
+
+	t.Run("callback", func(t *testing.T) {
+		h := newTestHarness(t)
+		collaborators, _ := newTestCollaboratorStore(auth.TelegramSubject(303))
+		h.handler.collaboratorStore = collaborators
+		questionStore := &fakeTelegramQuestionStore{record: testTelegramQuestionRecord(t, 303)}
+		h.handler.questionService = questions.New(questionStore, nil, zerolog.Nop())
+
+		err := h.handler.HandleCallback(context.Background(), baldatelegram.CallbackContext{
+			Locator: baldatelegram.NewLocator(9001, 0), CallbackQueryID: "callback-1",
+			QuestionID: "q1", ProviderMessageID: "42", UserID: 303, OptionIndex: 1,
+		})
+		if err != nil {
+			t.Fatalf("HandleCallback() error = %v", err)
+		}
+		if questionStore.record.Status != questioncmd.StatusAnswered {
+			t.Fatalf("question status = %q, want answered", questionStore.record.Status)
+		}
+		if len(h.dispatcher.commands) != 1 {
+			t.Fatalf("continuations = %d, want 1", len(h.dispatcher.commands))
+		}
+		if len(h.channel.answerCalls) != 1 || h.channel.answerCalls[0].showAlert {
+			t.Fatalf("callback answers = %+v, want one successful acknowledgement", h.channel.answerCalls)
+		}
+	})
 }
 
 func TestTelegramInboundHandler_HandleForumTopic_ClosedPublishesCancel(t *testing.T) {
@@ -410,6 +666,31 @@ func TestTelegramInboundHandler_ActivateOwner(t *testing.T) {
 	}
 }
 
+func TestTelegramInboundHandler_ActivateOwnerContinuesAfterRestoreFallback(t *testing.T) {
+	h := newTestHarness(t)
+	locator := baldatelegram.NewLocator(9001, 0)
+	h.sessionStore.record = baldastate.SessionRecord{
+		SessionID: locator.SessionID, UserID: baldatelegram.UserID(101),
+		ChannelType: locator.ChannelType, AddressKey: locator.AddressKey, AddressJSON: locator.AddressJSON,
+		AgentName: ownerSessionLabel, RuntimeSnapshotID: "snapshot-retired", Status: baldastate.SessionStatusActive,
+	}
+	h.sessionStore.foundByAddress = true
+	h.agentBuilder.openErr = errors.New("saved MCP attachment unavailable")
+	if _, found, err := h.sessionStore.GetByAddress(t.Context(), locator.ChannelType, locator.AddressKey); err != nil || !found {
+		t.Fatalf("persisted owner fixture unavailable: found=%t err=%v", found, err)
+	}
+
+	if err := h.handler.ActivateOwner(context.Background(), 101, 9001); err != nil {
+		t.Fatalf("ActivateOwner() error = %v", err)
+	}
+	if h.agentBuilder.openCalls != 1 || h.agentBuilder.freshCalls != 1 {
+		t.Fatalf("builder calls = open %d, fresh %d; want 1, 1", h.agentBuilder.openCalls, h.agentBuilder.freshCalls)
+	}
+	if _, err := h.sessions.GetSession(locator); err != nil {
+		t.Fatalf("owner session was not activated after fallback: %v", err)
+	}
+}
+
 func TestInboundTurnExecutor_SubmitSessionTurn(t *testing.T) {
 	dispatcher := &fakeTurnDispatcher{}
 	executor := newInboundTurnExecutor(dispatcher)
@@ -465,4 +746,14 @@ func TestInboundTurnExecutor_SubmitWebhookTask(t *testing.T) {
 	if len(dispatcher.commands) != 1 {
 		t.Fatalf("dispatched commands = %d, want 1", len(dispatcher.commands))
 	}
+}
+
+func (*fakeTelegramQuestionStore) PendingQuestionAnswerIDs(context.Context, string, int) ([]string, error) {
+	return nil, nil
+}
+func (*fakeTelegramQuestionStore) MarkQuestionAnswerAdmitted(context.Context, string) error {
+	return nil
+}
+func (*fakeTelegramQuestionStore) MarkQuestionAnswerControlsCleared(context.Context, string, questioncmd.DeliveryRef) error {
+	return nil
 }

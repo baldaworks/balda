@@ -3,17 +3,24 @@ package zulipfx
 import (
 	"time"
 
-	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/zulip"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfx"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )
 
 var Module = fx.Module(
 	"balda_channel_zulip_fx",
+	fx.Invoke(registerBindingIdentity),
 	fx.Provide(
+		fx.Annotate(
+			func() sessionmemoryapp.ScopeClassifierContribution {
+				return sessionmemoryapp.ScopeClassifierContribution{ChannelType: zulip.ChannelType, Classifier: zulip.ClassifyLocatorScope}
+			},
+			fx.ResultTags(`group:"balda_session_memory_scope_classifier"`),
+		),
 		fx.Annotate(
 			func(enabled bool) commandcmd.Advertisement {
 				return commandcmd.Advertisement{Transport: zulip.ChannelType, Enabled: enabled, Names: []string{"locator", "reset", "new", "usage", "auto", "cancel", "goalkeeper", "topic", "close", "start", "user", "skill"}}
@@ -22,6 +29,7 @@ var Module = fx.Module(
 			fx.ResultTags(`group:"balda_command_advertisements"`),
 		),
 		zulip.NewServer,
+		fx.Annotate(NewGatewayCallbackProvider, fx.ResultTags(`group:"balda_http_gateway_callback_providers"`)),
 		func(client *zulip.Client, logger zerolog.Logger) *zulip.Adapter {
 			adapter := zulip.NewAdapter(client, logger)
 			adapter.SetTypingThrottleInterval(4 * time.Second)
@@ -51,16 +59,6 @@ var Module = fx.Module(
 		fx.Annotate(
 			NewGoalOutcomeStructuredRegistrar,
 			fx.ResultTags(`group:"balda_delivery_structured_registrar"`),
-		),
-		fx.Annotate(
-			func(handler *zulip.Server) appports.TransportLifecycleStage {
-				return appports.TransportLifecycleStage{
-					Name:  "zulip ingress",
-					Start: handler.Start,
-					Stop:  handler.Stop,
-				}
-			},
-			fx.ResultTags(`group:"balda_transport_lifecycle_stage"`),
 		),
 	),
 )

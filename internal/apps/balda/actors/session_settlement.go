@@ -9,7 +9,9 @@ import (
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/baldaworks/go-actorlayer"
+	"github.com/rs/zerolog"
 )
 
 // session_settlement.go owns session turn durable settlement policy. The actor
@@ -47,6 +49,15 @@ func (c sessionSettlementCoordinator) settle(ctx context.Context, env actorlayer
 	if runErr == nil {
 		return nil
 	}
+	var handled *turncmd.FinalOutcomeAcceptedError
+	if conversationalTurn(env, payload) && errors.As(runErr, &handled) {
+		zerolog.Ctx(ctx).Warn().
+			Str("envelope_id", env.ID).
+			Str("session_id", payload.Locator.SessionID).
+			Str("error_class", "post_final_failure").
+			Msg("settling conversational turn after final outcome acceptance")
+		return nil
+	}
 	// Contract: once task terminal failure is durably recorded, settle command without retry.
 	if sessionTurnUsesJobLifecycle(env, payload) {
 		return nil
@@ -56,14 +67,8 @@ func (c sessionSettlementCoordinator) settle(ctx context.Context, env actorlayer
 
 func (c sessionSettlementCoordinator) record(ctx context.Context, env actorlayer.Envelope, payload SessionTurnPayload, runErr error) error {
 	if c.scheduler != nil && strings.TrimSpace(payload.ScheduledJobID) != "" {
-		if runErr == nil {
-			if err := c.scheduler.MarkSuccess(ctx, payload.ScheduledJobID); err != nil {
-				return fmt.Errorf("mark scheduled job %q success: %w", payload.ScheduledJobID, err)
-			}
-		} else {
-			if err := c.scheduler.RecordExecutionFailure(ctx, payload.ScheduledJobID, runErr); err != nil {
-				return fmt.Errorf("record scheduled job %q failure: %w", payload.ScheduledJobID, err)
-			}
+		if err := c.scheduler.RecordExecution(ctx, payload.ScheduledJobID, payload.DedupeKey, runErr); err != nil {
+			return fmt.Errorf("record scheduled job %q completion: %w", payload.ScheduledJobID, err)
 		}
 	}
 	if c.tasks == nil || !sessionTurnUsesJobLifecycle(env, payload) {

@@ -14,7 +14,8 @@ func EnvelopeSessionID(env actorlayer.Envelope) string {
 			return sessionID
 		}
 	}
-	if strings.EqualFold(strings.TrimSpace(env.To.Target), ActorTypeSession) {
+	target := strings.TrimSpace(env.To.Target)
+	if strings.EqualFold(target, ActorTypeSession) || strings.EqualFold(target, ActorTypeCommand) {
 		return strings.TrimSpace(env.To.Key)
 	}
 	return ""

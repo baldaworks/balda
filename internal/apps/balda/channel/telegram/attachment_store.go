@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
+	"github.com/baldaworks/balda/internal/apps/balda/redaction"
 	"github.com/tgbotkit/client"
 )
 
@@ -125,7 +126,7 @@ func (d *telegramDownloader) DownloadFile(ctx context.Context, fileID string) (i
 	}
 	resp, err := d.client.GetFileWithResponse(ctx, client.GetFileJSONRequestBody{FileId: fileID})
 	if err != nil {
-		return nil, fmt.Errorf("telegram getFile %s: %w", fileID, err)
+		return nil, fmt.Errorf("telegram getFile %s: %w", fileID, safeTelegramError(err))
 	}
 	if resp.JSON200 == nil || resp.JSON200.Result.FilePath == nil || strings.TrimSpace(*resp.JSON200.Result.FilePath) == "" {
 		return nil, fmt.Errorf("telegram getFile %s returned no file path", fileID)
@@ -138,7 +139,7 @@ func (d *telegramDownloader) DownloadFile(ctx context.Context, fileID string) (i
 	}).String()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return nil, fmt.Errorf("build telegram file request: %w", err)
+		return nil, fmt.Errorf("build telegram file request: %w", safeTelegramError(err))
 	}
 	httpClient := d.http
 	if httpClient == nil {
@@ -146,11 +147,11 @@ func (d *telegramDownloader) DownloadFile(ctx context.Context, fileID string) (i
 	}
 	httpResp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("download telegram file %s: %w", fileID, err)
+		return nil, fmt.Errorf("download telegram file %s: %w", fileID, safeTelegramError(err))
 	}
 	if httpResp.StatusCode < http.StatusOK || httpResp.StatusCode >= http.StatusMultipleChoices {
 		_ = httpResp.Body.Close()
-		return nil, fmt.Errorf("download telegram file %s: status %s", fileID, httpResp.Status)
+		return nil, fmt.Errorf("download telegram file %s: status %s", fileID, redaction.Secrets(httpResp.Status))
 	}
 	return httpResp.Body, nil
 }

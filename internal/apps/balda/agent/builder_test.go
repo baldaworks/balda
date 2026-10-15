@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"iter"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/memory"
+	"github.com/baldaworks/balda/internal/apps/balda/memorycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/normahq/runtime/v2/agentconfig"
 	"github.com/normahq/runtime/v2/agentfactory"
@@ -27,6 +29,22 @@ import (
 	adksession "google.golang.org/adk/v2/session"
 	"google.golang.org/genai"
 )
+
+type countingSessionService struct {
+	adksession.Service
+	getCalls    int
+	createCalls int
+}
+
+func (s *countingSessionService) Get(ctx context.Context, req *adksession.GetRequest) (*adksession.GetResponse, error) {
+	s.getCalls++
+	return s.Service.Get(ctx, req)
+}
+
+func (s *countingSessionService) Create(ctx context.Context, req *adksession.CreateRequest) (*adksession.CreateResponse, error) {
+	s.createCalls++
+	return s.Service.Create(ctx, req)
+}
 
 func TestMergeMCPServerIDsWithBase(t *testing.T) {
 	explicit := []string{" custom.one ", "balda", "", "custom.one", "custom.two"}
@@ -422,7 +440,7 @@ func TestBuildRootRuntimeInstruction_UsesPerSessionPlaceholders(t *testing.T) {
 	}
 }
 
-func TestCreateRuntimeSession_IncludesCanonicalCWDState(t *testing.T) {
+func TestCreateFreshRuntimeSession_IncludesCanonicalCWDState(t *testing.T) {
 	t.Parallel()
 
 	providers := map[string]agentconfig.Config{
@@ -438,12 +456,12 @@ func TestCreateRuntimeSession_IncludesCanonicalCWDState(t *testing.T) {
 	}
 
 	workspaceDir := t.TempDir()
-	sess, err := builder.CreateRuntimeSession(context.Background(), runtime, "alpha", "user-1", "s-1", workspaceDir, RuntimeSessionContext{
+	sess, err := builder.CreateFreshRuntimeSession(context.Background(), runtime, "alpha", "user-1", "s-1", workspaceDir, RuntimeSessionContext{
 		BaldaSessionID: "tg-1-2",
 		SessionBranch:  "norma/balda/tg-1-2",
 	})
 	if err != nil {
-		t.Fatalf("CreateRuntimeSession() error = %v", err)
+		t.Fatalf("CreateFreshRuntimeSession() error = %v", err)
 	}
 	gotCWD, err := sess.State().Get(sessionstate.CWDKey)
 	if err != nil {
@@ -475,7 +493,87 @@ func TestCreateRuntimeSession_IncludesCanonicalCWDState(t *testing.T) {
 	}
 }
 
-func TestCreateRuntimeSession_IncludesMemorySnapshotState(t *testing.T) {
+func TestOpenExistingRuntimeSessionOnlyGets(t *testing.T) {
+	t.Parallel()
+
+	base := adksession.InMemoryService()
+	workspaceDir := t.TempDir()
+	validState := map[string]any{
+		sessionstate.CWDKey:            workspaceDir,
+		BaldaSessionIDStateKey:         "tg-1-2",
+		BaldaSessionBranchStateKey:     workspaceBranchNA,
+		BaldaRepoBranchAtStartStateKey: workspaceBranchNA,
+	}
+	states := map[string]map[string]any{
+		"s-1":        validState,
+		"incomplete": {},
+		"bad-id": copySessionState(validState, map[string]any{
+			BaldaSessionIDStateKey: "tg-other",
+		}),
+		"bad-cwd": copySessionState(validState, map[string]any{
+			sessionstate.CWDKey: t.TempDir(),
+		}),
+		"bad-branch": copySessionState(validState, map[string]any{
+			BaldaSessionBranchStateKey: "norma/balda/other",
+		}),
+	}
+	for sessionID, state := range states {
+		if _, err := base.Create(t.Context(), &adksession.CreateRequest{
+			AppName: "norma-balda", UserID: "user-1", SessionID: sessionID, State: state,
+		}); err != nil {
+			t.Fatalf("seed session %q: %v", sessionID, err)
+		}
+	}
+	service := &countingSessionService{Service: base}
+	builder := &Builder{}
+	runtime := &BuiltRuntime{SessionSvc: service, AppName: "norma-balda"}
+	sessionCtx := RuntimeSessionContext{BaldaSessionID: " tg-1-2 "}
+
+	if _, err := builder.OpenExistingRuntimeSession(t.Context(), runtime, "alpha", "user-1", "s-1", workspaceDir, sessionCtx); err != nil {
+		t.Fatalf("OpenExistingRuntimeSession() error = %v", err)
+	}
+	if _, err := builder.OpenExistingRuntimeSession(t.Context(), runtime, "alpha", "user-1", "missing", workspaceDir, sessionCtx); !errors.Is(err, adksession.ErrNotFound) {
+		t.Fatalf("OpenExistingRuntimeSession(missing) error = %v, want ErrNotFound", err)
+	}
+	for _, sessionID := range []string{"incomplete", "bad-id", "bad-cwd", "bad-branch"} {
+		if _, err := builder.OpenExistingRuntimeSession(t.Context(), runtime, "alpha", "user-1", sessionID, workspaceDir, sessionCtx); err == nil {
+			t.Errorf("OpenExistingRuntimeSession(%s) error = nil, want identity mismatch", sessionID)
+		}
+	}
+	if service.getCalls != 6 || service.createCalls != 0 {
+		t.Fatalf("session service calls = Get %d, Create %d; want Get 6, Create 0", service.getCalls, service.createCalls)
+	}
+}
+
+func copySessionState(base, overrides map[string]any) map[string]any {
+	cloned := make(map[string]any, len(base))
+	for key, value := range base {
+		cloned[key] = value
+	}
+	for key, value := range overrides {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func TestCreateFreshRuntimeSessionOnlyCreates(t *testing.T) {
+	t.Parallel()
+
+	service := &countingSessionService{Service: adksession.InMemoryService()}
+	builder := &Builder{}
+	runtime := &BuiltRuntime{SessionSvc: service, AppName: "norma-balda"}
+
+	if _, err := builder.CreateFreshRuntimeSession(t.Context(), runtime, "alpha", "user-1", "s-1", t.TempDir(), RuntimeSessionContext{
+		BaldaSessionID: "tg-1-2",
+	}); err != nil {
+		t.Fatalf("CreateFreshRuntimeSession() error = %v", err)
+	}
+	if service.getCalls != 0 || service.createCalls != 1 {
+		t.Fatalf("session service calls = Get %d, Create %d; want Get 0, Create 1", service.getCalls, service.createCalls)
+	}
+}
+
+func TestCreateFreshRuntimeSession_IncludesMemorySnapshotState(t *testing.T) {
 	t.Parallel()
 
 	sess := createRuntimeSessionWithMemory(t, true)
@@ -499,7 +597,7 @@ func TestCreateRuntimeSession_IncludesMemorySnapshotState(t *testing.T) {
 	}
 }
 
-func TestCreateRuntimeSession_MemoryDisabledLeavesSnapshotEmpty(t *testing.T) {
+func TestCreateFreshRuntimeSession_MemoryDisabledLeavesSnapshotEmpty(t *testing.T) {
 	t.Parallel()
 
 	sess := createRuntimeSessionWithMemory(t, false)
@@ -542,11 +640,11 @@ func createRuntimeSessionWithMemory(t *testing.T, memoryEnabled bool) adksession
 		AppName:    "norma-balda",
 	}
 
-	sess, err := builder.CreateRuntimeSession(context.Background(), runtime, "alpha", "user-1", "s-1", t.TempDir(), RuntimeSessionContext{
+	sess, err := builder.CreateFreshRuntimeSession(context.Background(), runtime, "alpha", "user-1", "s-1", t.TempDir(), RuntimeSessionContext{
 		BaldaSessionID: "tg-1-2",
 	})
 	if err != nil {
-		t.Fatalf("CreateRuntimeSession() error = %v", err)
+		t.Fatalf("CreateFreshRuntimeSession() error = %v", err)
 	}
 	return sess
 }
@@ -590,7 +688,7 @@ func (s *builderMemoryKV) SetJSON(_ context.Context, key string, value any) erro
 	return nil
 }
 
-func TestCreateRuntimeSession_InvalidCWD_FailsBeforeCreate(t *testing.T) {
+func TestCreateFreshRuntimeSession_InvalidCWD_FailsBeforeCreate(t *testing.T) {
 	t.Parallel()
 
 	providers := map[string]agentconfig.Config{
@@ -605,18 +703,18 @@ func TestCreateRuntimeSession_InvalidCWD_FailsBeforeCreate(t *testing.T) {
 		AppName:    "norma-balda",
 	}
 
-	_, err := builder.CreateRuntimeSession(context.Background(), runtime, "alpha", "user-1", "s-1", t.TempDir()+"/missing", RuntimeSessionContext{
+	_, err := builder.CreateFreshRuntimeSession(context.Background(), runtime, "alpha", "user-1", "s-1", t.TempDir()+"/missing", RuntimeSessionContext{
 		BaldaSessionID: "tg-1-2",
 	})
 	if err == nil {
-		t.Fatal("CreateRuntimeSession() error = nil, want invalid cwd error")
+		t.Fatal("CreateFreshRuntimeSession() error = nil, want invalid cwd error")
 	}
 	if !strings.Contains(err.Error(), "stat session cwd") {
-		t.Fatalf("CreateRuntimeSession() error = %q, want stat session cwd", err)
+		t.Fatalf("CreateFreshRuntimeSession() error = %q, want stat session cwd", err)
 	}
 }
 
-func TestCreateRuntimeSession_RequiresBaldaSessionIDState(t *testing.T) {
+func TestCreateFreshRuntimeSession_RequiresBaldaSessionIDState(t *testing.T) {
 	t.Parallel()
 
 	providers := map[string]agentconfig.Config{
@@ -631,12 +729,12 @@ func TestCreateRuntimeSession_RequiresBaldaSessionIDState(t *testing.T) {
 		AppName:    "norma-balda",
 	}
 
-	_, err := builder.CreateRuntimeSession(context.Background(), runtime, "alpha", "user-1", "s-1", t.TempDir(), RuntimeSessionContext{})
+	_, err := builder.CreateFreshRuntimeSession(context.Background(), runtime, "alpha", "user-1", "s-1", t.TempDir(), RuntimeSessionContext{})
 	if err == nil {
-		t.Fatal("CreateRuntimeSession() error = nil, want missing balda session id error")
+		t.Fatal("CreateFreshRuntimeSession() error = nil, want missing balda session id error")
 	}
 	if !strings.Contains(err.Error(), "balda session id is required") {
-		t.Fatalf("CreateRuntimeSession() error = %q, want missing balda session id", err)
+		t.Fatalf("CreateFreshRuntimeSession() error = %q, want missing balda session id", err)
 	}
 }
 
@@ -836,4 +934,26 @@ func TestGetAgentMetadata_ExtractsModelAndReasoningEffort(t *testing.T) {
 			t.Errorf("expected empty metadata, got %+v", meta)
 		}
 	})
+}
+
+func TestCreateFreshRuntimeSessionRetainsInitializedEmptyMemory(t *testing.T) {
+	t.Parallel()
+	kv := newBuilderMemoryKV()
+	const updatedAt = "2026-10-11T06:00:00Z"
+	if err := kv.SetJSON(t.Context(), memorycmd.Key, memorycmd.Record{Version: 2, UpdatedAt: updatedAt, Entries: []memorycmd.Entry{}}); err != nil {
+		t.Fatal(err)
+	}
+	providers := map[string]agentconfig.Config{"alpha": {Type: "llm"}}
+	builder := &Builder{factory: agentfactory.New(providers, mcpregistry.New(nil)), normaCfg: runtimeconfig.RuntimeConfig{Providers: providers}, memoryEnabled: true, memorySnapshotReader: builderMemorySnapshotReader{store: memory.NewStore(kv, "", true)}}
+	runtime := &BuiltRuntime{SessionSvc: adksession.InMemoryService(), AppName: "norma-balda"}
+	sess, err := builder.CreateFreshRuntimeSession(t.Context(), runtime, "alpha", "user-1", "s-1", t.TempDir(), RuntimeSessionContext{BaldaSessionID: "tg-1-2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, want := range map[string]string{memory.MemoryStateKey: "", memory.MemoryVersionStateKey: "2", memory.MemoryUpdatedAtStateKey: updatedAt} {
+		got, err := sess.State().Get(key)
+		if err != nil || got != want {
+			t.Fatalf("state%s=%v,error=%v,want%q", key, got, err, want)
+		}
+	}
 }

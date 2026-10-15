@@ -16,6 +16,12 @@ func TestRedactSecrets(t *testing.T) {
 		notContain []string
 	}{
 		{
+			name:       "binding invitation in message",
+			in:         "received /start bind_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			want:       "received /start [REDACTED_INVITATION]",
+			notContain: []string{"bind_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		},
+		{
 			name:       "bearer header",
 			in:         "Authorization: Bearer super-secret-token",
 			want:       "Authorization: Bearer [REDACTED]",
@@ -50,6 +56,12 @@ func TestRedactSecrets(t *testing.T) {
 			in:         "Post https://api.telegram.org/bot123456:ABCdefGhIjkLMNopQRST_uvwx/sendMessage: timeout",
 			want:       "Post https://api.telegram.org/bot[REDACTED_TOKEN]/sendMessage: timeout",
 			notContain: []string{"123456:ABCdefGhIjkLMNopQRST_uvwx"},
+		},
+		{
+			name:       "telegram file URL with irregular token shape",
+			in:         "Get https://api.telegram.org/file/bot123:short/documents/file.pdf: timeout",
+			want:       "Get https://api.telegram.org/file/bot[REDACTED_TOKEN]/documents/file.pdf: timeout",
+			notContain: []string{"123:short"},
 		},
 		{
 			name:       "slack token",

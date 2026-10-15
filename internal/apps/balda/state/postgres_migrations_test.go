@@ -5,17 +5,62 @@ package state
 import (
 	"database/sql"
 	"fmt"
+	"io/fs"
 	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
+	"github.com/pressly/goose/v3"
 )
 
 var postgresTestSchemaSequence atomic.Uint64
+
+func TestPostgresWebhookHistoryMigration(t *testing.T) {
+	db := newPostgresTestDB(t)
+	migrations, err := fs.Sub(postgresMigrationsFS, "postgres_migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, migrations,
+		goose.WithDisableGlobalRegistry(true),
+		goose.WithGoMigrations(goose.NewGoMigration(10,
+			&goose.GoFunc{RunTx: up00010PostgresUserConversion}, &goose.GoFunc{RunTx: downUserConversion})))
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkWebhookHistoryMigration(t, db, provider, 23, 24, postgresBind)
+}
+
+func TestPostgresUserConversion(t *testing.T) {
+	runUserConversion(t, func(t *testing.T) conversionTestDatabase {
+		db := newPostgresTestDB(t)
+		migrations, err := fs.Sub(postgresMigrationsFS, "postgres_migrations")
+		if err != nil {
+			t.Fatal(err)
+		}
+		provider, err := goose.NewProvider(goose.DialectPostgres, db, migrations, goose.WithDisableGlobalRegistry(true))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := provider.UpTo(t.Context(), 9); err != nil {
+			t.Fatal(err)
+		}
+		return conversionTestDatabase{
+			db: db, bind: postgresBind,
+			upgrade: func() (usercmd.Store, error) {
+				if err := migratePostgres(t.Context(), db); err != nil {
+					return nil, err
+				}
+				return newPostgresUserStore(db), nil
+			},
+		}
+	})
+}
 
 func newPostgresTestDB(t *testing.T) *sql.DB {
 	t.Helper()
@@ -59,13 +104,6 @@ func TestPostgresMigrations(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	var version int
-	if err := db.QueryRowContext(t.Context(), "SELECT MAX(version_id) FROM goose_db_version WHERE is_applied").Scan(&version); err != nil {
-		t.Fatal(err)
-	}
-	if version != 1 {
-		t.Fatalf("PostgreSQL migration version = %d, want 1", version)
-	}
 	if _, err := db.ExecContext(t.Context(), `INSERT INTO balda_plugin_installs
 		(plugin_id, origin_marketplace, origin_source, origin_path, active_revision_id, enabled, capability_json, data_relative_path, updated_at)
 		VALUES ('missing', '', '', '', 'missing', 1, '{}', '', '')`); err == nil {
@@ -76,12 +114,213 @@ func TestPostgresMigrations(t *testing.T) {
 		VALUES ('invalid', '', '', '', 'invalid', '', '')`); err == nil {
 		t.Fatal("invalid intent state did not violate check constraint")
 	}
-	var indexes int
-	if err := db.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM pg_indexes WHERE schemaname = current_schema() AND indexname LIKE 'idx_%'`).Scan(&indexes); err != nil {
+	for _, name := range []string{"idx_balda_users_primary", "idx_balda_user_bindings_user", "idx_balda_security_audit_recent"} {
+		var found bool
+		if err := db.QueryRowContext(t.Context(), `SELECT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = current_schema() AND indexname = $1)`, name).Scan(&found); err != nil {
+			t.Fatal(err)
+		}
+		if !found {
+			t.Errorf("required PostgreSQL index %q is missing", name)
+		}
+	}
+}
+
+func TestPostgresPrimaryAdministratorDisplayNameMigration(t *testing.T) {
+	db := newPostgresTestDB(t)
+	migrations, err := fs.Sub(postgresMigrationsFS, "postgres_migrations")
+	if err != nil {
 		t.Fatal(err)
 	}
-	if indexes != 19 {
-		t.Fatalf("PostgreSQL explicit indexes = %d, want 19", indexes)
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, migrations, goose.WithDisableGlobalRegistry(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(t.Context(), 3); err != nil {
+		t.Fatal(err)
+	}
+	insertPostgresUser(t, db, "admin-1", "superuser", true)
+	if _, err := db.ExecContext(t.Context(), `UPDATE balda_users SET display_name = 'Legacy owner' WHERE user_id = 'admin-1'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.Up(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	var username, displayName, role, passwordHash string
+	var version, credentialVersion int
+	if err := db.QueryRowContext(t.Context(), `SELECT username, display_name, role, password_hash, version, credential_version FROM balda_users WHERE user_id = 'admin-1'`).Scan(
+		&username, &displayName, &role, &passwordHash, &version, &credentialVersion,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if username != "superuser" || displayName != "superuser" || role != "administrator" || passwordHash != "hash" || version != 2 || credentialVersion != 1 {
+		t.Fatalf("migrated primary = %q/%q %q hash=%q versions=%d/%d", username, displayName, role, passwordHash, version, credentialVersion)
+	}
+}
+
+func TestPostgresTelegramBindingProfileBackfill(t *testing.T) {
+	db := newPostgresTestDB(t)
+	migrations, err := fs.Sub(postgresMigrationsFS, "postgres_migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, migrations, goose.WithDisableGlobalRegistry(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(t.Context(), 5); err != nil {
+		t.Fatal(err)
+	}
+	insertPostgresUser(t, db, "admin-1", "superuser", true)
+	insertPostgresUser(t, db, "operator-1", "operator", false)
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO balda_collaborators
+		(user_id, username, first_name, added_by, added_at)
+		VALUES ('telegram:202', 'operator_handle', 'Op', 'admin-1', '2026-09-23T00:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
+	for _, query := range []string{
+		`INSERT INTO balda_user_bindings (binding_id, user_id, channel_type, principal, display_name, provenance, created_at, updated_at)
+		 VALUES ('owner-binding', 'admin-1', 'telegram', '101', 'superuser', 'legacy-owner', '2026-09-23T00:00:00Z', '2026-09-23T00:00:00Z')`,
+		`INSERT INTO balda_user_bindings (binding_id, user_id, channel_type, principal, display_name, provenance, created_at, updated_at)
+		 VALUES ('collaborator-binding', 'operator-1', 'telegram', '202', 'Op', 'legacy-collaborator', '2026-09-23T00:00:00Z', '2026-09-23T00:00:00Z')`,
+	} {
+		if _, err := db.ExecContext(t.Context(), query); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := provider.Up(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []struct{ id, username, firstName string }{
+		{"owner-binding", "", ""}, {"collaborator-binding", "operator_handle", "Op"},
+	} {
+		var username, firstName string
+		if err := db.QueryRowContext(t.Context(), `SELECT provider_username, provider_first_name FROM balda_user_bindings WHERE binding_id = $1`, want.id).Scan(&username, &firstName); err != nil {
+			t.Fatal(err)
+		}
+		if username != want.username || firstName != want.firstName {
+			t.Errorf("binding %s profile = %q/%q, want %q/%q", want.id, username, firstName, want.username, want.firstName)
+		}
+	}
+}
+
+func TestPostgresUnifiedUserSchemaConstraints(t *testing.T) {
+	db := newPostgresTestDB(t)
+	if err := migratePostgres(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+
+	insertPostgresUser(t, db, "admin-1", "admin.one", true)
+	insertPostgresUser(t, db, "operator-1", "operator.one", false)
+
+	assertPostgresRejected(t, db, `INSERT INTO balda_users
+		(user_id, display_name, username, normalized_username, status, role, password_hash,
+		 credential_state, must_change, is_primary, credential_version, version, created_at, updated_at)
+		VALUES ('bad-role', 'Bad', 'bad', 'bad', 'active', 'owner', 'hash',
+		        'active', 0, 0, 1, 1, '2026-09-23T00:00:00Z', '2026-09-23T00:00:00Z')`)
+	assertPostgresRejected(t, db, `INSERT INTO balda_users
+		(user_id, display_name, username, normalized_username, status, role, password_hash,
+		 credential_state, must_change, is_primary, credential_version, version, created_at, updated_at)
+		VALUES ('bad-temporary', 'Bad', 'bad-temporary', 'bad-temporary', 'active', 'operator', 'hash',
+		        'temporary', 0, 0, 1, 1, '2026-09-23T00:00:00Z', '2026-09-23T00:00:00Z')`)
+	assertPostgresRejected(t, db, `UPDATE balda_users SET normalized_username = 'admin.one' WHERE user_id = 'operator-1'`)
+	assertPostgresRejected(t, db, `UPDATE balda_users SET normalized_username = ' Mixed ' WHERE user_id = 'operator-1'`)
+	assertPostgresRejected(t, db, `UPDATE balda_users SET is_primary = 1 WHERE user_id = 'operator-1'`)
+
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO balda_user_bindings
+		(binding_id, user_id, channel_type, principal, display_name, provenance, created_at, updated_at)
+		VALUES ('binding-1', 'admin-1', 'telegram', '101', 'Admin', 'migration',
+		        '2026-09-23T00:00:00Z', '2026-09-23T00:00:00Z')`); err != nil {
+		t.Fatalf("insert binding: %v", err)
+	}
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO balda_user_bindings
+		(binding_id, user_id, channel_type, principal, display_name, provenance, created_at, updated_at)
+		VALUES ('binding-2', 'admin-1', 'slack', 'U101', '', '',
+		        '2026-09-23T00:00:00Z', '2026-09-23T00:00:00Z')`); err != nil {
+		t.Fatalf("insert second binding: %v", err)
+	}
+	assertPostgresRejected(t, db, `INSERT INTO balda_user_bindings
+		(binding_id, user_id, channel_type, principal, display_name, provenance, created_at, updated_at)
+		VALUES ('binding-3', 'operator-1', 'telegram', '101', '', '',
+		        '2026-09-23T00:00:00Z', '2026-09-23T00:00:00Z')`)
+
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO balda_backoffice_sessions
+		(session_id, user_id, assurance, credential_version, access_selector,
+		 access_verifier_digest, csrf_verifier_digest, created_at, last_seen_at,
+		 access_expires_at, refresh_expires_at, revoked_at, revocation_reason, version)
+		VALUES ('session-1', 'admin-1', 'normal', 1, 'access-1', decode('01', 'hex'), decode('02', 'hex'),
+		        '2026-09-23T00:00:00Z', '2026-09-23T00:00:00Z',
+		        '2026-09-23T00:15:00Z', '2026-09-24T00:00:00Z', '', '', 1)`); err != nil {
+		t.Fatalf("insert session: %v", err)
+	}
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO balda_backoffice_refresh_tokens
+		(session_id, selector, verifier_digest, generation, state, issued_at, used_at, expires_at)
+		VALUES ('session-1', 'refresh-1', decode('03', 'hex'), 1, 'active',
+		        '2026-09-23T00:00:00Z', '', '2026-09-24T00:00:00Z')`); err != nil {
+		t.Fatalf("insert refresh: %v", err)
+	}
+	assertPostgresRejected(t, db, `INSERT INTO balda_backoffice_refresh_tokens
+		(session_id, selector, verifier_digest, generation, state, issued_at, used_at, expires_at)
+		VALUES ('session-1', 'refresh-2', decode('04', 'hex'), 2, 'active',
+		        '2026-09-23T00:05:00Z', '', '2026-09-24T00:00:00Z')`)
+	if _, err := db.ExecContext(t.Context(), `UPDATE balda_backoffice_refresh_tokens
+		SET state = 'used', used_at = '2026-09-23T00:10:00Z'
+		WHERE selector = 'refresh-1'`); err != nil {
+		t.Fatalf("consume active refresh: %v", err)
+	}
+	assertPostgresRejected(t, db, `INSERT INTO balda_backoffice_refresh_tokens
+		(session_id, selector, verifier_digest, generation, state, issued_at, used_at, expires_at)
+		VALUES ('session-1', 'refresh-short', decode('05', 'hex'), 2, 'active',
+		        '2026-09-23T00:05:00Z', '', '2026-09-23T12:00:00Z')`)
+	assertPostgresRejected(t, db, `INSERT INTO balda_backoffice_refresh_tokens
+		(session_id, selector, verifier_digest, generation, state, issued_at, used_at, expires_at)
+		VALUES ('session-1', 'refresh-used', decode('06', 'hex'), 2, 'used',
+		        '2026-09-23T00:05:00Z', '2026-09-23T00:06:00Z', '2026-09-24T00:00:00Z')`)
+	assertPostgresRejected(t, db, `UPDATE balda_backoffice_refresh_tokens
+		SET state = 'active', used_at = '' WHERE selector = 'refresh-1'`)
+	if _, err := db.ExecContext(t.Context(), `UPDATE balda_backoffice_sessions
+  SET refresh_expires_at = '2026-09-25T00:00:00Z' WHERE session_id = 'session-1'`); err != nil {
+		t.Fatalf("renew family deadline: %v", err)
+	}
+	assertPostgresRejected(t, db, `UPDATE balda_backoffice_refresh_tokens
+  SET expires_at = '2026-09-25T00:00:00Z' WHERE selector = 'refresh-1'`)
+
+	if _, err := db.ExecContext(t.Context(), `DELETE FROM balda_users WHERE user_id = 'admin-1'`); err != nil {
+		t.Fatalf("delete user: %v", err)
+	}
+	for _, table := range []string{"balda_user_bindings", "balda_backoffice_sessions", "balda_backoffice_refresh_tokens"} {
+		var count int
+		if err := db.QueryRowContext(t.Context(), "SELECT COUNT(*) FROM "+table).Scan(&count); err != nil {
+			t.Fatalf("count %s: %v", table, err)
+		}
+		if count != 0 {
+			t.Errorf("%s rows after user deletion = %d, want 0", table, count)
+		}
+	}
+}
+
+func insertPostgresUser(t *testing.T, db *sql.DB, id, normalizedUsername string, primary bool) {
+	t.Helper()
+	primaryValue := 0
+	role := "operator"
+	if primary {
+		primaryValue = 1
+		role = "administrator"
+	}
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO balda_users
+		(user_id, display_name, username, normalized_username, status, role, password_hash,
+		 credential_state, must_change, is_primary, credential_version, version, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, 'active', $5, 'hash', 'active', 0, $6, 1, 1,
+		        '2026-09-23T00:00:00Z', '2026-09-23T00:00:00Z')`,
+		id, id, normalizedUsername, normalizedUsername, role, primaryValue,
+	); err != nil {
+		t.Fatalf("insert user %q: %v", id, err)
+	}
+}
+
+func assertPostgresRejected(t *testing.T, db *sql.DB, statement string) {
+	t.Helper()
+	if _, err := db.ExecContext(t.Context(), statement); err == nil {
+		t.Fatalf("statement unexpectedly succeeded: %s", statement)
 	}
 }
 
@@ -104,4 +343,38 @@ func TestPostgresMigrationFailureIsRedacted(t *testing.T) {
 	if exists {
 		t.Fatal("failed migration did not roll back")
 	}
+}
+
+func TestPostgresRollingRefreshUpgrade(t *testing.T) {
+	db := newPostgresTestDB(t)
+	migrations, err := fs.Sub(postgresMigrationsFS, "postgres_migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := goose.NewProvider(goose.DialectPostgres, db, migrations, goose.WithDisableGlobalRegistry(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.UpTo(t.Context(), 11); err != nil {
+		t.Fatal(err)
+	}
+	insertPostgresUser(t, db, "admin-1", "superuser", true)
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO balda_backoffice_sessions
+ (session_id, user_id, assurance, credential_version, access_selector,
+ access_verifier_digest, csrf_verifier_digest, created_at, last_seen_at,
+ access_expires_at, refresh_expires_at, revoked_at, revocation_reason, version)
+ VALUES ('session-1', 'admin-1', 'normal', 1, 'access-1', decode('01', 'hex'), decode('02', 'hex'),
+ '2026-09-23T00:00:00Z', '2026-09-23T00:00:00Z',
+ '2026-09-23T00:15:00Z', '2026-09-24T00:00:00Z', '', '', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO balda_backoffice_refresh_tokens
+ (session_id, selector, verifier_digest, generation, state, issued_at, used_at, expires_at)
+ VALUES ('session-1', 'refresh-1', decode('01', 'hex'), 1, 'active', '2026-09-23T00:00:00Z', '', '2026-09-24T00:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Up(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	checkRollingRefreshUpgrade(t, db)
 }

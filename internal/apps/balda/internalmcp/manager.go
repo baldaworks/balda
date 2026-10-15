@@ -213,6 +213,10 @@ func (m *InternalMCPManager) ensureBundledServers(ctx context.Context) error {
 	m.registry.Set(bundledBaldaServerID, agentconfig.MCPServerConfig{
 		Type: agentconfig.MCPServerTypeHTTP,
 		URL:  fmt.Sprintf("http://%s%s", res.Addr, baldaRoute),
+		// The session-scoped binding addresses this same listener with a
+		// context token appended, so both share one tool namespace. See
+		// sessionmemorymcp.BundledDedupKey.
+		DedupKey: sessionmemorymcp.BundledDedupKey,
 	})
 
 	sort.Strings(routes)

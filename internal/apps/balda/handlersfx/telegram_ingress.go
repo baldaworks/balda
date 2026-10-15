@@ -11,6 +11,7 @@ import (
 
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
+	"github.com/baldaworks/balda/internal/apps/balda/authpayload"
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	"github.com/baldaworks/balda/internal/apps/balda/controlcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
@@ -20,7 +21,7 @@ import (
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/telegramref"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
-	"github.com/baldaworks/balda/internal/apps/balda/welcome"
+	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
@@ -44,17 +45,27 @@ const (
 
 var serverActorAddress = actorlayer.ActorAddress{Target: "channel", Key: "telegram"}
 
+// QuestionContinuationDispatcher durably admits a settled question's continuation.
+type QuestionContinuationDispatcher interface {
+	Dispatch(ctx context.Context, env actorlayer.Envelope) (*actortransport.DispatchReceipt, error)
+}
+
 type telegramInboundHandler struct {
-	ownerStore        *auth.OwnerStore
-	collaboratorStore *auth.CollaboratorStore
-	sessionManager    *baldasession.Manager
-	actorDispatcher   actortransport.Dispatcher
-	questionService   *questions.Service
-	channel           baldatelegram.Channel
-	authToken         string
-	baldaProviderName string
-	logger            zerolog.Logger
-	now               func() time.Time
+	bindings           bindingInvitationAdmitter
+	bindingChannels    bindingChannelRegistry
+	ownerStore         *auth.OwnerStore
+	telegramProfiles   *auth.TelegramProfileService
+	collaboratorStore  *auth.CollaboratorStore
+	sessionManager     *baldasession.Manager
+	sessionPreparer    ingressapp.SessionPreparer
+	actorDispatcher    actortransport.Dispatcher
+	questionDispatcher QuestionContinuationDispatcher
+	questionService    *questions.Service
+	channel            baldatelegram.Channel
+	authToken          string
+	baldaProviderName  string
+	logger             zerolog.Logger
+	now                func() time.Time
 
 	mu          sync.RWMutex
 	bootstrapMu sync.Mutex
@@ -66,16 +77,21 @@ type telegramInboundHandler struct {
 
 type telegramInboundHandlerParams struct {
 	fx.In
+	Bindings        bindingInvitationAdmitter `optional:"true"`
+	BindingChannels bindingChannelRegistry    `optional:"true"`
 
-	OwnerStore        *auth.OwnerStore          `optional:"true"`
-	CollaboratorStore *auth.CollaboratorStore   `optional:"true"`
-	SessionManager    *baldasession.Manager     `optional:"true"`
-	Dispatcher        actortransport.Dispatcher `optional:"true"`
-	QuestionService   *questions.Service        `optional:"true"`
-	Channel           *baldatelegram.Adapter    `optional:"true"`
-	AuthToken         string                    `name:"balda_auth_token" optional:"true"`
-	BaldaProviderID   string                    `name:"balda_provider" optional:"true"`
-	Logger            zerolog.Logger
+	OwnerStore         *auth.OwnerStore             `optional:"true"`
+	TelegramProfiles   *auth.TelegramProfileService `optional:"true"`
+	CollaboratorStore  *auth.CollaboratorStore      `optional:"true"`
+	SessionPreparer    ingressapp.SessionPreparer
+	SessionManager     *baldasession.Manager          `optional:"true"`
+	Dispatcher         actortransport.Dispatcher      `optional:"true"`
+	QuestionDispatcher QuestionContinuationDispatcher `name:"command_ingress" optional:"true"`
+	QuestionService    *questions.Service             `optional:"true"`
+	Channel            *baldatelegram.Adapter         `optional:"true"`
+	AuthToken          string                         `name:"balda_auth_token" optional:"true"`
+	BaldaProviderID    string                         `name:"balda_provider" optional:"true"`
+	Logger             zerolog.Logger
 }
 
 func newTelegramInboundHandler(params telegramInboundHandlerParams) *telegramInboundHandler {
@@ -84,16 +100,20 @@ func newTelegramInboundHandler(params telegramInboundHandlerParams) *telegramInb
 		ch = params.Channel
 	}
 	return &telegramInboundHandler{
-		ownerStore:        params.OwnerStore,
-		collaboratorStore: params.CollaboratorStore,
-		sessionManager:    params.SessionManager,
-		actorDispatcher:   params.Dispatcher,
-		questionService:   params.QuestionService,
-		channel:           ch,
-		authToken:         strings.TrimSpace(params.AuthToken),
-		baldaProviderName: strings.TrimSpace(params.BaldaProviderID),
-		logger:            params.Logger.With().Str("component", "balda.handlersfx.telegram_ingress").Logger(),
-		now:               time.Now,
+		bindings: params.Bindings, bindingChannels: params.BindingChannels,
+		ownerStore:         params.OwnerStore,
+		telegramProfiles:   params.TelegramProfiles,
+		collaboratorStore:  params.CollaboratorStore,
+		sessionManager:     params.SessionManager,
+		sessionPreparer:    params.SessionPreparer,
+		actorDispatcher:    params.Dispatcher,
+		questionDispatcher: params.QuestionDispatcher,
+		questionService:    params.QuestionService,
+		channel:            ch,
+		authToken:          strings.TrimSpace(params.AuthToken),
+		baldaProviderName:  strings.TrimSpace(params.BaldaProviderID),
+		logger:             params.Logger.With().Str("component", "balda.handlersfx.telegram_ingress").Logger(),
+		now:                time.Now,
 	}
 }
 
@@ -102,6 +122,11 @@ func (h *telegramInboundHandler) OnBotStarted(ctx context.Context, botUserID int
 	h.botUserID = botUserID
 	h.botUsername = botUsername
 	h.mu.Unlock()
+	if h.bindingChannels != nil && botUserID > 0 {
+		if err := h.bindingChannels.Register(usercmd.BindingChannel{Integration: usercmd.BindingIntegration{ChannelType: "telegram", Key: strconv.FormatInt(botUserID, 10)}, Name: "Telegram", BotUsername: botUsername}); err != nil {
+			return fmt.Errorf("register Telegram binding identity: %w", err)
+		}
+	}
 
 	h.logOwnerAuthIfNeeded()
 	ownerID, chatID, bound := h.restorePersistedOwner()
@@ -128,8 +153,27 @@ func (h *telegramInboundHandler) ActivateOwner(ctx context.Context, ownerID, cha
 }
 
 func (h *telegramInboundHandler) HandleMessage(ctx context.Context, messageCtx baldatelegram.MessageContext) error {
+	if authpayload.Contains(messageCtx.Text) {
+		if h.bindings != nil && h.bindingChannels != nil && messageCtx.IsDM {
+			payload, exact := authpayload.Parse(messageCtx.Text)
+			info, available := h.bindingChannels.Get("telegram")
+			if exact && available && info.Integration.Key != "" {
+				_, err := h.bindings.Consume(ctx, usercmd.BindingProof{Payload: payload, Integration: info.Integration, Principal: strconv.FormatInt(messageCtx.UserID, 10), Direct: messageCtx.IsDM, Locator: messageCtx.Locator, DisplayName: messageCtx.FirstName, ProviderUsername: messageCtx.Username, ProviderFirstName: messageCtx.FirstName, Provenance: "chat_id=" + strconv.FormatInt(messageCtx.ChatID, 10)})
+				reply := "Account connected. Refresh bindings in Backoffice."
+				if err != nil {
+					reply = "Could not connect this account. Check or replace the invitation in Backoffice."
+				}
+				if err == nil {
+					h.activateBoundPrimary(ctx, messageCtx.UserID, messageCtx.ChatID)
+				}
+				return sendPlain(ctx, h.actorDispatcher, serverActorAddress, messageCtx.Locator, reply)
+			}
+			return sendPlain(ctx, h.actorDispatcher, serverActorAddress, messageCtx.Locator, "Could not connect this account. Copy the complete invitation from Backoffice and try again.")
+		}
+		return nil
+	}
 	ownerID, ownerChatID := h.getOwnerBinding()
-	if ownerID == 0 || ownerChatID == 0 {
+	if h.bindings == nil && (ownerID == 0 || ownerChatID == 0) {
 		h.logger.Warn().
 			Str("reason", telegramIngressReasonOwnerUnavailable).
 			Msg("ignored inbound telegram message")
@@ -142,10 +186,16 @@ func (h *telegramInboundHandler) HandleMessage(ctx context.Context, messageCtx b
 	if !allowed {
 		return nil
 	}
+	if h.bindings != nil && messageCtx.IsDM && messageCtx.TopicID == 0 && ownerID == 0 {
+		h.activateBoundPrimary(ctx, messageCtx.UserID, messageCtx.ChatID)
+	}
+	if err := h.telegramProfiles.Refresh(ctx, messageCtx.UserID, messageCtx.Username, messageCtx.FirstName); err != nil {
+		h.logger.Warn().Err(err).Int64("user_id", messageCtx.UserID).Msg("failed to refresh telegram binding profile")
+	}
 
 	if handled, err := h.handleQuestionReply(ctx, messageCtx); err != nil {
 		h.logger.Warn().Err(err).Str("session_id", messageCtx.Locator.SessionID).Msg("failed to handle question reply")
-		_ = sendPlain(ctx, h.actorDispatcher, serverActorAddress, messageCtx.Locator, "Could not process this reply right now. Please try again.")
+		_ = sendPlain(ctx, h.actorDispatcher, serverActorAddress, messageCtx.Locator, "Could not confirm this reply. Check the task status before sending another request.")
 		return nil
 	} else if handled {
 		return nil
@@ -169,7 +219,11 @@ func (h *telegramInboundHandler) HandleMessage(ctx context.Context, messageCtx b
 	if h.now != nil {
 		nowFn = h.now
 	}
-	inbound := baldatelegram.NormalizeInbound(messageCtx, baldatelegram.AppendAttachmentSummary(text, messageCtx.Attachments), nowFn())
+	normalizedText := baldatelegram.AppendAttachmentSummary(text, messageCtx.Attachments)
+	if authpayload.Contains(normalizedText) {
+		return nil
+	}
+	inbound := baldatelegram.NormalizeInbound(messageCtx, normalizedText, nowFn())
 	service, err := h.telegramIngressService()
 	if err != nil {
 		return err
@@ -234,14 +288,18 @@ func (h *telegramInboundHandler) HandleCallback(ctx context.Context, callback ba
 	case !result.Settled:
 		message = "This request has already been answered."
 	}
-	ackErr := h.channel.AnswerQuestionCallback(ctx, callback.CallbackQueryID, message, alert)
 	if !result.Settled {
-		return ackErr
+		return h.channel.AnswerQuestionCallback(ctx, callback.CallbackQueryID, message, alert)
 	}
-	if dispatchErr := dispatchQuestionContinuation(ctx, h.actorDispatcher, result.Continuation); dispatchErr != nil {
+	if dispatchErr := dispatchQuestionContinuation(ctx, h.questionDispatcher, result.Continuation); dispatchErr != nil {
+		message := "Could not confirm this choice. Check the task status."
+		if result.Record.AnswerContinuationPending {
+			message = "Your answer is saved. Processing will resume automatically."
+		}
+		_ = h.channel.AnswerQuestionCallback(ctx, callback.CallbackQueryID, message, true)
 		return dispatchErr
 	}
-	return ackErr
+	return h.channel.AnswerQuestionCallback(ctx, callback.CallbackQueryID, message, alert)
 }
 
 func (h *telegramInboundHandler) HandleForumTopic(ctx context.Context, lifecycle baldatelegram.TopicLifecycleContext) error {
@@ -305,7 +363,11 @@ func (h *telegramInboundHandler) handleQuestionReply(ctx context.Context, messag
 	if !result.Settled {
 		return true, nil
 	}
-	if err := dispatchQuestionContinuation(ctx, h.actorDispatcher, result.Continuation); err != nil {
+	if err := dispatchQuestionContinuation(ctx, h.questionDispatcher, result.Continuation); err != nil {
+		if result.Record.AnswerContinuationPending {
+			h.logger.Warn().Err(err).Str("question_id", result.Record.QuestionID).Msg("saved question answer retained for autonomous admission")
+			return true, nil
+		}
 		return true, err
 	}
 	return true, nil
@@ -323,7 +385,7 @@ func (h *telegramInboundHandler) accessCollaboratorScope(ctx context.Context, us
 	if h.collaboratorStore == nil {
 		return false, nil
 	}
-	collaborator, found, err := h.collaboratorStore.GetCollaborator(ctx, fmt.Sprintf("%d", userID))
+	collaborator, found, err := h.collaboratorStore.GetCollaborator(ctx, auth.TelegramSubject(userID))
 	if err != nil {
 		return false, fmt.Errorf("look up telegram collaborator: %w", err)
 	}
@@ -354,93 +416,6 @@ func (h *telegramInboundHandler) authorizeTelegramInbound(ctx context.Context, i
 	return ingressapp.Authorization{Allowed: allowed, Reason: ingressapp.ReasonUnauthorized}, nil
 }
 
-func (h *telegramInboundHandler) prepareTelegramSession(ctx context.Context, inbound ingressapp.InboundContext) (ingressapp.SessionPreparation, error) {
-	locator := baldasession.SessionLocator{
-		ChannelType: inbound.ChannelType,
-		AddressKey:  inbound.AddressKey,
-		AddressJSON: inbound.AddressJSON,
-		SessionID:   inbound.SessionID,
-	}
-	transportUserID := strings.TrimSpace(inbound.UserID)
-	var ts *baldasession.TopicSession
-	var err error
-	if inbound.Direct && inbound.TopicID == 0 {
-		ownerID, ownerChatID := h.getOwnerBinding()
-		if transportUserID == baldatelegram.UserID(ownerID) && locator.SessionID == baldatelegram.NewLocator(ownerChatID, 0).SessionID {
-			ts, err = h.bootstrapOwnerSession(ctx, ownerID, ownerChatID)
-			if err != nil {
-				h.logger.Error().Err(err).Msg("failed to bootstrap owner dm session")
-				_ = sendPlain(ctx, h.actorDispatcher, serverActorAddress, locator, "Could not start this session. Please close this chat and try again.")
-				return ingressapp.SessionPreparation{Reason: telegramIngressReasonSessionUnavailable}, nil
-			}
-		} else {
-			existingSession, _ := h.sessionManager.GetSession(locator)
-			sendWelcome := existingSession == nil
-			baldaProviderName := h.getProviderName()
-			if baldaProviderName == "" {
-				_ = sendPlain(ctx, h.actorDispatcher, serverActorAddress, locator, "Balda is not ready right now. Please close this chat and try again.")
-				return ingressapp.SessionPreparation{Reason: telegramIngressReasonProviderUnavailable}, nil
-			}
-			ts, err = h.sessionManager.EnsureSession(ctx, baldasession.SessionContext{Locator: locator, UserID: transportUserID}, ownerSessionLabel)
-			if err != nil {
-				h.logger.Error().Err(err).Str("agent", baldaProviderName).Msg("failed to ensure main dm session")
-				_ = sendPlain(ctx, h.actorDispatcher, serverActorAddress, locator, "Could not start this session. Please close this chat and try again.")
-				return ingressapp.SessionPreparation{Reason: telegramIngressReasonSessionUnavailable}, nil
-			}
-			if sendWelcome {
-				metadata := h.sessionManager.GetAgentMetadata(baldaProviderName)
-				welcomeMsg := welcome.BuildAgentWelcomeMessage(ownerSessionLabel, ts.GetSessionID(), metadata.Type, metadata.Model, metadata.ReasoningEffort, metadata.MCPServers)
-				_ = sendMarkdown(ctx, h.actorDispatcher, serverActorAddress, locator, welcomeMsg)
-				h.sendSessionStartupNotice(ctx, locator, ts.GetSessionID())
-			}
-		}
-	} else {
-		ts, err = h.sessionManager.GetSession(locator)
-		if err != nil {
-			_ = sendPlain(ctx, h.actorDispatcher, serverActorAddress, locator, "Restoring agent session...")
-			ts, err = h.sessionManager.RestoreSession(ctx, baldasession.SessionContext{Locator: locator, UserID: transportUserID, AllowBaldaProviderFallback: false})
-			if err != nil {
-				if errors.Is(err, baldasession.ErrNoPersistedSession) {
-					baldaProviderName := h.getProviderName()
-					if baldaProviderName == "" {
-						_ = sendPlain(ctx, h.actorDispatcher, serverActorAddress, locator, "Balda is not ready right now. Please close this chat topic and try again.")
-						return ingressapp.SessionPreparation{Reason: telegramIngressReasonProviderUnavailable}, nil
-					}
-					ts, err = h.sessionManager.EnsureSession(ctx, baldasession.SessionContext{Locator: locator, UserID: transportUserID}, autoSessionLabel)
-					if err != nil {
-						h.logger.Error().Err(err).Str("agent", baldaProviderName).Int("topic_id", inbound.TopicID).Msg("failed to create session")
-						_ = sendPlain(ctx, h.actorDispatcher, serverActorAddress, locator, "Could not start this session. Please close this chat topic and create a new one.")
-						return ingressapp.SessionPreparation{Reason: telegramIngressReasonSessionUnavailable}, nil
-					}
-				} else {
-					h.logger.Warn().Err(err).Int("topic_id", inbound.TopicID).Msg("failed to restore session")
-					_ = sendPlain(ctx, h.actorDispatcher, serverActorAddress, locator, "Could not restore this session. Please close this chat topic and create a new one.")
-					return ingressapp.SessionPreparation{Reason: telegramIngressReasonSessionUnavailable}, nil
-				}
-			}
-			if ts != nil {
-				baldaProviderID := h.getProviderName()
-				metadata := h.sessionManager.GetAgentMetadata(baldaProviderID)
-				welcomeName := ownerSessionLabel
-				if inbound.Direct {
-					welcomeName = ts.GetAgentName()
-				}
-				welcomeMsg := welcome.BuildAgentWelcomeMessage(welcomeName, ts.GetSessionID(), metadata.Type, metadata.Model, metadata.ReasoningEffort, metadata.MCPServers)
-				_ = sendMarkdown(ctx, h.actorDispatcher, serverActorAddress, locator, welcomeMsg)
-				h.sendSessionStartupNotice(ctx, locator, ts.GetSessionID())
-			}
-		}
-	}
-	if ts == nil {
-		return ingressapp.SessionPreparation{Reason: telegramIngressReasonSessionUnavailable}, nil
-	}
-	return ingressapp.SessionPreparation{
-		Ready: true, UserID: ts.GetUserID(), RequesterUserID: transportUserID,
-		AgentSessionID: ts.GetAgentSessionID(), TopicID: inbound.TopicID, WorkspaceDir: ts.GetWorkspaceDir(),
-		RuntimeSnapshotID: ts.GetRuntimeSnapshotID(),
-	}, nil
-}
-
 func (h *telegramInboundHandler) dispatchTelegramInbound(ctx context.Context, envelope actorlayer.Envelope) (*actortransport.DispatchReceipt, error) {
 	if h.actorDispatcher == nil {
 		return nil, actorlayer.TransientError(errors.New("telegram ingress dispatcher is unavailable"))
@@ -455,60 +430,17 @@ func (h *telegramInboundHandler) dispatchTelegramInbound(ctx context.Context, en
 	return receipt, err
 }
 
-func (h *telegramInboundHandler) bootstrapOwnerSession(ctx context.Context, ownerID, chatID int64) (*baldasession.TopicSession, error) {
-	if ownerID == 0 {
-		return nil, fmt.Errorf("telegram owner id is required")
-	}
-	if chatID == 0 {
-		return nil, fmt.Errorf("telegram owner chat id is required")
-	}
-	if h.sessionManager == nil {
-		return nil, fmt.Errorf("session manager is required")
+func (h *telegramInboundHandler) bootstrapOwnerSession(ctx context.Context, ownerID, chatID int64) (ingressapp.SessionPreparation, error) {
+	if ownerID == 0 || chatID == 0 {
+		return ingressapp.SessionPreparation{}, fmt.Errorf("telegram owner binding is required")
 	}
 	h.bootstrapMu.Lock()
 	defer h.bootstrapMu.Unlock()
-
-	providerName := h.getProviderName()
-	if providerName == "" {
-		return nil, fmt.Errorf("balda provider is not configured")
-	}
-
 	locator := baldatelegram.NewLocator(chatID, 0)
-	ts, err := h.sessionManager.GetSession(locator)
-	if err == nil {
-		return ts, nil
-	}
-
-	ts, err = h.sessionManager.RestoreSession(ctx, baldasession.SessionContext{
-		Locator: locator,
-		UserID:  baldatelegram.UserID(ownerID),
+	return h.prepareTelegramSession(ctx, ingressapp.InboundContext{
+		SessionID: locator.SessionID, ChannelType: locator.ChannelType, AddressKey: locator.AddressKey,
+		AddressJSON: locator.AddressJSON, UserID: baldatelegram.UserID(ownerID), Direct: true,
 	})
-	if err != nil {
-		if !errors.Is(err, baldasession.ErrNoPersistedSession) {
-			return nil, fmt.Errorf("restore owner session: %w", err)
-		}
-		ts, err = h.sessionManager.EnsureSession(ctx, baldasession.SessionContext{
-			Locator: locator,
-			UserID:  baldatelegram.UserID(ownerID),
-		}, ownerSessionLabel)
-		if err != nil {
-			return nil, fmt.Errorf("create owner session: %w", err)
-		}
-	}
-
-	metadata := h.sessionManager.GetAgentMetadata(providerName)
-	welcomeMessage := welcome.BuildAgentWelcomeMessage(ownerSessionLabel, ts.GetSessionID(), metadata.Type, metadata.Model, metadata.ReasoningEffort, metadata.MCPServers)
-	if err := sendMarkdown(ctx, h.actorDispatcher, serverActorAddress, locator, welcomeMessage); err != nil {
-		h.logger.Warn().Err(err).Str("session_id", ts.GetSessionID()).Msg("failed to send owner session welcome")
-	}
-	h.sendSessionStartupNotice(ctx, locator, ts.GetSessionID())
-
-	h.logger.Info().
-		Int64("owner_id", ownerID).
-		Int64("chat_id", chatID).
-		Str("agent", providerName).
-		Msg("owner session bootstrapped")
-	return ts, nil
 }
 
 func (h *telegramInboundHandler) restorePersistedOwner() (ownerID, chatID int64, bound bool) {
@@ -540,6 +472,10 @@ func (h *telegramInboundHandler) sendStartupReadyMessage(ctx context.Context) {
 }
 
 func (h *telegramInboundHandler) logOwnerAuthIfNeeded() {
+	if h.bindings != nil {
+		h.logger.Info().Msg("connect Telegram accounts using invitations from Backoffice Access")
+		return
+	}
 	if h.authToken == "" || h.ownerStore == nil || h.ownerStore.HasOwner() {
 		return
 	}
@@ -553,32 +489,6 @@ func (h *telegramInboundHandler) logOwnerAuthIfNeeded() {
 		Str("auth_command", auth.BuildOwnerAuthCommand(h.authToken)).
 		Str("auth_link", auth.BuildOwnerAuthLink(username, h.authToken)).
 		Msg("balda owner authentication required")
-}
-
-func (h *telegramInboundHandler) getProviderName() string {
-	if h.sessionManager == nil {
-		return ""
-	}
-	providerName := strings.TrimSpace(h.sessionManager.BaldaProviderID())
-	if providerName == "" {
-		h.mu.RLock()
-		defer h.mu.RUnlock()
-		providerName = strings.TrimSpace(h.baldaProviderName)
-	}
-	return providerName
-}
-
-func (h *telegramInboundHandler) sendSessionStartupNotice(ctx context.Context, locator baldasession.SessionLocator, sessionID string) {
-	if h.sessionManager == nil {
-		return
-	}
-	notice := strings.TrimSpace(h.sessionManager.TakeStartupNotice(sessionID))
-	if notice == "" {
-		return
-	}
-	if err := sendPlain(ctx, h.actorDispatcher, serverActorAddress, locator, notice); err != nil {
-		h.logger.Warn().Err(err).Str("session_id", sessionID).Msg("failed to send session startup notice")
-	}
 }
 
 func (h *telegramInboundHandler) getChatID() int64 {
@@ -606,12 +516,18 @@ func (h *telegramInboundHandler) getBotIdentity() (int64, string) {
 	return h.botUserID, h.botUsername
 }
 
-func dispatchQuestionContinuation(ctx context.Context, dispatcher actortransport.Dispatcher, env actorlayer.Envelope) error {
+func dispatchQuestionContinuation(ctx context.Context, dispatcher QuestionContinuationDispatcher, env actorlayer.Envelope) error {
 	if dispatcher == nil {
 		return actorlayer.TransientError(fmt.Errorf("runtime is unavailable"))
 	}
-	_, err := dispatcher.Dispatch(ctx, env)
-	return err
+	receipt, err := dispatcher.Dispatch(ctx, env)
+	if err != nil {
+		return err
+	}
+	if receipt == nil {
+		return actorlayer.TransientError(fmt.Errorf("question continuation admission returned no receipt"))
+	}
+	return nil
 }
 
 func sendPlain(ctx context.Context, dispatcher actortransport.Dispatcher, from actorlayer.ActorAddress, locator deliverycmd.Locator, text string) error {
@@ -684,10 +600,6 @@ func (e *inboundTurnExecutor) SubmitWebhookTask(ctx context.Context, payload tur
 		return nil, "", err
 	}
 	return result, jobID, nil
-}
-
-func (e *inboundTurnExecutor) PublishSessionTurn(ctx context.Context, payload turncmd.SessionTurnPayload) (*actortransport.DispatchReceipt, error) {
-	return e.SubmitSessionTurn(ctx, payload)
 }
 
 func (e *inboundTurnExecutor) PublishWebhookJob(ctx context.Context, payload turncmd.SessionTurnPayload, routeName string, requestID string) (*actortransport.DispatchReceipt, string, error) {

@@ -31,6 +31,20 @@ Slack validates the Request URL with a signed `url_verification` request. The
 forwarding layer must preserve the exact raw body and the
 `X-Slack-Request-Timestamp` and `X-Slack-Signature` headers.
 
+## Connect an existing Backoffice account
+
+In Backoffice Access, select the existing user and open that user's Slack binding
+form. Balda verifies the configured bot's workspace and identity with `auth.test`.
+Open its direct conversation and send the generated `bind_<token>` message, or
+use `/balda start bind_<token>` there. The invitation is single use, expires in
+24 hours, and preserves the selected user's role. Refresh bindings in Backoffice
+to see the confirmed Slack account. No owner token is needed.
+
+A workspace or bot mismatch, non-direct conversation, malformed invitation,
+expired invitation or account conflict grants no access. Invitation messages
+are handled before conversational processing and excluded from thread history.
+If bot identity is unavailable, retry discovery in the Slack binding interface.
+
 ## Balda Configuration
 
 Environment:

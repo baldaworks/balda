@@ -11,6 +11,32 @@ import (
 
 const testWorkspaceBranchContent = "branch\n"
 
+func TestDeleteBranchAfterWorktreeCleanup(t *testing.T) {
+	ctx := t.Context()
+	workingDir := t.TempDir()
+	initGitRepo(t, ctx, workingDir)
+	writeFile(t, filepath.Join(workingDir, "base.txt"), "base\n")
+	runGit(t, ctx, workingDir, "add", "base.txt")
+	runGit(t, ctx, workingDir, "commit", "-m", "chore: seed")
+	manager := NewWorkspaceManagerWithSessionsDir(workingDir, t.TempDir(), "", "")
+	branchName := "norma/balda/sch-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	workspaceDir := manager.CanonicalWorkspaceDir("sch-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	if _, err := manager.EnsureWorkspace(ctx, "sch-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", branchName, workspaceDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.CleanupWorkspace(ctx, workspaceDir); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := manager.DeleteBranch(ctx, branchName); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if branch := strings.TrimSpace(runGit(t, ctx, workingDir, "branch", "--list", branchName)); branch != "" {
+		t.Fatalf("private branch remains: %q", branch)
+	}
+}
+
 func TestWorkspaceImportDiscardsDirtyChangesAndSyncsToBaseBranch(t *testing.T) {
 	t.Parallel()
 
@@ -199,6 +225,9 @@ func TestEnsureWorkspace_UsesStateDirSessionsRoot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureWorkspace() error = %v", err)
 	}
+	if !got.Created {
+		t.Fatal("EnsureWorkspace() Created = false, want true for newly mounted workspace")
+	}
 	workspaceDir := got.Dir
 	t.Cleanup(func() {
 		_ = runGitAllowError(ctx, workingDir, "worktree", "remove", "--force", workspaceDir)
@@ -210,6 +239,13 @@ func TestEnsureWorkspace_UsesStateDirSessionsRoot(t *testing.T) {
 	}
 	if _, err := os.Stat(workspaceDir); err != nil {
 		t.Fatalf("stat workspaceDir %q: %v", workspaceDir, err)
+	}
+	reused, err := m.EnsureWorkspace(ctx, sessionID, branchName, workspaceDir)
+	if err != nil {
+		t.Fatalf("EnsureWorkspace(reused) error = %v", err)
+	}
+	if reused.Created {
+		t.Fatal("EnsureWorkspace(reused) Created = true, want false")
 	}
 }
 

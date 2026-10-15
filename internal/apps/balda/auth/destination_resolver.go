@@ -2,28 +2,71 @@ package auth
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/baldaworks/balda/internal/apps/balda/aliascmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
-	"github.com/baldaworks/balda/internal/apps/balda/telegramref"
 )
 
-// DestinationResolver resolves envelope alias targets using registered destinations,
-// supporting multiple concurrent channels, role assignments, and fallback to legacy owner state.
+// SessionLookup reads a persisted session destination without coupling auth to storage.
+type SessionLookup func(ctx context.Context, sessionID string) (envelopetarget.Resolved, bool, error)
+
+// DestinationResolver resolves envelope alias targets using registered destinations.
 type DestinationResolver struct {
-	destStore  *DestinationStore
-	ownerStore *OwnerStore
+	destStore *DestinationStore
+	sessions  SessionLookup
+	managed   ManagedAliasLookup
 }
 
+// ManagedAliasLookup resolves one managed name to its current concrete locator.
+type ManagedAliasLookup func(ctx context.Context, name string) (deliverycmd.Locator, error)
+
 // NewDestinationResolver creates a new DestinationResolver.
-func NewDestinationResolver(destStore *DestinationStore, ownerStore *OwnerStore) *DestinationResolver {
-	return &DestinationResolver{
-		destStore:  destStore,
-		ownerStore: ownerStore,
+func NewDestinationResolver(destStore *DestinationStore) *DestinationResolver {
+	return &DestinationResolver{destStore: destStore}
+}
+
+// NewDestinationResolverWithSessions also resolves persisted session destinations.
+func NewDestinationResolverWithSessions(destStore *DestinationStore, sessions SessionLookup) *DestinationResolver {
+	return &DestinationResolver{destStore: destStore, sessions: sessions}
+}
+
+// NewDestinationResolverWithManagedAliases composes role, session and managed-name resolution.
+func NewDestinationResolverWithManagedAliases(destStore *DestinationStore, sessions SessionLookup, managed ManagedAliasLookup) *DestinationResolver {
+	return &DestinationResolver{destStore: destStore, sessions: sessions, managed: managed}
+}
+
+// ResolveManagedAlias resolves a managed name without falling back to role aliases.
+func (r *DestinationResolver) ResolveManagedAlias(ctx context.Context, name string) (envelopetarget.Resolved, error) {
+	if r.managed == nil {
+		return envelopetarget.Resolved{}, envelopetarget.ErrResolutionUnavailable
 	}
+	locator, err := r.managed(ctx, name)
+	if errors.Is(err, aliascmd.ErrNotFound) || errors.Is(err, aliascmd.ErrInvalid) {
+		return envelopetarget.Resolved{}, envelopetarget.ErrDestinationUnavailable
+	}
+	if err != nil {
+		return envelopetarget.Resolved{}, fmt.Errorf("%w: managed alias lookup: %w", envelopetarget.ErrResolutionUnavailable, err)
+	}
+	return envelopetarget.Resolved{Locator: locator}, nil
+}
+
+// ResolveSession returns the canonical locator for an active session.
+func (r *DestinationResolver) ResolveSession(ctx context.Context, sessionID string) (envelopetarget.Resolved, error) {
+	if r.sessions == nil {
+		return envelopetarget.Resolved{}, fmt.Errorf("%w: session store is unavailable", envelopetarget.ErrResolutionUnavailable)
+	}
+	resolved, found, err := r.sessions(ctx, sessionID)
+	if err != nil {
+		return envelopetarget.Resolved{}, fmt.Errorf("%w: read session %q: %w", envelopetarget.ErrResolutionUnavailable, sessionID, err)
+	}
+	if !found {
+		return envelopetarget.Resolved{}, fmt.Errorf("%w: active session %q not found", envelopetarget.ErrSessionUnavailable, sessionID)
+	}
+	return resolved, nil
 }
 
 // ResolveAlias resolves an alias (e.g. "owner", "owner@slackagent", "collaborator") to a canonical delivery locator and principal.
@@ -38,11 +81,10 @@ func (r *DestinationResolver) ResolveAlias(ctx context.Context, alias string) (e
 		return envelopetarget.Resolved{}, fmt.Errorf("unsupported alias target %q", alias)
 	}
 
-	// 1. If destination store is available, look up registered role destinations.
 	if r.destStore != nil {
 		candidates, err := r.destStore.GetDestinationsByRole(ctx, role)
 		if err != nil {
-			return envelopetarget.Resolved{}, fmt.Errorf("lookup destinations for role %q: %w", role, err)
+			return envelopetarget.Resolved{}, fmt.Errorf("%w: lookup destinations for role %q: %w", envelopetarget.ErrResolutionUnavailable, role, err)
 		}
 
 		if channelFilter != "" {
@@ -84,27 +126,6 @@ func (r *DestinationResolver) ResolveAlias(ctx context.Context, alias string) (e
 				Alias:      alias,
 				Candidates: refs,
 			}
-		}
-	}
-
-	// 2. Fallback to legacy OwnerStore if alias is "owner" and channel is either unspecified or telegram.
-	if role == deliverycmd.RoleOwner && (channelFilter == "" || channelFilter == ChannelTelegram) && r.ownerStore != nil {
-		owner := r.ownerStore.GetOwner()
-		if owner != nil && owner.UserID != 0 && owner.ChatID != 0 {
-			rawJSON, _ := json.Marshal(map[string]any{"chat_id": owner.ChatID, "topic_id": 0})
-			loc, err := deliverycmd.NewLocator(
-				ChannelTelegram,
-				fmt.Sprintf("%d:0", owner.ChatID),
-				string(rawJSON),
-				fmt.Sprintf("tg-%d-0", owner.ChatID),
-			)
-			if err != nil {
-				return envelopetarget.Resolved{}, err
-			}
-			return envelopetarget.Resolved{
-				Locator:   loc,
-				Principal: telegramref.UserID(owner.UserID),
-			}, nil
 		}
 	}
 

@@ -12,6 +12,22 @@ type sqliteJobStore struct {
 	db *sql.DB
 }
 
+func (s *sqliteJobStore) RecordScheduledOutput(ctx context.Context, jobID, output string) error {
+	return recordScheduledOutput(ctx, s.db, func(query string) string { return query }, jobID, output)
+}
+
+func (s *sqliteJobStore) RecordPrivateOutput(ctx context.Context, jobID, output string, failed bool) error {
+	return recordPrivateOutput(ctx, s.db, func(query string) string { return query }, jobID, output, failed)
+}
+
+func (s *sqliteJobStore) ListUnclosedTerminalWebhookJobs(ctx context.Context, after time.Time, afterID string, before time.Time, limit int) ([]JobRecord, error) {
+	return listUnclosedTerminalWebhookJobs(ctx, s.db, func(query string) string { return query }, after, afterID, before, limit)
+}
+
+func (s *sqliteJobStore) MarkWebhookRunClosed(ctx context.Context, jobID string, closedAt time.Time) error {
+	return markWebhookRunClosed(ctx, s.db, func(query string) string { return query }, jobID, closedAt)
+}
+
 type contextExecer interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }
@@ -29,10 +45,10 @@ func insertExecutionJob(ctx context.Context, exec contextExecer, normalized JobR
 	res, err := exec.ExecContext(ctx, `
 		INSERT OR IGNORE INTO execution_jobs (
 			id, session_id, parent_job_id, title, objective, status, owner_actor, assigned_actor,
-			priority, created_by, result, error,
+			priority, created_by, result, error, private_run_kind, private_run_closed_at,
 			created_at, updated_at, started_at, completed_at, canceled_at
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		normalized.ID,
 		nullIfEmpty(normalized.SessionID),
 		nullIfEmpty(normalized.ParentJobID),
@@ -45,6 +61,8 @@ func insertExecutionJob(ctx context.Context, exec contextExecer, normalized JobR
 		nullIfEmpty(normalized.CreatedBy),
 		nullIfEmpty(normalized.Result),
 		nullIfEmpty(normalized.Error),
+		normalized.PrivateRunKind,
+		normalized.PrivateRunClosedAt,
 		normalized.CreatedAt.Format(time.RFC3339),
 		normalized.UpdatedAt.Format(time.RFC3339),
 		optionalTimeValue(normalized.StartedAt),
@@ -99,6 +117,18 @@ func (s *sqliteJobStore) GetJob(ctx context.Context, jobID string) (JobRecord, b
 		return JobRecord{}, false, err
 	}
 	return record, ok, nil
+}
+
+func (s *sqliteJobStore) RebindScheduledJobSession(ctx context.Context, jobID, oldSessionID, newSessionID, assignedActor string) (bool, error) {
+	result, err := s.db.ExecContext(ctx, `UPDATE execution_jobs SET session_id = ?, assigned_actor = ?, updated_at = ?
+		WHERE id = ? AND session_id = ? AND status NOT IN (?, ?, ?, ?)`,
+		newSessionID, assignedActor, time.Now().UTC().Format(time.RFC3339), jobID, oldSessionID,
+		JobStatusCompleted, JobStatusFailed, JobStatusCanceled, JobStatusDeadLettered)
+	if err != nil {
+		return false, fmt.Errorf("rebind scheduled job session: %w", err)
+	}
+	count, err := result.RowsAffected()
+	return count == 1, err
 }
 
 func (s *sqliteJobStore) ListActiveJobsBySession(ctx context.Context, sessionID string) ([]JobRecord, error) {
@@ -611,6 +641,31 @@ func (s *sqliteJobStore) MarkDeliveryFailed(ctx context.Context, deliveryKey str
 	return nil
 }
 
+// SentFinalDelivery returns the provider receipt for a job's final response.
+func (s *sqliteJobStore) SentFinalDelivery(ctx context.Context, jobID string) (string, bool, error) {
+	jobID = strings.TrimSpace(jobID)
+	if jobID == "" {
+		return "", false, fmt.Errorf("job id is required")
+	}
+	var providerMessageID string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT provider_message_id FROM execution_delivery_outbox
+		WHERE job_id = ? AND delivery_key IN (?, ?) AND status = ?
+		  AND provider_message_id IS NOT NULL AND provider_message_id <> ''
+		LIMIT 1`, jobID, jobID+":delivery:final", jobID+":delivery:terminal", DeliveryStatusSent).Scan(&providerMessageID)
+	if err == sql.ErrNoRows {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("read final delivery for job %q: %w", jobID, err)
+	}
+	return providerMessageID, true, nil
+}
+
+func (s *sqliteJobStore) FinalDelivery(ctx context.Context, jobID string) (DeliveryRecord, bool, error) {
+	return findFinalDelivery(ctx, jobID, s.getDeliveryByKey)
+}
+
 func (s *sqliteJobStore) ReserveAgentStep(ctx context.Context, record AgentStepRecord) (AgentStepRecord, bool, error) {
 	now := time.Now().UTC()
 	normalized, err := normalizeExecutionAgentStep(record, now)
@@ -712,6 +767,7 @@ const executionJobSelectSQL = `
 	SELECT id, COALESCE(session_id, ''), COALESCE(parent_job_id, ''), COALESCE(title, ''), objective,
 	       status, COALESCE(owner_actor, ''), COALESCE(assigned_actor, ''), priority,
 	       COALESCE(created_by, ''), COALESCE(result, result_json, ''), COALESCE(error, ''),
+	       COALESCE(private_run_kind, ''), COALESCE(private_run_closed_at, ''),
 	       created_at, updated_at, COALESCE(started_at, ''), COALESCE(completed_at, ''), COALESCE(canceled_at, '')
 	FROM execution_jobs`
 
@@ -752,6 +808,8 @@ func scanExecutionJob(scan func(dest ...any) error) (JobRecord, bool, error) {
 		&record.CreatedBy,
 		&record.Result,
 		&record.Error,
+		&record.PrivateRunKind,
+		&record.PrivateRunClosedAt,
 		&createdAtRaw,
 		&updatedAtRaw,
 		&startedAtRaw,
@@ -935,6 +993,10 @@ func normalizeExecutionJob(record JobRecord, now time.Time) (JobRecord, error) {
 	record.CreatedBy = strings.TrimSpace(record.CreatedBy)
 	record.Result = strings.TrimSpace(record.Result)
 	record.Error = strings.TrimSpace(record.Error)
+	record.PrivateRunKind = strings.TrimSpace(record.PrivateRunKind)
+	if record.PrivateRunKind != "" && record.PrivateRunKind != PrivateRunKindWebhook {
+		return JobRecord{}, fmt.Errorf("unsupported private run kind %q", record.PrivateRunKind)
+	}
 	return record, nil
 }
 

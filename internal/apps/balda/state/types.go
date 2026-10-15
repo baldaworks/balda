@@ -2,14 +2,20 @@ package state
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/authcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookcmd"
 	adksession "google.golang.org/adk/v2/session"
 )
+
+// ErrScheduledJobSourceConflict means an ID is already owned by another source.
+var ErrScheduledJobSourceConflict = errors.New("scheduled job source conflict")
 
 const (
 	// NamespaceApp stores balda app internal state (for example owner auth).
@@ -33,6 +39,12 @@ const (
 	ScheduledJobStatusActive = "active"
 	// ScheduledJobStatusPaused means the job is persisted but not dispatched.
 	ScheduledJobStatusPaused = "paused"
+	// ScheduledJobSourceConfig means host configuration owns the definition.
+	ScheduledJobSourceConfig = "config"
+	// ScheduledJobSourceManaged means Backoffice owns the definition.
+	ScheduledJobSourceManaged = "managed"
+	// ScheduledJobSourceInternal means the runtime owns a one-shot timer.
+	ScheduledJobSourceInternal = "internal"
 
 	// JobStatusCreated means a job record exists but has not been queued.
 	JobStatusCreated = "created"
@@ -73,6 +85,8 @@ const (
 	AgentStepStatusFailed = "failed"
 )
 
+const PrivateRunKindWebhook = "webhook"
+
 // Provider exposes balda state capabilities behind a backend-agnostic interface.
 // This allows swapping SQLite with another provider later.
 type Provider interface {
@@ -81,6 +95,14 @@ type Provider interface {
 	SessionMCPKV() KVStore
 	Sessions() SessionStore
 	ScheduledJobs() ScheduledJobStore
+	ScheduleManagement() ScheduleManagementStore
+	ScheduleRuns() ScheduleRunStore
+	Aliases() AliasStore
+	MemoryManagement() MemoryManagementStore
+	HookManagement() HookManagementStore
+	PluginManagement() PluginManagementStore
+	WebhookAdmissions() WebhookAdmissionStore
+	WebhookRoutes() WebhookRouteStore
 	Questions() QuestionStore
 	// SessionMemoryIngressOutbox returns producer-local exports awaiting
 	// JetStream PubAck. It is distinct from canonical memory delivery state.
@@ -89,7 +111,42 @@ type Provider interface {
 	PollingOffsetStore() PollingOffsetStore
 	Collaborators() CollaboratorStore
 	Plugins() PluginStore
+	MCP() MCPStore
+	Users() usercmd.Store
 	Close() error
+}
+
+// WebhookAdmissionStore freezes inbound job input and delivery selection.
+// It persists admission, but never executes or schedules actor work.
+type WebhookAdmissionStore interface {
+	Get(ctx context.Context, routeName, dedupeKey string) (webhookcmd.Admission, bool, error)
+	GetByJobID(ctx context.Context, jobID string) (webhookcmd.Admission, bool, error)
+	Create(ctx context.Context, candidate webhookcmd.Admission) (webhookcmd.Admission, bool, error)
+	RecordReceipt(ctx context.Context, routeName, dedupeKey string, receipt webhookcmd.Receipt) (webhookcmd.Admission, error)
+	ListHistory(ctx context.Context, routeName string, beforeAt time.Time, beforeJobID string, limit int) ([]WebhookHistoryRecord, error)
+	GetHistory(ctx context.Context, routeName, jobID string) (WebhookHistoryRecord, bool, error)
+}
+
+const (
+	// WebhookHistorySourceExternal identifies an admitted external HTTP request.
+	WebhookHistorySourceExternal = webhookcmd.SourceExternal
+	// WebhookHistorySourceTest identifies an administrator Test POST.
+	WebhookHistorySourceTest = webhookcmd.SourceTest
+)
+
+// WebhookHistoryRecord joins one durable admission to its optional job and final delivery.
+// RawBody is nil for admissions created before raw input was stored.
+type WebhookHistoryRecord struct {
+	RouteName       string
+	JobID           string
+	Source          string
+	RawBody         *string
+	ReportTo        *deliverycmd.Locator
+	CreatedAt       time.Time
+	JobStatus       string
+	Output          string
+	DeliveryStatus  string
+	DeliveryPayload string
 }
 
 const (
@@ -218,9 +275,17 @@ type SessionStore interface {
 	List(ctx context.Context) ([]SessionRecord, error)
 }
 
-// ScheduledJobRecord persists locator-targeted recurring job metadata.
+// ScheduledJobRecord persists recurring job metadata and optional report targeting.
 type ScheduledJobRecord struct {
 	JobID               string
+	Source              string
+	Enabled             bool
+	Deleted             bool
+	DefinitionVersion   uint64
+	TargetKind          string
+	TargetKey           string
+	ReportToTargetKind  string
+	ReportToTargetKey   string
 	SessionID           string
 	ChannelType         string
 	AddressKey          string
@@ -247,6 +312,7 @@ type ScheduledJobRecord struct {
 // ScheduledJobStore persists scheduler jobs bound to canonical locators.
 type ScheduledJobStore interface {
 	Upsert(ctx context.Context, record ScheduledJobRecord) error
+	UpdateRuntime(ctx context.Context, update ScheduledJobRuntimeUpdate) (bool, error)
 	GetByID(ctx context.Context, jobID string) (ScheduledJobRecord, bool, error)
 	List(ctx context.Context) ([]ScheduledJobRecord, error)
 	ListByAddress(ctx context.Context, channelType, addressKey string) ([]ScheduledJobRecord, error)
@@ -254,36 +320,110 @@ type ScheduledJobStore interface {
 	Delete(ctx context.Context, jobID string) error
 }
 
-type QuestionRecord struct {
-	QuestionID        string
-	SessionID         string
-	ChannelKind       string
-	AddressKey        string
-	AddressJSON       string
-	Prompt            string
-	Status            string
-	InteractionJSON   string
-	ResumeJSON        string
-	RequestJSON       string
-	AnswerJSON        string
-	FailureJSON       string
-	Provider          string
-	ConversationKey   string
-	ProviderMessageID string
-	ReplyHandle       string
-	ControlHandle     string
-	ExpiresAt         time.Time
-	AnsweredAt        time.Time
-	FailedAt          time.Time
+// ScheduledJobRuntimeUpdate changes only dispatch state when the selected definition and slot still match.
+type ScheduledJobRuntimeUpdate struct {
+	JobID                   string
+	DefinitionVersion       uint64
+	ExpectedNextRunAt       time.Time
+	ExpectedLastDispatchKey string
+	Status                  string
+	RetryCount              int
+	LastDispatchKey         string
+	NextRunAt               time.Time
+	LastRunAt               time.Time
+	LastError               string
+}
+
+// ScheduleRunRecord persists one exact manual or cron dispatch intent.
+type ScheduleRunRecord struct {
+	RunID             string
+	ScheduleID        string
+	Trigger           string
+	TriggerKey        string
+	DefinitionVersion uint64
+	Version           uint64
+	RequestedAt       time.Time
+	DueAt             time.Time
+	DispatchState     string
+	Attempts          int
+	NextAttemptAt     time.Time
+	SafeFailureCode   string
+	DispatchedAt      time.Time
+	ExecutionJobID    string
+	PayloadJSON       string
+	ReportLocatorRef  string
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 }
 
+const (
+	// ScheduleRunTriggerCron marks a due cron slot.
+	ScheduleRunTriggerCron = "cron"
+	// ScheduleRunTriggerManual marks an administrator-requested run.
+	ScheduleRunTriggerManual = "manual"
+	// ScheduleRunPending means an intent is awaiting durable dispatch.
+	ScheduleRunPending = "pending"
+	// ScheduleRunRetrying means a dispatch retry is due later.
+	ScheduleRunRetrying = "retrying"
+	// ScheduleRunPublishing means a worker claimed publication until its lease expires.
+	ScheduleRunPublishing = "publishing"
+	// ScheduleRunDispatched means the actor command was durably published.
+	ScheduleRunDispatched = "dispatched"
+	// ScheduleRunFailed means pre-publication dispatch exhausted its retries.
+	ScheduleRunFailed = "failed"
+	// ScheduleRunCanceled means a stale unclaimed intent was canceled.
+	ScheduleRunCanceled = "canceled"
+)
+
+// ScheduleRunStore persists run intents and lists history independently of definitions.
+type ScheduleRunStore interface {
+	Create(ctx context.Context, record ScheduleRunRecord) (bool, error)
+	CreateCron(ctx context.Context, record ScheduleRunRecord, expectedNextRunAt time.Time) (bool, error)
+	ClaimCron(ctx context.Context, record ScheduleRunRecord, now, leaseUntil time.Time) (bool, error)
+	Update(ctx context.Context, record ScheduleRunRecord, expectedVersion uint64) (bool, error)
+	GetByID(ctx context.Context, runID string) (ScheduleRunRecord, bool, error)
+	GetByTriggerKey(ctx context.Context, scheduleID, triggerKey string) (ScheduleRunRecord, bool, error)
+	ListBySchedule(ctx context.Context, scheduleID string, beforeAt time.Time, beforeID string, limit int) ([]ScheduleRunRecord, error)
+	ListPending(ctx context.Context, now time.Time, limit int) ([]ScheduleRunRecord, error)
+	ListUnclosedDispatched(ctx context.Context, afterAt time.Time, afterID string, limit int) ([]ScheduleRunRecord, error)
+	MarkClosed(ctx context.Context, runID string, at time.Time) error
+}
+
+type QuestionRecord struct {
+	AnswerContinuationPending bool
+	AnswerControlsPending     bool
+	QuestionID                string
+	SessionID                 string
+	ChannelKind               string
+	AddressKey                string
+	AddressJSON               string
+	Prompt                    string
+	Status                    string
+	InteractionJSON           string
+	ResumeJSON                string
+	RequestJSON               string
+	AnswerJSON                string
+	FailureJSON               string
+	Provider                  string
+	ConversationKey           string
+	ProviderMessageID         string
+	ReplyHandle               string
+	ControlHandle             string
+	ExpiresAt                 time.Time
+	AnsweredAt                time.Time
+	FailedAt                  time.Time
+	CreatedAt                 time.Time
+	UpdatedAt                 time.Time
+}
+
 type QuestionStore interface {
+	PendingQuestionAnswerIDs(ctx context.Context, afterID string, limit int) ([]string, error)
+	MarkQuestionAnswerAdmitted(ctx context.Context, questionID string) error
+	MarkQuestionAnswerControlsCleared(ctx context.Context, questionID string, ref questioncmd.DeliveryRef) error
 	CreatePendingQuestion(ctx context.Context, record QuestionRecord) error
 	BindQuestionDeliveryRef(ctx context.Context, questionID string, ref questioncmd.DeliveryRef) error
 	GetQuestionByID(ctx context.Context, questionID string) (QuestionRecord, bool, error)
-	GetPendingQuestionByReplyRef(ctx context.Context, provider, conversationKey, replyToMessageID string) (QuestionRecord, bool, error)
+	GetQuestionByReplyRef(ctx context.Context, provider, conversationKey, replyToMessageID string) (QuestionRecord, bool, error)
 	MarkQuestionAnswered(ctx context.Context, questionID string, answer questioncmd.Answer) (QuestionRecord, bool, error)
 	MarkQuestionTimedOut(ctx context.Context, questionID string, timedOutAt time.Time) (QuestionRecord, bool, error)
 	MarkQuestionFailed(ctx context.Context, questionID string, failure questioncmd.Failure) (QuestionRecord, bool, error)
@@ -291,23 +431,25 @@ type QuestionStore interface {
 
 // JobRecord persists one assignable work item.
 type JobRecord struct {
-	ID            string
-	SessionID     string
-	ParentJobID   string
-	Title         string
-	Objective     string
-	Status        string
-	OwnerActor    string
-	AssignedActor string
-	Priority      int
-	CreatedBy     string
-	Result        string
-	Error         string
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
-	StartedAt     time.Time
-	CompletedAt   time.Time
-	CanceledAt    time.Time
+	ID                 string
+	SessionID          string
+	ParentJobID        string
+	Title              string
+	Objective          string
+	Status             string
+	OwnerActor         string
+	AssignedActor      string
+	Priority           int
+	CreatedBy          string
+	Result             string
+	Error              string
+	PrivateRunKind     string
+	PrivateRunClosedAt string
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+	StartedAt          time.Time
+	CompletedAt        time.Time
+	CanceledAt         time.Time
 }
 
 // JobEventRecord persists an append-only job event.
@@ -375,10 +517,28 @@ type JobLifecycleStore interface {
 	CreateJobWithEvent(ctx context.Context, record JobRecord, event JobEventOutboxRecord) (bool, error)
 	GetJob(ctx context.Context, jobID string) (JobRecord, bool, error)
 	ListActiveJobsBySession(ctx context.Context, sessionID string) ([]JobRecord, error)
+	RebindScheduledJobSession(ctx context.Context, jobID, oldSessionID, newSessionID, assignedActor string) (bool, error)
 	UpdateJobStatus(ctx context.Context, jobID string, status string, reason string) error
 	UpdateJobStatusWithEvent(ctx context.Context, jobID string, status string, reason string, event JobEventOutboxRecord) error
 	SetJobResult(ctx context.Context, jobID string, result string, status string, reason string) error
 	SetJobResultWithEvent(ctx context.Context, jobID string, result string, status string, reason string, event JobEventOutboxRecord) error
+}
+
+// PrivateRunCleanupStore scans and marks private execution sessions for cleanup.
+type PrivateRunCleanupStore interface {
+	ListUnclosedTerminalWebhookJobs(ctx context.Context, after time.Time, afterID string, before time.Time, limit int) ([]JobRecord, error)
+	MarkWebhookRunClosed(ctx context.Context, jobID string, closedAt time.Time) error
+}
+
+// WebhookTurnClaimStore guards the first provider invocation for a webhook job.
+type WebhookTurnClaimStore interface {
+	ClaimWebhookTurn(ctx context.Context, jobID string) (bool, error)
+}
+
+// ScheduledOutputStore records one private scheduled run's provider output.
+type ScheduledOutputStore interface {
+	RecordScheduledOutput(ctx context.Context, jobID, output string) error
+	RecordPrivateOutput(ctx context.Context, jobID, output string, failed bool) error
 }
 
 // JobEventStore persists projected job history.
@@ -401,6 +561,8 @@ type DeliveryStore interface {
 	MarkDeliverySending(ctx context.Context, deliveryKey string) error
 	MarkDeliverySent(ctx context.Context, deliveryKey string, providerMessageID string) error
 	MarkDeliveryFailed(ctx context.Context, deliveryKey string, reason string) error
+	SentFinalDelivery(ctx context.Context, jobID string) (string, bool, error)
+	FinalDelivery(ctx context.Context, jobID string) (DeliveryRecord, bool, error)
 }
 
 // AgentStepStore persists idempotent agent workflow steps.
@@ -413,6 +575,9 @@ type AgentStepStore interface {
 // JobStore is the complete SQLite capability set exposed by the state provider.
 type JobStore interface {
 	JobLifecycleStore
+	WebhookTurnClaimStore
+	PrivateRunCleanupStore
+	ScheduledOutputStore
 	JobEventStore
 	JobEventOutboxStore
 	DeliveryStore

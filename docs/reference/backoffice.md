@@ -1,13 +1,17 @@
 # Backoffice application
 
 This page is the authoritative application and Web UI foundation for
-Backoffice. Read it before changing `cmd/backoffice` or
+Backoffice. Read it before changing `cmd/balda` or
 `internal/apps/backoffice`.
 
 ## Application boundary
 
-- `cmd/backoffice` is the executable entrypoint and composition edge. It owns
-  process startup and dependency wiring, not page policy or domain state.
+- `cmd/balda` is the sole executable entrypoint. Its `start` command owns the
+  production process lifecycle; `backoffice bootstrap-admin`,
+  `backoffice reset-password`, and `backoffice recover-2fa` are offline
+  administrator maintenance subcommands.
+  `backoffice qa serve` is a local preview command without application state.
+- `internal/apps/balda` composes one state provider for bot and Backoffice.
 - `internal/apps/backoffice` owns Backoffice application behavior, including
   HTTP routes, security enforcement, server-side rendering, view models,
   templates, static assets, and tests.
@@ -15,6 +19,319 @@ Backoffice. Read it before changing `cmd/backoffice` or
   calls server-side; the browser must never call Assistant directly.
 - `superadmin` is the interface name, not a new authorization role. Existing
   `administrator` and `operator` roles remain authoritative.
+
+## Startup and configuration
+
+`balda start` reads `.config/balda/config.yaml` once, applies `BALDA_*`
+overrides, opens the database selected by `balda.database`, and applies its
+embedded Goose schema and data migrations. Backoffice uses that same provider
+and canonical user store; it does not select a second database or run separate migrations.
+Provider opening automatically converts legacy owner/collaborator data.
+It also applies a Goose SQL data migration for retained configured MCP snapshots
+created before provider targeting was captured. The migration adds exact format
+markers in app KV and preserves the original snapshots, session IDs and history.
+Restoration accepts those markers only when the configured source, transport,
+command/arguments, directory, URL and environment/header keys match the original
+revision. These older revisions never recorded binding values or targeting:
+they keep host-file values and provider-default selection. New snapshots retain
+full-value hashes and exact targeting. Restore first attempts those pins
+exactly. If that attempt fails while the caller and service remain active,
+Balda replaces the saved ADK session at the same locator with a fresh one using
+current eligible capabilities; fallback failure still aborts restoration.
+The lifecycle checks canonical administrator bootstrap before MCP or ingress,
+then binds one shared HTTP listener before enabling inbound transports. A failed
+prerequisite, route conflict, or listener bind aborts startup. Shutdown stops
+inbound transports and the shared HTTP listener before the shared provider.
+
+Both hosted and ACP provider shells start with the complete selected MCP
+configuration, including unreachable, unresponsive or unauthorized servers.
+Startup, catalog publication and inventory do not connect to configured HTTP/SSE
+servers. Balda schedules owned stdio discovery before advancing startup, with
+handshake and restart work in supervised workers. MCP failure is an invocation
+or observed-health outcome; during a healthy active session it does not remove
+selected revisions or reset a conversation. Missing historical revisions,
+malformed local settings, and unavailable protection material fail exact
+restore and can trigger the fresh-session fallback described above. Caller
+cancellation and shutdown stop that fallback.
+The credential bridge and catalog keep their position before provider construction.
+
+Saving the same worker authorization repairs local projection or a previously
+failed credential request. It preserves the definition revision, capability
+snapshot and existing provider runtimes, without MCP discovery or a tool call.
+The next invocation may attempt attachment; saving authorization does not claim readiness.
+A first or changed binding follows ordinary immutable catalog publication.
+Changing a file-owned remote to stdio uses the current stdio declaration;
+removing it excludes it from new selections. Retained remote captures, grants,
+and session pins remain available under their exact identities.
+
+Commands:
+
+- `balda validate` checks configuration and the application graph without
+  opening or migrating the database. It is not a user-readiness check.
+- `balda init` creates the first administrator and prints its generated password
+  once, alongside the owner token. Its username is `superuser`.
+- `balda backoffice bootstrap-admin` generates and prints a password once by
+  default; it also accepts an operator-provided password on non-terminal stdin.
+  It creates the first unbound primary administrator on a fresh database, or
+  configures the selected credential-disabled administrator. Replacing a
+  usable credential requires `--reset` and revokes all existing browser
+  session families.
+- `balda backoffice reset-password` generates and prints a new primary administrator
+  password, revoking its browser session families. Use `--user-id` to select
+  another administrator, or non-terminal stdin to supply a password.
+- `balda start` applies schema and data migrations, then refuses incomplete
+  administrator bootstrap before binding any listener or ingress. Migration
+  failures also abort startup.
+
+The safe shared HTTP defaults are loopback `127.0.0.1:8095`, public origin
+`http://127.0.0.1:8095`, and an empty deployment prefix. Backoffice starts at
+`http://127.0.0.1:8095/backoffice/`. Its defaults include a 15-minute opaque
+access-token lifetime and a 30-day rolling refresh-token lifetime.
+`access_token_ttl` must be
+positive and shorter than `refresh_token_ttl`; both are bounded. A
+non-loopback listener requires an HTTPS public origin.
+
+Configure Backoffice in the existing Balda file; do not create a second
+configuration or database section:
+
+```yaml
+balda:
+  http:
+    listen_addr: "127.0.0.1:8095"
+    base_url: "http://127.0.0.1:8095"
+    base_path: ""
+  backoffice:
+    access_token_ttl: "15m"
+    refresh_token_ttl: "720h"
+    qa_ui: false
+```
+
+Every field has the normal `BALDA_*` environment override, for example
+`BALDA_HTTP_LISTEN_ADDR`, `BALDA_HTTP_BASE_URL`, `BALDA_HTTP_BASE_PATH`,
+`BALDA_BACKOFFICE_ACCESS_TOKEN_TTL`,
+`BALDA_BACKOFFICE_REFRESH_TOKEN_TTL`, and `BALDA_BACKOFFICE_QA_UI`. Access
+tokens may live from 1 minute through 1 hour. Refresh families must outlive
+access tokens and may live for at most 30 days. Every successful refresh renews the deadline to the effective rotation time
+plus `refresh_token_ttl`; the default is 30 elapsed days (`720h`), rather than a
+calendar month. Explicit YAML and environment values continue to override the
+default.
+
+`balda.http.listen_addr` is the one local bind for Backoffice, generic webhooks,
+and enabled HTTP transport callbacks. `base_url` is the public origin, without
+a path or trailing slash; it is independent of that bind. `base_path` is an
+optional canonical absolute deployment prefix without a trailing slash, for
+example `/balda`; an explicit empty value selects the origin root. Backoffice
+serves pages, assets, OAuth callbacks, and browser/session endpoints under
+`<base_path>/backoffice/`. Browser cookies are scoped to that browser subtree,
+not the sibling `/webhooks` or `/gateway` routes. A reverse proxy must forward
+the configured paths unchanged.
+
+For an illustrative asus configuration, set `balda.http.base_url` to
+`https://lab.metalagman.dev` and `balda.http.base_path` to `/balda`. The public
+URLs are `https://lab.metalagman.dev/balda/backoffice/`, its management page at
+`https://lab.metalagman.dev/balda/backoffice/webhooks`, an `orders` callback
+at `https://lab.metalagman.dev/balda/webhooks/orders`, and Slack callbacks at
+`https://lab.metalagman.dev/balda/gateway/slack/events` and
+`https://lab.metalagman.dev/balda/gateway/slack/commands`. These addresses are
+an application URL example; the live asus ingress, deployment, and external
+callback registrations are unchanged by this Story. They will be externally
+reachable only after a separate ingress and callback-registration rollout.
+
+If a `balda.http` field is omitted, it falls back to its corresponding
+`balda.backoffice.listen_addr`, `public_url`, or `base_path` value and then the
+default. Set the shared fields explicitly for new deployments. The former
+Backoffice address fields do not create a second listener or browser mount.
+
+## Deployment and first administrator
+
+The shipped Balda binary embeds the Backoffice UI; no second binary, frontend
+toolchain, or runtime asset download is required:
+
+```bash
+mkdir -p ./bin
+go build -trimpath -o ./bin/balda ./cmd/balda
+./bin/balda init
+./bin/balda validate
+```
+
+For a fresh database, `init` creates the administrator with username and display
+name `superuser` and prints its password once. Store the output securely, then start:
+
+```bash
+./bin/balda start
+```
+
+`bootstrap-admin` generates a new password when run without redirected input.
+The optional stdin path remains available for an operator-provided password;
+terminal input is never read or echoed. Never put passwords in command
+arguments, shell history, environment variables, or logs. Resetting an existing
+usable credential requires an explicit `--reset`; it invalidates every browser
+session family for that user.
+
+For an existing installation with legacy owner/collaborator records, stop
+Balda, take a consistent database backup, and deploy the new binary. Opening
+the selected state provider automatically runs the forward-only Goose data
+migration for SQLite or PostgreSQL. The conversion preserves users, roles,
+bot bindings, and profiles. The following SQL password migration sets the
+initial primary credential without credential files.
+
+Newly converted users have active bot access. A following SQL migration gives
+the primary administrator (`superuser`) the initial password `superusersuperuser`
+and marks it temporary, requiring replacement at first browser login. It also
+repairs already-converted primary administrators whose browser credential is
+still disabled. Start directly after deploying:
+
+```bash
+./bin/balda start
+```
+
+Other converted users retain disabled browser credentials and can receive them
+through the administrator's Access credential reset flow. Existing usable primary
+credentials and browser sessions remain unchanged; subsequent starts do not reset
+passwords. To generate and print a new administrator password once, run:
+
+```bash
+./bin/balda backoffice reset-password
+```
+
+This revokes that user's browser refresh families. Select another administrator
+with `--user-id`; non-terminal stdin may supply an operator-chosen password.
+The command opens the provider and applies migrations before changing credentials.
+
+Legacy conversion copies a Telegram collaborator's stored username and first
+name into separate optional binding fields. Legacy owner records contain neither
+field, so conversion leaves both empty. After a verified Telegram message or
+command from a bound principal, Balda refreshes those fields from Telegram.
+The schema upgrade backfills already-converted Telegram collaborator bindings
+from retained legacy collaborator rows. If those rows are unavailable, the
+fields stay empty until a verified event arrives.
+The numeric Telegram principal remains the authorization key; provider profile
+fields never replace the Backoffice username or display name.
+
+User conversion and its Goose version marker commit in one transaction.
+Repeated provider opening creates no duplicates. Invalid source records or
+unmarked legacy records mixed with canonical users fail instead of silently
+merging users; a failure rolls back conversion and does not advance its version.
+After it succeeds there is no legacy runtime fallback. Rollback means restoring the pre-migration
+database backup with the old binaries stopped; do not roll back only the binary
+or re-enable legacy reads.
+
+## Browser sessions and refresh rotation
+
+Successful login creates a short-lived opaque access token and a longer-lived
+refresh family. When access expires, the browser submits a guarded refresh form
+automatically and returns to the page the user was opening. The server consumes generation
+N, creates generation N+1, replaces the access, refresh and CSRF cookies, and
+renews the family deadline to 30 days after that successful refresh by default.
+The active token, family deadline and success audit commit in one transaction;
+refresh and CSRF cookies use that committed deadline. Historical generations keep
+their original expirations for replay detection. A valid token can refresh just
+before its current deadline; at or after that deadline it requires a new login.
+If the host clock moves backward, rotation timestamps never precede stored last
+activity or token issuance. A correction alone cannot extend the last renewed
+deadline. A stale concurrent rotation receives a conflict and can be retried. The browser does not replay the request that
+encountered expiry, especially an unsafe mutation.
+
+A duplicate refresh within 30 seconds of rotation receives a conflict without
+clearing cookies or revoking the family; another browser request may already
+have installed the new pair. Reuse of an older consumed token is treated as
+verified replay: Backoffice revokes the family and requires a new login.
+Invalid, expired, credential-stale, disabled, or administratively revoked
+families also require re-login.
+
+When upgrading, set existing explicit `refresh_token_ttl: "12h"` values or
+`BALDA_BACKOFFICE_REFRESH_TOKEN_TTL=12h` overrides to `720h` to use the monthly
+window. Changing the default does not replace an explicit setting. An existing,
+still-valid family adopts the effective configured lifetime on its next
+successful refresh; an already-expired family requires sign-in.
+
+Provider opening automatically applies a forward Goose migration for SQLite or
+PostgreSQL that permits renewal of the family deadline. It leaves stored sessions
+and immutable token histories unchanged. Take the usual consistent database backup
+before upgrading. After rolling generations have been issued, use a binary that
+supports their different historical expirations; reverting only to an older binary
+with fixed-deadline validation is not a supported downgrade.
+
+Access administrators can revoke another browser family. Account owners can
+revoke their own families, but revoking the current one requires explicit
+confirmation. Family revocation invalidates the current access token and every
+refresh generation in that lineage. Password reset, password replacement, and
+user disablement revoke all affected families rather than leaving a refresh
+credential that could restore access.
+
+Account and Access detail list active browser families only. When viewing your
+own sessions, the current family appears first; other active families are in
+descending order of their last recorded sign-in or refresh. The
+**Older active sessions** link continues
+through further active families; historical revoked and expired rows remain in
+storage for authorized investigation but do not crowd the default list.
+**Last sign-in or refresh** is not a record of every page visit. The session
+card shows a short browser/platform label when the request User-Agent can be
+recognized; old or unrecognized sessions show an unknown device. The
+**Connection peer** is the direct socket address and may be a reverse proxy.
+Forwarded IP headers are ignored because Backoffice has no configured trusted
+proxy chain. Neither field is used to authorize or identify a user, and the
+raw User-Agent and token values are never displayed.
+
+## Operations, recovery, and QA
+
+- Run `balda validate` for read-only configuration/graph checks. `balda start`
+  is the authoritative user-readiness gate and refuses to expose listeners
+  until provider migrations and administrator bootstrap are complete.
+- Back up and restore the selected database as documented in
+  [Balda state database](database.md). SQLite may be shared only by one Balda
+  process; stop it for file backup or restore. PostgreSQL backups must include
+  schema, data, sequences, and Goose
+  migration history.
+- Access is administrator-only. Account and Overview are available to active
+  administrators and operators; Audit is administrator-only. Account places
+  **Change password** before profile details. A successful change creates a
+  fresh browser session and revokes previous access and refresh credentials.
+  Each configured Telegram, Slack Agent (`slackagent`), Zulip, or Mattermost
+  integration has its own account-binding panel. An administrator generates a
+  single-use `bind_<token>` invitation for the selected existing user. The bot's
+  verified instance and sender identity determine attachment; browser input
+  cannot choose the principal or instance. User role and primary designation
+  stay unchanged. No owner token is required. Invitations expire after 24 hours;
+  issuing over a pending invitation requires explicit replacement confirmation.
+  Cancel requires confirmation and leaves confirmed bindings intact. Disabled
+  users cannot receive invitations, and disabling revokes pending invitations.
+  Unavailable bot identity offers Retry connection instead of issuance. Telegram
+  provides a start deep link and command, Slack a verified workspace DM and native
+  command, Zulip a realm bot DM and start command, and Mattermost a `/msg @bot`
+  DM action with a slash command only when its receiver is enabled. Mattermost
+  uses the existing Direct and locator contract, including D and G channels.
+  Refresh bindings shows confirmed principals and pending/expired metadata only.
+  The invitation value is shown once in the issuance POST response, never in
+  Backoffice navigation, session storage, server logs, or persisted state.
+  The explicit Telegram bot deep link carries the payload as its intended
+  provider action; it is never used as a Backoffice redirect or history URL. Only its
+  digest is stored. Generic webhooks are not user bindings. Removing a confirmed
+  binding requires confirmation of the affected principal's bot access. Other
+  bindings, the browser account, and browser sessions remain.
+  Committed role/status changes immediately affect bot authorization for every
+  attached principal. Telegram bindings show the provider username and first
+  name separately, with empty values when the provider has not supplied them.
+- Access opens with the user list and filters for name, username, role, and
+  status. User detail separates profile, chat bindings, credential reset, and
+  browser sessions. Audit lists newest events first by event time, then stable
+  ID, with actor, action, target, outcome, and filters that persist on the next
+  page. Technical IDs remain available in event details. Overview lists
+  configured integrations only; a configured card makes no claim about live
+  connectivity or health.
+- A terminal refresh failure offers sign-in as the primary action. A
+  concurrent-refresh conflict offers a safe page reopen because another
+  request may already have installed new cookies. Failed native and HTMX forms
+  retain their HTTP status and show an actionable message.
+- Keep `qa_ui: false` in production. A private development instance may enable
+  the same synthetic previews under `/qa/ui/`, but the preferred local workflow
+  uses `balda backoffice qa serve` without configuration or database access.
+  QA routes accept GET/HEAD only and send `no-store` and `noindex` headers.
+  Follow the [Backoffice UI review runbook](backoffice-ui-review.md) for routes,
+  browser checks, and the separate authenticated runtime check.
+- Username/password remains the browser sign-in provider. Administrators can
+  optionally enable a WebAuthn passkey as their second factor in Account; it is
+  off by default for each user. OIDC remains deferred.
 
 ## Web UI foundation
 
@@ -34,15 +351,34 @@ The pinned stack is:
 
 | Component | Version | Responsibility |
 | --- | --- | --- |
-| Go `html/template` | Go 1.26.6 | Authoritative SSR and HTML fragments |
+| Go `html/template` | Go 1.26.9 | Authoritative SSR and HTML fragments |
 | AdminLTE | 4.9.1 | Shell and UI components |
-| HTMX | 2.0.10 | Progressive enhancement |
+| HTMX | 2.0.10 | Browser navigation and fragment updates |
 | Bootstrap Icons | 1.13.1 | Local icons |
-| Vanilla JavaScript | Built in | HTMX lifecycle, focus, and sidebar behavior only |
+| Vanilla JavaScript | Built in | HTMX lifecycle, focus, sidebar and create-form field visibility |
+
+The shell adapts the AlaTooGuide Backoffice layout: a sticky utility top bar with the
+current authenticated username, the sole Account navigation link and native
+CSRF-protected sign-out; a branded permission-derived sidebar; a shared content frame; and a footer
+in normal grid flow. The top bar and sidebar brand share the same height;
+navigation scrolls content below the top bar so page headings remain visible.
+The viewer identity is independent of an inspected user.
+The sidebar groups authorized links by purpose: Workspace contains Overview;
+Operations contains Plugins, MCP, Schedules, Webhooks, Aliases, and Fact memory; Administration contains Access and Audit.
+It omits groups with no authorized links. Active administrators see all three;
+active operators see Workspace while Account remains available in the top bar.
+Nested Access, Plugins, MCP, Schedules, Webhooks, Aliases, and Fact memory pages keep their parent sidebar link active.
+Desktop collapse hides the sidebar and expands content. Mobile navigation uses
+an overlay with backdrop, Escape and focus containment.
+
+The theme is explicitly dark on console, authentication and recovery pages.
+`data-lte-color-mode="off"` disables OS-driven mutation. Shared CSS tokens and
+primitives own surfaces, headings, controls, statuses, cards, tables, empty and
+danger states. Review the synthetic component and full-layout examples before
+changing runtime page layouts; see the UI review runbook.
 
 Go templates are the only source of HTML. JavaScript must not assemble HTML.
-Every screen must work without JavaScript through ordinary links and forms.
-Every HTMX interaction must preserve an ordinary link or form as its fallback.
+Backoffice requires JavaScript for navigation, session refresh, and interactive forms.
 
 HTMX may improve navigation and interaction, but it must not own
 authentication, authorization, validation, or domain state. Those concerns
@@ -50,9 +386,14 @@ remain server-side and authoritative.
 
 ## Packaging and frontend provenance
 
-One Backoffice Go binary contains the templates, CSS, JavaScript, icons, and
-fonts. Node/npm, an SPA router, a frontend development server, and CDN-hosted
-runtime assets are prohibited.
+The Balda Go binary contains the Backoffice templates, CSS, JavaScript, icons, and
+fonts. Node/npm as a frontend build or runtime dependency, an SPA router, a
+separate frontend development server, and CDN-hosted runtime assets are
+prohibited. The local QA preview is served by the same Go binary and uses the
+same embedded templates and assets.
+Application CSS and JavaScript use content-versioned asset URLs so a browser or
+edge cache receives the matching files after a deployment. Static asset responses
+use immutable caching; a change to either application file changes its URL.
 
 Every vendored frontend dependency must be pinned with its exact version,
 license, and SHA-256 digest in
@@ -77,7 +418,8 @@ The fragment contains only:
 
 Every other request, including an HTMX history restoration request, receives a
 complete HTML document. Every rendered response contains exactly one
-`main-content` element.
+`main-content` element. Links and forms targeting `#main-content` use
+`hx-swap="outerHTML"` because the response includes the main element itself.
 
 Use a buffered HTML writer. Do not commit response headers or status until the
 template has rendered successfully.
@@ -89,7 +431,18 @@ A successful mutation follows these response contracts:
 | Request | Response |
 | --- | --- |
 | Ordinary form submission | `303 See Other` with `Location` |
-| HTMX request | `204 No Content` with `HX-Location` |
+| HTMX request | `204 No Content` with JSON `HX-Location`: local `path`, `target: "#main-content"`, `swap: "outerHTML"` |
+
+Invitation issuance is the deliberate exception: return `200 OK` with the full
+page for native forms or `#main-content` for HTMX, and `Cache-Control: no-store`.
+Reveal the newly generated value in that response only; a redirect would need
+credential persistence. Protected GET of the issuance URL redirects to user
+detail without a secret. Reload, refresh, and history recovery expose only safe
+metadata. The shared `.app-main` is the explicit HTMX history element so
+complete history-recovery responses restore content without re-executing shell
+scripts; HTMX history caching is disabled on binding detail and secrets are
+cleared on pagehide. Native no-store POST history may require reopening the
+issuance URL as GET; it redirects to metadata-only user detail. Cancel and identity retry retain the ordinary contracts.
 
 Errors retain their original HTTP status. For an eligible HTMX fragment
 request, an error replaces only `#main-content`; it must not replace the shell
@@ -110,11 +463,10 @@ Add pages in this order:
 5. Render through a buffered HTML writer.
 6. Add the template to the explicit allowlist under
    `internal/apps/backoffice/internal/webui`.
-7. Render exactly one `main-content` element.
+7. Render exactly one `main-content` element. Links and forms targeting `#main-content` use
+`hx-swap="outerHTML"` because the response includes the main element itself.
 8. Do not assemble HTML with JavaScript.
-9. Preserve an ordinary link or form for every HTMX operation.
-10. Verify the full page, fragment, non-JavaScript fallback, canonical URL, and
-    error paths.
+9. Verify the full page, fragment, canonical URL, and error paths.
 
 ## Verification matrix
 
@@ -125,8 +477,623 @@ For every page or interaction, verify:
 | Full-page navigation | Complete HTML document, canonical URL, one `main-content` |
 | Eligible HTMX navigation | Only `title` and `main#main-content` |
 | HTMX history restoration | Complete HTML document |
-| JavaScript disabled | Equivalent navigation or mutation through links and forms |
 | Ordinary mutation | `303` with `Location` |
 | HTMX mutation | `204` with `HX-Location` |
 | Validation or authorization error | Original error status and correct full-page or fragment shape |
 | Logout, CSV, or WebAuthn | Native non-boosted behavior |
+
+## Optional administrator passkey 2FA
+
+2FA is off by default, including after automatic upgrades. Each administrator
+can enable it in **Account → Two-factor authentication**; operators continue
+using password authentication. Bot bindings and admission are independent.
+One passkey is active at a time. Use a browser with JavaScript and WebAuthn support
+and an authenticator that supports user verification (PIN or biometric).
+Password-only accounts also use the JavaScript-enabled Backoffice browser.
+
+Set `balda.http.base_url` to the exact HTTPS origin, for example
+`https://lab.example.org`, or `http://localhost:8095` for local development.
+`balda.http.base_path: /balda` remains a separate setting. The RP ID is the
+origin's hostname;
+only that exact origin is accepted. IP origins, including the existing default
+`http://127.0.0.1:8095`, cannot enroll keys. The default still starts and supports
+password sign-in, and Account explains the unavailable enrollment capability.
+Changing the hostname changes the RP: recover and register a new key rather than
+expecting the old key to work. An enrolled administrator never falls back to
+password-only access when verification is unavailable.
+
+```yaml
+balda:
+  http:
+    base_url: https://lab.example.org
+    base_path: /balda
+  backoffice:
+    ceremony_ttl: 5m
+```
+
+`ceremony_ttl` must be positive and at most 15 minutes. Its environment
+override is `BALDA_BACKOFFICE_CEREMONY_TTL`. Ceremony state is one-use, expiring and
+bound to its browser, CSRF token, purpose, user and current authority.
+
+- **Enable:** confirm the current password, then register and verify a passkey.
+  The setting becomes enabled only after successful completion. Old browser
+  sessions are revoked and the current browser receives verified access.
+- **Sign in:** submit the password, then verify the passkey. Until verification
+  finishes, the browser has no usable access or refresh credentials. Temporary
+  passwords still require password replacement after both factors succeed.
+- **Authenticated session:** after the sign-in assertion, Account, Access, Audit,
+  MCP and other authorized routes use the current session. Refresh rotates access
+  authority without another passkey challenge. Normal session expiry, revocation,
+  role, CSRF and factor identity checks continue to apply.
+- **Replace:** confirm with the current password, then register the new key.
+  Only successful registration replaces the key and revokes old sessions.
+  **Disable:** confirm with the current password. Successful removal returns to
+  password authentication and revokes old sessions.
+- **Cancel or retry:** cancelling the authenticator or leaving the ceremony
+  keeps the factor setting unchanged. Retry while the ceremony is live, or
+  cancel and start again. Unsupported browsers show guidance;
+  they cannot bypass an enrolled factor. Authentication pages and ceremonies
+  are native, non-boosted and excluded from HTMX history; responses use no-store.
+
+Password change, Access password reset and `balda backoffice reset-password` preserve
+an enrolled passkey. Losing the key requires an explicitly confirmed operation
+by an administrator with host/database access, using the normal configuration:
+
+```bash
+balda backoffice recover-2fa --username superuser --confirm
+```
+
+Use the exact normalized username of an existing active enrolled administrator.
+Unknown, disabled, operator, already-off and unconfirmed targets fail. This
+maintenance operation opens and upgrades the selected database without starting
+HTTP, MCP or channels. It atomically disables the factor, advances authority,
+revokes browser sessions and writes an audit event. It leaves the password hash
+and bot bindings intact and prints no password or session credential. Sign in
+with the existing password and register a replacement key from Account.
+
+Factor transitions and verification appear in Audit. The verifier dependency
+and source reuse are documented in the
+[WebAuthn dependency review](backoffice-webauthn-dependency-review.md).
+
+## Plugins management
+
+Administrators open **Operations → Plugins** at `<backoffice_path>/plugins`.
+The **Installed** and **Marketplaces** tabs manage the global package catalog
+shared with chat. Operators cannot read these pages or submit their actions.
+Management uses the ordinary browser session; access refresh returns to the
+requested Plugins page without an additional passkey prompt. The browser needs
+JavaScript.
+
+**Installed** lists **Name**, **Version**, **Marketplace**, **Enabled** and
+**Actions**. Open a package to inspect its exact selected revision, origin
+availability, activation outcome and runtime catalog/health independently.
+Commands and skills expose names/descriptions; MCP servers expose
+names/transports. Inspection uses retained metadata and never invokes a command
+or test tool. Disabled packages remain inspectable.
+
+A **Balda extension** marker beside an installed package name in the list and
+detail means its selected revision's `plugin.json` declares
+`extensions["dev.baldaworks.balda"]`. The marker can remain visible for a
+disabled package or one with extension diagnostics. It does not indicate that
+commands are usable or that the runtime is healthy.
+
+**Marketplaces → Add marketplace** accepts these fields:
+
+| Field | Meaning |
+| --- | --- |
+| **Name** | Unique configured marketplace identity used for selection. |
+| **Source** | Existing supported local directory or Git repository source. |
+| **Ref** | Optional Git branch or tag selector; unavailable for local sources. |
+| **Sparse** | Optional Git-relative checkout paths, one per line; unavailable for local sources. |
+
+Git fields appear when the Source is a Git source. Source is a transient write
+input: it is cleared after submission and on browser history restoration, never
+refilled on validation errors. Saved Source projections omit URL userinfo,
+query and fragment values; local sources use a logical label rather than a host
+path. Adding a definition does not fetch or install packages. These forms do
+not provision Git credentials.
+
+Use **Refresh marketplace** to materialize discovery. Opening a page does not
+fetch Git or update discovery. **Last attempt** records the latest accepted
+attempt, separately from **Last successful refresh**. A failed attempt displays
+its bounded failure label and keeps earlier discovery as stale reference;
+candidate review stays unavailable until Refresh succeeds. Duplicate plugin
+names make discovery fail rather than selecting an arbitrary package. The
+discovery table uses **Name**, **Version**, **Description**, **Installed** and
+**Actions**. **Review install** selects the configured marketplace and
+package explicitly, even when another marketplace publishes the same name.
+The same **Balda extension** marker beside a discovered package name describes
+that row's candidate revision. A stale row keeps the marker from its last
+successful discovery until a successful refresh replaces it.
+
+**Install plugin** and **Upgrade plugin** review an exact candidate revision;
+source/content changes after review require reopening. Upgrade stays bound to
+the installation's proven origin and preserves Enabled. Removing a marketplace
+does not remove installed packages, but Upgrade becomes unavailable when its
+origin cannot be resolved. An unprovable origin is unavailable with a bounded
+explanation; the UI does not adopt a replacement origin.
+
+**Disable plugin**, **Rollback** and **Remove plugin** require confirmation;
+**Cancel** performs no mutation. Rollback selects an exact retained revision
+and preserves Enabled. Remove excludes the installation from future catalog
+selection while retaining revision archives and plugin data. Existing active
+sessions keep their exact command, skill and MCP snapshot. Restore first tries
+that snapshot; on failure, Balda may replace the saved ADK session with a fresh
+one using current eligible capabilities. No management action itself resets a
+session: new sessions select the current catalog, and ordinary `/reset`
+explicitly recreates an existing session with current capabilities.
+
+Enabled describes selection policy, rather than readiness. Current catalog,
+runtime health and **Activation outcome** remain separate. If durable acceptance
+succeeds but publication/completion fails, the page shows **Accepted; recovery
+pending**, effective state and a reopen link; it suppresses mutation replay.
+Ordinary lifecycle recovery reconciles the retained activation intent. A stale
+form returns 409 with **Reopen plugin** or **Reopen marketplace** guidance.
+Contextual HTMX errors preserve the error status and replace only a Plugins
+main region, so validation, conflicts and pending state remain actionable.
+
+Backoffice consumes its local `PluginsOperations` port through
+`pluginbackofficeapp`, using the same global `pluginapp.Service` and catalog
+serialization as chat. `plugincmd` owns neutral management values; `state` owns
+full-state comparisons, generation fences and current browser authority plus
+body-free audit at durable logical acceptance. Filesystem staging and runtime
+publication happen outside that SQL transaction. One Balda process owns a state
+directory; the in-process catalog lock does not coordinate independent processes
+sharing its filesystem. No additional schema migration or listener is needed.
+
+See [Plugins and session capabilities](plugins.md), the
+[runtime contribution catalog](../architecture/runtime-contribution-catalog.md)
+and [ordered browser review gates](backoffice-ui-review.md#plugins-layout-and-application-gates).
+
+## MCP management
+
+Administrators with a normal browser session can open **MCP** at `/mcp`.
+Operators do not receive MCP navigation and cannot open the pages or submit
+mutations. All forms use the current session CSRF token and same-origin guard;
+the host rechecks current user, credential, MFA and browser-family versions
+at the durable write boundary. MCP definition form intake is bounded to 1 MiB;
+other browser forms retain their existing limits. The **Refresh state** form
+has a separate 4 KiB limit because it accepts only the CSRF token.
+
+Inventory combines configured and Backoffice-managed connections. It shows
+source, transport, provider targets, tool availability and OAuth
+status separately. **Available** reflects observed tools for the selected revision;
+saving or storing an authorized grant does not establish readiness. An ordinary
+Pending state is shown as **Not checked** for HTTP and SSE because no current
+runtime observation establishes readiness. Pending stdio is shown as
+**Starting**, where a local process may actually be starting. Inventory and
+detail use the same transport-aware labels; established non-Pending meanings are
+unchanged. Provider invocation, candidate probes, and explicit diagnostics do
+not become background discovery authority. Recovery labels use exact current
+grant/capture state and trusted upstream observations. Opening, reloading, or
+navigating between inventory and detail with GET is passive: it does not connect
+to an MCP server, run `initialize` or `tools/list`, discover OAuth metadata,
+retry authorization, poll health, or write MCP state.
+
+`/mcp/new` creates a managed server. `/mcp/connections/{connection_id}` shows
+its current state and editor. The immutable server ID must be unique across
+both sources. Stdio uses a direct command, working directory and one argument
+per line; HTTP and SSE use a URL and headers. Their OAuth settings are
+managed separately in Backoffice when the definition is an eligible
+Backoffice-managed remote with OAuth enabled.
+The new-server form shows only the selected transport's fields
+and excludes inactive draft fields from submission. Switching back retains the
+draft until navigation or submission clears write-only values.
+Choose all providers or specific configured providers. The editor supplies
+explicit literal, protected and deployment-variable value sources. Keep retains
+an existing value, Replace supplies a new value, and Remove deletes it. Existing
+values are never prefilled. Protected replacement inputs are write-only and are
+cleared after browser requests and history restoration. Save and reopen to add
+more binding rows. When changing transport, remove incompatible bindings.
+
+**Probe candidate** validates and discovers the proposed revision without
+saving, publishing or selecting it. Full discovery has a ten-second caller
+deadline, with earlier cancellation honored. Successful probing reports a tool count
+and leaves runtime readiness unchanged. Probe inputs are cleared; enter them
+again before saving. Saves redirect to the current detail. Conflicts return
+409 and require reopening the editor. Errors retain their HTTP status and never
+reflect submitted values or private transport errors. Native forms use 303;
+creation is native even with JavaScript; eligible saved-editor HTMX mutations
+use 204 with a local `HX-Location`. If a change commits but reading its current
+state fails, the error response explicitly reports the saved change and offers
+**Open saved connection**. Use that record to check its state instead of repeating
+creation; the error status and write-only input clearing are preserved.
+
+**Refresh state** on an existing, non-deleted detail is an explicit diagnostic
+POST. It is available only through the normal authenticated administrator
+session and requires the current same-origin CSRF token. The request supplies
+only that token and the connection ID in the route; the server resolves the
+authoritative current configuration definition or selected managed revision at
+action time. The bounded check performs a protocol-valid `initialize` followed
+by complete `tools/list` discovery, reports the exact tool count on success, and
+always closes its transport and process resources. Connection, authentication,
+protocol, timeout, cancellation, and cleanup failures produce the same fixed,
+secret-free failure presentation.
+
+The result is confined to that action response. It does not save readiness,
+tools, failures, revisions, grants, or credentials; change catalog/runtime
+health or provider/session attachment; or start OAuth discovery, authorization,
+token refresh, or grant writes. A later GET again shows the ordinary
+runtime-derived state, such as **Not checked** when a remote has no current
+runtime observation.
+
+Configuration-owned entries are read-only: browser editing, selection changes,
+probe edits, lifecycle changes, deletion, and OAuth actions are rejected. Their
+only action is the read-only **Refresh state** diagnostic; change their
+definition or credentials in the host configuration. The dedicated
+**Enable/Disable connection** and **Delete connection** controls apply only to
+managed connections and require explicit confirmation. New managed connections
+start enabled for their selected providers. **Save definition** preserves the
+connection's enabled or disabled state. Selection changes affect new sessions;
+existing sessions retain their exact revision until release. Deletion
+tombstones the managed connection and does not erase retained revisions. Deleted
+connection details expose retained metadata without edit, probe, diagnostic,
+selection, or OAuth forms.
+
+Backoffice owns the `MCPOperations` and `MCPAuthorizations` consuming ports and its HTML views.
+`internal/apps/balda/mcpbackofficeapp` adapts the host's definition and catalog
+owners to that port. Validation, encrypted values, durable authority fences and
+readiness policy remain in their existing owners. Balda configures the port
+before the Backoffice HTTP listener starts; startup stage ordering is unchanged.
+The opt-in browser acceptance gate signs in through the existing `/login` form
+with one-off administrator test credentials. It adds no token command,
+credential issuer, pre-authenticated browser state, or login bypass, and keeps
+those credentials out of rendered HTML, logs, traces, screenshots, and test
+output.
+
+### OAuth authorization
+
+The **OAuth** section, status, and authorization actions appear only for a
+non-deleted Backoffice-managed HTTP/SSE definition with OAuth explicitly
+enabled. Managed definitions with OAuth disabled and every configuration-owned
+definition are OAuth-neutral: they show no **Not configured** or
+**Authorization required** status, no OAuth actions, and no OAuth remediation
+after a diagnostic failure. A public or static-header server does not require
+sign-in. For an eligible managed definition, availability shows whether tools
+can be used while authorization status shows the saved service authorization.
+Required-login guidance comes from current attachment or grant evidence, not
+merely an empty grant.
+
+When adding an HTTP/SSE server, use **Create and authorize in browser** or
+**Create with device code** to save once and start authorization. **Create
+server** and **Probe candidate** remain available for public/header-only
+connections. If authorization cannot start after saving, **Open saved
+connection** returns to that connection for retry; do not create it again.
+
+On an eligible saved managed remote, **Authorize in browser** or **Authorize
+with device** starts a native flow from its current trusted definition. A static
+`Authorization` header conflicts with worker OAuth and must be removed in the
+managed definition before authorization. Configuration-owned definitions never
+enter this Backoffice OAuth flow.
+
+Open **Client settings — optional** when the service requires a client ID,
+authentication method, client secret or scopes. The operator enters service
+account credentials at the external service, never in Balda. The authorization
+is shared by the installation. Client secrets are encrypted and write-only. Browser authorization can use
+supported server client registration when the ID is blank; device authorization
+requires a pre-registered client and server support. Unsupported device flows
+show an error; use browser authorization when the service supports that flow.
+Browser authorization requires the issuer to advertise S256 PKCE and
+`authorization_response_iss_parameter_supported`; the callback's `iss` value must
+match the trusted issuer. The browser callback is
+`<balda.http.base_url><balda.http.base_path>/backoffice/mcp/oauth/callback`;
+register that exact URL with the issuer. Use the configured public origin and
+shared deployment prefix.
+
+Begin, cancel, disconnect and retry are native forms with the existing normal
+administrator, current assurance, CSRF and same-origin checks. The callback uses
+one-use protocol state bound to the initiating browser family and issuer. Browser
+start also sets a host-only, HttpOnly callback credential with `SameSite=Lax`,
+scoped to that callback and expiring no later than the current access credential
+or attempt. Callback validation uses the same current administrator and fresh
+assurance checks, then clears this temporary cookie. Ordinary session cookies
+remain `SameSite=Strict`.
+
+Every callback outcome redirects to a safe continuation page before rendering,
+including access or assurance failures. Use **Continue to MCP** to return through
+a local browser navigation; this restores ordinary Strict-cookie eligibility
+after the external issuer's redirect chain. The page contains no code or state;
+refresh and history never replay the callback. Device verification
+instructions appear once in the native begin response. Status GETs show safe
+progress only; if instructions are lost, cancel and start again. Pending attempts
+live only in memory: host restart invalidates them and requires a new attempt.
+Already saved encrypted worker grants survive restart.
+
+Completion checks the original definition revision, current administrator
+versions and grant generation in one database transaction. An edit during code
+exchange or device polling prevents installation. After installation, the same
+host policy binds the exact initiating revision outside protocol locks. A later
+edit can reject that binding without assigning the saved grant to another
+revision. Existing session pins and ready runners retain their exact identity.
+Service authorization is shared: reauthorization replaces the grant for that
+connection, resource, issuer and client. Reducing scopes can deny tools to
+existing sessions that require the previous scopes. Their revisions stay
+unchanged; restoring sufficient authorization permits access again.
+
+**Authorized** means service authorization was saved; **Available** reflects
+observed tool readiness. Inspect both states on the connection. **Retry tool attachment**
+uses its saved current grant without repeating OAuth and keeps an unchanged binding
+revision. It repairs local projection or requests current credentials after a
+recorded credential failure; it does not discover MCP tools, restart provider
+runtimes or change historical pins. A transient OAuth refresh failure makes the
+exact connection **Tools unavailable** while retaining its saved authorization.
+A successful subsequent credential request or **Retry tool attachment** clears
+that credential failure without restarting MCP or changing its revision. It does
+not establish remote discovery readiness; a later invocation may attach again.
+Retry does not dispatch a tool request. **Revoke authorization** requires confirmation
+and revokes every retained worker grant context, including existing sessions.
+Run one active writer for worker grants; keep the deployment credential key with
+the database backup. Configure its format and deployment override as described in
+[MCP credential configuration](configuration.md#protected-values-and-worker-grants).
+No tokens, client secrets or local bridge capabilities belong
+in logs, URLs used for recovery, exported read models or browser history caches.
+
+## Schedules management
+
+Administrators with a normal browser session can open **Schedules** at
+`<balda.http.base_path>/backoffice/schedules`. Operators cannot view or mutate
+schedules. The
+inventory lists recurring definitions from both `balda.scheduler.jobs` and
+Backoffice, with source, UTC cron, a **Report to** column for the configured alias or locator,
+enabled/runtime state, and next/last run times. Internal `@once` timers are not
+listed. Opening a detail loads the instruction content only for that guarded
+administrator page; the inventory omits it. HTML content and safe errors are
+escaped. Forms use the current CSRF token and same-origin guard, and durable
+writes recheck current administrator, credential, MFA and browser-session
+versions. Session refresh returns to the requested Schedules page.
+
+`/schedules?new=1` creates a Backoffice-owned schedule. IDs use lowercase
+letters, digits, `_` and `-`, start with a letter or digit, and are fixed after
+creation. The ID must be unique across sources. The form uses a five-field UTC
+cron expression, content, and one optional **Report to** field. Leave it empty
+for no delivery, or enter a public `<channel_type>:<address_key>` locator
+(including a direct-message locator) or a managed alias such as `main_chat`.
+The form does not ask for a destination type. Each run starts in a new private
+session independent of that destination. A supplied locator is checked for
+syntax, but its external address need not exist when the schedule is saved or
+run. An alias may be named before its mapping is created. Without a destination,
+the output remains in run history
+and no external report is sent. A new managed schedule starts enabled. The
+selected report locator receives only the final
+output or bounded failure message, never progress or interactive permission
+questions. A permission request requiring a live conversation fails closed.
+Saving an edit recalculates its next future slot while preserving its enabled
+state. Confirmed disable prevents future due
+selection; an already admitted or published run may finish. Confirmed enable
+selects a new future slot. Confirmed delete archives the definition; its
+detail and run history remain accessible at `/schedules/{id}`. Stale versions
+or ID collisions return a conflict, and the editor asks the administrator to
+reload. Invalid cron, alias name, or supplied locator leaves the prior
+definition intact.
+
+Configuration-owned schedules are read-only in Backoffice. Change their
+definition in `.config/balda/config.yaml` and restart Balda. A removed config
+entry becomes an archive so its history remains readable. A config ID that
+collides with a managed or internal job aborts startup rather than changing
+ownership. Managed definitions and enabled state survive restart and are never
+deleted by config reconciliation.
+
+**Run now** is available on active details for both sources and queues one
+execution without moving the recurring cron slot. Running a disabled schedule
+requires a separate confirmation. A duplicate submission from the same form
+uses one request key and returns the same durable run; opening the page again
+starts a new request. The newest-first history distinguishes scheduled and
+manual triggers and shows queued, retrying, starting, waiting-for-execution,
+running, delivering-report, succeeded, failed or canceled state. It includes failures before
+command publication and terminal execution outcomes, with bounded failure
+labels instead of raw provider errors. At admission, each run selects its report
+locator from the current alias mapping and freezes it for retries, restart and
+delivery. A missing alias creates a failed run; the recurring definition stays
+active for the next cron slot. A manual failure does not move its cron cursor.
+Opening a run shows the selected concrete locator, frozen input, and durable
+provider output. Delivery status remains separate from
+the output: a failed or pending send does not erase the result. After execution
+and, when applicable, final delivery settles, Balda deletes the private session
+and its runtime events and ephemeral workspace branch; interrupted cleanup
+retries after restart without sending a second report. A canceled run without
+a queued report closes without waiting for delivery. History is paginated and remains
+available after deletion. A successful Run now redirect means admission, not
+completion; refresh the detail to observe the result.
+
+The shared state provider applies Goose SQL migrations for SQLite and
+PostgreSQL before Backoffice or ingress starts. They classify existing
+recurring rows as config-owned and `@once` rows as internal, add source and
+version fences, and create the durable run ledger. Later SQL migrations
+preserve optional report settings and add idempotent run-session cleanup state.
+Back up the selected
+database before upgrading. A migration failure aborts startup without running
+the scheduler. Restoring an older binary after new managed schedules or runs
+have been written requires a matching pre-upgrade database backup.
+
+Backoffice owns the `SchedulesOperations` consuming port and SSR views;
+`internal/apps/balda/schedulebackofficeapp` adapts the host-owned
+`scheduledjobs.Management` use case. `schedulecmd` holds the transport-neutral
+management values. `scheduledjobs` owns validation, source reconciliation,
+admission and dispatch policy; `state` owns the SQL rows and transactional
+authority/audit fences. Balda configures the port before the Backoffice
+route starts on the shared listener, preserving the existing startup order.
+
+## Webhooks management
+
+Administrators can open **Webhooks** at
+`<balda.http.base_path>/backoffice/webhooks`. Operators cannot view or change
+routes. The inventory combines routes from `balda.webhooks.routes`
+and Backoffice, showing **Route name**, **Source**, **Webhook URL**, **Report to**, and
+**State**. Config routes are read-only: edit their declarations in
+`.config/balda/config.yaml` and restart Balda. Backoffice-managed definitions
+and enabled state survive restart. The route name is fixed after creation and
+unique across both sources. Names use `^[a-z0-9][a-z0-9_-]{0,63}$` for both
+config and managed definitions. A name conflict fails
+explicitly rather than letting one source silently override another.
+
+Use `/webhooks?new=1` within Backoffice to create a managed route. Enter a
+unique lowercase route name, a nonempty Go text/template prompt, and
+one optional **Report to** value: a public `<channel_type>:<address_key>`
+locator or a managed alias such as `main_chat`. The external address or alias
+mapping may be added later. Without a recipient, output remains in request
+history and no report is sent. The read-only **Webhook URL** updates as the name
+is entered. Every route, whether config-owned or managed, existing or new,
+uses `<balda.http.base_path>/webhooks/<name>` for inbound POSTs. There is no
+editable or persisted per-route path. With explicit `balda.http.base_url`, the
+inventory and detail show the complete public URL; otherwise they show the
+canonical root-relative path and explain that the public origin is missing.
+The browser authentication origin does not fill in the missing webhook origin.
+Changing `base_path` changes every route address after restart. Each accepted
+request runs in a new private session, independent of the recipient.
+**Wait for report delivery before acknowledging the POST** requires a Report to value. Choose deduplication by
+request ID, header, or request body hash; header mode also needs a header name.
+The route starts enabled. Confirmed enable, disable, and delete affect new
+requests; work already admitted retains its selected definition and concrete
+recipient. Deletion archives the route and its history. An archived name cannot
+be used for a new managed route. A removed config route is archived on the next restart and can reappear under its
+original config identity. Stale definition versions require reopening the editor.
+
+Creation generates a random secret for `X-Balda-Webhook-Secret`. Copy it from
+the no-store creation response: the secret cannot be read again. A confirmed
+rotation returns a new one-time secret and immediately invalidates the old
+one for new external requests. The database keeps a verifier, not plaintext;
+inventory, detail GETs, history, audit, logs, and browser history do not return
+the secret. Config route authentication remains governed by config and is never
+copied into the managed route table. Protect the listener with a private
+network or trusted gateway even when a route has header authentication.
+
+**Test POST** is available on non-archived config and managed route details.
+It uses the current prompt and admission path with administrator browser authority,
+without revealing or requiring the webhook secret. Testing a disabled route
+requires separate confirmation; archived routes cannot be tested. Retrying the
+same form submission reuses its request key. The newest-first, paginated
+**Request history** includes accepted external and test requests, including
+execution failures, with raw input, execution status, durable output, selected
+Report to locator, and separate delivery state. Rejected requests create no
+history row. Binary request bodies are displayed losslessly as hex. Older
+admissions written before raw-body capture show **Input unavailable for this
+older request**. A successful POST or test response means
+admission; refresh the detail to see later execution or delivery results.
+
+The shared listener binds `balda.http.listen_addr` on every `balda start`, even
+with no enabled generic route. `balda.webhooks.enabled` controls
+config-route availability only; each managed route has its own enabled state.
+Unknown, disabled and archived names reject new external POSTs. Managed edits become
+visible to new requests without restart; config edits require restart. A bind
+failure or a route-name conflict aborts startup. Generic webhook routes
+are separate from chat transport callbacks under `/gateway`; they keep their
+own authentication and admission rules.
+Route management uses the existing administrator browser session, CSRF and
+same-origin checks, and transactional user, credential, MFA, session, and
+definition-version fences. Audit events omit secret values.
+
+The shared provider applies embedded Goose SQL migrations for SQLite and
+PostgreSQL before ingress. The slug upgrade removes the route path column and
+active-path index while preserving names, source, state, versions, prompt/report
+settings, secret verifiers and request input/output history. Existing custom URLs
+stop working; update senders to the canonical URL. Config declarations containing
+`path` fail startup even when disabled, identifying
+`balda.webhooks.routes.<name>.path`. Back up the
+selected database before upgrading; migration failure aborts startup. Restoring
+an older binary requires a matching pre-upgrade database backup; the removed
+custom paths cannot be reconstructed. Backoffice owns the
+`WebhooksOperations` consuming port and escaped views; `webhookbackofficeapp`
+adapts `webhookmanagement` and `webhookapp`. The `webhookroutecmd` contract
+holds neutral management values, `channel/webhook` handles HTTP transport,
+`webhookapp` owns route selection, authentication, templates and admission,
+`webhookfx` composes ingress, and `state` owns SQL persistence and guarded
+authority/audit transactions. See [the runtime contract](job-runtime.md#inbound-webhook-contract-internal)
+and [UI review](backoffice-ui-review.md#webhooks-layout-and-application-gates).
+
+## Managed locator aliases
+
+Administrators can open **Aliases** at
+`<balda.http.base_path>/backoffice/aliases` to create, inspect, retarget, and
+delete named report destinations. Operators cannot view or mutate
+them. A name such as `main_chat` maps to one public locator such as
+`telegram:-1003953132277:0`. Names use lowercase letters, digits, underscores,
+and hyphens, begin with a letter, and cannot be `owner`, `collaborator`, or a
+role-qualified selector. Names are fixed after creation. The locator is checked
+for public syntax; its external address need not exist when saved.
+
+`/aliases?new=1` creates a name, and `/aliases/{name}` edits its current locator.
+The inventory and editor display the name and concrete locator separately.
+Writes use the normal administrator browser authority, same-origin and CSRF
+checks, current user/credential/MFA/session versions, and optimistic alias
+versions. A stale edit returns 409 and requires reopening the alias. Deletion
+requires confirmation. Deleted names are absent from the inventory and cannot
+resolve; recreating a deleted name advances its version so old forms cannot
+change the new mapping. Audit events contain the name and operation, not the
+locator value.
+
+The host-owned `aliases` service validates and resolves names; `state` persists
+the mapping and checks authority and versions in the same SQL transaction as
+the audit event. `aliascmd` carries neutral values. Backoffice owns only the
+`AliasesOperations` consuming port and escaped views, bound by
+`aliasbackofficeapp` before the HTTP listener starts. Current mapping changes
+apply to future admitted schedule runs and webhook requests; accepted work
+retains its selected concrete locator.
+
+## Fact memory management
+
+Administrators open **Operations → Fact memory** at
+`<balda.http.base_path>/backoffice/memory`. This manages the existing single
+global fact source used by all Balda sessions, MCP tools and the memory actor.
+It has no per-fact owners, scopes or grants. Operators do not see the navigation
+link and cannot access its routes. Management uses ordinary Backoffice
+administrator authentication; it adds no passkey ceremony.
+
+The inventory shows **Fact** and **Actions**. **Search facts** filters text
+case-insensitively without changing memory; **Clear** restores the inventory.
+**Add fact** opens `/memory?new=1`, and **Edit** opens `/memory/{fact_id}`.
+Each editor has one **Fact** textarea. Save changes that fact only; Cancel
+leaves memory unchanged. Multiline text stays one entry, including an existing
+whole-file `MEMORY.md` import. Deletion requires **Confirm deleting this fact**.
+There is no bulk clear, import or export action.
+
+POST `/memory` creates a fact; POST `/memory/{fact_id}` edits it; POST
+`/memory/{fact_id}/delete` confirms deletion. These suffixes are relative to the
+Backoffice mount above. Fact IDs remain stable across edits. Edit and delete
+forms carry the global memory version: any intervening accepted write, including
+an MCP or actor append of another fact, makes the form stale. A 409 retains the
+submitted text and old version and offers **Reopen this fact**; reopen and review
+the latest state before saving again. There is no silent overwrite or automatic
+retry of a stale edit.
+
+Empty input returns 400, invalid/revoked authority or disabled memory returns
+403, stale fact or authority versions return 409, a missing fact returns 404,
+and unavailable/corrupt storage returns safe 503 feedback. Expired browser
+authentication can return 401 through ordinary session recovery before the
+feature runs. On an uncertain failure, reopen and check current memory before
+retrying. Empty inventory and a search with no matches have distinct messages.
+When `balda.memory.enabled: false`, the page explains the configuration state
+and exposes no operative form controls.
+
+Writes use existing browser authority, CSRF and same-origin checks. The SQL
+transaction rechecks current user, credential, MFA and session versions, changes
+the existing app-KV record and appends a body-free audit event atomically. Audit
+contains actor, operation, fact ID and time, never the fact or search text.
+Browser responses are private/no-store and do not enter HTMX history caching.
+
+Accepted changes apply on the next active or restored session turn. Deleting
+the last fact retains an initialized empty record, preventing file reimport,
+and sends an explicit superseding empty-memory boundary. It does not reset the
+session or delete historical conversation; historical prompts may still contain
+previous facts. This is separate from optional locator-scoped session memory.
+
+`memory` owns validation, ordered mutations and serialization through the same
+Store used by runtime writers. `memorycmd` carries neutral values; `state`
+owns guarded KV/audit persistence. Backoffice consumes `FactMemoryOperations`
+through `memorybackofficeapp`, bound before startup. This feature adds no table
+or schema migration. Run the ordered synthetic layout and isolated authenticated
+browser checks in the [UI review runbook](backoffice-ui-review.md#fact-memory-layout-and-application-gates).
+
+## Agent hooks management
+
+Administrators open **Operations → Agent hooks** at `/hooks` under the
+Backoffice mount. The page manages executable lifecycle definitions with
+explicit enablement, event/provider/source selection, bounded argv and timeout,
+optimistic versions, deletion confirmation, existing browser authority and
+body-free transactional audit. Operators cannot read or mutate definitions.
+Changes apply to the next matching event. See [Managed agent hooks](agent-hooks.md)
+for event semantics, executable privileges, failures and ownership.
+
+Native tool events (`PreToolUse`, `PostToolUse`) use the same guarded Agent hooks
+editor. Its capability banner reports configured provider support and explains
+new-session activation. Unsupported configurations return 400 with the submitted
+draft intact. Tool-event matchers apply to the provider-native tool name.

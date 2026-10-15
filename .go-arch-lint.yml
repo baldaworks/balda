@@ -11,12 +11,33 @@ exclude:
   - .config
 
 vendors:
+  native_hook_runtime:
+    in:
+      - github.com/normahq/runtime/v2/agentconfig
+      - golang.org/x/sys/unix
+
+  hook_policy_dependencies:
+    in:
+      - github.com/google/uuid
+
+  hook_wiring_dependencies:
+    in:
+      - go.uber.org/fx
+
+  command_outbox_runtime:
+    in:
+      - github.com/baldaworks/go-actorlayer
+      - github.com/baldaworks/go-actorlayer/transport
+      - github.com/rs/zerolog
+
   state_adapters:
     in:
       - github.com/jackc/pgx/v5
       - github.com/jackc/pgx/v5/**
       - github.com/pressly/goose/v3
       - github.com/pressly/goose/v3/**
+      # Data upgrades preserve canonical user IDs with the original UUID namespace.
+      - github.com/google/uuid
       - modernc.org/sqlite
       - github.com/rs/zerolog/log
       - google.golang.org/adk/v2/session
@@ -87,9 +108,11 @@ components:
       - internal/apps/balda/chatapp
       - internal/apps/balda/commandcmd
       - internal/apps/balda/deliverycmd
+      - internal/apps/balda/destinationcmd
       - internal/apps/balda/goalkeepercmd
       - internal/apps/balda/goalresultcmd
       - internal/apps/balda/locatorref
+      - internal/apps/balda/mattermostref
       - internal/apps/balda/locatorfmt
       - internal/apps/balda/progress
       - internal/apps/balda/permissioncmd
@@ -103,6 +126,123 @@ components:
       - internal/apps/balda/telegramfmt
       - internal/apps/balda/turncmd
       - internal/apps/balda/usageview
+      - internal/apps/balda/webhookcmd
+
+  # Canonical user, credential, binding, session, and audit contracts. These
+  # values stay independent of storage, HTTP, and concrete transports.
+  user_contracts:
+    in:
+      - internal/apps/balda/usercmd
+
+  # MCP management DTOs stay independent of SDKs, storage and feature policy.
+  mcp_contracts:
+    in:
+      - internal/apps/balda/mcpcmd
+
+  # Managed hook policy owns validation and execution; storage is behind a port.
+  hook_contracts:
+    in:
+      - internal/apps/balda/hookcmd
+
+  hook_policy:
+    in:
+      - internal/apps/balda/hooks
+
+  hook_backoffice_wiring:
+    in:
+      - internal/apps/balda/hookbackofficeapp
+
+  native_hook_adapters:
+    in:
+      - internal/apps/balda/hookprovider
+
+  hook_wiring:
+    in:
+      - internal/apps/balda/hookfx
+
+  memory_policy:
+    in:
+      - internal/apps/balda/memory
+
+  # Global fact-memory values preserve the existing KV record contract.
+  memory_contracts:
+    in:
+      - internal/apps/balda/memorycmd
+
+  # Schedule management values do not depend on HTTP, state, or transports.
+  schedule_contracts:
+    in:
+      - internal/apps/balda/schedulecmd
+
+  # Webhook management values are independent of ingress and persistence.
+  webhook_route_contracts:
+    in:
+      - internal/apps/balda/webhookroutecmd
+
+  # Route validation and guarded lifecycle policy stay outside HTTP ingress.
+  webhook_management:
+    in:
+      - internal/apps/balda/webhookmanagement
+
+  webhook_route_wiring:
+    in:
+      - internal/apps/balda/webhookroutefx
+
+  alias_contracts:
+    in:
+      - internal/apps/balda/aliascmd
+
+  alias_policy:
+    in:
+      - internal/apps/balda/aliases
+
+  alias_wiring:
+    in:
+      - internal/apps/balda/aliasfx
+
+  alias_backoffice_wiring:
+    in:
+      - internal/apps/balda/aliasbackofficeapp
+
+  # Credential recognition uses only standard-library values, never transports.
+  auth_payload:
+    in:
+      - internal/apps/balda/authpayload
+
+  # System-wide user policy shared by Backoffice and bot authorization.
+  user_application:
+    in:
+      - internal/apps/balda/users
+
+  # Bounded adaptive password primitives for Backoffice security.
+  user_security:
+    in:
+      - internal/apps/balda/userpassword
+
+  # Separate Backoffice application behavior and composition-facing use cases.
+  backoffice_application:
+    in:
+      - internal/apps/backoffice
+
+  # Backoffice-only canonical user and browser-session administration use cases.
+  backoffice_access:
+    in:
+      - internal/apps/backoffice/access
+
+  # Bounded, read-only Backoffice security-audit query use case.
+  backoffice_audit:
+    in:
+      - internal/apps/backoffice/audit
+
+  # Browser-only Backoffice authentication, opaque token rotation, and HTTP guards.
+  backoffice_security:
+    in:
+      - internal/apps/backoffice/security
+
+  # Embedded, secret-free Backoffice SSR models, templates, and static assets.
+  backoffice_webui:
+    in:
+      - internal/apps/backoffice/internal/webui
 
   # Transport-neutral delivery formatting registry.
   neutral_registry:
@@ -122,11 +262,9 @@ components:
       - internal/apps/balda/jobs
       - internal/apps/balda/jobexec
       - internal/apps/balda/ingressapp
-      - internal/apps/balda/memory
       - internal/apps/balda/questions
       - internal/apps/balda/permissions
       - internal/apps/balda/pluginapp
-      - internal/apps/balda/scheduledjobs
       - internal/apps/balda/session
       - internal/apps/balda/sessionmemorymcp
       - internal/apps/balda/sessionturn
@@ -135,6 +273,27 @@ components:
       - internal/apps/balda/welcome
       - internal/apps/balda/webhookapp
 
+  # Schedule policy owns recurring definitions and runs. Session cleanup is
+  # supplied through a consuming port by sessionapp, not constructed here.
+  schedule_policy:
+    in:
+      - internal/apps/balda/scheduledjobs
+
+  # Job-owned command admission/publication policy has consumer-owned ports
+  # and cannot import storage, ingress, provider or composition implementations.
+  command_outbox:
+    in:
+      - internal/apps/balda/jobs/commandoutbox
+
+  question_outbox:
+    in:
+      - internal/apps/balda/jobs/questionoutbox
+
+  # Only this composition adapter binds outbox ports to AppKV and the bus.
+  command_outbox_wiring:
+    in:
+      - internal/apps/balda/commandoutboxfx
+
   # Runtime contribution compilation and bounded source/content reads. Agent,
   # command, and MCP consumers depend on contracts or local ports; this owner
   # must not reach into their application implementations.
@@ -142,15 +301,57 @@ components:
     in:
       - internal/apps/balda/runtimecatalog
 
-  # Desired/observed MCP lifecycle and safe revision-aware launch policy.
+  # Exact configuration leases, supervised Balda-owned stdio workers, and
+  # bounded attachment evidence only. No SDK, credentials, or registry adapters.
+  # Current authorization recovery policy belongs to catalog_wiring, so this
+  # component remains independent of MCP management and concrete SDK adapters.
   mcp_runtime:
     in:
       - internal/apps/balda/mcpruntime
 
-  # Provider registry projection belongs in composition wiring.
+  # Provider registry projection and native stdio launch adaptation belong in
+  # composition wiring. The entrypoint dispatches private launch mechanics here.
   mcp_wiring:
     in:
       - internal/apps/balda/mcpfx
+
+  # Worker MCP definition/credential/authorization policy behind local ports.
+  mcp_management:
+    in:
+      - internal/apps/balda/mcpmanage
+
+  # Dedicated host adapter for Backoffice definition and native authorization
+  # ports. Shared completion stays in mcp_management; UI cannot import its owner.
+  mcp_backoffice_wiring:
+    in:
+      - internal/apps/balda/mcpbackofficeapp
+
+  # Shared fact memory is adapted to the browser port without constructing a Store.
+  plugin_backoffice_wiring:
+    in:
+      - internal/apps/balda/pluginbackofficeapp
+
+  memory_backoffice_wiring:
+    in:
+      - internal/apps/balda/memorybackofficeapp
+
+  # Host adapter exposes schedule policy through Backoffice's consuming port.
+  schedule_backoffice_wiring:
+    in:
+      - internal/apps/balda/schedulebackofficeapp
+
+  # Host adapter exposes webhook policy through Backoffice's consuming port.
+  webhook_backoffice_wiring:
+    in:
+      - internal/apps/balda/webhookbackofficeapp
+
+  # Fixed-upstream loopback MCP transport; grant policy stays behind its port.
+  # Upstream observation is injected by mcp_wiring; no OAuth SDK/policy belongs
+  # in the bridge's dependency set. Exact endpoint credential observations
+  # and retry feed a catalog-owned consuming port; the bridge owns no grant policy.
+  mcp_bridge:
+    in:
+      - internal/apps/balda/mcpbridge
 
   # Composition adapters for catalog sources, lifecycle, scope overlays, and
   # command/skill/MCP projections.
@@ -170,6 +371,9 @@ components:
       - internal/apps/balda/execution
 
   # Composition adapters bind ingress-owned ports to concrete provider runtimes.
+  # chatfx owns the shared SessionPreparer implementation. Conversational
+  # handlersfx wrappers only present its neutral result; session.Manager owns
+  # active/restore/create selection. Scoped forbidigo rules enforce that seam.
   ingress_wiring:
     in:
       - internal/apps/balda/chatfx
@@ -234,10 +438,32 @@ components:
     in:
       - internal/apps/balda/channel/slackagent/slackagentfx
 
+  # Provider-owned Mattermost transport. It may depend only on
+  # transport-neutral contracts; application/runtime adapters live in wiring.
+  mattermost_transport:
+    in:
+      - internal/apps/balda/channel/mattermost
+      - internal/apps/balda/channel/mattermost/presentation
+
+  # Composition-root adapters for Mattermost delivery, prompt, and structured renderers.
+  mattermost_wiring:
+    in:
+      - internal/apps/balda/channel/mattermost/mattermostfx
+
   # Provider-owned inbound webhook transport.
   webhook_transport:
     in:
       - internal/apps/balda/channel/webhook
+
+  webhook_wiring:
+    in:
+      - internal/apps/balda/webhookfx
+
+  # Shared HTTP routing and socket lifecycle are composition only; the package
+  # receives secured area handlers through standard-library interfaces.
+  http_composition:
+    in:
+      - internal/apps/balda/httpfx
 
   # Product state persistence, read models, and durable outbox storage.
   storage:
@@ -268,6 +494,36 @@ components:
       - cmd/balda
 
 deps:
+  question_outbox:
+    mayDependOn:
+      - question_outbox
+    anyVendorDeps: false
+    canUse:
+      - command_outbox_runtime
+    deepScan: false
+
+  command_outbox:
+    mayDependOn:
+      - command_outbox
+      - contracts
+    anyVendorDeps: false
+    canUse:
+      - command_outbox_runtime
+    # Storage and transport implementations are injected through local ports.
+    deepScan: false
+
+  command_outbox_wiring:
+    mayDependOn:
+      - question_outbox
+      - application
+      - command_outbox
+      - command_wiring
+      - ingress_wiring
+      - contracts
+      - storage
+    anyVendorDeps: true
+    deepScan: false
+
   session_memory_core:
     mayDependOn:
       - session_memory_core
@@ -340,6 +596,216 @@ deps:
     deepScan: false
     anyVendorDeps: true
 
+  user_contracts:
+    mayDependOn:
+      - user_contracts
+      - contracts
+    anyVendorDeps: false
+
+  mcp_contracts:
+    mayDependOn:
+      - mcp_contracts
+    anyVendorDeps: false
+
+  hook_contracts:
+    mayDependOn:
+      - user_contracts
+    anyVendorDeps: false
+
+  hook_policy:
+    mayDependOn:
+      - hook_contracts
+      - user_contracts
+    deepScan: false
+    anyVendorDeps: false
+    canUse:
+      - hook_policy_dependencies
+
+  hook_backoffice_wiring:
+    mayDependOn:
+      - hook_contracts
+      - hook_policy
+    deepScan: false
+    anyVendorDeps: false
+
+  native_hook_adapters:
+    mayDependOn:
+      - hook_contracts
+    # Constructor arguments implement consumer ports at the composition root.
+    deepScan: false
+    anyVendorDeps: false
+    canUse:
+      - native_hook_runtime
+
+  hook_wiring:
+    mayDependOn:
+      - native_hook_adapters
+      - hook_contracts
+      - hook_policy
+      - hook_backoffice_wiring
+      - application
+      - storage
+    deepScan: false
+    anyVendorDeps: false
+    canUse:
+      - hook_wiring_dependencies
+
+  memory_policy:
+    mayDependOn:
+      - memory_contracts
+      - user_contracts
+    # Concrete persistence is injected at composition, never imported here.
+    deepScan: false
+    anyVendorDeps: true
+
+  memory_contracts:
+    mayDependOn:
+      - user_contracts
+    anyVendorDeps: false
+
+  schedule_contracts:
+    mayDependOn:
+      - schedule_contracts
+    anyVendorDeps: false
+
+  webhook_route_contracts:
+    mayDependOn:
+      - webhook_route_contracts
+      - user_contracts
+    anyVendorDeps: false
+
+  webhook_management:
+    mayDependOn:
+      - webhook_route_contracts
+      - contracts
+      - user_contracts
+    # Constructor injection otherwise infers a false policy-to-adapter edge;
+    # direct imports remain checked and storage is not an allowed dependency.
+    deepScan: false
+    anyVendorDeps: true
+
+  webhook_route_wiring:
+    mayDependOn:
+      - webhook_route_contracts
+      - storage
+    anyVendorDeps: false
+
+  alias_contracts:
+    mayDependOn:
+      - alias_contracts
+      - user_contracts
+    anyVendorDeps: false
+
+  alias_policy:
+    mayDependOn:
+      - alias_contracts
+      - contracts
+      - user_contracts
+      - alias_policy
+    # Ports are injected at composition; direct import boundaries remain enforced.
+    deepScan: false
+    anyVendorDeps: true
+
+  alias_wiring:
+    mayDependOn:
+      - alias_contracts
+      - alias_policy
+      - contracts
+      - application
+      - storage
+      - alias_wiring
+    deepScan: false
+    anyVendorDeps: false
+
+  alias_backoffice_wiring:
+    mayDependOn:
+      - alias_contracts
+      - alias_policy
+      - alias_backoffice_wiring
+    deepScan: false
+    anyVendorDeps: false
+
+  auth_payload:
+    mayDependOn:
+      - auth_payload
+    anyVendorDeps: false
+
+  user_application:
+    mayDependOn:
+      - user_contracts
+      - user_application
+    anyVendorDeps: false
+
+  user_security:
+    mayDependOn:
+      - user_security
+    anyVendorDeps: true
+
+  backoffice_application:
+    mayDependOn:
+      - hook_contracts
+      - memory_contracts
+      - alias_contracts
+      - mcp_contracts
+      - schedule_contracts
+      - webhook_route_contracts
+      - contracts
+      - user_contracts
+      - user_application
+      - user_security
+      - storage
+      - infrastructure
+      - backoffice_application
+      - backoffice_access
+      - backoffice_audit
+      - backoffice_webui
+      - backoffice_security
+    # Backoffice receives its canonical persistence port from the host.
+    deepScan: false
+    anyVendorDeps: true
+
+  backoffice_security:
+    mayDependOn:
+      - user_contracts
+      - user_application
+      - user_security
+      - backoffice_security
+    # The storage and HTTP services are injected through security-owned narrow ports.
+    deepScan: false
+    anyVendorDeps: true
+
+  backoffice_access:
+    mayDependOn:
+      - user_contracts
+      - user_application
+      - user_security
+      - backoffice_access
+    # The selected user store is injected through the Access-owned narrow port.
+    deepScan: false
+    anyVendorDeps: true
+
+  backoffice_audit:
+    mayDependOn:
+      - user_contracts
+      - user_application
+      - backoffice_audit
+    # The selected audit repository is injected through the Audit-owned query port.
+    deepScan: false
+    anyVendorDeps: false
+
+  backoffice_webui:
+    mayDependOn:
+      - hook_contracts
+      - contracts
+      - memory_contracts
+      - alias_contracts
+      - mcp_contracts
+      - schedule_contracts
+      - webhook_route_contracts
+      - user_contracts
+      - backoffice_webui
+    anyVendorDeps: false
+
   # Transport-neutral delivery formatting registry. Provider renderers are
   # injected into the registry at composition time; deep-scan is disabled here
   # to prevent inverted upward edges while strictly prohibiting direct imports
@@ -354,8 +820,18 @@ deps:
 
   application:
     mayDependOn:
+      - hook_contracts
+      - memory_policy
+      - memory_contracts
+      - webhook_route_contracts
+      - alias_contracts
+      - schedule_contracts
+      - schedule_policy
+      - auth_payload
       - foundation
       - contracts
+      - user_contracts
+      - user_application
       - neutral_registry
       - session_memory_core
       - session_memory_app
@@ -367,6 +843,15 @@ deps:
       - runtime_catalog
       - storage
       - infrastructure
+    anyVendorDeps: true
+
+  schedule_policy:
+    mayDependOn:
+      - schedule_contracts
+      - contracts
+      - user_contracts
+      - application
+      - storage
     anyVendorDeps: true
 
   runtime_catalog:
@@ -388,16 +873,81 @@ deps:
   mcp_wiring:
     mayDependOn:
       - contracts
+      - mcp_contracts
+      - mcp_management
+      - mcp_bridge
       - mcp_runtime
       - mcp_wiring
+      - storage
     # Constructors inject runtime ports into provider adapters; deep scan
     # otherwise reports the intended composition direction as an inverse edge.
     deepScan: false
     anyVendorDeps: true
 
+  mcp_management:
+    mayDependOn:
+      - mcp_contracts
+      - user_contracts
+      - mcp_management
+    deepScan: false
+    anyVendorDeps: false
+
+  mcp_backoffice_wiring:
+    mayDependOn:
+      - mcp_contracts
+      - mcp_management
+      - catalog_wiring
+      - mcp_backoffice_wiring
+    deepScan: false
+    anyVendorDeps: false
+
+  plugin_backoffice_wiring:
+    mayDependOn:
+      - contracts
+      - plugin_backoffice_wiring
+    deepScan: false
+    anyVendorDeps: false
+
+  memory_backoffice_wiring:
+    mayDependOn:
+      - memory_contracts
+      - memory_policy
+    deepScan: false
+    anyVendorDeps: false
+
+  schedule_backoffice_wiring:
+    mayDependOn:
+      - schedule_contracts
+      - application
+      - schedule_policy
+      - schedule_backoffice_wiring
+    deepScan: false
+    anyVendorDeps: false
+
+  webhook_backoffice_wiring:
+    mayDependOn:
+      - webhook_route_contracts
+      - webhook_management
+      - application
+      - contracts
+      - storage
+      - webhook_backoffice_wiring
+    deepScan: false
+    anyVendorDeps: false
+
+  mcp_bridge:
+    mayDependOn:
+      - mcp_contracts
+      - mcp_bridge
+    deepScan: false
+    anyVendorDeps: false
+
   catalog_wiring:
     mayDependOn:
       - contracts
+      - mcp_contracts
+      - mcp_management
+      - mcp_bridge
       - application
       - domain
       - command_wiring
@@ -413,8 +963,10 @@ deps:
 
   domain:
     mayDependOn:
+      - memory_policy
       - foundation
       - contracts
+      - user_contracts
       - neutral_registry
       - application
       - domain
@@ -432,11 +984,16 @@ deps:
 
   ingress_wiring:
     mayDependOn:
+      - memory_policy
+      - auth_payload
       - contracts
+      - user_contracts
+      - user_application
       - neutral_registry
       - delivery
       - telegram_transport
       - zulip_transport
+      - mattermost_transport
       - storage
       - infrastructure
       - application
@@ -444,6 +1001,7 @@ deps:
 
   actor_wiring:
     mayDependOn:
+      - memory_policy
       - contracts
       - neutral_registry
       - application
@@ -457,6 +1015,8 @@ deps:
   command_wiring:
     mayDependOn:
       - contracts
+      - user_contracts
+      - user_application
       - neutral_registry
       - application
       - domain
@@ -493,6 +1053,7 @@ deps:
 
   telegram_transport:
     mayDependOn:
+      - auth_payload
       - foundation
       - contracts
       - neutral_registry
@@ -502,6 +1063,7 @@ deps:
 
   telegram_wiring:
     mayDependOn:
+      - http_composition
       - foundation
       - contracts
       - neutral_registry
@@ -523,6 +1085,8 @@ deps:
 
   zulip_wiring:
     mayDependOn:
+      - http_composition
+      - user_contracts
       - foundation
       - contracts
       - neutral_registry
@@ -535,6 +1099,8 @@ deps:
 
   slackagent_transport:
     mayDependOn:
+      - auth_payload
+      - user_contracts
       - foundation
       - contracts
       - neutral_registry
@@ -543,6 +1109,8 @@ deps:
 
   slackagent_wiring:
     mayDependOn:
+      - http_composition
+      - user_contracts
       - contracts
       - neutral_registry
       - application
@@ -552,19 +1120,64 @@ deps:
       - slackagent_wiring
     anyVendorDeps: true
 
-  webhook_transport:
+  mattermost_transport:
     mayDependOn:
+      - auth_payload
+      - foundation
+      - contracts
+      - neutral_registry
+      - mattermost_transport
+    anyVendorDeps: true
+
+  mattermost_wiring:
+    mayDependOn:
+      - http_composition
+      - user_contracts
       - foundation
       - contracts
       - neutral_registry
       - application
-      - webhook_transport
+      - delivery
+      - storage
+      - mattermost_transport
+      - mattermost_wiring
     anyVendorDeps: true
 
-  storage:
+  webhook_transport:
     mayDependOn:
       - foundation
       - contracts
+      - webhook_route_contracts
+      - webhook_transport
+    anyVendorDeps: true
+
+  webhook_wiring:
+    mayDependOn:
+      - http_composition
+      - foundation
+      - contracts
+      - application
+      - webhook_route_contracts
+      - storage
+      - webhook_transport
+      - webhook_wiring
+    anyVendorDeps: true
+
+  http_composition:
+    mayDependOn:
+      - http_composition
+    anyVendorDeps: false
+
+  storage:
+    mayDependOn:
+      - hook_contracts
+      - memory_contracts
+      - alias_contracts
+      - foundation
+      - contracts
+      - user_contracts
+      - mcp_contracts
+      - schedule_contracts
       - session_memory_core
       - session_memory_contracts
       - storage
@@ -579,8 +1192,35 @@ deps:
 
   composition_root:
     mayDependOn:
+      - native_hook_adapters
+      - hook_policy
+      - hook_wiring
+      - hook_backoffice_wiring
+      - hook_contracts
+      - command_outbox_wiring
+      - plugin_backoffice_wiring
+      - memory_backoffice_wiring
+      - memory_policy
+      - webhook_route_contracts
+      - webhook_management
+      - webhook_route_wiring
+      - alias_contracts
+      - alias_policy
+      - alias_wiring
+      - alias_backoffice_wiring
+      - mcp_backoffice_wiring
+      - schedule_backoffice_wiring
+      - webhook_backoffice_wiring
+      - schedule_policy
       - foundation
+      - mcp_bridge
+      - mcp_wiring
+      - mcp_management
+      - mcp_contracts
+      - backoffice_application
       - contracts
+      - user_contracts
+      - user_application
       - neutral_registry
       - session_memory_core
       - session_memory_app
@@ -603,12 +1243,29 @@ deps:
       - zulip_wiring
       - slackagent_transport
       - slackagent_wiring
+      - mattermost_transport
+      - mattermost_wiring
       - webhook_transport
+      - webhook_wiring
+      - http_composition
       - storage
       - infrastructure
       - composition_root
     anyVendorDeps: true
 
   entrypoints:
-    anyProjectDeps: true
+    mayDependOn:
+      - native_hook_adapters
+      - foundation
+      - composition_root
+      - application
+      - backoffice_application
+      - contracts
+      - user_contracts
+      - user_security
+      - storage
+      - infrastructure
+      - delivery
+      - mcp_wiring
+    deepScan: false
     anyVendorDeps: true

@@ -315,7 +315,7 @@ func preparePluginService(ctx context.Context) (*pluginapp.Service, error) {
 }
 
 func preparePluginServiceWithCleanup(ctx context.Context) (*pluginapp.Service, func(), error) {
-	prepared, err := prepareBaldaCommand(ctx)
+	prepared, err := prepareBaldaCommand(ctx, false)
 	if err != nil {
 		return nil, nil, err
 	}

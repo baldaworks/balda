@@ -4,10 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/url"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/authcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	adksession "google.golang.org/adk/v2/session"
 	_ "modernc.org/sqlite" // pure-Go SQLite driver
 )
@@ -19,11 +22,18 @@ type sqliteProvider struct {
 	runtimeSession *sqliteRuntimeSessionService
 	session        *sqliteSessionStore
 	jobs           *sqliteScheduledJobStore
+	management     *sqlScheduleManagementStore
+	aliases        *sqlAliasStore
+	webhook        *sqlWebhookAdmissionStore
+	webhookRoutes  *sqlWebhookRouteStore
+	runs           *sqlScheduleRunStore
 	questions      *sqliteQuestionStore
 	runtime        *sqliteJobStore
 	ingress        *sqliteSessionMemoryIngressOutboxStore
 	offset         *sqliteOffsetStore
 	plugins        *sqlitePluginStore
+	users          usercmd.Store
+	mcp            *sqlMCPStore
 }
 
 var _ Provider = (*sqliteProvider)(nil)
@@ -127,7 +137,7 @@ func NewSQLiteProvider(ctx context.Context, path string) (Provider, error) {
 		return nil, fmt.Errorf("sqlite path is required")
 	}
 
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := sql.Open("sqlite", sqliteConnectionString(dbPath))
 	if err != nil {
 		return nil, fmt.Errorf("open balda state sqlite db: %w", err)
 	}
@@ -160,13 +170,35 @@ func NewSQLiteProvider(ctx context.Context, path string) (Provider, error) {
 		runtimeSession: &sqliteRuntimeSessionService{db: db},
 		session:        &sqliteSessionStore{db: db},
 		jobs:           &sqliteScheduledJobStore{db: db},
+		management:     &sqlScheduleManagementStore{users: newSQLiteUserStore(db)},
+		aliases:        &sqlAliasStore{users: newSQLiteUserStore(db)},
+		webhook:        &sqlWebhookAdmissionStore{db: db, bind: func(query string) string { return query }, users: newSQLiteUserStore(db)},
+		webhookRoutes:  &sqlWebhookRouteStore{users: newSQLiteUserStore(db)},
+		runs:           &sqlScheduleRunStore{db: db, bind: func(query string) string { return query }},
 		questions:      &sqliteQuestionStore{db: db},
 		runtime:        &sqliteJobStore{db: db},
 		ingress:        &sqliteSessionMemoryIngressOutboxStore{db: db},
 		offset:         &sqliteOffsetStore{db: db},
 		plugins:        &sqlitePluginStore{db: db},
+		users:          newSQLiteUserStore(db),
+		mcp:            &sqlMCPStore{users: newSQLiteUserStore(db)},
 	}
 	return provider, nil
+}
+
+func sqliteConnectionString(path string) string {
+	query := url.Values{"_txlock": {"immediate"}}
+	query.Add("_pragma", "foreign_keys(1)")
+	query.Add("_pragma", "busy_timeout(5000)")
+	if path == ":memory:" {
+		return "file::memory:?" + query.Encode()
+	}
+	path = filepath.ToSlash(path)
+	if filepath.IsAbs(path) && !strings.HasPrefix(path, "/") {
+		// Keep native Windows drive letters in the URI path, not its authority.
+		path = "/" + path
+	}
+	return (&url.URL{Scheme: "file", Path: path, RawQuery: query.Encode()}).String()
 }
 
 func (p *sqliteProvider) AppKV() KVStore {
@@ -187,6 +219,20 @@ func (p *sqliteProvider) Sessions() SessionStore {
 
 func (p *sqliteProvider) ScheduledJobs() ScheduledJobStore {
 	return p.jobs
+}
+
+func (p *sqliteProvider) ScheduleManagement() ScheduleManagementStore {
+	return p.management
+}
+
+func (p *sqliteProvider) Aliases() AliasStore { return p.aliases }
+
+func (p *sqliteProvider) WebhookAdmissions() WebhookAdmissionStore { return p.webhook }
+
+func (p *sqliteProvider) WebhookRoutes() WebhookRouteStore { return p.webhookRoutes }
+
+func (p *sqliteProvider) ScheduleRuns() ScheduleRunStore {
+	return p.runs
 }
 
 func (p *sqliteProvider) Questions() QuestionStore {
@@ -211,6 +257,22 @@ func (p *sqliteProvider) Collaborators() CollaboratorStore {
 
 func (p *sqliteProvider) Plugins() PluginStore { return p.plugins }
 
+func (p *sqliteProvider) MCP() MCPStore { return p.mcp }
+
+func (p *sqliteProvider) Users() usercmd.Store { return p.users }
+
 func (p *sqliteProvider) Close() error {
 	return p.db.Close()
+}
+
+func (p *sqliteProvider) HookManagement() HookManagementStore {
+	return &sqlHookManagementStore{users: newSQLiteUserStore(p.db)}
+}
+
+func (p *sqliteProvider) MemoryManagement() MemoryManagementStore {
+	return &sqlMemoryManagementStore{users: newSQLiteUserStore(p.db)}
+}
+
+func (p *sqliteProvider) PluginManagement() PluginManagementStore {
+	return &sqlPluginManagementStore{users: newSQLiteUserStore(p.db)}
 }

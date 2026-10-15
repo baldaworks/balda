@@ -11,13 +11,13 @@ Architecture contracts are maintained in:
 
 ## Summary
 
-- Runtime stack: one or more channel runtimes (Telegram, Zulip, Slack) plus the configured Balda provider runtime.
-- Supported channels: Telegram (polling or webhook), Zulip (outgoing webhook), and Slack Agent DMs/channel threads (signed HTTP Events API).
+- Runtime stack: one or more channel runtimes (Telegram, Zulip, Slack, Mattermost) plus the configured Balda provider runtime.
+- Supported channels: Telegram (polling or webhook), Zulip (outgoing webhook), Slack Agent DMs/channel threads (signed HTTP Events API), and Mattermost (websocket events).
 - Main agent: Balda app key `balda.provider` (profile overrides via `profiles.<profile>.balda.provider`).
 - Subagents: one session per channel topic/thread with dedicated git worktree.
 - Balda startup prompt includes workspace settings for each session; in git workspace mode it also includes session/base/current-branch context and workspace MCP guidance.
 - Output streaming:
-  - Progress updates: non-terminal provider progress emits channel progress. Telegram maps this to throttled typing indicators for all chats, plus DM-only thinking placeholders.
+  - Progress updates: non-terminal provider progress emits channel progress. Telegram maps this to throttled typing indicators for all chats, plus DM-only thinking placeholders. Mattermost has no bot typing API, so progress there is plan updates only.
   - Final assistant response uses `balda.telegram.formatting_mode` (`rich_markdown|rich_html|none`; default `rich_markdown`; `none` is literal plain text).
 - Auth model: one-time owner authorization with startup-generated token.
 
@@ -31,7 +31,10 @@ can be read, linked, and indexed independently:
 - [Internal packages and startup architecture](reference/internals.md) — owned
   packages, dependency boundaries, architecture layers, and startup order.
 - [Backoffice application](reference/backoffice.md) — application ownership,
-  Web UI foundation, HTMX contracts, and the page-development workflow.
+  Web UI foundation, Schedules, Webhooks and global Fact memory management,
+  and the page-development workflow.
+- [Backoffice UI review](reference/backoffice-ui-review.md) — local synthetic
+  preview gallery, browser review, and authenticated deployment checks.
 - [Configuration](reference/configuration.md) — the complete runtime, provider,
   channel, workspace, scheduler, webhook, and MCP configuration contract.
 - [State database](reference/database.md) — SQLite defaults, PostgreSQL selection,
@@ -55,4 +58,7 @@ can be read, linked, and indexed independently:
 
 Focused guides remain separate from the technical reference, including
 [Telegram message formatting](telegram-formatting.md),
-[Slack Agent setup](slack.md), and the [command reference](commands.md).
+[Slack Agent setup](slack.md),
+[Mattermost setup](mattermost.md), and the [command reference](commands.md).
+
+- [Managed agent hooks](reference/agent-hooks.md): lifecycle boundaries, Backoffice configuration and command protocol.

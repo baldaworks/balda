@@ -9,15 +9,165 @@ import (
 	"testing"
 	"time"
 
-	"github.com/baldaworks/go-actorlayer"
 	baldaactorcmd "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
+	"github.com/baldaworks/go-actorlayer"
 	"github.com/rs/zerolog"
 )
+
+type actorScheduleModeFixture struct{ oneShot bool }
+
+type immediateTurnQueue struct{}
+
+func (immediateTurnQueue) Enqueue(ctx context.Context, task TurnTask) (<-chan error, int, error) {
+	result := make(chan error, 1)
+	result <- task.Run(ctx)
+	return result, 0, nil
+}
+
+func (immediateTurnQueue) CancelSession(baldasession.SessionLocator, bool) (bool, int, error) {
+	return false, 0, nil
+}
+
+func TestWebhookClaimWriteFailureKeepsUnstartedTurnRetryable(t *testing.T) {
+	ctx := t.Context()
+	provider, bus, dispatcher, tasks, allocator := newTaskActorRuntimeServices(t, ctx)
+	_ = provider
+	_ = bus
+	_ = allocator
+	const jobID = "webhook-route-retry"
+	if created, err := tasks.Create(ctx, baldastate.JobRecord{
+		ID: jobID, SessionID: "wh-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Objective: "input",
+		Status: baldastate.JobStatusRunning, PrivateRunKind: baldastate.PrivateRunKindWebhook,
+	}, "job.actor", nil); err != nil || !created {
+		t.Fatalf("create webhook job = %t, %v", created, err)
+	}
+	payload := SessionTurnPayload{JobID: jobID, Source: turncmd.SourceWebhook,
+		Locator: baldasession.SessionLocator{SessionID: "wh-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			ChannelType: "webhook", AddressKey: "wh-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", AddressJSON: "{}"},
+		Text: "input", DedupeKey: jobID + ":session"}
+	env, err := turncmd.SessionTurnEnvelope(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actor := NewSessionActor(SessionActorConfig{Turns: immediateTurnQueue{}, Tasks: tasks,
+		Dispatcher: dispatcher, Runner: callbackSessionTurnRunner{runFn: func(context.Context, SessionTurnPayload) error {
+			return turncmd.ErrWebhookTurnClaimUnavailable
+		}}})
+	if err := actor.Handle(ctx, env); err == nil || !actorlayer.IsRetryableError(err) {
+		t.Fatalf("unstarted turn error = %v, want retryable", err)
+	}
+	actor.runner = callbackSessionTurnRunner{runFn: func(context.Context, SessionTurnPayload) error {
+		return &turncmd.PreparationError{Cause: errors.New("restore private session failed")}
+	}}
+	if err := actor.Handle(ctx, env); err == nil || !actorlayer.IsRetryableError(err) {
+		t.Fatalf("private session preparation error = %v, want retryable", err)
+	}
+	job, found, err := tasks.Get(ctx, jobID)
+	if err != nil || !found || job.Status != baldastate.JobStatusRunning || job.Result != "" {
+		t.Fatalf("unstarted turn changed job: %+v, found=%t err=%v", job, found, err)
+	}
+}
+
+func TestWebhookInterruptedClaimRecordsIndeterminateFailure(t *testing.T) {
+	ctx := t.Context()
+	provider, bus, dispatcher, tasks, allocator := newTaskActorRuntimeServices(t, ctx)
+	_ = provider
+	_ = bus
+	_ = allocator
+	const jobID = "webhook-route-interrupted"
+	if created, err := tasks.Create(ctx, baldastate.JobRecord{
+		ID: jobID, SessionID: "wh-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Objective: "input",
+		Status: baldastate.JobStatusRunning, PrivateRunKind: baldastate.PrivateRunKindWebhook,
+	}, "job.actor", nil); err != nil || !created {
+		t.Fatalf("create webhook job = %t, %v", created, err)
+	}
+	payload := SessionTurnPayload{JobID: jobID, Source: turncmd.SourceWebhook,
+		Locator: baldasession.SessionLocator{SessionID: "wh-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+			ChannelType: "webhook", AddressKey: "wh-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", AddressJSON: "{}"},
+		Text: "input", DedupeKey: jobID + ":session"}
+	env, err := turncmd.SessionTurnEnvelope(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env.MaxAttempts = 3
+	actor := NewSessionActor(SessionActorConfig{Turns: immediateTurnQueue{}, Tasks: tasks,
+		Dispatcher: dispatcher, Runner: callbackSessionTurnRunner{runFn: func(context.Context, SessionTurnPayload) error {
+			return turncmd.ErrWebhookTurnAlreadyClaimed
+		}}})
+	if err := actor.Handle(ctx, env); err == nil || !actorlayer.IsRetryableError(err) {
+		t.Fatalf("possibly active turn error = %v, want retryable", err)
+	}
+	job, found, err := tasks.Get(ctx, jobID)
+	if err != nil || !found || job.Status != baldastate.JobStatusRunning || job.Result != "" {
+		t.Fatalf("possibly active turn changed job: %+v, found=%t err=%v", job, found, err)
+	}
+	env.Attempt = 2
+	if err := actor.Handle(ctx, env); err != nil {
+		t.Fatalf("ambiguous turn was not settled: %v", err)
+	}
+	job, found, err = tasks.Get(ctx, jobID)
+	if err != nil || !found || job.Status != baldastate.JobStatusFailed ||
+		job.Result != webhookFailureMessage || !strings.Contains(job.Error, "outcome unknown") {
+		t.Fatalf("ambiguous turn outcome = %+v, found=%t err=%v", job, found, err)
+	}
+}
+
+func (f actorScheduleModeFixture) IsOneShot(context.Context, string) (bool, error) {
+	return f.oneShot, nil
+}
+
+func TestSessionActorRedirectsOldRecurringTurnBeforeChatQueue(t *testing.T) {
+	ctx := t.Context()
+	_, bus, dispatcher, tasks, _ := newTaskActorRuntimeServices(t, ctx)
+	recipient := baldasession.SessionLocator{SessionID: "tg-9001-0", ChannelType: "telegram",
+		AddressKey: "9001:0", AddressJSON: `{"chat_id":9001,"topic_id":0}`}
+	jobID := "scheduled-daily-old"
+	if created, err := tasks.Create(ctx, baldastate.JobRecord{ID: jobID, SessionID: recipient.SessionID,
+		Objective: "review", Status: baldastate.JobStatusRunning, AssignedActor: "session:" + recipient.SessionID},
+		"job.actor", map[string]any{"source": "old-wire"}); err != nil || !created {
+		t.Fatalf("create pre-upgrade job = %t, %v", created, err)
+	}
+	env, err := turncmd.SessionTurnEnvelope(turncmd.SessionTurnPayload{
+		JobID: jobID, ScheduledJobID: "daily", Source: turncmd.SourceSchedule,
+		Locator: recipient, UserID: "tg-101", Text: "review", Deliver: false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	actor := NewSessionActor(SessionActorConfig{Dispatcher: dispatcher, Tasks: tasks, Modes: actorScheduleModeFixture{}})
+	if err := actor.enqueueTurn(t.Context(), env); err != nil {
+		t.Fatal(err)
+	}
+	if len(bus.commands) != 1 {
+		t.Fatalf("redirected commands = %d", len(bus.commands))
+	}
+	privateID := turncmd.ScheduledExecutionSessionID(jobID)
+	if bus.commands[0].To.Key != privateID {
+		t.Fatalf("redirect destination = %+v", bus.commands[0].To)
+	}
+	var redirected turncmd.SessionTurnPayload
+	if err := actorlayer.UnmarshalPayload(bus.commands[0].Payload, &redirected); err != nil {
+		t.Fatal(err)
+	}
+	if redirected.Locator.SessionID != privateID || redirected.ReportTo != nil || redirected.Deliver ||
+		redirected.ScheduleOneShot == nil || *redirected.ScheduleOneShot {
+		t.Fatalf("redirected turn = %+v", redirected)
+	}
+	job, found, err := tasks.Get(ctx, jobID)
+	if err != nil || !found || job.SessionID != privateID || job.AssignedActor != "session:"+privateID {
+		t.Fatalf("pre-upgrade job still scoped to chat: %+v, %t, %v", job, found, err)
+	}
+	canceled, err := tasks.CancelBySession(ctx, recipient.SessionID, "control.actor", "chat canceled")
+	if err != nil || len(canceled) != 0 {
+		t.Fatalf("chat cancel affected schedule: %v, %v", canceled, err)
+	}
+}
 
 func TestNewSessionActorWiresRuntimeStateUpdater(t *testing.T) {
 	t.Parallel()
@@ -298,7 +448,7 @@ func (*fakeQuestionStoreForTimeout) BindQuestionDeliveryRef(context.Context, str
 func (f *fakeQuestionStoreForTimeout) GetQuestionByID(_ context.Context, questionID string) (baldastate.QuestionRecord, bool, error) {
 	return f.record, f.record.QuestionID == questionID, nil
 }
-func (*fakeQuestionStoreForTimeout) GetPendingQuestionByReplyRef(context.Context, string, string, string) (baldastate.QuestionRecord, bool, error) {
+func (*fakeQuestionStoreForTimeout) GetQuestionByReplyRef(context.Context, string, string, string) (baldastate.QuestionRecord, bool, error) {
 	return baldastate.QuestionRecord{}, false, nil
 }
 func (*fakeQuestionStoreForTimeout) MarkQuestionAnswered(context.Context, string, questioncmd.Answer) (baldastate.QuestionRecord, bool, error) {
@@ -412,6 +562,23 @@ func (fakeSessionTurnRunner) RunSessionTurnPayload(context.Context, SessionTurnP
 type fakeScheduledJobRecorder struct {
 	successes []string
 	failures  []scheduledJobFailure
+	keys      []string
+}
+
+func TestManualScheduleSettlementPassesRunKey(t *testing.T) {
+	recorder := &fakeScheduledJobRecorder{}
+	coordinator := newSessionSettlementCoordinator(nil, recorder)
+	payload := SessionTurnPayload{ScheduledJobID: "daily", DedupeKey: "manual:nonce-123:session"}
+	if err := coordinator.record(t.Context(), actorlayer.Envelope{}, payload, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := coordinator.record(t.Context(), actorlayer.Envelope{}, payload, errors.New("execution failed")); err != nil {
+		t.Fatal(err)
+	}
+	if len(recorder.successes) != 1 || len(recorder.failures) != 1 ||
+		len(recorder.keys) != 2 || recorder.keys[0] != payload.DedupeKey || recorder.keys[1] != payload.DedupeKey {
+		t.Fatalf("manual run key was not forwarded: %+v", recorder)
+	}
 }
 
 type scheduledJobFailure struct {
@@ -419,13 +586,13 @@ type scheduledJobFailure struct {
 	cause error
 }
 
-func (f *fakeScheduledJobRecorder) MarkSuccess(_ context.Context, jobID string) error {
+func (f *fakeScheduledJobRecorder) RecordExecution(_ context.Context, jobID, key string, cause error) error {
+	f.keys = append(f.keys, key)
+	if cause != nil {
+		f.failures = append(f.failures, scheduledJobFailure{jobID: jobID, cause: cause})
+		return nil
+	}
 	f.successes = append(f.successes, jobID)
-	return nil
-}
-
-func (f *fakeScheduledJobRecorder) RecordExecutionFailure(_ context.Context, jobID string, cause error) error {
-	f.failures = append(f.failures, scheduledJobFailure{jobID: jobID, cause: cause})
 	return nil
 }
 
@@ -470,6 +637,20 @@ func ensureNoErrorSignal(t *testing.T, ch <-chan error, wait time.Duration, labe
 		t.Fatalf("unexpected error signal (%v): %s", err, label)
 	case <-time.After(wait):
 	}
+}
+
+type observedSteeringQueue struct {
+	*TurnDispatcher
+	enqueued chan struct{}
+}
+
+func (q *observedSteeringQueue) Enqueue(ctx context.Context, task TurnTask) (<-chan error, int, error) {
+	result, position, err := q.TurnDispatcher.Enqueue(ctx, task)
+	if err == nil && task.SessionTurn != nil && task.SessionTurn.ReplyToMessageID > 0 {
+		// Enqueue has finished merging the steering turn under the dispatcher lock.
+		q.enqueued <- struct{}{}
+	}
+	return result, position, err
 }
 
 func TestSessionActor_SteeringEnvelopesDoNotAcknowledgeBeforeExecutionBegins(t *testing.T) {
@@ -581,13 +762,13 @@ func TestSessionActor_SimulatedRestartWithUnacknowledgedEnvelopesReplaysAllSteer
 	}
 
 	rootStarted := make(chan struct{})
-	blockRoot := make(chan struct{})
+	t.Cleanup(func() { _ = dispatcher1.Shutdown(context.Background()) })
 
 	runner1 := callbackSessionTurnRunner{
-		runFn: func(_ context.Context, _ SessionTurnPayload) error {
+		runFn: func(ctx context.Context, _ SessionTurnPayload) error {
 			close(rootStarted)
-			<-blockRoot
-			return nil
+			<-ctx.Done()
+			return ctx.Err()
 		},
 	}
 	exec1 := &sessionActorExecutor{
@@ -617,8 +798,8 @@ func TestSessionActor_SimulatedRestartWithUnacknowledgedEnvelopesReplaysAllSteer
 	ensureNoErrorSignal(t, steer1Done, 150*time.Millisecond, "steer1 unacknowledged")
 	ensureNoErrorSignal(t, steer2Done, 150*time.Millisecond, "steer2 unacknowledged")
 
-	// Simulate crash: shut down dispatcher1 and abandon instance 1.
-	close(blockRoot)
+	// Stop intake before canceling the root. Releasing it first could execute
+	// queued steering work on the instance this fixture intends to abandon.
 	_ = dispatcher1.Shutdown(context.Background())
 
 	// Reconstruct fresh runtime instance (instance 2).
@@ -653,8 +834,9 @@ func TestSessionActor_SimulatedRestartWithUnacknowledgedEnvelopesReplaysAllSteer
 			return nil
 		},
 	}
+	observedQueue := &observedSteeringQueue{TurnDispatcher: dispatcher2, enqueued: make(chan struct{}, 3)}
 	exec2 := &sessionActorExecutor{
-		turns:  dispatcher2,
+		turns:  observedQueue,
 		runner: runner2,
 	}
 
@@ -670,19 +852,19 @@ func TestSessionActor_SimulatedRestartWithUnacknowledgedEnvelopesReplaysAllSteer
 	go func() {
 		replayedSteer1Done <- exec2.enqueueTurn(context.Background(), steer1Env)
 	}()
-	time.Sleep(30 * time.Millisecond)
+	waitForSignal(t, observedQueue.enqueued, "first replayed steering enqueue")
 
 	replayedSteer1DupDone := make(chan error, 1)
 	go func() {
 		replayedSteer1DupDone <- exec2.enqueueTurn(context.Background(), steer1Env)
 	}()
-	time.Sleep(30 * time.Millisecond)
+	waitForSignal(t, observedQueue.enqueued, "duplicate replayed steering enqueue")
 
 	replayedSteer2Done := make(chan error, 1)
 	go func() {
 		replayedSteer2Done <- exec2.enqueueTurn(context.Background(), steer2Env)
 	}()
-	time.Sleep(30 * time.Millisecond)
+	waitForSignal(t, observedQueue.enqueued, "successor replayed steering enqueue")
 
 	// Release root execution to let the merged steering batch run.
 	close(replayedRootRelease)
@@ -785,4 +967,14 @@ func TestSessionActor_TransportContextInterruptionKeepsEnvelopeRetryable(t *test
 	}
 
 	close(rootRelease)
+}
+
+func (*fakeQuestionStoreForTimeout) PendingQuestionAnswerIDs(context.Context, string, int) ([]string, error) {
+	return nil, nil
+}
+func (*fakeQuestionStoreForTimeout) MarkQuestionAnswerAdmitted(context.Context, string) error {
+	return nil
+}
+func (*fakeQuestionStoreForTimeout) MarkQuestionAnswerControlsCleared(context.Context, string, questioncmd.DeliveryRef) error {
+	return nil
 }

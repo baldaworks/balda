@@ -67,6 +67,7 @@ type SessionAccessor interface {
 	GetSession(locator SessionLocator) (ActiveSession, error)
 	RestoreSession(ctx context.Context, sessionCtx SessionContext) (ActiveSession, error)
 	EnsureSession(ctx context.Context, sessionCtx SessionContext, agentName string) (ActiveSession, error)
+	EnsureTransientSession(ctx context.Context, sessionCtx SessionContext, agentName string) (ActiveSession, error)
 }
 
 type MemorySnapshot struct {
@@ -88,9 +89,10 @@ type MemoryStateProvider interface {
 
 // SkillLoader is the turn assembler's local revision-pinned content port.
 type SkillLoader interface {
-	LoadPinned(
+	LoadPinnedForSession(
 		ctx context.Context,
 		selection runtimecatalogcmd.SkillSelection,
+		sessionID runtimecatalogcmd.SnapshotID,
 		resources []string,
 	) (runtimecatalogcmd.LoadedSkill, error)
 }
@@ -146,39 +148,67 @@ func newRunner(sessions SessionAccessor, executor Executor, memoryStore MemorySt
 }
 
 // RunSessionTurnPayload restores the target session and executes one provider turn.
-func (r *Runner) RunSessionTurnPayload(ctx context.Context, payload turncmd.SessionTurnPayload) error {
+func (r *Runner) RunSessionTurnPayload(ctx context.Context, payload turncmd.SessionTurnPayload) (runErr error) {
+	providerStarted := false
+	defer func() {
+		if runErr != nil && !providerStarted {
+			runErr = &turncmd.PreparationError{Cause: runErr}
+		}
+	}()
 	if r.sessions == nil {
 		return fmt.Errorf("session turn: session manager is unavailable")
 	}
 	if r.executor == nil {
 		return fmt.Errorf("session turn: executor is unavailable")
 	}
+	if payload.Source == turncmd.SourceSchedule && (payload.ScheduleOneShot == nil || !*payload.ScheduleOneShot) {
+		var err error
+		payload, err = turncmd.PrivateScheduledTurn(payload)
+		if err != nil {
+			return fmt.Errorf("prepare scheduled turn: %w", err)
+		}
+	}
 	locator := sessionLocatorFromPayload(payload)
+	if payload.Source == turncmd.SourceWebhook && !turncmd.IsPrivateRun(payload.Source, locator.SessionID) {
+		return fmt.Errorf("private webhook execution session id is required")
+	}
 	topicSession, err := r.sessions.GetSession(locator)
 	if err != nil {
 		userID := strings.TrimSpace(payload.UserID)
-		topicSession, err = r.sessions.RestoreSession(ctx, SessionContext{
-			Locator: locator,
-			UserID:  userID,
-		})
-		if err != nil {
-			if !errors.Is(err, ErrNoPersistedSession) {
-				return fmt.Errorf("restore session for queued turn: %w", err)
-			}
+		if turncmd.IsPrivateRun(payload.Source, locator.SessionID) {
 			if userID == "" {
-				r.logger.Debug().
-					Str("session_id", payload.Locator.SessionID).
-					Str("channel_type", payload.Locator.ChannelType).
-					Str("address_key", payload.Locator.AddressKey).
-					Msg("dropping queued turn for unknown session without transport user")
-				return nil
+				return fmt.Errorf("private execution user id is required")
 			}
-			topicSession, err = r.sessions.EnsureSession(ctx, SessionContext{
-				Locator: locator,
-				UserID:  userID,
+			topicSession, err = r.sessions.EnsureTransientSession(ctx, SessionContext{
+				Locator: locator, UserID: userID,
 			}, ownerSessionLabel)
 			if err != nil {
-				return fmt.Errorf("create session for queued turn: %w", err)
+				return fmt.Errorf("create private execution session: %w", err)
+			}
+		} else {
+			topicSession, err = r.sessions.RestoreSession(ctx, SessionContext{
+				Locator: locator,
+				UserID:  userID,
+			})
+			if err != nil {
+				if !errors.Is(err, ErrNoPersistedSession) {
+					return fmt.Errorf("restore session for queued turn: %w", err)
+				}
+				if userID == "" {
+					r.logger.Debug().
+						Str("session_id", payload.Locator.SessionID).
+						Str("channel_type", payload.Locator.ChannelType).
+						Str("address_key", payload.Locator.AddressKey).
+						Msg("dropping queued turn for unknown session without transport user")
+					return nil
+				}
+				topicSession, err = r.sessions.EnsureSession(ctx, SessionContext{
+					Locator: locator,
+					UserID:  userID,
+				}, ownerSessionLabel)
+				if err != nil {
+					return fmt.Errorf("create session for queued turn: %w", err)
+				}
 			}
 		}
 	}
@@ -197,9 +227,12 @@ func (r *Runner) RunSessionTurnPayload(ctx context.Context, payload turncmd.Sess
 	if payload.ReportTo != nil {
 		deliveryLocator = *payload.ReportTo
 	}
-	preparedMemory, err := prepareMemory(ctx, r.memory, topicSession, payload.Metadata)
-	if err != nil {
-		return err
+	var preparedMemory memoryPreparation
+	if payload.Source != turncmd.SourceWebhook {
+		preparedMemory, err = prepareMemory(ctx, r.memory, topicSession, payload.Metadata)
+		if err != nil {
+			return err
+		}
 	}
 	if preparedMemory.updatedAt != "" {
 		payload.Metadata = &turncmd.SessionTurnMetadata{LatestMemoryAt: preparedMemory.updatedAt}
@@ -211,15 +244,16 @@ func (r *Runner) RunSessionTurnPayload(ctx context.Context, payload turncmd.Sess
 			return fmt.Errorf("session turn: selected skill loader is unavailable")
 		}
 		sessionSnapshotID := runtimecatalogcmd.SnapshotID(strings.TrimSpace(topicSession.GetRuntimeSnapshotID()))
-		if sessionSnapshotID == "" || payload.Skill.Snapshot != sessionSnapshotID {
-			return fmt.Errorf("session turn: selected skill snapshot does not match session runtime")
+		if sessionSnapshotID == "" {
+			return fmt.Errorf("session turn: session runtime snapshot is unavailable")
 		}
-		loaded, loadErr := r.skills.LoadPinned(ctx, *payload.Skill, nil)
+		loaded, loadErr := r.skills.LoadPinnedForSession(ctx, *payload.Skill, sessionSnapshotID, nil)
 		if loadErr != nil {
 			return fmt.Errorf("load selected skill: %w", loadErr)
 		}
 		selectedSkill = &loaded
 	}
+	providerStarted = true
 	return r.executor.ExecuteSessionTurn(ctx, Request{
 		Payload:        payload,
 		Session:        topicSession,
@@ -261,7 +295,7 @@ func prepareMemory(
 		return memoryPreparation{}, fmt.Errorf("snapshot balda memory: %w", err)
 	}
 	content := strings.TrimSpace(snapshot.Content)
-	if content == "" {
+	if content == "" && snapshot.Version == 0 && strings.TrimSpace(snapshot.UpdatedAt) == "" {
 		return memoryPreparation{}, nil
 	}
 	cursor, err := memoryCursor(ctx, topicSession, metadata)

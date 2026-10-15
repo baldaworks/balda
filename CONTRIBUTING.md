@@ -4,7 +4,7 @@ Thanks for contributing to `balda`.
 
 ## Development Setup
 
-1. Use Go `1.26.3` (see `go.mod`).
+1. Use Go `1.26.9` (see `go.mod`).
 2. Clone the repository and fetch dependencies:
 
 ```bash
@@ -27,6 +27,25 @@ go tool golangci-lint run
 go tool go-arch-lint check --project-path .
 ```
 
+The CI race and coverage job uses a 20-minute per-package timeout. Backoffice
+tests use a shared low-cost bcrypt hash for fixture users; the production
+password hash still uses cost 12 and is checked in `userpassword` tests. Keep
+real login and password-change assertions when changing those fixtures.
+
+## Main Branch Checks
+
+GitHub protects `main` with these required GitHub Actions job checks on every
+pull request: `lint`, `test`, `sqlite-integration`, `postgres-integration`,
+`architecture-lint`, `projection-replay`, `jetstream-integration`, and
+`ingress-e2e`. All eight must finish successfully before a PR can merge. The
+rule also applies to repository administrators. A PR is required, but no
+approving review is required. Auto-merge is currently disabled for this
+repository; enabling it later does not remove these required checks.
+
+The `MCP native execution and persistence` workflow runs only for selected paths,
+so its `native-launch` jobs are additional checks when triggered, not required
+branch checks. Keep every required job enabled for all pull requests to `main`.
+
 ## Database Integration Checks
 
 State database integration suites are explicitly tagged and run separately:
@@ -41,6 +60,40 @@ Use a disposable PostgreSQL database with permission to create/drop test schemas
 Each test gets an isolated schema and cleans it up. An explicit PostgreSQL run
 fails if the DSN is missing. Both backends have separate required CI jobs;
 configuration and dispatch unit tests remain untagged.
+
+## Database Migrations
+
+Create sequential SQL migration files with the project-pinned Goose CLI:
+
+```bash
+go tool goose -s -dir internal/apps/balda/state/migrations create <name> sql
+go tool goose -s -dir internal/apps/balda/state/postgres_migrations create <name> sql
+```
+
+Use the SQLite or PostgreSQL command for the backend being changed. Fill in
+the generated `Up` section. Choose a version above both SQL files and registered
+Go migrations for that backend; the CLI's sequential allocator sees only files
+in the selected directory. SQLite Go registrations are in
+`state/00020_runtime_session_tables.go`; PostgreSQL Go registrations are local
+to the provider in `state/postgres_migrations.go`. Keep PostgreSQL's global
+registry disabled so SQLite callbacks cannot enter its history.
+
+Use a transactional Go migration for a data upgrade that needs Go normalization.
+Read and write through the callback's `*sql.Tx`, including data-conversion
+markers; the Goose version marker commits in the same transaction. Schema and
+data conversion belong to `internal/apps/balda/state`. Credential bootstrap
+belongs to Backoffice and runs separately from database upgrades.
+
+Validate both embedded SQL migration directories:
+
+```bash
+go tool goose -dir internal/apps/balda/state/migrations validate
+go tool goose -dir internal/apps/balda/state/postgres_migrations validate
+```
+
+Balda applies migrations through the embedded Goose providers when it opens
+the selected database. Run the tagged integration suite against a disposable
+database before shipping a migration.
 
 ## Code Standards
 

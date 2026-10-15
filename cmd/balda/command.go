@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/backoffice"
 	"github.com/baldaworks/balda/internal/apps/balda"
 	"github.com/baldaworks/balda/internal/apps/balda/paths"
 	"github.com/baldaworks/balda/internal/apps/balda/shutdown"
@@ -48,12 +49,12 @@ var (
 func startCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           "start",
-		Short:         "Start Telegram Balda bot",
-		Long:          "Start the Telegram Balda bot server.",
+		Short:         "Start Balda, Backoffice, and enabled integrations",
+		Long:          "Apply embedded schema and data migrations, check user readiness, then start Balda, Backoffice, and enabled integrations.",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			prepared, err := prepareBaldaCommand(cmd.Context())
+			prepared, err := prepareBaldaCommand(cmd.Context(), true)
 			if err != nil {
 				return err
 			}
@@ -75,17 +76,24 @@ func startCommand() *cobra.Command {
 
 			logBaldaStartup(ctx, prepared.baldaCfg.Balda.Telegram.Token)
 
-			<-ctx.Done()
+			var runtimeErr error
+			select {
+			case <-ctx.Done():
+			case signal := <-app.Wait():
+				if signal.ExitCode != 0 {
+					runtimeErr = fmt.Errorf("balda runtime requested shutdown with exit code %d", signal.ExitCode)
+				}
+			}
 			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 			defer shutdownCancel()
 			if err := app.Stop(shutdownCtx); err != nil {
 				if shutdown.IsExpected(err) {
-					return nil
+					return runtimeErr
 				}
 				return fmt.Errorf("stopping Balda app: %w", err)
 			}
 
-			return nil
+			return runtimeErr
 		},
 	}
 
@@ -100,7 +108,7 @@ func validateCommand() *cobra.Command {
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			prepared, err := prepareBaldaCommand(cmd.Context())
+			prepared, err := loadBaldaCommandConfig(true)
 			if err != nil {
 				return err
 			}
@@ -122,7 +130,7 @@ func preflightCommand() *cobra.Command {
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			prepared, err := prepareBaldaCommand(cmd.Context())
+			prepared, err := prepareBaldaCommand(cmd.Context(), false)
 			if err != nil {
 				return err
 			}
@@ -147,7 +155,7 @@ func doctorCommand() *cobra.Command {
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			prepared, err := prepareBaldaCommand(cmd.Context())
+			prepared, err := prepareBaldaCommand(cmd.Context(), false)
 			if err != nil {
 				return err
 			}
@@ -166,7 +174,41 @@ func doctorCommand() *cobra.Command {
 	return cmd
 }
 
-func prepareBaldaCommand(ctx context.Context) (preparedBaldaCommand, error) {
+func prepareBaldaCommand(ctx context.Context, requireUserReady bool) (preparedBaldaCommand, error) {
+	prepared, err := loadBaldaCommandConfig(true)
+	if err != nil {
+		return preparedBaldaCommand{}, err
+	}
+	if err := os.MkdirAll(prepared.stateDir, 0o700); err != nil {
+		return preparedBaldaCommand{}, fmt.Errorf("create balda state dir: %w", err)
+	}
+	provider, err := state.Open(ctx, prepared.database)
+	if err != nil {
+		return preparedBaldaCommand{}, fmt.Errorf("open balda state provider: %w", err)
+	}
+	defer func() { _ = provider.Close() }()
+	ownerToken, err := loadOrCreateBaldaOwnerTokenFromProvider(ctx, provider)
+	if err != nil {
+		return preparedBaldaCommand{}, fmt.Errorf("bootstrap balda owner token: %w", err)
+	}
+	if requireUserReady {
+		server, err := prepared.baldaCfg.Balda.ResolveBackofficeServer()
+		if err != nil {
+			return preparedBaldaCommand{}, err
+		}
+		runtime, err := backoffice.NewRuntime(backoffice.ResolvedConfig{Server: server, Database: prepared.database}, provider)
+		if err != nil {
+			return preparedBaldaCommand{}, err
+		}
+		if err := runtime.ValidateReady(ctx); err != nil {
+			return preparedBaldaCommand{}, fmt.Errorf("backoffice user readiness: %w; run balda backoffice bootstrap-admin", err)
+		}
+	}
+	prepared.ownerToken = ownerToken
+	return prepared, nil
+}
+
+func loadBaldaCommandConfig(requireChannel bool) (preparedBaldaCommand, error) {
 	workingDir, err := os.Getwd()
 	if err != nil {
 		return preparedBaldaCommand{}, fmt.Errorf("getting working directory: %w", err)
@@ -191,13 +233,16 @@ func prepareBaldaCommand(ctx context.Context) (preparedBaldaCommand, error) {
 	if err != nil {
 		return preparedBaldaCommand{}, err
 	}
+	applyHTTPBasePathEnv(&doc.Balda)
 	if err := applyBaldaLogging(doc.Balda.Logger); err != nil {
 		return preparedBaldaCommand{}, fmt.Errorf("configure balda logging: %w", err)
 	}
 
 	baldaCfg := balda.Config{Balda: doc.Balda}
-	if err := validateBaldaChannelConfiguration(workingDir, baldaCfg); err != nil {
-		return preparedBaldaCommand{}, err
+	if requireChannel {
+		if err := validateBaldaChannelConfiguration(workingDir, baldaCfg); err != nil {
+			return preparedBaldaCommand{}, err
+		}
 	}
 
 	stateWorkingDir, err := paths.ResolveWorkingDir(baldaCfg.Balda.WorkingDir)
@@ -208,33 +253,37 @@ func prepareBaldaCommand(ctx context.Context) (preparedBaldaCommand, error) {
 	if err != nil {
 		return preparedBaldaCommand{}, fmt.Errorf("resolve balda state_dir: %w", err)
 	}
-	if err := os.MkdirAll(stateDir, 0o700); err != nil {
-		return preparedBaldaCommand{}, fmt.Errorf("create balda state dir: %w", err)
-	}
-
 	database, err := baldaCfg.Balda.Database.Resolve(stateWorkingDir, stateDir)
 	if err != nil {
 		return preparedBaldaCommand{}, err
 	}
-	ownerToken, err := loadOrCreateBaldaOwnerToken(ctx, database)
-	if err != nil {
-		return preparedBaldaCommand{}, fmt.Errorf("bootstrap balda owner token: %w", err)
+	if _, err := baldaCfg.Balda.ResolveHTTP(); err != nil {
+		return preparedBaldaCommand{}, err
 	}
-
+	if _, err := baldaCfg.Balda.ResolveSharedBackofficeServer(); err != nil {
+		return preparedBaldaCommand{}, err
+	}
 	return preparedBaldaCommand{
 		workingDir:      workingDir,
 		stateDir:        stateDir,
 		doc:             doc,
 		baldaCfg:        baldaCfg,
 		runtimeLoadOpts: runtimeLoadOpts,
-		ownerToken:      ownerToken,
 		database:        database,
 	}, nil
 }
 
+func applyHTTPBasePathEnv(cfg *balda.BaldaConfig) {
+	// appconfig drops null defaults before applying env overrides; LookupEnv also
+	// preserves an explicitly empty value, which selects the origin root.
+	if basePath, ok := os.LookupEnv("BALDA_HTTP_BASE_PATH"); ok {
+		cfg.HTTP.BasePath = &basePath
+	}
+}
+
 func validateBaldaChannelConfiguration(workingDir string, cfg balda.Config) error {
-	if cfg.Balda.Telegram.Token == "" && !cfg.Balda.Zulip.Webhook.Enabled && !cfg.Balda.Slack.Enabled && !cfg.Balda.Slack.Agent.Enabled {
-		return fmt.Errorf("at least one channel is required.\nFor Telegram:\n  - Environment: BALDA_TELEGRAM_TOKEN=<token>\n  - CWD .env: %s with BALDA_TELEGRAM_TOKEN=<token>\nFor Zulip: set balda.zulip.webhook.enabled=true (or BALDA_ZULIP_WEBHOOK_ENABLED=true)\nFor Slack chat: set balda.slack.enabled=true (or BALDA_SLACK_ENABLED=true)\nFor Slack agent: set balda.slack.agent.enabled=true (or BALDA_SLACK_AGENT_ENABLED=true)", filepath.Join(workingDir, ".env"))
+	if cfg.Balda.Telegram.Token == "" && !cfg.Balda.Zulip.Webhook.Enabled && !cfg.Balda.Mattermost.Enabled && !cfg.Balda.Slack.Enabled && !cfg.Balda.Slack.Agent.Enabled {
+		return fmt.Errorf("at least one channel is required.\nFor Telegram:\n  - Environment: BALDA_TELEGRAM_TOKEN=<token>\n  - CWD .env: %s with BALDA_TELEGRAM_TOKEN=<token>\nFor Zulip: set balda.zulip.webhook.enabled=true (or BALDA_ZULIP_WEBHOOK_ENABLED=true)\nFor Mattermost: set balda.mattermost.enabled=true (or BALDA_MATTERMOST_ENABLED=true)\nFor Slack chat: set balda.slack.enabled=true (or BALDA_SLACK_ENABLED=true)\nFor Slack agent: set balda.slack.agent.enabled=true (or BALDA_SLACK_AGENT_ENABLED=true)", filepath.Join(workingDir, ".env"))
 	}
 	return nil
 }

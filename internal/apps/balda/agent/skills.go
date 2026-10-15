@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -168,6 +169,39 @@ func (m *SkillManager) LoadPinned(
 		return runtimecatalogcmd.LoadedSkill{}, ErrSkillRevisionUnavailable
 	}
 	return loaded, nil
+}
+
+// LoadPinnedForSession validates that a durable selection belongs to the session
+// catalog. A first turn may select from an application snapshot before lazy
+// session creation derives its effective catalog from that same parent.
+func (m *SkillManager) LoadPinnedForSession(
+	ctx context.Context,
+	selection runtimecatalogcmd.SkillSelection,
+	sessionID runtimecatalogcmd.SnapshotID,
+	resources []string,
+) (runtimecatalogcmd.LoadedSkill, error) {
+	if sessionID == "" {
+		return runtimecatalogcmd.LoadedSkill{}, ErrSkillRevisionUnavailable
+	}
+	session, err := m.catalog.RetainedSkillSnapshot(ctx, sessionID)
+	if err != nil || session.ID != sessionID {
+		return runtimecatalogcmd.LoadedSkill{}, ErrSkillRevisionUnavailable
+	}
+	if selection.Snapshot != sessionID {
+		if session.Scope.Kind != runtimecatalogcmd.SnapshotScopeEffective || !slices.Contains(session.Parents, selection.Snapshot) {
+			return runtimecatalogcmd.LoadedSkill{}, ErrSkillRevisionUnavailable
+		}
+		original, err := m.catalog.RetainedSkillSnapshot(ctx, selection.Snapshot)
+		if err != nil || original.ID != selection.Snapshot {
+			return runtimecatalogcmd.LoadedSkill{}, ErrSkillRevisionUnavailable
+		}
+		pinned, found := findExactSkill(original, selection.Ref.Source, selection.Ref.Name)
+		inherited, present := findExactSkill(session, selection.Ref.Source, selection.Ref.Name)
+		if !found || !present || pinned != inherited {
+			return runtimecatalogcmd.LoadedSkill{}, ErrSkillRevisionUnavailable
+		}
+	}
+	return m.LoadPinned(ctx, selection, resources)
 }
 
 // BoundSkillLoader is a read-only provider adapter pinned to trusted turn state.

@@ -11,9 +11,14 @@ import (
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 )
 
+// CommandDispatcher is the publication capability consumed by command ingress.
+type CommandDispatcher interface {
+	Dispatch(ctx context.Context, env actorlayer.Envelope) (*actortransport.DispatchReceipt, error)
+}
+
 // CommandIngress adapts actortransport.Dispatcher to commandcmd.Ingress.
 type CommandIngress struct {
-	dispatcher actortransport.Dispatcher
+	dispatcher CommandDispatcher
 	snapshots  EffectiveSnapshotResolver
 }
 
@@ -28,7 +33,7 @@ type EffectiveSnapshotResolver interface {
 }
 
 // NewCommandIngress constructs a CommandIngress.
-func NewCommandIngress(dispatcher actortransport.Dispatcher, snapshots EffectiveSnapshotResolver) *CommandIngress {
+func NewCommandIngress(dispatcher CommandDispatcher, snapshots EffectiveSnapshotResolver) *CommandIngress {
 	return &CommandIngress{dispatcher: dispatcher, snapshots: snapshots}
 }
 

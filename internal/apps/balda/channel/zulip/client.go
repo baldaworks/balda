@@ -13,6 +13,7 @@ import (
 )
 
 const (
+	apiResultSuccess         = "success"
 	defaultHTTPTimeout       = 15 * time.Second
 	maxResponseBodyBytes     = 1 << 20
 	maxErrorResponseBodyText = 4096
@@ -170,7 +171,7 @@ func (c *Client) postMessage(ctx context.Context, form url.Values) (int, error) 
 	if err := json.Unmarshal(body, &result); err != nil {
 		return 0, fmt.Errorf("decode zulip send message response: %w", err)
 	}
-	if result.Result != "success" {
+	if result.Result != apiResultSuccess {
 		return 0, &APIError{
 			Path:       "/api/v1/messages",
 			StatusCode: http.StatusOK,
@@ -198,7 +199,7 @@ func (c *Client) postTyping(ctx context.Context, form url.Values) error {
 	if err := json.Unmarshal(body, &result); err != nil {
 		return fmt.Errorf("decode zulip typing response: %w", err)
 	}
-	if result.Result != "success" {
+	if result.Result != apiResultSuccess {
 		return &APIError{
 			Path:       "/api/v1/typing",
 			StatusCode: http.StatusOK,

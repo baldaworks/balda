@@ -5,6 +5,59 @@ Balda-specific command extension, and session capability lifetime. Marketplace
 repository layout is documented separately in the
 [marketplace format ADR](../architecture/plugin-marketplace-format.md).
 
+## Backoffice package management
+
+Administrators manage the global package catalog through **Operations →
+Plugins**, with **Installed** and **Marketplaces** tabs. Add a named local or
+Git marketplace, explicitly **Refresh marketplace**, then review the qualified
+package and exact revision before **Install plugin**. A page read does not fetch
+a source. Failed refresh keeps the last successful discovery visible as stale
+reference and disables candidate review until a successful refresh.
+
+Installed and discovered package names carry a **Balda extension** marker when
+the displayed revision's `plugin.json` declares
+`extensions["dev.baldaworks.balda"]`. It reports declaration even if the
+extension is invalid or supplies no usable commands. Enabled state, extension
+diagnostics, and runtime health remain separate; stale discovery shows the
+last successful candidate's declaration until another successful refresh.
+
+The configured marketplace name is the selection identity; it can differ from
+the index's manifest name. Upgrade resolves the proven installation origin and
+cannot switch to another publisher merely because it offers the same package
+name. Ref and newline-separated Sparse paths apply only to Git sources. Source
+is never refilled, and stored browser projections redact credentials and local
+paths. See [Backoffice Plugins management](backoffice.md#plugins-management)
+for exact fields and outcomes.
+
+Enable/disable and rollback affect new catalog selections. Rollback chooses an
+exact retained package revision and preserves Enabled. Remove deactivates the
+installation without purging plugin data or revision archives; removing its
+marketplace definition also preserves those resources. Disabled packages can
+still be inspected. Runtime health, selected/current revision and Enabled are
+separate states.
+
+Installation stages immutable bytes and prepares the complete catalog before
+guarded durable acceptance. SQL acceptance records state and audit together;
+filesystem staging and catalog publication are separate steps. An accepted
+intent whose publication/completion fails remains **Accepted; recovery pending**
+until ordinary recovery reconciles it. Reopen the detail before retrying a
+conflict or pending operation. One process must own the state directory; its
+catalog lock does not provide coordination across independently running Balda
+processes.
+
+Management does not reset existing sessions or change their pins. New sessions
+select the current catalog; a healthy active conversation explicitly adopts
+current capabilities with `/reset`. A failed restore can also replace the saved
+ADK session with current capabilities as described below.
+
+MCP availability does not filter catalog selection: an exact restore attempt
+keeps every selected plugin server at its captured revision. HTTP/SSE attachment
+is invocation-owned, with no startup or idle remote discovery. A failed restore
+uses the fresh-session fallback described below.
+Balda-owned plugin stdio discovery starts asynchronously under bounded
+supervision; provider execution retains its separate child ownership. See
+[MCP deadlines](configuration.md#mcp-availability-and-deadlines) for limits and recovery scope.
+
 ## Package boundaries
 
 An installed package uses the Agent Plugins 1.0 `plugin.json` as its portable
@@ -88,8 +141,8 @@ That snapshot ID fixes all three capability classes for the session lifetime:
   snapshot, while selected skill bodies and resources are loaded lazily from
   its exact archived source revision;
 - the MCP server list is derived from the same snapshot and supplied when the
-  provider session is created, resumed, or loaded. Its acquisitions live until
-  that Balda session runtime closes.
+  ADK session runtime is created or opened. Its acquisitions live until that
+  Balda session runtime closes.
 
 The built-in `/skill <skill> [prompt...]` command explicitly selects a skill
 from this snapshot; Slack spells it `/balda skill <skill> [prompt...]`. An
@@ -101,23 +154,27 @@ without reading its body; the body and resources are loaded lazily when the
 turn executes. The existing `$skill:` selection mechanism remains available.
 
 Selected skill content is user-level context. It cannot replace Balda's system
-policy or weaken permissions and approval controls. Catalog changes affect new
-sessions only, so `/reset` is required before an existing conversation can use
-a newly installed or changed skill.
+policy or weaken permissions and approval controls. A healthy active session
+keeps its captured catalog; `/reset` is the explicit path for that session to
+adopt a newly installed or changed skill. If an exact persisted snapshot cannot
+restore, automatic fresh-session fallback may instead adopt current eligible
+capabilities.
 
 MCP is not supplied again with each prompt. A command does not receive an MCP
 list and cannot add tools; it merely executes inside the already-created
-provider session, where the model may use the tools that session already has.
+ADK session runtime, where the model may use the tools already bound there.
 Every command, ordinary, and selected-skill turn uses the existing
-`TopicSession` runner. No turn constructs or swaps a provider runtime.
+`TopicSession` runner. No turn constructs or swaps a session runtime.
 
 Catalog activation affects newly created sessions only. Restoring a session
-uses its exact persisted snapshot and fails closed if that retained snapshot is
-unavailable. A legacy session without a pin adopts the current effective
-snapshot once and persists it. `/reset` closes the old runtime and creates a
-fresh unpinned runtime, so reset is the explicit boundary at which an existing
-conversation adopts current commands, skills, and MCP servers. The newly
-selected snapshot replaces the old persisted pin only after recreation.
+first uses its exact persisted snapshot. If that attempt fails while the caller
+and service remain active, Balda replaces the saved ADK session at the same
+locator with a fresh one using the current effective snapshot. The replacement
+keeps the stable ADK session ID, clears prior ADK state and history, and persists
+the new snapshot before exposure; fallback failure remains an error. A legacy
+session without a pin adopts the current effective snapshot once and persists
+it. `/reset` remains the explicit user action that closes the old runtime and
+creates a fresh unpinned runtime with current commands, skills, and MCP servers.
 
 Immutable command instructions are retained in snapshot descriptors. Archived
 skill bytes remain readable by exact revision. MCP processes are the only

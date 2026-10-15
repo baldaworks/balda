@@ -10,13 +10,18 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/baldaworks/balda/internal/apps/backoffice"
 	"github.com/baldaworks/balda/internal/apps/balda/actorsfx"
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
+	"github.com/baldaworks/balda/internal/apps/balda/aliasbackofficeapp"
+	"github.com/baldaworks/balda/internal/apps/balda/aliasfx"
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	"github.com/baldaworks/balda/internal/apps/balda/attachmentstore"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
 	"github.com/baldaworks/balda/internal/apps/balda/catalogapp"
+	baldamattermost "github.com/baldaworks/balda/internal/apps/balda/channel/mattermost"
+	"github.com/baldaworks/balda/internal/apps/balda/channel/mattermost/mattermostfx"
 	baldaslackagent "github.com/baldaworks/balda/internal/apps/balda/channel/slackagent"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/slackagent/slackagentfx"
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
@@ -26,28 +31,48 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/channel/zulip/zulipfx"
 	"github.com/baldaworks/balda/internal/apps/balda/chatfx"
 	"github.com/baldaworks/balda/internal/apps/balda/commandfx"
+	"github.com/baldaworks/balda/internal/apps/balda/commandoutboxfx"
 	"github.com/baldaworks/balda/internal/apps/balda/controlapp"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfx"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryworkflow"
-	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
 	natsbus "github.com/baldaworks/balda/internal/apps/balda/eventbus/nats"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	"github.com/baldaworks/balda/internal/apps/balda/handlersfx"
+	"github.com/baldaworks/balda/internal/apps/balda/hookbackofficeapp"
+	"github.com/baldaworks/balda/internal/apps/balda/hookfx"
+	"github.com/baldaworks/balda/internal/apps/balda/hookprovider"
+	"github.com/baldaworks/balda/internal/apps/balda/hooks"
+	"github.com/baldaworks/balda/internal/apps/balda/httpfx"
 	"github.com/baldaworks/balda/internal/apps/balda/internalmcp"
 	"github.com/baldaworks/balda/internal/apps/balda/jobexec"
 	baldajobs "github.com/baldaworks/balda/internal/apps/balda/jobs"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpbackofficeapp"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpbridge"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpfx"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
 	"github.com/baldaworks/balda/internal/apps/balda/memory"
+	"github.com/baldaworks/balda/internal/apps/balda/memorybackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/paths"
 	"github.com/baldaworks/balda/internal/apps/balda/permissions"
 	"github.com/baldaworks/balda/internal/apps/balda/pluginapp"
+	"github.com/baldaworks/balda/internal/apps/balda/pluginbackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
+	"github.com/baldaworks/balda/internal/apps/balda/schedulebackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/scheduledjobs"
+	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionapp"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorymcp"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionturnapp"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
+	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookapp"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookbackofficeapp"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookfx"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookmanagement"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookroutecmd"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookroutefx"
 	"github.com/baldaworks/balda/internal/apps/sessionmcp"
 	"github.com/baldaworks/balda/internal/git"
 	portableapp "github.com/baldaworks/balda/sessionmemory/app"
@@ -89,8 +114,9 @@ func (a memorySnapshotReaderAdapter) Snapshot(ctx context.Context) (baldaagent.M
 		return baldaagent.MemorySnapshot{}, err
 	}
 	return baldaagent.MemorySnapshot{
-		Content: snapshot.Content,
-		Version: snapshot.Version,
+		Content:   snapshot.Content,
+		Version:   snapshot.Version,
+		UpdatedAt: snapshot.UpdatedAt,
 	}, nil
 }
 
@@ -163,6 +189,38 @@ func Module(
 	if err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
+	backofficeConfig, err := backofficeRuntimeConfig(cfg.Balda, database)
+	if err != nil {
+		return fx.Module("balda", fx.Error(err))
+	}
+	sharedHTTP, err := cfg.Balda.ResolveHTTP()
+	if err != nil {
+		return fx.Module("balda", fx.Error(err))
+	}
+	tgbotkitCfg, err = resolveTelegramWebhookConfig(tgbotkitCfg, sharedHTTP)
+	if err != nil {
+		return fx.Module("balda", fx.Error(err))
+	}
+	for _, old := range []struct{ field, address string }{
+		{"balda.telegram.webhook.listen_addr", cfg.Balda.Telegram.Webhook.ListenAddr},
+		{"balda.zulip.webhook.listen_addr", cfg.Balda.Zulip.Webhook.ListenAddr},
+		{"balda.slack.listen_addr", cfg.Balda.Slack.ListenAddr},
+		{"balda.slack.agent.listen_addr", cfg.Balda.Slack.Agent.ListenAddr},
+		{"balda.mattermost.commands_listen_addr", cfg.Balda.Mattermost.CommandsListenAddr},
+		{"balda.webhooks.listen_addr", cfg.Balda.Webhooks.ListenAddr},
+	} {
+		if strings.TrimSpace(old.address) == "" {
+			continue
+		}
+		logger.Warn().Str("obsolete_field", old.field).Str("configured_address", old.address).
+			Str("active_field", "balda.http.listen_addr").Str("active_address", sharedHTTP.ListenAddr).
+			Msg("old HTTP listen address is ignored; configure balda.http.listen_addr")
+	}
+	if cfg.Balda.HTTP.ListenAddr != "" && cfg.Balda.Backoffice.ListenAddr != "" {
+		logger.Warn().Str("obsolete_field", "balda.backoffice.listen_addr").Str("configured_address", cfg.Balda.Backoffice.ListenAddr).
+			Str("active_field", "balda.http.listen_addr").Str("active_address", sharedHTTP.ListenAddr).
+			Msg("old HTTP listen address is ignored; configure balda.http.listen_addr")
+	}
 	sessionPersistence, err := validateSessionPersistence(cfg.Balda.Sessions.Persistence)
 	if err != nil {
 		return fx.Module("balda", fx.Error(err))
@@ -191,7 +249,11 @@ func Module(
 			ReportTo: reportTo,
 		})
 	}
+	if err := validateWebhookRawConfig(cfg.Balda.Webhooks); err != nil {
+		return fx.Module("balda", fx.Error(err))
+	}
 	inboundWebhookConfig := buildInboundWebhookConfig(cfg.Balda)
+	inboundWebhookConfig.BasePath = sharedHTTP.BasePath
 	executionConfig := baldaexecution.Config{
 		Commands: baldaexecution.CommandConfig{
 			Stream:        strings.TrimSpace(cfg.Balda.Execution.Commands.Stream),
@@ -214,7 +276,7 @@ func Module(
 	if err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
-	if err := validateExecutionConfigLint(executionConfig, inboundWebhookConfig); err != nil {
+	if err := validateExecutionConfigLint(executionConfig, sharedHTTP.ListenAddr, inboundWebhookConfig); err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
 	if err := validateSessionMemoryConfig(cfg.Balda.SessionMemory); err != nil {
@@ -228,6 +290,9 @@ func Module(
 		return fx.Module("balda", fx.Error(err))
 	}
 	if err := validateSlackConfig(cfg.Balda.Slack); err != nil {
+		return fx.Module("balda", fx.Error(err))
+	}
+	if err := validateMattermostConfig(cfg.Balda.Mattermost); err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
 
@@ -249,6 +314,8 @@ func Module(
 
 	return fx.Module("balda",
 		fx.Supply(
+			cfg.Balda,
+			sharedHTTP,
 			tgbotkitCfg,
 			logger,
 			normaCfg,
@@ -261,18 +328,39 @@ func Module(
 			permissionConfig,
 		),
 		fx.Provide(
+			func() (*mcpmanage.Service, error) { return mcpmanage.New(cfg.Balda.MCPManagement.CredentialKey) },
+			func(credentials *mcpmanage.Service, provider baldastate.Provider) (*mcpmanage.Grants, error) {
+				return mcpmanage.NewGrants(credentials, mcpfx.NewGrantStore(provider.MCP()), mcpfx.NewOAuthProvider(nil))
+			},
+			func(grants *mcpmanage.Grants) *mcpbridge.Bridge {
+				return mcpbridge.New(mcpfx.GrantCredentials{Grants: grants}, nil)
+			},
+			func(credentials *mcpmanage.Service, grants *mcpmanage.Grants, provider baldastate.Provider, catalog *catalogapp.Runtime, bridge *mcpbridge.Bridge) (*mcpmanage.Definitions, error) {
+				launcher := mcpfx.NewClientLauncher()
+				probe, err := mcpfx.NewManagedProbe(credentials, launcher, bridge)
+				if err != nil {
+					return nil, err
+				}
+				diagnostic, err := mcpfx.NewDiagnosticProbe(credentials, grants, launcher)
+				if err != nil {
+					return nil, err
+				}
+				configured := mcpfx.NewConfiguredDefinitions(normaCfg.MCPServers, normaCfg.Providers, cfg.Balda.Provider, cfg.Balda.MCPServers)
+				return mcpmanage.NewDefinitions(credentials, mcpfx.NewDefinitionStore(provider.MCP()), configured, catalog, probe, diagnostic)
+			},
+			func(grants *mcpmanage.Grants, definitions *mcpmanage.Definitions, catalog *catalogapp.Runtime) (*mcpbackofficeapp.Operations, *mcpmanage.Authorizations, error) {
+				return newSharedBackofficeMCP(cfg.Balda, grants, definitions, catalog)
+			},
+			func() (*httpfx.Registry, error) { return httpfx.NewRegistry(sharedHTTP.BasePath) },
 			sessionmemorymcp.NewContextBroker,
 			fx.Annotate(
 				func() bool { return cfg.Balda.SessionMemory.Enabled },
 				fx.ResultTags(`name:"balda_session_memory_enabled"`),
 			),
-			func() sessionmemoryapp.ScopeResolver {
-				return sessionmemoryapp.NewScopeResolver(map[string]sessionmemoryapp.ScopeClassifier{
-					baldatelegram.ChannelType:   baldatelegram.ClassifyLocatorScope,
-					baldaslackagent.ChannelType: baldaslackagent.ClassifyLocatorScope,
-					baldazulip.ChannelType:      baldazulip.ClassifyLocatorScope,
-				})
-			},
+			fx.Annotate(
+				sessionmemoryapp.NewScopeResolverFromContributions,
+				fx.ParamTags(`group:"balda_session_memory_scope_classifier"`),
+			),
 			func(builder *baldaagent.Builder) (*portableapp.Runtime, error) {
 				return newCanonicalSessionMemoryRuntime(cfg.Balda.SessionMemory, builder, sessionMemoryProviderID, workingDir, stateDir)
 			},
@@ -342,6 +430,40 @@ func Module(
 				})
 				return provider, nil
 			},
+			func(provider baldastate.Provider, invitations *auth.BindingInvitations, channels *auth.BindingChannels, mcp *mcpbackofficeapp.Operations, schedules *schedulebackofficeapp.Operations, aliases *aliasbackofficeapp.Operations, webhooks *webhookbackofficeapp.Operations, facts *memorybackofficeapp.Operations, plugins *pluginbackofficeapp.Operations, hooks *hookbackofficeapp.Operations) (*backoffice.Runtime, error) {
+				runtime, err := backoffice.NewRuntime(backofficeConfig, provider)
+				if err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigureBindingInvitations(invitations, channels); err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigureMCPOperations(mcp); err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigureSchedulesOperations(schedules); err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigureWebhooksOperations(webhooks); err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigureAliasesOperations(aliases); err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigurePluginsOperations(plugins); err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigureHookOperations(hooks); err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigureFactMemoryOperations(facts); err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigureMCPAuthorizations(mcp); err != nil {
+					return nil, err
+				}
+				return runtime, nil
+			},
 			func(provider baldastate.Provider) tgbotkit.OffsetStore {
 				return provider.PollingOffsetStore()
 			},
@@ -353,6 +475,40 @@ func Module(
 			},
 			func(provider baldastate.Provider) baldastate.ScheduledJobStore {
 				return provider.ScheduledJobs()
+			},
+			func(provider baldastate.Provider) baldastate.ScheduleManagementStore {
+				return provider.ScheduleManagement()
+			},
+			func(provider baldastate.Provider) baldastate.ScheduleRunStore {
+				return provider.ScheduleRuns()
+			},
+			func(provider baldastate.Provider) baldastate.JobLifecycleStore {
+				return provider.Jobs()
+			},
+			func(provider baldastate.Provider) baldastate.DeliveryStore {
+				return provider.Jobs()
+			},
+			func(provider baldastate.Provider) jobexec.WebhookRunStore {
+				return provider.Jobs()
+			},
+			func(provider baldastate.Provider) jobexec.WebhookAdmissionReader {
+				return provider.WebhookAdmissions()
+			},
+			func(provider baldastate.Provider) jobexec.WebhookFinalDeliveryReader {
+				return provider.Jobs()
+			},
+			func(manager *baldasession.Manager) jobexec.WebhookRunSessionCloser {
+				return manager
+			},
+			schedulebackofficeapp.New,
+			webhookbackofficeapp.New,
+			aliasbackofficeapp.New,
+			memorybackofficeapp.New,
+			func(plugins *pluginapp.Service, catalog *catalogapp.Runtime) *pluginbackofficeapp.Operations {
+				return pluginbackofficeapp.New(plugins, pluginbackofficeapp.CatalogHealth{Catalog: catalog})
+			},
+			func(store *memory.Store, provider baldastate.Provider) *memory.Management {
+				return memory.NewManagement(store, provider.MemoryManagement())
 			},
 			func(provider baldastate.Provider) baldastate.QuestionStore {
 				return provider.Questions()
@@ -596,6 +752,61 @@ func Module(
 				fx.ResultTags(`name:"balda_zulip_webhook_token"`),
 			),
 		),
+		// Mattermost transport
+		fx.Provide(
+			fx.Annotate(
+				func() bool { return cfg.Balda.Mattermost.Enabled },
+				fx.ResultTags(`name:"balda_mattermost_enabled"`),
+			),
+		),
+		fx.Provide(
+			fx.Annotate(
+				func() string { return strings.TrimSpace(cfg.Balda.Mattermost.ServerURL) },
+				fx.ResultTags(`name:"balda_mattermost_server_url"`),
+			),
+		),
+		fx.Provide(
+			fx.Annotate(
+				func() string { return strings.TrimSpace(cfg.Balda.Mattermost.Token) },
+				fx.ResultTags(`name:"balda_mattermost_token"`),
+			),
+		),
+		fx.Provide(
+			fx.Annotate(
+				func() string { return strings.TrimSpace(cfg.Balda.Mattermost.BotUserID) },
+				fx.ResultTags(`name:"balda_mattermost_bot_user_id"`),
+			),
+		),
+		fx.Provide(
+			fx.Annotate(
+				func() string { return strings.TrimSpace(cfg.Balda.Mattermost.BotUsername) },
+				fx.ResultTags(`name:"balda_mattermost_bot_username"`),
+			),
+		),
+		fx.Provide(
+			fx.Annotate(
+				func() bool { return cfg.Balda.Mattermost.CommandsEnabled },
+				fx.ResultTags(`name:"balda_mattermost_commands_enabled"`),
+			),
+		),
+		fx.Provide(
+			fx.Annotate(
+				func() string { return strings.TrimSpace(cfg.Balda.Mattermost.CommandsListenAddr) },
+				fx.ResultTags(`name:"balda_mattermost_commands_listen_addr"`),
+			),
+		),
+		fx.Provide(
+			fx.Annotate(
+				func() string { return strings.TrimSpace(cfg.Balda.Mattermost.CommandsPath) },
+				fx.ResultTags(`name:"balda_mattermost_commands_path"`),
+			),
+		),
+		fx.Provide(
+			fx.Annotate(
+				func() string { return strings.TrimSpace(cfg.Balda.Mattermost.CommandsToken) },
+				fx.ResultTags(`name:"balda_mattermost_commands_token"`),
+			),
+		),
 		fx.Provide(func() *baldaslackagent.Client {
 			return baldaslackagent.NewClient(cfg.Balda.Slack.BotToken)
 		}),
@@ -615,13 +826,49 @@ func Module(
 			}
 		}),
 		fx.Provide(func(provider baldastate.Provider) (*auth.OwnerStore, error) {
-			return auth.NewOwnerStore(provider.AppKV())
+			return auth.NewCanonicalOwnerStore(provider.Users())
+		}),
+		fx.Provide(func(provider baldastate.Provider) *auth.TelegramProfileService {
+			return auth.NewTelegramProfileService(provider.Users())
+		}),
+		fx.Provide(func(provider baldastate.Provider) (*auth.BindingInvitations, error) {
+			store, ok := provider.Users().(usercmd.InvitationStore)
+			if !ok {
+				return nil, fmt.Errorf("binding invitation store is unavailable")
+			}
+			return auth.NewBindingInvitations(store)
+		}),
+		fx.Provide(func() *auth.BindingChannels {
+			var channels []string
+			if strings.TrimSpace(cfg.Balda.Telegram.Token) != "" {
+				channels = append(channels, "telegram")
+			}
+			if cfg.Balda.Slack.Agent.Enabled {
+				channels = append(channels, "slackagent")
+			}
+			if cfg.Balda.Zulip.Webhook.Enabled {
+				channels = append(channels, "zulip")
+			}
+			if cfg.Balda.Mattermost.Enabled {
+				channels = append(channels, "mattermost")
+			}
+			return auth.NewBindingChannels(channels)
 		}),
 		fx.Provide(func(provider baldastate.Provider) (*auth.DestinationStore, error) {
 			return auth.NewDestinationStore(provider.AppKV())
 		}),
-		fx.Provide(func(destStore *auth.DestinationStore, ownerStore *auth.OwnerStore) envelopetarget.DestinationResolver {
-			return auth.NewDestinationResolver(destStore, ownerStore)
+		fx.Provide(aliasfx.NewService, aliasfx.NewDestinationResolver),
+		fx.Provide(func(provider baldastate.Provider) webhook.DeliveryReceipts {
+			return provider.Jobs()
+		}),
+		fx.Provide(func(provider baldastate.Provider) webhookapp.AdmissionStore {
+			return provider.WebhookAdmissions()
+		}),
+		fx.Provide(func(provider baldastate.Provider) baldastate.WebhookAdmissionStore {
+			return provider.WebhookAdmissions()
+		}),
+		fx.Provide(func(provider baldastate.Provider) *webhookmanagement.Service {
+			return webhookmanagement.New(webhookroutefx.NewStore(provider))
 		}),
 		fx.Provide(func(provider baldastate.Provider) (*auth.InviteStore, error) {
 			return auth.NewInviteStore(provider.AppKV())
@@ -633,14 +880,29 @@ func Module(
 		fx.Provide(func(provider baldastate.Provider) *auth.CollaboratorStore {
 			// Wrap the state.CollaboratorStore interface in *auth.CollaboratorStore
 			// The wrapper delegates to the underlying store implementation
-			return auth.NewCollaboratorStore(provider.Collaborators())
+			return auth.NewCanonicalCollaboratorStore(provider.Users())
 		}),
 		fx.Provide(func(reg *mcpregistry.MapRegistry, reviewer *permissions.Service) *agentfactory.Factory {
 			return agentfactory.New(
 				normaCfg.Providers,
 				reg,
 				agentfactory.WithPermissionHandler(baldaagent.NewPermissionHandler(reviewer, logger)),
+				agentfactory.WithAvailabilityIndependentMCP(),
 			)
+		}),
+		fx.Provide(func(lifecycle fx.Lifecycle, runner *hooks.Runner, provider baldastate.Provider) (*hookprovider.Service, error) {
+			native, err := hookprovider.New(runner, provider.HookManagement(), cfg.Balda.Provider, normaCfg.Providers)
+			if err != nil {
+				return nil, err
+			}
+			lifecycle.Append(fx.Hook{OnStop: func(context.Context) error { return native.Close() }})
+			return native, nil
+		}),
+		fx.Provide(func(reg *mcpregistry.MapRegistry, reviewer *permissions.Service, native *hookprovider.Service) baldaagent.ScopedRuntimeFactory {
+			factory := catalogapp.NewProviderFactory(normaCfg.Providers, reg,
+				agentfactory.WithPermissionHandler(baldaagent.NewPermissionHandler(reviewer, logger)))
+			factory.ConfigureLaunchHooks(native)
+			return factory
 		}),
 		tgbotkit.Module,
 		natsbus.Module,
@@ -651,13 +913,16 @@ func Module(
 		pluginapp.Module,
 		sessionapp.Module,
 		sessionturnapp.Module,
+		hookfx.Module,
 		controlapp.Module,
 		deliveryfx.Module,
 		slackagentfx.Module,
 		telegramfx.Module,
 		zulipfx.Module,
+		mattermostfx.Module,
 		catalogapp.Module,
 		deliveryworkflow.Module,
+		commandoutboxfx.Module,
 		commandfx.Module,
 		chatfx.Module,
 		fx.Provide(fx.Annotate(
@@ -667,7 +932,10 @@ func Module(
 		actorsfx.Module,
 		scheduledjobs.Module,
 		handlersfx.Module,
-		webhook.Module,
+		webhookfx.Module,
+		fx.Invoke(func(manager *webhookmanagement.Service) error {
+			return manager.ReconcileConfig(context.Background(), configuredWebhookRoutes(inboundWebhookConfig))
+		}),
 		fx.Provide(
 			internalmcp.NewInternalMCPManager,
 		),
@@ -787,7 +1055,7 @@ func validateSessionPersistence(raw string) (string, error) {
 	}
 }
 
-func validateExecutionConfigLint(executionCfg baldaexecution.Config, webhookCfg webhook.Config) error {
+func validateExecutionConfigLint(executionCfg baldaexecution.Config, sharedListenAddr string, webhookCfg webhook.Config) error {
 	errs := make([]string, 0)
 
 	streamNames := map[string]string{
@@ -840,7 +1108,7 @@ func validateExecutionConfigLint(executionCfg baldaexecution.Config, webhookCfg 
 	}
 
 	if webhookCfg.Enabled {
-		host := strings.TrimSpace(webhookCfg.ListenAddr)
+		host := strings.TrimSpace(sharedListenAddr)
 		publicListenAddress := false
 		if host != "" {
 			if parsedHost, _, err := net.SplitHostPort(host); err == nil {
@@ -870,8 +1138,8 @@ func validateExecutionConfigLint(executionCfg baldaexecution.Config, webhookCfg 
 			if len(unsecuredRoutes) > 0 {
 				sort.Strings(unsecuredRoutes)
 				errs = append(errs, fmt.Sprintf(
-					"balda.webhooks.listen_addr %q is publicly reachable; routes %s must configure auth.type=header with a non-empty auth value",
-					webhookCfg.ListenAddr,
+					"balda.http.listen_addr %q is publicly reachable; routes %s must configure auth.type=header with a non-empty auth value",
+					sharedListenAddr,
 					strings.Join(unsecuredRoutes, ", "),
 				))
 			}
@@ -938,6 +1206,28 @@ func validateSlackConfig(cfg SlackConfig) error {
 	return nil
 }
 
+func validateMattermostConfig(cfg MattermostConfig) error {
+	if cfg.CommandsEnabled && !cfg.Enabled {
+		return fmt.Errorf("balda.mattermost.commands_enabled requires balda.mattermost.enabled")
+	}
+	if !cfg.Enabled {
+		return nil
+	}
+	if err := baldamattermost.ValidateConfig(cfg.ServerURL, cfg.Token); err != nil {
+		return err
+	}
+	if strings.TrimSpace(cfg.BotUserID) == "" {
+		return fmt.Errorf("balda.mattermost.bot_user_id is required when the Mattermost transport is enabled")
+	}
+	if strings.TrimSpace(cfg.BotUsername) == "" {
+		return fmt.Errorf("balda.mattermost.bot_username is required when the Mattermost transport is enabled")
+	}
+	if cfg.CommandsEnabled && strings.TrimSpace(cfg.CommandsToken) == "" {
+		return fmt.Errorf("balda.mattermost.commands_token is required when slash commands are enabled")
+	}
+	return nil
+}
+
 func validateIdentifierValue(field, value string) error {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
@@ -966,13 +1256,10 @@ func buildInboundWebhookConfig(cfg BaldaConfig) webhook.Config {
 			}
 		}
 		routes[strings.TrimSpace(routeName)] = webhook.RouteConfig{
-			Path:           strings.TrimSpace(route.Path),
 			PromptTemplate: strings.TrimSpace(route.PromptTemplate),
 			Envelope: webhook.RouteEnvelopeConfig{
-				Target:   strings.TrimSpace(route.Envelope.Target),
-				Key:      strings.TrimSpace(route.Envelope.Key),
-				Mode:     strings.TrimSpace(route.Envelope.Mode),
-				ReportTo: reportTo,
+				ReportTo:      reportTo,
+				AckOnDelivery: route.Envelope.AckOnDelivery,
 			},
 			Auth: webhook.RouteAuthConfig{
 				Type:   strings.TrimSpace(route.Auth.Type),
@@ -991,4 +1278,22 @@ func buildInboundWebhookConfig(cfg BaldaConfig) webhook.Config {
 		ListenAddr: strings.TrimSpace(cfg.Webhooks.ListenAddr),
 		Routes:     routes,
 	}
+}
+
+func validateWebhookRawConfig(cfg WebhooksConfig) error {
+	for name, route := range cfg.Routes {
+		if !webhookroutecmd.ValidName(name) {
+			return fmt.Errorf("balda.webhooks.routes.%s: invalid route slug", name)
+		}
+		if _, exists := route.Unsupported["path"]; exists {
+			return fmt.Errorf("balda.webhooks.routes.%s.path is obsolete; use the route name as slug", name)
+		}
+		if len(route.Envelope.Unsupported) > 0 {
+			return fmt.Errorf("balda.webhooks.routes envelope contains unsupported fields; use optional report_to and ack_on_delivery")
+		}
+		if route.Envelope.ReportTo != nil && len(route.Envelope.ReportTo.Unsupported) > 0 {
+			return fmt.Errorf("balda.webhooks.routes envelope.report_to contains unsupported fields; use target and key")
+		}
+	}
+	return nil
 }

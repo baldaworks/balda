@@ -1,0 +1,93 @@
+package backoffice
+
+import (
+	"sort"
+	"strings"
+
+	"github.com/baldaworks/balda/internal/apps/backoffice/internal/webui"
+)
+
+// ConfiguredCapability is a secret-free read-only projection of one enabled integration.
+type ConfiguredCapability struct {
+	ID         string
+	Name       string
+	Mode       string
+	ListenAddr string
+	Endpoint   string
+	RouteCount int
+	Streaming  bool
+}
+
+// ProjectCapabilityCards converts the safe configured projection into Web UI cards.
+func ProjectCapabilityCards(cfg BaldaConfig) []webui.CapabilityCard {
+	configured := ProjectConfiguredCapabilities(cfg)
+	cards := make([]webui.CapabilityCard, 0, len(configured))
+	for _, capability := range configured {
+		cards = append(cards, webui.CapabilityCard{
+			ID: capability.ID, Name: capability.Name, Mode: capability.Mode,
+			ListenAddr: capability.ListenAddr, Endpoint: capability.Endpoint,
+			RouteCount: capability.RouteCount, Streaming: capability.Streaming,
+		})
+	}
+	return cards
+}
+
+// ProjectConfiguredCapabilities returns only integrations enabled by resolved configuration.
+func ProjectConfiguredCapabilities(cfg BaldaConfig) []ConfiguredCapability {
+	capabilities := make([]ConfiguredCapability, 0, 5)
+	if cfg.Telegram.Enabled {
+		capability := ConfiguredCapability{ID: "telegram", Name: "Telegram", Mode: "polling"}
+		if cfg.Telegram.Webhook.Enabled {
+			capability.Mode = "webhook"
+			capability.ListenAddr = strings.TrimSpace(cfg.Telegram.Webhook.ListenAddr)
+			capability.Endpoint = strings.TrimSpace(cfg.Telegram.Webhook.Path)
+		}
+		capabilities = append(capabilities, capability)
+	}
+	if cfg.Slack.Agent.Enabled {
+		capabilities = append(capabilities, ConfiguredCapability{
+			ID: "slackagent", Name: "Slack Agent", Mode: "agent-events",
+			ListenAddr: strings.TrimSpace(cfg.Slack.Agent.ListenAddr), Endpoint: strings.TrimSpace(cfg.Slack.Agent.EventsPath),
+			Streaming: cfg.Slack.Agent.EnableStreaming,
+		})
+	}
+	if cfg.Zulip.Webhook.Enabled {
+		capabilities = append(capabilities, ConfiguredCapability{
+			ID: "zulip", Name: "Zulip", Mode: "webhook",
+			ListenAddr: strings.TrimSpace(cfg.Zulip.Webhook.ListenAddr), Endpoint: strings.TrimSpace(cfg.Zulip.Webhook.Path),
+		})
+	}
+	if cfg.Webhooks.Enabled {
+		capabilities = append(capabilities, ConfiguredCapability{
+			ID: "webhooks", Name: "Webhooks", Mode: "inbound",
+			ListenAddr: strings.TrimSpace(cfg.Webhooks.ListenAddr), RouteCount: cfg.Webhooks.RouteCount,
+		})
+	}
+	if cfg.Mattermost.Enabled {
+		capability := ConfiguredCapability{ID: "mattermost", Name: "Mattermost", Mode: "websocket"}
+		if cfg.Mattermost.CommandsEnabled {
+			capability.ListenAddr = strings.TrimSpace(cfg.Mattermost.ListenAddr)
+			capability.Endpoint = strings.TrimSpace(cfg.Mattermost.CommandsPath)
+		}
+		capabilities = append(capabilities, capability)
+	}
+	sort.Slice(capabilities, func(i, j int) bool { return capabilities[i].ID < capabilities[j].ID })
+	return capabilities
+}
+
+func configuredBindingChannels(cfg BaldaConfig) []string {
+	var channels []string
+	if cfg.Telegram.Enabled {
+		channels = append(channels, "telegram")
+	}
+	if cfg.Slack.Agent.Enabled {
+		channels = append(channels, "slackagent")
+	}
+	if cfg.Zulip.Webhook.Enabled {
+		channels = append(channels, "zulip")
+	}
+	if cfg.Mattermost.Enabled {
+		channels = append(channels, "mattermost")
+	}
+	return channels
+}

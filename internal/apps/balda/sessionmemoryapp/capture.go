@@ -25,6 +25,14 @@ type ExportPublisher interface {
 // or ambiguous locator addresses.
 type ScopeClassifier func(deliverycmd.Locator) (deliverycmd.LocatorScopeKind, error)
 
+// ScopeClassifierContribution lets a concrete transport module register its
+// locator codec once. Both runtime and preflight build the resolver from this
+// same group, preventing transport maps from drifting apart.
+type ScopeClassifierContribution struct {
+	ChannelType string
+	Classifier  ScopeClassifier
+}
+
 // ScopeResolver maps canonical locators to exact session-memory partitions.
 // The locator ref is the isolation key; the classified kind is metadata.
 type ScopeResolver struct {
@@ -42,6 +50,16 @@ func NewScopeResolver(classifiers map[string]ScopeClassifier) ScopeResolver {
 		copyOfClassifiers[channelType] = classifier
 	}
 	return ScopeResolver{classifiers: copyOfClassifiers}
+}
+
+// NewScopeResolverFromContributions builds a resolver from transport-module
+// contributions.
+func NewScopeResolverFromContributions(contributions []ScopeClassifierContribution) ScopeResolver {
+	classifiers := make(map[string]ScopeClassifier, len(contributions))
+	for _, contribution := range contributions {
+		classifiers[contribution.ChannelType] = contribution.Classifier
+	}
+	return NewScopeResolver(classifiers)
 }
 
 // Resolve validates a canonical locator and classifies its exact scope.

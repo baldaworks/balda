@@ -9,6 +9,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfx"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
 	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
@@ -19,6 +20,12 @@ var Module = fx.Module(
 	"balda_channel_telegram_fx",
 	fx.Provide(
 		fx.Annotate(
+			func() sessionmemoryapp.ScopeClassifierContribution {
+				return sessionmemoryapp.ScopeClassifierContribution{ChannelType: telegram.ChannelType, Classifier: telegram.ClassifyLocatorScope}
+			},
+			fx.ResultTags(`group:"balda_session_memory_scope_classifier"`),
+		),
+		fx.Annotate(
 			func(enabled bool) commandcmd.Advertisement {
 				return commandcmd.Advertisement{Transport: telegram.ChannelType, Enabled: enabled, Names: []string{"locator", "reset", "new", "help", "usage", "auto", "cancel", "goalkeeper", "topic", "close", "start", "user", "plugin", "skill"}}
 			},
@@ -26,6 +33,7 @@ var Module = fx.Module(
 			fx.ResultTags(`group:"balda_command_advertisements"`),
 		),
 		telegram.NewServer,
+		fx.Annotate(NewGatewayCallbackProvider, fx.ResultTags(`group:"balda_http_gateway_callback_providers"`)),
 		fx.Annotate(
 			func(
 				tgClient client.ClientWithResponsesInterface,

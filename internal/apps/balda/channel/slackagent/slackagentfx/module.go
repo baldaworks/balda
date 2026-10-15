@@ -1,11 +1,11 @@
 package slackagentfx
 
 import (
-	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/slackagent"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfx"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionturnapp"
 	"go.uber.org/fx"
 )
@@ -13,6 +13,12 @@ import (
 var Module = fx.Module(
 	"balda_channel_slackagent_fx",
 	fx.Provide(
+		fx.Annotate(
+			func() sessionmemoryapp.ScopeClassifierContribution {
+				return sessionmemoryapp.ScopeClassifierContribution{ChannelType: slackagent.ChannelType, Classifier: slackagent.ClassifyLocatorScope}
+			},
+			fx.ResultTags(`group:"balda_session_memory_scope_classifier"`),
+		),
 		func(adapter *slackagent.Adapter) slackagent.SessionLifecycle { return adapter },
 		fx.Annotate(
 			func(cfg slackagent.Config) commandcmd.Advertisement {
@@ -32,7 +38,11 @@ var Module = fx.Module(
 			fx.As(new(baldasession.BoundaryObserver)),
 			fx.ResultTags(`group:"balda_session_boundary_observer"`),
 		),
-		slackagent.NewServer,
+		newBindingServer,
+		fx.Annotate(
+			NewGatewayCallbackProvider,
+			fx.ResultTags(`group:"balda_http_gateway_callback_providers"`),
+		),
 		func(client *slackagent.Client) slackagent.MessageClient { return client },
 		func(client *slackagent.Client) slackagent.ThreadHistoryReader { return client },
 		func(client *slackagent.Client) slackagent.FileClient { return client },
@@ -73,16 +83,6 @@ var Module = fx.Module(
 		),
 		fx.Annotate(
 			func() sessionturnapp.ProgressTransportHook { return progressTransportHook{} },
-		),
-		fx.Annotate(
-			func(server *slackagent.Server) appports.TransportLifecycleStage {
-				return appports.TransportLifecycleStage{
-					Name:  "slack agent ingress",
-					Start: server.Start,
-					Stop:  server.Stop,
-				}
-			},
-			fx.ResultTags(`group:"balda_transport_lifecycle_stage"`),
 		),
 	),
 )

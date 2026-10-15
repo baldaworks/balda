@@ -58,6 +58,11 @@ Current examples:
 - inbound webhook work;
 - any future long-running or resumable orchestration.
 
+Schedules and generic webhooks run in new private sessions under this job-backed
+path. Their optional report locator is selected at admission and belongs only
+to final delivery; it never identifies the execution session. The retained job
+or run input/output survives private-session cleanup.
+
 ## Delivery policy
 
 Delivery is no longer modeled as one universal persistence rule for every user-visible message.

@@ -57,12 +57,25 @@ func TestPluginResolverResolvesContainedArgvFilteredEnvAndLaunchSecrets(t *testi
 	if len(config.Args) != 2 || !strings.Contains(config.Args[0], "skills") || !strings.Contains(config.Args[1], filepath.Join(dataRoot, "cache")) {
 		t.Fatalf("resolved args = %#v", config.Args)
 	}
-	if config.Env["TOKEN"] != "resolved-secret" || config.Env["PLUGIN_ROOT"] == "" || config.Env["PLUGIN_DATA"] != dataRoot {
+	if config.Env["TOKEN"] != "resolved-secret" || config.Env["PLUGIN_ROOT"] == "" || !sameResolvedPath(t, config.Env["PLUGIN_DATA"], dataRoot) {
 		t.Fatalf("resolved env keys/values are incomplete: %#v", config.Env)
 	}
 	if _, ok := config.Env["DROP"]; ok {
 		t.Fatalf("filtered env contains DROP: %#v", config.Env)
 	}
+}
+
+func sameResolvedPath(t *testing.T, got, want string) bool {
+	t.Helper()
+	got, err := filepath.EvalSymlinks(got)
+	if err != nil {
+		t.Fatalf("resolve actual path: %v", err)
+	}
+	want, err = filepath.EvalSymlinks(want)
+	if err != nil {
+		t.Fatalf("resolve expected path: %v", err)
+	}
+	return got == want
 }
 
 func TestPluginResolverRejectsTraversalWithoutLeakingSecret(t *testing.T) {

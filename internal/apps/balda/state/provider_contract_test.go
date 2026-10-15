@@ -5,6 +5,9 @@ package state
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"fmt"
+	"math"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -12,9 +15,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/aliascmd"
+	"github.com/baldaworks/balda/internal/apps/balda/aliases"
 	"github.com/baldaworks/balda/internal/apps/balda/authcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/schedulecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookcmd"
 	"github.com/baldaworks/balda/sessionmemory"
 	adksession "google.golang.org/adk/v2/session"
 )
@@ -25,14 +34,55 @@ const secondPluginRevision = "rev-2"
 type contractOpener func(context.Context, string) (Provider, error)
 
 func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) {
+	t.Run("HookManagement", func(t *testing.T) { checkHookManagement(t, factory(t)) })
+	t.Run("PluginManagementAuthorityWait", func(t *testing.T) { checkPluginManagementAuthorityWhileWaiting(t, factory(t)) })
+	t.Run("PluginManagementStateFences", func(t *testing.T) { checkPluginManagementStateFences(t, factory) })
+	t.Run("PluginManagementPurge", func(t *testing.T) { checkPluginManagementPurge(t, factory(t)) })
+	t.Run("PluginManagement", func(t *testing.T) { checkPluginManagement(t, factory(t)) })
+	t.Run("PluginMarketplaceManagement", func(t *testing.T) { checkPluginMarketplaceManagement(t, factory(t)) })
+	t.Run("MemoryAuthorityFences", func(t *testing.T) { checkMemoryAuthorityFences(t, factory) })
+	t.Run("MemoryManagement", func(t *testing.T) { checkMemoryManagement(t, factory(t)) })
+	t.Run("WebhookTurnClaimSurvivesRestart", func(t *testing.T) { checkWebhookTurnClaimSurvivesRestart(t, factory(t)) })
+	t.Run("MCPAuthorityWhileWaitingForConnection", func(t *testing.T) { checkMCPAuthorityWhileWaitingForConnection(t, factory) })
+	t.Run("MCPGrantsSurviveRestart", func(t *testing.T) { checkMCPGrantsSurviveRestart(t, factory(t)) })
+	t.Run("MCPDefinitionEditFencesCompletion", func(t *testing.T) { checkMCPDefinitionEditFencesCompletion(t, factory(t)) })
+	t.Run("MCPGrantTransitionsAreAtomic", func(t *testing.T) { checkMCPGrantTransitionsAreAtomic(t, factory(t)) })
+	t.Run("MCPGrantMetadataSecurityTime", func(t *testing.T) { checkMCPGrantMetadataUsesIndependentSecurityTime(t, factory(t)) })
+	t.Run("MCPDisconnectFencesCompletion", func(t *testing.T) { checkMCPDisconnectFencesCompletion(t, factory(t)) })
+	t.Run("MCPConcurrentGrantRenewalCommitsOnce", func(t *testing.T) { checkMCPConcurrentGrantRenewalCommitsOnce(t, factory(t)) })
+	t.Run("MCPRevisionsSurviveRestart", func(t *testing.T) { checkMCPRevisionsSurviveRestart(t, factory(t)) })
+	t.Run("MCPMutationIsAtomic", func(t *testing.T) { checkMCPMutationIsAtomic(t, factory(t)) })
+	t.Run("MCPAuthorityFences", func(t *testing.T) { checkMCPAuthorityFences(t, factory(t)) })
+	t.Run("MCPSelectionAndPublicationSurviveRestart", func(t *testing.T) { checkMCPSelectionAndPublicationSurviveRestart(t, factory(t)) })
+	t.Run("MCPConcurrentEditsCommitOnce", func(t *testing.T) { checkMCPConcurrentEditsCommitOnce(t, factory(t)) })
+	t.Run("MCPProtectedBindingsAndSafeAudit", func(t *testing.T) { checkMCPProtectedBindingsAndSafeAudit(t, factory(t)) })
+	t.Run("MCPEnrolledFactorAndRevocation", func(t *testing.T) { checkMCPEnrolledFactorAndRevocation(t, factory(t)) })
+	t.Run("MFAStoreLifecycle", func(t *testing.T) { checkMFAStoreLifecycle(t, factory(t)) })
+	t.Run("UserStoreCanonicalLifecycle", func(t *testing.T) { checkUserStoreCanonicalLifecycle(t, factory(t)) })
+	t.Run("ManagedBindings", func(t *testing.T) { checkManagedBindings(t, factory(t)) })
+	t.Run("BindingInvitations", func(t *testing.T) { checkBindingInvitations(t, factory(t)) })
+	t.Run("UserStoreRefreshRotationAndReplay", func(t *testing.T) { checkUserStoreRefreshRotationAndReplay(t, factory(t)) })
+	t.Run("UserStoreCredentialAndSessionRevocation", func(t *testing.T) { checkUserStoreCredentialAndSessionRevocation(t, factory(t)) })
+	t.Run("UserStoreActiveSessions", func(t *testing.T) { checkUserStoreActiveSessions(t, factory(t)) })
+	t.Run("UserStoreAuditTimeOrder", func(t *testing.T) { checkUserStoreAuditTimeOrder(t, factory(t)) })
+	t.Run("UserStoreConcurrentRefreshReplay", func(t *testing.T) { checkUserStoreConcurrentRefreshReplay(t, factory(t)) })
 	t.Run("Collaborators", func(t *testing.T) { checkCollaborators(t, factory(t)) })
 	t.Run("Provider_KVRoundTrip", func(t *testing.T) { checkProvider_KVRoundTrip(t, factory(t)) })
 	t.Run("Provider_KVConsumeJSONConcurrentConsumeOnce", func(t *testing.T) { checkProvider_KVConsumeJSONConcurrentConsumeOnce(t, factory(t)) })
 	t.Run("Provider_SessionStoreRoundTrip", func(t *testing.T) { checkProvider_SessionStoreRoundTrip(t, factory(t)) })
 	t.Run("Provider_SessionStoreUpsert_AllowsMultipleTelegramSessions", func(t *testing.T) { checkProvider_SessionStoreUpsert_AllowsMultipleTelegramSessions(t, factory(t)) })
 	t.Run("Provider_QuestionStoreRoundTrip", func(t *testing.T) { checkProvider_QuestionStoreRoundTrip(t, factory(t)) })
+	t.Run("QuestionAnswerHandoffSurvivesRestart", func(t *testing.T) { checkQuestionAnswerHandoffSurvivesRestart(t, factory(t)) })
 	t.Run("Provider_SessionStoreUpsert_DoesNotDecodeAddressJSON", func(t *testing.T) { checkProvider_SessionStoreUpsert_DoesNotDecodeAddressJSON(t, factory(t)) })
 	t.Run("Provider_ScheduledJobStoreRoundTrip", func(t *testing.T) { checkProvider_ScheduledJobStoreRoundTrip(t, factory(t)) })
+	t.Run("Provider_ScheduleManagementAuthorityAndVersion", func(t *testing.T) { checkProvider_ScheduleManagementAuthorityAndVersion(t, factory(t)) })
+	t.Run("Provider_ManagedAliasAuthorityAndVersion", func(t *testing.T) { checkProvider_ManagedAliasAuthorityAndVersion(t, factory(t)) })
+	t.Run("Provider_WebhookAdmissionSnapshot", func(t *testing.T) { checkProvider_WebhookAdmissionSnapshot(t, factory(t)) })
+	t.Run("Provider_WebhookHistory", func(t *testing.T) { checkProvider_WebhookHistory(t, factory(t)) })
+	t.Run("Provider_WebhookTestAudit", func(t *testing.T) { checkProvider_WebhookTestAudit(t, factory(t)) })
+	t.Run("Provider_WebhookRouteManagement", func(t *testing.T) { checkProvider_WebhookRouteManagement(t, factory(t)) })
+	t.Run("Provider_ScheduleRunStoreRoundTrip", func(t *testing.T) { checkProvider_ScheduleRunStoreRoundTrip(t, factory(t)) })
+	t.Run("Provider_ScheduleRunAdmissions", func(t *testing.T) { checkProvider_ScheduleRunAdmissions(t, factory(t)) })
 	t.Run("Provider_OffsetPersistsAcrossReopen", func(t *testing.T) { checkProvider_OffsetPersistsAcrossReopen(t, factory(t)) })
 	t.Run("Provider_RuntimeSessionPersistsAcrossReopen", func(t *testing.T) { checkProvider_RuntimeSessionPersistsAcrossReopen(t, factory(t)) })
 	t.Run("JobStore_JobLifecycle", func(t *testing.T) { checkJobStore_JobLifecycle(t, factory(t)) })
@@ -53,6 +103,421 @@ func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) 
 		checkSessionMemoryIngressOutboxRecoversExpiredLeaseAndRejectsForeignSettlement(t, factory(t))
 	})
 	t.Run("SessionMemoryIngressOutboxReplaysTerminalWithAuditAndStats", func(t *testing.T) { checkSessionMemoryIngressOutboxReplaysTerminalWithAuditAndStats(t, factory(t)) })
+}
+
+func checkWebhookTurnClaimSurvivesRestart(t *testing.T, open contractOpener) {
+	path := filepath.Join(t.TempDir(), "webhook-claim.db")
+	p, err := open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { closeContractProvider(t, p) }()
+	const jobID = "webhook-route-claim"
+	if created, err := p.Jobs().CreateJob(t.Context(), JobRecord{
+		ID: jobID, SessionID: "wh-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Objective: "input", Status: JobStatusRunning, PrivateRunKind: PrivateRunKindWebhook,
+	}); err != nil || !created {
+		t.Fatalf("create webhook job = %t, %v", created, err)
+	}
+	claimed, err := p.Jobs().ClaimWebhookTurn(t.Context(), jobID)
+	if err != nil || !claimed {
+		t.Fatalf("first claim = %t, %v", claimed, err)
+	}
+	closeContractProvider(t, p)
+	p, err = open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err = p.Jobs().ClaimWebhookTurn(t.Context(), jobID)
+	if err != nil || claimed {
+		t.Fatalf("replayed claim = %t, %v", claimed, err)
+	}
+}
+
+func checkProvider_WebhookAdmissionSnapshot(t *testing.T, open contractOpener) {
+	path := filepath.Join(t.TempDir(), "webhook-admissions.db")
+	p, err := open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { closeContractProvider(t, p) }()
+	now := time.Now().UTC()
+	first := webhookcmd.Admission{RouteName: "event", DedupeKey: "webhook:event:one", RequestID: "one",
+		Prompt: "first input", JobID: "webhook-event-one", SessionID: "wh-one",
+		ReportTo: &deliverycmd.Locator{ChannelType: "telegram", AddressKey: "9001:0", AddressJSON: `{}`,
+			SessionID: "tg-9001-0"}, CreatedAt: now}
+	selected, created, err := p.WebhookAdmissions().Create(t.Context(), first)
+	if err != nil || !created || selected.Prompt != first.Prompt || selected.ReportTo.AddressKey != first.ReportTo.AddressKey {
+		t.Fatalf("first admission = %+v, created=%t, error=%v", selected, created, err)
+	}
+	second := first
+	second.Prompt, second.RequestID, second.JobID, second.SessionID = "changed input", "later", "webhook-event-two", "wh-two"
+	second.ReportTo = &deliverycmd.Locator{ChannelType: "telegram", AddressKey: "9002:0", AddressJSON: `{}`, SessionID: "tg-9002-0"}
+	selected, created, err = p.WebhookAdmissions().Create(t.Context(), second)
+	if err != nil || created || selected.Prompt != first.Prompt || selected.RequestID != first.RequestID ||
+		selected.SessionID != first.SessionID || selected.ReportTo.AddressKey != first.ReportTo.AddressKey {
+		t.Fatalf("duplicate admission changed snapshot: %+v, created=%t, error=%v", selected, created, err)
+	}
+	for _, invalid := range []webhookcmd.Receipt{
+		{MessageID: strings.Repeat("m", webhookcmd.MaxReceiptMessageBytes+1), Stream: "BALDA_CMDS", Sequence: 1},
+		{MessageID: "message", Stream: strings.Repeat("s", webhookcmd.MaxReceiptStreamBytes+1), Sequence: 1},
+		{MessageID: "message", Stream: "BALDA_CMDS", Sequence: math.MaxUint64},
+	} {
+		if _, err := p.WebhookAdmissions().RecordReceipt(t.Context(), first.RouteName, first.DedupeKey, invalid); err == nil {
+			t.Fatalf("invalid receipt %+v accepted", invalid)
+		}
+	}
+	selected, err = p.WebhookAdmissions().RecordReceipt(t.Context(), first.RouteName, first.DedupeKey,
+		webhookcmd.Receipt{MessageID: "message-one", Stream: "BALDA_CMDS", Sequence: 7})
+	if err != nil || selected.MessageID != "message-one" || selected.Sequence != 7 {
+		t.Fatalf("record receipt = %+v, %v", selected, err)
+	}
+	selected, err = p.WebhookAdmissions().RecordReceipt(t.Context(), first.RouteName, first.DedupeKey,
+		webhookcmd.Receipt{MessageID: "message-two", Stream: "OTHER", Sequence: 8})
+	if err != nil || selected.MessageID != "message-one" || selected.Sequence != 7 {
+		t.Fatalf("receipt must be immutable: %+v, %v", selected, err)
+	}
+	pending := webhookcmd.Admission{RouteName: "event", DedupeKey: "webhook:event:pending",
+		RequestID: "pending", Prompt: "pending input", JobID: "webhook-event-pending",
+		SessionID: "wh-pending", CreatedAt: now}
+	if _, created, err := p.WebhookAdmissions().Create(t.Context(), pending); err != nil || !created {
+		t.Fatalf("pending admission created=%t, error=%v", created, err)
+	}
+	closeContractProvider(t, p)
+	p, err = open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected, found, err := p.WebhookAdmissions().Get(t.Context(), first.RouteName, first.DedupeKey)
+	if err != nil || !found || selected.Prompt != first.Prompt || selected.MessageID != "message-one" ||
+		selected.ReportTo.AddressKey != first.ReportTo.AddressKey {
+		t.Fatalf("reopened admission = %+v, found=%t, error=%v", selected, found, err)
+	}
+	selected, found, err = p.WebhookAdmissions().Get(t.Context(), pending.RouteName, pending.DedupeKey)
+	if err != nil || !found || selected.MessageID != "" || selected.JobID != pending.JobID ||
+		selected.SessionID != pending.SessionID || selected.Prompt != pending.Prompt {
+		t.Fatalf("pending admission after restart = %+v, found=%t, error=%v", selected, found, err)
+	}
+	const contenders = 12
+	results := make([]webhookcmd.Admission, contenders)
+	createdCount := atomic.Int32{}
+	errs := make([]error, contenders)
+	var group sync.WaitGroup
+	for i := range results {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			candidate := webhookcmd.Admission{RouteName: "event", DedupeKey: "webhook:event:race",
+				RequestID: fmt.Sprintf("race-%d", i), Prompt: fmt.Sprintf("input-%d", i),
+				JobID: fmt.Sprintf("webhook-event-race-%d", i), SessionID: fmt.Sprintf("wh-race-%d", i),
+				CreatedAt: now}
+			var created bool
+			results[i], created, errs[i] = p.WebhookAdmissions().Create(t.Context(), candidate)
+			if created {
+				createdCount.Add(1)
+			}
+		}()
+	}
+	group.Wait()
+	if createdCount.Load() != 1 {
+		t.Fatalf("created count = %d, want one", createdCount.Load())
+	}
+	for i := range results {
+		if errs[i] != nil || results[i].JobID != results[0].JobID ||
+			results[i].SessionID != results[0].SessionID || results[i].Prompt != results[0].Prompt {
+			t.Fatalf("contender %d = %+v, error = %v", i, results[i], errs[i])
+		}
+	}
+}
+
+func checkProvider_ManagedAliasAuthorityAndVersion(t *testing.T, open contractOpener) {
+	path := filepath.Join(t.TempDir(), "aliases.db")
+	p, err := open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { closeContractProvider(t, p) }()
+	base := contractMCPMutation(t, p)
+	a := aliascmd.Authority{UserID: base.Authority.UserID, UserVersion: base.Authority.UserVersion,
+		CredentialVersion: base.Authority.CredentialVersion, MFAVersion: base.Authority.MFAVersion,
+		SessionID: base.Authority.SessionID, SessionVersion: base.Authority.SessionVersion, At: base.Authority.At}
+	audit := usercmd.AuditEvent{ID: "alias-create", Action: usercmd.AuditActionAliasCreated,
+		Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: a.UserID, ActorSessionID: a.SessionID,
+		TargetType: usercmd.AuditTargetAlias, TargetID: "main_chat", Source: "provider-contract", OccurredAt: a.At}
+	m := aliascmd.Mutation{Kind: aliascmd.MutationCreate, Record: aliascmd.Record{Name: "main_chat", LocatorRef: "telegram:-1003953132277:0", Version: 1}, Authority: a, Audit: audit}
+	if err := p.Aliases().Save(t.Context(), m); err != nil {
+		t.Fatal(err)
+	}
+	closeContractProvider(t, p)
+	p, err = open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Aliases().Save(t.Context(), m); !errors.Is(err, aliascmd.ErrConflict) {
+		t.Fatalf("duplicate alias = %v, want conflict", err)
+	}
+	m.Kind, m.ExpectedVersion, m.Record.Version, m.Record.LocatorRef, m.Audit.ID = aliascmd.MutationRetarget, 1, 2, "telegram:-1003953132278:0", "alias-retarget"
+	m.Audit.Action = usercmd.AuditActionAliasRetargeted
+	stale := m
+	stale.Authority.UserVersion++
+	if err := p.Aliases().Save(t.Context(), stale); !errors.Is(err, aliascmd.ErrConflict) {
+		t.Fatalf("stale administrator = %v, want conflict", err)
+	}
+	if err := p.Aliases().Save(t.Context(), m); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Aliases().Save(t.Context(), m); !errors.Is(err, aliascmd.ErrConflict) {
+		t.Fatalf("stale alias version = %v, want conflict", err)
+	}
+	record, found, err := p.Aliases().Get(t.Context(), "main_chat")
+	if err != nil || !found || record.LocatorRef != "telegram:-1003953132278:0" || record.Version != 2 {
+		t.Fatalf("retargeted alias = %+v, %v, %v", record, found, err)
+	}
+	m.Kind, m.ExpectedVersion, m.Record.Version, m.Audit.ID = aliascmd.MutationDelete, 2, 3, "alias-delete"
+	m.Audit.Action = usercmd.AuditActionAliasDeleted
+	if err := p.Aliases().Save(t.Context(), m); err != nil {
+		t.Fatal(err)
+	}
+	_, found, err = p.Aliases().Get(t.Context(), "main_chat")
+	if err != nil || found {
+		t.Fatalf("deleted alias found = %v, error = %v", found, err)
+	}
+	service := aliases.New(p.Aliases())
+	recreated, err := service.Create(t.Context(), aliascmd.Create{Name: "main_chat", LocatorRef: "telegram:-1003953132279:0", Authority: a})
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, found, err = p.Aliases().Get(t.Context(), "main_chat")
+	if err != nil || !found || record.Version <= 2 || recreated.Version != record.Version {
+		t.Fatalf("recreated alias must return advanced generation: returned %+v, stored %+v, %v, %v", recreated, record, found, err)
+	}
+	stale = m
+	stale.Kind, stale.ExpectedVersion, stale.Record.Version, stale.Audit.ID = aliascmd.MutationRetarget, 1, 2, "alias-stale-old-generation"
+	stale.Audit.Action = usercmd.AuditActionAliasRetargeted
+	if err := p.Aliases().Save(t.Context(), stale); !errors.Is(err, aliascmd.ErrConflict) {
+		t.Fatalf("old generation edit = %v, want conflict", err)
+	}
+	updated, err := service.Retarget(t.Context(), aliascmd.Retarget{Name: "main_chat", LocatorRef: "telegram:-1003953132280:0", ExpectedVersion: recreated.Version, Authority: a})
+	if err != nil || updated.Version != recreated.Version+1 {
+		t.Fatalf("retarget recreated alias = %+v, %v", updated, err)
+	}
+	admin, found, err := p.Users().GetUser(t.Context(), a.UserID)
+	if err != nil || !found {
+		t.Fatal(err)
+	}
+	keeper := contractUser("alias-keeper", "alias-keeper", false, a.At)
+	if err := p.Users().CreateUser(t.Context(), keeper, contractSecret(keeper.ID), contractAudit("alias-keeper-create", usercmd.AuditActionUserCreated, keeper.ID, a.At)); err != nil {
+		t.Fatal(err)
+	}
+	admin.Role, admin.Version = usercmd.RoleOperator, admin.Version+1
+	if err := p.Users().UpdateUser(t.Context(), admin, admin.Version-1, contractAudit("alias-admin-demote", usercmd.AuditActionUserRoleChanged, admin.ID, a.At)); err != nil {
+		t.Fatal(err)
+	}
+	a.UserVersion = admin.Version
+	if _, err := service.List(t.Context(), a); !errors.Is(err, aliascmd.ErrForbidden) {
+		t.Fatalf("operator list = %v, want forbidden", err)
+	}
+	if _, err := service.Retarget(t.Context(), aliascmd.Retarget{Name: "main_chat", LocatorRef: "telegram:1:0", ExpectedVersion: updated.Version, Authority: a}); !errors.Is(err, aliascmd.ErrForbidden) {
+		t.Fatalf("operator retarget = %v, want forbidden", err)
+	}
+}
+
+func checkProvider_ScheduleManagementAuthorityAndVersion(t *testing.T, open contractOpener) {
+	p := newContractProvider(t, open)
+	defer closeContractProvider(t, p)
+	base := contractMCPMutation(t, p)
+	a := schedulecmd.Authority{UserID: base.Authority.UserID, UserVersion: base.Authority.UserVersion,
+		CredentialVersion: base.Authority.CredentialVersion, MFAVersion: base.Authority.MFAVersion,
+		SessionID: base.Authority.SessionID, SessionVersion: base.Authority.SessionVersion, At: base.Authority.At}
+	next := a.At.Add(time.Hour)
+	r := ScheduledJobRecord{JobID: "managed-daily", Source: ScheduledJobSourceManaged,
+		Enabled: true, DefinitionVersion: 1, SessionID: "tg-1-0", ChannelType: ChannelTypeTelegram,
+		AddressKey: "1:0", AddressJSON: `{}`, Content: "review", ScheduleSpec: "0 9 * * *",
+		Status: ScheduledJobStatusActive, TargetKind: "locator", TargetKey: "telegram:1:0", NextRunAt: next}
+	audit := usercmd.AuditEvent{ID: "schedule-create", Action: usercmd.AuditActionScheduleDefinitionChanged,
+		Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: a.UserID, ActorSessionID: a.SessionID,
+		TargetType: usercmd.AuditTargetSchedule, TargetID: r.JobID, Source: "provider-contract", OccurredAt: a.At}
+	m := ScheduleMutation{Kind: ScheduleCreate, Record: r, Authority: a, Audit: audit}
+	if err := p.ScheduleManagement().Save(t.Context(), m); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.ScheduleManagement().Save(t.Context(), m); !errors.Is(err, schedulecmd.ErrConflict) {
+		t.Fatalf("duplicate create = %v, want conflict", err)
+	}
+	current, found, err := p.ScheduledJobs().GetByID(t.Context(), r.JobID)
+	if err != nil || !found || current.Source != ScheduledJobSourceManaged || current.DefinitionVersion != 1 {
+		t.Fatalf("created = %+v, %v, %v", current, found, err)
+	}
+	m.Kind, m.ExpectedVersion, m.Record.DefinitionVersion, m.Audit.ID = ScheduleEdit, 1, 2, "schedule-edit"
+	m.Record.Content = "updated"
+	stale := m
+	stale.Authority.UserVersion++
+	if err := p.ScheduleManagement().Save(t.Context(), stale); !errors.Is(err, schedulecmd.ErrConflict) {
+		t.Fatalf("stale administrator = %v, want conflict", err)
+	}
+	if err := p.ScheduleManagement().Save(t.Context(), m); err != nil {
+		t.Fatal(err)
+	}
+	current, _, err = p.ScheduledJobs().GetByID(t.Context(), r.JobID)
+	if err != nil || current.Content != "updated" || current.DefinitionVersion != 2 {
+		t.Fatalf("edited = %+v, %v", current, err)
+	}
+	if err := p.ScheduleManagement().Save(t.Context(), m); !errors.Is(err, schedulecmd.ErrConflict) {
+		t.Fatalf("stale edit = %v, want conflict", err)
+	}
+	m.Kind, m.ExpectedVersion, m.Record.DefinitionVersion, m.Audit.ID = ScheduleSelection, 2, 3, "schedule-disable"
+	m.Record.Enabled = false
+	if err := p.ScheduleManagement().Save(t.Context(), m); err != nil {
+		t.Fatal(err)
+	}
+	current, _, err = p.ScheduledJobs().GetByID(t.Context(), r.JobID)
+	if err != nil || current.Enabled || current.DefinitionVersion != 3 {
+		t.Fatalf("disabled = %+v, %v", current, err)
+	}
+	m.Kind, m.ExpectedVersion, m.Record.DefinitionVersion, m.Audit.ID = ScheduleDelete, 3, 4, "schedule-delete"
+	m.Record.Deleted = true
+	if err := p.ScheduleManagement().Save(t.Context(), m); err != nil {
+		t.Fatal(err)
+	}
+	current, _, err = p.ScheduledJobs().GetByID(t.Context(), r.JobID)
+	if err != nil || !current.Deleted || current.Enabled || current.DefinitionVersion != 4 {
+		t.Fatalf("archived = %+v, %v", current, err)
+	}
+	audits, err := p.Users().ListAuditEvents(t.Context(), usercmd.PageRequest{Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	reasons := map[string]bool{}
+	for _, event := range audits.Events {
+		if event.TargetType == usercmd.AuditTargetSchedule {
+			count++
+			reasons[event.Reason] = true
+		}
+	}
+	if count != 4 {
+		t.Fatalf("schedule audits = %d, want four committed changes", count)
+	}
+	for _, reason := range []string{"Schedule created", "Schedule edited", "Schedule disabled", "Schedule deleted"} {
+		if !reasons[reason] {
+			t.Errorf("missing audit operation %q", reason)
+		}
+	}
+}
+
+func checkProvider_ScheduleRunAdmissions(t *testing.T, open contractOpener) {
+	p := newContractProvider(t, open)
+	defer closeContractProvider(t, p)
+	base := contractMCPMutation(t, p)
+	a := schedulecmd.Authority{UserID: base.Authority.UserID, UserVersion: base.Authority.UserVersion,
+		CredentialVersion: base.Authority.CredentialVersion, MFAVersion: base.Authority.MFAVersion,
+		SessionID: base.Authority.SessionID, SessionVersion: base.Authority.SessionVersion, At: base.Authority.At}
+	now := a.At
+	job := ScheduledJobRecord{JobID: "configured-daily", Source: ScheduledJobSourceConfig, Enabled: true,
+		DefinitionVersion: 1, SessionID: "tg-1-0", ChannelType: ChannelTypeTelegram,
+		AddressKey: "1:0", AddressJSON: `{}`, Content: "review", ScheduleSpec: "0 9 * * *",
+		Status: ScheduledJobStatusActive, NextRunAt: now.Add(time.Hour)}
+	if err := p.ScheduledJobs().Upsert(t.Context(), job); err != nil {
+		t.Fatal(err)
+	}
+	cron := ScheduleRunRecord{RunID: "cron-1", ScheduleID: job.JobID, Trigger: ScheduleRunTriggerCron,
+		TriggerKey: "cron-slot", DefinitionVersion: 1, RequestedAt: now, DueAt: job.NextRunAt,
+		DispatchState: ScheduleRunPending, PayloadJSON: `{}`}
+	created, err := p.ScheduleRuns().CreateCron(t.Context(), cron, job.NextRunAt)
+	if err != nil || !created {
+		t.Fatalf("CreateCron() = %v, %v", created, err)
+	}
+	created, err = p.ScheduleRuns().CreateCron(t.Context(), cron, job.NextRunAt)
+	if err != nil || created {
+		t.Fatalf("duplicate CreateCron() = %v, %v", created, err)
+	}
+	selected, found, err := p.ScheduleRuns().GetByID(t.Context(), cron.RunID)
+	if err != nil || !found {
+		t.Fatalf("load cron intent = %+v, %v", selected, err)
+	}
+	leaseAt := job.NextRunAt
+	claimed, err := p.ScheduleRuns().ClaimCron(t.Context(), selected, leaseAt, leaseAt.Add(30*time.Second))
+	if err != nil || !claimed {
+		t.Fatalf("ClaimCron() = %v, %v", claimed, err)
+	}
+	claimed, err = p.ScheduleRuns().ClaimCron(t.Context(), selected, leaseAt.Add(time.Second), leaseAt.Add(time.Minute))
+	if err != nil || claimed {
+		t.Fatalf("duplicate ClaimCron() = %v, %v", claimed, err)
+	}
+	selected, found, err = p.ScheduleRuns().GetByID(t.Context(), cron.RunID)
+	if err != nil || !found || selected.DispatchState != ScheduleRunPublishing {
+		t.Fatalf("publishing cron intent = %+v, %v", selected, err)
+	}
+	claimed, err = p.ScheduleRuns().ClaimCron(t.Context(), selected, leaseAt.Add(31*time.Second), leaseAt.Add(time.Minute))
+	if err != nil || !claimed {
+		t.Fatalf("expired ClaimCron() = %v, %v", claimed, err)
+	}
+	stale := cron
+	stale.RunID, stale.TriggerKey, stale.DefinitionVersion = "cron-2", "stale-slot", 2
+	created, err = p.ScheduleRuns().CreateCron(t.Context(), stale, job.NextRunAt)
+	if err != nil || created {
+		t.Fatalf("stale CreateCron() = %v, %v", created, err)
+	}
+	job.Enabled = false
+	if err := p.ScheduledJobs().Upsert(t.Context(), job); err != nil {
+		t.Fatal(err)
+	}
+	selected, found, err = p.ScheduleRuns().GetByID(t.Context(), cron.RunID)
+	if err != nil || !found {
+		t.Fatalf("load disabled cron intent = %+v, %v", selected, err)
+	}
+	claimed, err = p.ScheduleRuns().ClaimCron(t.Context(), selected, leaseAt.Add(time.Minute), leaseAt.Add(2*time.Minute))
+	if err != nil || !claimed {
+		t.Fatalf("recover claimed run after disable = %v, %v", claimed, err)
+	}
+	stale.DefinitionVersion, stale.RunID, stale.TriggerKey = 1, "cron-3", "disabled-slot"
+	created, err = p.ScheduleRuns().CreateCron(t.Context(), stale, job.NextRunAt)
+	if err != nil || created {
+		t.Fatalf("disabled CreateCron() = %v, %v", created, err)
+	}
+	manual := ScheduleRunRecord{RunID: "manual-1", ScheduleID: job.JobID, Trigger: ScheduleRunTriggerManual,
+		TriggerKey: "manual:nonce-1", DefinitionVersion: 1, RequestedAt: now,
+		DispatchState: ScheduleRunPending, PayloadJSON: `{}`}
+	audit := usercmd.AuditEvent{ID: "manual-audit", Action: usercmd.AuditActionScheduleRunRequested,
+		Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: a.UserID, ActorSessionID: a.SessionID,
+		TargetType: usercmd.AuditTargetSchedule, TargetID: job.JobID, Source: "provider-contract", OccurredAt: a.At}
+	admission := ScheduleManualAdmission{Run: manual, ExpectedVersion: 1, Authority: a, Audit: audit}
+	created, err = p.ScheduleManagement().AdmitManualRun(t.Context(), admission)
+	if !errors.Is(err, schedulecmd.ErrConflict) || created {
+		t.Fatalf("unconfirmed disabled run = %v, %v", created, err)
+	}
+	admission.ConfirmDisabled = true
+	created, err = p.ScheduleManagement().AdmitManualRun(t.Context(), admission)
+	if err != nil || !created {
+		t.Fatalf("confirmed manual run = %v, %v", created, err)
+	}
+	created, err = p.ScheduleManagement().AdmitManualRun(t.Context(), admission)
+	if err != nil || created {
+		t.Fatalf("duplicate manual run = %v, %v", created, err)
+	}
+	current, found, err := p.ScheduledJobs().GetByID(t.Context(), job.JobID)
+	if err != nil || !found || current.Enabled || !current.NextRunAt.Equal(job.NextRunAt) {
+		t.Fatalf("manual changed cron selection = %+v, %v", current, err)
+	}
+	got, found, err := p.ScheduleRuns().GetByTriggerKey(t.Context(), job.JobID, manual.TriggerKey)
+	if err != nil || !found || got.RunID != manual.RunID {
+		t.Fatalf("manual run = %+v, %v", got, err)
+	}
+	failed := manual
+	failed.RunID, failed.TriggerKey = "manual-missing-alias", "manual:missing-alias"
+	failed.DispatchState = ScheduleRunFailed
+	failed.SafeFailureCode = "report_alias_unavailable"
+	failed.ReportLocatorRef = ""
+	admission.Run = failed
+	admission.Audit.ID = "missing-alias-audit"
+	created, err = p.ScheduleManagement().AdmitManualRun(t.Context(), admission)
+	if err != nil || !created {
+		t.Fatalf("missing alias admission = %v, %v", created, err)
+	}
+	got, found, err = p.ScheduleRuns().GetByID(t.Context(), failed.RunID)
+	if err != nil || !found || got.DispatchState != ScheduleRunFailed || got.SafeFailureCode != "report_alias_unavailable" {
+		t.Fatalf("missing alias run = %+v, found=%t err=%v", got, found, err)
+	}
 }
 
 func checkCollaborators(t *testing.T, open contractOpener) {
@@ -193,7 +658,6 @@ func checkProvider_SessionStoreRoundTrip(t *testing.T, open contractOpener) {
 	if err := store.Upsert(ctx, record); err != nil {
 		t.Fatalf("Upsert() error = %v", err)
 	}
-
 	got, ok, err := store.GetByAddress(ctx, ChannelTypeTelegram, "1:2")
 	if err != nil {
 		t.Fatalf("GetByAddress() error = %v", err)
@@ -282,12 +746,12 @@ func checkProvider_QuestionStoreRoundTrip(t *testing.T, open contractOpener) {
 	}); err != nil {
 		t.Fatalf("BindQuestionDeliveryRef() error = %v", err)
 	}
-	got, ok, err := store.GetPendingQuestionByReplyRef(ctx, "telegram", "1:0", "42")
+	got, ok, err := store.GetQuestionByReplyRef(ctx, "telegram", "1:0", "42")
 	if err != nil {
-		t.Fatalf("GetPendingQuestionByReplyRef() error = %v", err)
+		t.Fatalf("GetQuestionByReplyRef() error = %v", err)
 	}
 	if !ok {
-		t.Fatal("GetPendingQuestionByReplyRef() found = false, want true")
+		t.Fatal("GetQuestionByReplyRef() found = false, want true")
 	}
 	if got.QuestionID != record.QuestionID {
 		t.Fatalf("question_id = %q, want %q", got.QuestionID, record.QuestionID)
@@ -304,6 +768,97 @@ func checkProvider_QuestionStoreRoundTrip(t *testing.T, open contractOpener) {
 	}
 	if answered.Status != questioncmd.StatusAnswered {
 		t.Fatalf("status = %q, want answered", answered.Status)
+	}
+	got, ok, err = store.GetQuestionByReplyRef(ctx, "telegram", "1:0", "42")
+	if err != nil || !ok || got.AnswerJSON != answered.AnswerJSON {
+		t.Fatalf("answered question unavailable for continuation recovery: %+v %v %v", got, ok, err)
+	}
+}
+
+func checkQuestionAnswerHandoffSurvivesRestart(t *testing.T, open contractOpener) {
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), "state.db")
+	p, err := open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := QuestionRecord{QuestionID: "handoff", SessionID: "session", ChannelKind: "telegram", AddressKey: "1:0", AddressJSON: `{"chat_id":1}`, Prompt: "Allow?", Status: questioncmd.StatusPending, InteractionJSON: `{}`, ResumeJSON: `{}`, RequestJSON: `{}`}
+	if err := p.Questions().CreatePendingQuestion(ctx, record); err != nil {
+		t.Fatal(err)
+	}
+	answer := questioncmd.Answer{Text: "Allow", SelectedOption: "allow", AnsweredBy: questioncmd.UserRef{UserID: "user"}}
+	settled, changed, err := p.Questions().MarkQuestionAnswered(ctx, record.QuestionID, answer)
+	if err != nil || !changed || !settled.AnswerContinuationPending || !settled.AnswerControlsPending {
+		t.Fatalf("answer/marker not atomic: %+v %v", settled, err)
+	}
+	closeContractProvider(t, p)
+	p, err = open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeContractProvider(t, p)
+	store := p.Questions()
+	ids, err := store.PendingQuestionAnswerIDs(ctx, "", 32)
+	if err != nil || len(ids) != 1 || ids[0] != record.QuestionID {
+		t.Fatalf("restart lost pending answer: %v %v", ids, err)
+	}
+	if err := store.MarkQuestionAnswerControlsCleared(ctx, record.QuestionID, questioncmd.DeliveryRef{}); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := store.GetQuestionByID(ctx, record.QuestionID)
+	if err != nil || !got.AnswerControlsPending {
+		t.Fatal("cleanup completed before continuation admission")
+	}
+	if err := store.MarkQuestionAnswerAdmitted(ctx, record.QuestionID); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err = store.GetQuestionByID(ctx, record.QuestionID)
+	if err != nil || got.AnswerContinuationPending || !got.AnswerControlsPending || got.AnswerJSON != settled.AnswerJSON {
+		t.Fatalf("admission changed answer or lost cleanup: %+v %v", got, err)
+	}
+	ids, err = store.PendingQuestionAnswerIDs(ctx, "", 32)
+	if err != nil || len(ids) != 1 {
+		t.Fatal("cleanup recovery was not retained")
+	}
+	if err := store.MarkQuestionAnswerControlsCleared(ctx, record.QuestionID, questioncmd.DeliveryRef{}); err != nil {
+		t.Fatal(err)
+	}
+	ids, err = store.PendingQuestionAnswerIDs(ctx, "", 32)
+	if err != nil || len(ids) != 0 {
+		t.Fatalf("completed handoff retained: %v %v", ids, err)
+	}
+	_, changed, err = store.MarkQuestionAnswered(ctx, record.QuestionID, questioncmd.Answer{Text: "changed"})
+	if err != nil || changed {
+		t.Fatal("duplicate settlement replaced answer")
+	}
+	ids, err = store.PendingQuestionAnswerIDs(ctx, "", 32)
+	if err != nil || len(ids) != 0 {
+		t.Fatal("duplicate settlement reopened admission")
+	}
+	ref := questioncmd.DeliveryRef{Provider: "telegram", ConversationKey: "1:0", ProviderMessageID: "42"}
+	if err := store.BindQuestionDeliveryRef(ctx, record.QuestionID, ref); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.MarkQuestionAnswerControlsCleared(ctx, record.QuestionID, questioncmd.DeliveryRef{}); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err = store.GetQuestionByID(ctx, record.QuestionID)
+	if err != nil || got.AnswerContinuationPending || !got.AnswerControlsPending {
+		t.Fatal("late binding lost cleanup or reopened continuation")
+	}
+	if err := store.MarkQuestionAnswerControlsCleared(ctx, record.QuestionID, ref); err != nil {
+		t.Fatal(err)
+	}
+	ids, err = store.PendingQuestionAnswerIDs(ctx, "", 32)
+	if err != nil || len(ids) != 0 {
+		t.Fatal("matching cleanup did not complete")
+	}
+	if err := store.BindQuestionDeliveryRef(ctx, record.QuestionID, ref); err != nil {
+		t.Fatal(err)
+	}
+	ids, err = store.PendingQuestionAnswerIDs(ctx, "", 32)
+	if err != nil || len(ids) != 0 {
+		t.Fatal("identical delivery replay reopened completed cleanup")
 	}
 }
 
@@ -371,6 +926,12 @@ func checkProvider_ScheduledJobStoreRoundTrip(t *testing.T, open contractOpener)
 	if err := store.Upsert(ctx, record); err != nil {
 		t.Fatalf("Upsert() error = %v", err)
 	}
+	collision := record
+	collision.Source = ScheduledJobSourceManaged
+	collision.Content = "unexpected overwrite"
+	if err := store.Upsert(ctx, collision); !errors.Is(err, ErrScheduledJobSourceConflict) {
+		t.Fatalf("Upsert(other source) = %v, want source conflict", err)
+	}
 
 	got, ok, err := store.GetByID(ctx, scheduledJobID)
 	if err != nil {
@@ -403,6 +964,20 @@ func checkProvider_ScheduledJobStoreRoundTrip(t *testing.T, open contractOpener)
 	if len(dueTasks) != 1 || dueTasks[0].JobID != scheduledJobID {
 		t.Fatalf("ListDue() = %#v, want single %s", dueTasks, scheduledJobID)
 	}
+	updated, err := store.UpdateRuntime(ctx, ScheduledJobRuntimeUpdate{
+		JobID: scheduledJobID, DefinitionVersion: got.DefinitionVersion,
+		ExpectedNextRunAt: got.NextRunAt, ExpectedLastDispatchKey: got.LastDispatchKey,
+		Status: ScheduledJobStatusActive, NextRunAt: nextRunAt.Add(5 * time.Minute),
+		LastDispatchKey: "task-1@slot", LastRunAt: nextRunAt,
+	})
+	if err != nil || !updated {
+		t.Fatalf("UpdateRuntime() = %v, %v, want true, nil", updated, err)
+	}
+	got, ok, err = store.GetByID(ctx, scheduledJobID)
+	if err != nil || !ok || got.LastDispatchKey != "task-1@slot" ||
+		!got.NextRunAt.Equal(nextRunAt.Add(5*time.Minute)) {
+		t.Fatalf("GetByID(after runtime update) = %+v, %v, %v", got, ok, err)
+	}
 
 	if err := store.Delete(ctx, scheduledJobID); err != nil {
 		t.Fatalf("Delete() error = %v", err)
@@ -413,6 +988,40 @@ func checkProvider_ScheduledJobStoreRoundTrip(t *testing.T, open contractOpener)
 	}
 	if ok {
 		t.Fatal("GetByID(after delete) found = true, want false")
+	}
+}
+
+func checkProvider_ScheduleRunStoreRoundTrip(t *testing.T, open contractOpener) {
+	provider := newContractProvider(t, open)
+	defer closeContractProvider(t, provider)
+
+	run := ScheduleRunRecord{
+		RunID: "run-1", ScheduleID: "daily-review", Trigger: ScheduleRunTriggerManual,
+		TriggerKey: "manual:request-1", DefinitionVersion: 1,
+		RequestedAt:   time.Date(2026, 10, 7, 9, 30, 0, 0, time.UTC),
+		DispatchState: ScheduleRunPending, PayloadJSON: `{"content":"review"}`,
+	}
+	created, err := provider.ScheduleRuns().Create(t.Context(), run)
+	if err != nil || !created {
+		t.Fatalf("Create() = %v, %v, want true, nil", created, err)
+	}
+	got, found, err := provider.ScheduleRuns().GetByTriggerKey(t.Context(), run.ScheduleID, run.TriggerKey)
+	if err != nil || !found || got.RunID != run.RunID || got.Version != 1 {
+		t.Fatalf("GetByTriggerKey() = %+v, %v, %v", got, found, err)
+	}
+	got.DispatchState = ScheduleRunDispatched
+	got.ExecutionJobID = "execution-1"
+	updated, err := provider.ScheduleRuns().Update(t.Context(), got, got.Version)
+	if err != nil || !updated {
+		t.Fatalf("Update() = %v, %v, want true, nil", updated, err)
+	}
+	got, found, err = provider.ScheduleRuns().GetByID(t.Context(), run.RunID)
+	if err != nil || !found || got.Version != 2 || got.ExecutionJobID != "execution-1" {
+		t.Fatalf("GetByID() = %+v, %v, %v", got, found, err)
+	}
+	history, err := provider.ScheduleRuns().ListBySchedule(t.Context(), run.ScheduleID, time.Time{}, "", 50)
+	if err != nil || len(history) != 1 || history[0].RunID != run.RunID {
+		t.Fatalf("ListBySchedule() = %+v, %v", history, err)
 	}
 }
 
@@ -759,6 +1368,9 @@ func checkJobStore_DeliveryOutboxLifecycle(t *testing.T, open contractOpener) {
 
 	ctx := context.Background()
 	store := provider.Jobs()
+	if _, sent, err := store.SentFinalDelivery(ctx, "task-1"); err != nil || sent {
+		t.Fatalf("initial final delivery = sent %v, err %v", sent, err)
+	}
 
 	record, created, err := store.ReserveDelivery(ctx, DeliveryRecord{
 		ID:          "delivery-1",
@@ -824,6 +1436,22 @@ func checkJobStore_DeliveryOutboxLifecycle(t *testing.T, open contractOpener) {
 		t.Fatalf("ReserveDelivery(after failed) error = %v", err)
 	} else if created || delivery.Status != DeliveryStatusFailed || delivery.Error != "provider timeout" {
 		t.Fatalf("ReserveDelivery(after failed) = %+v created=%v, want failed existing", delivery, created)
+	}
+	final, _, err := store.ReserveDelivery(ctx, DeliveryRecord{
+		ID: "final-delivery", DeliveryKey: "task-1:delivery:final", JobID: "task-1", SessionID: "session-1",
+		Channel: "mattermost", AddressKey: "channel:thread", Kind: "delivery", Payload: `{"mode":"agent_reply"}`, PayloadHash: "hash-final",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, sent, err := store.SentFinalDelivery(ctx, "task-1"); err != nil || sent {
+		t.Fatalf("pending final delivery = sent %v, err %v", sent, err)
+	}
+	if err := store.MarkDeliverySent(ctx, final.DeliveryKey, "mm-post-1"); err != nil {
+		t.Fatal(err)
+	}
+	if id, sent, err := store.SentFinalDelivery(ctx, "task-1"); err != nil || !sent || id != "mm-post-1" {
+		t.Fatalf("sent final delivery = id %q, sent %v, err %v", id, sent, err)
 	}
 }
 

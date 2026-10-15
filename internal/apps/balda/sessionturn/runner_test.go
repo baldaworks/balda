@@ -28,6 +28,76 @@ func TestRunnerRequiresSessionManager(t *testing.T) {
 	}
 }
 
+func TestRunnerRestoresQueuedScheduleTurnAsPrivateSession(t *testing.T) {
+	accessor := &testSessionAccessor{getErr: errors.New("not active"), transient: &testActiveSession{}}
+	executor := &testExecutor{}
+	runner := New(accessor, executor, nil, zerolog.Nop())
+	payload := turncmd.SessionTurnPayload{JobID: "scheduled-daily-slot", ScheduledJobID: "daily",
+		Source: turncmd.SourceSchedule, UserID: "tg-101", Text: "review",
+		Locator: baldasession.SessionLocator{SessionID: "tg-10-42", ChannelType: "telegram",
+			AddressKey: "10:42", AddressJSON: `{"chat_id":10,"topic_id":42}`}}
+	if err := runner.RunSessionTurnPayload(t.Context(), payload); err != nil {
+		t.Fatal(err)
+	}
+	if accessor.restoreCalled || len(accessor.transientCtx) != 1 {
+		t.Fatalf("ordinary restore called=%t, private creates=%d", accessor.restoreCalled, len(accessor.transientCtx))
+	}
+	privateID := turncmd.ScheduledExecutionSessionID(payload.JobID)
+	if accessor.transientCtx[0].Locator.SessionID != privateID {
+		t.Fatalf("private session = %+v", accessor.transientCtx[0])
+	}
+	request := executor.singleRequest(t)
+	if request.Payload.Locator.SessionID != privateID || request.DeliveryLocator.SessionID != privateID ||
+		request.Payload.Deliver || request.Payload.ReportTo != nil {
+		t.Fatalf("execution/delivery locators = %+v, %+v", request.Payload, request.DeliveryLocator)
+	}
+}
+
+func TestRunnerRunsWebhookInNewTransientSessionWithoutRestoringReportChat(t *testing.T) {
+	accessor := &testSessionAccessor{getErr: errors.New("not active"), transient: &testActiveSession{}}
+	executor := &testExecutor{}
+	runner := New(accessor, executor, nil, zerolog.Nop())
+	report := baldasession.SessionLocator{SessionID: "tg-report", ChannelType: "telegram",
+		AddressKey: "10:42", AddressJSON: `{"chat_id":10,"topic_id":42}`}
+	for _, sessionID := range []string{
+		"wh-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		"wh-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+	} {
+		payload := turncmd.SessionTurnPayload{JobID: "webhook-test-" + sessionID, Source: turncmd.SourceWebhook,
+			UserID: sessionID, Text: "review", Deliver: true,
+			Locator: baldasession.SessionLocator{SessionID: sessionID, ChannelType: "webhook",
+				AddressKey: sessionID, AddressJSON: "{}"}, ReportTo: &report}
+		if err := runner.RunSessionTurnPayload(t.Context(), payload); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if accessor.restoreCalled || len(accessor.transientCtx) != 2 {
+		t.Fatalf("ordinary restore called=%t, private creates=%d", accessor.restoreCalled, len(accessor.transientCtx))
+	}
+	if accessor.transientCtx[0].Locator.SessionID == accessor.transientCtx[1].Locator.SessionID {
+		t.Fatal("separate webhook jobs shared an execution session")
+	}
+	for _, request := range executor.requests {
+		if request.Payload.Locator.ChannelType != "webhook" || request.DeliveryLocator.SessionID != report.SessionID ||
+			request.DeliveryLocator.AddressKey != report.AddressKey {
+			t.Fatalf("execution or report locator changed: %+v", request)
+		}
+	}
+}
+
+func TestRunnerRejectsWebhookWithoutPrivateSessionID(t *testing.T) {
+	accessor := &testSessionAccessor{getErr: errors.New("not active")}
+	executor := &testExecutor{}
+	runner := New(accessor, executor, nil, zerolog.Nop())
+	err := runner.RunSessionTurnPayload(t.Context(), turncmd.SessionTurnPayload{
+		Source: turncmd.SourceWebhook, Locator: baldasession.SessionLocator{
+			SessionID: "tg-recipient", ChannelType: "telegram", AddressKey: "10:42"},
+	})
+	if err == nil || accessor.restoreCalled || len(accessor.transientCtx) != 0 {
+		t.Fatalf("invalid webhook session: error=%v restore=%t transient=%d", err, accessor.restoreCalled, len(accessor.transientCtx))
+	}
+}
+
 func TestRunnerLoadsExactSelectedSkillBeforeProviderExecution(t *testing.T) {
 	t.Parallel()
 
@@ -49,12 +119,16 @@ func TestRunnerLoadsExactSelectedSkillBeforeProviderExecution(t *testing.T) {
 		zerolog.Nop(),
 	)
 	payload := testTurnPayload()
-	payload.Skill = &runtimecatalogcmd.SkillSelection{Snapshot: "snapshot-1", Ref: loader.loaded.Ref}
+	payload.Skill = &runtimecatalogcmd.SkillSelection{Snapshot: "application-parent", Ref: loader.loaded.Ref}
+
 	if err := runner.RunSessionTurnPayload(context.Background(), payload); err != nil {
 		t.Fatalf("RunSessionTurnPayload() error = %v", err)
 	}
 	if len(loader.selections) != 1 || loader.selections[0] != *payload.Skill {
 		t.Fatalf("skill selections = %+v, want durable selection %+v", loader.selections, *payload.Skill)
+	}
+	if len(loader.sessionIDs) != 1 || loader.sessionIDs[0] != "snapshot-1" {
+		t.Fatalf("session snapshots = %v, want snapshot-1", loader.sessionIDs)
 	}
 	request := executor.singleRequest(t)
 	if request.SelectedSkill == nil || request.SelectedSkill.Ref.Revision != "revision-1" {
@@ -84,11 +158,11 @@ func TestRunnerFailsClosedWhenSelectedSkillLoaderIsUnavailable(t *testing.T) {
 	}
 }
 
-func TestRunnerFailsClosedWhenSelectedSkillSnapshotDiffersFromSession(t *testing.T) {
+func TestRunnerFailsClosedWhenSelectedSkillIsRejectedBySessionCatalog(t *testing.T) {
 	t.Parallel()
 
 	executor := &testExecutor{}
-	loader := &testSkillLoader{}
+	loader := &testSkillLoader{err: runtimecatalogcmd.ErrRevisionUnavailable}
 	runner := NewWithSkillLoader(
 		&testSessionAccessor{active: &testActiveSession{runtimeSnapshotID: "session-snapshot"}},
 		executor,
@@ -103,11 +177,11 @@ func TestRunnerFailsClosedWhenSelectedSkillSnapshotDiffersFromSession(t *testing
 	}
 
 	err := runner.RunSessionTurnPayload(context.Background(), payload)
-	if err == nil || !strings.Contains(err.Error(), "does not match session runtime") {
+	if !errors.Is(err, runtimecatalogcmd.ErrRevisionUnavailable) {
 		t.Fatalf("RunSessionTurnPayload() error = %v, want snapshot mismatch", err)
 	}
-	if len(loader.selections) != 0 {
-		t.Fatalf("skill selections = %d, want none", len(loader.selections))
+	if len(loader.sessionIDs) != 1 || loader.sessionIDs[0] != "session-snapshot" {
+		t.Fatalf("session snapshots = %v, want session-snapshot", loader.sessionIDs)
 	}
 	if len(executor.requests) != 0 {
 		t.Fatalf("executor requests = %d, want none", len(executor.requests))
@@ -201,6 +275,26 @@ func TestRunnerMissingCursorPerformsFullRefresh(t *testing.T) {
 	request := executor.singleRequest(t)
 	if request.MemoryRefresh.Content != "all facts" || len(request.MemoryRunOptions) != 1 {
 		t.Fatalf("missing-cursor memory request = %+v, options = %d", request.MemoryRefresh, len(request.MemoryRunOptions))
+	}
+}
+
+func TestRunnerRefreshesInitializedEmptyMemory(t *testing.T) {
+	t.Parallel()
+	executor := &testExecutor{}
+	runner := newMemoryTestRunner(&testActiveSession{}, executor, testMemoryProvider{
+		snapshot: MemorySnapshot{Version: 2, UpdatedAt: testMemoryUpdatedAt},
+	})
+	payload := testTurnPayload()
+	payload.Metadata = &turncmd.SessionTurnMetadata{LatestMemoryAt: testPriorMemoryAt}
+	if err := runner.RunSessionTurnPayload(t.Context(), payload); err != nil {
+		t.Fatal(err)
+	}
+	request := executor.singleRequest(t)
+	if request.MemoryRefresh.Content != "" || request.MemoryRefresh.UpdatedAt != testMemoryUpdatedAt || len(request.MemoryRunOptions) != 1 {
+		t.Fatalf("initialized empty refresh = %+v, options=%d", request.MemoryRefresh, len(request.MemoryRunOptions))
+	}
+	if request.Payload.Metadata == nil || request.Payload.Metadata.LatestMemoryAt != testMemoryUpdatedAt {
+		t.Fatal("empty refresh did not advance the memory cursor")
 	}
 }
 
@@ -342,12 +436,13 @@ func testTurnPayload() turncmd.SessionTurnPayload {
 }
 
 type testExecutor struct {
+	err      error
 	requests []Request
 }
 
 func (e *testExecutor) ExecuteSessionTurn(_ context.Context, request Request) error {
 	e.requests = append(e.requests, request)
-	return nil
+	return e.err
 }
 
 func (e *testExecutor) singleRequest(t *testing.T) Request {
@@ -365,16 +460,20 @@ type testMemoryProvider struct {
 
 type testSkillLoader struct {
 	loaded     runtimecatalogcmd.LoadedSkill
+	err        error
+	sessionIDs []runtimecatalogcmd.SnapshotID
 	selections []runtimecatalogcmd.SkillSelection
 }
 
-func (l *testSkillLoader) LoadPinned(
+func (l *testSkillLoader) LoadPinnedForSession(
 	_ context.Context,
 	selection runtimecatalogcmd.SkillSelection,
+	sessionID runtimecatalogcmd.SnapshotID,
 	_ []string,
 ) (runtimecatalogcmd.LoadedSkill, error) {
 	l.selections = append(l.selections, selection)
-	return l.loaded, nil
+	l.sessionIDs = append(l.sessionIDs, sessionID)
+	return l.loaded, l.err
 }
 
 type disabledMemoryProvider struct{}
@@ -392,10 +491,13 @@ func (p testMemoryProvider) Snapshot(context.Context) (MemorySnapshot, error) {
 }
 
 type testSessionAccessor struct {
-	active     ActiveSession
-	getErr     error
-	restored   ActiveSession
-	restoreErr error
+	active        ActiveSession
+	getErr        error
+	restored      ActiveSession
+	restoreErr    error
+	transient     ActiveSession
+	transientCtx  []SessionContext
+	restoreCalled bool
 }
 
 func (a *testSessionAccessor) GetSession(SessionLocator) (ActiveSession, error) {
@@ -403,11 +505,20 @@ func (a *testSessionAccessor) GetSession(SessionLocator) (ActiveSession, error) 
 }
 
 func (a *testSessionAccessor) RestoreSession(context.Context, SessionContext) (ActiveSession, error) {
+	a.restoreCalled = true
 	return a.restored, a.restoreErr
 }
 
 func (a *testSessionAccessor) EnsureSession(context.Context, SessionContext, string) (ActiveSession, error) {
 	return nil, errors.New("unexpected EnsureSession call")
+}
+
+func (a *testSessionAccessor) EnsureTransientSession(_ context.Context, sessionCtx SessionContext, _ string) (ActiveSession, error) {
+	a.transientCtx = append(a.transientCtx, sessionCtx)
+	if a.transient == nil {
+		return nil, errors.New("unexpected EnsureTransientSession call")
+	}
+	return a.transient, nil
 }
 
 type testActiveSession struct {
@@ -429,4 +540,25 @@ func (s *testActiveSession) RuntimeStateValue(_ context.Context, key string) (an
 	}
 	value, ok := s.state[key]
 	return value, ok, nil
+}
+
+func TestRunnerClassifiesOnlyPreparationFailure(t *testing.T) {
+	t.Parallel()
+	cause := errors.New("fixture error")
+	executor := &testExecutor{err: cause}
+	runner := New(&testSessionAccessor{active: &testActiveSession{}}, executor, nil, zerolog.Nop())
+	payload := testTurnPayload()
+	err := runner.RunSessionTurnPayload(context.Background(), payload)
+	var preparation *turncmd.PreparationError
+	if !errors.Is(err, cause) || errors.As(err, &preparation) {
+		t.Fatalf("provider error = %v, want unchanged cause", err)
+	}
+	payload.Skill = &runtimecatalogcmd.SkillSelection{Snapshot: "snapshot-1"}
+	err = runner.RunSessionTurnPayload(context.Background(), payload)
+	if !errors.As(err, &preparation) {
+		t.Fatalf("preparation error = %v, want typed failure", err)
+	}
+	if len(executor.requests) != 1 {
+		t.Fatal("provider called after preparation failed")
+	}
 }

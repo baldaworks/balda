@@ -15,8 +15,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/authpayload"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/rs/zerolog"
 )
 
@@ -32,6 +34,12 @@ const (
 	signatureVersion          = "v0"
 )
 
+// HTTPCallbackReadTimeout preserves the standalone Slack request read limit.
+const HTTPCallbackReadTimeout = webhookReadTimeout
+
+// HTTPCallbackWriteTimeout preserves the standalone Slack response write limit.
+const HTTPCallbackWriteTimeout = webhookWriteTimeout
+
 type Config struct {
 	Enabled       bool
 	ListenAddr    string
@@ -45,6 +53,8 @@ type Server struct {
 	turnCanceller    TurnCanceller
 	commandHandler   commandcmd.Ingress
 	commands         *commandcmd.Registry
+	bindings         BindingAdmitter
+	bindingClient    *Client
 	config           Config
 	logger           zerolog.Logger
 
@@ -52,6 +62,14 @@ type Server struct {
 	ln         net.Listener
 	processSem chan struct{}
 	processWG  sync.WaitGroup
+}
+
+// HTTPCallbacks exposes the existing checked handlers to a shared listener.
+type HTTPCallbacks struct {
+	Events             http.Handler
+	Commands           http.Handler
+	EventsLegacyPath   string
+	CommandsLegacyPath string
 }
 
 type InboundProcessor interface {
@@ -113,21 +131,42 @@ func (h *Server) onStart(context.Context) error {
 }
 
 func (h *Server) httpHandler() (http.Handler, string, string, error) {
-	eventsPath, err := normalizePath(h.config.EventsPath, "/slack/agent/events")
+	callbacks, err := h.callbackHandlers()
 	if err != nil {
 		return nil, "", "", err
+	}
+	mux := http.NewServeMux()
+	mux.Handle(callbacks.EventsLegacyPath, callbacks.Events)
+	mux.Handle(callbacks.CommandsLegacyPath, callbacks.Commands)
+	return mux, callbacks.EventsLegacyPath, callbacks.CommandsLegacyPath, nil
+}
+
+// HTTPCallbacks returns no handlers when Slack Agent HTTP ingress is disabled.
+func (h *Server) HTTPCallbacks() (HTTPCallbacks, error) {
+	if !h.config.Enabled {
+		return HTTPCallbacks{}, nil
+	}
+	return h.callbackHandlers()
+}
+
+func (h *Server) callbackHandlers() (HTTPCallbacks, error) {
+	eventsPath, err := normalizePath(h.config.EventsPath, "/slack/agent/events")
+	if err != nil {
+		return HTTPCallbacks{}, err
 	}
 	commandsPath, err := normalizePath(h.config.CommandsPath, "/slack/commands")
 	if err != nil {
-		return nil, "", "", err
+		return HTTPCallbacks{}, err
 	}
 	if eventsPath == commandsPath {
-		return nil, "", "", fmt.Errorf("slack agent events and commands paths must differ")
+		return HTTPCallbacks{}, fmt.Errorf("slack agent events and commands paths must differ")
 	}
-	mux := http.NewServeMux()
-	mux.HandleFunc(eventsPath, h.handleEvents)
-	mux.HandleFunc(commandsPath, h.handleCommands)
-	return mux, eventsPath, commandsPath, nil
+	return HTTPCallbacks{
+		Events:             http.HandlerFunc(h.handleEvents),
+		Commands:           http.HandlerFunc(h.handleCommands),
+		EventsLegacyPath:   eventsPath,
+		CommandsLegacyPath: commandsPath,
+	}, nil
 }
 
 func (h *Server) onStop(ctx context.Context) error {
@@ -198,16 +237,28 @@ func (h *Server) handleCommands(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	if h.commandHandler == nil {
-		http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
-		return
-	}
 	release, ok := h.acquireProcessSlot()
 	if !ok {
 		http.Error(w, "busy", http.StatusServiceUnavailable)
 		return
 	}
 	defer release()
+	if request.Payload.Name == "start" || authpayload.Contains(request.Payload.Args) {
+		ctx, cancel := context.WithTimeout(r.Context(), commandProcessingTimeout)
+		defer cancel()
+		response := "Open Backoffice Access to generate an account invitation for this Slack workspace."
+		if request.Payload.Name == "start" && authpayload.Contains(request.Payload.Args) {
+			response = h.consumeBinding(ctx, usercmd.BindingProof{Payload: request.Payload.Args, Principal: request.Payload.Principal, Direct: request.Payload.Conversation.Direct, Locator: request.Payload.Locator, Provenance: "slack-signed-command"})
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(response))
+		return
+	}
+	if h.commandHandler == nil {
+		http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), commandProcessingTimeout)
 	defer cancel()
 	request.InvocationID = slackCommandInvocationID(r.Header.Get("X-Slack-Request-Timestamp"), body)
@@ -274,6 +325,19 @@ func (h *Server) processEvent(requestCtx context.Context, env IngressEnvelope) (
 		if err := h.turnCanceller.CancelTurn(ctx, *env.Stopped); err != nil {
 			h.logger.Warn().Err(err).Str("address_key", env.Stopped.Locator.AddressKey).Msg("failed to cancel slackagent turn")
 			return retryInbound(), err
+		}
+		return terminalInbound(), nil
+	}
+	if authpayload.Contains(env.Chat.Text) {
+		response := h.consumeBinding(ctx, usercmd.BindingProof{Payload: env.Chat.Text, Principal: env.Subject, DisplayName: env.InitiatorUserID, Direct: env.Chat.Direct, Locator: env.Locator, Provenance: "slack-signed-event"})
+		if env.Chat.Direct && h.bindingClient != nil {
+			address, _, err := DecodeLocator(env.Locator)
+			if err != nil {
+				return terminalInbound(), nil
+			}
+			if _, err := h.bindingClient.PostMessage(ctx, address.ConversationID, "", response, false); err != nil {
+				return retryInbound(), fmt.Errorf("send binding outcome: %w", err)
+			}
 		}
 		return terminalInbound(), nil
 	}

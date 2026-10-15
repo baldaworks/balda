@@ -10,10 +10,37 @@ import (
 type Registry struct {
 	mu       sync.RWMutex
 	commands map[string]map[string]struct{}
+	builtins map[string]map[string]struct{}
 }
 
 // NewRegistry creates an empty dynamic alias registry.
-func NewRegistry() *Registry { return &Registry{commands: make(map[string]map[string]struct{})} }
+func NewRegistry() *Registry {
+	return &Registry{commands: make(map[string]map[string]struct{}), builtins: make(map[string]map[string]struct{})}
+}
+
+// NewRegistryWithAdvertisements creates the registry from the command surface
+// declared by commandfx transport advertisements. Concrete transports consult
+// this registry instead of maintaining their own command whitelists.
+func NewRegistryWithAdvertisements(advertisements []Advertisement) *Registry {
+	registry := NewRegistry()
+	for _, advertisement := range advertisements {
+		if !advertisement.Enabled {
+			continue
+		}
+		transport := strings.ToLower(strings.TrimSpace(advertisement.Transport))
+		if transport == "" {
+			continue
+		}
+		names := make(map[string]struct{}, len(advertisement.Names))
+		for _, command := range advertisement.Names {
+			if command = strings.ToLower(strings.TrimSpace(command)); command != "" {
+				names[command] = struct{}{}
+			}
+		}
+		registry.builtins[transport] = names
+	}
+	return registry
+}
 
 // Replace atomically replaces one transport's dynamic aliases.
 func (r *Registry) Replace(transport string, projection AdvertisementProjection) {
@@ -37,7 +64,12 @@ func (r *Registry) Supports(transport, name string) bool {
 		return false
 	}
 	r.mu.RLock()
-	_, ok := r.commands[strings.ToLower(strings.TrimSpace(transport))][strings.ToLower(strings.TrimSpace(name))]
+	transport = strings.ToLower(strings.TrimSpace(transport))
+	name = strings.ToLower(strings.TrimSpace(name))
+	_, ok := r.builtins[transport][name]
+	if !ok {
+		_, ok = r.commands[transport][name]
+	}
 	r.mu.RUnlock()
 	return ok
 }

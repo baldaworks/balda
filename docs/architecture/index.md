@@ -47,9 +47,13 @@ Use this map to find the authoritative runtime contracts.
   `CommandActor`.
 - `actorcmd` is the canonical leaf package for Balda actor targets, namespaces, subjects, headers, and job scope metadata; `execution` re-exports that taxonomy as the runtime-facing compatibility facade.
 - `deliverycmd` is the leaf package for transport-neutral delivery contracts: locator, opaque delivery capability, progress policy, delivery payloads, and adapter-facing delivery operations. `deliveryfmt` resolves that capability through one immutable registry shared by prompt and delivery paths.
+- `state` owns storage, read models, and embedded Goose schema/data upgrades,
+  including canonical user conversion. Backoffice owns credential bootstrap and
+  administrator readiness after the provider has opened.
 - `session` owns session lifecycle and restore semantics, but does not own transport delivery contracts.
 - `channel/*` packages are concrete transport adapters only. They must not define shared cross-transport contracts and must not import Balda application/session internals for convenience.
-- `chatapp` and `webhookapp` own ingress normalization, authorization/session preconditions, and durable publish; `commandfx` owns command publication; `handlersfx` is the composition boundary that binds transport ports to concrete provider runtimes.
+- `chatapp` owns conversational ingress preconditions and durable session publication. `webhookapp` owns webhook admission and private job publication behind a port consumed by `channel/webhook`; `webhookfx` composes them. `commandfx` owns command publication; `handlersfx` binds conversational transport ports to concrete provider runtimes.
+- `internal/apps/balda/httpfx` owns only the checked shared HTTP listener and route registry. Backoffice, generic webhook, and chat transport packages keep their own handlers, authentication, and admission policy. `balda.http.base_path` places them in sibling `/backoffice`, `/webhooks`, and `/gateway` areas.
 - `locatorref` owns the public `<channel_type>:<address_key>` reference form and must stay independent from concrete transport adapter packages.
 - Use-case packages such as `sessionturn` and MCP surfaces own local ports and depend on small interfaces; composition/wiring code provides concrete adapters.
 - `sessionturn` owns queued-turn restoration and delegates provider iteration through a narrow executor port.
@@ -61,8 +65,8 @@ Use this map to find the authoritative runtime contracts.
   `sessionmemory/index/bleve` is a rebuildable projection. Neither adapter
   owns Balda transport or global fact-memory policy.
 - `internal/apps/balda/memory` remains the separate owner of global
-  `balda.memory.read` and `balda.memory.remember`; session-memory migration
-  work must not move or delete that subsystem.
+  `balda.memory.read`, `balda.memory.remember` and explicit fact management;
+  session-memory migration work must not move or delete that subsystem.
 - The neutral bundled MCP names are `session_memory.search` and
   `session_memory.trace`. Scope is injected by Balda's authenticated context;
   locators are not tool arguments.
@@ -108,6 +112,10 @@ neutral MCP adapter returns bounded untrusted references.
 - `internal/apps/balda/chatapp`
 - `internal/apps/balda/channel/webhook`
 - `internal/apps/balda/webhookapp`
+- `internal/apps/balda/webhookfx`
+- `internal/apps/balda/httpfx`
+- `internal/apps/balda/aliases`
+- `internal/apps/balda/aliasfx`
 - `internal/apps/balda/handlersfx`
 - `internal/apps/balda/agent`
 - `internal/apps/balda/session`
@@ -127,3 +135,96 @@ neutral MCP adapter returns bounded untrusted references.
 - Startup or transport lifecycle changes.
 - Changes to retries, dedupe, or DLQ semantics.
 - New ingress or actor execution paths.
+
+Backoffice MCP pages consume local `MCPOperations` and `MCPAuthorizations` ports. The dedicated
+`mcpbackofficeapp` composition adapter connects it to `mcpmanage` definition,
+credential and durable authority policy and `catalogapp` current recovery and
+readiness reads. HTML projections depend only on `mcpcmd` contracts; the
+Backoffice application does not import either host policy owner. Runtime
+failure evidence remains in `mcpruntime`, while recovery classification remains
+in the catalog owner. Browser input does not supply configuration captures or
+worker authorization evidence.
+
+Backoffice Fact memory pages consume a local `FactMemoryOperations` port through
+`memorybackofficeapp`. The `memory` owner uses the existing global Store shared
+with MCP, the memory actor and runtime snapshot readers; its mutex serializes
+accepted writes in this process. `memorycmd` carries neutral values, while
+`state` guards UI changes against current administrator browser authority and
+the persisted global version in the same app-KV/audit transaction. There is no
+separate memory source or schema migration. Edit/delete preserve creation IDs
+and require the loaded global version. The runtime consumes complete current
+snapshots, including initialized empty records, without resetting sessions or
+removing historical messages.
+
+Backoffice Schedules pages consume a local `SchedulesOperations` port. The
+`schedulebackofficeapp` composition adapter connects it to `scheduledjobs`,
+which owns source reconciliation, UTC cron, optional report reference
+validation, managed definition policy, durable run admission and dispatch.
+`schedulecmd` holds the
+transport-neutral management values used by Backoffice projections. `state`
+owns the SQL source/version and administrator authority fences, run ledger,
+and audit transaction. Configuration rows remain host-owned; Backoffice may
+read or manually run them, while definition mutations require managed source.
+Scheduler dispatch checks the selected definition before publication and
+cannot overwrite a concurrent administrator edit, disable or delete.
+
+Backoffice Aliases pages consume a local `AliasesOperations` port through
+`aliasbackofficeapp`. The `aliases` application service owns managed name and
+public locator policy; `state` owns guarded persistence. `aliasfx` composes
+managed lookup with the existing role-alias resolver. Schedule and webhook
+admission select a concrete report locator through that transport-neutral
+boundary; durable run/admission snapshots, rather than later alias reads, own
+retries and delivery. Webhook HTTP parsing stays in `channel/webhook`, admission
+policy in `webhookapp`, and composition in `webhookfx`.
+
+Backoffice Webhooks pages consume a local `WebhooksOperations` port through
+`webhookbackofficeapp`. `webhookmanagement` owns route validation, generated
+secret rotation, source reconciliation and versioned mutations;
+`webhookroutecmd` carries transport-neutral definitions plus the shared slug
+validation and canonical-path formatter; definitions contain no per-route path.
+`state` owns route rows, secret verifiers, request-history queries and
+administrator authority/audit transactions. For each new HTTP request,
+`webhookapp` selects the current config definition or looks up an active managed
+route by canonical slug through a small store port, then owns authentication,
+template rendering, deduplication and durable admission. `channel/webhook` remains an
+HTTP adapter; `webhookfx` binds it to policy and the shared state provider.
+
+Native worker OAuth stays in the same owners: `mcpmanage.Authorizations` keeps
+bounded transient attempts and composes grant installation with exact revision
+binding outside protocol locks; `state` fences the initiating revision with
+current authority and grant generation in its existing transaction. The
+Backoffice adapter starts through trusted `Definitions.PrepareAuthorization` and
+projects stored authorization separately from catalog readiness. The browser
+handles native redirects and one-time device instructions, with no persistent
+attempt recovery or Backoffice-owned completion policy.
+
+`mcpbridge` owns private HTTP/SSE credential forwarding for header-bearing and
+OAuth connections; hosted and ACP execution share the same captured catalog
+binding. ACP projections expose only the local endpoint and capability.
+Deployment-key validation includes retained revisions and grants before provider
+startup. `state` owns native SQLite file URI normalization and durable reopen;
+the existing native platform workflow exercises real files and MCP contracts.
+
+Backoffice Plugins pages consume a local `PluginsOperations` port through
+`pluginbackofficeapp`, bound to the same global `pluginapp.Service` used by chat.
+`pluginapp` owns accepted discovery, locked origins, staged lifecycle and retained
+contribution inspection; `state` owns browser authority, full-state comparisons,
+generation tombstones and atomic audit/activation persistence. Browser reads do
+not fetch sources or change discovery/cache state. Command and skill projections
+contain only names/descriptions; MCP projections contain only names/transports.
+Disabled plugins remain inspectable from their retained revision. Catalog-owner
+status reaches the adapter through a narrow read port and remains separate from
+Enabled and pending durable activation. Backoffice does not import plugin policy,
+catalog implementations or command wiring. Publication failures retain the
+accepted intent for ordinary recovery; operations never reset session pins or
+remove retained packages.
+
+Managed agent lifecycle policy lives in `hooks` behind `hookcmd` contracts.
+`state` owns guarded KV/audit writes; `hookfx` supplies consuming ports in
+`session` and `sessionturnapp`, and `hookbackofficeapp` adapts management to
+Backoffice. See [Managed agent hooks](../reference/agent-hooks.md).
+
+Native hook adaptation is owned by `hookprovider`; private binding/process
+lifetimes are released with the session agent. `agent` and `catalogapp` connect
+through consumer ports and immutable launch defaults. Architecture rules keep
+these adapters independent of transport, session and storage implementations.

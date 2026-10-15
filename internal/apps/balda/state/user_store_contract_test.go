@@ -1,0 +1,534 @@
+//go:build integration && (sqlite || postgres)
+
+package state
+
+import (
+	"database/sql"
+	"errors"
+	"fmt"
+	"reflect"
+	"slices"
+	"sort"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
+)
+
+func checkUserStoreCanonicalLifecycle(t *testing.T, open contractOpener) {
+	provider := newContractProvider(t, open)
+	defer closeContractProvider(t, provider)
+	store := provider.Users()
+	now := time.Date(2026, 9, 23, 1, 0, 0, 0, time.UTC)
+
+	first := contractUser("admin-1", "admin.one", true, now)
+	second := contractUser("admin-2", "admin.two", false, now)
+	if err := store.CreateUser(t.Context(), first, contractSecret(first.ID), contractAudit("audit-create-1", usercmd.AuditActionCredentialChanged, first.ID, now)); err != nil {
+		t.Fatalf("CreateUser(first) error = %v", err)
+	}
+	if err := store.CreateUser(t.Context(), second, contractSecret(second.ID), contractAudit("audit-create-2", usercmd.AuditActionCredentialChanged, second.ID, now)); err != nil {
+		t.Fatalf("CreateUser(second) error = %v", err)
+	}
+	duplicate := contractUser("duplicate", first.NormalizedUsername, false, now)
+	if err := store.CreateUser(t.Context(), duplicate, contractSecret(duplicate.ID), contractAudit("audit-duplicate", usercmd.AuditActionCredentialChanged, duplicate.ID, now)); !errors.Is(err, usercmd.ErrConflict) {
+		t.Fatalf("CreateUser(duplicate) error = %v, want ErrConflict", err)
+	}
+
+	got, found, err := store.GetUserByNormalizedUsername(t.Context(), first.NormalizedUsername)
+	if err != nil || !found || got.ID != first.ID || got.Binding != nil {
+		t.Fatalf("GetUserByNormalizedUsername() = %+v, %t, %v", got, found, err)
+	}
+	secret, found, err := store.GetCredentialSecret(t.Context(), first.ID)
+	if err != nil || !found || secret.PasswordHash != contractSecret(first.ID).PasswordHash {
+		t.Fatalf("GetCredentialSecret() = %+v, %t, %v", secret, found, err)
+	}
+	page, err := store.ListUsers(t.Context(), usercmd.PageRequest{Limit: 1})
+	if err != nil || len(page.Users) != 1 || page.NextAfterID == "" {
+		t.Fatalf("ListUsers(first page) = %+v, %v", page, err)
+	}
+	next, err := store.ListUsers(t.Context(), usercmd.PageRequest{AfterID: page.NextAfterID, Limit: 1})
+	if err != nil || len(next.Users) != 1 || next.Users[0].ID == page.Users[0].ID {
+		t.Fatalf("ListUsers(second page) = %+v, %v", next, err)
+	}
+
+	claim := usercmd.BindingClaim{ID: "claim-1", UserID: first.ID, ChannelType: "telegram", ExpiresAt: now.Add(time.Hour)}
+	if err := store.CreateBindingClaim(t.Context(), claim, now, contractAudit("audit-claim", usercmd.AuditActionBindingAttached, first.ID, now)); err != nil {
+		t.Fatalf("CreateBindingClaim() error = %v", err)
+	}
+	binding := usercmd.Binding{
+		ID: "binding-1", UserID: first.ID, ChannelType: "telegram", Principal: "101",
+		DisplayName: "Admin One", Provenance: "verified", CreatedAt: now, UpdatedAt: now,
+	}
+	if err := store.AttachBinding(t.Context(), claim.ID, binding, now.Add(time.Minute), contractAudit("audit-binding", usercmd.AuditActionBindingAttached, binding.ID, now)); err != nil {
+		t.Fatalf("AttachBinding() error = %v", err)
+	}
+	bound, found, err := store.GetUserByBinding(t.Context(), "telegram", "101")
+	if err != nil || !found || bound.ID != first.ID || bound.Binding == nil || bound.Binding.ID != binding.ID {
+		t.Fatalf("GetUserByBinding() = %+v, %t, %v", bound, found, err)
+	}
+	secondClaim := usercmd.BindingClaim{ID: "claim-2", UserID: first.ID, ChannelType: "zulip", ExpiresAt: now.Add(time.Hour)}
+	if err := store.CreateBindingClaim(t.Context(), secondClaim, now, contractAudit("audit-claim-2", usercmd.AuditActionBindingClaimCreated, first.ID, now)); err != nil {
+		t.Fatalf("CreateBindingClaim(second) error = %v", err)
+	}
+	secondBinding := usercmd.Binding{ID: "binding-2", UserID: first.ID, ChannelType: "zulip", Principal: "202", CreatedAt: now, UpdatedAt: now}
+	if err := store.AttachBinding(t.Context(), secondClaim.ID, secondBinding, now.Add(time.Minute), contractAudit("audit-binding-2", usercmd.AuditActionBindingAttached, secondBinding.ID, now)); err != nil {
+		t.Fatalf("AttachBinding(second) error = %v", err)
+	}
+	bound, found, err = store.GetUserByBinding(t.Context(), "zulip", "202")
+	if err != nil || !found || bound.ID != first.ID || len(bound.Bindings) != 2 {
+		t.Fatalf("GetUserByBinding(second) = %+v, %t, %v", bound, found, err)
+	}
+	if err := store.AttachBinding(t.Context(), claim.ID, binding, now.Add(2*time.Minute), contractAudit("audit-binding-reuse", usercmd.AuditActionBindingAttached, binding.ID, now)); !errors.Is(err, usercmd.ErrBindingClaimUnavailable) {
+		t.Fatalf("AttachBinding(reused claim) error = %v, want ErrBindingClaimUnavailable", err)
+	}
+
+	demoted := second
+	demoted.Role = usercmd.RoleOperator
+	demoted.Version = 2
+	if err := store.UpdateUser(t.Context(), demoted, 99, contractAudit("audit-stale", usercmd.AuditActionUserRoleChanged, second.ID, now)); !errors.Is(err, usercmd.ErrConflict) {
+		t.Fatalf("UpdateUser(stale) error = %v, want ErrConflict", err)
+	}
+	if err := store.UpdateUser(t.Context(), demoted, 1, contractAudit("audit-demote-2", usercmd.AuditActionUserRoleChanged, second.ID, now)); err != nil {
+		t.Fatalf("UpdateUser(second demotion) error = %v", err)
+	}
+	lastAdmin := first
+	lastAdmin.Status = usercmd.StatusDisabled
+	lastAdmin.Version = 2
+	if err := store.UpdateUser(t.Context(), lastAdmin, 1, contractAudit("audit-disable-1", usercmd.AuditActionUserStatusChanged, first.ID, now)); !errors.Is(err, usercmd.ErrLastAdministrator) {
+		t.Fatalf("UpdateUser(last administrator) error = %v, want ErrLastAdministrator", err)
+	}
+
+	type updateOutcome struct{ err error }
+	updates := make(chan updateOutcome, 2)
+	var updateWG sync.WaitGroup
+	for i := range 2 {
+		updateWG.Add(1)
+		go func() {
+			defer updateWG.Done()
+			candidate := first
+			candidate.DisplayName = fmt.Sprintf("Concurrent %d", i)
+			candidate.Version = 2
+			candidate.UpdatedAt = now.Add(time.Duration(i+1) * time.Minute)
+			updates <- updateOutcome{err: store.UpdateUser(
+				t.Context(), candidate, 1,
+				contractAudit(fmt.Sprintf("audit-concurrent-%d", i), usercmd.AuditActionUserStatusChanged, first.ID, candidate.UpdatedAt),
+			)}
+		}()
+	}
+	updateWG.Wait()
+	close(updates)
+	var updateSuccesses, updateConflicts int
+	for outcome := range updates {
+		switch {
+		case outcome.err == nil:
+			updateSuccesses++
+		case errors.Is(outcome.err, usercmd.ErrConflict):
+			updateConflicts++
+		default:
+			t.Fatalf("UpdateUser(concurrent) error = %v", outcome.err)
+		}
+	}
+	if updateSuccesses != 1 || updateConflicts != 1 {
+		t.Fatalf("concurrent updates successes/conflicts = %d/%d, want 1/1", updateSuccesses, updateConflicts)
+	}
+
+	rolledBack := contractUser("rolled-back", "rolled.back", false, now)
+	err = store.CreateUser(
+		t.Context(), rolledBack, contractSecret(rolledBack.ID),
+		contractAudit("audit-create-1", usercmd.AuditActionCredentialChanged, rolledBack.ID, now),
+	)
+	if !errors.Is(err, usercmd.ErrConflict) {
+		t.Fatalf("CreateUser(duplicate audit) error = %v, want ErrConflict", err)
+	}
+	if _, found, err := store.GetUser(t.Context(), rolledBack.ID); err != nil || found {
+		t.Fatalf("audit-failed user found = %t, error = %v", found, err)
+	}
+
+	auditPage, err := store.ListAuditEvents(t.Context(), usercmd.PageRequest{Limit: usercmd.MaxPageSize})
+	if err != nil {
+		t.Fatalf("ListAuditEvents() error = %v", err)
+	}
+	if len(auditPage.Events) != 8 {
+		t.Fatalf("committed audit events = %d, want 8", len(auditPage.Events))
+	}
+}
+
+func checkManagedBindings(t *testing.T, open contractOpener) {
+	provider := newContractProvider(t, open)
+	defer closeContractProvider(t, provider)
+	store := provider.Users()
+	now := time.Date(2026, 9, 23, 1, 0, 0, 0, time.UTC)
+	user := contractUser("managed-admin", "managed.admin", true, now)
+	if err := store.CreateUser(t.Context(), user, contractSecret(user.ID), contractAudit("managed-create", usercmd.AuditActionUserCreated, user.ID, now)); err != nil {
+		t.Fatal(err)
+	}
+	first := usercmd.Binding{ID: "managed-telegram", UserID: user.ID, ChannelType: "telegram", Principal: "101", CreatedAt: now, UpdatedAt: now}
+	second := usercmd.Binding{ID: "managed-zulip", UserID: user.ID, ChannelType: "zulip", Principal: "202", CreatedAt: now, UpdatedAt: now}
+	if err := store.CreateManagedBinding(t.Context(), first, 1, contractAudit("managed-attach-1", usercmd.AuditActionBindingAttached, first.ID, now)); err != nil {
+		t.Fatalf("CreateManagedBinding(first): %v", err)
+	}
+	if err := store.CreateManagedBinding(t.Context(), second, 1, contractAudit("managed-stale", usercmd.AuditActionBindingAttached, second.ID, now)); !errors.Is(err, usercmd.ErrConflict) {
+		t.Fatalf("CreateManagedBinding(stale) = %v, want ErrConflict", err)
+	}
+	if err := store.CreateManagedBinding(t.Context(), second, 2, contractAudit("managed-attach-2", usercmd.AuditActionBindingAttached, second.ID, now)); err != nil {
+		t.Fatalf("CreateManagedBinding(second): %v", err)
+	}
+	changed, err := store.UpdateTelegramBindingProfile(t.Context(), "101", "handle", "Alice", now.Add(time.Minute))
+	if err != nil || !changed {
+		t.Fatalf("UpdateTelegramBindingProfile() = %t, %v", changed, err)
+	}
+	changed, err = store.UpdateTelegramBindingProfile(t.Context(), "101", "handle", "Alice", now.Add(2*time.Minute))
+	if err != nil || changed {
+		t.Fatalf("unchanged Telegram profile update = %t, %v", changed, err)
+	}
+	got, found, err := store.GetUser(t.Context(), user.ID)
+	if err != nil || !found || got.Version != 3 || len(got.Bindings) != 2 {
+		t.Fatalf("GetUser(multiple bindings) = %+v, %t, %v", got, found, err)
+	}
+	if got.Bindings[0].ProviderUsername != "handle" || got.Bindings[0].ProviderFirstName != "Alice" || got.Username != user.Username {
+		t.Fatalf("Telegram profile changed canonical identity: %+v", got)
+	}
+	if err := store.DeleteBinding(t.Context(), user.ID, first.ID, 2, contractAudit("managed-delete-stale", usercmd.AuditActionBindingDetached, first.ID, now)); !errors.Is(err, usercmd.ErrConflict) {
+		t.Fatalf("DeleteBinding(stale) = %v, want ErrConflict", err)
+	}
+	if err := store.DeleteBinding(t.Context(), user.ID, first.ID, 3, contractAudit("managed-delete", usercmd.AuditActionBindingDetached, first.ID, now)); err != nil {
+		t.Fatalf("DeleteBinding(first): %v", err)
+	}
+	if _, found, err := store.GetUserByBinding(t.Context(), "telegram", "101"); err != nil || found {
+		t.Fatalf("removed principal still resolves: found=%t err=%v", found, err)
+	}
+	got, found, err = store.GetUserByBinding(t.Context(), "zulip", "202")
+	if err != nil || !found || got.Version != 4 || len(got.Bindings) != 1 {
+		t.Fatalf("remaining principal = %+v, %t, %v", got, found, err)
+	}
+	changed, err = store.UpdateTelegramBindingProfile(t.Context(), "101", "handle", "Alice", now.Add(time.Minute))
+	if err != nil || changed {
+		t.Fatalf("removed Telegram profile update = %t, %v", changed, err)
+	}
+}
+
+func checkUserStoreRefreshRotationAndReplay(t *testing.T, open contractOpener) {
+	provider := newContractProvider(t, open)
+	defer closeContractProvider(t, provider)
+	store := provider.Users()
+	now := time.Date(2026, 9, 23, 2, 0, 0, 0, time.UTC)
+	user := contractUser("admin-1", "admin.one", true, now)
+	if err := store.CreateUser(t.Context(), user, contractSecret(user.ID), contractAudit("audit-create", usercmd.AuditActionCredentialChanged, user.ID, now)); err != nil {
+		t.Fatalf("CreateUser() error = %v", err)
+	}
+
+	family := contractSessionFamily(user.ID, now)
+	if err := store.CreateSession(t.Context(), family, contractAudit("audit-login", usercmd.AuditActionCredentialChanged, family.ID, now)); err != nil {
+		t.Fatalf("CreateSession() error = %v", err)
+	}
+	access, found, err := store.GetSessionByAccessSelector(t.Context(), family.Access.Selector)
+	if err != nil || !found || access.Family.ID != family.ID || access.User.ID != user.ID {
+		t.Fatalf("GetSessionByAccessSelector() = %+v, %t, %v", access, found, err)
+	}
+
+	rotation := usercmd.RefreshRotation{
+		Selector: family.RefreshTokens[0].Selector, PresentedVerifierDigest: family.RefreshTokens[0].VerifierDigest,
+		Access: usercmd.AccessCredential{Selector: "access-2", VerifierDigest: []byte("access-digest-2"), ExpiresAt: now.Add(30 * time.Minute)},
+		Refresh: usercmd.RefreshToken{
+			Selector: "refresh-2", VerifierDigest: []byte("refresh-digest-2"), Generation: 2,
+			State: usercmd.RefreshTokenStateActive, IssuedAt: now.Add(15 * time.Minute), ExpiresAt: family.RefreshExpiresAt.Add(15 * time.Minute),
+		},
+		RotatedAt:    now.Add(15 * time.Minute),
+		SuccessAudit: contractAudit("audit-refresh", usercmd.AuditActionSessionRevoked, family.ID, now.Add(15*time.Minute)),
+		ReplayAudit:  contractAudit("audit-replay", usercmd.AuditActionSessionRevoked, family.ID, now.Add(16*time.Minute)),
+	}
+	// Failure after consuming/updating must roll back the entire renewal.
+	failed := rotation
+	failed.SuccessAudit.ID = "audit-login"
+	if _, err := store.RotateRefresh(t.Context(), failed); err == nil {
+		t.Fatal("duplicate audit unexpectedly committed renewal")
+	}
+	unchanged, found, err := store.GetSession(t.Context(), family.ID)
+	if err != nil || !found || !reflect.DeepEqual(unchanged, family) {
+		t.Fatalf("failed renewal changed family: %+v, %v", unchanged, err)
+	}
+	stale := rotation
+	stale.RotatedAt = now.Add(-time.Second)
+	if _, err := store.RotateRefresh(t.Context(), stale); !errors.Is(err, usercmd.ErrConflict) {
+		t.Fatalf("stale rotation: %v", err)
+	}
+	unchanged, found, err = store.GetSession(t.Context(), family.ID)
+	if err != nil || !found || !reflect.DeepEqual(unchanged, family) {
+		t.Fatalf("stale renewal changed family: %+v, %v", unchanged, err)
+	}
+	result, err := store.RotateRefresh(t.Context(), rotation)
+	if err != nil || result != usercmd.RefreshRotationSucceeded {
+		t.Fatalf("RotateRefresh() = %q, %v", result, err)
+	}
+	refreshed, found, err := store.GetSessionByRefreshSelector(t.Context(), rotation.Refresh.Selector)
+	if err != nil || !found || refreshed.Token.Generation != 2 || refreshed.Token.State != usercmd.RefreshTokenStateActive {
+		t.Fatalf("GetSessionByRefreshSelector(new) = %+v, %t, %v", refreshed, found, err)
+	}
+	if !refreshed.Family.RefreshExpiresAt.Equal(rotation.Refresh.ExpiresAt) || len(refreshed.Family.RefreshTokens) != 2 {
+		t.Fatalf("rotated family = %+v", refreshed.Family)
+	}
+	if !refreshed.Family.RefreshTokens[0].ExpiresAt.Equal(family.RefreshExpiresAt) {
+		t.Fatal("historical expiry changed")
+	}
+	if err := usercmd.ValidateSessionFamily(refreshed.Family); err != nil {
+		t.Fatal(err)
+	}
+	if refreshed.Family.RefreshTokens[0].State != usercmd.RefreshTokenStateUsed {
+		t.Fatalf("old refresh state = %q, want used", refreshed.Family.RefreshTokens[0].State)
+	}
+
+	result, err = store.RotateRefresh(t.Context(), rotation)
+	if err != nil || result != usercmd.RefreshRotationConcurrent {
+		t.Fatalf("RotateRefresh(duplicate) = %q, %v", result, err)
+	}
+	rotation.RotatedAt = now.Add(14 * time.Minute)
+	result, err = store.RotateRefresh(t.Context(), rotation)
+	if err != nil || result != usercmd.RefreshRotationConcurrent {
+		t.Fatalf("out-of-order duplicate: %q, %v", result, err)
+	}
+	unchanged, found, err = store.GetSession(t.Context(), family.ID)
+	if err != nil || !found || !reflect.DeepEqual(unchanged, refreshed.Family) {
+		t.Fatalf("duplicate changed family: %+v, %v", unchanged, err)
+	}
+	rotation.RotatedAt = now.Add(16 * time.Minute)
+	result, err = store.RotateRefresh(t.Context(), rotation)
+	if err != nil || result != usercmd.RefreshRotationReplayRevoked {
+		t.Fatalf("RotateRefresh(replay) = %q, %v", result, err)
+	}
+	revoked, found, err := store.GetSessionByRefreshSelector(t.Context(), rotation.Refresh.Selector)
+	if err != nil || !found || revoked.Family.RevokedAt.IsZero() || revoked.Token.State != usercmd.RefreshTokenStateRevoked {
+		t.Fatalf("replayed family = %+v, %t, %v", revoked, found, err)
+	}
+
+	result, err = store.RotateRefresh(t.Context(), usercmd.RefreshRotation{
+		Selector: rotation.Refresh.Selector, PresentedVerifierDigest: []byte("wrong"), RotatedAt: now.Add(17 * time.Minute),
+	})
+	if err != nil || result != usercmd.RefreshRotationUnavailable {
+		t.Fatalf("RotateRefresh(wrong verifier) = %q, %v", result, err)
+	}
+
+	deleted, err := store.DeleteExpiredSessions(t.Context(), family.RefreshExpiresAt.Add(time.Hour), 1)
+	if err != nil || deleted != 1 {
+		t.Fatalf("DeleteExpiredSessions() = %d, %v", deleted, err)
+	}
+	_, found, err = store.GetSessionByAccessSelector(t.Context(), rotation.Access.Selector)
+	if err != nil || found {
+		t.Fatalf("deleted session found = %t, error = %v", found, err)
+	}
+}
+
+func checkUserStoreCredentialAndSessionRevocation(t *testing.T, open contractOpener) {
+	provider := newContractProvider(t, open)
+	defer closeContractProvider(t, provider)
+	store := provider.Users()
+	now := time.Date(2026, 9, 23, 3, 0, 0, 0, time.UTC)
+	user := contractUser("admin-1", "admin.one", true, now)
+	if err := store.CreateUser(t.Context(), user, contractSecret(user.ID), contractAudit("audit-create", usercmd.AuditActionCredentialChanged, user.ID, now)); err != nil {
+		t.Fatalf("CreateUser() error = %v", err)
+	}
+
+	staleFamily := contractSessionFamily(user.ID, now)
+	staleFamily.ID = "stale-session"
+	staleFamily.CredentialVersion = 2
+	if err := store.CreateSession(t.Context(), staleFamily, contractAudit("audit-stale-session", usercmd.AuditActionCredentialChanged, staleFamily.ID, now)); !errors.Is(err, usercmd.ErrSessionUnavailable) {
+		t.Fatalf("CreateSession(stale credential) error = %v, want ErrSessionUnavailable", err)
+	}
+
+	family := contractSessionFamily(user.ID, now)
+	if err := store.CreateSession(t.Context(), family, contractAudit("audit-login", usercmd.AuditActionCredentialChanged, family.ID, now)); err != nil {
+		t.Fatalf("CreateSession() error = %v", err)
+	}
+	nextCredential := usercmd.Credential{State: usercmd.CredentialStateActive, Version: 2}
+	nextSecret := usercmd.CredentialSecret{UserID: user.ID, PasswordHash: "replacement-hash"}
+	changedAt := now.Add(time.Hour)
+	conflictingSession := contractSessionFamily(user.ID, changedAt)
+	conflictingSession.ID = "replacement-session"
+	conflictingSession.CredentialVersion = 2
+	conflictingSession.Access.Selector = family.Access.Selector
+	conflictingSession.RefreshTokens[0].Selector = "replacement-refresh"
+	err := store.ChangeCredentialAndCreateSession(t.Context(), usercmd.CredentialSessionChange{
+		UserID: user.ID, ExpectedUserVersion: 1, ExpectedCredentialVersion: 1,
+		Credential: nextCredential, Secret: nextSecret, RevokedAt: changedAt,
+		Session:         conflictingSession,
+		CredentialAudit: contractAudit("audit-password-rollback", usercmd.AuditActionCredentialChanged, user.ID, changedAt),
+		SessionAudit:    contractAudit("audit-session-rollback", usercmd.AuditActionLoginSucceeded, conflictingSession.ID, changedAt),
+	})
+	if !errors.Is(err, usercmd.ErrConflict) {
+		t.Fatalf("ChangeCredentialAndCreateSession(conflict) error = %v, want ErrConflict", err)
+	}
+	unchanged, found, err := store.GetUser(t.Context(), user.ID)
+	if err != nil || !found || unchanged.Version != 1 || unchanged.Credential.Version != 1 {
+		t.Fatalf("GetUser(after rollback) = %+v, %t, %v", unchanged, found, err)
+	}
+	stillActive, found, err := store.GetSessionByAccessSelector(t.Context(), family.Access.Selector)
+	if err != nil || !found || !stillActive.Family.RevokedAt.IsZero() {
+		t.Fatalf("session after rollback = %+v, %t, %v", stillActive, found, err)
+	}
+	if err := store.ChangeCredential(
+		t.Context(), user.ID, 1, 1, nextCredential, nextSecret, changedAt,
+		contractAudit("audit-password", usercmd.AuditActionCredentialChanged, user.ID, changedAt),
+	); err != nil {
+		t.Fatalf("ChangeCredential() error = %v", err)
+	}
+	changed, found, err := store.GetUser(t.Context(), user.ID)
+	if err != nil || !found || changed.Version != 2 || changed.Credential.Version != 2 {
+		t.Fatalf("GetUser(changed credential) = %+v, %t, %v", changed, found, err)
+	}
+	secret, found, err := store.GetCredentialSecret(t.Context(), user.ID)
+	if err != nil || !found || secret.PasswordHash != nextSecret.PasswordHash {
+		t.Fatalf("GetCredentialSecret(changed) = %+v, %t, %v", secret, found, err)
+	}
+	revoked, found, err := store.GetSessionByAccessSelector(t.Context(), family.Access.Selector)
+	if err != nil || !found || !revoked.Family.RevokedAt.Equal(changedAt) ||
+		revoked.Family.RefreshTokens[0].State != usercmd.RefreshTokenStateRevoked {
+		t.Fatalf("credential-revoked family = %+v, %t, %v", revoked, found, err)
+	}
+
+	second := contractSessionFamily(user.ID, changedAt.Add(time.Minute))
+	second.ID = "session-2"
+	second.CredentialVersion = 2
+	second.Access.Selector = "access-session-2"
+	second.RefreshTokens[0].Selector = "refresh-session-2"
+	if err := store.CreateSession(t.Context(), second, contractAudit("audit-login-2", usercmd.AuditActionCredentialChanged, second.ID, second.CreatedAt)); err != nil {
+		t.Fatalf("CreateSession(second) error = %v", err)
+	}
+	if err := store.RevokeSession(
+		t.Context(), second.ID, 99, changedAt.Add(2*time.Minute), "administrative revocation",
+		contractAudit("audit-revoke-stale", usercmd.AuditActionSessionRevoked, second.ID, changedAt),
+	); !errors.Is(err, usercmd.ErrConflict) {
+		t.Fatalf("RevokeSession(stale) error = %v, want ErrConflict", err)
+	}
+	if err := store.RevokeSession(
+		t.Context(), second.ID, 1, changedAt.Add(2*time.Minute), "administrative revocation",
+		contractAudit("audit-revoke", usercmd.AuditActionSessionRevoked, second.ID, changedAt.Add(2*time.Minute)),
+	); err != nil {
+		t.Fatalf("RevokeSession() error = %v", err)
+	}
+	sessions, err := store.ListSessions(t.Context(), user.ID, usercmd.PageRequest{Limit: usercmd.MaxPageSize})
+	if err != nil || len(sessions.Sessions) != 2 {
+		t.Fatalf("ListSessions() = %+v, %v", sessions, err)
+	}
+	if sessions.Sessions[1].Version != 2 {
+		t.Fatalf("revoked session version = %d, want 2", sessions.Sessions[1].Version)
+	}
+}
+
+func checkUserStoreConcurrentRefreshReplay(t *testing.T, open contractOpener) {
+	provider := newContractProvider(t, open)
+	defer closeContractProvider(t, provider)
+	store := provider.Users()
+	now := time.Date(2026, 9, 23, 4, 0, 0, 0, time.UTC)
+	user := contractUser("admin-1", "admin.one", true, now)
+	if err := store.CreateUser(t.Context(), user, contractSecret(user.ID), contractAudit("audit-create", usercmd.AuditActionCredentialChanged, user.ID, now)); err != nil {
+		t.Fatalf("CreateUser() error = %v", err)
+	}
+	family := contractSessionFamily(user.ID, now)
+	if err := store.CreateSession(t.Context(), family, contractAudit("audit-login", usercmd.AuditActionCredentialChanged, family.ID, now)); err != nil {
+		t.Fatalf("CreateSession() error = %v", err)
+	}
+	base := usercmd.RefreshRotation{
+		Selector: family.RefreshTokens[0].Selector, PresentedVerifierDigest: family.RefreshTokens[0].VerifierDigest,
+		Access: usercmd.AccessCredential{Selector: "access-2", VerifierDigest: []byte("access-digest-2"), ExpiresAt: now.Add(30 * time.Minute)},
+		Refresh: usercmd.RefreshToken{
+			Selector: "refresh-2", VerifierDigest: []byte("refresh-digest-2"), Generation: 2,
+			State: usercmd.RefreshTokenStateActive, IssuedAt: now.Add(15 * time.Minute), ExpiresAt: family.RefreshExpiresAt.Add(15 * time.Minute),
+		},
+		RotatedAt:    now.Add(15 * time.Minute),
+		SuccessAudit: contractAudit("audit-refresh", usercmd.AuditActionSessionRevoked, family.ID, now.Add(15*time.Minute)),
+	}
+
+	type outcome struct {
+		result usercmd.RefreshRotationResult
+		err    error
+	}
+	outcomes := make(chan outcome, 2)
+	var wg sync.WaitGroup
+	for i := range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			rotation := base
+			rotation.ReplayAudit = contractAudit(
+				fmt.Sprintf("audit-replay-%d", i), usercmd.AuditActionSessionRevoked, family.ID, now.Add(16*time.Minute),
+			)
+			result, err := store.RotateRefresh(t.Context(), rotation)
+			outcomes <- outcome{result: result, err: err}
+		}()
+	}
+	wg.Wait()
+	close(outcomes)
+	var results []string
+	for got := range outcomes {
+		if got.err != nil {
+			t.Fatalf("RotateRefresh(concurrent) error = %v", got.err)
+		}
+		results = append(results, string(got.result))
+	}
+	sort.Strings(results)
+	want := []string{string(usercmd.RefreshRotationConcurrent), string(usercmd.RefreshRotationSucceeded)}
+	if !slices.Equal(results, want) {
+		t.Fatalf("concurrent refresh results = %v, want %v", results, want)
+	}
+	refreshed, found, err := store.GetSessionByRefreshSelector(t.Context(), base.Refresh.Selector)
+	if err != nil || !found || !refreshed.Family.RevokedAt.IsZero() || refreshed.Token.State != usercmd.RefreshTokenStateActive {
+		t.Fatalf("concurrent refresh family = %+v, %t, %v", refreshed, found, err)
+	}
+}
+
+func contractUser(id, username string, primary bool, now time.Time) usercmd.User {
+	return usercmd.User{
+		ID: id, DisplayName: id, Username: username, NormalizedUsername: username,
+		Status: usercmd.StatusActive, Role: usercmd.RoleAdministrator,
+		Credential: usercmd.Credential{State: usercmd.CredentialStateActive, Version: 1},
+		Primary:    primary, Version: 1, CreatedAt: now, UpdatedAt: now,
+	}
+}
+
+func contractSecret(userID string) usercmd.CredentialSecret {
+	return usercmd.CredentialSecret{UserID: userID, PasswordHash: "hash-" + userID}
+}
+
+func contractAudit(id string, action usercmd.AuditAction, targetID string, now time.Time) usercmd.AuditEvent {
+	return usercmd.AuditEvent{
+		ID: id, Action: action, Outcome: usercmd.AuditOutcomeSucceeded,
+		TargetType: usercmd.AuditTargetUser, TargetID: targetID, Source: "provider-contract", OccurredAt: now,
+	}
+}
+
+func contractSessionFamily(userID string, now time.Time) usercmd.SessionFamily {
+	expiresAt := now.Add(24 * time.Hour)
+	return usercmd.SessionFamily{
+		ID: "session-1", UserID: userID, Assurance: usercmd.SessionAssuranceNormal, CredentialVersion: 1,
+		Access:             usercmd.AccessCredential{Selector: "access-1", VerifierDigest: []byte("access-digest-1"), ExpiresAt: now.Add(15 * time.Minute)},
+		CSRFVerifierDigest: []byte("csrf-digest"), CreatedAt: now, LastSeenAt: now,
+		RefreshExpiresAt: expiresAt, Version: 1,
+		RefreshTokens: []usercmd.RefreshToken{{
+			Selector: "refresh-1", VerifierDigest: []byte("refresh-digest-1"), Generation: 1,
+			State: usercmd.RefreshTokenStateActive, IssuedAt: now, ExpiresAt: expiresAt,
+		}},
+	}
+}
+
+func checkRollingRefreshUpgrade(t *testing.T, db *sql.DB) {
+	t.Helper()
+	var familyExpiry, tokenExpiry string
+	if err := db.QueryRowContext(t.Context(), `SELECT s.refresh_expires_at, r.expires_at FROM balda_backoffice_sessions s JOIN balda_backoffice_refresh_tokens r ON r.session_id = s.session_id WHERE r.selector = 'refresh-1'`).Scan(&familyExpiry, &tokenExpiry); err != nil {
+		t.Fatal(err)
+	}
+	if familyExpiry != "2026-09-24T00:00:00Z" || tokenExpiry != familyExpiry {
+		t.Fatalf("upgrade changed stored expiry: %s/%s", familyExpiry, tokenExpiry)
+	}
+	if _, err := db.ExecContext(t.Context(), `UPDATE balda_backoffice_refresh_tokens SET state = 'used', used_at = '2026-09-23T00:10:00Z' WHERE selector = 'refresh-1'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(t.Context(), `UPDATE balda_backoffice_sessions SET refresh_expires_at = '2026-09-25T00:00:00Z' WHERE session_id = 'session-1'`); err != nil {
+		t.Fatalf("renew upgraded family: %v", err)
+	}
+	if err := db.QueryRowContext(t.Context(), `SELECT expires_at FROM balda_backoffice_refresh_tokens WHERE selector = 'refresh-1'`).Scan(&tokenExpiry); err != nil {
+		t.Fatal(err)
+	}
+	if tokenExpiry != familyExpiry {
+		t.Fatal("renewal rewrote historical expiration")
+	}
+}

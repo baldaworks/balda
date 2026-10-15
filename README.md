@@ -15,7 +15,7 @@ summary, changed files, validation output, a commit, or a concrete next step.
 
 ## What Balda is good for
 
-- chat-native engineering help in Telegram, Zulip, or Slack Agent DMs/channel threads
+- chat-native engineering help in Telegram, Zulip, Slack Agent, or Mattermost DMs/channel threads
 - focused task threads instead of one shared bot conversation
 - long-running goal execution with progress updates and final results
 - `wedge` style operation: put the agent in the middle of your team workflow so
@@ -26,7 +26,7 @@ summary, changed files, validation output, a commit, or a concrete next step.
 
 You need:
 
-- one chat surface: Telegram, Zulip, or Slack
+- one chat surface: Telegram, Zulip, Slack, or Mattermost
 - one supported provider CLI installed on the host or in Docker:
   `codex`, `opencode`, `copilot`, `gemini`, or `claude`
 - Node.js/npm, unless you run the Docker Compose path
@@ -43,11 +43,98 @@ Initialize in your project:
 balda init
 ```
 
-Start:
+`balda init` also creates the Backoffice administrator with username `superuser` and prints its generated
+password once. Save it securely, then start:
 
 ```bash
 balda start
 ```
+
+The primary administrator's display name is also `superuser`. In Backoffice,
+use **Account → Change password** to replace your own password. Administrators
+manage each user's chat bindings under **Access**: a user may have Telegram,
+Slack Agent (`slackagent`), Zulip, and Mattermost principals where those
+integrations are configured. Each channel has its own invitation panel: generate
+an invitation for the selected user and send it from their provider account.
+The value appears once; Refresh bindings shows status and confirmed identities.
+Use explicit Replace invitation or Cancel invitation for a pending value. Removing one binding revokes bot access for that principal without
+removing the user's other bindings or browser account.
+
+**Account** shows your active browser sessions with the current one first.
+Use **Older active sessions** to reach further sessions, or **End session**
+to revoke one; ending the current session requires confirmation. **Access**
+lets administrators find users and manage their sessions and bindings. **Audit**
+shows recent security events with filters. The **Overview** integration cards
+show configuration, not a live health check. See the
+[Backoffice reference](docs/reference/backoffice.md) for session and security details.
+
+Administrators can open **MCP** in Backoffice to inspect configured servers and
+create, edit, probe, disable or delete managed connections. Configuration entries
+are read-only except for the explicit **Refresh state** diagnostic; passive page
+loads do not probe them, and the diagnostic result is not saved as readiness.
+OAuth onboarding and later status/actions apply only to eligible
+Backoffice-managed HTTP/SSE connections with OAuth enabled. Configuration-owned
+entries and managed connections with OAuth disabled remain OAuth-neutral.
+Protected values are write-only, and **Available** tools are shown separately
+from OAuth status. Native browser/device authorization uses the current trusted
+managed definition; saved grants can retry tool attachment without repeating
+OAuth. See [MCP management](docs/reference/backoffice.md#mcp-management)
+for provider targeting and value operations.
+
+Configured MCP availability does not block startup: both hosted and ACP providers
+retain every selected exact revision. HTTP/SSE attachment starts on invocation;
+Balda-owned stdio starts under supervision without waiting for its handshake.
+See [MCP deadlines and recovery](docs/reference/configuration.md#mcp-availability-and-deadlines)
+for operation bounds and external-agent limitations.
+
+Administrators can open **Schedules** in Backoffice to inspect configured
+recurring jobs and create persistent UI-owned jobs. Configuration entries are
+read-only; either source can be run manually, and both have retained run
+history. The optional **Report to** field accepts a public locator, including
+a direct-message locator, or a managed alias from **Aliases**. Alias names can
+be entered before their mapping exists;
+each new run selects the current mapping and retains that concrete address for
+retries. A missing alias fails only that run. Every run uses a new private
+session and retains its input and output in the run detail; a selected address
+receives the final output. Cron uses UTC. A manual run queues work without moving its next
+scheduled time; a disabled job requires confirmation. See
+[Schedules management](docs/reference/backoffice.md#schedules-management).
+
+Administrators can open **Webhooks** in Backoffice to inspect config-owned
+routes and manage persistent Backoffice routes. Config routes are read-only;
+managed routes can be created, edited, enabled, disabled and archived without
+restarting Balda. Each managed route has a generated secret shown only on
+creation or rotation. Both sources offer **Test POST** and retained request
+history. Every config and managed route uses its immutable name as the slug at
+`<balda.http.base_path>/webhooks/<name>`; there is no per-route path setting.
+Changing the shared prefix changes every callback address after restart.
+An optional **Report to** locator or managed alias receives only the
+final output from each request's new private session. The shared HTTP listener
+always binds; `balda.webhooks.enabled` controls config routes, while managed
+routes have their own enabled state. See
+[Webhooks management](docs/reference/backoffice.md#webhooks-management).
+
+`balda.http.listen_addr` binds one local HTTP server for Backoffice, generic
+webhooks, and enabled chat transport callbacks. `balda.http.base_url` is its
+public origin, and `balda.http.base_path` is the shared prefix. With
+`base_url: https://lab.metalagman.dev` and `base_path: /balda`, Backoffice is
+`https://lab.metalagman.dev/balda/backoffice/`, any `orders` webhook is
+`https://lab.metalagman.dev/balda/webhooks/orders`, and Slack callbacks use
+`/balda/gateway/slack/events` and `/balda/gateway/slack/commands`. This is a URL
+example; the live asus ingress and callback registrations have not changed.
+See [shared HTTP configuration](docs/reference/configuration.md#shared-http-listener-and-public-urls)
+for the five complete URLs and migration details. Without an explicit
+`balda.http.base_url`, Webhooks displays the canonical path and explains that
+no public origin is configured. Upgrades remove custom webhook paths: update
+external senders to the canonical URLs and remove `path` from config routes.
+
+Before storing protected MCP values or worker grants, configure the deployment
+[MCP credential key](docs/reference/configuration.md#protected-values-and-worker-grants)
+and keep it with your database backup. Existing sessions retain their captured
+MCP revision while active. Create a session, or explicitly `/reset` a healthy
+active session, to activate changed definitions. If an exact persisted snapshot
+cannot restore, automatic fresh-session fallback may instead adopt current
+eligible capabilities.
 
 `balda init` creates `.config/balda/config.yaml`, initializes
 `.config/balda/state.db` by default, detects available provider CLIs, and prints
@@ -57,15 +144,67 @@ SQLite is the default state database. To select PostgreSQL, configure
 `balda.database.type: postgres`; launch remains `balda start`.
 See [database configuration and operations](docs/reference/database.md).
 
+`balda start` applies embedded schema and data migrations to the selected database,
+checks canonical users and administrator bootstrap, then starts the bot,
+Backoffice, and enabled integrations in one process. On a fresh database,
+`balda init` has already bootstrapped the administrator. For an existing
+installation, stop Balda, back up the database, and deploy the new binary.
+Goose automatically converts owner/collaborator records when Balda opens the
+database, preserving their roles and bot bindings. See the
+[Backoffice startup and security contract](docs/reference/backoffice.md).
+
+```bash
+# Existing installation with owner/collaborator records, after stopping Balda and backing up:
+balda start
+```
+
+The converted primary user is named `superuser`. A SQL migration sets its first
+browser password to `superusersuperuser` and requires replacement on first login.
+Existing usable credentials and browser sessions remain unchanged. No manual
+bootstrap is needed for an upgraded owner. To generate a new password and revoke
+that administrator's browser sessions, run:
+
+```bash
+balda backoffice reset-password
+```
+
+The command prints the generated password once. Never pass passwords as command
+arguments.
+
+Browser refresh tokens default to 30 days (`720h`), renewed after every successful
+refresh. Existing explicit `12h` config or environment overrides must be changed
+to `720h` to use the monthly window. Expired sessions require sign-in. See the
+[browser session contract](docs/reference/backoffice.md#browser-sessions-and-refresh-rotation).
+
+Administrator passkey 2FA is optional and off by default. Enable it in Account
+using the current password and a verified passkey at an HTTPS origin or localhost.
+Enrolled accounts require their passkey when signing in with a password;
+session refresh and ordinary Backoffice actions do not prompt for it again.
+Password resets preserve it. If a key is lost, an authorized host administrator
+can run `balda backoffice recover-2fa --username superuser --confirm`, which
+revokes browser sessions while retaining the password and bot bindings. See the
+[2FA and recovery contract](docs/reference/backoffice.md#optional-administrator-passkey-2fa).
+
 ## First run
 
-For Telegram, authenticate the owner with the command printed by `balda init`:
+For Telegram, sign in to Backoffice, select the existing user in Access and use
+its Telegram invitation link, or send the generated payload:
+
+```text
+/start bind_<opaque_token>
+```
+
+The exact payload also works as a direct message. It connects the verified sender
+to that selected user, preserving their role. Invitations expire after 24 hours
+and can be used once; refresh the user's bindings in Backoffice to confirm.
+
+The existing owner bootstrap command printed by `balda init` remains supported:
 
 ```text
 /start owner=<owner_token>
 ```
 
-Then send a normal direct message to the bot, or open an isolated topic:
+After connecting the account, send a normal direct message to the bot, or open an isolated topic:
 
 ```text
 /topic release
@@ -83,6 +222,12 @@ From there you can:
 ## Main workflows
 
 ### 1. Ordinary chat work
+
+Once a question answer is saved, Balda recovers its continuation after a local
+queue failure or restart without another reply or inline click. Telegram buttons
+are removed through durable cleanup after continuation admission. Upgrading adds
+SQLite migration 63 / PostgreSQL migration 28; take a database backup first.
+Existing answered history is not replayed. See [recovery operations](docs/reference/operations.md#command-admission-recovery-and-nats-storage-budgets).
 
 Send a message in the session where you want work to happen. Balda keeps that
 conversation as the execution context.
@@ -113,9 +258,10 @@ Balda can act as a wedge between team chat and the rest of your engineering
 system:
 
 - chat messages start work
-- scheduled jobs wake work up
-- inbound webhooks turn external events into session work
-- the same session can continue through follow-up questions and delayed work
+- scheduled jobs start isolated work on a cron
+- inbound webhooks start isolated work from external events
+- chat sessions continue through follow-up questions, while each schedule or
+  webhook invocation uses its own private session
 
 This is useful when you want one operational path for human requests,
 automation, and agent execution instead of separate bots and scripts.
@@ -125,12 +271,14 @@ automation, and agent execution instead of separate bots and scripts.
 - Telegram
 - Zulip
 - Slack Agent DMs and mentioned channel threads
+- Mattermost DMs and mentioned channel threads
 
 Balda maps each conversation scope to its own session:
 
 - Telegram direct chat or personal/group topic
 - Zulip stream + topic
 - Slack Agent DM or mentioned channel thread
+- Mattermost DM, channel, or channel thread
 
 In Slack channels, every turn requires an explicit `@Balda` mention. A mention
 inside an existing thread can use its preceding accessible discussion and
@@ -193,9 +341,14 @@ ENTRYPOINT ["balda"]
 
 Balda provides onboarding, session control, GoalKeeper, locator, usage, skill,
 user, and plugin commands. Telegram and Zulip use `/skill`, `/locator`,
-`/reset`, and the `/new` alias for `/reset`; Slack exposes the
-conversation-scoped forms `/balda skill`,
-`/balda locator`, and `/balda reset`.
+`/reset`, and the `/new` alias for `/reset`; Zulip also accepts currently
+projected plugin command aliases. Slack exposes the conversation-scoped forms
+`/balda skill`, `/balda locator`, and `/balda reset`. For Backoffice account
+binding, Zulip accepts `/start bind_<token>` or the exact
+`bind_<token>` DM generated for its configured bot. In Slack, send the
+generated `bind_<token>` in the configured bot’s DM or use `/balda start bind_<token>`.
+Mattermost accepts the exact DM payload (including `/msg @<bot_username> bind_<token>`);
+`/balda start bind_<token>` is available when its slash receiver is enabled.
 
 Slack formats the response for scanning and copying:
 
@@ -204,8 +357,9 @@ Slack formats the response for scanning and copying:
 
 *Scheduler / webhook configuration*
 ```
-target: locator
-key: slackagent:c:T0BFTRBFA94:C0BU4LKUB6W
+report_to:
+  target: locator
+  key: slackagent:c:T0BFTRBFA94:C0BU4LKUB6W
 ```
 ````
 
@@ -229,6 +383,14 @@ adopt skills installed or changed after the session was created.
 See [Plugins and session capabilities](docs/reference/plugins.md) for the
 `dev.baldaworks.balda` extension schema and the session-bound command, skill,
 and MCP lifecycle.
+
+Administrators can manage packages in **Operations → Plugins** in Backoffice.
+The **Installed** and **Marketplaces** tabs provide explicit discovery,
+installation, upgrade, enable/disable, retained revision rollback and removal.
+Changes affect new sessions; use the ordinary `/reset` boundary to update an
+existing conversation. Removal retains package revisions and plugin data.
+See [Backoffice Plugins management](docs/reference/backoffice.md#plugins-management)
+for the forms, discovery failures and recovery behavior.
 
 ## Configuration
 
@@ -254,6 +416,11 @@ balda:
 Common settings:
 
 - `balda.provider` — which configured provider runtime to use
+- `balda.nats.bounded_streams` — opt in to per-stream storage budgets (default
+  `false`; environment override `BALDA_NATS_BOUNDED_STREAMS`). Back up NATS and
+  check retained stream sizes before enabling it; startup refuses a budget below
+  existing usage. See [configuration](docs/reference/configuration.md#durable-command-admission-and-optional-stream-budgets)
+  and [upgrade and rollback steps](docs/reference/operations.md#command-admission-recovery-and-nats-storage-budgets).
 - `balda.telegram.token` — Telegram bot token
 
 Explicit `model` and `reasoning_effort` values on an ACP provider are reapplied
@@ -264,9 +431,12 @@ does not require `/reset`. Custom ACP servers can set `model_config_id` and
 - `balda.telegram.formatting_mode` — Telegram output mode: `rich_markdown`
   (default), `rich_html`, or `none` for literal plain text
 - `balda.zulip.*` — Zulip outgoing webhook bot credentials and receiver config
+- `balda.mattermost.*` — Mattermost bot credentials (`enabled`, `server_url`,
+  `token`, `bot_user_id`, `bot_username`) for websocket event ingress
 - `balda.slack.*` — Slack Agent credentials plus `agent.*` HTTP/streaming config
-- `balda.webhooks.*` — optional inbound webhook routes
-- `balda.scheduler.jobs` — recurring scheduled jobs
+- `balda.http.*` — one local HTTP bind, public origin, and shared path prefix. See [shared HTTP configuration](docs/reference/configuration.md#shared-http-listener-and-public-urls).
+- `balda.webhooks.*` — config-owned inbound routes; managed routes are administered in Backoffice. See [Webhooks management](docs/reference/backoffice.md#webhooks-management).
+- `balda.scheduler.jobs` — recurring scheduled jobs owned by host configuration; administrators can also create persistent schedules in Backoffice. See [Schedules management](docs/reference/backoffice.md#schedules-management).
 - `balda.workspace.*` — workspace/worktree behavior for goal execution
 - `balda.permissions.mode` — agent permission policy: `allow_all`, `ask`, or `deny_all`
 - `balda.permissions.timeout` — maximum wait for an interactive permission decision (default `2m`)
@@ -280,9 +450,13 @@ The bundled `balda.memory.remember` tool stores explicit facts globally for the
 Balda instance. Each update records a latest-memory timestamp. On a subsequent
 session turn, Balda compares that timestamp with the turn's memory cursor. When
 they differ, Balda adds the complete current fact-memory snapshot to that same
-provider user prompt in a delimited application-memory block. Unchanged, empty,
-or disabled memory adds nothing to the prompt. Global fact memory is expected to
-remain small; it is separate from optional durable session memory.
+provider user prompt in a delimited application-memory block. Administrators can
+search, add, edit and delete the same facts in Backoffice **Operations → Fact
+memory**; see [Fact memory management](docs/reference/backoffice.md#fact-memory-management).
+Deleting the last fact sends an explicit empty-current-memory boundary on the
+next turn, without clearing conversation history. Unchanged, never-initialized
+or disabled memory adds nothing to the prompt. Global fact memory is expected
+to remain small; it is separate from optional durable session memory.
 
 ### Knowl sidecar
 
@@ -322,6 +496,24 @@ fallback details.
 For complete configuration, examples, and provider-specific details, see the
 [configuration reference](docs/reference/configuration.md).
 
+## Agent hooks
+
+Administrators configure agent lifecycle hooks in **Operations → Agent hooks**.
+Approved commands can validate a session start, reject a prompt, check a final
+answer, or observe session closure. The Web UI accepts a timeout in whole
+seconds; `0` disables the hook's own deadline, while session cancellation still
+applies. See [Managed agent hooks](docs/reference/agent-hooks.md) for configuration,
+executable privileges and lifecycle behavior, and the [usage examples](docs/reference/agent-hooks.md#usage-examples)
+for ready-to-copy scripts and their Web UI settings: add project conventions to
+prompts or record session-close events with a local program.
+
+Managed `PreToolUse`/`PostToolUse` hooks have adapters for Claude Code, Codex and
+OpenCode ACP on Linux/macOS. Configure them in **Operations → Agent hooks** and
+reset existing sessions to activate native interception. The [usage examples](docs/reference/agent-hooks.md#reject-selected-shell-tools-before-execution)
+include a reusable pre-tool policy script and its Web UI settings. See the
+[agent hook reference](docs/reference/agent-hooks.md#native-adapters) for capability
+requirements and native engine deadline limits.
+
 ## Troubleshooting
 
 - `telegram token is required` — run `balda init` or set
@@ -347,6 +539,7 @@ For complete configuration, examples, and provider-specific details, see the
 - Architecture map: [docs/architecture/index.md](docs/architecture/index.md)
 - Telegram formatting: [docs/telegram-formatting.md](docs/telegram-formatting.md)
 - Zulip webhook setup: [docs/zulip-webhook.md](docs/zulip-webhook.md)
+- Mattermost setup: [docs/mattermost.md](docs/mattermost.md)
 - Slack setup: [docs/slack.md](docs/slack.md)
 - Contributing: [CONTRIBUTING.md](CONTRIBUTING.md)
 

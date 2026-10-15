@@ -37,6 +37,7 @@ type sessionActorParams struct {
 	Scheduler  appports.ScheduledJobRecorder  `optional:"true"`
 	Questions  *questions.Service             `optional:"true"`
 	Sessions   *baldasession.Manager          `optional:"true"`
+	Modes      appports.ScheduleModeResolver  `optional:"true"`
 }
 
 type goalkeeperActorParams struct {
@@ -102,6 +103,7 @@ var Module = fx.Module("balda_actorsfx",
 					Dispatcher: p.Dispatcher,
 					Questions:  p.Questions,
 					Sessions:   sessions,
+					Modes:      p.Modes,
 				})
 			},
 			fx.As(new(dispatch.Actor)),

@@ -27,9 +27,15 @@ fields. Unknown fields, malformed templates and empty paths fail startup.
 Rendered relative paths are anchored to the working directory and cleaned.
 For example, `{{.StateDir}}/databases/runtime.db` selects a custom file.
 
-SQLite is intended for a single Balda process with local persistent storage.
-Do not share its file across hosts or place it on a network filesystem. It uses
-foreign keys, WAL where available, and a single pooled connection.
+SQLite is intended for one Balda process on local persistent storage. The bot
+and embedded Backoffice share its provider. Do not run multiple active Balda
+processes, share the file across hosts, or place it on a network filesystem.
+It uses foreign keys, WAL where available, an immediate transaction lock for
+writes, a bounded busy timeout, and one pooled connection.
+
+Native absolute paths are supported on Linux, macOS and Windows, including
+filenames containing spaces, `#` or `%`. Balda escapes the path as a local SQLite
+file URI; do not pre-encode it in configuration.
 
 ## PostgreSQL
 
@@ -69,11 +75,23 @@ other local resources. `state_dir` is still needed for NATS and local artifacts.
 
 ## Commands and session persistence
 
-`start`, `init`, `validate`, `preflight`, `doctor`, and plugin commands use the
-same selected backend whenever they access state. Diagnostic commands can open
-and migrate the database and bootstrap owner state; they are not read-only
-database checks. Connection or migration failure prevents startup. No fallback
-to SQLite, hot switching, or database-specific start command exists.
+`start`, `init`, `preflight`, `doctor`, Backoffice maintenance, and plugin
+commands use the same selected backend whenever they access state. Opening it
+applies embedded forward Goose schema and data migrations. `balda validate` is
+different: it checks configuration and graph construction without opening, creating, or
+migrating the database. `preflight` and `doctor` can still open and mutate state;
+they are not read-only checks. Connection or migration failure prevents
+startup. No fallback to SQLite, hot switching, or schema down command exists.
+
+User conversion is part of those migrations on both backends: owner/collaborator
+records become canonical users and bindings in the same transaction as the
+Goose version marker. A fresh database needs no conversion; a completed
+conversion preserves existing credentials and browser sessions. Invalid or
+conflicting source data aborts the upgrade without a partial conversion.
+A following SQL migration sets a temporary `superusersuperuser` password for the
+primary administrator if its browser credential is disabled. First login requires
+replacement; existing usable passwords are preserved. Other converted users retain
+disabled browser credentials. See [Backoffice](backoffice.md) for CLI password reset.
 
 `balda init` retains its refusal to overwrite an existing config. On a fresh
 installation it honors effective database environment settings; keep those
@@ -88,13 +106,23 @@ still uses the selected database.
 ## Backup, restore and changing engines
 
 Back up before an upgrade or configuration change. For SQLite, stop Balda and
-use a consistent SQLite backup (or copy the stopped database and any remaining
-WAL/SHM files together). Do not copy only a live WAL-mode main file. For
-PostgreSQL, use your normal consistent `pg_dump`/restore or managed backup
-procedure, including schema, data, sequences and Goose version history.
-Restore into a stopped deployment and verify with `balda preflight` before
-resuming transport traffic. Schema recovery is forward migration or backup
-restore, not automatic migration downgrade.
+use a consistent SQLite backup (or copy the stopped database and
+any remaining WAL/SHM files together). Do not copy only a live WAL-mode main
+file. For PostgreSQL, use your normal consistent `pg_dump`/restore or managed
+backup procedure, including schema, data, sequences and Goose version history.
+Restore into a stopped deployment, run `balda validate`, then start Balda and
+verify Backoffice health and bot ingress. `balda start` applies schema
+migrations and checks canonical users before listeners become ready. Schema
+recovery is forward migration or backup restore, not automatic migration
+downgrade.
+
+Back up the deployment MCP credential key securely alongside the database if
+protected MCP values or worker grants are stored. Restore the matching
+`balda.mcp_management.credential_key` (or
+`BALDA_MCP_MANAGEMENT_CREDENTIAL_KEY`) before starting the restored deployment.
+The database alone cannot decrypt that data. Retained session revisions need
+the same key even after a connection is edited or deleted. See
+[MCP credential configuration](configuration.md#protected-values-and-worker-grants).
 
 Changing `type` does **not** copy data between engines. An empty PostgreSQL
 database starts empty: existing users do not appear there automatically.
@@ -107,3 +135,24 @@ not cross-engine migration tooling, dual writes or failover.
 See [Contributing](../../CONTRIBUTING.md) for separate `integration,sqlite` and
 `integration,postgres` runs. PostgreSQL tests require an explicitly configured
 disposable database and fail rather than skip when it is absent.
+
+## Optional WebAuthn state and upgrades
+
+Embedded Goose migrations SQLite 46 and PostgreSQL 11 add per-user MFA profiles,
+public authenticator credentials and expiring one-use ceremonies, and extend
+browser families with factor identity and verification time. They run through
+the existing `state.Open` upgrade path; no separate user or MFA migration command
+is needed. Existing users default to 2FA off. Password hashes, bot bindings and
+valid pre-upgrade browser families are preserved. Private authenticator keys
+never enter the database; pending ceremony/browser/CSRF selectors are digested.
+
+Enable, replacement, disable and confirmed recovery advance user/credential/MFA
+authority, revoke old families and append audit in one transaction. Counter
+verification and family issuance are transactional as well. An audit or
+SQL failure rolls back the corresponding security mutation.
+
+These migrations are forward-only. Back up the database before upgrading.
+Do not run an older binary against enrolled MFA state: it would not enforce the
+new factor policy. A rollback needs a compatible binary or a validated backup
+and explicit recovery plan; schema downgrade is unsupported. See
+[Backoffice recovery](backoffice.md#optional-administrator-passkey-2fa).

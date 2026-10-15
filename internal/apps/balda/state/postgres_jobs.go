@@ -12,6 +12,23 @@ type postgresJobStore struct {
 	db *sql.DB
 }
 
+func (s *postgresJobStore) RecordScheduledOutput(ctx context.Context, jobID, output string) error {
+	return redactPostgresError(recordScheduledOutput(ctx, s.db, postgresBind, jobID, output))
+}
+
+func (s *postgresJobStore) RecordPrivateOutput(ctx context.Context, jobID, output string, failed bool) error {
+	return redactPostgresError(recordPrivateOutput(ctx, s.db, postgresBind, jobID, output, failed))
+}
+
+func (s *postgresJobStore) ListUnclosedTerminalWebhookJobs(ctx context.Context, after time.Time, afterID string, before time.Time, limit int) ([]JobRecord, error) {
+	jobs, err := listUnclosedTerminalWebhookJobs(ctx, s.db, postgresBind, after, afterID, before, limit)
+	return jobs, redactPostgresError(err)
+}
+
+func (s *postgresJobStore) MarkWebhookRunClosed(ctx context.Context, jobID string, closedAt time.Time) error {
+	return redactPostgresError(markWebhookRunClosed(ctx, s.db, postgresBind, jobID, closedAt))
+}
+
 func (s *postgresJobStore) CreateJob(ctx context.Context, record JobRecord) (bool, error) {
 	now := time.Now().UTC()
 	normalized, err := normalizeExecutionJob(record, now)
@@ -25,10 +42,10 @@ func postgresInsertExecutionJob(ctx context.Context, exec contextExecer, normali
 	res, err := exec.ExecContext(ctx, postgresBind(`
 		INSERT INTO execution_jobs (
 			id, session_id, parent_job_id, title, objective, status, owner_actor, assigned_actor,
-			priority, created_by, result, error,
+			priority, created_by, result, error, private_run_kind, private_run_closed_at,
 			created_at, updated_at, started_at, completed_at, canceled_at
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`), normalized.ID,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`), normalized.ID,
 		nullIfEmpty(normalized.SessionID),
 		nullIfEmpty(normalized.ParentJobID),
 		nullIfEmpty(normalized.Title),
@@ -40,6 +57,8 @@ func postgresInsertExecutionJob(ctx context.Context, exec contextExecer, normali
 		nullIfEmpty(normalized.CreatedBy),
 		nullIfEmpty(normalized.Result),
 		nullIfEmpty(normalized.Error),
+		normalized.PrivateRunKind,
+		normalized.PrivateRunClosedAt,
 		normalized.CreatedAt.Format(time.RFC3339),
 		normalized.UpdatedAt.Format(time.RFC3339),
 		optionalTimeValue(normalized.StartedAt),
@@ -94,6 +113,18 @@ func (s *postgresJobStore) GetJob(ctx context.Context, jobID string) (JobRecord,
 		return JobRecord{}, false, redactPostgresError(err)
 	}
 	return record, ok, nil
+}
+
+func (s *postgresJobStore) RebindScheduledJobSession(ctx context.Context, jobID, oldSessionID, newSessionID, assignedActor string) (bool, error) {
+	result, err := s.db.ExecContext(ctx, postgresBind(`UPDATE execution_jobs SET session_id = ?, assigned_actor = ?, updated_at = ?
+		WHERE id = ? AND session_id = ? AND status NOT IN (?, ?, ?, ?)`),
+		newSessionID, assignedActor, time.Now().UTC().Format(time.RFC3339), jobID, oldSessionID,
+		JobStatusCompleted, JobStatusFailed, JobStatusCanceled, JobStatusDeadLettered)
+	if err != nil {
+		return false, postgresErrorf("rebind scheduled job session: %w", err)
+	}
+	count, err := result.RowsAffected()
+	return count == 1, err
 }
 
 func (s *postgresJobStore) ListActiveJobsBySession(ctx context.Context, sessionID string) ([]JobRecord, error) {
@@ -592,6 +623,31 @@ func (s *postgresJobStore) MarkDeliveryFailed(ctx context.Context, deliveryKey s
 		return postgresErrorf("mark runtime delivery %q failed: %w", trimmedKey, err)
 	}
 	return nil
+}
+
+// SentFinalDelivery returns the provider receipt for a job's final response.
+func (s *postgresJobStore) SentFinalDelivery(ctx context.Context, jobID string) (string, bool, error) {
+	jobID = strings.TrimSpace(jobID)
+	if jobID == "" {
+		return "", false, postgresErrorf("job id is required")
+	}
+	var providerMessageID string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT provider_message_id FROM execution_delivery_outbox
+		WHERE job_id = $1 AND delivery_key IN ($2, $3) AND status = $4
+		  AND provider_message_id IS NOT NULL AND provider_message_id <> ''
+		LIMIT 1`, jobID, jobID+":delivery:final", jobID+":delivery:terminal", DeliveryStatusSent).Scan(&providerMessageID)
+	if err == sql.ErrNoRows {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, postgresErrorf("read final delivery for job %q: %w", jobID, err)
+	}
+	return providerMessageID, true, nil
+}
+
+func (s *postgresJobStore) FinalDelivery(ctx context.Context, jobID string) (DeliveryRecord, bool, error) {
+	return findFinalDelivery(ctx, jobID, s.getDeliveryByKey)
 }
 
 func (s *postgresJobStore) ReserveAgentStep(ctx context.Context, record AgentStepRecord) (AgentStepRecord, bool, error) {

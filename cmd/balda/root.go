@@ -103,7 +103,7 @@ func newRootCommand() (*cobra.Command, error) {
 
 	cmd := &cobra.Command{
 		Use:     "balda",
-		Short:   "balda is a standalone Telegram control plane",
+		Short:   "Balda assistant with embedded Backoffice and integrations",
 		Version: fmt.Sprintf("balda %s (commit %s, built %s)", resolvedVersion, resolvedCommit, resolvedDate),
 		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
 			logLevel := logging.LevelInfo
@@ -135,6 +135,7 @@ func newRootCommand() (*cobra.Command, error) {
 	cmd.AddCommand(preflightCommand())
 	cmd.AddCommand(doctorCommand())
 	cmd.AddCommand(initCommand())
+	cmd.AddCommand(backofficeCommand())
 	cmd.AddCommand(pluginsCommand())
 	cmd.AddCommand(evalFixturesCommand())
 	return cmd, nil

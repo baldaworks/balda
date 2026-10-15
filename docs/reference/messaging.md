@@ -10,7 +10,12 @@ Session key:
 - The owner session is bootstrapped for the bound owner DM chat (`topic_id=0`) during activation/startup when an owner is already registered.
 
 Balda always persists session metadata in `state.db` for lazy restore.
-By default, Balda also persists session history and state in `state.db` until the session is explicitly closed. Set `balda.sessions.persistence=memory` to keep conversation/runtime state process-local while retaining Balda session metadata for lazy restore.
+By default, Balda also persists session history and state in `state.db`. Exact
+restore reuses them after restart. Explicit `/reset` or `/close`, and successful
+automatic fresh-session fallback after exact restore fails, clear prior ADK
+state and history. Set `balda.sessions.persistence=memory` to keep
+conversation/runtime state process-local while retaining Balda session metadata
+for lazy restore.
 
 ## Message flow
 
@@ -18,7 +23,11 @@ Ordinary conversational chat transports follow the same runtime model.
 
 1. User sends a chat message through Telegram, Slack, or Zulip.
 2. The ingress handler normalizes provider data and resolves the Balda session locator for that chat/thread/topic.
-3. If the session is missing in memory, Balda attempts lazy restore from persisted metadata.
+3. The common conversational service prepares the session through a shared
+   transport-neutral adapter. The session manager returns an active session,
+   restores persisted metadata/history, or creates only when metadata is absent.
+   Owner and collaborator DMs use this same path. Temporary preparation errors
+   retain retry settlement rather than dropping the inbound message.
 4. Conversational ingress publishes exactly one durable `balda.v1.cmd.session` envelope directly to the session actor lane for the normalized inbound item.
 5. The session actor runs the configured provider runtime for that session and emits separate delivery envelopes for progress/final replies.
 

@@ -9,8 +9,9 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
-	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/locatorref"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/telegramref"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
@@ -52,9 +53,11 @@ type scheduledJobSchedulerParams struct {
 	fx.In
 
 	JobStore   baldastate.ScheduledJobStore
+	RunStore   baldastate.ScheduleRunStore
 	Dispatcher actortransport.Dispatcher
 	OwnerStore *auth.OwnerStore                   `optional:"true"`
 	Resolver   envelopetarget.DestinationResolver `optional:"true"`
+	Finalizer  *RunFinalizer
 	Logger     zerolog.Logger
 	Config     ScheduledJobSchedulerConfig
 }
@@ -62,9 +65,11 @@ type scheduledJobSchedulerParams struct {
 // ScheduledJobScheduler publishes due locator-bound recurring jobs as durable job commands.
 type ScheduledJobScheduler struct {
 	jobStore   baldastate.ScheduledJobStore
+	runStore   baldastate.ScheduleRunStore
 	dispatcher actortransport.Dispatcher
 	owner      *auth.OwnerStore
 	resolver   envelopetarget.DestinationResolver
+	finalizer  *RunFinalizer
 	logger     zerolog.Logger
 	config     ScheduledJobSchedulerConfig
 
@@ -108,6 +113,14 @@ func (s *ScheduledJobScheduler) start() {
 			if err := s.dispatchDue(runCtx, s.now().UTC()); err != nil {
 				s.logger.Warn().Err(err).Msg("failed to dispatch due jobs")
 			}
+			if err := s.processPendingRuns(runCtx, s.now().UTC()); err != nil {
+				s.logger.Warn().Err(err).Msg("failed to process schedule runs")
+			}
+			if s.finalizer != nil {
+				if err := s.finalizer.Settle(runCtx, s.dueBatchSize); err != nil {
+					s.logger.Warn().Err(err).Msg("failed to finalize schedule runs")
+				}
+			}
 
 			select {
 			case <-runCtx.Done():
@@ -139,66 +152,132 @@ func (s *ScheduledJobScheduler) stop(ctx context.Context) error {
 func (s *ScheduledJobScheduler) reconcileConfiguredJobs(ctx context.Context) error {
 	desired := make(map[string]struct{}, len(s.config.Jobs))
 	now := s.now().UTC()
+	currentJobs, err := s.jobStore.List(ctx)
+	if err != nil {
+		return fmt.Errorf("list persisted scheduler jobs: %w", err)
+	}
+	currentByID := make(map[string]baldastate.ScheduledJobRecord, len(currentJobs))
+	for _, existing := range currentJobs {
+		currentByID[existing.JobID] = existing
+	}
+	for _, job := range s.config.Jobs {
+		if existing, ok := currentByID[job.ID]; ok && existing.Source != baldastate.ScheduledJobSourceConfig {
+			return fmt.Errorf("scheduler job %q source collision: persisted source %q", job.ID, existing.Source)
+		}
+	}
+	prepared := make([]baldastate.ScheduledJobRecord, 0, len(s.config.Jobs))
 
 	for _, job := range s.config.Jobs {
-		target, err := envelopetarget.Resolve(ctx, s.getResolver(), envelopetarget.Target{Target: job.Target, Key: job.Key})
-		if err != nil {
-			return fmt.Errorf("resolve scheduler job %q target: %w", job.ID, err)
-		}
-		var reportTo *envelopetarget.Resolved
-		if job.ReportTo != nil {
-			resolved, err := envelopetarget.Resolve(ctx, s.getResolver(), envelopetarget.Target{Target: job.ReportTo.Target, Key: job.ReportTo.Key})
+		var target deliverycmd.Locator
+		if job.Key != "" {
+			var err error
+			target, err = locatorref.Parse(job.Key)
 			if err != nil {
-				return fmt.Errorf("resolve scheduler job %q report_to: %w", job.ID, err)
+				return fmt.Errorf("scheduler job %q envelope.key: %w", job.ID, err)
 			}
-			reportTo = &resolved
+		}
+		reportKind, reportKey := job.Target, job.Key
+		report := target
+		if job.ReportTo != nil {
+			reportKind, reportKey = job.ReportTo.Target, job.ReportTo.Key
+			if reportKind == envelopetarget.TargetLocator {
+				var err error
+				report, err = locatorref.Parse(reportKey)
+				if err != nil {
+					return fmt.Errorf("scheduler job %q report_to: %w", job.ID, err)
+				}
+			}
 		}
 		nextRunAt, err := nextRunAtFromSpec(job.Cron, now)
 		if err != nil {
 			return fmt.Errorf("compute next run for scheduler job %q: %w", job.ID, err)
 		}
 		record := baldastate.ScheduledJobRecord{
-			JobID:        job.ID,
-			SessionID:    target.Locator.SessionID,
-			ChannelType:  target.Locator.ChannelType,
-			AddressKey:   target.Locator.AddressKey,
-			AddressJSON:  target.Locator.AddressJSON,
-			Content:      job.Content,
-			ScheduleSpec: job.Cron,
-			Timezone:     "UTC",
-			Status:       baldastate.ScheduledJobStatusActive,
-			MaxRetries:   defaultSchedulerMaxRetries,
-			RetryCount:   0,
-			NextRunAt:    nextRunAt,
+			JobID:               job.ID,
+			Source:              baldastate.ScheduledJobSourceConfig,
+			Enabled:             true,
+			TargetKind:          job.Target,
+			TargetKey:           job.Key,
+			SessionID:           target.SessionID,
+			ChannelType:         target.ChannelType,
+			AddressKey:          target.AddressKey,
+			AddressJSON:         target.AddressJSON,
+			ReportToEnabled:     reportKey != "",
+			ReportToTargetKind:  reportKind,
+			ReportToTargetKey:   reportKey,
+			ReportToSessionID:   report.SessionID,
+			ReportToChannelType: report.ChannelType,
+			ReportToAddressKey:  report.AddressKey,
+			ReportToAddressJSON: report.AddressJSON,
+			Content:             job.Content,
+			ScheduleSpec:        job.Cron,
+			Timezone:            "UTC",
+			Status:              baldastate.ScheduledJobStatusActive,
+			MaxRetries:          defaultSchedulerMaxRetries,
+			RetryCount:          0,
+			NextRunAt:           nextRunAt,
 		}
-		if reportTo != nil {
-			record.ReportToEnabled = true
-			record.ReportToSessionID = reportTo.Locator.SessionID
-			record.ReportToChannelType = reportTo.Locator.ChannelType
-			record.ReportToAddressKey = reportTo.Locator.AddressKey
-			record.ReportToAddressJSON = reportTo.Locator.AddressJSON
+		if previous, ok := currentByID[job.ID]; ok {
+			record.DefinitionVersion = previous.DefinitionVersion
+			record.CreatedAt = previous.CreatedAt
+			record.LastRunAt = previous.LastRunAt
+			if sameConfiguredDefinition(previous, record) && !previous.Deleted {
+				record.Status = previous.Status
+				record.RetryCount = previous.RetryCount
+				record.LastDispatchKey = previous.LastDispatchKey
+				record.NextRunAt = previous.NextRunAt
+				record.LastError = previous.LastError
+			} else {
+				record.DefinitionVersion++
+			}
 		}
-		if err := s.jobStore.Upsert(ctx, record); err != nil {
-			return fmt.Errorf("upsert scheduler job %q: %w", job.ID, err)
-		}
+		prepared = append(prepared, record)
 		desired[job.ID] = struct{}{}
 	}
-
-	currentJobs, err := s.jobStore.List(ctx)
-	if err != nil {
-		return fmt.Errorf("list persisted scheduler jobs: %w", err)
+	for _, record := range prepared {
+		if err := s.jobStore.Upsert(ctx, record); err != nil {
+			return fmt.Errorf("upsert scheduler job %q: %w", record.JobID, err)
+		}
 	}
 	for _, existing := range currentJobs {
 		jobID := strings.TrimSpace(existing.JobID)
 		if _, ok := desired[jobID]; ok {
 			continue
 		}
-		if err := s.jobStore.Delete(ctx, jobID); err != nil {
-			return fmt.Errorf("delete unmanaged scheduler job %q: %w", jobID, err)
+		switch existing.Source {
+		case baldastate.ScheduledJobSourceManaged:
+			continue
+		case baldastate.ScheduledJobSourceConfig:
+			if existing.Deleted {
+				continue
+			}
+			existing.Deleted = true
+			existing.Enabled = false
+			existing.DefinitionVersion++
+			if err := s.jobStore.Upsert(ctx, existing); err != nil {
+				return fmt.Errorf("archive removed scheduler job %q: %w", jobID, err)
+			}
+		case baldastate.ScheduledJobSourceInternal:
+			if err := s.jobStore.Delete(ctx, jobID); err != nil {
+				return fmt.Errorf("delete internal scheduler job %q: %w", jobID, err)
+			}
 		}
 	}
 
 	return nil
+}
+
+func sameConfiguredDefinition(a, b baldastate.ScheduledJobRecord) bool {
+	return a.Content == b.Content && a.ScheduleSpec == b.ScheduleSpec &&
+		a.TargetKind == b.TargetKind && a.TargetKey == b.TargetKey &&
+		a.ReportToTargetKind == b.ReportToTargetKind && a.ReportToTargetKey == b.ReportToTargetKey &&
+		a.SessionID == b.SessionID && a.ChannelType == b.ChannelType &&
+		a.AddressKey == b.AddressKey && a.AddressJSON == b.AddressJSON &&
+		a.ReportToEnabled == b.ReportToEnabled &&
+		a.ReportToSessionID == b.ReportToSessionID &&
+		a.ReportToChannelType == b.ReportToChannelType &&
+		a.ReportToAddressKey == b.ReportToAddressKey &&
+		a.ReportToAddressJSON == b.ReportToAddressJSON
 }
 
 func (s *ScheduledJobScheduler) dispatchDue(ctx context.Context, now time.Time) error {
@@ -228,7 +307,7 @@ func (s *ScheduledJobScheduler) dispatchJob(ctx context.Context, job baldastate.
 	if !ok {
 		return fmt.Errorf("scheduled job %q not found", jobID)
 	}
-	if strings.TrimSpace(current.Status) != baldastate.ScheduledJobStatusActive {
+	if strings.TrimSpace(current.Status) != baldastate.ScheduledJobStatusActive || !current.Enabled || current.Deleted {
 		return nil
 	}
 	if current.NextRunAt.After(now.UTC()) {
@@ -239,19 +318,22 @@ func (s *ScheduledJobScheduler) dispatchJob(ctx context.Context, job baldastate.
 	if strings.TrimSpace(current.LastDispatchKey) == dispatchKey {
 		return nil
 	}
+	if s.runStore != nil && current.Source != baldastate.ScheduledJobSourceInternal &&
+		!isOneShotScheduleSpec(current.ScheduleSpec) {
+		return s.dispatchRecurringRun(ctx, current, dispatchKey, now)
+	}
 
 	target, err := s.resolveScheduledJobTarget(ctx, current)
 	if err != nil {
-		return s.markFailure(ctx, jobID, fmt.Errorf("resolve scheduler target: %w", err))
+		return s.markFailureForJob(ctx, current, fmt.Errorf("resolve scheduler target: %w", err))
 	}
-	locator := target.Locator
 
 	var nextRunAt time.Time
 	if !isOneShotScheduleSpec(current.ScheduleSpec) {
 		var err error
 		nextRunAt, err = nextRunAtFromSpec(current.ScheduleSpec, now)
 		if err != nil {
-			return s.markFailure(ctx, jobID, fmt.Errorf("invalid schedule_spec: %w", err))
+			return s.markFailureForJob(ctx, current, fmt.Errorf("invalid schedule_spec: %w", err))
 		}
 	}
 
@@ -261,6 +343,7 @@ func (s *ScheduledJobScheduler) dispatchJob(ctx context.Context, job baldastate.
 	}
 
 	// Mark the slot only after durable command dispatch succeeds.
+	previous := current
 	current.LastDispatchKey = dispatchKey
 	current.LastError = ""
 	current.LastRunAt = now.UTC()
@@ -270,12 +353,12 @@ func (s *ScheduledJobScheduler) dispatchJob(ctx context.Context, job baldastate.
 		current.Status = baldastate.ScheduledJobStatusActive
 		current.NextRunAt = nextRunAt
 	}
-	current.SessionID = locator.SessionID
-	current.ChannelType = locator.ChannelType
-	current.AddressKey = locator.AddressKey
-	current.AddressJSON = locator.AddressJSON
-	if err := s.jobStore.Upsert(ctx, current); err != nil {
+	updated, err := s.jobStore.UpdateRuntime(ctx, runtimeUpdate(previous, current))
+	if err != nil {
 		return fmt.Errorf("update scheduled job %q after publish: %w", jobID, err)
+	}
+	if !updated {
+		s.logger.Debug().Str("job_id", jobID).Msg("scheduled job changed after publication")
 	}
 
 	return nil
@@ -289,9 +372,16 @@ func (s *ScheduledJobScheduler) getResolver() envelopetarget.DestinationResolver
 }
 
 func (s *ScheduledJobScheduler) resolveScheduledJobTarget(ctx context.Context, job baldastate.ScheduledJobRecord) (envelopetarget.Resolved, error) {
-	locator, err := baldasession.NewSessionLocator(job.ChannelType, job.AddressKey, job.AddressJSON, job.SessionID)
+	if job.Source != baldastate.ScheduledJobSourceInternal && !isOneShotScheduleSpec(job.ScheduleSpec) &&
+		strings.TrimSpace(job.ChannelType) == "" {
+		return envelopetarget.Resolved{}, nil
+	}
+	locator, err := deliverycmd.NewLocator(job.ChannelType, job.AddressKey, job.AddressJSON, job.SessionID)
 	if err != nil {
-		return envelopetarget.Resolve(ctx, s.getResolver(), envelopetarget.Target{Target: envelopetarget.TargetAlias, Key: envelopetarget.AliasOwner})
+		if job.Source == baldastate.ScheduledJobSourceInternal {
+			return envelopetarget.Resolve(ctx, s.getResolver(), envelopetarget.Target{Target: envelopetarget.TargetAlias, Key: envelopetarget.AliasOwner})
+		}
+		return envelopetarget.Resolved{}, fmt.Errorf("scheduled job %q has invalid locator: %w", job.JobID, err)
 	}
 	target := envelopetarget.Resolved{Locator: locator}
 	if s.owner != nil {
@@ -309,20 +399,24 @@ func (s *ScheduledJobScheduler) dispatchScheduledJob(
 	content string,
 	dispatchKey string,
 ) error {
-	var reportTo *baldasession.SessionLocator
+	var reportTo *deliverycmd.Locator
 	if job.ReportToEnabled {
-		locator, err := baldasession.NewSessionLocator(job.ReportToChannelType, job.ReportToAddressKey, job.ReportToAddressJSON, job.ReportToSessionID)
+		locator, err := deliverycmd.NewLocator(job.ReportToChannelType, job.ReportToAddressKey, job.ReportToAddressJSON, job.ReportToSessionID)
 		if err != nil {
-			return s.markFailure(ctx, job.JobID, fmt.Errorf("resolve report_to locator: %w", err))
+			return s.markFailureForJob(ctx, job, fmt.Errorf("resolve report_to locator: %w", err))
 		}
 		reportTo = &locator
 	}
-	env, err := turncmd.ScheduledJobEnvelope(job.JobID, content, target.Locator, reportTo, target.UserID(), 0, dispatchKey)
+	envelope := turncmd.ScheduledJobEnvelope
+	if job.Source == baldastate.ScheduledJobSourceInternal || isOneShotScheduleSpec(job.ScheduleSpec) {
+		envelope = turncmd.InternalOneShotEnvelope
+	}
+	env, err := envelope(job.JobID, content, target.Locator, reportTo, target.UserID(), 0, dispatchKey)
 	if err != nil {
-		return s.markFailure(ctx, job.JobID, err)
+		return s.markFailureForJob(ctx, job, err)
 	}
 	if _, err := s.dispatcher.Dispatch(ctx, env); err != nil {
-		return s.markFailure(ctx, job.JobID, fmt.Errorf("publish scheduled job command: %w", err))
+		return s.markFailureForJob(ctx, job, fmt.Errorf("publish scheduled job command: %w", err))
 	}
 	return nil
 }
@@ -335,6 +429,7 @@ func (s *ScheduledJobScheduler) MarkSuccess(ctx context.Context, jobID string) e
 	if !ok {
 		return fmt.Errorf("scheduled job %q not found", jobID)
 	}
+	previous := job
 	job.LastRunAt = s.now().UTC()
 	job.LastError = ""
 	job.RetryCount = 0
@@ -343,7 +438,7 @@ func (s *ScheduledJobScheduler) MarkSuccess(ctx context.Context, jobID string) e
 	} else {
 		job.Status = baldastate.ScheduledJobStatusActive
 	}
-	if err := s.jobStore.Upsert(ctx, job); err != nil {
+	if _, err := s.jobStore.UpdateRuntime(ctx, runtimeUpdate(previous, job)); err != nil {
 		return fmt.Errorf("upsert scheduled job %q: %w", jobID, err)
 	}
 	return nil
@@ -357,6 +452,11 @@ func (s *ScheduledJobScheduler) markFailure(ctx context.Context, jobID string, c
 	if !ok {
 		return fmt.Errorf("scheduled job %q not found", jobID)
 	}
+	return s.markFailureForJob(ctx, job, cause)
+}
+
+func (s *ScheduledJobScheduler) markFailureForJob(ctx context.Context, job baldastate.ScheduledJobRecord, cause error) error {
+	previous := job
 	now := s.now().UTC()
 	job.RetryCount++
 	job.LastError = strings.TrimSpace(cause.Error())
@@ -380,8 +480,8 @@ func (s *ScheduledJobScheduler) markFailure(ctx context.Context, jobID string, c
 		}
 		job.NextRunAt = now.Add(delay)
 	}
-	if err := s.jobStore.Upsert(ctx, job); err != nil {
-		return fmt.Errorf("upsert scheduled job %q: %w", jobID, err)
+	if _, err := s.jobStore.UpdateRuntime(ctx, runtimeUpdate(previous, job)); err != nil {
+		return fmt.Errorf("update scheduled job %q: %w", job.JobID, err)
 	}
 	return cause
 }
@@ -394,6 +494,7 @@ func (s *ScheduledJobScheduler) RecordExecutionFailure(ctx context.Context, jobI
 	if !ok {
 		return fmt.Errorf("scheduled job %q not found", jobID)
 	}
+	previous := job
 	now := s.now().UTC()
 	job.LastError = strings.TrimSpace(cause.Error())
 	job.LastRunAt = now
@@ -402,10 +503,19 @@ func (s *ScheduledJobScheduler) RecordExecutionFailure(ctx context.Context, jobI
 	} else {
 		job.Status = baldastate.ScheduledJobStatusActive
 	}
-	if err := s.jobStore.Upsert(ctx, job); err != nil {
+	if _, err := s.jobStore.UpdateRuntime(ctx, runtimeUpdate(previous, job)); err != nil {
 		return fmt.Errorf("upsert scheduled job %q execution failure: %w", jobID, err)
 	}
 	return cause
+}
+
+func runtimeUpdate(previous, current baldastate.ScheduledJobRecord) baldastate.ScheduledJobRuntimeUpdate {
+	return baldastate.ScheduledJobRuntimeUpdate{
+		JobID: previous.JobID, DefinitionVersion: previous.DefinitionVersion,
+		ExpectedNextRunAt: previous.NextRunAt, ExpectedLastDispatchKey: previous.LastDispatchKey,
+		Status: current.Status, RetryCount: current.RetryCount, LastDispatchKey: current.LastDispatchKey,
+		NextRunAt: current.NextRunAt, LastRunAt: current.LastRunAt, LastError: current.LastError,
+	}
 }
 
 func normalizeScheduledJobSchedulerConfig(raw ScheduledJobSchedulerConfig) (ScheduledJobSchedulerConfig, error) {
@@ -433,12 +543,19 @@ func normalizeScheduledJobSchedulerConfig(raw ScheduledJobSchedulerConfig) (Sche
 		}
 
 		target := strings.TrimSpace(rawJob.Target)
-		if target == "" {
-			return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].envelope.target is required", idx)
-		}
 		key := strings.TrimSpace(rawJob.Key)
-		if key == "" {
-			return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].envelope.key is required", idx)
+		if target == "" && key != "" || target != "" && key == "" {
+			return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].envelope.target and key must be supplied together", idx)
+		}
+		if target != "" && target != envelopetarget.TargetLocator {
+			return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].envelope.target must be locator; replace alias/session with a public locator ref", idx)
+		}
+		if key != "" {
+			locator, err := locatorref.Parse(key)
+			if err != nil {
+				return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].envelope.key: %w", idx, err)
+			}
+			key = locatorref.Format(locator)
 		}
 		content := strings.TrimSpace(rawJob.Content)
 		if content == "" {
@@ -446,16 +563,30 @@ func normalizeScheduledJobSchedulerConfig(raw ScheduledJobSchedulerConfig) (Sche
 		}
 		var reportTo *ConfiguredScheduledJobTarget
 		if rawJob.ReportTo != nil {
-			reportTo = &ConfiguredScheduledJobTarget{
-				Target: strings.TrimSpace(rawJob.ReportTo.Target),
-				Key:    strings.TrimSpace(rawJob.ReportTo.Key),
+			if key != "" {
+				return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].envelope must use either key or report_to", idx)
 			}
-			if reportTo.Target == "" {
-				return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].envelope.report_to.target is required", idx)
+			reference := ConfiguredScheduledJobTarget{
+				Target: strings.TrimSpace(rawJob.ReportTo.Target), Key: strings.TrimSpace(rawJob.ReportTo.Key),
 			}
-			if reportTo.Key == "" {
+			if reference.Key == "" {
 				return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].envelope.report_to.key is required", idx)
 			}
+			switch reference.Target {
+			case envelopetarget.TargetLocator:
+				locator, err := locatorref.Parse(reference.Key)
+				if err != nil {
+					return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].envelope.report_to.key: %w", idx, err)
+				}
+				reference.Key = locatorref.Format(locator)
+			case envelopetarget.TargetManagedAlias:
+				if !validScheduleAliasName(reference.Key) {
+					return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].envelope.report_to.key is not a managed alias name", idx)
+				}
+			default:
+				return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].envelope.report_to.target must be locator or managed_alias", idx)
+			}
+			reportTo = &reference
 		}
 
 		cfg.Jobs = append(cfg.Jobs, ConfiguredScheduledJob{

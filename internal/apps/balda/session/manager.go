@@ -28,8 +28,28 @@ const workspaceSyncSkippedNotice = "Workspace restore hit a sync conflict, so Ba
 
 var ErrNoPersistedSession = errors.New("no persisted session")
 
+var errManagerStopping = errors.New("session manager is stopping")
+
 type AgentBuilder interface {
 	CreateRuntimeSession(
+		ctx context.Context,
+		runtime *BuiltRuntime,
+		agentName string,
+		userID string,
+		sessionID string,
+		workspaceDir string,
+		sessionCtx RuntimeSessionContext,
+	) (adksession.Session, error)
+	OpenExistingRuntimeSession(
+		ctx context.Context,
+		runtime *BuiltRuntime,
+		agentName string,
+		userID string,
+		sessionID string,
+		workspaceDir string,
+		sessionCtx RuntimeSessionContext,
+	) (adksession.Session, error)
+	CreateFreshRuntimeSession(
 		ctx context.Context,
 		runtime *BuiltRuntime,
 		agentName string,
@@ -72,6 +92,7 @@ type WorkspaceManager interface {
 	Import(ctx context.Context, workspaceDir string) error
 	Export(ctx context.Context, workspaceDir, branchName, commitMessage string) error
 	CleanupWorkspace(ctx context.Context, workspaceDir string) error
+	DeleteBranch(ctx context.Context, branchName string) error
 }
 
 type AgentMetadata struct {
@@ -99,6 +120,7 @@ type BuiltRuntime struct {
 type EnsureWorkspaceResult struct {
 	Dir         string
 	SyncSkipped bool
+	Created     bool
 }
 
 // Manager manages Balda sessions backed by the configured runtime and persists session metadata.
@@ -114,14 +136,24 @@ type Manager struct {
 	sessionsPersistent bool
 	sessionStore       baldastate.SessionStore
 	logger             zerolog.Logger
+	hooks              HookRunner
 	boundaryObserver   BoundaryObserver
 	now                func() time.Time
 
 	mu                 sync.RWMutex
+	lifecycleMu        sync.RWMutex
 	sessions           map[string]*TopicSession
 	agentSessionSeq    uint64
 	boundarySeq        uint64
+	stopping           atomic.Bool
 	shutdownBoundaries map[string]string
+	operationMu        sync.Mutex
+	operations         map[string]*sessionOperation
+}
+
+type sessionOperation struct {
+	mu   sync.Mutex
+	refs int
 }
 
 // ManagerParams provides dependencies for Manager.
@@ -139,6 +171,7 @@ type ManagerParams struct {
 	SessionsPersistent bool `name:"balda_sessions_persistent"`
 	SessionStore       baldastate.SessionStore
 	BoundaryObserver   BoundaryObserver `optional:"true"`
+	Hooks              HookRunner       `optional:"true"`
 	Logger             zerolog.Logger
 }
 
@@ -160,6 +193,7 @@ func NewManager(p ManagerParams) (*Manager, error) {
 		sessionsPersistent: p.SessionsPersistent,
 		sessionStore:       p.SessionStore,
 		boundaryObserver:   p.BoundaryObserver,
+		hooks:              p.Hooks,
 		logger:             p.Logger.With().Str("component", "balda.session_manager").Logger(),
 		sessions:           make(map[string]*TopicSession),
 		now:                time.Now,
@@ -171,6 +205,9 @@ func NewManager(p ManagerParams) (*Manager, error) {
 
 // Start marks the session manager ready after its provider runtime is initialized.
 func (m *Manager) Start(context.Context) error {
+	m.lifecycleMu.Lock()
+	defer m.lifecycleMu.Unlock()
+	m.stopping.Store(false)
 	m.logger.Info().Str("balda_provider", m.getProviderName()).Msg("session manager ready")
 	return nil
 }
@@ -188,6 +225,9 @@ func (m *Manager) SetBoundaryObserver(observer BoundaryObserver) {
 
 // Stop terminates all active sessions.
 func (m *Manager) Stop(ctx context.Context) error {
+	m.stopping.Store(true)
+	m.lifecycleMu.Lock()
+	defer m.lifecycleMu.Unlock()
 	m.mu.RLock()
 	activeSessions := len(m.sessions)
 	m.mu.RUnlock()
@@ -278,17 +318,36 @@ func (m *Manager) BaldaProviderID() string {
 
 // CreateSession builds an agent for the given locator and stores it in memory.
 func (m *Manager) CreateSession(ctx context.Context, sessionCtx SessionContext, agentName string) error {
-	return m.createSession(ctx, sessionCtx, agentName, nil)
+	return m.createSession(ctx, sessionCtx, agentName, nil, false)
 }
 
-func (m *Manager) createSession(ctx context.Context, sessionCtx SessionContext, agentName string, persisted *baldastate.SessionRecord) error {
+func (m *Manager) createSession(ctx context.Context, sessionCtx SessionContext, agentName string,
+	persisted *baldastate.SessionRecord, transient bool,
+) error {
+	sessionID := strings.TrimSpace(sessionCtx.Locator.SessionID)
+	endLifecycle, err := m.beginLifecycleOperation(ctx)
+	if err != nil {
+		return err
+	}
+	defer endLifecycle()
+	unlock := m.lockSessionOperation(sessionID)
+	defer unlock()
+	return m.createSessionLocked(ctx, sessionCtx, agentName, persisted, transient)
+}
+
+func (m *Manager) createSessionLocked(ctx context.Context, sessionCtx SessionContext, agentName string,
+	persisted *baldastate.SessionRecord, transient bool,
+) error {
+	if err := m.lifecycleInterruption(ctx); err != nil {
+		return err
+	}
 	locator := sessionCtx.Locator
 	userID := strings.TrimSpace(sessionCtx.UserID)
 	if userID == "" {
 		return fmt.Errorf("user id is required")
 	}
-
 	sessionID := strings.TrimSpace(locator.SessionID)
+
 	m.mu.RLock()
 	builder := m.agentBuilder
 	m.mu.RUnlock()
@@ -303,65 +362,43 @@ func (m *Manager) createSession(ctx context.Context, sessionCtx SessionContext, 
 		Str("channel_type", locator.ChannelType).
 		Msg("creating session")
 
-	m.mu.Lock()
-	if _, exists := m.sessions[sessionID]; exists {
-		m.mu.Unlock()
+	m.mu.RLock()
+	_, exists := m.sessions[sessionID]
+	m.mu.RUnlock()
+	if exists {
 		m.logger.Warn().Str("session_id", sessionID).Msg("session already exists")
 		return fmt.Errorf("session already exists for %s", locator.AddressKey)
 	}
-	m.mu.Unlock()
 
-	branchName := ""
-	workspaceDir := m.workingDir
-	startupNotice := ""
-	if m.workspaceEnabled {
-		branchName = fmt.Sprintf("norma/balda/%s", sessionID)
-		canonicalPath := m.workspaces.CanonicalWorkspaceDir(sessionID)
-		if persisted != nil {
-			if persistedBranch := strings.TrimSpace(persisted.BranchName); persistedBranch != "" {
-				branchName = persistedBranch
-				if !git.BranchExists(ctx, m.workingDir, branchName) {
-					return fmt.Errorf("persisted workspace branch %q not found", branchName)
-				}
-			}
+	branchName, workspaceDir, startupNotice, workspaceCreated, err := m.prepareSessionWorkspace(ctx, sessionID, persisted)
+	if err != nil {
+		return err
+	}
+	cleanupWorkspace := m.workspaceEnabled && persisted == nil && workspaceCreated
+	if err := m.lifecycleInterruption(ctx); err != nil {
+		if cleanupWorkspace {
+			_ = m.workspaces.CleanupWorkspace(ctx, workspaceDir)
 		}
-
-		workspace, err := m.workspaces.EnsureWorkspace(ctx, sessionID, branchName, canonicalPath)
-		if err != nil {
-			if errors.Is(err, ErrWorkspaceCollision) {
-				m.logger.Warn().
-					Err(err).
-					Str("session_id", sessionID).
-					Str("canonical_workspace", canonicalPath).
-					Str("branch", branchName).
-					Msg("workspace collision detected; force-remounting canonical workspace path")
-				workspace, err = m.workspaces.ForceRemountCanonicalWorkspace(ctx, sessionID, branchName)
-			}
-			if err != nil {
-				m.logger.Error().Err(err).Str("session_id", sessionID).Msg("failed to create workspace")
-				return fmt.Errorf("create workspace: %w", err)
-			}
+		return err
+	}
+	cleanupPreparedWorkspace := func() {
+		if cleanupWorkspace {
+			_ = m.workspaces.CleanupWorkspace(ctx, workspaceDir)
 		}
-		workspaceDir = workspace.Dir
-		if workspace.SyncSkipped {
-			startupNotice = workspaceSyncSkippedNotice
-		}
-		m.logger.Debug().Str("session_id", sessionID).Str("workspace", workspaceDir).Msg("workspace created")
 	}
 
 	runtimeManager := m.runtimeManager
 	if runtimeManager == nil {
-		if m.workspaceEnabled {
-			_ = m.workspaces.CleanupWorkspace(ctx, workspaceDir)
-		}
+		cleanupPreparedWorkspace()
 		return fmt.Errorf("balda runtime manager is required")
 	}
-
 	rootRuntime, err := runtimeManager.Runtime(ctx)
 	if err != nil {
-		if m.workspaceEnabled {
-			_ = m.workspaces.CleanupWorkspace(ctx, workspaceDir)
-		}
+		cleanupPreparedWorkspace()
+		return err
+	}
+	if err := m.lifecycleInterruption(ctx); err != nil {
+		cleanupPreparedWorkspace()
 		return err
 	}
 	baldaProvider := strings.TrimSpace(runtimeManager.ProviderID())
@@ -370,66 +407,36 @@ func (m *Manager) createSession(ctx context.Context, sessionCtx SessionContext, 
 	}
 
 	agentSessionID := m.newAgentSessionID(sessionID)
-	if m.sessionsPersistent {
+	if m.sessionsPersistent || transient || persisted != nil {
 		agentSessionID = sessionID
 	}
-	sessionRuntime := rootRuntime
-	if scopedManager, ok := runtimeManager.(SessionRuntimeManager); ok {
-		requestedSnapshotID := ""
-		if persisted != nil {
-			requestedSnapshotID = strings.TrimSpace(persisted.RuntimeSnapshotID)
-		}
-		sessionRuntime, err = scopedManager.RuntimeForSession(ctx, SessionRuntimeRequest{
-			Locator:           locator,
-			UserID:            userID,
-			AgentSessionID:    agentSessionID,
-			WorkspaceDir:      workspaceDir,
-			RuntimeSnapshotID: requestedSnapshotID,
-		})
-		if err != nil {
-			if m.workspaceEnabled {
-				_ = m.workspaces.CleanupWorkspace(ctx, workspaceDir)
-			}
-			return err
-		}
-		if sessionRuntime == nil {
-			if m.workspaceEnabled {
-				_ = m.workspaces.CleanupWorkspace(ctx, workspaceDir)
-			}
-			return fmt.Errorf("session runtime is required")
-		}
-		resolvedSnapshotID := strings.TrimSpace(sessionRuntime.RuntimeSnapshotID)
-		if resolvedSnapshotID == "" {
-			if sessionRuntime.Close != nil {
-				_ = sessionRuntime.Close()
-			}
-			if m.workspaceEnabled {
-				_ = m.workspaces.CleanupWorkspace(ctx, workspaceDir)
-			}
-			return fmt.Errorf("session runtime snapshot is required")
-		}
-		if requestedSnapshotID != "" && resolvedSnapshotID != requestedSnapshotID {
-			if sessionRuntime.Close != nil {
-				_ = sessionRuntime.Close()
-			}
-			if m.workspaceEnabled {
-				_ = m.workspaces.CleanupWorkspace(ctx, workspaceDir)
-			}
-			return fmt.Errorf("session runtime snapshot %q does not match persisted snapshot %q", resolvedSnapshotID, requestedSnapshotID)
-		}
+	runtimeSessionCtx := RuntimeSessionContext{
+		BaldaSessionID: sessionID,
+		SessionBranch:  branchName,
 	}
-	sess, err := builder.CreateRuntimeSession(
-		ctx,
-		sessionRuntime,
-		baldaProvider,
-		userID,
-		agentSessionID,
-		workspaceDir,
-		RuntimeSessionContext{
-			BaldaSessionID: sessionID,
-			SessionBranch:  branchName,
-		},
-	)
+
+	var sessionRuntime *BuiltRuntime
+	var sess adksession.Session
+	createdFresh := false
+	if persisted == nil {
+		sessionRuntime, err = m.bindSessionRuntime(ctx, rootRuntime, locator, userID, agentSessionID, workspaceDir, "")
+		if err == nil {
+			if transient {
+				sess, err = builder.CreateRuntimeSession(
+					ctx, sessionRuntime, baldaProvider, userID, agentSessionID, workspaceDir, runtimeSessionCtx,
+				)
+			} else {
+				sess, err = builder.CreateFreshRuntimeSession(
+					ctx, sessionRuntime, baldaProvider, userID, agentSessionID, workspaceDir, runtimeSessionCtx,
+				)
+			}
+			createdFresh = err == nil
+		}
+	} else {
+		sessionRuntime, sess, createdFresh, err = m.restoreRuntimeSession(
+			ctx, builder, rootRuntime, locator, userID, baldaProvider, workspaceDir, runtimeSessionCtx, *persisted,
+		)
+	}
 	if err != nil {
 		m.logger.Error().
 			Err(err).
@@ -437,13 +444,14 @@ func (m *Manager) createSession(ctx context.Context, sessionCtx SessionContext, 
 			Str("agent_session_id", agentSessionID).
 			Str("agent", baldaProvider).
 			Str("label", agentName).
-			Msg("failed to create runtime session")
-		if m.workspaceEnabled {
-			_ = m.workspaces.CleanupWorkspace(ctx, workspaceDir)
-		}
-		if sessionRuntime != nil && sessionRuntime.Close != nil {
-			_ = sessionRuntime.Close()
-		}
+			Msg("failed to open runtime session")
+		closeBuiltRuntime(sessionRuntime)
+		cleanupPreparedWorkspace()
+		return err
+	}
+	if err := m.lifecycleInterruption(ctx); err != nil {
+		closeBuiltRuntime(sessionRuntime)
+		cleanupPreparedWorkspace()
 		return err
 	}
 
@@ -463,12 +471,26 @@ func (m *Manager) createSession(ctx context.Context, sessionCtx SessionContext, 
 		branchName:        branchName,
 		startupNotice:     startupNotice,
 	}
+	source := "startup"
+	if persisted != nil && !createdFresh {
+		source = "resume"
+	}
+	if err := m.startSessionHooks(ctx, ts, baldaProvider, source); err != nil {
+		_ = m.cleanupTopicSession(ctx, ts, sessionCleanupOptions{deleteRuntimeSession: createdFresh, cleanupWorkspace: cleanupWorkspace})
+		return err
+	}
 
-	if err := m.persistSessionRecord(ctx, ts, baldastate.SessionStatusActive); err != nil {
-		if closeErr := m.cleanupTopicSession(ctx, ts, sessionCleanupOptions{deleteRuntimeSession: true, cleanupWorkspace: true}); closeErr != nil {
-			m.logger.Warn().Err(closeErr).Str("session_id", sessionID).Msg("failed to rollback session after persist error")
+	shouldPersist := !transient && (persisted == nil || createdFresh)
+	if shouldPersist {
+		if err := m.persistSessionRecord(ctx, ts, baldastate.SessionStatusActive); err != nil {
+			if closeErr := m.cleanupTopicSession(ctx, ts, sessionCleanupOptions{
+				deleteRuntimeSession: createdFresh,
+				cleanupWorkspace:     cleanupWorkspace,
+			}); closeErr != nil {
+				m.logger.Warn().Err(closeErr).Str("session_id", sessionID).Msg("failed to rollback session after persist error")
+			}
+			return fmt.Errorf("persist session metadata: %w", err)
 		}
-		return fmt.Errorf("persist session metadata: %w", err)
 	}
 
 	m.mu.Lock()
@@ -483,6 +505,202 @@ func (m *Manager) createSession(ctx context.Context, sessionCtx SessionContext, 
 		Msg("session created successfully")
 
 	return nil
+}
+
+func (m *Manager) prepareSessionWorkspace(
+	ctx context.Context,
+	sessionID string,
+	persisted *baldastate.SessionRecord,
+) (branchName, workspaceDir, startupNotice string, created bool, err error) {
+	workspaceDir = m.workingDir
+	if !m.workspaceEnabled {
+		return "", workspaceDir, "", false, nil
+	}
+
+	branchName = fmt.Sprintf("norma/balda/%s", sessionID)
+	if persisted != nil {
+		if persistedBranch := strings.TrimSpace(persisted.BranchName); persistedBranch != "" {
+			branchName = persistedBranch
+			if !git.BranchExists(ctx, m.workingDir, branchName) {
+				return "", "", "", false, fmt.Errorf("persisted workspace branch %q not found", branchName)
+			}
+		}
+	}
+
+	canonicalPath := m.workspaces.CanonicalWorkspaceDir(sessionID)
+	workspace, err := m.workspaces.EnsureWorkspace(ctx, sessionID, branchName, canonicalPath)
+	if err != nil && errors.Is(err, ErrWorkspaceCollision) {
+		m.logger.Warn().
+			Err(err).
+			Str("session_id", sessionID).
+			Str("canonical_workspace", canonicalPath).
+			Str("branch", branchName).
+			Msg("workspace collision detected; force-remounting canonical workspace path")
+		workspace, err = m.workspaces.ForceRemountCanonicalWorkspace(ctx, sessionID, branchName)
+	}
+	if err != nil {
+		m.logger.Error().Err(err).Str("session_id", sessionID).Msg("failed to create workspace")
+		return "", "", "", false, fmt.Errorf("create workspace: %w", err)
+	}
+	if workspace.SyncSkipped {
+		startupNotice = workspaceSyncSkippedNotice
+	}
+	m.logger.Debug().Str("session_id", sessionID).Str("workspace", workspace.Dir).Msg("workspace created")
+	return branchName, workspace.Dir, startupNotice, workspace.Created, nil
+}
+
+func (m *Manager) bindSessionRuntime(
+	ctx context.Context,
+	rootRuntime *BuiltRuntime,
+	locator SessionLocator,
+	userID, agentSessionID, workspaceDir, snapshotID string,
+) (*BuiltRuntime, error) {
+	if rootRuntime == nil {
+		return nil, fmt.Errorf("runtime is required")
+	}
+	runtimeManager := m.runtimeManager
+	scopedManager, ok := runtimeManager.(SessionRuntimeManager)
+	if !ok {
+		nonOwningRuntime := *rootRuntime
+		nonOwningRuntime.Close = nil
+		return &nonOwningRuntime, nil
+	}
+
+	sessionRuntime, err := scopedManager.RuntimeForSession(ctx, SessionRuntimeRequest{
+		Locator:           locator,
+		UserID:            userID,
+		AgentSessionID:    agentSessionID,
+		WorkspaceDir:      workspaceDir,
+		RuntimeSnapshotID: strings.TrimSpace(snapshotID),
+	})
+	if err != nil {
+		return nil, err
+	}
+	if sessionRuntime == nil {
+		return nil, fmt.Errorf("session runtime is required")
+	}
+	resolvedSnapshotID := strings.TrimSpace(sessionRuntime.RuntimeSnapshotID)
+	if resolvedSnapshotID == "" {
+		closeBuiltRuntime(sessionRuntime)
+		return nil, fmt.Errorf("session runtime snapshot is required")
+	}
+	if requested := strings.TrimSpace(snapshotID); requested != "" && resolvedSnapshotID != requested {
+		closeBuiltRuntime(sessionRuntime)
+		return nil, fmt.Errorf("session runtime snapshot %q does not match persisted snapshot %q", resolvedSnapshotID, requested)
+	}
+	return sessionRuntime, nil
+}
+
+func (m *Manager) restoreRuntimeSession(
+	ctx context.Context,
+	builder AgentBuilder,
+	rootRuntime *BuiltRuntime,
+	locator SessionLocator,
+	userID, provider, workspaceDir string,
+	sessionCtx RuntimeSessionContext,
+	record baldastate.SessionRecord,
+) (*BuiltRuntime, adksession.Session, bool, error) {
+	sessionID := strings.TrimSpace(record.SessionID)
+	exactRuntime, restoreErr := m.bindSessionRuntime(
+		ctx, rootRuntime, locator, userID, sessionID, workspaceDir, record.RuntimeSnapshotID,
+	)
+	if restoreErr == nil {
+		var sess adksession.Session
+		sess, restoreErr = builder.OpenExistingRuntimeSession(
+			ctx, exactRuntime, provider, userID, sessionID, workspaceDir, sessionCtx,
+		)
+		if restoreErr == nil {
+			return exactRuntime, sess, false, nil
+		}
+		closeBuiltRuntime(exactRuntime)
+	}
+	if err := m.lifecycleInterruption(ctx); err != nil {
+		return nil, nil, false, err
+	}
+
+	m.logger.Warn().
+		Err(restoreErr).
+		Str("session_id", sessionID).
+		Str("runtime_snapshot_id", strings.TrimSpace(record.RuntimeSnapshotID)).
+		Msg("saved session restore failed; starting fresh with current capabilities")
+
+	currentRuntime, err := m.bindSessionRuntime(ctx, rootRuntime, locator, userID, sessionID, workspaceDir, "")
+	if err != nil {
+		return nil, nil, false, fmt.Errorf("bind current runtime after restore failure: %w", err)
+	}
+	if err := m.lifecycleInterruption(ctx); err != nil {
+		closeBuiltRuntime(currentRuntime)
+		return nil, nil, false, err
+	}
+	if err := m.notifyBoundary(ctx, SessionBoundary{
+		Locator:        locator,
+		SessionID:      sessionID,
+		AgentSessionID: sessionID,
+		Reason:         BoundaryReasonRotation,
+	}); err != nil {
+		closeBuiltRuntime(currentRuntime)
+		return nil, nil, false, err
+	}
+	if err := m.lifecycleInterruption(ctx); err != nil {
+		closeBuiltRuntime(currentRuntime)
+		return nil, nil, false, err
+	}
+	appName := strings.TrimSpace(currentRuntime.AppName)
+	if appName == "" {
+		appName = baldaRuntimeAppName
+	}
+	if currentRuntime.SessionSvc == nil {
+		closeBuiltRuntime(currentRuntime)
+		return nil, nil, false, fmt.Errorf("session service is required")
+	}
+	if err := currentRuntime.SessionSvc.Delete(ctx, &adksession.DeleteRequest{
+		AppName: appName, UserID: userID, SessionID: sessionID,
+	}); err != nil {
+		closeBuiltRuntime(currentRuntime)
+		return nil, nil, false, fmt.Errorf("delete failed runtime session: %w", err)
+	}
+	if err := m.lifecycleInterruption(ctx); err != nil {
+		closeBuiltRuntime(currentRuntime)
+		return nil, nil, false, err
+	}
+	sess, err := builder.CreateFreshRuntimeSession(
+		ctx, currentRuntime, provider, userID, sessionID, workspaceDir, sessionCtx,
+	)
+	if err != nil {
+		closeBuiltRuntime(currentRuntime)
+		return nil, nil, false, fmt.Errorf("create fresh runtime session: %w", err)
+	}
+	if err := m.lifecycleInterruption(ctx); err != nil {
+		closeBuiltRuntime(currentRuntime)
+		return nil, nil, false, err
+	}
+	return currentRuntime, sess, true, nil
+}
+
+func (m *Manager) beginLifecycleOperation(ctx context.Context) (func(), error) {
+	m.lifecycleMu.RLock()
+	if err := m.lifecycleInterruption(ctx); err != nil {
+		m.lifecycleMu.RUnlock()
+		return nil, err
+	}
+	return m.lifecycleMu.RUnlock, nil
+}
+
+func (m *Manager) lifecycleInterruption(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if m.stopping.Load() {
+		return errManagerStopping
+	}
+	return nil
+}
+
+func closeBuiltRuntime(runtime *BuiltRuntime) {
+	if runtime != nil && runtime.Close != nil {
+		_ = runtime.Close()
+		runtime.Close = nil
+	}
 }
 
 // TakeStartupNotice returns and clears the pending session startup notice.
@@ -508,6 +726,8 @@ func (m *Manager) TakeStartupNotice(sessionID string) string {
 // StopSession removes a session from memory and cleans up.
 func (m *Manager) StopSession(locator SessionLocator) {
 	sessionID := strings.TrimSpace(locator.SessionID)
+	unlock := m.lockSessionOperation(sessionID)
+	defer unlock()
 	if m.sessionsPersistent {
 		m.logger.Info().
 			Str("session_id", sessionID).
@@ -542,6 +762,8 @@ func (m *Manager) resetSessionWithReason(ctx context.Context, locator SessionLoc
 	if sessionID == "" {
 		return fmt.Errorf("session_id is required")
 	}
+	unlock := m.lockSessionOperation(sessionID)
+	defer unlock()
 
 	m.logger.Info().
 		Str("session_id", sessionID).
@@ -550,7 +772,7 @@ func (m *Manager) resetSessionWithReason(ctx context.Context, locator SessionLoc
 		Str("boundary_reason", string(reason)).
 		Msg("resetting session")
 
-	if removed, boundaryErr := m.removeActiveSession(ctx, locator, sessionCleanupOptions{deleteRuntimeSession: true}, reason); removed {
+	if removed, boundaryErr := m.resetActiveSession(ctx, locator, reason); removed {
 		return boundaryErr
 	}
 
@@ -645,17 +867,21 @@ func (m *Manager) stopAllWithContext(ctx context.Context) {
 		if ts == nil {
 			continue
 		}
-		if err := m.notifyBoundary(ctx, SessionBoundary{
-			Locator:        ts.locator,
-			SessionID:      ts.sessionID,
-			AgentSessionID: ts.GetAgentSessionID(),
-			Reason:         BoundaryReasonShutdown,
-		}); err != nil {
-			m.logger.Warn().Err(err).Str("session_id", ts.sessionID).Msg("session shutdown boundary failed")
+		unlock := m.lockSessionOperation(ts.sessionID)
+		if !ts.runtimeDeleted && !ts.runtimeClosed {
+			if err := m.notifyBoundary(ctx, SessionBoundary{
+				Locator:        ts.locator,
+				SessionID:      ts.sessionID,
+				AgentSessionID: ts.GetAgentSessionID(),
+				Reason:         BoundaryReasonShutdown,
+			}); err != nil {
+				m.logger.Warn().Err(err).Str("session_id", ts.sessionID).Msg("session shutdown boundary failed")
+			}
 		}
 		if err := m.cleanupTopicSession(ctx, ts, opts); err != nil {
 			m.logger.Warn().Err(err).Str("session_id", ts.sessionID).Msg("failed to close topic session")
 		}
+		unlock()
 	}
 
 	m.logger.Info().Msg("all sessions stopped")
@@ -664,6 +890,79 @@ func (m *Manager) stopAllWithContext(ctx context.Context) {
 type sessionCleanupOptions struct {
 	deleteRuntimeSession bool
 	cleanupWorkspace     bool
+}
+
+func (m *Manager) resetActiveSession(ctx context.Context, locator SessionLocator, reason BoundaryReason) (bool, error) {
+	sessionID := strings.TrimSpace(locator.SessionID)
+	m.mu.RLock()
+	ts := m.sessions[sessionID]
+	m.mu.RUnlock()
+	if ts == nil {
+		return false, nil
+	}
+	if ts.pendingBoundaries == nil {
+		ts.pendingBoundaries = make(map[BoundaryReason]boundaryAttempt)
+	}
+	attempt, ok := ts.pendingBoundaries[reason]
+	if !ok {
+		occurredAt := m.currentTime()
+		attempt.boundary = SessionBoundary{
+			Locator:        ts.locator,
+			SessionID:      ts.sessionID,
+			AgentSessionID: ts.GetAgentSessionID(),
+			Reason:         reason,
+			OccurredAt:     occurredAt,
+			TransitionID:   m.newBoundaryID(reason, ts.sessionID, occurredAt),
+		}
+		ts.pendingBoundaries[reason] = attempt
+	}
+	var boundaryErr error
+	if !attempt.published {
+		boundaryErr = m.notifyBoundary(ctx, attempt.boundary)
+		if boundaryErr == nil {
+			attempt.published = true
+			ts.pendingBoundaries[reason] = attempt
+		}
+	}
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
+	defer cancel()
+	// Keep the active runtime available if storage cannot delete its history.
+	if err := deleteTopicRuntimeSession(cleanupCtx, ts); err != nil {
+		return true, errors.Join(boundaryErr, err)
+	}
+	m.mu.Lock()
+	if m.sessions[sessionID] == ts {
+		delete(m.sessions, sessionID)
+	}
+	m.mu.Unlock()
+	if err := m.cleanupTopicSession(cleanupCtx, ts, sessionCleanupOptions{}); err != nil {
+		return true, errors.Join(boundaryErr, err)
+	}
+	return true, boundaryErr
+}
+
+func (m *Manager) lockSessionOperation(sessionID string) func() {
+	m.operationMu.Lock()
+	if m.operations == nil {
+		m.operations = make(map[string]*sessionOperation)
+	}
+	op := m.operations[sessionID]
+	if op == nil {
+		op = &sessionOperation{}
+		m.operations[sessionID] = op
+	}
+	op.refs++
+	m.operationMu.Unlock()
+	op.mu.Lock()
+	return func() {
+		op.mu.Unlock()
+		m.operationMu.Lock()
+		op.refs--
+		if op.refs == 0 {
+			delete(m.operations, sessionID)
+		}
+		m.operationMu.Unlock()
+	}
 }
 
 func (m *Manager) removeActiveSession(ctx context.Context, locator SessionLocator, opts sessionCleanupOptions, reason BoundaryReason) (bool, error) {
@@ -793,40 +1092,57 @@ func (m *Manager) newBoundaryID(reason BoundaryReason, sessionID string, occurre
 }
 
 func (m *Manager) cleanupTopicSession(ctx context.Context, ts *TopicSession, opts sessionCleanupOptions) error {
+	m.endSessionHooks(ctx, ts)
 	var firstErr error
-	if opts.deleteRuntimeSession && ts != nil && ts.sessionSvc != nil {
-		sessionID := strings.TrimSpace(ts.GetAgentSessionID())
-		userID := strings.TrimSpace(ts.userID)
-		appName := baldaRuntimeAppName
-		if ts.sess != nil {
-			if sessionAppName := strings.TrimSpace(ts.sess.AppName()); sessionAppName != "" {
-				appName = sessionAppName
-			}
-			if sessionUserID := strings.TrimSpace(ts.sess.UserID()); sessionUserID != "" {
-				userID = sessionUserID
-			}
-		}
-		if sessionID != "" && userID != "" {
-			if err := ts.sessionSvc.Delete(ctx, &adksession.DeleteRequest{
-				AppName:   appName,
-				UserID:    userID,
-				SessionID: sessionID,
-			}); err != nil {
-				firstErr = fmt.Errorf("delete runtime session: %w", err)
-			}
-		}
+	if opts.deleteRuntimeSession {
+		firstErr = deleteTopicRuntimeSession(ctx, ts)
 	}
 	if opts.cleanupWorkspace && ts != nil && m.workspaceEnabled && ts.workspaceDir != "" {
 		if err := m.workspaces.CleanupWorkspace(ctx, ts.workspaceDir); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
-	if ts != nil && ts.runtimeClose != nil {
-		if err := ts.runtimeClose(); err != nil && firstErr == nil {
-			firstErr = fmt.Errorf("close scoped runtime: %w", err)
+	if ts != nil && !ts.runtimeClosed {
+		if ts.runtimeClose != nil {
+			if err := ts.runtimeClose(); err != nil {
+				if firstErr == nil {
+					firstErr = fmt.Errorf("close scoped runtime: %w", err)
+				}
+				return firstErr
+			}
 		}
+		ts.runtimeClosed = true
 	}
 	return firstErr
+}
+
+func deleteTopicRuntimeSession(ctx context.Context, ts *TopicSession) error {
+	if ts == nil || ts.sessionSvc == nil || ts.runtimeDeleted {
+		return nil
+	}
+	sessionID := strings.TrimSpace(ts.GetAgentSessionID())
+	userID := strings.TrimSpace(ts.userID)
+	appName := baldaRuntimeAppName
+	if ts.sess != nil {
+		if sessionAppName := strings.TrimSpace(ts.sess.AppName()); sessionAppName != "" {
+			appName = sessionAppName
+		}
+		if sessionUserID := strings.TrimSpace(ts.sess.UserID()); sessionUserID != "" {
+			userID = sessionUserID
+		}
+	}
+	if sessionID == "" || userID == "" {
+		return nil
+	}
+	if err := ts.sessionSvc.Delete(ctx, &adksession.DeleteRequest{
+		AppName:   appName,
+		UserID:    userID,
+		SessionID: sessionID,
+	}); err != nil {
+		return fmt.Errorf("delete runtime session: %w", err)
+	}
+	ts.runtimeDeleted = true
+	return nil
 }
 
 func (m *Manager) persistSessionRecord(ctx context.Context, ts *TopicSession, status string) error {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/baldaworks/balda/internal/apps/backoffice"
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	baldaeventbus "github.com/baldaworks/balda/internal/apps/balda/eventbus"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
@@ -23,14 +24,17 @@ type Config struct {
 // BaldaConfig holds the balda-specific configuration.
 type BaldaConfig struct {
 	Provider            string                    `mapstructure:"provider"`
+	HTTP                HTTPConfig                `mapstructure:"http"`
 	Telegram            TelegramConfig            `mapstructure:"telegram"`
 	Zulip               ZulipConfig               `mapstructure:"zulip"`
+	Mattermost          MattermostConfig          `mapstructure:"mattermost"`
 	Slack               SlackConfig               `mapstructure:"slack"`
 	Webhooks            WebhooksConfig            `mapstructure:"webhooks"`
 	Logger              LoggerConfig              `mapstructure:"logger"`
 	WorkingDir          string                    `mapstructure:"working_dir"`
 	StateDir            string                    `mapstructure:"state_dir"`
 	Database            state.DatabaseConfig      `mapstructure:"database"`
+	Backoffice          backoffice.ServerConfig   `mapstructure:"backoffice"`
 	Sessions            SessionsConfig            `mapstructure:"sessions"`
 	Memory              MemoryConfig              `mapstructure:"memory"`
 	SessionMemory       SessionMemoryConfig       `mapstructure:"session_memory"`
@@ -42,8 +46,14 @@ type BaldaConfig struct {
 	Scheduler           SchedulerConfig           `mapstructure:"scheduler"`
 	Workspace           WorkspaceConfig           `mapstructure:"workspace"`
 	MCPServers          []string                  `mapstructure:"mcp_servers"`
+	MCPManagement       MCPManagementConfig       `mapstructure:"mcp_management"`
 	GlobalInstruction   string                    `mapstructure:"global_instruction"`
 	SessionInstructions SessionInstructionsConfig `mapstructure:"session_instructions"`
+}
+
+// MCPManagementConfig supplies the deployment-owned worker credential key.
+type MCPManagementConfig struct {
+	CredentialKey string `mapstructure:"credential_key" json:"-"`
 }
 
 // SessionInstructionsConfig controls trusted host instruction contributions.
@@ -75,6 +85,30 @@ type ZulipConfig struct {
 	ServerURL    string             `mapstructure:"server_url"`
 	WebhookToken string             `mapstructure:"webhook_token"`
 	Webhook      ZulipWebhookConfig `mapstructure:"webhook"`
+}
+
+// MattermostConfig holds the Mattermost bot configuration.
+//
+// Mattermost is a websocket transport: Enabled turns on the bot-account
+// connection, ServerURL is the absolute http(s) base URL, and Token is the
+// bot account personal access token. BotUserID/BotUsername identify the bot
+// so inbound posts authored by it are not answered.
+//
+// A non-loopback ServerURL is required for real deployments because the
+// websocket event stream is only reachable over the network.
+type MattermostConfig struct {
+	Enabled     bool   `mapstructure:"enabled"`
+	ServerURL   string `mapstructure:"server_url"`
+	Token       string `mapstructure:"token"`
+	BotUserID   string `mapstructure:"bot_user_id"`
+	BotUsername string `mapstructure:"bot_username"`
+
+	// Slash commands are delivered as HTTP requests, not posts, so they need a
+	// separate receiver. It is independent from the websocket ingress.
+	CommandsEnabled    bool   `mapstructure:"commands_enabled"`
+	CommandsListenAddr string `mapstructure:"commands_listen_addr"`
+	CommandsPath       string `mapstructure:"commands_path"`
+	CommandsToken      string `mapstructure:"commands_token"`
 }
 
 // ZulipWebhookConfig holds Zulip webhook receiver settings.
@@ -114,27 +148,27 @@ type WebhooksConfig struct {
 	Routes     map[string]WebhookRouteConfig `mapstructure:"routes"`
 }
 
-// WebhookRouteConfig binds a webhook path to route envelope/auth/dedupe policy.
+// WebhookRouteConfig binds a webhook slug to route envelope/auth/dedupe policy.
 type WebhookRouteConfig struct {
-	Path           string                     `mapstructure:"path"`
+	Unsupported    map[string]any             `mapstructure:",remain"`
 	PromptTemplate string                     `mapstructure:"prompt_template"`
 	Envelope       WebhookRouteEnvelopeConfig `mapstructure:"envelope"`
 	Auth           WebhookRouteAuthConfig     `mapstructure:"auth"`
 	Dedupe         WebhookRouteDedupeConfig   `mapstructure:"dedupe"`
 }
 
-// WebhookRouteEnvelopeConfig configures the session envelope for one route.
+// WebhookRouteEnvelopeConfig configures optional final report delivery.
 type WebhookRouteEnvelopeConfig struct {
-	Target   string                            `mapstructure:"target"`
-	Key      string                            `mapstructure:"key"`
-	Mode     string                            `mapstructure:"mode"`
-	ReportTo *WebhookRouteEnvelopeTargetConfig `mapstructure:"report_to"`
+	ReportTo      *WebhookRouteEnvelopeTargetConfig `mapstructure:"report_to"`
+	AckOnDelivery bool                              `mapstructure:"ack_on_delivery"`
+	Unsupported   map[string]any                    `mapstructure:",remain"`
 }
 
 // WebhookRouteEnvelopeTargetConfig defines a route report_to address.
 type WebhookRouteEnvelopeTargetConfig struct {
-	Target string `mapstructure:"target"`
-	Key    string `mapstructure:"key"`
+	Target      string         `mapstructure:"target"`
+	Key         string         `mapstructure:"key"`
+	Unsupported map[string]any `mapstructure:",remain"`
 }
 
 // WebhookRouteAuthConfig configures route-level request authentication.

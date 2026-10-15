@@ -16,6 +16,7 @@ import (
 )
 
 type fakeSessionStore struct {
+	getErr error
 	record baldastate.SessionRecord
 	found  bool
 }
@@ -27,6 +28,9 @@ func (f *fakeSessionStore) Upsert(_ context.Context, record baldastate.SessionRe
 }
 
 func (f *fakeSessionStore) GetByAddress(_ context.Context, _, _ string) (baldastate.SessionRecord, bool, error) {
+	if f.getErr != nil {
+		return baldastate.SessionRecord{}, false, f.getErr
+	}
 	if !f.found {
 		return baldastate.SessionRecord{}, false, nil
 	}
@@ -53,6 +57,24 @@ type fakeAgentBuilder struct {
 }
 
 func (f *fakeAgentBuilder) CreateRuntimeSession(
+	ctx context.Context,
+	runtime *baldasession.BuiltRuntime,
+	agentName, userID, sessionID, workspaceDir string,
+	sessionCtx baldasession.RuntimeSessionContext,
+) (adksession.Session, error) {
+	return f.CreateFreshRuntimeSession(ctx, runtime, agentName, userID, sessionID, workspaceDir, sessionCtx)
+}
+
+func (f *fakeAgentBuilder) OpenExistingRuntimeSession(
+	ctx context.Context,
+	runtime *baldasession.BuiltRuntime,
+	agentName, userID, sessionID, workspaceDir string,
+	sessionCtx baldasession.RuntimeSessionContext,
+) (adksession.Session, error) {
+	return f.CreateFreshRuntimeSession(ctx, runtime, agentName, userID, sessionID, workspaceDir, sessionCtx)
+}
+
+func (f *fakeAgentBuilder) CreateFreshRuntimeSession(
 	context.Context,
 	*baldasession.BuiltRuntime,
 	string,
@@ -169,7 +191,7 @@ func TestModule_ProvidesChatHandler(t *testing.T) {
 		fx.NopLogger,
 		fx.Provide(
 			func() *baldasession.Manager { return newTestSessionManager(t) },
-			func() actortransport.Dispatcher { return &fakeDispatcher{} },
+			fx.Annotate(func() chatapp.Dispatcher { return &fakeDispatcher{} }, fx.ResultTags(`name:"command_ingress"`)),
 			zerolog.Nop,
 		),
 		Module,

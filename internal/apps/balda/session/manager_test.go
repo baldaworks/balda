@@ -9,7 +9,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/rs/zerolog"
@@ -47,6 +49,122 @@ func TestStopAllWithContext_CleansWorkspaceWhenRootContextCanceled(t *testing.T)
 
 	if _, err := os.Stat(workspaceDir); !os.IsNotExist(err) {
 		t.Fatalf("workspace still exists after StopAll; stat err = %v", err)
+	}
+}
+
+func TestStopAllHidesEverySessionBeforeCleanup(t *testing.T) {
+	first := testTelegramLocator(10, 42)
+	second := testTelegramLocator(11, 43)
+	cleanupStarted := make(chan string, 1)
+	releaseCleanup := make(chan struct{})
+	closeRuntime := func(sessionID string) func() error {
+		return func() error {
+			cleanupStarted <- sessionID
+			<-releaseCleanup
+			return nil
+		}
+	}
+	m := &Manager{
+		logger: zerolog.Nop(),
+		sessions: map[string]*TopicSession{
+			first.SessionID:  {sessionID: first.SessionID, locator: first, runtimeClose: closeRuntime(first.SessionID)},
+			second.SessionID: {sessionID: second.SessionID, locator: second, runtimeClose: closeRuntime(second.SessionID)},
+		},
+	}
+	stopped := make(chan struct{})
+	go func() {
+		m.stopAllWithContext(context.Background())
+		close(stopped)
+	}()
+	var waitingOn string
+	select {
+	case waitingOn = <-cleanupStarted:
+	case <-time.After(time.Second):
+		t.Fatal("shutdown cleanup did not start")
+	}
+	other := first
+	if waitingOn == first.SessionID {
+		other = second
+	}
+	_, lookupErr := m.GetSession(other)
+	if lookupErr == nil {
+		t.Error("session remained visible after shutdown cleanup began")
+	}
+	close(releaseCleanup)
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("shutdown cleanup did not settle")
+	}
+}
+
+func TestStopAllDoesNotRepeatCompletedResetCleanup(t *testing.T) {
+	ctx := context.Background()
+	locator := testTelegramLocator(10, 42)
+	service := &blockingDeleteSessionService{
+		Service:      adksession.InMemoryService(),
+		firstEntered: make(chan struct{}),
+		releaseFirst: make(chan struct{}),
+	}
+	created, err := service.Create(ctx, &adksession.CreateRequest{
+		AppName: baldaRuntimeAppName, UserID: "tg-101", SessionID: locator.SessionID,
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	var closeCalls atomic.Int32
+	observer := &fakeBoundaryObserver{}
+	m := &Manager{
+		logger: zerolog.Nop(), sessionStore: &fakeSessionStore{}, boundaryObserver: observer,
+		sessions: map[string]*TopicSession{locator.SessionID: {
+			sessionID: locator.SessionID, userID: "tg-101", locator: locator,
+			sessionSvc: service, sess: created.Session,
+			runtimeClose: func() error { closeCalls.Add(1); return nil },
+		}},
+	}
+	resetDone := make(chan error, 1)
+	go func() { resetDone <- m.ResetSession(ctx, locator) }()
+	select {
+	case <-service.firstEntered:
+	case <-time.After(time.Second):
+		t.Fatal("reset did not start runtime deletion")
+	}
+	stopDone := make(chan struct{})
+	go func() {
+		m.stopAllWithContext(ctx)
+		close(stopDone)
+	}()
+	deadline := time.After(time.Second)
+	for {
+		m.mu.RLock()
+		remaining := len(m.sessions)
+		m.mu.RUnlock()
+		if remaining == 0 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("shutdown did not hide the active session")
+		case <-time.After(time.Millisecond):
+		}
+	}
+	close(service.releaseFirst)
+	if err := <-resetDone; err != nil {
+		t.Fatalf("ResetSession() error = %v", err)
+	}
+	select {
+	case <-stopDone:
+	case <-time.After(time.Second):
+		t.Fatal("shutdown cleanup did not settle")
+	}
+	if got := service.deleteCalls.Load(); got != 1 {
+		t.Fatalf("runtime deletes = %d, want 1", got)
+	}
+	if got := closeCalls.Load(); got != 1 {
+		t.Fatalf("scoped runtime closes = %d, want 1", got)
+	}
+	if len(observer.boundaries) != 1 || observer.boundaries[0].Reason != BoundaryReasonReset {
+		t.Fatalf("boundaries after completed reset and shutdown = %+v, want one reset", observer.boundaries)
 	}
 }
 
@@ -167,6 +285,340 @@ func TestResetSession_DeletesRuntimeHistoryAndPreservesMetadata(t *testing.T) {
 	}); err == nil {
 		t.Fatal("runtime session still exists after ResetSession")
 	}
+}
+
+func TestResetSessionDeleteTimeoutKeepsSessionForRetry(t *testing.T) {
+	ctx := context.Background()
+	locator := testTelegramLocator(10, 42)
+	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteProvider() error = %v", err)
+	}
+	t.Cleanup(func() { _ = provider.Close() })
+	service := &timeoutOnceSessionService{Service: provider.RuntimeSessions()}
+	created, err := service.Create(ctx, &adksession.CreateRequest{
+		AppName: baldaRuntimeAppName, UserID: "tg-101", SessionID: locator.SessionID,
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	event := adksession.NewEvent(ctx, "old-turn")
+	event.Author = "user"
+	if err := service.AppendEvent(ctx, created.Session, event); err != nil {
+		t.Fatalf("AppendEvent() error = %v", err)
+	}
+	closed := false
+	active := &TopicSession{
+		sessionID:      locator.SessionID,
+		agentSessionID: locator.SessionID,
+		userID:         "tg-101",
+		locator:        locator,
+		sessionSvc:     service,
+		sess:           created.Session,
+		runtimeClose:   func() error { closed = true; return nil },
+	}
+	observer := &fakeBoundaryObserver{}
+	m := &Manager{
+		logger:           zerolog.Nop(),
+		sessionStore:     &fakeSessionStore{},
+		boundaryObserver: observer,
+		sessions:         map[string]*TopicSession{locator.SessionID: active},
+	}
+
+	if err := m.ResetSession(ctx, locator); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("first ResetSession() error = %v, want deadline exceeded", err)
+	}
+	got, err := m.GetSession(locator)
+	if err != nil || got != active {
+		t.Fatalf("GetSession() after failed reset = %p, %v; want original %p", got, err, active)
+	}
+	if closed {
+		t.Fatal("scoped runtime closed after failed reset")
+	}
+	oldSession, err := service.Get(ctx, &adksession.GetRequest{
+		AppName: baldaRuntimeAppName, UserID: "tg-101", SessionID: locator.SessionID,
+	})
+	if err != nil {
+		t.Fatalf("runtime session after failed reset: %v", err)
+	}
+	if got := oldSession.Session.Events().Len(); got != 1 {
+		t.Fatalf("events after failed reset = %d, want 1", got)
+	}
+
+	if err := m.ResetSession(ctx, locator); err != nil {
+		t.Fatalf("second ResetSession() error = %v", err)
+	}
+	if _, err := m.GetSession(locator); err == nil {
+		t.Fatal("session still active after successful retry")
+	}
+	if !closed {
+		t.Fatal("scoped runtime not closed after successful retry")
+	}
+	if _, err := service.Get(ctx, &adksession.GetRequest{
+		AppName: baldaRuntimeAppName, UserID: "tg-101", SessionID: locator.SessionID,
+	}); err == nil {
+		t.Fatal("old runtime session still exists after retry")
+	}
+	recreated, err := service.Create(ctx, &adksession.CreateRequest{
+		AppName: baldaRuntimeAppName, UserID: "tg-101", SessionID: locator.SessionID,
+	})
+	if err != nil {
+		t.Fatalf("Create() after retry error = %v", err)
+	}
+	if got := recreated.Session.Events().Len(); got != 0 {
+		t.Fatalf("events in fresh session = %d, want 0", got)
+	}
+	if len(service.deleteRequests) != 2 {
+		t.Fatalf("Delete() calls = %d, want 2", len(service.deleteRequests))
+	}
+	if len(observer.boundaries) != 1 {
+		t.Fatalf("reset boundaries = %d, want 1", len(observer.boundaries))
+	}
+	for _, req := range service.deleteRequests {
+		if req.AppName != baldaRuntimeAppName || req.UserID != "tg-101" || req.SessionID != locator.SessionID {
+			t.Fatalf("Delete() request = %+v, want original runtime identity", req)
+		}
+	}
+}
+
+type timeoutOnceSessionService struct {
+	adksession.Service
+	deleteRequests []adksession.DeleteRequest
+}
+
+type trackingSessionService struct {
+	adksession.Service
+	deleteRequests []adksession.DeleteRequest
+	deleteErr      error
+	beforeDelete   func()
+}
+
+type closeSensitiveSessionService struct {
+	adksession.Service
+	closed *atomic.Bool
+}
+
+func (s *closeSensitiveSessionService) Delete(ctx context.Context, req *adksession.DeleteRequest) error {
+	if s.closed.Load() {
+		return errors.New("shared root runtime is closed")
+	}
+	return s.Service.Delete(ctx, req)
+}
+
+func (s *trackingSessionService) Delete(ctx context.Context, req *adksession.DeleteRequest) error {
+	if s.beforeDelete != nil {
+		s.beforeDelete()
+	}
+	s.deleteRequests = append(s.deleteRequests, *req)
+	if s.deleteErr != nil {
+		return s.deleteErr
+	}
+	return s.Service.Delete(ctx, req)
+}
+
+func TestConcurrentResetsDoNotDeleteTheSameActiveRuntimeTogether(t *testing.T) {
+	ctx := context.Background()
+	locator := testTelegramLocator(10, 42)
+	service := &blockingDeleteSessionService{
+		Service:       adksession.InMemoryService(),
+		firstEntered:  make(chan struct{}),
+		releaseFirst:  make(chan struct{}),
+		secondEntered: make(chan struct{}),
+	}
+	created, err := service.Create(ctx, &adksession.CreateRequest{
+		AppName: baldaRuntimeAppName, UserID: "tg-101", SessionID: locator.SessionID,
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	m := &Manager{
+		logger:       zerolog.Nop(),
+		sessionStore: &fakeSessionStore{},
+		sessions: map[string]*TopicSession{locator.SessionID: {
+			sessionID: locator.SessionID, userID: "tg-101", locator: locator,
+			sessionSvc: service, sess: created.Session,
+		}},
+	}
+	firstDone := make(chan error, 1)
+	go func() { firstDone <- m.ResetSession(ctx, locator) }()
+	select {
+	case <-service.firstEntered:
+	case <-time.After(time.Second):
+		t.Fatal("first reset did not start runtime deletion")
+	}
+	secondStarted := make(chan struct{})
+	secondDone := make(chan error, 1)
+	go func() {
+		close(secondStarted)
+		secondDone <- m.ResetSession(ctx, locator)
+	}()
+	<-secondStarted
+	select {
+	case <-service.secondEntered:
+		t.Fatal("second reset started deleting the active runtime before the first completed")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(service.releaseFirst)
+	if err := <-firstDone; err != nil {
+		t.Fatalf("first ResetSession() error = %v", err)
+	}
+	select {
+	case <-secondDone:
+	case <-time.After(time.Second):
+		t.Fatal("second reset did not settle")
+	}
+}
+
+func TestSessionLookupWaitsForFailedResetDeletion(t *testing.T) {
+	ctx := context.Background()
+	locator := testTelegramLocator(10, 42)
+	service := &blockingDeleteSessionService{
+		Service:      adksession.InMemoryService(),
+		firstEntered: make(chan struct{}),
+		releaseFirst: make(chan struct{}),
+		firstErr:     context.DeadlineExceeded,
+	}
+	created, err := service.Create(ctx, &adksession.CreateRequest{
+		AppName: baldaRuntimeAppName, UserID: "tg-101", SessionID: locator.SessionID,
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	active := &TopicSession{
+		sessionID: locator.SessionID, userID: "tg-101", locator: locator,
+		sessionSvc: service, sess: created.Session,
+	}
+	m := &Manager{
+		logger: zerolog.Nop(), sessionStore: &fakeSessionStore{},
+		sessions: map[string]*TopicSession{locator.SessionID: active},
+	}
+	resetDone := make(chan error, 1)
+	go func() { resetDone <- m.ResetSession(ctx, locator) }()
+	select {
+	case <-service.firstEntered:
+	case <-time.After(time.Second):
+		t.Fatal("reset did not start runtime deletion")
+	}
+	type lookupResult struct {
+		session *TopicSession
+		err     error
+	}
+	lookupDone := make(chan lookupResult, 1)
+	lookupStarted := make(chan struct{})
+	go func() {
+		close(lookupStarted)
+		session, err := m.GetSession(locator)
+		lookupDone <- lookupResult{session: session, err: err}
+	}()
+	<-lookupStarted
+	select {
+	case <-lookupDone:
+		t.Fatal("GetSession returned while reset deletion was unresolved")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(service.releaseFirst)
+	if err := <-resetDone; !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("ResetSession() error = %v, want deadline exceeded", err)
+	}
+	select {
+	case result := <-lookupDone:
+		if result.err != nil || result.session != active {
+			t.Fatalf("GetSession() = %p, %v; want original %p", result.session, result.err, active)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("GetSession did not resume after failed deletion")
+	}
+}
+
+func TestStopSessionWaitsForResetDeletion(t *testing.T) {
+	ctx := context.Background()
+	locator := testTelegramLocator(10, 42)
+	service := &blockingDeleteSessionService{
+		Service:      adksession.InMemoryService(),
+		firstEntered: make(chan struct{}),
+		releaseFirst: make(chan struct{}),
+		firstErr:     context.DeadlineExceeded,
+	}
+	created, err := service.Create(ctx, &adksession.CreateRequest{
+		AppName: baldaRuntimeAppName, UserID: "tg-101", SessionID: locator.SessionID,
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	closed := false
+	m := &Manager{
+		logger: zerolog.Nop(), sessionStore: &fakeSessionStore{}, sessionsPersistent: true,
+		sessions: map[string]*TopicSession{locator.SessionID: {
+			sessionID: locator.SessionID, userID: "tg-101", locator: locator,
+			sessionSvc: service, sess: created.Session,
+			runtimeClose: func() error { closed = true; return nil },
+		}},
+	}
+	resetDone := make(chan error, 1)
+	go func() { resetDone <- m.ResetSession(ctx, locator) }()
+	select {
+	case <-service.firstEntered:
+	case <-time.After(time.Second):
+		t.Fatal("reset did not start runtime deletion")
+	}
+	stopStarted := make(chan struct{})
+	stopDone := make(chan struct{})
+	go func() {
+		close(stopStarted)
+		m.StopSession(locator)
+		close(stopDone)
+	}()
+	<-stopStarted
+	select {
+	case <-stopDone:
+		t.Fatal("StopSession completed while reset deletion was unresolved")
+	case <-time.After(100 * time.Millisecond):
+	}
+	if closed {
+		t.Fatal("scoped runtime closed while reset deletion was unresolved")
+	}
+	close(service.releaseFirst)
+	if err := <-resetDone; !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("ResetSession() error = %v, want deadline exceeded", err)
+	}
+	select {
+	case <-stopDone:
+	case <-time.After(time.Second):
+		t.Fatal("StopSession did not settle after reset deletion")
+	}
+	if !closed {
+		t.Fatal("scoped runtime remained open after StopSession")
+	}
+}
+
+type blockingDeleteSessionService struct {
+	adksession.Service
+	firstEntered  chan struct{}
+	releaseFirst  chan struct{}
+	secondEntered chan struct{}
+	deleteCalls   atomic.Int32
+	firstErr      error
+}
+
+func (s *blockingDeleteSessionService) Delete(ctx context.Context, req *adksession.DeleteRequest) error {
+	if s.deleteCalls.Add(1) == 1 {
+		close(s.firstEntered)
+		<-s.releaseFirst
+		if s.firstErr != nil {
+			return s.firstErr
+		}
+	} else if s.secondEntered != nil {
+		close(s.secondEntered)
+	}
+	return s.Service.Delete(ctx, req)
+}
+
+func (s *timeoutOnceSessionService) Delete(ctx context.Context, req *adksession.DeleteRequest) error {
+	s.deleteRequests = append(s.deleteRequests, *req)
+	if len(s.deleteRequests) == 1 {
+		return context.DeadlineExceeded
+	}
+	return s.Service.Delete(ctx, req)
 }
 
 func TestResetSessionPublishesBoundaryBeforeRuntimeDeletion(t *testing.T) {
@@ -422,6 +874,39 @@ func TestRuntimeStateAccessRestoresPersistedSession(t *testing.T) {
 	}
 }
 
+func TestRestoreSessionReusesActivePersistedSessionWhenLocatorIDChanged(t *testing.T) {
+	address := testTelegramLocator(10, 42)
+	legacyID := "legacy-session-id"
+	active := &TopicSession{sessionID: legacyID, locator: address}
+	record := baldastate.SessionRecord{
+		SessionID:   legacyID,
+		UserID:      "tg-201",
+		ChannelType: address.ChannelType,
+		AddressKey:  address.AddressKey,
+		AddressJSON: address.AddressJSON,
+		AgentName:   "auto",
+		Status:      baldastate.SessionStatusActive,
+	}
+	store := &fakeSessionStore{recordsByAddress: map[string]baldastate.SessionRecord{
+		sessionAddressKey(address.ChannelType, address.AddressKey): record,
+	}}
+	locator := address
+	locator.SessionID = "new-session-id"
+	m := &Manager{
+		logger:       zerolog.Nop(),
+		sessions:     map[string]*TopicSession{legacyID: active},
+		sessionStore: store,
+	}
+
+	got, err := m.RestoreSession(context.Background(), SessionContext{Locator: locator, UserID: "tg-201"})
+	if err != nil {
+		t.Fatalf("RestoreSession() error = %v", err)
+	}
+	if got != active {
+		t.Fatalf("RestoreSession() returned %p, want active session %p", got, active)
+	}
+}
+
 func TestGetSessionInfo_ReturnsActiveTransportUserID(t *testing.T) {
 	m := &Manager{
 		logger: zerolog.Nop(),
@@ -446,15 +931,59 @@ func TestGetSessionInfo_ReturnsActiveTransportUserID(t *testing.T) {
 
 type fakeAgentBuilder struct {
 	agentMetadata                     AgentMetadata
+	createRuntimeSessionCalls         int
+	openRuntimeSessionCalls           int
+	freshRuntimeSessionCalls          int
 	createRuntimeSessionAgentNames    []string
 	createRuntimeSessionUserIDs       []string
 	createRuntimeSessionSessionIDs    []string
 	createRuntimeSessionWorkspaceDirs []string
 	createRuntimeSessionContexts      []RuntimeSessionContext
 	createRuntimeSessionErr           error
+	openRuntimeSessionErr             error
+	beforeFreshRuntimeSession         func()
 }
 
 func (f *fakeAgentBuilder) CreateRuntimeSession(
+	ctx context.Context,
+	runtime *BuiltRuntime,
+	agentName string,
+	userID, sessionID, workspaceDir string,
+	sessionCtx RuntimeSessionContext,
+) (adksession.Session, error) {
+	f.createRuntimeSessionCalls++
+	return f.recordRuntimeSession(ctx, runtime, agentName, userID, sessionID, workspaceDir, sessionCtx)
+}
+
+func (f *fakeAgentBuilder) OpenExistingRuntimeSession(
+	ctx context.Context,
+	runtime *BuiltRuntime,
+	agentName string,
+	userID, sessionID, workspaceDir string,
+	sessionCtx RuntimeSessionContext,
+) (adksession.Session, error) {
+	f.openRuntimeSessionCalls++
+	if f.openRuntimeSessionErr != nil {
+		return nil, f.openRuntimeSessionErr
+	}
+	return f.recordRuntimeSession(ctx, runtime, agentName, userID, sessionID, workspaceDir, sessionCtx)
+}
+
+func (f *fakeAgentBuilder) CreateFreshRuntimeSession(
+	ctx context.Context,
+	runtime *BuiltRuntime,
+	agentName string,
+	userID, sessionID, workspaceDir string,
+	sessionCtx RuntimeSessionContext,
+) (adksession.Session, error) {
+	f.freshRuntimeSessionCalls++
+	if f.beforeFreshRuntimeSession != nil {
+		f.beforeFreshRuntimeSession()
+	}
+	return f.recordRuntimeSession(ctx, runtime, agentName, userID, sessionID, workspaceDir, sessionCtx)
+}
+
+func (f *fakeAgentBuilder) recordRuntimeSession(
 	_ context.Context,
 	_ *BuiltRuntime,
 	agentName string,
@@ -474,6 +1003,67 @@ func (f *fakeAgentBuilder) CreateRuntimeSession(
 
 func (f *fakeAgentBuilder) GetAgentMetadata(string) AgentMetadata {
 	return f.agentMetadata
+}
+
+type sqliteAgentBuilder struct {
+	legacyCalls int
+	freshCalls  int
+}
+
+func (b *sqliteAgentBuilder) CreateRuntimeSession(
+	ctx context.Context,
+	runtime *BuiltRuntime,
+	_, userID, sessionID, _ string,
+	_ RuntimeSessionContext,
+) (adksession.Session, error) {
+	b.legacyCalls++
+	response, err := runtime.SessionSvc.Get(ctx, &adksession.GetRequest{
+		AppName: runtime.AppName, UserID: userID, SessionID: sessionID,
+	})
+	if err == nil {
+		return response.Session, nil
+	}
+	if !errors.Is(err, adksession.ErrNotFound) {
+		return nil, err
+	}
+	return createSQLiteTestSession(ctx, runtime, userID, sessionID)
+}
+
+func (b *sqliteAgentBuilder) OpenExistingRuntimeSession(
+	ctx context.Context,
+	runtime *BuiltRuntime,
+	_, userID, sessionID, _ string,
+	_ RuntimeSessionContext,
+) (adksession.Session, error) {
+	response, err := runtime.SessionSvc.Get(ctx, &adksession.GetRequest{
+		AppName: runtime.AppName, UserID: userID, SessionID: sessionID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return response.Session, nil
+}
+
+func (b *sqliteAgentBuilder) CreateFreshRuntimeSession(
+	ctx context.Context,
+	runtime *BuiltRuntime,
+	_, userID, sessionID, _ string,
+	_ RuntimeSessionContext,
+) (adksession.Session, error) {
+	b.freshCalls++
+	return createSQLiteTestSession(ctx, runtime, userID, sessionID)
+}
+
+func (*sqliteAgentBuilder) GetAgentMetadata(string) AgentMetadata { return AgentMetadata{} }
+
+func createSQLiteTestSession(ctx context.Context, runtime *BuiltRuntime, userID, sessionID string) (adksession.Session, error) {
+	response, err := runtime.SessionSvc.Create(ctx, &adksession.CreateRequest{
+		AppName: runtime.AppName, UserID: userID, SessionID: sessionID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return response.Session, nil
 }
 
 type fakeBaldaRuntimeManager struct {
@@ -500,13 +1090,17 @@ func (f *fakeBaldaRuntimeManager) ProviderID() string {
 
 type fakeScopedRuntimeManager struct {
 	fakeBaldaRuntimeManager
-	sessionRuntime  *BuiltRuntime
-	sessionErr      error
-	sessionRequests []SessionRuntimeRequest
+	sessionRuntime    *BuiltRuntime
+	sessionErr        error
+	runtimeForSession func(SessionRuntimeRequest) (*BuiltRuntime, error)
+	sessionRequests   []SessionRuntimeRequest
 }
 
 func (f *fakeScopedRuntimeManager) RuntimeForSession(_ context.Context, request SessionRuntimeRequest) (*BuiltRuntime, error) {
 	f.sessionRequests = append(f.sessionRequests, request)
+	if f.runtimeForSession != nil {
+		return f.runtimeForSession(request)
+	}
 	if f.sessionErr != nil {
 		return nil, f.sessionErr
 	}
@@ -558,6 +1152,143 @@ func TestCreateSessionPersistsRuntimeSnapshot(t *testing.T) {
 	}
 	if got := ts.GetRuntimeSnapshotID(); got != currentSnapshotID {
 		t.Fatalf("GetRuntimeSnapshotID() = %q, want snapshot-current", got)
+	}
+}
+
+func TestEnsureTransientSessionDoesNotPersistAddressMetadata(t *testing.T) {
+	store := &fakeSessionStore{}
+	builder := &fakeAgentBuilder{}
+	m := &Manager{baldaProviderName: "balda-provider", runtimeManager: &fakeScopedRuntimeManager{
+		fakeBaldaRuntimeManager: fakeBaldaRuntimeManager{providerID: "balda-provider"},
+		sessionRuntime:          &BuiltRuntime{RuntimeSnapshotID: currentSnapshotID},
+	}, agentBuilder: builder, workingDir: t.TempDir(), logger: zerolog.Nop(),
+		sessions: make(map[string]*TopicSession), sessionStore: store, sessionsPersistent: true}
+	recipient := testTelegramLocator(10, 42)
+	first := recipient
+	first.SessionID = "sch-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	second := recipient
+	second.SessionID = "wh-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	second.ChannelType = "webhook"
+	second.AddressKey = second.SessionID
+	second.AddressJSON = "{}"
+	for _, locator := range []SessionLocator{first, second, first} {
+		if _, err := m.EnsureTransientSession(t.Context(), SessionContext{Locator: locator, UserID: "tg-101"}, "balda"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(store.upsertedRecords) != 0 {
+		t.Fatalf("private sessions persisted address metadata: %+v", store.upsertedRecords)
+	}
+	if len(builder.createRuntimeSessionSessionIDs) != 2 || builder.createRuntimeSessionSessionIDs[0] != first.SessionID ||
+		builder.createRuntimeSessionSessionIDs[1] != second.SessionID {
+		t.Fatalf("runtime session IDs = %v", builder.createRuntimeSessionSessionIDs)
+	}
+	if builder.createRuntimeSessionCalls != 2 || builder.freshRuntimeSessionCalls != 0 {
+		t.Fatalf("private builder calls = legacy %d, fresh %d; want legacy 2, fresh 0", builder.createRuntimeSessionCalls, builder.freshRuntimeSessionCalls)
+	}
+	if _, err := m.GetSession(recipient); err == nil {
+		t.Fatal("recipient chat was created by private schedule sessions")
+	}
+	for _, sessionID := range []string{"sch-short", "wh-short", "tg-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"} {
+		invalid := first
+		invalid.SessionID = sessionID
+		if _, err := m.EnsureTransientSession(t.Context(), SessionContext{Locator: invalid, UserID: "owner"}, "balda"); err == nil {
+			t.Fatalf("invalid private session id %q accepted", sessionID)
+		}
+	}
+	// A restarted manager has no address record to restore, yet uses the same
+	// private ADK identity for an unfinished run.
+	restarted := &Manager{baldaProviderName: m.baldaProviderName, runtimeManager: m.runtimeManager,
+		agentBuilder: builder, workingDir: m.workingDir, logger: zerolog.Nop(),
+		sessions: make(map[string]*TopicSession), sessionStore: store, sessionsPersistent: true}
+	if _, err := restarted.EnsureTransientSession(t.Context(), SessionContext{Locator: first, UserID: "tg-101"}, "balda"); err != nil {
+		t.Fatal(err)
+	}
+	if len(builder.createRuntimeSessionSessionIDs) != 3 || builder.createRuntimeSessionSessionIDs[2] != first.SessionID ||
+		len(store.upsertedRecords) != 0 {
+		t.Fatalf("restart identities=%v, metadata=%d", builder.createRuntimeSessionSessionIDs, len(store.upsertedRecords))
+	}
+	if builder.createRuntimeSessionCalls != 3 || builder.freshRuntimeSessionCalls != 0 {
+		t.Fatalf("restart builder calls = legacy %d, fresh %d; want legacy 3, fresh 0", builder.createRuntimeSessionCalls, builder.freshRuntimeSessionCalls)
+	}
+}
+
+func TestEnsureTransientSessionReopensSQLiteRuntimeAfterRestart(t *testing.T) {
+	provider, err := baldastate.NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = provider.Close() })
+
+	service := provider.RuntimeSessions()
+	runtimeManager := &fakeBaldaRuntimeManager{
+		providerID: "balda-provider",
+		runtime:    &BuiltRuntime{AppName: baldaRuntimeAppName, SessionSvc: service},
+	}
+	builder := &sqliteAgentBuilder{}
+	locator := testTelegramLocator(10, 42)
+	locator.SessionID = "sch-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	newManager := func() *Manager {
+		return &Manager{
+			baldaProviderName: "balda-provider", runtimeManager: runtimeManager, agentBuilder: builder,
+			workingDir: t.TempDir(), logger: zerolog.Nop(), sessions: make(map[string]*TopicSession),
+			sessionStore: &fakeSessionStore{}, sessionsPersistent: true,
+		}
+	}
+
+	if _, err := newManager().EnsureTransientSession(t.Context(), SessionContext{Locator: locator, UserID: "tg-101"}, "balda"); err != nil {
+		t.Fatalf("first EnsureTransientSession() error = %v", err)
+	}
+	if _, err := newManager().EnsureTransientSession(t.Context(), SessionContext{Locator: locator, UserID: "tg-101"}, "balda"); err != nil {
+		t.Fatalf("restart EnsureTransientSession() error = %v", err)
+	}
+	if builder.legacyCalls != 2 || builder.freshCalls != 0 {
+		t.Fatalf("builder calls = legacy %d, fresh %d; want legacy 2, fresh 0", builder.legacyCalls, builder.freshCalls)
+	}
+}
+
+func TestCloseRunSessionDeletesPersistedEventsAfterRestart(t *testing.T) {
+	provider, err := baldastate.NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = provider.Close() }()
+	service := provider.RuntimeSessions()
+	manager := &Manager{runtimeManager: &fakeBaldaRuntimeManager{
+		runtime: &BuiltRuntime{AppName: baldaRuntimeAppName, SessionSvc: service},
+	}, sessions: make(map[string]*TopicSession)}
+	if err := manager.CloseRunSession(t.Context(), "tg-ordinary", "owner"); err == nil {
+		t.Fatal("ordinary chat session accepted as private run")
+	}
+	for _, sessionID := range []string{
+		"sch-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		"wh-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+	} {
+		created, err := service.Create(t.Context(), &adksession.CreateRequest{
+			AppName: baldaRuntimeAppName, UserID: "owner", SessionID: sessionID,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		event := adksession.NewEvent(t.Context(), "run-turn")
+		event.Author = "user"
+		if err := service.AppendEvent(t.Context(), created.Session, event); err != nil {
+			t.Fatal(err)
+		}
+		for range 2 {
+			if err := manager.CloseRunSession(t.Context(), sessionID, "owner"); err != nil {
+				t.Fatal(err)
+			}
+		}
+		recreated, err := service.Create(t.Context(), &adksession.CreateRequest{
+			AppName: baldaRuntimeAppName, UserID: "owner", SessionID: sessionID,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := recreated.Session.Events().Len(); got != 0 {
+			t.Fatalf("events after private session %q delete = %d", sessionID, got)
+		}
 	}
 }
 
@@ -690,10 +1421,11 @@ func TestRestoreSessionRequestsPersistedRuntimeSnapshot(t *testing.T) {
 		fakeBaldaRuntimeManager: fakeBaldaRuntimeManager{providerID: "balda-provider"},
 		sessionRuntime:          &BuiltRuntime{RuntimeSnapshotID: "snapshot-persisted"},
 	}
+	builder := &fakeAgentBuilder{}
 	m := &Manager{
 		baldaProviderName: "balda-provider",
 		runtimeManager:    runtimeManager,
-		agentBuilder:      &fakeAgentBuilder{},
+		agentBuilder:      builder,
 		workingDir:        t.TempDir(),
 		logger:            zerolog.Nop(),
 		sessions:          make(map[string]*TopicSession),
@@ -709,10 +1441,17 @@ func TestRestoreSessionRequestsPersistedRuntimeSnapshot(t *testing.T) {
 	if got := runtimeManager.sessionRequests[0].RuntimeSnapshotID; got != "snapshot-persisted" {
 		t.Fatalf("requested runtime snapshot = %q, want snapshot-persisted", got)
 	}
+	if builder.openRuntimeSessionCalls != 1 || builder.freshRuntimeSessionCalls != 0 {
+		t.Fatalf("builder calls = open %d, fresh %d; want open 1, fresh 0", builder.openRuntimeSessionCalls, builder.freshRuntimeSessionCalls)
+	}
+	if len(store.upsertedRecords) != 0 {
+		t.Fatalf("exact restore metadata writes = %d, want 0", len(store.upsertedRecords))
+	}
 }
 
-func TestRestoreSessionRejectsRuntimeSnapshotMismatch(t *testing.T) {
+func TestRestoreSessionSnapshotMismatchStartsFreshWithCurrentRuntime(t *testing.T) {
 	locator := testTelegramLocator(10, 42)
+	unrelatedLocator := testTelegramLocator(11, 43)
 	record := baldastate.SessionRecord{
 		SessionID:         locator.SessionID,
 		UserID:            "tg-101",
@@ -723,42 +1462,404 @@ func TestRestoreSessionRejectsRuntimeSnapshotMismatch(t *testing.T) {
 		RuntimeSnapshotID: "snapshot-persisted",
 		Status:            baldastate.SessionStatusActive,
 	}
+	unrelatedRecord := baldastate.SessionRecord{
+		SessionID: unrelatedLocator.SessionID, UserID: "tg-202", ChannelType: unrelatedLocator.ChannelType,
+		AddressKey: unrelatedLocator.AddressKey, AddressJSON: unrelatedLocator.AddressJSON, AgentName: "other",
+		RuntimeSnapshotID: "snapshot-unrelated", Status: baldastate.SessionStatusActive,
+	}
 	store := &fakeSessionStore{recordsByAddress: map[string]baldastate.SessionRecord{
-		sessionAddressKey(locator.ChannelType, locator.AddressKey): record,
+		sessionAddressKey(locator.ChannelType, locator.AddressKey):                   record,
+		sessionAddressKey(unrelatedLocator.ChannelType, unrelatedLocator.AddressKey): unrelatedRecord,
 	}}
-	closeCalls := 0
+	var events []string
+	store.beforeUpsert = func() { events = append(events, "upsert") }
+	exactCloseCalls := 0
+	service := &trackingSessionService{
+		Service:      adksession.InMemoryService(),
+		beforeDelete: func() { events = append(events, "delete") },
+	}
 	runtimeManager := &fakeScopedRuntimeManager{
 		fakeBaldaRuntimeManager: fakeBaldaRuntimeManager{providerID: "balda-provider"},
-		sessionRuntime: &BuiltRuntime{
-			RuntimeSnapshotID: "snapshot-other",
-			Close: func() error {
-				closeCalls++
-				return nil
-			},
+		runtimeForSession: func(request SessionRuntimeRequest) (*BuiltRuntime, error) {
+			if request.RuntimeSnapshotID != "" {
+				return &BuiltRuntime{
+					RuntimeSnapshotID: "snapshot-other",
+					Close: func() error {
+						exactCloseCalls++
+						return nil
+					},
+				}, nil
+			}
+			return &BuiltRuntime{
+				AppName: baldaRuntimeAppName, SessionSvc: service, RuntimeSnapshotID: currentSnapshotID,
+			}, nil
 		},
 	}
+	builder := &fakeAgentBuilder{beforeFreshRuntimeSession: func() { events = append(events, "create") }}
+	observer := &fakeBoundaryObserver{before: func(context.Context, SessionBoundary) { events = append(events, "boundary") }}
 	m := &Manager{
 		baldaProviderName: "balda-provider",
 		runtimeManager:    runtimeManager,
-		agentBuilder:      &fakeAgentBuilder{},
+		agentBuilder:      builder,
 		workingDir:        t.TempDir(),
 		logger:            zerolog.Nop(),
 		sessions:          make(map[string]*TopicSession),
 		sessionStore:      store,
+		boundaryObserver:  observer,
 	}
 
-	_, err := m.RestoreSession(context.Background(), SessionContext{Locator: locator})
-	if err == nil || !strings.Contains(err.Error(), "does not match persisted snapshot") {
-		t.Fatalf("RestoreSession() error = %v, want snapshot mismatch", err)
+	ts, err := m.RestoreSession(context.Background(), SessionContext{Locator: locator})
+	if err != nil {
+		t.Fatalf("RestoreSession() error = %v", err)
 	}
-	if closeCalls != 1 {
-		t.Fatalf("runtime close calls = %d, want 1", closeCalls)
+	if exactCloseCalls != 1 {
+		t.Fatalf("failed exact runtime close calls = %d, want 1", exactCloseCalls)
 	}
-	if len(store.upsertedRecords) != 0 {
-		t.Fatalf("persisted records = %d, want 0", len(store.upsertedRecords))
+	if len(runtimeManager.sessionRequests) != 2 || runtimeManager.sessionRequests[0].RuntimeSnapshotID != "snapshot-persisted" || runtimeManager.sessionRequests[1].RuntimeSnapshotID != "" {
+		t.Fatalf("runtime requests = %+v, want saved snapshot then current selection", runtimeManager.sessionRequests)
+	}
+	if builder.openRuntimeSessionCalls != 0 || builder.freshRuntimeSessionCalls != 1 {
+		t.Fatalf("builder calls = open %d, fresh %d; want open 0, fresh 1", builder.openRuntimeSessionCalls, builder.freshRuntimeSessionCalls)
+	}
+	if len(observer.boundaries) != 1 || observer.boundaries[0].Reason != BoundaryReasonRotation {
+		t.Fatalf("boundaries = %+v, want one rotation", observer.boundaries)
+	}
+	if len(service.deleteRequests) != 1 || service.deleteRequests[0].SessionID != locator.SessionID {
+		t.Fatalf("delete requests = %+v, want stable session %q", service.deleteRequests, locator.SessionID)
+	}
+	if len(store.upsertedRecords) != 1 || store.upsertedRecords[0].RuntimeSnapshotID != currentSnapshotID {
+		t.Fatalf("persisted records = %+v, want current snapshot", store.upsertedRecords)
+	}
+	if ts.GetRuntimeSnapshotID() != currentSnapshotID {
+		t.Fatalf("published snapshot = %q, want %q", ts.GetRuntimeSnapshotID(), currentSnapshotID)
+	}
+	gotUnrelated := store.recordsByAddress[sessionAddressKey(unrelatedLocator.ChannelType, unrelatedLocator.AddressKey)]
+	if gotUnrelated.RuntimeSnapshotID != unrelatedRecord.RuntimeSnapshotID || gotUnrelated.SessionID != unrelatedRecord.SessionID {
+		t.Fatalf("unrelated locator changed during lazy recovery: %+v", gotUnrelated)
+	}
+	if _, err := m.GetSession(unrelatedLocator); err == nil {
+		t.Fatal("lazy recovery published unrelated locator")
+	}
+	if got, want := strings.Join(events, ","), "boundary,delete,create,upsert"; got != want {
+		t.Fatalf("fallback order = %q, want %q", got, want)
+	}
+
+	restartedRuntime := &fakeScopedRuntimeManager{
+		fakeBaldaRuntimeManager: fakeBaldaRuntimeManager{providerID: "balda-provider"},
+		sessionRuntime:          &BuiltRuntime{RuntimeSnapshotID: currentSnapshotID},
+	}
+	restartedBuilder := &fakeAgentBuilder{}
+	restarted := &Manager{
+		baldaProviderName: "balda-provider", runtimeManager: restartedRuntime, agentBuilder: restartedBuilder,
+		workingDir: t.TempDir(), logger: zerolog.Nop(), sessions: make(map[string]*TopicSession), sessionStore: store,
+	}
+	if _, err := restarted.RestoreSession(context.Background(), SessionContext{Locator: locator}); err != nil {
+		t.Fatalf("RestoreSession() after restart error = %v", err)
+	}
+	if len(restartedRuntime.sessionRequests) != 1 || restartedRuntime.sessionRequests[0].RuntimeSnapshotID != currentSnapshotID {
+		t.Fatalf("restart runtime requests = %+v, want recovered snapshot", restartedRuntime.sessionRequests)
+	}
+	if restartedBuilder.openRuntimeSessionCalls != 1 || restartedBuilder.freshRuntimeSessionCalls != 0 {
+		t.Fatalf("restart builder calls = open %d, fresh %d; want open 1, fresh 0", restartedBuilder.openRuntimeSessionCalls, restartedBuilder.freshRuntimeSessionCalls)
+	}
+}
+
+func TestRestoreSessionStopsBeforeRecoveryMutationWhenManagerStopsDuringCurrentBind(t *testing.T) {
+	locator := testTelegramLocator(10, 42)
+	record := baldastate.SessionRecord{
+		SessionID: locator.SessionID, UserID: "tg-101", ChannelType: locator.ChannelType,
+		AddressKey: locator.AddressKey, AddressJSON: locator.AddressJSON, AgentName: "topic",
+		RuntimeSnapshotID: "snapshot-persisted", Status: baldastate.SessionStatusActive,
+	}
+	store := &fakeSessionStore{recordsByAddress: map[string]baldastate.SessionRecord{
+		sessionAddressKey(locator.ChannelType, locator.AddressKey): record,
+	}}
+	currentBindStarted := make(chan struct{})
+	releaseCurrentBind := make(chan struct{})
+	service := &trackingSessionService{Service: adksession.InMemoryService()}
+	runtimeManager := &fakeScopedRuntimeManager{
+		fakeBaldaRuntimeManager: fakeBaldaRuntimeManager{providerID: "balda-provider"},
+		runtimeForSession: func(request SessionRuntimeRequest) (*BuiltRuntime, error) {
+			if request.RuntimeSnapshotID != "" {
+				return &BuiltRuntime{RuntimeSnapshotID: request.RuntimeSnapshotID}, nil
+			}
+			close(currentBindStarted)
+			<-releaseCurrentBind
+			return &BuiltRuntime{
+				AppName: baldaRuntimeAppName, SessionSvc: service, RuntimeSnapshotID: currentSnapshotID,
+			}, nil
+		},
+	}
+	builder := &fakeAgentBuilder{openRuntimeSessionErr: errors.New("saved attachment unavailable")}
+	observer := &fakeBoundaryObserver{}
+	m := &Manager{
+		baldaProviderName: "balda-provider", runtimeManager: runtimeManager, agentBuilder: builder,
+		workingDir: t.TempDir(), logger: zerolog.Nop(), sessions: make(map[string]*TopicSession),
+		sessionStore: store, boundaryObserver: observer,
+	}
+
+	restoreDone := make(chan error, 1)
+	go func() {
+		_, err := m.RestoreSession(t.Context(), SessionContext{Locator: locator})
+		restoreDone <- err
+	}()
+	select {
+	case <-currentBindStarted:
+	case <-time.After(time.Second):
+		t.Fatal("current runtime bind did not start")
+	}
+	stopDone := make(chan struct{})
+	go func() {
+		_ = m.Stop(t.Context())
+		close(stopDone)
+	}()
+	deadline := time.After(time.Second)
+	for !m.stopping.Load() {
+		select {
+		case <-deadline:
+			t.Fatal("Stop did not mark manager stopping")
+		case <-time.After(time.Millisecond):
+		}
+	}
+	select {
+	case <-stopDone:
+		t.Fatal("Stop returned while restore held the lifecycle read guard")
+	default:
+	}
+	close(releaseCurrentBind)
+	if err := <-restoreDone; !errors.Is(err, errManagerStopping) {
+		t.Fatalf("RestoreSession() error = %v, want manager stopping", err)
+	}
+	select {
+	case <-stopDone:
+	case <-time.After(time.Second):
+		t.Fatal("Stop did not return after restore aborted")
+	}
+	if len(observer.boundaries) != 0 || len(service.deleteRequests) != 0 || builder.freshRuntimeSessionCalls != 0 || len(store.upsertedRecords) != 0 {
+		t.Fatalf("recovery mutation after Stop: boundaries=%d deletes=%d creates=%d upserts=%d",
+			len(observer.boundaries), len(service.deleteRequests), builder.freshRuntimeSessionCalls, len(store.upsertedRecords))
 	}
 	if _, ok := m.sessions[locator.SessionID]; ok {
-		t.Fatal("mismatched runtime was published")
+		t.Fatal("restore published a session while manager was stopping")
+	}
+}
+
+func TestRestoreSessionDoesNotCloseSharedRootRuntime(t *testing.T) {
+	locator := testTelegramLocator(10, 42)
+	record := baldastate.SessionRecord{
+		SessionID: locator.SessionID, UserID: "tg-101", ChannelType: locator.ChannelType,
+		AddressKey: locator.AddressKey, AddressJSON: locator.AddressJSON, AgentName: "topic",
+		RuntimeSnapshotID: "snapshot-persisted", Status: baldastate.SessionStatusActive,
+	}
+	store := &fakeSessionStore{recordsByAddress: map[string]baldastate.SessionRecord{
+		sessionAddressKey(locator.ChannelType, locator.AddressKey): record,
+	}}
+	closed := &atomic.Bool{}
+	closeCalls := 0
+	service := &closeSensitiveSessionService{Service: adksession.InMemoryService(), closed: closed}
+	rootRuntime := &BuiltRuntime{
+		AppName: baldaRuntimeAppName, SessionSvc: service,
+		Close: func() error {
+			closeCalls++
+			closed.Store(true)
+			return nil
+		},
+	}
+	builder := &fakeAgentBuilder{openRuntimeSessionErr: errors.New("saved attachment unavailable")}
+	m := &Manager{
+		baldaProviderName: "balda-provider",
+		runtimeManager: &fakeBaldaRuntimeManager{
+			providerID: "balda-provider", runtime: rootRuntime,
+		},
+		agentBuilder: builder, workingDir: t.TempDir(), logger: zerolog.Nop(),
+		sessions: make(map[string]*TopicSession), sessionStore: store, sessionsPersistent: true,
+	}
+
+	if _, err := m.RestoreSession(t.Context(), SessionContext{Locator: locator}); err != nil {
+		t.Fatalf("RestoreSession() error = %v", err)
+	}
+	if closeCalls != 0 || closed.Load() {
+		t.Fatalf("shared root closed during fallback: calls=%d closed=%t", closeCalls, closed.Load())
+	}
+	if err := m.Stop(t.Context()); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+	if closeCalls != 0 || closed.Load() {
+		t.Fatalf("shared root closed during session cleanup: calls=%d closed=%t", closeCalls, closed.Load())
+	}
+}
+
+func TestRestoreSessionFallbackHonorsCallerAndManagerLifecycle(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		restoreErr error
+		cancel     bool
+		stopping   bool
+		wantFresh  bool
+	}{
+		{name: "canceled caller", restoreErr: errors.New("restore failed"), cancel: true},
+		{name: "manager stopping", restoreErr: errors.New("restore failed"), stopping: true},
+		{name: "live dependency canceled", restoreErr: context.Canceled, wantFresh: true},
+		{name: "live dependency deadline", restoreErr: context.DeadlineExceeded, wantFresh: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			locator := testTelegramLocator(10, 42)
+			record := baldastate.SessionRecord{
+				SessionID: locator.SessionID, UserID: "tg-101", ChannelType: locator.ChannelType,
+				AddressKey: locator.AddressKey, AddressJSON: locator.AddressJSON, AgentName: "topic",
+				RuntimeSnapshotID: "snapshot-persisted", Status: baldastate.SessionStatusActive,
+			}
+			store := &fakeSessionStore{recordsByAddress: map[string]baldastate.SessionRecord{
+				sessionAddressKey(locator.ChannelType, locator.AddressKey): record,
+			}}
+			closed := 0
+			service := &trackingSessionService{Service: adksession.InMemoryService()}
+			runtimeManager := &fakeScopedRuntimeManager{
+				fakeBaldaRuntimeManager: fakeBaldaRuntimeManager{providerID: "balda-provider"},
+				runtimeForSession: func(request SessionRuntimeRequest) (*BuiltRuntime, error) {
+					if request.RuntimeSnapshotID != "" {
+						return &BuiltRuntime{RuntimeSnapshotID: request.RuntimeSnapshotID, Close: func() error {
+							closed++
+							return nil
+						}}, nil
+					}
+					return &BuiltRuntime{AppName: baldaRuntimeAppName, SessionSvc: service, RuntimeSnapshotID: currentSnapshotID}, nil
+				},
+			}
+			builder := &fakeAgentBuilder{openRuntimeSessionErr: tc.restoreErr}
+			observer := &fakeBoundaryObserver{}
+			m := &Manager{
+				baldaProviderName: "balda-provider", runtimeManager: runtimeManager, agentBuilder: builder,
+				workingDir: t.TempDir(), logger: zerolog.Nop(), sessions: make(map[string]*TopicSession),
+				sessionStore: store, boundaryObserver: observer,
+			}
+			m.stopping.Store(tc.stopping)
+			ctx, cancel := context.WithCancel(context.Background())
+			if tc.cancel {
+				cancel()
+			} else {
+				defer cancel()
+			}
+
+			_, err := m.RestoreSession(ctx, SessionContext{Locator: locator})
+			if tc.wantFresh && err != nil {
+				t.Fatalf("RestoreSession() error = %v", err)
+			}
+			if !tc.wantFresh && err == nil {
+				t.Fatal("RestoreSession() error = nil, want interrupted restore")
+			}
+			wantRequests := 0
+			wantBoundaries := 0
+			wantFreshCalls := 0
+			wantClosed := 0
+			if tc.wantFresh {
+				wantRequests = 2
+				wantBoundaries = 1
+				wantFreshCalls = 1
+				wantClosed = 1
+			}
+			if len(runtimeManager.sessionRequests) != wantRequests || builder.freshRuntimeSessionCalls != wantFreshCalls || len(observer.boundaries) != wantBoundaries {
+				t.Fatalf("fallback activity: requests=%d fresh=%d boundaries=%d", len(runtimeManager.sessionRequests), builder.freshRuntimeSessionCalls, len(observer.boundaries))
+			}
+			if closed != wantClosed {
+				t.Fatalf("failed exact runtime close calls = %d, want %d", closed, wantClosed)
+			}
+			_, published := m.sessions[locator.SessionID]
+			if published != tc.wantFresh {
+				t.Fatalf("session published = %t, want %t", published, tc.wantFresh)
+			}
+		})
+	}
+}
+
+func TestRestoreSessionFreshFailurePublishesNothing(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		configure      func(*fakeAgentBuilder, *fakeSessionStore)
+		currentBindErr error
+		boundaryErr    error
+		deleteErr      error
+		wantDeletes    int
+		wantFreshCall  int
+		wantCloseCalls int
+	}{
+		{
+			name: "current bind", currentBindErr: errors.New("current catalog unavailable"),
+			wantDeletes: 0, wantFreshCall: 0, wantCloseCalls: 0,
+		},
+		{
+			name: "boundary", boundaryErr: errors.New("boundary unavailable"),
+			wantDeletes: 0, wantFreshCall: 0, wantCloseCalls: 1,
+		},
+		{
+			name: "delete", deleteErr: errors.New("delete unavailable"),
+			wantDeletes: 1, wantFreshCall: 0, wantCloseCalls: 1,
+		},
+		{
+			name: "create",
+			configure: func(builder *fakeAgentBuilder, _ *fakeSessionStore) {
+				builder.createRuntimeSessionErr = errors.New("create unavailable")
+			},
+			wantDeletes: 1, wantFreshCall: 1, wantCloseCalls: 1,
+		},
+		{
+			name: "metadata upsert",
+			configure: func(_ *fakeAgentBuilder, store *fakeSessionStore) {
+				store.upsertErr = errors.New("metadata unavailable")
+			},
+			wantDeletes: 2, wantFreshCall: 1, wantCloseCalls: 1,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			locator := testTelegramLocator(10, 42)
+			record := baldastate.SessionRecord{
+				SessionID: locator.SessionID, UserID: "tg-101", ChannelType: locator.ChannelType,
+				AddressKey: locator.AddressKey, AddressJSON: locator.AddressJSON, AgentName: "topic",
+				RuntimeSnapshotID: "snapshot-persisted", Status: baldastate.SessionStatusActive,
+			}
+			store := &fakeSessionStore{recordsByAddress: map[string]baldastate.SessionRecord{
+				sessionAddressKey(locator.ChannelType, locator.AddressKey): record,
+			}}
+			builder := &fakeAgentBuilder{}
+			if tc.configure != nil {
+				tc.configure(builder, store)
+			}
+			service := &trackingSessionService{Service: adksession.InMemoryService(), deleteErr: tc.deleteErr}
+			currentCloseCalls := 0
+			runtimeManager := &fakeScopedRuntimeManager{
+				fakeBaldaRuntimeManager: fakeBaldaRuntimeManager{providerID: "balda-provider"},
+				runtimeForSession: func(request SessionRuntimeRequest) (*BuiltRuntime, error) {
+					if request.RuntimeSnapshotID != "" {
+						return &BuiltRuntime{RuntimeSnapshotID: "snapshot-other"}, nil
+					}
+					if tc.currentBindErr != nil {
+						return nil, tc.currentBindErr
+					}
+					return &BuiltRuntime{
+						AppName: baldaRuntimeAppName, SessionSvc: service, RuntimeSnapshotID: currentSnapshotID,
+						Close: func() error { currentCloseCalls++; return nil },
+					}, nil
+				},
+			}
+			m := &Manager{
+				baldaProviderName: "balda-provider", runtimeManager: runtimeManager, agentBuilder: builder,
+				workingDir: t.TempDir(), logger: zerolog.Nop(), sessions: make(map[string]*TopicSession),
+				sessionStore: store, boundaryObserver: &fakeBoundaryObserver{err: tc.boundaryErr},
+			}
+
+			if _, err := m.RestoreSession(context.Background(), SessionContext{Locator: locator}); err == nil {
+				t.Fatal("RestoreSession() error = nil, want fresh-start failure")
+			}
+			if _, ok := m.sessions[locator.SessionID]; ok {
+				t.Fatal("failed fresh start published a session")
+			}
+			if builder.freshRuntimeSessionCalls != tc.wantFreshCall || len(service.deleteRequests) != tc.wantDeletes {
+				t.Fatalf("fresh calls = %d, deletes = %d; want %d, %d", builder.freshRuntimeSessionCalls, len(service.deleteRequests), tc.wantFreshCall, tc.wantDeletes)
+			}
+			if currentCloseCalls != tc.wantCloseCalls {
+				t.Fatalf("current runtime close calls = %d, want %d", currentCloseCalls, tc.wantCloseCalls)
+			}
+		})
 	}
 }
 
@@ -1208,10 +2309,24 @@ type fakeSessionStore struct {
 	recordsByID      map[string]baldastate.SessionRecord
 	listRecords      []baldastate.SessionRecord
 	upsertedRecords  []baldastate.SessionRecord
+	upsertErr        error
+	beforeUpsert     func()
 }
 
 func (f *fakeSessionStore) Upsert(_ context.Context, record baldastate.SessionRecord) error {
+	if f.beforeUpsert != nil {
+		f.beforeUpsert()
+	}
+	if f.upsertErr != nil {
+		return f.upsertErr
+	}
 	f.upsertedRecords = append(f.upsertedRecords, record)
+	if f.recordsByAddress != nil {
+		f.recordsByAddress[sessionAddressKey(record.ChannelType, record.AddressKey)] = record
+	}
+	if f.recordsByID != nil {
+		f.recordsByID[record.SessionID] = record
+	}
 	return nil
 }
 

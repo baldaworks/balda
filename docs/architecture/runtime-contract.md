@@ -5,7 +5,56 @@ Status: active
 
 ## Invariants
 
-- Startup order stays strict: config -> bundled MCP -> runtime contribution catalog reconstruction -> provider runtime -> session/mailbox and durable actor infrastructure -> scheduler/webhook/Zulip/Telegram/Slackagent ingress. Shutdown runs these stages in reverse.
+- Startup order stays strict: config -> bundled MCP -> runtime contribution catalog reconstruction -> provider runtime -> session/mailbox and durable actor infrastructure -> scheduler -> checked shared HTTP listener -> enabled Telegram/Zulip/Slackagent ingress. Shutdown runs these stages in reverse.
+- The shared HTTP listener binds `balda.http.listen_addr` once after Backoffice, generic webhook, and enabled gateway handlers are prepared. `httpfx` reserves `<base_path>/backoffice`, `<base_path>/webhooks`, and `<base_path>/gateway`, rejects conflicting handler registrations before binding, and forwards each request to its owning handler without replacing browser, webhook, or transport authorization. Transport callbacks use canonical `/gateway` paths. Every generic webhook, whether configured or managed, uses its immutable name as the slug at `<base_path>/webhooks/<name>`; route definitions store no path. `webhookapp` selects by canonical slug and rejects unknown, disabled or archived names before admission. Changing the shared prefix moves every generic callback address after restart without changing its durable identity, secret verifier or history.
+- Scheduler startup reconciles only config-owned recurring definitions; managed definitions survive restart. A source ID collision fails startup. Due and manual runs have separate durable keys and preserve their exact definition snapshots; manual runs do not advance the cron cursor.
+- Global explicit fact memory has one process-shared Store for UI, MCP and actor
+  writers. The `memory` owner serializes ordered writes; `state` atomically
+  fences administrator mutations with current browser authority, the global
+  version and a body-free audit event in the existing app-KV record. Stable fact
+  IDs retain their creation version across edits, and later IDs are not reused.
+  Runtime snapshots preserve content, version and update timestamp through
+  composition adapters. A changed timestamp refreshes the complete current
+  facts on the next active/restored turn; an initialized empty record sends an
+  explicit superseding empty boundary. Final deletion never triggers file
+  reimport, session reset or conversation-history deletion. Historical prompts
+  remain historical data. This contract does not extend to concurrent writers
+  from multiple Balda processes sharing one database.
+- Both hosted and ACP provider shells retain every selected exact MCP revision,
+  independently of availability. `catalogapp` owns targeting and local current
+  authorization recovery metadata; `mcpruntime` owns complete configuration
+  leases, revision drain and supervised Balda stdio. `mcpfx` owns concrete SDK,
+  registry and process adapters; `mcpbridge` owns private fixed-upstream credential
+  transport. Runtime policy imports no SDK or credential implementation.
+  HTTP/SSE startup/publication/inventory perform no upstream discovery and no
+  idle retries. Native MCP discovery returns within 10 seconds and calls/reconnect
+  within 120 seconds; ACP initialization and attachment RPCs within 10 seconds, earlier caller
+  deadlines winning. Owned SDK cleanup remains retained after caller return.
+  Local structural/protection errors fail the exact operation; availability
+  never filters acquisition. Normal invocation and equal-binding retry preserve
+  snapshot, history, revision and provider identity without remote discovery.
+  Failed ADK session restore follows the fresh-session fallback below.
+- Owned stdio workers are scheduled before startup advances and never join
+  handshake readiness. Discovery is bounded to 10 seconds; process exit/failure retries
+  after 1/2/4/8/16/30 seconds with a 60-second stable reset. Final reference drain/shutdown cancel
+  workers and timers, stop with a 5-second graceful budget, force and retain reaping.
+  Catalog discovery and provider-owned execution children remain distinct.
+  Private bridge routes follow config leases and deny unbound OAuth before
+  upstream I/O. Remote catalog health remains unobserved rather than claiming
+  tool readiness. Existing ACP internal MCP behavior is provider-specific;
+  genuine missing-session recovery is preserved without outage-driven recreation.
+- `mcpmanage` owns explicit OAuth selection and scopes for remote connections.
+  Native authorization prepares an immutable current revision; ordinary
+  connection edits and candidate probes retain trusted authorization settings.
+  `mcpbackofficeapp` composes creation and protocol start, returning the saved
+  identity even if subsequent authorization start fails. Backoffice owns form
+  intake and presentation through its consuming ports; it never selects grant
+  identity or replaces retained session pins.
+- Historical revision and authorization-binding identities are immutable, while
+  installation grants retain their shared mutable generation policy. Explicit
+  reauthorization can narrow that grant's scopes; incompatible historical scope
+  requirements fail closed. Restoring sufficient authorization permits retained
+  pins to use their original identity again, without rewriting the revision.
 - Shutdown follows the exact reverse lifecycle order.
 - The durable command runtime must be available before ingress accepts work.
 - No runtime path executes user work without durable actor dispatch acceptance.
@@ -16,6 +65,7 @@ Status: active
 - SQLite does not own command selection, claim, retry, or wakeup semantics.
 - Runtime boundaries are strict and explicit: ingress publishes through actorlayer transport dispatcher contracts, actor execution and delivery settlement flow through `github.com/baldaworks/go-actorlayer`, and concrete transport policy stays in Balda's NATS adapter.
 - Balda owns queue, retry exhaustion, dead-letter side effects, projection writes, and command visibility telemetry.
+- Conversational preparation and unhandled provider/executor failures retain the normal retry policy. On terminal failure, delivery-enabled human turns enqueue one bounded generic notice to the exact originating locator before settlement, even when provider execution or progress has already started. The delivery uses the persistent outbox and a stable inbound-envelope identity across retries and restarts, with causation/correlation metadata linking the notice to that inbound work; internal causes never become notice text. Cancellation and silent turns remain excluded, and private jobs retain their existing reporting policies. A normal final response counts as handled only after successful delivery-command publication, before later fallible bookkeeping; a subsequent conversational bookkeeping failure settles without another provider attempt or generic notice. A final event or failed final publication alone does not count as handled. Failure to publish the terminal notice follows the existing bounded runtime settlement policy and does not guarantee eventual notification acceptance after exhaustion. Accepted notices retain durable delivery replay; an ambiguous external send remains subject to the existing no-automatic-resend policy.
 - Runtime diagnostics expose only structural settlement metadata. Retry/dead-letter reasons are bounded outcome and error-class codes; command DLQ records retain identity, routing, source metadata, payload size, and SHA-256, but never the original payload, provider error body, header values, credentials, or capability URLs.
 - Balda keeps that ownership inside explicit app layers: `actorcmd` owns the canonical wire taxonomy; `execution` owns runtime policy and re-exports that taxonomy as the runtime-facing compatibility facade; `jobs` owns durable job state, event outbox, and projections; `actors` owns product behavior; `actorsfx` owns actor composition and Fx wiring; `runtimecatalog` owns immutable compilation and bounded reads; `catalogapp` owns catalog lifecycle and consumer adapters; `sessionturn` owns queued-turn restoration; `internalmcp` owns bundled MCP lifecycle; `handlers` owns ingress normalization and publication; and `handlersfx` binds ingress-owned ports to concrete provider runtimes.
 - `agent` owns provider-backed runtime construction, root runtime prompt/session-state bootstrap, isolated goal runtime preparation, runtime-adjacent workspace support, and adaptation of ADK-facing permission callbacks into provider-neutral Balda contracts. It does not own session lifecycle semantics, queued-turn orchestration, or permission policy.
@@ -35,14 +85,54 @@ Status: active
 - Presentation routing is explicit: model-authored text stays on the prompt-formatting path, while system-authored service messages use typed structured message contracts with deterministic per-transport renderers. Where those structured messages are durable/runtime-facing contracts, their schema identity belongs in AsyncAPI rather than in channel formatter registrations.
 - Slackagent behavior lives in a dedicated `slackagent` path with its own ingress and response contracts. `internal/apps/balda/channel/slackagent` owns the channel boundary, and `internal/apps/balda/channel/slackagent/slackagentfx` is the composition/DI boundary exported to the rest of the app. See [Slackagent mode](slack-agent-mode.md).
 - Session boundaries are explicit: `session` owns create/restore/reset/lifecycle semantics and may consume shared delivery contracts, but it must not become the home of transport delivery contract types.
+- Ordinary conversational intake consumes one shared session preparation adapter
+  through the consuming service's `SessionPreparer` port. Telegram, Zulip,
+  Slack and Mattermost handlers do not choose create versus restore. `chatfx`
+  projects the same preparation into the existing conversational ports;
+  transport presentation receives neutral activation/identity/notice values,
+  never an ADK session or runner. Authorization precedes preparation; the
+  prepared snapshot is available before explicit skill pinning and durable
+  publication. A preparation error retains its normal retry classification.
+- `session.Manager.EnsureSession` returns an active session, otherwise restores
+  saved metadata, otherwise creates only when metadata is absent. Saved locator,
+  session ID, user, label and snapshot are authoritative. It serializes
+  preparation and publication under the canonical session operation lock and
+  shares the exact-restore/fresh-fallback path with restore-only
+  `RestoreSession`. Explicit `CreateSession` remains the fresh-creation path for
+  reset/topic commands; private runs retain their own lifecycle.
+
 - Each session persists one runtime catalog snapshot before exposure. Command
   lookup and skill metadata/selection use that exact snapshot; MCP identities
-  are supplied only when the provider session is created or restored. Every
-  turn reuses `TopicSession`'s runner. Restore fails closed for an unavailable
-  non-empty pin, while reset deliberately selects current capabilities.
+  are supplied only when the ADK session runtime is created or restored. Every
+  turn reuses `TopicSession`'s runner. Restore first validates the persisted
+  metadata, active status, and locator identity; those validation failures
+  remain errors. It then binds the exact persisted snapshot and opens and
+  validates the existing ADK session. Failure to bind that snapshot or
+  open/validate that session, except caller cancellation or shutdown,
+  automatically attempts a fresh ADK session at the same validated locator with
+  current eligible capabilities. The fallback uses the stable ADK session ID,
+  applies the rotation boundary, replaces the old ADK session with
+  Delete/Create, and therefore clears its prior ADK state and history. Balda
+  persists the current snapshot before exposing the replacement; any fallback
+  failure remains an error. `/reset` remains a separate explicit action that
+  deliberately selects current capabilities.
+- Provider-open Goose SQL migrations mark persisted configured MCP descriptors
+  from the pre-targeting catalog format without rewriting snapshots, session
+  pins or history. `catalogapp` consumes those exact markers at restore and
+  validates the original source, contribution identity, transport and structural
+  revision against the current host declaration before using the strict launch
+  resolver. Marked pins retain configured provider-default selection and the
+  original environment/header **key-only** revision contract; historical private
+  values were never persisted and cannot be verified. New snapshots keep full-value
+  revisions and retained targeting. Missing markers or changed structural/key
+  definitions fail the exact restore attempt. The migration itself performs no
+  application-lifecycle reset or restore write. Failed restore can subsequently
+  replace the saved ADK session through the ordinary fresh-session fallback.
 - Adapter boundaries are explicit: transport/use-case integrations should prefer package-local ports with composition-root adapters instead of reaching directly into concrete runtime or transport implementations.
 - Ingress construction is fail-fast: formatting/registry validation and all downstream runtime dependencies must resolve before any ingress lifecycle stage can accept work.
 - Telegram polling settlement is explicit: the provider-owned offset boundary advances only after accepted or terminal event processing; retryable handler outcomes preserve the previous offset for stable-ID replay, while webhook settlement remains request-local.
+- A new webhook request freezes any selected report locator in an admission row before durable JobActor publication. It executes in a new transient `wh-` session, never in the report recipient's session. JobActor replays interrupted SessionActor publication under the same identity. The SessionActor turn claims its durable job immediately before provider invocation; a later replay cannot repeat provider side effects even after broker deduplication expires. A crash after the claim without durable output has an indeterminate outcome and terminates with a bounded failure rather than restarting provider execution. Only final output is delivered, and terminal cleanup retains job input/output while removing the private session.
+- A recurring schedule definition retains its optional report reference. Cron and manual admission freeze a concrete locator in the run snapshot before publication. A missing alias fails the run and advances only the selected cron slot; it does not pause the definition. Retries and final delivery do not reread the alias.
 
 ## Boundary contract
 
@@ -87,6 +177,7 @@ Status: active
 - `internal/apps/balda/execution/config_test.go`
 - `internal/apps/balda/eventbus/config_test.go`
 - `internal/apps/balda/application_lifecycle_test.go`
+- `internal/apps/balda/application_mcp_startup_test.go`
 - `internal/apps/balda/actors/turn_dispatcher_test.go`
 - `internal/apps/balda/jobs/service_test.go`
 
@@ -111,3 +202,10 @@ Status: active
 - Runtime startup wiring changes.
 - Any command execution path change.
 - New config keys that affect transport or execution mode.
+
+A first explicit skill command can be pinned to the application catalog before
+lazy session creation derives an effective application-plus-workspace catalog.
+The turn loader accepts that direct parent selection only when the session
+retains the identical skill descriptor and revision. It reads the original
+retained content; unrelated snapshots, changed descriptors, missing archives,
+and refreshed revisions fail closed. The session runtime itself stays pinned.

@@ -47,8 +47,21 @@ task projection-replay
 `balda init` requires a Telegram bot token, detects supported provider CLIs
 (`codex`, `opencode`, `copilot`, `gemini`, `claude`), writes
 `.config/balda/config.yaml`, initializes `.config/balda/state.db`, and prints
-both an owner auth command and Telegram auth link. The default token storage is
+both an owner auth command and Telegram auth link, plus the generated
+Backoffice administrator password. Its username is `superuser`; save the password securely. The default token storage is
 CWD `.env` as `BALDA_TELEGRAM_TOKEN`.
+
+On an existing installation, stop Balda, back up the selected database, and
+deploy the new binary. Goose automatically converts owner/collaborator records
+when the state provider opens. Conversion preserves roles and bot bindings;
+a following SQL migration sets the primary administrator's (`superuser`) initial
+browser password to `superusersuperuser`, requiring replacement at first login.
+Restart directly without manual bootstrap. Existing usable passwords remain
+unchanged. Run `balda backoffice reset-password` to generate and print a new
+administrator password once and revoke that user's browser sessions. Optional
+non-terminal stdin can provide an operator-chosen password.
+`balda start` applies embedded schema and data migrations and refuses bot ingress
+or Backoffice HTTP until canonical users and administrator credentials are ready.
 
 Owner onboarding is completed in a direct message with the bot by opening the
 printed auth link or sending:
@@ -56,6 +69,14 @@ printed auth link or sending:
 ```text
 /start owner=<owner_token>
 ```
+
+For Backoffice-managed account binding, Telegram accepts a generated
+`bind_<opaque_token>` invitation through `/start`, a bot deep link or an exact
+direct message. The verified sender is attached to the invitation's selected
+existing user, preserving its role and primary status; no owner bootstrap token
+is required. A token is scoped to the configured bot, expires after 24 hours and
+is consumed atomically with the binding and audit. Replace or cancel a pending
+invitation in Backoffice instead of reusing a lost or already consumed token.
 
 After owner auth, users can send normal direct messages to the bot's main DM
 session or create a named topic session:

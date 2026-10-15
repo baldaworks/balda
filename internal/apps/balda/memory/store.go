@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/baldaworks/balda/internal/apps/balda/memorycmd"
 )
 
 const (
@@ -23,7 +26,7 @@ const (
 	// MemoryUpdatedAtStateKey stores the latest memory update timestamp in ADK session state.
 	MemoryUpdatedAtStateKey = "balda_memory_updated_at"
 
-	kvMemoryKey = "memory/global"
+	kvMemoryKey = memorycmd.Key
 )
 
 // KVStore persists JSON-compatible values by key.
@@ -49,18 +52,6 @@ type Store struct {
 	legacyStateDir string
 	memoryEnabled  bool
 	mu             sync.Mutex
-}
-
-type record struct {
-	Version   int64   `json:"version"`
-	UpdatedAt string  `json:"updated_at"`
-	Entries   []entry `json:"entries"`
-}
-
-type entry struct {
-	Version   int64  `json:"version"`
-	CreatedAt string `json:"created_at"`
-	Fact      string `json:"fact"`
 }
 
 // NewStore creates a memory store backed by kv.
@@ -131,11 +122,14 @@ func (s *Store) Remember(ctx context.Context, fact string) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
+	if rec.Version == math.MaxInt64 {
+		return Snapshot{}, memorycmd.ErrUnavailable
+	}
 	nextVersion := rec.Version + 1
 	now := nextUpdatedAt(rec.UpdatedAt)
 	rec.Version = nextVersion
 	rec.UpdatedAt = now
-	rec.Entries = append(rec.Entries, entry{
+	rec.Entries = append(rec.Entries, memorycmd.Entry{
 		Version:   nextVersion,
 		CreatedAt: now,
 		Fact:      fact,
@@ -171,34 +165,34 @@ func VersionFromState(value any) int64 {
 	}
 }
 
-func (s *Store) loadRecordLocked(ctx context.Context) (record, error) {
+func (s *Store) loadRecordLocked(ctx context.Context) (memorycmd.Record, error) {
 	if s.kv == nil {
-		return record{}, nil
+		return memorycmd.Record{}, nil
 	}
 	value, ok, err := s.kv.GetJSON(ctx, kvMemoryKey)
 	if err != nil {
-		return record{}, fmt.Errorf("read memory kv: %w", err)
+		return memorycmd.Record{}, fmt.Errorf("read memory kv: %w", err)
 	}
 	if ok {
 		rec, err := normalizeRecord(value)
 		if err != nil {
-			return record{}, err
+			return memorycmd.Record{}, err
 		}
 		return rec, nil
 	}
 	rec, imported, err := s.importLegacyRecord(ctx)
 	if err != nil {
-		return record{}, err
+		return memorycmd.Record{}, err
 	}
 	if imported {
 		if err := s.saveRecordLocked(ctx, rec); err != nil {
-			return record{}, err
+			return memorycmd.Record{}, err
 		}
 	}
 	return rec, nil
 }
 
-func (s *Store) saveRecordLocked(ctx context.Context, rec record) error {
+func (s *Store) saveRecordLocked(ctx context.Context, rec memorycmd.Record) error {
 	if s.kv == nil {
 		return fmt.Errorf("memory kv store is required")
 	}
@@ -208,29 +202,29 @@ func (s *Store) saveRecordLocked(ctx context.Context, rec record) error {
 	return nil
 }
 
-func (s *Store) importLegacyRecord(ctx context.Context) (record, bool, error) {
+func (s *Store) importLegacyRecord(ctx context.Context) (memorycmd.Record, bool, error) {
 	if strings.TrimSpace(s.legacyStateDir) == "" {
-		return record{}, false, nil
+		return memorycmd.Record{}, false, nil
 	}
 	if err := ctx.Err(); err != nil {
-		return record{}, false, err
+		return memorycmd.Record{}, false, err
 	}
 	content, err := os.ReadFile(filepath.Join(s.legacyStateDir, MemoryFileName))
 	if err != nil {
 		if os.IsNotExist(err) {
-			return record{}, false, nil
+			return memorycmd.Record{}, false, nil
 		}
-		return record{}, false, fmt.Errorf("read legacy %s: %w", MemoryFileName, err)
+		return memorycmd.Record{}, false, fmt.Errorf("read legacy %s: %w", MemoryFileName, err)
 	}
 	fact := strings.TrimSpace(string(content))
 	if fact == "" {
-		return record{}, false, nil
+		return memorycmd.Record{}, false, nil
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
-	return record{
+	return memorycmd.Record{
 		Version:   1,
 		UpdatedAt: now,
-		Entries: []entry{{
+		Entries: []memorycmd.Entry{{
 			Version:   1,
 			CreatedAt: now,
 			Fact:      fact,
@@ -238,35 +232,35 @@ func (s *Store) importLegacyRecord(ctx context.Context) (record, bool, error) {
 	}, true, nil
 }
 
-func normalizeRecord(value any) (record, error) {
+func normalizeRecord(value any) (memorycmd.Record, error) {
 	data, err := json.Marshal(value)
 	if err != nil {
-		return record{}, fmt.Errorf("marshal memory record: %w", err)
+		return memorycmd.Record{}, memorycmd.ErrUnavailable
 	}
-	var rec record
-	if err := json.Unmarshal(data, &rec); err != nil {
-		return record{}, fmt.Errorf("decode memory record: %w", err)
+	var rec *memorycmd.Record
+	if err := json.Unmarshal(data, &rec); err != nil || rec == nil || rec.Version < 0 {
+		return memorycmd.Record{}, memorycmd.ErrUnavailable
 	}
-	if rec.Version < 0 {
-		rec.Version = 0
-	}
-	if recordHasContent(rec) {
-		updatedAt, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(rec.UpdatedAt))
-		if err != nil {
-			return record{}, fmt.Errorf("decode memory record updated_at: %w", err)
+	if rec.Version == 0 {
+		if rec.UpdatedAt != "" || len(rec.Entries) != 0 {
+			return memorycmd.Record{}, memorycmd.ErrUnavailable
 		}
-		rec.UpdatedAt = updatedAt.UTC().Format(time.RFC3339Nano)
+		return *rec, nil
 	}
-	return rec, nil
-}
-
-func recordHasContent(rec record) bool {
-	for _, item := range rec.Entries {
-		if strings.TrimSpace(item.Fact) != "" {
-			return true
+	updated, err := time.Parse(time.RFC3339Nano, rec.UpdatedAt)
+	if err != nil || updated.IsZero() {
+		return memorycmd.Record{}, memorycmd.ErrUnavailable
+	}
+	ids := make(map[int64]bool, len(rec.Entries))
+	for _, entry := range rec.Entries {
+		created, err := time.Parse(time.RFC3339Nano, entry.CreatedAt)
+		if entry.Version <= 0 || entry.Version > rec.Version || ids[entry.Version] || strings.TrimSpace(entry.Fact) == "" || err != nil || created.IsZero() || created.After(updated) {
+			return memorycmd.Record{}, memorycmd.ErrUnavailable
 		}
+		ids[entry.Version] = true
 	}
-	return false
+	rec.UpdatedAt = updated.UTC().Format(time.RFC3339Nano)
+	return *rec, nil
 }
 
 func nextUpdatedAt(previous string) string {
@@ -277,7 +271,7 @@ func nextUpdatedAt(previous string) string {
 	return now.Format(time.RFC3339Nano)
 }
 
-func snapshotFromRecord(rec record) Snapshot {
+func snapshotFromRecord(rec memorycmd.Record) Snapshot {
 	facts := make([]string, 0, len(rec.Entries))
 	for _, item := range rec.Entries {
 		if fact := strings.TrimSpace(item.Fact); fact != "" {
