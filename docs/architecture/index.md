@@ -31,9 +31,9 @@ Use this map to find the authoritative runtime contracts.
 - [Native session memory](session-memory-native.md)
 - [Session-memory v2 acceptance and operations](session-memory-v2-acceptance.md)
 
-## Proposed decisions
+## Accepted decisions
 
-These records are under discussion and are not active architecture contracts.
+These records are active architecture contracts.
 
 - [ADR 0001: Provider-neutral ADK agent tool hooks](adr/0001-adk-agent-tool-hooks.md)
 

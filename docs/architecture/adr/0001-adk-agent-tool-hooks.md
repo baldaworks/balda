@@ -1,14 +1,15 @@
 # ADR 0001: Provider-neutral ADK agent tool hooks
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-10-15
 - Owners: Balda maintainers
 - Decision scope: agent runner construction, managed hooks, Agent Plugins contributions
 - Supersedes: none
+- Approval: Prism Story `balda-qubf`, Human gate approved 2026-10-15
 
-This ADR is a proposal. It is not an active architecture contract and does not
-authorize implementation. Move it to `Accepted` only after the maintainers
-approve the decision and resolve the open questions below.
+This ADR records the architecture approved through the Human gate of Prism
+Story `balda-qubf`. Implementation remains governed by the Story tasks and
+their independent review and verification gates.
 
 ## Context
 
@@ -55,7 +56,7 @@ closed and commands-only.
 - Keep the existing ownership boundaries for catalog, plugin lifecycle, state,
   hooks, and Backoffice.
 
-## Proposed decision
+## Decision
 
 ### 1. Centralize Balda-owned runner construction
 
@@ -98,7 +99,7 @@ Dedicated internal runtimes, including session-memory derivation, remain on a
 plain runner unless explicitly opted in. Tests may construct a plain runner
 when the plugin boundary is irrelevant.
 
-No change is proposed to `agentfactory.Factory`, its `Build` result, or the
+No change is made to `agentfactory.Factory`, its `Build` result, or the
 `agent.Agent` interface.
 
 ### 2. Add one Balda ADK runner plugin
@@ -201,7 +202,7 @@ changes.
 
 ### 4. Add hook contributions to the Balda Agent Plugins extension
 
-The portable package format remains Agent Plugins 1.0. A proposed Balda
+The portable package format remains Agent Plugins 1.0. Balda
 extension schema version 2 adds `hooks` while retaining `commands`:
 
 ```json
@@ -228,7 +229,7 @@ extension schema version 2 adds `hooks` while retaining `commands`:
 ```
 
 Version 2 accepts `commands`, `hooks`, or both and requires at least one
-contribution. Version 1 remains valid and unchanged. The proposed canonical
+contribution. Version 1 remains valid and unchanged. The canonical
 schema ID is
 `https://baldaworks.dev/schemas/balda-extension/2.0.0/schema.json`; Balda embeds
 and validates it offline.
@@ -266,7 +267,7 @@ plugin/<plugin-id>/<hook-name>
 
 The initial order is lexical by effective identity within an event.
 
-## Proposed ownership
+## Ownership
 
 - `agentfactory.Factory` creates and returns `agent.Agent`; unchanged.
 - `agent.RunnerFactory` creates stock ADK runners with host plugins.
@@ -315,7 +316,7 @@ The initial order is lexical by effective identity within an event.
 
 ### Add capabilities to `agentfactory.Factory` or `agent.Agent`
 
-Rejected from this proposal. The current factory returns an agent and does not
+Rejected. The current factory returns an agent and does not
 own runner behavior. Adding Balda tool-hook metadata would widen a stable generic
 boundary without being necessary for plugin attachment.
 
@@ -344,29 +345,77 @@ a fork would add avoidable lifecycle and upgrade cost.
 Rejected. Package hooks are executable code running with Balda's operating-system
 authority and require explicit approval of an exact revision.
 
-## Risks and open questions
+## Resolved design questions
 
-The following items must be resolved before this ADR can be accepted:
+The Human-approved Story design resolves the former acceptance questions as
+follows:
 
-1. Verify the lifetime and close behavior of `plugin.Plugin` in the pinned ADK
-   release and decide whether every runner requires a fresh plugin instance.
-2. Verify callback propagation to agent-tool sub-runners. Google ADK tracks a
-   related issue in
-   [google/adk-go#669](https://github.com/google/adk-go/issues/669).
-3. Confirm which callback context fields provide stable invocation and tool-call
-   identifiers for deduplication and audit.
-4. Define the exact extension v2 JSON Schema bounds and compatibility tests.
-5. Define durable package-hook activation storage, upgrade behavior, and
-   transaction boundaries with package removal.
-6. Decide whether lexical identity ordering is sufficient or a later schema
-   needs explicit priority.
-7. Confirm how `additional_context` and post-tool denial map into ADK result
-   values without weakening the current untrusted-context boundary.
-8. Finalize the consumer-owned native adapter contract, including leaf-config
-   handoff after provider-tree traversal, ambiguous matches, and release
-   ownership.
+1. **Plugin lifetime.** `agent.RunnerFactory` creates a fresh, stateless host
+   plugin for each runner. The pinned ADK runner has no public close method, so
+   mandatory cleanup cannot rely on `plugin.Plugin.CloseFunc`; invocation and
+   session cleanup belong to explicit callbacks and the owning runtime. Owner:
+   `agent` and `hookadk`. Consequence: plugin instances are not shared, and
+   lifecycle tests must pin this behavior.
+2. **Nested runners.** Balda-owned main, child, GoalKeeper worker, and GoalKeeper
+   validator runners use `RunnerFactory`. Dedicated internal runners opt in
+   explicitly. Private runners created inside ADK `agenttool` do not inherit
+   host plugins; the outer agent-tool invocation remains visible, while inner
+   calls are outside this decision. Owner: each runner construction site.
+   Consequence: privately constructed third-party runners are not claimed as
+   instrumented.
+3. **Callback identity and deduplication.** ADK events use `SessionID`,
+   `InvocationID`, and `FunctionCallID`. Eligible tool events deduplicate on
+   `(session, invocation, tool-call, event)` in an in-memory cache owned by
+   `hooks.Runner`; source is excluded. The cache is bounded to 256 entries per
+   invocation and 4096 globally with a ten-minute safety TTL.
+   `AfterRunCallback` releases an invocation and native binding release clears
+   its session. Missing identity bypasses deduplication. Owner: `hookcmd`,
+   `hooks`, and `hookadk`. Consequence: no cross-restart guarantee is provided
+   for synchronous in-flight calls.
+4. **Extension v2 validation.** Agent Plugins 1.0 remains the outer format. A
+   separately embedded closed v2 schema accepts commands, hooks, or both and
+   requires a non-empty contribution set. It retains v1 unchanged and rejects
+   unsafe paths, symlinks, missing or non-executable files, duplicate names,
+   unknown fields, invalid events or regular expressions, and out-of-range
+   bounds. Owner: `runtimecatalog`. Consequence: exact numeric limits and the
+   fixture corpus are explicitly deferred to delivery task `balda-qubf.9` as
+   implementation constants covered by compatibility tests; they cannot widen
+   the containment or direct-execution contracts accepted here.
+5. **Activation persistence and package transactions.** Approvals are keyed by
+   plugin ID, immutable revision, and hook name, fenced by a descriptor digest.
+   Eligibility is read by joining the activation with the enabled installation
+   and its active exact revision. Existing atomic plugin commits therefore make
+   disable, removal, upgrade, and rollback visible to the next snapshot without
+   copying authority. Revision purge is forbidden while approvals or in-flight
+   leases reference it. Owner: `pluginapp` and `state`. Consequence: migrations
+   must refuse destructive downgrade while v2 descriptors or activations exist.
+6. **Ordering.** Lexical order by full effective identity is the accepted
+   initial contract. Owner: `hooks`. Consequence: explicit priority requires a
+   future ADR and schema revision rather than an implicit ordering change.
+7. **Post-tool results and context.** `hookcmd.Result` gains a bounded JSON
+   replacement output for `PostToolUse`. ADK replacements must decode to an
+   object. `additional_context` may appear only as named untrusted result data;
+   it never enters system or developer instructions or trusted session state.
+   Post-tool outcomes are recorded as observed or replaced and never as
+   prevention. Owner: `hookcmd` and `hookadk`. Consequence: a native adapter
+   that cannot apply an actionable result must reject that activation or result
+   explicitly rather than ignore it.
+8. **Native adapter boundary.** `catalogapp.ProviderFactory` owns provider-tree
+   traversal and passes leaf configurations through its consumer-owned port.
+   `hooknative.Registry` only iterates adapters and requires exactly one match
+   for a native-intercepted leaf. Concrete adapters own detection, launch
+   mutation, proxy commands, wire codecs, normalization, and partial-failure
+   release. `hookprovider.Service.Bind` exposes only a neutral endpoint and
+   opaque token. Owner: `catalogapp`, `hooknative`, provider adapters, and
+   `hookprovider` respectively. Consequence: provider ID may remain opaque event
+   data but cannot select an adapter, command, or codec.
 
-## Validation required for acceptance
+Implementation still must verify migration numbering, audit-retention wiring,
+and final Backoffice route and template touch points before editing those areas.
+These checks belong to the owning delivery tasks and do not reopen this
+architecture decision.
+
+## Validation contract
 
 - `agentfactory.Factory` still returns only `agent.Agent`.
 - `RunnerFactory` preserves caller configuration, creates host plugins with the
@@ -393,7 +442,7 @@ The following items must be resolved before this ADR can be accepted:
 - Timeout, malformed JSON, executable failure, oversized output, and process-tree
   cancellation produce bounded audit evidence and the documented failure mode.
 
-## Rollout after acceptance
+## Implementation rollout
 
 1. Add `agent.RunnerFactory` and the Balda ADK plugin constructor.
 2. Move all Balda-owned user-facing runner construction through the factory.
@@ -402,11 +451,25 @@ The following items must be resolved before this ADR can be accepted:
    dispatch, and wire codecs from `hookprovider` into registered native adapters.
    Keep `hookprovider` as the neutral binding and normalized hook dispatch
    service used by those adapters.
-5. Add source-aware deduplication if validation demonstrates overlapping events.
+5. Add bounded cross-source deduplication keyed by session, invocation,
+   tool-call, and event. Exclude source so ADK and native observations coalesce;
+   bypass deduplication when identity is incomplete. Enforce the accepted limits
+   of 256 entries per invocation and 4096 globally with a ten-minute safety TTL,
+   and release entries through ADK invocation and native session cleanup.
 6. Add extension schema v2 and immutable catalog hook descriptors.
 7. Add durable exact-revision activation and Backoffice review.
 8. Enable package hook execution only after audit, rollback, and kill-switch
    validation passes.
+
+## Delivery completion
+
+Prism Story `balda-qubf` remains open after implementation verification and
+after its implementation pull request is opened. Verify records the canonical
+pull request and exact reviewed head, then keeps the Story in
+`phase:story:verify` with delivery state `awaiting_merge`. A changed head
+requires review and verification again. Only confirmed merge of that verified
+pull request into `main`, with its reported merge commit reachable from
+`origin/main`, permits the lifecycle orchestrator to close the Story.
 
 ## References
 
