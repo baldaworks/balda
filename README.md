@@ -379,6 +379,13 @@ the runtime account's `$HOME/.agents/skills`, `$CODEX_HOME/skills` (defaulting
 to `$HOME/.codex/skills`), `<state_dir>/skills`, and the current workspace's
 `.agents/skills`; enabled plugins contribute their own skills. Run `/reset` to
 adopt skills installed or changed after the session was created.
+
+Administrators manage independent skills in **Operations → Skills**: review one
+complete skill directory from a local source or Git repository, then install,
+update, enable, disable or remove it. Plugin skills remain owned by Plugins.
+Use **Refresh sources** to adopt changes in existing global skill roots.
+Management retains archived content for existing sessions and never resets them.
+See [Skills management](docs/reference/backoffice.md#skills-management).
 See [Plugins and session capabilities](docs/reference/plugins.md) for the
 `dev.baldaworks.balda` extension schema and the session-bound command, skill,
 and MCP lifecycle.

@@ -1097,3 +1097,68 @@ Native tool events (`PreToolUse`, `PostToolUse`) use the same guarded Agent hook
 editor. Its capability banner reports configured provider support and explains
 new-session activation. Unsupported configurations return 400 with the submitted
 draft intact. Tool-event matchers apply to the provider-native tool name.
+
+
+## Skills management
+
+Administrators open **Operations → Skills** at `<backoffice_path>/skills`.
+Operators cannot inspect or mutate this global catalog. Ordinary browser login,
+access refresh, CSRF and origin protections apply. Refresh returns to the
+requested Skills page. There is no additional passkey ceremony.
+
+The inventory separates managed standalone installations, existing global
+standalone roots and plugin contributions. Duplicate names remain distinct;
+unqualified selection is ambiguous and qualified selection identifies the exact
+source. Plugin rows link to their owning Plugins page. Existing filesystem
+skills are read-only here: management does not adopt, overwrite or delete them.
+Workspace skills are session-scoped and are not enumerated globally.
+
+**Install skill** accepts a local directory or Git repository **Source**, an
+optional Git **Ref**, and a relative **Skill path** containing `SKILL.md`.
+Use `.` when the source root is the skill. A repository may contain several
+skills: only the chosen subtree is installed. No `plugin.json`, marketplace
+index, Node runtime or `npx` installer is required. Review shows the skill's
+metadata, content revision and resolved Git commit before acceptance. The
+complete directory, including supporting resources, is retained without
+executing its scripts. Acceptance rechecks that reviewed bytes are unchanged.
+
+Source is private transient input. It is cleared on submission, errors and
+history restoration, never refilled. Remote labels omit credentials, query and
+fragment; local labels omit host paths. Configure source access on the host;
+these forms do not provision Git credentials.
+
+Managed payloads use Balda's immutable revision archive. The standalone archive
+layout includes `<name>/SKILL.md` beneath the retained source
+revision; accepted descriptors and private origins are stored in the shared
+state database's versioned application metadata. Mutable staging is isolated
+under `<state_dir>/skill-staging`. This does not take ownership of the runtime
+account's existing `.agents/skills` or workspace directories.
+
+**Review update** uses the recorded origin and retains Enabled. **Enable skill**,
+**Disable skill** and **Remove skill** use retained revisions without fetching
+the origin. Disable/remove require confirmation. Remove excludes the source
+from new selection while retaining archived instructions/resources and session
+pins. Existing sessions are neither reset nor repinned; new sessions and an
+explicit `/reset` select the current catalog.
+
+GET pages read retained metadata only. **Refresh sources** explicitly rebuilds
+eligible global roots with current managed/plugin/configured sources. Normal
+complete catalog reconstruction during startup or another accepted catalog
+operation also captures current unmanaged roots. Invalid refresh leaves the
+last usable catalog and displays bounded diagnostics.
+
+Stale forms or changed/expired reviews return 409 with reopen guidance. A
+change committed before publication fails appears as **Accepted; recovery
+pending** with distinct desired/current revisions. Do not repeat installation
+or update. **Recover publication** rebuilds the current desired catalog from
+retained descriptors without fetching managed origins or adding another
+mutation audit. Startup performs the same recovery. Exact generation and the
+complete enabled source set fence publication, including removal of the final
+skill. One Balda process owns a state directory.
+
+`skillapp` owns source/lifecycle policy, `catalogapp` owns capture and complete
+publication, and the shared state provider owns guarded metadata/audit. The
+Backoffice `SkillsOperations` port is bound by `skillbackofficeapp`; the Web UI
+does not own catalog policy. There is no schema migration for this app-KV data.
+Older binaries do not understand managed selections; deployment rollback needs
+a matching state backup when retained managed capabilities matter.
