@@ -2,9 +2,11 @@ package state
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
@@ -118,7 +120,7 @@ func (s *sqlSkillManagementStore) Commit(ctx context.Context, m skillcmd.Commit)
 	if m.Operation == skillcmd.OperationRefresh {
 		targetID = "skills"
 	}
-	audit := usercmd.AuditEvent{ID: m.AuditID, Action: usercmd.AuditActionSkillChanged, Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: m.Authority.UserID, ActorSessionID: m.Authority.SessionID, TargetType: usercmd.AuditTargetSkill, TargetID: targetID, Source: "backoffice", Reason: "Standalone skill " + string(m.Operation), OccurredAt: m.Authority.At}
+	audit := usercmd.AuditEvent{ID: m.AuditID, Action: usercmd.AuditActionSkillChanged, Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: m.Authority.UserID, ActorSessionID: m.Authority.SessionID, TargetType: usercmd.AuditTargetSkill, TargetID: targetID, Source: "backoffice", Reason: skillAuditReason(m), OccurredAt: m.Authority.At}
 	if err := s.users.insertAudit(ctx, tx, audit); err != nil {
 		return skillcmd.ErrUnavailable
 	}
@@ -129,6 +131,21 @@ func (s *sqlSkillManagementStore) Commit(ctx context.Context, m skillcmd.Commit)
 		return skillcmd.ErrUnavailable
 	}
 	return nil
+}
+
+// Record exact accepted evidence from protected metadata, never browser audit text.
+func skillAuditReason(m skillcmd.Commit) string {
+	selection := m.Record.Selection()
+	data, _ := json.Marshal(selection.Sources)
+	reason := fmt.Sprintf("Standalone skill %s; generation=%d; selection=%x", m.Operation, m.Record.Generation, sha256.Sum256(data))
+	if m.Operation != skillcmd.OperationRefresh {
+		for _, i := range m.Record.Installations {
+			if i.Descriptor.ID.Name == m.TargetID {
+				return fmt.Sprintf("%s; revision_sha256=%x", reason, sha256.Sum256([]byte(i.Descriptor.Revision)))
+			}
+		}
+	}
+	return reason
 }
 
 func preservesSkillTombstones(before, after skillcmd.Record) bool {

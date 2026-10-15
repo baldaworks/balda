@@ -3,8 +3,10 @@
 package state
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -30,7 +32,7 @@ func checkSkillManagement(t *testing.T, open contractOpener) {
 		t.Fatalf("empty observation=%+v, %v", initial, err)
 	}
 	id := runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindUserSkill, Name: "managed-one"}
-	install := skillcmd.Installation{Descriptor: runtimecatalogcmd.SourceDescriptor{ID: id, Revision: "revision-one"}, Name: "example", Description: "safe description", Origin: skillcmd.Origin{Kind: "git", Source: "https://private:credential-canary@example.test/repo", Ref: "main", Path: "skills/example"}, Enabled: true, CreatedAt: a.At, UpdatedAt: a.At}
+	install := skillcmd.Installation{Descriptor: runtimecatalogcmd.SourceDescriptor{ID: id, Revision: "revision-one"}, Name: "example", Description: "private-body-canary", Origin: skillcmd.Origin{Kind: "git", Source: "https://private:credential-canary@example.test/repo", Ref: "main", Path: "skills/example"}, Enabled: true, CreatedAt: a.At, UpdatedAt: a.At}
 	mutate := func(o skillcmd.Observation, records []skillcmd.Installation, operation skillcmd.Operation, audit string) skillcmd.Commit {
 		return skillcmd.Commit{Authority: a, ExpectedState: o.Token(), Record: skillcmd.Record{SchemaVersion: 1, Generation: o.Record.Generation + 1, Installations: records, Pending: true, UpdatedAt: a.At}, Operation: operation, TargetID: id.Name, AuditID: audit}
 	}
@@ -53,6 +55,16 @@ func checkSkillManagement(t *testing.T, open contractOpener) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	updated := install
+	updated.Descriptor.Revision = "revision-two"
+	if err := store.Commit(t.Context(), mutate(current, []skillcmd.Installation{updated}, skillcmd.OperationUpdate, "skill-update")); err != nil {
+		t.Fatal(err)
+	}
+	current, err = store.Observe(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	install = updated
 	disabled := install
 	disabled.Enabled = false
 	duplicate := mutate(current, []skillcmd.Installation{disabled}, skillcmd.OperationDisable, "skill-install")
@@ -92,7 +104,7 @@ func checkSkillManagement(t *testing.T, open contractOpener) {
 		t.Fatalf("stale generation completion=%v", err)
 	}
 	empty, err := store.ReadSelections(t.Context())
-	if err != nil || empty.Generation != 2 || len(empty.Sources) != 0 {
+	if err != nil || empty.Generation != 3 || len(empty.Sources) != 0 {
 		t.Fatalf("disabled selection=%+v, %v", empty, err)
 	}
 	mismatched := empty
@@ -127,7 +139,7 @@ func checkSkillManagement(t *testing.T, open contractOpener) {
 	if err := store.Commit(t.Context(), refreshed); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.MarkPublished(t.Context(), runtimecatalogcmd.ManagedSkillSelection{Generation: 3}); !errors.Is(err, skillcmd.ErrConflict) {
+	if err := store.MarkPublished(t.Context(), runtimecatalogcmd.ManagedSkillSelection{Generation: 4}); !errors.Is(err, skillcmd.ErrConflict) {
 		t.Fatalf("empty stale completion=%v", err)
 	}
 	latest, _ := store.Observe(t.Context())
@@ -138,14 +150,24 @@ func checkSkillManagement(t *testing.T, open contractOpener) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	seenUpdate := false
 	for _, event := range events.Events {
 		if event.TargetType != usercmd.AuditTargetSkill {
 			continue
 		}
 		raw, _ := json.Marshal(event)
-		if strings.Contains(string(raw), "credential-canary") || event.Source != "backoffice" {
+		if strings.Contains(string(raw), "credential-canary") || strings.Contains(string(raw), "private-body-canary") || event.Source != "backoffice" {
 			t.Fatal("unsafe skill audit")
 		}
+		if event.ID == "skill-update" {
+			seenUpdate = true
+			if event.TargetID != id.Name || event.Action != usercmd.AuditActionSkillChanged || event.Outcome != usercmd.AuditOutcomeSucceeded || !strings.Contains(event.Reason, "generation=2;") || !strings.Contains(event.Reason, fmt.Sprintf("revision_sha256=%x", sha256.Sum256([]byte(updated.Descriptor.Revision)))) || !strings.Contains(event.Reason, "selection=") {
+				t.Fatalf("update audit lacks accepted evidence: %+v", event)
+			}
+		}
+	}
+	if !seenUpdate {
+		t.Fatal("accepted update audit missing")
 	}
 	for _, tc := range []struct {
 		name   string
