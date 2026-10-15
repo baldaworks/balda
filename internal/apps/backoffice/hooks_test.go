@@ -61,6 +61,11 @@ func TestHooksHTTPManagement(t *testing.T) {
 			if response := get("/overview", operator.access, false); strings.Contains(response.Body.String(), `href="`+base+`/hooks"`) {
 				t.Fatal("operator sees hook navigation")
 			}
+			form.Set("timeout_seconds", "1e4")
+			if response := mutate("/hooks", form, true); response.Code != 400 || !strings.Contains(response.Body.String(), `value="1e4"`) {
+				t.Fatalf("invalid timeout draft = %d, %s", response.Code, response.Body.String())
+			}
+			form.Set("timeout_seconds", "3600")
 			if response := mutate("/hooks", form, false); response.Code != 303 || response.Header().Get("Location") != base+"/hooks" {
 				t.Fatalf("create = %d, %s", response.Code, response.Body.String())
 			}

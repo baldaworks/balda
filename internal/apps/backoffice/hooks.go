@@ -90,6 +90,7 @@ func (a *httpApp) hookMutation(w http.ResponseWriter, r *http.Request) {
 	page.Hooks = webui.ProjectHooks(hookcmd.Record{})
 	page.Hooks.Editor = webui.ProjectHookEditor(definition, version, create)
 	page.Hooks.Editor.ArgsJSON = form.Get("args")
+	page.Hooks.Editor.TimeoutValue = form.Get("timeout_seconds")
 	if versionErr != nil || version < 0 || !hookcmd.ValidName(name) {
 		a.hookError(w, r, page, hookcmd.ErrInvalid)
 		return
