@@ -23,7 +23,6 @@ Use this map to find the authoritative runtime contracts.
 - [Plugin marketplace repo format](plugin-marketplace-format.md)
 - [Plugins and session capabilities](../reference/plugins.md)
 - [Runtime contribution catalog](runtime-contribution-catalog.md)
-- [Provider-neutral ADK agent tool hooks](adk-agent-tool-hooks.md)
 - [Actor runtime](actor-runtime.md)
 - [Local actorlayer contract boundary](actor-runtime.md#local-actorlayer-contract-boundaries)
 - [Projections and read models](projections-and-read-models.md)
@@ -31,6 +30,12 @@ Use this map to find the authoritative runtime contracts.
 - [Testing and evals](testing-and-evals.md)
 - [Native session memory](session-memory-native.md)
 - [Session-memory v2 acceptance and operations](session-memory-v2-acceptance.md)
+
+## Proposed decisions
+
+These records are under discussion and are not active architecture contracts.
+
+- [ADR 0001: Provider-neutral ADK agent tool hooks](adr/0001-adk-agent-tool-hooks.md)
 
 ## Invariants
 
@@ -46,12 +51,6 @@ Use this map to find the authoritative runtime contracts.
   resolve from that pin; MCP is supplied when the provider session is created
   or restored. Plugin aliases still execute only through the independent
   `CommandActor`.
-- `agentfactory.Factory` returns only `agent.Agent`. Balda-owned user-facing
-  runners are created through one host `agent.RunnerFactory`, which attaches the
-  Balda plugin through the stock ADK `PluginConfig`. Provider-native adapters
-  remain a separate fallback for tools executed inside ACP processes. Agent
-  Plugins packages contribute executable hooks through an explicitly activated,
-  exact-revision Balda extension descriptor.
 - `actorcmd` is the canonical leaf package for Balda actor targets, namespaces, subjects, headers, and job scope metadata; `execution` re-exports that taxonomy as the runtime-facing compatibility facade.
 - `deliverycmd` is the leaf package for transport-neutral delivery contracts: locator, opaque delivery capability, progress policy, delivery payloads, and adapter-facing delivery operations. `deliveryfmt` resolves that capability through one immutable registry shared by prompt and delivery paths.
 - `state` owns storage, read models, and embedded Goose schema/data upgrades,
