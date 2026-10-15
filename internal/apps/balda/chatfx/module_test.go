@@ -16,6 +16,7 @@ import (
 )
 
 type fakeSessionStore struct {
+	getErr error
 	record baldastate.SessionRecord
 	found  bool
 }
@@ -27,6 +28,9 @@ func (f *fakeSessionStore) Upsert(_ context.Context, record baldastate.SessionRe
 }
 
 func (f *fakeSessionStore) GetByAddress(_ context.Context, _, _ string) (baldastate.SessionRecord, bool, error) {
+	if f.getErr != nil {
+		return baldastate.SessionRecord{}, false, f.getErr
+	}
 	if !f.found {
 		return baldastate.SessionRecord{}, false, nil
 	}

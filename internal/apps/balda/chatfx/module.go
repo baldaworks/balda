@@ -38,5 +38,6 @@ func NewChatService(params ChatServiceParams) (chatapp.Handler, error) {
 var Module = fx.Module("balda_chatfx",
 	fx.Provide(
 		NewChatService,
+		NewIngressSessionAdapter,
 	),
 )

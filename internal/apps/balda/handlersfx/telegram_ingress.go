@@ -22,7 +22,6 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/telegramref"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
-	"github.com/baldaworks/balda/internal/apps/balda/welcome"
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
@@ -58,6 +57,7 @@ type telegramInboundHandler struct {
 	telegramProfiles   *auth.TelegramProfileService
 	collaboratorStore  *auth.CollaboratorStore
 	sessionManager     *baldasession.Manager
+	sessionPreparer    ingressapp.SessionPreparer
 	actorDispatcher    actortransport.Dispatcher
 	questionDispatcher QuestionContinuationDispatcher
 	questionService    *questions.Service
@@ -80,9 +80,10 @@ type telegramInboundHandlerParams struct {
 	Bindings        bindingInvitationAdmitter `optional:"true"`
 	BindingChannels bindingChannelRegistry    `optional:"true"`
 
-	OwnerStore         *auth.OwnerStore               `optional:"true"`
-	TelegramProfiles   *auth.TelegramProfileService   `optional:"true"`
-	CollaboratorStore  *auth.CollaboratorStore        `optional:"true"`
+	OwnerStore         *auth.OwnerStore             `optional:"true"`
+	TelegramProfiles   *auth.TelegramProfileService `optional:"true"`
+	CollaboratorStore  *auth.CollaboratorStore      `optional:"true"`
+	SessionPreparer    ingressapp.SessionPreparer
 	SessionManager     *baldasession.Manager          `optional:"true"`
 	Dispatcher         actortransport.Dispatcher      `optional:"true"`
 	QuestionDispatcher QuestionContinuationDispatcher `name:"command_ingress" optional:"true"`
@@ -104,6 +105,7 @@ func newTelegramInboundHandler(params telegramInboundHandlerParams) *telegramInb
 		telegramProfiles:   params.TelegramProfiles,
 		collaboratorStore:  params.CollaboratorStore,
 		sessionManager:     params.SessionManager,
+		sessionPreparer:    params.SessionPreparer,
 		actorDispatcher:    params.Dispatcher,
 		questionDispatcher: params.QuestionDispatcher,
 		questionService:    params.QuestionService,
@@ -414,93 +416,6 @@ func (h *telegramInboundHandler) authorizeTelegramInbound(ctx context.Context, i
 	return ingressapp.Authorization{Allowed: allowed, Reason: ingressapp.ReasonUnauthorized}, nil
 }
 
-func (h *telegramInboundHandler) prepareTelegramSession(ctx context.Context, inbound ingressapp.InboundContext) (ingressapp.SessionPreparation, error) {
-	locator := baldasession.SessionLocator{
-		ChannelType: inbound.ChannelType,
-		AddressKey:  inbound.AddressKey,
-		AddressJSON: inbound.AddressJSON,
-		SessionID:   inbound.SessionID,
-	}
-	transportUserID := strings.TrimSpace(inbound.UserID)
-	var ts *baldasession.TopicSession
-	var err error
-	if inbound.Direct && inbound.TopicID == 0 {
-		ownerID, ownerChatID := h.getOwnerBinding()
-		if transportUserID == baldatelegram.UserID(ownerID) && locator.SessionID == baldatelegram.NewLocator(ownerChatID, 0).SessionID {
-			ts, err = h.bootstrapOwnerSession(ctx, ownerID, ownerChatID)
-			if err != nil {
-				h.logger.Error().Err(err).Msg("failed to bootstrap owner dm session")
-				_ = sendPlain(ctx, h.actorDispatcher, serverActorAddress, locator, "Could not start this session. Please close this chat and try again.")
-				return ingressapp.SessionPreparation{Reason: telegramIngressReasonSessionUnavailable}, nil
-			}
-		} else {
-			existingSession, _ := h.sessionManager.GetSession(locator)
-			sendWelcome := existingSession == nil
-			baldaProviderName := h.getProviderName()
-			if baldaProviderName == "" {
-				_ = sendPlain(ctx, h.actorDispatcher, serverActorAddress, locator, "Balda is not ready right now. Please close this chat and try again.")
-				return ingressapp.SessionPreparation{Reason: telegramIngressReasonProviderUnavailable}, nil
-			}
-			ts, err = h.sessionManager.EnsureSession(ctx, baldasession.SessionContext{Locator: locator, UserID: transportUserID}, ownerSessionLabel)
-			if err != nil {
-				h.logger.Error().Err(err).Str("agent", baldaProviderName).Msg("failed to ensure main dm session")
-				_ = sendPlain(ctx, h.actorDispatcher, serverActorAddress, locator, "Could not start this session. Please close this chat and try again.")
-				return ingressapp.SessionPreparation{Reason: telegramIngressReasonSessionUnavailable}, nil
-			}
-			if sendWelcome {
-				metadata := h.sessionManager.GetAgentMetadata(baldaProviderName)
-				welcomeMsg := welcome.BuildAgentWelcomeMessage(ownerSessionLabel, ts.GetSessionID(), metadata.Type, metadata.Model, metadata.ReasoningEffort, metadata.MCPServers)
-				_ = sendMarkdown(ctx, h.actorDispatcher, serverActorAddress, locator, welcomeMsg)
-				h.sendSessionStartupNotice(ctx, locator, ts.GetSessionID())
-			}
-		}
-	} else {
-		ts, err = h.sessionManager.GetSession(locator)
-		if err != nil {
-			_ = sendPlain(ctx, h.actorDispatcher, serverActorAddress, locator, "Restoring agent session...")
-			ts, err = h.sessionManager.RestoreSession(ctx, baldasession.SessionContext{Locator: locator, UserID: transportUserID, AllowBaldaProviderFallback: false})
-			if err != nil {
-				if errors.Is(err, baldasession.ErrNoPersistedSession) {
-					baldaProviderName := h.getProviderName()
-					if baldaProviderName == "" {
-						_ = sendPlain(ctx, h.actorDispatcher, serverActorAddress, locator, "Balda is not ready right now. Please close this chat topic and try again.")
-						return ingressapp.SessionPreparation{Reason: telegramIngressReasonProviderUnavailable}, nil
-					}
-					ts, err = h.sessionManager.EnsureSession(ctx, baldasession.SessionContext{Locator: locator, UserID: transportUserID}, autoSessionLabel)
-					if err != nil {
-						h.logger.Error().Err(err).Str("agent", baldaProviderName).Int("topic_id", inbound.TopicID).Msg("failed to create session")
-						_ = sendPlain(ctx, h.actorDispatcher, serverActorAddress, locator, "Could not start this session. Please close this chat topic and create a new one.")
-						return ingressapp.SessionPreparation{Reason: telegramIngressReasonSessionUnavailable}, nil
-					}
-				} else {
-					h.logger.Warn().Err(err).Int("topic_id", inbound.TopicID).Msg("failed to restore session")
-					_ = sendPlain(ctx, h.actorDispatcher, serverActorAddress, locator, "Could not restore this session. Please close this chat topic and create a new one.")
-					return ingressapp.SessionPreparation{Reason: telegramIngressReasonSessionUnavailable}, nil
-				}
-			}
-			if ts != nil {
-				baldaProviderID := h.getProviderName()
-				metadata := h.sessionManager.GetAgentMetadata(baldaProviderID)
-				welcomeName := ownerSessionLabel
-				if inbound.Direct {
-					welcomeName = ts.GetAgentName()
-				}
-				welcomeMsg := welcome.BuildAgentWelcomeMessage(welcomeName, ts.GetSessionID(), metadata.Type, metadata.Model, metadata.ReasoningEffort, metadata.MCPServers)
-				_ = sendMarkdown(ctx, h.actorDispatcher, serverActorAddress, locator, welcomeMsg)
-				h.sendSessionStartupNotice(ctx, locator, ts.GetSessionID())
-			}
-		}
-	}
-	if ts == nil {
-		return ingressapp.SessionPreparation{Reason: telegramIngressReasonSessionUnavailable}, nil
-	}
-	return ingressapp.SessionPreparation{
-		Ready: true, UserID: ts.GetUserID(), RequesterUserID: transportUserID,
-		AgentSessionID: ts.GetAgentSessionID(), TopicID: inbound.TopicID, WorkspaceDir: ts.GetWorkspaceDir(),
-		RuntimeSnapshotID: ts.GetRuntimeSnapshotID(),
-	}, nil
-}
-
 func (h *telegramInboundHandler) dispatchTelegramInbound(ctx context.Context, envelope actorlayer.Envelope) (*actortransport.DispatchReceipt, error) {
 	if h.actorDispatcher == nil {
 		return nil, actorlayer.TransientError(errors.New("telegram ingress dispatcher is unavailable"))
@@ -515,60 +430,17 @@ func (h *telegramInboundHandler) dispatchTelegramInbound(ctx context.Context, en
 	return receipt, err
 }
 
-func (h *telegramInboundHandler) bootstrapOwnerSession(ctx context.Context, ownerID, chatID int64) (*baldasession.TopicSession, error) {
-	if ownerID == 0 {
-		return nil, fmt.Errorf("telegram owner id is required")
-	}
-	if chatID == 0 {
-		return nil, fmt.Errorf("telegram owner chat id is required")
-	}
-	if h.sessionManager == nil {
-		return nil, fmt.Errorf("session manager is required")
+func (h *telegramInboundHandler) bootstrapOwnerSession(ctx context.Context, ownerID, chatID int64) (ingressapp.SessionPreparation, error) {
+	if ownerID == 0 || chatID == 0 {
+		return ingressapp.SessionPreparation{}, fmt.Errorf("telegram owner binding is required")
 	}
 	h.bootstrapMu.Lock()
 	defer h.bootstrapMu.Unlock()
-
-	providerName := h.getProviderName()
-	if providerName == "" {
-		return nil, fmt.Errorf("balda provider is not configured")
-	}
-
 	locator := baldatelegram.NewLocator(chatID, 0)
-	ts, err := h.sessionManager.GetSession(locator)
-	if err == nil {
-		return ts, nil
-	}
-
-	ts, err = h.sessionManager.RestoreSession(ctx, baldasession.SessionContext{
-		Locator: locator,
-		UserID:  baldatelegram.UserID(ownerID),
+	return h.prepareTelegramSession(ctx, ingressapp.InboundContext{
+		SessionID: locator.SessionID, ChannelType: locator.ChannelType, AddressKey: locator.AddressKey,
+		AddressJSON: locator.AddressJSON, UserID: baldatelegram.UserID(ownerID), Direct: true,
 	})
-	if err != nil {
-		if !errors.Is(err, baldasession.ErrNoPersistedSession) {
-			return nil, fmt.Errorf("restore owner session: %w", err)
-		}
-		ts, err = h.sessionManager.EnsureSession(ctx, baldasession.SessionContext{
-			Locator: locator,
-			UserID:  baldatelegram.UserID(ownerID),
-		}, ownerSessionLabel)
-		if err != nil {
-			return nil, fmt.Errorf("create owner session: %w", err)
-		}
-	}
-
-	metadata := h.sessionManager.GetAgentMetadata(providerName)
-	welcomeMessage := welcome.BuildAgentWelcomeMessage(ownerSessionLabel, ts.GetSessionID(), metadata.Type, metadata.Model, metadata.ReasoningEffort, metadata.MCPServers)
-	if err := sendMarkdown(ctx, h.actorDispatcher, serverActorAddress, locator, welcomeMessage); err != nil {
-		h.logger.Warn().Err(err).Str("session_id", ts.GetSessionID()).Msg("failed to send owner session welcome")
-	}
-	h.sendSessionStartupNotice(ctx, locator, ts.GetSessionID())
-
-	h.logger.Info().
-		Int64("owner_id", ownerID).
-		Int64("chat_id", chatID).
-		Str("agent", providerName).
-		Msg("owner session bootstrapped")
-	return ts, nil
 }
 
 func (h *telegramInboundHandler) restorePersistedOwner() (ownerID, chatID int64, bound bool) {
@@ -617,32 +489,6 @@ func (h *telegramInboundHandler) logOwnerAuthIfNeeded() {
 		Str("auth_command", auth.BuildOwnerAuthCommand(h.authToken)).
 		Str("auth_link", auth.BuildOwnerAuthLink(username, h.authToken)).
 		Msg("balda owner authentication required")
-}
-
-func (h *telegramInboundHandler) getProviderName() string {
-	if h.sessionManager == nil {
-		return ""
-	}
-	providerName := strings.TrimSpace(h.sessionManager.BaldaProviderID())
-	if providerName == "" {
-		h.mu.RLock()
-		defer h.mu.RUnlock()
-		providerName = strings.TrimSpace(h.baldaProviderName)
-	}
-	return providerName
-}
-
-func (h *telegramInboundHandler) sendSessionStartupNotice(ctx context.Context, locator baldasession.SessionLocator, sessionID string) {
-	if h.sessionManager == nil {
-		return
-	}
-	notice := strings.TrimSpace(h.sessionManager.TakeStartupNotice(sessionID))
-	if notice == "" {
-		return
-	}
-	if err := sendPlain(ctx, h.actorDispatcher, serverActorAddress, locator, notice); err != nil {
-		h.logger.Warn().Err(err).Str("session_id", sessionID).Msg("failed to send session startup notice")
-	}
 }
 
 func (h *telegramInboundHandler) getChatID() int64 {

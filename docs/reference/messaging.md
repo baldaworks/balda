@@ -23,7 +23,11 @@ Ordinary conversational chat transports follow the same runtime model.
 
 1. User sends a chat message through Telegram, Slack, or Zulip.
 2. The ingress handler normalizes provider data and resolves the Balda session locator for that chat/thread/topic.
-3. If the session is missing in memory, Balda attempts lazy restore from persisted metadata.
+3. The common conversational service prepares the session through a shared
+   transport-neutral adapter. The session manager returns an active session,
+   restores persisted metadata/history, or creates only when metadata is absent.
+   Owner and collaborator DMs use this same path. Temporary preparation errors
+   retain retry settlement rather than dropping the inbound message.
 4. Conversational ingress publishes exactly one durable `balda.v1.cmd.session` envelope directly to the session actor lane for the normalized inbound item.
 5. The session actor runs the configured provider runtime for that session and emits separate delivery envelopes for progress/final replies.
 
