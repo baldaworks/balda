@@ -287,8 +287,10 @@ outside this Story's unchanged ingress and Compose configuration.
 MCP servers are configured in `runtime.mcp_servers` and referenced by providers via `runtime.providers.<id>.mcp_servers`.
 
 Backoffice also manages durable MCP definitions. Configuration-owned entries
-remain read-only there; worker authorization explicitly captures their current
-configuration. Provider targets apply when a session is created or reset.
+remain read-only there except for the explicit, ephemeral **Refresh state**
+diagnostic. Backoffice OAuth status and actions apply only to eligible managed
+HTTP/SSE definitions with OAuth enabled. Provider targets apply when a session
+is created or reset.
 When a provider pool is selected, its MCP selection also applies to that pool's
 members for that runtime. It does not change the shared member configuration or
 the selection for standalone members or other pools.
@@ -348,10 +350,11 @@ confirm the deployed executable's own behavior before relying on stronger recove
 
 #### Protected values and worker grants
 
-HTTP/SSE OAuth settings and authorization are managed in Backoffice, including
-for file-owned server definitions; no OAuth settings need to be added to YAML.
-The operator signs in at the external service. Stdio keeps its ordinary command,
-arguments and environment configuration.
+HTTP/SSE OAuth settings and authorization are managed in Backoffice only for
+eligible Backoffice-managed definitions with OAuth enabled. File-owned server
+definitions remain OAuth-neutral and use their public endpoint or configured
+headers. For managed OAuth, the operator signs in at the external service.
+Stdio keeps its ordinary command, arguments and environment configuration.
 
 Set `balda.mcp_management.credential_key`, or its environment override
 `BALDA_MCP_MANAGEMENT_CREDENTIAL_KEY`, to a standard base64-encoded 32-byte
