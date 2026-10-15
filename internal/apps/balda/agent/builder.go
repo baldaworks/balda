@@ -745,7 +745,7 @@ func (b *Builder) normalizedSessionBranch(branch string) string {
 func (b *Builder) buildRootRuntimeInstruction(ctx context.Context, agentName, workspaceDir string, projection SkillMetadataProjection, input SessionInstructionContext) (string, error) {
 	base := b.buildBaldaInstructionWithSkills(
 		baldaSessionIDPlaceholder,
-		"telegram",
+		input.ChannelType,
 		agentName,
 		baldaSessionBranchPlaceholder,
 		"{"+sessionstate.CWDKey+"}",
