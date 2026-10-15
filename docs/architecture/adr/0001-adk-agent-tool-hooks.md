@@ -35,7 +35,7 @@ Balda creates runner.Runner
 
 `agentfactory.Factory` returns only `agent.Agent`. It has no tool-hook metadata
 or capability contract. Provider-native launch preparation is a separate path
-owned by `catalogapp.ProviderFactory` and `hookprovider.Service`.
+owned by `catalogapp.ProviderFactory` and registered native adapters.
 
 Agent Plugins 1.0 packages can already contribute Balda commands through
 `extensions["dev.baldaworks.balda"]`. The current Balda extension schema is
@@ -133,21 +133,61 @@ remains after the post-tool chain.
 Tools executed inside external ACP processes remain outside the ADK tool path:
 
 ```text
-catalogapp.ProviderFactory
+catalogapp.ProviderFactory (provider-tree traversal)
         |
         v
-ProviderLaunchPreparer
+consumer-owned NativeHookPreparer port
         |
         v
-hookprovider.Service.Prepare()
+hooknative.Registry (adapter iteration only)
         |
         v
-provider-native proxy
+provider-owned NativeAdapter (one leaf config)
+        |
+        v
+hookprovider.Service.Bind()
+        |
+        v
+hooks.Runner
 ```
 
-`hookprovider` continues to own provider type recognition, command wrapping,
-session bindings, process cleanup, and validation. Provider-specific knowledge
-does not enter `agentfactory`, `agent.Agent`, the ADK plugin, or `hookcmd`.
+`hookprovider` is provider-neutral. It owns authenticated session bindings over
+normalized `hookcmd.Event`/`hookcmd.Result` transport, execution through
+`hooks.Runner`, bounds, opaque binding tokens, and binding cleanup. It does not
+import ACP provider IDs or families, recognize provider types, walk provider
+pools, rewrite provider launch commands, select proxy commands, dispatch on a
+binding kind, or encode and decode provider-specific wire formats.
+
+Concrete native adapters own their protocol and launch integration. Each
+adapter decides whether it supports one leaf provider configuration and, when
+selected, obtains a neutral binding from `hookprovider.Service` and injects that
+binding into its provider-specific launch configuration. The adapter also owns
+its proxy command, wire codec, normalization into `hookcmd.Event`, conversion
+from `hookcmd.Result`, and any provider-specific binding metadata. Examples may
+support Codex, Claude, or OpenCode, but those names occur only in their adapter
+packages and composition registration.
+
+The registry accepts adapters through a neutral interface. Conceptually:
+
+```go
+type NativeAdapter interface {
+    Supports(agentconfig.Config) bool
+    Prepare(context.Context, LaunchRequest, BindingFactory) (PreparedLaunch, error)
+}
+```
+
+`catalogapp.ProviderFactory`, as the consuming launch layer, owns the port and
+provider-tree traversal. It passes each leaf configuration to the registry. The
+registry only iterates registered adapters; it contains no provider type or
+family switch. A concrete adapter determines support and may mutate only the
+selected leaf launch configuration.
+
+Registration order must not silently choose between multiple matches: zero
+matches is unsupported when native interception is required, and multiple
+matches is a configuration error. Provider ID remains opaque event data and an
+optional hook filter; it is never an adapter dispatch key. The provider map and
+root ID never enter `hookprovider`. Adding a provider requires registering
+another adapter, not changing the hook execution service.
 
 Both paths call the same `hooks.Runner`. Events identify their source as `adk`
 or `native`. Normally only one path observes a tool because execution ownership
@@ -235,7 +275,14 @@ The initial order is lexical by effective identity within an event.
 - `hookcmd` owns provider-neutral hook events and results.
 - `hooks` owns the combined managed/package execution view, ordering, bounds,
   and failure policy.
-- `hookprovider` owns only provider-native synchronous interception.
+- `hookprovider` owns provider-neutral native bindings, normalized hook
+  dispatch, bounds, opaque tokens, and cleanup. It has no provider config,
+  proxy codec, ACP ID, or family knowledge.
+- `hooknative` owns adapter registration and selection; concrete adapter
+  packages own provider protocol detection, launch mutation, proxy commands,
+  wire codecs, and normalization.
+- `catalogapp.ProviderFactory` owns provider-tree traversal and supplies leaf
+  configurations through its consumer-owned native preparation port.
 - `runtimecatalog` owns extension discovery and immutable hook descriptors; it
   never executes hooks.
 - `pluginapp` owns package review, retained revisions, and activation candidates.
@@ -258,6 +305,7 @@ The initial order is lexical by effective identity within an event.
 
 - Every Balda-owned user-facing runner must migrate to `RunnerFactory`.
 - Two interception implementations remain: ADK callbacks and native proxies.
+- Native interception gains a registry plus provider-owned adapter packages.
 - Native sessions can retain a reset boundary when proxy instrumentation changes.
 - Package hooks add durable activation, review, and revision-retention state.
 - Third-party agents that create private runners outside Balda's constructor do
@@ -314,6 +362,9 @@ The following items must be resolved before this ADR can be accepted:
    needs explicit priority.
 7. Confirm how `additional_context` and post-tool denial map into ADK result
    values without weakening the current untrusted-context boundary.
+8. Finalize the consumer-owned native adapter contract, including leaf-config
+   handoff after provider-tree traversal, ambiguous matches, and release
+   ownership.
 
 ## Validation required for acceptance
 
@@ -326,7 +377,14 @@ The following items must be resolved before this ADR can be accepted:
   arguments rewritten in place, and have its result replaced.
 - A custom agent without ADK-managed tools runs normally and produces no false
   tool-hook events.
-- Existing Claude, Codex, and OpenCode native proxy behavior remains covered.
+- Concrete native adapter integration tests retain the existing Claude, Codex,
+  and OpenCode behavior while proving that `hookprovider` contains no provider
+  type constants, family switches, provider configuration imports, tree
+  traversal, launch mutation, or provider wire codecs. Passing
+  `hookcmd.Event.Provider` through as opaque event data remains valid.
+- An architecture test prevents `hookprovider` from importing provider config or
+  concrete native adapter packages; zero and multiple adapter matches fail with
+  explicit errors in the native launch layer.
 - A call visible through both integrations invokes each hook once.
 - Extension v1 remains compatible; v2 validates commands-only, hooks-only, and
   combined packages and rejects unsafe paths and malformed declarations.
@@ -340,8 +398,10 @@ The following items must be resolved before this ADR can be accepted:
 1. Add `agent.RunnerFactory` and the Balda ADK plugin constructor.
 2. Move all Balda-owned user-facing runner construction through the factory.
 3. Add callback translation and ADK integration tests.
-4. Preserve `catalogapp.ProviderFactory` and `hookprovider.Service.Prepare` as
-   the independent native path.
+4. Extract provider recognition, launch mutation, proxy commands, binding-kind
+   dispatch, and wire codecs from `hookprovider` into registered native adapters.
+   Keep `hookprovider` as the neutral binding and normalized hook dispatch
+   service used by those adapters.
 5. Add source-aware deduplication if validation demonstrates overlapping events.
 6. Add extension schema v2 and immutable catalog hook descriptors.
 7. Add durable exact-revision activation and Backoffice review.
