@@ -30,6 +30,66 @@ func TestSQLiteSessionChannelInstructionUpgradePreservesRuntimeState(t *testing.
 	checkSessionChannelInstructionUpgrade(t, db, p, 63, func(q string) string { return q })
 }
 
+func TestSQLiteSessionChannelInstructionUpgradePreservesIncompleteRuntimeSchemas(t *testing.T) {
+	for _, missing := range []string{"app_name", "user_id", "session_id", "state_json"} {
+		t.Run("without_"+missing, func(t *testing.T) {
+			db, err := sql.Open("sqlite", sqliteConnectionString(filepath.Join(t.TempDir(), "state.db")))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = db.Close() }()
+			registerBaldaGoMigrations()
+			migrations, err := fs.Sub(baldaMigrationsFS, "migrations")
+			if err != nil {
+				t.Fatal(err)
+			}
+			p, err := goose.NewProvider(goose.DialectSQLite3, db, migrations)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := p.UpTo(t.Context(), 63); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.ExecContext(t.Context(), `DROP TABLE balda_runtime_sessions`); err != nil {
+				t.Fatal(err)
+			}
+			columns := []string{"id INTEGER PRIMARY KEY"}
+			for _, column := range []string{"app_name", "user_id", "session_id", "state_json"} {
+				if column != missing {
+					columns = append(columns, column+" TEXT")
+				}
+			}
+			schema := "CREATE TABLE balda_runtime_sessions (" + strings.Join(columns, ", ") + ")"
+			if _, err := db.ExecContext(t.Context(), schema); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.ExecContext(t.Context(), `INSERT INTO balda_runtime_sessions(id) VALUES (42)`); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := p.UpTo(t.Context(), 64); err != nil {
+				t.Fatalf("upgrade incomplete runtime schema: %v", err)
+			}
+			var id int
+			if err := db.QueryRowContext(t.Context(), `SELECT id FROM balda_runtime_sessions`).Scan(&id); err != nil {
+				t.Fatal(err)
+			}
+			if id != 42 {
+				t.Fatalf("runtime placeholder id = %d, want 42", id)
+			}
+			var gotSchema string
+			if err := db.QueryRowContext(t.Context(), `SELECT sql FROM sqlite_master WHERE name = 'balda_runtime_sessions'`).Scan(&gotSchema); err != nil {
+				t.Fatal(err)
+			}
+			if gotSchema != schema {
+				t.Fatalf("runtime schema changed: %q, want %q", gotSchema, schema)
+			}
+			if applied, err := p.Up(t.Context()); err != nil || len(applied) != 0 {
+				t.Fatalf("reopen upgraded database = %v, %v; want no migrations", applied, err)
+			}
+		})
+	}
+}
+
 func checkSessionChannelInstructionUpgrade(t *testing.T, db *sql.DB, p *goose.Provider, previous int64, bind func(string) string) {
 	t.Helper()
 	if _, err := p.UpTo(t.Context(), previous); err != nil {
