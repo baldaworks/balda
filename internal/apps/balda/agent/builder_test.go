@@ -957,3 +957,29 @@ func TestCreateFreshRuntimeSessionRetainsInitializedEmptyMemory(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildRootRuntimeInstructionUsesBoundSessionChannel(t *testing.T) {
+	t.Parallel()
+	const telegramChannel = "telegram"
+	for _, channel := range []string{"mattermost", "slack", telegramChannel, ""} {
+		t.Run(channel, func(t *testing.T) {
+			t.Parallel()
+			builder := &Builder{}
+			got, err := builder.buildRootRuntimeInstruction(t.Context(), "codex", "/workspace", SkillMetadataProjection{}, SessionInstructionContext{SessionID: "session-1", ChannelType: channel})
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := "Read the current channel type from authenticated session metadata"
+			if channel != "" {
+				want = "This session belongs to channel type: " + channel + "."
+			}
+			if !strings.Contains(got, want) {
+				t.Errorf("channel %q instruction = %q, want %q", channel, got, want)
+			}
+			telegramHint := strings.Contains(got, "Telegram sessions use IDs like")
+			if telegramHint != (channel == telegramChannel) {
+				t.Errorf("channel %q Telegram ID hint = %v, want %v", channel, telegramHint, channel == telegramChannel)
+			}
+		})
+	}
+}
