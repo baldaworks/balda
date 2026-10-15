@@ -4,17 +4,19 @@ const [baseURL, issuerURL, flow, phase, widthString, markerDirectory] = process.
 let detailURL = `${baseURL}/mcp/connections/config%3Aworker-tools`;
 const prefix = new URL(baseURL).pathname.replace(/\/$/, '');
 let stage = 'launch';
-const managed = phase.startsWith('managed-');
+const pendingRestart = phase === 'pending-restart';
+const managed = phase.startsWith('managed-') || pendingRestart;
 const partialEntry = phase.startsWith('managed-partial-');
 let createdAndAuthorized = false;
 const staticEntry = phase.startsWith('managed-static-');
 const scopeChange = phase.startsWith('managed-scopes-');
 const missingScopes = phase.startsWith('managed-missing-');
 const identityOnly = missingScopes || phase.startsWith('managed-equal-');
-const existingEntry = scopeChange || identityOnly || phase.startsWith('managed-restore-');
+const existingEntry = scopeChange || identityOnly || phase.startsWith('managed-restore-') || pendingRestart;
 const serverName = managed ? (staticEntry ? 'static-tools' : partialEntry ? 'partial-tools' : 'managed-tools') : phase === 'configured-public' ? 'public-tools' : 'worker-tools';
 const providerPrefix = staticEntry ? 'static' : partialEntry ? 'partial' : 'managed';
 const clientSecret = 'synthetic-client-secret';
+const resource = staticEntry ? '/public' : '/mcp';
 async function activate(page, role, name) {
   const target = page.getByRole(role, { name, exact: true });
   const press = () => target.click();
@@ -219,18 +221,16 @@ async function complete(page, context, denied = false) {
       await page.goto(`${baseURL}/mcp/new`);
       await page.getByLabel(/^Server ID(?: \(required\))?$/).fill(serverName);
       await page.getByLabel('Transport', { exact: true }).selectOption(phase.endsWith('-sse') ? 'sse' : 'http');
-      await page.getByLabel('Server URL', { exact: true }).fill(`${issuerURL}/mcp`);
+      await page.getByLabel('Server URL', { exact: true }).fill(`${issuerURL}${resource}`);
       await selection(page, 'All providers', false);
       await selection(page, `${providerPrefix}-hosted`, true);
       await selection(page, `${providerPrefix}-acp`, true);
       await page.locator('#header-key-0').fill('X-Worker-Secret');
       await page.locator('#header-kind-0').selectOption('protected');
-      await page.locator('#header-value-0').fill('synthetic-oauth-header/mcp');
+      await page.locator('#header-value-0').fill(`synthetic-oauth-header${resource}`);
       if (staticEntry) {
         await activate(page, 'button', 'Create server');
         await page.waitForLoadState('networkidle');
-        await page.getByText('Not configured', { exact: true }).waitFor();
-        await page.getByRole('button', { name: 'Authorize in browser', exact: true }).waitFor();
       } else {
         await clientSettings(page, !partialEntry && flow === 'browser');
         if (partialEntry) {
@@ -258,12 +258,29 @@ async function complete(page, context, denied = false) {
         }
       }
     }
+    const neutralCountsBefore = !managed || staticEntry ? await (await page.request.get(`${issuerURL}/fixture/counts`)).json() : null;
     await detail(page);
-    if (managed) assert.equal(await page.getByRole('button', { name: 'Authorize in browser', exact: true }).count(), 1, 'saved managed entry does not require a recovery marker');
+    if (!managed || staticEntry) {
+      stage = 'OAuth-neutral current state';
+      assert.equal(await page.getByRole('button', { name: 'Refresh state', exact: true }).count(), 1, 'saved connection exposes the explicit diagnostic');
+      assert.equal(await page.locator('.fact-list dt').filter({ hasText: /^OAuth$/ }).count(), 0, 'OAuth-neutral connection has no authorization projection');
+      assert.equal(await page.getByText(managed ? 'Backoffice' : 'Configuration · Read-only', { exact: true }).count(), 1, 'source ownership is explicit');
+      const neutralCountsAfter = await (await page.request.get(`${issuerURL}/fixture/counts`)).json();
+      assert.deepEqual(neutralCountsAfter, neutralCountsBefore, 'opening OAuth-neutral metadata does not start authorization');
+      const html = await page.content();
+      for (const secret of ['synthetic-browser-access', 'synthetic-browser-refresh', 'synthetic-oauth-header', clientSecret]) assert.equal(html.includes(secret), false, 'OAuth-neutral metadata omits credentials');
+      assert.deepEqual(errors, []);
+      await activate(page, 'button', 'Sign out');
+      await page.waitForURL(`${baseURL}/login`);
+      await context.close();
+      console.log(`MCP OAuth-neutral ${phase}: ordinary login, explicit ownership and passive metadata passed (${widthString}px)`);
+      return;
+    }
+    assert.equal(await page.getByRole('button', { name: 'Authorize in browser', exact: true }).count(), 1, 'saved managed OAuth entry does not require a recovery marker');
     stage = 'security rejection';
     const denied = await page.request.post(`${detailURL}/oauth/${flow}`, { form: { client_id: 'browser-client', client_auth_method: 'none', csrf_token: 'invalid' }, headers: { Origin: new URL(baseURL).origin } });
     assert.equal(denied.status(), 403, 'invalid CSRF cannot start authorization');
-    if (phase === 'pending-restart') {
+    if (pendingRestart) {
       stage = 'pending device before host restart';
       await begin(page);
       const statusPath = await page.getByRole('link', { name: 'Refresh authorization status', exact: true }).getAttribute('href');
@@ -286,7 +303,7 @@ async function complete(page, context, denied = false) {
       await activate(page, 'link', 'Return to MCP');
       await detail(page);
     }
-    if (phase === 'fresh') {
+    if (partialEntry) {
       stage = flow === 'browser' ? 'denial then retry' : 'cancellation then retry';
       await begin(page);
       if (flow === 'browser') await complete(page, context, true);
@@ -302,7 +319,7 @@ async function complete(page, context, denied = false) {
       }
       await detail(page);
     }
-    if (flow === 'device' && phase === 'fresh') {
+    if (flow === 'device' && partialEntry) {
       stage = 'unsupported device alternative';
       await page.request.get(`${issuerURL}/fixture/device-support?value=false`);
       await begin(page, 503);
@@ -313,11 +330,11 @@ async function complete(page, context, denied = false) {
     if (identityOnly) {
       stage = 'unchanged scope authorization';
       await begin(page); await complete(page, context); await detail(page);
-      assert.equal(await page.locator('.status-chip').filter({ hasText: /^Available$/ }).count(), 1, 'unchanged authorization retains the ready connection');
-      assert.equal(await page.getByRole('button', { name: 'Retry tool attachment', exact: true }).count(), 0);
+      assert.equal(await page.locator('.status-chip').filter({ hasText: /^Not checked$/ }).count(), 1, 'unchanged authorization does not claim runtime readiness');
+      assert.equal(await page.getByRole('button', { name: 'Retry tool attachment', exact: true }).count(), 1);
       assert.deepEqual(errors, []);
       await activate(page, 'button', 'Sign out'); await context.close();
-      console.log(`MCP OAuth ${flow} ${phase}: native scope intent and existing availability passed (${widthString}px)`);
+      console.log(`MCP OAuth ${flow} ${phase}: native scope intent and observational readiness passed (${widthString}px)`);
       return;
     }
     stage = 'authorization with unavailable tools';
@@ -337,8 +354,9 @@ async function complete(page, context, denied = false) {
     ]);
     assert.equal(new URLSearchParams(retried.request().postData()).get('expected_revision_id'), revision, 'retry submits the exact saved revision');
     await detail(page);
-    assert.equal(await page.locator('.status-chip').filter({ hasText: /^Available$/ }).count(), 1, 'real MCP discovery reaches Ready');
-    assert.equal(await page.getByRole('button', { name: 'Retry tool attachment', exact: true }).count(), 0, 'available tools no longer offer retry');
+    const toolStatuses = await page.locator('.status-chip').allTextContents();
+    assert.equal(toolStatuses.some(status => status.trim() === 'Not checked'), true, `publication retry keeps runtime readiness observational, got ${toolStatuses.join(', ')}`);
+    assert.equal(await page.getByRole('button', { name: 'Retry tool attachment', exact: true }).count(), 1, 'publication retry remains available until runtime health is observed');
     if (managed) {
       await page.goto(`${baseURL}/mcp`);
       assert.equal(await page.getByRole('link', { name: serverName, exact: true }).count(), 1, 'saved retry did not duplicate managed creation');
@@ -359,7 +377,7 @@ async function complete(page, context, denied = false) {
     await activate(page, 'button', 'Sign out');
     await page.waitForURL(`${baseURL}/login`);
     await context.close();
-    console.log(`MCP OAuth ${flow} ${phase}: ordinary login, native authorization, safe recovery, real available tools and history passed (${widthString}px)`);
+    console.log(`MCP OAuth ${flow} ${phase}: ordinary login, native authorization, safe publication recovery and history passed (${widthString}px)`);
   } finally { await browser.close(); }
 })().catch(error => {
   // Playwright diagnostics may contain an issuer/callback query. Keep OAuth

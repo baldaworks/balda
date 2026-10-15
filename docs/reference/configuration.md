@@ -376,16 +376,23 @@ advertise S256 PKCE and `authorization_response_iss_parameter_supported`, with a
 callback `iss` value matching the trusted issuer. Use browser authorization after
 an unsupported device flow only when the service supports browser authorization.
 
-HTTP/SSE connections with configured headers or worker OAuth use Balda's private
-credential bridge for discovery and execution. External ACP clients receive
-only the local bridge endpoint and its capability, rather than upstream headers
-or OAuth tokens. Headerless connections without OAuth and stdio connections use
-their direct transports. Saving authorization and making tools ready are
-separate outcomes. An unbound OAuth definition or current file requiring a new
-capture keeps a private denied route; requests fail with a sanitized authorization
-error before any unsigned upstream traffic. The route follows the exact config
-lease, including across discovery failure. Backoffice retry repairs local
-publication or recorded credential failure; fresh remote attachment remains invocation-owned.
+HTTP/SSE connections with configured headers and Backoffice-managed worker OAuth
+use Balda's private credential bridge for discovery and execution. External ACP
+clients receive only the local bridge endpoint and its capability, rather than
+upstream headers or OAuth tokens. Headerless connections without OAuth and stdio
+connections use their direct transports. Saving managed authorization and making
+tools ready are separate outcomes. An unbound managed OAuth definition keeps a
+private denied route; requests fail with a sanitized authorization error before
+any unsigned upstream traffic. The route follows the exact managed revision,
+including across discovery failure. Backoffice retry repairs local publication
+or recorded credential failure for eligible managed OAuth definitions; fresh
+remote attachment remains invocation-owned.
+
+Historical configuration captures and grants may remain available to exact
+retained session snapshots created by earlier versions. They are compatibility
+state only: current configuration-owned definitions are read-only and
+OAuth-neutral in Backoffice, so operators cannot create, replace, retry or revoke
+their authorization there. Change their endpoint or headers in configuration.
 
 #### Transport Types
 
