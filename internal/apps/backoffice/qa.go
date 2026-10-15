@@ -45,6 +45,18 @@ func QAHandler(basePath string) (http.Handler, error) {
 		if name == "webhooks/orders" && r.URL.Query().Has("job_id") {
 			name = "webhooks-history"
 		}
+		if strings.HasPrefix(name, "skills/contributions/") {
+			for i, row := range qaSkills().Skills.Rows {
+				if row.DetailPath == "/"+name {
+					if i == 0 {
+						name = "skills-plugin"
+					} else {
+						name = "skills-unmanaged"
+					}
+					break
+				}
+			}
+		}
 		page, templateName, status, ok := qaFixture(name)
 		if !ok {
 			http.NotFound(w, r)
@@ -59,7 +71,7 @@ func QAHandler(basePath string) (http.Handler, error) {
 		if page.ReturnTo != "" {
 			page.ReturnTo = basePath + "/qa/ui/overview"
 		}
-		if page.RestartURL != "" && strings.HasPrefix(name, "plugins") {
+		if page.RestartURL != "" && (strings.HasPrefix(name, "plugins") || strings.HasPrefix(name, "skills")) {
 			page.RestartURL = basePath + "/qa/ui" + page.RestartURL
 		} else if page.RestartURL != "" {
 			page.RestartURL = basePath + "/qa/ui/mcp"
@@ -93,7 +105,7 @@ type qaEntry struct {
 	status       int
 }
 
-var qaEntries = append(append(append(pluginMarketplaceQAEntries, pluginLifecycleQAEntries...), hooksQAEntries...), []qaEntry{
+var qaEntries = append(append(append(append(pluginMarketplaceQAEntries, pluginLifecycleQAEntries...), hooksQAEntries...), skillsQAEntries...), []qaEntry{
 	{name: "memory", label: "Fact memory · inventory", templateName: webui.TemplateFactMemory, page: qaFactMemory, gallery: true},
 	{name: "memory-long", label: "Fact memory · long multiline fact", templateName: webui.TemplateFactMemory, page: func() webui.Page {
 		p := qaFactMemory()

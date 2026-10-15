@@ -64,6 +64,8 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorymcp"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionturnapp"
+	"github.com/baldaworks/balda/internal/apps/balda/skillbackofficeapp"
+	"github.com/baldaworks/balda/internal/apps/balda/skillfx"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
@@ -430,7 +432,7 @@ func Module(
 				})
 				return provider, nil
 			},
-			func(provider baldastate.Provider, invitations *auth.BindingInvitations, channels *auth.BindingChannels, mcp *mcpbackofficeapp.Operations, schedules *schedulebackofficeapp.Operations, aliases *aliasbackofficeapp.Operations, webhooks *webhookbackofficeapp.Operations, facts *memorybackofficeapp.Operations, plugins *pluginbackofficeapp.Operations, hooks *hookbackofficeapp.Operations) (*backoffice.Runtime, error) {
+			func(provider baldastate.Provider, invitations *auth.BindingInvitations, channels *auth.BindingChannels, mcp *mcpbackofficeapp.Operations, schedules *schedulebackofficeapp.Operations, aliases *aliasbackofficeapp.Operations, webhooks *webhookbackofficeapp.Operations, facts *memorybackofficeapp.Operations, plugins *pluginbackofficeapp.Operations, hooks *hookbackofficeapp.Operations, skills *skillbackofficeapp.Operations) (*backoffice.Runtime, error) {
 				runtime, err := backoffice.NewRuntime(backofficeConfig, provider)
 				if err != nil {
 					return nil, err
@@ -448,6 +450,9 @@ func Module(
 					return nil, err
 				}
 				if err := runtime.ConfigureAliasesOperations(aliases); err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigureSkillsOperations(skills); err != nil {
 					return nil, err
 				}
 				if err := runtime.ConfigurePluginsOperations(plugins); err != nil {
@@ -500,6 +505,7 @@ func Module(
 			func(manager *baldasession.Manager) jobexec.WebhookRunSessionCloser {
 				return manager
 			},
+			skillbackofficeapp.New,
 			schedulebackofficeapp.New,
 			webhookbackofficeapp.New,
 			aliasbackofficeapp.New,
@@ -911,6 +917,7 @@ func Module(
 		questions.Module,
 		permissions.Module,
 		pluginapp.Module,
+		skillfx.Module,
 		sessionapp.Module,
 		sessionturnapp.Module,
 		hookfx.Module,

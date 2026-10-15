@@ -238,3 +238,7 @@ func (p *postgresProvider) MemoryManagement() MemoryManagementStore {
 func (p *postgresProvider) PluginManagement() PluginManagementStore {
 	return &sqlPluginManagementStore{users: newPostgresUserStore(p.db)}
 }
+
+func (p *postgresProvider) SkillManagement() SkillManagementStore {
+	return &sqlSkillManagementStore{users: newPostgresUserStore(p.db)}
+}

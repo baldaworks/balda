@@ -99,6 +99,7 @@ type Provider interface {
 	ScheduleRuns() ScheduleRunStore
 	Aliases() AliasStore
 	MemoryManagement() MemoryManagementStore
+	SkillManagement() SkillManagementStore
 	HookManagement() HookManagementStore
 	PluginManagement() PluginManagementStore
 	WebhookAdmissions() WebhookAdmissionStore

@@ -39,6 +39,7 @@ type httpApp struct {
 	factMemory        FactMemoryOperations
 	hooks             HookOperations
 	plugins           PluginsOperations
+	skills            SkillsOperations
 	mcpAuthorizations MCPAuthorizations
 	qa                bool
 	basePath          string
@@ -164,6 +165,7 @@ func (a *httpApp) handler() (http.Handler, error) {
 	mux.Handle("GET "+a.path(pluginInstalledPath), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.pluginDetailPage))))
 	mux.HandleFunc("POST "+a.path(pluginInstallPath), a.pluginLifecycleMutation)
 	mux.HandleFunc("POST "+a.path(pluginInstalledPath+"/{plugin_operation}"), a.pluginLifecycleMutation)
+	a.registerSkills(mux)
 	mux.Handle("GET "+a.path("/plugins"), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.pluginsPage))))
 	for _, route := range []string{pluginMarketplacesPath, pluginMarketplaceNewPath, pluginMarketplaceDefinitionsPath + "{marketplace_name}"} {
 		mux.Handle("GET "+a.path(route), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.pluginMarketplacesPage))))
