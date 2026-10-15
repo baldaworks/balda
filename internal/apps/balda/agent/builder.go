@@ -61,6 +61,7 @@ type Builder struct {
 	memorySnapshotReader     MemorySnapshotReader
 	instructionContributors  []SessionInstructionContributor
 	instructionMaxTotalBytes int
+	runnerFactory            *RunnerFactory
 }
 
 // runtimeFactory is the provider-factory boundary used by chat runtimes.
@@ -210,6 +211,7 @@ type BuilderParams struct {
 	MemorySnapshotReader     MemorySnapshotReader
 	InstructionContributors  []SessionInstructionContributor `group:"balda_session_instruction_contributors"`
 	InstructionMaxTotalBytes int                             `name:"balda_session_instruction_max_total_bytes" optional:"true"`
+	RunnerFactory            *RunnerFactory                  `optional:"true"`
 }
 
 // NewBuilder creates a Builder with the given factory and config.
@@ -234,6 +236,7 @@ func NewBuilder(params BuilderParams) *Builder {
 		memorySnapshotReader:     params.MemorySnapshotReader,
 		instructionContributors:  append([]SessionInstructionContributor(nil), params.InstructionContributors...),
 		instructionMaxTotalBytes: params.InstructionMaxTotalBytes,
+		runnerFactory:            params.RunnerFactory,
 	}
 }
 
@@ -320,10 +323,14 @@ func (b *Builder) buildRuntimeWithCapabilities(
 	if sessionSvc == nil {
 		sessionSvc = adksession.InMemoryService()
 	}
-	r, err := runner.New(runner.Config{
+	r, err := b.newRunner(runner.Config{
 		AppName:        appName,
 		Agent:          ag,
 		SessionService: sessionSvc,
+	}, ToolHookScope{
+		Enabled:  true,
+		Provider: strings.TrimSpace(agentName),
+		CWD:      strings.TrimSpace(workspaceDir),
 	})
 	if err != nil {
 		if closer, ok := ag.(io.Closer); ok {
@@ -338,6 +345,13 @@ func (b *Builder) buildRuntimeWithCapabilities(
 		SessionSvc: sessionSvc,
 		AppName:    appName,
 	}, nil
+}
+
+func (b *Builder) newRunner(cfg runner.Config, scope ToolHookScope) (*runner.Runner, error) {
+	if b != nil && b.runnerFactory != nil {
+		return b.runnerFactory.New(cfg, scope)
+	}
+	return runner.New(cfg)
 }
 
 // BuildDedicatedRuntime creates an isolated provider runtime for internal

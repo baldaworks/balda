@@ -133,18 +133,26 @@ func (b *Builder) BuildGoalWorkflow(ctx context.Context, cfg GoalBuildConfig) (a
 		return nil, err
 	}
 
-	workerRunner, err := adkrunner.New(adkrunner.Config{
+	workerRunner, err := b.newRunner(adkrunner.Config{
 		AppName:        appName,
 		Agent:          worker,
 		SessionService: cfg.SessionService,
+	}, ToolHookScope{
+		Enabled:  true,
+		Provider: providerID,
+		CWD:      strings.TrimSpace(cfg.WorkspaceDir),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("creating goal worker runner: %w", err)
 	}
-	validatorRunner, err := adkrunner.New(adkrunner.Config{
+	validatorRunner, err := b.newRunner(adkrunner.Config{
 		AppName:        appName,
 		Agent:          validator,
 		SessionService: cfg.SessionService,
+	}, ToolHookScope{
+		Enabled:  true,
+		Provider: providerID,
+		CWD:      strings.TrimSpace(cfg.WorkspaceDir),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("creating goal validator runner: %w", err)
