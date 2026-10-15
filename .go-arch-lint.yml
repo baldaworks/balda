@@ -11,10 +11,13 @@ exclude:
   - .config
 
 vendors:
-  native_hook_runtime:
+  native_hook_process_runtime:
+    in:
+      - golang.org/x/sys/unix
+
+  native_hook_provider_config:
     in:
       - github.com/normahq/runtime/v2/agentconfig
-      - golang.org/x/sys/unix
 
   hook_policy_dependencies:
     in:
@@ -152,9 +155,32 @@ components:
     in:
       - internal/apps/balda/hookbackofficeapp
 
-  native_hook_adapters:
+  # Target owner for neutral authenticated Event/Result bindings. TASK-002
+  # records one staged exception: the pre-extraction package still contains
+  # provider traversal and wire adapters. TASK-003 removes that implementation
+  # debt without changing this component's provider-neutral dependency rule.
+  native_hook_bindings:
     in:
       - internal/apps/balda/hookprovider
+
+  # Target registry iterates provider-owned adapters for one catalog leaf. It
+  # owns no provider switch and no binding transport implementation.
+  native_hook_registry:
+    in:
+      - internal/apps/balda/hooknative
+
+  # Target concrete adapters own provider detection, launch mutation and wire
+  # normalization. New providers extend this component instead of hookprovider.
+  concrete_native_hook_adapters:
+    in:
+      - internal/apps/balda/hooknative/claude
+      - internal/apps/balda/hooknative/codex
+      - internal/apps/balda/hooknative/opencode
+
+  # Reusable behavior contracts for neutral bindings and concrete adapters.
+  native_hook_testkit:
+    in:
+      - internal/apps/balda/hooknativetest
 
   hook_wiring:
     in:
@@ -628,18 +654,47 @@ deps:
     deepScan: false
     anyVendorDeps: false
 
-  native_hook_adapters:
+  native_hook_bindings:
     mayDependOn:
       - hook_contracts
-    # Constructor arguments implement consumer ports at the composition root.
+    # TASK-002 staged exception: service.go is the sole remaining provider-tree
+    # and agentconfig owner in hookprovider. TASK-003 removes this capability;
+    # process runtime remains valid for binding cleanup.
     deepScan: false
     anyVendorDeps: false
     canUse:
-      - native_hook_runtime
+      - native_hook_process_runtime
+      - native_hook_provider_config
+
+  native_hook_registry:
+    mayDependOn:
+      - hook_contracts
+      - native_hook_bindings
+    deepScan: false
+    anyVendorDeps: false
+    canUse:
+      - native_hook_provider_config
+
+  concrete_native_hook_adapters:
+    mayDependOn:
+      - hook_contracts
+      - native_hook_bindings
+      - native_hook_registry
+    deepScan: false
+    anyVendorDeps: false
+    canUse:
+      - native_hook_process_runtime
+      - native_hook_provider_config
+
+  native_hook_testkit:
+    mayDependOn:
+      - hook_contracts
+    deepScan: false
+    anyVendorDeps: false
 
   hook_wiring:
     mayDependOn:
-      - native_hook_adapters
+      - native_hook_bindings
       - hook_contracts
       - hook_policy
       - hook_backoffice_wiring
@@ -944,6 +999,9 @@ deps:
 
   catalog_wiring:
     mayDependOn:
+      - native_hook_bindings
+      - native_hook_registry
+      - concrete_native_hook_adapters
       - contracts
       - mcp_contracts
       - mcp_management
@@ -1192,7 +1250,7 @@ deps:
 
   composition_root:
     mayDependOn:
-      - native_hook_adapters
+      - native_hook_bindings
       - hook_policy
       - hook_wiring
       - hook_backoffice_wiring
@@ -1255,7 +1313,7 @@ deps:
 
   entrypoints:
     mayDependOn:
-      - native_hook_adapters
+      - native_hook_bindings
       - foundation
       - composition_root
       - application
