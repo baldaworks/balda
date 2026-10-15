@@ -111,21 +111,23 @@ func runCommand(ctx context.Context, definition hookcmd.Definition, event hookcm
 	if err != nil || len(input) > maxEventBytes {
 		return hookcmd.Result{}, hookcmd.ErrInvalid
 	}
-	command := exec.CommandContext(ctx, definition.Command, definition.Args...)
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	command := exec.CommandContext(runCtx, definition.Command, definition.Args...)
 	command.Dir = event.CWD
 	command.Stdin = bytes.NewReader(input)
-	stdout, stderr := &boundedOutput{}, &boundedOutput{}
+	stdout, stderr := &boundedOutput{cancel: cancel}, &boundedOutput{cancel: cancel}
 	command.Stdout, command.Stderr = stdout, stderr
 	command.WaitDelay = time.Second
 	configureProcess(command)
 	if err := command.Run(); err != nil {
 		var exit *exec.ExitError
-		if errors.As(err, &exit) && exit.ExitCode() == 2 && ctx.Err() == nil {
+		if errors.As(err, &exit) && exit.ExitCode() == 2 && runCtx.Err() == nil {
 			return hookcmd.Result{Decision: hookcmd.DecisionDeny, Reason: "Hook rejected the event."}, nil
 		}
 		return hookcmd.Result{}, fmt.Errorf("%w: %s", hookcmd.ErrExecution, definition.Name)
 	}
-	if ctx.Err() != nil {
+	if runCtx.Err() != nil {
 		return hookcmd.Result{}, fmt.Errorf("%w: %s", hookcmd.ErrExecution, definition.Name)
 	}
 	if len(bytes.TrimSpace(stdout.Bytes())) == 0 {
@@ -152,11 +154,17 @@ func runCommand(ctx context.Context, definition hookcmd.Definition, event hookcm
 	return result, nil
 }
 
-type boundedOutput struct{ bytes.Buffer }
+type boundedOutput struct {
+	buffer bytes.Buffer
+	cancel context.CancelFunc
+}
+
+func (b *boundedOutput) Bytes() []byte { return b.buffer.Bytes() }
 
 func (b *boundedOutput) Write(data []byte) (int, error) {
-	if len(data) > maxOutputBytes-b.Len() {
+	if len(data) > maxOutputBytes-b.buffer.Len() {
+		b.cancel()
 		return 0, io.ErrShortBuffer
 	}
-	return b.Buffer.Write(data)
+	return b.buffer.Write(data)
 }
