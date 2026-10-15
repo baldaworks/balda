@@ -2,6 +2,7 @@ package webui
 
 import (
 	"encoding/json"
+	"strconv"
 
 	"github.com/baldaworks/balda/internal/apps/balda/hookcmd"
 )
@@ -31,6 +32,7 @@ type HookEditor struct {
 	Action          string
 	ReopenPath      string
 	ArgsJSON        string
+	TimeoutValue    string
 }
 
 // ProjectHooks exposes names and applicability without command arguments in inventory.
@@ -49,7 +51,7 @@ func ProjectHookEditor(d hookcmd.Definition, version int64, create bool) *HookEd
 		args = []string{}
 	}
 	encoded, _ := json.Marshal(args)
-	editor := &HookEditor{Definition: d, ExpectedVersion: version, New: create, Action: "/hooks/" + d.Name, ReopenPath: "/hooks/" + d.Name, ArgsJSON: string(encoded)}
+	editor := &HookEditor{Definition: d, ExpectedVersion: version, New: create, Action: "/hooks/" + d.Name, ReopenPath: "/hooks/" + d.Name, ArgsJSON: string(encoded), TimeoutValue: strconv.Itoa(d.TimeoutSeconds)}
 	if create {
 		editor.Action, editor.ReopenPath = "/hooks", "/hooks?new=1"
 	}
