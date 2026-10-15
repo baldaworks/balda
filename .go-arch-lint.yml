@@ -360,7 +360,10 @@ components:
       - internal/apps/balda/mcpbridge
 
   # Composition adapters for catalog sources, lifecycle, scope overlays, and
-  # command/skill/MCP projections.
+  # command/skill/MCP projections. Managed skills enter through an origin-free
+  # local storage port and exact archive descriptors. skill_policy deliberately
+  # stays outside catalog_wiring dependencies: catalog publication must not call
+  # management services while holding catalog locks.
   catalog_wiring:
     in:
       - internal/apps/balda/catalogapp

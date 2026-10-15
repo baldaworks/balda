@@ -32,3 +32,10 @@ func (s ManagedSkillSelection) Normalized() ManagedSkillSelection {
 func (s ManagedSkillSelection) Equal(other ManagedSkillSelection) bool {
 	return s.Generation == other.Generation && slices.Equal(s.Normalized().Sources, other.Normalized().Sources)
 }
+
+// PreparedApplicationCandidate carries the complete compilation and exact desired
+// managed-skill evidence independently of its content-derived snapshot identity.
+type PreparedApplicationCandidate struct {
+	Snapshot
+	ManagedSkills ManagedSkillSelection
+}

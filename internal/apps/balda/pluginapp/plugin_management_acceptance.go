@@ -26,7 +26,7 @@ type pluginAcceptance struct {
 	accepted            bool
 }
 
-func (m *managedLifecycle) acceptAndPublish(ctx context.Context, operation, name, from, to string, install *state.PluginInstallRecord, revision *state.PluginRevisionRecord, snapshot runtimecatalogcmd.Snapshot, a *pluginAcceptance) error {
+func (m *managedLifecycle) acceptAndPublish(ctx context.Context, operation, name, from, to string, install *state.PluginInstallRecord, revision *state.PluginRevisionRecord, snapshot runtimecatalogcmd.PreparedApplicationCandidate, a *pluginAcceptance) error {
 	now := m.now().UTC()
 	if install != nil {
 		install.UpdatedAt = now
