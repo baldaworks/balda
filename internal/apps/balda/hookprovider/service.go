@@ -32,6 +32,10 @@ type Runner interface {
 	Run(ctx context.Context, event hookcmd.Event) (hookcmd.Result, error)
 }
 
+type sessionReleaser interface {
+	ReleaseSession(sessionID string)
+}
+
 // BindingScope is trusted context attached to every event received by a binding.
 // Provider is opaque event data and never selects transport behavior.
 type BindingScope struct {
@@ -42,13 +46,28 @@ type BindingScope struct {
 
 // Service owns private bindings, one loopback endpoint, and their lifetimes.
 type Service struct {
-	runner    Runner
-	mu        sync.Mutex
-	server    *http.Server
-	address   string
-	bindings  map[bindingID]*boundSession
-	authDummy [16]byte
-	closed    bool
+	runner                Runner
+	sessionLifecycleGate  sync.RWMutex
+	sessionLocksMu        sync.Mutex
+	sessionLocks          map[string]*sessionLock
+	mu                    sync.Mutex
+	server                *http.Server
+	address               string
+	bindings              map[bindingID]*boundSession
+	sessionGenerations    map[string]sessionGeneration
+	nextSessionGeneration uint64
+	authDummy             [16]byte
+	closed                bool
+}
+
+type sessionLock struct {
+	mu    sync.Mutex
+	users int
+}
+
+type sessionGeneration struct {
+	id   uint64
+	refs int
 }
 
 type boundSession struct {
@@ -63,6 +82,7 @@ type boundSession struct {
 	processes   map[int]string
 	ready       chan struct{}
 	readyOnce   sync.Once
+	generation  uint64
 }
 
 type bindingID [16]byte
@@ -85,7 +105,36 @@ func New(runner Runner) (*Service, error) {
 	if _, err := rand.Read(authDummy[:]); err != nil {
 		return nil, err
 	}
-	return &Service{runner: runner, bindings: make(map[bindingID]*boundSession), authDummy: authDummy}, nil
+	return &Service{
+		runner:             runner,
+		bindings:           make(map[bindingID]*boundSession),
+		sessionGenerations: make(map[string]sessionGeneration),
+		sessionLocks:       make(map[string]*sessionLock),
+		authDummy:          authDummy,
+	}, nil
+}
+
+func (s *Service) lockSession(sessionID string) *sessionLock {
+	s.sessionLocksMu.Lock()
+	lock := s.sessionLocks[sessionID]
+	if lock == nil {
+		lock = &sessionLock{}
+		s.sessionLocks[sessionID] = lock
+	}
+	lock.users++
+	s.sessionLocksMu.Unlock()
+	lock.mu.Lock()
+	return lock
+}
+
+func (s *Service) unlockSession(sessionID string, lock *sessionLock) {
+	lock.mu.Unlock()
+	s.sessionLocksMu.Lock()
+	lock.users--
+	if lock.users == 0 {
+		delete(s.sessionLocks, sessionID)
+	}
+	s.sessionLocksMu.Unlock()
 }
 
 // Bind creates an isolated capability without retaining the caller's context.
@@ -120,9 +169,13 @@ func (s *Service) Bind(ctx context.Context, scope BindingScope) (*Binding, error
 	if err != nil {
 		return nil, err
 	}
+	s.sessionLifecycleGate.RLock()
+	sessionLock := s.lockSession(scope.SessionID)
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
+		s.unlockSession(scope.SessionID, sessionLock)
+		s.sessionLifecycleGate.RUnlock()
 		_ = os.RemoveAll(dir)
 		return nil, hookcmd.ErrUnavailable
 	}
@@ -130,6 +183,8 @@ func (s *Service) Bind(ctx context.Context, scope BindingScope) (*Binding, error
 		listener, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
 			s.mu.Unlock()
+			s.unlockSession(scope.SessionID, sessionLock)
+			s.sessionLifecycleGate.RUnlock()
 			_ = os.RemoveAll(dir)
 			return nil, err
 		}
@@ -139,20 +194,50 @@ func (s *Service) Bind(ctx context.Context, scope BindingScope) (*Binding, error
 	}
 	bindingCtx, cancel := context.WithCancel(context.Background())
 	path := filepath.Join(dir, "binding.json")
-	bound := &boundSession{scope: scope, tokenSecret: secret, ownerProof: ownerProof, ctx: bindingCtx, cancel: cancel, dir: dir, processes: make(map[int]string), ready: make(chan struct{})}
+	generation := s.sessionGenerations[scope.SessionID]
+	if generation.refs == 0 {
+		s.nextSessionGeneration++
+		generation.id = s.nextSessionGeneration
+	}
+	generation.refs++
+	s.sessionGenerations[scope.SessionID] = generation
+	bound := &boundSession{scope: scope, tokenSecret: secret, ownerProof: ownerProof, ctx: bindingCtx, cancel: cancel, dir: dir, processes: make(map[int]string), ready: make(chan struct{}), generation: generation.id}
 	s.bindings[id] = bound
 	binding := &Binding{URL: s.address, Token: token, path: path, ownerProof: ownerProof}
 	data, err := json.Marshal(binding)
 	s.mu.Unlock()
+	s.unlockSession(scope.SessionID, sessionLock)
+	s.sessionLifecycleGate.RUnlock()
 	var once sync.Once
 	binding.release = func() error {
 		var releaseErr error
 		once.Do(func() {
+			s.sessionLifecycleGate.RLock()
+			sessionLock := s.lockSession(scope.SessionID)
 			s.mu.Lock()
 			processes := maps.Clone(bound.processes)
-			delete(s.bindings, id)
+			_, existed := s.bindings[id]
+			if existed {
+				delete(s.bindings, id)
+			}
+			generation, current := s.sessionGenerations[scope.SessionID]
+			lastForSession := existed && current && generation.id == bound.generation
+			if lastForSession {
+				generation.refs--
+				lastForSession = generation.refs == 0
+				if lastForSession {
+					delete(s.sessionGenerations, scope.SessionID)
+				} else {
+					s.sessionGenerations[scope.SessionID] = generation
+				}
+			}
 			s.mu.Unlock()
 			cancel()
+			if releaser, ok := s.runner.(sessionReleaser); ok && lastForSession {
+				releaser.ReleaseSession(scope.SessionID)
+			}
+			s.unlockSession(scope.SessionID, sessionLock)
+			s.sessionLifecycleGate.RUnlock()
 			terminateNativeProcesses(processes)
 			releaseErr = os.RemoveAll(dir)
 		})
@@ -283,18 +368,30 @@ func (s *Service) serve(w http.ResponseWriter, r *http.Request) {
 
 // Close invalidates every capability and stops the loopback endpoint.
 func (s *Service) Close() error {
+	s.sessionLifecycleGate.Lock()
+	defer s.sessionLifecycleGate.Unlock()
 	s.mu.Lock()
 	s.closed = true
 	server := s.server
 	var dirs []string
 	processes := make(map[int]string)
+	sessions := make([]string, 0, len(s.sessionGenerations))
+	for sessionID := range s.sessionGenerations {
+		sessions = append(sessions, sessionID)
+	}
 	for key, binding := range s.bindings {
 		dirs = append(dirs, binding.dir)
 		maps.Copy(processes, binding.processes)
 		binding.cancel()
 		delete(s.bindings, key)
 	}
+	clear(s.sessionGenerations)
 	s.mu.Unlock()
+	if releaser, ok := s.runner.(sessionReleaser); ok {
+		for _, sessionID := range sessions {
+			releaser.ReleaseSession(sessionID)
+		}
+	}
 	terminateNativeProcesses(processes)
 	var closeErr error
 	for _, dir := range dirs {

@@ -18,9 +18,13 @@ import (
 )
 
 const (
-	maxEventBytes   = 256 << 10
-	maxOutputBytes  = 64 << 10
-	maxContextBytes = 32 << 10
+	maxEventBytes        = 256 << 10
+	maxOutputBytes       = 64 << 10
+	maxContextBytes      = 32 << 10
+	maxIdentityBytes     = 1024
+	maxInvocationEntries = 256
+	maxGlobalEntries     = 4096
+	deduplicationTTL     = 10 * time.Minute
 )
 
 // RecordReader is the runtime's read-only configuration port.
@@ -28,39 +32,99 @@ type RecordReader interface {
 	Load(ctx context.Context) (hookcmd.Record, error)
 }
 
+// ExecutionSnapshotReader selects the effective definitions for one event.
+type ExecutionSnapshotReader interface {
+	LoadExecutionSnapshot(ctx context.Context) (hookcmd.ExecutionSnapshot, error)
+}
+
+type managedSnapshotReader struct {
+	store RecordReader
+}
+
+// ManagedExecutionSnapshotReader adapts the existing managed-hook record to
+// the combined execution snapshot contract.
+func ManagedExecutionSnapshotReader(store RecordReader) ExecutionSnapshotReader {
+	return managedSnapshotReader{store: store}
+}
+
+func (r managedSnapshotReader) LoadExecutionSnapshot(ctx context.Context) (hookcmd.ExecutionSnapshot, error) {
+	if r.store == nil {
+		return hookcmd.ExecutionSnapshot{}, hookcmd.ErrUnavailable
+	}
+	record, err := r.store.Load(ctx)
+	if err != nil {
+		return hookcmd.ExecutionSnapshot{}, err
+	}
+	if record.Validate() != nil {
+		return hookcmd.ExecutionSnapshot{}, hookcmd.ErrUnavailable
+	}
+	snapshot := hookcmd.ExecutionSnapshot{Definitions: make([]hookcmd.EffectiveDefinition, 0, len(record.Definitions))}
+	for _, definition := range record.Definitions {
+		snapshot.Definitions = append(snapshot.Definitions, hookcmd.EffectiveDefinition{
+			ID:         "managed/" + definition.Name,
+			Definition: definition,
+		})
+	}
+	return snapshot, nil
+}
+
 // Runner executes a deterministic snapshot of matching administrator hooks.
 type Runner struct {
-	store RecordReader
-	gate  chan struct{}
+	snapshots ExecutionSnapshotReader
+	gate      chan struct{}
+	dedup     coalescingCache
 }
 
-// NewRunner binds runtime execution to the shared configuration owner.
-func NewRunner(store RecordReader) *Runner {
-	return &Runner{store: store, gate: make(chan struct{}, 16)}
+// NewRunner binds runtime execution to a combined effective hook view.
+func NewRunner(snapshots ExecutionSnapshotReader) *Runner {
+	return &Runner{
+		snapshots: snapshots,
+		gate:      make(chan struct{}, 16),
+		dedup:     newCoalescingCache(),
+	}
 }
 
-// Run executes enabled hooks in name order and fails closed on malformed output.
+// NewManagedRunner binds runtime execution to the existing managed-hook store.
+func NewManagedRunner(store RecordReader) *Runner {
+	return NewRunner(ManagedExecutionSnapshotReader(store))
+}
+
+// Run executes enabled hooks in effective identity order and fails closed on malformed output.
 func (r *Runner) Run(ctx context.Context, event hookcmd.Event) (hookcmd.Result, error) {
-	if r == nil || r.store == nil {
+	if r == nil || r.snapshots == nil {
 		return hookcmd.Result{}, hookcmd.ErrUnavailable
 	}
 	if !event.Name.Valid() || event.SessionID == "" || !filepath.IsAbs(event.CWD) {
 		return hookcmd.Result{}, hookcmd.ErrInvalid
 	}
-	if event.Name.ToolEvent() && (event.ToolName == "" || len(event.ToolName) > 256 || !json.Valid(event.ToolInput)) {
+	if event.Name.ToolEvent() && (event.ToolName == "" || len(event.ToolName) > 256 || len(event.SessionID) > maxIdentityBytes || len(event.InvocationID) > maxIdentityBytes || len(event.ToolCallID) > maxIdentityBytes || !json.Valid(event.ToolInput)) {
 		return hookcmd.Result{}, hookcmd.ErrInvalid
 	}
-	record, err := r.store.Load(ctx)
+	key, eligible := deduplicationKeyFor(event)
+	if eligible {
+		return r.dedup.run(ctx, key, func() (hookcmd.Result, error) {
+			return r.runOnce(ctx, event)
+		})
+	}
+	return r.runOnce(ctx, event)
+}
+
+func (r *Runner) runOnce(ctx context.Context, event hookcmd.Event) (hookcmd.Result, error) {
+	snapshot, err := r.snapshots.LoadExecutionSnapshot(ctx)
 	if err != nil {
 		return hookcmd.Result{}, err
 	}
-	if record.Validate() != nil {
+	definitions := slices.Clone(snapshot.Definitions)
+	for i := range definitions {
+		definitions[i].Definition.Args = slices.Clone(definitions[i].Definition.Args)
+	}
+	if !validExecutionSnapshot(definitions) {
 		return hookcmd.Result{}, hookcmd.ErrUnavailable
 	}
-	definitions := slices.Clone(record.Definitions)
-	slices.SortFunc(definitions, func(a, b hookcmd.Definition) int { return strings.Compare(a.Name, b.Name) })
+	slices.SortFunc(definitions, func(a, b hookcmd.EffectiveDefinition) int { return strings.Compare(a.ID, b.ID) })
 	var combined hookcmd.Result
-	for _, definition := range definitions {
+	for _, effective := range definitions {
+		definition := effective.Definition
 		if !definition.Enabled || definition.Event != event.Name || definition.Provider != "" && definition.Provider != event.Provider {
 			continue
 		}
@@ -80,7 +144,7 @@ func (r *Runner) Run(ctx context.Context, event hookcmd.Event) (hookcmd.Result, 
 			return hookcmd.Result{}, err
 		}
 		if result.Decision == hookcmd.DecisionDeny {
-			return hookcmd.Result{}, &hookcmd.DeniedError{Hook: definition.Name, Reason: result.Reason}
+			return hookcmd.Result{}, &hookcmd.DeniedError{Hook: effective.ID, Reason: result.Reason}
 		}
 		if result.AdditionalContext != "" {
 			if event.Name != hookcmd.UserPromptSubmit && !event.Name.ToolEvent() {
@@ -99,14 +163,70 @@ func (r *Runner) Run(ctx context.Context, event hookcmd.Event) (hookcmd.Result, 
 			combined.AdditionalContext += result.AdditionalContext
 		}
 		if len(result.UpdatedInput) != 0 {
-			if event.Name != hookcmd.PreToolUse || !json.Valid(result.UpdatedInput) || len(bytes.TrimSpace(result.UpdatedInput)) == 0 || bytes.TrimSpace(result.UpdatedInput)[0] != '{' {
+			if event.Name != hookcmd.PreToolUse || !jsonObject(result.UpdatedInput) {
 				return hookcmd.Result{}, hookcmd.ErrExecution
 			}
 			combined.UpdatedInput = slices.Clone(result.UpdatedInput)
 			event.ToolInput = slices.Clone(result.UpdatedInput)
 		}
+		if len(result.UpdatedOutput) != 0 {
+			if event.Name != hookcmd.PostToolUse || len(result.UpdatedOutput) > maxOutputBytes || !jsonObject(result.UpdatedOutput) {
+				return hookcmd.Result{}, hookcmd.ErrExecution
+			}
+			combined.UpdatedOutput = slices.Clone(result.UpdatedOutput)
+			event.ToolResponse = slices.Clone(result.UpdatedOutput)
+		}
 	}
 	return combined, nil
+}
+
+func validExecutionSnapshot(definitions []hookcmd.EffectiveDefinition) bool {
+	seen := make(map[string]struct{}, len(definitions))
+	for _, effective := range definitions {
+		if !validEffectiveDefinition(effective) {
+			return false
+		}
+		if _, ok := seen[effective.ID]; ok {
+			return false
+		}
+		seen[effective.ID] = struct{}{}
+	}
+	return true
+}
+
+func validEffectiveDefinition(effective hookcmd.EffectiveDefinition) bool {
+	if effective.Definition.Validate() != nil {
+		return false
+	}
+	name := effective.Definition.Name
+	if effective.ID == "managed/"+name {
+		return effective.PluginID == "" && effective.PluginRevision == ""
+	}
+	if effective.PluginID == "" || strings.Contains(effective.PluginID, "/") || effective.PluginRevision == "" {
+		return false
+	}
+	return effective.ID == "plugin/"+effective.PluginID+"/"+name
+}
+
+func jsonObject(value json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(value)
+	return len(trimmed) != 0 && trimmed[0] == '{' && json.Valid(trimmed)
+}
+
+// ReleaseInvocation removes completed decisions for one invocation. An active
+// decision is removed as soon as its single execution finishes.
+func (r *Runner) ReleaseInvocation(sessionID, invocationID string) {
+	if r != nil {
+		r.dedup.releaseInvocation(sessionID, invocationID)
+	}
+}
+
+// ReleaseSession removes completed decisions for one session. An active
+// decision is removed as soon as its single execution finishes.
+func (r *Runner) ReleaseSession(sessionID string) {
+	if r != nil {
+		r.dedup.releaseSession(sessionID)
+	}
 }
 
 func (r *Runner) execute(ctx context.Context, definition hookcmd.Definition, event hookcmd.Event) (hookcmd.Result, error) {

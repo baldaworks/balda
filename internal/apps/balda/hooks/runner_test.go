@@ -7,8 +7,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -18,6 +21,12 @@ import (
 type recordFixture struct {
 	record hookcmd.Record
 	err    error
+}
+
+type snapshotReaderFunc func(context.Context) (hookcmd.ExecutionSnapshot, error)
+
+func (f snapshotReaderFunc) LoadExecutionSnapshot(ctx context.Context) (hookcmd.ExecutionSnapshot, error) {
+	return f(ctx)
 }
 
 func (f recordFixture) Load(context.Context) (hookcmd.Record, error) { return f.record, f.err }
@@ -79,6 +88,45 @@ func TestHookCommandHelper(t *testing.T) {
 	case "first", "second":
 		data, _ := json.Marshal(hookcmd.Result{AdditionalContext: mode})
 		_, _ = os.Stdout.Write(data)
+	case "rewrite-input":
+		data, _ := json.Marshal(hookcmd.Result{UpdatedInput: json.RawMessage(`{"step":"managed"}`)})
+		_, _ = os.Stdout.Write(data)
+	case "echo-input":
+		data, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			os.Exit(3)
+		}
+		var event hookcmd.Event
+		if json.Unmarshal(data, &event) != nil {
+			os.Exit(3)
+		}
+		data, _ = json.Marshal(hookcmd.Result{AdditionalContext: string(event.ToolInput)})
+		_, _ = os.Stdout.Write(data)
+	case "rewrite-output":
+		_, _ = fmt.Fprint(os.Stdout, `{"updated_output":{"step":"post"}}`)
+	case "echo-output":
+		data, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			os.Exit(3)
+		}
+		var event hookcmd.Event
+		if json.Unmarshal(data, &event) != nil {
+			os.Exit(3)
+		}
+		data, _ = json.Marshal(hookcmd.Result{AdditionalContext: string(event.ToolResponse)})
+		_, _ = os.Stdout.Write(data)
+	case "array-output":
+		_, _ = fmt.Fprint(os.Stdout, `{"updated_output":[]}`)
+	case "count":
+		file, err := os.OpenFile(os.Args[index+2], os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+		if err != nil {
+			os.Exit(3)
+		}
+		_, err = file.WriteString("1")
+		_ = file.Close()
+		if err != nil {
+			os.Exit(3)
+		}
 	case "full-context":
 		data, _ := json.Marshal(hookcmd.Result{AdditionalContext: strings.Repeat("x", maxContextBytes)})
 		_, _ = os.Stdout.Write(data)
@@ -90,7 +138,7 @@ func TestHookCommandHelper(t *testing.T) {
 
 func TestRunnerExecutesJSONInputAndStructuredContext(t *testing.T) {
 	definition := helperDefinition(t, "context", "context")
-	runner := NewRunner(recordFixture{record: hookcmd.Record{Version: 1, UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano), Definitions: []hookcmd.Definition{definition}}})
+	runner := NewManagedRunner(recordFixture{record: hookcmd.Record{Version: 1, UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano), Definitions: []hookcmd.Definition{definition}}})
 	event := hookcmd.Event{Name: hookcmd.UserPromptSubmit, SessionID: "session", CWD: t.TempDir(), Prompt: "literal $(touch should-not-exist)\nquoted \"request\""}
 	result, err := runner.Run(t.Context(), event)
 	if err != nil || result.AdditionalContext != event.Prompt {
@@ -103,7 +151,7 @@ func TestRunnerHonorsSelectionAndNameOrder(t *testing.T) {
 	second.Provider, second.Matcher = "provider", "^chat$"
 	disabled := helperDefinition(t, "disabled", "failure")
 	disabled.Enabled = false
-	runner := NewRunner(recordFixture{record: hookcmd.Record{Version: 1, UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano), Definitions: []hookcmd.Definition{second, disabled, first}}})
+	runner := NewManagedRunner(recordFixture{record: hookcmd.Record{Version: 1, UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano), Definitions: []hookcmd.Definition{second, disabled, first}}})
 	event := hookcmd.Event{Name: hookcmd.UserPromptSubmit, SessionID: "session", Provider: "provider", Source: "chat", CWD: t.TempDir()}
 	result, err := runner.Run(t.Context(), event)
 	if err != nil || result.AdditionalContext != "first\nsecond" {
@@ -123,7 +171,7 @@ func TestRunnerFailsClosedOnCommandFailures(t *testing.T) {
 			if mode == "timeout" {
 				definition.TimeoutSeconds = 1
 			}
-			runner := NewRunner(recordFixture{record: hookcmd.Record{Version: 1, UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano), Definitions: []hookcmd.Definition{definition}}})
+			runner := NewManagedRunner(recordFixture{record: hookcmd.Record{Version: 1, UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano), Definitions: []hookcmd.Definition{definition}}})
 			_, err := runner.Run(t.Context(), hookcmd.Event{Name: hookcmd.UserPromptSubmit, SessionID: "session", CWD: t.TempDir()})
 			want := hookcmd.ErrExecution
 			if mode == hookcmd.DecisionDeny || mode == "exit-deny" {
@@ -141,7 +189,7 @@ func TestRunnerFailsClosedOnCommandFailures(t *testing.T) {
 
 func TestRunnerPropagatesCancellationWithoutRunningCommand(t *testing.T) {
 	definition := helperDefinition(t, "guard", "timeout")
-	runner := NewRunner(recordFixture{record: hookcmd.Record{Version: 1, UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano), Definitions: []hookcmd.Definition{definition}}})
+	runner := NewManagedRunner(recordFixture{record: hookcmd.Record{Version: 1, UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano), Definitions: []hookcmd.Definition{definition}}})
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	started := time.Now()
@@ -156,7 +204,7 @@ func TestRunnerConfiguredTimeouts(t *testing.T) {
 		t.Run(fmt.Sprint(seconds), func(t *testing.T) {
 			definition := helperDefinition(t, "guard", "context")
 			definition.TimeoutSeconds = seconds
-			runner := NewRunner(recordFixture{record: hookcmd.Record{Version: 1, UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano), Definitions: []hookcmd.Definition{definition}}})
+			runner := NewManagedRunner(recordFixture{record: hookcmd.Record{Version: 1, UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano), Definitions: []hookcmd.Definition{definition}}})
 			result, err := runner.Run(t.Context(), hookcmd.Event{Name: hookcmd.UserPromptSubmit, SessionID: "session", CWD: t.TempDir(), Prompt: "configured timeout"})
 			if err != nil || result.AdditionalContext != "configured timeout" {
 				t.Fatalf("Run(timeout=%d) = %+v, %v", seconds, result, err)
@@ -168,7 +216,7 @@ func TestRunnerConfiguredTimeouts(t *testing.T) {
 func TestRunnerNoDeadlineStillHonorsCallerCancellation(t *testing.T) {
 	definition := helperDefinition(t, "guard", "timeout")
 	definition.TimeoutSeconds = 0
-	runner := NewRunner(recordFixture{record: hookcmd.Record{Version: 1, UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano), Definitions: []hookcmd.Definition{definition}}})
+	runner := NewManagedRunner(recordFixture{record: hookcmd.Record{Version: 1, UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano), Definitions: []hookcmd.Definition{definition}}})
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
 	started := time.Now()
@@ -181,7 +229,7 @@ func TestRunnerNoDeadlineStillHonorsCallerCancellation(t *testing.T) {
 func TestRunnerTimeoutIncludesWaitingForProcessSlot(t *testing.T) {
 	definition := helperDefinition(t, "guard", "context")
 	definition.TimeoutSeconds = 1
-	runner := NewRunner(recordFixture{record: hookcmd.Record{Version: 1, UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano), Definitions: []hookcmd.Definition{definition}}})
+	runner := NewManagedRunner(recordFixture{record: hookcmd.Record{Version: 1, UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano), Definitions: []hookcmd.Definition{definition}}})
 	for range cap(runner.gate) {
 		runner.gate <- struct{}{}
 	}
@@ -197,7 +245,7 @@ func TestRunnerOutputLimitTerminatesUnlimitedCommand(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			definition := helperDefinition(t, "guard", mode)
 			definition.TimeoutSeconds = 0
-			runner := NewRunner(recordFixture{record: hookcmd.Record{Version: 1, UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano), Definitions: []hookcmd.Definition{definition}}})
+			runner := NewManagedRunner(recordFixture{record: hookcmd.Record{Version: 1, UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano), Definitions: []hookcmd.Definition{definition}}})
 			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			defer cancel()
 			started := time.Now()
@@ -211,9 +259,308 @@ func TestRunnerOutputLimitTerminatesUnlimitedCommand(t *testing.T) {
 
 func TestRunnerAcceptsCompleteContextBudget(t *testing.T) {
 	definition := helperDefinition(t, "context", "full-context")
-	runner := NewRunner(recordFixture{record: hookcmd.Record{Version: 1, UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano), Definitions: []hookcmd.Definition{definition}}})
+	runner := NewManagedRunner(recordFixture{record: hookcmd.Record{Version: 1, UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano), Definitions: []hookcmd.Definition{definition}}})
 	result, err := runner.Run(t.Context(), hookcmd.Event{Name: hookcmd.UserPromptSubmit, SessionID: "session", CWD: t.TempDir()})
 	if err != nil || result.AdditionalContext != strings.Repeat("x", maxContextBytes) {
 		t.Fatalf("full context budget = %d bytes, %v", len(result.AdditionalContext), err)
+	}
+}
+
+func TestRunnerOrdersEffectiveDefinitionsAndChainsRewrites(t *testing.T) {
+	managed := helperDefinition(t, "z-managed", "rewrite-input")
+	managed.Event = hookcmd.PreToolUse
+	packaged := helperDefinition(t, "a-package", "echo-input")
+	packaged.Event = hookcmd.PreToolUse
+	runner := NewRunner(snapshotReaderFunc(func(context.Context) (hookcmd.ExecutionSnapshot, error) {
+		return hookcmd.ExecutionSnapshot{Definitions: []hookcmd.EffectiveDefinition{
+			{ID: "plugin/p/a-package", Definition: packaged, PluginID: "p", PluginRevision: "r1"},
+			{ID: "managed/z-managed", Definition: managed},
+		}}, nil
+	}))
+	result, err := runner.Run(t.Context(), hookcmd.Event{
+		Name: hookcmd.PreToolUse, SessionID: "session", CWD: t.TempDir(),
+		ToolName: "tool", ToolInput: json.RawMessage(`{"step":"original"}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(result.UpdatedInput), `{"step":"managed"}`; got != want {
+		t.Fatalf("UpdatedInput = %s, want %s", got, want)
+	}
+	if got, want := result.AdditionalContext, `{"step":"managed"}`; got != want {
+		t.Fatalf("AdditionalContext = %q, want %q", got, want)
+	}
+}
+
+func TestExecutionSnapshotRequiresCanonicalIdentityAndMetadata(t *testing.T) {
+	definition := helperDefinition(t, "guard", "context")
+	tests := []struct {
+		name      string
+		effective hookcmd.EffectiveDefinition
+		wantValid bool
+	}{
+		{name: "managed", effective: hookcmd.EffectiveDefinition{ID: "managed/guard", Definition: definition}, wantValid: true},
+		{name: "managed plugin metadata", effective: hookcmd.EffectiveDefinition{ID: "managed/guard", Definition: definition, PluginID: "plugin"}},
+		{name: "managed mismatched name", effective: hookcmd.EffectiveDefinition{ID: "managed/other", Definition: definition}},
+		{name: "plugin", effective: hookcmd.EffectiveDefinition{ID: "plugin/demo/guard", Definition: definition, PluginID: "demo", PluginRevision: "revision"}, wantValid: true},
+		{name: "plugin missing id", effective: hookcmd.EffectiveDefinition{ID: "plugin//guard", Definition: definition, PluginRevision: "revision"}},
+		{name: "plugin missing revision", effective: hookcmd.EffectiveDefinition{ID: "plugin/demo/guard", Definition: definition, PluginID: "demo"}},
+		{name: "plugin mismatched metadata", effective: hookcmd.EffectiveDefinition{ID: "plugin/other/guard", Definition: definition, PluginID: "demo", PluginRevision: "revision"}},
+		{name: "plugin id contains segment", effective: hookcmd.EffectiveDefinition{ID: "plugin/demo/nested/guard", Definition: definition, PluginID: "demo/nested", PluginRevision: "revision"}},
+		{name: "arbitrary", effective: hookcmd.EffectiveDefinition{ID: "guard", Definition: definition}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := validExecutionSnapshot([]hookcmd.EffectiveDefinition{test.effective}); got != test.wantValid {
+				t.Fatalf("validExecutionSnapshot() = %t, want %t", got, test.wantValid)
+			}
+		})
+	}
+}
+
+func TestRunnerChainsAndValidatesUpdatedOutput(t *testing.T) {
+	rewrite := helperDefinition(t, "rewrite", "rewrite-output")
+	rewrite.Event = hookcmd.PostToolUse
+	echo := helperDefinition(t, "verify", "echo-output")
+	echo.Event = hookcmd.PostToolUse
+	runner := NewRunner(snapshotReaderFunc(func(context.Context) (hookcmd.ExecutionSnapshot, error) {
+		return hookcmd.ExecutionSnapshot{Definitions: []hookcmd.EffectiveDefinition{
+			{ID: "managed/rewrite", Definition: rewrite},
+			{ID: "managed/verify", Definition: echo},
+		}}, nil
+	}))
+	result, err := runner.Run(t.Context(), hookcmd.Event{
+		Name: hookcmd.PostToolUse, SessionID: "session", CWD: t.TempDir(),
+		ToolName: "tool", ToolInput: json.RawMessage(`{}`), ToolResponse: json.RawMessage(`{"step":"original"}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(result.UpdatedOutput), `{"step":"post"}`; got != want {
+		t.Fatalf("UpdatedOutput = %s, want %s", got, want)
+	}
+	if got, want := result.AdditionalContext, `{"step":"post"}`; got != want {
+		t.Fatalf("AdditionalContext = %q, want %q", got, want)
+	}
+
+	invalid := helperDefinition(t, "invalid", "array-output")
+	invalid.Event = hookcmd.PostToolUse
+	invalidRunner := NewRunner(snapshotReaderFunc(func(context.Context) (hookcmd.ExecutionSnapshot, error) {
+		return hookcmd.ExecutionSnapshot{Definitions: []hookcmd.EffectiveDefinition{{ID: "managed/invalid", Definition: invalid}}}, nil
+	}))
+	_, err = invalidRunner.Run(t.Context(), hookcmd.Event{Name: hookcmd.PostToolUse, SessionID: "session", CWD: t.TempDir(), ToolName: "tool", ToolInput: json.RawMessage(`{}`)})
+	if !errors.Is(err, hookcmd.ErrExecution) {
+		t.Fatalf("array UpdatedOutput error = %v, want ErrExecution", err)
+	}
+	invalid.Event = hookcmd.PreToolUse
+	_, err = NewRunner(snapshotReaderFunc(func(context.Context) (hookcmd.ExecutionSnapshot, error) {
+		return hookcmd.ExecutionSnapshot{Definitions: []hookcmd.EffectiveDefinition{{ID: "managed/invalid", Definition: invalid}}}, nil
+	})).Run(t.Context(), hookcmd.Event{Name: hookcmd.PreToolUse, SessionID: "session", CWD: t.TempDir(), ToolName: "tool", ToolInput: json.RawMessage(`{}`)})
+	if !errors.Is(err, hookcmd.ErrExecution) {
+		t.Fatalf("PreToolUse UpdatedOutput error = %v, want ErrExecution", err)
+	}
+}
+
+func TestRunnerCoalescesConcurrentCrossSourceCalls(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "executions")
+	definition := helperDefinition(t, "count", "count")
+	definition.Event = hookcmd.PreToolUse
+	definition.Args = append(definition.Args, path)
+	runner := NewRunner(snapshotReaderFunc(func(context.Context) (hookcmd.ExecutionSnapshot, error) {
+		return hookcmd.ExecutionSnapshot{Definitions: []hookcmd.EffectiveDefinition{{ID: "managed/count", Definition: definition}}}, nil
+	}))
+	event := hookcmd.Event{Name: hookcmd.PreToolUse, SessionID: "session", InvocationID: "invocation", ToolCallID: "call", CWD: t.TempDir(), ToolName: "tool", ToolInput: json.RawMessage(`{}`)}
+	const callers = 32
+	start := make(chan struct{})
+	errorsSeen := make(chan error, callers)
+	var group sync.WaitGroup
+	for i := range callers {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			<-start
+			call := event
+			if i%2 == 0 {
+				call.Source = "adk"
+			} else {
+				call.Source = "native"
+			}
+			_, err := runner.Run(t.Context(), call)
+			errorsSeen <- err
+		}()
+	}
+	close(start)
+	group.Wait()
+	close(errorsSeen)
+	for err := range errorsSeen {
+		if err != nil {
+			t.Fatalf("Run() error = %v", err)
+		}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len(data); got != 1 {
+		t.Fatalf("hook executions = %d, want 1", got)
+	}
+}
+
+func TestRunnerMissingIdentityBypassesCoalescing(t *testing.T) {
+	var loads atomic.Int64
+	runner := NewRunner(snapshotReaderFunc(func(context.Context) (hookcmd.ExecutionSnapshot, error) {
+		loads.Add(1)
+		return hookcmd.ExecutionSnapshot{}, nil
+	}))
+	base := hookcmd.Event{Name: hookcmd.PreToolUse, SessionID: "session", InvocationID: "invocation", ToolCallID: "call", CWD: t.TempDir(), ToolName: "tool", ToolInput: json.RawMessage(`{}`)}
+	for _, missing := range []string{"invocation", "call"} {
+		event := base
+		switch missing {
+		case "invocation":
+			event.InvocationID = ""
+		case "call":
+			event.ToolCallID = ""
+		}
+		if _, err := runner.Run(t.Context(), event); err != nil {
+			t.Fatalf("Run(missing %s): %v", missing, err)
+		}
+	}
+	if got := loads.Load(); got != 2 {
+		t.Fatalf("snapshot loads = %d, want 2", got)
+	}
+}
+
+func TestRunnerDeduplicationCapacityFailsClosed(t *testing.T) {
+	var loads atomic.Int64
+	newRunner := func() *Runner {
+		return NewRunner(snapshotReaderFunc(func(context.Context) (hookcmd.ExecutionSnapshot, error) {
+			loads.Add(1)
+			return hookcmd.ExecutionSnapshot{}, nil
+		}))
+	}
+	event := hookcmd.Event{Name: hookcmd.PreToolUse, SessionID: "session", InvocationID: "invocation", CWD: t.TempDir(), ToolName: "tool", ToolInput: json.RawMessage(`{}`)}
+	runner := newRunner()
+	for i := range maxInvocationEntries {
+		event.ToolCallID = fmt.Sprintf("call-%d", i)
+		if _, err := runner.Run(t.Context(), event); err != nil {
+			t.Fatalf("Run(%d): %v", i, err)
+		}
+	}
+	event.ToolCallID = "over-capacity"
+	if _, err := runner.Run(t.Context(), event); !errors.Is(err, hookcmd.ErrExecution) {
+		t.Fatalf("per-invocation capacity error = %v, want ErrExecution", err)
+	}
+	if got := loads.Load(); got != maxInvocationEntries {
+		t.Fatalf("snapshot loads = %d, want %d", got, maxInvocationEntries)
+	}
+
+	loads.Store(0)
+	runner = newRunner()
+	for i := range maxGlobalEntries {
+		event.InvocationID = fmt.Sprintf("invocation-%d", i)
+		event.ToolCallID = "call"
+		if _, err := runner.Run(t.Context(), event); err != nil {
+			t.Fatalf("global Run(%d): %v", i, err)
+		}
+	}
+	event.InvocationID = "over-global-capacity"
+	if _, err := runner.Run(t.Context(), event); !errors.Is(err, hookcmd.ErrExecution) {
+		t.Fatalf("global capacity error = %v, want ErrExecution", err)
+	}
+	if got := loads.Load(); got != maxGlobalEntries {
+		t.Fatalf("global snapshot loads = %d, want %d", got, maxGlobalEntries)
+	}
+}
+
+func TestRunnerDeduplicationReleaseAndTTL(t *testing.T) {
+	var loads atomic.Int64
+	runner := NewRunner(snapshotReaderFunc(func(context.Context) (hookcmd.ExecutionSnapshot, error) {
+		loads.Add(1)
+		return hookcmd.ExecutionSnapshot{}, nil
+	}))
+	now := time.Date(2026, time.October, 15, 12, 0, 0, 0, time.UTC)
+	runner.dedup.now = func() time.Time { return now }
+	event := hookcmd.Event{Name: hookcmd.PreToolUse, SessionID: "session", InvocationID: "invocation", ToolCallID: "call", CWD: t.TempDir(), ToolName: "tool", ToolInput: json.RawMessage(`{}`)}
+	if _, err := runner.Run(t.Context(), event); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runner.Run(t.Context(), event); err != nil {
+		t.Fatal(err)
+	}
+	if got := loads.Load(); got != 1 {
+		t.Fatalf("cached loads = %d, want 1", got)
+	}
+	runner.ReleaseInvocation(event.SessionID, event.InvocationID)
+	if _, err := runner.Run(t.Context(), event); err != nil {
+		t.Fatal(err)
+	}
+	if got := loads.Load(); got != 2 {
+		t.Fatalf("loads after invocation release = %d, want 2", got)
+	}
+	runner.ReleaseSession(event.SessionID)
+	if _, err := runner.Run(t.Context(), event); err != nil {
+		t.Fatal(err)
+	}
+	if got := loads.Load(); got != 3 {
+		t.Fatalf("loads after session release = %d, want 3", got)
+	}
+	now = now.Add(deduplicationTTL + time.Second)
+	if _, err := runner.Run(t.Context(), event); err != nil {
+		t.Fatal(err)
+	}
+	if got := loads.Load(); got != 4 {
+		t.Fatalf("loads after TTL = %d, want 4", got)
+	}
+}
+
+func TestRunnerCoalescesClassifiedFailure(t *testing.T) {
+	var loads atomic.Int64
+	runner := NewRunner(snapshotReaderFunc(func(context.Context) (hookcmd.ExecutionSnapshot, error) {
+		loads.Add(1)
+		return hookcmd.ExecutionSnapshot{}, fmt.Errorf("private details: %w", hookcmd.ErrUnavailable)
+	}))
+	event := hookcmd.Event{Name: hookcmd.PreToolUse, SessionID: "session", InvocationID: "invocation", ToolCallID: "call", CWD: t.TempDir(), ToolName: "tool", ToolInput: json.RawMessage(`{}`)}
+	for range 2 {
+		_, err := runner.Run(t.Context(), event)
+		if !errors.Is(err, hookcmd.ErrUnavailable) || strings.Contains(err.Error(), "private details") {
+			t.Fatalf("classified error = %v", err)
+		}
+	}
+	if got := loads.Load(); got != 1 {
+		t.Fatalf("snapshot loads = %d, want 1", got)
+	}
+}
+
+func TestRunnerReleaseDuringExecutionRemovesCompletedDecision(t *testing.T) {
+	var loads atomic.Int64
+	started := make(chan struct{})
+	unblock := make(chan struct{})
+	runner := NewRunner(snapshotReaderFunc(func(context.Context) (hookcmd.ExecutionSnapshot, error) {
+		if loads.Add(1) == 1 {
+			close(started)
+			<-unblock
+		}
+		return hookcmd.ExecutionSnapshot{}, nil
+	}))
+	event := hookcmd.Event{Name: hookcmd.PreToolUse, SessionID: "session", InvocationID: "invocation", ToolCallID: "call", CWD: t.TempDir(), ToolName: "tool", ToolInput: json.RawMessage(`{}`)}
+	results := make(chan error, 1)
+	go func() {
+		_, err := runner.Run(t.Context(), event)
+		results <- err
+	}()
+	<-started
+	runner.ReleaseInvocation(event.SessionID, event.InvocationID)
+	close(unblock)
+	if err := <-results; err != nil {
+		t.Fatal(err)
+	}
+	if got := loads.Load(); got != 1 {
+		t.Fatalf("in-flight snapshot loads = %d, want 1", got)
+	}
+	if _, err := runner.Run(t.Context(), event); err != nil {
+		t.Fatal(err)
+	}
+	if got := loads.Load(); got != 2 {
+		t.Fatalf("snapshot loads after released execution = %d, want 2", got)
 	}
 }

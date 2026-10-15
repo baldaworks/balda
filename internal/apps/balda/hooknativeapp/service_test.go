@@ -25,7 +25,7 @@ func TestActivationRequiresPreparedSession(t *testing.T) {
 	definition := hookcmd.Definition{Name: "guard", Event: hookcmd.PreToolUse, Enabled: true, Command: "true", TimeoutSeconds: 1}
 	record := hookcmd.Record{Version: 1, UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano), Definitions: []hookcmd.Definition{definition}}
 	provider := agentconfig.Config{Type: agentconfig.AgentTypeClaudeCodeACP, ClaudeCodeACP: &agentconfig.ACPConfig{Cmd: []string{"fixture"}}}
-	service, err := hooknativeapp.New(hooks.NewRunner(store{record}), store{record}, "provider", map[string]agentconfig.Config{"provider": provider}, claude.New)
+	service, err := hooknativeapp.New(hooks.NewManagedRunner(store{record}), store{record}, "provider", map[string]agentconfig.Config{"provider": provider}, claude.New)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestActivationRequiresPreparedSession(t *testing.T) {
 }
 
 func TestDisabledHooksDoNotRequireNativePreparation(t *testing.T) {
-	service, err := hooknativeapp.New(hooks.NewRunner(store{}), store{}, "provider", map[string]agentconfig.Config{}, claude.New)
+	service, err := hooknativeapp.New(hooks.NewManagedRunner(store{}), store{}, "provider", map[string]agentconfig.Config{}, claude.New)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestDisabledHooksDoNotRequireNativePreparation(t *testing.T) {
 
 func TestValidationRejectsUnsupportedDirectACP(t *testing.T) {
 	record := hookcmd.Record{Version: 1, UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano)}
-	service, err := hooknativeapp.New(hooks.NewRunner(store{record}), store{record}, "provider", map[string]agentconfig.Config{"provider": {Type: agentconfig.AgentTypeGenericACP, GenericACP: &agentconfig.ACPConfig{Cmd: []string{"fixture"}}}}, claude.New)
+	service, err := hooknativeapp.New(hooks.NewManagedRunner(store{record}), store{record}, "provider", map[string]agentconfig.Config{"provider": {Type: agentconfig.AgentTypeGenericACP, GenericACP: &agentconfig.ACPConfig{Cmd: []string{"fixture"}}}}, claude.New)
 	if err != nil {
 		t.Fatal(err)
 	}

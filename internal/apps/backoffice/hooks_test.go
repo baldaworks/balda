@@ -32,7 +32,7 @@ func TestHooksHTTPManagement(t *testing.T) {
 				t.Fatal(err)
 			}
 			management := hooks.NewManagement(provider.HookManagement())
-			native, err := hooknativeapp.New(hooks.NewRunner(provider.HookManagement()), provider.HookManagement(), "provider", map[string]agentconfig.Config{"provider": {Type: agentconfig.AgentTypeClaudeCodeACP, ClaudeCodeACP: &agentconfig.ACPConfig{Cmd: []string{"fixture-acp"}}}}, claude.New)
+			native, err := hooknativeapp.New(hooks.NewManagedRunner(provider.HookManagement()), provider.HookManagement(), "provider", map[string]agentconfig.Config{"provider": {Type: agentconfig.AgentTypeClaudeCodeACP, ClaudeCodeACP: &agentconfig.ACPConfig{Cmd: []string{"fixture-acp"}}}}, claude.New)
 			if err != nil {
 				t.Fatal(err)
 			}

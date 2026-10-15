@@ -47,7 +47,7 @@ var Module = fx.Module("balda_agent_hooks",
 			management.ConfigureValidator(native)
 			return management
 		},
-		func(provider state.Provider) *hooks.Runner { return hooks.NewRunner(provider.HookManagement()) },
+		func(provider state.Provider) *hooks.Runner { return hooks.NewManagedRunner(provider.HookManagement()) },
 		func(p adapterParams) session.HookRunner {
 			return runtimeAdapter{runner: p.Runner, provider: p.Provider, native: p.Native}
 		},

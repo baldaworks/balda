@@ -61,7 +61,7 @@ func runHooksApplicationBrowser(t *testing.T, base string, width int) {
 		t.Fatal(err)
 	}
 	management := hooks.NewManagement(provider.HookManagement())
-	native, err := hooknativeapp.New(hooks.NewRunner(provider.HookManagement()), provider.HookManagement(), "provider", map[string]agentconfig.Config{"provider": {Type: agentconfig.AgentTypeClaudeCodeACP, ClaudeCodeACP: &agentconfig.ACPConfig{Cmd: []string{"fixture-acp"}}}}, claude.New)
+	native, err := hooknativeapp.New(hooks.NewManagedRunner(provider.HookManagement()), provider.HookManagement(), "provider", map[string]agentconfig.Config{"provider": {Type: agentconfig.AgentTypeClaudeCodeACP, ClaudeCodeACP: &agentconfig.ACPConfig{Cmd: []string{"fixture-acp"}}}}, claude.New)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func runHooksApplicationBrowser(t *testing.T, base string, width int) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runner := hooks.NewRunner(provider.HookManagement())
+	runner := hooks.NewManagedRunner(provider.HookManagement())
 	server.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/__hook_test/run" {
 			handler.ServeHTTP(w, r)
