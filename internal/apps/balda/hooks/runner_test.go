@@ -63,6 +63,13 @@ func TestHookCommandHelper(t *testing.T) {
 		time.Sleep(5 * time.Second)
 	case "oversize":
 		_, _ = fmt.Fprint(os.Stdout, strings.Repeat("x", maxOutputBytes+1))
+	case "oversize-wait", "stderr-oversize-wait":
+		output := os.Stdout
+		if mode == "stderr-oversize-wait" {
+			output = os.Stderr
+		}
+		_, _ = fmt.Fprint(output, strings.Repeat("x", maxOutputBytes+1))
+		time.Sleep(30 * time.Second)
 	case "unknown-field":
 		_, _ = fmt.Fprint(os.Stdout, `{"unexpected":true}`)
 	case "trailing":
@@ -179,5 +186,22 @@ func TestRunnerTimeoutIncludesWaitingForProcessSlot(t *testing.T) {
 	_, err := runner.Run(t.Context(), hookcmd.Event{Name: hookcmd.UserPromptSubmit, SessionID: "session", CWD: t.TempDir()})
 	if !errors.Is(err, hookcmd.ErrExecution) || time.Since(started) > 3*time.Second {
 		t.Fatalf("queued hook = %v, duration = %v", err, time.Since(started))
+	}
+}
+
+func TestRunnerOutputLimitTerminatesUnlimitedCommand(t *testing.T) {
+	for _, mode := range []string{"oversize-wait", "stderr-oversize-wait"} {
+		t.Run(mode, func(t *testing.T) {
+			definition := helperDefinition(t, "guard", mode)
+			definition.TimeoutSeconds = 0
+			runner := NewRunner(recordFixture{record: hookcmd.Record{Version: 1, UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano), Definitions: []hookcmd.Definition{definition}}})
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+			started := time.Now()
+			_, err := runner.Run(ctx, hookcmd.Event{Name: hookcmd.UserPromptSubmit, SessionID: "session", CWD: t.TempDir()})
+			if !errors.Is(err, hookcmd.ErrExecution) || ctx.Err() != nil {
+				t.Fatalf("oversized unlimited command = %v, duration=%v, caller=%v", err, time.Since(started), ctx.Err())
+			}
+		})
 	}
 }
