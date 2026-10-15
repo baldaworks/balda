@@ -79,6 +79,9 @@ func TestHookCommandHelper(t *testing.T) {
 	case "first", "second":
 		data, _ := json.Marshal(hookcmd.Result{AdditionalContext: mode})
 		_, _ = os.Stdout.Write(data)
+	case "full-context":
+		data, _ := json.Marshal(hookcmd.Result{AdditionalContext: strings.Repeat("x", maxContextBytes)})
+		_, _ = os.Stdout.Write(data)
 	default:
 		os.Exit(3)
 	}
@@ -203,5 +206,14 @@ func TestRunnerOutputLimitTerminatesUnlimitedCommand(t *testing.T) {
 				t.Fatalf("oversized unlimited command = %v, duration=%v, caller=%v", err, time.Since(started), ctx.Err())
 			}
 		})
+	}
+}
+
+func TestRunnerAcceptsCompleteContextBudget(t *testing.T) {
+	definition := helperDefinition(t, "context", "full-context")
+	runner := NewRunner(recordFixture{record: hookcmd.Record{Version: 1, UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano), Definitions: []hookcmd.Definition{definition}}})
+	result, err := runner.Run(t.Context(), hookcmd.Event{Name: hookcmd.UserPromptSubmit, SessionID: "session", CWD: t.TempDir()})
+	if err != nil || result.AdditionalContext != strings.Repeat("x", maxContextBytes) {
+		t.Fatalf("full context budget = %d bytes, %v", len(result.AdditionalContext), err)
 	}
 }
