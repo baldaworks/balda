@@ -46,12 +46,12 @@ Use this map to find the authoritative runtime contracts.
   resolve from that pin; MCP is supplied when the provider session is created
   or restored. Plugin aliases still execute only through the independent
   `CommandActor`.
-- Tool-hook enforcement is selected by execution capability rather than provider
-  name. ADK-managed tools use a host plugin on the stock ADK runner;
-  provider-native adapters remain a synchronous fallback, while observed events
-  never claim pre-execution denial or argument rewriting. Agent Plugins packages
-  contribute executable hooks through an explicitly activated, exact-revision
-  Balda extension descriptor.
+- `agentfactory.Factory` returns only `agent.Agent`. Balda-owned user-facing
+  runners are created through one host `agent.RunnerFactory`, which attaches the
+  Balda plugin through the stock ADK `PluginConfig`. Provider-native adapters
+  remain a separate fallback for tools executed inside ACP processes. Agent
+  Plugins packages contribute executable hooks through an explicitly activated,
+  exact-revision Balda extension descriptor.
 - `actorcmd` is the canonical leaf package for Balda actor targets, namespaces, subjects, headers, and job scope metadata; `execution` re-exports that taxonomy as the runtime-facing compatibility facade.
 - `deliverycmd` is the leaf package for transport-neutral delivery contracts: locator, opaque delivery capability, progress policy, delivery payloads, and adapter-facing delivery operations. `deliveryfmt` resolves that capability through one immutable registry shared by prompt and delivery paths.
 - `state` owns storage, read models, and embedded Goose schema/data upgrades,
