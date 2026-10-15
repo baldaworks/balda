@@ -10,9 +10,10 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
 )
 
-// configuredAuthorization exposes current file values only to capture policy.
-type configuredAuthorization interface {
-	MCPAuthorizationDefinition(ctx context.Context, publicID string) (mcpcmd.Definition, mcpcmd.LaunchValues, error)
+// configuredPrivateDefinition exposes current file values only to trusted
+// protected-revision construction and transient diagnostics.
+type configuredPrivateDefinition interface {
+	MCPPrivateDefinition(ctx context.Context, publicID string) (mcpcmd.Definition, mcpcmd.LaunchValues, error)
 }
 
 // PrepareAuthorization loads a managed revision or captures a file-owned
@@ -63,11 +64,11 @@ func (s *Definitions) PrepareAuthorization(ctx context.Context, request mcpcmd.P
 		}
 		c = mcpcmd.Connection{ID: rand.Text(), PublicID: publicID, Source: mcpcmd.SourceConfig, Enabled: true, CreatedAt: request.Authority.At}
 	}
-	configured, ok := s.configured.(configuredAuthorization)
+	configured, ok := s.configured.(configuredPrivateDefinition)
 	if !ok {
 		return mcpcmd.Revision{}, mcpcmd.ErrUnavailable
 	}
-	d, values, err := configured.MCPAuthorizationDefinition(ctx, c.PublicID)
+	d, values, err := configured.MCPPrivateDefinition(ctx, c.PublicID)
 	if err != nil {
 		return mcpcmd.Revision{}, safeOperationError(err)
 	}

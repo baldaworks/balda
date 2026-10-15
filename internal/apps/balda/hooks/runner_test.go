@@ -140,3 +140,44 @@ func TestRunnerPropagatesCancellationWithoutRunningCommand(t *testing.T) {
 		t.Fatalf("canceled Run() error = %v, duration = %v", err, time.Since(started))
 	}
 }
+
+func TestRunnerConfiguredTimeouts(t *testing.T) {
+	for _, seconds := range []int{0, 3600} {
+		t.Run(fmt.Sprint(seconds), func(t *testing.T) {
+			definition := helperDefinition(t, "guard", "context")
+			definition.TimeoutSeconds = seconds
+			runner := NewRunner(recordFixture{record: hookcmd.Record{Version: 1, UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano), Definitions: []hookcmd.Definition{definition}}})
+			result, err := runner.Run(t.Context(), hookcmd.Event{Name: hookcmd.UserPromptSubmit, SessionID: "session", CWD: t.TempDir(), Prompt: "configured timeout"})
+			if err != nil || result.AdditionalContext != "configured timeout" {
+				t.Fatalf("Run(timeout=%d) = %+v, %v", seconds, result, err)
+			}
+		})
+	}
+}
+
+func TestRunnerNoDeadlineStillHonorsCallerCancellation(t *testing.T) {
+	definition := helperDefinition(t, "guard", "timeout")
+	definition.TimeoutSeconds = 0
+	runner := NewRunner(recordFixture{record: hookcmd.Record{Version: 1, UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano), Definitions: []hookcmd.Definition{definition}}})
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	_, err := runner.Run(ctx, hookcmd.Event{Name: hookcmd.UserPromptSubmit, SessionID: "session", CWD: t.TempDir()})
+	if !errors.Is(err, hookcmd.ErrExecution) || time.Since(started) > 2*time.Second {
+		t.Fatalf("canceled unlimited hook = %v, duration = %v", err, time.Since(started))
+	}
+}
+
+func TestRunnerTimeoutIncludesWaitingForProcessSlot(t *testing.T) {
+	definition := helperDefinition(t, "guard", "context")
+	definition.TimeoutSeconds = 1
+	runner := NewRunner(recordFixture{record: hookcmd.Record{Version: 1, UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano), Definitions: []hookcmd.Definition{definition}}})
+	for range cap(runner.gate) {
+		runner.gate <- struct{}{}
+	}
+	started := time.Now()
+	_, err := runner.Run(t.Context(), hookcmd.Event{Name: hookcmd.UserPromptSubmit, SessionID: "session", CWD: t.TempDir()})
+	if !errors.Is(err, hookcmd.ErrExecution) || time.Since(started) > 3*time.Second {
+		t.Fatalf("queued hook = %v, duration = %v", err, time.Since(started))
+	}
+}

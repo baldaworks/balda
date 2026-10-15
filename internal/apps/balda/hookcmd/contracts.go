@@ -74,7 +74,7 @@ type Definition struct {
 	Args           []string  `json:"args,omitempty"`
 	Provider       string    `json:"provider,omitempty"`
 	Matcher        string    `json:"matcher,omitempty"`
-	TimeoutSeconds int       `json:"timeout_seconds"`
+	TimeoutSeconds int       `json:"timeout_seconds"` // Zero waits until the caller cancels.
 }
 
 // ValidName reports whether a name is a canonical browser-safe identity.
@@ -92,7 +92,7 @@ func ValidName(name string) bool {
 
 // Validate checks executable input bounds and the implemented event contract.
 func (d Definition) Validate() error {
-	if !ValidName(d.Name) || !d.Event.Valid() || strings.TrimSpace(d.Command) == "" || len(d.Command) > 4096 || strings.ContainsRune(d.Command, 0) || len(d.Args) > 32 || len(d.Provider) > 128 || strings.TrimSpace(d.Provider) != d.Provider || d.TimeoutSeconds < 1 || d.TimeoutSeconds > 120 || len(d.Matcher) > 256 {
+	if !ValidName(d.Name) || !d.Event.Valid() || strings.TrimSpace(d.Command) == "" || len(d.Command) > 4096 || strings.ContainsRune(d.Command, 0) || len(d.Args) > 32 || len(d.Provider) > 128 || strings.TrimSpace(d.Provider) != d.Provider || d.TimeoutSeconds < 0 || uint64(d.TimeoutSeconds) > uint64(math.MaxInt64/int64(time.Second)) || len(d.Matcher) > 256 {
 		return ErrInvalid
 	}
 	if _, err := regexp.Compile(d.Matcher); err != nil {

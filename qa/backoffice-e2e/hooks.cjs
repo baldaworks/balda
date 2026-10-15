@@ -31,6 +31,7 @@ assert.equal(new URL(origin).hostname, '127.0.0.1', 'isolated loopback fixture')
     await page.getByLabel(/^Name/).fill('guard');
     await page.getByLabel(/^Executable/).fill('/bin/sh');
     await page.getByLabel(/^Arguments/).fill(JSON.stringify([script]));
+    await page.getByLabel('Timeout in seconds', { exact: true }).fill('3600');
     await page.getByLabel('Enable this hook', { exact: true }).check();
     await page.getByRole('button', { name: 'Create hook', exact: true }).click();
     await page.getByRole('link', { name: 'Edit guard', exact: true }).waitFor();
@@ -39,9 +40,11 @@ assert.equal(new URL(origin).hostname, '127.0.0.1', 'isolated loopback fixture')
     assert.equal(run.status(), 200, 'actual managed command execution');
     await page.getByRole('link', { name: 'Edit guard', exact: true }).click();
     await page.getByRole('heading', { name: 'Edit agent hook', exact: true }).waitFor();
+    assert.equal(await page.getByLabel('Timeout in seconds', { exact: true }).inputValue(), '3600', 'configured deadline retained');
     const stale = await context.newPage();
     await stale.goto(`${url}/hooks/guard`);
     await page.getByLabel('Enable this hook', { exact: true }).uncheck();
+    await page.getByLabel('Timeout in seconds', { exact: true }).fill('0');
     await page.getByRole('button', { name: 'Save hook', exact: true }).click();
     await page.getByRole('link', { name: 'Edit guard', exact: true }).waitFor();
     run = await context.request.post(`${origin}/__hook_test/run`);
@@ -55,6 +58,7 @@ assert.equal(new URL(origin).hostname, '127.0.0.1', 'isolated loopback fixture')
     await stale.close();
     await page.getByRole('link', { name: 'Edit guard', exact: true }).click();
     await page.getByRole('heading', { name: 'Edit agent hook', exact: true }).waitFor();
+    assert.equal(await page.getByLabel('Timeout in seconds', { exact: true }).inputValue(), '0', 'unlimited deadline retained');
     await screen('disabled-editor');
     await page.getByLabel('Confirm deleting this hook.', { exact: true }).check();
     await page.getByRole('button', { name: 'Delete hook', exact: true }).click();

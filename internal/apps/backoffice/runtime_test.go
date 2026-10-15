@@ -38,8 +38,9 @@ func TestRuntimeSharedHandlerUsesIndependentBrowserMount(t *testing.T) {
 	if err := runtime.ConfigureWebhooksOperations(&webhooksHTTPFixture{items: map[string]webhookroutecmd.Item{}}); err != nil {
 		t.Fatal(err)
 	}
-	legacyAuthorizations := &mcpAuthorizationFixture{item: mcpcmd.Item{Connection: mcpcmd.Connection{ID: "worker"}}}
-	if err := runtime.ConfigureMCPOperations(&mcpHTTPFixture{}); err != nil {
+	item := mcpcmd.Item{Connection: mcpcmd.Connection{ID: "worker", Source: mcpcmd.SourceManaged}, Definition: mcpcmd.Definition{Transport: mcpcmd.TransportHTTP, OAuth: true}}
+	legacyAuthorizations := &mcpAuthorizationFixture{item: item}
+	if err := runtime.ConfigureMCPOperations(&mcpHTTPFixture{items: []mcpcmd.Item{item}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := runtime.ConfigureMCPAuthorizations(legacyAuthorizations); err != nil {
@@ -48,8 +49,8 @@ func TestRuntimeSharedHandlerUsesIndependentBrowserMount(t *testing.T) {
 	if _, err := runtime.Handler(t.Context(), shared, HandlerServices{}); err == nil {
 		t.Fatal("shared handler reused legacy MCP operations")
 	}
-	sharedAuthorizations := &mcpAuthorizationFixture{item: mcpcmd.Item{Connection: mcpcmd.Connection{ID: "worker"}}}
-	handler, err := runtime.Handler(t.Context(), shared, HandlerServices{MCP: &mcpHTTPFixture{}, MCPAuthorizations: sharedAuthorizations})
+	sharedAuthorizations := &mcpAuthorizationFixture{item: item}
+	handler, err := runtime.Handler(t.Context(), shared, HandlerServices{MCP: &mcpHTTPFixture{items: []mcpcmd.Item{item}}, MCPAuthorizations: sharedAuthorizations})
 	if err != nil {
 		t.Fatal(err)
 	}

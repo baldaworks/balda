@@ -152,6 +152,40 @@ func (s *Grants) RequestCredentials(ctx context.Context, binding mcpcmd.AuthBind
 	return token.Secrets, nil
 }
 
+// DiagnosticAccessToken returns an already-valid bearer for an exact grant.
+// It never discovers metadata, refreshes credentials, changes status, or saves.
+func (s *Grants) DiagnosticAccessToken(ctx context.Context, binding mcpcmd.AuthBinding, requiredScopes []string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", mcpcmd.ErrUnavailable
+	}
+	g, found, err := s.store.GetMCPGrant(ctx, binding)
+	if err != nil {
+		return "", safeOperationError(err)
+	}
+	if !found || g.Status == mcpcmd.GrantAuthRequired {
+		return "", mcpcmd.ErrAuthRequired
+	}
+	if g.Binding != binding {
+		return "", mcpcmd.ErrCredentials
+	}
+	if g.Status == mcpcmd.GrantDisconnected {
+		return "", mcpcmd.ErrDisconnected
+	}
+	if !containsScopes(g.Scopes, requiredScopes) {
+		return "", mcpcmd.ErrAuthRequired
+	}
+	secrets, err := s.credentials.OpenGrant(g)
+	if err != nil {
+		return "", safeOperationError(err)
+	}
+	now := time.Now().UTC()
+	client := OAuthClient{ID: g.Binding.ClientID, Secret: secrets.ClientSecret, AuthMethod: g.TokenEndpointAuthMethod, SecretExpiresAt: g.ClientSecretExpiresAt}
+	if !validOAuthClient(client, OAuthMetadata{}, now) || (!g.AccessExpiresAt.IsZero() && !g.AccessExpiresAt.After(now.Add(30*time.Second))) {
+		return "", mcpcmd.ErrAuthRequired
+	}
+	return secrets.AccessToken, nil
+}
+
 // Disconnect advances the durable generation independently of a held refresh.
 func (s *Grants) Disconnect(ctx context.Context, binding mcpcmd.AuthBinding, expected uint64, authority mcpcmd.Authority) error {
 	if err := s.store.CheckMCPAuthority(ctx, authority); err != nil {

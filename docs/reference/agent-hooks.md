@@ -43,8 +43,13 @@ events, or the source for lifecycle events. An empty matcher matches everything.
 complete configuration record. Saved changes apply to the next matching event;
 already-running invocations keep their selected definitions.
 
-Timeouts are 1–120 seconds per command. The complete event has a two-minute
-budget, including time waiting for one of the application's 16 process slots.
+**Timeout in seconds** accepts nonnegative whole seconds: for example, `30`,
+`300` or `3600`. `0` disables the hook's own deadline. There is no fixed overall
+event deadline; matching hooks run sequentially with their individual timeouts.
+A positive timeout includes waiting for one of the application's 16 process slots.
+Values must fit the host's integer and Go duration representation (up to
+9,223,372,036 seconds on 64-bit hosts); overflowing values are rejected.
+The caller's cancellation or earlier deadline always wins, including with `0`.
 Session-end notification shares the ten-second session cleanup budget. Unix
 timeout/cancellation terminates the hook process group. Standard output and
 standard error are each bounded to 64 KiB. Event JSON is bounded to 256 KiB;
@@ -104,6 +109,119 @@ but is not included in public exception messages or audit.
 On `UserPromptSubmit`, `additional_context` appends bounded context to the
 provider input. That field is rejected for the other lifecycle events. It does
 not weaken Balda's existing permissions or change the selected runtime.
+
+## Usage examples
+
+These examples use Python 3 and the standard library. Save scripts on the
+machine/container running Balda, outside agent-writable workspaces, and make
+them readable by the Balda operating-system user. Use the actual absolute Python
+executable path on that host; `/usr/bin/python3` below is illustrative. Scripts
+need no executable bit when passed as an argument to Python.
+
+Only protocol JSON belongs on stdout. Send diagnostics to stderr; a nonzero
+exit other than `2` means execution failure. Programs called by a script must
+have their stdout captured or redirected so it cannot corrupt the verdict.
+Saving a definition does not run its executable; verify it manually before
+enabling it. Provider IDs and paths below are examples, not configuration that
+Balda creates automatically.
+
+### Add project working conventions to each prompt
+
+Save `/opt/balda/hooks/project_context.py`:
+
+```python
+import json
+import sys
+
+event = json.load(sys.stdin)
+if event["hook_event_name"] != "UserPromptSubmit":
+    raise SystemExit(2)
+json.dump({
+    "additional_context": (
+        "Follow the project's existing formatting and naming conventions. "
+        "Report which verification commands actually ran and their results."
+    )
+}, sys.stdout)
+```
+
+In **Operations → Agent hooks → Add hook**, enter:
+
+| Field | Value |
+| --- | --- |
+| Name | `project-context` |
+| Event | `UserPromptSubmit` |
+| Executable | `/usr/bin/python3` |
+| Arguments | `["/opt/balda/hooks/project_context.py"]` |
+| Provider ID | Leave empty, or enter an existing Balda provider ID |
+| Source matcher | Leave empty |
+| Timeout in seconds | `30` |
+| Enable this hook | Checked |
+
+Verify the command independently, then submit an ordinary Balda turn. The
+provider input will contain the original prompt followed by this context:
+
+```bash
+printf '%s\n' '{"hook_event_name":"UserPromptSubmit","session_id":"example","cwd":"/srv/project","prompt":"Explain the project"}' \
+  | /usr/bin/python3 /opt/balda/hooks/project_context.py
+```
+
+The result is one JSON object with `additional_context`. This does not replace
+existing agent instructions, permissions, or the user's prompt. Disable the
+definition to stop adding context on subsequent turns.
+
+### Record a session-close event with a local program
+
+Save `/opt/balda/hooks/record_session_end.py`:
+
+```python
+import datetime
+import json
+import os
+import sys
+
+event = json.load(sys.stdin)
+if event["hook_event_name"] != "SessionEnd":
+    raise SystemExit(2)
+entry = {
+    "at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    "event": event["hook_event_name"],
+    "provider": event.get("provider", ""),
+    "source": event.get("source", ""),
+}
+fd = os.open(sys.argv[1], os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+with os.fdopen(fd, "a", encoding="utf-8") as log:
+    log.write(json.dumps(entry) + "\n")
+json.dump({"decision": "allow"}, sys.stdout)
+```
+
+Create the destination directory and grant the Balda user write access before
+enabling this definition:
+
+| Field | Value |
+| --- | --- |
+| Name | `record-session-end` |
+| Event | `SessionEnd` |
+| Executable | `/usr/bin/python3` |
+| Arguments | `["/opt/balda/hooks/record_session_end.py", "/var/lib/balda/hooks/session-events.jsonl"]` |
+| Provider ID | Leave empty |
+| Source matcher | `^close$` |
+| Timeout in seconds | `5` |
+| Enable this hook | Checked |
+
+Verify it using synthetic input:
+
+```bash
+printf '%s\n' '{"hook_event_name":"SessionEnd","session_id":"example","cwd":"/srv/project","provider":"example-provider","source":"close"}' \
+  | /usr/bin/python3 /opt/balda/hooks/record_session_end.py /tmp/example-session-events.jsonl
+```
+
+The command returns `{"decision":"allow"}` and appends a JSON line to the
+selected file. The example deliberately omits prompts, responses and tool
+arguments. Closing or resetting an active Balda session emits the real event;
+closing an unactivated lazy session does not. Keep the command short: session
+cleanup continues after its ten-second budget even if this hook requests a
+longer or unlimited timeout. This is a best-effort local observation, not a
+durable delivery queue. Log rotation and retention belong to the operator.
 
 ## Native adapters
 

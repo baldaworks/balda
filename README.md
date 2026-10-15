@@ -70,13 +70,15 @@ show configuration, not a live health check. See the
 
 Administrators can open **MCP** in Backoffice to inspect configured servers and
 create, edit, probe, disable or delete managed connections. Configuration entries
-are read-only. HTTP/SSE servers offer OAuth on creation and detail, with optional
-client settings; enter service account credentials at the external service.
-OAuth is managed in Backoffice even for configuration-owned addresses. Protected
-values are write-only, and **Available** tools are shown separately from OAuth
-status. Native browser/device authorization
-uses the current trusted definition, including explicit configured capture;
-saved grants can retry tool attachment without repeating OAuth. See [MCP management](docs/reference/backoffice.md#mcp-management)
+are read-only except for the explicit **Refresh state** diagnostic; passive page
+loads do not probe them, and the diagnostic result is not saved as readiness.
+OAuth onboarding and later status/actions apply only to eligible
+Backoffice-managed HTTP/SSE connections with OAuth enabled. Configuration-owned
+entries and managed connections with OAuth disabled remain OAuth-neutral.
+Protected values are write-only, and **Available** tools are shown separately
+from OAuth status. Native browser/device authorization uses the current trusted
+managed definition; saved grants can retry tool attachment without repeating
+OAuth. See [MCP management](docs/reference/backoffice.md#mcp-management)
 for provider targeting and value operations.
 
 Configured MCP availability does not block startup: both hosted and ACP providers
@@ -534,8 +536,12 @@ long-lived npm publish token. Each `@baldaworks/balda*` package trusts the
 
 Administrators configure agent lifecycle hooks in **Operations → Agent hooks**.
 Approved commands can validate a session start, reject a prompt, check a final
-answer, or observe session closure. See [Managed agent hooks](docs/reference/agent-hooks.md)
-for configuration, executable privileges, limits and lifecycle behavior.
+answer, or observe session closure. The Web UI accepts a timeout in whole
+seconds; `0` disables the hook's own deadline, while session cancellation still
+applies. See [Managed agent hooks](docs/reference/agent-hooks.md) for configuration,
+executable privileges and lifecycle behavior, and the [usage examples](docs/reference/agent-hooks.md#usage-examples)
+for ready-to-copy scripts and their Web UI settings: add project conventions to
+prompts or record session-close events with a local program.
 
 Managed `PreToolUse`/`PostToolUse` hooks have adapters for Claude Code, Codex and
 OpenCode ACP on Linux/macOS. Configure them in **Operations → Agent hooks** and

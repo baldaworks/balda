@@ -60,7 +60,7 @@ func TestHooksHTTPManagement(t *testing.T) {
 				handler.ServeHTTP(response, request)
 				return response
 			}
-			form := url.Values{"name": {"guard"}, "event": {"UserPromptSubmit"}, "command": {"/usr/bin/true"}, "args": {`["command-canary"]`}, "timeout_seconds": {"10"}, "expected_version": {"0"}, "enabled": {"yes"}, "csrf_token": {admin.csrf}}
+			form := url.Values{"name": {"guard"}, "event": {"UserPromptSubmit"}, "command": {"/usr/bin/true"}, "args": {`["command-canary"]`}, "timeout_seconds": {"3600"}, "expected_version": {"0"}, "enabled": {"yes"}, "csrf_token": {admin.csrf}}
 			mutate := func(path string, values url.Values, fragment bool) *httptest.ResponseRecorder {
 				return performAccessMutation(t, handler, config, base+path, values, admin.access, admin.csrf, fragment)
 			}
@@ -92,6 +92,7 @@ func TestHooksHTTPManagement(t *testing.T) {
 			}
 			form.Set("expected_version", "1")
 			form.Set("enabled", "")
+			form.Set("timeout_seconds", "0")
 			if response := mutate("/hooks/guard", form, true); response.Code != 204 || !strings.Contains(response.Header().Get("HX-Location"), base+"/hooks") {
 				t.Fatalf("update = %d", response.Code)
 			}

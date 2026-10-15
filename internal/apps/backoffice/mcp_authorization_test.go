@@ -22,8 +22,9 @@ func TestMCPBrowserAuthorizationReturnsWithCallbackCredential(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	flows := &mcpAuthorizationFixture{item: mcpcmd.Item{Connection: mcpcmd.Connection{ID: "worker"}}}
-	app.mcp, app.mcpAuthorizations = &mcpHTTPFixture{}, flows
+	item := mcpcmd.Item{Connection: mcpcmd.Connection{ID: "worker", Source: mcpcmd.SourceManaged}, Definition: mcpcmd.Definition{Transport: mcpcmd.TransportHTTP, OAuth: true}}
+	flows := &mcpAuthorizationFixture{item: item}
+	app.mcp, app.mcpAuthorizations = &mcpHTTPFixture{items: []mcpcmd.Item{item}}, flows
 	handler, err := app.handler()
 	if err != nil {
 		t.Fatal(err)
@@ -147,7 +148,7 @@ func TestMCPCallbackFailureLeavesOnlyMetadataInBrowserLocation(t *testing.T) {
 	}
 }
 
-func TestMCPAuthorizationNativeGuardsAndConfiguredSideState(t *testing.T) {
+func TestMCPAuthorizationNativeGuardsAndManagedSideState(t *testing.T) {
 	provider, config := newHTTPAppTestState(t)
 	now := time.Now().UTC()
 	for _, role := range []usercmd.Role{usercmd.RoleAdministrator, usercmd.RoleOperator} {
@@ -158,7 +159,7 @@ func TestMCPAuthorizationNativeGuardsAndConfiguredSideState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	item := mcpcmd.Item{Connection: mcpcmd.Connection{ID: "config:worker", PublicID: "worker", Source: mcpcmd.SourceConfig, Enabled: true, CurrentRevisionID: "revision"}, Definition: mcpcmd.Definition{Transport: mcpcmd.TransportHTTP, URL: "https://worker.example/mcp", OAuth: true}, Status: mcpcmd.StatusUnavailable}
+	item := mcpcmd.Item{Connection: mcpcmd.Connection{ID: "managed-worker", PublicID: "worker", Source: mcpcmd.SourceManaged, Enabled: true, CurrentRevisionID: "revision"}, Definition: mcpcmd.Definition{Transport: mcpcmd.TransportHTTP, URL: "https://worker.example/mcp", OAuth: true}, Status: mcpcmd.StatusUnavailable}
 	app.mcp = &mcpHTTPFixture{items: []mcpcmd.Item{item}}
 	flows := &mcpAuthorizationFixture{item: item}
 	app.mcpAuthorizations = flows
@@ -168,7 +169,7 @@ func TestMCPAuthorizationNativeGuardsAndConfiguredSideState(t *testing.T) {
 	}
 	admin := loginHTTPAppSession(t, handler, config, string(usercmd.RoleAdministrator))
 	operator := loginHTTPAppSession(t, handler, config, string(usercmd.RoleOperator))
-	path := "/mcp/connections/config:worker/oauth/device"
+	path := "/mcp/connections/managed-worker/oauth/device"
 	for _, tc := range []struct {
 		name, access, csrf string
 		hx                 bool
@@ -181,7 +182,7 @@ func TestMCPAuthorizationNativeGuardsAndConfiguredSideState(t *testing.T) {
 	} {
 		for _, flow := range []string{"browser", "device"} {
 			t.Run(tc.name+" "+flow, func(t *testing.T) {
-				w := performAccessMutation(t, handler, config, "/mcp/connections/config:worker/oauth/"+flow, url.Values{"csrf_token": {tc.csrf}, "client_secret": {"must-not-echo"}}, tc.access, tc.csrf, tc.hx)
+				w := performAccessMutation(t, handler, config, "/mcp/connections/managed-worker/oauth/"+flow, url.Values{"csrf_token": {tc.csrf}, "client_secret": {"must-not-echo"}}, tc.access, tc.csrf, tc.hx)
 				if w.Code != tc.want {
 					t.Fatalf("native begin = %d, want %d", w.Code, tc.want)
 				}
@@ -193,7 +194,7 @@ func TestMCPAuthorizationNativeGuardsAndConfiguredSideState(t *testing.T) {
 	}
 	w := performAccessMutation(t, handler, config, path, url.Values{"csrf_token": {admin.csrf}, "client_id": {"client"}, "client_auth_method": {"none"}}, admin.access, admin.csrf, false)
 	if w.Code != 200 || flows.begins != 1 {
-		t.Fatalf("configuredsideauthorization=%d/%d", w.Code, flows.begins)
+		t.Fatalf("managed authorization = %d/%d", w.Code, flows.begins)
 	}
 	if w.Header().Get("Referrer-Policy") != "same-origin" {
 		t.Fatal("native device cancellation would lose its trusted Origin")
@@ -225,15 +226,65 @@ func TestMCPAuthorizationNativeGuardsAndConfiguredSideState(t *testing.T) {
 	}
 }
 
+func TestMCPSavedAuthorizationActionsRequireEligibleManagedOAuth(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		source mcpcmd.Source
+		oauth  bool
+	}{
+		{"configuration owned", mcpcmd.SourceConfig, true},
+		{"managed OAuth disabled", mcpcmd.SourceManaged, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			provider, config := newHTTPAppTestState(t)
+			now := time.Now().UTC()
+			createAccessTestUser(t, provider.Users(), usercmd.User{ID: "admin", Username: "admin", NormalizedUsername: "admin", DisplayName: "admin", Role: usercmd.RoleAdministrator, Status: usercmd.StatusActive, Primary: true, Version: 1, Credential: usercmd.Credential{State: usercmd.CredentialStateActive, Version: 1}, CreatedAt: now, UpdatedAt: now})
+			app, err := newHTTPApp(provider.Users(), config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			item := mcpcmd.Item{Connection: mcpcmd.Connection{ID: "worker", PublicID: "worker", Source: tc.source, Enabled: true, CurrentRevisionID: "revision"}, Definition: mcpcmd.Definition{Transport: mcpcmd.TransportHTTP, URL: "https://worker.example/mcp", OAuth: tc.oauth}, Status: mcpcmd.StatusUnavailable, Authorization: mcpcmd.GrantAuthorized}
+			app.mcp = &mcpHTTPFixture{items: []mcpcmd.Item{item}}
+			flows := &mcpAuthorizationFixture{item: item}
+			app.mcpAuthorizations = flows
+			handler, err := app.handler()
+			if err != nil {
+				t.Fatal(err)
+			}
+			admin := loginHTTPAppSession(t, handler, config, "admin")
+			for _, action := range []struct {
+				path string
+				form url.Values
+			}{
+				{"/mcp/connections/worker/oauth/browser", url.Values{"csrf_token": {admin.csrf}}},
+				{"/mcp/connections/worker/oauth/device", url.Values{"csrf_token": {admin.csrf}}},
+				{"/mcp/connections/worker/oauth/disconnect", url.Values{"csrf_token": {admin.csrf}, "confirm": {"yes"}}},
+				{"/mcp/connections/worker/oauth/retry", url.Values{"csrf_token": {admin.csrf}, "expected_revision_id": {"revision"}}},
+			} {
+				w := performAccessMutation(t, handler, config, action.path, action.form, admin.access, admin.csrf, false)
+				if w.Code != http.StatusForbidden {
+					t.Fatalf("POST %s = %d, want 403", action.path, w.Code)
+				}
+			}
+			if flows.begins != 0 || flows.disconnects != 0 || flows.retries != 0 {
+				t.Fatal("ineligible saved OAuth action reached owner")
+			}
+		})
+	}
+}
+
 type mcpAuthorizationFixture struct {
-	item      mcpcmd.Item
-	device    mcpcmd.DeviceAuthorization
-	callback  mcpcmd.BrowserCallback
-	begins    int
-	creations int
-	creation  mcpcmd.CreateDefinition
-	begin     mcpcmd.BeginAuthorization
-	beginErr  error
+	item         mcpcmd.Item
+	device       mcpcmd.DeviceAuthorization
+	callback     mcpcmd.BrowserCallback
+	begins       int
+	creations    int
+	creation     mcpcmd.CreateDefinition
+	begin        mcpcmd.BeginAuthorization
+	beginErr     error
+	disconnects  int
+	retries      int
+	currentReads int
 }
 
 func (f *mcpAuthorizationFixture) CreateAndBeginBrowser(ctx context.Context, creation mcpcmd.CreateDefinition, request mcpcmd.BeginAuthorization) (mcpcmd.Item, mcpcmd.BrowserAuthorization, error) {
@@ -270,13 +321,16 @@ func (f *mcpAuthorizationFixture) BeginDevice(_ context.Context, r mcpcmd.BeginA
 func (f *mcpAuthorizationFixture) Device(context.Context, string, mcpcmd.Authority) (mcpcmd.DeviceAuthorization, error) {
 	return f.device, nil
 }
-func (*mcpAuthorizationFixture) CurrentAttempt(context.Context, string, mcpcmd.Authority) (mcpcmd.AuthorizationAttempt, bool, error) {
+func (f *mcpAuthorizationFixture) CurrentAttempt(context.Context, string, mcpcmd.Authority) (mcpcmd.AuthorizationAttempt, bool, error) {
+	f.currentReads++
 	return mcpcmd.AuthorizationAttempt{}, false, nil
 }
 func (*mcpAuthorizationFixture) Cancel(context.Context, string, mcpcmd.Authority) error { return nil }
-func (*mcpAuthorizationFixture) Disconnect(context.Context, string, mcpcmd.Authority) error {
+func (f *mcpAuthorizationFixture) Disconnect(context.Context, string, mcpcmd.Authority) error {
+	f.disconnects++
 	return nil
 }
 func (f *mcpAuthorizationFixture) RetryAuthorization(context.Context, mcpcmd.SelectAuthorization) (mcpcmd.Item, error) {
+	f.retries++
 	return f.item, nil
 }

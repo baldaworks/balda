@@ -135,7 +135,7 @@ func (a *httpApp) hookError(w http.ResponseWriter, r *http.Request, page webui.P
 	status, message := http.StatusServiceUnavailable, "The operation could not be confirmed. Reopen Agent hooks and check the saved configuration before retrying."
 	switch {
 	case errors.Is(err, hookcmd.ErrInvalid):
-		status, message = http.StatusBadRequest, "Check the name, event, executable, JSON argument array, matcher and timeout (1–120 seconds). Confirm deletion when removing a hook."
+		status, message = http.StatusBadRequest, "Check the name, event, executable, JSON argument array, matcher and timeout (whole seconds, 0 for no hook deadline). Confirm deletion when removing a hook."
 	case errors.Is(err, hookcmd.ErrForbidden):
 		status, message = http.StatusForbidden, "Your administrator authority changed. Sign in again."
 	case errors.Is(err, hookcmd.ErrConflict):

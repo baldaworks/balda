@@ -112,7 +112,7 @@ func testStdioActualProviders(t *testing.T, forceACP bool) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				definitions, err := mcpmanage.NewDefinitions(credentials, mcpfx.NewDefinitionStore(p.MCP()), mcpfx.NewConfiguredDefinitions(remote, map[string]agentconfig.Config{"alpha": {MCPServers: configuredIDs}}, "alpha", nil), original, probe)
+				definitions, err := mcpmanage.NewDefinitions(credentials, mcpfx.NewDefinitionStore(p.MCP()), mcpfx.NewConfiguredDefinitions(remote, map[string]agentconfig.Config{"alpha": {MCPServers: configuredIDs}}, "alpha", nil), original, probe, unusedDiagnosticProbe{})
 				if err != nil {
 					t.Fatal(err)
 				}
