@@ -64,6 +64,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorymcp"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionturnapp"
+	"github.com/baldaworks/balda/internal/apps/balda/skillfx"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
@@ -911,6 +912,7 @@ func Module(
 		questions.Module,
 		permissions.Module,
 		pluginapp.Module,
+		skillfx.Module,
 		sessionapp.Module,
 		sessionturnapp.Module,
 		hookfx.Module,

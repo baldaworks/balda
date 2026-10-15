@@ -150,6 +150,10 @@ components:
     in:
       - internal/apps/balda/skillapp
 
+  skill_wiring:
+    in:
+      - internal/apps/balda/skillfx
+
   hook_policy:
     in:
       - internal/apps/balda/hooks
@@ -624,6 +628,18 @@ deps:
   skill_policy:
     mayDependOn:
       - contracts
+    canUse:
+      - hook_policy_dependencies
+    anyVendorDeps: false
+    deepScan: false
+
+  skill_wiring:
+    mayDependOn:
+      - skill_policy
+      - catalog_wiring
+      - storage
+    canUse:
+      - hook_wiring_dependencies
     anyVendorDeps: false
     deepScan: false
 
@@ -1207,6 +1223,7 @@ deps:
 
   composition_root:
     mayDependOn:
+      - skill_wiring
       - native_hook_adapters
       - hook_policy
       - hook_wiring

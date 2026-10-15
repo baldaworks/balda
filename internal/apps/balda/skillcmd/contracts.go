@@ -65,19 +65,21 @@ const (
 
 // Entry is a metadata-only browser projection. It never carries source origins.
 type Entry struct {
-	ID          runtimecatalogcmd.ContributionID
-	Revision    runtimecatalogcmd.RevisionID
-	Name        string
-	Description string
-	Ownership   Ownership
-	SourceLabel string
-	PluginID    string
-	Enabled     bool
-	Pending     bool
+	ID              runtimecatalogcmd.ContributionID
+	CurrentRevision runtimecatalogcmd.RevisionID
+	Revision        runtimecatalogcmd.RevisionID
+	Name            string
+	Description     string
+	Ownership       Ownership
+	SourceLabel     string
+	PluginID        string
+	Enabled         bool
+	Pending         bool
 }
 
 // Inventory combines current contributions and desired managed installations.
 type Inventory struct {
+	Diagnostics   []string
 	Entries       []Entry
 	ExpectedState string
 	Generation    uint64

@@ -2,6 +2,7 @@ package catalogapp
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,7 +42,11 @@ func (r *Runtime) CaptureCandidate(ctx context.Context, root *os.Root, relative 
 	materialized := filepath.Join(stage, "content")
 	source, err := r.loader.MaterializeSkillFromRoot(root, relative, materialized, id)
 	if err != nil {
-		return runtimecatalogcmd.Source{}, err
+		var pathError *os.PathError
+		if errors.As(err, &pathError) {
+			return runtimecatalogcmd.Source{}, skillcmd.ErrUnavailable
+		}
+		return runtimecatalogcmd.Source{}, skillcmd.ErrInvalid
 	}
 	if err := r.archive.Retain(ctx, materialized, source.Descriptor); err != nil {
 		return runtimecatalogcmd.Source{}, err
