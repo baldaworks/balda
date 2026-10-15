@@ -412,3 +412,24 @@ Native hook review extends the hook layout gate to 11 states (88 viewport/mount
 combinations), including pre-tool, post-tool and unsupported capability drafts.
 Run the opt-in native engine gate from `agent-hooks.md` after the ordered layout
 and application browser gates when changing provider adapters.
+
+## Skills layout and application gates
+
+Run the synthetic layout gate before the authenticated application gate, using
+only the optional Playwright tools above:
+
+```bash
+BALDA_BACKOFFICE_BROWSER_TEST=1 BALDA_SKILLS_LAYOUT_SCREENSHOTS=/tmp/balda-skills-screens/layout go test ./internal/apps/backoffice -run '^TestSkillsLayoutBrowser$' -count=1 -v
+```
+
+It uses production Skills templates and assets at root and
+`/balda/backoffice`, at 1440×900, 1024×768, 768×1024 and 390×844. Review the
+mixed plugin/unmanaged/managed inventory, disabled entries, read-only details,
+install and update review, confirmations, empty/long content, 400/409 errors
+and accepted pending recovery. Checks cover exact single-main fragments,
+no-store/private history, Source clearing, labels, keyboard focus, placeholder
+contrast, document/table overflow, nested Skills navigation and actual 409
+HTMX replacement after `htmx:afterSettle`. Inspect the generated screenshots
+before accepting the layout or starting application verification. Fixtures are
+synthetic and cannot mutate application state; Source inputs and credentials
+are excluded from captures.

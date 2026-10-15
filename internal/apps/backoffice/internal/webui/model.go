@@ -21,6 +21,7 @@ const (
 	LocationAccount    Location = "/account"
 	LocationAudit      Location = "/audit"
 	LocationMCP        Location = "/mcp"
+	LocationSkills     Location = "/skills"
 	LocationPlugins    Location = "/plugins"
 	LocationSchedules  Location = "/schedules"
 	LocationWebhooks   Location = "/webhooks"
@@ -32,7 +33,7 @@ const (
 // Valid reports whether a location can be emitted by server navigation.
 func (l Location) Valid() bool {
 	switch l {
-	case LocationHooks, LocationLogin, LocationOverview, LocationAccess, LocationAccount, LocationAudit, LocationMCP, LocationSchedules, LocationWebhooks, LocationAliases, LocationFactMemory, LocationPlugins:
+	case LocationSkills, LocationHooks, LocationLogin, LocationOverview, LocationAccess, LocationAccount, LocationAudit, LocationMCP, LocationSchedules, LocationWebhooks, LocationAliases, LocationFactMemory, LocationPlugins:
 		return true
 	default:
 		return false
@@ -155,6 +156,7 @@ type MFACeremonyView struct {
 
 // Page is the closed safe model accepted by production templates.
 type Page struct {
+	Skills       *SkillsView
 	Plugins      *PluginsView
 	MCP          *MCPView
 	Schedules    *SchedulesView
@@ -216,7 +218,7 @@ func Navigation(capabilities usercmd.BackofficeCapabilities, current Location) [
 	}
 	var operations []NavItem
 	if capabilities.ManagePlugins {
-		operations = append(operations, item("Plugins", LocationPlugins, "bi-box-seam"))
+		operations = append(operations, item("Plugins", LocationPlugins, "bi-box-seam"), item("Skills", LocationSkills, "bi-journal-code"))
 	}
 	if capabilities.ManageMCP {
 		operations = append(operations, item("MCP", LocationMCP, "bi-tools"))
