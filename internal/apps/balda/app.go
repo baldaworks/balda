@@ -40,7 +40,10 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/handlersfx"
 	"github.com/baldaworks/balda/internal/apps/balda/hookbackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/hookfx"
-	"github.com/baldaworks/balda/internal/apps/balda/hooknativecompat"
+	"github.com/baldaworks/balda/internal/apps/balda/hooknative/claude"
+	"github.com/baldaworks/balda/internal/apps/balda/hooknative/codex"
+	"github.com/baldaworks/balda/internal/apps/balda/hooknative/opencode"
+	"github.com/baldaworks/balda/internal/apps/balda/hooknativeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/hooks"
 	"github.com/baldaworks/balda/internal/apps/balda/httpfx"
 	"github.com/baldaworks/balda/internal/apps/balda/internalmcp"
@@ -890,15 +893,19 @@ func Module(
 				agentfactory.WithAvailabilityIndependentMCP(),
 			)
 		}),
-		fx.Provide(func(lifecycle fx.Lifecycle, runner *hooks.Runner, provider baldastate.Provider) (*hooknativecompat.Service, error) {
-			native, err := hooknativecompat.New(runner, provider.HookManagement(), cfg.Balda.Provider, normaCfg.Providers)
+		fx.Provide(func(lifecycle fx.Lifecycle, runner *hooks.Runner, provider baldastate.Provider) (*hooknativeapp.Service, error) {
+			native, err := hooknativeapp.New(runner, provider.HookManagement(), cfg.Balda.Provider, normaCfg.Providers,
+				claude.New,
+				codex.New,
+				opencode.New,
+			)
 			if err != nil {
 				return nil, err
 			}
 			lifecycle.Append(fx.Hook{OnStop: func(context.Context) error { return native.Close() }})
 			return native, nil
 		}),
-		fx.Provide(func(reg *mcpregistry.MapRegistry, reviewer *permissions.Service, native *hooknativecompat.Service) baldaagent.ScopedRuntimeFactory {
+		fx.Provide(func(reg *mcpregistry.MapRegistry, reviewer *permissions.Service, native *hooknativeapp.Service) baldaagent.ScopedRuntimeFactory {
 			factory := catalogapp.NewProviderFactory(normaCfg.Providers, reg,
 				agentfactory.WithPermissionHandler(baldaagent.NewPermissionHandler(reviewer, logger)))
 			factory.ConfigureNativeHooks(native)

@@ -1,4 +1,4 @@
-package hooknativecompat
+package codex
 
 import (
 	"context"
@@ -16,8 +16,16 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/hookcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/hooknative/proxyruntime"
+	"github.com/baldaworks/balda/internal/apps/balda/hooknativehost"
 	"github.com/baldaworks/balda/internal/apps/balda/hookprovider"
 )
+
+type codexRunnerFunc func(context.Context, hookcmd.Event) (hookcmd.Result, error)
+
+func (f codexRunnerFunc) Run(ctx context.Context, event hookcmd.Event) (hookcmd.Result, error) {
+	return f(ctx, event)
+}
 
 // This exercises the installed native hook engine against a loopback Responses
 // fixture. It makes no model requests to an external service and uses an isolated
@@ -35,12 +43,37 @@ func TestCodexNativeDeniesToolBeforeSideEffect(t *testing.T) {
 	}
 	binary := filepath.Join(directory, "balda")
 	build := exec.CommandContext(ctx, "go", "build", "-o", binary, "./cmd/balda")
-	build.Dir = "../../../.."
+	build.Dir = "../../../../.."
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build dispatcher: %v: %s", err, output)
 	}
-	service := testService(t, nativeEngineDefinition(t))
-	path, release, err := service.bind(kindCodex, hookcmd.Event{SessionID: "native-session", Provider: "provider", CWD: directory})
+	service, err := hookprovider.New(codexRunnerFunc(func(ctx context.Context, _ hookcmd.Event) (hookcmd.Result, error) {
+		if os.Getenv("BALDA_NATIVE_HOOK_SLOW_TEST") == "1" {
+			select {
+			case <-time.After(130 * time.Second):
+			case <-ctx.Done():
+				return hookcmd.Result{}, ctx.Err()
+			}
+		}
+		return hookcmd.Result{Decision: hookcmd.DecisionDeny, Reason: "guard rejected this call"}, nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding, err := service.Bind(t.Context(), hookprovider.BindingScope{SessionID: "native-session", Provider: "provider", CWD: directory})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := hooknativehost.WriteMetadata(binding, name); err != nil {
+		t.Fatal(err)
+	}
+	path, release := binding.Reference(), func() error {
+		err := binding.Release()
+		if closeErr := service.Close(); err == nil {
+			err = closeErr
+		}
+		return err
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +146,7 @@ func TestCodexNativeDeniesToolBeforeSideEffect(t *testing.T) {
 			_ = command.Process.Kill()
 		}
 	}()
-	command.Env = append(os.Environ(), "CODEX_HOME="+nativeConfigDir, bindingEnv+"="+path, executableEnv+"="+binary)
+	command.Env = append(os.Environ(), "CODEX_HOME="+nativeConfigDir, proxyruntime.BindingEnv+"="+path, proxyruntime.ExecutableEnv+"="+binary)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("native Codex: %v: %s", err, output)

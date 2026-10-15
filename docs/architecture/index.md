@@ -231,8 +231,10 @@ Managed agent lifecycle policy lives in `hooks` behind `hookcmd` contracts.
 Backoffice. See [Managed agent hooks](../reference/agent-hooks.md).
 
 Provider-neutral native binding and process cleanup are owned by `hookprovider`;
-the temporary `hooknativecompat` package retains provider adaptation until the
-native adapter registry migration completes. Private binding/process
+registered packages under `hooknative/claude`, `hooknative/codex`, and
+`hooknative/opencode` own provider adaptation behind the neutral `hooknative`
+registry. `hooknativeapp` composes live policy, bindings, and adapters without
+provider dispatch in `hookprovider`. Private binding/process
 lifetimes are released with the session agent. `agent` and `catalogapp` connect
 through consumer ports and immutable launch defaults. Architecture rules keep
 these adapters independent of transport, session and storage implementations.

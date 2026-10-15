@@ -6,7 +6,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/hookbackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/hookcmd"
-	"github.com/baldaworks/balda/internal/apps/balda/hooknativecompat"
+	"github.com/baldaworks/balda/internal/apps/balda/hooknativeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/hooks"
 	"github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionturnapp"
@@ -17,7 +17,7 @@ import (
 type runtimeAdapter struct {
 	runner   *hooks.Runner
 	provider string
-	native   *hooknativecompat.Service
+	native   *hooknativeapp.Service
 }
 
 func (a runtimeAdapter) Run(ctx context.Context, event hookcmd.Event) (hookcmd.Result, error) {
@@ -36,13 +36,13 @@ type adapterParams struct {
 	fx.In
 	Runner   *hooks.Runner
 	Provider string `name:"balda_provider"`
-	Native   *hooknativecompat.Service
+	Native   *hooknativeapp.Service
 }
 
 // Module binds one configuration owner to both lifecycle surfaces and browser management.
 var Module = fx.Module("balda_agent_hooks",
 	fx.Provide(
-		func(provider state.Provider, native *hooknativecompat.Service) *hooks.Management {
+		func(provider state.Provider, native *hooknativeapp.Service) *hooks.Management {
 			management := hooks.NewManagement(provider.HookManagement())
 			management.ConfigureValidator(native)
 			return management

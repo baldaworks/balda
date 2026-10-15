@@ -14,7 +14,8 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/hookbackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/hookcmd"
-	"github.com/baldaworks/balda/internal/apps/balda/hooknativecompat"
+	"github.com/baldaworks/balda/internal/apps/balda/hooknative/claude"
+	"github.com/baldaworks/balda/internal/apps/balda/hooknativeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/hooks"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
@@ -60,7 +61,7 @@ func runHooksApplicationBrowser(t *testing.T, base string, width int) {
 		t.Fatal(err)
 	}
 	management := hooks.NewManagement(provider.HookManagement())
-	native, err := hooknativecompat.New(hooks.NewRunner(provider.HookManagement()), provider.HookManagement(), "provider", map[string]agentconfig.Config{"provider": {Type: agentconfig.AgentTypeClaudeCodeACP, ClaudeCodeACP: &agentconfig.ACPConfig{Cmd: []string{"fixture-acp"}}}})
+	native, err := hooknativeapp.New(hooks.NewRunner(provider.HookManagement()), provider.HookManagement(), "provider", map[string]agentconfig.Config{"provider": {Type: agentconfig.AgentTypeClaudeCodeACP, ClaudeCodeACP: &agentconfig.ACPConfig{Cmd: []string{"fixture-acp"}}}}, claude.New)
 	if err != nil {
 		t.Fatal(err)
 	}

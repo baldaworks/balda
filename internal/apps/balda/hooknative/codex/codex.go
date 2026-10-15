@@ -1,4 +1,4 @@
-package hooknativecompat
+package codex
 
 import (
 	"bufio"
@@ -108,7 +108,7 @@ func prepareCodex(ctx context.Context, argv []string, registrars ...func(int) (f
 func probeCodex(parent context.Context, arguments []string, registrar func(int) (func(), error)) ([]codexHook, error) {
 	ctx, cancel := context.WithTimeout(parent, 15*time.Second)
 	defer cancel()
-	executable, err := exec.LookPath(kindCodex)
+	executable, err := exec.LookPath("codex")
 	if err != nil {
 		return nil, hookcmd.ErrUnsupported
 	}

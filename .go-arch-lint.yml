@@ -161,18 +161,24 @@ components:
     in:
       - internal/apps/balda/hookprovider
 
-  # Temporary compatibility owner for the pre-registry native launch path.
-  # TASK-004 and TASK-005 replace this package with the registry and concrete
-  # adapters; it must not leak provider concepts back into hookprovider.
-  native_hook_compat:
+  # Application service composes live policy, neutral bindings, and adapters.
+  native_hook_app:
     in:
-      - internal/apps/balda/hooknativecompat
+      - internal/apps/balda/hooknativeapp
 
   # Target registry iterates provider-owned adapters for one catalog leaf. It
   # owns no provider switch and no binding transport implementation.
   native_hook_registry:
     in:
       - internal/apps/balda/hooknative
+
+  native_hook_runtime:
+    in:
+      - internal/apps/balda/hooknative/proxyruntime
+
+  native_hook_host:
+    in:
+      - internal/apps/balda/hooknativehost
 
   # Target concrete adapters own provider detection, launch mutation and wire
   # normalization. New providers extend this component instead of hookprovider.
@@ -186,6 +192,7 @@ components:
   native_hook_testkit:
     in:
       - internal/apps/balda/hooknativetest
+      - internal/apps/balda/hooknativeadaptertest
 
   hook_wiring:
     in:
@@ -667,11 +674,30 @@ deps:
     canUse:
       - native_hook_process_runtime
 
-  native_hook_compat:
+  native_hook_app:
     mayDependOn:
       - hook_contracts
       - native_hook_bindings
       - native_hook_registry
+      - native_hook_host
+    deepScan: false
+    anyVendorDeps: false
+    canUse:
+      - native_hook_provider_config
+
+  native_hook_runtime:
+    mayDependOn:
+      - hook_contracts
+      - native_hook_bindings
+      - native_hook_registry
+    deepScan: false
+    anyVendorDeps: false
+    canUse:
+      - native_hook_process_runtime
+
+  native_hook_host:
+    mayDependOn:
+      - native_hook_bindings
     deepScan: false
     anyVendorDeps: false
     canUse:
@@ -690,6 +716,8 @@ deps:
       - hook_contracts
       - native_hook_bindings
       - native_hook_registry
+      - native_hook_runtime
+      - native_hook_host
     deepScan: false
     anyVendorDeps: false
     canUse:
@@ -699,12 +727,19 @@ deps:
   native_hook_testkit:
     mayDependOn:
       - hook_contracts
+      - native_hook_bindings
+      - native_hook_registry
+      - native_hook_runtime
+      - native_hook_host
+      - native_hook_testkit
     deepScan: false
     anyVendorDeps: false
+    canUse:
+      - native_hook_provider_config
 
   hook_wiring:
     mayDependOn:
-      - native_hook_compat
+      - native_hook_app
       - hook_contracts
       - hook_policy
       - hook_backoffice_wiring
@@ -1260,7 +1295,10 @@ deps:
 
   composition_root:
     mayDependOn:
-      - native_hook_compat
+      - native_hook_app
+      - native_hook_registry
+      - native_hook_host
+      - concrete_native_hook_adapters
       - hook_policy
       - hook_wiring
       - hook_backoffice_wiring
@@ -1323,7 +1361,9 @@ deps:
 
   entrypoints:
     mayDependOn:
-      - native_hook_compat
+      - native_hook_registry
+      - concrete_native_hook_adapters
+      - native_hook_runtime
       - foundation
       - composition_root
       - application

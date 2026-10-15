@@ -347,7 +347,7 @@ with isolated native config directories and synthetic credentials. It verifies
 denial before a filesystem effect without contacting an external model:
 
 ```bash
-BALDA_NATIVE_HOOK_TEST=1 go test -race ./internal/apps/balda/hooknativecompat -count=1 -v
+BALDA_NATIVE_HOOK_TEST=1 go test -race ./internal/apps/balda/hooknative/... -count=1 -v
 ```
 
 Install Codex CLI and Node/npm first. The suite uses Claude ACP 0.16.2 and
@@ -360,11 +360,11 @@ run the slower opt-in deadline check (about seven minutes for all three):
 
 ```bash
 BALDA_NATIVE_HOOK_TEST=1 BALDA_NATIVE_HOOK_SLOW_TEST=1 \
-  go test -race ./internal/apps/balda/hooknativecompat -run '^Test(Claude|Codex|OpenCode)NativeDeniesToolBeforeSideEffect$' -count=1 -v
+  go test -race ./internal/apps/balda/hooknative/... -run '^Test(Claude|Codex|OpenCode)NativeDeniesToolBeforeSideEffect$' -count=1 -v
 ```
 
-Each command has a configured 3,600-second timeout and returns deny only after
-the delay. The fixture verifies that the engine receives the rejection and that
+The fixture returns deny only after the delay. It verifies that each engine
+receives the rejection and that
 the proposed filesystem effect does not happen. No external model is contacted.
 
 ## Ownership and verification
@@ -375,10 +375,12 @@ persistence. `session` and `sessionturnapp` own their lifecycle boundaries;
 `hookfx` connects those ports to the shared runner. Backoffice owns only HTTP
 ingress and presentation through `hookbackofficeapp`.
 
-`hookprovider` owns provider-neutral private process/binding lifecycle. The
-temporary `hooknativecompat` package owns native protocol adaptation until the
-registered provider adapters replace it. Native process/binding
-lifetimes are released with the session agent. `agent` consumes a
+`hookprovider` owns provider-neutral private process/binding lifecycle.
+Registered adapters under `hooknative/claude`, `hooknative/codex`, and
+`hooknative/opencode` own provider detection, launch mutation, native commands,
+wire codecs, and readiness behavior. `hooknativeapp` composes those adapters
+with live policy, while the neutral registry only selects an exact match.
+Native process/binding lifetimes are released with the session agent. `agent` consumes a
 session-runtime factory port; `catalogapp` supplies
 private launch defaults and agent-owned release. Session/transport packages do
 not own native provider contracts.

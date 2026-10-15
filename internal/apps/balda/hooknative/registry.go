@@ -47,6 +47,12 @@ type Registry struct {
 	adapters []Adapter
 }
 
+// Validate requires exactly one adapter to support config.
+func (r *Registry) Validate(config agentconfig.Config) error {
+	_, err := r.adapterFor("", config)
+	return err
+}
+
 // NewRegistry constructs an immutable native adapter registry.
 func NewRegistry(adapters ...Adapter) (*Registry, error) {
 	copyAdapters := slices.Clone(adapters)
@@ -65,23 +71,31 @@ func NewRegistry(adapters ...Adapter) (*Registry, error) {
 
 // Prepare requires exactly one adapter to support the requested ACP leaf.
 func (r *Registry) Prepare(ctx context.Context, request LeafRequest) (PreparedLeaf, error) {
+	adapter, err := r.adapterFor(request.LeafID, request.Config)
+	if err != nil {
+		return PreparedLeaf{}, err
+	}
+	prepared, err := adapter.Prepare(ctx, request)
+	if err != nil {
+		return PreparedLeaf{}, fmt.Errorf("prepare native hook leaf %q with adapter %q: %w", request.LeafID, adapter.Name(), err)
+	}
+	return prepared, nil
+}
+
+func (r *Registry) adapterFor(leafID string, config agentconfig.Config) (Adapter, error) {
 	if r == nil {
-		return PreparedLeaf{}, selectionError(request.LeafID, nil)
+		return nil, selectionError(leafID, nil)
 	}
 	var matches []Adapter
 	for _, adapter := range r.adapters {
-		if adapter.Supports(request.Config) {
+		if adapter.Supports(config) {
 			matches = append(matches, adapter)
 		}
 	}
 	if len(matches) != 1 {
-		return PreparedLeaf{}, selectionError(request.LeafID, matches)
+		return nil, selectionError(leafID, matches)
 	}
-	prepared, err := matches[0].Prepare(ctx, request)
-	if err != nil {
-		return PreparedLeaf{}, fmt.Errorf("prepare native hook leaf %q with adapter %q: %w", request.LeafID, matches[0].Name(), err)
-	}
-	return prepared, nil
+	return matches[0], nil
 }
 
 func selectionError(leafID string, matches []Adapter) error {

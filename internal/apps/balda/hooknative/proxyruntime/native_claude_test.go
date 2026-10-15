@@ -1,4 +1,4 @@
-package hooknativecompat
+package proxyruntime_test
 
 import (
 	"context"
@@ -12,9 +12,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
-	"github.com/baldaworks/balda/internal/apps/balda/hookcmd"
+	"time"
 )
 
 func TestClaudeNativeDeniesToolBeforeSideEffect(t *testing.T) {
@@ -25,8 +24,7 @@ func TestClaudeNativeDeniesToolBeforeSideEffect(t *testing.T) {
 	defer cancel()
 	directory := t.TempDir()
 	binary := buildNativeFixtureDispatcher(t, ctx, directory)
-	service := testService(t, nativeEngineDefinition(t))
-	path, release, err := service.bind(kindClaude, hookcmd.Event{SessionID: "native-session", Provider: "provider", CWD: directory})
+	path, proof, release, err := nativeBinding(t, "claude", directory)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +63,9 @@ func TestClaudeNativeDeniesToolBeforeSideEffect(t *testing.T) {
 		}
 		mu.Unlock()
 		w.Header().Set("Content-Type", "text/event-stream")
-		emit := func(event string, value any) { _, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, encode(value)) }
+		emit := func(event string, value any) {
+			_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, encodeFixture(value))
+		}
 		message := map[string]any{"id": fmt.Sprintf("msg_%d", number), "type": "message", "role": "assistant", "model": "claude-sonnet-4-6", "content": []any{}, "stop_reason": nil, "stop_sequence": nil, "usage": map[string]int{"input_tokens": 1, "output_tokens": 0}}
 		emit("message_start", map[string]any{"type": "message_start", "message": message})
 		stopReason := "end_turn"
@@ -82,7 +82,7 @@ func TestClaudeNativeDeniesToolBeforeSideEffect(t *testing.T) {
 		emit("message_stop", map[string]any{"type": "message_stop"})
 	}))
 	defer modelServer.Close()
-	runNativeACPFixture(t, ctx, binary, path, directory, []string{"npx", "-y", "@zed-industries/claude-code-acp@0.16.2"}, []string{
+	runNativeACPFixture(t, ctx, binary, "claude", path, proof, directory, []string{"npx", "-y", "@zed-industries/claude-code-acp@0.16.2"}, []string{
 		"CLAUDE_CONFIG_DIR=" + filepath.Join(directory, "native-config"), "ANTHROPIC_BASE_URL=" + modelServer.URL, "ANTHROPIC_API_KEY=synthetic-hook-fixture-key", "ANTHROPIC_AUTH_TOKEN=", "CLAUDE_CODE_OAUTH_TOKEN=", "CLAUDE_CODE_USE_BEDROCK=0", "CLAUDE_CODE_USE_VERTEX=0", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1", "DISABLE_AUTOUPDATER=1",
 	}, map[string]any{"claudeCode": map[string]any{"options": map[string]any{"settingSources": []any{}, "model": "claude-sonnet-4-6"}}})
 	mu.Lock()

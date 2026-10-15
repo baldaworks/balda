@@ -5,13 +5,16 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/baldaworks/balda/internal/apps/balda/hooknativecompat"
+	"github.com/baldaworks/balda/internal/apps/balda/hooknative/claude"
+	"github.com/baldaworks/balda/internal/apps/balda/hooknative/codex"
+	"github.com/baldaworks/balda/internal/apps/balda/hooknative/opencode"
+	"github.com/baldaworks/balda/internal/apps/balda/hooknative/proxyruntime"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpfx"
 	"github.com/baldaworks/balda/internal/apps/balda/shutdown"
 )
 
 func main() {
-	if handled, code := hooknativecompat.RunCommandMode(os.Args[1:]); handled {
+	if handled, code := proxyruntime.RunCommandMode(os.Args[1:], claude.Protocol{}, codex.Protocol{}, opencode.Protocol{}); handled {
 		os.Exit(code)
 	}
 	if handled, code := mcpfx.RunStdioMode(os.Args[1:]); handled {
