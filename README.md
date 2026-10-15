@@ -495,6 +495,17 @@ fallback details.
 For complete configuration, examples, and provider-specific details, see the
 [configuration reference](docs/reference/configuration.md).
 
+## Agent hooks
+
+Administrators configure agent lifecycle hooks in **Operations → Agent hooks**.
+Approved commands can validate a session start, reject a prompt, check a final
+answer, or observe session closure. The Web UI accepts a timeout in whole
+seconds; `0` disables the hook's own deadline, while session cancellation still
+applies. See [Managed agent hooks](docs/reference/agent-hooks.md) for configuration,
+executable privileges and lifecycle behavior, and the [usage examples](docs/reference/agent-hooks.md#usage-examples)
+for ready-to-copy scripts and their Web UI settings: add project conventions to
+prompts or record session-close events with a local program.
+
 ## Troubleshooting
 
 - `telegram token is required` — run `balda init` or set
@@ -533,12 +544,3 @@ npm releases are published from Git tags through the Omnidist workflow. The
 workflow uses npm trusted publishing with GitHub Actions OIDC; it does not use a
 long-lived npm publish token. Each `@baldaworks/balda*` package trusts the
 `baldaworks/balda` repository and the `omnidist-release.yml` workflow.
-
-Administrators configure agent lifecycle hooks in **Operations → Agent hooks**.
-Approved commands can validate a session start, reject a prompt, check a final
-answer, or observe session closure. The Web UI accepts a timeout in whole
-seconds; `0` disables the hook's own deadline, while session cancellation still
-applies. See [Managed agent hooks](docs/reference/agent-hooks.md) for configuration,
-executable privileges and lifecycle behavior, and the [usage examples](docs/reference/agent-hooks.md#usage-examples)
-for ready-to-copy scripts and their Web UI settings: add project conventions to
-prompts or record session-close events with a local program.
