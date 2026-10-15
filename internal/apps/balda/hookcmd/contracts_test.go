@@ -9,7 +9,7 @@ import (
 func TestDefinitionTimeout(t *testing.T) {
 	valid := []int{0, 1, 3600}
 	invalid := []int{-1}
-	maxSeconds := int64(math.MaxInt64 / int64(time.Second))
+	maxSeconds := math.MaxInt64 / int64(time.Second)
 	if int64(int(maxSeconds)) == maxSeconds {
 		valid = append(valid, int(maxSeconds))
 		invalid = append(invalid, int(maxSeconds)+1)
