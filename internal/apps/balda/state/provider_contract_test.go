@@ -34,6 +34,7 @@ const secondPluginRevision = "rev-2"
 type contractOpener func(context.Context, string) (Provider, error)
 
 func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) {
+	t.Run("SkillManagement", func(t *testing.T) { checkSkillManagement(t, factory(t)) })
 	t.Run("HookManagement", func(t *testing.T) { checkHookManagement(t, factory(t)) })
 	t.Run("PluginManagementAuthorityWait", func(t *testing.T) { checkPluginManagementAuthorityWhileWaiting(t, factory(t)) })
 	t.Run("PluginManagementStateFences", func(t *testing.T) { checkPluginManagementStateFences(t, factory) })

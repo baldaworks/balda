@@ -303,6 +303,8 @@ const (
 	AuditActionPluginOriginAdopted AuditAction = "plugin.origin.adopted"
 	// AuditActionPluginMarketplaceRemoved records accepted plugin management.
 	AuditActionPluginMarketplaceRemoved AuditAction = "plugin.marketplace.removed"
+	// AuditActionSkillChanged records standalone skill metadata acceptance.
+	AuditActionSkillChanged AuditAction = "skill.management.changed"
 	// AuditActionHookChanged records a managed executable hook change.
 	AuditActionHookChanged AuditAction = "hook.definition.changed"
 	// AuditActionMemoryFactCreated records an explicit global fact creation.
@@ -326,7 +328,7 @@ const (
 // Valid reports whether the action belongs to the bounded security audit vocabulary.
 func (a AuditAction) Valid() bool {
 	switch a {
-	case AuditActionHookChanged, AuditActionPluginRevisionPurged, AuditActionPluginMarketplaceRefreshFailed, AuditActionPluginOriginAdopted, AuditActionPluginInstalled, AuditActionPluginUpgraded, AuditActionPluginEnabled, AuditActionPluginDisabled, AuditActionPluginRolledBack, AuditActionPluginRemoved, AuditActionPluginMarketplaceAdded, AuditActionPluginMarketplaceRefreshed, AuditActionPluginMarketplaceRemoved, AuditActionUserCreated, AuditActionUserUpdated, AuditActionUserAccessChanged,
+	case AuditActionSkillChanged, AuditActionHookChanged, AuditActionPluginRevisionPurged, AuditActionPluginMarketplaceRefreshFailed, AuditActionPluginOriginAdopted, AuditActionPluginInstalled, AuditActionPluginUpgraded, AuditActionPluginEnabled, AuditActionPluginDisabled, AuditActionPluginRolledBack, AuditActionPluginRemoved, AuditActionPluginMarketplaceAdded, AuditActionPluginMarketplaceRefreshed, AuditActionPluginMarketplaceRemoved, AuditActionUserCreated, AuditActionUserUpdated, AuditActionUserAccessChanged,
 		AuditActionUserRoleChanged, AuditActionUserStatusChanged, AuditActionCredentialChanged,
 		AuditActionSessionRevoked, AuditActionBindingAttached, AuditActionBindingDetached, AuditActionBindingClaimCreated,
 		AuditActionUserMigrated, AuditActionLoginSucceeded, AuditActionRefreshSucceeded,
@@ -374,6 +376,8 @@ const (
 	AuditTargetMCP AuditTargetType = "mcp"
 	// AuditTargetSchedule identifies a recurring schedule without content.
 	AuditTargetSchedule AuditTargetType = "schedule"
+	// AuditTargetSkill identifies a managed standalone skill without source content.
+	AuditTargetSkill AuditTargetType = "skill"
 	// AuditTargetHook identifies a managed hook without executable content.
 	AuditTargetHook AuditTargetType = "agent_hook"
 	// AuditTargetMemoryFact identifies one global fact without exposing its body.
@@ -387,7 +391,7 @@ const (
 // Valid reports whether the audit target type is supported.
 func (t AuditTargetType) Valid() bool {
 	switch t {
-	case AuditTargetHook, AuditTargetPlugin, AuditTargetPluginMarketplace, AuditTargetUser, AuditTargetSession, AuditTargetBinding, AuditTargetSystem, AuditTargetMigration, AuditTargetMCP, AuditTargetSchedule, AuditTargetMemoryFact, AuditTargetAlias, AuditTargetWebhookRoute:
+	case AuditTargetSkill, AuditTargetHook, AuditTargetPlugin, AuditTargetPluginMarketplace, AuditTargetUser, AuditTargetSession, AuditTargetBinding, AuditTargetSystem, AuditTargetMigration, AuditTargetMCP, AuditTargetSchedule, AuditTargetMemoryFact, AuditTargetAlias, AuditTargetWebhookRoute:
 		return true
 	default:
 		return false

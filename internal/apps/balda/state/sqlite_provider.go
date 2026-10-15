@@ -276,3 +276,7 @@ func (p *sqliteProvider) MemoryManagement() MemoryManagementStore {
 func (p *sqliteProvider) PluginManagement() PluginManagementStore {
 	return &sqlPluginManagementStore{users: newSQLiteUserStore(p.db)}
 }
+
+func (p *sqliteProvider) SkillManagement() SkillManagementStore {
+	return &sqlSkillManagementStore{users: newSQLiteUserStore(p.db)}
+}

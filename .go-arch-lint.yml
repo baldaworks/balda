@@ -117,6 +117,7 @@ components:
       - internal/apps/balda/progress
       - internal/apps/balda/permissioncmd
       - internal/apps/balda/permissionfmt
+      - internal/apps/balda/skillcmd
       - internal/apps/balda/plugincmd
       - internal/apps/balda/progressfmt
       - internal/apps/balda/questioncmd
@@ -143,6 +144,11 @@ components:
   hook_contracts:
     in:
       - internal/apps/balda/hookcmd
+
+  # Standalone skill policy consumes guarded storage through its own port.
+  skill_policy:
+    in:
+      - internal/apps/balda/skillapp
 
   hook_policy:
     in:
@@ -611,6 +617,12 @@ deps:
     mayDependOn:
       - user_contracts
     anyVendorDeps: false
+
+  skill_policy:
+    mayDependOn:
+      - contracts
+    anyVendorDeps: false
+    deepScan: false
 
   hook_policy:
     mayDependOn:
