@@ -87,7 +87,12 @@ func (e *ProviderTurnExecutor) ExecuteSessionTurn(ctx context.Context, request s
 			execution.logger,
 		)
 	}
+	workspaceDir := ""
+	if workspace, ok := request.Session.(interface{ GetWorkspaceDir() string }); ok {
+		workspaceDir = workspace.GetWorkspaceDir()
+	}
 	return execution.Execute(ctx, ExecutionRequest{
+		WorkspaceDir:    workspaceDir,
 		Text:            payload.Text,
 		Runner:          providerRunner,
 		UserID:          request.UserID,

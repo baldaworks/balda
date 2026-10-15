@@ -391,3 +391,24 @@ cleared and outside credential forms. Keep timestamps, actual commands/results,
 reviewed screenshots and defect/reopen evidence in Beads. If an implementation
 defect changes rendered behavior, repair its owning task and rerun the affected
 layout gate before the application gate. No SSH/asus or live data is used.
+
+## Agent hooks layout and application gates
+
+First run `BALDA_BACKOFFICE_BROWSER_TEST=1 go test ./internal/apps/backoffice
+-run "^TestHooksLayoutBrowser$" -count=1 -v`. It checks inventory, empty and
+long content, create/edit, validation, conflict and unavailable states at
+1440×900, 1024×768, 768×1024 and 390×844, with root and prefixed mounts.
+Screenshots are written under `BALDA_HOOKS_LAYOUT_SCREENSHOTS` or
+`/tmp/balda-hooks-screens/layout`. Review placeholder contrast, required labels,
+keyboard focus, private history, fragments, active navigation and overflow.
+
+Then run `BALDA_BACKOFFICE_BROWSER_TEST=1 go test -race ./internal/apps/backoffice
+-run "^TestHooksApplicationBrowser$" -count=1 -v` against isolated SQLite and
+ordinary synthetic administrator/operator login. It proves actual definitions,
+execution, disablement, conflicts, deletion, authorization and persistence.
+Record both reviews and their screenshot findings in Beads.
+
+Native hook review extends the hook layout gate to 11 states (88 viewport/mount
+combinations), including pre-tool, post-tool and unsupported capability drafts.
+Run the opt-in native engine gate from `agent-hooks.md` after the ordered layout
+and application browser gates when changing provider adapters.

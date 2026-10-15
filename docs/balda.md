@@ -60,3 +60,5 @@ Focused guides remain separate from the technical reference, including
 [Telegram message formatting](telegram-formatting.md),
 [Slack Agent setup](slack.md),
 [Mattermost setup](mattermost.md), and the [command reference](commands.md).
+
+- [Managed agent hooks](reference/agent-hooks.md): lifecycle boundaries, Backoffice configuration and command protocol.

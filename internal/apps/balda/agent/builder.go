@@ -47,6 +47,7 @@ const (
 )
 
 type Builder struct {
+	providerMCPSelections    map[string][]string
 	factory                  runtimeFactory
 	scopedFactory            ScopedRuntimeFactory
 	dedicatedFactory         dedicatedRuntimeFactory
@@ -305,7 +306,12 @@ func (b *Builder) buildRuntimeWithCapabilities(
 		MCPServerIDs:     b.buildAgentMCPServerIDs(agentName, bundledMCPServerIDs, extraMCPServerIDs),
 	}
 
-	ag, err := b.factory.Build(ctx, req)
+	var ag agent.Agent
+	if sessionFactory, ok := b.scopedFactory.(SessionRuntimeFactory); ok && instructionContext.SessionID != "" {
+		ag, err = sessionFactory.BuildSession(ctx, req, b.providerMCPSelections, instructionContext.SessionID)
+	} else {
+		ag, err = b.factory.Build(ctx, req)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("creating agent %q: %w", agentName, err)
 	}
