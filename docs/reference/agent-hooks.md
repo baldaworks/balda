@@ -223,6 +223,52 @@ cleanup continues after its ten-second budget even if this hook requests a
 longer or unlimited timeout. This is a best-effort local observation, not a
 durable delivery queue. Log rotation and retention belong to the operator.
 
+### Reject selected shell tools before execution
+
+For a session that should use other supported tools without these shell entry
+points, save `/opt/balda/hooks/reject_shell.py`:
+
+```python
+import json
+import sys
+
+event = json.load(sys.stdin)
+shell_tools = {"Bash", "exec_command", "bash"}
+denied = (event["hook_event_name"] == "PreToolUse"
+          and event.get("tool_name") in shell_tools)
+result = {"decision": "deny" if denied else "allow"}
+if denied:
+    result["reason"] = "The configured policy does not permit this shell tool."
+json.dump(result, sys.stdout)
+```
+
+| Field | Value |
+| --- | --- |
+| Name | `reject-shell` |
+| Event | `PreToolUse` |
+| Executable | `/usr/bin/python3` |
+| Arguments | `["/opt/balda/hooks/reject_shell.py"]` |
+| Provider ID | Leave empty for the configured Balda provider |
+| Matcher | `^(Bash|exec_command|bash)$` |
+| Timeout in seconds | `30` |
+| Enable this hook | Checked |
+
+Test the script before enabling it:
+
+```bash
+printf '%s\n' '{"hook_event_name":"PreToolUse","session_id":"example","cwd":"/srv/project","tool_name":"Bash","tool_input":{"command":"printf example"}}' \
+  | /usr/bin/python3 /opt/balda/hooks/reject_shell.py
+```
+
+It returns a deny verdict. A synthetic `Read` tool event returns allow. After
+enabling the definition, use `/reset` for existing sessions, then ask the agent
+to run a harmless shell command. The intercepted call should report rejection
+without running it. Inspect the actual provider's native tool names and extend
+both the matcher and the script's set if it exposes other shell tools. This
+example does not parse shell text or sandbox filesystem/network access; tools
+outside its selected names are unaffected. `PostToolUse` cannot provide the
+same guarantee because the operation has already happened.
+
 ## Native adapters
 
 Native interception supports **Linux and macOS**. Lifecycle command hooks retain
@@ -235,6 +281,17 @@ member must have a supported adapter.
 | `claude_code_acp` | SDK `extraArgs` forwards inline native `--settings` hooks | Claude ACP 0.16.2 or later with command hooks |
 | `codex_acp` | Bridge forwards native `-c` definitions and exact trusted hashes | Codex ACP 1.10.1 or later; CLI supports trusted command hooks and `hooks/list` |
 | `opencode_acp` | Private V1 plugin implements `tool.execute.before/after` | OpenCode 1.19.0 or later with V1 plugin support |
+
+The private HTTP bridge adds no overall execution timeout. Balda's configured
+deadline and session cancellation govern each invocation. Native engines retain
+their own representational limits: Claude's outer command envelope uses the
+largest safe whole-second JavaScript timer, 2,147,483 seconds (about 24.8 days),
+and Codex's envelope uses 9,223,372,036 seconds. These cover the complete event,
+including every matching hook and queue wait. OpenCode adds no outer execution
+deadline. `0` disables Balda's own deadline; it does not remove an engine's outer
+envelope. Use finite values within the selected engine's range when a precise
+cutoff is required. Increasing a timeout does not require resetting an already
+instrumented session.
 
 Activation requires a new session: use `/reset` for an existing session after
 first enabling a tool hook. New turns without the required adapter fail with an
@@ -297,6 +354,18 @@ Install Codex CLI and Node/npm first. The suite uses Claude ACP 0.16.2 and
 OpenCode 1.19.0 and discovers installed Codex hook capabilities. Ordinary tests
 also verify result translation, input rewrites, isolation, activation and cleanup
 after proxy `SIGKILL`.
+
+To additionally verify decisions after 130 seconds through each actual engine,
+run the slower opt-in deadline check (about seven minutes for all three):
+
+```bash
+BALDA_NATIVE_HOOK_TEST=1 BALDA_NATIVE_HOOK_SLOW_TEST=1 \
+  go test -race ./internal/apps/balda/hookprovider -run '^Test(Claude|Codex|OpenCode)NativeDeniesToolBeforeSideEffect$' -count=1 -v
+```
+
+Each command has a configured 3,600-second timeout and returns deny only after
+the delay. The fixture verifies that the engine receives the rejection and that
+the proposed filesystem effect does not happen. No external model is contacted.
 
 ## Ownership and verification
 

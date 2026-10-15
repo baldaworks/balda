@@ -112,16 +112,20 @@ func TestHooksHTTPManagement(t *testing.T) {
 				t.Fatalf("unsupported native draft = %d, %s", response.Code, response.Body.String())
 			}
 			toolForm.Set("provider", "provider")
-			if response := mutate("/hooks", toolForm, false); response.Code != 303 {
-				t.Fatalf("PreToolUse creation = %d: %s", response.Code, response.Body.String())
-			}
-			toolForm.Set("event", string(hookcmd.PostToolUse))
-			toolForm.Set("expected_version", "4")
-			if response := mutate("/hooks/tool-guard", toolForm, true); response.Code != 204 {
-				t.Fatalf("PostToolUse edit = %d", response.Code)
-			}
-			if response := get("/hooks/tool-guard", admin.access, false); response.Code != 200 || !strings.Contains(response.Body.String(), `value="PostToolUse" selected`) || !strings.Contains(response.Body.String(), "use /reset") {
-				t.Fatal("native editor lost event or activation guidance")
+			if native.ValidateDefinition(t.Context(), hookcmd.Definition{Event: hookcmd.PreToolUse, Enabled: true}) == nil {
+				if response := mutate("/hooks", toolForm, false); response.Code != 303 {
+					t.Fatalf("PreToolUse creation = %d: %s", response.Code, response.Body.String())
+				}
+				toolForm.Set("event", string(hookcmd.PostToolUse))
+				toolForm.Set("expected_version", "4")
+				if response := mutate("/hooks/tool-guard", toolForm, true); response.Code != 204 {
+					t.Fatalf("PostToolUse edit = %d", response.Code)
+				}
+				if response := get("/hooks/tool-guard", admin.access, false); response.Code != 200 || !strings.Contains(response.Body.String(), `value="PostToolUse" selected`) || !strings.Contains(response.Body.String(), "use /reset") {
+					t.Fatal("native editor lost event or activation guidance")
+				}
+			} else if response := mutate("/hooks", toolForm, false); response.Code != 400 {
+				t.Fatalf("native platform capability = %d", response.Code)
 			}
 			for _, failure := range []string{"csrf", "foreign origin"} {
 				request := httptest.NewRequest(http.MethodPost, base+"/hooks", strings.NewReader(form.Encode()))

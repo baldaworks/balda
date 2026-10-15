@@ -8,7 +8,20 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/baldaworks/balda/internal/apps/balda/hookcmd"
 )
+
+func nativeEngineDefinition(t *testing.T) hookcmd.Definition {
+	t.Helper()
+	definition := nativeDefinition(t, hookcmd.DecisionDeny)
+	if os.Getenv("BALDA_NATIVE_HOOK_SLOW_TEST") == "1" {
+		definition.TimeoutSeconds = 3600
+		definition.Args = append(definition.Args, "130")
+		t.Log("verifying a real native decision after 130 seconds with a 3600-second hook deadline")
+	}
+	return definition
+}
 
 func buildNativeFixtureDispatcher(t *testing.T, ctx context.Context, directory string) string {
 	t.Helper()

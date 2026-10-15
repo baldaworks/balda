@@ -25,10 +25,11 @@ import (
 )
 
 const (
-	maxNativeBytes = 256 << 10
-	kindClaude     = "claude"
-	kindCodex      = "codex"
-	kindOpenCode   = "opencode"
+	maxNativeBytes       = 256 << 10
+	maxNativeResultBytes = 256 << 10
+	kindClaude           = "claude"
+	kindCodex            = "codex"
+	kindOpenCode         = "opencode"
 )
 
 // Runner is the native adapter's consumer-owned execution port.
@@ -258,7 +259,9 @@ func (s *Service) bind(kind string, event hookcmd.Event) (string, func() error, 
 			_ = os.RemoveAll(dir)
 			return "", nil, err
 		}
-		s.server = &http.Server{Handler: http.HandlerFunc(s.serve), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 125 * time.Second, IdleTimeout: 10 * time.Second, MaxHeaderBytes: 8 << 10}
+		// The runner owns command deadlines. A response write deadline here
+		// would silently truncate longer administrator-configured hooks.
+		s.server = &http.Server{Handler: http.HandlerFunc(s.serve), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, IdleTimeout: 10 * time.Second, MaxHeaderBytes: 8 << 10}
 		s.address = "http://" + listener.Addr().String() + "/invoke"
 		go func(server *http.Server) { _ = server.Serve(listener) }(s.server)
 	}
@@ -362,7 +365,9 @@ func (s *Service) serve(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(result); err != nil {
+	encoder := json.NewEncoder(w)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(result); err != nil {
 		return
 	}
 }
@@ -397,7 +402,7 @@ func (s *Service) CapabilityDescription() string {
 	if s.ValidateDefinition(context.Background(), hookcmd.Definition{Enabled: true, Event: hookcmd.PreToolUse}) != nil {
 		return "Native tool hooks are unavailable for the configured provider. Lifecycle hooks remain available."
 	}
-	return fmt.Sprintf("Native PreToolUse and PostToolUse adapters are configured for provider %s. Activation requires a new session: use /reset for an existing session. In-flight tool calls are unaffected. Unsupported native versions fail explicitly.", s.root)
+	return fmt.Sprintf("Native PreToolUse and PostToolUse adapters are configured for provider %s. Activation requires a new session: use /reset for an existing session. In-flight tool calls are unaffected. Native engine deadlines still apply; Claude's outer timer is about 24.8 days. Unsupported native versions fail explicitly.", s.root)
 }
 
 // VerifySession blocks new turns in runtimes created before native activation.

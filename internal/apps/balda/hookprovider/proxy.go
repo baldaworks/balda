@@ -34,8 +34,13 @@ func nativeCommand() string {
 
 func nativeReadyCommand() string { return strings.TrimSuffix(nativeCommand(), "dispatch") + "ready" }
 
+// Claude's JavaScript AbortSignal timer overflows beyond signed 32-bit
+// milliseconds. Keep its outer native envelope at the largest safe whole
+// second value; the Balda runner applies the live per-command deadline.
+const claudeEnvelopeSeconds = 2147483
+
 func hookGroups() map[string]any {
-	group := []any{map[string]any{"hooks": []any{map[string]any{"type": "command", "command": nativeCommand(), "timeout": 125}}}}
+	group := []any{map[string]any{"hooks": []any{map[string]any{"type": "command", "command": nativeCommand(), "timeout": claudeEnvelopeSeconds}}}}
 	return map[string]any{"PreToolUse": group, "PostToolUse": group, "SessionStart": []any{map[string]any{"hooks": []any{map[string]any{"type": "command", "command": nativeReadyCommand(), "timeout": 10}}}}}
 }
 
@@ -233,7 +238,7 @@ func Proxy(parent context.Context, path string, argv []string, input io.Reader, 
 	releaseProcess, err := registerNativeProcess(ctx, binding, command.Process.Pid)
 	if err != nil {
 		cancel()
-		_ = command.Wait()
+		_ = waitOwnedProcess(command)
 		return err
 	}
 	defer releaseProcess()
@@ -296,29 +301,29 @@ func Proxy(parent context.Context, path string, argv []string, input io.Reader, 
 		if mustBeReady && len(response.Error) == 0 {
 			if err := waitReady(ctx, binding); err != nil {
 				cancel()
-				_ = command.Wait()
+				_ = waitOwnedProcess(command)
 				return err
 			}
 		}
 		if mustVerify && len(response.Error) == 0 && len(response.Result["agentInfo"]) == 0 {
 			cancel()
-			_ = command.Wait()
+			_ = waitOwnedProcess(command)
 			return hookcmd.ErrUnsupported
 		}
 		if err := checkNativeVersion(line, binding.Kind); err != nil {
 			cancel()
-			_ = command.Wait()
+			_ = waitOwnedProcess(command)
 			return err
 		}
 		if _, err := output.Write(append(line, '\n')); err != nil {
 			cancel()
-			_ = command.Wait()
+			_ = waitOwnedProcess(command)
 			return err
 		}
 	}
 	interrupted := ctx.Err() != nil
 	cancel()
-	waitErr := command.Wait()
+	waitErr := waitOwnedProcess(command)
 	inputEnded := false
 	select {
 	case err := <-inputError:

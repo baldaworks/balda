@@ -1,10 +1,13 @@
 package hookprovider
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/baldaworks/balda/internal/apps/balda/hookcmd"
@@ -96,11 +99,48 @@ func TestCodexNativeRegistersOnlyTrustedOwnedHooks(t *testing.T) {
 	if os.Getenv("BALDA_NATIVE_HOOK_TEST") != "1" {
 		t.Skip("enable BALDA_NATIVE_HOOK_TEST with a supported Codex CLI installed")
 	}
+	home := t.TempDir()
+	t.Setenv("CODEX_HOME", home)
+	const userCommand = "printf '{}'"
+	config := "features.plugins=false\nhooks.PreToolUse=[{hooks=[{type=\"command\",command=" + strconv.Quote(userCommand) + ",timeout=5}]}]\n"
+	configPath := filepath.Join(home, "config.toml")
+	if err := os.WriteFile(configPath, []byte(config), 0600); err != nil {
+		t.Fatal(err)
+	}
+	baseline, err := probeCodex(t.Context(), nil, nil)
+	if err != nil || len(baseline) != 1 || baseline[0].TimeoutSeconds != 5 {
+		t.Fatalf("user hook discovery = %+v, %v", baseline, err)
+	}
+	config += "hooks.state={" + strconv.Quote(baseline[0].Key) + "={enabled=true,trusted_hash=" + strconv.Quote(baseline[0].Hash) + "}}\n"
+	if err := os.WriteFile(configPath, []byte(config), 0600); err != nil {
+		t.Fatal(err)
+	}
 	command, err := prepareCodex(t.Context(), []string{"codex-acp", "--codex-args=--sandbox=workspace-write"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(command) < 8 || command[1] != "--codex-args=--sandbox=workspace-write" {
 		t.Fatalf("native arguments not preserved: %v", command)
+	}
+	var arguments []string
+	for _, arg := range command[1:] {
+		arguments = append(arguments, strings.TrimPrefix(arg, "--codex-args="))
+	}
+	verified, err := probeCodex(t.Context(), arguments, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, hook := range verified {
+		if hook.Command == userCommand {
+			found = hook.Enabled && hook.Trust == "trusted" && hook.Hash == baseline[0].Hash
+		}
+	}
+	if !found {
+		t.Fatalf("trusted user hook lost its definition or trust: %+v", verified)
+	}
+	data, err := os.ReadFile(configPath)
+	if err != nil || !bytes.Equal(data, []byte(config)) {
+		t.Fatal("native preparation modified user configuration")
 	}
 }

@@ -16,17 +16,22 @@ import (
 )
 
 type codexHook struct {
-	Key     string `json:"key"`
-	Hash    string `json:"currentHash"`
-	Source  string `json:"source"`
-	Command string `json:"command"`
-	Event   string `json:"eventName"`
-	Enabled bool   `json:"enabled"`
-	Trust   string `json:"trustStatus"`
+	Key            string `json:"key"`
+	Hash           string `json:"currentHash"`
+	Source         string `json:"source"`
+	Command        string `json:"command"`
+	Event          string `json:"eventName"`
+	Enabled        bool   `json:"enabled"`
+	Trust          string `json:"trustStatus"`
+	TimeoutSeconds uint64 `json:"timeoutSec"`
 }
 
+const codexEnvelopeSeconds = 9223372036
+
 func codexHookArguments() []string {
-	group := `[{hooks=[{type="command",command=` + strconv.Quote(nativeCommand()) + `,timeout=125}]}]`
+	// The native outer envelope must not impose a product-level deadline on
+	// live Balda policy. This matches the host runner's duration range.
+	group := `[{hooks=[{type="command",command=` + strconv.Quote(nativeCommand()) + `,timeout=` + strconv.FormatUint(codexEnvelopeSeconds, 10) + `}]}]`
 	ready := `[{hooks=[{type="command",command=` + strconv.Quote(nativeReadyCommand()) + `,timeout=10}]}]`
 	return []string{"-c", "hooks.PreToolUse=" + group, "-c", "hooks.PostToolUse=" + group, "-c", "hooks.SessionStart=" + ready}
 }
@@ -65,6 +70,9 @@ func prepareCodex(ctx context.Context, argv []string, registrars ...func(int) (f
 			continue
 		}
 		if hook.Key == "" || hook.Hash == "" {
+			return nil, hookcmd.ErrUnsupported
+		}
+		if hook.Command == nativeCommand() && hook.TimeoutSeconds != codexEnvelopeSeconds || hook.Command == nativeReadyCommand() && hook.TimeoutSeconds != 10 {
 			return nil, hookcmd.ErrUnsupported
 		}
 		states = append(states, strconv.Quote(hook.Key)+"={enabled=true,trusted_hash="+strconv.Quote(hook.Hash)+"}")
@@ -123,13 +131,13 @@ func probeCodex(parent context.Context, arguments []string, registrar func(int) 
 		releaseProcess, err = registrar(command.Process.Pid)
 		if err != nil {
 			cancel()
-			_ = command.Wait()
+			_ = waitOwnedProcess(command)
 			return nil, err
 		}
 	}
 	defer func() {
 		cancel()
-		_ = command.Wait()
+		_ = waitOwnedProcess(command)
 		if releaseProcess != nil {
 			releaseProcess()
 		}

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -38,6 +39,9 @@ func nativeDefinition(t *testing.T, mode string) hookcmd.Definition {
 }
 
 func TestNativeActivationRequiresSessionBinding(t *testing.T) {
+	if !nativePlatformSupported() {
+		t.Skip("native session activation requires Linux or macOS")
+	}
 	service := testService(t, nativeDefinition(t, "inspect"))
 	if err := service.VerifySession(t.Context(), "session"); !errors.Is(err, hookcmd.ErrSessionReset) {
 		t.Fatalf("unbound session = %v", err)
@@ -88,6 +92,13 @@ func TestNativeCommandHelper(t *testing.T) {
 		os.Exit(3)
 	}
 	var result hookcmd.Result
+	if len(os.Args) > index+2 {
+		seconds, err := strconv.Atoi(os.Args[index+2])
+		if err != nil || seconds < 0 {
+			os.Exit(3)
+		}
+		time.Sleep(time.Duration(seconds) * time.Second)
+	}
 	switch os.Args[index+1] {
 	case "inspect":
 		result.AdditionalContext = string(data)
@@ -97,13 +108,95 @@ func TestNativeCommandHelper(t *testing.T) {
 		result.Decision, result.Reason = hookcmd.DecisionDeny, "guard rejected this call"
 	case modePost:
 		result.AdditionalContext = "checked tool result"
+	case "large-context":
+		result.AdditionalContext = strings.Repeat("<", 32<<10)
+	case "large-rewrite":
+		result.UpdatedInput = encode(map[string]string{"command": strings.Repeat("x", 50<<10)})
+	case "wait":
+		if os.WriteFile(filepath.Join(event.CWD, "hook-started"), nil, 0600) != nil {
+			os.Exit(3)
+		}
+		time.Sleep(30 * time.Second)
 	default:
 		os.Exit(3)
 	}
-	if json.NewEncoder(os.Stdout).Encode(result) != nil {
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetEscapeHTML(false)
+	if encoder.Encode(result) != nil {
 		os.Exit(3)
 	}
 	os.Exit(0)
+}
+
+func TestBridgePreservesCombinedContextAndInputRewrite(t *testing.T) {
+	contextHook := nativeDefinition(t, "large-context")
+	contextHook.Name = "a-context"
+	rewriteHook := nativeDefinition(t, "large-rewrite")
+	rewriteHook.Name = "b-rewrite"
+	service := testService(t, contextHook)
+	store := configurationFixture{record: hookcmd.Record{Version: 1, UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano), Definitions: []hookcmd.Definition{contextHook, rewriteHook}}}
+	service.records, service.runner = store, hooks.NewRunner(store)
+	path, release, err := service.bind(kindCodex, hookcmd.Event{SessionID: "session", Provider: "provider", CWD: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = release() }()
+	input := []byte(`{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{}}`)
+	var output bytes.Buffer
+	if err := Dispatch(t.Context(), path, bytes.NewReader(input), &output); err != nil {
+		t.Fatal(err)
+	}
+	var envelope struct {
+		Specific struct {
+			Context string            `json:"additionalContext"`
+			Input   map[string]string `json:"updatedInput"`
+		} `json:"hookSpecificOutput"`
+	}
+	if json.Unmarshal(output.Bytes(), &envelope) != nil || envelope.Specific.Context != strings.Repeat("<", 32<<10) || envelope.Specific.Input["command"] != strings.Repeat("x", 50<<10) {
+		t.Fatal("valid combined hook results were truncated or rejected by the private bridge")
+	}
+}
+
+func TestSessionReleaseCancelsUnlimitedNativeHook(t *testing.T) {
+	definition := nativeDefinition(t, "wait")
+	definition.TimeoutSeconds = 0
+	service := testService(t, definition)
+	cwd := t.TempDir()
+	path, release, err := service.bind(kindCodex, hookcmd.Event{SessionID: "session", Provider: "provider", CWD: cwd})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = release() }()
+	binding, err := readBinding(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	finished := make(chan error, 1)
+	go func() {
+		_, err := invoke(t.Context(), binding, hookcmd.Event{Name: hookcmd.PreToolUse, ToolName: "Bash", ToolInput: json.RawMessage(`{}`)})
+		finished <- err
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(filepath.Join(cwd, "hook-started")); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("native hook did not start")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err := release(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-finished:
+		if !errors.Is(err, hookcmd.ErrUnavailable) {
+			t.Fatalf("released invocation = %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("unlimited native hook survived session release")
+	}
 }
 
 func testService(t *testing.T, definition hookcmd.Definition) *Service {
@@ -127,6 +220,9 @@ func testService(t *testing.T, definition hookcmd.Definition) *Service {
 }
 
 func TestBridgeBindsTrustedSessionContextAndReleasesCapabilities(t *testing.T) {
+	if !nativePlatformSupported() {
+		t.Skip("native launch preparation requires Linux or macOS")
+	}
 	service := testService(t, nativeDefinition(t, "inspect"))
 	for _, sessionID := range []string{"session-a", "session-b"} {
 		cwd := t.TempDir()
@@ -220,6 +316,12 @@ func TestDispatchNativeDecisionsAndRewrites(t *testing.T) {
 func TestNativeCapabilitiesRejectUnsupportedPoolAndMissingProvider(t *testing.T) {
 	service := testService(t, hookcmd.Definition{})
 	definition := hookcmd.Definition{Enabled: true, Event: hookcmd.PreToolUse}
+	if !nativePlatformSupported() {
+		if err := service.ValidateDefinition(t.Context(), definition); !errors.Is(err, hookcmd.ErrUnsupported) {
+			t.Fatalf("native platform capability = %v", err)
+		}
+		return
+	}
 	if err := service.ValidateDefinition(t.Context(), definition); err != nil {
 		t.Fatal(err)
 	}

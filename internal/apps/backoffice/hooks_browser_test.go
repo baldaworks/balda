@@ -14,9 +14,11 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/hookbackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/hookcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/hookprovider"
 	"github.com/baldaworks/balda/internal/apps/balda/hooks"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
+	"github.com/normahq/runtime/v2/agentconfig"
 )
 
 func TestHooksApplicationBrowser(t *testing.T) {
@@ -57,7 +59,14 @@ func runHooksApplicationBrowser(t *testing.T, base string, width int) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	app.hooks = hookbackofficeapp.New(hooks.NewManagement(provider.HookManagement()))
+	management := hooks.NewManagement(provider.HookManagement())
+	native, err := hookprovider.New(hooks.NewRunner(provider.HookManagement()), provider.HookManagement(), "provider", map[string]agentconfig.Config{"provider": {Type: agentconfig.AgentTypeClaudeCodeACP, ClaudeCodeACP: &agentconfig.ACPConfig{Cmd: []string{"fixture-acp"}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = native.Close() })
+	management.ConfigureValidator(native)
+	app.hooks = hookbackofficeapp.New(management)
 	handler, err := app.handler()
 	if err != nil {
 		t.Fatal(err)
@@ -106,7 +115,7 @@ func runHooksApplicationBrowser(t *testing.T, base string, width int) {
 	}
 	defer func() { _ = reopened.Close() }()
 	record, err := reopened.HookManagement().Load(t.Context())
-	if err != nil || record.Version != 4 || len(record.Definitions) != 1 || record.Definitions[0].Name != "retained" || record.Definitions[0].Enabled {
+	if err != nil || record.Version != 6 || len(record.Definitions) != 2 || record.Definitions[0].Name != "retained" || record.Definitions[0].Enabled || record.Definitions[1].Event != hookcmd.PostToolUse || record.Definitions[1].Enabled || record.Definitions[1].TimeoutSeconds != 0 {
 		t.Fatalf("reopened configuration = %+v, %v", record, err)
 	}
 	audit, err := reopened.Users().ListAuditEvents(t.Context(), usercmd.PageRequest{Limit: 100})
@@ -127,7 +136,7 @@ func runHooksApplicationBrowser(t *testing.T, base string, width int) {
 			t.Fatal("private hook data entered audit")
 		}
 	}
-	if count != 4 {
-		t.Fatalf("accepted hook audit events = %d, want 4", count)
+	if count != 6 {
+		t.Fatalf("accepted hook audit events = %d, want 6", count)
 	}
 }

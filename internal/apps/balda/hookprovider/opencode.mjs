@@ -1,4 +1,37 @@
 import { readFile } from "node:fs/promises";
+import { request } from "node:http";
+
+// node:http has no fetch/Undici headers deadline. The host runner owns hook
+// timeouts; releasing the session cancels the request at the loopback server.
+const callHook = (binding, payload) => new Promise((resolve, reject) => {
+  const req = request(binding.url, {
+    method: "POST", agent: false,
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${binding.token}` },
+  }, res => {
+    res.on("error", reject);
+    if (res.statusCode !== 200) {
+      res.resume();
+      reject(new Error("Balda tool hook unavailable; invocation rejected."));
+      return;
+    }
+    let size = 0;
+    const chunks = [];
+    res.on("data", chunk => {
+      size += chunk.length;
+      if (size > 262144) {
+        res.destroy(new Error("Balda tool hook output exceeds its limit."));
+        return;
+      }
+      chunks.push(chunk);
+    });
+    res.on("end", () => {
+      try { resolve(JSON.parse(Buffer.concat(chunks).toString("utf8"))); }
+      catch (error) { reject(error); }
+    });
+  });
+  req.on("error", reject);
+  req.end(payload);
+});
 
 // V1 tool.execute hooks remain supported by the published OpenCode 1.19 API.
 export const BaldaHooks = async () => {
@@ -19,17 +52,7 @@ export const BaldaHooks = async () => {
     };
     const serialized = JSON.stringify(payload);
     if (Buffer.byteLength(serialized) > 262144) throw new Error("Balda tool hook input exceeds its limit.");
-    const result = await fetch(binding.url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${binding.token}` },
-      body: serialized,
-      signal: AbortSignal.timeout(125000),
-      redirect: "error",
-    });
-    if (!result.ok) throw new Error("Balda tool hook unavailable; invocation rejected.");
-    const text = await result.text();
-    if (Buffer.byteLength(text) > 65536) throw new Error("Balda tool hook output exceeds its limit.");
-    const verdict = JSON.parse(text);
+    const verdict = await callHook(binding, serialized);
     if (verdict.decision === "deny") throw new Error(verdict.reason || "Balda hook rejected the tool event.");
     return verdict;
   };

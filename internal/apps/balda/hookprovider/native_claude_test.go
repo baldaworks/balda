@@ -21,11 +21,11 @@ func TestClaudeNativeDeniesToolBeforeSideEffect(t *testing.T) {
 	if os.Getenv("BALDA_NATIVE_HOOK_TEST") != "1" {
 		t.Skip("enable BALDA_NATIVE_HOOK_TEST with npm and the published Claude ACP bridge")
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 4*time.Minute)
 	defer cancel()
 	directory := t.TempDir()
 	binary := buildNativeFixtureDispatcher(t, ctx, directory)
-	service := testService(t, nativeDefinition(t, hookcmd.DecisionDeny))
+	service := testService(t, nativeEngineDefinition(t))
 	path, release, err := service.bind(kindClaude, hookcmd.Event{SessionID: "native-session", Provider: "provider", CWD: directory})
 	if err != nil {
 		t.Fatal(err)

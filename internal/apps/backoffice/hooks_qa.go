@@ -69,7 +69,7 @@ func qaHooks() webui.Page {
 		{Name: "guard", Event: hookcmd.UserPromptSubmit, Enabled: true, Command: "/usr/bin/python3", Args: []string{"/synthetic/hooks/guard.py"}, TimeoutSeconds: 10},
 		{Name: "session-note", Event: hookcmd.SessionEnd, Command: "/usr/bin/true", TimeoutSeconds: 2},
 	}})
-	page.Hooks.Capabilities = "Native PreToolUse and PostToolUse adapters are configured for provider qa-provider. Activation requires a new session: use /reset for an existing session. In-flight tool calls are unaffected. Unsupported native versions fail explicitly."
+	page.Hooks.Capabilities = "Native PreToolUse and PostToolUse adapters are configured for provider qa-provider. Activation requires a new session: use /reset for an existing session. In-flight tool calls are unaffected. Native engine deadlines still apply; Claude's outer timer is about 24.8 days. Unsupported native versions fail explicitly."
 	return page
 }
 

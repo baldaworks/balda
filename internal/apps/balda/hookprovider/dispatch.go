@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/hookcmd"
 )
@@ -63,14 +62,14 @@ func invoke(ctx context.Context, binding Binding, event hookcmd.Event) (hookcmd.
 	request.Header.Set("Content-Type", "application/json")
 	transport := &http.Transport{Proxy: nil, DisableKeepAlives: true}
 	defer transport.CloseIdleConnections()
-	client := &http.Client{Transport: transport, Timeout: 125 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	response, err := client.Do(request)
 	if err != nil {
 		return result, hookcmd.ErrUnavailable
 	}
 	defer func() { _ = response.Body.Close() }()
-	data, err = io.ReadAll(io.LimitReader(response.Body, (64<<10)+1))
-	if err != nil || len(data) > 64<<10 || response.StatusCode != http.StatusOK {
+	data, err = io.ReadAll(io.LimitReader(response.Body, maxNativeResultBytes+1))
+	if err != nil || len(data) > maxNativeResultBytes || response.StatusCode != http.StatusOK {
 		return result, hookcmd.ErrUnavailable
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
@@ -116,7 +115,9 @@ func Dispatch(ctx context.Context, path string, input io.Reader, output io.Write
 	} else if result.Decision == hookcmd.DecisionDeny {
 		envelope["decision"], envelope["reason"] = "block", denialReason(result.Reason)
 	}
-	return json.NewEncoder(output).Encode(envelope)
+	encoder := json.NewEncoder(output)
+	encoder.SetEscapeHTML(false)
+	return encoder.Encode(envelope)
 }
 
 func denialReason(reason string) string {
