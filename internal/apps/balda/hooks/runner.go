@@ -86,7 +86,11 @@ func (r *Runner) Run(ctx context.Context, event hookcmd.Event) (hookcmd.Result, 
 			if event.Name != hookcmd.UserPromptSubmit && !event.Name.ToolEvent() {
 				return hookcmd.Result{}, hookcmd.ErrExecution
 			}
-			if len(combined.AdditionalContext)+len(result.AdditionalContext)+1 > maxContextBytes {
+			addedBytes := len(result.AdditionalContext)
+			if combined.AdditionalContext != "" {
+				addedBytes++ // Separator between context contributions.
+			}
+			if len(combined.AdditionalContext)+addedBytes > maxContextBytes {
 				return hookcmd.Result{}, hookcmd.ErrExecution
 			}
 			if combined.AdditionalContext != "" {
