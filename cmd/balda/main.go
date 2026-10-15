@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/baldaworks/balda/internal/apps/balda/hookprovider"
+	"github.com/baldaworks/balda/internal/apps/balda/hooknativecompat"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpfx"
 	"github.com/baldaworks/balda/internal/apps/balda/shutdown"
 )
 
 func main() {
-	if handled, code := hookprovider.RunCommandMode(os.Args[1:]); handled {
+	if handled, code := hooknativecompat.RunCommandMode(os.Args[1:]); handled {
 		os.Exit(code)
 	}
 	if handled, code := mcpfx.RunStdioMode(os.Args[1:]); handled {

@@ -347,7 +347,7 @@ with isolated native config directories and synthetic credentials. It verifies
 denial before a filesystem effect without contacting an external model:
 
 ```bash
-BALDA_NATIVE_HOOK_TEST=1 go test -race ./internal/apps/balda/hookprovider -count=1 -v
+BALDA_NATIVE_HOOK_TEST=1 go test -race ./internal/apps/balda/hooknativecompat -count=1 -v
 ```
 
 Install Codex CLI and Node/npm first. The suite uses Claude ACP 0.16.2 and
@@ -360,7 +360,7 @@ run the slower opt-in deadline check (about seven minutes for all three):
 
 ```bash
 BALDA_NATIVE_HOOK_TEST=1 BALDA_NATIVE_HOOK_SLOW_TEST=1 \
-  go test -race ./internal/apps/balda/hookprovider -run '^Test(Claude|Codex|OpenCode)NativeDeniesToolBeforeSideEffect$' -count=1 -v
+  go test -race ./internal/apps/balda/hooknativecompat -run '^Test(Claude|Codex|OpenCode)NativeDeniesToolBeforeSideEffect$' -count=1 -v
 ```
 
 Each command has a configured 3,600-second timeout and returns deny only after
@@ -375,8 +375,11 @@ persistence. `session` and `sessionturnapp` own their lifecycle boundaries;
 `hookfx` connects those ports to the shared runner. Backoffice owns only HTTP
 ingress and presentation through `hookbackofficeapp`.
 
-`hookprovider` owns native protocol adaptation and private process/binding
-lifetimes. `agent` consumes a session-runtime factory port; `catalogapp` supplies
+`hookprovider` owns provider-neutral private process/binding lifecycle. The
+temporary `hooknativecompat` package owns native protocol adaptation until the
+registered provider adapters replace it. Native process/binding
+lifetimes are released with the session agent. `agent` consumes a
+session-runtime factory port; `catalogapp` supplies
 private launch defaults and agent-owned release. Session/transport packages do
 not own native provider contracts.
 

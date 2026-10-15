@@ -53,3 +53,9 @@ func waitReady(parent context.Context, binding Binding) error {
 	}
 	return nil
 }
+
+// SignalReady marks a provider session as ready for tool events.
+func (b Binding) SignalReady(ctx context.Context) error { return sendReady(ctx, b, false) }
+
+// WaitReady waits for the provider session to signal readiness.
+func (b Binding) WaitReady(ctx context.Context) error { return waitReady(ctx, b) }

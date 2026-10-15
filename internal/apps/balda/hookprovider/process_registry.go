@@ -19,12 +19,12 @@ type nativeProcessInfo struct {
 }
 type processRequest struct {
 	Operation string `json:"operation"`
-	ProxyPID  int    `json:"proxy_pid"`
+	OwnerPID  int    `json:"owner_pid"`
 	ChildPID  int    `json:"child_pid"`
 }
 
-func (s *Service) processMutation(token string, binding *boundSession, request processRequest) error {
-	if request.ChildPID <= 1 || request.ProxyPID <= 1 {
+func (s *Service) processMutation(token bindingID, binding *boundSession, request processRequest) error {
+	if request.ChildPID <= 1 || request.OwnerPID <= 1 {
 		return hookcmd.ErrForbidden
 	}
 	if request.Operation == "detach" {
@@ -43,22 +43,34 @@ func (s *Service) processMutation(token string, binding *boundSession, request p
 	if request.Operation != "attach" {
 		return hookcmd.ErrInvalid
 	}
-	proxy, err := readNativeProcess(request.ProxyPID)
-	if err != nil || proxy.Parent != os.Getpid() {
+	owner, err := readNativeProcess(request.OwnerPID)
+	if err != nil || owner.Parent != os.Getpid() {
 		return hookcmd.ErrForbidden
 	}
-	matched, err := proxyOwnsBinding(request.ProxyPID, binding.path)
-	if err != nil || !matched {
+	s.mu.Lock()
+	boundOwnerPID, boundOwnerStart := binding.ownerPID, binding.ownerStart
+	s.mu.Unlock()
+	if boundOwnerPID == 0 {
+		matched, err := processHasArgument(request.OwnerPID, binding.ownerProof)
+		if err != nil || !matched {
+			return hookcmd.ErrForbidden
+		}
+	} else if request.OwnerPID != boundOwnerPID || owner.Start != boundOwnerStart {
 		return hookcmd.ErrForbidden
 	}
 	child, err := readNativeProcess(request.ChildPID)
-	if err != nil || child.Parent != request.ProxyPID || child.Group != request.ChildPID {
+	if err != nil || child.Parent != request.OwnerPID || child.Group != request.ChildPID {
 		return hookcmd.ErrForbidden
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.bindings[token] != binding || len(binding.processes) >= 8 {
 		return hookcmd.ErrUnavailable
+	}
+	if binding.ownerPID == 0 {
+		binding.ownerPID, binding.ownerStart = request.OwnerPID, owner.Start
+	} else if binding.ownerPID != request.OwnerPID || binding.ownerStart != owner.Start {
+		return hookcmd.ErrForbidden
 	}
 	binding.processes[request.ChildPID] = child.Start
 	return nil
@@ -75,17 +87,23 @@ func terminateNativeProcesses(processes map[int]string) {
 	}
 }
 
-func registerNativeProcess(ctx context.Context, binding Binding, pid int) (func(), error) {
-	request := processRequest{Operation: "attach", ProxyPID: os.Getpid(), ChildPID: pid}
-	if err := sendProcessMutation(ctx, binding, request); err != nil {
+// RegisterProcess registers a direct child process for binding-owned cleanup.
+func (b Binding) RegisterProcess(ctx context.Context, pid int) (func(), error) {
+	request := processRequest{Operation: "attach", OwnerPID: os.Getpid(), ChildPID: pid}
+	if err := sendProcessMutation(ctx, b, request); err != nil {
 		return nil, err
 	}
 	return func() {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
 		request.Operation = "detach"
-		_ = sendProcessMutation(cleanupCtx, binding, request)
+		_ = sendProcessMutation(cleanupCtx, b, request)
 	}, nil
+}
+
+// UnregisterProcess removes a child after it has exited and can no longer be owned.
+func (b Binding) UnregisterProcess(ctx context.Context, pid int) error {
+	return sendProcessMutation(ctx, b, processRequest{Operation: "detach", OwnerPID: os.Getpid(), ChildPID: pid})
 }
 
 func sendProcessMutation(ctx context.Context, binding Binding, payload processRequest) error {
@@ -116,13 +134,4 @@ func sendProcessMutation(ctx context.Context, binding Binding, payload processRe
 		return hookcmd.ErrUnavailable
 	}
 	return nil
-}
-
-func bindingArgumentsMatch(args []string, path string) bool {
-	for i := 0; i+3 < len(args); i++ {
-		if args[i] == "agent-hooks" && args[i+1] == "proxy" && args[i+2] == path && args[i+3] == "--" {
-			return true
-		}
-	}
-	return false
 }

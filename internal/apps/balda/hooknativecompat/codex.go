@@ -1,4 +1,4 @@
-package hookprovider
+package hooknativecompat
 
 import (
 	"bufio"
@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/hookcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/hookprovider"
 )
 
 type codexHook struct {
@@ -114,7 +115,7 @@ func probeCodex(parent context.Context, arguments []string, registrar func(int) 
 	command := exec.CommandContext(ctx, executable, append(arguments, "app-server")...)
 	command.Stderr = io.Discard
 	command.WaitDelay = time.Second
-	configureProxyProcess(command)
+	hookprovider.ConfigureProcess(command)
 	stdin, err := command.StdinPipe()
 	if err != nil {
 		return nil, hookcmd.ErrUnavailable
@@ -131,13 +132,13 @@ func probeCodex(parent context.Context, arguments []string, registrar func(int) 
 		releaseProcess, err = registrar(command.Process.Pid)
 		if err != nil {
 			cancel()
-			_ = waitOwnedProcess(command)
+			_ = hookprovider.WaitProcess(command)
 			return nil, err
 		}
 	}
 	defer func() {
 		cancel()
-		_ = waitOwnedProcess(command)
+		_ = hookprovider.WaitProcess(command)
 		if releaseProcess != nil {
 			releaseProcess()
 		}

@@ -1,4 +1,4 @@
-package hookprovider
+package hooknativecompat
 
 import (
 	"bufio"
@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/hookcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/hookprovider"
 )
 
 func TestPrivateProxyHelper(t *testing.T) {
@@ -40,7 +41,7 @@ func TestLingeringACPHelper(t *testing.T) {
 }
 
 func TestNativeProxyCrashReleasesOwnedProcessGroup(t *testing.T) {
-	if !nativePlatformSupported() {
+	if !hookprovider.NativePlatformSupported() {
 		t.Skip("native adapters require Linux or macOS")
 	}
 	service := testService(t, hookcmd.Definition{})
@@ -53,7 +54,11 @@ func TestNativeProxyCrashReleasesOwnedProcessGroup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	command := exec.CommandContext(t.Context(), executable, "-test.run=^TestPrivateProxyHelper$", "--", "private-proxy-helper", "agent-hooks", "proxy", path, "--", executable, "-test.run=^TestLingeringACPHelper$", "--", "lingering-acp-helper")
+	proof, err := readOwnerProof(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := exec.CommandContext(t.Context(), executable, "-test.run=^TestPrivateProxyHelper$", "--", "private-proxy-helper", "agent-hooks", "proxy", path, proof, "--", executable, "-test.run=^TestLingeringACPHelper$", "--", "lingering-acp-helper")
 	stdin, err := command.StdinPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -97,7 +102,7 @@ func TestNativeProxyCrashReleasesOwnedProcessGroup(t *testing.T) {
 	_ = command.Wait()
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
-		if _, err := readNativeProcess(response.Result.PID); err != nil {
+		if !hookprovider.ProcessAlive(response.Result.PID) {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)

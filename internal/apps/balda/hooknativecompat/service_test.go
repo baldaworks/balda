@@ -1,4 +1,4 @@
-package hookprovider
+package hooknativecompat
 
 import (
 	"bytes"
@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/hookcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/hookprovider"
 	"github.com/baldaworks/balda/internal/apps/balda/hooks"
 	"github.com/normahq/runtime/v2/agentconfig"
 )
@@ -39,7 +40,7 @@ func nativeDefinition(t *testing.T, mode string) hookcmd.Definition {
 }
 
 func TestNativeActivationRequiresSessionBinding(t *testing.T) {
-	if !nativePlatformSupported() {
+	if !hookprovider.NativePlatformSupported() {
 		t.Skip("native session activation requires Linux or macOS")
 	}
 	service := testService(t, nativeDefinition(t, "inspect"))
@@ -133,9 +134,8 @@ func TestBridgePreservesCombinedContextAndInputRewrite(t *testing.T) {
 	contextHook.Name = "a-context"
 	rewriteHook := nativeDefinition(t, "large-rewrite")
 	rewriteHook.Name = "b-rewrite"
-	service := testService(t, contextHook)
 	store := configurationFixture{record: hookcmd.Record{Version: 1, UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano), Definitions: []hookcmd.Definition{contextHook, rewriteHook}}}
-	service.records, service.runner = store, hooks.NewRunner(store)
+	service := testServiceWithStore(t, store)
 	path, release, err := service.bind(kindCodex, hookcmd.Event{SessionID: "session", Provider: "provider", CWD: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
@@ -206,6 +206,11 @@ func testService(t *testing.T, definition hookcmd.Definition) *Service {
 		record = hookcmd.Record{Version: 1, UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano), Definitions: []hookcmd.Definition{definition}}
 	}
 	store := configurationFixture{record: record}
+	return testServiceWithStore(t, store)
+}
+
+func testServiceWithStore(t *testing.T, store configurationFixture) *Service {
+	t.Helper()
 	providers := map[string]agentconfig.Config{"provider": {Type: agentconfig.AgentTypeClaudeCodeACP, ClaudeCodeACP: &agentconfig.ACPConfig{Cmd: []string{"fixture-acp"}, Model: "model", Mode: "default"}}}
 	service, err := New(hooks.NewRunner(store), store, "provider", providers)
 	if err != nil {
@@ -220,7 +225,7 @@ func testService(t *testing.T, definition hookcmd.Definition) *Service {
 }
 
 func TestBridgeBindsTrustedSessionContextAndReleasesCapabilities(t *testing.T) {
-	if !nativePlatformSupported() {
+	if !hookprovider.NativePlatformSupported() {
 		t.Skip("native launch preparation requires Linux or macOS")
 	}
 	service := testService(t, nativeDefinition(t, "inspect"))
@@ -316,7 +321,7 @@ func TestDispatchNativeDecisionsAndRewrites(t *testing.T) {
 func TestNativeCapabilitiesRejectUnsupportedPoolAndMissingProvider(t *testing.T) {
 	service := testService(t, hookcmd.Definition{})
 	definition := hookcmd.Definition{Enabled: true, Event: hookcmd.PreToolUse}
-	if !nativePlatformSupported() {
+	if !hookprovider.NativePlatformSupported() {
 		if err := service.ValidateDefinition(t.Context(), definition); !errors.Is(err, hookcmd.ErrUnsupported) {
 			t.Fatalf("native platform capability = %v", err)
 		}

@@ -39,7 +39,7 @@ func TestWaitOwnedProcessCleansDescendantsAfterLeaderExit(t *testing.T) {
 		t.Fatal(err)
 	}
 	command := exec.CommandContext(t.Context(), executable, "-test.run=^TestExitingNativeParentHelper$", "--", "exiting-native-parent")
-	configureProxyProcess(command)
+	configureOwnedProcess(command)
 	stdout, err := command.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)

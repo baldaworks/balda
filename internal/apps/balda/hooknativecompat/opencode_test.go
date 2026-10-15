@@ -1,4 +1,4 @@
-package hookprovider
+package hooknativecompat
 
 import (
 	"bytes"

@@ -49,6 +49,7 @@ func RunBindingContract(t *testing.T, factory BindingFactory) {
 		})
 		got, err := fixture.Binding.Invoke(t.Context(), hookcmd.Event{
 			Name:       hookcmd.PreToolUse,
+			Source:     "adk",
 			SessionID:  "untrusted-session",
 			Provider:   "untrusted-provider",
 			CWD:        "/untrusted",

@@ -1,4 +1,4 @@
-package hookprovider
+package hooknativecompat
 
 import (
 	"context"
@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/hookcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/hookprovider"
 )
 
 // This exercises the installed native hook engine against a loopback Responses
@@ -106,10 +107,10 @@ func TestCodexNativeDeniesToolBeforeSideEffect(t *testing.T) {
 	arguments = append(arguments, "-c", `model_provider="balda_hook_fixture"`, "-c", `model="gpt-5.4"`, "-c", `features.code_mode=false`, "-c", `features.plugins=false`, "-c", `model_providers.balda_hook_fixture={name="Balda hook fixture",base_url="`+modelServer.URL+`",wire_api="responses",requires_openai_auth=false}`, "exec", "--json", "--skip-git-repo-check", "--ephemeral", "--sandbox", "workspace-write", "Run one local command.")
 	command := exec.CommandContext(ctx, "codex", arguments...)
 	command.Dir = directory
-	configureProxyProcess(command)
+	hookprovider.ConfigureProcess(command)
 	defer func() {
 		if command.Process != nil {
-			_ = killNativeGroup(command.Process.Pid)
+			_ = command.Process.Kill()
 		}
 	}()
 	command.Env = append(os.Environ(), "CODEX_HOME="+nativeConfigDir, bindingEnv+"="+path, executableEnv+"="+binary)

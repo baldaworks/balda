@@ -1,4 +1,4 @@
-package hookprovider
+package hooknativecompat
 
 import (
 	"bufio"
@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/hookcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/hookprovider"
 )
 
 //go:embed opencode.mjs
@@ -209,7 +210,7 @@ func Proxy(parent context.Context, path string, argv []string, input io.Reader, 
 	argv = append([]string(nil), argv...)
 	switch binding.Kind {
 	case kindCodex:
-		argv, err = prepareCodex(ctx, argv, func(pid int) (func(), error) { return registerNativeProcess(ctx, binding, pid) })
+		argv, err = prepareCodex(ctx, argv, func(pid int) (func(), error) { return binding.RegisterProcess(ctx, pid) })
 	case kindOpenCode:
 		err = openCodeEnvironment(path, environment)
 	}
@@ -223,7 +224,7 @@ func Proxy(parent context.Context, path string, argv []string, input io.Reader, 
 	}
 	command.Stderr = stderr
 	command.WaitDelay = time.Second
-	configureProxyProcess(command)
+	hookprovider.ConfigureProcess(command)
 	stdin, err := command.StdinPipe()
 	if err != nil {
 		return err
@@ -235,10 +236,10 @@ func Proxy(parent context.Context, path string, argv []string, input io.Reader, 
 	if err := command.Start(); err != nil {
 		return hookcmd.ErrUnavailable
 	}
-	releaseProcess, err := registerNativeProcess(ctx, binding, command.Process.Pid)
+	releaseProcess, err := binding.RegisterProcess(ctx, command.Process.Pid)
 	if err != nil {
 		cancel()
-		_ = waitOwnedProcess(command)
+		_ = hookprovider.WaitProcess(command)
 		return err
 	}
 	defer releaseProcess()
@@ -299,31 +300,31 @@ func Proxy(parent context.Context, path string, argv []string, input io.Reader, 
 		delete(sessionRequests, string(response.ID))
 		handshakeMu.Unlock()
 		if mustBeReady && len(response.Error) == 0 {
-			if err := waitReady(ctx, binding); err != nil {
+			if err := binding.WaitReady(ctx); err != nil {
 				cancel()
-				_ = waitOwnedProcess(command)
+				_ = hookprovider.WaitProcess(command)
 				return err
 			}
 		}
 		if mustVerify && len(response.Error) == 0 && len(response.Result["agentInfo"]) == 0 {
 			cancel()
-			_ = waitOwnedProcess(command)
+			_ = hookprovider.WaitProcess(command)
 			return hookcmd.ErrUnsupported
 		}
 		if err := checkNativeVersion(line, binding.Kind); err != nil {
 			cancel()
-			_ = waitOwnedProcess(command)
+			_ = hookprovider.WaitProcess(command)
 			return err
 		}
 		if _, err := output.Write(append(line, '\n')); err != nil {
 			cancel()
-			_ = waitOwnedProcess(command)
+			_ = hookprovider.WaitProcess(command)
 			return err
 		}
 	}
 	interrupted := ctx.Err() != nil
 	cancel()
-	waitErr := waitOwnedProcess(command)
+	waitErr := hookprovider.WaitProcess(command)
 	inputEnded := false
 	select {
 	case err := <-inputError:
@@ -341,7 +342,7 @@ func Proxy(parent context.Context, path string, argv []string, input io.Reader, 
 		// Treat that deliberate termination as a clean proxy shutdown.
 		cleanupCtx, stop := context.WithTimeout(context.Background(), time.Second)
 		defer stop()
-		if sendProcessMutation(cleanupCtx, binding, processRequest{Operation: "detach", ProxyPID: os.Getpid(), ChildPID: command.Process.Pid}) != nil {
+		if binding.UnregisterProcess(cleanupCtx, command.Process.Pid) != nil {
 			return nil
 		}
 		return hookcmd.ErrUnavailable

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"os"
 	"strings"
 	"testing"
 
@@ -20,21 +19,21 @@ func TestNativeBindingContract(t *testing.T) {
 
 func newCurrentBindingFixture(t testing.TB, runner hooknativetest.Runner) hooknativetest.BindingFixture {
 	t.Helper()
-	service := &Service{runner: runnerFunc(runner), bindings: make(map[string]*boundSession)}
-	t.Cleanup(func() { _ = service.Close() })
-	trusted := hookcmd.Event{SessionID: "trusted-session", Provider: "opaque-provider", CWD: t.TempDir(), Source: "native"}
-	// The empty legacy kind deliberately avoids exercising the provider wire
-	// dispatcher. TASK-003 removes this transitional bind parameter entirely.
-	path, release, err := service.bind("", trusted)
+	service, err := New(runnerFunc(runner))
 	if err != nil {
 		t.Fatal(err)
 	}
-	var binding Binding
-	data, err := os.ReadFile(path)
-	if err != nil || json.Unmarshal(data, &binding) != nil {
-		t.Fatalf("read current binding: %v", err)
+	t.Cleanup(func() { _ = service.Close() })
+	trusted := hookcmd.Event{SessionID: "trusted-session", Provider: "opaque-provider", CWD: t.TempDir(), Source: "native"}
+	binding, err := service.Bind(t.Context(), BindingScope{SessionID: trusted.SessionID, Provider: trusted.Provider, CWD: trusted.CWD})
+	if err != nil {
+		t.Fatal(err)
 	}
-	return hooknativetest.BindingFixture{Binding: &currentBindingDriver{binding: binding, release: release}, Trusted: trusted}
+	read, err := ReadBinding(binding.Reference())
+	if err != nil {
+		t.Fatalf("read binding: %v", err)
+	}
+	return hooknativetest.BindingFixture{Binding: &currentBindingDriver{binding: read, release: binding.Release}, Trusted: trusted}
 }
 
 type currentBindingDriver struct {
@@ -43,13 +42,13 @@ type currentBindingDriver struct {
 }
 
 func (d *currentBindingDriver) Invoke(ctx context.Context, event hookcmd.Event) (hookcmd.Result, error) {
-	return invoke(ctx, d.binding, event)
+	return d.binding.Invoke(ctx, event)
 }
 
 func (d *currentBindingDriver) InvokeUnauthenticated(ctx context.Context, event hookcmd.Event) error {
 	untrusted := d.binding
 	untrusted.Token = strings.Repeat("0", len(untrusted.Token))
-	_, err := invoke(ctx, untrusted, event)
+	_, err := untrusted.Invoke(ctx, event)
 	return err
 }
 
@@ -76,11 +75,11 @@ func (d *currentBindingDriver) InvokeWithOrigin(ctx context.Context, event hookc
 }
 
 func (d *currentBindingDriver) SignalReady(ctx context.Context) error {
-	return sendReady(ctx, d.binding, false)
+	return d.binding.SignalReady(ctx)
 }
 
 func (d *currentBindingDriver) WaitReady(ctx context.Context) error {
-	return waitReady(ctx, d.binding)
+	return d.binding.WaitReady(ctx)
 }
 
 func (d *currentBindingDriver) Release() error { return d.release() }

@@ -155,13 +155,18 @@ components:
     in:
       - internal/apps/balda/hookbackofficeapp
 
-  # Target owner for neutral authenticated Event/Result bindings. TASK-002
-  # records one staged exception: the pre-extraction package still contains
-  # provider traversal and wire adapters. TASK-003 removes that implementation
-  # debt without changing this component's provider-neutral dependency rule.
+  # Provider-neutral authenticated Event/Result bindings and process cleanup.
+  # Provider config, traversal, launch mutation, and wire codecs are forbidden.
   native_hook_bindings:
     in:
       - internal/apps/balda/hookprovider
+
+  # Temporary compatibility owner for the pre-registry native launch path.
+  # TASK-004 and TASK-005 replace this package with the registry and concrete
+  # adapters; it must not leak provider concepts back into hookprovider.
+  native_hook_compat:
+    in:
+      - internal/apps/balda/hooknativecompat
 
   # Target registry iterates provider-owned adapters for one catalog leaf. It
   # owns no provider switch and no binding transport implementation.
@@ -657,13 +662,18 @@ deps:
   native_hook_bindings:
     mayDependOn:
       - hook_contracts
-    # TASK-002 staged exception: service.go is the sole remaining provider-tree
-    # and agentconfig owner in hookprovider. TASK-003 removes this capability;
-    # process runtime remains valid for binding cleanup.
     deepScan: false
     anyVendorDeps: false
     canUse:
       - native_hook_process_runtime
+
+  native_hook_compat:
+    mayDependOn:
+      - hook_contracts
+      - native_hook_bindings
+    deepScan: false
+    anyVendorDeps: false
+    canUse:
       - native_hook_provider_config
 
   native_hook_registry:
@@ -694,7 +704,7 @@ deps:
 
   hook_wiring:
     mayDependOn:
-      - native_hook_bindings
+      - native_hook_compat
       - hook_contracts
       - hook_policy
       - hook_backoffice_wiring
@@ -1250,7 +1260,7 @@ deps:
 
   composition_root:
     mayDependOn:
-      - native_hook_bindings
+      - native_hook_compat
       - hook_policy
       - hook_wiring
       - hook_backoffice_wiring
@@ -1313,7 +1323,7 @@ deps:
 
   entrypoints:
     mayDependOn:
-      - native_hook_bindings
+      - native_hook_compat
       - foundation
       - composition_root
       - application

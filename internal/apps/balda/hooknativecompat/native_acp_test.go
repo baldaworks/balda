@@ -1,4 +1,4 @@
-package hookprovider
+package hooknativecompat
 
 import (
 	"context"
@@ -36,7 +36,11 @@ func buildNativeFixtureDispatcher(t *testing.T, ctx context.Context, directory s
 
 func runNativeACPFixture(t *testing.T, ctx context.Context, binary, path, directory string, argv, environment []string, metadata map[string]any) {
 	t.Helper()
-	command := exec.CommandContext(ctx, binary, append([]string{"agent-hooks", "proxy", path, "--"}, argv...)...)
+	proof, err := readOwnerProof(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := exec.CommandContext(ctx, binary, append([]string{"agent-hooks", "proxy", path, proof, "--"}, argv...)...)
 	command.Dir = directory
 	command.Env = append(os.Environ(), environment...)
 	stdin, err := command.StdinPipe()

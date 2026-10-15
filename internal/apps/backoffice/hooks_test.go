@@ -11,7 +11,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/backoffice/security"
 	"github.com/baldaworks/balda/internal/apps/balda/hookbackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/hookcmd"
-	"github.com/baldaworks/balda/internal/apps/balda/hookprovider"
+	"github.com/baldaworks/balda/internal/apps/balda/hooknativecompat"
 	"github.com/baldaworks/balda/internal/apps/balda/hooks"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/normahq/runtime/v2/agentconfig"
@@ -31,7 +31,7 @@ func TestHooksHTTPManagement(t *testing.T) {
 				t.Fatal(err)
 			}
 			management := hooks.NewManagement(provider.HookManagement())
-			native, err := hookprovider.New(hooks.NewRunner(provider.HookManagement()), provider.HookManagement(), "provider", map[string]agentconfig.Config{"provider": {Type: agentconfig.AgentTypeClaudeCodeACP, ClaudeCodeACP: &agentconfig.ACPConfig{Cmd: []string{"fixture-acp"}}}})
+			native, err := hooknativecompat.New(hooks.NewRunner(provider.HookManagement()), provider.HookManagement(), "provider", map[string]agentconfig.Config{"provider": {Type: agentconfig.AgentTypeClaudeCodeACP, ClaudeCodeACP: &agentconfig.ACPConfig{Cmd: []string{"fixture-acp"}}}})
 			if err != nil {
 				t.Fatal(err)
 			}

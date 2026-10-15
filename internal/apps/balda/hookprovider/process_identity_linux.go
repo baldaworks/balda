@@ -35,12 +35,17 @@ func readNativeProcess(pid int) (nativeProcessInfo, error) {
 	return nativeProcessInfo{Parent: parent, Group: group, Start: fields[19]}, nil
 }
 
-func proxyOwnsBinding(pid int, path string) (bool, error) {
+func processHasArgument(pid int, expected string) (bool, error) {
 	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
 	if err != nil {
 		return false, os.ErrProcessDone
 	}
-	return bindingArgumentsMatch(strings.Split(string(data), "\x00"), path), nil
+	for _, argument := range strings.Split(string(data), "\x00") {
+		if argument == expected {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func killNativeGroup(pid int) error { return syscall.Kill(-pid, syscall.SIGKILL) }
