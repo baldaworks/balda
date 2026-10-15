@@ -1,8 +1,10 @@
 package runtimecatalog
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -101,6 +103,167 @@ func TestSourceLoaderValidatesBundledBaldaExtensionSchema(t *testing.T) {
 			}
 			if len(source.Commands) != 0 || !containsDiagnostic(source.Diagnostics, runtimecatalogcmd.DiagnosticExtensionInvalid) {
 				t.Fatalf("source = %+v, want disabled extension diagnostic", source)
+			}
+		})
+	}
+}
+
+func TestSourceLoaderLoadsBaldaExtensionV2HooksWithoutActivatingThem(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	executable := testHookExecutable(t, root)
+	extension := `{"schema_version":2,"commands":[{"name":"release","description":"Release safely","instruction":"Deploy it."}],"hooks":[{"name":"guard-shell","description":"Guard shell tools","event":"PreToolUse","executable":"` + executable + `","args":["--literal=$HOME","$(never)"],"matcher":"^(exec_command|bash)$","providers":["codex","claude"],"timeout_seconds":30}]}`
+	writeSourceFile(t, root, "plugin.json", `{"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json","name":"policy-pack","extensions":{"dev.baldaworks.balda":`+extension+`}}`)
+
+	source, err := newTestSourceLoader(t).LoadPlugin(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(source.Commands) != 1 || len(source.Hooks) != 1 {
+		t.Fatalf("commands/hooks = %d/%d, want 1/1", len(source.Commands), len(source.Hooks))
+	}
+	hook := source.Hooks[0]
+	if hook.ID.Kind != runtimecatalogcmd.ContributionKindHook || hook.Event != "PreToolUse" || hook.Executable != executable || hook.TimeoutSeconds != 30 {
+		t.Fatalf("hook descriptor = %#v", hook)
+	}
+	if got := strings.Join(hook.Args, "|"); got != "--literal=$HOME|$(never)" {
+		t.Fatalf("hook args = %q, want literal shell metacharacters", got)
+	}
+	if containsDiagnostic(source.Diagnostics, runtimecatalogcmd.DiagnosticExtensionInvalid) {
+		t.Fatalf("diagnostics = %#v, want valid extension", source.Diagnostics)
+	}
+}
+
+func TestSourceLoaderAcceptsBaldaExtensionV2ContributionShapes(t *testing.T) {
+	t.Parallel()
+	for _, shape := range []string{"commands", "hooks", "combined"} {
+		t.Run(shape, func(t *testing.T) {
+			root := t.TempDir()
+			executable := testHookExecutable(t, root)
+			command := `"commands":[{"name":"release","description":"Release safely","instruction":"Deploy it."}]`
+			hook := `"hooks":[{"name":"guard","description":"Guard tools","event":"PostToolUse","executable":"` + executable + `","args":[],"matcher":"","timeout_seconds":30}]`
+			body := command
+			switch shape {
+			case "hooks":
+				body = hook
+			case "combined":
+				body = command + "," + hook
+			}
+			writeSourceFile(t, root, "plugin.json", `{"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json","name":"demo","extensions":{"dev.baldaworks.balda":{"schema_version":2,`+body+`}}}`)
+			source, err := newTestSourceLoader(t).LoadPlugin(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantCommands, wantHooks := 1, 0
+			switch shape {
+			case "hooks":
+				wantCommands, wantHooks = 0, 1
+			case "combined":
+				wantHooks = 1
+			}
+			if len(source.Commands) != wantCommands || len(source.Hooks) != wantHooks || containsDiagnostic(source.Diagnostics, runtimecatalogcmd.DiagnosticExtensionInvalid) {
+				t.Fatalf("source = %#v, want commands/hooks %d/%d", source, wantCommands, wantHooks)
+			}
+		})
+	}
+}
+
+func TestSourceLoaderRejectsInvalidBaldaExtensionV2Hooks(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		hook      string
+		prepare   func(*testing.T, string, string)
+		whole     string
+		wantFatal bool
+	}{
+		{name: "empty contributions", whole: `{"schema_version":2}`},
+		{name: "unknown field", hook: `,"unknown":true`},
+		{name: "noncanonical name", hook: `,"name":"1guard"`},
+		{name: "unsupported event", hook: `,"event":"Stop"`},
+		{name: "invalid matcher", hook: `,"matcher":"["`},
+		{name: "zero timeout", hook: `,"timeout_seconds":0`},
+		{name: "oversized timeout", hook: `,"timeout_seconds":3601`},
+		{name: "absolute executable", hook: `,"executable":"/tmp/hook"`},
+		{name: "traversing executable", hook: `,"executable":"../hook"`},
+		{name: "missing executable", hook: `,"executable":"hooks/missing"`},
+		{name: "non executable", prepare: func(t *testing.T, root, executable string) {
+			t.Helper()
+			if runtime.GOOS == windowsGOOS {
+				t.Skip("Windows executable validation uses a direct-execution suffix")
+			}
+			if err := os.Chmod(filepath.Join(root, filepath.FromSlash(executable)), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{name: "nul argument", hook: `,"args":["bad\u0000arg"]`},
+		{name: "nul description", hook: `,"description":"bad\u0000description"`},
+		{name: "duplicate hook", whole: `{"schema_version":2,"hooks":[HOOK,HOOK]}`},
+		{name: "symlink executable", prepare: func(t *testing.T, root, executable string) {
+			t.Helper()
+			target := filepath.Base(executable)
+			link := filepath.Join(root, "hooks", "linked")
+			if runtime.GOOS == windowsGOOS {
+				link += windowsCommandExtension
+			}
+			if err := os.Symlink(target, link); err != nil {
+				t.Skipf("symlink unavailable: %v", err)
+			}
+		}, hook: `,"executable":"HOOK_LINK"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			executable := testHookExecutable(t, root)
+			if tt.prepare != nil {
+				tt.prepare(t, root, executable)
+			}
+			base := `{"name":"guard","description":"Guard tools","event":"PreToolUse","executable":"` + executable + `","args":[],"matcher":"","timeout_seconds":30}`
+			hook := base
+			if tt.hook != "" {
+				var fields map[string]any
+				if err := json.Unmarshal([]byte(base), &fields); err != nil {
+					t.Fatal(err)
+				}
+				var override map[string]any
+				if err := json.Unmarshal([]byte(`{`+strings.TrimPrefix(tt.hook, ",")+`}`), &override); err != nil {
+					t.Fatal(err)
+				}
+				for key, value := range override {
+					fields[key] = value
+				}
+				data, err := json.Marshal(fields)
+				if err != nil {
+					t.Fatal(err)
+				}
+				hook = string(data)
+			}
+			if strings.Contains(hook, "HOOK_LINK") {
+				link := "hooks/linked"
+				if runtime.GOOS == windowsGOOS {
+					link += windowsCommandExtension
+				}
+				hook = strings.ReplaceAll(hook, "HOOK_LINK", link)
+			}
+			extension := tt.whole
+			if extension == "" {
+				extension = `{"schema_version":2,"hooks":[` + hook + `]}`
+			} else {
+				extension = strings.ReplaceAll(extension, "HOOK", hook)
+			}
+			writeSourceFile(t, root, "plugin.json", `{"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json","name":"demo","extensions":{"dev.baldaworks.balda":`+extension+`}}`)
+			source, err := newTestSourceLoader(t).LoadPlugin(root)
+			if tt.wantFatal {
+				if err == nil {
+					t.Fatal("LoadPlugin() error = nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(source.Hooks) != 0 || !containsDiagnostic(source.Diagnostics, runtimecatalogcmd.DiagnosticExtensionInvalid) {
+				t.Fatalf("source = %#v, want disabled extension", source)
 			}
 		})
 	}
@@ -531,6 +694,23 @@ func writeSourceFile(t *testing.T, root, relative, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func testHookExecutable(t *testing.T, root string) string {
+	t.Helper()
+	relative := "hooks/guard"
+	content := "#!/bin/sh\nexit 0\n"
+	if runtime.GOOS == windowsGOOS {
+		relative += windowsCommandExtension
+		content = "@exit /b 0\r\n"
+	}
+	writeSourceFile(t, root, relative, content)
+	if runtime.GOOS != windowsGOOS {
+		if err := os.Chmod(filepath.Join(root, filepath.FromSlash(relative)), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return relative
 }
 
 func containsDiagnostic(diagnostics []runtimecatalogcmd.Diagnostic, code string) bool {

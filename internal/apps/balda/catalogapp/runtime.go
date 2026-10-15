@@ -361,6 +361,7 @@ type snapshotRecord struct {
 	Parents     []runtimecatalogcmd.SnapshotID          `json:"parents,omitempty"`
 	Sources     []runtimecatalogcmd.SourceDescriptor    `json:"sources,omitempty"`
 	Commands    []runtimecatalogcmd.CommandDescriptor   `json:"commands,omitempty"`
+	Hooks       []runtimecatalogcmd.HookDescriptor      `json:"hooks,omitempty"`
 	Skills      []runtimecatalogcmd.SkillMetadata       `json:"skills,omitempty"`
 	MCPServers  []runtimecatalogcmd.MCPServerDescriptor `json:"mcp_servers,omitempty"`
 	Diagnostics []runtimecatalogcmd.Diagnostic          `json:"diagnostics,omitempty"`
@@ -374,6 +375,9 @@ func (r *Runtime) persistSnapshot(ctx context.Context, snapshot runtimecatalogcm
 	for _, command := range snapshot.Commands {
 		record.Commands = append(record.Commands, command)
 	}
+	for _, hook := range snapshot.Hooks {
+		record.Hooks = append(record.Hooks, hook)
+	}
 	for _, skill := range snapshot.Skills {
 		record.Skills = append(record.Skills, skill)
 	}
@@ -382,6 +386,7 @@ func (r *Runtime) persistSnapshot(ctx context.Context, snapshot runtimecatalogcm
 	}
 	sort.Slice(record.Sources, func(i, j int) bool { return record.Sources[i].ID.String() < record.Sources[j].ID.String() })
 	sort.Slice(record.Commands, func(i, j int) bool { return record.Commands[i].ID.String() < record.Commands[j].ID.String() })
+	sort.Slice(record.Hooks, func(i, j int) bool { return record.Hooks[i].ID.String() < record.Hooks[j].ID.String() })
 	sort.Slice(record.Skills, func(i, j int) bool { return record.Skills[i].ID.String() < record.Skills[j].ID.String() })
 	sort.Slice(record.MCPServers, func(i, j int) bool { return record.MCPServers[i].ID.String() < record.MCPServers[j].ID.String() })
 	if err := r.kv.SetJSON(ctx, snapshotKeyPrefix+string(snapshot.ID), record); err != nil {
@@ -413,6 +418,7 @@ func (r *Runtime) retainedSnapshot(ctx context.Context, id runtimecatalogcmd.Sna
 		ID: record.ID, Scope: record.Scope, Parents: record.Parents, Diagnostics: record.Diagnostics,
 		Sources:    make(map[runtimecatalogcmd.SourceID]runtimecatalogcmd.SourceDescriptor, len(record.Sources)),
 		Commands:   make(map[runtimecatalogcmd.ContributionID]runtimecatalogcmd.CommandDescriptor, len(record.Commands)),
+		Hooks:      make(map[runtimecatalogcmd.ContributionID]runtimecatalogcmd.HookDescriptor, len(record.Hooks)),
 		Skills:     make(map[runtimecatalogcmd.ContributionID]runtimecatalogcmd.SkillMetadata, len(record.Skills)),
 		MCPServers: make(map[runtimecatalogcmd.ContributionID]runtimecatalogcmd.MCPServerDescriptor, len(record.MCPServers)),
 	}
@@ -421,6 +427,9 @@ func (r *Runtime) retainedSnapshot(ctx context.Context, id runtimecatalogcmd.Sna
 	}
 	for _, command := range record.Commands {
 		snapshot.Commands[command.ID] = command
+	}
+	for _, hook := range record.Hooks {
+		snapshot.Hooks[hook.ID] = hook
 	}
 	for _, skill := range record.Skills {
 		snapshot.Skills[skill.ID] = skill

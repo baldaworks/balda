@@ -37,6 +37,7 @@ type ContributionKind string
 
 const (
 	ContributionKindCommand   ContributionKind = "command"
+	ContributionKindHook      ContributionKind = "hook"
 	ContributionKindSkill     ContributionKind = "skill"
 	ContributionKindMCPServer ContributionKind = "mcp-server"
 )
@@ -182,6 +183,21 @@ type CommandDescriptor struct {
 	Advertised  bool           `json:"advertised"`
 }
 
+// HookDescriptor describes an immutable package hook contribution. Discovery
+// does not grant execution authority; activation is stored separately.
+type HookDescriptor struct {
+	ID             ContributionID `json:"id"`
+	Revision       RevisionID     `json:"revision"`
+	Name           string         `json:"name"`
+	Description    string         `json:"description"`
+	Event          string         `json:"event"`
+	Executable     string         `json:"executable"`
+	Args           []string       `json:"args"`
+	Matcher        string         `json:"matcher"`
+	Providers      []string       `json:"providers,omitempty"`
+	TimeoutSeconds int            `json:"timeout_seconds"`
+}
+
 // SkillMetadata describes a skill without loading its instruction body.
 type SkillMetadata struct {
 	ID          ContributionID `json:"id"`
@@ -216,6 +232,7 @@ type Diagnostic struct {
 type Source struct {
 	Descriptor  SourceDescriptor      `json:"descriptor"`
 	Commands    []CommandDescriptor   `json:"commands,omitempty"`
+	Hooks       []HookDescriptor      `json:"hooks,omitempty"`
 	Skills      []SkillMetadata       `json:"skills,omitempty"`
 	MCPServers  []MCPServerDescriptor `json:"mcp_servers,omitempty"`
 	Diagnostics []Diagnostic          `json:"diagnostics,omitempty"`
@@ -229,6 +246,7 @@ type Snapshot struct {
 	Parents     []SnapshotID                           `json:"parents,omitempty"`
 	Sources     map[SourceID]SourceDescriptor          `json:"-"`
 	Commands    map[ContributionID]CommandDescriptor   `json:"-"`
+	Hooks       map[ContributionID]HookDescriptor      `json:"-"`
 	Skills      map[ContributionID]SkillMetadata       `json:"-"`
 	MCPServers  map[ContributionID]MCPServerDescriptor `json:"-"`
 	Diagnostics []Diagnostic                           `json:"diagnostics,omitempty"`
@@ -240,6 +258,12 @@ func (s Snapshot) Clone() Snapshot {
 	out.Parents = append([]SnapshotID(nil), s.Parents...)
 	out.Sources = cloneMap(s.Sources)
 	out.Commands = cloneMap(s.Commands)
+	out.Hooks = cloneMap(s.Hooks)
+	for id, descriptor := range out.Hooks {
+		descriptor.Args = append([]string(nil), descriptor.Args...)
+		descriptor.Providers = append([]string(nil), descriptor.Providers...)
+		out.Hooks[id] = descriptor
+	}
 	out.Skills = cloneMap(s.Skills)
 	out.MCPServers = cloneMap(s.MCPServers)
 	for id, descriptor := range out.MCPServers {

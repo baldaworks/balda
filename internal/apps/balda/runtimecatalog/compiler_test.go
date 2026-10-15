@@ -1,6 +1,9 @@
 package runtimecatalog
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"sync"
@@ -15,6 +18,11 @@ func TestCompileApplicationIsDeterministic(t *testing.T) {
 
 	builtin := commandSource(runtimecatalogcmd.SourceKindBuiltin, "balda", "builtin-revision", "reset")
 	plugin := pluginSource("release-tools", "plugin-revision", "release", "deploy")
+	hookID := runtimecatalogcmd.ContributionID{Source: plugin.Descriptor.ID, Kind: runtimecatalogcmd.ContributionKindHook, Name: "guard"}
+	plugin.Hooks = []runtimecatalogcmd.HookDescriptor{{
+		ID: hookID, Revision: plugin.Descriptor.Revision, Name: "guard", Description: "Guard tools", Event: "PreToolUse",
+		Executable: "hooks/guard", Args: []string{"--literal=$HOME"}, Matcher: "^exec$", Providers: []string{"codex"}, TimeoutSeconds: 30,
+	}}
 	compiler := NewCompiler()
 
 	first, err := compiler.CompileApplication([]runtimecatalogcmd.Source{plugin, builtin})
@@ -28,6 +36,9 @@ func TestCompileApplicationIsDeterministic(t *testing.T) {
 	if first.ID != second.ID {
 		t.Fatalf("reordered snapshot IDs differ: %q != %q", first.ID, second.ID)
 	}
+	if got := first.Hooks[hookID]; got.Executable != "hooks/guard" || got.Args[0] != "--literal=$HOME" {
+		t.Fatalf("compiled hook = %#v", got)
+	}
 
 	plugin.Descriptor.Revision = changedRevision
 	for i := range plugin.Commands {
@@ -36,12 +47,51 @@ func TestCompileApplicationIsDeterministic(t *testing.T) {
 	for i := range plugin.Skills {
 		plugin.Skills[i].Revision = changedRevision
 	}
+	for i := range plugin.Hooks {
+		plugin.Hooks[i].Revision = changedRevision
+	}
 	changed, err := compiler.CompileApplication([]runtimecatalogcmd.Source{builtin, plugin})
 	if err != nil {
 		t.Fatalf("CompileApplication() changed error = %v", err)
 	}
 	if changed.ID == first.ID {
 		t.Fatalf("changed revision retained snapshot ID %q", changed.ID)
+	}
+}
+
+func TestSnapshotsWithoutHooksRetainLegacyContentIdentity(t *testing.T) {
+	t.Parallel()
+	source := commandSource(runtimecatalogcmd.SourceKindBuiltin, "balda", "builtin-revision", "reset")
+	snapshot, err := NewCompiler().CompileApplication([]runtimecatalogcmd.Source{source})
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := struct {
+		Rules       string                                  `json:"rules"`
+		Scope       runtimecatalogcmd.SnapshotScope         `json:"scope"`
+		Parents     []runtimecatalogcmd.SnapshotID          `json:"parents,omitempty"`
+		Sources     []runtimecatalogcmd.SourceDescriptor    `json:"sources"`
+		Commands    []runtimecatalogcmd.CommandDescriptor   `json:"commands"`
+		Skills      []runtimecatalogcmd.SkillMetadata       `json:"skills"`
+		MCPServers  []runtimecatalogcmd.MCPServerDescriptor `json:"mcp_servers"`
+		Diagnostics []runtimecatalogcmd.Diagnostic          `json:"diagnostics"`
+	}{
+		Rules: compilationRulesVersion, Scope: snapshot.Scope,
+	}
+	for _, descriptor := range snapshot.Sources {
+		legacy.Sources = append(legacy.Sources, descriptor)
+	}
+	for _, descriptor := range snapshot.Commands {
+		legacy.Commands = append(legacy.Commands, descriptor)
+	}
+	data, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(data)
+	want := runtimecatalogcmd.SnapshotID(hex.EncodeToString(digest[:]))
+	if snapshot.ID != want {
+		t.Fatalf("snapshot ID = %q, want legacy-compatible %q", snapshot.ID, want)
 	}
 }
 
