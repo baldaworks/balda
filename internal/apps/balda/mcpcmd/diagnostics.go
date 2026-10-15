@@ -1,5 +1,7 @@
 package mcpcmd
 
+import "time"
+
 // DiagnosticOutcome is the terminal, secret-free result of one explicit MCP
 // connectivity check. It does not represent durable runtime health.
 type DiagnosticOutcome string
@@ -12,9 +14,10 @@ const (
 	DiagnosticFailed DiagnosticOutcome = "failed"
 )
 
-// DiagnosticResult contains only request-local information safe to present to
-// an operator. ToolCount is meaningful only for DiagnosticSucceeded.
+// DiagnosticResult contains only information safe to present to an operator.
+// ToolCount is meaningful only for DiagnosticSucceeded.
 type DiagnosticResult struct {
 	Outcome   DiagnosticOutcome `json:"outcome"`
 	ToolCount int               `json:"tool_count,omitempty"`
+	CheckedAt time.Time         `json:"checked_at"`
 }

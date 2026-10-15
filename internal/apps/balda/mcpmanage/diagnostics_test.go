@@ -58,7 +58,7 @@ func TestDiagnoseCurrentUsesExactSelectedManagedRevisionWithoutWrites(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result != probe.result || len(probe.revisions) != 1 || len(probe.transientValues) != 0 {
+	if result.Outcome != probe.result.Outcome || result.ToolCount != probe.result.ToolCount || result.CheckedAt.IsZero() || len(probe.revisions) != 1 || len(probe.transientValues) != 0 {
 		t.Fatalf("diagnostic result/calls/transient calls = %+v/%d/%d", result, len(probe.revisions), len(probe.transientValues))
 	}
 	got := probe.revisions[0]
@@ -67,6 +67,55 @@ func TestDiagnoseCurrentUsesExactSelectedManagedRevisionWithoutWrites(t *testing
 	}
 	if len(store.writes) != writes {
 		t.Fatal("managed diagnostic changed durable definitions")
+	}
+}
+
+func TestDiagnoseCurrentRetainsLastResultForExactConfiguredRevision(t *testing.T) {
+	s, _, configured := definitionHarness(t)
+	configured.items = []mcpcmd.Item{{
+		Connection: mcpcmd.Connection{ID: "config:knowl", PublicID: "knowl", Source: mcpcmd.SourceConfig, Enabled: true},
+		Definition: mcpcmd.Definition{Transport: mcpcmd.TransportHTTP, URL: "https://knowl.example/mcp", ConfigRevision: "config-one"},
+	}}
+	probe := &recordingDiagnosticProbe{result: mcpcmd.DiagnosticResult{Outcome: mcpcmd.DiagnosticSucceeded, ToolCount: 2}}
+	s.diagnostic = probe
+
+	result, err := s.DiagnoseCurrent(t.Context(), "config:knowl", definitionCreate().Authority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.CheckedAt.IsZero() {
+		t.Fatal("diagnostic result has no check time")
+	}
+	items, err := s.Inventory(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].LastDiagnostic == nil || *items[0].LastDiagnostic != result {
+		t.Fatalf("retained diagnostic = %+v, want %+v", items, result)
+	}
+	if len(probe.revisions) != 1 {
+		t.Fatalf("passive inventory reran diagnostic: %d calls", len(probe.revisions))
+	}
+
+	configured.items[0].Definition.ConfigRevision = "config-next"
+	items, err = s.Inventory(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if items[0].LastDiagnostic != nil {
+		t.Fatalf("changed revision inherited diagnostic: %+v", items[0].LastDiagnostic)
+	}
+
+	fresh, err := NewDefinitions(s.credentials, s.store, s.configured, s.catalog, s.probe, s.diagnostic)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, err = fresh.Inventory(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if items[0].LastDiagnostic != nil {
+		t.Fatalf("fresh process inherited diagnostic: %+v", items[0].LastDiagnostic)
 	}
 }
 
@@ -156,7 +205,7 @@ func TestDiagnoseCurrentUsesConfiguredStaticHeaderWithoutCredentialKey(t *testin
 			if err != nil {
 				t.Fatal(err)
 			}
-			if result != probe.result || len(probe.revisions) != 1 || len(probe.transientValues) != 1 {
+			if result.Outcome != probe.result.Outcome || result.ToolCount != probe.result.ToolCount || result.CheckedAt.IsZero() || len(probe.revisions) != 1 || len(probe.transientValues) != 1 {
 				t.Fatalf("diagnostic result/calls = %+v/%d/%d", result, len(probe.revisions), len(probe.transientValues))
 			}
 			if got := probe.transientValues[0].Headers["Authorization"]; got != "Bearer configured-only" {

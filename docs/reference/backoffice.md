@@ -710,12 +710,13 @@ always closes its transport and process resources. Connection, authentication,
 protocol, timeout, cancellation, and cleanup failures produce the same fixed,
 secret-free failure presentation.
 
-The result is confined to that action response. It does not save readiness,
-tools, failures, revisions, grants, or credentials; change catalog/runtime
-health or provider/session attachment; or start OAuth discovery, authorization,
-token refresh, or grant writes. A later GET again shows the ordinary
-runtime-derived state, such as **Not checked** when a remote has no current
-runtime observation.
+The last secret-free result and check time remain visible on later passive GETs
+for the exact checked revision while the Balda process is running. A definition
+change or process restart clears that observation. It does not save readiness,
+tools, failures, revisions, grants, or credentials durably; change
+catalog/runtime health or provider/session attachment; or start OAuth discovery,
+authorization, token refresh, or grant writes. Runtime-derived state remains
+separate, such as **Not checked** when a remote has no current runtime observation.
 
 Configuration-owned entries are read-only: browser editing, selection changes,
 probe edits, lifecycle changes, deletion, and OAuth actions are rejected. Their

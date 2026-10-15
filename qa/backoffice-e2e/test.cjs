@@ -292,6 +292,25 @@ async function checkPage(browser, baseURL, viewport) {
     assert.deepEqual(contrastFailures, [], `${route} text contrast at ${viewport.width}px`);
     assert.equal(await page.locator('h1').count(), 1, `${route} heading at ${viewport.width}px`);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${route} document overflow at ${viewport.width}px`);
+    if (route === 'mcp/connections/config:qa-worker') {
+      const facts = await page.getByRole('heading', { name: 'Configuration definition', exact: true }).locator('..').locator('..').locator('.fact-list').evaluate(list => {
+        const children = [...list.children];
+        return {
+          labels: children.filter(child => child.tagName === 'DT').map(child => child.textContent.trim()),
+          pairs: Array.from({length: children.length / 2}, (_, index) => {
+            const term = children[index * 2].getBoundingClientRect();
+            const value = children[index * 2 + 1].getBoundingClientRect();
+            return {termX: term.x, valueX: value.x, termBottom: term.bottom, valueTop: value.top};
+          }),
+        };
+      });
+      assert.deepEqual(facts.labels, ['Transport', 'Endpoint or command', 'Header X-Deployment', 'Header X-Worker-Key'], 'configuration metadata uses one fact list');
+      if (viewport.width >= 576) {
+        assert.equal(facts.pairs.every(pair => pair.termX === facts.pairs[0].termX && pair.valueX === facts.pairs[0].valueX), true, 'desktop configuration facts share columns');
+      } else {
+        assert.equal(facts.pairs.every(pair => pair.termX === pair.valueX && pair.valueTop >= pair.termBottom), true, 'mobile configuration facts stack consistently');
+      }
+    }
     if (await page.locator('.app-header').count()) await checkTopBar(page, `${route} native at ${viewport.width}px`);
     assert.deepEqual(errors, [], `${route} script errors at ${viewport.width}px`);
     if (process.env.BACKOFFICE_E2E_SCREENSHOTS) {

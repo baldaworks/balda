@@ -25,12 +25,13 @@ const (
 
 // Item is a secret-free inventory row; configured values are redacted.
 type Item struct {
-	Connection    Connection     `json:"connection"`
-	Definition    Definition     `json:"definition"`
-	Status        Status         `json:"status"`
-	ToolCount     int            `json:"tool_count"`
-	Recovery      RecoveryReason `json:"recovery,omitempty"`
-	Authorization GrantStatus    `json:"authorization,omitempty"`
+	Connection     Connection        `json:"connection"`
+	Definition     Definition        `json:"definition"`
+	Status         Status            `json:"status"`
+	ToolCount      int               `json:"tool_count"`
+	Recovery       RecoveryReason    `json:"recovery,omitempty"`
+	Authorization  GrantStatus       `json:"authorization,omitempty"`
+	LastDiagnostic *DiagnosticResult `json:"last_diagnostic,omitempty"`
 }
 
 // CreateDefinition creates a managed identity. Values are write-only edits.
