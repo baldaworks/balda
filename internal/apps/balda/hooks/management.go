@@ -20,7 +20,27 @@ type Persistence interface {
 }
 
 // Management owns per-definition mutations of the shared runtime record.
-type Management struct{ store Persistence }
+type Management struct {
+	store     Persistence
+	validator DefinitionValidator
+}
+
+// DefinitionValidator supplies configured native-provider capabilities.
+type DefinitionValidator interface {
+	ValidateDefinition(ctx context.Context, definition hookcmd.Definition) error
+	CapabilityDescription() string
+}
+
+// ConfigureValidator binds immutable native capability policy before startup.
+func (m *Management) ConfigureValidator(validator DefinitionValidator) { m.validator = validator }
+
+// CapabilityDescription projects current provider support for an authorized view.
+func (m *Management) CapabilityDescription() string {
+	if m.validator == nil {
+		return "Lifecycle hooks are available. Native tool interception is not configured."
+	}
+	return m.validator.CapabilityDescription()
+}
 
 // NewManagement binds the existing application's guarded persistence owner.
 func NewManagement(store Persistence) *Management { return &Management{store: store} }
@@ -42,6 +62,14 @@ func (m *Management) Save(ctx context.Context, request hookcmd.Save) error {
 		return hookcmd.ErrInvalid
 	}
 	return m.mutate(ctx, request.Definition.Name, request.ExpectedVersion, request.Authority, func(record *hookcmd.Record, index int) error {
+		if request.Definition.Enabled && request.Definition.Event.ToolEvent() && m.validator == nil {
+			return hookcmd.ErrUnsupported
+		}
+		if m.validator != nil {
+			if err := m.validator.ValidateDefinition(ctx, request.Definition); err != nil {
+				return err
+			}
+		}
 		if request.Create {
 			if index >= 0 {
 				return hookcmd.ErrConflict

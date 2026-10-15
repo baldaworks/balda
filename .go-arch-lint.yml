@@ -11,6 +11,11 @@ exclude:
   - .config
 
 vendors:
+  native_hook_runtime:
+    in:
+      - github.com/normahq/runtime/v2/agentconfig
+      - golang.org/x/sys/unix
+
   hook_policy_dependencies:
     in:
       - github.com/google/uuid
@@ -146,6 +151,10 @@ components:
   hook_backoffice_wiring:
     in:
       - internal/apps/balda/hookbackofficeapp
+
+  native_hook_adapters:
+    in:
+      - internal/apps/balda/hookprovider
 
   hook_wiring:
     in:
@@ -619,8 +628,18 @@ deps:
     deepScan: false
     anyVendorDeps: false
 
+  native_hook_adapters:
+    mayDependOn:
+      - hook_contracts
+    # Constructor arguments implement consumer ports at the composition root.
+    deepScan: false
+    anyVendorDeps: false
+    canUse:
+      - native_hook_runtime
+
   hook_wiring:
     mayDependOn:
+      - native_hook_adapters
       - hook_contracts
       - hook_policy
       - hook_backoffice_wiring
@@ -1173,6 +1192,8 @@ deps:
 
   composition_root:
     mayDependOn:
+      - native_hook_adapters
+      - hook_policy
       - hook_wiring
       - hook_backoffice_wiring
       - hook_contracts
@@ -1234,6 +1255,7 @@ deps:
 
   entrypoints:
     mayDependOn:
+      - native_hook_adapters
       - foundation
       - composition_root
       - application

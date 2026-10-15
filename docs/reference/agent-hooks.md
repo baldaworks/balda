@@ -2,7 +2,7 @@
 
 Administrators configure agent hooks in **Operations → Agent hooks** at
 `<balda.http.base_path>/backoffice/hooks`. These hooks respond to agent lifecycle
-events. They are separate from incoming HTTP webhook routes.
+and native tool events. They are separate from incoming HTTP webhook routes.
 
 ## Events
 
@@ -12,6 +12,8 @@ events. They are separate from incoming HTTP webhook routes.
 | `UserPromptSubmit` | Before the provider receives an ordinary, skill, scheduled, webhook or automatic session turn | Allow or deny; optionally append context |
 | `Stop` | The provider emits its terminal turn event, before Balda captures or submits the final answer | Allow or deny final acceptance |
 | `SessionEnd` | The session runtime is being closed, including reset and shutdown | Best-effort notification; cleanup always continues |
+| `PreToolUse` | Before a supported native tool invocation | Allow/deny; optionally replace input |
+| `PostToolUse` | After a supported native tool completes | Allow/reject result; optionally append context |
 
 `SessionStart.source` is `startup` for a new runtime, including reset recreation,
 or `resume` for lazy restore. `SessionEnd.source` is `close`. Submission sources
@@ -36,8 +38,8 @@ Balda; the Web UI does not upload or install programs. Enabled commands execute
 with Balda's operating-system privileges and inherit its environment.
 
 An optional provider ID matches the configured Balda provider ID exactly. An
-optional source matcher is a regular expression; an empty matcher matches all
-sources. Hooks execute sequentially in name order. Each invocation selects one
+optional matcher is a Go regular expression over the native tool name for tool
+events, or the source for lifecycle events. An empty matcher matches everything. Hooks execute sequentially in name order. Each invocation selects one
 complete configuration record. Saved changes apply to the next matching event;
 already-running invocations keep their selected definitions.
 
@@ -221,6 +223,150 @@ cleanup continues after its ten-second budget even if this hook requests a
 longer or unlimited timeout. This is a best-effort local observation, not a
 durable delivery queue. Log rotation and retention belong to the operator.
 
+### Reject selected shell tools before execution
+
+For a session that should use other supported tools without these shell entry
+points, save `/opt/balda/hooks/reject_shell.py`:
+
+```python
+import json
+import sys
+
+event = json.load(sys.stdin)
+shell_tools = {"Bash", "exec_command", "bash"}
+denied = (event["hook_event_name"] == "PreToolUse"
+          and event.get("tool_name") in shell_tools)
+result = {"decision": "deny" if denied else "allow"}
+if denied:
+    result["reason"] = "The configured policy does not permit this shell tool."
+json.dump(result, sys.stdout)
+```
+
+| Field | Value |
+| --- | --- |
+| Name | `reject-shell` |
+| Event | `PreToolUse` |
+| Executable | `/usr/bin/python3` |
+| Arguments | `["/opt/balda/hooks/reject_shell.py"]` |
+| Provider ID | Leave empty for the configured Balda provider |
+| Matcher | `^(Bash|exec_command|bash)$` |
+| Timeout in seconds | `30` |
+| Enable this hook | Checked |
+
+Test the script before enabling it:
+
+```bash
+printf '%s\n' '{"hook_event_name":"PreToolUse","session_id":"example","cwd":"/srv/project","tool_name":"Bash","tool_input":{"command":"printf example"}}' \
+  | /usr/bin/python3 /opt/balda/hooks/reject_shell.py
+```
+
+It returns a deny verdict. A synthetic `Read` tool event returns allow. After
+enabling the definition, use `/reset` for existing sessions, then ask the agent
+to run a harmless shell command. The intercepted call should report rejection
+without running it. Inspect the actual provider's native tool names and extend
+both the matcher and the script's set if it exposes other shell tools. This
+example does not parse shell text or sandbox filesystem/network access; tools
+outside its selected names are unaffected. `PostToolUse` cannot provide the
+same guarantee because the operation has already happened.
+
+## Native adapters
+
+Native interception supports **Linux and macOS**. Lifecycle command hooks retain
+the existing host platform support. Unsupported native providers/platforms cannot
+be enabled in the Web UI; disabled drafts remain editable. Every reachable pool
+member must have a supported adapter.
+
+| Provider | Integration | Requirement |
+| --- | --- | --- |
+| `claude_code_acp` | SDK `extraArgs` forwards inline native `--settings` hooks | Claude ACP 0.16.2 or later with command hooks |
+| `codex_acp` | Bridge forwards native `-c` definitions and exact trusted hashes | Codex ACP 1.10.1 or later; CLI supports trusted command hooks and `hooks/list` |
+| `opencode_acp` | Private V1 plugin implements `tool.execute.before/after` | OpenCode 1.19.0 or later with V1 plugin support |
+
+The private HTTP bridge adds no overall execution timeout. Balda's configured
+deadline and session cancellation govern each invocation. Native engines retain
+their own representational limits: Claude's outer command envelope uses the
+largest safe whole-second JavaScript timer, 2,147,483 seconds (about 24.8 days),
+and Codex's envelope uses 9,223,372,036 seconds. These cover the complete event,
+including every matching hook and queue wait. OpenCode adds no outer execution
+deadline. `0` disables Balda's own deadline; it does not remove an engine's outer
+envelope. Use finite values within the selected engine's range when a precise
+cutoff is required. Increasing a timeout does not require resetting an already
+instrumented session.
+
+Activation requires a new session: use `/reset` for an existing session after
+first enabling a tool hook. New turns without the required adapter fail with an
+explicit reset requirement. In-flight turns/tools are unaffected. Installed
+adapters read live definitions at each event. With no enabled tool hooks,
+provider launch retains its existing behavior.
+
+Provider arguments, models, modes, MCP selections and native hook definitions
+are retained. User/project settings files, credentials and history are not
+modified. Codex discovery verifies the adapter's exact command hashes and places
+only their trust state in process flags; global hook trust and permissions are
+not bypassed. Explicit conflicting Codex hook flags are rejected.
+
+A private startup acknowledgment proves the native hook/plugin actually loaded
+before accepting the ACP session response. Disabled/ignored hook engines or
+unsupported bridges fail explicitly. This acknowledgment does not run Balda's
+`SessionStart` hook again. Native provider policies and tool coverage remain
+authoritative; hosted tools that emit no native hook are outside this contract.
+
+Bindings use private 0700 directories, 0600 files, random bearer capabilities and
+a loopback-only endpoint. The host fixes the Balda session, provider and CWD.
+Close revokes capabilities and cancels commands. Process groups are registered
+only after checking parentage, the proxy's binding argument and start identity;
+close cleans them up even after a proxy crash. Tokens/plugin files are ephemeral
+and are not exposed in SQL, audit or Web UI.
+
+Tool stdin adds `tool_name`, `tool_call_id`, `tool_input` and, for post events,
+`tool_response`. `agent_session_id` is the native session. Names and argument
+schemas remain provider-native: `Bash`, `exec_command` and `bash` are distinct
+matcher values. A portable shell matcher can use `^(Bash|exec_command|bash)$`.
+
+`updated_input` is a complete JSON object replacement accepted only for
+`PreToolUse`. Subsequent matching Balda hooks inspect the replacement:
+
+```json
+{"updated_input":{"command":"printf 'approved operation'"}}
+```
+
+Preserve the tool's required fields. Codex uses its documented native `allow`
+verdict to apply a rewrite. Claude uses `ask`, retaining its permission callback
+for the rewritten invocation. Ordinary allow without a rewrite emits no native
+permission override. OpenCode replaces the plugin's mutable arguments.
+
+Claude/Codex accept `additional_context` on native pre/post events. OpenCode
+appends it to a post-tool result; pre-tool context is unsupported and rejected
+before execution. Post denial cannot undo an operation that already ran. Hooks
+execute approved host programs and are not an operating-system security boundary.
+
+## Native engine verification
+
+The opt-in suite runs actual published backends against loopback model fixtures
+with isolated native config directories and synthetic credentials. It verifies
+denial before a filesystem effect without contacting an external model:
+
+```bash
+BALDA_NATIVE_HOOK_TEST=1 go test -race ./internal/apps/balda/hookprovider -count=1 -v
+```
+
+Install Codex CLI and Node/npm first. The suite uses Claude ACP 0.16.2 and
+OpenCode 1.19.0 and discovers installed Codex hook capabilities. Ordinary tests
+also verify result translation, input rewrites, isolation, activation and cleanup
+after proxy `SIGKILL`.
+
+To additionally verify decisions after 130 seconds through each actual engine,
+run the slower opt-in deadline check (about seven minutes for all three):
+
+```bash
+BALDA_NATIVE_HOOK_TEST=1 BALDA_NATIVE_HOOK_SLOW_TEST=1 \
+  go test -race ./internal/apps/balda/hookprovider -run '^Test(Claude|Codex|OpenCode)NativeDeniesToolBeforeSideEffect$' -count=1 -v
+```
+
+Each command has a configured 3,600-second timeout and returns deny only after
+the delay. The fixture verifies that the engine receives the rejection and that
+the proposed filesystem effect does not happen. No external model is contacted.
+
 ## Ownership and verification
 
 `hookcmd` owns neutral values and validation. `hooks` owns management and
@@ -228,6 +374,11 @@ execution policy behind consuming ports. `state` owns guarded KV/audit
 persistence. `session` and `sessionturnapp` own their lifecycle boundaries;
 `hookfx` connects those ports to the shared runner. Backoffice owns only HTTP
 ingress and presentation through `hookbackofficeapp`.
+
+`hookprovider` owns native protocol adaptation and private process/binding
+lifetimes. `agent` consumes a session-runtime factory port; `catalogapp` supplies
+private launch defaults and agent-owned release. Session/transport packages do
+not own native provider contracts.
 
 Run the ordered synthetic layout and authenticated application gates described
 in the [Backoffice UI review runbook](backoffice-ui-review.md), then the required

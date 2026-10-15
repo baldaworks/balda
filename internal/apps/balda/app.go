@@ -40,6 +40,8 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/handlersfx"
 	"github.com/baldaworks/balda/internal/apps/balda/hookbackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/hookfx"
+	"github.com/baldaworks/balda/internal/apps/balda/hookprovider"
+	"github.com/baldaworks/balda/internal/apps/balda/hooks"
 	"github.com/baldaworks/balda/internal/apps/balda/httpfx"
 	"github.com/baldaworks/balda/internal/apps/balda/internalmcp"
 	"github.com/baldaworks/balda/internal/apps/balda/jobexec"
@@ -888,9 +890,19 @@ func Module(
 				agentfactory.WithAvailabilityIndependentMCP(),
 			)
 		}),
-		fx.Provide(func(reg *mcpregistry.MapRegistry, reviewer *permissions.Service) baldaagent.ScopedRuntimeFactory {
-			return catalogapp.NewProviderFactory(normaCfg.Providers, reg,
+		fx.Provide(func(lifecycle fx.Lifecycle, runner *hooks.Runner, provider baldastate.Provider) (*hookprovider.Service, error) {
+			native, err := hookprovider.New(runner, provider.HookManagement(), cfg.Balda.Provider, normaCfg.Providers)
+			if err != nil {
+				return nil, err
+			}
+			lifecycle.Append(fx.Hook{OnStop: func(context.Context) error { return native.Close() }})
+			return native, nil
+		}),
+		fx.Provide(func(reg *mcpregistry.MapRegistry, reviewer *permissions.Service, native *hookprovider.Service) baldaagent.ScopedRuntimeFactory {
+			factory := catalogapp.NewProviderFactory(normaCfg.Providers, reg,
 				agentfactory.WithPermissionHandler(baldaagent.NewPermissionHandler(reviewer, logger)))
+			factory.ConfigureLaunchHooks(native)
+			return factory
 		}),
 		tgbotkit.Module,
 		natsbus.Module,

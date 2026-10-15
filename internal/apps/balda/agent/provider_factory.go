@@ -16,6 +16,11 @@ type ScopedRuntimeFactory interface {
 	BuildScoped(ctx context.Context, request agentfactory.BuildRequest, selections map[string][]string) (adkagent.Agent, error)
 }
 
+// SessionRuntimeFactory prepares session-owned native provider capabilities.
+type SessionRuntimeFactory interface {
+	BuildSession(ctx context.Context, request agentfactory.BuildRequest, selections map[string][]string, sessionID string) (adkagent.Agent, error)
+}
+
 func (b *Builder) withProviderMCP(selections map[string][]string) (*Builder, error) {
 	if selections == nil {
 		return b, nil
@@ -24,6 +29,7 @@ func (b *Builder) withProviderMCP(selections map[string][]string) (*Builder, err
 		return nil, fmt.Errorf("scoped provider factory is required")
 	}
 	copyBuilder := *b
+	copyBuilder.providerMCPSelections = selections
 	copyBuilder.normaCfg.Providers = maps.Clone(b.normaCfg.Providers)
 	selected := make(map[string][]string, len(selections))
 	for id, ids := range selections {

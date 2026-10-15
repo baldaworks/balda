@@ -506,6 +506,13 @@ executable privileges and lifecycle behavior, and the [usage examples](docs/refe
 for ready-to-copy scripts and their Web UI settings: add project conventions to
 prompts or record session-close events with a local program.
 
+Managed `PreToolUse`/`PostToolUse` hooks have adapters for Claude Code, Codex and
+OpenCode ACP on Linux/macOS. Configure them in **Operations → Agent hooks** and
+reset existing sessions to activate native interception. The [usage examples](docs/reference/agent-hooks.md#reject-selected-shell-tools-before-execution)
+include a reusable pre-tool policy script and its Web UI settings. See the
+[agent hook reference](docs/reference/agent-hooks.md#native-adapters) for capability
+requirements and native engine deadline limits.
+
 ## Troubleshooting
 
 - `telegram token is required` — run `balda init` or set

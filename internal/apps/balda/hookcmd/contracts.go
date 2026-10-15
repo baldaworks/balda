@@ -2,6 +2,7 @@
 package hookcmd
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -29,20 +30,29 @@ const (
 	UserPromptSubmit EventName = "UserPromptSubmit"
 	Stop             EventName = "Stop"
 	SessionEnd       EventName = "SessionEnd"
+	PreToolUse       EventName = "PreToolUse"
+	PostToolUse      EventName = "PostToolUse"
 )
 
 var (
-	ErrInvalid     = errors.New("invalid agent hook")
-	ErrForbidden   = errors.New("agent hook management forbidden")
-	ErrConflict    = errors.New("agent hooks changed")
-	ErrNotFound    = errors.New("agent hook not found")
-	ErrUnavailable = errors.New("agent hooks unavailable")
-	ErrDenied      = errors.New("agent hook denied event")
-	ErrExecution   = errors.New("agent hook execution failed")
+	ErrInvalid      = errors.New("invalid agent hook")
+	ErrForbidden    = errors.New("agent hook management forbidden")
+	ErrConflict     = errors.New("agent hooks changed")
+	ErrNotFound     = errors.New("agent hook not found")
+	ErrUnavailable  = errors.New("agent hooks unavailable")
+	ErrDenied       = errors.New("agent hook denied event")
+	ErrExecution    = errors.New("agent hook execution failed")
+	ErrUnsupported  = errors.New("native tool hooks unavailable for configured provider")
+	ErrSessionReset = errors.New("native tool hooks require a session reset")
 )
 
 // Events returns a fresh, ordered list for configuration and validation.
-func Events() []EventName { return []EventName{SessionStart, UserPromptSubmit, Stop, SessionEnd} }
+func Events() []EventName {
+	return []EventName{SessionStart, UserPromptSubmit, Stop, SessionEnd, PreToolUse, PostToolUse}
+}
+
+// ToolEvent reports whether an event requires synchronous provider interception.
+func (n EventName) ToolEvent() bool { return n == PreToolUse || n == PostToolUse }
 
 // Valid reports whether the event is implemented by the host.
 func (n EventName) Valid() bool {
@@ -98,21 +108,26 @@ func (d Definition) Validate() error {
 
 // Event is the JSON document supplied to a trusted hook process.
 type Event struct {
-	Name           EventName `json:"hook_event_name"`
-	SessionID      string    `json:"session_id"`
-	AgentSessionID string    `json:"agent_session_id,omitempty"`
-	Provider       string    `json:"provider,omitempty"`
-	CWD            string    `json:"cwd"`
-	Source         string    `json:"source,omitempty"`
-	Prompt         string    `json:"prompt,omitempty"`
-	Response       string    `json:"response,omitempty"`
+	Name           EventName       `json:"hook_event_name"`
+	SessionID      string          `json:"session_id"`
+	AgentSessionID string          `json:"agent_session_id,omitempty"`
+	Provider       string          `json:"provider,omitempty"`
+	CWD            string          `json:"cwd"`
+	Source         string          `json:"source,omitempty"`
+	Prompt         string          `json:"prompt,omitempty"`
+	Response       string          `json:"response,omitempty"`
+	ToolName       string          `json:"tool_name,omitempty"`
+	ToolCallID     string          `json:"tool_call_id,omitempty"`
+	ToolInput      json.RawMessage `json:"tool_input,omitempty"`
+	ToolResponse   json.RawMessage `json:"tool_response,omitempty"`
 }
 
 // Result contains the synchronous hook verdict and optional prompt context.
 type Result struct {
-	Decision          string `json:"decision,omitempty"`
-	Reason            string `json:"reason,omitempty"`
-	AdditionalContext string `json:"additional_context,omitempty"`
+	Decision          string          `json:"decision,omitempty"`
+	Reason            string          `json:"reason,omitempty"`
+	AdditionalContext string          `json:"additional_context,omitempty"`
+	UpdatedInput      json.RawMessage `json:"updated_input,omitempty"`
 }
 
 // Record is the durable, optimistic configuration boundary.
