@@ -668,90 +668,27 @@ func seedPreviousSchemaAtVersion8(t *testing.T, dbPath string) {
 func seedBaldaDBAtVersion10WithBuggyZeroSession(t *testing.T, db *sql.DB) {
 	t.Helper()
 
-	stmts := []string{
-		`CREATE TABLE schema_migrations (
-			version INTEGER PRIMARY KEY,
-			applied_at TEXT NOT NULL
-		);`,
-		`INSERT INTO schema_migrations(version, applied_at)
-		 VALUES(10, datetime('now'));`,
-		`CREATE TABLE goose_db_version (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			version_id INTEGER NOT NULL,
-			is_applied INTEGER NOT NULL,
-			tstamp TIMESTAMP DEFAULT (datetime('now'))
-		);`,
-		`INSERT INTO goose_db_version(version_id, is_applied)
-		 VALUES(0, 1), (1, 1), (2, 1), (3, 1), (4, 1), (5, 1), (6, 1), (7, 1), (8, 1), (9, 1), (10, 1);`,
-		`CREATE TABLE balda_app_kv (
-			namespace TEXT NOT NULL, key TEXT NOT NULL, value_json TEXT NOT NULL,
-			updated_at TEXT NOT NULL, expires_at TEXT, PRIMARY KEY (namespace, key)
-		);`,
-		`CREATE TABLE balda_session_metadata (
-			session_id TEXT PRIMARY KEY,
-			chat_id INTEGER NOT NULL,
-			topic_id INTEGER NOT NULL,
-			agent_name TEXT NOT NULL,
-			workspace_dir TEXT NOT NULL,
-			branch_name TEXT NOT NULL,
-			status TEXT NOT NULL,
-			updated_at TEXT NOT NULL,
-			channel_type TEXT NOT NULL DEFAULT 'telegram',
-			address_key TEXT NOT NULL DEFAULT '',
-			address_json TEXT NOT NULL DEFAULT '{}',
-			user_id TEXT NOT NULL DEFAULT '',
-			UNIQUE (chat_id, topic_id)
-		);`,
-		`CREATE INDEX idx_balda_session_metadata_status
-		 ON balda_session_metadata(status);`,
-		`CREATE UNIQUE INDEX idx_balda_session_metadata_channel_address
-		 ON balda_session_metadata(channel_type, address_key);`,
-		`INSERT INTO balda_session_metadata (
-			session_id, user_id, chat_id, topic_id, channel_type, address_key, address_json,
-			agent_name, workspace_dir, branch_name, status, updated_at
-		)
-		 VALUES (
-			'tg--1002667079342-8939', 'tg-101', 0, 0, 'telegram', '-1002667079342:8939',
-			'{"chat_id":-1002667079342,"topic_id":8939}',
-			'agent', '/tmp/ws', 'norma/balda/tg--1002667079342-8939', 'active', '2026-01-01T00:00:00Z'
-		);`,
-		`CREATE TABLE balda_telegram_offsets (id INTEGER);`,
-		`CREATE TABLE balda_collaborators (
-			user_id TEXT PRIMARY KEY,
-			username TEXT NOT NULL DEFAULT '',
-			first_name TEXT NOT NULL DEFAULT '',
-			added_by TEXT NOT NULL,
-			added_at TEXT NOT NULL
-		);`,
-		`CREATE TABLE balda_runtime_app_state (id INTEGER);`,
-		`CREATE TABLE balda_runtime_user_state (id INTEGER);`,
-		`CREATE TABLE balda_runtime_sessions (id INTEGER);`,
-		`CREATE TABLE balda_runtime_events (id INTEGER);`,
-		`CREATE TABLE balda_scheduled_jobs (
-			job_id TEXT PRIMARY KEY,
-			session_id TEXT NOT NULL,
-			channel_type TEXT NOT NULL,
-			address_key TEXT NOT NULL,
-			address_json TEXT NOT NULL,
-			prompt TEXT NOT NULL,
-			schedule_spec TEXT NOT NULL,
-			timezone TEXT NOT NULL DEFAULT 'UTC',
-			status TEXT NOT NULL DEFAULT 'active',
-			max_retries INTEGER NOT NULL DEFAULT 3,
-			retry_count INTEGER NOT NULL DEFAULT 0,
-			last_dispatch_key TEXT NOT NULL DEFAULT '',
-			next_run_at TEXT NOT NULL,
-			last_run_at TEXT NOT NULL DEFAULT '',
-			last_error TEXT NOT NULL DEFAULT '',
-			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL
-		);`,
+	registerBaldaGoMigrations()
+	migrations, err := fs.Sub(baldaMigrationsFS, "migrations")
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	for _, stmt := range stmts {
-		if _, err := db.Exec(stmt); err != nil {
-			t.Fatalf("seed balda version 10 db stmt failed: %v\nstmt: %s", err, stmt)
-		}
+	provider, err := goose.NewProvider(goose.DialectSQLite3, db, migrations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(t.Context(), 10); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO balda_session_metadata (
+		session_id, user_id, chat_id, topic_id, channel_type, address_key, address_json,
+		agent_name, workspace_dir, branch_name, status, updated_at
+	) VALUES (
+		'tg--1002667079342-8939', 'tg-101', 0, 0, 'telegram', '-1002667079342:8939',
+		'{"chat_id":-1002667079342,"topic_id":8939}',
+		'agent', '/tmp/ws', 'norma/balda/tg--1002667079342-8939', 'active', '2026-01-01T00:00:00Z'
+	)`); err != nil {
+		t.Fatal(err)
 	}
 }
 

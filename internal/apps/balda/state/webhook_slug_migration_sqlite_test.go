@@ -26,5 +26,5 @@ func TestSQLiteWebhookSlugMigrationPreservesData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	checkWebhookSlugMigration(t, db, provider, 60, func(q string) string { return q }, `SELECT count(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_balda_webhook_routes_active_path'`)
+	checkWebhookSlugMigration(t, db, provider, 60, 61, func(q string) string { return q }, `SELECT count(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_balda_webhook_routes_active_path'`)
 }

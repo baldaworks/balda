@@ -19,5 +19,5 @@ func TestPostgresWebhookSlugMigrationPreservesData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	checkWebhookSlugMigration(t, db, provider, 25, postgresBind, `SELECT count(*) FROM pg_indexes WHERE schemaname = current_schema() AND indexname = 'idx_balda_webhook_routes_active_path'`)
+	checkWebhookSlugMigration(t, db, provider, 25, 26, postgresBind, `SELECT count(*) FROM pg_indexes WHERE schemaname = current_schema() AND indexname = 'idx_balda_webhook_routes_active_path'`)
 }
