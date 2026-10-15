@@ -1,8 +1,11 @@
 const assert = require('node:assert/strict');
 const { chromium } = require('playwright');
-const [baseURL, workerURL] = process.argv.slice(2);
-const password = 'correct-horse-battery';
+const [baseURL, workerURL, mode = 'crud', recorderURL = ''] = process.argv.slice(2);
+const password = process.env.BALDA_E2E_ADMIN_PASSWORD;
+const mcpBearer = process.env.BALDA_E2E_MCP_BEARER;
 const protectedValue = 'synthetic-browser-protected-value';
+assert.ok(password, 'browser password is supplied by the Go harness');
+assert.ok(mcpBearer, 'MCP bearer is supplied by the Go harness');
 async function login(page, username) {
   await page.goto(`${baseURL}/login`);
   await page.getByLabel('Username').fill(username);
@@ -53,12 +56,109 @@ async function mutation(page, button, path, status) {
   }
   if (status === 303) assert.equal((response.headers().location || '').includes(protectedValue),false,'protected input absent from redirect');
   else assert.equal((await response.text()).includes(protectedValue), false, 'protected input absent from response');
+  if (path.endsWith('/diagnostic')) return;
   // Complete the HX-Location GET before operating on its replacement forms.
   await page.waitForLoadState('networkidle');
+}
+async function recorder(page, reject = false) {
+  const response = await page.request.post(`${recorderURL}/__recorder/reset${reject ? '?reject' : ''}`);
+  assert.equal(response.status(), 204, 'controlled recorder reset');
+}
+async function records(page) {
+  const response = await page.request.get(`${recorderURL}/__recorder`);
+  assert.equal(response.status(), 200, 'controlled recorder read');
+  return response.json();
+}
+async function sameOriginPost(page, path, csrf) {
+  return page.evaluate(async ({path, csrf}) => {
+    const response = await fetch(path, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: new URLSearchParams({csrf_token: csrf}),
+    });
+    return response.status;
+  }, {path, csrf});
+}
+async function assertNoCredentials(page) {
+  const html = await page.content();
+  assert.equal(html.includes(password), false, 'login password absent from rendered HTML');
+  assert.equal(html.includes(mcpBearer), false, 'MCP bearer absent from rendered HTML');
+}
+async function configuredDiagnostic(browser) {
+  assert.ok(recorderURL, 'diagnostic mode requires the controlled recorder URL');
+  const context = await browser.newContext({ viewport: {width: 1440, height: 900} });
+  const page = await context.newPage();
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+
+  await recorder(page);
+  await login(page, 'operator');
+  const operatorCSRF = await page.locator('form[action$="/logout"] input[name="csrf_token"]').inputValue();
+  assert.equal(await sameOriginPost(page, '/mcp/connections/config:knowl/diagnostic', operatorCSRF), 403, 'operator diagnostic is forbidden');
+  assert.deepEqual(await records(page), [], 'operator rejection makes no MCP request');
+  await Promise.all([page.waitForURL(`${baseURL}/login`), page.getByRole('button', {name:'Sign out', exact:true}).click()]);
+
+  await login(page, 'administrator');
+  await page.goto(`${baseURL}/mcp`);
+  assert.equal(await page.getByRole('link', {name:'knowl', exact:true}).count(), 1, 'configured Knowl is listed');
+  assert.equal(await page.getByRole('row', {name:/knowl/}).getByText('Not checked', {exact:true}).count(), 1, 'inventory uses truthful unobserved state');
+  await link(page, 'knowl');
+  await page.reload();
+  await page.getByRole('heading', {name:'Configuration definition', exact:true}).waitFor();
+  assert.equal(await page.getByText('Configuration · Read-only', {exact:true}).count(), 1, 'Knowl is configuration-owned');
+  assert.equal(await page.getByText('Not checked', {exact:true}).count(), 1, 'passive detail is not checked');
+  assert.equal(await page.locator('input[name="expected_version"]').count(), 0, 'configured detail has no edit form');
+  assert.equal(await page.getByRole('heading', {name:'OAuth', exact:true}).count(), 0, 'static bearer definition is OAuth-neutral');
+  assert.equal(await page.getByText(/Not configured|Authorization required/).count(), 0, 'static bearer definition has no OAuth status');
+  assert.deepEqual(await records(page), [], 'inventory, navigation and reload are passive');
+  await assertNoCredentials(page);
+
+  const diagnosticPath = '/mcp/connections/config:knowl/diagnostic';
+  assert.equal(await sameOriginPost(page, diagnosticPath, 'invalid-csrf'), 403, 'invalid CSRF is forbidden');
+  assert.deepEqual(await records(page), [], 'invalid CSRF makes no MCP request');
+
+  await mutation(page, 'Refresh state', diagnosticPath, 200);
+  await page.getByText('Check succeeded', {exact:true}).waitFor();
+  assert.equal(await page.getByText(/2 tools\. This one-time check/).count(), 1, 'diagnostic displays the exact tool count');
+  assert.deepEqual(await records(page), [
+    {order: 1, operation: 'initialize', headerMatched: true},
+    {order: 2, operation: 'tools/list', headerMatched: true},
+  ], 'diagnostic performs authenticated initialize then tools/list');
+  await assertNoCredentials(page);
+
+  await recorder(page);
+  await page.reload();
+  await page.getByText('Not checked', {exact:true}).waitFor();
+  assert.equal(await page.getByText('Check succeeded', {exact:true}).count(), 0, 'success is response-local');
+  assert.deepEqual(await records(page), [], 'reload after success is passive');
+
+  await recorder(page, true);
+  await mutation(page, 'Refresh state', diagnosticPath, 200);
+  await page.getByText('Check failed', {exact:true}).waitFor();
+  assert.equal(await page.getByText(/Unauthorized|401|Bearer/).count(), 0, 'failure is sanitized');
+  assert.equal(await page.getByRole('heading', {name:'OAuth', exact:true}).count(), 0, 'failure does not offer OAuth remediation');
+  assert.deepEqual(await records(page), [
+    {order: 1, operation: 'initialize', headerMatched: true},
+  ], 'controlled authentication failure is terminal');
+  await assertNoCredentials(page);
+
+  await recorder(page);
+  await page.reload();
+  await page.getByText('Not checked', {exact:true}).waitFor();
+  assert.equal(await page.getByText('Check failed', {exact:true}).count(), 0, 'failure is response-local');
+  assert.deepEqual(await records(page), [], 'reload after failure is passive');
+  assert.deepEqual(errors, [], 'configured diagnostic has no browser errors');
+  await Promise.all([page.waitForURL(`${baseURL}/login`), page.getByRole('button', {name:'Sign out', exact:true}).click()]);
+  await context.close();
 }
 (async () => {
  const browser = await chromium.launch({ headless: true });
  try {
+  if (mode === 'diagnostic') {
+    await configuredDiagnostic(browser);
+    console.log('MCP configured diagnostic: ordinary login, passive reads, protected success/failure and ephemeral state passed');
+    return;
+  }
   for (const viewport of [{ width:1440,height:900 },{ width:390,height:844 }]) {
     console.log(`MCP browser context ${viewport.width}px`);
     const context = await browser.newContext({ viewport });
@@ -71,7 +171,7 @@ async function mutation(page, button, path, status) {
     await Promise.all([page.waitForURL(`${baseURL}/login`),page.getByRole('button',{name:'Sign out',exact:true}).click()]);
     await login(page,'administrator');
     await page.goto(`${baseURL}/mcp`);
-    await link(page,'file-server');
+    await link(page,'knowl');
     await page.getByRole('heading',{name:'Configuration definition'}).waitFor();
     assert.equal(await page.getByRole('button',{name:'Save definition',exact:true}).count(),0);
     await link(page,'All MCP servers');
@@ -85,7 +185,7 @@ async function mutation(page, button, path, status) {
     await mutation(page,'Create server','/mcp/connections',303);
     await page.waitForURL(/\/mcp\/connections\//);
     await page.getByRole('heading',{name:'Current state',exact:true}).waitFor();
-    assert.equal(await page.locator('.status-chip').filter({hasText:/^Available$/}).count(),1,'real catalog discovers tools');
+    assert.equal(await page.locator('.status-chip').filter({hasText:/^Not checked$/}).count(),1,'new remote connection has no fabricated readiness observation');
     const detailPath=new URL(page.url()).pathname;
     const version=await page.locator('input[name="expected_version"]').first().inputValue();
     assert.equal(await page.locator('input[data-mcp-secret]').evaluateAll(inputs => inputs.every(i => i.value === '')),true);
@@ -133,7 +233,9 @@ async function mutation(page, button, path, status) {
     assert.equal(await page.locator('input[name="expected_version"]').first().inputValue(),disabledVersion,'disabled probe does not save');
     await page.locator('#mcp-confirm-selection').check();
     await mutation(page,'Enable connection',`${detailPath}/selection`,204);
-    await page.locator('.status-chip').filter({hasText:/^Available$/}).waitFor();
+    await page.waitForFunction(() => document.querySelector('.status-chip')?.textContent.trim() !== 'Disabled');
+    const enabledStatus = (await page.locator('.status-chip').first().textContent()).trim();
+    assert.equal(['Not checked', 'Available'].includes(enabledStatus), true, `enabled connection has a supported observed state, got ${enabledStatus}`);
     assert.equal(await page.getByLabel('hosted',{exact:true}).isChecked(),true,'enable retains provider target');
     await page.locator('#mcp-confirm-delete').check();
     await mutation(page,'Delete connection',`${detailPath}/delete`,204);
