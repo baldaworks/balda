@@ -227,6 +227,10 @@ func (p *postgresProvider) Close() error {
 	return p.db.Close()
 }
 
+func (p *postgresProvider) HookManagement() HookManagementStore {
+	return &sqlHookManagementStore{users: newPostgresUserStore(p.db)}
+}
+
 func (p *postgresProvider) MemoryManagement() MemoryManagementStore {
 	return &sqlMemoryManagementStore{users: newPostgresUserStore(p.db)}
 }

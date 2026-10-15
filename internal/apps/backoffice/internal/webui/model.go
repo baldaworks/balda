@@ -25,13 +25,14 @@ const (
 	LocationSchedules  Location = "/schedules"
 	LocationWebhooks   Location = "/webhooks"
 	LocationAliases    Location = "/aliases"
+	LocationHooks      Location = "/hooks"
 	LocationFactMemory Location = "/memory"
 )
 
 // Valid reports whether a location can be emitted by server navigation.
 func (l Location) Valid() bool {
 	switch l {
-	case LocationLogin, LocationOverview, LocationAccess, LocationAccount, LocationAudit, LocationMCP, LocationSchedules, LocationWebhooks, LocationAliases, LocationFactMemory, LocationPlugins:
+	case LocationHooks, LocationLogin, LocationOverview, LocationAccess, LocationAccount, LocationAudit, LocationMCP, LocationSchedules, LocationWebhooks, LocationAliases, LocationFactMemory, LocationPlugins:
 		return true
 	default:
 		return false
@@ -160,6 +161,7 @@ type Page struct {
 	Webhooks     *WebhooksView
 	Aliases      *AliasesView
 	FactMemory   *FactMemoryView
+	Hooks        *HooksView
 	RestartURL   string
 	RestartLabel string
 	MFA          *MFAView
@@ -227,6 +229,9 @@ func Navigation(capabilities usercmd.BackofficeCapabilities, current Location) [
 	}
 	if capabilities.ManageAliases {
 		operations = append(operations, item("Aliases", LocationAliases, "bi-signpost-split"))
+	}
+	if capabilities.ManageHooks {
+		operations = append(operations, item("Agent hooks", LocationHooks, "bi-lightning"))
 	}
 	if capabilities.ManageFactMemory {
 		operations = append(operations, item("Fact memory", LocationFactMemory, "bi-journal-text"))
@@ -344,6 +349,8 @@ func auditActionLabel(action usercmd.AuditAction) string {
 		return "Recovered two-factor access offline"
 	case usercmd.AuditActionLogout:
 		return "Signed out"
+	case usercmd.AuditActionHookChanged:
+		return "Agent hook changed"
 	case usercmd.AuditActionMemoryFactCreated:
 		return "Created fact"
 	case usercmd.AuditActionMemoryFactEdited:
@@ -373,6 +380,8 @@ func auditTargetLabel(target usercmd.AuditTargetType) string {
 		return "System"
 	case usercmd.AuditTargetMigration:
 		return "Migration"
+	case usercmd.AuditTargetHook:
+		return "Agent hook"
 	case usercmd.AuditTargetMemoryFact:
 		return "Fact"
 	case usercmd.AuditTargetAlias:

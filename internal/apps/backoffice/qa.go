@@ -27,6 +27,9 @@ func QAHandler(basePath string) (http.Handler, error) {
 	mux.Handle("GET "+basePath+"/assets/", http.StripPrefix(basePath, assets))
 	mux.HandleFunc("GET "+basePath+"/qa/ui/", func(w http.ResponseWriter, r *http.Request) {
 		name := strings.TrimPrefix(r.URL.Path, basePath+"/qa/ui/")
+		if name == "hooks" && r.URL.Query().Get("new") == "1" {
+			name = "hooks/new"
+		}
 		if name == "memory" && r.URL.Query().Get("new") == "1" {
 			name = "memory/new"
 		}
@@ -90,7 +93,7 @@ type qaEntry struct {
 	status       int
 }
 
-var qaEntries = append(append(pluginMarketplaceQAEntries, pluginLifecycleQAEntries...), []qaEntry{
+var qaEntries = append(append(append(pluginMarketplaceQAEntries, pluginLifecycleQAEntries...), hooksQAEntries...), []qaEntry{
 	{name: "memory", label: "Fact memory · inventory", templateName: webui.TemplateFactMemory, page: qaFactMemory, gallery: true},
 	{name: "memory-long", label: "Fact memory · long multiline fact", templateName: webui.TemplateFactMemory, page: func() webui.Page {
 		p := qaFactMemory()

@@ -11,6 +11,14 @@ exclude:
   - .config
 
 vendors:
+  hook_policy_dependencies:
+    in:
+      - github.com/google/uuid
+
+  hook_wiring_dependencies:
+    in:
+      - go.uber.org/fx
+
   command_outbox_runtime:
     in:
       - github.com/baldaworks/go-actorlayer
@@ -126,7 +134,23 @@ components:
     in:
       - internal/apps/balda/mcpcmd
 
-  # Global fact policy owns serialized mutations; persistence stays behind a port.
+  # Managed hook policy owns validation and execution; storage is behind a port.
+  hook_contracts:
+    in:
+      - internal/apps/balda/hookcmd
+
+  hook_policy:
+    in:
+      - internal/apps/balda/hooks
+
+  hook_backoffice_wiring:
+    in:
+      - internal/apps/balda/hookbackofficeapp
+
+  hook_wiring:
+    in:
+      - internal/apps/balda/hookfx
+
   memory_policy:
     in:
       - internal/apps/balda/memory
@@ -574,6 +598,39 @@ deps:
       - mcp_contracts
     anyVendorDeps: false
 
+  hook_contracts:
+    mayDependOn:
+      - user_contracts
+    anyVendorDeps: false
+
+  hook_policy:
+    mayDependOn:
+      - hook_contracts
+      - user_contracts
+    deepScan: false
+    anyVendorDeps: false
+    canUse:
+      - hook_policy_dependencies
+
+  hook_backoffice_wiring:
+    mayDependOn:
+      - hook_contracts
+      - hook_policy
+    deepScan: false
+    anyVendorDeps: false
+
+  hook_wiring:
+    mayDependOn:
+      - hook_contracts
+      - hook_policy
+      - hook_backoffice_wiring
+      - application
+      - storage
+    deepScan: false
+    anyVendorDeps: false
+    canUse:
+      - hook_wiring_dependencies
+
   memory_policy:
     mayDependOn:
       - memory_contracts
@@ -667,6 +724,7 @@ deps:
 
   backoffice_application:
     mayDependOn:
+      - hook_contracts
       - memory_contracts
       - alias_contracts
       - mcp_contracts
@@ -718,6 +776,7 @@ deps:
 
   backoffice_webui:
     mayDependOn:
+      - hook_contracts
       - contracts
       - memory_contracts
       - alias_contracts
@@ -742,6 +801,7 @@ deps:
 
   application:
     mayDependOn:
+      - hook_contracts
       - memory_policy
       - memory_contracts
       - webhook_route_contracts
@@ -1091,6 +1151,7 @@ deps:
 
   storage:
     mayDependOn:
+      - hook_contracts
       - memory_contracts
       - alias_contracts
       - foundation
@@ -1112,6 +1173,9 @@ deps:
 
   composition_root:
     mayDependOn:
+      - hook_wiring
+      - hook_backoffice_wiring
+      - hook_contracts
       - command_outbox_wiring
       - plugin_backoffice_wiring
       - memory_backoffice_wiring

@@ -265,6 +265,10 @@ func (p *sqliteProvider) Close() error {
 	return p.db.Close()
 }
 
+func (p *sqliteProvider) HookManagement() HookManagementStore {
+	return &sqlHookManagementStore{users: newSQLiteUserStore(p.db)}
+}
+
 func (p *sqliteProvider) MemoryManagement() MemoryManagementStore {
 	return &sqlMemoryManagementStore{users: newSQLiteUserStore(p.db)}
 }

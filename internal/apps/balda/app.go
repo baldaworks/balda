@@ -38,6 +38,8 @@ import (
 	natsbus "github.com/baldaworks/balda/internal/apps/balda/eventbus/nats"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	"github.com/baldaworks/balda/internal/apps/balda/handlersfx"
+	"github.com/baldaworks/balda/internal/apps/balda/hookbackofficeapp"
+	"github.com/baldaworks/balda/internal/apps/balda/hookfx"
 	"github.com/baldaworks/balda/internal/apps/balda/httpfx"
 	"github.com/baldaworks/balda/internal/apps/balda/internalmcp"
 	"github.com/baldaworks/balda/internal/apps/balda/jobexec"
@@ -426,7 +428,7 @@ func Module(
 				})
 				return provider, nil
 			},
-			func(provider baldastate.Provider, invitations *auth.BindingInvitations, channels *auth.BindingChannels, mcp *mcpbackofficeapp.Operations, schedules *schedulebackofficeapp.Operations, aliases *aliasbackofficeapp.Operations, webhooks *webhookbackofficeapp.Operations, facts *memorybackofficeapp.Operations, plugins *pluginbackofficeapp.Operations) (*backoffice.Runtime, error) {
+			func(provider baldastate.Provider, invitations *auth.BindingInvitations, channels *auth.BindingChannels, mcp *mcpbackofficeapp.Operations, schedules *schedulebackofficeapp.Operations, aliases *aliasbackofficeapp.Operations, webhooks *webhookbackofficeapp.Operations, facts *memorybackofficeapp.Operations, plugins *pluginbackofficeapp.Operations, hooks *hookbackofficeapp.Operations) (*backoffice.Runtime, error) {
 				runtime, err := backoffice.NewRuntime(backofficeConfig, provider)
 				if err != nil {
 					return nil, err
@@ -447,6 +449,9 @@ func Module(
 					return nil, err
 				}
 				if err := runtime.ConfigurePluginsOperations(plugins); err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigureHookOperations(hooks); err != nil {
 					return nil, err
 				}
 				if err := runtime.ConfigureFactMemoryOperations(facts); err != nil {
@@ -896,6 +901,7 @@ func Module(
 		pluginapp.Module,
 		sessionapp.Module,
 		sessionturnapp.Module,
+		hookfx.Module,
 		controlapp.Module,
 		deliveryfx.Module,
 		slackagentfx.Module,

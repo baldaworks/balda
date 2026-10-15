@@ -37,6 +37,7 @@ type httpApp struct {
 	webhooks          WebhooksOperations
 	aliases           AliasesOperations
 	factMemory        FactMemoryOperations
+	hooks             HookOperations
 	plugins           PluginsOperations
 	mcpAuthorizations MCPAuthorizations
 	qa                bool
@@ -145,6 +146,12 @@ func (a *httpApp) handler() (http.Handler, error) {
 	mux.HandleFunc("POST "+a.path("/aliases"), a.aliasCreate)
 	mux.HandleFunc("POST "+a.path("/aliases/{alias_name}"), a.aliasRetarget)
 	mux.HandleFunc("POST "+a.path("/aliases/{alias_name}/delete"), a.aliasDelete)
+	for _, route := range []string{"/hooks", "/hooks/{hook_name}"} {
+		mux.Handle("GET "+a.path(route), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.hooksPage))))
+	}
+	mux.HandleFunc("POST "+a.path("/hooks"), a.hookMutation)
+	mux.HandleFunc("POST "+a.path("/hooks/{hook_name}"), a.hookMutation)
+	mux.HandleFunc("POST "+a.path("/hooks/{hook_name}/delete"), a.hookDelete)
 	for _, route := range []string{"/memory", "/memory/{fact_id}"} {
 		mux.Handle("GET "+a.path(route), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.factMemoryPage))))
 	}
