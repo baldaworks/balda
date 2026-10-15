@@ -338,6 +338,9 @@ components:
       - internal/apps/balda/execution
 
   # Composition adapters bind ingress-owned ports to concrete provider runtimes.
+  # chatfx owns the shared SessionPreparer implementation. Conversational
+  # handlersfx wrappers only present its neutral result; session.Manager owns
+  # active/restore/create selection. Scoped forbidigo rules enforce that seam.
   ingress_wiring:
     in:
       - internal/apps/balda/chatfx

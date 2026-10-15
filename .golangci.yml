@@ -47,12 +47,18 @@ linters:
         - pattern: '^state\.New(SQLite|Postgres)Provider$'
           pkg: '^github\.com/baldaworks/balda/internal/apps/balda/state$'
           msg: 'Use state.Open with resolved database configuration in production composition.'
+        - pattern: '^session\.Manager\.(GetSession|EnsureSession|RestoreSession|CreateSession|TakeStartupNotice)$'
+          pkg: '^github\.com/baldaworks/balda/internal/apps/balda/session$'
+          msg: 'Ordinary conversational presentation must consume the shared SessionPreparer outcome.'
     revive:
       rules:
         - name: exported
           disabled: true
   exclusions:
     rules:
+      - path-except: 'internal/apps/balda/handlersfx/conversational_sessions\.go$'
+        text: 'Ordinary conversational presentation must consume'
+        linters: [forbidigo]
       - path: 'internal/apps/balda/state/|_test\.go$'
         linters: [forbidigo]
 

@@ -65,6 +65,13 @@ package ownership is documented in the
 ## Session restore/create behavior
 
 - Balda restores persisted session metadata on first message after restart.
+- Ordinary channel handlers consume the common conversational preparation path;
+  they do not select create or restore. `EnsureSession` owns that choice in the
+  session manager, while `RestoreSession` remains restore-only and
+  `CreateSession` remains explicit fresh creation for lifecycle commands.
+- Preparation uses the saved canonical identity even if an inbound session-ID
+  format differs. Concurrent preparation of that identity shares one operation
+  lock through runtime initialization, metadata persistence and publication.
 - When `balda.sessions.persistence=sqlite`, exact restore reuses the stable session ID and prior session history/state.
 - Session metadata includes one non-empty runtime catalog snapshot ID. Restore
   first uses that exact pin. If binding the snapshot or opening the saved ADK

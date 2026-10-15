@@ -115,6 +115,10 @@ This zone owns the provider-neutral acceptance boundary for ordinary chat work:
 
 - authorization through a small consuming-package port;
 - session create/restore preconditions through a small consuming-package port;
+- one shared `chatfx` session preparer bound to the existing conversational
+  service ports, with lifecycle selection owned by `session.Manager`;
+- transport-specific presentation of neutral activation and startup outcomes,
+  without session runtime access in ordinary message preparation;
 - exactly one durable SessionActor publish attempt per processing attempt;
 - accepted, retry, and terminal settlement classification with stable identity.
 

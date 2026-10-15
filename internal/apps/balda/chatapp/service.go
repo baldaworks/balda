@@ -98,6 +98,9 @@ func (s *Service) HandleChat(ctx context.Context, request Request) (Result, erro
 		return s.finish(logContext, terminalResult(firstNonEmpty(prep.Reason, ReasonSessionRejected)), ReasonSessionRejected, nil)
 	}
 
+	if prep.SessionID != "" {
+		payload.Locator.SessionID = prep.SessionID
+	}
 	payload.UserID = firstNonEmpty(prep.UserID, payload.UserID)
 	payload.RequesterUserID = firstNonEmpty(prep.RequesterUserID, inbound.UserID)
 	payload.AgentSessionID = strings.TrimSpace(prep.AgentSessionID)

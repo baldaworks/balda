@@ -404,7 +404,7 @@ func (m *Manager) createSessionLocked(ctx context.Context, sessionCtx SessionCon
 	}
 
 	agentSessionID := m.newAgentSessionID(sessionID)
-	if m.sessionsPersistent || transient {
+	if m.sessionsPersistent || transient || persisted != nil {
 		agentSessionID = sessionID
 	}
 	runtimeSessionCtx := RuntimeSessionContext{
