@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/baldaworks/balda/internal/apps/balda/chatfx"
+	"github.com/baldaworks/balda/internal/apps/balda/ingressapp"
 	"strings"
 	"sync"
 	"testing"
@@ -425,6 +427,7 @@ func newTestHarness(t *testing.T) *testHarness {
 	handler := newTelegramInboundHandler(telegramInboundHandlerParams{
 		OwnerStore:         ownerStore,
 		SessionManager:     sessions,
+		SessionPreparer:    chatfx.NewIngressSessionAdapter(sessions),
 		Dispatcher:         dispatcher,
 		QuestionDispatcher: dispatcher,
 		BaldaProviderID:    "alpha",
@@ -490,6 +493,10 @@ func TestTelegramInboundHandler_HandleMessage_PublishesTurn(t *testing.T) {
 
 func TestTelegramInboundHandler_HandleMessage_IgnoresUnauthorizedUser(t *testing.T) {
 	h := newTestHarness(t)
+	h.handler.sessionPreparer = ingressapp.SessionPreparerFunc(func(context.Context, ingressapp.InboundContext) (ingressapp.SessionPreparation, error) {
+		t.Fatal("unauthorized input reached session preparation")
+		return ingressapp.SessionPreparation{}, nil
+	})
 
 	msgText := "unauthorized hello"
 	event := &events.MessageEvent{
