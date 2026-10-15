@@ -32,7 +32,7 @@ func TestConfiguredCaptureTransitionsKeepRetainedIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	definitions, err := mcpmanage.NewDefinitions(credentials, mcpfx.NewDefinitionStore(p.MCP()), mcpfx.NewConfiguredDefinitions(configured, providers, "alpha", nil), catalog, probe)
+	definitions, err := mcpmanage.NewDefinitions(credentials, mcpfx.NewDefinitionStore(p.MCP()), mcpfx.NewConfiguredDefinitions(configured, providers, "alpha", nil), catalog, probe, unusedDiagnosticProbe{})
 	if err != nil {
 		t.Fatal(err)
 	}

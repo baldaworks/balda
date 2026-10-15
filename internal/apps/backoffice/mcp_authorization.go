@@ -174,6 +174,10 @@ func (a *httpApp) mcpBeginBrowser(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if err := a.mcpSavedAuthorizationAvailable(r.Context(), r.PathValue("connection_id")); err != nil {
+		a.mcpAuthorizationError(w, r, page, err)
+		return
+	}
 	started, err := a.mcpAuthorizations.BeginBrowser(r.Context(), mcpBeginRequest(form, r.PathValue("connection_id"), authority))
 	if err != nil {
 		a.mcpAuthorizationError(w, r, page, err)
@@ -189,6 +193,10 @@ func (a *httpApp) mcpBeginBrowser(w http.ResponseWriter, r *http.Request) {
 func (a *httpApp) mcpBeginDevice(w http.ResponseWriter, r *http.Request) {
 	form, page, authority, ok := a.mcpNativeMutation(w, r)
 	if !ok {
+		return
+	}
+	if err := a.mcpSavedAuthorizationAvailable(r.Context(), r.PathValue("connection_id")); err != nil {
+		a.mcpAuthorizationError(w, r, page, err)
 		return
 	}
 	started, err := a.mcpAuthorizations.BeginDevice(r.Context(), mcpBeginRequest(form, r.PathValue("connection_id"), authority))
@@ -293,6 +301,10 @@ func (a *httpApp) mcpDisconnectAuthorization(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
+	if err := a.mcpSavedAuthorizationAvailable(r.Context(), r.PathValue("connection_id")); err != nil {
+		a.mcpAuthorizationError(w, r, page, err)
+		return
+	}
 	if form.Get("confirm") != checkedFormValue {
 		a.mcpAuthorizationError(w, r, page, mcpcmd.ErrInvalid)
 		return
@@ -308,6 +320,10 @@ func (a *httpApp) mcpRetryAuthorization(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+	if err := a.mcpSavedAuthorizationAvailable(r.Context(), r.PathValue("connection_id")); err != nil {
+		a.mcpAuthorizationError(w, r, page, err)
+		return
+	}
 	expected := form.Get("expected_revision_id")
 	if strings.TrimSpace(expected) == "" {
 		a.mcpAuthorizationError(w, r, page, mcpcmd.ErrInvalid)
@@ -320,6 +336,24 @@ func (a *httpApp) mcpRetryAuthorization(w http.ResponseWriter, r *http.Request) 
 	}
 	http.Redirect(w, r, a.path("/mcp/connections/"+url.PathEscape(item.Connection.ID)), http.StatusSeeOther)
 }
+
+func (a *httpApp) mcpSavedAuthorizationAvailable(ctx context.Context, connectionID string) error {
+	items, err := a.mcp.Inventory(ctx)
+	if err != nil {
+		return err
+	}
+	for _, item := range items {
+		if item.Connection.ID != connectionID {
+			continue
+		}
+		if webui.ProjectMCPEditor(item, nil, false).AuthorizationAvailable {
+			return nil
+		}
+		return mcpcmd.ErrForbidden
+	}
+	return mcpcmd.ErrNotFound
+}
+
 func (a *httpApp) mcpAuthorizationError(w http.ResponseWriter, r *http.Request, page webui.Page, err error) {
 	status, message := mcpAuthorizationFailure(err)
 	page.Error = &webui.ErrorView{Heading: "OAuth could not complete", Message: message}

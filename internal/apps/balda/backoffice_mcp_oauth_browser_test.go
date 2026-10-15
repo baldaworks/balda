@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -139,7 +140,7 @@ func TestBackofficeMCPOAuthBrowserWorkflow(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				definitions, err := mcpmanage.NewDefinitions(credentials, mcpfx.NewDefinitionStore(p.MCP()), mcpfx.NewConfiguredDefinitions(configs, providers, "hosted", nil), catalog, probe)
+				definitions, err := mcpmanage.NewDefinitions(credentials, mcpfx.NewDefinitionStore(p.MCP()), mcpfx.NewConfiguredDefinitions(configs, providers, "hosted", nil), catalog, probe, unusedDiagnosticProbe{})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -177,7 +178,7 @@ func TestBackofficeMCPOAuthBrowserWorkflow(t *testing.T) {
 			runtime, catalog, registry, binder, flows := start("/mcp")
 			captures, err := p.MCP().ListMCPConnections(t.Context())
 			if err != nil || len(captures) != 0 {
-				t.Fatal("startup must leave fresh configured capture empty")
+				t.Fatal("startup must not create a configured capture")
 			}
 			inventory, err := currentOperations.Inventory(t.Context())
 			if err != nil {
@@ -197,19 +198,20 @@ func TestBackofficeMCPOAuthBrowserWorkflow(t *testing.T) {
 				t.Fatal(err)
 			}
 			verifyOAuthBrowserExecution(t, catalog, registry, binder, providers, publicBefore.ID, "/public", "public-hosted", "public-acp")
+			configStoreBefore := oauthBrowserStoreSnapshot(t, p)
 			runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "configured-public", scenario.width)
+			runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "configured-worker", scenario.width)
+			if configStoreAfter := oauthBrowserStoreSnapshot(t, p); !reflect.DeepEqual(configStoreAfter, configStoreBefore) {
+				t.Fatal("opening configuration-owned MCP metadata changed durable MCP state")
+			}
 			publicAfter, err := catalog.Store().Application()
 			if err != nil {
 				t.Fatal(err)
 			}
-			verifyOAuthBrowserExecution(t, catalog, registry, binder, providers, publicBefore.ID, "/public", "public-hosted", "public-acp")
-			verifyOAuthBrowserExecution(t, catalog, registry, binder, providers, publicAfter.ID, "/public", "public-hosted", "public-acp")
-			runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "fresh", scenario.width)
-			pinned, err := catalog.Store().Application()
-			if err != nil {
-				t.Fatal(err)
+			if publicAfter.ID != publicBefore.ID {
+				t.Fatal("opening configuration-owned MCP metadata changed the catalog snapshot")
 			}
-			verifyOAuthBrowserExecution(t, catalog, registry, binder, providers, pinned.ID, "/mcp")
+			verifyOAuthBrowserExecution(t, catalog, registry, binder, providers, publicBefore.ID, "/public", "public-hosted", "public-acp")
 			runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "managed-create-"+scenario.transport, scenario.width)
 			managedPin, err := catalog.Store().Application()
 			if err != nil {
@@ -248,32 +250,26 @@ func TestBackofficeMCPOAuthBrowserWorkflow(t *testing.T) {
 			verifyOAuthBrowserExecution(t, catalog, registry, binder, providers, scopePin.ID, "/mcp", "managed-hosted", "managed-acp")
 			runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "managed-restore-"+scenario.transport, scenario.width)
 			verifyOAuthBrowserExecution(t, catalog, registry, binder, providers, managedPin.ID, "/mcp", "managed-hosted", "managed-acp")
+			staticGrantsBefore, err := p.MCP().ListMCPGrants(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
 			runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "managed-static-"+scenario.transport, scenario.width)
 			staticPin, err := catalog.Store().Application()
 			if err != nil {
 				t.Fatal(err)
 			}
-			verifyOAuthBrowserExecution(t, catalog, registry, binder, providers, staticPin.ID, "/mcp", "static-hosted", "static-acp")
+			verifyOAuthBrowserExecution(t, catalog, registry, binder, providers, staticPin.ID, "/public", "static-hosted", "static-acp")
 			staticCurrent := oauthBrowserConnectionRevision(t, p, "static-tools")
-			if staticCurrent.Definition.AuthBinding == nil || staticCurrent.Definition.AuthBinding.ClientID != oauthBrowserConfidentialClientID {
-				t.Fatal("native static entry lost its confidential client identity")
+			if staticCurrent.Definition.OAuth || staticCurrent.Definition.AuthBinding != nil || staticCurrent.Definition.Headers["X-Worker-Secret"].Kind != mcpcmd.ValueProtected {
+				t.Fatal("managed static entry did not remain OAuth-neutral with its protected header")
 			}
-			staticGrant, found, err := p.MCP().GetMCPGrant(t.Context(), *staticCurrent.Definition.AuthBinding)
-			if err != nil || !found || staticGrant.TokenEndpointAuthMethod != mcpcmd.ClientAuthSecretBasic {
-				t.Fatal("native confidential client did not retain its required authentication method")
-			}
-			revisions, err := p.MCP().ListMCPRevisions(t.Context())
+			staticGrantsAfter, err := p.MCP().ListMCPGrants(t.Context())
 			if err != nil {
 				t.Fatal(err)
 			}
-			staticRetained := false
-			for _, revision := range revisions {
-				if revision.ConnectionID == staticCurrent.ConnectionID && !revision.Definition.OAuth && revision.Definition.Headers["X-Worker-Secret"].Kind == mcpcmd.ValueProtected {
-					staticRetained = revision.ID != staticCurrent.ID && revision.Definition.AuthBinding == nil
-				}
-			}
-			if !staticRetained || staticCurrent.Definition.AuthBinding == nil {
-				t.Fatal("native authorization of static managed server changed its historical definition")
+			if !reflect.DeepEqual(staticGrantsAfter, staticGrantsBefore) {
+				t.Fatal("opening managed OAuth-neutral MCP metadata changed grants")
 			}
 			if scenario.flow == "device" {
 				runOAuthBrowserRestart(t, origin+scenario.base, issuer.server.URL, scenario.flow, "pending-restart", scenario.width, func() {
@@ -287,8 +283,12 @@ func TestBackofficeMCPOAuthBrowserWorkflow(t *testing.T) {
 					runtime, catalog, registry, binder, flows = start("/mcp")
 				})
 			}
-			// Restart replaces the current declaration while retained pins keep their
-			// original protected headers and exact resource identity.
+			// Restart replaces the current declaration while retained managed pins keep
+			// their original protected headers and exact resource identity.
+			beforeRestart, err := catalog.Store().Application()
+			if err != nil {
+				t.Fatal(err)
+			}
 			flows.Close()
 			if err := runtime.Stop(t.Context()); err != nil {
 				t.Fatal(err)
@@ -297,22 +297,25 @@ func TestBackofficeMCPOAuthBrowserWorkflow(t *testing.T) {
 				t.Fatal(err)
 			}
 			_, restarted, nextRegistry, nextBinder, _ := start("/changed")
-			runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "recapture", scenario.width)
 			current, err := restarted.Store().Application()
-			if err != nil || current.ID == pinned.ID {
+			if err != nil || current.ID == beforeRestart.ID {
 				t.Fatal("changed configuration did not publish a new snapshot")
 			}
-			verifyOAuthBrowserExecution(t, restarted, nextRegistry, nextBinder, providers, pinned.ID, "/mcp")
-			verifyOAuthBrowserExecution(t, restarted, nextRegistry, nextBinder, providers, current.ID, "/changed")
+			restartedStoreBefore := oauthBrowserStoreSnapshot(t, p)
+			runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "configured-worker", scenario.width)
+			if restartedStoreAfter := oauthBrowserStoreSnapshot(t, p); !reflect.DeepEqual(restartedStoreAfter, restartedStoreBefore) {
+				t.Fatal("opening changed configuration-owned MCP metadata changed durable MCP state")
+			}
+			verifyOAuthBrowserExecution(t, restarted, nextRegistry, nextBinder, providers, current.ID, "/public", "public-hosted", "public-acp")
 			verifyOAuthBrowserExecution(t, restarted, nextRegistry, nextBinder, providers, managedPin.ID, "/mcp", "managed-hosted", "managed-acp")
-			verifyOAuthBrowserExecution(t, restarted, nextRegistry, nextBinder, providers, staticPin.ID, "/mcp", "static-hosted", "static-acp")
+			verifyOAuthBrowserExecution(t, restarted, nextRegistry, nextBinder, providers, staticPin.ID, "/public", "static-hosted", "static-acp")
 			if scenario.flow == "browser" && issuer.registrations.Load() == 0 {
 				t.Fatal("managed browser onboarding did not use supported client registration")
 			}
 			if issuer.hostedCalls.Load() < 3 || issuer.acpCalls.Load() < 3 {
 				t.Fatal("native authorization did not reach actual hosted and ACP invocation")
 			}
-			if retryChecks.Load() < 8 {
+			if retryChecks.Load() < 4 {
 				t.Fatal("native retries were not verified against actual returned revision identities")
 			}
 		})
@@ -341,6 +344,29 @@ func oauthBrowserConnectionRevision(t *testing.T, p state.Provider, publicID str
 		t.Fatal("current native authorization revision unavailable")
 	}
 	return revision
+}
+
+type oauthBrowserStoreState struct {
+	connections []mcpcmd.Connection
+	revisions   []mcpcmd.Revision
+	grants      []mcpcmd.Grant
+}
+
+func oauthBrowserStoreSnapshot(t *testing.T, p state.Provider) oauthBrowserStoreState {
+	t.Helper()
+	connections, err := p.MCP().ListMCPConnections(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	revisions, err := p.MCP().ListMCPRevisions(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	grants, err := p.MCP().ListMCPGrants(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return oauthBrowserStoreState{connections: connections, revisions: revisions, grants: grants}
 }
 
 func sameOAuthBrowserRevision(a, b mcpcmd.Revision) bool {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -100,6 +101,8 @@ type grantOAuth struct {
 	refresh     func(context.Context, mcpcmd.Grant, GrantSecrets) (OAuthToken, error)
 	register    func(context.Context) (OAuthClient, error)
 	exchange    func(context.Context, mcpcmd.Grant, string, string) (OAuthToken, error)
+	discoveries atomic.Int64
+	refreshes   atomic.Int64
 }
 
 func (o *grantOAuth) BeginDevice(ctx context.Context, _ OAuthMetadata, g mcpcmd.Grant, secrets GrantSecrets) (OAuthDevice, error) {
@@ -123,6 +126,7 @@ func (o *grantOAuth) Discover(context.Context, string, string) (OAuthMetadata, e
 	return o.metadata, nil
 }
 func (o *grantOAuth) DiscoverIssuer(context.Context, mcpcmd.AuthBinding) (OAuthMetadata, error) {
+	o.discoveries.Add(1)
 	return o.metadata, nil
 }
 func (o *grantOAuth) Register(ctx context.Context, _ OAuthMetadata, _ string, _ []string) (OAuthClient, error) {
@@ -132,6 +136,7 @@ func (o *grantOAuth) Register(ctx context.Context, _ OAuthMetadata, _ string, _ 
 	return OAuthClient{ID: "worker-client", AuthMethod: mcpcmd.ClientAuthNone}, nil
 }
 func (o *grantOAuth) Refresh(ctx context.Context, _ OAuthMetadata, g mcpcmd.Grant, v GrantSecrets) (OAuthToken, error) {
+	o.refreshes.Add(1)
 	return o.refresh(ctx, g, v)
 }
 
@@ -154,6 +159,79 @@ func grantHarness(t *testing.T) (*Grants, *grantMemoryStore, *grantOAuth) {
 		t.Fatal(err)
 	}
 	return s, store, o
+}
+
+func TestDiagnosticAccessTokenReadsOnlyAlreadyValidExactGrant(t *testing.T) {
+	s, store, oauth := grantHarness(t)
+	g := store.grant
+	g.AccessExpiresAt = time.Now().Add(time.Hour)
+	store.grant = g
+
+	token, err := s.DiagnosticAccessToken(t.Context(), g.Binding, []string{"tools"})
+	if err != nil || token != "expired-access" {
+		t.Fatalf("valid diagnostic token unavailable: %v", err)
+	}
+	if len(store.writes) != 0 || oauth.discoveries.Load() != 0 || oauth.refreshes.Load() != 0 {
+		t.Fatal("diagnostic token read invoked OAuth or changed grant state")
+	}
+}
+
+func TestDiagnosticAccessTokenFailsWithoutRenewalOrMutation(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		edit func(*grantMemoryStore)
+		want error
+	}{
+		{"expired", func(*grantMemoryStore) {}, mcpcmd.ErrAuthRequired},
+		{"missing", func(s *grantMemoryStore) { s.grant = mcpcmd.Grant{} }, mcpcmd.ErrAuthRequired},
+		{"missing scope", func(s *grantMemoryStore) { s.grant.AccessExpiresAt = time.Now().Add(time.Hour); s.grant.Scopes = nil }, mcpcmd.ErrAuthRequired},
+		{"invalid client", func(s *grantMemoryStore) {
+			s.grant.AccessExpiresAt = time.Now().Add(time.Hour)
+			s.grant.TokenEndpointAuthMethod = mcpcmd.ClientAuthSecretBasic
+		}, mcpcmd.ErrAuthRequired},
+		{"disconnected", func(s *grantMemoryStore) {
+			g := s.grant
+			g.Status = mcpcmd.GrantDisconnected
+			g.AccessExpiresAt = time.Time{}
+			g.ProtectedValues = nil
+			s.grant = g
+		}, mcpcmd.ErrDisconnected},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, store, oauth := grantHarness(t)
+			binding := store.grant.Binding
+			tc.edit(store)
+			if token, err := s.DiagnosticAccessToken(t.Context(), binding, []string{"tools"}); token != "" || !errors.Is(err, tc.want) {
+				t.Fatalf("unsafe diagnostic token result: %v", err)
+			}
+			if len(store.writes) != 0 || oauth.discoveries.Load() != 0 || oauth.refreshes.Load() != 0 {
+				t.Fatal("failed diagnostic token read invoked OAuth or changed grant state")
+			}
+		})
+	}
+}
+
+type mismatchedDiagnosticGrantStore struct{ *grantMemoryStore }
+
+func (s mismatchedDiagnosticGrantStore) GetMCPGrant(context.Context, mcpcmd.AuthBinding) (mcpcmd.Grant, bool, error) {
+	g := s.grant
+	g.Binding.ConnectionID = "different-connection"
+	return g, true, nil
+}
+
+func TestDiagnosticAccessTokenRejectsMismatchedGrantIdentity(t *testing.T) {
+	s, store, oauth := grantHarness(t)
+	g := store.grant
+	g.AccessExpiresAt = time.Now().Add(time.Hour)
+	store.grant = g
+	s.store = mismatchedDiagnosticGrantStore{store}
+
+	if token, err := s.DiagnosticAccessToken(t.Context(), g.Binding, []string{"tools"}); token != "" || !errors.Is(err, mcpcmd.ErrCredentials) {
+		t.Fatalf("mismatched diagnostic token accepted: %v", err)
+	}
+	if len(store.writes) != 0 || oauth.discoveries.Load() != 0 || oauth.refreshes.Load() != 0 {
+		t.Fatal("mismatched diagnostic token invoked OAuth or changed grant state")
+	}
 }
 
 func TestGrantMetadataPreservesCurrentSecurityAndAuditTimeAfterClockRollback(t *testing.T) {

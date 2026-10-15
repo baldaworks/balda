@@ -331,13 +331,18 @@ func Module(
 			func(grants *mcpmanage.Grants) *mcpbridge.Bridge {
 				return mcpbridge.New(mcpfx.GrantCredentials{Grants: grants}, nil)
 			},
-			func(credentials *mcpmanage.Service, provider baldastate.Provider, catalog *catalogapp.Runtime, bridge *mcpbridge.Bridge) (*mcpmanage.Definitions, error) {
-				probe, err := mcpfx.NewManagedProbe(credentials, mcpfx.NewClientLauncher(), bridge)
+			func(credentials *mcpmanage.Service, grants *mcpmanage.Grants, provider baldastate.Provider, catalog *catalogapp.Runtime, bridge *mcpbridge.Bridge) (*mcpmanage.Definitions, error) {
+				launcher := mcpfx.NewClientLauncher()
+				probe, err := mcpfx.NewManagedProbe(credentials, launcher, bridge)
+				if err != nil {
+					return nil, err
+				}
+				diagnostic, err := mcpfx.NewDiagnosticProbe(credentials, grants, launcher)
 				if err != nil {
 					return nil, err
 				}
 				configured := mcpfx.NewConfiguredDefinitions(normaCfg.MCPServers, normaCfg.Providers, cfg.Balda.Provider, cfg.Balda.MCPServers)
-				return mcpmanage.NewDefinitions(credentials, mcpfx.NewDefinitionStore(provider.MCP()), configured, catalog, probe)
+				return mcpmanage.NewDefinitions(credentials, mcpfx.NewDefinitionStore(provider.MCP()), configured, catalog, probe, diagnostic)
 			},
 			func(grants *mcpmanage.Grants, definitions *mcpmanage.Definitions, catalog *catalogapp.Runtime) (*mcpbackofficeapp.Operations, *mcpmanage.Authorizations, error) {
 				return newSharedBackofficeMCP(cfg.Balda, grants, definitions, catalog)

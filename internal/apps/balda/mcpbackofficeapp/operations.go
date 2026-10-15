@@ -74,3 +74,8 @@ func (o *Operations) Probe(ctx context.Context, request mcpcmd.CreateDefinition)
 func (o *Operations) ProbeUpdate(ctx context.Context, request mcpcmd.UpdateDefinition) (mcpcmd.Item, error) {
 	return o.definitions.ProbeUpdate(ctx, request)
 }
+
+// DiagnoseCurrent checks the authoritative current definition without writes.
+func (o *Operations) DiagnoseCurrent(ctx context.Context, connectionID string, authority mcpcmd.Authority) (mcpcmd.DiagnosticResult, error) {
+	return o.definitions.DiagnoseCurrent(ctx, connectionID, authority)
+}

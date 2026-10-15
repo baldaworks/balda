@@ -121,7 +121,7 @@ func TestSharedBackofficeMCPBrowserOAuthUsesSharedCallback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	definitions, err := mcpmanage.NewDefinitions(credentials, mcpfx.NewDefinitionStore(provider.MCP()), mcpfx.NewConfiguredDefinitions(nil, map[string]agentconfig.Config{"hosted": {}}, "hosted", nil), catalog, probe)
+	definitions, err := mcpmanage.NewDefinitions(credentials, mcpfx.NewDefinitionStore(provider.MCP()), mcpfx.NewConfiguredDefinitions(nil, map[string]agentconfig.Config{"hosted": {}}, "hosted", nil), catalog, probe, unusedDiagnosticProbe{})
 	if err != nil {
 		t.Fatal(err)
 	}

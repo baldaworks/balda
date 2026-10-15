@@ -43,7 +43,7 @@ func TestAuthorizationMetadataStaysMonotonicWithCurrentSecurityTime(t *testing.T
 			if err != nil {
 				t.Fatal(err)
 			}
-			operations.definitions, err = mcpmanage.NewDefinitions(credentials, store, mcpfx.NewConfiguredDefinitions(nil, map[string]agentconfig.Config{"hosted": {}}, "hosted", nil), catalog, probe)
+			operations.definitions, err = mcpmanage.NewDefinitions(credentials, store, mcpfx.NewConfiguredDefinitions(nil, map[string]agentconfig.Config{"hosted": {}}, "hosted", nil), catalog, probe, unusedDiagnosticProbe{})
 			if err != nil {
 				t.Fatal(err)
 			}

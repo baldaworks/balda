@@ -30,6 +30,12 @@ import (
 	"github.com/normahq/runtime/v2/mcpregistry"
 )
 
+type unusedDiagnosticProbe struct{}
+
+func (unusedDiagnosticProbe) DiagnoseMCP(context.Context, mcpcmd.Revision) mcpcmd.DiagnosticResult {
+	return mcpcmd.DiagnosticResult{Outcome: mcpcmd.DiagnosticFailed}
+}
+
 func TestRemoteDiscoveryAndExecutionUseSameProtectedBridge(t *testing.T) {
 	for _, source := range []mcpcmd.Source{mcpcmd.SourceManaged, mcpcmd.SourceConfig} {
 		t.Run(string(source), func(t *testing.T) {
@@ -150,7 +156,7 @@ func testRemoteDiscoveryAndExecutionUseSameProtectedBridge(t *testing.T, source 
 					if err != nil {
 						t.Fatal(err)
 					}
-					definitions, err := mcpmanage.NewDefinitions(credentials, mcpfx.NewDefinitionStore(p.MCP()), mcpfx.NewConfiguredDefinitions(configured, map[string]agentconfig.Config{"alpha": {MCPServers: []string{"worker-tools"}}, "beta": {}}, "alpha", nil), original, probe)
+					definitions, err := mcpmanage.NewDefinitions(credentials, mcpfx.NewDefinitionStore(p.MCP()), mcpfx.NewConfiguredDefinitions(configured, map[string]agentconfig.Config{"alpha": {MCPServers: []string{"worker-tools"}}, "beta": {}}, "alpha", nil), original, probe, unusedDiagnosticProbe{})
 					if err != nil {
 						t.Fatal(err)
 					}

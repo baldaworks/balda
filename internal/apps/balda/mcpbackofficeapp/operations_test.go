@@ -25,6 +25,12 @@ import (
 	"github.com/normahq/runtime/v2/mcpregistry"
 )
 
+type unusedDiagnosticProbe struct{}
+
+func (unusedDiagnosticProbe) DiagnoseMCP(context.Context, mcpcmd.Revision) mcpcmd.DiagnosticResult {
+	return mcpcmd.DiagnosticResult{Outcome: mcpcmd.DiagnosticFailed}
+}
+
 func TestOperationsPersistProtectedEditsAndProbeExactCandidate(t *testing.T) {
 	var requests atomic.Int64
 	var wantSecret atomic.Value
@@ -54,6 +60,10 @@ func TestOperationsPersistProtectedEditsAndProbeExactCandidate(t *testing.T) {
 	created, err := operations.Create(t.Context(), request)
 	if err != nil || created.Status != mcpcmd.StatusPending || created.ToolCount != 0 || requests.Load() != 0 {
 		t.Fatalf("create = %s/%v", created.Status, err)
+	}
+	diagnostic, err := operations.DiagnoseCurrent(t.Context(), created.Connection.ID, authority)
+	if err != nil || diagnostic.Outcome != mcpcmd.DiagnosticFailed || requests.Load() != 0 {
+		t.Fatalf("current diagnostic delegation = %+v/%v", diagnostic, err)
 	}
 	pinned, err := catalog.Store().Application()
 	if err != nil {
@@ -165,7 +175,7 @@ func operationsFixture(t *testing.T, configured map[string]agentconfig.MCPServer
 	if err != nil {
 		t.Fatal(err)
 	}
-	definitions, err := mcpmanage.NewDefinitions(credentials, mcpfx.NewDefinitionStore(p.MCP()), mcpfx.NewConfiguredDefinitions(configured, map[string]agentconfig.Config{"hosted": {}}, "hosted", nil), catalog, probe)
+	definitions, err := mcpmanage.NewDefinitions(credentials, mcpfx.NewDefinitionStore(p.MCP()), mcpfx.NewConfiguredDefinitions(configured, map[string]agentconfig.Config{"hosted": {}}, "hosted", nil), catalog, probe, unusedDiagnosticProbe{})
 	if err != nil {
 		t.Fatal(err)
 	}

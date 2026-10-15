@@ -17,6 +17,7 @@ import (
 
 const mcpProbeOperation = "probe"
 const mcpSavedConnectionLabel = "Open saved connection"
+const mcpDiagnosticFormLimit = 4 << 10
 
 // MCPOperations is Backoffice's port to host-owned MCP management. Definition
 // validation, durable authority fences and readiness policy remain with the host.
@@ -29,6 +30,7 @@ type MCPOperations interface {
 	Delete(ctx context.Context, request mcpcmd.ChangeSelection) (mcpcmd.Item, error)
 	Probe(ctx context.Context, request mcpcmd.CreateDefinition) (mcpcmd.Item, error)
 	ProbeUpdate(ctx context.Context, request mcpcmd.UpdateDefinition) (mcpcmd.Item, error)
+	DiagnoseCurrent(ctx context.Context, connectionID string, authority mcpcmd.Authority) (mcpcmd.DiagnosticResult, error)
 }
 
 // ConfigureMCPOperations wires the host use case before the listener starts.
@@ -76,6 +78,32 @@ func (a *httpApp) mcpPage(w http.ResponseWriter, r *http.Request) {
 		}
 		a.mcpAuthorizationError(w, r, page, err)
 		return
+	}
+	a.render(w, r, http.StatusOK, webui.TemplateMCP, page)
+}
+
+func (a *httpApp) mcpDiagnostic(w http.ResponseWriter, r *http.Request) {
+	_, principal, ok := a.browser.AdministratorMutationLimit(w, r, mcpDiagnosticFormLimit)
+	if !ok {
+		return
+	}
+	if a.mcp == nil {
+		a.mcpError(w, r, a.mcpBasePage(r, principal), mcpcmd.ErrUnavailable)
+		return
+	}
+	result, diagnosticErr := a.mcp.DiagnoseCurrent(r.Context(), r.PathValue("connection_id"), a.mcpAuthority(principal))
+	page, err := a.mcpView(r, principal)
+	if err != nil {
+		a.mcpError(w, r, page, err)
+		return
+	}
+	if diagnosticErr != nil {
+		a.mcpError(w, r, page, diagnosticErr)
+		return
+	}
+	page.MCP.Diagnostic = &webui.MCPDiagnosticView{
+		Succeeded: result.Outcome == mcpcmd.DiagnosticSucceeded && result.ToolCount >= 0,
+		ToolCount: result.ToolCount,
 	}
 	a.render(w, r, http.StatusOK, webui.TemplateMCP, page)
 }

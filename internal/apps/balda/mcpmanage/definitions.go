@@ -50,6 +50,12 @@ type Probe interface {
 	ProbeMCP(ctx context.Context, revision mcpcmd.Revision) (int, error)
 }
 
+// DiagnosticProbe checks one authoritative exact revision without publishing
+// runtime health or accepting candidate definition fields.
+type DiagnosticProbe interface {
+	DiagnoseMCP(ctx context.Context, revision mcpcmd.Revision) mcpcmd.DiagnosticResult
+}
+
 // Definitions owns hybrid definition validation and management.
 type Definitions struct {
 	credentials *Service
@@ -57,14 +63,15 @@ type Definitions struct {
 	configured  Configured
 	catalog     Catalog
 	probe       Probe
+	diagnostic  DiagnosticProbe
 }
 
 // NewDefinitions binds the feature to the shared store and catalog owners.
-func NewDefinitions(credentials *Service, store DefinitionStore, configured Configured, catalog Catalog, probe Probe) (*Definitions, error) {
-	if credentials == nil || store == nil || configured == nil || catalog == nil || probe == nil {
+func NewDefinitions(credentials *Service, store DefinitionStore, configured Configured, catalog Catalog, probe Probe, diagnostic DiagnosticProbe) (*Definitions, error) {
+	if credentials == nil || store == nil || configured == nil || catalog == nil || probe == nil || diagnostic == nil {
 		return nil, mcpcmd.ErrInvalid
 	}
-	return &Definitions{credentials: credentials, store: store, configured: configured, catalog: catalog, probe: probe}, nil
+	return &Definitions{credentials: credentials, store: store, configured: configured, catalog: catalog, probe: probe, diagnostic: diagnostic}, nil
 }
 
 // Create validates and persists a new managed connection and revision.
