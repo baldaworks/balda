@@ -55,8 +55,6 @@ func (r *Runner) Run(ctx context.Context, event hookcmd.Event) (hookcmd.Result, 
 		return hookcmd.Result{}, hookcmd.ErrUnavailable
 	}
 	definitions := slices.Clone(record.Definitions)
-	eventCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancel()
 	slices.SortFunc(definitions, func(a, b hookcmd.Definition) int { return strings.Compare(a.Name, b.Name) })
 	var combined hookcmd.Result
 	for _, definition := range definitions {
@@ -70,7 +68,7 @@ func (r *Runner) Run(ctx context.Context, event hookcmd.Event) (hookcmd.Result, 
 		if !matcher.MatchString(event.Source) {
 			continue
 		}
-		result, err := r.execute(eventCtx, definition, event)
+		result, err := r.execute(ctx, definition, event)
 		if err != nil {
 			return hookcmd.Result{}, err
 		}
@@ -94,6 +92,11 @@ func (r *Runner) Run(ctx context.Context, event hookcmd.Event) (hookcmd.Result, 
 }
 
 func (r *Runner) execute(ctx context.Context, definition hookcmd.Definition, event hookcmd.Event) (hookcmd.Result, error) {
+	if definition.TimeoutSeconds > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(definition.TimeoutSeconds)*time.Second)
+		defer cancel()
+	}
 	select {
 	case r.gate <- struct{}{}:
 		defer func() { <-r.gate }()
@@ -108,9 +111,7 @@ func runCommand(ctx context.Context, definition hookcmd.Definition, event hookcm
 	if err != nil || len(input) > maxEventBytes {
 		return hookcmd.Result{}, hookcmd.ErrInvalid
 	}
-	runCtx, cancel := context.WithTimeout(ctx, time.Duration(definition.TimeoutSeconds)*time.Second)
-	defer cancel()
-	command := exec.CommandContext(runCtx, definition.Command, definition.Args...)
+	command := exec.CommandContext(ctx, definition.Command, definition.Args...)
 	command.Dir = event.CWD
 	command.Stdin = bytes.NewReader(input)
 	stdout, stderr := &boundedOutput{}, &boundedOutput{}
@@ -119,9 +120,12 @@ func runCommand(ctx context.Context, definition hookcmd.Definition, event hookcm
 	configureProcess(command)
 	if err := command.Run(); err != nil {
 		var exit *exec.ExitError
-		if errors.As(err, &exit) && exit.ExitCode() == 2 && runCtx.Err() == nil {
+		if errors.As(err, &exit) && exit.ExitCode() == 2 && ctx.Err() == nil {
 			return hookcmd.Result{Decision: hookcmd.DecisionDeny, Reason: "Hook rejected the event."}, nil
 		}
+		return hookcmd.Result{}, fmt.Errorf("%w: %s", hookcmd.ErrExecution, definition.Name)
+	}
+	if ctx.Err() != nil {
 		return hookcmd.Result{}, fmt.Errorf("%w: %s", hookcmd.ErrExecution, definition.Name)
 	}
 	if len(bytes.TrimSpace(stdout.Bytes())) == 0 {

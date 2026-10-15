@@ -11,6 +11,14 @@ exclude:
   - .config
 
 vendors:
+  hook_policy_dependencies:
+    in:
+      - github.com/google/uuid
+
+  hook_wiring_dependencies:
+    in:
+      - go.uber.org/fx
+
   command_outbox_runtime:
     in:
       - github.com/baldaworks/go-actorlayer
@@ -126,7 +134,7 @@ components:
     in:
       - internal/apps/balda/mcpcmd
 
-  # Global fact policy owns serialized mutations; persistence stays behind a port.
+  # Managed hook policy owns validation and execution; storage is behind a port.
   hook_contracts:
     in:
       - internal/apps/balda/hookcmd
@@ -597,7 +605,9 @@ deps:
       - hook_contracts
       - user_contracts
     deepScan: false
-    anyVendorDeps: true
+    anyVendorDeps: false
+    canUse:
+      - hook_policy_dependencies
 
   hook_backoffice_wiring:
     mayDependOn:
@@ -614,7 +624,9 @@ deps:
       - application
       - storage
     deepScan: false
-    anyVendorDeps: true
+    anyVendorDeps: false
+    canUse:
+      - hook_wiring_dependencies
 
   memory_policy:
     mayDependOn:

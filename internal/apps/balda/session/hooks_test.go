@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/hookcmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
@@ -13,8 +14,9 @@ import (
 )
 
 type lifecycleHooks struct {
-	events []hookcmd.Event
-	deny   bool
+	events                 []hookcmd.Event
+	deny                   bool
+	waitForEndCancellation bool
 }
 
 func TestSessionStartDenialPreservesPersistedRestore(t *testing.T) {
@@ -55,12 +57,28 @@ func TestSessionStartDenialPreservesPersistedRestore(t *testing.T) {
 	}
 }
 
-func (h *lifecycleHooks) Run(_ context.Context, event hookcmd.Event) (hookcmd.Result, error) {
+func (h *lifecycleHooks) Run(ctx context.Context, event hookcmd.Event) (hookcmd.Result, error) {
 	h.events = append(h.events, event)
+	if h.waitForEndCancellation && event.Name == hookcmd.SessionEnd {
+		<-ctx.Done()
+		return hookcmd.Result{}, ctx.Err()
+	}
 	if h.deny {
 		return hookcmd.Result{}, hookcmd.ErrDenied
 	}
 	return hookcmd.Result{}, nil
+}
+
+func TestSessionEndHooksRespectRemainingCleanupBudget(t *testing.T) {
+	hooks := &lifecycleHooks{waitForEndCancellation: true}
+	manager := hookTestManager(t, hooks)
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	manager.endSessionHooks(ctx, &TopicSession{sessionID: "session", workspaceDir: t.TempDir(), hooksStarted: true})
+	if time.Since(started) > time.Second || len(hooks.events) != 1 {
+		t.Fatalf("session-end hook exceeded cleanup budget: %v, events=%+v", time.Since(started), hooks.events)
+	}
 }
 
 func hookTestManager(t *testing.T, hooks *lifecycleHooks) *Manager {

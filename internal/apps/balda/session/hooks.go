@@ -34,7 +34,7 @@ func (m *Manager) endSessionHooks(ctx context.Context, ts *TopicSession) {
 		return
 	}
 	ts.hooksEnded = true
-	endCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
+	endCtx, cancel := context.WithTimeout(ctx, cleanupTimeout)
 	defer cancel()
 	cwd, err := filepath.Abs(ts.workspaceDir)
 	if err == nil {
