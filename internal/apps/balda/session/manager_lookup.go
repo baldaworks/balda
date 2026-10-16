@@ -2,9 +2,11 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 )
 
@@ -29,6 +31,17 @@ func (m *Manager) GetSession(locator SessionLocator) (*TopicSession, error) {
 		return nil, fmt.Errorf("no session for %s", locator.AddressKey)
 	}
 
+	if m.archive != nil && ts.archiveID != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
+		defer cancel()
+		pending, err := m.archive.Pending(ctx, ts.locator.ChannelType, ts.locator.AddressKey)
+		if err != nil && !errors.Is(err, chatarchivecmd.ErrNotFound) {
+			return nil, err
+		}
+		if err == nil && pending.Kind == chatarchivecmd.KindDestroy {
+			return nil, chatarchivecmd.ErrConflict
+		}
+	}
 	return ts, nil
 }
 
@@ -64,9 +77,6 @@ func (m *Manager) prepareSession(ctx context.Context, sessionCtx SessionContext,
 		return nil, err
 	}
 	defer endLifecycle()
-	if active, err := m.GetSession(sessionCtx.Locator); err == nil {
-		return active, nil
-	}
 	if m.sessionStore == nil {
 		return nil, fmt.Errorf("session metadata store is required")
 	}
@@ -123,6 +133,9 @@ func (m *Manager) prepareSessionLocked(ctx context.Context, sessionCtx SessionCo
 			label = "auto"
 		}
 		persisted = &record
+	}
+	if err := m.reconcileArchiveDestruction(ctx, sessionCtx.Locator, sessionCtx.UserID); err != nil {
+		return nil, err
 	}
 	sessionID := strings.TrimSpace(sessionCtx.Locator.SessionID)
 	m.mu.RLock()

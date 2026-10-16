@@ -568,6 +568,8 @@ components:
       - cmd/balda
 
 deps:
+  # Lifecycle composition exposes only SQL archive capability to session ports.
+  # Boot reconciliation stays in storage: no provider or transport dependency.
   chat_archive_wiring:
     mayDependOn:
       - chat_archive_contracts

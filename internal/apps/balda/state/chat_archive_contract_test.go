@@ -332,3 +332,52 @@ func checkChatArchiveExactRuntimeLoss(t *testing.T, open contractOpener) {
 		t.Fatalf("replacement after proven loss: %v", err)
 	}
 }
+
+func checkChatArchiveMemoryBoot(t *testing.T, open contractOpener) {
+	p, err := open(t.Context(), filepath.Join(t.TempDir(), "memory-archive.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = p.Close() }()
+	s := p.ChatArchive()
+	now := time.Now().UTC()
+	for n, kind := range []string{"former-active", "former-pending", "current", "durable"} {
+		rec := chatarchivecmd.Session{ID: fmt.Sprintf("33c9805d-c079-4f04-a52b-%012d", n+1), StableID: kind, RuntimeID: kind, Persistence: chatarchivecmd.PersistenceMemory, BootID: "former", Location: chatarchivecmd.Location{Channel: "telegram", AddressKey: kind, Locator: "telegram:" + kind}, StartedAt: now, ObservedAt: now}
+		if kind == "current" {
+			rec.BootID = "current"
+		}
+		if kind == "durable" {
+			rec.Persistence = chatarchivecmd.PersistenceDurable
+		}
+		i, err := s.Begin(t.Context(), chatarchivecmd.Intent{Token: kind, Kind: chatarchivecmd.KindFresh, Session: rec, At: now})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if kind != "former-pending" {
+			if _, err := s.Activate(t.Context(), i.Token, nil); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	for range 2 {
+		if err := s.ReconcileMemory(t.Context(), "current"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows, err := s.List(t.Context(), chatarchivecmd.Filter{Limit: 50})
+	if err != nil || len(rows) != 4 {
+		t.Fatalf("rows=%#v, %v", rows, err)
+	}
+	for _, row := range rows {
+		ended := row.StableID == "former-active" || row.StableID == "former-pending"
+		if ended && (row.Status != chatarchivecmd.StatusEnded || row.EndReason != "interrupted") {
+			t.Fatalf("former lifetime=%#v", row)
+		}
+		if !ended && row.Status != chatarchivecmd.StatusActive {
+			t.Fatalf("unrelated lifetime changed=%#v", row)
+		}
+	}
+	if _, err := s.Pending(t.Context(), "telegram", "former-pending"); !errors.Is(err, chatarchivecmd.ErrNotFound) {
+		t.Fatalf("former pending operation=%v", err)
+	}
+}

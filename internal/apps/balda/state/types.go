@@ -591,6 +591,7 @@ type JobStore interface {
 
 // ChatArchiveStore persists lifetime identity, lifecycle evidence and immutable messages.
 type ChatArchiveStore interface {
+	ReconcileMemory(ctx context.Context, bootID string) error
 	Begin(ctx context.Context, intent chatarchivecmd.Intent) (chatarchivecmd.Intent, error)
 	Activate(ctx context.Context, token string, live *SessionRecord) (chatarchivecmd.Session, error)
 	Complete(ctx context.Context, token, outcome string) error

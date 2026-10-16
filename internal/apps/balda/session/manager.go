@@ -4,15 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
-	"github.com/google/uuid"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/git"
+	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 	"google.golang.org/adk/v2/agent"
@@ -207,6 +207,13 @@ func NewManager(p ManagerParams) (*Manager, error) {
 		shutdownBoundaries: make(map[string]string),
 	}
 
+	if m.archive != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
+		defer cancel()
+		if err := m.archive.ReconcileMemory(ctx, m.bootID); err != nil {
+			return nil, fmt.Errorf("reconcile former memory lifetimes: %w", err)
+		}
+	}
 	return m, nil
 }
 
@@ -414,8 +421,19 @@ func (m *Manager) createSessionLocked(ctx context.Context, sessionCtx SessionCon
 	}
 
 	agentSessionID := m.newAgentSessionID(sessionID)
-	if m.sessionsPersistent || transient || persisted != nil {
+	if m.sessionsPersistent || transient || (persisted != nil && m.archive == nil) {
 		agentSessionID = sessionID
+	}
+	if !transient {
+		if err := m.reconcileArchiveDestruction(ctx, locator, userID); err != nil {
+			cleanupPreparedWorkspace()
+			return err
+		}
+	}
+	// Memory runtime metadata can survive in SQL, but its provider history did
+	// not survive the previous process. Adoption would invent an exact runtime.
+	if m.archive != nil && !m.sessionsPersistent && persisted != nil && persisted.ArchiveID == "" {
+		persisted = nil
 	}
 	var activation *chatarchivecmd.Intent
 	var interrupted bool
@@ -441,6 +459,9 @@ func (m *Manager) createSessionLocked(ctx context.Context, sessionCtx SessionCon
 		SessionBranch:  branchName,
 	}
 
+	if activation != nil && activation.Kind == chatarchivecmd.KindFresh {
+		persisted = nil
+	}
 	if activation != nil && activation.Kind != chatarchivecmd.KindAdopt {
 		runtimeSessionCtx.ArchiveID = activation.Session.ID
 	}
@@ -707,9 +728,20 @@ func (m *Manager) restoreRuntimeSession(
 		closeBuiltRuntime(currentRuntime)
 		return nil, nil, false, fmt.Errorf("session service is required")
 	}
-	if err := currentRuntime.SessionSvc.Delete(ctx, &adksession.DeleteRequest{
-		AppName: appName, UserID: userID, SessionID: sessionID,
-	}); err != nil {
+	var destruction *chatarchivecmd.Intent
+	if *activation != nil && (*activation).Kind == chatarchivecmd.KindExact {
+		if err := m.archive.Complete(ctx, (*activation).Token, chatarchivecmd.OutcomeAborted); err != nil {
+			closeBuiltRuntime(currentRuntime)
+			return nil, nil, false, err
+		}
+		destruction, err = m.beginArchiveDestruction(ctx, record.ArchiveID, BoundaryReasonRotation)
+		if err != nil {
+			closeBuiltRuntime(currentRuntime)
+			return nil, nil, false, err
+		}
+	}
+	deleteErr := currentRuntime.SessionSvc.Delete(ctx, &adksession.DeleteRequest{AppName: appName, UserID: userID, SessionID: sessionID})
+	if _, err := m.completeArchiveDeletion(ctx, destruction, currentRuntime.SessionSvc, appName, userID, deleteErr); err != nil {
 		closeBuiltRuntime(currentRuntime)
 		return nil, nil, false, fmt.Errorf("delete failed runtime session: %w", err)
 	}
@@ -718,15 +750,17 @@ func (m *Manager) restoreRuntimeSession(
 		return nil, nil, false, err
 	}
 	if *activation != nil {
-		outcome := chatarchivecmd.OutcomeDestroyed
 		if (*activation).Kind == chatarchivecmd.KindAdopt {
-			outcome = chatarchivecmd.OutcomeAborted
+			if err := m.archive.Complete(ctx, (*activation).Token, chatarchivecmd.OutcomeAborted); err != nil {
+				closeBuiltRuntime(currentRuntime)
+				return nil, nil, false, err
+			}
 		}
-		if err := m.archive.Complete(ctx, (*activation).Token, outcome); err != nil {
-			closeBuiltRuntime(currentRuntime)
-			return nil, nil, false, err
+		prior := record
+		if prior.ArchiveID == "" {
+			prior.ArchiveID = (*activation).Session.ID
 		}
-		next, _, err := m.beginArchiveActivation(ctx, locator, sessionID, record.AgentName, nil)
+		next, _, err := m.beginArchiveActivation(ctx, locator, sessionID, record.AgentName, &prior)
 		if err != nil {
 			closeBuiltRuntime(currentRuntime)
 			return nil, nil, false, err
@@ -734,6 +768,7 @@ func (m *Manager) restoreRuntimeSession(
 		*activation = next
 		sessionCtx.ArchiveID = next.Session.ID
 	}
+
 	sess, err := builder.CreateFreshRuntimeSession(
 		ctx, currentRuntime, provider, userID, sessionID, workspaceDir, sessionCtx,
 	)
@@ -858,6 +893,22 @@ func (m *Manager) resetSessionWithReason(ctx context.Context, locator SessionLoc
 	if err != nil {
 		return fmt.Errorf("decode persisted session locator: %w", err)
 	}
+	if err := m.reconcileArchiveDestruction(ctx, recordLocator, record.UserID); err != nil {
+		return err
+	}
+	if m.archive != nil && record.ArchiveID != "" {
+		old, err := m.archive.Get(ctx, record.ArchiveID)
+		if err != nil {
+			return err
+		}
+		if old.Status == chatarchivecmd.StatusEnded {
+			return nil
+		}
+	}
+	destruction, err := m.beginArchiveDestruction(ctx, record.ArchiveID, reason)
+	if err != nil {
+		return err
+	}
 	boundaryErr := m.notifyBoundary(ctx, SessionBoundary{
 		Locator:        recordLocator,
 		SessionID:      record.SessionID,
@@ -887,14 +938,9 @@ func (m *Manager) resetSessionWithReason(ctx context.Context, locator SessionLoc
 	if appName == "" {
 		appName = baldaRuntimeAppName
 	}
-	if err := rootRuntime.SessionSvc.Delete(ctx, &adksession.DeleteRequest{
-		AppName:   appName,
-		UserID:    userID,
-		SessionID: sessionID,
-	}); err != nil {
-		return errors.Join(boundaryErr, fmt.Errorf("delete runtime session: %w", err))
-	}
-	return boundaryErr
+	deleteErr := rootRuntime.SessionSvc.Delete(ctx, &adksession.DeleteRequest{AppName: appName, UserID: userID, SessionID: sessionID})
+	_, journalErr := m.completeArchiveDeletion(ctx, destruction, rootRuntime.SessionSvc, appName, userID, deleteErr)
+	return errors.Join(boundaryErr, journalErr)
 }
 
 func (m *Manager) hardDeleteSession(locator SessionLocator) {
@@ -912,6 +958,9 @@ func (m *Manager) hardDeleteSession(locator SessionLocator) {
 	}
 	if boundaryErr != nil {
 		m.logger.Warn().Err(boundaryErr).Str("session_id", sessionID).Msg("session close boundary failed")
+	}
+	if boundaryErr != nil {
+		return
 	}
 	cleanupCtx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
 	defer cancel()
@@ -949,7 +998,23 @@ func (m *Manager) stopAllWithContext(ctx context.Context) {
 				m.logger.Warn().Err(err).Str("session_id", ts.sessionID).Msg("session shutdown boundary failed")
 			}
 		}
-		if err := m.cleanupTopicSession(ctx, ts, opts); err != nil {
+		cleanupOpts := opts
+		if opts.deleteRuntimeSession {
+			intent, err := m.beginArchiveDestruction(ctx, ts.archiveID, BoundaryReasonShutdown)
+			if err != nil {
+				cleanupOpts.deleteRuntimeSession = false
+				m.logger.Warn().Err(err).Str("archive_id", ts.archiveID).Msg("runtime retained because shutdown journal is unavailable")
+			} else {
+				deleteErr := deleteTopicRuntimeSession(ctx, ts)
+				destroyed, journalErr := m.completeArchiveDeletion(ctx, intent, ts.sessionSvc, topicAppName(ts), ts.userID, deleteErr)
+				ts.runtimeDeleted = destroyed
+				cleanupOpts.deleteRuntimeSession = false
+				if journalErr != nil {
+					m.logger.Warn().Err(journalErr).Str("archive_id", ts.archiveID).Msg("shutdown destruction remains pending")
+				}
+			}
+		}
+		if err := m.cleanupTopicSession(ctx, ts, cleanupOpts); err != nil {
 			m.logger.Warn().Err(err).Str("session_id", ts.sessionID).Msg("failed to close topic session")
 		}
 		unlock()
@@ -987,6 +1052,10 @@ func (m *Manager) resetActiveSession(ctx context.Context, locator SessionLocator
 		}
 		ts.pendingBoundaries[reason] = attempt
 	}
+	destruction, err := m.beginArchiveDestruction(ctx, ts.archiveID, reason)
+	if err != nil {
+		return true, err
+	}
 	var boundaryErr error
 	if !attempt.published {
 		boundaryErr = m.notifyBoundary(ctx, attempt.boundary)
@@ -998,8 +1067,11 @@ func (m *Manager) resetActiveSession(ctx context.Context, locator SessionLocator
 	cleanupCtx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
 	defer cancel()
 	// Keep the active runtime available if storage cannot delete its history.
-	if err := deleteTopicRuntimeSession(cleanupCtx, ts); err != nil {
-		return true, errors.Join(boundaryErr, err)
+	deleteErr := deleteTopicRuntimeSession(cleanupCtx, ts)
+	destroyed, journalErr := m.completeArchiveDeletion(cleanupCtx, destruction, ts.sessionSvc, topicAppName(ts), ts.userID, deleteErr)
+	ts.runtimeDeleted = destroyed
+	if !destroyed {
+		return true, errors.Join(boundaryErr, journalErr)
 	}
 	m.mu.Lock()
 	if m.sessions[sessionID] == ts {
@@ -1007,9 +1079,9 @@ func (m *Manager) resetActiveSession(ctx context.Context, locator SessionLocator
 	}
 	m.mu.Unlock()
 	if err := m.cleanupTopicSession(cleanupCtx, ts, sessionCleanupOptions{}); err != nil {
-		return true, errors.Join(boundaryErr, err)
+		return true, errors.Join(boundaryErr, journalErr, err)
 	}
-	return true, boundaryErr
+	return true, errors.Join(boundaryErr, journalErr)
 }
 
 func (m *Manager) lockSessionOperation(sessionID string) func() {
@@ -1037,6 +1109,17 @@ func (m *Manager) lockSessionOperation(sessionID string) func() {
 }
 
 func (m *Manager) removeActiveSession(ctx context.Context, locator SessionLocator, opts sessionCleanupOptions, reason BoundaryReason) (bool, error) {
+	if opts.deleteRuntimeSession {
+		m.mu.RLock()
+		ts := m.sessions[strings.TrimSpace(locator.SessionID)]
+		m.mu.RUnlock()
+		removed, err := m.resetActiveSession(ctx, locator, reason)
+		if err != nil || !removed {
+			return removed, err
+		}
+		opts.deleteRuntimeSession = false
+		return true, m.cleanupTopicSession(ctx, ts, opts)
+	}
 	sessionID := strings.TrimSpace(locator.SessionID)
 	m.mu.Lock()
 	ts, exists := m.sessions[sessionID]

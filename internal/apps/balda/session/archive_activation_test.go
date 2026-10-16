@@ -219,7 +219,7 @@ func TestArchiveRecoveryRequiresReadyMatchingEpoch(t *testing.T) {
 				t.Fatal(err)
 			}
 			event := adksession.NewEvent(t.Context(), "contradiction")
-			event.Author = "system"
+			event.Author = archiveStateAuthor
 			event.Actions.StateDelta = map[string]any{key: "unproven"}
 			if err := f.runtime.SessionSvc.AppendEvent(t.Context(), runtime.Session, event); err != nil {
 				t.Fatal(err)

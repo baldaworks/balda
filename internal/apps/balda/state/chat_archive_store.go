@@ -506,3 +506,74 @@ func liveFingerprint(live *SessionRecord, id string) string {
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])
 }
+
+// ReconcileMemory ends lifetimes owned by a previous process without opening
+// runtime sessions. Durable lifetimes and this process's reservations are untouched.
+func (s *sqlChatArchiveStore) ReconcileMemory(ctx context.Context, bootID string) error {
+	if bootID == "" {
+		return chatarchivecmd.ErrInvalid
+	}
+	tx, err := s.users.begin(ctx)
+	if err != nil {
+		return archiveError(ctx, err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	rows, err := tx.QueryContext(ctx, `SELECT record_json FROM balda_archive_sessions WHERE status IN ('active','pending','uncertain')`)
+	if err != nil {
+		return archiveError(ctx, err)
+	}
+	var former []chatarchivecmd.Session
+	for rows.Next() {
+		var raw string
+		var rec chatarchivecmd.Session
+		if err := rows.Scan(&raw); err != nil {
+			_ = rows.Close()
+			return archiveError(ctx, err)
+		}
+		if json.Unmarshal([]byte(raw), &rec) != nil {
+			_ = rows.Close()
+			return chatarchivecmd.ErrUnavailable
+		}
+		if rec.Persistence == chatarchivecmd.PersistenceMemory && rec.BootID != bootID {
+			former = append(former, rec)
+		}
+	}
+	readErr := rows.Err()
+	closeErr := rows.Close()
+	if readErr != nil || closeErr != nil {
+		return chatarchivecmd.ErrUnavailable
+	}
+	for _, rec := range former {
+		rec.Status = chatarchivecmd.StatusEnded
+		rec.EndedAt = time.Now().UTC()
+		rec.EndReason = "interrupted"
+		if err := s.writeSession(ctx, tx, rec, false); err != nil {
+			return err
+		}
+		// Resolve the location's pending operation only if it belongs to that epoch.
+		var raw string
+		err := tx.QueryRowContext(ctx, s.users.bind(`SELECT record_json FROM balda_archive_lifecycle_intents WHERE channel_type=? AND address_key=? AND outcome IN ('pending','uncertain')`), rec.Location.Channel, rec.Location.AddressKey).Scan(&raw)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return archiveError(ctx, err)
+		}
+		var i chatarchivecmd.Intent
+		if json.Unmarshal([]byte(raw), &i) != nil {
+			return chatarchivecmd.ErrUnavailable
+		}
+		if i.Session.ID != rec.ID {
+			continue
+		}
+		i.Outcome = chatarchivecmd.OutcomeDestroyed
+		i.CompletedAt = rec.EndedAt
+		if err := s.writeIntent(ctx, tx, i); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return archiveError(ctx, err)
+	}
+	return nil
+}
