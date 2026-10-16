@@ -1,3 +1,6 @@
 
 # Use bd merge for beads JSONL files
 .beads/issues.jsonl merge=beads
+
+# Preserve exact bytes covered by embedded frontend provenance digests.
+internal/apps/backoffice/internal/webui/static/vendor/** -text
