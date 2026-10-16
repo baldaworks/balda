@@ -53,6 +53,10 @@ vendors:
       - google.golang.org/adk/v2/platform
 
 components:
+  chat_archive_wiring:
+    in:
+      - internal/apps/balda/chatarchivefx
+
   chat_archive_contracts:
     in:
       - internal/apps/balda/chatarchivecmd
@@ -564,6 +568,16 @@ components:
       - cmd/balda
 
 deps:
+  chat_archive_wiring:
+    mayDependOn:
+      - chat_archive_contracts
+      - application
+      - storage
+    deepScan: false
+    anyVendorDeps: false
+    canUse:
+      - hook_wiring_dependencies
+
   chat_archive_contracts:
     mayDependOn:
       - chat_archive_contracts
@@ -991,6 +1005,7 @@ deps:
 
   application:
     mayDependOn:
+      - chat_archive_contracts
       - hook_contracts
       - memory_policy
       - memory_contracts
@@ -1367,6 +1382,7 @@ deps:
 
   composition_root:
     mayDependOn:
+      - chat_archive_wiring
       - skill_wiring
       - skill_backoffice_wiring
       - native_hook_app

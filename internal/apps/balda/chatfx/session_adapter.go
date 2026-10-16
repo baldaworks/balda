@@ -45,6 +45,7 @@ func (a *SessionAdapter) Prepare(ctx context.Context, inbound chatapp.InboundCon
 	}
 	metadata := a.sessions.GetAgentMetadata(a.sessions.BaldaProviderID())
 	return chatapp.SessionPreparation{
+		ArchiveID:     topicSession.GetArchiveID(),
 		Activated:     existing == nil,
 		SessionID:     topicSession.GetSessionID(),
 		SessionLabel:  topicSession.GetAgentName(),
@@ -78,6 +79,7 @@ func (a *IngressSessionAdapter) Prepare(ctx context.Context, inbound ingressapp.
 		TopicID: inbound.TopicID, Direct: inbound.Direct, Source: inbound.Source,
 	})
 	return ingressapp.SessionPreparation{
+		ArchiveID: prep.ArchiveID,
 		Activated: prep.Activated, SessionID: prep.SessionID, SessionLabel: prep.SessionLabel,
 		StartupNotice: prep.StartupNotice, AgentType: prep.AgentType, Model: prep.Model,
 		ReasoningEffort: prep.ReasoningEffort, MCPServers: prep.MCPServers,

@@ -29,6 +29,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/channel/webhook"
 	baldazulip "github.com/baldaworks/balda/internal/apps/balda/channel/zulip"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/zulip/zulipfx"
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivefx"
 	"github.com/baldaworks/balda/internal/apps/balda/chatfx"
 	"github.com/baldaworks/balda/internal/apps/balda/commandfx"
 	"github.com/baldaworks/balda/internal/apps/balda/commandoutboxfx"
@@ -925,6 +926,7 @@ func Module(
 		permissions.Module,
 		pluginapp.Module,
 		skillfx.Module,
+		chatarchivefx.Module,
 		sessionapp.Module,
 		sessionturnapp.Module,
 		hookfx.Module,

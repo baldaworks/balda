@@ -77,6 +77,7 @@ func agentRuntime(runtime *baldasession.BuiltRuntime) *baldaagent.BuiltRuntime {
 
 func agentSessionContext(sessionCtx baldasession.RuntimeSessionContext) baldaagent.RuntimeSessionContext {
 	return baldaagent.RuntimeSessionContext{
+		ArchiveID:      sessionCtx.ArchiveID,
 		BaldaSessionID: sessionCtx.BaldaSessionID,
 		SessionBranch:  sessionCtx.SessionBranch,
 	}

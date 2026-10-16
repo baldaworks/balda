@@ -113,3 +113,10 @@ const (
 	PersistenceDurable = "sqlite"
 	PersistenceMemory  = "memory"
 )
+
+// Runtime state keys bind an ADK lifetime and successful activation readiness.
+const (
+	EpochStateKey   = "balda_archive_epoch"
+	ReadyStateKey   = "balda_archive_ready"
+	BindingStateKey = "balda_archive_binding"
+)

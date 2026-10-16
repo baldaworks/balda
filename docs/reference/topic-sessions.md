@@ -118,3 +118,26 @@ package ownership is documented in the
 - Source of truth:
   - persisted metadata (`workspace_dir`, `branch_name`) is stored in `state.db` session records
   - job and goal work resolve workspace metadata from session info when commands are dispatched and handled
+
+## Chat archive lifetime activation
+
+Conversational preparation reserves a separate archive UUID before creating a
+runtime. The runtime's initial state includes that epoch; it does not replace
+the canonical Balda session ID, ADK routing ID, or public locator. After start
+hooks succeed, Balda persists activation readiness and the exact binding in
+runtime state, then atomically activates the archive and saves its live metadata
+binding. A runtime is exposed to intake only after this commit succeeds.
+Private schedule and webhook execution sessions do not enter this archive.
+
+Exact restoration continues the saved archive identity. Pre-upgrade sessions
+without an archive identity are adopted lazily during ordinary preparation,
+with partial coverage beginning at adoption; reading an archive never creates
+or restores a runtime. Existing messages are not fabricated from old history.
+
+An interrupted activation can finish only when its runtime epoch, operation
+readiness marker and frozen binding agree. Recovery opens the pinned runtime
+and commits the same reserved archive, without repeating completed start hooks.
+Missing or contradictory readiness remains a preparation error with retained
+pending/uncertain evidence. Failed creation or hooks do not expose a successful
+active archive. A database failure before reservation prevents runtime creation;
+a failure after successful readiness retains the runtime for a later lazy retry.

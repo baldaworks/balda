@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
+	"github.com/google/uuid"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -103,6 +105,7 @@ type AgentMetadata struct {
 }
 
 type RuntimeSessionContext struct {
+	ArchiveID      string
 	BaldaSessionID string
 	SessionBranch  string
 }
@@ -125,6 +128,8 @@ type EnsureWorkspaceResult struct {
 
 // Manager manages Balda sessions backed by the configured runtime and persists session metadata.
 type Manager struct {
+	archive            ArchiveLifecycle
+	bootID             string
 	agentBuilder       AgentBuilder
 	runtimeManager     RuntimeManager
 	baldaMCPServerIDs  []string
@@ -160,6 +165,7 @@ type sessionOperation struct {
 type ManagerParams struct {
 	fx.In
 
+	Archive            ArchiveLifecycle
 	AgentBuilder       AgentBuilder
 	RuntimeManager     RuntimeManager
 	BaldaMCPServerIDs  []string `name:"balda_mcp_servers"`
@@ -182,6 +188,7 @@ func NewManager(p ManagerParams) (*Manager, error) {
 	}
 
 	m := &Manager{
+		archive: p.Archive, bootID: uuid.NewString(),
 		agentBuilder:       p.AgentBuilder,
 		runtimeManager:     p.RuntimeManager,
 		baldaMCPServerIDs:  append([]string(nil), p.BaldaMCPServerIDs...),
@@ -410,11 +417,33 @@ func (m *Manager) createSessionLocked(ctx context.Context, sessionCtx SessionCon
 	if m.sessionsPersistent || transient || persisted != nil {
 		agentSessionID = sessionID
 	}
+	var activation *chatarchivecmd.Intent
+	var interrupted bool
+	if !transient {
+		activation, interrupted, err = m.beginArchiveActivation(ctx, locator, agentSessionID, agentName, persisted)
+	}
+	if err != nil {
+		cleanupPreparedWorkspace()
+		return fmt.Errorf("reserve archive activation: %w", err)
+	}
+	if interrupted {
+		recovered, err := m.recoverArchiveActivation(ctx, rootRuntime, builder, activation, userID, baldaProvider)
+		if err != nil {
+			return err
+		}
+		m.mu.Lock()
+		m.sessions[sessionID] = recovered
+		m.mu.Unlock()
+		return nil
+	}
 	runtimeSessionCtx := RuntimeSessionContext{
 		BaldaSessionID: sessionID,
 		SessionBranch:  branchName,
 	}
 
+	if activation != nil && activation.Kind != chatarchivecmd.KindAdopt {
+		runtimeSessionCtx.ArchiveID = activation.Session.ID
+	}
 	var sessionRuntime *BuiltRuntime
 	var sess adksession.Session
 	createdFresh := false
@@ -434,7 +463,7 @@ func (m *Manager) createSessionLocked(ctx context.Context, sessionCtx SessionCon
 		}
 	} else {
 		sessionRuntime, sess, createdFresh, err = m.restoreRuntimeSession(
-			ctx, builder, rootRuntime, locator, userID, baldaProvider, workspaceDir, runtimeSessionCtx, *persisted,
+			ctx, builder, rootRuntime, locator, userID, baldaProvider, workspaceDir, runtimeSessionCtx, *persisted, &activation,
 		)
 	}
 	if err != nil {
@@ -447,6 +476,9 @@ func (m *Manager) createSessionLocked(ctx context.Context, sessionCtx SessionCon
 			Msg("failed to open runtime session")
 		closeBuiltRuntime(sessionRuntime)
 		cleanupPreparedWorkspace()
+		if activation != nil {
+			m.failArchiveActivation(ctx, rootRuntime, activation, userID)
+		}
 		return err
 	}
 	if err := m.lifecycleInterruption(ctx); err != nil {
@@ -471,16 +503,37 @@ func (m *Manager) createSessionLocked(ctx context.Context, sessionCtx SessionCon
 		branchName:        branchName,
 		startupNotice:     startupNotice,
 	}
+	if activation != nil {
+		ts.archiveID = activation.Session.ID
+	}
 	source := "startup"
 	if persisted != nil && !createdFresh {
 		source = "resume"
 	}
 	if err := m.startSessionHooks(ctx, ts, baldaProvider, source); err != nil {
-		_ = m.cleanupTopicSession(ctx, ts, sessionCleanupOptions{deleteRuntimeSession: createdFresh, cleanupWorkspace: cleanupWorkspace})
+		cleanupErr := m.cleanupTopicSession(ctx, ts, sessionCleanupOptions{deleteRuntimeSession: createdFresh, cleanupWorkspace: cleanupWorkspace})
+		if activation != nil {
+			outcome := chatarchivecmd.OutcomeAborted
+			if cleanupErr != nil || !createdFresh {
+				outcome = chatarchivecmd.StatusUncertain
+			}
+			_ = m.archive.Complete(ctx, activation.Token, outcome)
+		}
 		return err
 	}
 
-	shouldPersist := !transient && (persisted == nil || createdFresh)
+	if activation != nil {
+		if err := m.markArchiveReady(ctx, ts, activation); err != nil {
+			closeBuiltRuntime(sessionRuntime)
+			return err
+		}
+		live := m.sessionRecord(ts, baldastate.SessionStatusActive)
+		if _, err := m.archive.Activate(ctx, activation.Token, &live); err != nil {
+			closeBuiltRuntime(sessionRuntime)
+			return fmt.Errorf("commit archive activation: %w", err)
+		}
+	}
+	shouldPersist := activation == nil && !transient && (persisted == nil || createdFresh)
 	if shouldPersist {
 		if err := m.persistSessionRecord(ctx, ts, baldastate.SessionStatusActive); err != nil {
 			if closeErr := m.cleanupTopicSession(ctx, ts, sessionCleanupOptions{
@@ -599,6 +652,7 @@ func (m *Manager) restoreRuntimeSession(
 	userID, provider, workspaceDir string,
 	sessionCtx RuntimeSessionContext,
 	record baldastate.SessionRecord,
+	activation **chatarchivecmd.Intent,
 ) (*BuiltRuntime, adksession.Session, bool, error) {
 	sessionID := strings.TrimSpace(record.SessionID)
 	exactRuntime, restoreErr := m.bindSessionRuntime(
@@ -662,6 +716,23 @@ func (m *Manager) restoreRuntimeSession(
 	if err := m.lifecycleInterruption(ctx); err != nil {
 		closeBuiltRuntime(currentRuntime)
 		return nil, nil, false, err
+	}
+	if *activation != nil {
+		outcome := chatarchivecmd.OutcomeDestroyed
+		if (*activation).Kind == chatarchivecmd.KindAdopt {
+			outcome = chatarchivecmd.OutcomeAborted
+		}
+		if err := m.archive.Complete(ctx, (*activation).Token, outcome); err != nil {
+			closeBuiltRuntime(currentRuntime)
+			return nil, nil, false, err
+		}
+		next, _, err := m.beginArchiveActivation(ctx, locator, sessionID, record.AgentName, nil)
+		if err != nil {
+			closeBuiltRuntime(currentRuntime)
+			return nil, nil, false, err
+		}
+		*activation = next
+		sessionCtx.ArchiveID = next.Session.ID
 	}
 	sess, err := builder.CreateFreshRuntimeSession(
 		ctx, currentRuntime, provider, userID, sessionID, workspaceDir, sessionCtx,
@@ -1153,7 +1224,12 @@ func (m *Manager) persistSessionRecord(ctx context.Context, ts *TopicSession, st
 		status = baldastate.SessionStatusActive
 	}
 
-	return m.sessionStore.Upsert(ctx, baldastate.SessionRecord{
+	return m.sessionStore.Upsert(ctx, m.sessionRecord(ts, status))
+}
+
+func (m *Manager) sessionRecord(ts *TopicSession, status string) baldastate.SessionRecord {
+	return baldastate.SessionRecord{
+		ArchiveID:         ts.archiveID,
 		SessionID:         ts.sessionID,
 		UserID:            ts.userID,
 		ChannelType:       ts.locator.ChannelType,
@@ -1164,7 +1240,7 @@ func (m *Manager) persistSessionRecord(ctx context.Context, ts *TopicSession, st
 		BranchName:        ts.branchName,
 		RuntimeSnapshotID: ts.runtimeSnapshotID,
 		Status:            status,
-	})
+	}
 }
 
 func (m *Manager) newAgentSessionID(sessionID string) string {
