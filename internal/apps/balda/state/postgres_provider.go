@@ -16,6 +16,7 @@ type postgresProvider struct {
 	appKV          *postgresKVStore
 	mcpKV          *postgresKVStore
 	runtimeSession *postgresRuntimeSessionService
+	archive        *sqlChatArchiveStore
 	session        *postgresSessionStore
 	jobs           *postgresScheduledJobStore
 	management     *sqlScheduleManagementStore
@@ -57,6 +58,7 @@ func initializePostgresProvider(ctx context.Context, db *sql.DB) (Provider, erro
 		appKV:          &postgresKVStore{db: db, namespace: NamespaceApp},
 		mcpKV:          &postgresKVStore{db: db, namespace: NamespaceSessionMCP},
 		runtimeSession: &postgresRuntimeSessionService{db: db},
+		archive:        &sqlChatArchiveStore{users: newPostgresUserStore(db)},
 		session:        &postgresSessionStore{db: db},
 		jobs:           &postgresScheduledJobStore{db: db},
 		management:     &sqlScheduleManagementStore{users: newPostgresUserStore(db)},
@@ -242,3 +244,5 @@ func (p *postgresProvider) PluginManagement() PluginManagementStore {
 func (p *postgresProvider) SkillManagement() SkillManagementStore {
 	return &sqlSkillManagementStore{users: newPostgresUserStore(p.db)}
 }
+
+func (p *postgresProvider) ChatArchive() ChatArchiveStore { return p.archive }

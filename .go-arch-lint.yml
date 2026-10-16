@@ -53,6 +53,10 @@ vendors:
       - google.golang.org/adk/v2/platform
 
 components:
+  chat_archive_contracts:
+    in:
+      - internal/apps/balda/chatarchivecmd
+
   # Extraction-ready session-memory values and semantic API. This package may
   # use only the standard library and must remain independent of Balda policy.
   session_memory_core:
@@ -560,6 +564,10 @@ components:
       - cmd/balda
 
 deps:
+  chat_archive_contracts:
+    mayDependOn:
+      - chat_archive_contracts
+    anyVendorDeps: false
   question_outbox:
     mayDependOn:
       - question_outbox
@@ -1336,6 +1344,7 @@ deps:
 
   storage:
     mayDependOn:
+      - chat_archive_contracts
       - hook_contracts
       - memory_contracts
       - alias_contracts
