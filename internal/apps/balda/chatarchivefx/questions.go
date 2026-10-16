@@ -2,7 +2,6 @@ package chatarchivefx
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -41,7 +40,7 @@ func (a *questionArchive) BindQuestion(ctx context.Context, interaction question
 	return interaction, nil
 }
 
-func (a *questionArchive) RecordAnswer(ctx context.Context, interaction questioncmd.InteractionContext, id string, reply questioncmd.InboundReply) error {
+func (a *questionArchive) RecordAnswer(ctx context.Context, interaction questioncmd.InteractionContext, _ string, reply questioncmd.InboundReply) error {
 	if interaction.ArchiveID == "" {
 		return nil
 	}
@@ -49,9 +48,8 @@ func (a *questionArchive) RecordAnswer(ctx context.Context, interaction question
 		return chatarchivecmd.ErrInvalid
 	}
 	input := *reply.OriginalInput.Clone()
-	// Question and original provider identity jointly scope this human answer.
-	identity, _ := json.Marshal([]string{id, reply.Provider, reply.ConversationKey, reply.MessageID})
-	input.Source = "question-answer:" + string(identity)
+	// Keep the transport identity shared with ordinary admission: a concurrent
+	// answer can win settlement after this capture and send this reply there.
 	if strings.TrimSpace(reply.MessageID) == "" {
 		return chatarchivecmd.ErrInvalid
 	}

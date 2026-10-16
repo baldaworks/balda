@@ -118,8 +118,10 @@ inputs from different lifetimes.
 
 Typed `/skill` commands retain the literal request before selector rewriting.
 Conversational free-text question answers commit after responder/answer
-validation and before durable settlement, using the question and provider
-message identity. Questions freeze their originating lifetime when created;
+validation and before durable settlement, using the same original provider
+input identity as ordinary intake. If a concurrent answer wins settlement, the
+losing reply may continue through ordinary intake without creating a second
+archive message. Questions freeze their originating lifetime when created;
 resumed session work retains that binding. Button choices do not fabricate user
 text, and GoalKeeper/private continuations and authentication/control commands
 remain outside conversational capture. Input snapshots fill only previously
