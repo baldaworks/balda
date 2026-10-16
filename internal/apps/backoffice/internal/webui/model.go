@@ -15,25 +15,26 @@ import (
 type Location string
 
 const (
-	LocationLogin      Location = "/login"
-	LocationOverview   Location = "/overview"
-	LocationAccess     Location = "/access"
-	LocationAccount    Location = "/account"
-	LocationAudit      Location = "/audit"
-	LocationMCP        Location = "/mcp"
-	LocationSkills     Location = "/skills"
-	LocationPlugins    Location = "/plugins"
-	LocationSchedules  Location = "/schedules"
-	LocationWebhooks   Location = "/webhooks"
-	LocationAliases    Location = "/aliases"
-	LocationHooks      Location = "/hooks"
-	LocationFactMemory Location = "/memory"
+	LocationLogin       Location = "/login"
+	LocationOverview    Location = "/overview"
+	LocationAccess      Location = "/access"
+	LocationAccount     Location = "/account"
+	LocationAudit       Location = "/audit"
+	LocationMCP         Location = "/mcp"
+	LocationSkills      Location = "/skills"
+	LocationPlugins     Location = "/plugins"
+	LocationSchedules   Location = "/schedules"
+	LocationWebhooks    Location = "/webhooks"
+	LocationAliases     Location = "/aliases"
+	LocationHooks       Location = "/hooks"
+	LocationChatArchive Location = "/chat-sessions"
+	LocationFactMemory  Location = "/memory"
 )
 
 // Valid reports whether a location can be emitted by server navigation.
 func (l Location) Valid() bool {
 	switch l {
-	case LocationSkills, LocationHooks, LocationLogin, LocationOverview, LocationAccess, LocationAccount, LocationAudit, LocationMCP, LocationSchedules, LocationWebhooks, LocationAliases, LocationFactMemory, LocationPlugins:
+	case LocationChatArchive, LocationSkills, LocationHooks, LocationLogin, LocationOverview, LocationAccess, LocationAccount, LocationAudit, LocationMCP, LocationSchedules, LocationWebhooks, LocationAliases, LocationFactMemory, LocationPlugins:
 		return true
 	default:
 		return false
@@ -162,6 +163,7 @@ type Page struct {
 	Schedules    *SchedulesView
 	Webhooks     *WebhooksView
 	Aliases      *AliasesView
+	ChatArchive  *ChatArchiveView
 	FactMemory   *FactMemoryView
 	Hooks        *HooksView
 	RestartURL   string
@@ -215,6 +217,9 @@ func Navigation(capabilities usercmd.BackofficeCapabilities, current Location) [
 			Label: "Workspace", ID: "nav-workspace",
 			Items: []NavItem{item("Overview", LocationOverview, "bi-speedometer2")},
 		})
+	}
+	if capabilities.ViewChatArchive && len(groups) > 0 {
+		groups[0].Items = append(groups[0].Items, item("Chat sessions", LocationChatArchive, "bi-chat-left-text"))
 	}
 	var operations []NavItem
 	if capabilities.ManagePlugins {

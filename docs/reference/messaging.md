@@ -78,3 +78,84 @@ search/MCP capabilities do not participate in this ingress path.
 
 See [Slack Agent setup](../slack.md) for scopes, subscriptions, configuration, and
 sandbox validation.
+
+## Original conversational input snapshots
+
+Chat transports preserve current human input separately from the model prompt.
+The snapshot retains original text, stable inbound identity, the actual known
+speaker, canonical public location, and independent audience and subdivision
+metadata. Unknown names/classifications stay unknown. Telegram captures before
+attachment persistence and quote/forward enrichment; Slack captures before
+current-file ingestion and historical thread hydration; Zulip uses raw webhook
+message data before mention cleanup; Mattermost preserves the original post and
+its D/G channel distinction. A personal conversation can also have a topic or
+thread. Group input keeps the individual sender rather than the runtime owner.
+
+Attachment snapshots contain filename/kind labels only. Local paths, private
+URLs, file bytes and hydrated historical attachments remain outside them.
+Known channel titles and message-sender names are copied from trusted inbound
+metadata, with no extra provider lookup. Subsequent model prompt enrichment
+uses its existing text and attachment fields and does not modify the original
+snapshot. Recording, lifecycle attribution and replay are owned by the archive
+application boundary rather than these concrete transport adapters.
+
+## Durable conversational input admission
+
+After access checks, successful session preparation, and explicit skill
+validation, intake commits the original human snapshot to the shared SQL archive
+before publishing the session turn. Archive storage failure prevents publication
+and retains retry settlement. A later broker failure, cancellation, dropped
+queue entry, or turn-preparation failure does not erase this admitted input;
+an archived bubble does not imply successful execution or delivery.
+
+Provider input identities deduplicate across runtime lifetimes. A repeated
+observation retains its first timestamp, immutable content and archive UUID;
+contradictory content fails rather than overwriting history. A retry observed
+after reset cannot dispatch into the replacement lifetime. Durable turns and
+each steering constituent carry the frozen epoch; queued execution checks the
+runtime epoch before invoking the provider, and steering batches cannot merge
+inputs from different lifetimes.
+
+Typed `/skill` commands retain the literal request before selector rewriting.
+Conversational free-text question answers commit after responder/answer
+validation and before durable settlement, using the same original provider
+input identity as ordinary intake. If a concurrent answer wins settlement, the
+losing reply may continue through ordinary intake without creating a second
+archive message. Questions freeze their originating lifetime when created;
+resumed session work retains that binding. Button choices do not fabricate user
+text, and GoalKeeper/private continuations and authentication/control commands
+remain outside conversational capture. Input snapshots fill only previously
+unknown location fields; later renames cannot rewrite historical labels or
+per-message speakers.
+
+## Durable final reply selection
+
+For archived conversational turns, the selected visible model reply becomes a
+final only after a successful SQL commit. Stop-hook approval and the existing
+visible-text/auto-notification selection run first. The immutable agent message,
+frozen archive UUID, final delivery envelope and steering constituent claims
+commit together before format-state, semantic-memory, job or auto bookkeeping
+and before final publication. Empty output, rejected output, private/silent runs,
+provider diagnostics, progress and auto-state notifications do not become agent
+chat messages. Public auto continuations retain their originating archive UUID;
+their synthetic prompts are not user messages.
+
+Normal command replay checks committed constituent claims before restoring a
+runtime or invoking the model. When ordinary replay must finish runtime
+bookkeeping after restart, it may exact-restore the still-bound durable lifetime;
+a failed exact restore remains retryable and never falls back to a new lifetime
+for final recovery. Confirmed replacement or interrupted process-local lifetimes
+skip old runtime mutations. It reuses the frozen final envelope and existing
+settlement policy. Already committed steering inputs are removed from a larger
+replayed batch; new inputs remain eligible for execution. Late output remains
+attributed to its original lifetime, and replay never updates format/auto state
+in a replacement runtime. Accepted final publication keeps the existing
+`FinalOutcomeAcceptedError` bookkeeping contract. Archive reads never send.
+
+An unavailable first final write retries the same candidate at most three times
+while the process is alive. Exhaustion prevents final publication and terminates
+that execution without an archive-driven model retry. A process crash before
+the first successful commit can lose the unwritten candidate; no pending record
+can reconstruct those bytes. Once committed, later bookkeeping or process failure
+cannot erase the archived reply. Recovery resumes ordinary delivery only when
+normal command replay requires it, never solely to reconstruct archive content.

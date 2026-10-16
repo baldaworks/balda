@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"iter"
 	"os"
 	"path/filepath"
@@ -457,11 +458,15 @@ func TestCreateFreshRuntimeSession_IncludesCanonicalCWDState(t *testing.T) {
 
 	workspaceDir := t.TempDir()
 	sess, err := builder.CreateFreshRuntimeSession(context.Background(), runtime, "alpha", "user-1", "s-1", workspaceDir, RuntimeSessionContext{
+		ArchiveID:      "lifetime-epoch",
 		BaldaSessionID: "tg-1-2",
 		SessionBranch:  "norma/balda/tg-1-2",
 	})
 	if err != nil {
 		t.Fatalf("CreateFreshRuntimeSession() error = %v", err)
+	}
+	if got, err := sess.State().Get(chatarchivecmd.EpochStateKey); err != nil || got != "lifetime-epoch" {
+		t.Fatalf("created epoch = %v, %v", got, err)
 	}
 	gotCWD, err := sess.State().Get(sessionstate.CWDKey)
 	if err != nil {

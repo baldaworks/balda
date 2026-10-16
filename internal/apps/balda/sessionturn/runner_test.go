@@ -562,3 +562,13 @@ func TestRunnerClassifiesOnlyPreparationFailure(t *testing.T) {
 		t.Fatal("provider called after preparation failed")
 	}
 }
+
+func TestRunnerRejectsInputFromDifferentLifetime(t *testing.T) {
+	executor := &testExecutor{}
+	runner := New(&testSessionAccessor{active: &testActiveSession{state: map[string]any{"balda_archive_epoch": "new"}}}, executor, nil, zerolog.Nop())
+	payload := testTurnPayload()
+	payload.ArchiveID = "old"
+	if err := runner.RunSessionTurnPayload(t.Context(), payload); err == nil {
+		t.Fatal("executed input from a destroyed lifetime")
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/actorcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/go-actorlayer"
 	"github.com/google/uuid"
@@ -40,6 +41,9 @@ type UserRef struct {
 }
 
 type InteractionContext struct {
+	// Private excludes question continuations from the public conversational transcript.
+	Private        bool                `json:"private,omitempty"`
+	ArchiveID      string              `json:"archive_id,omitempty"`
 	SessionID      string              `json:"session_id"`
 	ChannelKind    string              `json:"channel_kind,omitempty"`
 	Locator        deliverycmd.Locator `json:"locator"`
@@ -79,14 +83,15 @@ type DeliveryRef struct {
 }
 
 type InboundReply struct {
-	Provider         string    `json:"provider,omitempty"`
-	SessionID        string    `json:"session_id,omitempty"`
-	ConversationKey  string    `json:"conversation_key,omitempty"`
-	ReplyToMessageID string    `json:"reply_to_message_id,omitempty"`
-	MessageID        string    `json:"message_id,omitempty"`
-	User             UserRef   `json:"user,omitempty"`
-	Text             string    `json:"text,omitempty"`
-	ReceivedAt       time.Time `json:"received_at,omitempty"`
+	OriginalInput    *chatarchivecmd.Input `json:"original_input,omitempty"`
+	Provider         string                `json:"provider,omitempty"`
+	SessionID        string                `json:"session_id,omitempty"`
+	ConversationKey  string                `json:"conversation_key,omitempty"`
+	ReplyToMessageID string                `json:"reply_to_message_id,omitempty"`
+	MessageID        string                `json:"message_id,omitempty"`
+	User             UserRef               `json:"user,omitempty"`
+	Text             string                `json:"text,omitempty"`
+	ReceivedAt       time.Time             `json:"received_at,omitempty"`
 }
 
 // InboundSelection describes a structured choice made through channel-native

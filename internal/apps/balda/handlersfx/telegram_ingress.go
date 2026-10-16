@@ -13,6 +13,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/authpayload"
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/controlcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/ingressapp"
@@ -57,6 +58,7 @@ type telegramInboundHandler struct {
 	telegramProfiles   *auth.TelegramProfileService
 	collaboratorStore  *auth.CollaboratorStore
 	sessionManager     *baldasession.Manager
+	archive            ingressapp.InputRecorder
 	sessionPreparer    ingressapp.SessionPreparer
 	actorDispatcher    actortransport.Dispatcher
 	questionDispatcher QuestionContinuationDispatcher
@@ -83,6 +85,7 @@ type telegramInboundHandlerParams struct {
 	OwnerStore         *auth.OwnerStore             `optional:"true"`
 	TelegramProfiles   *auth.TelegramProfileService `optional:"true"`
 	CollaboratorStore  *auth.CollaboratorStore      `optional:"true"`
+	Archive            ingressapp.InputRecorder
 	SessionPreparer    ingressapp.SessionPreparer
 	SessionManager     *baldasession.Manager          `optional:"true"`
 	Dispatcher         actortransport.Dispatcher      `optional:"true"`
@@ -105,6 +108,7 @@ func newTelegramInboundHandler(params telegramInboundHandlerParams) *telegramInb
 		telegramProfiles:   params.TelegramProfiles,
 		collaboratorStore:  params.CollaboratorStore,
 		sessionManager:     params.SessionManager,
+		archive:            params.Archive,
 		sessionPreparer:    params.SessionPreparer,
 		actorDispatcher:    params.Dispatcher,
 		questionDispatcher: params.QuestionDispatcher,
@@ -194,6 +198,9 @@ func (h *telegramInboundHandler) HandleMessage(ctx context.Context, messageCtx b
 	}
 
 	if handled, err := h.handleQuestionReply(ctx, messageCtx); err != nil {
+		if errors.Is(err, chatarchivecmd.ErrUnavailable) {
+			return actorlayer.TransientError(err)
+		}
 		h.logger.Warn().Err(err).Str("session_id", messageCtx.Locator.SessionID).Msg("failed to handle question reply")
 		_ = sendPlain(ctx, h.actorDispatcher, serverActorAddress, messageCtx.Locator, "Could not confirm this reply. Check the task status before sending another request.")
 		return nil
@@ -348,6 +355,7 @@ func (h *telegramInboundHandler) handleQuestionReply(ctx context.Context, messag
 		receivedAt = h.now()
 	}
 	result, err := h.questionService.ResolveReplyDetailed(ctx, questioncmd.InboundReply{
+		OriginalInput:    baldatelegram.NormalizeInbound(messageCtx, messageCtx.Text, receivedAt).OriginalInput,
 		Provider:         "telegram",
 		SessionID:        messageCtx.Locator.SessionID,
 		ConversationKey:  messageCtx.Locator.AddressKey,
@@ -396,12 +404,17 @@ func (h *telegramInboundHandler) telegramIngressService() (*ingressapp.Service, 
 	if h == nil {
 		return nil, fmt.Errorf("telegram inbound handler is required")
 	}
-	return ingressapp.NewWithLogger(
+	service, err := ingressapp.NewWithLogger(
 		ingressapp.AuthorizerFunc(h.authorizeTelegramInbound),
 		ingressapp.SessionPreparerFunc(h.prepareTelegramSession),
 		ingressapp.DispatcherFunc(h.dispatchTelegramInbound),
 		h.logger,
 	)
+	if err != nil {
+		return nil, err
+	}
+	service.SetArchiveRecorder(h.archive)
+	return service, nil
 }
 
 func (h *telegramInboundHandler) authorizeTelegramInbound(ctx context.Context, inbound ingressapp.InboundContext) (ingressapp.Authorization, error) {

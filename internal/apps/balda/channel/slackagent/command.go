@@ -3,8 +3,11 @@ package slackagent
 import (
 	"errors"
 	"fmt"
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
+	"github.com/baldaworks/balda/internal/apps/balda/locatorref"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
@@ -55,17 +58,25 @@ func decodeCommandRequestWithRegistry(body []byte, registry *commandcmd.Registry
 		DeliveryFormat: deliveryfmt.DeliveryFormatMrkdwn,
 		ProgressPolicy: deliveryfmt.ProgressPolicy{Typing: true, Thinking: true, PlanUpdates: true},
 	})
+	var original *chatarchivecmd.Input
+	if name == "skill" {
+		original = &chatarchivecmd.Input{Text: slackRootCommand + " " + form.Get("text"), ReceivedAt: time.Now().UTC(), Speaker: chatarchivecmd.Speaker{Principal: slackUserID(teamID, userID), Name: form.Get("user_name")}, Location: chatarchivecmd.Location{Channel: locator.ChannelType, AddressKey: locator.AddressKey, Locator: locatorref.Format(locator), Audience: chatarchivecmd.AudienceUnknown, Subdivision: chatarchivecmd.SubdivisionRoot}}
+		if scope == deliverycmd.LocatorScopePersonal {
+			original.Location.Audience = chatarchivecmd.AudiencePersonal
+		}
+	}
 	return commandcmd.Request{Payload: commandcmd.Payload{
-		Version:      commandcmd.SchemaVersion,
-		Name:         name,
-		Args:         args,
-		Locator:      locator,
-		Transport:    ChannelType,
-		Principal:    slackUserID(teamID, userID),
-		Access:       commandcmd.Access{SessionCommands: true, WorkspaceMember: true},
-		Conversation: commandcmd.Conversation{Direct: scope == deliverycmd.LocatorScopePersonal},
-		Presentation: options,
-		Invocation:   commandcmd.Invocation{Root: slackRootCommand},
+		OriginalInput: original,
+		Version:       commandcmd.SchemaVersion,
+		Name:          name,
+		Args:          args,
+		Locator:       locator,
+		Transport:     ChannelType,
+		Principal:     slackUserID(teamID, userID),
+		Access:        commandcmd.Access{SessionCommands: true, WorkspaceMember: true},
+		Conversation:  commandcmd.Conversation{Direct: scope == deliverycmd.LocatorScopePersonal},
+		Presentation:  options,
+		Invocation:    commandcmd.Invocation{Root: slackRootCommand},
 	}}, nil
 }
 

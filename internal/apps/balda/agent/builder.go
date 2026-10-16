@@ -5,6 +5,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"io"
 	"os"
 	"path/filepath"
@@ -78,6 +79,7 @@ type dedicatedRuntimeFactory interface {
 }
 
 type RuntimeSessionContext struct {
+	ArchiveID      string
 	BaldaSessionID string
 	SessionBranch  string
 }
@@ -475,6 +477,9 @@ func (b *Builder) OpenExistingRuntimeSession(
 		BaldaSessionIDStateKey:     strings.TrimSpace(sessionCtx.BaldaSessionID),
 		BaldaSessionBranchStateKey: b.normalizedSessionBranch(sessionCtx.SessionBranch),
 	}
+	if sessionCtx.ArchiveID != "" {
+		expected[chatarchivecmd.EpochStateKey] = sessionCtx.ArchiveID
+	}
 	for key, want := range expected {
 		got, err := sessionStateString(resp.Session, key)
 		if err != nil {
@@ -739,6 +744,9 @@ func (b *Builder) buildSessionState(ctx context.Context, agentName, workspaceDir
 		state = make(map[string]any, 4)
 	}
 	state[sessionstate.CWDKey] = absCWD
+	if sessionCtx.ArchiveID != "" {
+		state[chatarchivecmd.EpochStateKey] = sessionCtx.ArchiveID
+	}
 	state[BaldaSessionIDStateKey] = baldaSessionID
 	state[BaldaSessionBranchStateKey] = sessionBranch
 	state[BaldaRepoBranchAtStartStateKey] = repoBranchAtStart

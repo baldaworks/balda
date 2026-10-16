@@ -34,6 +34,14 @@ const secondPluginRevision = "rev-2"
 type contractOpener func(context.Context, string) (Provider, error)
 
 func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) {
+	t.Run("ChatArchiveBrowser", func(t *testing.T) { checkChatArchiveBrowser(t, factory) })
+	t.Run("ChatArchiveFinal", func(t *testing.T) { checkChatArchiveFinal(t, factory(t)) })
+	t.Run("ChatArchiveMemoryBoot", func(t *testing.T) { checkChatArchiveMemoryBoot(t, factory(t)) })
+	t.Run("ChatArchiveExactRuntimeLoss", func(t *testing.T) { checkChatArchiveExactRuntimeLoss(t, factory(t)) })
+	t.Run("ChatArchiveExactRecovery", func(t *testing.T) { checkChatArchiveExactRecovery(t, factory(t)) })
+	t.Run("ChatArchiveLifecycleFences", func(t *testing.T) { checkChatArchiveLifecycleFences(t, factory(t)) })
+	t.Run("ChatArchiveLifecycle", func(t *testing.T) { checkChatArchiveLifecycle(t, factory(t)) })
+	t.Run("ChatArchive", func(t *testing.T) { checkChatArchive(t, factory(t)) })
 	t.Run("SkillManagement", func(t *testing.T) { checkSkillManagement(t, factory(t)) })
 	t.Run("HookManagement", func(t *testing.T) { checkHookManagement(t, factory(t)) })
 	t.Run("PluginManagementAuthorityWait", func(t *testing.T) { checkPluginManagementAuthorityWhileWaiting(t, factory(t)) })

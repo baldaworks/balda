@@ -58,6 +58,9 @@ func QAHandler(basePath string) (http.Handler, error) {
 			}
 		}
 		page, templateName, status, ok := qaFixture(name)
+		if chatPage, chatOK := qaChatRequest(r, name); chatOK {
+			page, templateName, status, ok = chatPage, webui.TemplateChatArchive, http.StatusOK, true
+		}
 		if !ok {
 			http.NotFound(w, r)
 			return
@@ -305,14 +308,14 @@ var qaEntries = append(append(append(append(pluginMarketplaceQAEntries, pluginLi
 func qaFixture(name string) (webui.Page, string, int, bool) {
 	if name == "" {
 		links := make([]webui.QALink, 0, len(qaEntries))
-		for _, entry := range qaEntries {
+		for _, entry := range append(qaChatArchiveEntries(), qaEntries...) {
 			if entry.gallery {
 				links = append(links, webui.QALink{Label: entry.label, Path: "/" + entry.name})
 			}
 		}
 		return webui.Page{Title: "Backoffice UI previews · QA", Gallery: links, Navigation: qaAdminNavigation("")}, webui.TemplateGallery, http.StatusOK, true
 	}
-	for _, entry := range qaEntries {
+	for _, entry := range append(qaChatArchiveEntries(), qaEntries...) {
 		if entry.name == name {
 			status := entry.status
 			if status == 0 {
@@ -382,7 +385,7 @@ func qaWebhookHistory() webui.Page {
 
 func qaAdminNavigation(current webui.Location) []webui.NavGroup {
 	return webui.Navigation(usercmd.BackofficeCapabilities{
-		Overview: true, Account: true, ManageUsers: true, ManageMCP: true, ManageSchedules: true, ManageWebhooks: true, ManageFactMemory: true, ManagePlugins: true, ViewAudit: true,
+		Overview: true, Account: true, ViewChatArchive: true, ManageUsers: true, ManageMCP: true, ManageSchedules: true, ManageWebhooks: true, ManageFactMemory: true, ManagePlugins: true, ViewAudit: true,
 	}, current)
 }
 

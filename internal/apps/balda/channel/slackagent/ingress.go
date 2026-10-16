@@ -59,7 +59,7 @@ func BuildIngressEnvelope(env EventEnvelope, receivedAt time.Time) (IngressEnvel
 			out.IgnoreEvent = true
 			return out, nil
 		}
-	case "app_mention":
+	case eventTypeAppMention:
 		if !eligibleHumanChannelMention(event) {
 			out.IgnoreEvent = true
 			return out, nil
@@ -87,7 +87,7 @@ func BuildIngressEnvelope(env EventEnvelope, receivedAt time.Time) (IngressEnvel
 	out.Files = append([]FileRef(nil), event.Files...)
 	out.Chat = NormalizeChatRequest(out.Locator, event, receivedAt)
 	out.Chat.UserID = out.Subject
-	if event.EventType == "app_mention" && strings.TrimSpace(event.ReplyToMessageID()) != "" {
+	if event.EventType == eventTypeAppMention && strings.TrimSpace(event.ReplyToMessageID()) != "" {
 		out.ThreadContext = &ThreadContextRequest{
 			ConversationID: strings.TrimSpace(event.Conversation.ConversationID),
 			RootTS:         strings.TrimSpace(event.ReplyToMessageID()),

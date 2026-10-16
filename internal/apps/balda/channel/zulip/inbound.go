@@ -3,38 +3,43 @@ package zulip
 import (
 	"context"
 	"crypto/subtle"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/locatorref"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 )
 
 // InboundMessage represents a normalized inbound message from Zulip.
 type InboundMessage struct {
-	BotEmail    string
-	Locator     deliverycmd.Locator
-	MessageID   int
-	SenderID    int
-	SenderEmail string
-	Text        string
-	Direct      bool
-	ReceivedAt  time.Time
+	OriginalInput *chatarchivecmd.Input
+	BotEmail      string
+	Locator       deliverycmd.Locator
+	MessageID     int
+	SenderID      int
+	SenderEmail   string
+	Text          string
+	Direct        bool
+	ReceivedAt    time.Time
 }
 
 // InboundCommand represents a command invocation from Zulip.
 type InboundCommand struct {
-	BotEmail    string
-	SenderEmail string
-	Locator     deliverycmd.Locator
-	MessageID   int
-	SenderID    int
-	Command     string
-	Args        string
-	Direct      bool
+	OriginalInput *chatarchivecmd.Input
+	BotEmail      string
+	SenderEmail   string
+	Locator       deliverycmd.Locator
+	MessageID     int
+	SenderID      int
+	Command       string
+	Args          string
+	Direct        bool
 }
 
 // InboundProcessor processes inbound Zulip messages and commands.
@@ -73,13 +78,15 @@ type WebhookPayload struct {
 
 // WebhookMessage is the provider message object inside a Zulip webhook payload.
 type WebhookMessage struct {
-	ID          int    `json:"id"`
-	SenderID    int    `json:"sender_id"`
-	SenderEmail string `json:"sender_email"`
-	Type        string `json:"type"`
-	StreamID    int    `json:"stream_id"`
-	Subject     string `json:"subject"`
-	Content     string `json:"content"`
+	SenderFullName   string          `json:"sender_full_name"`
+	DisplayRecipient json.RawMessage `json:"display_recipient"`
+	ID               int             `json:"id"`
+	SenderID         int             `json:"sender_id"`
+	SenderEmail      string          `json:"sender_email"`
+	Type             string          `json:"type"`
+	StreamID         int             `json:"stream_id"`
+	Subject          string          `json:"subject"`
+	Content          string          `json:"content"`
 }
 
 // ValidateWebhookPayload validates the transport-owned Zulip webhook shape.
@@ -144,6 +151,7 @@ func NormalizeInbound(locator deliverycmd.Locator, messageID int, userID, text s
 		logicalID = turncmd.InboundID("zulip:" + providerMessageID)
 	}
 	return turncmd.NormalizedInbound{
+		OriginalInput:     zulipOriginalInput(locator, logicalID, userID, text, receivedAt),
 		ID:                logicalID,
 		Text:              strings.TrimSpace(text),
 		Locator:           locator,
@@ -192,4 +200,58 @@ func trimLeadingMention(text string) (string, bool) {
 		return rest[end+len("**"):], true
 	}
 	return text, false
+}
+
+func zulipOriginalInput(locator deliverycmd.Locator, id turncmd.InboundID, userID, text string, at time.Time) *chatarchivecmd.Input {
+	location := chatarchivecmd.Location{Channel: locator.ChannelType, AddressKey: locator.AddressKey, Locator: locatorref.Format(locator), Audience: chatarchivecmd.AudienceUnknown, Subdivision: chatarchivecmd.SubdivisionUnknown}
+	if address, ok, err := DecodeLocator(locator); ok && err == nil {
+		switch address.Type {
+		case addressTypeStream:
+			location.Audience = chatarchivecmd.AudienceGroup
+			location.Subdivision = chatarchivecmd.SubdivisionTopic
+			location.SubdivisionLabel = address.Topic
+		case addressTypeDM:
+			location.Subdivision = chatarchivecmd.SubdivisionRoot
+		}
+	}
+	return &chatarchivecmd.Input{Source: string(id), Text: text, Speaker: chatarchivecmd.Speaker{Principal: userID}, ReceivedAt: at.UTC(), Location: location}
+}
+
+func originalInputFromWebhook(payload WebhookPayload) *chatarchivecmd.Input {
+	// Data is the raw human Markdown; Content may be a rendered HTML projection.
+	text := payload.Data
+	if text == "" {
+		text = payload.Message.Content
+	}
+	input := zulipOriginalInput(LocatorFromWebhookPayload(payload), "", UserID(payload.Message.SenderID), text, time.Time{})
+	input.Speaker.Name = payload.Message.SenderFullName
+	input.Speaker.Username = payload.Message.SenderEmail
+	if payload.Message.Type == messageTypeStream {
+		var title string
+		if json.Unmarshal(payload.Message.DisplayRecipient, &title) == nil {
+			input.Location.Title = title
+		}
+	} else {
+		var recipients []struct {
+			ID int `json:"id"`
+		}
+		if json.Unmarshal(payload.Message.DisplayRecipient, &recipients) == nil && len(recipients) > 0 {
+			input.Location.Audience = "personal"
+			if len(recipients) > 2 {
+				input.Location.Audience = "group"
+			}
+		}
+	}
+	return input
+}
+
+// NormalizeInboundMessage preserves the trusted webhook snapshot through intake.
+func NormalizeInboundMessage(message InboundMessage, receivedAt time.Time) turncmd.NormalizedInbound {
+	inbound := NormalizeInbound(message.Locator, message.MessageID, UserID(message.SenderID), message.Text, message.Direct, receivedAt)
+	if message.OriginalInput != nil {
+		inbound.OriginalInput = message.OriginalInput.Clone()
+	}
+	inbound.OriginalInput.Source = string(inbound.ID)
+	inbound.OriginalInput.ReceivedAt = receivedAt.UTC()
+	return inbound
 }

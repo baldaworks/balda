@@ -37,6 +37,7 @@ type Runtime struct {
 	webhooks          WebhooksOperations
 	aliases           AliasesOperations
 	factMemory        FactMemoryOperations
+	chatArchive       ChatArchiveOperations
 	hooks             HookOperations
 	plugins           PluginsOperations
 	skills            SkillsOperations
@@ -178,6 +179,7 @@ func (r *Runtime) handler(browserConfig ResolvedServerConfig, services HandlerSe
 	httpApplication.webhooks = r.webhooks
 	httpApplication.aliases = r.aliases
 	httpApplication.factMemory = r.factMemory
+	httpApplication.chatArchive = r.chatArchive
 	httpApplication.hooks = r.hooks
 	httpApplication.plugins = r.plugins
 	httpApplication.skills = r.skills

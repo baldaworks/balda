@@ -8,6 +8,7 @@ import (
 
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/locatorref"
@@ -33,6 +34,8 @@ var ErrScheduledReportQueued = errors.New("scheduled report queued")
 var ErrWebhookReportQueued = errors.New("webhook report queued")
 
 type SessionTurnPayload struct {
+	// ArchiveID freezes the runtime lifetime at human admission.
+	ArchiveID        string                            `json:"archive_id,omitempty"`
 	JobID            string                            `json:"job_id,omitempty"`
 	Text             string                            `json:"text"`
 	Attachments      []attachment.Descriptor           `json:"attachments,omitempty"`
@@ -89,6 +92,8 @@ type InboundSettlement struct {
 
 // NormalizedInbound represents one logical message after provider grouping.
 type NormalizedInbound struct {
+	// OriginalInput is captured before transport and runtime prompt enrichment.
+	OriginalInput     *chatarchivecmd.Input      `json:"original_input,omitempty"`
 	ID                InboundID                  `json:"id"`
 	Text              string                     `json:"text"`
 	Attachments       []attachment.Descriptor    `json:"attachments,omitempty"`
@@ -138,11 +143,14 @@ func (m NormalizedInbound) SessionTurn() (SessionTurnPayload, error) {
 }
 
 type SteeringMessage struct {
-	MessageID        int    `json:"message_id,omitempty"`
-	ReplyToMessageID int    `json:"reply_to_message_id,omitempty"`
-	UserID           string `json:"user_id,omitempty"`
-	ReceivedAt       string `json:"received_at,omitempty"`
-	Text             string `json:"text,omitempty"`
+	Attachments      []attachment.Descriptor `json:"attachments,omitempty"`
+	ArchiveID        string                  `json:"archive_id,omitempty"`
+	DedupeKey        string                  `json:"dedupe_key,omitempty"`
+	MessageID        int                     `json:"message_id,omitempty"`
+	ReplyToMessageID int                     `json:"reply_to_message_id,omitempty"`
+	UserID           string                  `json:"user_id,omitempty"`
+	ReceivedAt       string                  `json:"received_at,omitempty"`
+	Text             string                  `json:"text,omitempty"`
 }
 
 type jobEnvelopePayload struct {
@@ -390,4 +398,27 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// RenderSteeringBatchText preserves the provider prompt shape after replay filtering.
+func RenderSteeringBatchText(messages []SteeringMessage) string {
+	if len(messages) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("Steering messages:\n")
+	for i, msg := range messages {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		ts := strings.TrimSpace(msg.ReceivedAt)
+		if ts == "" {
+			ts = "unknown_time"
+		}
+		b.WriteString("- [")
+		b.WriteString(ts)
+		b.WriteString("] ")
+		b.WriteString(strings.TrimSpace(msg.Text))
+	}
+	return b.String()
 }

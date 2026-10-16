@@ -3,6 +3,7 @@ package questions
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -572,4 +573,23 @@ func (f *fakeStore) MarkQuestionAnswerControlsCleared(_ context.Context, id stri
 		f.replyMatch.AnswerControlsPending = false
 	}
 	return nil
+}
+
+type failingAnswerArchive struct{}
+
+func (failingAnswerArchive) BindQuestion(_ context.Context, i questioncmd.InteractionContext, _ questioncmd.ResumeTarget) (questioncmd.InteractionContext, error) {
+	return i, nil
+}
+func (failingAnswerArchive) RecordAnswer(context.Context, questioncmd.InteractionContext, string, questioncmd.InboundReply) error {
+	return errors.New("archive unavailable")
+}
+
+func TestReplyArchiveFailureLeavesQuestionPending(t *testing.T) {
+	store := &fakeStore{replyMatch: baldastate.QuestionRecord{QuestionID: "q", Status: questioncmd.StatusPending, InteractionJSON: mustJSON(questioncmd.InteractionContext{SessionID: "s", ArchiveID: "epoch"}), ResumeJSON: mustJSON(questioncmd.ResumeTarget{To: "session:s"})}}
+	svc := New(store, nil, zerolog.Nop())
+	svc.SetArchive(failingAnswerArchive{})
+	_, err := svc.ResolveReplyDetailed(t.Context(), questioncmd.InboundReply{MessageID: "inbound", Text: "answer"})
+	if err == nil || store.replyMatch.Status != questioncmd.StatusPending {
+		t.Fatalf("answer settled without archive: %+v,%v", store.replyMatch, err)
+	}
 }

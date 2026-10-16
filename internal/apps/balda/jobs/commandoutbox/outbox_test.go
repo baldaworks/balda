@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -15,10 +16,11 @@ import (
 )
 
 type memoryStore struct {
-	mu           sync.Mutex
-	values       map[string]string
-	reject       bool
-	rejectDelete bool
+	mu            sync.Mutex
+	values        map[string]string
+	reject        bool
+	rejectDelete  bool
+	rejectPending bool
 }
 
 func (s *memoryStore) Get(_ context.Context, key string) (string, bool, error) {
@@ -30,7 +32,7 @@ func (s *memoryStore) Get(_ context.Context, key string) (string, bool, error) {
 func (s *memoryStore) Set(_ context.Context, key, value string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.reject {
+	if s.reject || (s.rejectPending && strings.HasPrefix(key, ingressOutboxPrefix)) {
 		return errors.New("local store unavailable")
 	}
 	s.values[key] = value
@@ -308,6 +310,171 @@ func TestRestartAfterTerminalSaveNeverRepublishes(t *testing.T) {
 			keys, _ := s.List(context.Background(), ingressOutboxPrefix)
 			if len(keys) != 0 {
 				t.Fatal("interrupted pending deletion not reconciled")
+			}
+		})
+	}
+}
+
+func TestAdmissionOrderSurvivesWallClockRollbackAndRestart(t *testing.T) {
+	d, store, bus := fixture(t)
+	now := time.Date(2026, 10, 16, 10, 0, 0, 0, time.UTC)
+	d.now = func() time.Time { return now }
+	for _, id := range []string{"first", "second"} {
+		if _, err := d.Dispatch(t.Context(), envelope(id)); err != nil {
+			t.Fatal(err)
+		}
+		now = now.Add(-10 * time.Second)
+	}
+	restarted, err := NewDispatcher(store, bus, zerolog.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	restarted.now = func() time.Time { return now }
+	if _, err := restarted.Dispatch(t.Context(), envelope("third")); err != nil {
+		t.Fatal(err)
+	}
+	flush(t, restarted)
+	if len(bus.envelopes) != 3 {
+		t.Fatalf("published %d envelopes", len(bus.envelopes))
+	}
+	for i, want := range []string{"first", "second", "third"} {
+		if bus.envelopes[i].ID != want {
+			t.Errorf("publication %d=%s, want %s", i, bus.envelopes[i].ID, want)
+		}
+	}
+}
+
+func TestFailedPendingWriteLeavesSafeSequenceGap(t *testing.T) {
+	d, store, bus := fixture(t)
+	store.rejectPending = true
+	if receipt, err := d.Dispatch(t.Context(), envelope("rejected")); err == nil || receipt != nil {
+		t.Fatalf("failed row accepted: %v %v", receipt, err)
+	}
+	if raw, _, _ := store.Get(t.Context(), ingressSequenceKey); raw != "1" {
+		t.Fatalf("watermark=%q, want 1", raw)
+	}
+	store.rejectPending = false
+	restarted, err := NewDispatcher(store, bus, zerolog.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := restarted.Dispatch(t.Context(), envelope("accepted")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := restarted.Dispatch(t.Context(), envelope("accepted")); err != nil {
+		t.Fatal(err)
+	}
+	if raw, _, _ := store.Get(t.Context(), ingressSequenceKey); raw != "2" {
+		t.Fatalf("retry changed watermark=%q, want 2", raw)
+	}
+	flush(t, restarted)
+	if len(bus.envelopes) != 1 || bus.envelopes[0].ID != "accepted" {
+		t.Fatalf("rejected admission executed: %+v", bus.envelopes)
+	}
+}
+
+func TestConcurrentAdmissionsRetainDistinctSequence(t *testing.T) {
+	d, store, bus := fixture(t)
+	var wg sync.WaitGroup
+	errs := make(chan error, 16)
+	for n := range 16 {
+		wg.Go(func() { _, err := d.Dispatch(t.Context(), envelope(fmt.Sprintf("concurrent-%d", n))); errs <- err })
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	keys, err := store.List(t.Context(), ingressOutboxPrefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sequences := map[string]uint64{}
+	for _, key := range keys {
+		raw, _, err := store.Get(t.Context(), key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var record ingressRecord
+		if err := json.Unmarshal([]byte(raw), &record); err != nil {
+			t.Fatal(err)
+		}
+		env, err := actorlayer.DecodeEnvelope(record.Envelope)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sequences[env.ID] = record.Sequence
+	}
+	flush(t, d)
+	if len(bus.envelopes) != 16 {
+		t.Fatalf("published=%d", len(bus.envelopes))
+	}
+	for n, env := range bus.envelopes {
+		if got := sequences[env.ID]; got != uint64(n+1) {
+			t.Errorf("publication sequence=%d, want %d", got, n+1)
+		}
+	}
+}
+
+func TestUnsequencedPendingRowsDrainBeforeNewAdmissions(t *testing.T) {
+	d, store, bus := fixture(t)
+	now := time.Now().UTC()
+	d.now = func() time.Time { return now }
+	if _, err := d.Dispatch(t.Context(), envelope("existing")); err != nil {
+		t.Fatal(err)
+	}
+	keys, err := store.List(t.Context(), ingressOutboxPrefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _, err := store.Get(t.Context(), keys[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record ingressRecord
+	if err := json.Unmarshal([]byte(raw), &record); err != nil {
+		t.Fatal(err)
+	}
+	record.Sequence = 0
+	data, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Set(t.Context(), keys[0], string(data)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Delete(t.Context(), ingressSequenceKey); err != nil {
+		t.Fatal(err)
+	}
+	restarted, err := NewDispatcher(store, bus, zerolog.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	restarted.now = func() time.Time { return now.Add(-time.Hour) }
+	if _, err := restarted.Dispatch(t.Context(), envelope("new")); err != nil {
+		t.Fatal(err)
+	}
+	flush(t, restarted)
+	if len(bus.envelopes) != 2 || bus.envelopes[0].ID != "existing" || bus.envelopes[1].ID != "new" {
+		t.Fatalf("upgrade publication order=%+v", bus.envelopes)
+	}
+}
+
+func TestInvalidAdmissionWatermarkRejectsNewInput(t *testing.T) {
+	for _, raw := range []string{"not-a-number", "18446744073709551615"} {
+		t.Run(raw, func(t *testing.T) {
+			d, store, bus := fixture(t)
+			if err := store.Set(t.Context(), ingressSequenceKey, raw); err != nil {
+				t.Fatal(err)
+			}
+			if receipt, err := d.Dispatch(t.Context(), envelope("denied")); err == nil || receipt != nil {
+				t.Fatalf("unusable watermark accepted input: %v %v", receipt, err)
+			}
+			flush(t, d)
+			if len(bus.envelopes) != 0 {
+				t.Fatal("rejected admission executed")
 			}
 		})
 	}

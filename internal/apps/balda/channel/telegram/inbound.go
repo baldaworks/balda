@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/locatorref"
 	"github.com/baldaworks/balda/internal/apps/balda/telegramref"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 )
@@ -26,7 +28,14 @@ func NormalizeInbound(message MessageContext, text string, receivedAt time.Time)
 			mediaGroupID,
 		)
 	}
+	original := message.OriginalInput.Clone()
+	if original == nil {
+		original = originalInput(message)
+	}
+	original.Source = inboundID
+	original.ReceivedAt = receivedAt.UTC()
 	return turncmd.NormalizedInbound{
+		OriginalInput:     original,
 		ID:                turncmd.InboundID(inboundID),
 		Text:              strings.TrimSpace(text),
 		Attachments:       attachment.NormalizeList(message.Attachments),
@@ -106,4 +115,39 @@ func AppendAttachmentSummary(text string, attachments []attachment.Descriptor) s
 		}
 	}
 	return strings.TrimSpace(b.String())
+}
+
+// originalInput snapshots only current transport content, before prompt context.
+func originalInput(message MessageContext) *chatarchivecmd.Input {
+	audience := chatarchivecmd.AudienceUnknown
+	switch message.ChatType {
+	case "private":
+		audience = chatarchivecmd.AudiencePersonal
+	case "group", "supergroup":
+		audience = chatarchivecmd.AudienceGroup
+	default:
+		if message.IsDM {
+			audience = chatarchivecmd.AudiencePersonal
+		}
+	}
+	subdivision := chatarchivecmd.SubdivisionRoot
+	if message.TopicID != 0 {
+		subdivision = chatarchivecmd.SubdivisionTopic
+	}
+	input := &chatarchivecmd.Input{
+		Text:     message.Text,
+		Speaker:  chatarchivecmd.Speaker{Principal: telegramref.UserID(message.UserID), Name: message.FirstName, Username: message.Username},
+		Location: chatarchivecmd.Location{Channel: message.Locator.ChannelType, AddressKey: message.Locator.AddressKey, Locator: locatorref.Format(message.Locator), Title: message.ChatTitle, Audience: audience, Subdivision: subdivision},
+	}
+	for _, item := range message.Attachments {
+		input.Attachments = append(input.Attachments, chatarchivecmd.AttachmentLabel(item.FileName, string(item.Kind)))
+	}
+	return input
+}
+
+func telegramChatTitle(title *string) string {
+	if title == nil {
+		return ""
+	}
+	return *title
 }

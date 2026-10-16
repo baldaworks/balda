@@ -37,6 +37,7 @@ type httpApp struct {
 	webhooks          WebhooksOperations
 	aliases           AliasesOperations
 	factMemory        FactMemoryOperations
+	chatArchive       ChatArchiveOperations
 	hooks             HookOperations
 	plugins           PluginsOperations
 	skills            SkillsOperations
@@ -165,6 +166,9 @@ func (a *httpApp) handler() (http.Handler, error) {
 	mux.Handle("GET "+a.path(pluginInstalledPath), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.pluginDetailPage))))
 	mux.HandleFunc("POST "+a.path(pluginInstallPath), a.pluginLifecycleMutation)
 	mux.HandleFunc("POST "+a.path(pluginInstalledPath+"/{plugin_operation}"), a.pluginLifecycleMutation)
+	for _, route := range []string{"/chat-sessions", "/chat-sessions/{archive_id}"} {
+		mux.Handle("GET "+a.path(route), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.chatArchivePage))))
+	}
 	a.registerSkills(mux)
 	mux.Handle("GET "+a.path("/plugins"), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.pluginsPage))))
 	for _, route := range []string{pluginMarketplacesPath, pluginMarketplaceNewPath, pluginMarketplaceDefinitionsPath + "{marketplace_name}"} {

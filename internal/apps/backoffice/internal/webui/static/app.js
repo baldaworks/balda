@@ -166,6 +166,7 @@ function syncNavigation() {
       (path.endsWith("/schedules") && location.pathname.startsWith(path + "/")) ||
       (path.endsWith("/webhooks") && location.pathname.startsWith(path + "/")) ||
       (path.endsWith("/aliases") && location.pathname.startsWith(path + "/")) ||
+      (path.endsWith("/chat-sessions") && location.pathname.startsWith(path + "/")) ||
       (path.endsWith("/memory") && location.pathname.startsWith(path + "/")) ||
       (path.endsWith("/hooks") && location.pathname.startsWith(path + "/"));
     link.classList.toggle("active", current);

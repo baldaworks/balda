@@ -199,7 +199,8 @@ func (h *zulipInboundHandler) HandleCommand(ctx context.Context, cmd zulip.Inbou
 			InvocationID: fmt.Sprintf("zulip:command:%d", cmd.MessageID),
 			Payload: commandcmd.Payload{
 				Version: commandcmd.SchemaVersion, Name: cmd.Command, Args: cmd.Args,
-				Locator: cmd.Locator, Transport: zulip.ChannelType, Principal: zulipUserID(cmd.SenderID),
+				OriginalInput: cmd.OriginalInput.Clone(),
+				Locator:       cmd.Locator, Transport: zulip.ChannelType, Principal: zulipUserID(cmd.SenderID),
 				Access:       commandcmd.Access{SessionCommands: true, Owner: isOwner, Collaborator: !isOwner},
 				Conversation: commandcmd.Conversation{Direct: cmd.Direct},
 				Presentation: deliveryfmt.Options{DeliveryFormat: deliveryfmt.DeliveryFormatMarkdown, ProgressPolicy: deliveryfmt.ProgressPolicy{Typing: true, PlanUpdates: true}},
@@ -280,7 +281,7 @@ func (h *zulipInboundHandler) ProcessInbound(ctx context.Context, msg zulip.Inbo
 		}
 	}
 
-	inbound := zulip.NormalizeInbound(msg.Locator, msg.MessageID, zulipUserID(msg.SenderID), msg.Text, msg.Direct, reqAt)
+	inbound := zulip.NormalizeInboundMessage(msg, reqAt)
 	service, err := ingressapp.NewWithLogger(
 		ingressapp.AuthorizerFunc(h.authorizeZulipInbound),
 		ingressapp.SessionPreparerFunc(h.prepareZulipSession),

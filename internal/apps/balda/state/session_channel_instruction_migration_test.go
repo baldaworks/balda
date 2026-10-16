@@ -66,7 +66,7 @@ func TestSQLiteSessionChannelInstructionUpgradePreservesIncompleteRuntimeSchemas
 			if _, err := db.ExecContext(t.Context(), `INSERT INTO balda_runtime_sessions(id) VALUES (42)`); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := p.UpTo(t.Context(), 64); err != nil {
+			if _, err := p.Up(t.Context()); err != nil {
 				t.Fatalf("upgrade incomplete runtime schema: %v", err)
 			}
 			var id int

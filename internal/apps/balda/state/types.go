@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/authcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorycmd"
@@ -94,6 +95,7 @@ type Provider interface {
 	RuntimeSessions() adksession.Service
 	SessionMCPKV() KVStore
 	Sessions() SessionStore
+	ChatArchive() ChatArchiveStore
 	ScheduledJobs() ScheduledJobStore
 	ScheduleManagement() ScheduleManagementStore
 	ScheduleRuns() ScheduleRunStore
@@ -254,6 +256,8 @@ type CollaboratorStore interface {
 
 // SessionRecord persists balda session metadata for lazy restore.
 type SessionRecord struct {
+	// ArchiveID pins this live runtime to its historical lifetime.
+	ArchiveID    string
 	SessionID    string
 	UserID       string
 	ChannelType  string
@@ -583,4 +587,24 @@ type JobStore interface {
 	JobEventOutboxStore
 	DeliveryStore
 	AgentStepStore
+}
+
+// ChatArchiveStore persists lifetime identity, lifecycle evidence and immutable messages.
+type ChatArchiveStore interface {
+	CheckAuthority(ctx context.Context, authority chatarchivecmd.Authority) error
+	Summary(ctx context.Context, id string) (chatarchivecmd.Summary, error)
+	Successor(ctx context.Context, id string) (string, error)
+	CommitFinal(ctx context.Context, message chatarchivecmd.Message, members []string) (chatarchivecmd.Message, error)
+	FindFinal(ctx context.Context, epoch, member string) (chatarchivecmd.Message, error)
+	RecordInput(ctx context.Context, message chatarchivecmd.Message, location chatarchivecmd.Location) (chatarchivecmd.Message, error)
+	ReconcileMemory(ctx context.Context, bootID string) error
+	Begin(ctx context.Context, intent chatarchivecmd.Intent) (chatarchivecmd.Intent, error)
+	Activate(ctx context.Context, token string, live *SessionRecord) (chatarchivecmd.Session, error)
+	Complete(ctx context.Context, token, outcome string) error
+	Pending(ctx context.Context, channel, address string) (chatarchivecmd.Intent, error)
+	Get(ctx context.Context, id string) (chatarchivecmd.Session, error)
+	List(ctx context.Context, filter chatarchivecmd.Filter) ([]chatarchivecmd.Session, error)
+	Record(ctx context.Context, message chatarchivecmd.Message) (chatarchivecmd.Message, error)
+	FindMessage(ctx context.Context, source string) (chatarchivecmd.Message, error)
+	Messages(ctx context.Context, id string, before int64, limit int) ([]chatarchivecmd.Message, error)
 }

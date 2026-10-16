@@ -118,3 +118,53 @@ package ownership is documented in the
 - Source of truth:
   - persisted metadata (`workspace_dir`, `branch_name`) is stored in `state.db` session records
   - job and goal work resolve workspace metadata from session info when commands are dispatched and handled
+
+## Chat archive lifetime activation
+
+Conversational preparation reserves a separate archive UUID before creating a
+runtime. The runtime's initial state includes that epoch; it does not replace
+the canonical Balda session ID, ADK routing ID, or public locator. After start
+hooks succeed, Balda persists activation readiness and the exact binding in
+runtime state, then atomically activates the archive and saves its live metadata
+binding. A runtime is exposed to intake only after this commit succeeds.
+Private schedule and webhook execution sessions do not enter this archive.
+
+Exact restoration continues the saved archive identity. Pre-upgrade sessions
+without an archive identity are adopted lazily during ordinary preparation,
+with partial coverage beginning at adoption; reading an archive never creates
+or restores a runtime. Existing messages are not fabricated from old history.
+
+An interrupted activation can finish only when its runtime epoch, operation
+readiness marker and frozen binding agree. Recovery opens the pinned runtime
+and commits the same reserved archive, without repeating completed start hooks.
+Missing or contradictory readiness remains a preparation error with retained
+pending/uncertain evidence. Failed creation or hooks do not expose a successful
+active archive. A database failure before reservation prevents runtime creation;
+a failure after successful readiness retains the runtime for a later lazy retry.
+
+Reset, close, and failed-restore rotation journal their destructive intent before
+runtime deletion, independently of optional boundary observers. The archive
+ends only after a successful delete or a subsequent runtime read proving
+absence. A failed delete with the old epoch still present retains its lifetime;
+contradictory or unavailable evidence remains uncertain and blocks preparation.
+Journal reservation failure prevents deletion. Completion-write failure prevents
+replacement until lazy reconciliation under the canonical operation lock proves
+the old runtime retained or destroyed. Reconciliation never repeats lifecycle
+hooks. Later hook/workspace cleanup failure cannot undo a proved destruction.
+
+A fresh replacement uses a new archive UUID and retains the ended predecessor
+where available, even when its Balda and ADK routing IDs are reused. If deletion
+succeeds but replacement creation fails, the old transcript remains ended and no
+replacement is shown as active. `/close` and `/reset` preserve archived messages;
+this journal does not make optional observers authoritative or change their
+existing error policy.
+
+Persistent shutdown and suspension preserve the existing lifetime and binding.
+For memory runtime persistence, startup performs SQL-only reconciliation: open
+or pending memory lifetimes from previous boot UUIDs end as `interrupted`.
+Current-boot and durable lifetimes remain unchanged, and no provider runtime is
+opened by this reconciliation. The first runtime in the new process receives a
+fresh UUID even if its process-local runtime-ID suffix repeats. A journal outage
+at startup fails startup; destructive shutdown cleanup is withheld if its
+intent cannot be recorded. Recovery retains uncertainty rather than inferring
+runtime deletion from an absent in-memory Manager entry.

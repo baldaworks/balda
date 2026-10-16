@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/baldaworks/balda/internal/apps/balda/chatapp"
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchiveapp"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
@@ -191,6 +192,7 @@ func TestModule_ProvidesChatHandler(t *testing.T) {
 		fx.NopLogger,
 		fx.Provide(
 			func() *baldasession.Manager { return newTestSessionManager(t) },
+			func() chatapp.InputRecorder { return chatarchiveapp.New(nil) },
 			fx.Annotate(func() chatapp.Dispatcher { return &fakeDispatcher{} }, fx.ResultTags(`name:"command_ingress"`)),
 			zerolog.Nop,
 		),

@@ -213,16 +213,17 @@ func (h *telegramCommandHandler) onCommand(ctx context.Context, event *events.Co
 	return h.commandIngress.PublishCommand(ctx, commandcmd.Request{
 		InvocationID: fmt.Sprintf("telegram:command:%d:%d", commandCtx.ChatID, commandCtx.MessageID),
 		Payload: commandcmd.Payload{
-			Version:      commandcmd.SchemaVersion,
-			Name:         commandCtx.Command,
-			Args:         commandCtx.Args,
-			Locator:      commandCtx.Locator,
-			Transport:    commandCtx.Locator.ChannelType,
-			Principal:    telegramref.UserID(commandCtx.UserID),
-			Access:       commandcmd.Access{SessionCommands: allowed, Owner: isOwner, Collaborator: allowed && !isOwner},
-			Conversation: commandcmd.Conversation{Direct: commandCtx.IsDM},
-			Presentation: commandCtx.DeliveryOptions,
-			Invocation:   commandcmd.Invocation{Root: "/"},
+			Version:       commandcmd.SchemaVersion,
+			Name:          commandCtx.Command,
+			OriginalInput: commandCtx.OriginalInput.Clone(),
+			Args:          commandCtx.Args,
+			Locator:       commandCtx.Locator,
+			Transport:     commandCtx.Locator.ChannelType,
+			Principal:     telegramref.UserID(commandCtx.UserID),
+			Access:        commandcmd.Access{SessionCommands: allowed, Owner: isOwner, Collaborator: allowed && !isOwner},
+			Conversation:  commandcmd.Conversation{Direct: commandCtx.IsDM},
+			Presentation:  commandCtx.DeliveryOptions,
+			Invocation:    commandcmd.Invocation{Root: "/"},
 		},
 	})
 }

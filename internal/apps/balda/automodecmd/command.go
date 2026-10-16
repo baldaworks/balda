@@ -11,8 +11,9 @@ import (
 )
 
 type Payload struct {
-	Locator deliverycmd.Locator `json:"locator"`
-	State   map[string]any      `json:"state,omitempty"`
+	ArchiveID string              `json:"archive_id,omitempty"`
+	Locator   deliverycmd.Locator `json:"locator"`
+	State     map[string]any      `json:"state,omitempty"`
 }
 
 func Envelope(payload Payload) (actorlayer.Envelope, error) {

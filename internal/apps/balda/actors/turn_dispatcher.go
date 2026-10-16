@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
+	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	"github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/rs/zerolog"
@@ -331,7 +332,7 @@ func matchesRunningSteering(runningPayload, incoming *turncmd.SessionTurnPayload
 	if strings.TrimSpace(runningPayload.RequesterUserID) == "" || strings.TrimSpace(incoming.RequesterUserID) == "" {
 		return false
 	}
-	if strings.TrimSpace(runningPayload.RequesterUserID) != strings.TrimSpace(incoming.RequesterUserID) {
+	if runningPayload.ArchiveID != incoming.ArchiveID || strings.TrimSpace(runningPayload.RequesterUserID) != strings.TrimSpace(incoming.RequesterUserID) {
 		return false
 	}
 	return slices.Contains(steeringAnchorMessageIDs(runningPayload), incoming.ReplyToMessageID)
@@ -371,7 +372,7 @@ func mergeIntoSteeringBatch(turn *queuedTurn, incoming *queuedTurn) bool {
 	}
 	batch := turn.task.SessionTurn
 	incomingPayload := incoming.task.SessionTurn
-	if strings.TrimSpace(batch.RequesterUserID) != strings.TrimSpace(incomingPayload.RequesterUserID) {
+	if batch.ArchiveID != incomingPayload.ArchiveID || strings.TrimSpace(batch.RequesterUserID) != strings.TrimSpace(incomingPayload.RequesterUserID) {
 		return false
 	}
 
@@ -394,7 +395,8 @@ func mergeIntoSteeringBatch(turn *queuedTurn, incoming *queuedTurn) bool {
 
 	if !isDuplicate {
 		batch.SteeringMessages = append(batch.SteeringMessages, steeringMessageFromPayload(incomingPayload))
-		batch.Text = renderSteeringBatchText(batch.SteeringMessages)
+		batch.Attachments = append(batch.Attachments, incomingPayload.Attachments...)
+		batch.Text = turncmd.RenderSteeringBatchText(batch.SteeringMessages)
 		batch.MessageID = incomingPayload.MessageID
 		batch.ReplyToMessageID = incomingPayload.ReplyToMessageID
 		batch.Metadata = reconcileSessionTurnMetadata(batch.Metadata, incomingPayload.Metadata)
@@ -422,7 +424,7 @@ func initializeSteeringBatch(payload *turncmd.SessionTurnPayload) *turncmd.Sessi
 		return nil
 	}
 	payload.SteeringMessages = []turncmd.SteeringMessage{steeringMessageFromPayload(payload)}
-	payload.Text = renderSteeringBatchText(payload.SteeringMessages)
+	payload.Text = turncmd.RenderSteeringBatchText(payload.SteeringMessages)
 	return payload
 }
 
@@ -431,6 +433,9 @@ func steeringMessageFromPayload(payload *turncmd.SessionTurnPayload) turncmd.Ste
 		return turncmd.SteeringMessage{}
 	}
 	return turncmd.SteeringMessage{
+		Attachments:      append([]attachment.Descriptor(nil), payload.Attachments...),
+		ArchiveID:        payload.ArchiveID,
+		DedupeKey:        payload.DedupeKey,
 		MessageID:        payload.MessageID,
 		ReplyToMessageID: payload.ReplyToMessageID,
 		UserID:           strings.TrimSpace(payload.RequesterUserID),
@@ -453,28 +458,6 @@ func steeringAnchorMessageIDs(payload *turncmd.SessionTurnPayload) []int {
 		}
 	}
 	return ids
-}
-
-func renderSteeringBatchText(messages []turncmd.SteeringMessage) string {
-	if len(messages) == 0 {
-		return ""
-	}
-	var b strings.Builder
-	b.WriteString("Steering messages:\n")
-	for i, msg := range messages {
-		if i > 0 {
-			b.WriteByte('\n')
-		}
-		ts := strings.TrimSpace(msg.ReceivedAt)
-		if ts == "" {
-			ts = "unknown_time"
-		}
-		b.WriteString("- [")
-		b.WriteString(ts)
-		b.WriteString("] ")
-		b.WriteString(strings.TrimSpace(msg.Text))
-	}
-	return b.String()
 }
 
 func completeTurn(turn *queuedTurn, err error) {

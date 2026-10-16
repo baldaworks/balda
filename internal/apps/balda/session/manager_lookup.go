@@ -2,9 +2,11 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 )
 
@@ -29,6 +31,17 @@ func (m *Manager) GetSession(locator SessionLocator) (*TopicSession, error) {
 		return nil, fmt.Errorf("no session for %s", locator.AddressKey)
 	}
 
+	if m.archive != nil && ts.archiveID != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
+		defer cancel()
+		pending, err := m.archive.Pending(ctx, ts.locator.ChannelType, ts.locator.AddressKey)
+		if err != nil && !errors.Is(err, chatarchivecmd.ErrNotFound) {
+			return nil, err
+		}
+		if err == nil && pending.Kind == chatarchivecmd.KindDestroy {
+			return nil, chatarchivecmd.ErrConflict
+		}
+	}
 	return ts, nil
 }
 
@@ -64,9 +77,6 @@ func (m *Manager) prepareSession(ctx context.Context, sessionCtx SessionContext,
 		return nil, err
 	}
 	defer endLifecycle()
-	if active, err := m.GetSession(sessionCtx.Locator); err == nil {
-		return active, nil
-	}
 	if m.sessionStore == nil {
 		return nil, fmt.Errorf("session metadata store is required")
 	}
@@ -123,6 +133,9 @@ func (m *Manager) prepareSessionLocked(ctx context.Context, sessionCtx SessionCo
 			label = "auto"
 		}
 		persisted = &record
+	}
+	if err := m.reconcileArchiveDestruction(ctx, sessionCtx.Locator, sessionCtx.UserID); err != nil {
+		return nil, err
 	}
 	sessionID := strings.TrimSpace(sessionCtx.Locator.SessionID)
 	m.mu.RLock()
@@ -248,4 +261,87 @@ func (m *Manager) getProviderName() string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.baldaProviderName
+}
+
+// ActiveRuntimeStateValue reads only the currently loaded runtime. Final replay
+// must never invoke lazy restoration, fallback, hooks or provider creation.
+func (m *Manager) ActiveRuntimeStateValue(ctx context.Context, locator SessionLocator, key string) (any, bool, error) {
+	unlock := m.lockSessionOperation(locator.SessionID)
+	defer unlock()
+	m.mu.RLock()
+	ts := m.sessions[locator.SessionID]
+	m.mu.RUnlock()
+	if ts == nil {
+		return nil, false, nil
+	}
+	return ts.RuntimeStateValue(ctx, key)
+}
+
+// UpdateRuntimeStateForArchive fences late bookkeeping against replacement.
+// The same operation lock protects epoch verification and the runtime write.
+func (m *Manager) UpdateRuntimeStateForArchive(ctx context.Context, locator SessionLocator, epoch string, values map[string]any) (bool, error) {
+	unlock := m.lockSessionOperation(locator.SessionID)
+	defer unlock()
+	m.mu.RLock()
+	ts := m.sessions[locator.SessionID]
+	m.mu.RUnlock()
+	if ts == nil || ts.archiveID != epoch {
+		return false, nil
+	}
+	if err := ts.UpdateRuntimeState(ctx, values); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// archiveReplayRestoreKey restricts ordinary final-publication recovery to the
+// existing lifetime. It must never take the destructive fresh fallback path.
+type archiveReplayRestoreKey struct{}
+
+// ResumeArchiveRuntime loads only the matching durable lifetime for ordinary
+// final publication/bookkeeping replay. Archive readers never call this method.
+func (m *Manager) ResumeArchiveRuntime(ctx context.Context, locator SessionLocator, epoch string) (bool, error) {
+	endLifecycle, err := m.beginLifecycleOperation(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer endLifecycle()
+	unlock := m.lockSessionOperation(locator.SessionID)
+	defer unlock()
+	m.mu.RLock()
+	active := m.sessions[locator.SessionID]
+	m.mu.RUnlock()
+	if active != nil {
+		return active.archiveID == epoch, nil
+	}
+	if !m.sessionsPersistent || m.archive == nil || m.sessionStore == nil {
+		return false, nil
+	}
+	record, found, err := m.sessionStore.GetBySessionID(ctx, locator.SessionID)
+	if err != nil {
+		return false, err
+	}
+	if !found || record.ArchiveID != epoch || record.Status != baldastate.SessionStatusActive {
+		return false, nil
+	}
+	archived, err := m.archive.Get(ctx, epoch)
+	if err != nil {
+		return false, err
+	}
+	if archived.Status != chatarchivecmd.StatusActive || archived.Persistence != chatarchivecmd.PersistenceDurable {
+		return false, nil
+	}
+	pending, err := m.archive.Pending(ctx, locator.ChannelType, locator.AddressKey)
+	if err != nil && !errors.Is(err, chatarchivecmd.ErrNotFound) {
+		return false, err
+	}
+	if err == nil && pending.Kind == chatarchivecmd.KindDestroy {
+		return false, chatarchivecmd.ErrConflict
+	}
+	restoreCtx := context.WithValue(ctx, archiveReplayRestoreKey{}, true)
+	restored, err := m.prepareSessionLocked(restoreCtx, SessionContext{Locator: locator, UserID: record.UserID}, record.AgentName, false, record, true)
+	if err != nil {
+		return false, err
+	}
+	return restored != nil && restored.archiveID == epoch, nil
 }
