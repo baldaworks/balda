@@ -65,6 +65,16 @@ Status: active
 - Shutdown follows the exact reverse lifecycle order.
 - The durable command runtime must be available before ingress accepts work.
 - No runtime path executes user work without durable actor dispatch acceptance.
+- The single producer-local command outbox preserves durable admission order
+  with a persisted sequence, independently of wall-clock adjustments. The
+  existing admission mutex serializes watermark allocation and pending writes;
+  the watermark commits before the pending row, so failed admissions may leave
+  gaps but cannot reuse an accepted order value. Duplicates and publication
+  retries retain the original sequence across restart. Older unsequenced
+  pending rows drain first in their existing timestamp order. Actual creation,
+  retry and expiry timestamps remain wall time. This does not support multiple
+  active outbox owners sharing one database.
+
 - The session actor is the only code path that can enqueue `TurnDispatcher` work; `sessionturn` is the only queued-turn restoration use case.
 - `TurnDispatcher` is the authoritative per-session mailbox. Canceling a session resolves every dropped completion (including constituent steering waiters) with `context.Canceled` and cancels the active turn.
 - Coalesced steering messages retain individual constituent completion channels; constituent envelopes remain unacknowledged to durable transport until batch execution finishes, fails, or cancels.

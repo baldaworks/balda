@@ -1,7 +1,9 @@
 # Backoffice chat session archive
 
-Status: proposed for user approval after builder review.
-Tracking: `balda-ax16`.
+Status: superseded historical proposal. The approved requirements/design in
+Beads Story `balda-x22c` are authoritative; this document is not an implementation
+or authorization contract.
+Tracking: `balda-x22c`.
 Feature base: `origin/main` at `3a58254bb05747fdeecde070b1828e770ed589a4`.
 
 ## Intent and accepted scope

@@ -34,3 +34,17 @@ Status: active
 - New ingress channels.
 - New actor types or lifecycle stages.
 - Changes to command/event subjects, settlement, or projection rules.
+
+## Chat session archive evidence
+
+[The Backoffice QA runbook](../reference/backoffice-ui-review.md#chat-session-archive-layout-gate)
+defines the ordered synthetic-layout then authenticated-application browser
+gates. `TestChatArchiveSharedProviderLifecycleAndTurns` joins the real selected
+SQLite provider, ADK session storage, deterministic provider, session manager,
+original-input admission and committed-final execution/replay. It covers durable
+reopen, memory boot replacement, reset/close/fallback identity and late committed
+replay without another model invocation. Tagged shared backend contracts run
+against both SQLite and disposable PostgreSQL for storage/authority behavior.
+The SQL-only archive reader has no provider or session accessor; production
+ports remain enforced by `.go-arch-lint.yml`. All durable requirement/evidence
+mapping and independent acceptance live in Beads Story `balda-x22c`.

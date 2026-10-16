@@ -151,12 +151,17 @@ func checkMCPAuthorityWhileWaiting(t *testing.T, open contractOpener, wait, oper
 	if !time.Now().Before(deadline) {
 		t.Fatal("queue deadline passed before the wait was observed")
 	}
-	timer := time.NewTimer(time.Until(deadline.Add(20 * time.Millisecond)))
-	defer timer.Stop()
-	select {
-	case <-timer.C:
-	case <-ctx.Done():
-		t.Fatal(ctx.Err())
+	// Stored expiry uses wall time. On virtualized hosts the wall clock can
+	// move backwards while a monotonic timer runs; recheck the actual expiry
+	// rather than treating one elapsed timer as proof that authority expired.
+	for time.Now().UTC().Before(deadline.Add(20 * time.Millisecond)) {
+		timer := time.NewTimer(time.Until(deadline.Add(20 * time.Millisecond)))
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			timer.Stop()
+			t.Fatal(ctx.Err())
+		}
 	}
 	releasedAt := time.Now().UTC()
 	if condition == "access" && releasedAt.Before(storedDeadline) {
