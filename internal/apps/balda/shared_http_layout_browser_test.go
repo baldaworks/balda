@@ -15,6 +15,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/webhookmanagement"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookroutecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookroutefx"
+	"github.com/normahq/runtime/v2/appconfig"
 )
 
 // TestSharedHTTPLayoutBrowser checks rendered URLs and layout through the
@@ -41,7 +42,7 @@ func TestSharedHTTPLayoutBrowser(t *testing.T) {
 				originMode = "missing"
 				params.Config.HTTP.BaseURL = ""
 				params.Config.Backoffice.PublicURL = "http://" + address
-				config, err := backofficeRuntimeConfig(params.Config, state.DatabaseConfig{})
+				config, err := backofficeRuntimeConfig(params.Config, appconfig.RuntimeConfig{}, "", state.DatabaseConfig{})
 				if err != nil {
 					t.Fatal(err)
 				}

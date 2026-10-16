@@ -201,7 +201,7 @@ func Module(
 	if err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
-	backofficeConfig, err := backofficeRuntimeConfig(cfg.Balda, database)
+	backofficeConfig, err := backofficeRuntimeConfig(cfg.Balda, normaCfg, runtimeLoadOpts.Profile, database)
 	if err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}

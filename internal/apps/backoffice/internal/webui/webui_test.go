@@ -27,7 +27,7 @@ func TestRendererFullFragmentAndHistoryContracts(t *testing.T) {
 	page := Page{
 		Title: "Overview · Balda", Current: LocationOverview,
 		Navigation:   Navigation(usercmd.BackofficeCapabilities{Overview: true, Account: true}, LocationOverview),
-		Capabilities: []CapabilityCard{{ID: "telegram", Name: "Telegram", Mode: "webhook", Endpoint: "/telegram"}},
+		Capabilities: []CapabilityCard{{ID: "telegram", Name: "Telegram", Mode: "webhook", Endpoints: []CapabilityEndpoint{{Label: "Webhook", URL: "/gateway/telegram/webhook"}}}},
 	}
 	tests := []struct {
 		name        string
@@ -61,6 +61,9 @@ func TestRendererFullFragmentAndHistoryContracts(t *testing.T) {
 			if !tt.wantFull && !strings.HasPrefix(body, "<title>Overview · Balda</title><main") {
 				t.Fatalf("fragment shape = %q", body)
 			}
+			if !strings.Contains(body, "/gateway/telegram/webhook") || !strings.Contains(body, "Callback locations") {
+				t.Fatalf("overview callback details are missing: %q", body)
+			}
 			if tt.wantNavItem != "" && !strings.Contains(body, tt.wantNavItem) {
 				t.Fatalf("authorized navigation %q absent", tt.wantNavItem)
 			}
@@ -92,14 +95,14 @@ func TestRendererGroupsAuthorizedNavigationWithoutDuplicateAccount(t *testing.T)
 				ManageMCP: true, ManageSchedules: true, ManageWebhooks: true, ManageAliases: true, ManageFactMemory: true, ViewAudit: true,
 			},
 			wantGroups: []string{"Workspace", "Operations", "Administration"},
-			wantLinks:  []string{"/overview", "/mcp", "/schedules", "/webhooks", "/aliases", "/memory", "/access", "/audit"},
+			wantLinks:  []string{"/overview", "/agent", "/mcp", "/schedules", "/webhooks", "/aliases", "/memory", "/access", "/audit"},
 		},
 		{
 			name:         "operator",
 			capabilities: usercmd.BackofficeCapabilities{Overview: true, Account: true},
 			wantGroups:   []string{"Workspace"},
 			absentGroups: []string{"Operations", "Administration"},
-			wantLinks:    []string{"/overview"},
+			wantLinks:    []string{"/overview", "/agent"},
 			absentLinks:  []string{"/mcp", "/schedules", "/webhooks", "/aliases", "/memory", "/access", "/audit"},
 		},
 	}
@@ -135,6 +138,32 @@ func TestRendererGroupsAuthorizedNavigationWithoutDuplicateAccount(t *testing.T)
 				}
 			}
 		})
+	}
+}
+
+func TestRendererAgentEscapesInstructionAndShowsEmptyValues(t *testing.T) {
+	t.Parallel()
+	renderer, err := NewRenderer("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := Page{
+		Title: "Agent · Balda", Current: LocationAgent,
+		Navigation: Navigation(usercmd.BackofficeCapabilities{Overview: true}, LocationAgent),
+		Agent:      &AgentView{ProviderID: "primary", ProviderType: "codex_acp", Profile: "default", GlobalInstruction: "first line\n<script>alert(1)</script>"},
+	}
+	response := httptest.NewRecorder()
+	if err := renderer.Render(response, httptest.NewRequest(http.MethodGet, "/agent", nil), http.StatusOK, TemplateAgent, page); err != nil {
+		t.Fatal(err)
+	}
+	body := response.Body.String()
+	for _, want := range []string{"first line\n&lt;script&gt;alert(1)&lt;/script&gt;", "Not configured", `href="/agent"`, `aria-current="page"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("agent page missing %q: %s", want, body)
+		}
+	}
+	if strings.Contains(body, "<script>alert(1)</script>") {
+		t.Fatal("agent instruction was rendered as HTML")
 	}
 }
 

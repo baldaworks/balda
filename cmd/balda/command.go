@@ -221,7 +221,7 @@ func loadBaldaCommandConfig(requireChannel bool) (preparedBaldaCommand, error) {
 	}
 
 	var doc baldaConfigDocument
-	_, err = appconfig.LoadConfigDocument(
+	selectedProfile, err := appconfig.LoadConfigDocument(
 		runtimeLoadOpts,
 		appconfig.AppLoadOptions{
 			AppName:            "balda",
@@ -233,6 +233,7 @@ func loadBaldaCommandConfig(requireChannel bool) (preparedBaldaCommand, error) {
 	if err != nil {
 		return preparedBaldaCommand{}, err
 	}
+	runtimeLoadOpts.Profile = selectedProfile
 	// appconfig discovers env overrides through non-null leaves. Preserve the
 	// nonempty env override when YAML null expresses omission of this setting.
 	if value := os.Getenv("BALDA_ACP_STARTUP_TIMEOUT"); value != "" {

@@ -17,6 +17,7 @@ type Location string
 const (
 	LocationLogin       Location = "/login"
 	LocationOverview    Location = "/overview"
+	LocationAgent       Location = "/agent"
 	LocationAccess      Location = "/access"
 	LocationAccount     Location = "/account"
 	LocationAudit       Location = "/audit"
@@ -34,7 +35,7 @@ const (
 // Valid reports whether a location can be emitted by server navigation.
 func (l Location) Valid() bool {
 	switch l {
-	case LocationChatArchive, LocationSkills, LocationHooks, LocationLogin, LocationOverview, LocationAccess, LocationAccount, LocationAudit, LocationMCP, LocationSchedules, LocationWebhooks, LocationAliases, LocationFactMemory, LocationPlugins:
+	case LocationChatArchive, LocationSkills, LocationHooks, LocationLogin, LocationOverview, LocationAgent, LocationAccess, LocationAccount, LocationAudit, LocationMCP, LocationSchedules, LocationWebhooks, LocationAliases, LocationFactMemory, LocationPlugins:
 		return true
 	default:
 		return false
@@ -61,10 +62,31 @@ type CapabilityCard struct {
 	ID         string
 	Name       string
 	Mode       string
-	ListenAddr string
-	Endpoint   string
 	RouteCount int
-	Streaming  bool
+	Settings   []CapabilitySetting
+	Endpoints  []CapabilityEndpoint
+}
+
+// CapabilitySetting is one explicit non-secret integration setting.
+type CapabilitySetting struct {
+	Label string
+	Value string
+}
+
+// CapabilityEndpoint is one canonical callback location.
+type CapabilityEndpoint struct {
+	Label string
+	URL   string
+}
+
+// AgentView is the safe effective agent configuration rendered read-only.
+type AgentView struct {
+	ProviderID        string
+	ProviderType      string
+	Profile           string
+	Model             string
+	ReasoningEffort   string
+	GlobalInstruction string
 }
 
 // BindingView is the optional single transport binding shown read-only.
@@ -157,6 +179,7 @@ type MFACeremonyView struct {
 
 // Page is the closed safe model accepted by production templates.
 type Page struct {
+	Agent        *AgentView
 	Skills       *SkillsView
 	Plugins      *PluginsView
 	MCP          *MCPView
@@ -215,7 +238,10 @@ func Navigation(capabilities usercmd.BackofficeCapabilities, current Location) [
 	if capabilities.Overview {
 		groups = append(groups, NavGroup{
 			Label: "Workspace", ID: "nav-workspace",
-			Items: []NavItem{item("Overview", LocationOverview, "bi-speedometer2")},
+			Items: []NavItem{
+				item("Overview", LocationOverview, "bi-speedometer2"),
+				item("Agent", LocationAgent, "bi-robot"),
+			},
 		})
 	}
 	if capabilities.ViewChatArchive && len(groups) > 0 {

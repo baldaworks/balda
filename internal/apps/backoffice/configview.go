@@ -2,77 +2,73 @@ package backoffice
 
 import (
 	"sort"
-	"strings"
 
 	"github.com/baldaworks/balda/internal/apps/backoffice/internal/webui"
 )
 
-// ConfiguredCapability is a secret-free read-only projection of one enabled integration.
-type ConfiguredCapability struct {
-	ID         string
-	Name       string
-	Mode       string
-	ListenAddr string
-	Endpoint   string
-	RouteCount int
-	Streaming  bool
-}
-
 // ProjectCapabilityCards converts the safe configured projection into Web UI cards.
 func ProjectCapabilityCards(cfg BaldaConfig) []webui.CapabilityCard {
-	configured := ProjectConfiguredCapabilities(cfg)
-	cards := make([]webui.CapabilityCard, 0, len(configured))
-	for _, capability := range configured {
-		cards = append(cards, webui.CapabilityCard{
-			ID: capability.ID, Name: capability.Name, Mode: capability.Mode,
-			ListenAddr: capability.ListenAddr, Endpoint: capability.Endpoint,
-			RouteCount: capability.RouteCount, Streaming: capability.Streaming,
-		})
-	}
-	return cards
-}
-
-// ProjectConfiguredCapabilities returns only integrations enabled by resolved configuration.
-func ProjectConfiguredCapabilities(cfg BaldaConfig) []ConfiguredCapability {
-	capabilities := make([]ConfiguredCapability, 0, 5)
+	cards := make([]webui.CapabilityCard, 0, 5)
 	if cfg.Telegram.Enabled {
-		capability := ConfiguredCapability{ID: "telegram", Name: "Telegram", Mode: "polling"}
+		card := webui.CapabilityCard{ID: "telegram", Name: "Telegram", Mode: "polling", Settings: []webui.CapabilitySetting{{Label: "Formatting", Value: configuredValue(cfg.Telegram.FormattingMode)}}}
 		if cfg.Telegram.Webhook.Enabled {
-			capability.Mode = "webhook"
-			capability.ListenAddr = strings.TrimSpace(cfg.Telegram.Webhook.ListenAddr)
-			capability.Endpoint = strings.TrimSpace(cfg.Telegram.Webhook.Path)
+			card.Mode = "webhook"
+			card.Endpoints = appendEndpoint(card.Endpoints, "Webhook", cfg.Telegram.Webhook.CallbackURL)
 		}
-		capabilities = append(capabilities, capability)
+		cards = append(cards, card)
 	}
 	if cfg.Slack.Agent.Enabled {
-		capabilities = append(capabilities, ConfiguredCapability{
+		cards = append(cards, webui.CapabilityCard{
 			ID: "slackagent", Name: "Slack Agent", Mode: "agent-events",
-			ListenAddr: strings.TrimSpace(cfg.Slack.Agent.ListenAddr), Endpoint: strings.TrimSpace(cfg.Slack.Agent.EventsPath),
-			Streaming: cfg.Slack.Agent.EnableStreaming,
+			Settings: []webui.CapabilitySetting{
+				{Label: "Private channels", Value: yesNo(cfg.Slack.Agent.IncludePrivateChannels)},
+				{Label: "Streaming", Value: yesNo(cfg.Slack.Agent.EnableStreaming)},
+				{Label: "Suggested prompts", Value: yesNo(cfg.Slack.Agent.SuggestedPrompts)},
+			},
+			Endpoints: appendEndpoint(appendEndpoint(nil, "Events", cfg.Slack.Agent.EventsCallbackURL), "Commands", cfg.Slack.Agent.CommandsCallbackURL),
 		})
 	}
 	if cfg.Zulip.Webhook.Enabled {
-		capabilities = append(capabilities, ConfiguredCapability{
+		cards = append(cards, webui.CapabilityCard{
 			ID: "zulip", Name: "Zulip", Mode: "webhook",
-			ListenAddr: strings.TrimSpace(cfg.Zulip.Webhook.ListenAddr), Endpoint: strings.TrimSpace(cfg.Zulip.Webhook.Path),
+			Endpoints: appendEndpoint(nil, "Webhook", cfg.Zulip.Webhook.CallbackURL),
 		})
 	}
 	if cfg.Webhooks.Enabled {
-		capabilities = append(capabilities, ConfiguredCapability{
-			ID: "webhooks", Name: "Webhooks", Mode: "inbound",
-			ListenAddr: strings.TrimSpace(cfg.Webhooks.ListenAddr), RouteCount: cfg.Webhooks.RouteCount,
+		cards = append(cards, webui.CapabilityCard{
+			ID: "webhooks", Name: "Webhooks", Mode: "inbound", RouteCount: cfg.Webhooks.RouteCount,
 		})
 	}
 	if cfg.Mattermost.Enabled {
-		capability := ConfiguredCapability{ID: "mattermost", Name: "Mattermost", Mode: "websocket"}
+		card := webui.CapabilityCard{ID: "mattermost", Name: "Mattermost", Mode: "websocket", Settings: []webui.CapabilitySetting{{Label: "Server", Value: configuredValue(cfg.Mattermost.ServerURL)}}}
 		if cfg.Mattermost.CommandsEnabled {
-			capability.ListenAddr = strings.TrimSpace(cfg.Mattermost.ListenAddr)
-			capability.Endpoint = strings.TrimSpace(cfg.Mattermost.CommandsPath)
+			card.Endpoints = appendEndpoint(card.Endpoints, "Commands", cfg.Mattermost.CommandsCallbackURL)
 		}
-		capabilities = append(capabilities, capability)
+		cards = append(cards, card)
 	}
-	sort.Slice(capabilities, func(i, j int) bool { return capabilities[i].ID < capabilities[j].ID })
-	return capabilities
+	sort.Slice(cards, func(i, j int) bool { return cards[i].ID < cards[j].ID })
+	return cards
+}
+
+func yesNo(value bool) string {
+	if value {
+		return "Yes"
+	}
+	return "No"
+}
+
+func configuredValue(value string) string {
+	if value == "" {
+		return "Not configured"
+	}
+	return value
+}
+
+func appendEndpoint(endpoints []webui.CapabilityEndpoint, label, value string) []webui.CapabilityEndpoint {
+	if value == "" {
+		return endpoints
+	}
+	return append(endpoints, webui.CapabilityEndpoint{Label: label, URL: value})
 }
 
 func configuredBindingChannels(cfg BaldaConfig) []string {

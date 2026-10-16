@@ -12,6 +12,7 @@ import (
 const qaChatBefore = "before"
 const qaChatMissing = "missing"
 const qaChatPending = "pending"
+const qaSlackAgent = "slackagent"
 
 // These fixtures use deliberately synthetic identifiers, never live archive reads.
 func qaChatArchiveEntries() []qaEntry {
@@ -56,12 +57,12 @@ func qaChatSummary(state string) chatarchivecmd.Summary {
 		s.Label = "After reset"
 		s.PredecessorID = qaChatBefore
 	case "group":
-		s.Location.Channel = "slackagent"
+		s.Location.Channel = qaSlackAgent
 		s.Location.Audience = chatarchivecmd.AudienceGroup
 		s.Location.Subdivision = chatarchivecmd.SubdivisionThread
 		s.Location.SubdivisionLabel = "Synthetic thread"
 		s.Location.Title = "Synthetic group"
-		s.Location.Locator = "slackagent:synthetic-invalid:thread"
+		s.Location.Locator = qaSlackAgent + ":synthetic-invalid:thread"
 	case "partial":
 		s.Partial = true
 		s.CoverageStart = qaNow.Add(-5 * time.Minute)
