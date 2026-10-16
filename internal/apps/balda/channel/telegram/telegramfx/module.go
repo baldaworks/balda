@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
+	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	"github.com/baldaworks/balda/internal/apps/balda/attachmentstore"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
@@ -26,7 +27,7 @@ var Module = fx.Module(
 		),
 		fx.Annotate(
 			func(enabled bool) commandcmd.Advertisement {
-				return commandcmd.Advertisement{Transport: telegram.ChannelType, Enabled: enabled, Names: []string{"locator", "reset", "help", "usage", "auto", "cancel", "goalkeeper", "topic", "close", "start", "user", "plugin", "skill"}}
+				return commandcmd.Advertisement{Transport: telegram.ChannelType, Enabled: enabled, Names: []string{"locator", "reset", "new", "help", "usage", "auto", "cancel", "goalkeeper", "topic", "close", "start", "user", "plugin", "skill"}}
 			},
 			fx.ParamTags(`name:"balda_telegram_enabled"`),
 			fx.ResultTags(`group:"balda_command_advertisements"`),
@@ -56,8 +57,8 @@ var Module = fx.Module(
 		fx.Annotate(
 			func(adapter *telegram.Adapter) telegram.Channel { return adapter },
 		),
-		func(store attachmentstore.Store, cfg tgbotkit.Config, tgClient client.ClientWithResponsesInterface) telegram.AttachmentStore {
-			return telegram.NewAttachmentStore(store, tgClient, cfg.Token)
+		func(store attachmentstore.Store, cfg tgbotkit.Config, tgClient client.ClientWithResponsesInterface, limits attachment.Limits) telegram.AttachmentStore {
+			return telegram.NewAttachmentStore(store, tgClient, cfg.Token, limits)
 		},
 		fx.Annotate(
 			func(adapter *telegram.Adapter) deliveryfx.ChannelAdapterBinding {
@@ -97,10 +98,11 @@ var Module = fx.Module(
 			fx.ResultTags(`group:"balda_delivery_structured_registrar"`),
 		),
 		fx.Annotate(
-			func(server *telegram.Server) appports.TransportLifecycleStage {
+			func(server *telegram.Server, adapter *telegram.Adapter) appports.TransportLifecycleStage {
 				return appports.TransportLifecycleStage{
 					Name:  "telegram ingress",
 					Start: server.Start,
+					Stop:  adapter.StopMediaGroups,
 				}
 			},
 			fx.ResultTags(`group:"balda_transport_lifecycle_stage"`),

@@ -36,7 +36,7 @@
    terminal outcomes advance it.
 9. Non-terminal session progress always emits progress activity; Telegram sends typing indicators in DM and public chats for that activity, while only visible progress renders as drafts/messages. Thinking placeholders remain DM-only.
 10. Final assistant response uses configured `balda.telegram.formatting_mode`; `none` is literal plain text, while rich modes make at most one parse-mode-free plain send only after an explicit Telegram formatting rejection.
-11. `/reset` cancels current session work, clears history, and immediately starts a fresh runtime session in any supported chat/thread context without closing the underlying chat/topic.
+11. `/reset` and its `/new` alias cancel current session work, clear history, and immediately start a fresh runtime session in any supported chat/thread context without closing the underlying chat/topic.
 12. `/locator` returns the exact current session locator in
     `<channel_type>:<address_key>` form through the registered structured
     renderer and explicit transport format, with no fallback on render failure.

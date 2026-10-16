@@ -20,7 +20,7 @@ func readNativeProcess(pid int) (nativeProcessInfo, error) {
 	return nativeProcessInfo{Parent: int(info.Eproc.Ppid), Group: int(info.Eproc.Pgid), Start: fmt.Sprintf("%d:%d", info.Proc.P_starttime.Sec, info.Proc.P_starttime.Usec)}, nil
 }
 
-func proxyOwnsBinding(pid int, path string) (bool, error) {
+func processHasArgument(pid int, expected string) (bool, error) {
 	data, err := unix.SysctlRaw("kern.procargs2", pid)
 	if err != nil || len(data) < 4 {
 		return false, os.ErrProcessDone
@@ -35,16 +35,17 @@ func proxyOwnsBinding(pid int, path string) (bool, error) {
 	for len(data) > 0 && data[0] == 0 {
 		data = data[1:]
 	}
-	var args []string
 	for i := 0; i < argc; i++ {
 		end = bytes.IndexByte(data, 0)
 		if end < 0 {
 			return false, os.ErrProcessDone
 		}
-		args = append(args, string(data[:end]))
+		if string(data[:end]) == expected {
+			return true, nil
+		}
 		data = data[end+1:]
 	}
-	return bindingArgumentsMatch(args, path), nil
+	return false, nil
 }
 
 func killNativeGroup(pid int) error { return syscall.Kill(-pid, syscall.SIGKILL) }

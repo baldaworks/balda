@@ -24,10 +24,15 @@ func TestSnapshotCloneDoesNotShareMutableState(t *testing.T) {
 
 	sourceID := SourceID{Kind: SourceKindPlugin, Name: "demo"}
 	commandID := ContributionID{Source: sourceID, Kind: ContributionKindCommand, Name: "release"}
+	hookID := ContributionID{Source: sourceID, Kind: ContributionKindHook, Name: "guard"}
 	snapshot := Snapshot{
 		Parents:  []SnapshotID{"parent"},
 		Sources:  map[SourceID]SourceDescriptor{sourceID: {ID: sourceID, Revision: "revision"}},
 		Commands: map[ContributionID]CommandDescriptor{commandID: {ID: commandID, Revision: "revision", Name: "release", Instruction: "release safely"}},
+		Hooks: map[ContributionID]HookDescriptor{hookID: {
+			ID: hookID, Revision: "revision", Name: "guard", Description: "Guard", Event: "PreToolUse",
+			Executable: "hooks/guard", Args: []string{"--one"}, Providers: []string{"codex"}, TimeoutSeconds: 30,
+		}},
 		Diagnostics: []Diagnostic{{
 			Severity: DiagnosticSeverityWarning, Code: "test", Source: sourceID, Contribution: &commandID,
 		}},
@@ -37,6 +42,9 @@ func TestSnapshotCloneDoesNotShareMutableState(t *testing.T) {
 	clone.Parents[0] = changed
 	delete(clone.Sources, sourceID)
 	delete(clone.Commands, commandID)
+	clonedHook := clone.Hooks[hookID]
+	clonedHook.Args[0] = changed
+	clonedHook.Providers[0] = changed
 	clone.Diagnostics[0].Contribution.Name = changed
 
 	if snapshot.Parents[0] != "parent" || len(snapshot.Sources) != 1 {
@@ -44,6 +52,9 @@ func TestSnapshotCloneDoesNotShareMutableState(t *testing.T) {
 	}
 	if len(snapshot.Commands) != 1 {
 		t.Fatalf("clone mutated command descriptors: %+v", snapshot.Commands)
+	}
+	if got := snapshot.Hooks[hookID]; got.Args[0] != "--one" || got.Providers[0] != "codex" {
+		t.Fatalf("clone mutated hook descriptor: %+v", got)
 	}
 	if got := snapshot.Diagnostics[0].Contribution.Name; got != "release" {
 		t.Fatalf("clone mutated diagnostic contribution = %q, want release", got)

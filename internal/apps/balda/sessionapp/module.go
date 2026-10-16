@@ -224,6 +224,7 @@ func translateWorkspaceError(err error) error {
 
 var Module = fx.Module("balda_sessionapp",
 	fx.Provide(
+		baldaagent.NewRunnerFactory,
 		baldaagent.NewBuilder,
 		baldaagent.NewRuntimeManager,
 		fx.Annotate(

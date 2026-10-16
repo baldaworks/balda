@@ -43,6 +43,11 @@ type resetParams struct {
 	Dispatcher actortransport.Dispatcher
 }
 
+func newResetHandlers(p resetParams) []command.Handler {
+	handler := commandreset.New(p.Sessions, p.Canceller, p.Dispatcher)
+	return []command.Handler{handler, command.Alias("new", handler)}
+}
+
 type usageParams struct {
 	fx.In
 	Sessions   *session.Manager
@@ -174,10 +179,8 @@ var Module = fx.Module("balda_command",
 	fx.Provide(
 		fx.Annotate(commandlocator.New, fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`)),
 		fx.Annotate(
-			func(p resetParams) *commandreset.Handler {
-				return commandreset.New(p.Sessions, p.Canceller, p.Dispatcher)
-			},
-			fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`),
+			newResetHandlers,
+			fx.ResultTags(`group:"balda_command_handlers,flatten"`),
 		),
 		fx.Annotate(commandhelp.New, fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`)),
 		fx.Annotate(commandskill.New, fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`)),

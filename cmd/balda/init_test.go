@@ -69,6 +69,18 @@ func TestInitCommand_NonInteractiveAutoSelectsRootAndGeneratesDetectedAgents(t *
 	if got := baldaSection["provider"]; got != testBaldaProviderCodex {
 		t.Fatalf("balda.provider = %#v, want %s", got, testBaldaProviderCodex)
 	}
+	slackSection := mustMap(t, baldaSection, "slack")
+	for _, key := range []string{"enabled", "listen_addr", "events_path", "commands_path"} {
+		if _, exists := slackSection[key]; exists {
+			t.Fatalf("generated balda.slack contains compatibility-only key %q", key)
+		}
+	}
+	slackAgentSection := mustMap(t, slackSection, "agent")
+	for _, key := range []string{"listen_addr", "events_path"} {
+		if _, exists := slackAgentSection[key]; exists {
+			t.Fatalf("generated balda.slack.agent contains compatibility-only key %q", key)
+		}
+	}
 	telegramSection, ok := toStringAnyMap(baldaSection["telegram"])
 	if !ok {
 		t.Fatal("balda.telegram section missing in generated config")

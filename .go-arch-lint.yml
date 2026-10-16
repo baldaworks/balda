@@ -11,10 +11,13 @@ exclude:
   - .config
 
 vendors:
-  native_hook_runtime:
+  native_hook_process_runtime:
+    in:
+      - golang.org/x/sys/unix
+
+  native_hook_provider_config:
     in:
       - github.com/normahq/runtime/v2/agentconfig
-      - golang.org/x/sys/unix
 
   hook_policy_dependencies:
     in:
@@ -23,6 +26,12 @@ vendors:
   hook_wiring_dependencies:
     in:
       - go.uber.org/fx
+
+  adk_hook_dependencies:
+    in:
+      - google.golang.org/adk/v2/agent
+      - google.golang.org/adk/v2/plugin
+      - google.golang.org/adk/v2/tool
 
   command_outbox_runtime:
     in:
@@ -161,13 +170,54 @@ components:
     in:
       - internal/apps/balda/hooks
 
+  # Provider-neutral adapter from stock ADK callbacks to normalized hook
+  # events. Provider configuration and execution policy stay outside it.
+  adk_hook_adapter:
+    in:
+      - internal/apps/balda/hookadk
+
   hook_backoffice_wiring:
     in:
       - internal/apps/balda/hookbackofficeapp
 
-  native_hook_adapters:
+  # Provider-neutral authenticated Event/Result bindings and process cleanup.
+  # Provider config, traversal, launch mutation, and wire codecs are forbidden.
+  native_hook_bindings:
     in:
       - internal/apps/balda/hookprovider
+
+  # Application service composes live policy, neutral bindings, and adapters.
+  native_hook_app:
+    in:
+      - internal/apps/balda/hooknativeapp
+
+  # Target registry iterates provider-owned adapters for one catalog leaf. It
+  # owns no provider switch and no binding transport implementation.
+  native_hook_registry:
+    in:
+      - internal/apps/balda/hooknative
+
+  native_hook_runtime:
+    in:
+      - internal/apps/balda/hooknative/proxyruntime
+
+  native_hook_host:
+    in:
+      - internal/apps/balda/hooknativehost
+
+  # Target concrete adapters own provider detection, launch mutation and wire
+  # normalization. New providers extend this component instead of hookprovider.
+  concrete_native_hook_adapters:
+    in:
+      - internal/apps/balda/hooknative/claude
+      - internal/apps/balda/hooknative/codex
+      - internal/apps/balda/hooknative/opencode
+
+  # Reusable behavior contracts for neutral bindings and concrete adapters.
+  native_hook_testkit:
+    in:
+      - internal/apps/balda/hooknativetest
+      - internal/apps/balda/hooknativeadaptertest
 
   hook_wiring:
     in:
@@ -669,18 +719,81 @@ deps:
     deepScan: false
     anyVendorDeps: false
 
-  native_hook_adapters:
+  native_hook_bindings:
     mayDependOn:
       - hook_contracts
-    # Constructor arguments implement consumer ports at the composition root.
     deepScan: false
     anyVendorDeps: false
     canUse:
+      - native_hook_process_runtime
+
+  native_hook_app:
+    mayDependOn:
+      - hook_contracts
+      - native_hook_bindings
+      - native_hook_registry
+      - native_hook_host
+    deepScan: false
+    anyVendorDeps: false
+    canUse:
+      - native_hook_provider_config
+
+  native_hook_runtime:
+    mayDependOn:
+      - hook_contracts
+      - native_hook_bindings
+      - native_hook_registry
+    deepScan: false
+    anyVendorDeps: false
+    canUse:
+      - native_hook_process_runtime
+
+  native_hook_host:
+    mayDependOn:
+      - native_hook_bindings
+    deepScan: false
+    anyVendorDeps: false
+    canUse:
+      - native_hook_provider_config
+
+  native_hook_registry:
+    mayDependOn:
+      - hook_contracts
+    deepScan: false
+    anyVendorDeps: false
+    canUse:
+      - native_hook_provider_config
+
+  concrete_native_hook_adapters:
+    mayDependOn:
+      - hook_contracts
+      - native_hook_bindings
+      - native_hook_registry
       - native_hook_runtime
+      - native_hook_host
+    deepScan: false
+    anyVendorDeps: false
+    canUse:
+      - native_hook_process_runtime
+      - native_hook_provider_config
+
+  native_hook_testkit:
+    mayDependOn:
+      - hook_contracts
+      - native_hook_bindings
+      - native_hook_registry
+      - native_hook_runtime
+      - native_hook_host
+      - native_hook_testkit
+    deepScan: false
+    anyVendorDeps: false
+    canUse:
+      - native_hook_provider_config
 
   hook_wiring:
     mayDependOn:
-      - native_hook_adapters
+      - adk_hook_adapter
+      - native_hook_app
       - hook_contracts
       - hook_policy
       - hook_backoffice_wiring
@@ -690,6 +803,15 @@ deps:
     anyVendorDeps: false
     canUse:
       - hook_wiring_dependencies
+      - adk_hook_dependencies
+
+  adk_hook_adapter:
+    mayDependOn:
+      - hook_contracts
+    deepScan: false
+    anyVendorDeps: false
+    canUse:
+      - adk_hook_dependencies
 
   memory_policy:
     mayDependOn:
@@ -985,6 +1107,9 @@ deps:
 
   catalog_wiring:
     mayDependOn:
+      - native_hook_bindings
+      - native_hook_registry
+      - concrete_native_hook_adapters
       - contracts
       - mcp_contracts
       - mcp_management
@@ -1235,7 +1360,10 @@ deps:
     mayDependOn:
       - skill_wiring
       - skill_backoffice_wiring
-      - native_hook_adapters
+      - native_hook_app
+      - native_hook_registry
+      - native_hook_host
+      - concrete_native_hook_adapters
       - hook_policy
       - hook_wiring
       - hook_backoffice_wiring
@@ -1298,7 +1426,9 @@ deps:
 
   entrypoints:
     mayDependOn:
-      - native_hook_adapters
+      - native_hook_registry
+      - concrete_native_hook_adapters
+      - native_hook_runtime
       - foundation
       - composition_root
       - application

@@ -55,6 +55,7 @@ const (
 	commandUsage   = "usage"
 	commandAuto    = "auto"
 	commandReset   = "reset"
+	commandNew     = "new"
 	commandClose   = "close"
 	commandSkill   = "skill"
 

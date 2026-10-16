@@ -31,15 +31,24 @@ type pendingMediaGroup struct {
 }
 
 type mediaGroupCollector struct {
-	mu     sync.Mutex
-	delay  time.Duration
-	groups map[mediaGroupKey]*pendingMediaGroup
+	mu        sync.Mutex
+	delay     time.Duration
+	groups    map[mediaGroupKey]*pendingMediaGroup
+	ctx       context.Context
+	cancel    context.CancelFunc
+	callbacks sync.WaitGroup
+	done      chan struct{}
+	stopped   bool
 }
 
 func newMediaGroupCollector(delay time.Duration) *mediaGroupCollector {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &mediaGroupCollector{
 		delay:  delay,
 		groups: make(map[mediaGroupKey]*pendingMediaGroup),
+		ctx:    ctx,
+		cancel: cancel,
+		done:   make(chan struct{}),
 	}
 }
 
@@ -69,6 +78,10 @@ func (c *mediaGroupCollector) collect(
 	})
 
 	c.mu.Lock()
+	if c.stopped {
+		c.mu.Unlock()
+		return true
+	}
 	pending := c.groups[key]
 	if pending == nil {
 		pending = &pendingMediaGroup{dispatch: dispatch}
@@ -91,12 +104,13 @@ func (c *mediaGroupCollector) collect(
 func (c *mediaGroupCollector) flush(key mediaGroupKey, generation uint64) {
 	c.mu.Lock()
 	pending := c.groups[key]
-	if pending == nil || pending.generation != generation {
+	if c.stopped || pending == nil || pending.generation != generation {
 		c.mu.Unlock()
 		return
 	}
 	delete(c.groups, key)
 	messages := append([]MessageContext(nil), pending.messages...)
+	c.callbacks.Add(1)
 	c.mu.Unlock()
 	c.dispatch(pending, messages)
 }
@@ -107,6 +121,10 @@ func (c *mediaGroupCollector) flushMatching(match func(mediaGroupKey) bool) {
 	}
 	c.mu.Lock()
 	pending := make([]*pendingMediaGroup, 0)
+	if c.stopped {
+		c.mu.Unlock()
+		return
+	}
 	for key, group := range c.groups {
 		if !match(key) {
 			continue
@@ -116,6 +134,7 @@ func (c *mediaGroupCollector) flushMatching(match func(mediaGroupKey) bool) {
 			group.timer.Stop()
 		}
 		pending = append(pending, group)
+		c.callbacks.Add(1)
 	}
 	c.mu.Unlock()
 
@@ -127,13 +146,55 @@ func (c *mediaGroupCollector) flushMatching(match func(mediaGroupKey) bool) {
 	}
 }
 
-func (*mediaGroupCollector) dispatch(pending *pendingMediaGroup, messages []MessageContext) {
+func (c *mediaGroupCollector) dispatch(pending *pendingMediaGroup, messages []MessageContext) {
+	defer c.callbacks.Done()
 	if pending == nil || pending.dispatch == nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), mediaGroupDispatchTimeout)
+	c.mu.Lock()
+	if c.stopped {
+		c.mu.Unlock()
+		return
+	}
+	root := c.ctx
+	c.mu.Unlock()
+	ctx, cancel := context.WithTimeout(root, mediaGroupDispatchTimeout)
 	defer cancel()
 	pending.dispatch(ctx, mergeMediaGroup(messages))
+}
+
+func (c *mediaGroupCollector) stop(ctx context.Context) error {
+	if c == nil {
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	c.mu.Lock()
+	if !c.stopped {
+		c.stopped = true
+		for _, group := range c.groups {
+			if group.timer != nil {
+				group.timer.Stop()
+			}
+		}
+		c.groups = make(map[mediaGroupKey]*pendingMediaGroup)
+		c.cancel()
+		go func() {
+			c.callbacks.Wait()
+			close(c.done)
+		}()
+	}
+	done := c.done
+	c.mu.Unlock()
+
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (key mediaGroupKey) sameBoundary(message MessageContext) bool {

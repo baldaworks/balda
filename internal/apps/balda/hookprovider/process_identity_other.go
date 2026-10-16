@@ -8,5 +8,5 @@ func nativePlatformSupported() bool { return false }
 func readNativeProcess(int) (nativeProcessInfo, error) {
 	return nativeProcessInfo{}, hookcmd.ErrUnsupported
 }
-func proxyOwnsBinding(int, string) (bool, error) { return false, hookcmd.ErrUnsupported }
-func killNativeGroup(int) error                  { return hookcmd.ErrUnsupported }
+func processHasArgument(int, string) (bool, error) { return false, hookcmd.ErrUnsupported }
+func killNativeGroup(int) error                    { return hookcmd.ErrUnsupported }

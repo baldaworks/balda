@@ -111,6 +111,7 @@ type Event struct {
 	Name           EventName       `json:"hook_event_name"`
 	SessionID      string          `json:"session_id"`
 	AgentSessionID string          `json:"agent_session_id,omitempty"`
+	InvocationID   string          `json:"invocation_id,omitempty"`
 	Provider       string          `json:"provider,omitempty"`
 	CWD            string          `json:"cwd"`
 	Source         string          `json:"source,omitempty"`
@@ -128,6 +129,23 @@ type Result struct {
 	Reason            string          `json:"reason,omitempty"`
 	AdditionalContext string          `json:"additional_context,omitempty"`
 	UpdatedInput      json.RawMessage `json:"updated_input,omitempty"`
+	UpdatedOutput     json.RawMessage `json:"updated_output,omitempty"`
+}
+
+// EffectiveDefinition identifies one executable definition in the combined
+// managed and package hook view. ID is the canonical execution and audit
+// identity, such as managed/<name> or plugin/<plugin-id>/<name>.
+type EffectiveDefinition struct {
+	ID             string     `json:"id"`
+	Definition     Definition `json:"definition"`
+	PluginID       string     `json:"plugin_id,omitempty"`
+	PluginRevision string     `json:"plugin_revision,omitempty"`
+}
+
+// ExecutionSnapshot is the complete immutable hook view selected for one
+// event. Callers must not reuse its slices after returning it to a runner.
+type ExecutionSnapshot struct {
+	Definitions []EffectiveDefinition `json:"definitions"`
 }
 
 // Record is the durable, optimistic configuration boundary.

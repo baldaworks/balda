@@ -217,7 +217,7 @@ From there you can:
 - run a session skill with `/skill <skill> [prompt...]` or
   `/skill <plugin>:<skill> [prompt...]`
 - stop the current turn with `/cancel`
-- reset the current session with `/reset`
+- reset the current session with `/reset` or its `/new` alias
 
 ## Main workflows
 
@@ -340,10 +340,11 @@ ENTRYPOINT ["balda"]
 ## Core commands
 
 Balda provides onboarding, session control, GoalKeeper, locator, usage, skill,
-user, and plugin commands. Telegram and Zulip use `/skill`, `/locator`, and
-`/reset`; Zulip also accepts currently projected plugin command aliases.
-Slack exposes the conversation-scoped forms `/balda skill`,
-`/balda locator`, and `/balda reset`. For Backoffice account binding, Zulip accepts `/start bind_<token>` or the exact
+user, and plugin commands. Telegram and Zulip use `/skill`, `/locator`,
+`/reset`, and the `/new` alias for `/reset`; Zulip also accepts currently
+projected plugin command aliases. Slack exposes the conversation-scoped forms
+`/balda skill`, `/balda locator`, and `/balda reset`. For Backoffice account
+binding, Zulip accepts `/start bind_<token>` or the exact
 `bind_<token>` DM generated for its configured bot. In Slack, send the
 generated `bind_<token>` in the configured bot’s DM or use `/balda start bind_<token>`.
 Mattermost accepts the exact DM payload (including `/msg @<bot_username> bind_<token>`);

@@ -1,8 +1,9 @@
 # Slack Agent Integration
 
-Balda integrates with Slack's `agent_view` over the signed HTTP Events API.
-Balda serves plain HTTP; terminate public HTTPS in a reverse proxy, ingress, or
-tunnel and forward the request without changing its body.
+Slack Agent is Balda's Slack integration. It uses Slack's `agent_view` over the
+signed HTTP Events API. Balda serves plain HTTP; terminate public HTTPS in a
+reverse proxy, ingress, or tunnel and forward the request without changing its
+body.
 
 ## Slack App Setup
 
@@ -22,10 +23,10 @@ tunnel and forward the request without changing its body.
    - `message.im`
    - `app_mention`
    - `agent_session_stopped`
-4. Set the Events Request URL to a public HTTPS URL that forwards to
-   `balda.slack.agent.events_path`.
-5. Create a `/balda` slash command. Set its Request URL to a public HTTPS URL
-   that forwards to `balda.slack.commands_path`.
+4. Set the Events Request URL to
+   `<balda.http.base_url><balda.http.base_path>/gateway/slack/events`.
+5. Create a `/balda` slash command. Set its Request URL to
+   `<balda.http.base_url><balda.http.base_path>/gateway/slack/commands`.
 
 Slack validates the Request URL with a signed `url_verification` request. The
 forwarding layer must preserve the exact raw body and the
@@ -50,12 +51,12 @@ If bot identity is unavailable, retry discovery in the Slack binding interface.
 Environment:
 
 ```env
+BALDA_HTTP_LISTEN_ADDR=127.0.0.1:8095
+BALDA_HTTP_BASE_URL=https://balda.example.com
+BALDA_HTTP_BASE_PATH=/balda
 BALDA_SLACK_AGENT_ENABLED=true
 BALDA_SLACK_BOT_TOKEN=xoxb-...
 BALDA_SLACK_SIGNING_SECRET=...
-BALDA_SLACK_AGENT_LISTEN_ADDR=0.0.0.0:8092
-BALDA_SLACK_AGENT_EVENTS_PATH=/slack/agent/events
-BALDA_SLACK_COMMANDS_PATH=/slack/commands
 BALDA_SLACK_AGENT_ENABLE_STREAMING=false
 ```
 
@@ -63,6 +64,10 @@ Equivalent YAML:
 
 ```yaml
 balda:
+  http:
+    listen_addr: "127.0.0.1:8095"
+    base_url: "https://balda.example.com"
+    base_path: "/balda"
   features:
     attachments:
       max_files_per_message: 10
@@ -73,18 +78,17 @@ balda:
   slack:
     bot_token: "xoxb-..."
     signing_secret: "..."
-    commands_path: "/slack/commands"
     agent:
       enabled: true
-      listen_addr: "0.0.0.0:8092"
-      events_path: "/slack/agent/events"
       enable_streaming: false
       suggested_prompts: false
 ```
 
 The HTTP Events API requires the Bot OAuth Token and Signing Secret. No Slack
 app-level token is required. User-token search, Canvas, file-search, and Slack
-MCP scopes are not used by conversational ingress.
+MCP scopes are not used by conversational ingress. With the example above, use
+`https://balda.example.com/balda/gateway/slack/events` for Event Subscriptions
+and `https://balda.example.com/balda/gateway/slack/commands` for `/balda`.
 
 The attachment limit environment overrides are:
 
@@ -265,9 +269,9 @@ artifacts.
 - Events do not arrive: confirm the app is configured as an agent, installed to
   the workspace, subscribed to the required events, and using HTTP Events API
   rather than Socket Mode.
-- Slash commands fail: confirm `/balda` uses the public URL that forwards to
-  `balda.slack.commands_path`, and that this path differs from the Agent Events
-  path.
+- Slash commands fail: confirm `/balda` uses
+  `<balda.http.base_url><balda.http.base_path>/gateway/slack/commands` and the
+  reverse proxy preserves the path and raw request body.
 - Replies or session states fail: inspect Slack API error codes and confirm the
   app has the required bot scopes.
 - Current-message files fail: confirm `files:read`, conversation membership,

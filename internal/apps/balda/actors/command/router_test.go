@@ -36,3 +36,29 @@ func TestRouterRejectsDuplicateRegistration(t *testing.T) {
 		t.Fatal("duplicate registration accepted")
 	}
 }
+
+func TestAliasDelegatesAndPreservesInvocationName(t *testing.T) {
+	var got commandcmd.Payload
+	target := HandlerFunc{
+		CommandName: "reset",
+		Run: func(_ context.Context, _ actorlayer.Envelope, payload commandcmd.Payload) error {
+			got = payload
+			return nil
+		},
+	}
+	router, err := NewRouter([]Handler{target, Alias("new", target)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	handler, ok := router.Resolve("new")
+	if !ok {
+		t.Fatal("Resolve(new) ok = false, want true")
+	}
+	if err := handler.Handle(context.Background(), actorlayer.Envelope{}, commandcmd.Payload{Name: "new"}); err != nil {
+		t.Fatal(err)
+	}
+	if got.Name != "new" {
+		t.Fatalf("payload name = %q, want new", got.Name)
+	}
+}

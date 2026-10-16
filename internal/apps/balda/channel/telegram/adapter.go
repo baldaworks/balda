@@ -117,7 +117,7 @@ type CommandContext struct {
 	IsDM            bool
 }
 
-var supportedCommands = []string{"start", "help", "topic", "goalkeeper", "reset", "locator", "close", "cancel", "usage", "auto", "user", "plugin", "skill"}
+var supportedCommands = []string{"start", "help", "topic", "goalkeeper", "reset", "new", "locator", "close", "cancel", "usage", "auto", "user", "plugin", "skill"}
 
 func SupportedCommands() []string { return append([]string(nil), supportedCommands...) }
 
@@ -175,6 +175,14 @@ func (a *Adapter) CollectMediaGroup(message MessageContext, dispatch func(contex
 		return false
 	}
 	return a.mediaGroups.collect(message, dispatch)
+}
+
+// StopMediaGroups cancels pending media-group work and waits for active dispatches.
+func (a *Adapter) StopMediaGroups(ctx context.Context) error {
+	if a == nil || a.mediaGroups == nil {
+		return nil
+	}
+	return a.mediaGroups.stop(ctx)
 }
 
 func (a *Adapter) SetTypingThrottleInterval(interval time.Duration) {

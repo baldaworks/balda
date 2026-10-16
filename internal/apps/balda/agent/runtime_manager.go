@@ -641,7 +641,7 @@ func (m *RuntimeManager) PrepareGoalRun(
 		}
 		return nil, err
 	}
-	r, err := base.runner(workflow, "goal")
+	r, err := base.runner(workflow, "goal", workspaceDir)
 	if err != nil {
 		_ = closeRuntimeAgent(workflow)
 		_ = base.deleteRuntimeSession(ctx, userID, validatorSessionID)
@@ -704,11 +704,15 @@ func (m *RuntimeManager) childRuntimeBase(ctx context.Context) (childRuntimeBase
 	return base, nil
 }
 
-func (b childRuntimeBase) runner(agent adkagent.Agent, label string) (*runner.Runner, error) {
-	r, err := runner.New(runner.Config{
+func (b childRuntimeBase) runner(agent adkagent.Agent, label, workingDir string) (*runner.Runner, error) {
+	r, err := b.builder.newRunner(runner.Config{
 		AppName:        b.runtime.AppName,
 		Agent:          agent,
 		SessionService: b.runtime.SessionSvc,
+	}, ToolHookScope{
+		Enabled:  true,
+		Provider: b.providerID,
+		CWD:      strings.TrimSpace(workingDir),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("creating %s runner: %w", label, err)
@@ -753,7 +757,7 @@ func (b childRuntimeBase) buildGoalCommitMessage(
 		return "", err
 	}
 
-	r, err := b.runner(agent, "goal commit message")
+	r, err := b.runner(agent, "goal commit message", workspaceDir)
 	if err != nil {
 		return "", err
 	}

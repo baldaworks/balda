@@ -2,4 +2,4 @@ package hookprovider
 
 import "os/exec"
 
-func configureProxyProcess(*exec.Cmd) {}
+func configureOwnedProcess(*exec.Cmd) {}

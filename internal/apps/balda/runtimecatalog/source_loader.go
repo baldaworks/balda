@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -29,11 +30,17 @@ const (
 	mcpSchemaV1                = "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"
 	baldaExtension             = "dev.baldaworks.balda"
 	baldaExtensionSchemaV1     = "https://baldaworks.dev/schemas/balda-extension/1.0.0/schema.json"
+	baldaExtensionSchemaV2     = "https://baldaworks.dev/schemas/balda-extension/2.0.0/schema.json"
 	sourceRevisionRulesVersion = "runtime-source-v1"
+	windowsGOOS                = "windows"
+	windowsCommandExtension    = ".cmd"
 )
 
 //go:embed schemas/balda-extension-v1.schema.json
-var baldaExtensionSchemaJSON []byte
+var baldaExtensionSchemaV1JSON []byte
+
+//go:embed schemas/balda-extension-v2.schema.json
+var baldaExtensionSchemaV2JSON []byte
 
 var (
 	pluginNamePattern  = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$`)
@@ -59,7 +66,8 @@ func DefaultSourceLimits() SourceLimits {
 type SourceLoader struct {
 	limits              SourceLimits
 	supportedTransports map[string]struct{}
-	baldaExtension      *jsonschema.Schema
+	baldaExtensionV1    *jsonschema.Schema
+	baldaExtensionV2    *jsonschema.Schema
 }
 
 // PluginPackage is one validated plugin source plus manifest display metadata.
@@ -90,11 +98,15 @@ func NewSourceLoader(limits SourceLimits, supportedMCPTransports ...string) (*So
 		transports["stdio"] = struct{}{}
 		transports["streamable-http"] = struct{}{}
 	}
-	baldaSchema, err := compileBaldaExtensionSchema()
+	baldaSchemaV1, err := compileBaldaExtensionSchema(baldaExtensionSchemaV1, baldaExtensionSchemaV1JSON)
 	if err != nil {
-		return nil, fmt.Errorf("compile bundled balda-extension schema: %w", err)
+		return nil, fmt.Errorf("compile bundled balda-extension v1 schema: %w", err)
 	}
-	return &SourceLoader{limits: limits, supportedTransports: transports, baldaExtension: baldaSchema}, nil
+	baldaSchemaV2, err := compileBaldaExtensionSchema(baldaExtensionSchemaV2, baldaExtensionSchemaV2JSON)
+	if err != nil {
+		return nil, fmt.Errorf("compile bundled balda-extension v2 schema: %w", err)
+	}
+	return &SourceLoader{limits: limits, supportedTransports: transports, baldaExtensionV1: baldaSchemaV1, baldaExtensionV2: baldaSchemaV2}, nil
 }
 
 // LoadPlugin validates one Agent Plugins package and projects its components.
@@ -250,8 +262,9 @@ func (l *SourceLoader) loadCapturedPlugin(revision runtimecatalogcmd.RevisionID,
 	}
 	source.Skills, source.Diagnostics = loadSkills(tree, "skills", source.Descriptor, source.Diagnostics)
 	source.MCPServers, source.Diagnostics = l.loadMCP(tree, source.Descriptor, source.Diagnostics)
-	commands, commandDiagnostics := l.loadBaldaCommands(extensionRaw, source.Descriptor)
+	commands, hooks, commandDiagnostics := l.loadBaldaExtension(extensionRaw, tree, source.Descriptor)
 	source.Commands = commands
+	source.Hooks = hooks
 	source.Diagnostics = append(source.Diagnostics, commandDiagnostics...)
 	source.Diagnostics = boundDiagnostics(source.Diagnostics, l.limits.MaxDiagnostics)
 	return source, nil
@@ -635,56 +648,143 @@ func httpgutsValidHeaderValue(value string) bool {
 	return true
 }
 
-type baldaCommandExtension struct {
+type baldaExtensionDocument struct {
 	SchemaVersion int               `json:"schema_version"`
 	Commands      []json.RawMessage `json:"commands"`
+	Hooks         []json.RawMessage `json:"hooks"`
 }
 
-func (l *SourceLoader) loadBaldaCommands(raw json.RawMessage, source runtimecatalogcmd.SourceDescriptor) ([]runtimecatalogcmd.CommandDescriptor, []runtimecatalogcmd.Diagnostic) {
+func (l *SourceLoader) loadBaldaExtension(raw json.RawMessage, tree capturedTree, source runtimecatalogcmd.SourceDescriptor) ([]runtimecatalogcmd.CommandDescriptor, []runtimecatalogcmd.HookDescriptor, []runtimecatalogcmd.Diagnostic) {
 	if len(raw) == 0 {
-		return nil, nil
+		return nil, nil, nil
+	}
+	invalid := func() ([]runtimecatalogcmd.CommandDescriptor, []runtimecatalogcmd.HookDescriptor, []runtimecatalogcmd.Diagnostic) {
+		return nil, nil, []runtimecatalogcmd.Diagnostic{diagnostic(source.ID, runtimecatalogcmd.DiagnosticSeverityError, runtimecatalogcmd.DiagnosticExtensionInvalid, nil)}
+	}
+	var version struct {
+		SchemaVersion int `json:"schema_version"`
+	}
+	if json.Unmarshal(raw, &version) != nil || l == nil {
+		return invalid()
+	}
+	var schema *jsonschema.Schema
+	switch version.SchemaVersion {
+	case 1:
+		schema = l.baldaExtensionV1
+	case 2:
+		schema = l.baldaExtensionV2
+	default:
+		return invalid()
 	}
 	var value any
-	if json.Unmarshal(raw, &value) != nil || l == nil || l.baldaExtension == nil || l.baldaExtension.Validate(value) != nil {
-		return nil, []runtimecatalogcmd.Diagnostic{diagnostic(source.ID, runtimecatalogcmd.DiagnosticSeverityError, runtimecatalogcmd.DiagnosticExtensionInvalid, nil)}
+	if json.Unmarshal(raw, &value) != nil || schema == nil || schema.Validate(value) != nil {
+		return invalid()
 	}
-	var extension baldaCommandExtension
+	var extension baldaExtensionDocument
 	if json.Unmarshal(raw, &extension) != nil {
-		return nil, []runtimecatalogcmd.Diagnostic{diagnostic(source.ID, runtimecatalogcmd.DiagnosticSeverityError, runtimecatalogcmd.DiagnosticExtensionInvalid, nil)}
+		return invalid()
 	}
 	seen := make(map[string]struct{}, len(extension.Commands))
 	commands := make([]runtimecatalogcmd.CommandDescriptor, 0, len(extension.Commands))
 	for _, rawCommand := range extension.Commands {
 		var command struct{ Name, Description, Instruction string }
 		if json.Unmarshal(rawCommand, &command) != nil {
-			return nil, []runtimecatalogcmd.Diagnostic{diagnostic(source.ID, runtimecatalogcmd.DiagnosticSeverityError, runtimecatalogcmd.DiagnosticExtensionInvalid, nil)}
+			return invalid()
 		}
 		name := strings.ToLower(strings.TrimSpace(command.Name))
 		description := strings.TrimSpace(command.Description)
 		instruction := strings.TrimSpace(command.Instruction)
 		if command.Name != name || strings.Contains(name, "--") || command.Description != description || command.Instruction != instruction {
-			return nil, []runtimecatalogcmd.Diagnostic{diagnostic(source.ID, runtimecatalogcmd.DiagnosticSeverityError, runtimecatalogcmd.DiagnosticExtensionInvalid, nil)}
+			return invalid()
 		}
 		if _, ok := seen[name]; ok {
-			return nil, []runtimecatalogcmd.Diagnostic{diagnostic(source.ID, runtimecatalogcmd.DiagnosticSeverityError, runtimecatalogcmd.DiagnosticExtensionInvalid, nil)}
+			return invalid()
 		}
 		seen[name] = struct{}{}
 		id := runtimecatalogcmd.ContributionID{Source: source.ID, Kind: runtimecatalogcmd.ContributionKindCommand, Name: name}
 		commands = append(commands, runtimecatalogcmd.CommandDescriptor{ID: id, Revision: source.Revision, Name: name, Description: description, Instruction: instruction, Advertised: true})
 	}
-	return commands, nil
+	if version.SchemaVersion == 1 {
+		return commands, nil, nil
+	}
+	hooks := make([]runtimecatalogcmd.HookDescriptor, 0, len(extension.Hooks))
+	seen = make(map[string]struct{}, len(extension.Hooks))
+	for _, rawHook := range extension.Hooks {
+		var hook struct {
+			Name, Description, Event, Executable, Matcher string
+			Args                                          []string
+			Providers                                     []string
+			TimeoutSeconds                                int `json:"timeout_seconds"`
+		}
+		if json.Unmarshal(rawHook, &hook) != nil {
+			return invalid()
+		}
+		name := strings.TrimSpace(hook.Name)
+		description := strings.TrimSpace(hook.Description)
+		executable := filepath.ToSlash(strings.TrimSpace(hook.Executable))
+		if hook.Name != name || hook.Description != description || hook.Executable != executable || strings.ContainsRune(description, 0) || strings.ContainsRune(hook.Matcher, 0) || !validHookExecutable(tree, executable) {
+			return invalid()
+		}
+		if _, ok := seen[name]; ok {
+			return invalid()
+		}
+		seen[name] = struct{}{}
+		if _, err := regexp.Compile(hook.Matcher); err != nil {
+			return invalid()
+		}
+		for _, arg := range hook.Args {
+			if strings.ContainsRune(arg, 0) {
+				return invalid()
+			}
+		}
+		providers := append([]string(nil), hook.Providers...)
+		for _, provider := range providers {
+			if strings.TrimSpace(provider) != provider || strings.ContainsRune(provider, 0) {
+				return invalid()
+			}
+		}
+		sort.Strings(providers)
+		id := runtimecatalogcmd.ContributionID{Source: source.ID, Kind: runtimecatalogcmd.ContributionKindHook, Name: name}
+		hooks = append(hooks, runtimecatalogcmd.HookDescriptor{
+			ID: id, Revision: source.Revision, Name: name, Description: description,
+			Event: hook.Event, Executable: executable, Args: append([]string(nil), hook.Args...),
+			Matcher: hook.Matcher, Providers: providers, TimeoutSeconds: hook.TimeoutSeconds,
+		})
+	}
+	return commands, hooks, nil
 }
 
-func compileBaldaExtensionSchema() (*jsonschema.Schema, error) {
+func validHookExecutable(tree capturedTree, executable string) bool {
+	if !validRelativeRef(executable) || filepath.ToSlash(filepath.Clean(executable)) != executable || strings.ContainsRune(executable, 0) || strings.Contains(executable, `\`) {
+		return false
+	}
+	if _, linked := tree.links[executable]; linked {
+		return false
+	}
+	if _, ok := tree.files[executable]; !ok {
+		return false
+	}
+	mode, ok := tree.modes[executable]
+	if !ok {
+		return false
+	}
+	if runtime.GOOS == windowsGOOS {
+		ext := strings.ToLower(filepath.Ext(executable))
+		return ext == ".exe" || ext == ".com" || ext == ".bat" || ext == windowsCommandExtension
+	}
+	return mode.Perm()&0o111 != 0
+}
+
+func compileBaldaExtensionSchema(id string, schemaJSON []byte) (*jsonschema.Schema, error) {
 	var document any
-	if err := json.Unmarshal(baldaExtensionSchemaJSON, &document); err != nil {
+	if err := json.Unmarshal(schemaJSON, &document); err != nil {
 		return nil, err
 	}
 	compiler := jsonschema.NewCompiler()
-	if err := compiler.AddResource(baldaExtensionSchemaV1, document); err != nil {
+	if err := compiler.AddResource(id, document); err != nil {
 		return nil, err
 	}
-	return compiler.Compile(baldaExtensionSchemaV1)
+	return compiler.Compile(id)
 }
 
 type treeIssue struct {

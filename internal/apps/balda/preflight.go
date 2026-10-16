@@ -304,6 +304,7 @@ func PreflightRuntime(
 					agentfactory.WithAvailabilityIndependentMCP(),
 				)
 			},
+			baldaagent.NewRunnerFactory,
 			baldaagent.NewBuilder,
 			baldaagent.NewRuntimeManager,
 			func(builder *baldaagent.Builder) session.AgentBuilder {

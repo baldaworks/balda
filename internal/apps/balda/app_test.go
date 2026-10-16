@@ -370,7 +370,7 @@ func TestValidateSlackConfig(t *testing.T) {
 			wantError: "agent.events_path",
 		},
 		{
-			name: "slack agent path must differ from slack chat path",
+			name: "slack agent path must differ from legacy slack path",
 			cfg: SlackConfig{
 				Enabled:       true,
 				BotToken:      "xoxb-token",
@@ -417,7 +417,7 @@ func TestValidateSlackConfig(t *testing.T) {
 			wantError: "commands_path",
 		},
 		{
-			name: "valid slack chat",
+			name: "valid legacy slack configuration",
 			cfg: SlackConfig{
 				Enabled:       true,
 				BotToken:      "xoxb-token",

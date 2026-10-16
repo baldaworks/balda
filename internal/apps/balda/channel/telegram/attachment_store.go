@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"net/url"
 	"strings"
@@ -16,10 +15,7 @@ import (
 )
 
 const (
-	// Telegram persistence did not previously impose a Balda-side size policy.
-	// Keep that behavior while the shared store still requires an overflow-safe bound.
-	maxTelegramAttachmentBytes = math.MaxInt64 - 1
-	telegramDownloadTimeout    = 90 * time.Second
+	telegramDownloadTimeout = 90 * time.Second
 )
 
 // BlobStore is the persistence capability consumed by the Telegram adapter.
@@ -35,10 +31,11 @@ type telegramFileDownloader interface {
 type attachmentStore struct {
 	blobs      BlobStore
 	downloader telegramFileDownloader
+	limits     attachment.Limits
 }
 
 // NewAttachmentStore adapts Telegram file retrieval to transport-neutral blob persistence.
-func NewAttachmentStore(blobs BlobStore, tgClient client.ClientWithResponsesInterface, token string) AttachmentStore {
+func NewAttachmentStore(blobs BlobStore, tgClient client.ClientWithResponsesInterface, token string, limits attachment.Limits) AttachmentStore {
 	return &attachmentStore{
 		blobs: blobs,
 		downloader: &telegramDownloader{
@@ -46,6 +43,7 @@ func NewAttachmentStore(blobs BlobStore, tgClient client.ClientWithResponsesInte
 			token:  strings.TrimSpace(token),
 			http:   newTelegramDownloadHTTPClient(),
 		},
+		limits: limits,
 	}
 }
 
@@ -60,13 +58,24 @@ func (s *attachmentStore) PersistTelegram(ctx context.Context, descriptors []att
 	if !s.blobs.Enabled() {
 		return items, nil
 	}
+	if !validTelegramAttachmentLimits(s.limits) {
+		return nil, fmt.Errorf("telegram attachment limits are invalid")
+	}
+	if len(items) > s.limits.MaxFilesPerMessage {
+		return nil, fmt.Errorf("%w: attachment count %d exceeds limit %d", attachment.ErrTooLarge, len(items), s.limits.MaxFilesPerMessage)
+	}
 	if s.downloader == nil {
 		return nil, fmt.Errorf("telegram attachment downloader is unavailable")
 	}
 
 	out := make([]attachment.Descriptor, 0, len(items))
+	var totalBytes int64
 	for _, item := range items {
 		if item.Blob != nil && strings.TrimSpace(item.Blob.Path) != "" {
+			if item.SizeBytes > s.limits.MaxTotalBytes-totalBytes {
+				return nil, fmt.Errorf("%w: aggregate attachment size exceeds limit %d", attachment.ErrTooLarge, s.limits.MaxTotalBytes)
+			}
+			totalBytes += item.SizeBytes
 			out = append(out, item)
 			continue
 		}
@@ -74,18 +83,31 @@ func (s *attachmentStore) PersistTelegram(ctx context.Context, descriptors []att
 			out = append(out, item)
 			continue
 		}
+		remaining := s.limits.MaxTotalBytes - totalBytes
+		maxBytes := min(s.limits.MaxFileBytes, remaining)
+		if maxBytes <= 0 {
+			return nil, fmt.Errorf("%w: aggregate attachment size exceeds limit %d", attachment.ErrTooLarge, s.limits.MaxTotalBytes)
+		}
 		body, err := s.downloader.DownloadFile(ctx, item.FileID)
 		if err != nil {
 			return nil, err
 		}
-		persisted, persistErr := s.blobs.Persist(ctx, item, body, maxTelegramAttachmentBytes)
+		persisted, persistErr := s.blobs.Persist(ctx, item, body, maxBytes)
 		_ = body.Close()
 		if persistErr != nil {
 			return nil, persistErr
 		}
+		if persisted.SizeBytes < 0 || persisted.SizeBytes > maxBytes {
+			return nil, fmt.Errorf("%w: persisted attachment size %d exceeds remaining limit %d", attachment.ErrTooLarge, persisted.SizeBytes, maxBytes)
+		}
+		totalBytes += persisted.SizeBytes
 		out = append(out, persisted)
 	}
 	return attachment.NormalizeList(out), nil
+}
+
+func validTelegramAttachmentLimits(limits attachment.Limits) bool {
+	return limits.MaxFilesPerMessage > 0 && limits.MaxFileBytes > 0 && limits.MaxTotalBytes >= limits.MaxFileBytes
 }
 
 type telegramDownloader struct {
