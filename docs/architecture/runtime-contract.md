@@ -35,12 +35,30 @@ Status: active
   transport. Runtime policy imports no SDK or credential implementation.
   HTTP/SSE startup/publication/inventory perform no upstream discovery and no
   idle retries. Native MCP discovery returns within 10 seconds and calls/reconnect
-  within 120 seconds; ACP initialization and attachment RPCs within 10 seconds, earlier caller
-  deadlines winning. Owned SDK cleanup remains retained after caller return.
+  within 120 seconds; each ACP `session/new` or `session/resume` attachment RPC
+  remains bounded to 10 seconds, earlier caller deadlines winning. Owned SDK
+  cleanup remains retained after caller return.
   Local structural/protection errors fail the exact operation; availability
   never filters acquisition. Normal invocation and equal-binding retry preserve
   snapshot, history, revision and provider identity without remote discovery.
   Failed ADK session restore follows the fresh-session fallback below.
+- Balda owns the app-scoped ACP startup budget through
+  `balda.acp_startup_timeout` / `BALDA_ACP_STARTUP_TIMEOUT`, default `60s`.
+  Configuration validation precedes provider, bundled MCP, and ingress side
+  effects; the resolved positive duration reaches direct, scoped, goal, and
+  preflight factories. This budget covers gate waiting, process launch, and
+  ACP `initialize`, with earlier caller deadlines, cancellation, and shutdown
+  winning. Launch remains invocation-lazy, including after metadata-only
+  restore. A successfully initialized process survives the startup deadline
+  and completed turn context until owner close; this is not a prompt or overall
+  turn timeout. Restart adopts changed configuration without repinning saved
+  capabilities, changing provider identity, or resetting conversation history.
+  Startup failure cleanup allows 200ms graceful exit, then kills the owned
+  immediate child and waits up to 5 seconds independently of the startup budget.
+  A cleanup timeout preserves the startup cause and retains the sole reaper
+  until process wait completes; it does not guarantee an unkillable kernel task
+  can be reaped or supervise a wrapper's descendant process group. See
+  [ACP setting validation and precedence](../reference/configuration.md#acp-startup-timeout).
 - Owned stdio workers are scheduled before startup advances and never join
   handshake readiness. Discovery is bounded to 10 seconds; process exit/failure retries
   after 1/2/4/8/16/30 seconds with a 60-second stable reset. Final reference drain/shutdown cancel

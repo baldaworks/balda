@@ -234,6 +234,14 @@ func loadBaldaCommandConfig(requireChannel bool) (preparedBaldaCommand, error) {
 		return preparedBaldaCommand{}, err
 	}
 	runtimeLoadOpts.Profile = selectedProfile
+	// appconfig discovers env overrides through non-null leaves. Preserve the
+	// nonempty env override when YAML null expresses omission of this setting.
+	if value := os.Getenv("BALDA_ACP_STARTUP_TIMEOUT"); value != "" {
+		doc.Balda.ACPStartupTimeout = value
+	}
+	if _, err := doc.Balda.ResolveACPStartupTimeout(); err != nil {
+		return preparedBaldaCommand{}, err
+	}
 	applyHTTPBasePathEnv(&doc.Balda)
 	if err := applyBaldaLogging(doc.Balda.Logger); err != nil {
 		return preparedBaldaCommand{}, fmt.Errorf("configure balda logging: %w", err)

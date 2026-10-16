@@ -54,6 +54,55 @@ profiles:
       provider: <provider_id>
 ```
 
+### ACP startup timeout
+
+`balda.acp_startup_timeout` sets the ACP startup budget, default `60s`.
+It applies to Balda's ACP providers, including scoped sessions and isolated
+goal agents; hosted providers do not use it. The budget covers waiting for the
+initialization gate, launching the selected process, and its ACP `initialize`
+handshake. It does not bound prompts, complete turns, or a successfully
+initialized process's lifetime.
+
+Values use Go duration syntax, such as `30s`, `2m`, or `500ms`. Surrounding
+whitespace is trimmed. Omitted, empty, whitespace-only, and YAML `null` values
+select `60s`. Explicit `0`, `0s`, negative, malformed, overflowing, or nonzero
+unitless values fail validation before provider, bundled MCP, or ingress
+startup. Every representable positive duration is accepted; there is no
+disable or unbounded sentinel.
+
+Add these settings to the existing `.config/balda/config.yaml`:
+
+```yaml
+balda:
+  acp_startup_timeout: "30s"
+profiles:
+  patient:
+    balda:
+      acp_startup_timeout: "2m"
+```
+
+The file selects `30s`; selecting `--profile patient` selects `2m`. A nonempty
+environment override wins over the selected profile, file, and defaults,
+including when the file value is `null`:
+
+```dotenv
+BALDA_ACP_STARTUP_TIMEOUT=3m
+```
+
+This override selects `3m` regardless of profile selection. An empty
+`BALDA_ACP_STARTUP_TIMEOUT` is ignored, preserving the underlying profile,
+file, or default value. A nonempty whitespace-only override selects the `60s`
+default. Restart Balda to adopt a changed value; the budget is not persisted
+in session state and does not change the selected backend, command arguments,
+saved history, or capability pin.
+
+Startup and metadata-only session restore do not launch ACP. First invocation
+launches it lazily; successful initialization allows reuse on later turns.
+Earlier caller deadlines, cancellation, and application shutdown interrupt a
+pending startup. The healthy process outlives the startup deadline and the
+completed turn's context, until its owning runtime is closed. See the
+[operation bounds and cleanup policy](#mcp-availability-and-deadlines).
+
 ### Shared HTTP listener and public URLs
 
 `balda.http.listen_addr` is the local `host:port` bind for all HTTP-facing
@@ -324,16 +373,29 @@ remains an error.
 | --- | --- |
 | Native ADK MCP initialization and complete tool discovery | 10 seconds |
 | Native ADK MCP tool call, including reconnect | 120 seconds |
-| ACP process initialization and each new/resume attachment RPC | 10 seconds |
+| ACP gate waiting, process launch, and initialization | `balda.acp_startup_timeout`, default 60 seconds |
+| Each ACP `session/new` or `session/resume` attachment RPC | 10 seconds |
 | Explicit candidate probe discovery | 10 seconds |
 | Balda-owned stdio handshake and discovery | 10 seconds |
-| Owned stdio graceful stop | 5 seconds, then forced termination with reaping retained by its owner |
+| Balda-owned MCP stdio graceful stop | 5 seconds, then forced termination with reaping retained by its owner |
+| ACP immediate-child cleanup | Up to 200ms graceful exit, then forced termination and up to 5 seconds waiting for cleanup |
 
-Earlier caller cancellation or deadlines win. These bounds cover MCP setup and
-tool operations, not the lifetime of a model prompt or conversation. Slow servers
+Earlier caller cancellation or deadlines win. These bounds cover ACP startup,
+session attachment, MCP setup and tool operations, not the lifetime of a model
+prompt, complete turn, or conversation. Slow servers
 can fail an invocation under these limits. Native SDK cancellation cleanup stays
 owned after a caller returns; concurrent callers wait within their own deadlines
 without starting extra setup workers or replaying an ambiguous tool call.
+
+ACP startup timeout, cancellation, or shutdown triggers cleanup of the owned
+immediate child.
+Cleanup has its own finite wait, independent of the startup budget, so returning
+an error can take that additional time. If cleanup has not finished after the
+force-kill wait, the adapter reports a cleanup-timeout error alongside the
+startup cause and retains its sole reaper until process wait completes. This
+does not guarantee that an unkillable kernel task can be reaped, and does not
+extend ownership to a wrapper's descendant process group. ACP cleanup is
+separate from Balda's MCP stdio supervision below.
 
 Balda schedules owned stdio during startup without joining readiness. Launch
 failure, failed discovery and process exit retry after 1, 2, 4, 8, 16 and at most

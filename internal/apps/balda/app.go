@@ -154,6 +154,10 @@ func Module(
 	runtimeLoadOpts runtimeconfig.RuntimeLoadOptions,
 	defaultsYAML []byte,
 ) fx.Option {
+	acpStartupTimeout, err := cfg.Balda.ResolveACPStartupTimeout()
+	if err != nil {
+		return fx.Module("balda", fx.Error(err))
+	}
 	// Convert balda config to tgbotkit config.
 	tgbotkitCfg := tgbotkit.Config{
 		Token: cfg.Balda.Telegram.Token,
@@ -314,7 +318,7 @@ func Module(
 		cfg.Balda.SessionMemory,
 		cfg.Balda.Provider,
 		normaCfg.Providers,
-		agentfactory.New(normaCfg.Providers, mcpReg),
+		agentfactory.New(normaCfg.Providers, mcpReg, agentfactory.WithACPInitializeTimeout(acpStartupTimeout)),
 	)
 	if err != nil {
 		return fx.Module("balda", fx.Error(err))
@@ -906,6 +910,7 @@ func Module(
 				reg,
 				agentfactory.WithPermissionHandler(baldaagent.NewPermissionHandler(reviewer, logger)),
 				agentfactory.WithAvailabilityIndependentMCP(),
+				agentfactory.WithACPInitializeTimeout(acpStartupTimeout),
 			)
 		}),
 		fx.Provide(func(lifecycle fx.Lifecycle, runner *hooks.Runner, provider baldastate.Provider) (*hooknativeapp.Service, error) {
@@ -922,7 +927,8 @@ func Module(
 		}),
 		fx.Provide(func(reg *mcpregistry.MapRegistry, reviewer *permissions.Service, native *hooknativeapp.Service) baldaagent.ScopedRuntimeFactory {
 			factory := catalogapp.NewProviderFactory(normaCfg.Providers, reg,
-				agentfactory.WithPermissionHandler(baldaagent.NewPermissionHandler(reviewer, logger)))
+				agentfactory.WithPermissionHandler(baldaagent.NewPermissionHandler(reviewer, logger)),
+				agentfactory.WithACPInitializeTimeout(acpStartupTimeout))
 			factory.ConfigureNativeHooks(native)
 			return factory
 		}),

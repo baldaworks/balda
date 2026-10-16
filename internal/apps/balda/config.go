@@ -24,6 +24,7 @@ type Config struct {
 // BaldaConfig holds the balda-specific configuration.
 type BaldaConfig struct {
 	Provider            string                    `mapstructure:"provider"`
+	ACPStartupTimeout   string                    `mapstructure:"acp_startup_timeout"`
 	HTTP                HTTPConfig                `mapstructure:"http"`
 	Telegram            TelegramConfig            `mapstructure:"telegram"`
 	Zulip               ZulipConfig               `mapstructure:"zulip"`
