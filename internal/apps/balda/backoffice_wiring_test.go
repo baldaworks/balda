@@ -293,7 +293,7 @@ func TestBackofficeRuntimeConfigUsesSharedDatabaseAndSafeCapabilities(t *testing
 
 func TestBackofficeRuntimeConfigProjectsOperationalConfig(t *testing.T) {
 	t.Parallel()
-	basePath := "/balda"
+	basePath := sharedTestBasePath
 	runtimeCfg := appconfig.RuntimeConfig{Providers: map[string]agentconfig.Config{
 		"primary": {
 			Type:     agentconfig.AgentTypeCodexACP,
