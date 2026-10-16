@@ -6,6 +6,9 @@ balda:
   # Provider id from runtime providers registry used for Balda sessions.
   provider: ""
 
+  # ACP initialization budget; does not change session attachment or MCP deadlines.
+  acp_startup_timeout: "60s"
+
   # Agent tool permission policy: allow_all, ask, or deny_all.
   # allow_all preserves the historical behavior; production deployments should prefer ask.
   permissions:
