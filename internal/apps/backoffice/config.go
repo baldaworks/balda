@@ -176,7 +176,7 @@ type ZulipWebhookConfig struct {
 	Path       string `mapstructure:"path"`
 }
 
-// SlackConfig contains only chat and agent capability information.
+// SlackConfig contains compatibility and Slack Agent capability information.
 type SlackConfig struct {
 	Enabled    bool             `mapstructure:"enabled"`
 	ListenAddr string           `mapstructure:"listen_addr"`

@@ -44,6 +44,21 @@ func buildBaldaInitDocument(workingDir string) (map[string]any, []string, error)
 			baldaSection["mcp_servers"] = []any{}
 		}
 	}
+	slackSection, ok := toStringAnyMap(baldaSection["slack"])
+	if !ok {
+		return nil, nil, fmt.Errorf("balda.slack section is missing from generated config")
+	}
+	for _, key := range []string{"enabled", "listen_addr", "events_path", "commands_path"} {
+		delete(slackSection, key)
+	}
+	slackAgentSection, ok := toStringAnyMap(slackSection["agent"])
+	if !ok {
+		return nil, nil, fmt.Errorf("balda.slack.agent section is missing from generated config")
+	}
+	delete(slackAgentSection, "listen_addr")
+	delete(slackAgentSection, "events_path")
+	slackSection["agent"] = slackAgentSection
+	baldaSection["slack"] = slackSection
 	baldaBaseBranch, err := baldaInitCurrentBranch(workingDir)
 	if err != nil {
 		baldaBaseBranch = ""

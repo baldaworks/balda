@@ -229,7 +229,7 @@ balda:
 	}
 
 	if !doc.Balda.Slack.Enabled || !doc.Balda.Slack.Agent.Enabled {
-		t.Fatal("Slack and Slack Agent enablement env overrides were not loaded")
+		t.Fatal("legacy Slack and Slack Agent enablement env overrides were not loaded")
 	}
 	if doc.Balda.Slack.BotToken != "xoxb-test" || doc.Balda.Slack.SigningSecret != "signing-secret" {
 		t.Fatalf("slack credentials were not loaded from env")
