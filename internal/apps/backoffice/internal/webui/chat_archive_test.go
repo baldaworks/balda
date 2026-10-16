@@ -34,3 +34,10 @@ func TestChatArchivePreservesInventoryWindow(t *testing.T) {
 		t.Fatalf("back=%s older=%s", detail.BackPath, detail.OlderPath)
 	}
 }
+
+func TestChatArchiveReadableLabels(t *testing.T) {
+	view := ProjectChatInventory(chatarchivecmd.Inventory{Rows: []chatarchivecmd.Summary{{Session: chatarchivecmd.Session{ID: "synthetic", Status: chatarchivecmd.StatusActive, Location: chatarchivecmd.Location{Channel: "slackagent"}}}}}, chatarchivecmd.BrowseQuery{})
+	if view.Rows[0].Channel != "Slack" || view.Rows[0].Status != "Active" {
+		t.Fatalf("channel/status = %q/%q, want Slack/Active", view.Rows[0].Channel, view.Rows[0].Status)
+	}
+}

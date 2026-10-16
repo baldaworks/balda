@@ -1178,8 +1178,8 @@ close retains the earlier lifetime and its chat; exact durable restore continues
 that same lifetime. Channel, location, locator, audience and root/topic/thread
 are historical snapshots. Personal topics remain personal; group transcripts
 show each actual speaker rather than assigning one group owner. Missing names
-and location metadata stay explicitly unknown. **Active lifetime** describes the
-stored lifecycle, not provider connectivity. Pending and uncertain records make
+and location metadata stay explicitly unknown. **Active** describes the
+stored session status, not provider connectivity. Pending and uncertain records make
 no claim of successful activation. **Partial coverage** marks adopted sessions;
 messages before capture began are not backfilled.
 

@@ -10,6 +10,9 @@ import (
 
 const archiveUnknown = "Unknown"
 const archiveUserRole = "user"
+const archiveTelegram = "telegram"
+const archiveSlack = "slackagent"
+const archiveMattermost = "mattermost"
 
 // ChatArchiveView allowlists browser-visible historical metadata and chat text.
 type ChatArchiveView struct {
@@ -61,6 +64,21 @@ func archiveSpeaker(s chatarchivecmd.Speaker) string {
 	}
 	return "Unknown speaker"
 }
+func archiveChannelLabel(channel string) string {
+	switch channel {
+	case archiveTelegram:
+		return "Telegram"
+	case archiveSlack:
+		return "Slack"
+	case "zulip":
+		return "Zulip"
+	case archiveMattermost:
+		return "Mattermost"
+	default:
+		return knownArchiveLabel(channel)
+	}
+}
+
 func archiveRow(summary chatarchivecmd.Summary, query string) ChatSessionRow {
 	s := summary.Session
 	activity := s.ObservedAt
@@ -70,13 +88,13 @@ func archiveRow(summary chatarchivecmd.Summary, query string) ChatSessionRow {
 	status := archiveUnknown
 	switch s.Status {
 	case chatarchivecmd.StatusActive:
-		status = "Active lifetime"
+		status = "Active"
 	case chatarchivecmd.StatusEnded:
 		status = "Archived"
 	case chatarchivecmd.StatusPending:
 		status = "Activation pending"
 	case chatarchivecmd.StatusUncertain:
-		status = "Lifecycle uncertain"
+		status = "Status uncertain"
 	}
 	person := "Multiple or unknown speakers"
 	if s.Location.Audience == chatarchivecmd.AudiencePersonal {
@@ -89,7 +107,7 @@ func archiveRow(summary chatarchivecmd.Summary, query string) ChatSessionRow {
 	if label == "" {
 		label = "Unnamed session"
 	}
-	return ChatSessionRow{Label: label, Channel: knownArchiveLabel(s.Location.Channel), Locator: knownArchiveLabel(s.Location.Locator), Title: knownArchiveLabel(s.Location.Title), Audience: knownArchiveLabel(s.Location.Audience), Subdivision: knownArchiveLabel(s.Location.Subdivision), SubdivisionLabel: s.Location.SubdivisionLabel, Person: person, Status: status, EndReason: s.EndReason, Started: archiveTimeLabel(s.StartedAt), Activity: archiveTimeLabel(activity), Ended: archiveTimeLabel(s.EndedAt), CoverageStart: archiveTimeLabel(s.CoverageStart), DetailPath: "/chat-sessions/" + url.PathEscape(s.ID) + "?" + query, MessageCount: summary.MessageCount, Partial: s.Partial}
+	return ChatSessionRow{Label: label, Channel: archiveChannelLabel(s.Location.Channel), Locator: knownArchiveLabel(s.Location.Locator), Title: knownArchiveLabel(s.Location.Title), Audience: knownArchiveLabel(s.Location.Audience), Subdivision: knownArchiveLabel(s.Location.Subdivision), SubdivisionLabel: s.Location.SubdivisionLabel, Person: person, Status: status, EndReason: s.EndReason, Started: archiveTimeLabel(s.StartedAt), Activity: archiveTimeLabel(activity), Ended: archiveTimeLabel(s.EndedAt), CoverageStart: archiveTimeLabel(s.CoverageStart), DetailPath: "/chat-sessions/" + url.PathEscape(s.ID) + "?" + query, MessageCount: summary.MessageCount, Partial: s.Partial}
 }
 func archiveQuery(q chatarchivecmd.BrowseQuery) url.Values {
 	v := url.Values{}

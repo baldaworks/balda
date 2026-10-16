@@ -461,3 +461,33 @@ pending publication and recovery without source refetch. Controller checkpoints
 verify actual durable selection/catalog and unchanged pinned-session metadata.
 Capture only after Source clears and outside credential forms; inspect the
 actual screenshots and record results separately from synthetic layout proof.
+
+## Chat session archive layout gate
+
+Run the synthetic gate before the authenticated archive application gate:
+
+```bash
+BALDA_BACKOFFICE_BROWSER_TEST=1 BALDA_CHAT_ARCHIVE_LAYOUT_SCREENSHOTS=/tmp/balda-chat-archive-layout go test ./internal/apps/backoffice -run '^TestChatArchiveLayoutBrowser$' -count=1 -v
+```
+
+The gallery links **Chat sessions** inventory, reset-separated before/after
+lifetimes, closed, group, partial, pending, uncertain, unknown, empty transcript,
+long/multiline escaped text, empty inventory and actual 400/403/404/503 previews.
+All use the production archive projections/templates and embedded assets.
+Synthetic identifiers and attachment labels are deliberately invalid; the QA
+handler has no live archive reader and accepts GET/HEAD only.
+
+Review root and `/balda/backoffice` at 1440×900, 1024×768, 768×1024 and
+390×844. Check Workspace sidebar parent, native and HTMX inventory/detail/back,
+previous/next sessions, older inventory and message windows, preserved filters
+and inventory position, private history and fragment status, keyboard focus,
+mobile navigation, top-bar alignment, contained table scrolling, readable long
+names/locators/chat/attachments, loaded assets and browser errors.
+Inspect actual images under `<directory>/<root|balda-backoffice>/<viewport>/`,
+particularly `chat-sessions.png`, `chat-sessions-long.png`,
+`chat-sessions-group.png`, and `older-messages-htmx.png`. The fixture matrix and
+screenshots prove synthetic template/layout behavior; real administrator
+login, current authority, storage, lifecycle and passive browsing remain the
+separate authenticated application/integration gate. Record severity-ranked
+findings, exact commands, timestamps and screenshot paths in Beads. Repair and
+rerun this gate before starting the application gate.
