@@ -428,6 +428,10 @@ balda:
 Common settings:
 
 - `balda.provider` — which configured provider runtime to use
+- `balda.acp_startup_timeout` — ACP initialization budget (default `60s`),
+  configurable with `BALDA_ACP_STARTUP_TIMEOUT`. Use a positive Go duration,
+  such as `30s` or `2m`, and restart to apply it. Launch stays lazy; session
+  attachment and MCP deadlines remain separate. See [ACP startup timeout](docs/reference/configuration.md#acp-startup-timeout).
 - `balda.nats.bounded_streams` — opt in to per-stream storage budgets (default
   `false`; environment override `BALDA_NATS_BOUNDED_STREAMS`). Back up NATS and
   check retained stream sizes before enabling it; startup refuses a budget below
