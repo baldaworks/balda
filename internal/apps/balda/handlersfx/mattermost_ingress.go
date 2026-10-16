@@ -129,6 +129,7 @@ func mattermostChatRequest(msg mattermost.InboundMessage, receivedAt time.Time) 
 	}
 	request := chatapp.Request{
 		ID:                inboundID,
+		OriginalInput:     mattermost.NormalizeInboundMessage(msg, receivedAt).OriginalInput,
 		Text:              strings.TrimSpace(msg.Text),
 		Locator:           msg.Locator,
 		ProviderMessageID: postID,

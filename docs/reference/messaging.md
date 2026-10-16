@@ -78,3 +78,23 @@ search/MCP capabilities do not participate in this ingress path.
 
 See [Slack Agent setup](../slack.md) for scopes, subscriptions, configuration, and
 sandbox validation.
+
+## Original conversational input snapshots
+
+Chat transports preserve current human input separately from the model prompt.
+The snapshot retains original text, stable inbound identity, the actual known
+speaker, canonical public location, and independent audience and subdivision
+metadata. Unknown names/classifications stay unknown. Telegram captures before
+attachment persistence and quote/forward enrichment; Slack captures before
+current-file ingestion and historical thread hydration; Zulip uses raw webhook
+message data before mention cleanup; Mattermost preserves the original post and
+its D/G channel distinction. A personal conversation can also have a topic or
+thread. Group input keeps the individual sender rather than the runtime owner.
+
+Attachment snapshots contain filename/kind labels only. Local paths, private
+URLs, file bytes and hydrated historical attachments remain outside them.
+Known channel titles and message-sender names are copied from trusted inbound
+metadata, with no extra provider lookup. Subsequent model prompt enrichment
+uses its existing text and attachment fields and does not modify the original
+snapshot. Recording, lifecycle attribution and replay are owned by the archive
+application boundary rather than these concrete transport adapters.

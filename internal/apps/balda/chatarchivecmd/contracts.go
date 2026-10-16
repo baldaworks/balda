@@ -120,3 +120,14 @@ const (
 	ReadyStateKey   = "balda_archive_ready"
 	BindingStateKey = "balda_archive_binding"
 )
+
+// Audience and subdivision values describe independent location dimensions.
+const (
+	AudienceUnknown    = "unknown"
+	AudiencePersonal   = "personal"
+	AudienceGroup      = "group"
+	SubdivisionUnknown = "unknown"
+	SubdivisionRoot    = "root"
+	SubdivisionTopic   = "topic"
+	SubdivisionThread  = "thread"
+)

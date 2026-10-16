@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
@@ -77,6 +78,9 @@ type Adapter struct {
 
 // MessageContext is the balda-facing Telegram message shape.
 type MessageContext struct {
+	OriginalInput    *chatarchivecmd.Input
+	ChatType         string
+	ChatTitle        string
 	Locator          deliverycmd.Locator
 	ChatID           int64
 	TopicID          int
@@ -332,6 +336,8 @@ func (a *Adapter) MessageContextFromEvent(event *events.MessageEvent) (MessageCo
 
 	return MessageContext{
 		Locator:          NewLocator(event.Message.Chat.Id, topicID),
+		ChatType:         event.Message.Chat.Type,
+		ChatTitle:        telegramChatTitle(event.Message.Chat.Title),
 		ChatID:           event.Message.Chat.Id,
 		TopicID:          topicID,
 		MessageID:        event.Message.MessageId,

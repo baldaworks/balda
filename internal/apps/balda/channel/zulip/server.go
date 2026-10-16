@@ -321,14 +321,15 @@ func (s *Server) processMessage(ctx context.Context, payload WebhookPayload) (tu
 
 	if s.processor != nil {
 		return s.processor.ProcessInbound(ctx, InboundMessage{
-			BotEmail:    payload.BotEmail,
-			Locator:     locator,
-			MessageID:   payload.Message.ID,
-			SenderID:    senderID,
-			SenderEmail: payload.Message.SenderEmail,
-			Text:        text,
-			Direct:      isDM,
-			ReceivedAt:  time.Now(),
+			OriginalInput: originalInputFromWebhook(payload),
+			BotEmail:      payload.BotEmail,
+			Locator:       locator,
+			MessageID:     payload.Message.ID,
+			SenderID:      senderID,
+			SenderEmail:   payload.Message.SenderEmail,
+			Text:          text,
+			Direct:        isDM,
+			ReceivedAt:    time.Now(),
 		})
 	}
 

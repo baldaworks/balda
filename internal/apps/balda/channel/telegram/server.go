@@ -119,6 +119,7 @@ func (s *Server) HandleMessage(ctx context.Context, event *events.MessageEvent) 
 }
 
 func (s *Server) handleAcceptedMessage(ctx context.Context, messageCtx MessageContext) error {
+	messageCtx.OriginalInput = originalInput(messageCtx)
 	if s.attachmentStore != nil && len(messageCtx.Attachments) > 0 {
 		persisted, err := s.attachmentStore.PersistTelegram(ctx, messageCtx.Attachments)
 		if err != nil {

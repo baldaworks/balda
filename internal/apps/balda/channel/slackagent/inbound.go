@@ -47,6 +47,7 @@ func DecodeEventEnvelope(body []byte) (EventEnvelope, error) {
 }
 
 func normalizeRawEnvelope(raw rawEnvelope) EventEnvelope {
+	originalText := raw.Event.Text
 	teamID := strings.TrimSpace(raw.TeamID)
 	rootTS := firstNonEmpty(raw.Event.ThreadTS, raw.Event.TS)
 	conversation := ConversationRef{
@@ -72,6 +73,7 @@ func normalizeRawEnvelope(raw rawEnvelope) EventEnvelope {
 		Type:      strings.TrimSpace(raw.Type),
 		Challenge: raw.Challenge,
 		Event: Event{
+			OriginalText:       &originalText,
 			EventID:            strings.TrimSpace(raw.EventID),
 			EventType:          strings.TrimSpace(raw.Event.Type),
 			UserID:             strings.TrimSpace(raw.Event.User),

@@ -8,6 +8,7 @@ import (
 
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/locatorref"
@@ -89,6 +90,8 @@ type InboundSettlement struct {
 
 // NormalizedInbound represents one logical message after provider grouping.
 type NormalizedInbound struct {
+	// OriginalInput is captured before transport and runtime prompt enrichment.
+	OriginalInput     *chatarchivecmd.Input      `json:"original_input,omitempty"`
 	ID                InboundID                  `json:"id"`
 	Text              string                     `json:"text"`
 	Attachments       []attachment.Descriptor    `json:"attachments,omitempty"`

@@ -522,16 +522,19 @@ func (s *Ingress) processPosted(ctx context.Context, data PostedData, post Post)
 	if s.processor == nil {
 		return
 	}
+	original := originalMattermostInput(locator, post, strings.TrimSpace(data.SenderName), postTime(post))
+	original.Location.Title = data.ChannelDisplayName
 	s.processInboundWithRetry(ctx, post.ID, InboundMessage{
-		Locator:    locator,
-		MessageID:  ParsePostID(post.ID),
-		PostID:     post.ID,
-		RootID:     post.RootID,
-		SenderID:   post.UserID,
-		SenderName: strings.TrimSpace(data.SenderName),
-		Text:       text,
-		Direct:     direct,
-		ReceivedAt: postTime(post),
+		OriginalInput: original,
+		Locator:       locator,
+		MessageID:     ParsePostID(post.ID),
+		PostID:        post.ID,
+		RootID:        post.RootID,
+		SenderID:      post.UserID,
+		SenderName:    strings.TrimSpace(data.SenderName),
+		Text:          text,
+		Direct:        direct,
+		ReceivedAt:    postTime(post),
 	})
 }
 

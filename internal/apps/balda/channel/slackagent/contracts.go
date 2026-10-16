@@ -22,6 +22,8 @@ type MessageRef struct {
 
 // Event is the normalized inbound contract for slackagent ingress.
 type Event struct {
+	// OriginalText preserves the received human text before transport normalization.
+	OriginalText       *string         `json:"original_text,omitempty"`
 	EventID            string          `json:"event_id,omitempty"`
 	EventType          string          `json:"event_type,omitempty"`
 	UserID             string          `json:"user_id,omitempty"`

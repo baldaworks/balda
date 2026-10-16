@@ -676,6 +676,7 @@ deps:
 
   contracts:
     mayDependOn:
+      - chat_archive_contracts
       - foundation
       - contracts
       - neutral_registry
@@ -1175,6 +1176,7 @@ deps:
 
   ingress_wiring:
     mayDependOn:
+      - chat_archive_contracts
       - memory_policy
       - auth_payload
       - contracts
@@ -1244,6 +1246,7 @@ deps:
 
   telegram_transport:
     mayDependOn:
+      - chat_archive_contracts
       - auth_payload
       - foundation
       - contracts
@@ -1268,6 +1271,7 @@ deps:
 
   zulip_transport:
     mayDependOn:
+      - chat_archive_contracts
       - foundation
       - contracts
       - neutral_registry
@@ -1290,6 +1294,7 @@ deps:
 
   slackagent_transport:
     mayDependOn:
+      - chat_archive_contracts
       - auth_payload
       - user_contracts
       - foundation
@@ -1313,6 +1318,7 @@ deps:
 
   mattermost_transport:
     mayDependOn:
+      - chat_archive_contracts
       - auth_payload
       - foundation
       - contracts

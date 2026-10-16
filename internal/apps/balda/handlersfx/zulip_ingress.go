@@ -280,7 +280,7 @@ func (h *zulipInboundHandler) ProcessInbound(ctx context.Context, msg zulip.Inbo
 		}
 	}
 
-	inbound := zulip.NormalizeInbound(msg.Locator, msg.MessageID, zulipUserID(msg.SenderID), msg.Text, msg.Direct, reqAt)
+	inbound := zulip.NormalizeInboundMessage(msg, reqAt)
 	service, err := ingressapp.NewWithLogger(
 		ingressapp.AuthorizerFunc(h.authorizeZulipInbound),
 		ingressapp.SessionPreparerFunc(h.prepareZulipSession),
