@@ -18,6 +18,7 @@ const (
 	TemplateWebAuthn    = "webauthn"
 	TemplateLogin       = "login"
 	TemplateOverview    = "overview"
+	TemplateAgent       = "agent"
 	TemplateAccess      = "access"
 	TemplateAccount     = "account"
 	TemplateAudit       = "audit"
@@ -41,7 +42,7 @@ const (
 
 var templateFiles = map[string]string{
 	TemplateWebAuthn: "templates/webauthn.tmpl",
-	TemplateLogin:    "templates/login.tmpl", TemplateOverview: "templates/overview.tmpl",
+	TemplateLogin:    "templates/login.tmpl", TemplateOverview: "templates/overview.tmpl", TemplateAgent: "templates/agent.tmpl",
 	TemplateAccess: "templates/access.tmpl", TemplateAccount: "templates/account.tmpl",
 	TemplateAudit: "templates/audit.tmpl", TemplateError: "templates/error.tmpl",
 	TemplateRefresh: "templates/refresh.tmpl", TemplatePassword: "templates/password.tmpl",

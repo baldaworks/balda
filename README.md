@@ -64,8 +64,13 @@ removing the user's other bindings or browser account.
 Use **Older active sessions** to reach further sessions, or **End session**
 to revoke one; ending the current session requires confirmation. **Access**
 lets administrators find users and manage their sessions and bindings. **Audit**
-shows recent security events with filters. The **Overview** integration cards
-show configuration, not a live health check. See the
+shows recent security events with filters. **Agent** shows the effective
+provider, selected profile, model, reasoning effort, and global instruction as
+read-only startup configuration. The **Overview** integration cards show
+operational channel settings and canonical callback locations, not a live
+health check. A callback is shown as a full URL only when
+`balda.http.base_url` is explicit; otherwise it is shown as a root-relative
+`/gateway/...` path. See the
 [Backoffice reference](docs/reference/backoffice.md) for session and security details.
 
 Administrators can open **Workspace → Chat sessions** to browse retained user/agent

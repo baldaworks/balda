@@ -100,11 +100,16 @@ listen-address fields are ignored for binding once the shared listener is in
 use; the old Backoffice address fields do not create a separate browser mount.
 Every generic webhook derives its callback path from the current shared prefix
 and immutable route name; changing `base_path` moves all route addresses after
-restart without rewriting route rows. For generic webhook display, only an
+restart without rewriting route rows. For Backoffice callback display, only an
 explicit `balda.http.base_url` supplies the public origin. If it is omitted,
-Backoffice shows the canonical root-relative callback path and an explanation,
-even when browser authentication uses a fallback `balda.backoffice.public_url`.
-Chat transport callbacks use only their canonical `/gateway` paths.
+generic webhook rows and Overview channel cards show canonical root-relative
+callback paths, even when browser authentication uses a fallback
+`balda.backoffice.public_url`. Chat transport callbacks use only their canonical
+`/gateway` paths. Overview also shows Telegram formatting mode, Slack Agent
+private-channel, streaming and suggested-prompt flags, and the Mattermost server
+URL with userinfo, query and fragment removed. Workspace → Agent shows the
+effective provider, selected profile, model, reasoning effort and global
+instruction read-only; configuration changes still require a restart.
 
 The live asus ingress, deployment, and Telegram/Slack/external callback
 registrations are unchanged by this Story. The table is an application URL
