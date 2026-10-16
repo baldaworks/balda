@@ -18,7 +18,8 @@ type diagnosticTarget struct {
 }
 
 // DiagnoseCurrent resolves and checks only the authoritative current
-// definition identified by connectionID. The diagnostic result is ephemeral.
+// definition identified by connectionID. The last secret-free result is kept
+// for the exact revision for the lifetime of this Definitions instance.
 func (s *Definitions) DiagnoseCurrent(ctx context.Context, connectionID string, authority mcpcmd.Authority) (mcpcmd.DiagnosticResult, error) {
 	if err := ctx.Err(); err != nil {
 		return mcpcmd.DiagnosticResult{}, err
@@ -32,14 +33,36 @@ func (s *Definitions) DiagnoseCurrent(ctx context.Context, connectionID string, 
 	if err != nil {
 		return mcpcmd.DiagnosticResult{}, err
 	}
+	var result mcpcmd.DiagnosticResult
 	if target.values == nil {
-		return s.diagnostic.DiagnoseMCP(ctx, target.revision), nil
+		result = s.diagnostic.DiagnoseMCP(ctx, target.revision)
+	} else {
+		diagnostic, ok := s.diagnostic.(transientDiagnosticProbe)
+		if !ok {
+			return mcpcmd.DiagnosticResult{}, mcpcmd.ErrUnavailable
+		}
+		result = diagnostic.DiagnoseMCPWithValues(ctx, target.revision, *target.values)
 	}
-	diagnostic, ok := s.diagnostic.(transientDiagnosticProbe)
-	if !ok {
-		return mcpcmd.DiagnosticResult{}, mcpcmd.ErrUnavailable
+	result.CheckedAt = time.Now().UTC()
+	s.diagnosticMu.Lock()
+	s.diagnostics[connectionID] = diagnosticObservation{revisionID: target.revision.ID, result: result}
+	s.diagnosticMu.Unlock()
+	return result, nil
+}
+
+func (s *Definitions) attachLastDiagnostic(item *mcpcmd.Item) {
+	revisionID := item.Connection.CurrentRevisionID
+	if item.Connection.Source == mcpcmd.SourceConfig {
+		revisionID = item.Definition.ConfigRevision
 	}
-	return diagnostic.DiagnoseMCPWithValues(ctx, target.revision, *target.values), nil
+	s.diagnosticMu.RLock()
+	observation, ok := s.diagnostics[item.Connection.ID]
+	s.diagnosticMu.RUnlock()
+	if !ok || observation.revisionID != revisionID {
+		return
+	}
+	result := observation.result
+	item.LastDiagnostic = &result
 }
 
 func (s *Definitions) currentDiagnosticTarget(ctx context.Context, connectionID string) (diagnosticTarget, error) {

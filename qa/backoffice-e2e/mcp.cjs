@@ -119,7 +119,7 @@ async function configuredDiagnostic(browser) {
 
   await mutation(page, 'Refresh state', diagnosticPath, 200);
   await page.getByText('Check succeeded', {exact:true}).waitFor();
-  assert.equal(await page.getByText(/2 tools\. This one-time check/).count(), 1, 'diagnostic displays the exact tool count');
+  assert.equal(await page.getByText(/2 tools/).count(), 1, 'diagnostic displays the exact tool count');
   assert.deepEqual(await records(page), [
     {order: 1, category: 'jsonrpc', operation: 'server/discover', headerMatched: true},
     {order: 2, category: 'jsonrpc', operation: 'initialize', headerMatched: true},
@@ -131,8 +131,8 @@ async function configuredDiagnostic(browser) {
 
   await recorder(page);
   await page.reload();
-  await page.getByText('Not checked', {exact:true}).waitFor();
-  assert.equal(await page.getByText('Check succeeded', {exact:true}).count(), 0, 'success is response-local');
+  await page.getByText('Check succeeded', {exact:true}).waitFor();
+  assert.equal(await page.getByText('Not checked', {exact:true}).count(), 1, 'runtime readiness remains separate');
   assert.deepEqual(await records(page), [], 'reload after success is passive');
 
   await recorder(page, true);
@@ -148,8 +148,8 @@ async function configuredDiagnostic(browser) {
 
   await recorder(page);
   await page.reload();
-  await page.getByText('Not checked', {exact:true}).waitFor();
-  assert.equal(await page.getByText('Check failed', {exact:true}).count(), 0, 'failure is response-local');
+  await page.getByText('Check failed', {exact:true}).waitFor();
+  assert.equal(await page.getByText('Not checked', {exact:true}).count(), 1, 'failed check does not replace runtime readiness');
   assert.deepEqual(await records(page), [], 'reload after failure is passive');
   assert.deepEqual(errors, [], 'configured diagnostic has no browser errors');
   await Promise.all([page.waitForURL(`${baseURL}/login`), page.getByRole('button', {name:'Sign out', exact:true}).click()]);
@@ -160,7 +160,7 @@ async function configuredDiagnostic(browser) {
  try {
   if (mode === 'diagnostic') {
     await configuredDiagnostic(browser);
-    console.log('MCP configured diagnostic: ordinary login, passive reads, protected success/failure and ephemeral state passed');
+    console.log('MCP configured diagnostic: ordinary login, passive reads, protected success/failure and retained process state passed');
     return;
   }
   for (const viewport of [{ width:1440,height:900 },{ width:390,height:844 }]) {

@@ -71,7 +71,8 @@ show configuration, not a live health check. See the
 Administrators can open **MCP** in Backoffice to inspect configured servers and
 create, edit, probe, disable or delete managed connections. Configuration entries
 are read-only except for the explicit **Refresh state** diagnostic; passive page
-loads do not probe them, and the diagnostic result is not saved as readiness.
+loads do not probe them. The last manual result remains visible for the exact
+revision during the running process and is shown separately from readiness.
 OAuth onboarding and later status/actions apply only to eligible
 Backoffice-managed HTTP/SSE connections with OAuth enabled. Configuration-owned
 entries and managed connections with OAuth disabled remain OAuth-neutral.

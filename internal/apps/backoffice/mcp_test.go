@@ -188,10 +188,22 @@ func (f *mcpHTTPFixture) ProbeUpdate(context.Context, mcpcmd.UpdateDefinition) (
 func (f *mcpHTTPFixture) DiagnoseCurrent(_ context.Context, id string, authority mcpcmd.Authority) (mcpcmd.DiagnosticResult, error) {
 	f.diagnosticIDs = append(f.diagnosticIDs, id)
 	f.diagnosticAuthorities = append(f.diagnosticAuthorities, authority)
+	if f.diagnosticErr == nil {
+		result := f.diagnosticResult
+		if result.CheckedAt.IsZero() {
+			result.CheckedAt = time.Date(2026, 10, 15, 8, 30, 0, 0, time.UTC)
+		}
+		f.diagnosticResult = result
+		for i := range f.items {
+			if f.items[i].Connection.ID == id {
+				f.items[i].LastDiagnostic = &result
+			}
+		}
+	}
 	return f.diagnosticResult, f.diagnosticErr
 }
 
-func TestMCPDiagnosticUsesProtectedServerAuthorityAndEphemeralResult(t *testing.T) {
+func TestMCPDiagnosticUsesProtectedServerAuthorityAndRetainsLastResult(t *testing.T) {
 	provider, config := newHTTPAppTestState(t)
 	now := time.Now().UTC()
 	for _, role := range []usercmd.Role{usercmd.RoleAdministrator, usercmd.RoleOperator} {
@@ -272,7 +284,7 @@ func TestMCPDiagnosticUsesProtectedServerAuthorityAndEphemeralResult(t *testing.
 	if authority.UserID != string(usercmd.RoleAdministrator) || authority.SessionID == "" || authority.SessionVersion == 0 {
 		t.Fatalf("diagnostic authority = %+v", authority)
 	}
-	for _, visible := range []string{"Check succeeded", "3 tools", "one-time check"} {
+	for _, visible := range []string{"Check succeeded", "3 tools", "Last manual check", "15 Oct 2026, 08:30 UTC"} {
 		if !strings.Contains(w.Body.String(), visible) {
 			t.Errorf("successful diagnostic missing %q", visible)
 		}
@@ -285,8 +297,8 @@ func TestMCPDiagnosticUsesProtectedServerAuthorityAndEphemeralResult(t *testing.
 	get.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: admin.access})
 	getResponse = httptest.NewRecorder()
 	handler.ServeHTTP(getResponse, get)
-	if getResponse.Code != http.StatusOK || len(fixture.diagnosticIDs) != 1 || authorizations.currentReads != 0 || !strings.Contains(getResponse.Body.String(), "Not checked") || strings.Contains(getResponse.Body.String(), "Check succeeded") {
-		t.Fatal("later passive GET retained or reran diagnostic")
+	if getResponse.Code != http.StatusOK || len(fixture.diagnosticIDs) != 1 || authorizations.currentReads != 0 || !strings.Contains(getResponse.Body.String(), "Not checked") || !strings.Contains(getResponse.Body.String(), "Check succeeded") {
+		t.Fatal("later passive GET lost or reran diagnostic")
 	}
 
 	fixture.diagnosticResult = mcpcmd.DiagnosticResult{Outcome: mcpcmd.DiagnosticFailed}
