@@ -8,6 +8,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/ingressapp"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
 	"github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionturnapp"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"go.uber.org/fx"
 )
@@ -16,7 +17,9 @@ import (
 type Lifecycle struct{ state.ChatArchiveStore }
 
 // Module makes archive journaling mandatory in the production session graph.
-var Module = fx.Module("balda_chatarchive", fx.Provide(
+var Module = fx.Module("balda_chatarchive", fx.Invoke(func(service *sessionturnapp.TurnExecutionService, archive *chatarchiveapp.Service) {
+	service.SetFinalArchive(archive)
+}), fx.Provide(
 	func(s *chatarchiveapp.Service, m *session.Manager) commandfx.SkillAdmission {
 		return &skillAdmission{inputs: s, sessions: m}
 	},

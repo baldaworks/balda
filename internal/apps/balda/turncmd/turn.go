@@ -143,13 +143,14 @@ func (m NormalizedInbound) SessionTurn() (SessionTurnPayload, error) {
 }
 
 type SteeringMessage struct {
-	ArchiveID        string `json:"archive_id,omitempty"`
-	DedupeKey        string `json:"dedupe_key,omitempty"`
-	MessageID        int    `json:"message_id,omitempty"`
-	ReplyToMessageID int    `json:"reply_to_message_id,omitempty"`
-	UserID           string `json:"user_id,omitempty"`
-	ReceivedAt       string `json:"received_at,omitempty"`
-	Text             string `json:"text,omitempty"`
+	Attachments      []attachment.Descriptor `json:"attachments,omitempty"`
+	ArchiveID        string                  `json:"archive_id,omitempty"`
+	DedupeKey        string                  `json:"dedupe_key,omitempty"`
+	MessageID        int                     `json:"message_id,omitempty"`
+	ReplyToMessageID int                     `json:"reply_to_message_id,omitempty"`
+	UserID           string                  `json:"user_id,omitempty"`
+	ReceivedAt       string                  `json:"received_at,omitempty"`
+	Text             string                  `json:"text,omitempty"`
 }
 
 type jobEnvelopePayload struct {
@@ -397,4 +398,27 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// RenderSteeringBatchText preserves the provider prompt shape after replay filtering.
+func RenderSteeringBatchText(messages []SteeringMessage) string {
+	if len(messages) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("Steering messages:\n")
+	for i, msg := range messages {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		ts := strings.TrimSpace(msg.ReceivedAt)
+		if ts == "" {
+			ts = "unknown_time"
+		}
+		b.WriteString("- [")
+		b.WriteString(ts)
+		b.WriteString("] ")
+		b.WriteString(strings.TrimSpace(msg.Text))
+	}
+	return b.String()
 }

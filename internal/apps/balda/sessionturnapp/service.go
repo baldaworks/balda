@@ -102,6 +102,7 @@ type TurnExecutionService struct {
 	jobEvents      jobEventAppender
 	sessions       runtimeStateReader
 	turnCapture    CompletedTurnCapture
+	finalArchive   FinalArchive
 	hooks          HookRunner
 	privateOutput  PrivateOutputRecorder
 	webhookClaims  WebhookTurnClaimer
@@ -120,28 +121,29 @@ func (s *TurnExecutionService) currentTime() time.Time {
 }
 
 type ExecutionRequest struct {
-	ArchiveID       string
-	WorkspaceDir    string
-	Text            string
-	Attachments     []attachment.Descriptor
-	Runner          *runner.Runner
-	UserID          string
-	RequesterUserID string
-	SessionID       string
-	JobID           string
-	AgentSessionID  string
-	Locator         baldasession.SessionLocator
-	DeliveryLocator baldasession.SessionLocator
-	MessageID       int
-	DeliveryOptions deliveryfmt.Options
-	Deliver         bool
-	ProgressEmitter SessionProgressEmitter
-	OutboundFrom    actorlayer.ActorAddress
-	RunOptions      []runner.RunOption
-	MemoryRefresh   sessionturn.MemoryRefresh
-	SelectedSkill   *runtimecatalogcmd.LoadedSkill
-	TurnSource      string
-	DedupeKey       string
+	ArchiveID        string
+	SteeringMessages []turncmd.SteeringMessage
+	WorkspaceDir     string
+	Text             string
+	Attachments      []attachment.Descriptor
+	Runner           *runner.Runner
+	UserID           string
+	RequesterUserID  string
+	SessionID        string
+	JobID            string
+	AgentSessionID   string
+	Locator          baldasession.SessionLocator
+	DeliveryLocator  baldasession.SessionLocator
+	MessageID        int
+	DeliveryOptions  deliveryfmt.Options
+	Deliver          bool
+	ProgressEmitter  SessionProgressEmitter
+	OutboundFrom     actorlayer.ActorAddress
+	RunOptions       []runner.RunOption
+	MemoryRefresh    sessionturn.MemoryRefresh
+	SelectedSkill    *runtimecatalogcmd.LoadedSkill
+	TurnSource       string
+	DedupeKey        string
 }
 
 func NewTurnExecutionService(dispatcher actortransport.Dispatcher, jobEvents *baldajobs.JobEventsService, sessions *baldasession.Manager, logger zerolog.Logger, autoMaxTurns int) *TurnExecutionService {
@@ -635,6 +637,34 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 			sawTurnComplete = true
 			responseText := streamedText.String()
 			memoryResponseText := memoryStreamedText.String()
+			// Selection follows stop approval and the existing auto replacement policy.
+			if !privateRun && req.Deliver && req.ArchiveID != "" && strings.TrimSpace(responseText) != "" {
+				status := automode.DefaultStatusWithMaxTurns(s.autoMaxTurns)
+				if req.TurnSource == turncmd.SourceAuto {
+					if loaded, err := s.autoStatus(ctx, req.Locator); err == nil {
+						status = loaded
+					}
+				}
+				if _, _, notification := autoDecisionNotification(status, req.TurnSource, responseText, s.currentTime()); !notification {
+					change := formatState
+					if !successfulFormatTurn(ev, responseText) {
+						change = nil
+					}
+					final, err := s.commitSelectedFinal(ctx, req, responseText, change)
+					if err != nil {
+						return err
+					}
+					// Semantic memory remains a separate best-effort observer.
+					if s.turnCapture != nil && shouldCaptureTerminalTurn(ev, req.Text, memoryResponseText) {
+						if source := completedTurnSourceID(req); source != "" {
+							if err := s.turnCapture.CaptureCompletedTurn(ctx, CompletedTurn{UserText: req.Text, AssistantText: memoryResponseText, Locator: req.Locator, SessionID: req.SessionID, AgentSessionID: req.AgentSessionID, SourceTurnID: source, CompletedAt: s.currentTime().UTC(), TerminalStatus: terminalTurnStatus(ev), TrustedTools: append([]TrustedToolEvidence(nil), trustedTools...)}); err != nil {
+								zerolog.Ctx(runCtx).Warn().Str("source_turn_id", source).Msg("failed to publish completed turn to session memory")
+							}
+						}
+					}
+					return s.resumeFinal(ctx, final)
+				}
+			}
 			if !privateRun && formatState != nil && successfulFormatTurn(ev, responseText) {
 				if err := s.formatComposer.Commit(ctx, req.Locator, *formatState); err != nil {
 					return err
@@ -731,7 +761,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 							automode.StateKeyConsecutiveTurns: autoModeStatus.ConsecutiveTurns,
 							automode.StateKeyLastTurnAt:       s.currentTime().UTC().Format(time.RFC3339),
 							automode.StateKeyLastStopReason:   "model_reported_done",
-						}); err != nil {
+						}, req.ArchiveID); err != nil {
 							return err
 						}
 					case responseSourceAutoWaitForUser:
@@ -740,7 +770,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 							automode.StateKeyConsecutiveTurns: autoModeStatus.ConsecutiveTurns,
 							automode.StateKeyLastTurnAt:       s.currentTime().UTC().Format(time.RFC3339),
 							automode.StateKeyLastStopReason:   "model_waiting_for_user",
-						}); err != nil {
+						}, req.ArchiveID); err != nil {
 							return err
 						}
 					}
@@ -897,7 +927,7 @@ func (s *TurnExecutionService) startAutoCycleIfNeeded(ctx context.Context, req E
 		automode.StateKeyLastTurnAt:     now,
 		automode.StateKeyMaxTurns:       status.MaxTurns,
 		automode.StateKeyLastStopReason: "",
-	}); err != nil {
+	}, req.ArchiveID); err != nil {
 		return err
 	}
 	return s.notifyAutoStateChange(ctx, req, automode.Status{
@@ -988,13 +1018,18 @@ func autoDecisionNotification(status automode.Status, turnSource, responseText s
 	}
 }
 
-func (s *TurnExecutionService) updateAutoState(ctx context.Context, locator baldasession.SessionLocator, state map[string]any) error {
+func (s *TurnExecutionService) updateAutoState(ctx context.Context, locator baldasession.SessionLocator, state map[string]any, archiveID ...string) error {
 	if s == nil || s.dispatcher == nil || len(state) == 0 {
 		return nil
 	}
+	epoch := ""
+	if len(archiveID) > 0 {
+		epoch = archiveID[0]
+	}
 	env, err := automodecmd.Envelope(automodecmd.Payload{
-		Locator: locator,
-		State:   state,
+		ArchiveID: epoch,
+		Locator:   locator,
+		State:     state,
 	})
 	if err != nil {
 		return err
@@ -1038,7 +1073,7 @@ func (s *TurnExecutionService) maybeScheduleAutoTurn(ctx context.Context, req Ex
 					automode.StateKeyConsecutiveTurns: status.ConsecutiveTurns,
 					automode.StateKeyLastTurnAt:       s.currentTime().UTC().Format(time.RFC3339),
 					automode.StateKeyLastStopReason:   "repeated_visible_output",
-				}); err != nil {
+				}, req.ArchiveID); err != nil {
 					return err
 				}
 				if status.State != automode.StateNoProgress {
@@ -1065,7 +1100,7 @@ func (s *TurnExecutionService) maybeScheduleAutoTurn(ctx context.Context, req Ex
 			automode.StateKeyConsecutiveTurns: status.MaxTurns,
 			automode.StateKeyLastTurnAt:       s.currentTime().UTC().Format(time.RFC3339),
 			automode.StateKeyLastStopReason:   "max_auto_turns_reached",
-		}); err != nil {
+		}, req.ArchiveID); err != nil {
 			return err
 		}
 		if status.State != automode.StateLimitReached {
@@ -1091,7 +1126,7 @@ func (s *TurnExecutionService) maybeScheduleAutoTurn(ctx context.Context, req Ex
 		automode.StateKeyMaxTurns:         status.MaxTurns,
 		automode.StateKeyLastOutput:       lastOutput,
 		automode.StateKeyLastStopReason:   "",
-	}); err != nil {
+	}, req.ArchiveID); err != nil {
 		return err
 	}
 	if status.State != automode.StateRunning {
@@ -1107,6 +1142,7 @@ func (s *TurnExecutionService) maybeScheduleAutoTurn(ctx context.Context, req Ex
 		}
 	}
 	env, err := turncmd.SessionTurnEnvelope(turncmd.SessionTurnPayload{
+		ArchiveID:       req.ArchiveID,
 		Text:            automode.InternalPrompt(status.MaxTurns),
 		Locator:         req.Locator,
 		UserID:          req.UserID,

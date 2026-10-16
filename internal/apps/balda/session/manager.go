@@ -689,6 +689,9 @@ func (m *Manager) restoreRuntimeSession(
 		}
 		closeBuiltRuntime(exactRuntime)
 	}
+	if replay, _ := ctx.Value(archiveReplayRestoreKey{}).(bool); replay {
+		return nil, nil, false, fmt.Errorf("restore committed-final lifetime: %w", restoreErr)
+	}
 	if err := m.lifecycleInterruption(ctx); err != nil {
 		return nil, nil, false, err
 	}

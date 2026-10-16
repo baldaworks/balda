@@ -580,7 +580,8 @@ deps:
     deepScan: false
     anyVendorDeps: false
 
-  # Lifecycle composition exposes only SQL archive capability to session ports.
+  # Archive composition exposes SQL capabilities through consuming ports in
+  # session, ingress and sessionturnapp; final replay policy stays in its executor.
   # Boot reconciliation stays in storage: no provider or transport dependency.
   chat_archive_wiring:
     mayDependOn:

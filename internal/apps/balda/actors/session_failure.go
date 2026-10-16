@@ -21,6 +21,10 @@ func (e *SessionActorExecutor) reportTerminalFailure(ctx context.Context, env ac
 	if payload.Source == turncmd.SourceWebhook {
 		return e.reportWebhookFailure(ctx, env, payload, runErr)
 	}
+	var archival *turncmd.FinalArchiveError
+	if errors.As(runErr, &archival) {
+		return nil
+	}
 	var preparation *turncmd.PreparationError
 	if !payload.Deliver || runErr == nil || errors.Is(runErr, context.Canceled) ||
 		errors.Is(runErr, turncmd.ErrScheduledReportQueued) {

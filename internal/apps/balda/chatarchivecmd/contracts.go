@@ -76,6 +76,9 @@ type Intent struct {
 
 // Message is an immutable input or selected final, ordered by database sequence.
 type Message struct {
+	FinalMembers []string `json:",omitempty"`
+	// Replay contains the owning executor's final publication metadata, never prompts.
+	Replay      []byte `json:",omitempty"`
 	SessionID   string
 	Sequence    int64
 	Source      string

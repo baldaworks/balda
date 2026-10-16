@@ -25,6 +25,17 @@ Status: active
   migration; stronger crash-atomic session replacement is separate work.
 - Operational recovery for retained `sending` deliveries: operators inspect chat/channel history and local outbox timestamps/keys. Balda does not perform automated provider receipt reconciliation or provide an ad-hoc recovery CLI; deliberate manual resubmission carries an explicit risk of message duplication.
 
+- Conversational archive selection commits the exact final reply, delivery
+  snapshot and per-input steering claims atomically before final publication.
+  Command replay reads those claims before provider execution. Archive-only
+  reads never publish; ordinary replay preserves delivery settlement and its
+  existing ambiguous-outcome semantics. Bypass delivery remains at least once,
+  with a persisted final envelope identity rather than a new identity per retry.
+- First final commit failure retries the same in-memory candidate at most three
+  times and then terminates without a model rerun for archive repair. Candidate
+  bytes unwritten at process death remain unknown. This boundary does not claim
+  exactly-once provider delivery or recovery of unwritten model output.
+
 ## Related tests
 
 - `internal/apps/balda/execution/host_test.go`

@@ -591,6 +591,8 @@ type JobStore interface {
 
 // ChatArchiveStore persists lifetime identity, lifecycle evidence and immutable messages.
 type ChatArchiveStore interface {
+	CommitFinal(ctx context.Context, message chatarchivecmd.Message, members []string) (chatarchivecmd.Message, error)
+	FindFinal(ctx context.Context, epoch, member string) (chatarchivecmd.Message, error)
 	RecordInput(ctx context.Context, message chatarchivecmd.Message, location chatarchivecmd.Location) (chatarchivecmd.Message, error)
 	ReconcileMemory(ctx context.Context, bootID string) error
 	Begin(ctx context.Context, intent chatarchivecmd.Intent) (chatarchivecmd.Intent, error)

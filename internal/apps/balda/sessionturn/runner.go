@@ -156,6 +156,20 @@ func (r *Runner) RunSessionTurnPayload(ctx context.Context, payload turncmd.Sess
 			runErr = &turncmd.PreparationError{Cause: runErr}
 		}
 	}()
+	if replay, ok := r.executor.(interface {
+		ReplaySessionTurn(ctx context.Context, payload turncmd.SessionTurnPayload) (turncmd.SessionTurnPayload, bool, error)
+	}); ok {
+		var handled bool
+		var err error
+		payload, handled, err = replay.ReplaySessionTurn(ctx, payload)
+		if handled {
+			providerStarted = true
+			return err
+		}
+		if err != nil {
+			return err
+		}
+	}
 	if r.sessions == nil {
 		return fmt.Errorf("session turn: session manager is unavailable")
 	}

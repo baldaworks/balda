@@ -125,3 +125,35 @@ text, and GoalKeeper/private continuations and authentication/control commands
 remain outside conversational capture. Input snapshots fill only previously
 unknown location fields; later renames cannot rewrite historical labels or
 per-message speakers.
+
+## Durable final reply selection
+
+For archived conversational turns, the selected visible model reply becomes a
+final only after a successful SQL commit. Stop-hook approval and the existing
+visible-text/auto-notification selection run first. The immutable agent message,
+frozen archive UUID, final delivery envelope and steering constituent claims
+commit together before format-state, semantic-memory, job or auto bookkeeping
+and before final publication. Empty output, rejected output, private/silent runs,
+provider diagnostics, progress and auto-state notifications do not become agent
+chat messages. Public auto continuations retain their originating archive UUID;
+their synthetic prompts are not user messages.
+
+Normal command replay checks committed constituent claims before restoring a
+runtime or invoking the model. When ordinary replay must finish runtime
+bookkeeping after restart, it may exact-restore the still-bound durable lifetime;
+a failed exact restore remains retryable and never falls back to a new lifetime
+for final recovery. Confirmed replacement or interrupted process-local lifetimes
+skip old runtime mutations. It reuses the frozen final envelope and existing
+settlement policy. Already committed steering inputs are removed from a larger
+replayed batch; new inputs remain eligible for execution. Late output remains
+attributed to its original lifetime, and replay never updates format/auto state
+in a replacement runtime. Accepted final publication keeps the existing
+`FinalOutcomeAcceptedError` bookkeeping contract. Archive reads never send.
+
+An unavailable first final write retries the same candidate at most three times
+while the process is alive. Exhaustion prevents final publication and terminates
+that execution without an archive-driven model retry. A process crash before
+the first successful commit can lose the unwritten candidate; no pending record
+can reconstruct those bytes. Once committed, later bookkeeping or process failure
+cannot erase the archived reply. Recovery resumes ordinary delivery only when
+normal command replay requires it, never solely to reconstruct archive content.

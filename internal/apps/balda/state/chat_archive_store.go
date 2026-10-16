@@ -7,6 +7,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
@@ -389,14 +391,14 @@ func archiveFingerprint(m chatarchivecmd.Message) string {
 
 // RecordInput inserts an immutable human input and fills only unknown location metadata.
 func (s *sqlChatArchiveStore) RecordInput(ctx context.Context, m chatarchivecmd.Message, location chatarchivecmd.Location) (chatarchivecmd.Message, error) {
-	return s.record(ctx, m, &location)
+	return s.record(ctx, m, &location, nil)
 }
 
 func (s *sqlChatArchiveStore) Record(ctx context.Context, m chatarchivecmd.Message) (chatarchivecmd.Message, error) {
-	return s.record(ctx, m, nil)
+	return s.record(ctx, m, nil, nil)
 }
 
-func (s *sqlChatArchiveStore) record(ctx context.Context, m chatarchivecmd.Message, location *chatarchivecmd.Location) (chatarchivecmd.Message, error) {
+func (s *sqlChatArchiveStore) record(ctx context.Context, m chatarchivecmd.Message, location *chatarchivecmd.Location, members []string) (chatarchivecmd.Message, error) {
 	if m.Source == "" || m.SessionID == "" || m.ObservedAt.IsZero() || (m.Role != "user" && m.Role != "agent") || (m.Text == "" && len(m.Attachments) == 0) {
 		return m, chatarchivecmd.ErrInvalid
 	}
@@ -405,6 +407,16 @@ func (s *sqlChatArchiveStore) record(ctx context.Context, m chatarchivecmd.Messa
 		return m, archiveError(ctx, err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	for _, member := range members {
+		var priorSource string
+		err := tx.QueryRowContext(ctx, s.users.bind(`SELECT source_key FROM balda_archive_final_members WHERE archive_id=? AND member_key=?`), m.SessionID, member).Scan(&priorSource)
+		if err == nil && priorSource != m.Source {
+			return m, chatarchivecmd.ErrConflict
+		}
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return m, archiveError(ctx, err)
+		}
+	}
 	fingerprint := archiveFingerprint(m)
 	var raw, prior string
 	err = tx.QueryRowContext(ctx, s.users.bind(`SELECT record_json,fingerprint FROM balda_archive_messages WHERE source_key = ?`), m.Source).Scan(&raw, &prior)
@@ -471,6 +483,14 @@ func (s *sqlChatArchiveStore) record(ctx context.Context, m chatarchivecmd.Messa
 		}
 		if err := s.writeSession(ctx, tx, rec, false); err != nil {
 			return m, err
+		}
+	}
+	for _, member := range members {
+		if member == "" {
+			return m, chatarchivecmd.ErrInvalid
+		}
+		if _, err := tx.ExecContext(ctx, s.users.bind(`INSERT INTO balda_archive_final_members(archive_id,member_key,source_key) VALUES(?,?,?)`), m.SessionID, member, m.Source); err != nil {
+			return m, archiveError(ctx, err)
 		}
 	}
 	if err := tx.Commit(); err != nil {
@@ -615,4 +635,28 @@ func (s *sqlChatArchiveStore) ReconcileMemory(ctx context.Context, bootID string
 		return archiveError(ctx, err)
 	}
 	return nil
+}
+
+// CommitFinal commits the message and every constituent claim in one transaction.
+func (s *sqlChatArchiveStore) CommitFinal(ctx context.Context, m chatarchivecmd.Message, members []string) (chatarchivecmd.Message, error) {
+	if m.Role != "agent" || strings.TrimSpace(m.Text) == "" || len(members) == 0 || len(m.Replay) == 0 {
+		return m, chatarchivecmd.ErrInvalid
+	}
+	m.FinalMembers = append([]string(nil), members...)
+	sort.Strings(m.FinalMembers)
+	for i, member := range m.FinalMembers {
+		if member == "" || (i > 0 && member == m.FinalMembers[i-1]) {
+			return m, chatarchivecmd.ErrInvalid
+		}
+	}
+	return s.record(ctx, m, nil, m.FinalMembers)
+}
+
+func (s *sqlChatArchiveStore) FindFinal(ctx context.Context, epoch, member string) (chatarchivecmd.Message, error) {
+	var source string
+	err := s.users.db.QueryRowContext(ctx, s.users.bind(`SELECT source_key FROM balda_archive_final_members WHERE archive_id=? AND member_key=?`), epoch, member).Scan(&source)
+	if err != nil {
+		return chatarchivecmd.Message{}, archiveError(ctx, err)
+	}
+	return s.FindMessage(ctx, source)
 }
