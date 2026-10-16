@@ -34,6 +34,7 @@ const secondPluginRevision = "rev-2"
 type contractOpener func(context.Context, string) (Provider, error)
 
 func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) {
+	t.Run("ChatArchiveBrowser", func(t *testing.T) { checkChatArchiveBrowser(t, factory) })
 	t.Run("ChatArchiveFinal", func(t *testing.T) { checkChatArchiveFinal(t, factory(t)) })
 	t.Run("ChatArchiveMemoryBoot", func(t *testing.T) { checkChatArchiveMemoryBoot(t, factory(t)) })
 	t.Run("ChatArchiveExactRuntimeLoss", func(t *testing.T) { checkChatArchiveExactRuntimeLoss(t, factory(t)) })

@@ -29,6 +29,8 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/channel/webhook"
 	baldazulip "github.com/baldaworks/balda/internal/apps/balda/channel/zulip"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/zulip/zulipfx"
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchiveapp"
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivebackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/chatarchivefx"
 	"github.com/baldaworks/balda/internal/apps/balda/chatfx"
 	"github.com/baldaworks/balda/internal/apps/balda/commandfx"
@@ -436,7 +438,7 @@ func Module(
 				})
 				return provider, nil
 			},
-			func(provider baldastate.Provider, invitations *auth.BindingInvitations, channels *auth.BindingChannels, mcp *mcpbackofficeapp.Operations, schedules *schedulebackofficeapp.Operations, aliases *aliasbackofficeapp.Operations, webhooks *webhookbackofficeapp.Operations, facts *memorybackofficeapp.Operations, plugins *pluginbackofficeapp.Operations, hooks *hookbackofficeapp.Operations, skills *skillbackofficeapp.Operations) (*backoffice.Runtime, error) {
+			func(provider baldastate.Provider, invitations *auth.BindingInvitations, channels *auth.BindingChannels, mcp *mcpbackofficeapp.Operations, schedules *schedulebackofficeapp.Operations, aliases *aliasbackofficeapp.Operations, webhooks *webhookbackofficeapp.Operations, facts *memorybackofficeapp.Operations, plugins *pluginbackofficeapp.Operations, hooks *hookbackofficeapp.Operations, skills *skillbackofficeapp.Operations, archive *chatarchivebackofficeapp.Operations) (*backoffice.Runtime, error) {
 				runtime, err := backoffice.NewRuntime(backofficeConfig, provider)
 				if err != nil {
 					return nil, err
@@ -463,6 +465,9 @@ func Module(
 					return nil, err
 				}
 				if err := runtime.ConfigureHookOperations(hooks); err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigureChatArchiveOperations(archive); err != nil {
 					return nil, err
 				}
 				if err := runtime.ConfigureFactMemoryOperations(facts); err != nil {
@@ -514,6 +519,9 @@ func Module(
 			webhookbackofficeapp.New,
 			aliasbackofficeapp.New,
 			memorybackofficeapp.New,
+			func(provider baldastate.Provider) *chatarchivebackofficeapp.Operations {
+				return chatarchivebackofficeapp.New(chatarchiveapp.NewReader(provider.ChatArchive()))
+			},
 			func(plugins *pluginapp.Service, catalog *catalogapp.Runtime) *pluginbackofficeapp.Operations {
 				return pluginbackofficeapp.New(plugins, pluginbackofficeapp.CatalogHealth{Catalog: catalog})
 			},

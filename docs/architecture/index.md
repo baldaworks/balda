@@ -246,3 +246,11 @@ consults the executor replay seam before runtime restoration. SQL atomically
 claims each steering constituent with its final message; replay filters committed
 constituents before rebuilding the neutral `turncmd` steering prompt. Neither
 storage nor archive readers invoke a provider or send messages.
+
+Backoffice Chat sessions consumes the local `ChatArchiveOperations` read port.
+`chatarchivebackofficeapp` binds `chatarchiveapp.Reader` to the selected SQL
+archive capability. It has no runtime/session/provider-client accessor. The
+reader fences current administrator authority around bounded queries; explicit
+Backoffice view models exclude replay/source/runtime bookkeeping. Inventory
+search covers stored location/session metadata, while transcript text remains
+plain escaped content. Storage retains ownership of SQL summaries and keysets.

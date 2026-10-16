@@ -74,6 +74,7 @@ func BackofficeCapabilities(user usercmd.User) usercmd.BackofficeCapabilities {
 			ManageWebhooks:   true,
 			ManageAliases:    true,
 			ManageFactMemory: true,
+			ViewChatArchive:  true,
 			ManageHooks:      true,
 			ManagePlugins:    true,
 			ViewAudit:        true,

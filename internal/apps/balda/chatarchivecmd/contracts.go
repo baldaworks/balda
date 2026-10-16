@@ -92,6 +92,7 @@ type Message struct {
 
 // Filter bounds the inventory by channel, status and a stable keyset cursor.
 type Filter struct {
+	Query    string
 	Channel  string
 	Status   string
 	BeforeAt time.Time

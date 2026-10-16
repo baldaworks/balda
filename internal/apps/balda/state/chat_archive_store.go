@@ -348,6 +348,19 @@ func (s *sqlChatArchiveStore) List(ctx context.Context, f chatarchivecmd.Filter)
 		q += ` AND channel_type = ?`
 		args = append(args, f.Channel)
 	}
+	if f.Query != "" {
+		fields := []string{"Label", "Location.Title", "Location.Locator", "Location.SubdivisionLabel"}
+		var clauses []string
+		for _, field := range fields {
+			function := "instr"
+			if s.users.forUpdate != "" {
+				function = "strpos"
+			}
+			clauses = append(clauses, function+"("+s.browserJSONField("record_json", field)+", ?) > 0")
+			args = append(args, f.Query)
+		}
+		q += " AND (" + strings.Join(clauses, " OR ") + ")"
+	}
 	if f.Status != "" {
 		q += ` AND status = ?`
 		args = append(args, f.Status)

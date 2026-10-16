@@ -196,3 +196,16 @@ summary:not(.btn) { color: var(--accent); font-weight: 500; }
 [data-skills] .table-responsive { position: relative; }
 .skills-table td:nth-child(3) { overflow-wrap: normal; word-break: normal; }
 .skills-table td:nth-child(4) { white-space: nowrap; }
+
+/* Archive text is plain, untrusted content; wrap without losing line breaks. */
+.archive-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.archive-metadata, .archive-message, .archive-attachment { overflow-wrap: anywhere; min-width: 0; }
+.archive-transcript { max-width: 64rem; margin-inline: auto; }
+.archive-message-user { margin-right: clamp(0rem, 4vw, 4rem); }
+.archive-message-agent { margin-left: clamp(0rem, 4vw, 4rem); border-left: 3px solid var(--bs-primary); }
+.archive-table { min-width: 48rem; table-layout: fixed; }
+.archive-table td { overflow-wrap: anywhere; }
+.archive-table th:first-child { width: 30%; }
+.archive-table th:nth-child(2) { width: 23%; }
+.archive-table th:nth-child(3) { width: 18%; }
+.archive-table th:nth-child(4) { width: 9%; }

@@ -123,6 +123,7 @@ type BackofficeCapabilities struct {
 	ManageAliases    bool
 	ManagePlugins    bool
 	ManageFactMemory bool
+	ViewChatArchive  bool
 	ManageHooks      bool
 	ManageUsers      bool
 	ViewAudit        bool

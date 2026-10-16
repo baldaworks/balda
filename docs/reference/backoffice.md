@@ -1162,3 +1162,49 @@ Backoffice `SkillsOperations` port is bound by `skillbackofficeapp`; the Web UI
 does not own catalog policy. There is no schema migration for this app-KV data.
 Older binaries do not understand managed selections; deployment rollback needs
 a matching state backup when retained managed capabilities matter.
+
+## Chat session archive
+
+Administrators open **Workspace → Chat sessions** at
+`<balda.http.base_path>/backoffice/chat-sessions`. Operators cannot read the
+inventory, individual sessions or HTMX fragments, and do not see its navigation
+entry. The ordinary browser login and refresh flow applies; there is no extra
+factor ceremony. Every read rechecks current administrator and browser-family
+authority, including credential/MFA versions and expiry.
+
+The inventory contains individual conversational lifetimes, ordered by latest
+observed activity (creation time before any messages). A successful reset or
+close retains the earlier lifetime and its chat; exact durable restore continues
+that same lifetime. Channel, location, locator, audience and root/topic/thread
+are historical snapshots. Personal topics remain personal; group transcripts
+show each actual speaker rather than assigning one group owner. Missing names
+and location metadata stay explicitly unknown. **Active lifetime** describes the
+stored lifecycle, not provider connectivity. Pending and uncertain records make
+no claim of successful activation. **Partial coverage** marks adopted sessions;
+messages before capture began are not backfilled.
+
+Search uses a literal, case-sensitive substring of session metadata (label,
+location, locator and topic/thread label),
+not chat text. Channel and lifecycle filters persist through **Older sessions**
+keyset navigation, with at most 50 rows per page. Each detail at
+`/chat-sessions/{archive_uuid}` shows the newest 100 messages chronologically
+within that window. **Older messages** opens the preceding window. Previous/next
+lifetime links use recorded predecessor relationships. Speaker names, timestamps,
+plain multiline text and attachment names/kinds are escaped; attachments are
+labels, without downloads or stored binaries. Private execution replay, internal
+runtime identifiers, prompts, tools, reasoning, progress and credentials are not
+browser projections.
+
+These pages are passive SQL readers. Opening them cannot restore/create a
+runtime, look up provider profiles, invoke a model, send a reply or change chat
+state. Invalid IDs/filters/cursors return a safe 400; absent records return 404;
+unavailable storage returns 503. Full pages and fragments retain private/no-store,
+CSP, prefix-aware navigation and ordinary refresh behavior. There are no runtime
+controls, composer, export or deletion actions. Archive rows follow the shared
+database backup policy and have no automatic expiry.
+
+Backoffice owns the `ChatArchiveOperations` consuming port and allowlisted SSR
+views. `chatarchivebackofficeapp` binds the SQL-only `chatarchiveapp.Reader`;
+`chatarchivecmd` holds neutral read values and `state` owns persisted summaries,
+keysets and the current durable authority fence. Startup and lazy restoration
+order are unchanged.

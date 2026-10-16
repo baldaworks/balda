@@ -68,6 +68,11 @@ shows recent security events with filters. The **Overview** integration cards
 show configuration, not a live health check. See the
 [Backoffice reference](docs/reference/backoffice.md) for session and security details.
 
+Administrators can open **Workspace → Chat sessions** to browse retained user/agent
+chat by individual session lifetime. Reset and close retain previous transcripts;
+channel/status filters and metadata search keep browsing bounded and read-only.
+Operators cannot access this archive. See [Chat session archive](docs/reference/backoffice.md#chat-session-archive).
+
 Administrators can open **MCP** in Backoffice to inspect configured servers and
 create, edit, probe, disable or delete managed connections. Configuration entries
 are read-only except for the explicit **Refresh state** diagnostic; passive page

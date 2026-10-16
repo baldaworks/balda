@@ -57,6 +57,10 @@ components:
     in:
       - internal/apps/balda/chatarchiveapp
 
+  chat_archive_backoffice_wiring:
+    in:
+      - internal/apps/balda/chatarchivebackofficeapp
+
   chat_archive_wiring:
     in:
       - internal/apps/balda/chatarchivefx
@@ -580,6 +584,9 @@ deps:
     deepScan: false
     anyVendorDeps: false
 
+    canUse:
+      - hook_policy_dependencies
+
   # Archive composition exposes SQL capabilities through consuming ports in
   # session, ingress and sessionturnapp; final replay policy stays in its executor.
   # Boot reconciliation stays in storage: no provider or transport dependency.
@@ -948,6 +955,7 @@ deps:
 
   backoffice_application:
     mayDependOn:
+      - chat_archive_contracts
       - hook_contracts
       - memory_contracts
       - alias_contracts
@@ -1000,6 +1008,7 @@ deps:
 
   backoffice_webui:
     mayDependOn:
+      - chat_archive_contracts
       - hook_contracts
       - contracts
       - memory_contracts
@@ -1111,6 +1120,13 @@ deps:
     mayDependOn:
       - contracts
       - plugin_backoffice_wiring
+    deepScan: false
+    anyVendorDeps: false
+
+  chat_archive_backoffice_wiring:
+    mayDependOn:
+      - chat_archive_app
+      - chat_archive_contracts
     deepScan: false
     anyVendorDeps: false
 
@@ -1409,6 +1425,8 @@ deps:
   composition_root:
     mayDependOn:
       - chat_archive_wiring
+      - chat_archive_backoffice_wiring
+      - chat_archive_app
       - skill_wiring
       - skill_backoffice_wiring
       - native_hook_app
