@@ -11,7 +11,7 @@ import (
 	"github.com/pressly/goose/v3"
 )
 
-func checkWebhookSlugMigration(t *testing.T, db *sql.DB, migrations *goose.Provider, previousVersion int64, bind func(string) string, indexQuery string) {
+func checkWebhookSlugMigration(t *testing.T, db *sql.DB, migrations *goose.Provider, previousVersion, version int64, bind func(string) string, indexQuery string) {
 	t.Helper()
 	if _, err := migrations.UpTo(t.Context(), previousVersion); err != nil {
 		t.Fatal(err)
@@ -41,7 +41,7 @@ func checkWebhookSlugMigration(t *testing.T, db *sql.DB, migrations *goose.Provi
 	output := webhookMigrationRows(t, db, `SELECT id, result FROM execution_jobs WHERE id = 'job'`)
 	before := webhookMigrationRows(t, db, `SELECT `+columns+` FROM balda_webhook_routes ORDER BY name`)
 	history := webhookMigrationRows(t, db, `SELECT * FROM balda_webhook_admissions ORDER BY job_id`)
-	if _, err := migrations.Up(t.Context()); err != nil {
+	if _, err := migrations.UpTo(t.Context(), version); err != nil {
 		t.Fatal(err)
 	}
 	if after := webhookMigrationRows(t, db, `SELECT `+columns+` FROM balda_webhook_routes ORDER BY name`); !reflect.DeepEqual(before, after) {

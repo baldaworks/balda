@@ -317,6 +317,23 @@ func TestSafeReturnPathPreservesPluginsPages(t *testing.T) {
 		})
 	}
 }
+func TestSafeReturnPathPreservesSkillsPages(t *testing.T) {
+	t.Parallel()
+	for _, base := range []string{"", "/balda/backoffice"} {
+		t.Run(base, func(t *testing.T) {
+			browser, err := NewBrowser(&fakeBrowserService{}, HTTPConfig{TrustedOrigin: "http://localhost", BasePath: base})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, route := range []string{"/skills", "/skills/install", "/skills/managed/managed-example", "/skills/contributions/opaque?view=review"} {
+				requested := base + route
+				if got := browser.SafeReturnPath(requested, base+"/overview"); got != requested {
+					t.Errorf("SafeReturnPath(%q) = %q", requested, got)
+				}
+			}
+		})
+	}
+}
 
 type fakeBrowserService struct {
 	login    func(context.Context, string, []byte) (Credentials, error)

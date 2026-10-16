@@ -163,6 +163,59 @@ func (l *SourceLoader) MaterializePluginFromRoot(root *os.Root, relative, dest s
 	return l.materializeCapturedPlugin(revision, tree, dest)
 }
 
+// MaterializeSkillFromRoot captures one selected skill through an anchored source.
+// Its validated frontmatter supplies the synthetic direct-child name, independent
+// of the checkout basename. Supporting resources stay inside the selected root.
+func (l *SourceLoader) MaterializeSkillFromRoot(root *os.Root, relative, dest string, id runtimecatalogcmd.SourceID) (runtimecatalogcmd.Source, error) {
+	if root == nil || !filepath.IsLocal(relative) {
+		return runtimecatalogcmd.Source{}, errors.New("contained skill path is required")
+	}
+	selected, err := root.OpenRoot(relative)
+	if err != nil {
+		return runtimecatalogcmd.Source{}, fmt.Errorf("open selected skill: %w", err)
+	}
+	defer func() { _ = selected.Close() }()
+	_, tree, err := l.captureOpenRoot(selected)
+	if err != nil {
+		return runtimecatalogcmd.Source{}, err
+	}
+	if len(tree.issues) != 0 {
+		return runtimecatalogcmd.Source{}, errors.New("skill contains unsafe filesystem entries")
+	}
+	name, _, err := parseSkillFrontmatter(tree.files["SKILL.md"], "")
+	if err != nil {
+		return runtimecatalogcmd.Source{}, err
+	}
+	synthetic := capturedTree{files: make(map[string][]byte), dirs: map[string]bool{".": true, name: true}, links: make(map[string]string), modes: make(map[string]fs.FileMode)}
+	for path, data := range tree.files {
+		prefixed := name + "/" + path
+		synthetic.files[prefixed] = data
+		synthetic.modes[prefixed] = tree.modes[path]
+	}
+	for path := range tree.dirs {
+		if path != "." {
+			synthetic.dirs[name+"/"+path] = true
+		}
+	}
+	for path, target := range tree.links {
+		if filepath.IsAbs(target) {
+			return runtimecatalogcmd.Source{}, errors.New("skill contains absolute resource link")
+		}
+		synthetic.links[name+"/"+path] = target
+	}
+	if err := materializeCapturedTree(dest, synthetic); err != nil {
+		return runtimecatalogcmd.Source{}, err
+	}
+	source, err := l.LoadSkillSource(dest, id)
+	if err != nil {
+		return runtimecatalogcmd.Source{}, err
+	}
+	if len(source.Skills) != 1 || len(source.Diagnostics) != 0 {
+		return runtimecatalogcmd.Source{}, errors.New("invalid standalone skill")
+	}
+	return source, nil
+}
+
 func (l *SourceLoader) materializeCapturedPlugin(revision runtimecatalogcmd.RevisionID, tree capturedTree, dest string) (PluginPackage, error) {
 	source, err := l.loadCapturedPlugin(revision, tree)
 	if err != nil {
@@ -394,7 +447,7 @@ func parseSkillFrontmatter(data []byte, directory string) (string, string, error
 	if err := decoder.Decode(&metadata); err != nil {
 		return "", "", fmt.Errorf("decode YAML frontmatter: %w", err)
 	}
-	if metadata.Name != directory || len(metadata.Name) > 64 || !skillNamePattern.MatchString(metadata.Name) || strings.Contains(metadata.Name, "--") {
+	if (directory != "" && metadata.Name != directory) || len(metadata.Name) > 64 || !skillNamePattern.MatchString(metadata.Name) || strings.Contains(metadata.Name, "--") {
 		return "", "", errors.New("invalid skill name")
 	}
 	if metadata.Description == "" || len(metadata.Description) > 1024 {

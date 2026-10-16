@@ -412,3 +412,52 @@ Native hook review extends the hook layout gate to 11 states (88 viewport/mount
 combinations), including pre-tool, post-tool and unsupported capability drafts.
 Run the opt-in native engine gate from `agent-hooks.md` after the ordered layout
 and application browser gates when changing provider adapters.
+
+## Skills layout and application gates
+
+Run the synthetic layout gate before the authenticated application gate, using
+only the optional Playwright tools above:
+
+```bash
+BALDA_BACKOFFICE_BROWSER_TEST=1 BALDA_SKILLS_LAYOUT_SCREENSHOTS=/tmp/balda-skills-screens/layout go test ./internal/apps/backoffice -run '^TestSkillsLayoutBrowser$' -count=1 -v
+```
+
+It uses production Skills templates and assets at root and
+`/balda/backoffice`, at 1440×900, 1024×768, 768×1024 and 390×844. Review the
+mixed plugin/unmanaged/managed inventory, disabled entries, read-only details,
+install and update review, confirmations, empty/long content, 400/409 errors
+and accepted pending recovery. Checks cover exact single-main fragments,
+no-store/private history, Source clearing, labels, keyboard focus, placeholder
+contrast, document/table overflow, nested Skills navigation and actual 409
+HTMX replacement after `htmx:afterSettle`. Inspect the generated screenshots
+before accepting the layout or starting application verification. Fixtures are
+synthetic and cannot mutate application state; Source inputs and credentials
+are excluded from captures.
+
+
+After the inspected Skills layout gate passes, run the real application gates:
+
+```bash
+go test -race ./internal/apps/balda -run '^TestBackofficeSkillsRuntimeContracts$' -count=1 -v
+BALDA_BACKOFFICE_BROWSER_TEST=1 BALDA_SKILLS_RUNTIME_SCREENSHOTS=/tmp/balda-skills-screens/application go test -race ./internal/apps/balda -run '^TestBackofficeSkillsBrowserWorkflow$' -count=1 -v
+```
+
+These gates use the shared production Fx catalog owners, real SQLite/ADK
+session storage, local sources and deterministic file-Git repositories. The
+runtime gate proves selected-subtree/resource retention, update while disabled,
+old session pins and seeded ADK history/state across remove and process-owner
+reopen, explicit reset,
+pre-acceptance failures, pending publication recovery and read-only inventory
+versus explicit unmanaged refresh. The provider itself is deterministic; no
+LLM, external transport or production state is used.
+
+The browser gate uses ordinary synthetic valid/invalid password login at root
+and `/balda/backoffice`, 1440×900 and 390×844. It checks administrator/operator
+authority, access refresh destination, Source clearing/history, single-main
+HTMX replacement after `htmx:afterSettle`, exact review/install/update,
+plugin ownership navigation, duplicate-source inventory, confirmation, stale
+forms, CSRF/origin/revoked-session rejection, audit rollback, accepted
+pending publication and recovery without source refetch. Controller checkpoints
+verify actual durable selection/catalog and unchanged pinned-session metadata.
+Capture only after Source clears and outside credential forms; inspect the
+actual screenshots and record results separately from synthetic layout proof.

@@ -12,7 +12,7 @@ import (
 
 func TestPluginsNavigationAndMarketplaceRender(t *testing.T) {
 	nav := Navigation(usercmd.BackofficeCapabilities{ManagePlugins: true}, LocationPlugins)
-	if len(nav) != 1 || nav[0].Label != "Operations" || len(nav[0].Items) != 1 || nav[0].Items[0].Label != "Plugins" {
+	if len(nav) != 1 || nav[0].Label != "Operations" || len(nav[0].Items) != 2 || nav[0].Items[0].Label != "Plugins" || nav[0].Items[1].Label != "Skills" || nav[0].Items[1].Href != LocationSkills {
 		t.Fatalf("navigation %+v", nav)
 	}
 	renderer, err := NewRenderer("/balda/backoffice")

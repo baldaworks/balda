@@ -46,7 +46,7 @@ These records are active architecture contracts.
   `commandcmd.Payload` to the independent CommandActor; its exact-name handlers
   live under scoped families in `actors/command`, and `commandfx` contains composition only.
 - `runtimecatalog` compiles immutable application/workspace snapshots;
-  `catalogapp` reconstructs durable plugin state before provider startup and
+  `catalogapp` reconstructs durable plugin and managed standalone skill state before provider startup and
   binds one immutable capability snapshot to each session. Commands and skills
   resolve from that pin; MCP is supplied when the provider session is created
   or restored. Plugin aliases still execute only through the independent

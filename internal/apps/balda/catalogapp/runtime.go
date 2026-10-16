@@ -44,6 +44,7 @@ type Runtime struct {
 	loader                     *runtimecatalog.SourceLoader
 	archive                    *runtimecatalog.RevisionArchive
 	reader                     *runtimecatalog.SkillReader
+	managedSkills              managedSkillStore
 	plugins                    baldastate.PluginStore
 	managedMCP                 baldastate.MCPStore
 	credentials                *mcpmanage.Service
@@ -88,7 +89,7 @@ func NewRuntime(
 	}
 	runtime := &Runtime{
 		stateDir: stateDir, agentSkillDir: strings.TrimSpace(agentSkillDir), codexSkillDir: strings.TrimSpace(codexSkillDir), compiler: runtimecatalog.NewCompiler(), store: runtimecatalog.NewStore(),
-		loader: loader, archive: archive, reader: reader, plugins: provider.Plugins(), managedMCP: provider.MCP(), sessions: provider.Sessions(), kv: provider.AppKV(),
+		loader: loader, archive: archive, reader: reader, managedSkills: provider.SkillManagement(), plugins: provider.Plugins(), managedMCP: provider.MCP(), sessions: provider.Sessions(), kv: provider.AppKV(),
 		builtin: builtinSource(advertisements), configuredMCP: configuredMCPSources(configured), credentials: credentials,
 		configuredUpgradeRevisions: configuredUpgradeRevisions(configured),
 	}
@@ -144,26 +145,34 @@ func (r *Runtime) MCP() *mcpruntime.Reconciler { return r.mcp }
 func (r *Runtime) Advertisements() *commandfx.AdvertisementProjector { return r.ads }
 
 // PreparePluginCandidate compiles all host sources and enabled plugin sources.
-func (r *Runtime) PreparePluginCandidate(ctx context.Context, plugins []runtimecatalogcmd.Source, prepared *pluginapp.PreparedPluginSource) (runtimecatalogcmd.Snapshot, error) {
+func (r *Runtime) PreparePluginCandidate(ctx context.Context, plugins []runtimecatalogcmd.Source, prepared *pluginapp.PreparedPluginSource) (runtimecatalogcmd.PreparedApplicationCandidate, error) {
+	selection, err := r.managedSkills.ReadSelections(ctx)
+	if err != nil {
+		return runtimecatalogcmd.PreparedApplicationCandidate{}, err
+	}
+	return r.prepareApplicationCandidate(ctx, plugins, prepared, selection)
+}
+
+func (r *Runtime) prepareApplicationCandidate(ctx context.Context, plugins []runtimecatalogcmd.Source, prepared *pluginapp.PreparedPluginSource, selection runtimecatalogcmd.ManagedSkillSelection) (runtimecatalogcmd.PreparedApplicationCandidate, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if prepared != nil {
 		if err := validatePreparedPlugin(plugins, *prepared); err != nil {
-			return runtimecatalogcmd.Snapshot{}, err
+			return runtimecatalogcmd.PreparedApplicationCandidate{}, err
 		}
 		if err := r.retainPreparedPlugin(ctx, *prepared); err != nil {
-			return runtimecatalogcmd.Snapshot{}, err
+			return runtimecatalogcmd.PreparedApplicationCandidate{}, err
 		}
 	}
 	sources := []runtimecatalogcmd.Source{r.builtin}
 	configured, err := r.currentConfiguredMCPSources(ctx)
 	if err != nil {
-		return runtimecatalogcmd.Snapshot{}, err
+		return runtimecatalogcmd.PreparedApplicationCandidate{}, err
 	}
 	sources = append(sources, configured...)
 	managed, err := r.managedMCPSources(ctx)
 	if err != nil {
-		return runtimecatalogcmd.Snapshot{}, err
+		return runtimecatalogcmd.PreparedApplicationCandidate{}, err
 	}
 	sources = append(sources, managed...)
 	skillRoots := []struct {
@@ -186,24 +195,38 @@ func (r *Runtime) PreparePluginCandidate(ctx context.Context, plugins []runtimec
 		seenSkillRoots[cleanDir] = struct{}{}
 		loaded, err := r.loadSkillSources(ctx, cleanDir, runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindUserSkill, Name: root.name})
 		if err != nil {
-			return runtimecatalogcmd.Snapshot{}, err
+			return runtimecatalogcmd.PreparedApplicationCandidate{}, err
 		}
 		sources = append(sources, loaded...)
 	}
+	managedSources, err := r.managedSkillSources(ctx, selection)
+	if err != nil {
+		return runtimecatalogcmd.PreparedApplicationCandidate{}, err
+	}
+	sources = append(sources, managedSources...)
 	for _, source := range plugins {
 		if prepared == nil || source.Descriptor != prepared.Descriptor {
 			if err := r.retainPlugin(ctx, source.Descriptor); err != nil {
-				return runtimecatalogcmd.Snapshot{}, err
+				return runtimecatalogcmd.PreparedApplicationCandidate{}, err
 			}
 		}
 		sources = append(sources, source)
 	}
-	return r.compiler.CompileApplication(sources)
+	snapshot, err := r.compiler.CompileApplication(sources)
+	if err != nil {
+		return runtimecatalogcmd.PreparedApplicationCandidate{}, err
+	}
+	return runtimecatalogcmd.PreparedApplicationCandidate{Snapshot: snapshot, ManagedSkills: selection.Normalized()}, nil
 }
 
 // PublishCandidate atomically makes a compiled application snapshot current,
 // then updates process-local projections from that exact retained value.
-func (r *Runtime) PublishCandidate(ctx context.Context, snapshot runtimecatalogcmd.Snapshot) error {
+// Callers hold LockCatalogMutation through durable acceptance and completion.
+func (r *Runtime) PublishCandidate(ctx context.Context, candidate runtimecatalogcmd.PreparedApplicationCandidate) error {
+	if err := r.validateManagedSkills(ctx, candidate); err != nil {
+		return err
+	}
+	snapshot := candidate.Snapshot
 	if err := r.persistSnapshot(ctx, snapshot); err != nil {
 		return err
 	}
@@ -219,7 +242,10 @@ func (r *Runtime) PublishCandidate(ctx context.Context, snapshot runtimecatalogc
 			return err
 		}
 	}
-	return r.markMCPPublished(ctx, retained)
+	if err := r.markMCPPublished(ctx, retained); err != nil {
+		return err
+	}
+	return r.managedSkills.MarkPublished(ctx, candidate.ManagedSkills)
 }
 
 // ResolveEffectiveSnapshot pins command ingress to its trusted session scope.

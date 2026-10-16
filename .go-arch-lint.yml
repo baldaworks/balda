@@ -126,6 +126,7 @@ components:
       - internal/apps/balda/progress
       - internal/apps/balda/permissioncmd
       - internal/apps/balda/permissionfmt
+      - internal/apps/balda/skillcmd
       - internal/apps/balda/plugincmd
       - internal/apps/balda/progressfmt
       - internal/apps/balda/questioncmd
@@ -152,6 +153,18 @@ components:
   hook_contracts:
     in:
       - internal/apps/balda/hookcmd
+
+  # Standalone skill policy consumes guarded storage through its own port.
+  skill_policy:
+    in:
+      - internal/apps/balda/skillapp
+
+  skill_backoffice_wiring:
+    in:
+      - internal/apps/balda/skillbackofficeapp
+  skill_wiring:
+    in:
+      - internal/apps/balda/skillfx
 
   hook_policy:
     in:
@@ -404,7 +417,10 @@ components:
       - internal/apps/balda/mcpbridge
 
   # Composition adapters for catalog sources, lifecycle, scope overlays, and
-  # command/skill/MCP projections.
+  # command/skill/MCP projections. Managed skills enter through an origin-free
+  # local storage port and exact archive descriptors. skill_policy deliberately
+  # stays outside catalog_wiring dependencies: catalog publication must not call
+  # management services while holding catalog locks.
   catalog_wiring:
     in:
       - internal/apps/balda/catalogapp
@@ -661,6 +677,31 @@ deps:
     mayDependOn:
       - user_contracts
     anyVendorDeps: false
+
+  skill_policy:
+    mayDependOn:
+      - contracts
+    canUse:
+      - hook_policy_dependencies
+    anyVendorDeps: false
+    deepScan: false
+
+  skill_backoffice_wiring:
+    mayDependOn:
+      - contracts
+      - skill_policy
+      - backoffice_application
+    deepScan: false
+    anyVendorDeps: false
+  skill_wiring:
+    mayDependOn:
+      - skill_policy
+      - catalog_wiring
+      - storage
+    canUse:
+      - hook_wiring_dependencies
+    anyVendorDeps: false
+    deepScan: false
 
   hook_policy:
     mayDependOn:
@@ -1317,6 +1358,8 @@ deps:
 
   composition_root:
     mayDependOn:
+      - skill_wiring
+      - skill_backoffice_wiring
       - native_hook_app
       - native_hook_registry
       - native_hook_host

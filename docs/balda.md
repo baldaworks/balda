@@ -52,7 +52,8 @@ can be read, linked, and indexed independently:
   snapshot pinning, retries, queues, and replay boundaries.
 - [Plugins and session capabilities](reference/plugins.md) — Agent Plugins
   package boundaries, the Balda extension schema, and session-bound commands,
-  skills, and MCP servers.
+  skills, and MCP servers; standalone Skills management, retained resources and
+  explicit session adoption.
 - [Operations and verification](reference/operations.md) — troubleshooting,
   workspace MCP verification, and acceptance checks.
 

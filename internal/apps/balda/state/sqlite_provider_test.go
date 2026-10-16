@@ -407,6 +407,9 @@ func TestSQLiteProvider_Migration11BackfillsBuggyTelegramAddressColumns(t *testi
 	defer func() { _ = db.Close() }()
 
 	seedBaldaDBAtVersion10WithBuggyZeroSession(t, db)
+	if _, err := db.ExecContext(ctx, `INSERT INTO balda_runtime_sessions(id) VALUES (42)`); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := migrate(ctx, db); err != nil {
 		t.Fatalf("migrate() error = %v", err)
@@ -424,6 +427,24 @@ func TestSQLiteProvider_Migration11BackfillsBuggyTelegramAddressColumns(t *testi
 		t.Fatalf("migrated telegram address columns = %d/%d, want -1002667079342/8939", chatID, topicID)
 	}
 	assertSessionMetadataHasNoChatTopicUnique(t, ctx, db)
+
+	var runtimeID int
+	if err := db.QueryRowContext(ctx, `SELECT id FROM balda_runtime_sessions`).Scan(&runtimeID); err != nil {
+		t.Fatalf("query preserved runtime placeholder: %v", err)
+	}
+	if runtimeID != 42 {
+		t.Fatalf("runtime placeholder id = %d, want 42", runtimeID)
+	}
+	var version int64
+	if err := db.QueryRowContext(ctx, `SELECT MAX(version_id) FROM goose_db_version WHERE is_applied = 1`).Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if version < 64 {
+		t.Fatalf("migration version = %d, want at least 64", version)
+	}
+	if err := migrate(ctx, db); err != nil {
+		t.Fatalf("reopen migrated legacy database: %v", err)
+	}
 }
 
 func newTestProvider(t *testing.T) Provider {
@@ -665,6 +686,8 @@ func seedPreviousSchemaAtVersion8(t *testing.T, dbPath string) {
 	}
 }
 
+// Preserve this captured schema, including runtime placeholder tables. Rebuilding
+// it with current migrations would stop exercising upgrades of existing databases.
 func seedBaldaDBAtVersion10WithBuggyZeroSession(t *testing.T, db *sql.DB) {
 	t.Helper()
 
