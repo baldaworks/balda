@@ -142,26 +142,35 @@ type BaldaConfig struct {
 	Mattermost MattermostConfig `mapstructure:"mattermost"`
 }
 
+// AgentConfig is the secret-free effective agent configuration shown by Backoffice.
+type AgentConfig struct {
+	ProviderID        string
+	ProviderType      string
+	Profile           string
+	Model             string
+	ReasoningEffort   string
+	GlobalInstruction string
+}
+
 // MattermostConfig contains only non-secret integration capability information.
 type MattermostConfig struct {
-	Enabled         bool   `mapstructure:"enabled"`
-	ServerURL       string `mapstructure:"server_url"`
-	CommandsEnabled bool   `mapstructure:"commands_enabled"`
-	ListenAddr      string `mapstructure:"listen_addr"`
-	CommandsPath    string `mapstructure:"commands_path"`
+	Enabled             bool   `mapstructure:"enabled"`
+	ServerURL           string `mapstructure:"server_url"`
+	CommandsEnabled     bool   `mapstructure:"commands_enabled"`
+	CommandsCallbackURL string
 }
 
 // TelegramConfig contains only non-secret capability information.
 type TelegramConfig struct {
-	Enabled bool                  `mapstructure:"enabled"`
-	Webhook TelegramWebhookConfig `mapstructure:"webhook"`
+	Enabled        bool                  `mapstructure:"enabled"`
+	FormattingMode string                `mapstructure:"formatting_mode"`
+	Webhook        TelegramWebhookConfig `mapstructure:"webhook"`
 }
 
 // TelegramWebhookConfig is the safe enablement/address subset.
 type TelegramWebhookConfig struct {
-	Enabled    bool   `mapstructure:"enabled"`
-	ListenAddr string `mapstructure:"listen_addr"`
-	Path       string `mapstructure:"path"`
+	Enabled     bool `mapstructure:"enabled"`
+	CallbackURL string
 }
 
 // ZulipConfig contains only non-secret capability information.
@@ -171,36 +180,34 @@ type ZulipConfig struct {
 
 // ZulipWebhookConfig is the safe enablement/address subset.
 type ZulipWebhookConfig struct {
-	Enabled    bool   `mapstructure:"enabled"`
-	ListenAddr string `mapstructure:"listen_addr"`
-	Path       string `mapstructure:"path"`
+	Enabled     bool `mapstructure:"enabled"`
+	CallbackURL string
 }
 
-// SlackConfig contains compatibility and Slack Agent capability information.
+// SlackConfig contains only Slack Agent capability information.
 type SlackConfig struct {
-	Enabled    bool             `mapstructure:"enabled"`
-	ListenAddr string           `mapstructure:"listen_addr"`
-	EventsPath string           `mapstructure:"events_path"`
-	Agent      SlackAgentConfig `mapstructure:"agent"`
+	Agent SlackAgentConfig `mapstructure:"agent"`
 }
 
 // SlackAgentConfig is the safe enablement/address subset.
 type SlackAgentConfig struct {
-	Enabled         bool   `mapstructure:"enabled"`
-	ListenAddr      string `mapstructure:"listen_addr"`
-	EventsPath      string `mapstructure:"events_path"`
-	EnableStreaming bool   `mapstructure:"enable_streaming"`
+	Enabled                bool `mapstructure:"enabled"`
+	IncludePrivateChannels bool `mapstructure:"include_private_channels"`
+	EnableStreaming        bool `mapstructure:"enable_streaming"`
+	SuggestedPrompts       bool `mapstructure:"suggested_prompts"`
+	EventsCallbackURL      string
+	CommandsCallbackURL    string
 }
 
 // WebhooksConfig contains only enablement and a safe route count.
 type WebhooksConfig struct {
-	Enabled    bool   `mapstructure:"enabled"`
-	ListenAddr string `mapstructure:"listen_addr"`
-	RouteCount int    `mapstructure:"route_count"`
+	Enabled    bool `mapstructure:"enabled"`
+	RouteCount int  `mapstructure:"route_count"`
 }
 
 // ResolvedConfig contains the selected database and safe Backoffice runtime settings.
 type ResolvedConfig struct {
+	Agent    AgentConfig
 	Balda    BaldaConfig
 	Server   ResolvedServerConfig
 	Database state.DatabaseConfig

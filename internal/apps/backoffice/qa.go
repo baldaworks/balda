@@ -278,6 +278,7 @@ var qaEntries = append(append(append(append(pluginMarketplaceQAEntries, pluginLi
 	{name: "password-error", label: "Password replacement · error", templateName: webui.TemplatePassword, page: qaPasswordError, gallery: true},
 	{name: "overview", label: "Overview", templateName: webui.TemplateOverview, page: qaOverview, gallery: true},
 	{name: "overview-empty", label: "Overview · empty", templateName: webui.TemplateOverview, page: qaOverviewEmpty, gallery: true},
+	{name: "agent", label: "Agent", templateName: webui.TemplateAgent, page: qaAgent, gallery: true},
 	{name: "access", label: "Access · detail", templateName: webui.TemplateAccess, page: qaAccess, gallery: true},
 	{name: "bindings-issued", label: "Bindings · one-time actions", templateName: webui.TemplateAccess, page: qaBindingsIssued, gallery: true},
 	{name: "bindings-pending", label: "Bindings · pending and expired", templateName: webui.TemplateAccess, page: qaBindingsPending, gallery: true},
@@ -462,8 +463,8 @@ func qaOverview() webui.Page {
 		Title: "Overview · QA", Current: webui.LocationOverview,
 		Navigation: qaAdminNavigation(webui.LocationOverview),
 		Capabilities: []webui.CapabilityCard{
-			{ID: "telegram", Name: "Telegram", Mode: "webhook", ListenAddr: "127.0.0.1:8080", Endpoint: "/telegram"},
-			{ID: "slackagent", Name: "Slack Agent", Mode: "agent-events", Streaming: true},
+			{ID: "telegram", Name: "Telegram", Mode: "webhook", Settings: []webui.CapabilitySetting{{Label: "Formatting", Value: "markdown"}}, Endpoints: []webui.CapabilityEndpoint{{Label: "Webhook", URL: "/gateway/telegram/webhook"}}},
+			{ID: "slackagent", Name: "Slack Agent", Mode: "agent-events", Settings: []webui.CapabilitySetting{{Label: "Streaming", Value: "Yes"}}, Endpoints: []webui.CapabilityEndpoint{{Label: "Events", URL: "/gateway/slack/events"}, {Label: "Commands", URL: "/gateway/slack/commands"}}},
 			{ID: "webhooks", Name: "Webhooks", Mode: "inbound", RouteCount: 3},
 		},
 	}
@@ -473,6 +474,13 @@ func qaOverviewEmpty() webui.Page {
 	page := qaOverview()
 	page.Capabilities = nil
 	return page
+}
+
+func qaAgent() webui.Page {
+	return webui.Page{
+		Title: "Agent · QA", Current: webui.LocationAgent, Navigation: qaAdminNavigation(webui.LocationAgent),
+		Agent: &webui.AgentView{ProviderID: "balda", ProviderType: "codex_acp", Profile: "default", Model: "gpt-6-sol", ReasoningEffort: "high", GlobalInstruction: "Answer operators clearly.\nPreserve configured safety boundaries."},
+	}
 }
 
 func qaAccess() webui.Page {

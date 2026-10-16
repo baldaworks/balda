@@ -221,7 +221,7 @@ func loadBaldaCommandConfig(requireChannel bool) (preparedBaldaCommand, error) {
 	}
 
 	var doc baldaConfigDocument
-	_, err = appconfig.LoadConfigDocument(
+	selectedProfile, err := appconfig.LoadConfigDocument(
 		runtimeLoadOpts,
 		appconfig.AppLoadOptions{
 			AppName:            "balda",
@@ -233,6 +233,7 @@ func loadBaldaCommandConfig(requireChannel bool) (preparedBaldaCommand, error) {
 	if err != nil {
 		return preparedBaldaCommand{}, err
 	}
+	runtimeLoadOpts.Profile = selectedProfile
 	applyHTTPBasePathEnv(&doc.Balda)
 	if err := applyBaldaLogging(doc.Balda.Logger); err != nil {
 		return preparedBaldaCommand{}, fmt.Errorf("configure balda logging: %w", err)

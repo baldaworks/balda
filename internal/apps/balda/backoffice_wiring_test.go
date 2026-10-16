@@ -23,6 +23,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/normahq/runtime/v2/agentconfig"
+	"github.com/normahq/runtime/v2/appconfig"
 	"github.com/normahq/runtime/v2/mcpregistry"
 )
 
@@ -39,7 +40,7 @@ func TestBackofficeSharedHandlerContribution(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = provider.Close() })
-	config, err := backofficeRuntimeConfig(cfg, state.DatabaseConfig{})
+	config, err := backofficeRuntimeConfig(cfg, appconfig.RuntimeConfig{}, "", state.DatabaseConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +83,7 @@ func TestBackofficeSharedHandlerContribution(t *testing.T) {
 
 func TestBackofficeRuntimeConfigRejectsInvalidSharedHTTPBeforeStartup(t *testing.T) {
 	cfg := BaldaConfig{HTTP: HTTPConfig{BaseURL: "https://lab.metalagman.dev/extra"}}
-	_, err := backofficeRuntimeConfig(cfg, state.DatabaseConfig{})
+	_, err := backofficeRuntimeConfig(cfg, appconfig.RuntimeConfig{}, "", state.DatabaseConfig{})
 	if err == nil || !strings.Contains(err.Error(), "balda.http.base_url") {
 		t.Fatalf("invalid shared origin error = %v", err)
 	}
@@ -145,7 +146,7 @@ func TestSharedBackofficeMCPBrowserOAuthUsesSharedCallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(sharedFlow.Close)
-	runtimeConfig, err := backofficeRuntimeConfig(cfg, state.DatabaseConfig{})
+	runtimeConfig, err := backofficeRuntimeConfig(cfg, appconfig.RuntimeConfig{}, "", state.DatabaseConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,7 +276,7 @@ func TestBackofficeRuntimeConfigUsesSharedDatabaseAndSafeCapabilities(t *testing
 	cfg.Webhooks.Enabled = true
 	cfg.Webhooks.Routes = map[string]WebhookRouteConfig{"example": {PromptTemplate: "secret prompt"}}
 	cfg.Mattermost = MattermostConfig{Enabled: true, ServerURL: "https://mattermost.example", Token: "secret-mattermost-token", CommandsEnabled: true, CommandsListenAddr: "127.0.0.1:8094", CommandsPath: "/mattermost/commands", CommandsToken: "secret-command-token"}
-	resolved, err := backofficeRuntimeConfig(cfg, database)
+	resolved, err := backofficeRuntimeConfig(cfg, appconfig.RuntimeConfig{}, "", database)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,7 +286,89 @@ func TestBackofficeRuntimeConfigUsesSharedDatabaseAndSafeCapabilities(t *testing
 	if !resolved.Balda.Telegram.Enabled || resolved.Balda.Webhooks.RouteCount != 1 {
 		t.Fatalf("capability projection = %+v", resolved.Balda)
 	}
-	if !resolved.Balda.Mattermost.Enabled || !resolved.Balda.Mattermost.CommandsEnabled || resolved.Balda.Mattermost.ListenAddr != cfg.Mattermost.CommandsListenAddr || resolved.Balda.Mattermost.ServerURL != cfg.Mattermost.ServerURL {
+	if !resolved.Balda.Mattermost.Enabled || !resolved.Balda.Mattermost.CommandsEnabled || resolved.Balda.Mattermost.ServerURL != cfg.Mattermost.ServerURL {
 		t.Fatalf("Mattermost capability projection = %+v", resolved.Balda.Mattermost)
+	}
+}
+
+func TestBackofficeRuntimeConfigProjectsOperationalConfig(t *testing.T) {
+	t.Parallel()
+	basePath := "/balda"
+	runtimeCfg := appconfig.RuntimeConfig{Providers: map[string]agentconfig.Config{
+		"primary": {
+			Type:     agentconfig.AgentTypeCodexACP,
+			CodexACP: &agentconfig.ACPConfig{Model: "gpt-6-sol", ReasoningEffort: "high"},
+		},
+		"fallback": {
+			Type:       agentconfig.AgentTypePool,
+			PoolConfig: &agentconfig.PoolConfig{Members: []string{"primary"}},
+		},
+	}}
+	tests := []struct {
+		name           string
+		provider       string
+		baseURL        string
+		callbacks      bool
+		wantProvider   backoffice.AgentConfig
+		wantTelegram   string
+		wantSlack      string
+		wantMattermost string
+	}{
+		{
+			name:     "explicit public origin",
+			provider: "primary", baseURL: "https://bots.example.test", callbacks: true,
+			wantProvider:   backoffice.AgentConfig{ProviderID: "primary", ProviderType: "codex_acp", Profile: "production", Model: "gpt-6-sol", ReasoningEffort: "high", GlobalInstruction: "operate safely"},
+			wantTelegram:   "https://bots.example.test/balda/gateway/telegram/webhook",
+			wantSlack:      "https://bots.example.test/balda/gateway/slack/events",
+			wantMattermost: "https://bots.example.test/balda/gateway/mattermost/commands",
+		},
+		{
+			name:     "root relative without explicit origin",
+			provider: "primary", callbacks: true,
+			wantProvider:   backoffice.AgentConfig{ProviderID: "primary", ProviderType: "codex_acp", Profile: "production", Model: "gpt-6-sol", ReasoningEffort: "high", GlobalInstruction: "operate safely"},
+			wantTelegram:   "/balda/gateway/telegram/webhook",
+			wantSlack:      "/balda/gateway/slack/events",
+			wantMattermost: "/balda/gateway/mattermost/commands",
+		},
+		{
+			name:         "pool and disabled callbacks",
+			provider:     "fallback",
+			wantProvider: backoffice.AgentConfig{ProviderID: "fallback", ProviderType: "pool", Profile: "production", GlobalInstruction: "operate safely"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := BaldaConfig{
+				Provider: tt.provider, GlobalInstruction: "operate safely",
+				HTTP:       HTTPConfig{BaseURL: tt.baseURL, BasePath: &basePath},
+				Telegram:   TelegramConfig{Token: "secret", FormattingMode: "markdown", Webhook: WebhookConfig{Enabled: tt.callbacks}},
+				Zulip:      ZulipConfig{Webhook: ZulipWebhookConfig{Enabled: tt.callbacks}},
+				Slack:      SlackConfig{IncludePrivateChannels: true, Agent: SlackAgentConfig{Enabled: tt.callbacks, EnableStreaming: false, SuggestedPrompts: true}},
+				Mattermost: MattermostConfig{Enabled: true, ServerURL: "https://user:secret@mattermost.example/team?token=secret#fragment", CommandsEnabled: tt.callbacks},
+			}
+			resolved, err := backofficeRuntimeConfig(cfg, runtimeCfg, "production", state.DatabaseConfig{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if resolved.Agent != tt.wantProvider {
+				t.Fatalf("agent projection = %+v, want %+v", resolved.Agent, tt.wantProvider)
+			}
+			if resolved.Balda.Telegram.Webhook.CallbackURL != tt.wantTelegram || resolved.Balda.Slack.Agent.EventsCallbackURL != tt.wantSlack || resolved.Balda.Mattermost.CommandsCallbackURL != tt.wantMattermost {
+				t.Fatalf("callback projection = telegram %q, slack %q, mattermost %q", resolved.Balda.Telegram.Webhook.CallbackURL, resolved.Balda.Slack.Agent.EventsCallbackURL, resolved.Balda.Mattermost.CommandsCallbackURL)
+			}
+			if got := resolved.Balda.Mattermost.ServerURL; got != "https://mattermost.example/team" {
+				t.Fatalf("sanitized Mattermost URL = %q", got)
+			}
+			if !resolved.Balda.Slack.Agent.IncludePrivateChannels || !resolved.Balda.Slack.Agent.SuggestedPrompts || resolved.Balda.Slack.Agent.EnableStreaming {
+				t.Fatalf("Slack Agent behavior = %+v", resolved.Balda.Slack.Agent)
+			}
+		})
+	}
+}
+
+func TestBackofficeRuntimeConfigRejectsMissingAgentProvider(t *testing.T) {
+	_, err := backofficeRuntimeConfig(BaldaConfig{Provider: "missing"}, appconfig.RuntimeConfig{}, "default", state.DatabaseConfig{})
+	if err == nil || !strings.Contains(err.Error(), `provider "missing" is not configured`) {
+		t.Fatalf("missing provider error = %v", err)
 	}
 }

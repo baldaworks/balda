@@ -33,7 +33,7 @@ const (
 	defaultMaxBodyBytes = 8 << 10
 )
 
-var defaultReturnPrefixes = []string{"/", "/overview", "/access", "/account", "/audit", "/mcp", "/schedules", "/aliases", "/plugins", "/skills", "/chat-sessions"}
+var defaultReturnPrefixes = []string{"/", "/overview", "/agent", "/access", "/account", "/audit", "/mcp", "/schedules", "/aliases", "/plugins", "/skills", "/chat-sessions"}
 
 type browserService interface {
 	Login(ctx context.Context, username string, password []byte) (Credentials, error)

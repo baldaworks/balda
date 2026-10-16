@@ -283,7 +283,7 @@ raw User-Agent and token values are never displayed.
   process; stop it for file backup or restore. PostgreSQL backups must include
   schema, data, sequences, and Goose
   migration history.
-- Access is administrator-only. Account and Overview are available to active
+- Access is administrator-only. Account, Overview, and Agent are available to active
   administrators and operators; Audit is administrator-only. Account places
   **Change password** before profile details. A successful change creates a
   fresh browser session and revokes previous access and refresh credentials.
@@ -316,9 +316,13 @@ raw User-Agent and token values are never displayed.
   status. User detail separates profile, chat bindings, credential reset, and
   browser sessions. Audit lists newest events first by event time, then stable
   ID, with actor, action, target, outcome, and filters that persist on the next
-  page. Technical IDs remain available in event details. Overview lists
-  configured integrations only; a configured card makes no claim about live
-  connectivity or health.
+  page. Technical IDs remain available in event details. Agent shows the
+  effective startup profile, configured root provider ID and type, model,
+  reasoning effort, and global instruction read-only. Pool providers do not
+  claim a currently active member. Overview lists configured integrations only;
+  its cards show daily-operation channel settings and canonical callback
+  locations without legacy bind addresses. A configured card makes no claim
+  about live connectivity or health.
 - A terminal refresh failure offers sign-in as the primary action. A
   concurrent-refresh conflict offers a safe page reopen because another
   request may already have installed new cookies. Failed native and HTMX forms
@@ -363,7 +367,7 @@ CSRF-protected sign-out; a branded permission-derived sidebar; a shared content 
 in normal grid flow. The top bar and sidebar brand share the same height;
 navigation scrolls content below the top bar so page headings remain visible.
 The viewer identity is independent of an inspected user.
-The sidebar groups authorized links by purpose: Workspace contains Overview;
+The sidebar groups authorized links by purpose: Workspace contains Overview and Agent;
 Operations contains Plugins, MCP, Schedules, Webhooks, Aliases, and Fact memory; Administration contains Access and Audit.
 It omits groups with no authorized links. Active administrators see all three;
 active operators see Workspace while Account remains available in the top bar.
