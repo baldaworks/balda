@@ -277,6 +277,9 @@ func (s *CommandServer) handleCommand(w http.ResponseWriter, r *http.Request) {
 		Args:         args,
 		Direct:       direct,
 	}
+	if name == "skill" {
+		command.OriginalInput = originalMattermostInput(locator, Post{ID: postID, UserID: userID, Message: form.Get("command") + " " + form.Get("text")}, form.Get("user_name"), time.Now())
+	}
 	if err := s.processor.HandleCommand(ctx, command); err != nil {
 		s.logger.Warn().Err(err).Str("command", name).Msg("failed to handle mattermost slash command")
 		http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)

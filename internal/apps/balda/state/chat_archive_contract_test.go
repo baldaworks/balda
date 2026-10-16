@@ -114,6 +114,30 @@ func checkChatArchive(t *testing.T, open contractOpener) {
 	if err != nil || len(messages) != 13 || messages[0].Speaker.Name != "Anna" {
 		t.Fatalf("retained transcript=%+v,%v", messages, err)
 	}
+	// Intake retries keep their first epoch and observation time transactionally.
+	admitted := input
+	admitted.Source = "input:contract-original"
+	location := candidate.Location
+	location.Title = "Historical title"
+	recorded, err := s.RecordInput(ctx, admitted, location)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admitted.SessionID = "replacement"
+	admitted.ObservedAt = admitted.ObservedAt.Add(time.Minute)
+	location.Title = "Renamed"
+	replay, err := s.RecordInput(ctx, admitted, location)
+	if err != nil || replay.SessionID != candidate.ID || replay.Sequence != recorded.Sequence {
+		t.Fatalf("input replay=%+v,%v", replay, err)
+	}
+	got, err := s.Get(ctx, candidate.ID)
+	if err != nil || got.Location.Title != "Historical title" {
+		t.Fatalf("immutable location=%+v,%v", got, err)
+	}
+	admitted.Text = "conflicting content"
+	if _, err := s.RecordInput(ctx, admitted, location); !errors.Is(err, chatarchivecmd.ErrConflict) {
+		t.Fatalf("input conflict=%v", err)
+	}
 	cancelled, cancel := context.WithCancel(ctx)
 	cancel()
 	if _, err := s.Record(cancelled, input); !errors.Is(err, context.Canceled) {

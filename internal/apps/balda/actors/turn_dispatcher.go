@@ -331,7 +331,7 @@ func matchesRunningSteering(runningPayload, incoming *turncmd.SessionTurnPayload
 	if strings.TrimSpace(runningPayload.RequesterUserID) == "" || strings.TrimSpace(incoming.RequesterUserID) == "" {
 		return false
 	}
-	if strings.TrimSpace(runningPayload.RequesterUserID) != strings.TrimSpace(incoming.RequesterUserID) {
+	if runningPayload.ArchiveID != incoming.ArchiveID || strings.TrimSpace(runningPayload.RequesterUserID) != strings.TrimSpace(incoming.RequesterUserID) {
 		return false
 	}
 	return slices.Contains(steeringAnchorMessageIDs(runningPayload), incoming.ReplyToMessageID)
@@ -371,7 +371,7 @@ func mergeIntoSteeringBatch(turn *queuedTurn, incoming *queuedTurn) bool {
 	}
 	batch := turn.task.SessionTurn
 	incomingPayload := incoming.task.SessionTurn
-	if strings.TrimSpace(batch.RequesterUserID) != strings.TrimSpace(incomingPayload.RequesterUserID) {
+	if batch.ArchiveID != incomingPayload.ArchiveID || strings.TrimSpace(batch.RequesterUserID) != strings.TrimSpace(incomingPayload.RequesterUserID) {
 		return false
 	}
 
@@ -431,6 +431,8 @@ func steeringMessageFromPayload(payload *turncmd.SessionTurnPayload) turncmd.Ste
 		return turncmd.SteeringMessage{}
 	}
 	return turncmd.SteeringMessage{
+		ArchiveID:        payload.ArchiveID,
+		DedupeKey:        payload.DedupeKey,
 		MessageID:        payload.MessageID,
 		ReplyToMessageID: payload.ReplyToMessageID,
 		UserID:           strings.TrimSpace(payload.RequesterUserID),

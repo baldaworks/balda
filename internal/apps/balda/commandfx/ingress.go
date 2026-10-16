@@ -17,7 +17,16 @@ type CommandDispatcher interface {
 }
 
 // CommandIngress adapts actortransport.Dispatcher to commandcmd.Ingress.
+// SkillCommandAdmission validates and records eligible skill input before publication.
+type SkillCommandAdmission interface {
+	AdmitSkillCommand(ctx context.Context, payload commandcmd.Payload) (commandcmd.Payload, error)
+}
+
+// SetSkillAdmission installs the production skill input admission boundary.
+func (h *CommandIngress) SetSkillAdmission(admission SkillCommandAdmission) { h.skills = admission }
+
 type CommandIngress struct {
+	skills     SkillCommandAdmission
 	dispatcher CommandDispatcher
 	snapshots  EffectiveSnapshotResolver
 }
@@ -52,8 +61,18 @@ func (h *CommandIngress) PublishCommand(ctx context.Context, req commandcmd.Requ
 	if strings.TrimSpace(string(snapshotID)) == "" {
 		return fmt.Errorf("resolve command snapshot: %w", runtimecatalogcmd.ErrSnapshotUnavailable)
 	}
+	if req.Payload.OriginalInput != nil {
+		req.Payload.OriginalInput = req.Payload.OriginalInput.Clone()
+		req.Payload.OriginalInput.Source = "command:" + strings.TrimSpace(req.InvocationID)
+	}
 	req.Payload.Version = commandcmd.SchemaVersion
 	req.Payload.SnapshotID = snapshotID
+	if strings.EqualFold(req.Payload.Name, "skill") && h.skills != nil {
+		req.Payload, err = h.skills.AdmitSkillCommand(ctx, req.Payload)
+		if err != nil {
+			return err
+		}
+	}
 	id := strings.TrimSpace(req.InvocationID)
 	env, err := commandcmd.NewEnvelope(req.Payload, commandcmd.EnvelopeOptions{
 		ID:            id,

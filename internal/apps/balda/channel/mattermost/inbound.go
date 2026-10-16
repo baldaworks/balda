@@ -52,6 +52,7 @@ func BuildInboundReply(locator deliverycmd.Locator, subject string, message Inbo
 
 // InboundCommand represents a command invocation from Mattermost.
 type InboundCommand struct {
+	OriginalInput *chatarchivecmd.Input
 	// InvocationID identifies this command invocation for durable deduplication.
 	// HTTP slash commands have no Mattermost request ID, so each delivery gets a
 	// fresh ID; websocket commands use the source post ID.

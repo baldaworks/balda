@@ -16,7 +16,16 @@ import (
 )
 
 // SkillTurnExecutor resolves session-pinned skills and publishes normal turns.
+// SkillAdmission prepares and archives one validated literal skill invocation.
+type SkillAdmission interface {
+	AdmitSkillInput(ctx context.Context, payload commandcmd.Payload) (string, error)
+}
+
+// SetAdmission attaches mandatory production input admission.
+func (e *SkillTurnExecutor) SetAdmission(admission SkillAdmission) { e.admission = admission }
+
 type SkillTurnExecutor struct {
+	admission  SkillAdmission
 	skills     *baldaagent.SkillManager
 	dispatcher actortransport.Dispatcher
 }
@@ -56,6 +65,7 @@ func (e *SkillTurnExecutor) ExecuteSkill(
 	}
 
 	turn := turncmd.SessionTurnPayload{
+		ArchiveID:       payload.ArchiveID,
 		Text:            strings.TrimSpace(prompt),
 		Locator:         payload.Locator,
 		UserID:          payload.Principal,
@@ -66,6 +76,13 @@ func (e *SkillTurnExecutor) ExecuteSkill(
 		Source:          payload.Transport,
 		DedupeKey:       firstNonEmpty(parent.DedupeKey, parent.ID) + ":skill-turn",
 		Skill:           &selection,
+	}
+	if e.admission != nil && turn.ArchiveID == "" {
+		archiveID, err := e.admission.AdmitSkillInput(ctx, payload)
+		if err != nil {
+			return err
+		}
+		turn.ArchiveID = archiveID
 	}
 	envelope, err := turncmd.SessionTurnEnvelope(turn)
 	if err != nil {

@@ -53,6 +53,10 @@ vendors:
       - google.golang.org/adk/v2/platform
 
 components:
+  chat_archive_app:
+    in:
+      - internal/apps/balda/chatarchiveapp
+
   chat_archive_wiring:
     in:
       - internal/apps/balda/chatarchivefx
@@ -568,10 +572,21 @@ components:
       - cmd/balda
 
 deps:
+  chat_archive_app:
+    mayDependOn:
+      - chat_archive_contracts
+    # Consumer-owned storage ports receive wiring adapters; constructor scanning
+    # otherwise reverses that intended dependency. Direct imports stay enforced.
+    deepScan: false
+    anyVendorDeps: false
+
   # Lifecycle composition exposes only SQL archive capability to session ports.
   # Boot reconciliation stays in storage: no provider or transport dependency.
   chat_archive_wiring:
     mayDependOn:
+      - chat_archive_app
+      - contracts
+      - command_wiring
       - chat_archive_contracts
       - application
       - storage
@@ -579,6 +594,7 @@ deps:
     anyVendorDeps: false
     canUse:
       - hook_wiring_dependencies
+      - command_outbox_runtime
 
   chat_archive_contracts:
     mayDependOn:
@@ -1207,6 +1223,7 @@ deps:
 
   command_wiring:
     mayDependOn:
+      - chat_archive_contracts
       - contracts
       - user_contracts
       - user_application

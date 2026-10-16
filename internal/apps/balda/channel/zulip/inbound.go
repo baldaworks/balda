@@ -31,14 +31,15 @@ type InboundMessage struct {
 
 // InboundCommand represents a command invocation from Zulip.
 type InboundCommand struct {
-	BotEmail    string
-	SenderEmail string
-	Locator     deliverycmd.Locator
-	MessageID   int
-	SenderID    int
-	Command     string
-	Args        string
-	Direct      bool
+	OriginalInput *chatarchivecmd.Input
+	BotEmail      string
+	SenderEmail   string
+	Locator       deliverycmd.Locator
+	MessageID     int
+	SenderID      int
+	Command       string
+	Args          string
+	Direct        bool
 }
 
 // InboundProcessor processes inbound Zulip messages and commands.

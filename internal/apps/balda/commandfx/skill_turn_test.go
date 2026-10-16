@@ -282,3 +282,21 @@ func testSkillCommandPayload() commandcmd.Payload {
 		Invocation: commandcmd.Invocation{Root: "/"},
 	}
 }
+
+type failedSkillAdmission struct{}
+
+func (failedSkillAdmission) AdmitSkillInput(context.Context, commandcmd.Payload) (string, error) {
+	return "", errors.New("archive unavailable")
+}
+
+func TestSkillArchiveFailurePreventsPublication(t *testing.T) {
+	source := runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindUserSkill, Name: "default"}
+	manager := newTestSkillManager(t, skillSnapshot(skillMetadata(source, "review", "revision")), &unreadSkillContent{})
+	dispatcher := &skillTurnDispatcher{receipt: &actortransport.DispatchReceipt{}}
+	executor := NewSkillTurnExecutor(manager, dispatcher)
+	executor.SetAdmission(failedSkillAdmission{})
+	err := executor.ExecuteSkill(t.Context(), actorlayer.Envelope{ID: "command"}, testSkillCommandPayload(), commandskill.Selector{Name: "review"}, "prompt")
+	if err == nil || len(dispatcher.envelopes) != 0 {
+		t.Fatalf("publication despite archive failure: %v,%+v", err, dispatcher.envelopes)
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"net/http"
 	"strings"
 	"sync"
@@ -18,6 +19,7 @@ import (
 )
 
 const (
+	commandSkill = "skill"
 	// websocketPingInterval is the Mattermost-recommended client ping cadence.
 	websocketPingInterval = 30 * time.Second
 	// websocketReadLimit caps an inbound frame. Auth challenge frames are small;
@@ -505,14 +507,19 @@ func (s *Ingress) processPosted(ctx context.Context, data PostedData, post Post)
 		}
 		if s.processor != nil {
 			s.processCommandWithRetry(ctx, post.ID, func() error {
+				var original *chatarchivecmd.Input
+				if name == commandSkill {
+					original = originalMattermostInput(locator, post, strings.TrimSpace(data.SenderName), postTime(post))
+				}
 				return s.processor.HandleCommand(ctx, InboundCommand{
-					Locator:   locator,
-					MessageID: ParsePostID(post.ID),
-					PostID:    post.ID,
-					SenderID:  post.UserID,
-					Command:   name,
-					Args:      args,
-					Direct:    direct,
+					OriginalInput: original,
+					Locator:       locator,
+					MessageID:     ParsePostID(post.ID),
+					PostID:        post.ID,
+					SenderID:      post.UserID,
+					Command:       name,
+					Args:          args,
+					Direct:        direct,
 				})
 			})
 		}

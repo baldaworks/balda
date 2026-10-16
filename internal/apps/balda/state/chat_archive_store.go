@@ -387,7 +387,16 @@ func archiveFingerprint(m chatarchivecmd.Message) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// RecordInput inserts an immutable human input and fills only unknown location metadata.
+func (s *sqlChatArchiveStore) RecordInput(ctx context.Context, m chatarchivecmd.Message, location chatarchivecmd.Location) (chatarchivecmd.Message, error) {
+	return s.record(ctx, m, &location)
+}
+
 func (s *sqlChatArchiveStore) Record(ctx context.Context, m chatarchivecmd.Message) (chatarchivecmd.Message, error) {
+	return s.record(ctx, m, nil)
+}
+
+func (s *sqlChatArchiveStore) record(ctx context.Context, m chatarchivecmd.Message, location *chatarchivecmd.Location) (chatarchivecmd.Message, error) {
 	if m.Source == "" || m.SessionID == "" || m.ObservedAt.IsZero() || (m.Role != "user" && m.Role != "agent") || (m.Text == "" && len(m.Attachments) == 0) {
 		return m, chatarchivecmd.ErrInvalid
 	}
@@ -400,13 +409,27 @@ func (s *sqlChatArchiveStore) Record(ctx context.Context, m chatarchivecmd.Messa
 	var raw, prior string
 	err = tx.QueryRowContext(ctx, s.users.bind(`SELECT record_json,fingerprint FROM balda_archive_messages WHERE source_key = ?`), m.Source).Scan(&raw, &prior)
 	if err == nil {
+		var existing chatarchivecmd.Message
+		if json.Unmarshal([]byte(raw), &existing) != nil {
+			return m, chatarchivecmd.ErrUnavailable
+		}
+		if location != nil {
+			// Intake retries retain first observation time and lifetime, including after reset.
+			m.SessionID = existing.SessionID
+			m.ObservedAt = existing.ObservedAt
+			fingerprint = archiveFingerprint(m)
+			rec, err := s.readSession(ctx, tx, existing.SessionID)
+			if err != nil {
+				return m, err
+			}
+			if rec.Location.Channel != location.Channel || rec.Location.AddressKey != location.AddressKey || rec.Location.Locator != location.Locator {
+				return m, chatarchivecmd.ErrConflict
+			}
+		}
 		if prior != fingerprint {
 			return m, chatarchivecmd.ErrConflict
 		}
-		if json.Unmarshal([]byte(raw), &m) != nil {
-			return m, chatarchivecmd.ErrUnavailable
-		}
-		return m, nil
+		return existing, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return m, archiveError(ctx, err)
@@ -428,8 +451,24 @@ func (s *sqlChatArchiveStore) Record(ctx context.Context, m chatarchivecmd.Messa
 	if err != nil {
 		return m, archiveError(ctx, err)
 	}
-	if m.ObservedAt.After(rec.ObservedAt) {
-		rec.ObservedAt = m.ObservedAt
+	if location != nil {
+		if rec.Location.Channel != location.Channel || rec.Location.AddressKey != location.AddressKey || rec.Location.Locator != location.Locator {
+			return m, chatarchivecmd.ErrConflict
+		}
+		fillUnknown := func(current *string, incoming string) {
+			if *current == "" || *current == "unknown" {
+				*current = incoming
+			}
+		}
+		fillUnknown(&rec.Location.Title, location.Title)
+		fillUnknown(&rec.Location.Audience, location.Audience)
+		fillUnknown(&rec.Location.Subdivision, location.Subdivision)
+		fillUnknown(&rec.Location.SubdivisionLabel, location.SubdivisionLabel)
+	}
+	if m.ObservedAt.After(rec.ObservedAt) || location != nil {
+		if m.ObservedAt.After(rec.ObservedAt) {
+			rec.ObservedAt = m.ObservedAt
+		}
 		if err := s.writeSession(ctx, tx, rec, false); err != nil {
 			return m, err
 		}

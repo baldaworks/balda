@@ -195,12 +195,13 @@ func (h *mattermostInboundHandler) HandleCommand(ctx context.Context, cmd matter
 	return h.commandIngress.PublishCommand(ctx, commandcmd.Request{
 		InvocationID: invocationID,
 		Payload: commandcmd.Payload{
-			Version:   commandcmd.SchemaVersion,
-			Name:      cmd.Command,
-			Args:      cmd.Args,
-			Locator:   cmd.Locator,
-			Transport: mattermost.ChannelType,
-			Principal: auth.MattermostSubject(cmd.SenderID),
+			Version:       commandcmd.SchemaVersion,
+			Name:          cmd.Command,
+			OriginalInput: cmd.OriginalInput.Clone(),
+			Args:          cmd.Args,
+			Locator:       cmd.Locator,
+			Transport:     mattermost.ChannelType,
+			Principal:     auth.MattermostSubject(cmd.SenderID),
 			Access: commandcmd.Access{
 				SessionCommands: true,
 				Owner:           isOwner,

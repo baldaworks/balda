@@ -1045,8 +1045,8 @@ func TestTurnDispatcher_DeduplicatesConstituentArrivalInRunningBatch(t *testing.
 		Locator:         baldatelegram.NewLocator(24, 0),
 		RequesterUserID: "tg-user-5",
 		MessageID:       700,
-		DedupeKey:        "turn-700",
-		Text:             "running root",
+		DedupeKey:       "turn-700",
+		Text:            "running root",
 	}
 	resRoot, posRoot, err := dispatcher.Enqueue(context.Background(), TurnTask{
 		SessionID:   root.Locator.SessionID,
@@ -1070,8 +1070,8 @@ func TestTurnDispatcher_DeduplicatesConstituentArrivalInRunningBatch(t *testing.
 		Locator:         root.Locator,
 		RequesterUserID: "tg-user-5",
 		MessageID:       700,
-		DedupeKey:        "turn-700",
-		Text:             "running root duplicate",
+		DedupeKey:       "turn-700",
+		Text:            "running root duplicate",
 	}
 	resDup, posDup, err := dispatcher.Enqueue(context.Background(), TurnTask{
 		SessionID:   root.Locator.SessionID,
@@ -1123,4 +1123,24 @@ func ensureNoSignal(t *testing.T, ch <-chan struct{}, wait time.Duration, label 
 func enqueueTurn(dispatcher *TurnDispatcher, ctx context.Context, task TurnTask) (int, error) {
 	_, position, err := dispatcher.Enqueue(ctx, task)
 	return position, err
+}
+
+func TestSteeringKeepsEachAdmissionAndRejectsOtherEpoch(t *testing.T) {
+	first := &turncmd.SessionTurnPayload{ArchiveID: "old", DedupeKey: "a", RequesterUserID: "speaker", MessageID: 10, ReplyToMessageID: 1, Text: "first"}
+	batch := &queuedTurn{ctx: t.Context(), task: TurnTask{SessionTurn: initializeSteeringBatch(first)}}
+	second := &queuedTurn{ctx: t.Context(), task: TurnTask{SessionTurn: &turncmd.SessionTurnPayload{ArchiveID: "old", DedupeKey: "b", RequesterUserID: "speaker", MessageID: 11, ReplyToMessageID: 1, Text: "second"}}}
+	if !mergeIntoSteeringBatch(batch, second) {
+		t.Fatal("same epoch steering did not merge")
+	}
+	messages := batch.task.SessionTurn.SteeringMessages
+	if len(messages) != 2 || messages[0].DedupeKey != "a" || messages[1].DedupeKey != "b" || messages[1].ArchiveID != "old" {
+		t.Fatalf("constituents lost admission: %+v", messages)
+	}
+	second.task.SessionTurn.ArchiveID = "replacement"
+	if matchesRunningSteering(first, second.task.SessionTurn) {
+		t.Fatal("matched steering across runtime epochs")
+	}
+	if mergeIntoSteeringBatch(batch, second) {
+		t.Fatal("merged different epochs")
+	}
 }

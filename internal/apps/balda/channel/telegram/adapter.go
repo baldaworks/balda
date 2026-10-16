@@ -108,6 +108,7 @@ type MessageContext struct {
 
 // CommandContext is the balda-facing Telegram command shape.
 type CommandContext struct {
+	OriginalInput   *chatarchivecmd.Input
 	Locator         deliverycmd.Locator
 	DeliveryOptions deliveryfmt.Options
 	ChatID          int64
@@ -730,8 +731,14 @@ func (a *Adapter) CommandContextFromEvent(event *events.CommandEvent) (CommandCo
 	}
 	topicID := a.topicIDFromMessage(event.Message)
 
+	var original *chatarchivecmd.Input
+	if event.Command == "skill" {
+		message, _ := a.MessageContextFromEvent(&events.MessageEvent{Message: event.Message})
+		original = NormalizeInbound(message, message.Text, time.Now()).OriginalInput
+	}
 	return CommandContext{
-		Locator: NewLocator(event.Message.Chat.Id, topicID),
+		OriginalInput: original,
+		Locator:       NewLocator(event.Message.Chat.Id, topicID),
 		DeliveryOptions: deliveryfmt.Options{
 			DeliveryFormat: deliveryfmt.DeliveryFormat(a.telegramFormattingMode()),
 			ProgressPolicy: deliveryfmt.ProgressPolicy{

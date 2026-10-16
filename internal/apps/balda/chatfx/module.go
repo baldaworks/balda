@@ -12,6 +12,7 @@ import (
 type ChatServiceParams struct {
 	fx.In
 
+	Archive        chatapp.InputRecorder
 	SessionManager *baldasession.Manager
 	Dispatcher     chatapp.Dispatcher  `name:"command_ingress"`
 	Questions      *questions.Service  `optional:"true"`
@@ -26,6 +27,7 @@ func NewChatService(params ChatServiceParams) (chatapp.Handler, error) {
 		qResolver = NewQuestionAdapter(params.Questions)
 	}
 	return chatapp.NewService(chatapp.ServiceParams{
+		Archive:    params.Archive,
 		Sessions:   NewSessionAdapter(params.SessionManager),
 		Dispatcher: NewDispatcherAdapter(params.Dispatcher),
 		Questions:  qResolver,

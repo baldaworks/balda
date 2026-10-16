@@ -4,6 +4,7 @@ package ingressapp
 import (
 	"context"
 	"fmt"
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"strings"
 
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
@@ -129,7 +130,13 @@ type Result struct {
 }
 
 // Service validates, gates, and durably accepts normalized conversational input.
+// InputRecorder commits original human input before durable dispatch.
+type InputRecorder interface {
+	RecordInput(ctx context.Context, archiveID string, input chatarchivecmd.Input) (chatarchivecmd.Message, error)
+}
+
 type Service struct {
+	archive    InputRecorder
 	authorizer Authorizer
 	sessions   SessionPreparer
 	dispatcher Dispatcher
@@ -214,6 +221,25 @@ func (s *Service) Process(ctx context.Context, inbound turncmd.NormalizedInbound
 		if err != nil {
 			return s.finish(logContext, terminalResult(result, ReasonInvalidInbound), ReasonInvalidInbound, actorlayer.DecodeError(err))
 		}
+	}
+	if s.archive != nil {
+		if inbound.OriginalInput == nil {
+			return s.finish(logContext, terminalResult(result, ReasonInvalidInbound), ReasonInvalidInbound, actorlayer.DecodeError(chatarchivecmd.ErrInvalid))
+		}
+		recorded, archiveErr := s.archive.RecordInput(ctx, preparation.ArchiveID, *inbound.OriginalInput)
+		if archiveErr != nil {
+			if archiveErr == chatarchivecmd.ErrInvalid || archiveErr == chatarchivecmd.ErrConflict {
+				archiveErr = actorlayer.PolicyError(archiveErr)
+			} else {
+				archiveErr = actorlayer.TransientError(archiveErr)
+			}
+			settled, resultErr := errorResult(result, ReasonSessionRejected, archiveErr)
+			return s.finish(logContext, settled, ReasonSessionRejected, resultErr)
+		}
+		if recorded.SessionID != preparation.ArchiveID {
+			return s.finish(logContext, terminalResult(result, ReasonSessionRejected), ReasonSessionRejected, nil)
+		}
+		payload.ArchiveID = recorded.SessionID
 	}
 	envelope, err := turncmd.SessionTurnEnvelope(payload)
 	if err != nil {
@@ -309,3 +335,6 @@ func firstNonEmpty(values ...string) string {
 	}
 	return ""
 }
+
+// SetArchiveRecorder installs the mandatory production archive admission capability.
+func (s *Service) SetArchiveRecorder(recorder InputRecorder) { s.archive = recorder }

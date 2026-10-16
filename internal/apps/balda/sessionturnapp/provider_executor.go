@@ -92,6 +92,7 @@ func (e *ProviderTurnExecutor) ExecuteSessionTurn(ctx context.Context, request s
 		workspaceDir = workspace.GetWorkspaceDir()
 	}
 	return execution.Execute(ctx, ExecutionRequest{
+		ArchiveID:       payload.ArchiveID,
 		WorkspaceDir:    workspaceDir,
 		Text:            payload.Text,
 		Runner:          providerRunner,

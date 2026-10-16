@@ -34,6 +34,8 @@ var ErrScheduledReportQueued = errors.New("scheduled report queued")
 var ErrWebhookReportQueued = errors.New("webhook report queued")
 
 type SessionTurnPayload struct {
+	// ArchiveID freezes the runtime lifetime at human admission.
+	ArchiveID        string                            `json:"archive_id,omitempty"`
 	JobID            string                            `json:"job_id,omitempty"`
 	Text             string                            `json:"text"`
 	Attachments      []attachment.Descriptor           `json:"attachments,omitempty"`
@@ -141,6 +143,8 @@ func (m NormalizedInbound) SessionTurn() (SessionTurnPayload, error) {
 }
 
 type SteeringMessage struct {
+	ArchiveID        string `json:"archive_id,omitempty"`
+	DedupeKey        string `json:"dedupe_key,omitempty"`
 	MessageID        int    `json:"message_id,omitempty"`
 	ReplyToMessageID int    `json:"reply_to_message_id,omitempty"`
 	UserID           string `json:"user_id,omitempty"`

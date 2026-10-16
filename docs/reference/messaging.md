@@ -98,3 +98,30 @@ metadata, with no extra provider lookup. Subsequent model prompt enrichment
 uses its existing text and attachment fields and does not modify the original
 snapshot. Recording, lifecycle attribution and replay are owned by the archive
 application boundary rather than these concrete transport adapters.
+
+## Durable conversational input admission
+
+After access checks, successful session preparation, and explicit skill
+validation, intake commits the original human snapshot to the shared SQL archive
+before publishing the session turn. Archive storage failure prevents publication
+and retains retry settlement. A later broker failure, cancellation, dropped
+queue entry, or turn-preparation failure does not erase this admitted input;
+an archived bubble does not imply successful execution or delivery.
+
+Provider input identities deduplicate across runtime lifetimes. A repeated
+observation retains its first timestamp, immutable content and archive UUID;
+contradictory content fails rather than overwriting history. A retry observed
+after reset cannot dispatch into the replacement lifetime. Durable turns and
+each steering constituent carry the frozen epoch; queued execution checks the
+runtime epoch before invoking the provider, and steering batches cannot merge
+inputs from different lifetimes.
+
+Typed `/skill` commands retain the literal request before selector rewriting.
+Conversational free-text question answers commit after responder/answer
+validation and before durable settlement, using the question and provider
+message identity. Questions freeze their originating lifetime when created;
+resumed session work retains that binding. Button choices do not fabricate user
+text, and GoalKeeper/private continuations and authentication/control commands
+remain outside conversational capture. Input snapshots fill only previously
+unknown location fields; later renames cannot rewrite historical labels or
+per-message speakers.

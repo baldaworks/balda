@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
@@ -214,6 +215,15 @@ func (r *Runner) RunSessionTurnPayload(ctx context.Context, payload turncmd.Sess
 	}
 	if topicSession == nil {
 		return fmt.Errorf("session turn: session %s unavailable after restore", payload.Locator.SessionID)
+	}
+	if payload.ArchiveID != "" {
+		epoch, found, err := topicSession.RuntimeStateValue(ctx, chatarchivecmd.EpochStateKey)
+		if err != nil {
+			return fmt.Errorf("read queued turn lifetime: %w", err)
+		}
+		if !found || epoch != payload.ArchiveID {
+			return fmt.Errorf("queued turn lifetime: %w", chatarchivecmd.ErrConflict)
+		}
 	}
 	userID := strings.TrimSpace(payload.UserID)
 	if userID == "" {

@@ -120,6 +120,7 @@ func (s *TurnExecutionService) currentTime() time.Time {
 }
 
 type ExecutionRequest struct {
+	ArchiveID       string
 	WorkspaceDir    string
 	Text            string
 	Attachments     []attachment.Descriptor
@@ -389,6 +390,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 	runCtx = permissioncmd.WithOutcomeSink(runCtx, permissionOutcomes)
 	if !privateRun {
 		runCtx = permissioncmd.WithInteraction(runCtx, questioncmd.InteractionContext{
+			ArchiveID:   req.ArchiveID,
 			SessionID:   req.SessionID,
 			ChannelKind: req.Locator.ChannelType,
 			Locator:     req.Locator,
