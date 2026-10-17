@@ -38,6 +38,12 @@ These records are active architecture contracts.
 - [ADR 0001: Provider-neutral ADK agent tool hooks](adr/0001-adk-agent-tool-hooks.md)
 - [ADR 0003: YAML-first provider driver registry](adr/0003-yaml-first-provider-driver-registry.md)
 
+## Proposed decisions
+
+These records are under review and are not active architecture contracts yet.
+
+- [ADR 0002: Backoffice-managed runtime providers](adr/0002-backoffice-managed-runtime-providers.md)
+
 ## Invariants
 
 - Durable command/event transport is exposed to Balda runtime code through actorlayer abstractions.
