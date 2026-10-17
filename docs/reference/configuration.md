@@ -54,6 +54,40 @@ profiles:
       provider: <provider_id>
 ```
 
+### ACP process environment
+
+Every ACP provider block accepts `inherit_env` and `env`. Omitted
+`inherit_env` defaults to `true`, preserving the current behavior. Set it to
+`false` to start the ACP child with an empty environment, then add every
+required variable explicitly. `env` overlays inherited variables by exact
+name; an empty string sets an empty value and does not remove the variable.
+
+```yaml
+runtime:
+  providers:
+    codex-work:
+      type: codex_acp
+      codex_acp:
+        inherit_env: false
+        env:
+          PATH: /usr/local/bin:/usr/bin:/bin
+          CODEX_HOME: /state/providers/codex-work
+          HTTPS_PROXY: ""
+```
+
+Home selection stays explicit because its persistence and mounts belong to
+the deployment. Common examples are `CODEX_HOME` for Codex,
+`CLAUDE_CONFIG_DIR` for Claude Code, and the `XDG_CONFIG_HOME`,
+`XDG_DATA_HOME`, `XDG_STATE_HOME`, and `XDG_CACHE_HOME` family for OpenCode.
+Generic and Registry ACP providers can use `HOME` or the same XDG variables.
+
+Treat `env` values as secrets when they contain credentials. Balda passes the
+resolved values to the child process but does not include them in provider
+metadata, diagnostics, or logs. `balda validate` only parses and normalizes the
+configuration; it does not start providers or contact external services.
+`balda preflight` retains its existing behavior of constructing the selected
+provider runtime, using the same resolved environment as normal startup.
+
 ### ACP startup timeout
 
 `balda.acp_startup_timeout` sets the ACP startup budget, default `60s`.
