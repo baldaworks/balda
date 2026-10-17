@@ -45,6 +45,7 @@ type finalReplay struct {
 	TurnSource      string
 	DedupeKey       string
 	Options         deliveryfmt.Options
+	TerminalStatus  TerminalStatus
 }
 
 func finalMembers(req ExecutionRequest) ([]string, error) {
@@ -74,6 +75,10 @@ func finalMembers(req ExecutionRequest) ([]string, error) {
 }
 
 func (s *TurnExecutionService) commitSelectedFinal(ctx context.Context, req ExecutionRequest, text string, change *formatStateChange) (chatarchivecmd.Message, error) {
+	return s.commitSelectedFinalWithStatus(ctx, req, text, change, TerminalStatusSuccess)
+}
+
+func (s *TurnExecutionService) commitSelectedFinalWithStatus(ctx context.Context, req ExecutionRequest, text string, change *formatStateChange, status TerminalStatus) (chatarchivecmd.Message, error) {
 	if s.finalArchive == nil {
 		return chatarchivecmd.Message{}, &turncmd.FinalArchiveError{Cause: chatarchivecmd.ErrUnavailable}
 	}
@@ -104,7 +109,7 @@ func (s *TurnExecutionService) commitSelectedFinal(ctx context.Context, req Exec
 	if len(req.SteeringMessages) > 0 {
 		continuationKey = source
 	}
-	replay := finalReplay{Envelope: env, Locator: req.Locator, ArchiveID: req.ArchiveID, SessionID: req.SessionID, AgentSessionID: req.AgentSessionID, UserID: req.UserID, RequesterUserID: req.RequesterUserID, JobID: req.JobID, TurnSource: req.TurnSource, DedupeKey: continuationKey, Options: req.DeliveryOptions}
+	replay := finalReplay{Envelope: env, Locator: req.Locator, ArchiveID: req.ArchiveID, SessionID: req.SessionID, AgentSessionID: req.AgentSessionID, UserID: req.UserID, RequesterUserID: req.RequesterUserID, JobID: req.JobID, TurnSource: req.TurnSource, DedupeKey: continuationKey, Options: req.DeliveryOptions, TerminalStatus: status}
 	if change != nil {
 		replay.CommitFormat = true
 		replay.FormatAnnounced = change.announced
@@ -168,9 +173,15 @@ func (s *TurnExecutionService) resumeFinal(ctx context.Context, final chatarchiv
 		}
 	}()
 	if replay.JobID != "" {
-		if err := s.appendJobEvent(ctx, replay.JobID, jobs.JobEventAgentResult, "session.actor", "", map[string]any{"text": strings.TrimSpace(final.Text)}); err != nil {
+		if err := s.appendJobEvent(ctx, replay.JobID, jobs.JobEventAgentResult, "session.actor", "", map[string]any{"text": strings.TrimSpace(final.Text), "terminal_status": replay.TerminalStatus}); err != nil {
 			return err
 		}
+	}
+	if replay.TerminalStatus == TerminalStatusFailed {
+		return errProviderTurnFailed
+	}
+	if replay.TerminalStatus == TerminalStatusInterrupted {
+		return nil
 	}
 	if current {
 		clone := *s

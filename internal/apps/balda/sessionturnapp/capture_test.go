@@ -461,8 +461,9 @@ func TestExecuteCapturesUserOnlyTerminalProviderFailure(t *testing.T) {
 		Text: "user question", Runner: adkRunner, UserID: "tg-101", SessionID: "balda-session-1", AgentSessionID: agentSessionID,
 		Locator: baldasession.SessionLocator{ChannelType: "telegram", AddressKey: "123:0", SessionID: "tg-123-0"}, Deliver: false, DedupeKey: "telegram:message:failed",
 	})
-	if err != nil {
-		t.Fatalf("Execute() error = %v", err)
+	var accepted *turncmd.FinalOutcomeAcceptedError
+	if !errors.Is(err, errProviderTurnFailed) || !errors.As(err, &accepted) {
+		t.Fatalf("Execute() error = %v, want accepted provider failure", err)
 	}
 	if len(hook.turns) != 1 || hook.turns[0].UserText != "user question" || hook.turns[0].AssistantText != "" || hook.turns[0].TerminalStatus != TerminalStatusFailed {
 		t.Fatalf("captured turns = %+v, want one user-only terminal turn", hook.turns)

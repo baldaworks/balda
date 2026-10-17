@@ -81,7 +81,11 @@ func TestFinalAcceptedBeforeBookkeepingFailure(t *testing.T) {
 				}
 				err := service.Execute(t.Context(), req)
 				var accepted *turncmd.FinalOutcomeAcceptedError
-				if !errors.Is(err, cause) || !errors.As(err, &accepted) || len(bus.envelopes) != 1 {
+				wantCause := cause
+				if terminal && !jobBacked {
+					wantCause = errProviderTurnFailed
+				}
+				if !errors.Is(err, wantCause) || !errors.As(err, &accepted) || len(bus.envelopes) != 1 {
 					t.Fatalf("error=%v accepted=%t deliveries=%d", err, accepted != nil, len(bus.envelopes))
 				}
 			})
