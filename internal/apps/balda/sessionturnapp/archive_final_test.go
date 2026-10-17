@@ -17,6 +17,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/sessionturn"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/baldaworks/go-actorlayer"
+	"github.com/normahq/go-adk-acpagent/v2/acperror"
 	"github.com/rs/zerolog"
 	adksession "google.golang.org/adk/v2/session"
 	"google.golang.org/genai"
@@ -102,6 +103,70 @@ func TestCommittedFinalReplayBeforeSessionRestore(t *testing.T) {
 	}
 	if len(bus.envelopes) != 1 {
 		t.Fatal("archive read sent a reply")
+	}
+}
+
+func TestCommittedProviderFailureStaysFailedAfterAcceptance(t *testing.T) {
+	bus := &finalOutcomeDispatcher{}
+	svc := NewTurnExecutionServiceWithJobEvents(bus, nil, nil, zerolog.Nop(), 1)
+	archive := &finalArchiveStub{messages: map[string]chatarchivecmd.Message{}}
+	svc.SetFinalArchive(archive)
+	locator := deliverycmd.Locator{ChannelType: "telegram", AddressKey: "101:0", SessionID: "session"}
+	final, err := svc.commitSelectedFinalWithStatus(t.Context(), ExecutionRequest{
+		ArchiveID: "epoch", SessionID: "session", DedupeKey: "input-id", Deliver: true, Locator: locator,
+	}, "partial\n\nResponse interrupted. The provider is temporarily unavailable.", nil, TerminalStatusFailed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = svc.resumeFinal(t.Context(), final)
+	var accepted *turncmd.FinalOutcomeAcceptedError
+	if !errors.Is(err, errProviderTurnFailed) || !errors.As(err, &accepted) || len(bus.envelopes) != 1 {
+		t.Fatalf("replay error=%v accepted=%t deliveries=%d", err, accepted != nil, len(bus.envelopes))
+	}
+}
+
+func TestProviderFailureWithoutPartialReplaysCommittedFinalWithoutModelRerun(t *testing.T) {
+	calls := 0
+	runner, id := newCaptureTestRunner(t, func(invocationID string) []*adksession.Event {
+		calls++
+		done := adksession.NewEvent(t.Context(), invocationID)
+		done.TurnComplete = true
+		done.ErrorCode = "acp_request_error:-32603"
+		done.ErrorMessage = "credential=SYNTHETIC_SECRET"
+		done.CustomMetadata = map[string]any{
+			acperror.ProviderErrorMetadataKey: (&acperror.ProviderError{
+				Kind: acperror.KindAuthenticationRequired, Scope: acperror.ScopeAccount,
+				Message: "credential=SYNTHETIC_SECRET",
+			}).Metadata(),
+		}
+		return []*adksession.Event{done}
+	})
+	bus := &finalOutcomeDispatcher{err: errors.New("publication unavailable")}
+	svc := NewTurnExecutionServiceWithJobEvents(bus, nil, nil, zerolog.Nop(), 1)
+	archive := &finalArchiveStub{messages: map[string]chatarchivecmd.Message{}}
+	svc.SetFinalArchive(archive)
+	locator := deliverycmd.Locator{ChannelType: "telegram", AddressKey: "101:0", SessionID: "session"}
+	req := ExecutionRequest{
+		ArchiveID: "epoch", Runner: runner, AgentSessionID: id, UserID: "tg-101", SessionID: "session",
+		Text: "input", DedupeKey: "input-id", Deliver: true, TurnSource: turncmd.SourceTelegram, Locator: locator,
+	}
+	if err := svc.Execute(t.Context(), req); err == nil {
+		t.Fatal("expected publication failure")
+	}
+	committed := archive.messages["input-id"]
+	if archive.calls != 1 || committed.Text == "" || strings.Contains(committed.Text, "SYNTHETIC_SECRET") {
+		t.Fatalf("unsafe or missing committed failure: %+v", committed)
+	}
+
+	bus.err = nil
+	payload := turncmd.SessionTurnPayload{ArchiveID: "epoch", DedupeKey: "input-id", Deliver: true, Source: turncmd.SourceTelegram, Locator: locator}
+	err := sessionturn.New(nil, NewProviderTurnExecutorFromService(svc), nil, zerolog.Nop()).RunSessionTurnPayload(t.Context(), payload)
+	var accepted *turncmd.FinalOutcomeAcceptedError
+	if !errors.Is(err, errProviderTurnFailed) || !errors.As(err, &accepted) {
+		t.Fatalf("replay error=%v, want accepted provider failure", err)
+	}
+	if calls != 1 || len(bus.envelopes) != 1 {
+		t.Fatalf("provider calls=%d deliveries=%d, want 1/1", calls, len(bus.envelopes))
 	}
 }
 
