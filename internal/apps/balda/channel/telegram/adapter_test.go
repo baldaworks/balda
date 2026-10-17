@@ -497,17 +497,17 @@ func TestMessageContextFromEvent_PrivateChatIgnoresMessageThreadID(t *testing.T)
 			MessageThreadId: &topicID,
 			IsTopicMessage:  &isTopicMessage,
 			Chat: client.Chat{
-				Id:   2317500,
+				Id:   10001,
 				Type: "private",
 			},
-			From: &client.User{Id: 2317500},
+			From: &client.User{Id: 10001},
 			Text: textPtr(testMessageText),
 		},
 	})
 	if !ok {
 		t.Fatal("MessageContextFromEvent() ok = false, want true")
 	}
-	assertPrivateMessageContext(t, got, 0, "tg-2317500-0")
+	assertPrivateMessageContext(t, got, 0, "tg-10001-0")
 }
 
 func TestMessageContextFromEvent_SupergroupPreservesMessageThreadID(t *testing.T) {
@@ -608,17 +608,17 @@ func TestMessageContextFromEvent_PrivateTopicPreservesMessageThreadID(t *testing
 			MessageThreadId: &topicID,
 			IsTopicMessage:  &isTopicMessage,
 			Chat: client.Chat{
-				Id:   2317500,
+				Id:   10001,
 				Type: "private",
 			},
-			From: &client.User{Id: 2317500},
+			From: &client.User{Id: 10001},
 			Text: textPtr(testMessageText),
 		},
 	})
 	if !ok {
 		t.Fatal("MessageContextFromEvent() ok = false, want true")
 	}
-	assertPrivateMessageContext(t, got, 523431, "tg-2317500-523431")
+	assertPrivateMessageContext(t, got, 523431, "tg-10001-523431")
 }
 
 func assertPrivateMessageContext(t *testing.T, got MessageContext, wantTopicID int, wantSessionID string) {
@@ -828,7 +828,7 @@ func TestMessageContextFromEvent_QuoteOnlyMarksReplyAndPopulatesContext(t *testi
 		Message: &client.Message{
 			MessageId: 46,
 			Chat: client.Chat{
-				Id:   2317500,
+				Id:   10001,
 				Type: "private",
 			},
 			From:  &client.User{Id: 101},
@@ -1026,10 +1026,10 @@ func TestMessageContextFromEvent_BotCommandInsideTextIsNotMarkedAsCommand(t *tes
 		Message: &client.Message{
 			MessageId: 99,
 			Chat: client.Chat{
-				Id:   2317500,
+				Id:   10001,
 				Type: "private",
 			},
-			From:     &client.User{Id: 2317500},
+			From:     &client.User{Id: 10001},
 			Text:     &text,
 			Entities: &entities,
 		},
@@ -1052,10 +1052,10 @@ func TestCommandContextFromEvent_PrivateChatIgnoresMessageThreadID(t *testing.T)
 			MessageThreadId: &topicID,
 			IsTopicMessage:  &isTopicMessage,
 			Chat: client.Chat{
-				Id:   2317500,
+				Id:   10001,
 				Type: "private",
 			},
-			From: &client.User{Id: 2317500},
+			From: &client.User{Id: 10001},
 		},
 	})
 	if !ok {
@@ -1064,8 +1064,8 @@ func TestCommandContextFromEvent_PrivateChatIgnoresMessageThreadID(t *testing.T)
 	if got.TopicID != 0 {
 		t.Fatalf("topic_id = %d, want 0 for private chat", got.TopicID)
 	}
-	if got.Locator.SessionID != "tg-2317500-0" {
-		t.Fatalf("session_id = %q, want tg-2317500-0", got.Locator.SessionID)
+	if got.Locator.SessionID != "tg-10001-0" {
+		t.Fatalf("session_id = %q, want tg-10001-0", got.Locator.SessionID)
 	}
 }
 
@@ -1075,8 +1075,8 @@ func TestCommandContextFromEvent_SkillPreservesSelectorAndPrompt(t *testing.T) {
 		Args:    "prism:story implement this feature",
 		Message: &client.Message{
 			MessageId: 99,
-			Chat:      client.Chat{Id: 2317500, Type: "private"},
-			From:      &client.User{Id: 2317500},
+			Chat:      client.Chat{Id: 10001, Type: "private"},
+			From:      &client.User{Id: 10001},
 		},
 	})
 	if !ok {
@@ -1097,10 +1097,10 @@ func TestCommandContextFromEvent_PrivateTopicPreservesMessageThreadID(t *testing
 			MessageThreadId: &topicID,
 			IsTopicMessage:  &isTopicMessage,
 			Chat: client.Chat{
-				Id:   2317500,
+				Id:   10001,
 				Type: "private",
 			},
-			From: &client.User{Id: 2317500},
+			From: &client.User{Id: 10001},
 		},
 	})
 	if !ok {
@@ -1109,8 +1109,8 @@ func TestCommandContextFromEvent_PrivateTopicPreservesMessageThreadID(t *testing
 	if got.TopicID != 523431 {
 		t.Fatalf("topic_id = %d, want 523431 for private topic command", got.TopicID)
 	}
-	if got.Locator.SessionID != "tg-2317500-523431" {
-		t.Fatalf("session_id = %q, want tg-2317500-523431", got.Locator.SessionID)
+	if got.Locator.SessionID != "tg-10001-523431" {
+		t.Fatalf("session_id = %q, want tg-10001-523431", got.Locator.SessionID)
 	}
 }
 
@@ -1125,10 +1125,10 @@ func TestTopicLifecycleFromEvent_IgnoresPrivateNonTopicChat(t *testing.T) {
 			MessageThreadId: &topicID,
 			IsTopicMessage:  &isTopicMessage,
 			Chat: client.Chat{
-				Id:   2317500,
+				Id:   10001,
 				Type: "private",
 			},
-			From: &client.User{Id: 2317500},
+			From: &client.User{Id: 10001},
 		},
 	})
 	if ok {
@@ -1175,10 +1175,10 @@ func TestTopicLifecycleFromEvent_AcceptsPrivateTopic(t *testing.T) {
 			MessageThreadId: &topicID,
 			IsTopicMessage:  &isTopicMessage,
 			Chat: client.Chat{
-				Id:   2317500,
+				Id:   10001,
 				Type: "private",
 			},
-			From: &client.User{Id: 2317500},
+			From: &client.User{Id: 10001},
 		},
 	})
 	if !ok {
@@ -1187,8 +1187,8 @@ func TestTopicLifecycleFromEvent_AcceptsPrivateTopic(t *testing.T) {
 	if got.TopicID != 523452 {
 		t.Fatalf("topic_id = %d, want 523452", got.TopicID)
 	}
-	if got.Locator.SessionID != "tg-2317500-523452" {
-		t.Fatalf("session_id = %q, want tg-2317500-523452", got.Locator.SessionID)
+	if got.Locator.SessionID != "tg-10001-523452" {
+		t.Fatalf("session_id = %q, want tg-10001-523452", got.Locator.SessionID)
 	}
 }
 

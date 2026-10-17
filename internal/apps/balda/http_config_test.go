@@ -13,13 +13,13 @@ import (
 const testHTTPListenAddr = "127.0.0.1:18095"
 
 func TestTelegramWebhookURLUsesMountedSharedRoute(t *testing.T) {
-	shared := ResolvedHTTPConfig{BaseURL: "https://lab.metalagman.dev", BasePath: "/balda"}
+	shared := ResolvedHTTPConfig{BaseURL: "https://balda.example.com", BasePath: "/balda"}
 	config := tgbotkit.Config{Webhook: tgbotkit.WebhookConfig{Enabled: true, Path: "/telegram/old"}}
 	resolved, err := resolveTelegramWebhookConfig(config, shared)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := "https://lab.metalagman.dev/balda/gateway/telegram/webhook"; resolved.Webhook.URL != want {
+	if want := "https://balda.example.com/balda/gateway/telegram/webhook"; resolved.Webhook.URL != want {
 		t.Fatalf("webhook URL = %q, want %q", resolved.Webhook.URL, want)
 	}
 	config.Webhook.URL = "https://external.example/balda/gateway/telegram/webhook"
@@ -40,29 +40,29 @@ func TestResolvedHTTPURLs(t *testing.T) {
 		want     []string
 	}{
 		{
-			name: "asus prefix", basePath: "/balda",
+			name: "deployment prefix", basePath: "/balda",
 			want: []string{
-				"https://lab.metalagman.dev/balda/backoffice/",
-				"https://lab.metalagman.dev/balda/backoffice/webhooks",
-				"https://lab.metalagman.dev/balda/webhooks/orders",
-				"https://lab.metalagman.dev/balda/gateway/slack/events",
-				"https://lab.metalagman.dev/balda/gateway/slack/commands",
+				"https://balda.example.com/balda/backoffice/",
+				"https://balda.example.com/balda/backoffice/webhooks",
+				"https://balda.example.com/balda/webhooks/orders",
+				"https://balda.example.com/balda/gateway/slack/events",
+				"https://balda.example.com/balda/gateway/slack/commands",
 			},
 		},
 		{
 			name: "root prefix", basePath: "",
 			want: []string{
-				"https://lab.metalagman.dev/backoffice/",
-				"https://lab.metalagman.dev/backoffice/webhooks",
-				"https://lab.metalagman.dev/webhooks/orders",
-				"https://lab.metalagman.dev/gateway/slack/events",
-				"https://lab.metalagman.dev/gateway/slack/commands",
+				"https://balda.example.com/backoffice/",
+				"https://balda.example.com/backoffice/webhooks",
+				"https://balda.example.com/webhooks/orders",
+				"https://balda.example.com/gateway/slack/events",
+				"https://balda.example.com/gateway/slack/commands",
 			},
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := BaldaConfig{HTTP: HTTPConfig{
-				ListenAddr: testHTTPListenAddr, BaseURL: "https://lab.metalagman.dev", BasePath: &tt.basePath,
+				ListenAddr: testHTTPListenAddr, BaseURL: "https://balda.example.com", BasePath: &tt.basePath,
 			}}
 			resolved, err := cfg.ResolveHTTP()
 			if err != nil {
@@ -133,20 +133,20 @@ func TestResolveHTTPAcceptsExplicitEmptyBasePathFromConfig(t *testing.T) {
 func TestResolveSharedBackofficeServerUsesSharedBrowserPath(t *testing.T) {
 	basePath := sharedTestBasePath
 	cfg := BaldaConfig{HTTP: HTTPConfig{
-		ListenAddr: testHTTPListenAddr, BaseURL: "https://lab.metalagman.dev", BasePath: &basePath,
+		ListenAddr: testHTTPListenAddr, BaseURL: "https://balda.example.com", BasePath: &basePath,
 	}}
 	server, err := cfg.ResolveSharedBackofficeServer()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if server.ListenAddr != testHTTPListenAddr || server.PublicURL != "https://lab.metalagman.dev" || server.BasePath != "/balda/backoffice" {
+	if server.ListenAddr != testHTTPListenAddr || server.PublicURL != "https://balda.example.com" || server.BasePath != "/balda/backoffice" {
 		t.Fatalf("Backoffice server = %+v", server)
 	}
 	callback, err := mcpfx.MCPCallbackURL(server.PublicURL, server.BasePath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if callback != "https://lab.metalagman.dev/balda/backoffice/mcp/oauth/callback" {
+	if callback != "https://balda.example.com/balda/backoffice/mcp/oauth/callback" {
 		t.Errorf("MCP OAuth callback = %q", callback)
 	}
 }
@@ -155,7 +155,7 @@ func TestResolveBackofficeServerKeepsLegacyRouteAndSocketUntilCutover(t *testing
 	basePath := "/balda"
 	cfg := BaldaConfig{
 		Backoffice: backoffice.ServerConfig{ListenAddr: "127.0.0.1:19095", PublicURL: "https://old.example.test", BasePath: "/old"},
-		HTTP:       HTTPConfig{ListenAddr: testHTTPListenAddr, BaseURL: "https://lab.metalagman.dev", BasePath: &basePath},
+		HTTP:       HTTPConfig{ListenAddr: testHTTPListenAddr, BaseURL: "https://balda.example.com", BasePath: &basePath},
 	}
 	server, err := cfg.ResolveBackofficeServer()
 	if err != nil {
@@ -172,11 +172,11 @@ func TestResolveHTTPRejectsInvalidFields(t *testing.T) {
 		cfg   HTTPConfig
 		field string
 	}{
-		{name: "origin path", cfg: HTTPConfig{BaseURL: "https://lab.metalagman.dev/extra"}, field: "balda.http.base_url"},
-		{name: "origin trailing slash", cfg: HTTPConfig{BaseURL: "https://lab.metalagman.dev/"}, field: "balda.http.base_url"},
-		{name: "origin credentials", cfg: HTTPConfig{BaseURL: "https://user:secret@lab.metalagman.dev"}, field: "balda.http.base_url"},
-		{name: "empty query marker", cfg: HTTPConfig{BaseURL: "https://lab.metalagman.dev?"}, field: "balda.http.base_url"},
-		{name: "empty fragment marker", cfg: HTTPConfig{BaseURL: "https://lab.metalagman.dev#"}, field: "balda.http.base_url"},
+		{name: "origin path", cfg: HTTPConfig{BaseURL: "https://balda.example.com/extra"}, field: "balda.http.base_url"},
+		{name: "origin trailing slash", cfg: HTTPConfig{BaseURL: "https://balda.example.com/"}, field: "balda.http.base_url"},
+		{name: "origin credentials", cfg: HTTPConfig{BaseURL: "https://user:secret@balda.example.com"}, field: "balda.http.base_url"},
+		{name: "empty query marker", cfg: HTTPConfig{BaseURL: "https://balda.example.com?"}, field: "balda.http.base_url"},
+		{name: "empty fragment marker", cfg: HTTPConfig{BaseURL: "https://balda.example.com#"}, field: "balda.http.base_url"},
 		{name: "relative base path", cfg: HTTPConfig{BasePath: stringPtr("balda")}, field: "balda.http.base_path"},
 		{name: "trailing base path slash", cfg: HTTPConfig{BasePath: stringPtr("/balda/")}, field: "balda.http.base_path"},
 		{name: "invalid bind port", cfg: HTTPConfig{ListenAddr: "127.0.0.1:not-a-port"}, field: "balda.http.listen_addr"},
@@ -205,7 +205,7 @@ func TestSharedWebhookDisplayOriginIsOptional(t *testing.T) {
 	if server.PublicURL == "" {
 		t.Fatal("browser authentication origin must remain resolved")
 	}
-	cfg.HTTP.BaseURL = "https://lab.metalagman.dev"
+	cfg.HTTP.BaseURL = "https://balda.example.com"
 	server, err = cfg.ResolveSharedBackofficeServer()
 	if err != nil {
 		t.Fatal(err)

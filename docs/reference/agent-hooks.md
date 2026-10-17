@@ -279,7 +279,7 @@ member must have a supported adapter.
 | Provider | Integration | Requirement |
 | --- | --- | --- |
 | `claude_code_acp` | SDK `extraArgs` forwards inline native `--settings` hooks | Claude ACP 0.16.2 or later with command hooks |
-| `codex_acp` | Bridge forwards native `-c` definitions and exact trusted hashes | Codex ACP 1.10.1 or later; CLI supports trusted command hooks and `hooks/list` |
+| `codex_acp` | Bridge forwards native `-c` definitions and exact trusted hashes | Codex ACP 1.11.0 or later; CLI supports trusted command hooks and `hooks/list` |
 | `opencode_acp` | Private V1 plugin implements `tool.execute.before/after` | OpenCode 1.19.0 or later with V1 plugin support |
 
 The private HTTP bridge adds no overall execution timeout. Balda's configured

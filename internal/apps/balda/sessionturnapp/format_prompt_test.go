@@ -138,6 +138,7 @@ func TestTurnExecutionCommitsFormatOnlyAfterSuccessfulTerminalCompletion(t *test
 				terminal.ErrorMessage = `set acp session config option "model": invalid params`
 				return []*adksession.Event{terminal}, nil
 			},
+			wantError: true,
 		},
 		{
 			name: "interrupted terminal turn",

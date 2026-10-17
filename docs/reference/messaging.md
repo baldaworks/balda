@@ -31,6 +31,13 @@ Ordinary conversational chat transports follow the same runtime model.
 4. Conversational ingress publishes exactly one durable `balda.v1.cmd.session` envelope directly to the session actor lane for the normalized inbound item.
 5. The session actor runs the configured provider runtime for that session and emits separate delivery envelopes for progress/final replies.
 
+Terminal provider failures use structured error classes. Balda shows bounded
+guidance for quota, rate limits, authentication, billing, availability,
+session limits, and invalid requests without forwarding raw provider details.
+If the provider fails after visible or tool output, Balda keeps the partial
+response, adds an explicit interruption notice, and records the turn as failed.
+Successful pool fallback hides diagnostics from the failed member.
+
 Telegram-specific message selection rules:
 
 - In non-DM chats (groups/supergroups/topics), Balda processes a message when it contains a mention entity for `@<bot_username>` or is a reply to this bot's message.

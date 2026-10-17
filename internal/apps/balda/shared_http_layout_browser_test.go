@@ -29,9 +29,9 @@ func TestSharedHTTPLayoutBrowser(t *testing.T) {
 		basePath      string
 		missingOrigin bool
 	}{
-		{name: "asus prefix", basePath: "/balda"},
+		{name: "deployment prefix", basePath: "/balda"},
 		{name: "root prefix"},
-		{name: "asus prefix without public origin", basePath: "/balda", missingOrigin: true},
+		{name: "deployment prefix without public origin", basePath: "/balda", missingOrigin: true},
 		{name: "root prefix without public origin", missingOrigin: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {

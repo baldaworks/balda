@@ -3,7 +3,7 @@ const path = require('node:path');
 const { chromium } = require('playwright');
 
 const script = path.join(__dirname, '../../internal/apps/backoffice/internal/webui/static/app.js');
-const prefix = 'https://lab.metalagman.dev/balda/webhooks/';
+const prefix = 'https://balda.example.com/balda/webhooks/';
 
 function form() {
   return `<main id="main-content"><form><input data-webhook-url-name maxlength="64">

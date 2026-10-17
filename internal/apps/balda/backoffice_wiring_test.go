@@ -33,7 +33,7 @@ func TestBackofficeSharedHandlerContribution(t *testing.T) {
 	basePath := sharedTestBasePath
 	cfg := BaldaConfig{
 		Backoffice: backoffice.ServerConfig{ListenAddr: "127.0.0.1:19095", PublicURL: "https://legacy.example.test", BasePath: "/old"},
-		HTTP:       HTTPConfig{ListenAddr: testHTTPListenAddr, BaseURL: "https://lab.metalagman.dev", BasePath: &basePath},
+		HTTP:       HTTPConfig{ListenAddr: testHTTPListenAddr, BaseURL: "https://balda.example.com", BasePath: &basePath},
 	}
 	provider, err := state.NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
@@ -82,7 +82,7 @@ func TestBackofficeSharedHandlerContribution(t *testing.T) {
 }
 
 func TestBackofficeRuntimeConfigRejectsInvalidSharedHTTPBeforeStartup(t *testing.T) {
-	cfg := BaldaConfig{HTTP: HTTPConfig{BaseURL: "https://lab.metalagman.dev/extra"}}
+	cfg := BaldaConfig{HTTP: HTTPConfig{BaseURL: "https://balda.example.com/extra"}}
 	_, err := backofficeRuntimeConfig(cfg, appconfig.RuntimeConfig{}, "", state.DatabaseConfig{})
 	if err == nil || !strings.Contains(err.Error(), "balda.http.base_url") {
 		t.Fatalf("invalid shared origin error = %v", err)
@@ -131,7 +131,7 @@ func TestSharedBackofficeMCPBrowserOAuthUsesSharedCallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	basePath := sharedTestBasePath
-	cfg := BaldaConfig{Backoffice: backoffice.ServerConfig{ListenAddr: "127.0.0.1:19095", PublicURL: "https://legacy.example.test", BasePath: "/old"}, HTTP: HTTPConfig{ListenAddr: testHTTPListenAddr, BaseURL: "https://lab.metalagman.dev", BasePath: &basePath}}
+	cfg := BaldaConfig{Backoffice: backoffice.ServerConfig{ListenAddr: "127.0.0.1:19095", PublicURL: "https://legacy.example.test", BasePath: "/old"}, HTTP: HTTPConfig{ListenAddr: testHTTPListenAddr, BaseURL: "https://balda.example.com", BasePath: &basePath}}
 	legacyFlow, err := mcpmanage.NewAuthorizations(grants, "https://legacy.example.test/old/mcp/oauth/callback", definitions)
 	if err != nil {
 		t.Fatal(err)
@@ -176,7 +176,7 @@ func TestSharedBackofficeMCPBrowserOAuthUsesSharedCallback(t *testing.T) {
 	loginForm := url.Values{"username": {"superuser"}, "password": {"correct horse battery staple"}, "csrf_token": {csrf}}
 	loginRequest := httptest.NewRequest(http.MethodPost, "/balda/backoffice/login", strings.NewReader(loginForm.Encode()))
 	loginRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	loginRequest.Header.Set("Origin", "https://lab.metalagman.dev")
+	loginRequest.Header.Set("Origin", "https://balda.example.com")
 	loginRequest.Header.Set("Sec-Fetch-Site", "same-origin")
 	loginRequest.AddCookie(&http.Cookie{Name: security.CSRFCookieName, Value: csrf})
 	login := httptest.NewRecorder()
@@ -189,7 +189,7 @@ func TestSharedBackofficeMCPBrowserOAuthUsesSharedCallback(t *testing.T) {
 	form := url.Values{"csrf_token": {csrf}, "public_id": {"worker"}, "transport": {"http"}, "url": {issuer.server.URL + "/mcp"}, "targets_all": {"yes"}, "client_id": {oauthBrowserClientID}, "client_auth_method": {"none"}, "scopes": {"tools:read"}}
 	beginRequest := httptest.NewRequest(http.MethodPost, "/balda/backoffice/mcp/connections/oauth/browser", strings.NewReader(form.Encode()))
 	beginRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	beginRequest.Header.Set("Origin", "https://lab.metalagman.dev")
+	beginRequest.Header.Set("Origin", "https://balda.example.com")
 	beginRequest.Header.Set("Sec-Fetch-Site", "same-origin")
 	beginRequest.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: access})
 	beginRequest.AddCookie(&http.Cookie{Name: security.CSRFCookieName, Value: csrf})
@@ -202,7 +202,7 @@ func TestSharedBackofficeMCPBrowserOAuthUsesSharedCallback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const callbackURL = "https://lab.metalagman.dev/balda/backoffice/mcp/oauth/callback"
+	const callbackURL = "https://balda.example.com/balda/backoffice/mcp/oauth/callback"
 	if got := authorizationURL.Query().Get("redirect_uri"); got != callbackURL {
 		t.Fatalf("issued OAuth redirect_uri = %q, want %q", got, callbackURL)
 	}

@@ -390,7 +390,7 @@ Application captures use names such as `root-390-installed-v1.png`,
 cleared and outside credential forms. Keep timestamps, actual commands/results,
 reviewed screenshots and defect/reopen evidence in Beads. If an implementation
 defect changes rendered behavior, repair its owning task and rerun the affected
-layout gate before the application gate. No SSH/asus or live data is used.
+layout gate before the application gate. Only synthetic local preview data is used.
 
 ## Agent hooks layout and application gates
 
