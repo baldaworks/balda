@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	runtimeconfig "github.com/normahq/runtime/v2/appconfig"
+	runtimeconfig "github.com/baldaworks/runtime/v2/appconfig"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/fx"
 )

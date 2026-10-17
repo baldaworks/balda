@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	baldaapp "github.com/baldaworks/balda/internal/apps/balda"
-	"github.com/normahq/runtime/v2/appconfig"
+	"github.com/baldaworks/runtime/v2/appconfig"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )

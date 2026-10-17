@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/state"
-	"github.com/normahq/runtime/v2/appconfig"
+	"github.com/baldaworks/runtime/v2/appconfig"
 )
 
 func TestLoadDatabaseDefaults(t *testing.T) {

@@ -21,12 +21,12 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/mcpbridge"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
+	"github.com/baldaworks/runtime/v2/agentconfig"
+	"github.com/baldaworks/runtime/v2/agentfactory"
+	runtimeconfig "github.com/baldaworks/runtime/v2/appconfig"
+	"github.com/baldaworks/runtime/v2/mcpregistry"
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/normahq/runtime/v2/agentconfig"
-	"github.com/normahq/runtime/v2/agentfactory"
-	runtimeconfig "github.com/normahq/runtime/v2/appconfig"
-	"github.com/normahq/runtime/v2/mcpregistry"
 	"github.com/rs/zerolog"
 )
 

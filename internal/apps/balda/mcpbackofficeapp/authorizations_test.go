@@ -14,7 +14,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
-	"github.com/normahq/runtime/v2/agentconfig"
+	"github.com/baldaworks/runtime/v2/agentconfig"
 )
 
 type authorizationTimestampStore struct {

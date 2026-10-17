@@ -10,9 +10,9 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/hookcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/hooknative"
-	"github.com/normahq/runtime/v2/agentconfig"
-	"github.com/normahq/runtime/v2/agentfactory"
-	"github.com/normahq/runtime/v2/mcpregistry"
+	"github.com/baldaworks/runtime/v2/agentconfig"
+	"github.com/baldaworks/runtime/v2/agentfactory"
+	"github.com/baldaworks/runtime/v2/mcpregistry"
 )
 
 type nativePreparerFixture struct {

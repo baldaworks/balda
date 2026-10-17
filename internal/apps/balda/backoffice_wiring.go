@@ -13,8 +13,8 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/mcpfx"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
-	"github.com/normahq/runtime/v2/agentconfig"
-	runtimeconfig "github.com/normahq/runtime/v2/appconfig"
+	"github.com/baldaworks/runtime/v2/agentconfig"
+	runtimeconfig "github.com/baldaworks/runtime/v2/appconfig"
 )
 
 func backofficeSharedHandler(ctx context.Context, runtime *backoffice.Runtime, cfg BaldaConfig, mcp *mcpbackofficeapp.Operations) (http.Handler, error) {

@@ -8,7 +8,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/hookcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/hookprovider"
-	"github.com/normahq/runtime/v2/agentconfig"
+	"github.com/baldaworks/runtime/v2/agentconfig"
 )
 
 type allowRunner struct{}

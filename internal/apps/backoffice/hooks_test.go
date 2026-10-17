@@ -15,7 +15,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/hooknativeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/hooks"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
-	"github.com/normahq/runtime/v2/agentconfig"
+	"github.com/baldaworks/runtime/v2/agentconfig"
 )
 
 func TestHooksHTTPManagement(t *testing.T) {

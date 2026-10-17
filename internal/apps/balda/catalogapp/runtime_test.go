@@ -19,7 +19,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
-	"github.com/normahq/runtime/v2/mcpregistry"
+	"github.com/baldaworks/runtime/v2/mcpregistry"
 )
 
 func TestLifecycleMigratesLegacyPluginAndReconstructsCatalog(t *testing.T) {

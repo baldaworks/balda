@@ -17,7 +17,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/hooknative/proxyruntime"
 	"github.com/baldaworks/balda/internal/apps/balda/hooknativehost"
 	"github.com/baldaworks/balda/internal/apps/balda/hookprovider"
-	"github.com/normahq/runtime/v2/agentconfig"
+	"github.com/baldaworks/runtime/v2/agentconfig"
 )
 
 const name = "opencode"

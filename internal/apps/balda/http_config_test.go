@@ -7,7 +7,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/backoffice"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpfx"
 	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
-	"github.com/normahq/runtime/v2/appconfig"
+	"github.com/baldaworks/runtime/v2/appconfig"
 )
 
 const testHTTPListenAddr = "127.0.0.1:18095"

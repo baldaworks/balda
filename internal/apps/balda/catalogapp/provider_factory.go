@@ -12,9 +12,9 @@ import (
 
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
 	"github.com/baldaworks/balda/internal/apps/balda/hooknative"
-	"github.com/normahq/runtime/v2/agentconfig"
-	"github.com/normahq/runtime/v2/agentfactory"
-	"github.com/normahq/runtime/v2/mcpregistry"
+	"github.com/baldaworks/runtime/v2/agentconfig"
+	"github.com/baldaworks/runtime/v2/agentfactory"
+	"github.com/baldaworks/runtime/v2/mcpregistry"
 	adkagent "google.golang.org/adk/v2/agent"
 )
 

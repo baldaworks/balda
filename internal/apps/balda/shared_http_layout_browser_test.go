@@ -15,7 +15,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/webhookmanagement"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookroutecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookroutefx"
-	"github.com/normahq/runtime/v2/appconfig"
+	"github.com/baldaworks/runtime/v2/appconfig"
 )
 
 // TestSharedHTTPLayoutBrowser checks rendered URLs and layout through the

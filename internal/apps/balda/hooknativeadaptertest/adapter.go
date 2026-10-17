@@ -13,7 +13,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/hooknativehost"
 	"github.com/baldaworks/balda/internal/apps/balda/hooknativetest"
 	"github.com/baldaworks/balda/internal/apps/balda/hookprovider"
-	"github.com/normahq/runtime/v2/agentconfig"
+	"github.com/baldaworks/runtime/v2/agentconfig"
 )
 
 // RealAdapterFactory creates contract fixtures around a concrete adapter and protocol.

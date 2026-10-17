@@ -12,8 +12,8 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	badgerstore "github.com/baldaworks/balda/sessionmemory/store/badger"
-	"github.com/normahq/runtime/v2/agentconfig"
-	"github.com/normahq/runtime/v2/agentfactory"
+	"github.com/baldaworks/runtime/v2/agentconfig"
+	"github.com/baldaworks/runtime/v2/agentfactory"
 )
 
 func TestSessionMemoryConfigDisabledIgnoresOptionalValues(t *testing.T) {

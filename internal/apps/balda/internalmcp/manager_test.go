@@ -12,13 +12,13 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/baldaworks/go-actorlayer"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/baldaworks/balda/internal/apps/balda/controlcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/sessionmcp"
-	"github.com/normahq/runtime/v2/mcpregistry"
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
+	"github.com/baldaworks/runtime/v2/mcpregistry"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )

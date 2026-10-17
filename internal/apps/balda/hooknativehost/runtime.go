@@ -5,7 +5,7 @@ import (
 	"os"
 
 	"github.com/baldaworks/balda/internal/apps/balda/hookprovider"
-	"github.com/normahq/runtime/v2/agentconfig"
+	"github.com/baldaworks/runtime/v2/agentconfig"
 )
 
 // Host is the provider-neutral capability surface used by concrete adapters.

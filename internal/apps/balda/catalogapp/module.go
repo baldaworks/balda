@@ -22,9 +22,9 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionturn"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
-	"github.com/normahq/runtime/v2/agentconfig"
-	runtimeconfig "github.com/normahq/runtime/v2/appconfig"
-	"github.com/normahq/runtime/v2/mcpregistry"
+	"github.com/baldaworks/runtime/v2/agentconfig"
+	runtimeconfig "github.com/baldaworks/runtime/v2/appconfig"
+	"github.com/baldaworks/runtime/v2/mcpregistry"
 	"go.uber.org/fx"
 )
 

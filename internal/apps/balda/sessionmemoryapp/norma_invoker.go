@@ -15,7 +15,7 @@ import (
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
 	"github.com/baldaworks/balda/sessionmemory"
 	portableapp "github.com/baldaworks/balda/sessionmemory/app"
-	"github.com/normahq/runtime/v2/structuredagent"
+	"github.com/baldaworks/runtime/v2/structuredagent"
 	adkagent "google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/runner"
 	adksession "google.golang.org/adk/v2/session"
