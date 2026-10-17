@@ -95,6 +95,14 @@ func (h *mattermostInboundHandler) ProcessInbound(ctx context.Context, msg matte
 		return turncmd.InboundSettlement{Outcome: turncmd.InboundRetry, Reason: chatapp.ReasonUnauthorized}, err
 	}
 	if !allowed {
+		h.logger.Warn().
+			Str("post_id", msg.PostID).
+			Str("sender_id", msg.SenderID).
+			Msg("mattermost message dropped: sender is not an owner or collaborator")
+		// The denial notice is best effort: the post is settled either way.
+		if err := h.sendPlain(ctx, msg.Locator, mattermostAccessDeniedText); err != nil {
+			h.logger.Warn().Err(err).Str("post_id", msg.PostID).Msg("send mattermost access denied notice")
+		}
 		return turncmd.InboundSettlement{Outcome: turncmd.InboundTerminal, Reason: chatapp.ReasonUnauthorized}, nil
 	}
 	if h.chat == nil {
