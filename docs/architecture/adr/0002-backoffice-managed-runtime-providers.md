@@ -52,11 +52,21 @@ One revision contains:
 
 - canonical driver type and driver contract version;
 - storage format version;
-- normalized public `agentconfig.Config`;
+- a persisted public `ProviderDefinition`;
 - encrypted protected values, when present;
 - immutable identity values;
 - ordered pool member IDs;
-- whether execution is reproducible from Balda-controlled inputs.
+- a server-computed indication of whether Balda-controlled execution inputs are
+  reproducible.
+
+`ProviderDefinition` is a small storage envelope, not a second driver model. It
+contains the public typed configuration with protected fields absent, the
+presence state of other protected fields, and the names of protected environment
+fields. The encrypted payload contains their values. Balda reconstructs a
+complete `agentconfig.Config` from the envelope and payload before asking the
+runtime driver to validate and normalize it. This preserves the difference
+between an absent environment value and an explicitly empty value without
+exposing either one.
 
 The runtime `DriverDescriptor` gains one `ContractVersion`. Balda uses the
 runtime registry for canonical type, validation, normalization, and
@@ -90,6 +100,9 @@ provider_id
 revision_id
 ```
 
+`revision_id` is an opaque generated identifier. Balda allocates it before
+sealing the payload; it is not a digest of either plaintext or ciphertext.
+
 Changing a protected value creates a new revision and reseals the payload.
 Plaintext never enters HTML, logs, audit records, revision IDs, session state,
 or errors.
@@ -118,7 +131,14 @@ The mutation conflicts if another provider mutation changed the version.
 SQLite and PostgreSQL commit either the complete valid graph change or nothing.
 
 A new session reads configured providers plus one consistent committed managed
-state and compiles its graph. An implementation may cache compiled state by
+state and compiles its graph. The state store exposes one `ReadProviderState`
+operation that returns the state version, provider records, and referenced
+revisions from one logical database snapshot. Each backend may implement that
+contract with an appropriate transaction isolation level or a version-checked
+retry; callers cannot assemble a state from unrelated reads.
+
+Mutation validation uses the same state version later supplied to the
+compare-and-swap. An implementation may cache compiled state by
 `provider_state_version`, but the database remains authoritative and cache
 invalidation is not part of correctness.
 
@@ -139,8 +159,11 @@ ProviderBinding
 ```
 
 Managed entries reference immutable database revisions. Configured entries
-reference the current configured provider by ID and a public-definition
-revision; their secrets remain external and unpinned.
+reference the current configured provider by ID and a canonical public-definition
+revision. That revision includes environment names and `inherit_env`, but
+excludes the API key and all environment values. Configured API keys and
+environment values remain external and unpinned, including explicitly empty
+values.
 
 The graph compiler preserves pool order and rejects missing or disabled
 providers, empty IDs or pools, cycles, duplicate members, source collisions,
@@ -148,7 +171,9 @@ unavailable driver contracts or protected values, identity violations, and
 invalid runtime definitions.
 
 Session creation persists `ProviderBinding` and the independent catalog
-snapshot ID before exposure. No binding table or binding ID is introduced.
+snapshot ID together in the same session-state row and atomic upsert before
+exposure. A session cannot commit one pin without the other. No binding table or
+binding ID is introduced.
 
 Managed revisions and tombstones are retained indefinitely in this increment.
 Physical purge and revision rollback are deferred.
@@ -168,15 +193,21 @@ runtimes when applicable, and native hook provider validation.
 New sessions and `/reset` resolve current committed state. Active sessions
 keep their runtime and binding.
 
+Disable and delete affect only new bindings. Exact restore of an existing
+binding may load its retained managed revisions even when the corresponding
+provider record is now disabled or tombstoned.
+
 ### 7. Bound restore guarantees
 
 Managed public definitions, explicit managed environment values, API keys, and
-pool graphs are reproducible while their revisions, driver contracts, key, and
-any required retained artifacts remain available.
+pool graphs are reproducible Balda-controlled inputs while their revisions,
+driver contracts, key, and any required retained artifacts remain available.
+This does not promise the same external account state, model availability, or
+execution result.
 
-Configured secrets, inherited process environment, agent auth homes, external
-accounts and model availability, and floating Registry artifacts remain
-external and mutable.
+Configured API keys and environment values, inherited process environment,
+agent auth homes, external accounts and model availability, and floating
+Registry artifacts remain external and mutable.
 
 A configured entry restores using current YAML only while its public-definition
 revision still matches. Managed entries restore from exact revisions. A
@@ -291,8 +322,8 @@ and key rotation remain future work.
    AAD and never enter public surfaces.
 6. Existing encrypted MCP data remains readable with the current deployment
    key.
-7. Session state contains the root and exact ordered transitive provider
-   entries beside its catalog snapshot ID.
+7. One atomic session-state write contains the root and exact ordered transitive
+   provider entries together with its catalog snapshot ID.
 8. Runtime and native-hook provider resolution use the bound graph.
 9. New sessions and `/reset` adopt current committed state; active sessions
    retain their binding.
@@ -301,6 +332,10 @@ and key rotation remain future work.
     restore without silently selecting newer managed revisions.
 12. Listing, validation, mutations, and startup compilation do not execute
     providers, authenticate, or discover models.
+13. `ReadProviderState` never combines provider records and revisions from
+    different committed state versions.
+14. Disable and delete do not prevent exact restore through an existing binding
+    while its immutable revisions remain retained.
 
 ## Deferred decisions
 
