@@ -36,6 +36,7 @@ Use this map to find the authoritative runtime contracts.
 These records are active architecture contracts.
 
 - [ADR 0001: Provider-neutral ADK agent tool hooks](adr/0001-adk-agent-tool-hooks.md)
+- [ADR 0003: YAML-first provider driver registry](adr/0003-yaml-first-provider-driver-registry.md)
 
 ## Invariants
 

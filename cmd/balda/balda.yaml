@@ -2,6 +2,18 @@
 # Environment variables override these settings with BALDA_ prefix
 # Example: BALDA_TELEGRAM_TOKEN=my-token
 
+# ACP provider environment is configured in the runtime provider block:
+# runtime:
+#   providers:
+#     codex-work:
+#       type: codex_acp
+#       codex_acp:
+#         inherit_env: false
+#         env:
+#           PATH: /usr/local/bin:/usr/bin:/bin
+#           CODEX_HOME: /state/providers/codex-work
+# See docs/reference/configuration.md for inheritance and secret-handling rules.
+
 balda:
   # Provider id from runtime providers registry used for Balda sessions.
   provider: ""

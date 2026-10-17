@@ -883,6 +883,7 @@ func TestGetAgentMetadata_ExtractsModelAndReasoningEffort(t *testing.T) {
 				"empty-reasoning": {
 					Type: agentconfig.AgentTypeGenericACP,
 					GenericACP: &agentconfig.ACPConfig{
+						Cmd:   []string{"custom-acp"},
 						Model: "custom-model",
 					},
 				},
@@ -890,6 +891,20 @@ func TestGetAgentMetadata_ExtractsModelAndReasoningEffort(t *testing.T) {
 					Type: agentconfig.AgentTypeOpenAI,
 					OpenAI: &agentconfig.LocalAPIConfig{
 						Model: "gpt-4o",
+					},
+				},
+				"claude-alias": {
+					Type: agentconfig.AgentTypeClaudeACP,
+					ClaudeCodeACP: &agentconfig.ACPConfig{
+						Model:           "claude-sonnet",
+						ReasoningEffort: "medium",
+					},
+				},
+				"antigravity-alias": {
+					Type: agentconfig.AgentTypeAntigravityACP,
+					AntigravityACP: &agentconfig.ACPConfig{
+						Model:           "gemini-pro",
+						ReasoningEffort: "low",
 					},
 				},
 			},
@@ -912,6 +927,20 @@ func TestGetAgentMetadata_ExtractsModelAndReasoningEffort(t *testing.T) {
 			t.Errorf("MCPServers = %#v, want %#v", meta.MCPServers, wantMCP)
 		}
 	})
+
+	for _, tt := range []struct {
+		name, provider, providerType, model, reasoning string
+	}{
+		{name: "claude compatibility alias", provider: "claude-alias", providerType: agentconfig.AgentTypeClaudeACP, model: "claude-sonnet", reasoning: "medium"},
+		{name: "antigravity compatibility alias", provider: "antigravity-alias", providerType: agentconfig.AgentTypeAntigravityACP, model: "gemini-pro", reasoning: "low"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			meta := builder.GetAgentMetadata(tt.provider)
+			if meta.Type != tt.providerType || meta.Model != tt.model || meta.ReasoningEffort != tt.reasoning {
+				t.Fatalf("GetAgentMetadata(%q) = %+v, want type=%q model=%q reasoning=%q", tt.provider, meta, tt.providerType, tt.model, tt.reasoning)
+			}
+		})
+	}
 
 	t.Run("generic acp without reasoning", func(t *testing.T) {
 		meta := builder.GetAgentMetadata("empty-reasoning")

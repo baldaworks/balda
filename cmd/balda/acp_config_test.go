@@ -8,10 +8,55 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baldaworks/runtime/v2/agentconfig"
 	"github.com/baldaworks/runtime/v2/appconfig"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
+
+func TestLoadACPEnvironmentPolicy(t *testing.T) {
+	dir := t.TempDir()
+	content := `runtime:
+  providers:
+    isolated:
+      type: codex_acp
+      codex_acp:
+        inherit_env: false
+        env:
+          CODEX_HOME: /state/providers/isolated
+          EMPTY_VALUE: ""
+balda:
+  provider: isolated
+`
+	if err := writeFile(filepath.Join(dir, ".config", "balda", "config.yaml"), content); err != nil {
+		t.Fatal(err)
+	}
+
+	var doc baldaConfigDocument
+	if _, err := appconfig.LoadConfigDocument(
+		appconfig.RuntimeLoadOptions{WorkingDir: dir},
+		appconfig.AppLoadOptions{AppName: "balda", DefaultsYAML: defaultBaldaConfig, UseDotConfigAppDir: true},
+		&doc,
+	); err != nil {
+		t.Fatal(err)
+	}
+	provider := doc.Runtime.Providers["isolated"]
+	resolved, err := agentconfig.NormalizeConfig(provider, "")
+	if err != nil {
+		t.Fatalf("NormalizeConfig() error = %v", err)
+	}
+	if resolved.Environment.Inherits() {
+		t.Fatal("Environment.Inherits() = true, want false")
+	}
+	got, err := resolved.Environment.Resolve([]string{"SECRET=must-not-leak"})
+	if err != nil {
+		t.Fatalf("Environment.Resolve() error = %v", err)
+	}
+	want := []string{"CODEX_HOME=/state/providers/isolated", "EMPTY_VALUE="}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("Environment.Resolve() = %q, want %q", got, want)
+	}
+}
 
 func TestLoadACPStartupTimeout(t *testing.T) {
 	for _, tt := range []struct {

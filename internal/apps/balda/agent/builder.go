@@ -608,48 +608,19 @@ func (b *Builder) GetAgentMetadata(agentName string) AgentMetadata {
 	if !ok {
 		return AgentMetadata{}
 	}
-
-	var acp *agentconfig.ACPConfig
-	switch strings.TrimSpace(agentCfg.Type) {
-	case agentconfig.AgentTypeGenericACP:
-		acp = agentCfg.GenericACP
-	case agentconfig.AgentTypeGeminiACP:
-		acp = agentCfg.GeminiACP
-	case agentconfig.AgentTypeCodexACP:
-		acp = agentCfg.CodexACP
-	case agentconfig.AgentTypeOpenCodeACP:
-		acp = agentCfg.OpenCodeACP
-	case agentconfig.AgentTypeCopilotACP:
-		acp = agentCfg.CopilotACP
-	case agentconfig.AgentTypeClaudeCodeACP, agentconfig.AgentTypeClaudeACP:
-		acp = agentCfg.ClaudeCodeACP
-	case agentconfig.AgentTypeGrokACP:
-		acp = agentCfg.GrokACP
-	case agentconfig.AgentTypeRegistryACP:
-		acp = agentCfg.RegistryACP
-	case agentconfig.AgentTypeAgyACP:
-		acp = agentCfg.AgyACP
-	case agentconfig.AgentTypeAntigravityACP:
-		acp = agentCfg.AntigravityACP
-	}
-
-	model := ""
-	reasoningEffort := ""
-	switch {
-	case acp != nil:
-		model = strings.TrimSpace(acp.Model)
-		reasoningEffort = strings.TrimSpace(acp.ReasoningEffort)
-	case agentCfg.OpenAI != nil:
-		model = strings.TrimSpace(agentCfg.OpenAI.Model)
-	case agentCfg.AIStudio != nil:
-		model = strings.TrimSpace(agentCfg.AIStudio.Model)
+	resolved, err := agentconfig.NormalizeConfig(agentCfg, "")
+	if err != nil {
+		return AgentMetadata{
+			Type:       strings.TrimSpace(agentCfg.Type),
+			MCPServers: mergeMCPServerIDsWithBase([]string{"balda"}, agentCfg.MCPServers, nil),
+		}
 	}
 
 	return AgentMetadata{
-		Type:            strings.TrimSpace(agentCfg.Type),
-		Model:           model,
-		ReasoningEffort: reasoningEffort,
-		MCPServers:      mergeMCPServerIDsWithBase([]string{"balda"}, agentCfg.MCPServers, nil),
+		Type:            resolved.ConfiguredType,
+		Model:           resolved.Model,
+		ReasoningEffort: resolved.ReasoningEffort,
+		MCPServers:      mergeMCPServerIDsWithBase([]string{"balda"}, resolved.MCPServers, nil),
 	}
 }
 
