@@ -42,7 +42,10 @@ These records are active architecture contracts.
 
 These records are under review and are not active architecture contracts yet.
 
-- [ADR 0002: Backoffice-managed runtime providers](adr/0002-backoffice-managed-runtime-providers.md)
+- [ADR 0002: Backoffice-managed runtime providers](adr/0002-backoffice-managed-runtime-providers.md) —
+  reviewed 2026-10-17; runtime-driver, protected-value, and catalog-snapshot
+  foundations exist, while managed-provider state, provider bindings, and the
+  Backoffice management surface remain unimplemented; approval is pending.
 
 ## Invariants
 

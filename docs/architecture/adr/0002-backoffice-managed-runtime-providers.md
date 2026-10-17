@@ -2,6 +2,7 @@
 
 - Status: Proposed
 - Date: 2026-10-17
+- Last reviewed: 2026-10-17
 - Owners: Balda maintainers
 - Decision scope: managed provider definitions, protected values, session binding, and restore
 - Depends on: ADR 0003, YAML-first provider driver registry
@@ -22,6 +23,67 @@ ADR 0003 defines the runtime driver registry and YAML normalization. This
 decision adds only the persistence, encryption, and session binding needed for
 managed providers. Authentication, probing, model discovery, auth homes,
 artifact retention, and custom executables are deferred.
+
+## Repository status at last review
+
+This decision remains **Proposed** with **Approval: pending**. Repository
+history records the proposal and wording refinements, but no approval record.
+The acceptance criteria below therefore remain implementation expectations,
+not claims about current behavior.
+
+The 2026-10-17 review verified these foundations:
+
+- [`go.mod`](../../../go.mod) pins `github.com/baldaworks/runtime/v2` v2.6.1.
+  Its built-in driver registry supplies canonical types, aliases, driver
+  classes, immutable identity fields, passive normalization, and ACP
+  environment policy. Balda's configuration test verifies inheritance,
+  override, isolation, and an explicitly empty environment value in
+  [`cmd/balda/acp_config_test.go`](../../../cmd/balda/acp_config_test.go).
+- Managed MCP revisions already use revision-bound AES-GCM with the deployment
+  key configured by `balda.mcp_management.credential_key`. The implementation
+  and its protected-value tests are in
+  [`internal/apps/balda/mcpmanage/credentials.go`](../../../internal/apps/balda/mcpmanage/credentials.go)
+  and
+  [`internal/apps/balda/mcpmanage/credentials_test.go`](../../../internal/apps/balda/mcpmanage/credentials_test.go).
+  This primitive is still owned by `mcpmanage`; the application-scoped
+  `SecretProtector` selected by this ADR does not yet exist.
+- Sessions already pin one runtime-catalog capability snapshot, attempt exact
+  restoration, and use the documented fresh-session fallback if that snapshot
+  or saved ADK session cannot be restored. The behavior and tests live in
+  [`internal/apps/balda/session/manager.go`](../../../internal/apps/balda/session/manager.go)
+  and
+  [`internal/apps/balda/session/manager_test.go`](../../../internal/apps/balda/session/manager_test.go).
+  That `RuntimeSnapshotID` covers commands, skills, and MCP contributions; it
+  is not the `ProviderBinding` defined here.
+- `balda validate` remains configuration-only and does not open the state
+  database; `preflight` opens state and constructs the configured provider
+  runtime. The command boundary is visible in
+  [`cmd/balda/command.go`](../../../cmd/balda/command.go).
+
+The same review verified that managed runtime providers are not implemented:
+
+- The pinned runtime descriptor has `ImmutableIdentityFields` but no
+  `ContractVersion`, which section 2 requires before managed revisions can pin
+  a driver contract.
+- Balda constructs `catalogapp.ProviderFactory` from the startup
+  `runtime.providers` map and retains that configured map. There is no
+  configured-plus-managed graph resolver; see
+  [`internal/apps/balda/app.go`](../../../internal/apps/balda/app.go) and
+  [`internal/apps/balda/catalogapp/provider_factory.go`](../../../internal/apps/balda/catalogapp/provider_factory.go).
+- `state.SessionRecord` persists the runtime-catalog snapshot ID but has no
+  provider binding. The SQLite and PostgreSQL migration sets contain no
+  managed-provider records, immutable provider revisions, provider state
+  version, or session provider-binding field; see
+  [`internal/apps/balda/state/types.go`](../../../internal/apps/balda/state/types.go),
+  [`internal/apps/balda/state/migrations.go`](../../../internal/apps/balda/state/migrations.go),
+  and
+  [`internal/apps/balda/state/postgres_migrations.go`](../../../internal/apps/balda/state/postgres_migrations.go).
+- Backoffice exposes the configured root provider on its read-only `/agent`
+  page. It has no Providers inventory or mutation routes; see
+  [`internal/apps/backoffice/httpapp.go`](../../../internal/apps/backoffice/httpapp.go).
+
+These gaps are implementation status, not amendments to the proposed decision.
+They do not establish approval or acceptance.
 
 ## Decision
 
