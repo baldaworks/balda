@@ -618,9 +618,9 @@ func TestSessionSendAttachmentsToolInvokesService(t *testing.T) {
 
 	result := callTool(t, ctx, session, "balda.session.send_attachments", map[string]any{
 		"locator": map[string]any{
-			"session_id":   "tg-2317500-536036",
+			"session_id":   "tg-10001-536036",
 			"channel_type": "telegram",
-			"address_key":  "2317500:536036",
+			"address_key":  "10001:536036",
 		},
 		"text": "Here you go",
 		"attachments": []map[string]any{

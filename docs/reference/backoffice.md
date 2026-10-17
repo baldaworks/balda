@@ -126,16 +126,14 @@ serves pages, assets, OAuth callbacks, and browser/session endpoints under
 not the sibling `/webhooks` or `/gateway` routes. A reverse proxy must forward
 the configured paths unchanged.
 
-For an illustrative asus configuration, set `balda.http.base_url` to
-`https://lab.metalagman.dev` and `balda.http.base_path` to `/balda`. The public
-URLs are `https://lab.metalagman.dev/balda/backoffice/`, its management page at
-`https://lab.metalagman.dev/balda/backoffice/webhooks`, an `orders` callback
-at `https://lab.metalagman.dev/balda/webhooks/orders`, and Slack callbacks at
-`https://lab.metalagman.dev/balda/gateway/slack/events` and
-`https://lab.metalagman.dev/balda/gateway/slack/commands`. These addresses are
-an application URL example; the live asus ingress, deployment, and external
-callback registrations are unchanged by this Story. They will be externally
-reachable only after a separate ingress and callback-registration rollout.
+For an example deployment, set `balda.http.base_url` to
+`https://balda.example.com` and `balda.http.base_path` to `/balda`. The public
+URLs are `https://balda.example.com/balda/backoffice/`, its management page at
+`https://balda.example.com/balda/backoffice/webhooks`, an `orders` callback
+at `https://balda.example.com/balda/webhooks/orders`, and Slack callbacks at
+`https://balda.example.com/balda/gateway/slack/events` and
+`https://balda.example.com/balda/gateway/slack/commands`. These example addresses require a reverse proxy and
+external callback registrations matching the configured origin and prefix.
 
 If a `balda.http` field is omitted, it falls back to its corresponding
 `balda.backoffice.listen_addr`, `public_url`, or `base_path` value and then the

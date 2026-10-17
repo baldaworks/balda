@@ -114,6 +114,13 @@ database before shipping a migration.
 ## Documentation Policy
 
 - Keep `README.md` focused on installation and usage.
+- Treat `README.md` as the public product landing page: explain the value,
+  show a short first-run path, and link to focused guides. Feature changes
+  should update that overview only when the user-facing story changes.
+- Put operational procedures, migrations, recovery steps, and configuration
+  details under `docs/reference/`, rather than appending them to the README.
+- Use reserved example domains and synthetic identities in documentation and
+  test fixtures. Do not publish private deployment addresses or topology.
 - Keep `docs/balda.md` as the technical-reference entry point and put detailed
   contracts in the relevant page under `docs/reference/`.
 - Keep `AGENTS.md` focused on agent workflow guardrails.

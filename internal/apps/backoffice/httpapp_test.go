@@ -176,7 +176,7 @@ func TestHTTPAppServesConfiguredBasePath(t *testing.T) {
 	t.Parallel()
 	provider, config := newHTTPAppTestState(t)
 	config.Server.BasePath = "/balda"
-	config.Server.PublicURL = "https://lab.metalagman.dev"
+	config.Server.PublicURL = "https://balda.example.com"
 	config.Server.SecureCookies = true
 	config.Server.QAUI = true
 	app, err := newHTTPApp(provider.Users(), config)

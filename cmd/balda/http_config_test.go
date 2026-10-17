@@ -12,7 +12,7 @@ import (
 func TestLoadConfigDocumentAppliesSharedHTTPEnvOverrides(t *testing.T) {
 	workingDir := t.TempDir()
 	t.Setenv("BALDA_HTTP_LISTEN_ADDR", "127.0.0.1:18095")
-	t.Setenv("BALDA_HTTP_BASE_URL", "https://lab.metalagman.dev")
+	t.Setenv("BALDA_HTTP_BASE_URL", "https://balda.example.com")
 	t.Setenv("BALDA_HTTP_BASE_PATH", "/balda")
 	if err := writeFile(filepath.Join(workingDir, ".config", "balda", "config.yaml"), `runtime:
   providers:
@@ -40,7 +40,7 @@ balda:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resolved.ListenAddr != "127.0.0.1:18095" || resolved.BaseURL != "https://lab.metalagman.dev" || resolved.BasePath != "/balda" {
+	if resolved.ListenAddr != "127.0.0.1:18095" || resolved.BaseURL != "https://balda.example.com" || resolved.BasePath != "/balda" {
 		t.Fatalf("HTTP env overrides = %+v", resolved)
 	}
 }
@@ -132,7 +132,7 @@ func TestLoadBaldaCommandConfigRejectsInvalidSharedHTTP(t *testing.T) {
 	for _, tt := range []struct {
 		name, setting, field string
 	}{
-		{name: "origin path", setting: "base_url: https://lab.metalagman.dev/extra", field: "balda.http.base_url"},
+		{name: "origin path", setting: "base_url: https://balda.example.com/extra", field: "balda.http.base_url"},
 		{name: "relative prefix", setting: "base_path: balda", field: "balda.http.base_path"},
 		{name: "invalid bind", setting: "listen_addr: 127.0.0.1:invalid", field: "balda.http.listen_addr"},
 	} {

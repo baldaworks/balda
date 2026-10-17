@@ -47,7 +47,7 @@ func TestSessionActorNotifiesUnsupportedModelAfterProviderStarted(t *testing.T) 
 			if err != nil {
 				t.Fatal(err)
 			}
-			env.ID, env.MaxAttempts = "telegram:2317500:0:5316", maxAttempts
+			env.ID, env.MaxAttempts = "telegram:10001:0:5316", maxAttempts
 			env.CorrelationID = "telegram-update-5316"
 			for attempt := range maxAttempts {
 				env.Attempt = attempt
@@ -115,7 +115,7 @@ func executionFailureActor(t *testing.T, run func(adkagent.InvocationContext) it
 	t.Cleanup(func() { _ = turns.Shutdown(context.Background()) })
 	actor := NewSessionActor(SessionActorConfig{Turns: turns, Runner: queued, Dispatcher: bus})
 	payload := turncmd.SessionTurnPayload{Text: "message", UserID: "telegram-user", MessageID: 5316, Source: turncmd.SourceTelegram, Deliver: true,
-		Locator: deliverycmd.Locator{SessionID: "tg-2317500-0", ChannelType: "telegram", AddressKey: "2317500:0", AddressJSON: `{"chat_id":2317500,"topic_id":0}`}}
+		Locator: deliverycmd.Locator{SessionID: "tg-10001-0", ChannelType: "telegram", AddressKey: "10001:0", AddressJSON: `{"chat_id":10001,"topic_id":0}`}}
 	return actor, bus, payload
 }
 
@@ -126,7 +126,7 @@ type failureActiveSession struct {
 
 func (s *failureActiveSession) GetRunner() *adkrunner.Runner { return s.runner }
 func (*failureActiveSession) GetRuntimeSnapshotID() string   { return "" }
-func (*failureActiveSession) GetSessionID() string           { return "tg-2317500-0" }
+func (*failureActiveSession) GetSessionID() string           { return "tg-10001-0" }
 func (s *failureActiveSession) GetAgentSessionID() string    { return s.id }
 func (*failureActiveSession) GetUserID() string              { return "telegram-user" }
 func (*failureActiveSession) RuntimeStateValue(context.Context, string) (any, bool, error) {
