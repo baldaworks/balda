@@ -192,14 +192,14 @@ func TestCanonicalSessionLocatorReconstructsTelegramAddress(t *testing.T) {
 	t.Parallel()
 
 	got, err := canonicalSessionLocator(sessionmcp.SessionLocatorInput{
-		SessionID:   "tg-2317500-536036",
+		SessionID:   "tg-10001-536036",
 		ChannelType: "telegram",
-		AddressKey:  "2317500:536036",
+		AddressKey:  "10001:536036",
 	})
 	if err != nil {
 		t.Fatalf("canonicalSessionLocator() error = %v", err)
 	}
-	if got.AddressJSON != `{"chat_id":2317500,"topic_id":536036}` {
+	if got.AddressJSON != `{"chat_id":10001,"topic_id":536036}` {
 		t.Fatalf("address_json = %q, want canonical Telegram topic", got.AddressJSON)
 	}
 }
@@ -211,9 +211,9 @@ func TestSessionSendAttachmentServiceDispatchesLocalAttachmentsBatch(t *testing.
 	svc := sessionSendAttachmentService{dispatcher: dispatcher}
 	out, err := svc.SendSessionAttachments(context.Background(), sessionmcp.SessionSendAttachmentsInput{
 		Locator: sessionmcp.SessionLocatorInput{
-			SessionID:   "tg-2317500-536036",
+			SessionID:   "tg-10001-536036",
 			ChannelType: "telegram",
-			AddressKey:  "2317500:536036",
+			AddressKey:  "10001:536036",
 		},
 		Text: "Here you go",
 		Attachments: []sessionmcp.SessionAttachmentItemInput{
@@ -274,9 +274,9 @@ func TestCanonicalSessionLocatorRejectsSessionMismatch(t *testing.T) {
 	t.Parallel()
 
 	_, err := canonicalSessionLocator(sessionmcp.SessionLocatorInput{
-		SessionID:   "tg-2317500-1",
+		SessionID:   "tg-10001-1",
 		ChannelType: "telegram",
-		AddressKey:  "2317500:536036",
+		AddressKey:  "10001:536036",
 	})
 	if err == nil || !strings.Contains(err.Error(), "locator mismatch") {
 		t.Fatalf("canonicalSessionLocator() error = %v, want mismatch", err)
@@ -290,9 +290,9 @@ func TestScheduleSessionWaitReconstructsMissingAddressJSON(t *testing.T) {
 	service := sessionWaitService{dispatcher: dispatcher}
 	err := service.ScheduleSessionWait(context.Background(), sessionmcp.SessionWaitInput{
 		Locator: sessionmcp.SessionLocatorInput{
-			SessionID:   "tg-2317500-536036",
+			SessionID:   "tg-10001-536036",
 			ChannelType: "telegram",
-			AddressKey:  "2317500:536036",
+			AddressKey:  "10001:536036",
 		},
 		Content:      "wake me",
 		DelaySeconds: 60,
@@ -307,7 +307,7 @@ func TestScheduleSessionWaitReconstructsMissingAddressJSON(t *testing.T) {
 	if err := actorlayer.UnmarshalPayload(dispatcher.envelopes[0].Payload, &payload); err != nil {
 		t.Fatalf("decode control payload: %v", err)
 	}
-	if got, want := payload.Locator.AddressJSON, `{"chat_id":2317500,"topic_id":536036}`; got != want {
+	if got, want := payload.Locator.AddressJSON, `{"chat_id":10001,"topic_id":536036}`; got != want {
 		t.Fatalf("address_json = %q, want %q", got, want)
 	}
 }

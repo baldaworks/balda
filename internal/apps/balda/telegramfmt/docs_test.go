@@ -58,10 +58,10 @@ func TestUserDocsDocumentRuntimeStateHelper(t *testing.T) {
 	}
 }
 
-func TestReadmeDocumentsBaldaConfigShapeAndMCPServers(t *testing.T) {
+func TestConfigurationReferenceDocumentsBaldaConfigShapeAndMCPServers(t *testing.T) {
 	t.Parallel()
 
-	doc := readRepoDoc(t, "README.md")
+	doc := readRepoDoc(t, "docs/reference/configuration.md")
 	for _, want := range []string{
 		"## Configuration",
 		"runtime:",
@@ -69,16 +69,15 @@ func TestReadmeDocumentsBaldaConfigShapeAndMCPServers(t *testing.T) {
 		"mcp_servers:",
 		"balda.provider",
 		"balda.telegram.token",
-		"balda.zulip.*",
-		"balda.slack.*",
-		"balda.webhooks.*",
+		"balda.zulip.server_url",
+		"balda.slack.agent.enabled",
+		"balda.webhooks.routes",
 		"balda.scheduler.jobs",
-		"balda.workspace.*",
+		"balda.workspace.mode",
 		"balda.mcp_servers",
-		"docs/balda.md",
 	} {
 		if !strings.Contains(doc, want) {
-			t.Fatalf("README.md missing %q", want)
+			t.Fatalf("configuration reference missing %q", want)
 		}
 	}
 }

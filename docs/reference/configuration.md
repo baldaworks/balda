@@ -121,24 +121,23 @@ The three sibling areas are `<base_path>/backoffice/` for the browser,
 `<base_path>/webhooks/<name>` for every config and managed generic webhook, and
 `<base_path>/gateway/<transport>/...` for chat transport callbacks. The
 Backoffice Webhooks management page is under `/backoffice/webhooks`; it is
-separate from the inbound `/webhooks` area. For the agreed **illustrative** asus
-values:
+separate from the inbound `/webhooks` area. For example:
 
 ```yaml
 balda:
   http:
     listen_addr: "127.0.0.1:8095"
-    base_url: https://lab.metalagman.dev
+    base_url: https://balda.example.com
     base_path: /balda
 ```
 
 | Area | Public URL |
 | --- | --- |
-| Backoffice | `https://lab.metalagman.dev/balda/backoffice/` |
-| Webhook management | `https://lab.metalagman.dev/balda/backoffice/webhooks` |
-| Config or managed webhook `orders` | `https://lab.metalagman.dev/balda/webhooks/orders` |
-| Slack Events | `https://lab.metalagman.dev/balda/gateway/slack/events` |
-| Slack Commands | `https://lab.metalagman.dev/balda/gateway/slack/commands` |
+| Backoffice | `https://balda.example.com/balda/backoffice/` |
+| Webhook management | `https://balda.example.com/balda/backoffice/webhooks` |
+| Config or managed webhook `orders` | `https://balda.example.com/balda/webhooks/orders` |
+| Slack Events | `https://balda.example.com/balda/gateway/slack/events` |
+| Slack Commands | `https://balda.example.com/balda/gateway/slack/commands` |
 
 The local `listen_addr` does not appear in those public URLs. With an empty
 `base_path`, the same area paths start at `/backoffice`, `/webhooks`, and
@@ -160,10 +159,9 @@ URL with userinfo, query and fragment removed. Workspace → Agent shows the
 effective provider, selected profile, model, reasoning effort and global
 instruction read-only; configuration changes still require a restart.
 
-The live asus ingress, deployment, and Telegram/Slack/external callback
-registrations are unchanged by this Story. The table is an application URL
-example, not a claim that those addresses are already publicly reachable;
-external exposure needs a separate ingress and callback-registration rollout.
+The table illustrates application URL construction. Configure your reverse
+proxy and external callback registrations to match your chosen origin and
+prefix.
 See [Backoffice startup and browser security](backoffice.md#startup-and-configuration).
 
 ### Docker Compose Runtime
