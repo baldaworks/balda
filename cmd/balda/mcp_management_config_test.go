@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/normahq/runtime/v2/appconfig"
+	"github.com/baldaworks/runtime/v2/appconfig"
 )
 
 func TestLoadConfigDocumentAppliesMCPDeploymentKeyOverride(t *testing.T) {

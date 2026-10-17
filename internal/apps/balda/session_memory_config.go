@@ -17,8 +17,8 @@ import (
 	portableapp "github.com/baldaworks/balda/sessionmemory/app"
 	blevestore "github.com/baldaworks/balda/sessionmemory/index/bleve"
 	badgerstore "github.com/baldaworks/balda/sessionmemory/store/badger"
-	"github.com/normahq/runtime/v2/agentconfig"
-	"github.com/normahq/runtime/v2/agentfactory"
+	"github.com/baldaworks/runtime/v2/agentconfig"
+	"github.com/baldaworks/runtime/v2/agentfactory"
 )
 
 const (

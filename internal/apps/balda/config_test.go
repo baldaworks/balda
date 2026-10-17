@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/normahq/runtime/v2/appconfig"
+	"github.com/baldaworks/runtime/v2/appconfig"
 )
 
 func TestWebhookConfigRejectsUnknownFieldsAfterDecode(t *testing.T) {

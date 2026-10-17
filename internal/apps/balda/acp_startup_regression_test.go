@@ -18,7 +18,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/internalmcp"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
-	runtimeconfig "github.com/normahq/runtime/v2/appconfig"
+	runtimeconfig "github.com/baldaworks/runtime/v2/appconfig"
 	"go.uber.org/fx"
 	adkagent "google.golang.org/adk/v2/agent"
 	adksession "google.golang.org/adk/v2/session"

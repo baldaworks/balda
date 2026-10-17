@@ -18,7 +18,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/skillcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
-	"github.com/normahq/runtime/v2/mcpregistry"
+	"github.com/baldaworks/runtime/v2/mcpregistry"
 )
 
 type fixture struct {

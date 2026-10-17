@@ -9,7 +9,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/mcpruntime"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
-	"github.com/normahq/runtime/v2/agentconfig"
+	"github.com/baldaworks/runtime/v2/agentconfig"
 )
 
 const configuredUpgradeKeyPrefix = "runtime_catalog_configured_upgrade:"

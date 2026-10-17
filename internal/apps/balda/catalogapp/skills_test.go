@@ -15,7 +15,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/skillcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
-	"github.com/normahq/runtime/v2/mcpregistry"
+	"github.com/baldaworks/runtime/v2/mcpregistry"
 )
 
 func TestManagedSkillsCompleteCatalogRecovery(t *testing.T) {

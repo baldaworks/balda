@@ -13,8 +13,8 @@ import (
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	"github.com/baldaworks/balda/internal/apps/balda/paths"
 	"github.com/baldaworks/balda/internal/git"
-	"github.com/normahq/runtime/v2/agentconfig"
-	runtimeconfig "github.com/normahq/runtime/v2/appconfig"
+	"github.com/baldaworks/runtime/v2/agentconfig"
+	runtimeconfig "github.com/baldaworks/runtime/v2/appconfig"
 )
 
 const (

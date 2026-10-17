@@ -11,7 +11,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/hooknative/claude"
 	"github.com/baldaworks/balda/internal/apps/balda/hooknativeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/hooks"
-	"github.com/normahq/runtime/v2/agentconfig"
+	"github.com/baldaworks/runtime/v2/agentconfig"
 )
 
 type store struct{ record hookcmd.Record }

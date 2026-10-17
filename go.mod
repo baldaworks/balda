@@ -3,6 +3,7 @@ module github.com/baldaworks/balda
 go 1.26.9
 
 require (
+	github.com/baldaworks/runtime/v2 v2.4.1
 	github.com/blevesearch/bleve/v2 v2.4.0
 	github.com/coder/acp-go-sdk v0.13.5
 	github.com/dgraph-io/badger/v4 v4.9.6
@@ -16,7 +17,6 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/nats-io/nats-server/v2 v2.14.0
 	github.com/nats-io/nats.go v1.52.0
-	github.com/normahq/runtime/v2 v2.4.0
 	github.com/pressly/goose/v3 v3.24.3
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/rs/zerolog v1.35.1
