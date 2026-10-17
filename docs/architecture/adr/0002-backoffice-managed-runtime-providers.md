@@ -3,384 +3,419 @@
 - Status: Proposed
 - Date: 2026-10-17
 - Owners: Balda maintainers
-- Decision scope: runtime provider definitions, Backoffice management, runtime
-  catalog selection, session restore
+- Decision scope: managed provider definitions, provider revision binding,
+  protected values, publication, and session restore
+- Depends on: ADR 0003, YAML-first provider driver registry
 - Supersedes: none
 - Approval: pending
 
 ## Context
 
-Balda currently reads named provider definitions from
-`runtime.providers` in `.config/balda/config.yaml`. The runtime library decodes
-each entry as an `agentconfig.Config`; providers may be ACP, hosted API, or an
-ordered pool whose members refer to other provider IDs. `balda.provider`
-selects the root provider used for ordinary Balda sessions.
+Balda reads provider definitions from `runtime.providers` and selects the
+ordinary root with `balda.provider`. A provider may be hosted, ACP-backed, or
+an ordered pool whose members refer to other provider IDs. Configuration is
+loaded once and copied into runtime factories, so changing a provider requires
+editing deployment configuration and restarting Balda.
 
-The provider map is loaded during process construction and copied into agent
-factories. Backoffice can display the selected provider, but cannot create,
-edit, disable, or delete provider definitions. Changing a provider therefore
-requires editing deployment configuration and restarting Balda.
+Backoffice already presents source-aware resources: configuration-owned rows
+are visible and read-only, while managed rows use durable revisions, guarded
+mutations, audit records, and recoverable publication. Providers additionally
+form transitive graphs, contain protected values, and may execute local or
+Registry-selected programs. Existing sessions must not silently adopt a
+changed provider graph.
 
-Backoffice already uses a source-aware management pattern for resources such
-as MCP connections, schedules, and webhooks: configuration-owned records are
-visible but read-only, while administrator-managed records live in the shared
-state database with guarded mutations and audit history. Provider management
-should follow the same operator model without making old configuration invalid.
-
-Providers differ from ordinary settings in three important ways:
-
-- pools form a directed graph of provider references;
-- provider definitions may contain credentials and executable commands;
-- changing a provider under a stable name must not silently change the runtime
-  of an existing conversation or make exact restore use a different backend.
+ADR 0003 defines the YAML-first runtime driver registry and deterministic
+normalization. This decision adds Balda-owned persistence and session binding
+around it. Browser authentication, model discovery, executable probes, managed
+auth homes, and Registry artifact materialization are deferred.
 
 ## Decision drivers
 
-- Preserve existing `runtime.providers` and environment override behavior.
-- Make database-managed definitions usable anywhere a configured provider is
-  usable, including as pool members.
-- Keep one deterministic provider namespace and reject ambiguous ownership.
-- Preserve exact session behavior across edits, disablement, deletion, and
-  process restarts.
-- Keep secrets write-only in Backoffice and out of HTML, logs, audit payloads,
-  and revision hashes.
-- Apply changes without interrupting healthy conversations.
-- Keep provider policy in Balda rather than in the generic runtime library or
-  the Backoffice HTTP layer.
+- Preserve existing YAML, profiles, and environment overrides.
+- Make managed definitions usable as roots and pool members.
+- Keep one deterministic provider namespace without source precedence.
+- Bind sessions to immutable transitive provider graphs.
+- Encrypt managed values with the application-scoped secret key.
+- Recover publication after a committed mutation or crash.
+- State precisely which inputs Balda can restore.
+- Keep provider bindings separate from runtime catalog contributions.
+
+## Terminology
+
+- **Provider record** is a stable provider ID, source, lifecycle state, and
+  optimistic version.
+- **Provider revision** is one immutable, versioned provider definition.
+- **Effective provider view** is the collision-free set of enabled configured
+  and managed revisions eligible for new bindings.
+- **Provider binding** is an immutable root plus the exact ordered transitive
+  revisions selected for one session.
+- **Catalog snapshot** is the existing commands, hooks, skills, and MCP
+  snapshot. It contains no provider definitions.
+- **Applied generation** is the provider view published to runtime consumers.
+  It may briefly lag durable desired state while recovery is pending.
 
 ## Decision
 
-### 1. Compile one source-aware provider catalog
+### 1. Compile one source-aware provider view
 
-Balda compiles an effective provider catalog from two sources:
-
-| Source | Storage | Backoffice behavior | Lifecycle |
+| Source | Storage | Backoffice | Lifecycle |
 | --- | --- | --- | --- |
-| `configured` | `runtime.providers` after profile and environment overrides | visible, redacted, read-only | refreshed at process start |
-| `managed` | shared SQLite or PostgreSQL state | create, edit, enable, disable, delete | available after a committed mutation |
+| `configured` | Effective `runtime.providers` | redacted, read-only | reconstructed at startup |
+| `managed` | SQLite or PostgreSQL | managed | durable revisions and recoverable publication |
 
-Both sources use the existing `agentconfig.Config` schema as the provider
-definition contract. Management metadata such as source, stable record ID,
-revision ID, version, enabled state, and deletion tombstone stays outside that
-schema.
+Provider IDs occupy one namespace and are immutable after creation. A
+configured and managed provider with the same ID is an error. Startup,
+preflight, and publication reject collisions instead of choosing a source.
 
-Provider IDs occupy one effective namespace and are immutable after creation.
-Backoffice rejects creation with an ID owned by configuration or another
-managed record. Startup and preflight fail if configured and managed active
-records collide. Balda does not silently choose a winner because that would
-make behavior depend on load order and could redirect a pool member or root
-provider.
+YAML-only installations remain valid without managed records or an application
+secret key. No migration copies YAML definitions into the database.
 
-Configured providers remain fully supported. An installation that never
-creates a managed provider observes the same effective definitions and
-selection behavior as before this decision.
+`balda.provider` remains configuration-owned and may name an enabled provider
+from either source. Moving ownership uses a new provider ID; both sources
+cannot contain the same ID during transition.
 
-### 2. Keep the root selection in deployment configuration
+### 2. Add a versioned managed-driver contract
 
-This decision manages the definitions that duplicate `runtime.providers`.
-The root selection `balda.provider` remains configuration-owned. It may name
-either a configured or an enabled managed provider in the effective catalog.
-
-Keeping root selection outside the first provider-management increment avoids
-turning a browser mutation into an implicit change of the application's
-default execution backend. A later decision may add a guarded managed root
-selection if operational experience justifies it.
-
-Migration from a configured definition to a managed one uses a new provider
-ID: create and validate the managed provider, change `balda.provider` or pool
-references to the new ID as needed, then remove the old configured definition.
-The same ID cannot be present in both sources during the transition.
-
-### 3. Store immutable revisions and pin the transitive provider graph
-
-Each accepted managed definition change creates an immutable revision. The
-managed record points to its current revision and carries an optimistic
-version. Disablement and deletion change selection metadata; deletion leaves a
-tombstone and retained revisions.
-
-Creating a managed provider produces a disabled record by default. A disabled
-record must be locally valid but may refer to providers that are not yet
-available, allowing a pool to be assembled before publication. Enabling or
-changing an enabled record validates the complete resulting effective graph.
-Disabling or deleting a record is rejected while the current root or another
-enabled provider depends on it. The state change, audit record, and publication
-of the new current revision form one guarded operation.
-
-At startup, Balda canonicalizes each configured definition into an immutable
-configured revision. Its identity is derived from the effective normalized
-definition and protected-value hashes, not from YAML formatting or secret
-plaintext.
-
-Provider revisions become runtime catalog contributions. When Balda creates a
-session capability snapshot, it resolves the selected root and recursively
-captures every pool member as an exact provider revision. The same snapshot
-already used to restore session capabilities becomes the authority for
-reconstructing the provider graph. A pool revision is therefore insufficient
-by itself; its snapshot must also contain the exact revisions of all reachable
-members.
-
-The compiler rejects:
-
-- a missing or disabled root or pool member;
-- an empty member ID;
-- an empty pool;
-- a provider-reference cycle;
-- duplicate pool members after normalization;
-- an unsupported or invalid `agentconfig.Config`;
-- a source-name collision;
-- a managed definition whose protected values cannot be resolved.
-
-Validation errors identify provider IDs and fields but never include protected
-values.
-
-### 4. Adopt managed changes at session boundaries
-
-A successful managed mutation publishes a new current catalog view. It does
-not rebuild, replace, or terminate an already constructed runtime.
-
-- A new session selects the current enabled revisions.
-- `/reset` starts a new session and adopts the current revisions.
-- An active or restorable session continues with its pinned snapshot.
-- Disabling or deleting a provider prevents new selection but retains revisions
-  required by existing pins.
-- If an exact pinned revision cannot be reconstructed, the existing session
-  restore fallback may create a fresh session from the current eligible
-  catalog. Balda must report the fallback and must not describe it as exact
-  restore.
-
-This is the same user-visible adoption boundary used by other immutable
-runtime capabilities. It prevents an administrator edit from changing the
-model, command, credential, or pool membership halfway through a conversation.
-
-Provider processes remain lazy. Listing providers or opening a Backoffice page
-does not launch ACP commands or contact hosted APIs. An explicit bounded
-diagnostic may construct a candidate runtime, but its result is transient and
-does not publish, enable, or claim durable readiness for the definition.
-
-### 5. Guard mutations and protect credentials
-
-Only administrators with the provider-management permission may mutate managed
-providers. Browser mutations use the existing Backoffice protections:
-authenticated current authority, same-origin and CSRF checks, optimistic
-versioning, and an audit event committed with the state change.
-
-Provider configuration is split into public definition data and protected
-values. API keys and any future credential-bearing fields use Balda's existing
-encrypted state protection and deployment-key policy. Backoffice accepts a new
-value or an explicit clear operation; it never returns an existing plaintext
-value. Edit forms show only whether a protected value is present.
-
-Audit records contain record identity, source, operation, actor, version, and
-revision identity. They do not contain credentials, full command environments,
-system instructions, or complete serialized definitions.
-
-ACP command and argument fields are configuration, not shell text. Runtime
-construction continues to execute argv directly under existing provider and
-hook policies. Backoffice does not add shell interpolation.
-
-### 6. Separate ownership by layer
-
-The responsibilities are divided as follows:
-
-- `github.com/baldaworks/runtime/v2/agentconfig` remains the generic provider
-  schema and validation boundary. It does not gain Balda persistence, browser,
-  authorization, or source-precedence policy.
-- A Balda provider-management application service owns source reconciliation,
-  provider IDs, revision creation, graph validation, protected-field handling,
-  enablement, deletion, and mutation policy.
-- `internal/apps/balda/state` owns managed records, immutable revisions,
-  protected values, optimistic versions, tombstones, and atomic audit writes.
-- `internal/apps/balda/runtimecatalog` and `catalogapp` own immutable provider
-  contributions, snapshot selection, exact-revision lookup, and runtime factory
-  binding.
-- `internal/apps/backoffice` owns routes, forms, view models, redaction, and
-  presentation through a narrow provider-operations port. It does not construct
-  agents or decide provider-selection policy.
-- Runtime factories receive a resolved provider graph for one snapshot rather
-  than retaining the startup `runtime.providers` map as their only source.
-
-Conceptually:
+The runtime driver registry remains authoritative for canonical provider type,
+typed validation, normalization, and its declared immutable identity fields.
+Balda adds a closed managed-driver adapter for every driver allowed in
+Backoffice:
 
 ```text
-runtime.providers ---- read-only adapter ---+
-                                           |
-Backoffice -> provider management -> state +--> provider catalog compiler
-                                                   |
-                                                   v
-                                      immutable runtime snapshot
-                                                   |
-                                                   v
-                                        scoped provider factory
+ManagedDriverAdapter
+  canonical_driver_id
+  driver_contract_version
+  normalized_definition_version
+  immutable_identity_fields
+  public/protected field split
+  managed execution policy
+  passive presentation metadata
 ```
 
-### 7. Define validation and startup behavior
+The adapter prepares a complete `agentconfig.Config` and delegates validation
+and execution semantics to runtime. It does not duplicate provider execution.
 
-`balda validate` remains database-free. It validates the configured provider
-source and all provider references that can be resolved from that source. If
-`balda.provider` or a pool member is intentionally supplied by managed state,
-validation reports that effective provider validation is deferred rather than
-claiming the provider exists.
+Every revision stores:
 
-`balda preflight` and `balda start` open the selected state provider, load
-managed revisions, compile the effective catalog, and require the selected
-root graph to be complete before enabling conversational ingress. A missing,
-ambiguous, undecryptable, or invalid effective root aborts startup before chat
-work is accepted.
+- provider ID and immutable revision ID;
+- canonical driver ID and driver contract version;
+- normalized-definition version and normalized public definition;
+- protected-payload format version and ciphertext, when present;
+- immutable identity values and ordered direct pool references;
+- reproducibility flags and retained artifact identity, when applicable;
+- creation metadata without plaintext protected values.
 
-Backoffice does not introduce a provider-recovery degraded mode in this
-decision. Initial installation still creates a usable configured provider.
-An operator who wants a database-only definition first creates and validates
-it while Balda is running, updates the file-owned root selection, and then
-restarts. This keeps startup failure semantics explicit and avoids exposing a
-partially initialized application mode.
+Retained bytes are interpreted only by their recorded contract version. If it
+is unavailable, reconstruction fails closed rather than renormalizing with
+newer semantics.
 
-### 8. Provide a source-aware Backoffice experience
+Runtime `immutable_identity_fields` are the minimum boundary. Executable
+origin is also identity for managed ACP. Changing canonical type,
+`registry_id`, or executable selection requires a new provider ID so a new
+executable cannot inherit old secrets or auth state.
 
-Backoffice adds an Administration → Providers inventory with source, type,
-model or mode when non-sensitive, pool membership, enabled state, revision,
-and validation state.
+### 3. Restrict managed executable configuration initially
 
-Configured rows are read-only and explain that changes belong in
-`runtime.providers`. Managed rows support create, edit, enable, disable, delete,
-and explicit candidate diagnostics. The UI warns that accepted changes affect
-new sessions and sessions reset afterward. It does not offer an action that
-mutates or resets existing conversations in bulk.
+The first increment supports hosted providers, pools, and trusted built-in ACP
+launch paths exposed by approved managed-driver adapters. It rejects
+`generic_acp`, explicit `cmd`, and command overrides for built-in ACP types.
 
-Pool editing uses provider IDs from the unified inventory. The server repeats
-all validation and authorization; browser choices are never authoritative.
+Arbitrary managed commands plus protected environment values are host code
+execution with application credentials. Supporting them requires a later
+decision covering a separate high-privilege capability, provenance, review,
+and isolation.
+
+Registry-backed ACP follows its adapter policy. A floating Registry launch may
+be enabled but is marked non-reproducible until an exact artifact is retained.
+
+### 4. Use one application-scoped secret-protection service
+
+Balda owns an application-scoped secret-protection service created at
+composition with one deployment root key. It exposes narrow seal, open, and
+keyed-fingerprint operations. MCP and provider management consume this service
+through separate cryptographic domains; they do not own separate keys or
+implementations.
+
+Managed API keys and every value in managed ACP `env` are write-only
+protected values. Environment names, binding kinds, and presence indicators
+may be public. Values never appear in public definitions, HTML, logs, audit
+records, revision IDs, snapshots, bindings, or errors.
+
+One provider revision owns one canonical encrypted payload. Its authenticated
+context binds at least:
+
+```text
+domain = managed-provider-revision
+protected_format_version
+provider_id
+revision_id
+```
+
+Changing any protected value creates a revision and reseals the complete
+payload. Sessions pin the revision ID and never persist plaintext or duplicate
+ciphertext.
+
+The application key is optional only while no encrypted managed data is
+created or required. Creating, publishing, restoring, or using a protected
+revision requires the matching key. A missing or incorrect key makes that
+revision unavailable.
+
+The existing MCP credential-key setting remains a compatible key input during
+migration. Existing MCP revisions and grants must remain readable without bulk
+reencryption. Conflicting app and legacy inputs fail configuration. Key IDs,
+online rotation, and crash-safe rewrapping are deferred; operators retain the
+same key with the database.
+
+Configured YAML secrets are not copied. With an application key, Balda may
+persist a domain-separated keyed fingerprint only to verify that the current
+secret still matches a retained binding. Plain hashes are forbidden. Without
+a verifiable match, exact configured-secret restoration is unavailable.
+
+### 5. Store provider bindings outside runtimecatalog
+
+Provider revisions do not become runtimecatalog sources or contributions.
+`runtimecatalog` continues to own commands, hooks, skills, and MCP.
+
+```text
+ProviderBinding
+  binding_id
+  root_provider_id
+  root_revision_id
+  ordered transitive provider revision IDs
+  provider-view generation
+  restore grade and limitation flags
+```
+
+The binding compiler preserves pool order and rejects missing or disabled
+members, empty IDs or pools, cycles, normalized duplicates, source collisions,
+unavailable driver contracts or protected payloads, identity violations, and
+invalid runtime definitions.
+
+Session state persists the runtime catalog snapshot ID and provider binding ID
+before exposure. The in-memory `SessionCapabilityBinding` carries both. A
+composite storage operation prevents observing one without the other.
+
+Disablement and deletion prevent new selection but retain tombstones,
+revisions, ciphertext, and bindings required by sessions. Physical purge is a
+separate guarded operation and fails while bindings reference the data.
+
+### 6. Build runtimes from the bound graph
+
+A provider-binding resolver loads exact revisions, decrypts only at build
+time, rebuilds typed configs, verifies driver contract versions, and supplies
+one scoped graph to `agentfactory`. Runtime construction does not reread the
+startup provider map or select current revisions by provider ID.
+
+Plaintext exists only as needed to construct a hosted client or child process
+environment. It is not cached in catalog state, session metadata, inventory,
+or audit payloads.
+
+The same binding graph is used by ordinary, reset, scheduled, webhook, goal,
+and session-memory runtimes when they select a managed provider; by pool member
+construction; and by native hook provider validation and traversal.
+`hooknativeapp` resolves provider identity from this graph while
+`hooknative.Registry` remains solely the native hook-adapter registry.
+
+New sessions and `/reset` adopt the applied provider view. Active sessions
+retain their existing runtime and binding. Publication does not rebuild or
+terminate healthy runtimes.
+
+### 7. Publish through durable activation intents
+
+A SQL commit and in-memory publication are not atomic. Every managed lifecycle
+mutation follows:
+
+1. authorize and verify optimistic state;
+2. prepare and validate the complete candidate view;
+3. atomically commit revision/lifecycle state, current selection, audit,
+   desired generation, and pending activation intent;
+4. publish the exact durable desired view;
+5. complete the intent and record the applied generation.
+
+Failure before commit rejects the mutation. Failure after commit returns
+**Accepted; recovery pending** and the client must not repeat it. Explicit
+recovery and startup reconciliation republish durable desired state
+idempotently and complete intents before conversational ingress.
+
+Inventory exposes desired and applied generations and pending recovery. New
+bindings use only the applied generation; existing bindings remain valid.
+
+### 8. Bound exact restore
+
+| Input | Guarantee |
+| --- | --- |
+| Managed public definition and pool graph | Exact while revision and driver contract are retained |
+| Managed API keys and explicit `env` values | Exact while ciphertext and matching application key exist |
+| Configured public values | Exact only while current normalized values match |
+| Configured secrets | Current-match verification only with a keyed fingerprint |
+| Inherited process environment | External and mutable; excluded |
+| Agent auth home and refreshed tokens | External and mutable; excluded |
+| External account and model availability | External and mutable; excluded |
+| Floating Registry artifact | Excluded |
+| Retained content-addressed artifact | Exact bytes under a future artifact contract |
+
+Each binding records a restore grade such as `exact-balda-inputs`,
+`current-match-required`, or `floating-external-input`. It does not claim
+external services or accounts are unchanged.
+
+Restore requests the persisted provider binding and catalog snapshot. Missing
+revisions or contracts, configured-secret mismatch, decryption failure, or an
+absent required artifact prevents exact restore. The existing bounded
+fresh-session fallback may use the current applied view while preserving the
+stable Balda session identity and replacing provider state and history. The
+fallback is recorded and never described as exact.
+
+### 9. Define validation and startup
+
+`balda validate` remains database-free. It validates configured definitions
+and references resolvable from configuration. A syntactically valid reference
+that may come from managed state is reported as deferred. Validation does not
+decrypt managed data, fetch Registry metadata, download or execute agents,
+authenticate, or discover models.
+
+`balda preflight` and `balda start` open state, recover pending provider
+activations, compile the effective view, and require the selected root graph
+before conversational ingress. Collisions, unavailable contracts,
+undecryptable required revisions, invalid graphs, and missing roots fail
+startup.
+
+Inventory, validation, publication, and startup compilation remain passive and
+do not launch a provider or contact a hosted API.
+
+### 10. Keep the first Backoffice surface passive
+
+Administration → Providers shows source, canonical type, public model or mode,
+pool members, lifecycle state, revision, restore grade, desired/applied
+generation, and recovery status.
+
+Configured rows are redacted and read-only. Managed rows support create, edit,
+enable, disable, delete, rollback, and publication recovery through
+server-owned adapters. Protected fields accept replace or clear and otherwise
+show presence only.
+
+The page performs schema and graph validation only. Authentication, executable
+probes, hosted API tests, Registry refresh, and model discovery require a
+future ADR because they can mutate external accounts or local state.
+
+Mutations require current administrator authority, same-origin and CSRF
+checks, optimistic state, and committed audit. Browser input never supplies
+authoritative revision, graph, encryption, or publication evidence.
+
+### 11. Assign ownership
+
+- `runtime/v2/agentconfig`: typed provider schema, runtime driver registry,
+  passive validation, and normalization.
+- Managed-provider application service: adapters, source reconciliation,
+  records, revisions, graph compilation, lifecycle, and activation recovery.
+- Application secret-protection service: deployment key, domain-separated
+  encryption, and keyed fingerprints, without provider or MCP policy.
+- `internal/apps/balda/state`: records, revisions, opaque ciphertext,
+  bindings, tombstones, activation intents, and atomic audit writes.
+- Session capability binder: provider binding beside the independent catalog
+  snapshot.
+- `internal/apps/balda/agent`: exact bound-graph runtime construction.
+- `hooknativeapp`: bound provider identity; `hooknative.Registry`: native
+  hook adapters only.
+- Backoffice: routes, forms, redaction, and presentation through narrow ports.
+- `runtimecatalog` and `catalogapp`: commands, hooks, skills, and MCP only.
+
+```text
+runtime.providers ---- configured adapter ----+
+                                             |
+Backoffice -> managed providers -> state + activation intent
+                                             |
+                                     applied provider view
+                                             |
+                    ProviderBinding + catalog SnapshotID
+                                             |
+                                      scoped runtime
+```
 
 ## Compatibility and migration
 
-### Existing installations
+Existing provider IDs, root selection, pools, profiles, environment expansion,
+and process inheritance keep their current meaning. YAML-only installations
+require neither managed rows nor an application key.
 
-No data migration copies `runtime.providers` into the database. On first start,
-configured definitions are projected as read-only catalog entries. Existing
-provider IDs, `balda.provider`, pools, profiles, and environment overrides keep
-their current meaning.
+Legacy sessions without a provider binding adopt a configured binding on first
+compatible load when current values can be verified. Otherwise Balda uses the
+fresh-session fallback. Plaintext configured secrets are never copied into
+session rows.
 
-Existing sessions that predate provider revision pinning receive a legacy
-configured-provider capture during state migration or first compatible load.
-The capture records the provider ID, normalized public definition, protected
-field hashes, and the transitive pool graph available at that time. It does not
-copy plaintext secrets into session or catalog rows.
+The application secret service accepts the existing MCP deployment key as a
+compatibility source. Existing ciphertext remains readable. The database and
+matching key must be backed up together; lost or replaced keys make protected
+history unavailable.
 
-Exact legacy restore is allowed only when the current configured values match
-the retained capture. If they do not match, Balda follows the existing bounded
-fresh-session fallback and records that exact provider restoration was not
-possible.
+Migrations add provider records, revisions, protected payloads, bindings,
+tombstones, generations, and activation intents for SQLite and PostgreSQL.
+They do not edit YAML or publish a provider by themselves.
 
-### Rolling forward
-
-The schema migration creates managed-provider, revision, protected-value, and
-snapshot-association storage for both SQLite and PostgreSQL. It does not alter
-the configuration file. Deployment order is binary first, automatic schema
-migration on provider open, then optional Backoffice-managed definitions.
-
-### Rolling back
-
-Configured providers remain the rollback path. Before using managed providers
-as the selected root or required pool members, operators keep or restore an
-equivalent configured graph. An older binary ignores the new provider tables
-but cannot run a root that exists only in managed state.
-
-Database rollback after managed revisions have been created requires restoring
-a pre-migration database backup with the older binary stopped. Removing only
-the new tables is not a supported rollback because session snapshots may refer
-to retained provider revisions.
-
-## Consequences
-
-### Positive
-
-- Existing configuration remains a first-class, read-only source.
-- Administrators can manage provider definitions without editing deployment
-  files.
-- New sessions can adopt a provider change without interrupting active work.
-- Exact revisions make provider edits and pool changes auditable and
-  reproducible.
-- One namespace and fail-closed conflicts avoid hidden precedence rules.
-- The generic runtime library remains independent of Balda product policy.
-
-### Costs and risks
-
-- Provider definitions and transitive pool graphs become part of runtime
-  snapshot retention and garbage-collection policy.
-- Runtime factories must resolve snapshot-bound definitions instead of relying
-  on one immutable startup map.
-- Database-free `validate` cannot prove managed references; operators must use
-  state-aware preflight for the effective graph.
-- Database-only provider deployments cannot be repaired through Backoffice when
-  the selected graph prevents process startup; the configured fallback and
-  staged migration procedure remain operationally important.
-- Retaining old credential-bearing revisions increases the importance of key
-  rotation and protected-state backup procedures.
+Before rolling back to a binary without managed providers, operators restore a
+fully configured YAML root graph. Older binaries ignore managed tables, which
+remain dormant for later upgrade.
 
 ## Alternatives considered
 
-### Let managed definitions override configured names
+- Replacing YAML was rejected because it breaks deployment ownership, offline
+  validation, profiles, and rollback.
+- Source precedence was rejected because collisions could redirect roots or
+  pool members.
+- Runtimecatalog contributions were rejected because provider graphs, secrets,
+  identity, and restore differ from catalog contributions.
+- Pinning only a pool root was rejected because member edits would change
+  restored behavior.
+- Plain secret hashes and snapshot copies were rejected because hashes cannot
+  restore values and copies multiply sensitive storage.
+- Publishing inside SQL was rejected because the two operations cannot be
+  atomic.
+- Arbitrary managed commands were deferred pending stronger authorization and
+  isolation.
+- Mandatory probes were rejected because offline configuration must work and
+  ACP probes can mutate auth state.
 
-Rejected. Silent precedence makes a browser mutation capable of redirecting a
-configured root or pool member and makes rollback dependent on load order.
+## Consequences
 
-### Let configuration always override managed names
+Managed providers adopt cleanly at session boundaries, retain an exact
+Balda-controlled graph, encrypt values under one application key, and recover
+post-commit publication failures. The cost is a second session binding,
+versioned managed-driver adapters, scoped runtime construction, additional
+state and migrations, and replacement of static provider maps in all
+consumers.
 
-Rejected. The managed record would appear enabled while being ineffective, and
-removing the configured entry could unexpectedly activate stale database state.
-
-### Rewrite `config.yaml` from Backoffice
-
-Rejected. It breaks immutable/container deployments, loses environment-override
-semantics, couples the browser to filesystem permissions and formatting, and
-does not provide immutable history for session restore.
-
-### Apply edits immediately to active sessions
-
-Rejected. Replacing a provider during a conversation can change model behavior,
-credentials, tools, or pool failover order without a session boundary and
-cannot provide exact restore semantics.
-
-### Require a restart for every managed edit
-
-Rejected as the default. The runtime catalog already has an immutable snapshot
-boundary suitable for new-session adoption. A restart remains necessary for
-file-owned root-selection changes and rollback to configured definitions.
-
-### Move source merging into `runtime/v2`
-
-Rejected. Persistence sources, administrator authority, audit, Backoffice, and
-session migration are Balda product concerns. The runtime library should keep
-accepting resolved provider definitions.
+External accounts, auth homes, inherited environment, remote model state, and
+floating Registry artifacts remain outside exact restore.
 
 ## Acceptance criteria
 
-- An unchanged configuration-only installation builds the same effective
-  provider graph and can start and restore sessions.
-- Backoffice lists configured providers as redacted and read-only.
-- An authorized administrator can create, revise, enable, disable, and delete a
-  managed provider with optimistic concurrency and an atomic audit record.
-- A configured/managed ID collision is rejected consistently by mutation,
-  preflight, and startup.
-- Pools can reference configured and managed providers, and snapshots capture
-  the exact transitive graph.
-- Existing sessions retain their pinned provider revisions after a managed
-  edit, disable, or deletion; a new session and `/reset` select current enabled
-  revisions.
-- Inventory reads launch no provider process and make no external provider
-  request.
-- Protected values never appear in HTML, logs, errors, audit payloads, or
-  plaintext revision data.
-- SQLite and PostgreSQL enforce equivalent revision, version, tombstone,
-  authority, and audit behavior.
-- `balda validate` clearly identifies deferred managed references, while
-  `balda preflight` validates the complete effective root graph.
-- Architecture enforcement keeps management policy out of Backoffice handlers,
-  `state`, and `runtime/v2`.
+1. YAML-only installations behave as before without managed migration or key.
+2. Source collisions fail before ingress or publication.
+3. Revisions pin canonical driver, contract versions, identity, public
+   definition, and opaque revision-bound protected payload.
+4. Managed API keys and environment values never enter public or diagnostic
+   surfaces.
+5. Existing encrypted MCP data remains readable through the app-scoped
+   service using the existing deployment key.
+6. Provider binding captures the root and ordered transitive revisions and is
+   persisted atomically with the catalog snapshot.
+7. Runtime and native-hook provider resolution use the bound graph.
+8. New sessions and reset adopt the applied view; active sessions retain it.
+9. Post-commit publication failure reports **Accepted; recovery pending**.
+10. Startup recovers pending activations before ingress.
+11. Missing contracts, keys, revisions, or artifacts fail exact restore
+    without selecting current bytes silently.
+12. Restore reporting distinguishes Balda-controlled, current-match, and
+    floating external inputs.
+13. Managed generic and explicit ACP commands are rejected initially.
+14. Listing, validation, startup compilation, and publication do not execute
+    providers, authenticate, or discover models.
 
-## Follow-up decisions
+## Deferred decisions
 
-- Whether `balda.provider` itself should become Backoffice-managed.
-- Retention and garbage collection for provider revisions no longer referenced
-  by sessions, audits, or current definitions.
-- Whether candidate diagnostics should only validate construction or also run a
-  bounded model interaction, with corresponding cost and data-disclosure
-  controls.
+- Browser and CLI authentication, including terminal auth.
+- Model and session-option discovery.
+- Managed auth homes and generations for agent-owned state.
+- Registry refresh, artifact materialization, retention, and offline replay.
+- Custom executable authorization, provenance, sandboxing, and secret access.
+- Application-key IDs, rotation, and crash-safe rewrapping.
+- Managed selection of `balda.provider`.
