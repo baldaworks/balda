@@ -36,8 +36,8 @@ The 2026-10-17 review verified these foundations:
 - [`go.mod`](../../../go.mod) pins `github.com/baldaworks/runtime/v2` v2.6.1.
   Its built-in driver registry supplies canonical types, aliases, driver
   classes, immutable identity fields, passive normalization, and ACP
-  environment policy. Balda's configuration test verifies inheritance,
-  override, isolation, and an explicitly empty environment value in
+  environment policy. Balda's configuration test verifies disabled
+  inheritance and preservation of an explicitly empty environment value in
   [`cmd/balda/acp_config_test.go`](../../../cmd/balda/acp_config_test.go).
 - Managed MCP revisions already use revision-bound AES-GCM with the deployment
   key configured by `balda.mcp_management.credential_key`. The implementation
