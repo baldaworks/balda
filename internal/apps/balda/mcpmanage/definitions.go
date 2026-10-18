@@ -59,17 +59,19 @@ type DiagnosticProbe interface {
 
 // Definitions owns hybrid definition validation and management.
 type Definitions struct {
-	credentials  *Service
-	store        DefinitionStore
-	configured   Configured
-	catalog      Catalog
-	probe        Probe
-	diagnostic   DiagnosticProbe
-	diagnosticMu sync.RWMutex
-	diagnostics  map[string]diagnosticObservation
+	credentials        *Service
+	store              DefinitionStore
+	configured         Configured
+	catalog            Catalog
+	probe              Probe
+	diagnostic         DiagnosticProbe
+	diagnosticMu       sync.RWMutex
+	diagnosticSequence uint64
+	diagnostics        map[string]diagnosticObservation
 }
 
 type diagnosticObservation struct {
+	sequence   uint64
 	revisionID string
 	result     mcpcmd.DiagnosticResult
 }

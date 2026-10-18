@@ -24,6 +24,11 @@ func (s *Definitions) DiagnoseCurrent(ctx context.Context, connectionID string, 
 	if err := ctx.Err(); err != nil {
 		return mcpcmd.DiagnosticResult{}, err
 	}
+	// Order requests before target lookup, which may itself outlive a newer check.
+	s.diagnosticMu.Lock()
+	s.diagnosticSequence++
+	sequence := s.diagnosticSequence
+	s.diagnosticMu.Unlock()
 	authority.At = time.Now().UTC()
 	if err := s.store.CheckMCPAuthority(ctx, authority); err != nil {
 		return mcpcmd.DiagnosticResult{}, safeOperationError(err)
@@ -45,7 +50,9 @@ func (s *Definitions) DiagnoseCurrent(ctx context.Context, connectionID string, 
 	}
 	result.CheckedAt = time.Now().UTC()
 	s.diagnosticMu.Lock()
-	s.diagnostics[connectionID] = diagnosticObservation{revisionID: target.revision.ID, result: result}
+	if previous, ok := s.diagnostics[connectionID]; !ok || previous.sequence < sequence {
+		s.diagnostics[connectionID] = diagnosticObservation{sequence: sequence, revisionID: target.revision.ID, result: result}
+	}
 	s.diagnosticMu.Unlock()
 	return result, nil
 }
