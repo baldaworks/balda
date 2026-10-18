@@ -313,6 +313,9 @@ func mcpBrowserState(t *testing.T, provider state.Provider, catalog *catalogapp.
 	if err != nil {
 		t.Fatal(err)
 	}
+	for i := range items {
+		items[i].LastDiagnostic = nil
+	}
 	application, err := catalog.Store().Application()
 	if err != nil {
 		t.Fatal(err)

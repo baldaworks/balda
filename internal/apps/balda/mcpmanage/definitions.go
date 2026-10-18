@@ -6,6 +6,7 @@ import (
 	"errors"
 	"slices"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
@@ -58,12 +59,21 @@ type DiagnosticProbe interface {
 
 // Definitions owns hybrid definition validation and management.
 type Definitions struct {
-	credentials *Service
-	store       DefinitionStore
-	configured  Configured
-	catalog     Catalog
-	probe       Probe
-	diagnostic  DiagnosticProbe
+	credentials        *Service
+	store              DefinitionStore
+	configured         Configured
+	catalog            Catalog
+	probe              Probe
+	diagnostic         DiagnosticProbe
+	diagnosticMu       sync.RWMutex
+	diagnosticSequence uint64
+	diagnostics        map[string]diagnosticObservation
+}
+
+type diagnosticObservation struct {
+	sequence   uint64
+	revisionID string
+	result     mcpcmd.DiagnosticResult
 }
 
 // NewDefinitions binds the feature to the shared store and catalog owners.
@@ -71,7 +81,15 @@ func NewDefinitions(credentials *Service, store DefinitionStore, configured Conf
 	if credentials == nil || store == nil || configured == nil || catalog == nil || probe == nil || diagnostic == nil {
 		return nil, mcpcmd.ErrInvalid
 	}
-	return &Definitions{credentials: credentials, store: store, configured: configured, catalog: catalog, probe: probe, diagnostic: diagnostic}, nil
+	return &Definitions{
+		credentials: credentials,
+		store:       store,
+		configured:  configured,
+		catalog:     catalog,
+		probe:       probe,
+		diagnostic:  diagnostic,
+		diagnostics: make(map[string]diagnosticObservation),
+	}, nil
 }
 
 // Create validates and persists a new managed connection and revision.
@@ -409,6 +427,7 @@ func (s *Definitions) Inventory(ctx context.Context) ([]mcpcmd.Item, error) {
 			items[i].Status = mcpcmd.StatusConflict
 			items[i].ToolCount = 0
 		}
+		s.attachLastDiagnostic(&items[i])
 	}
 	sort.Slice(items, func(i, j int) bool {
 		if items[i].Connection.PublicID == items[j].Connection.PublicID {

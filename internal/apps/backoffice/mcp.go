@@ -91,7 +91,7 @@ func (a *httpApp) mcpDiagnostic(w http.ResponseWriter, r *http.Request) {
 		a.mcpError(w, r, a.mcpBasePage(r, principal), mcpcmd.ErrUnavailable)
 		return
 	}
-	result, diagnosticErr := a.mcp.DiagnoseCurrent(r.Context(), r.PathValue("connection_id"), a.mcpAuthority(principal))
+	_, diagnosticErr := a.mcp.DiagnoseCurrent(r.Context(), r.PathValue("connection_id"), a.mcpAuthority(principal))
 	page, err := a.mcpView(r, principal)
 	if err != nil {
 		a.mcpError(w, r, page, err)
@@ -100,10 +100,6 @@ func (a *httpApp) mcpDiagnostic(w http.ResponseWriter, r *http.Request) {
 	if diagnosticErr != nil {
 		a.mcpError(w, r, page, diagnosticErr)
 		return
-	}
-	page.MCP.Diagnostic = &webui.MCPDiagnosticView{
-		Succeeded: result.Outcome == mcpcmd.DiagnosticSucceeded && result.ToolCount >= 0,
-		ToolCount: result.ToolCount,
 	}
 	a.render(w, r, http.StatusOK, webui.TemplateMCP, page)
 }

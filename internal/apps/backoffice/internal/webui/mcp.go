@@ -13,14 +13,15 @@ type MCPView struct {
 	Rows         []MCPRow
 	Editor       *MCPEditor
 	Device       *MCPDevice
-	Diagnostic   *MCPDiagnosticView
 	ProbeMessage string
 }
 
-// MCPDiagnosticView is one response's secret-free explicit check result.
+// MCPDiagnosticView is the last secret-free explicit check result.
 type MCPDiagnosticView struct {
-	Succeeded bool
-	ToolCount int
+	Succeeded    bool
+	ToolCount    int
+	CheckedAt    string
+	CheckedAtISO string
 }
 
 // MCPRow keeps stored authorization separate from observed runtime readiness.
@@ -31,6 +32,7 @@ type MCPRow struct {
 	Version                                                                             uint64
 	ToolCount                                                                           int
 	Ready, Enabled, ReadOnly, Deleted                                                   bool
+	LastDiagnostic                                                                      *MCPDiagnosticView
 }
 
 // ProjectMCPRow constructs a bounded, secret-free inventory projection.
@@ -93,6 +95,14 @@ func ProjectMCPRow(item mcpcmd.Item) MCPRow {
 			case mcpcmd.GrantDisconnected:
 				row.Recovery = "Authorization was revoked. Sign in again if this server requires OAuth."
 			}
+		}
+	}
+	if item.LastDiagnostic != nil {
+		row.LastDiagnostic = &MCPDiagnosticView{
+			Succeeded:    item.LastDiagnostic.Outcome == mcpcmd.DiagnosticSucceeded && item.LastDiagnostic.ToolCount >= 0,
+			ToolCount:    item.LastDiagnostic.ToolCount,
+			CheckedAt:    item.LastDiagnostic.CheckedAt.UTC().Format("02 Jan 2006, 15:04 UTC"),
+			CheckedAtISO: item.LastDiagnostic.CheckedAt.UTC().Format("2006-01-02T15:04:05Z"),
 		}
 	}
 	return row

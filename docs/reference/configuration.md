@@ -373,8 +373,9 @@ outside this Story's unchanged ingress and Compose configuration.
 MCP servers are configured in `runtime.mcp_servers` and referenced by providers via `runtime.providers.<id>.mcp_servers`.
 
 Backoffice also manages durable MCP definitions. Configuration-owned entries
-remain read-only there except for the explicit, ephemeral **Refresh state**
-diagnostic. Backoffice OAuth status and actions apply only to eligible managed
+remain read-only there except for the explicit **Refresh state** diagnostic.
+Its last secret-free result remains visible for the exact revision until the
+Balda process restarts. Backoffice OAuth status and actions apply only to eligible managed
 HTTP/SSE definitions with OAuth enabled. Provider targets apply when a session
 is created or reset.
 When a provider pool is selected, its MCP selection also applies to that pool's
