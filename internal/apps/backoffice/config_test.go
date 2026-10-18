@@ -47,33 +47,36 @@ func TestResolveServerConfig(t *testing.T) {
 	}
 }
 
-func TestProjectConfiguredCapabilitiesOmitsDisabled(t *testing.T) {
+func TestProjectCapabilityCardsOmitsDisabledAndShowsOperationalSettings(t *testing.T) {
 	t.Parallel()
 	cfg := BaldaConfig{
-		Telegram: TelegramConfig{Enabled: true, Webhook: TelegramWebhookConfig{Enabled: true, ListenAddr: "127.0.0.1:8080", Path: "/telegram"}},
+		Telegram: TelegramConfig{Enabled: true, FormattingMode: "markdown", Webhook: TelegramWebhookConfig{Enabled: true, CallbackURL: "/gateway/telegram/webhook"}},
 		Zulip:    ZulipConfig{Webhook: ZulipWebhookConfig{Enabled: false}},
 		Slack: SlackConfig{
-			Enabled: true, ListenAddr: "127.0.0.1:8091", EventsPath: "/slack/events",
-			Agent: SlackAgentConfig{Enabled: true, ListenAddr: "127.0.0.1:8092", EventsPath: "/slack/agent/events", EnableStreaming: true},
+			Agent: SlackAgentConfig{Enabled: true, IncludePrivateChannels: false, EnableStreaming: true, SuggestedPrompts: false, EventsCallbackURL: "/gateway/slack/events", CommandsCallbackURL: "/gateway/slack/commands"},
 		},
-		Webhooks:   WebhooksConfig{Enabled: true, ListenAddr: "127.0.0.1:8093", RouteCount: 1},
-		Mattermost: MattermostConfig{Enabled: true, CommandsEnabled: true, ListenAddr: "127.0.0.1:8094", CommandsPath: "/mattermost/commands"},
-	}
-	projection := ProjectConfiguredCapabilities(cfg)
-	if len(projection) != 4 {
-		t.Fatalf("capability count = %d, want 4: %+v", len(projection), projection)
-	}
-	for _, capability := range projection {
-		if capability.ID == "zulip" {
-			t.Fatal("disabled Zulip capability was projected")
-		}
-		if capability.ID == "webhooks" && capability.RouteCount != 1 {
-			t.Fatalf("webhook route count = %d, want 1", capability.RouteCount)
-		}
+		Webhooks:   WebhooksConfig{Enabled: true, RouteCount: 1},
+		Mattermost: MattermostConfig{Enabled: true, ServerURL: "https://mattermost.example", CommandsEnabled: true, CommandsCallbackURL: "/gateway/mattermost/commands"},
 	}
 	cards := ProjectCapabilityCards(cfg)
-	if len(cards) != len(projection) || cards[0].ID != projection[0].ID {
-		t.Fatalf("capability cards = %+v", cards)
+	if len(cards) != 4 {
+		t.Fatalf("capability count = %d, want 4: %+v", len(cards), cards)
+	}
+	for _, card := range cards {
+		if card.ID == "zulip" {
+			t.Fatal("disabled Zulip capability was projected")
+		}
+		if card.ID == "webhooks" && card.RouteCount != 1 {
+			t.Fatalf("webhook route count = %d, want 1", card.RouteCount)
+		}
+		if card.ID == "slackagent" {
+			if len(card.Settings) != 3 || card.Settings[0].Value != "No" || card.Settings[1].Value != "Yes" || card.Settings[2].Value != "No" {
+				t.Fatalf("Slack settings = %+v", card.Settings)
+			}
+			if len(card.Endpoints) != 2 || card.Endpoints[0].URL != "/gateway/slack/events" || card.Endpoints[1].URL != "/gateway/slack/commands" {
+				t.Fatalf("Slack endpoints = %+v", card.Endpoints)
+			}
+		}
 	}
 	if got := configuredBindingChannels(cfg); !slices.Equal(got, []string{"telegram", "slackagent", "mattermost"}) {
 		t.Fatalf("configured binding channels = %v", got)

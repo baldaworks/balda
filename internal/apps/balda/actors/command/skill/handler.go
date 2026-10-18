@@ -72,7 +72,7 @@ func (h *Handler) Handle(ctx context.Context, env actorlayer.Envelope, payload c
 		return h.respond(ctx, env.ID, payload, msgDenied, "skill-denied")
 	}
 
-	selector, prompt, err := parseInvocation(payload.Args)
+	selector, prompt, err := ParseInvocation(payload.Args)
 	if err != nil {
 		return h.respond(ctx, env.ID, payload, usage(payload), "skill-usage")
 	}
@@ -105,7 +105,8 @@ func (h *Handler) respond(ctx context.Context, operationID string, payload comma
 	return nil
 }
 
-func parseInvocation(args string) (Selector, string, error) {
+// ParseInvocation validates a literal selector and separates its optional prompt.
+func ParseInvocation(args string) (Selector, string, error) {
 	args = strings.TrimSpace(args)
 	if args == "" {
 		return Selector{}, "", errors.New("skill selector is required")

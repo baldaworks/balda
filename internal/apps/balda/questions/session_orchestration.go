@@ -124,6 +124,7 @@ func (s *Service) startSession(ctx context.Context, dispatcher actortransport.Di
 		}
 		metadata[metadataDefaultOptionID] = defaultID
 	}
+	req.Interaction.Private = req.Audience.Visibility == deliverycmd.QuestionVisibilityPrivate
 	record, err := s.Ask(ctx, req.Interaction, req.Resume, questioncmd.Request{
 		Prompt:        presentation.Prompt,
 		Options:       options,

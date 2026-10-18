@@ -91,8 +91,12 @@ func (h *Handler) deliverResult(ctx context.Context, operationID string, p comma
 }
 
 func usage(p commandcmd.Payload) string {
-	if root := strings.TrimSpace(p.Invocation.Root); root != "" {
-		return root + " reset"
+	name := strings.ToLower(strings.TrimSpace(p.Name))
+	if name == "" {
+		name = "reset"
 	}
-	return "/reset"
+	if root := strings.TrimSpace(p.Invocation.Root); root != "" {
+		return root + " " + name
+	}
+	return "/" + name
 }

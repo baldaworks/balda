@@ -95,6 +95,14 @@ func (h *mattermostInboundHandler) ProcessInbound(ctx context.Context, msg matte
 		return turncmd.InboundSettlement{Outcome: turncmd.InboundRetry, Reason: chatapp.ReasonUnauthorized}, err
 	}
 	if !allowed {
+		h.logger.Warn().
+			Str("post_id", msg.PostID).
+			Str("sender_id", msg.SenderID).
+			Msg("mattermost message dropped: sender is not an owner or collaborator")
+		// The denial notice is best effort: the post is settled either way.
+		if err := h.sendPlain(ctx, msg.Locator, mattermostAccessDeniedText); err != nil {
+			h.logger.Warn().Err(err).Str("post_id", msg.PostID).Msg("send mattermost access denied notice")
+		}
 		return turncmd.InboundSettlement{Outcome: turncmd.InboundTerminal, Reason: chatapp.ReasonUnauthorized}, nil
 	}
 	if h.chat == nil {
@@ -129,6 +137,7 @@ func mattermostChatRequest(msg mattermost.InboundMessage, receivedAt time.Time) 
 	}
 	request := chatapp.Request{
 		ID:                inboundID,
+		OriginalInput:     mattermost.NormalizeInboundMessage(msg, receivedAt).OriginalInput,
 		Text:              strings.TrimSpace(msg.Text),
 		Locator:           msg.Locator,
 		ProviderMessageID: postID,
@@ -194,12 +203,13 @@ func (h *mattermostInboundHandler) HandleCommand(ctx context.Context, cmd matter
 	return h.commandIngress.PublishCommand(ctx, commandcmd.Request{
 		InvocationID: invocationID,
 		Payload: commandcmd.Payload{
-			Version:   commandcmd.SchemaVersion,
-			Name:      cmd.Command,
-			Args:      cmd.Args,
-			Locator:   cmd.Locator,
-			Transport: mattermost.ChannelType,
-			Principal: auth.MattermostSubject(cmd.SenderID),
+			Version:       commandcmd.SchemaVersion,
+			Name:          cmd.Command,
+			OriginalInput: cmd.OriginalInput.Clone(),
+			Args:          cmd.Args,
+			Locator:       cmd.Locator,
+			Transport:     mattermost.ChannelType,
+			Principal:     auth.MattermostSubject(cmd.SenderID),
 			Access: commandcmd.Access{
 				SessionCommands: true,
 				Owner:           isOwner,

@@ -29,6 +29,7 @@ type httpApp struct {
 	access            *access.Service
 	auditLog          *audit.Service
 	cards             []webui.CapabilityCard
+	agent             webui.AgentView
 	bindingChoices    []string
 	invitations       BindingInvitations
 	bindingChannels   BindingChannels
@@ -37,7 +38,10 @@ type httpApp struct {
 	webhooks          WebhooksOperations
 	aliases           AliasesOperations
 	factMemory        FactMemoryOperations
+	chatArchive       ChatArchiveOperations
+	hooks             HookOperations
 	plugins           PluginsOperations
+	skills            SkillsOperations
 	mcpAuthorizations MCPAuthorizations
 	qa                bool
 	basePath          string
@@ -66,7 +70,10 @@ func newHTTPApp(store usercmd.Store, config ResolvedConfig) (*httpApp, error) {
 	if config.Server.WebhookPublicOrigin != nil {
 		webhookOrigin = *config.Server.WebhookPublicOrigin
 	}
-	app := &httpApp{renderer: renderer, security: service, access: access.NewService(store), auditLog: audit.NewService(store), cards: ProjectCapabilityCards(config.Balda), bindingChoices: bindingChoices, qa: config.Server.QAUI, basePath: config.Server.BasePath, publicOrigin: webhookOrigin,
+	app := &httpApp{renderer: renderer, security: service, access: access.NewService(store), auditLog: audit.NewService(store), cards: ProjectCapabilityCards(config.Balda), agent: webui.AgentView{
+		ProviderID: config.Agent.ProviderID, ProviderType: config.Agent.ProviderType, Profile: config.Agent.Profile,
+		Model: config.Agent.Model, ReasoningEffort: config.Agent.ReasoningEffort, GlobalInstruction: config.Agent.GlobalInstruction,
+	}, bindingChoices: bindingChoices, qa: config.Server.QAUI, basePath: config.Server.BasePath, publicOrigin: webhookOrigin,
 		webhookURLPrefix: webhookOrigin + webhookroutecmd.CanonicalPath(webhookURLBasePath, "")}
 	browser, err := security.NewBrowser(service, security.HTTPConfig{
 		TrustedOrigin: config.Server.PublicURL, SecureCookies: config.Server.SecureCookies, BasePath: config.Server.BasePath,
@@ -112,6 +119,7 @@ func (a *httpApp) handler() (http.Handler, error) {
 	mux.Handle("GET "+a.path("/account/password"), a.browser.Authenticate(http.HandlerFunc(a.passwordPage)))
 	mux.HandleFunc("POST "+a.path("/account/password"), a.browser.ReplacePassword)
 	mux.Handle("GET "+a.path("/overview"), a.browser.Authenticate(a.browser.RequireNormal(http.HandlerFunc(a.overview))))
+	mux.Handle("GET "+a.path("/agent"), a.browser.Authenticate(a.browser.RequireNormal(http.HandlerFunc(a.agentPage))))
 	mux.Handle("GET "+a.path("/account"), a.browser.Authenticate(a.browser.RequireNormal(http.HandlerFunc(a.account))))
 	mux.HandleFunc("POST "+a.path("/account/sessions/{session_id}/revoke"), a.browser.RevokeSession)
 	for _, route := range []string{"/mcp", "/mcp/new", "/mcp/connections/{connection_id}"} {
@@ -145,6 +153,12 @@ func (a *httpApp) handler() (http.Handler, error) {
 	mux.HandleFunc("POST "+a.path("/aliases"), a.aliasCreate)
 	mux.HandleFunc("POST "+a.path("/aliases/{alias_name}"), a.aliasRetarget)
 	mux.HandleFunc("POST "+a.path("/aliases/{alias_name}/delete"), a.aliasDelete)
+	for _, route := range []string{"/hooks", "/hooks/{hook_name}"} {
+		mux.Handle("GET "+a.path(route), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.hooksPage))))
+	}
+	mux.HandleFunc("POST "+a.path("/hooks"), a.hookMutation)
+	mux.HandleFunc("POST "+a.path("/hooks/{hook_name}"), a.hookMutation)
+	mux.HandleFunc("POST "+a.path("/hooks/{hook_name}/delete"), a.hookDelete)
 	for _, route := range []string{"/memory", "/memory/{fact_id}"} {
 		mux.Handle("GET "+a.path(route), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.factMemoryPage))))
 	}
@@ -157,6 +171,10 @@ func (a *httpApp) handler() (http.Handler, error) {
 	mux.Handle("GET "+a.path(pluginInstalledPath), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.pluginDetailPage))))
 	mux.HandleFunc("POST "+a.path(pluginInstallPath), a.pluginLifecycleMutation)
 	mux.HandleFunc("POST "+a.path(pluginInstalledPath+"/{plugin_operation}"), a.pluginLifecycleMutation)
+	for _, route := range []string{"/chat-sessions", "/chat-sessions/{archive_id}"} {
+		mux.Handle("GET "+a.path(route), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.chatArchivePage))))
+	}
+	a.registerSkills(mux)
 	mux.Handle("GET "+a.path("/plugins"), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.pluginsPage))))
 	for _, route := range []string{pluginMarketplacesPath, pluginMarketplaceNewPath, pluginMarketplaceDefinitionsPath + "{marketplace_name}"} {
 		mux.Handle("GET "+a.path(route), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.pluginMarketplacesPage))))
@@ -234,6 +252,19 @@ func (a *httpApp) overview(w http.ResponseWriter, r *http.Request) {
 	a.render(w, r, http.StatusOK, webui.TemplateOverview, webui.Page{
 		Title: "Overview · Balda", Current: webui.LocationOverview,
 		Navigation: webui.Navigation(capabilities, webui.LocationOverview), Capabilities: a.cards,
+	})
+}
+
+func (a *httpApp) agentPage(w http.ResponseWriter, r *http.Request) {
+	principal, ok := security.PrincipalFromContext(r.Context())
+	if !ok {
+		a.renderSecurityError(w, r, http.StatusUnauthorized)
+		return
+	}
+	capabilities := users.BackofficeCapabilities(principal.User)
+	a.render(w, r, http.StatusOK, webui.TemplateAgent, webui.Page{
+		Title: "Agent · Balda", Current: webui.LocationAgent,
+		Navigation: webui.Navigation(capabilities, webui.LocationAgent), Agent: &a.agent,
 	})
 }
 

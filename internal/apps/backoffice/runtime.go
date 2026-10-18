@@ -37,7 +37,10 @@ type Runtime struct {
 	webhooks          WebhooksOperations
 	aliases           AliasesOperations
 	factMemory        FactMemoryOperations
+	chatArchive       ChatArchiveOperations
+	hooks             HookOperations
 	plugins           PluginsOperations
+	skills            SkillsOperations
 	mcpAuthorizations MCPAuthorizations
 	invitations       BindingInvitations
 	bindingChannels   BindingChannels
@@ -176,7 +179,10 @@ func (r *Runtime) handler(browserConfig ResolvedServerConfig, services HandlerSe
 	httpApplication.webhooks = r.webhooks
 	httpApplication.aliases = r.aliases
 	httpApplication.factMemory = r.factMemory
+	httpApplication.chatArchive = r.chatArchive
+	httpApplication.hooks = r.hooks
 	httpApplication.plugins = r.plugins
+	httpApplication.skills = r.skills
 	httpApplication.mcpAuthorizations = services.MCPAuthorizations
 	httpApplication.invitations = r.invitations
 	httpApplication.bindingChannels = r.bindingChannels

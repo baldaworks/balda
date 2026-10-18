@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"io"
 	"net"
 	"net/http"
@@ -305,8 +306,14 @@ func (s *Server) processMessage(ctx context.Context, payload WebhookPayload) (tu
 			if !commandSupported(cmd) && (s.commands == nil || !s.commands.Supports(ChannelType, cmd)) {
 				return turncmd.InboundSettlement{Outcome: turncmd.InboundTerminal}, s.processor.HandleUnsupportedCommand(ctx, command)
 			}
+			var original *chatarchivecmd.Input
+			if cmd == "skill" {
+				original = originalInputFromWebhook(payload)
+				original.ReceivedAt = time.Now().UTC()
+			}
 			err := s.processor.HandleCommand(ctx, InboundCommand{
-				BotEmail: payload.BotEmail, SenderEmail: payload.Message.SenderEmail,
+				OriginalInput: original,
+				BotEmail:      payload.BotEmail, SenderEmail: payload.Message.SenderEmail,
 				Locator:   locator,
 				MessageID: payload.Message.ID,
 				SenderID:  senderID,
@@ -321,14 +328,15 @@ func (s *Server) processMessage(ctx context.Context, payload WebhookPayload) (tu
 
 	if s.processor != nil {
 		return s.processor.ProcessInbound(ctx, InboundMessage{
-			BotEmail:    payload.BotEmail,
-			Locator:     locator,
-			MessageID:   payload.Message.ID,
-			SenderID:    senderID,
-			SenderEmail: payload.Message.SenderEmail,
-			Text:        text,
-			Direct:      isDM,
-			ReceivedAt:  time.Now(),
+			OriginalInput: originalInputFromWebhook(payload),
+			BotEmail:      payload.BotEmail,
+			Locator:       locator,
+			MessageID:     payload.Message.ID,
+			SenderID:      senderID,
+			SenderEmail:   payload.Message.SenderEmail,
+			Text:          text,
+			Direct:        isDM,
+			ReceivedAt:    time.Now(),
 		})
 	}
 

@@ -195,6 +195,28 @@ only when `path` is absent and produce a
 both forms are present. The transitional decoder is removed only at a future
 explicit marketplace format version boundary.
 
+### Managed standalone skills
+
+`skillapp` owns independent Git/local selected-subtree installation, private
+origins, reviewed candidates and explicit lifecycle admission. It contributes
+`user-skill` descriptors with stable managed installation identities; it does
+not detach plugin skills or adopt existing global/workspace directories.
+`catalogapp` captures the complete bounded subtree in its existing immutable
+archive (direct-child `<name>/SKILL.md` layout), resolves accepted descriptors there,
+and includes enabled managed sources in every complete catalog build.
+
+The shared state provider stores desired selections in versioned app-KV and
+commits generation, authority, selection and audit atomically. Prepared complete
+candidates carry exact managed generation plus the complete enabled descriptor
+set. Publication and completion recheck both, including disabled/removed absence
+and an empty final set. Accepted pending changes recover by rebuilding current
+desired state; historical mutations and origin fetches are never replayed.
+
+The administrator Skills inventory is metadata-only. Explicit refresh rebuilds
+unmanaged application roots; normal complete rebuilds retain their existing
+capture behavior. Session pins and revision readers are unchanged. See
+[Skills management](../reference/backoffice.md#skills-management).
+
 ### Snapshot identity
 
 Every application and effective snapshot has a content-derived identity that
@@ -617,6 +639,8 @@ skill bodies, MCP headers, environment values, credentials, or raw tool data.
 - the runtime contribution catalog owns source descriptors, snapshot
   compilation, scope overlays, collision policy, immutable publication, and
   diagnostics;
+- `skillapp` owns independent standalone origin policy and guarded lifecycle;
+  `skillbackofficeapp` adapts its shared owner to the Backoffice consuming port;
 - `pluginapp` owns marketplace access, staged package installation, active
   install records, origins, revisions, enablement, and rollback;
 - `actors/command` owns command validation and behavior;

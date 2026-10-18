@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -45,7 +46,7 @@ func (c *Compiler) CompileWorkspace(workspace string, sources []runtimecatalogcm
 		if source.Descriptor.ID.Kind != runtimecatalogcmd.SourceKindWorkspaceSkill {
 			return runtimecatalogcmd.Snapshot{}, fmt.Errorf("source %q is not workspace-scoped", source.Descriptor.ID.String())
 		}
-		if len(source.Commands) != 0 || len(source.MCPServers) != 0 {
+		if len(source.Commands) != 0 || len(source.Hooks) != 0 || len(source.MCPServers) != 0 {
 			return runtimecatalogcmd.Snapshot{}, fmt.Errorf("workspace source %q may contribute only skills", source.Descriptor.ID.Name)
 		}
 	}
@@ -84,6 +85,7 @@ func (c *Compiler) compile(scope runtimecatalogcmd.SnapshotScope, parents []runt
 		Parents:    append([]runtimecatalogcmd.SnapshotID(nil), parents...),
 		Sources:    make(map[runtimecatalogcmd.SourceID]runtimecatalogcmd.SourceDescriptor, len(sources)),
 		Commands:   make(map[runtimecatalogcmd.ContributionID]runtimecatalogcmd.CommandDescriptor),
+		Hooks:      make(map[runtimecatalogcmd.ContributionID]runtimecatalogcmd.HookDescriptor),
 		Skills:     make(map[runtimecatalogcmd.ContributionID]runtimecatalogcmd.SkillMetadata),
 		MCPServers: make(map[runtimecatalogcmd.ContributionID]runtimecatalogcmd.MCPServerDescriptor),
 	}
@@ -130,6 +132,42 @@ func addSource(snapshot *runtimecatalogcmd.Snapshot, source runtimecatalogcmd.So
 			return fmt.Errorf("duplicate contribution %q", command.ID.String())
 		}
 		snapshot.Commands[command.ID] = command
+	}
+	for _, hook := range source.Hooks {
+		hook.Name = strings.TrimSpace(hook.Name)
+		hook.Description = strings.TrimSpace(hook.Description)
+		hook.Executable = filepath.ToSlash(strings.TrimSpace(hook.Executable))
+		if descriptor.ID.Kind != runtimecatalogcmd.SourceKindPlugin {
+			return fmt.Errorf("hook %q must belong to a plugin source", hook.ID.String())
+		}
+		if err := validateContribution(descriptor, hook.ID, hook.Revision, runtimecatalogcmd.ContributionKindHook, hook.Name); err != nil {
+			return err
+		}
+		if !validCatalogHookName(hook.Name) || !validRelativeRef(hook.Executable) || len(hook.Executable) > 4096 || strings.ContainsRune(hook.Executable, 0) || len(hook.Description) == 0 || len(hook.Description) > 1024 || strings.ContainsRune(hook.Description, 0) || (hook.Event != "PreToolUse" && hook.Event != "PostToolUse") || len(hook.Args) > 32 || len(hook.Matcher) > 256 || strings.ContainsRune(hook.Matcher, 0) || len(hook.Providers) > 32 || hook.TimeoutSeconds < 1 || hook.TimeoutSeconds > 3600 {
+			return fmt.Errorf("hook %q descriptor is invalid", hook.ID.String())
+		}
+		if _, err := regexp.Compile(hook.Matcher); err != nil {
+			return fmt.Errorf("hook %q matcher is invalid", hook.ID.String())
+		}
+		for _, arg := range hook.Args {
+			if len(arg) > 8192 || strings.ContainsRune(arg, 0) {
+				return fmt.Errorf("hook %q argument is invalid", hook.ID.String())
+			}
+		}
+		for i, provider := range hook.Providers {
+			if provider == "" || len(provider) > 128 || strings.TrimSpace(provider) != provider || strings.ContainsRune(provider, 0) {
+				return fmt.Errorf("hook %q provider is invalid", hook.ID.String())
+			}
+			if i > 0 && hook.Providers[i-1] >= provider {
+				return fmt.Errorf("hook %q providers are not canonical", hook.ID.String())
+			}
+		}
+		hook.Args = append([]string(nil), hook.Args...)
+		hook.Providers = append([]string(nil), hook.Providers...)
+		if _, exists := snapshot.Hooks[hook.ID]; exists {
+			return fmt.Errorf("duplicate contribution %q", hook.ID.String())
+		}
+		snapshot.Hooks[hook.ID] = hook
 	}
 	for _, skill := range source.Skills {
 		skill.Name = strings.TrimSpace(skill.Name)
@@ -255,6 +293,18 @@ func validRelativeRef(ref string) bool {
 
 func canonicalCommandName(name string) string { return strings.ToLower(strings.TrimSpace(name)) }
 
+func validCatalogHookName(name string) bool {
+	if len(name) == 0 || len(name) > 64 || name[0] < 'a' || name[0] > 'z' {
+		return false
+	}
+	for _, char := range name[1:] {
+		if (char < 'a' || char > 'z') && (char < '0' || char > '9') && char != '-' {
+			return false
+		}
+	}
+	return true
+}
+
 func applyCommandCollisionPolicy(snapshot *runtimecatalogcmd.Snapshot) error {
 	aliases := make(map[string][]runtimecatalogcmd.ContributionID)
 	for id, command := range snapshot.Commands {
@@ -315,6 +365,13 @@ func mergeSources(application, workspace runtimecatalogcmd.Snapshot) ([]runtimec
 			}
 			source.Commands = append(source.Commands, command)
 		}
+		for _, hook := range snapshot.Hooks {
+			source, ok := grouped[hook.ID.Source]
+			if !ok {
+				return nil, fmt.Errorf("hook %q has no source descriptor", hook.ID.String())
+			}
+			source.Hooks = append(source.Hooks, hook)
+		}
 		for _, skill := range snapshot.Skills {
 			source, ok := grouped[skill.ID.Source]
 			if !ok {
@@ -353,6 +410,7 @@ type canonicalSnapshot struct {
 	Parents     []runtimecatalogcmd.SnapshotID          `json:"parents,omitempty"`
 	Sources     []runtimecatalogcmd.SourceDescriptor    `json:"sources"`
 	Commands    []runtimecatalogcmd.CommandDescriptor   `json:"commands"`
+	Hooks       []runtimecatalogcmd.HookDescriptor      `json:"hooks,omitempty"`
 	Skills      []runtimecatalogcmd.SkillMetadata       `json:"skills"`
 	MCPServers  []runtimecatalogcmd.MCPServerDescriptor `json:"mcp_servers"`
 	Diagnostics []runtimecatalogcmd.Diagnostic          `json:"diagnostics"`
@@ -366,6 +424,9 @@ func hashSnapshot(snapshot runtimecatalogcmd.Snapshot) (runtimecatalogcmd.Snapsh
 	for _, descriptor := range snapshot.Commands {
 		canonical.Commands = append(canonical.Commands, descriptor)
 	}
+	for _, descriptor := range snapshot.Hooks {
+		canonical.Hooks = append(canonical.Hooks, descriptor)
+	}
 	for _, descriptor := range snapshot.Skills {
 		canonical.Skills = append(canonical.Skills, descriptor)
 	}
@@ -376,6 +437,9 @@ func hashSnapshot(snapshot runtimecatalogcmd.Snapshot) (runtimecatalogcmd.Snapsh
 	sort.Slice(canonical.Sources, func(i, j int) bool { return sourceKey(canonical.Sources[i].ID) < sourceKey(canonical.Sources[j].ID) })
 	sort.Slice(canonical.Commands, func(i, j int) bool {
 		return contributionKey(canonical.Commands[i].ID) < contributionKey(canonical.Commands[j].ID)
+	})
+	sort.Slice(canonical.Hooks, func(i, j int) bool {
+		return contributionKey(canonical.Hooks[i].ID) < contributionKey(canonical.Hooks[j].ID)
 	})
 	sort.Slice(canonical.Skills, func(i, j int) bool {
 		return contributionKey(canonical.Skills[i].ID) < contributionKey(canonical.Skills[j].ID)

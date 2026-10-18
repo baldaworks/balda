@@ -53,7 +53,17 @@ type ControlPublisher interface {
 	ClearQuestionControls(ctx context.Context, request ControlClearRequest) error
 }
 
+// Archive binds conversational questions and records authorized free-text answers.
+type Archive interface {
+	BindQuestion(ctx context.Context, interaction questioncmd.InteractionContext, resume questioncmd.ResumeTarget) (questioncmd.InteractionContext, error)
+	RecordAnswer(ctx context.Context, interaction questioncmd.InteractionContext, questionID string, reply questioncmd.InboundReply) error
+}
+
+// SetArchive installs the mandatory production archive capability.
+func (s *Service) SetArchive(archive Archive) { s.archive = archive }
+
 type Service struct {
+	archive    Archive
 	store      Store
 	scheduled  ScheduledJobStore
 	controls   ControlPublisher
@@ -103,6 +113,13 @@ func (s *Service) Ask(ctx context.Context, interaction questioncmd.InteractionCo
 	}
 	if strings.TrimSpace(resume.To) == "" {
 		return baldastate.QuestionRecord{}, fmt.Errorf("resume target is required")
+	}
+	if s.archive != nil {
+		var err error
+		interaction, err = s.archive.BindQuestion(ctx, interaction, resume)
+		if err != nil {
+			return baldastate.QuestionRecord{}, err
+		}
 	}
 	questionID := "question-" + uuid.NewString()
 	now := s.now().UTC()
@@ -216,6 +233,15 @@ func (s *Service) ResolveReplyDetailed(ctx context.Context, in questioncmd.Inbou
 		AnsweredBy:     in.User,
 		AnsweredAt:     zeroOrNow(in.ReceivedAt, s.now().UTC()),
 		ProviderMsgID:  strings.TrimSpace(in.MessageID),
+	}
+	if s.archive != nil {
+		var interaction questioncmd.InteractionContext
+		if err := json.Unmarshal([]byte(record.InteractionJSON), &interaction); err != nil {
+			return ReplyResolution{Record: record, Matched: true}, err
+		}
+		if err := s.archive.RecordAnswer(ctx, interaction, record.QuestionID, in); err != nil {
+			return ReplyResolution{Record: record, Matched: true}, err
+		}
 	}
 	updated, settled, err := s.store.MarkQuestionAnswered(ctx, record.QuestionID, answer)
 	if err == nil && settled {

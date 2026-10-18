@@ -29,6 +29,9 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/channel/webhook"
 	baldazulip "github.com/baldaworks/balda/internal/apps/balda/channel/zulip"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/zulip/zulipfx"
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchiveapp"
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivebackofficeapp"
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivefx"
 	"github.com/baldaworks/balda/internal/apps/balda/chatfx"
 	"github.com/baldaworks/balda/internal/apps/balda/commandfx"
 	"github.com/baldaworks/balda/internal/apps/balda/commandoutboxfx"
@@ -38,6 +41,13 @@ import (
 	natsbus "github.com/baldaworks/balda/internal/apps/balda/eventbus/nats"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	"github.com/baldaworks/balda/internal/apps/balda/handlersfx"
+	"github.com/baldaworks/balda/internal/apps/balda/hookbackofficeapp"
+	"github.com/baldaworks/balda/internal/apps/balda/hookfx"
+	"github.com/baldaworks/balda/internal/apps/balda/hooknative/claude"
+	"github.com/baldaworks/balda/internal/apps/balda/hooknative/codex"
+	"github.com/baldaworks/balda/internal/apps/balda/hooknative/opencode"
+	"github.com/baldaworks/balda/internal/apps/balda/hooknativeapp"
+	"github.com/baldaworks/balda/internal/apps/balda/hooks"
 	"github.com/baldaworks/balda/internal/apps/balda/httpfx"
 	"github.com/baldaworks/balda/internal/apps/balda/internalmcp"
 	"github.com/baldaworks/balda/internal/apps/balda/jobexec"
@@ -60,6 +70,8 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorymcp"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionturnapp"
+	"github.com/baldaworks/balda/internal/apps/balda/skillbackofficeapp"
+	"github.com/baldaworks/balda/internal/apps/balda/skillfx"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
@@ -73,11 +85,11 @@ import (
 	"github.com/baldaworks/balda/internal/git"
 	portableapp "github.com/baldaworks/balda/sessionmemory/app"
 	portmcp "github.com/baldaworks/balda/sessionmemory/mcp"
+	"github.com/baldaworks/runtime/v2/agentconfig"
+	"github.com/baldaworks/runtime/v2/agentfactory"
+	runtimeconfig "github.com/baldaworks/runtime/v2/appconfig"
+	"github.com/baldaworks/runtime/v2/mcpregistry"
 	"github.com/ipfans/fxlogger"
-	"github.com/normahq/runtime/v2/agentconfig"
-	"github.com/normahq/runtime/v2/agentfactory"
-	runtimeconfig "github.com/normahq/runtime/v2/appconfig"
-	"github.com/normahq/runtime/v2/mcpregistry"
 	"github.com/rs/zerolog/log"
 	"go.uber.org/fx"
 	adksession "google.golang.org/adk/v2/session"
@@ -142,6 +154,10 @@ func Module(
 	runtimeLoadOpts runtimeconfig.RuntimeLoadOptions,
 	defaultsYAML []byte,
 ) fx.Option {
+	acpStartupTimeout, err := cfg.Balda.ResolveACPStartupTimeout()
+	if err != nil {
+		return fx.Module("balda", fx.Error(err))
+	}
 	// Convert balda config to tgbotkit config.
 	tgbotkitCfg := tgbotkit.Config{
 		Token: cfg.Balda.Telegram.Token,
@@ -185,7 +201,7 @@ func Module(
 	if err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
-	backofficeConfig, err := backofficeRuntimeConfig(cfg.Balda, database)
+	backofficeConfig, err := backofficeRuntimeConfig(cfg.Balda, normaCfg, runtimeLoadOpts.Profile, database)
 	if err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
@@ -302,7 +318,7 @@ func Module(
 		cfg.Balda.SessionMemory,
 		cfg.Balda.Provider,
 		normaCfg.Providers,
-		agentfactory.New(normaCfg.Providers, mcpReg),
+		agentfactory.New(normaCfg.Providers, mcpReg, agentfactory.WithACPInitializeTimeout(acpStartupTimeout)),
 	)
 	if err != nil {
 		return fx.Module("balda", fx.Error(err))
@@ -426,7 +442,7 @@ func Module(
 				})
 				return provider, nil
 			},
-			func(provider baldastate.Provider, invitations *auth.BindingInvitations, channels *auth.BindingChannels, mcp *mcpbackofficeapp.Operations, schedules *schedulebackofficeapp.Operations, aliases *aliasbackofficeapp.Operations, webhooks *webhookbackofficeapp.Operations, facts *memorybackofficeapp.Operations, plugins *pluginbackofficeapp.Operations) (*backoffice.Runtime, error) {
+			func(provider baldastate.Provider, invitations *auth.BindingInvitations, channels *auth.BindingChannels, mcp *mcpbackofficeapp.Operations, schedules *schedulebackofficeapp.Operations, aliases *aliasbackofficeapp.Operations, webhooks *webhookbackofficeapp.Operations, facts *memorybackofficeapp.Operations, plugins *pluginbackofficeapp.Operations, hooks *hookbackofficeapp.Operations, skills *skillbackofficeapp.Operations, archive *chatarchivebackofficeapp.Operations) (*backoffice.Runtime, error) {
 				runtime, err := backoffice.NewRuntime(backofficeConfig, provider)
 				if err != nil {
 					return nil, err
@@ -446,7 +462,16 @@ func Module(
 				if err := runtime.ConfigureAliasesOperations(aliases); err != nil {
 					return nil, err
 				}
+				if err := runtime.ConfigureSkillsOperations(skills); err != nil {
+					return nil, err
+				}
 				if err := runtime.ConfigurePluginsOperations(plugins); err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigureHookOperations(hooks); err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigureChatArchiveOperations(archive); err != nil {
 					return nil, err
 				}
 				if err := runtime.ConfigureFactMemoryOperations(facts); err != nil {
@@ -493,10 +518,14 @@ func Module(
 			func(manager *baldasession.Manager) jobexec.WebhookRunSessionCloser {
 				return manager
 			},
+			skillbackofficeapp.New,
 			schedulebackofficeapp.New,
 			webhookbackofficeapp.New,
 			aliasbackofficeapp.New,
 			memorybackofficeapp.New,
+			func(provider baldastate.Provider) *chatarchivebackofficeapp.Operations {
+				return chatarchivebackofficeapp.New(chatarchiveapp.NewReader(provider.ChatArchive()))
+			},
 			func(plugins *pluginapp.Service, catalog *catalogapp.Runtime) *pluginbackofficeapp.Operations {
 				return pluginbackofficeapp.New(plugins, pluginbackofficeapp.CatalogHealth{Catalog: catalog})
 			},
@@ -881,11 +910,27 @@ func Module(
 				reg,
 				agentfactory.WithPermissionHandler(baldaagent.NewPermissionHandler(reviewer, logger)),
 				agentfactory.WithAvailabilityIndependentMCP(),
+				agentfactory.WithACPInitializeTimeout(acpStartupTimeout),
 			)
 		}),
-		fx.Provide(func(reg *mcpregistry.MapRegistry, reviewer *permissions.Service) baldaagent.ScopedRuntimeFactory {
-			return catalogapp.NewProviderFactory(normaCfg.Providers, reg,
-				agentfactory.WithPermissionHandler(baldaagent.NewPermissionHandler(reviewer, logger)))
+		fx.Provide(func(lifecycle fx.Lifecycle, runner *hooks.Runner, provider baldastate.Provider) (*hooknativeapp.Service, error) {
+			native, err := hooknativeapp.New(runner, provider.HookManagement(), cfg.Balda.Provider, normaCfg.Providers,
+				claude.New,
+				codex.New,
+				opencode.New,
+			)
+			if err != nil {
+				return nil, err
+			}
+			lifecycle.Append(fx.Hook{OnStop: func(context.Context) error { return native.Close() }})
+			return native, nil
+		}),
+		fx.Provide(func(reg *mcpregistry.MapRegistry, reviewer *permissions.Service, native *hooknativeapp.Service) baldaagent.ScopedRuntimeFactory {
+			factory := catalogapp.NewProviderFactory(normaCfg.Providers, reg,
+				agentfactory.WithPermissionHandler(baldaagent.NewPermissionHandler(reviewer, logger)),
+				agentfactory.WithACPInitializeTimeout(acpStartupTimeout))
+			factory.ConfigureNativeHooks(native)
+			return factory
 		}),
 		tgbotkit.Module,
 		natsbus.Module,
@@ -894,8 +939,11 @@ func Module(
 		questions.Module,
 		permissions.Module,
 		pluginapp.Module,
+		skillfx.Module,
+		chatarchivefx.Module,
 		sessionapp.Module,
 		sessionturnapp.Module,
+		hookfx.Module,
 		controlapp.Module,
 		deliveryfx.Module,
 		slackagentfx.Module,

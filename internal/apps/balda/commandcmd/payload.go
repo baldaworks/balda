@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/baldaworks/balda/internal/apps/balda/actorcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
@@ -43,17 +44,20 @@ type Invocation struct {
 
 // Payload is the command body routed solely by Name.
 type Payload struct {
-	Version      int                          `json:"version"`
-	Name         string                       `json:"name"`
-	SnapshotID   runtimecatalogcmd.SnapshotID `json:"snapshot_id,omitempty"`
-	Args         string                       `json:"args,omitempty"`
-	Locator      deliverycmd.Locator          `json:"locator"`
-	Transport    string                       `json:"transport"`
-	Principal    string                       `json:"principal"`
-	Access       Access                       `json:"access"`
-	Conversation Conversation                 `json:"conversation"`
-	Presentation deliveryfmt.Options          `json:"presentation"`
-	Invocation   Invocation                   `json:"invocation"`
+	ArchiveID string `json:"archive_id,omitempty"`
+	// OriginalInput is present only for literal human skill invocations.
+	OriginalInput *chatarchivecmd.Input        `json:"original_input,omitempty"`
+	Version       int                          `json:"version"`
+	Name          string                       `json:"name"`
+	SnapshotID    runtimecatalogcmd.SnapshotID `json:"snapshot_id,omitempty"`
+	Args          string                       `json:"args,omitempty"`
+	Locator       deliverycmd.Locator          `json:"locator"`
+	Transport     string                       `json:"transport"`
+	Principal     string                       `json:"principal"`
+	Access        Access                       `json:"access"`
+	Conversation  Conversation                 `json:"conversation"`
+	Presentation  deliveryfmt.Options          `json:"presentation"`
+	Invocation    Invocation                   `json:"invocation"`
 }
 
 func (p Payload) Validate() error {

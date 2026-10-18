@@ -156,3 +156,42 @@ Do not run an older binary against enrolled MFA state: it would not enforce the
 new factor policy. A rollback needs a compatible binary or a validated backup
 and explicit recovery plan; schema downgrade is unsupported. See
 [Backoffice recovery](backoffice.md#optional-administrator-passkey-2fa).
+
+## Durable chat archive and upgrades
+
+The selected provider stores conversational archive lifetimes, original human
+inputs and committed final replies in the same database as other Balda state.
+SQLite migrations 65–66 and PostgreSQL migrations 30–31 add this storage and
+final-replay claims. They are additive, forward-only Goose migrations applied
+before ingress. Archive rows have no foreign-key cascade from live users,
+bindings or ADK history. Reset, close, deleting live runtime history and database
+reopen therefore preserve the archive, including with session persistence set
+to `memory`. A new memory-process boot ends the earlier process-local lifetime;
+exact durable restore continues its existing identity.
+
+Capture starts at upgrade. Existing saved sessions are adopted lazily with
+**Partial coverage**; their earlier messages are not reconstructed. Retention
+is indefinite, with no automatic purge, export or deletion UI. Account for chat
+text and sensitive historical metadata in disk capacity, access control and
+backup retention. Attachments retain safe filename/kind labels only; file bytes,
+private URLs and paths are excluded. Ordinary database backups above include
+all archive rows and lifecycle journals; there is no separate transcript file.
+
+An input write failure prevents turn publication. Failed final writes delay or
+stop final publication with a bounded archival failure and never require a new
+model invocation merely to rebuild history. A candidate held only in memory
+before its first successful durable commit can be lost on process failure.
+After successful commit, immutable final replay survives later bookkeeping or
+publication failure. Reading or repairing archival state never sends a reply.
+See [messaging](messaging.md#durable-final-reply-selection) for the boundary.
+
+Pending or uncertain lifecycle records need investigation of the recorded
+transition and the matching runtime epoch; they are not proof of an active
+runtime. Normal preparation reconciles a proven ready epoch without replaying
+completed hooks. Do not delete journals/archives or rerun an agent as an archive
+repair procedure. Reopen after transient storage recovery; unresolved or
+contradictory readiness fails explicitly. Operational logs identify operation
+and bounded result, never transcript content. Rollback uses a compatible binary
+or a validated pre-upgrade backup restored while stopped. Schema downgrade is
+unsupported; running an older binary loses subsequent capture. Verify health,
+normal ingress and archive access after the restore.

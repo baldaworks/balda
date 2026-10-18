@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"iter"
 	"os"
 	"path/filepath"
@@ -17,12 +18,12 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/memory"
 	"github.com/baldaworks/balda/internal/apps/balda/memorycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
-	"github.com/normahq/runtime/v2/agentconfig"
-	"github.com/normahq/runtime/v2/agentfactory"
-	runtimeconfig "github.com/normahq/runtime/v2/appconfig"
-	"github.com/normahq/runtime/v2/hostedagent"
-	"github.com/normahq/runtime/v2/mcpregistry"
-	"github.com/normahq/runtime/v2/sessionstate"
+	"github.com/baldaworks/runtime/v2/agentconfig"
+	"github.com/baldaworks/runtime/v2/agentfactory"
+	runtimeconfig "github.com/baldaworks/runtime/v2/appconfig"
+	"github.com/baldaworks/runtime/v2/hostedagent"
+	"github.com/baldaworks/runtime/v2/mcpregistry"
+	"github.com/baldaworks/runtime/v2/sessionstate"
 	adkagent "google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/model"
 	"google.golang.org/adk/v2/runner"
@@ -457,11 +458,15 @@ func TestCreateFreshRuntimeSession_IncludesCanonicalCWDState(t *testing.T) {
 
 	workspaceDir := t.TempDir()
 	sess, err := builder.CreateFreshRuntimeSession(context.Background(), runtime, "alpha", "user-1", "s-1", workspaceDir, RuntimeSessionContext{
+		ArchiveID:      "lifetime-epoch",
 		BaldaSessionID: "tg-1-2",
 		SessionBranch:  "norma/balda/tg-1-2",
 	})
 	if err != nil {
 		t.Fatalf("CreateFreshRuntimeSession() error = %v", err)
+	}
+	if got, err := sess.State().Get(chatarchivecmd.EpochStateKey); err != nil || got != "lifetime-epoch" {
+		t.Fatalf("created epoch = %v, %v", got, err)
 	}
 	gotCWD, err := sess.State().Get(sessionstate.CWDKey)
 	if err != nil {
@@ -878,6 +883,7 @@ func TestGetAgentMetadata_ExtractsModelAndReasoningEffort(t *testing.T) {
 				"empty-reasoning": {
 					Type: agentconfig.AgentTypeGenericACP,
 					GenericACP: &agentconfig.ACPConfig{
+						Cmd:   []string{"custom-acp"},
 						Model: "custom-model",
 					},
 				},
@@ -885,6 +891,20 @@ func TestGetAgentMetadata_ExtractsModelAndReasoningEffort(t *testing.T) {
 					Type: agentconfig.AgentTypeOpenAI,
 					OpenAI: &agentconfig.LocalAPIConfig{
 						Model: "gpt-4o",
+					},
+				},
+				"claude-alias": {
+					Type: agentconfig.AgentTypeClaudeACP,
+					ClaudeCodeACP: &agentconfig.ACPConfig{
+						Model:           "claude-sonnet",
+						ReasoningEffort: "medium",
+					},
+				},
+				"antigravity-alias": {
+					Type: agentconfig.AgentTypeAntigravityACP,
+					AntigravityACP: &agentconfig.ACPConfig{
+						Model:           "gemini-pro",
+						ReasoningEffort: "low",
 					},
 				},
 			},
@@ -907,6 +927,20 @@ func TestGetAgentMetadata_ExtractsModelAndReasoningEffort(t *testing.T) {
 			t.Errorf("MCPServers = %#v, want %#v", meta.MCPServers, wantMCP)
 		}
 	})
+
+	for _, tt := range []struct {
+		name, provider, providerType, model, reasoning string
+	}{
+		{name: "claude compatibility alias", provider: "claude-alias", providerType: agentconfig.AgentTypeClaudeACP, model: "claude-sonnet", reasoning: "medium"},
+		{name: "antigravity compatibility alias", provider: "antigravity-alias", providerType: agentconfig.AgentTypeAntigravityACP, model: "gemini-pro", reasoning: "low"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			meta := builder.GetAgentMetadata(tt.provider)
+			if meta.Type != tt.providerType || meta.Model != tt.model || meta.ReasoningEffort != tt.reasoning {
+				t.Fatalf("GetAgentMetadata(%q) = %+v, want type=%q model=%q reasoning=%q", tt.provider, meta, tt.providerType, tt.model, tt.reasoning)
+			}
+		})
+	}
 
 	t.Run("generic acp without reasoning", func(t *testing.T) {
 		meta := builder.GetAgentMetadata("empty-reasoning")
@@ -955,5 +989,31 @@ func TestCreateFreshRuntimeSessionRetainsInitializedEmptyMemory(t *testing.T) {
 		if err != nil || got != want {
 			t.Fatalf("state%s=%v,error=%v,want%q", key, got, err, want)
 		}
+	}
+}
+
+func TestBuildRootRuntimeInstructionUsesBoundSessionChannel(t *testing.T) {
+	t.Parallel()
+	const telegramChannel = "telegram"
+	for _, channel := range []string{"mattermost", "slack", telegramChannel, ""} {
+		t.Run(channel, func(t *testing.T) {
+			t.Parallel()
+			builder := &Builder{}
+			got, err := builder.buildRootRuntimeInstruction(t.Context(), "codex", "/workspace", SkillMetadataProjection{}, SessionInstructionContext{SessionID: "session-1", ChannelType: channel})
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := "Read the current channel type from authenticated session metadata"
+			if channel != "" {
+				want = "This session belongs to channel type: " + channel + "."
+			}
+			if !strings.Contains(got, want) {
+				t.Errorf("channel %q instruction = %q, want %q", channel, got, want)
+			}
+			telegramHint := strings.Contains(got, "Telegram sessions use IDs like")
+			if telegramHint != (channel == telegramChannel) {
+				t.Errorf("channel %q Telegram ID hint = %v, want %v", channel, telegramHint, channel == telegramChannel)
+			}
+		})
 	}
 }

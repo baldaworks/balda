@@ -11,9 +11,9 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/mcpfx"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpruntime"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
+	"github.com/baldaworks/runtime/v2/agentconfig"
+	"github.com/baldaworks/runtime/v2/mcpregistry"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/normahq/runtime/v2/agentconfig"
-	"github.com/normahq/runtime/v2/mcpregistry"
 )
 
 func testConfiguredOAuthRecovery(t *testing.T, original *Runtime, worker *workerGrantFixture, pinned runtimecatalogcmd.Snapshot, configured map[string]agentconfig.MCPServerConfig) {

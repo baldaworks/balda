@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
-	"github.com/normahq/runtime/v2/agentconfig"
+	"github.com/baldaworks/runtime/v2/agentconfig"
 )
 
 func TestConfiguredInventoryRetainsGlobalSelectionWithoutExposingCredentials(t *testing.T) {

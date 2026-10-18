@@ -26,7 +26,7 @@ func TestRuntimeSharedHandlerUsesIndependentBrowserMount(t *testing.T) {
 		t.Fatal(err)
 	}
 	shared := config.Server
-	shared.PublicURL = "https://lab.metalagman.dev"
+	shared.PublicURL = "https://balda.example.com"
 	shared.BasePath = "/balda/backoffice"
 	shared.SecureCookies = true
 	if _, err := runtime.Handler(t.Context(), shared, HandlerServices{}); err == nil {

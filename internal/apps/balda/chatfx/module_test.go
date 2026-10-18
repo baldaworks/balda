@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/baldaworks/balda/internal/apps/balda/chatapp"
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchiveapp"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
@@ -16,6 +17,7 @@ import (
 )
 
 type fakeSessionStore struct {
+	getErr error
 	record baldastate.SessionRecord
 	found  bool
 }
@@ -27,6 +29,9 @@ func (f *fakeSessionStore) Upsert(_ context.Context, record baldastate.SessionRe
 }
 
 func (f *fakeSessionStore) GetByAddress(_ context.Context, _, _ string) (baldastate.SessionRecord, bool, error) {
+	if f.getErr != nil {
+		return baldastate.SessionRecord{}, false, f.getErr
+	}
 	if !f.found {
 		return baldastate.SessionRecord{}, false, nil
 	}
@@ -187,6 +192,7 @@ func TestModule_ProvidesChatHandler(t *testing.T) {
 		fx.NopLogger,
 		fx.Provide(
 			func() *baldasession.Manager { return newTestSessionManager(t) },
+			func() chatapp.InputRecorder { return chatarchiveapp.New(nil) },
 			fx.Annotate(func() chatapp.Dispatcher { return &fakeDispatcher{} }, fx.ResultTags(`name:"command_ingress"`)),
 			zerolog.Nop,
 		),

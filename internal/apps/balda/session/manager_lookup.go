@@ -2,9 +2,11 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 )
 
@@ -29,28 +31,24 @@ func (m *Manager) GetSession(locator SessionLocator) (*TopicSession, error) {
 		return nil, fmt.Errorf("no session for %s", locator.AddressKey)
 	}
 
+	if m.archive != nil && ts.archiveID != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
+		defer cancel()
+		pending, err := m.archive.Pending(ctx, ts.locator.ChannelType, ts.locator.AddressKey)
+		if err != nil && !errors.Is(err, chatarchivecmd.ErrNotFound) {
+			return nil, err
+		}
+		if err == nil && pending.Kind == chatarchivecmd.KindDestroy {
+			return nil, chatarchivecmd.ErrConflict
+		}
+	}
 	return ts, nil
 }
 
-// EnsureSession returns the existing session or creates a new one if it doesn't exist.
+// EnsureSession returns an active session, restores saved metadata, or creates a
+// new session when no metadata exists. agentName is the label for new sessions.
 func (m *Manager) EnsureSession(ctx context.Context, sessionCtx SessionContext, agentName string) (*TopicSession, error) {
-	sessionID := strings.TrimSpace(sessionCtx.Locator.SessionID)
-
-	unlock := m.lockSessionOperation(sessionID)
-	m.mu.RLock()
-	ts := m.sessions[sessionID]
-	m.mu.RUnlock()
-	unlock()
-
-	if ts != nil {
-		m.logger.Debug().Str("session_id", sessionID).Msg("returning existing session")
-		return ts, nil
-	}
-
-	if err := m.CreateSession(ctx, sessionCtx, agentName); err != nil {
-		return nil, err
-	}
-	return m.GetSession(sessionCtx.Locator)
+	return m.prepareSession(ctx, sessionCtx, agentName, true)
 }
 
 // EnsureTransientSession creates a private run session without address-indexed metadata.
@@ -68,86 +66,104 @@ func (m *Manager) EnsureTransientSession(ctx context.Context, sessionCtx Session
 	return m.GetSession(sessionCtx.Locator)
 }
 
-// RestoreSession restores a session from persisted metadata when it is not active in memory.
+// RestoreSession restores a saved session without creating one when metadata is absent.
 func (m *Manager) RestoreSession(ctx context.Context, sessionCtx SessionContext) (*TopicSession, error) {
-	locator := sessionCtx.Locator
-	sessionID := strings.TrimSpace(locator.SessionID)
+	return m.prepareSession(ctx, sessionCtx, "", false)
+}
+
+func (m *Manager) prepareSession(ctx context.Context, sessionCtx SessionContext, label string, createIfMissing bool) (*TopicSession, error) {
 	endLifecycle, err := m.beginLifecycleOperation(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer endLifecycle()
+	if m.sessionStore == nil {
+		return nil, fmt.Errorf("session metadata store is required")
+	}
+	for {
+		if err := m.lifecycleInterruption(ctx); err != nil {
+			return nil, err
+		}
+		record, found, err := m.sessionStore.GetByAddress(ctx, sessionCtx.Locator.ChannelType, sessionCtx.Locator.AddressKey)
+		if err != nil {
+			return nil, fmt.Errorf("read session metadata: %w", err)
+		}
+		lookupID := strings.TrimSpace(sessionCtx.Locator.SessionID)
+		if found {
+			lookupID = strings.TrimSpace(record.SessionID)
+		}
+		unlock := m.lockSessionOperation(lookupID)
+		// Metadata can be replaced while waiting for the session operation. Resolve
+		// its authoritative identity again before opening or creating any runtime.
+		record, found, err = m.sessionStore.GetByAddress(ctx, sessionCtx.Locator.ChannelType, sessionCtx.Locator.AddressKey)
+		if err != nil {
+			unlock()
+			return nil, fmt.Errorf("read session metadata: %w", err)
+		}
+		currentID := strings.TrimSpace(sessionCtx.Locator.SessionID)
+		if found {
+			currentID = strings.TrimSpace(record.SessionID)
+		}
+		if currentID != lookupID {
+			unlock()
+			continue
+		}
+		sess, err := m.prepareSessionLocked(ctx, sessionCtx, label, createIfMissing, record, found)
+		unlock()
+		return sess, err
+	}
+}
 
-	unlock := m.lockSessionOperation(sessionID)
+func (m *Manager) prepareSessionLocked(ctx context.Context, sessionCtx SessionContext, label string, createIfMissing bool, record baldastate.SessionRecord, found bool) (*TopicSession, error) {
+	var persisted *baldastate.SessionRecord
+	if found {
+		if strings.TrimSpace(record.Status) != "" && record.Status != baldastate.SessionStatusActive {
+			return nil, fmt.Errorf("persisted session for %s is not active", sessionCtx.Locator.AddressKey)
+		}
+		locator, err := LocatorFromRecord(record)
+		if err != nil {
+			return nil, fmt.Errorf("decode persisted session locator: %w", err)
+		}
+		sessionCtx.Locator = locator
+		if userID := strings.TrimSpace(record.UserID); userID != "" {
+			sessionCtx.UserID = userID
+		}
+		label = strings.TrimSpace(record.AgentName)
+		if label == "" {
+			label = "auto"
+		}
+		persisted = &record
+	}
+	if err := m.reconcileArchiveDestruction(ctx, sessionCtx.Locator, sessionCtx.UserID); err != nil {
+		return nil, err
+	}
+	sessionID := strings.TrimSpace(sessionCtx.Locator.SessionID)
 	m.mu.RLock()
-	ts := m.sessions[sessionID]
-	m.mu.RUnlock()
-	unlock()
-	if ts != nil {
-		return ts, nil
-	}
-
-	record, ok, err := m.sessionStore.GetByAddress(ctx, locator.ChannelType, locator.AddressKey)
-	if err != nil {
-		return nil, fmt.Errorf("read session metadata: %w", err)
-	}
-	if !ok {
-		return nil, fmt.Errorf("%w for %s", ErrNoPersistedSession, locator.AddressKey)
-	}
-	if strings.TrimSpace(record.Status) != "" && record.Status != baldastate.SessionStatusActive {
-		return nil, fmt.Errorf("persisted session for %s is not active", locator.AddressKey)
-	}
-
-	recordLocator, err := LocatorFromRecord(record)
-	if err != nil {
-		return nil, fmt.Errorf("decode persisted session locator: %w", err)
-	}
-	sessionLabel := strings.TrimSpace(record.AgentName)
-	if sessionLabel == "" {
-		sessionLabel = "auto"
-	}
-
-	m.logger.Info().
-		Str("session_id", sessionID).
-		Str("channel_type", recordLocator.ChannelType).
-		Str("address_key", recordLocator.AddressKey).
-		Str("label", sessionLabel).
-		Msg("restoring session from persisted metadata")
-
-	// The persisted record is authoritative for the session identity. This
-	// matters when a transport changes its deterministic session-ID format:
-	// the inbound locator can have a new ID while the active in-memory session
-	// still uses the old ID for the same address.
-	lookupID := strings.TrimSpace(recordLocator.SessionID)
-	unlock = m.lockSessionOperation(lookupID)
-	defer unlock()
-	m.mu.RLock()
-	active := m.sessions[lookupID]
+	active := m.sessions[sessionID]
 	m.mu.RUnlock()
 	if active != nil {
 		return active, nil
 	}
+	if !found && !createIfMissing {
+		return nil, fmt.Errorf("%w for %s", ErrNoPersistedSession, sessionCtx.Locator.AddressKey)
+	}
 	if err := m.lifecycleInterruption(ctx); err != nil {
 		return nil, err
 	}
-
-	restoredCtx := SessionContext{
-		Locator: recordLocator,
-		UserID:  sessionCtx.UserID,
+	if found {
+		m.logger.Info().Str("session_id", sessionID).Str("channel_type", sessionCtx.Locator.ChannelType).
+			Str("address_key", sessionCtx.Locator.AddressKey).Str("label", label).Msg("restoring session from persisted metadata")
 	}
-	if userID := strings.TrimSpace(record.UserID); userID != "" {
-		restoredCtx.UserID = userID
-	}
-	if err := m.createSessionLocked(ctx, restoredCtx, sessionLabel, &record, false); err != nil {
+	if err := m.createSessionLocked(ctx, sessionCtx, label, persisted, false); err != nil {
 		return nil, err
 	}
 	m.mu.RLock()
-	restored := m.sessions[lookupID]
+	prepared := m.sessions[sessionID]
 	m.mu.RUnlock()
-	if restored == nil {
-		return nil, fmt.Errorf("restored session %q was not published", lookupID)
+	if prepared == nil {
+		return nil, fmt.Errorf("prepared session %q was not published", sessionID)
 	}
-	return restored, nil
+	return prepared, nil
 }
 
 func (m *Manager) RuntimeStateValue(ctx context.Context, locator SessionLocator, key string) (any, bool, error) {
@@ -245,4 +261,87 @@ func (m *Manager) getProviderName() string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.baldaProviderName
+}
+
+// ActiveRuntimeStateValue reads only the currently loaded runtime. Final replay
+// must never invoke lazy restoration, fallback, hooks or provider creation.
+func (m *Manager) ActiveRuntimeStateValue(ctx context.Context, locator SessionLocator, key string) (any, bool, error) {
+	unlock := m.lockSessionOperation(locator.SessionID)
+	defer unlock()
+	m.mu.RLock()
+	ts := m.sessions[locator.SessionID]
+	m.mu.RUnlock()
+	if ts == nil {
+		return nil, false, nil
+	}
+	return ts.RuntimeStateValue(ctx, key)
+}
+
+// UpdateRuntimeStateForArchive fences late bookkeeping against replacement.
+// The same operation lock protects epoch verification and the runtime write.
+func (m *Manager) UpdateRuntimeStateForArchive(ctx context.Context, locator SessionLocator, epoch string, values map[string]any) (bool, error) {
+	unlock := m.lockSessionOperation(locator.SessionID)
+	defer unlock()
+	m.mu.RLock()
+	ts := m.sessions[locator.SessionID]
+	m.mu.RUnlock()
+	if ts == nil || ts.archiveID != epoch {
+		return false, nil
+	}
+	if err := ts.UpdateRuntimeState(ctx, values); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// archiveReplayRestoreKey restricts ordinary final-publication recovery to the
+// existing lifetime. It must never take the destructive fresh fallback path.
+type archiveReplayRestoreKey struct{}
+
+// ResumeArchiveRuntime loads only the matching durable lifetime for ordinary
+// final publication/bookkeeping replay. Archive readers never call this method.
+func (m *Manager) ResumeArchiveRuntime(ctx context.Context, locator SessionLocator, epoch string) (bool, error) {
+	endLifecycle, err := m.beginLifecycleOperation(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer endLifecycle()
+	unlock := m.lockSessionOperation(locator.SessionID)
+	defer unlock()
+	m.mu.RLock()
+	active := m.sessions[locator.SessionID]
+	m.mu.RUnlock()
+	if active != nil {
+		return active.archiveID == epoch, nil
+	}
+	if !m.sessionsPersistent || m.archive == nil || m.sessionStore == nil {
+		return false, nil
+	}
+	record, found, err := m.sessionStore.GetBySessionID(ctx, locator.SessionID)
+	if err != nil {
+		return false, err
+	}
+	if !found || record.ArchiveID != epoch || record.Status != baldastate.SessionStatusActive {
+		return false, nil
+	}
+	archived, err := m.archive.Get(ctx, epoch)
+	if err != nil {
+		return false, err
+	}
+	if archived.Status != chatarchivecmd.StatusActive || archived.Persistence != chatarchivecmd.PersistenceDurable {
+		return false, nil
+	}
+	pending, err := m.archive.Pending(ctx, locator.ChannelType, locator.AddressKey)
+	if err != nil && !errors.Is(err, chatarchivecmd.ErrNotFound) {
+		return false, err
+	}
+	if err == nil && pending.Kind == chatarchivecmd.KindDestroy {
+		return false, chatarchivecmd.ErrConflict
+	}
+	restoreCtx := context.WithValue(ctx, archiveReplayRestoreKey{}, true)
+	restored, err := m.prepareSessionLocked(restoreCtx, SessionContext{Locator: locator, UserID: record.UserID}, record.AgentName, false, record, true)
+	if err != nil {
+		return false, err
+	}
+	return restored != nil && restored.archiveID == epoch, nil
 }

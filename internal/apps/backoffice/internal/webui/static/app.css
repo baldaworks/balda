@@ -47,7 +47,7 @@ html, body { color: var(--ink); background: var(--canvas); }
 .card-body { min-width: 0; padding: 1.25rem; }
 .form-label { font-weight: 600; }
 .form-control, .form-select, .form-check-input { color: var(--ink); background-color: var(--surface-raised); border-color: var(--border); }
-#alias-name::placeholder, #alias-locator::placeholder, #fact-query::placeholder, #fact-text::placeholder { color: var(--input-placeholder); opacity: 1; }
+#hook-command::placeholder, #alias-name::placeholder, #alias-locator::placeholder, #fact-query::placeholder, #archive-query::placeholder, #fact-text::placeholder { color: var(--input-placeholder); opacity: 1; }
 .form-control:focus, .form-select:focus { background-color: var(--surface-raised); color: var(--ink); }
 .form-text { color: var(--muted); }
 .btn-outline-secondary { --bs-btn-color: var(--ink); --bs-btn-border-color: var(--muted); }
@@ -185,3 +185,27 @@ summary:not(.btn) { color: var(--accent); font-weight: 500; }
 [data-plugins] .plugins-marketplaces-table :is(th, td):nth-child(3) { min-width: 5rem; }
 [data-plugins] .plugins-marketplaces-table :is(th, td):nth-child(4) { min-width: 10rem; }
 [data-plugins] .plugins-marketplaces-table :is(th, td):nth-child(5) { min-width: 14rem; }
+
+#skill-source::placeholder, #skill-ref::placeholder, #skill-path::placeholder { color: var(--input-placeholder); opacity: 1; }
+
+.skills-table { table-layout: fixed; min-width: 38rem; }
+.skills-table th:nth-child(1) { width: 30%; }
+.skills-table th:nth-child(2) { width: 32%; }
+.skills-table th:nth-child(3) { width: 20%; }
+.skills-table th:nth-child(4) { width: 18%; }
+[data-skills] .table-responsive { position: relative; }
+.skills-table td:nth-child(3) { overflow-wrap: normal; word-break: normal; }
+.skills-table td:nth-child(4) { white-space: nowrap; }
+
+/* Archive text is plain, untrusted content; wrap without losing line breaks. */
+.archive-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.archive-metadata, .archive-message, .archive-attachment { overflow-wrap: anywhere; min-width: 0; }
+.archive-transcript { max-width: 64rem; margin-inline: auto; }
+.archive-message-user { margin-right: clamp(0rem, 4vw, 4rem); }
+.archive-message-agent { margin-left: clamp(0rem, 4vw, 4rem); border-left: 3px solid var(--bs-primary); }
+.archive-table { min-width: 48rem; table-layout: fixed; }
+.archive-table td { overflow-wrap: anywhere; }
+.archive-table th:first-child { width: 30%; }
+.archive-table th:nth-child(2) { width: 23%; }
+.archive-table th:nth-child(3) { width: 18%; }
+.archive-table th:nth-child(4) { width: 12%; }

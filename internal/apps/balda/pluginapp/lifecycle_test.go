@@ -37,17 +37,18 @@ func (a *recordingActivator) PreparePluginCandidate(
 	_ context.Context,
 	sources []runtimecatalogcmd.Source,
 	_ *PreparedPluginSource,
-) (runtimecatalogcmd.Snapshot, error) {
+) (runtimecatalogcmd.PreparedApplicationCandidate, error) {
 	a.compiled = append(a.compiled, append([]runtimecatalogcmd.Source(nil), sources...))
 	if a.compileErr != nil {
-		return runtimecatalogcmd.Snapshot{}, a.compileErr
+		return runtimecatalogcmd.PreparedApplicationCandidate{}, a.compileErr
 	}
 	complete := append([]runtimecatalogcmd.Source(nil), a.base...)
 	complete = append(complete, sources...)
-	return runtimecatalog.NewCompiler().CompileApplication(complete)
+	snapshot, err := runtimecatalog.NewCompiler().CompileApplication(complete)
+	return runtimecatalogcmd.PreparedApplicationCandidate{Snapshot: snapshot}, err
 }
 
-func (a *recordingActivator) PublishCandidate(_ context.Context, snapshot runtimecatalogcmd.Snapshot) error {
+func (a *recordingActivator) PublishCandidate(_ context.Context, snapshot runtimecatalogcmd.PreparedApplicationCandidate) error {
 	if a.started != nil {
 		close(a.started)
 		<-a.release
@@ -56,7 +57,7 @@ func (a *recordingActivator) PublishCandidate(_ context.Context, snapshot runtim
 	if a.publishErr != nil {
 		return a.publishErr
 	}
-	a.published = append(a.published, snapshot)
+	a.published = append(a.published, snapshot.Snapshot)
 	return nil
 }
 

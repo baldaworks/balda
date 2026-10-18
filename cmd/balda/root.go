@@ -7,9 +7,9 @@ import (
 	buildinfo "runtime/debug"
 	"strings"
 
-	"github.com/joho/godotenv"
 	"github.com/baldaworks/balda/internal/apps/balda/shutdown"
 	"github.com/baldaworks/balda/internal/logging"
+	"github.com/joho/godotenv"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -137,6 +137,7 @@ func newRootCommand() (*cobra.Command, error) {
 	cmd.AddCommand(initCommand())
 	cmd.AddCommand(backofficeCommand())
 	cmd.AddCommand(pluginsCommand())
+	cmd.AddCommand(skillsCommand())
 	cmd.AddCommand(evalFixturesCommand())
 	return cmd, nil
 }

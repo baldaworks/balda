@@ -5,6 +5,13 @@ Status: active
 
 ## Invariants
 
+- A session's generated channel declaration comes from its authenticated locator.
+  A runtime without a bound channel must not guess a transport. State migrations
+  repair the generated channel/session header in retained Codex ACP metadata
+  using canonical session metadata, preserving provider session identity,
+  capability pins, conversation events and all later user/provider instructions.
+  SQLite repair inspects the runtime schema first and preserves older placeholder
+  tables that have no persisted ACP state.
 - Startup order stays strict: config -> bundled MCP -> runtime contribution catalog reconstruction -> provider runtime -> session/mailbox and durable actor infrastructure -> scheduler -> checked shared HTTP listener -> enabled Telegram/Zulip/Slackagent ingress. Shutdown runs these stages in reverse.
 - The shared HTTP listener binds `balda.http.listen_addr` once after Backoffice, generic webhook, and enabled gateway handlers are prepared. `httpfx` reserves `<base_path>/backoffice`, `<base_path>/webhooks`, and `<base_path>/gateway`, rejects conflicting handler registrations before binding, and forwards each request to its owning handler without replacing browser, webhook, or transport authorization. Transport callbacks use canonical `/gateway` paths. Every generic webhook, whether configured or managed, uses its immutable name as the slug at `<base_path>/webhooks/<name>`; route definitions store no path. `webhookapp` selects by canonical slug and rejects unknown, disabled or archived names before admission. Changing the shared prefix moves every generic callback address after restart without changing its durable identity, secret verifier or history.
 - Scheduler startup reconciles only config-owned recurring definitions; managed definitions survive restart. A source ID collision fails startup. Due and manual runs have separate durable keys and preserve their exact definition snapshots; manual runs do not advance the cron cursor.
@@ -28,12 +35,30 @@ Status: active
   transport. Runtime policy imports no SDK or credential implementation.
   HTTP/SSE startup/publication/inventory perform no upstream discovery and no
   idle retries. Native MCP discovery returns within 10 seconds and calls/reconnect
-  within 120 seconds; ACP initialization and attachment RPCs within 10 seconds, earlier caller
-  deadlines winning. Owned SDK cleanup remains retained after caller return.
+  within 120 seconds; each ACP `session/new` or `session/resume` attachment RPC
+  remains bounded to 10 seconds, earlier caller deadlines winning. Owned SDK
+  cleanup remains retained after caller return.
   Local structural/protection errors fail the exact operation; availability
   never filters acquisition. Normal invocation and equal-binding retry preserve
   snapshot, history, revision and provider identity without remote discovery.
   Failed ADK session restore follows the fresh-session fallback below.
+- Balda owns the app-scoped ACP startup budget through
+  `balda.acp_startup_timeout` / `BALDA_ACP_STARTUP_TIMEOUT`, default `60s`.
+  Configuration validation precedes provider, bundled MCP, and ingress side
+  effects; the resolved positive duration reaches direct, scoped, goal, and
+  preflight factories. This budget covers gate waiting, process launch, and
+  ACP `initialize`, with earlier caller deadlines, cancellation, and shutdown
+  winning. Launch remains invocation-lazy, including after metadata-only
+  restore. A successfully initialized process survives the startup deadline
+  and completed turn context until owner close; this is not a prompt or overall
+  turn timeout. Restart adopts changed configuration without repinning saved
+  capabilities, changing provider identity, or resetting conversation history.
+  Startup failure cleanup allows 200ms graceful exit, then kills the owned
+  immediate child and waits up to 5 seconds independently of the startup budget.
+  A cleanup timeout preserves the startup cause and retains the sole reaper
+  until process wait completes; it does not guarantee an unkillable kernel task
+  can be reaped or supervise a wrapper's descendant process group. See
+  [ACP setting validation and precedence](../reference/configuration.md#acp-startup-timeout).
 - Owned stdio workers are scheduled before startup advances and never join
   handshake readiness. Discovery is bounded to 10 seconds; process exit/failure retries
   after 1/2/4/8/16/30 seconds with a 60-second stable reset. Final reference drain/shutdown cancel
@@ -58,6 +83,16 @@ Status: active
 - Shutdown follows the exact reverse lifecycle order.
 - The durable command runtime must be available before ingress accepts work.
 - No runtime path executes user work without durable actor dispatch acceptance.
+- The single producer-local command outbox preserves durable admission order
+  with a persisted sequence, independently of wall-clock adjustments. The
+  existing admission mutex serializes watermark allocation and pending writes;
+  the watermark commits before the pending row, so failed admissions may leave
+  gaps but cannot reuse an accepted order value. Duplicates and publication
+  retries retain the original sequence across restart. Older unsequenced
+  pending rows drain first in their existing timestamp order. Actual creation,
+  retry and expiry timestamps remain wall time. This does not support multiple
+  active outbox owners sharing one database.
+
 - The session actor is the only code path that can enqueue `TurnDispatcher` work; `sessionturn` is the only queued-turn restoration use case.
 - `TurnDispatcher` is the authoritative per-session mailbox. Canceling a session resolves every dropped completion (including constituent steering waiters) with `context.Canceled` and cancels the active turn.
 - Coalesced steering messages retain individual constituent completion channels; constituent envelopes remain unacknowledged to durable transport until batch execution finishes, fails, or cancels.
@@ -85,6 +120,22 @@ Status: active
 - Presentation routing is explicit: model-authored text stays on the prompt-formatting path, while system-authored service messages use typed structured message contracts with deterministic per-transport renderers. Where those structured messages are durable/runtime-facing contracts, their schema identity belongs in AsyncAPI rather than in channel formatter registrations.
 - Slackagent behavior lives in a dedicated `slackagent` path with its own ingress and response contracts. `internal/apps/balda/channel/slackagent` owns the channel boundary, and `internal/apps/balda/channel/slackagent/slackagentfx` is the composition/DI boundary exported to the rest of the app. See [Slackagent mode](slack-agent-mode.md).
 - Session boundaries are explicit: `session` owns create/restore/reset/lifecycle semantics and may consume shared delivery contracts, but it must not become the home of transport delivery contract types.
+- Ordinary conversational intake consumes one shared session preparation adapter
+  through the consuming service's `SessionPreparer` port. Telegram, Zulip,
+  Slack and Mattermost handlers do not choose create versus restore. `chatfx`
+  projects the same preparation into the existing conversational ports;
+  transport presentation receives neutral activation/identity/notice values,
+  never an ADK session or runner. Authorization precedes preparation; the
+  prepared snapshot is available before explicit skill pinning and durable
+  publication. A preparation error retains its normal retry classification.
+- `session.Manager.EnsureSession` returns an active session, otherwise restores
+  saved metadata, otherwise creates only when metadata is absent. Saved locator,
+  session ID, user, label and snapshot are authoritative. It serializes
+  preparation and publication under the canonical session operation lock and
+  shares the exact-restore/fresh-fallback path with restore-only
+  `RestoreSession`. Explicit `CreateSession` remains the fresh-creation path for
+  reset/topic commands; private runs retain their own lifecycle.
+
 - Each session persists one runtime catalog snapshot before exposure. Command
   lookup and skill metadata/selection use that exact snapshot; MCP identities
   are supplied only when the ADK session runtime is created or restored. Every

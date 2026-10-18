@@ -15,7 +15,8 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/paths"
 	"github.com/baldaworks/balda/internal/apps/balda/shutdown"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
-	"github.com/normahq/runtime/v2/appconfig"
+	"github.com/baldaworks/balda/internal/apps/balda/stateowner"
+	"github.com/baldaworks/runtime/v2/appconfig"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.uber.org/fx"
@@ -54,7 +55,16 @@ func startCommand() *cobra.Command {
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			prepared, err := prepareBaldaCommand(cmd.Context(), true)
+			prepared, err := loadBaldaCommandConfig(true)
+			if err != nil {
+				return err
+			}
+			owner, err := stateowner.Acquire(prepared.stateDir)
+			if err != nil {
+				return fmt.Errorf("acquire Balda state ownership: %w", err)
+			}
+			defer func() { _ = owner.Close() }()
+			prepared, err = prepareLoadedBaldaCommand(cmd.Context(), prepared, true)
 			if err != nil {
 				return err
 			}
@@ -179,6 +189,10 @@ func prepareBaldaCommand(ctx context.Context, requireUserReady bool) (preparedBa
 	if err != nil {
 		return preparedBaldaCommand{}, err
 	}
+	return prepareLoadedBaldaCommand(ctx, prepared, requireUserReady)
+}
+
+func prepareLoadedBaldaCommand(ctx context.Context, prepared preparedBaldaCommand, requireUserReady bool) (preparedBaldaCommand, error) {
 	if err := os.MkdirAll(prepared.stateDir, 0o700); err != nil {
 		return preparedBaldaCommand{}, fmt.Errorf("create balda state dir: %w", err)
 	}
@@ -221,7 +235,7 @@ func loadBaldaCommandConfig(requireChannel bool) (preparedBaldaCommand, error) {
 	}
 
 	var doc baldaConfigDocument
-	_, err = appconfig.LoadConfigDocument(
+	selectedProfile, err := appconfig.LoadConfigDocument(
 		runtimeLoadOpts,
 		appconfig.AppLoadOptions{
 			AppName:            "balda",
@@ -231,6 +245,15 @@ func loadBaldaCommandConfig(requireChannel bool) (preparedBaldaCommand, error) {
 		&doc,
 	)
 	if err != nil {
+		return preparedBaldaCommand{}, err
+	}
+	runtimeLoadOpts.Profile = selectedProfile
+	// appconfig discovers env overrides through non-null leaves. Preserve the
+	// nonempty env override when YAML null expresses omission of this setting.
+	if value := os.Getenv("BALDA_ACP_STARTUP_TIMEOUT"); value != "" {
+		doc.Balda.ACPStartupTimeout = value
+	}
+	if _, err := doc.Balda.ResolveACPStartupTimeout(); err != nil {
 		return preparedBaldaCommand{}, err
 	}
 	applyHTTPBasePathEnv(&doc.Balda)
@@ -283,7 +306,7 @@ func applyHTTPBasePathEnv(cfg *balda.BaldaConfig) {
 
 func validateBaldaChannelConfiguration(workingDir string, cfg balda.Config) error {
 	if cfg.Balda.Telegram.Token == "" && !cfg.Balda.Zulip.Webhook.Enabled && !cfg.Balda.Mattermost.Enabled && !cfg.Balda.Slack.Enabled && !cfg.Balda.Slack.Agent.Enabled {
-		return fmt.Errorf("at least one channel is required.\nFor Telegram:\n  - Environment: BALDA_TELEGRAM_TOKEN=<token>\n  - CWD .env: %s with BALDA_TELEGRAM_TOKEN=<token>\nFor Zulip: set balda.zulip.webhook.enabled=true (or BALDA_ZULIP_WEBHOOK_ENABLED=true)\nFor Mattermost: set balda.mattermost.enabled=true (or BALDA_MATTERMOST_ENABLED=true)\nFor Slack chat: set balda.slack.enabled=true (or BALDA_SLACK_ENABLED=true)\nFor Slack agent: set balda.slack.agent.enabled=true (or BALDA_SLACK_AGENT_ENABLED=true)", filepath.Join(workingDir, ".env"))
+		return fmt.Errorf("at least one channel is required.\nFor Telegram:\n  - Environment: BALDA_TELEGRAM_TOKEN=<token>\n  - CWD .env: %s with BALDA_TELEGRAM_TOKEN=<token>\nFor Zulip: set balda.zulip.webhook.enabled=true (or BALDA_ZULIP_WEBHOOK_ENABLED=true)\nFor Mattermost: set balda.mattermost.enabled=true (or BALDA_MATTERMOST_ENABLED=true)\nFor Slack Agent: set balda.slack.agent.enabled=true (or BALDA_SLACK_AGENT_ENABLED=true)", filepath.Join(workingDir, ".env"))
 	}
 	return nil
 }

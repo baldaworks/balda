@@ -33,10 +33,10 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/mcpfx"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/runtime/v2/agentconfig"
+	runtimeconfig "github.com/baldaworks/runtime/v2/appconfig"
+	"github.com/baldaworks/runtime/v2/mcpregistry"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/normahq/runtime/v2/agentconfig"
-	runtimeconfig "github.com/normahq/runtime/v2/appconfig"
-	"github.com/normahq/runtime/v2/mcpregistry"
 	"go.uber.org/fx"
 	"golang.org/x/oauth2"
 )

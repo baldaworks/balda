@@ -33,6 +33,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/webhookmanagement"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookroutecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookroutefx"
+	"github.com/baldaworks/runtime/v2/appconfig"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
 )
@@ -138,7 +139,7 @@ func TestSharedHTTPApplicationBrowser(t *testing.T) {
 func startApplicationBrowserIngress(t *testing.T, provider state.Provider, address, basePath string, bootstrap bool) applicationBrowserIngress {
 	t.Helper()
 	config := BaldaConfig{HTTP: HTTPConfig{ListenAddr: address, BaseURL: "http://" + address, BasePath: &basePath}}
-	backofficeConfig, err := backofficeRuntimeConfig(config, state.DatabaseConfig{})
+	backofficeConfig, err := backofficeRuntimeConfig(config, appconfig.RuntimeConfig{}, "", state.DatabaseConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}

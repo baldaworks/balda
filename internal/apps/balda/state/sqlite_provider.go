@@ -20,6 +20,7 @@ type sqliteProvider struct {
 	appKV          *sqliteKVStore
 	mcpKV          *sqliteKVStore
 	runtimeSession *sqliteRuntimeSessionService
+	archive        *sqlChatArchiveStore
 	session        *sqliteSessionStore
 	jobs           *sqliteScheduledJobStore
 	management     *sqlScheduleManagementStore
@@ -168,6 +169,7 @@ func NewSQLiteProvider(ctx context.Context, path string) (Provider, error) {
 		appKV:          &sqliteKVStore{db: db, namespace: NamespaceApp},
 		mcpKV:          &sqliteKVStore{db: db, namespace: NamespaceSessionMCP},
 		runtimeSession: &sqliteRuntimeSessionService{db: db},
+		archive:        &sqlChatArchiveStore{users: newSQLiteUserStore(db)},
 		session:        &sqliteSessionStore{db: db},
 		jobs:           &sqliteScheduledJobStore{db: db},
 		management:     &sqlScheduleManagementStore{users: newSQLiteUserStore(db)},
@@ -265,6 +267,10 @@ func (p *sqliteProvider) Close() error {
 	return p.db.Close()
 }
 
+func (p *sqliteProvider) HookManagement() HookManagementStore {
+	return &sqlHookManagementStore{users: newSQLiteUserStore(p.db)}
+}
+
 func (p *sqliteProvider) MemoryManagement() MemoryManagementStore {
 	return &sqlMemoryManagementStore{users: newSQLiteUserStore(p.db)}
 }
@@ -272,3 +278,9 @@ func (p *sqliteProvider) MemoryManagement() MemoryManagementStore {
 func (p *sqliteProvider) PluginManagement() PluginManagementStore {
 	return &sqlPluginManagementStore{users: newSQLiteUserStore(p.db)}
 }
+
+func (p *sqliteProvider) SkillManagement() SkillManagementStore {
+	return &sqlSkillManagementStore{users: newSQLiteUserStore(p.db)}
+}
+
+func (p *sqliteProvider) ChatArchive() ChatArchiveStore { return p.archive }

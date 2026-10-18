@@ -18,14 +18,18 @@ const (
 	TemplateWebAuthn    = "webauthn"
 	TemplateLogin       = "login"
 	TemplateOverview    = "overview"
+	TemplateAgent       = "agent"
 	TemplateAccess      = "access"
 	TemplateAccount     = "account"
 	TemplateAudit       = "audit"
 	TemplateMCP         = "mcp"
+	TemplateSkills      = "skills"
 	TemplatePlugins     = "plugins"
 	TemplateSchedules   = "schedules"
 	TemplateWebhooks    = "webhooks"
 	TemplateAliases     = "aliases"
+	TemplateHooks       = "hooks"
+	TemplateChatArchive = "chat-archive"
 	TemplateFactMemory  = "fact-memory"
 	TemplateOAuthReturn = "oauth-return"
 	TemplateError       = "error"
@@ -38,16 +42,19 @@ const (
 
 var templateFiles = map[string]string{
 	TemplateWebAuthn: "templates/webauthn.tmpl",
-	TemplateLogin:    "templates/login.tmpl", TemplateOverview: "templates/overview.tmpl",
+	TemplateLogin:    "templates/login.tmpl", TemplateOverview: "templates/overview.tmpl", TemplateAgent: "templates/agent.tmpl",
 	TemplateAccess: "templates/access.tmpl", TemplateAccount: "templates/account.tmpl",
 	TemplateAudit: "templates/audit.tmpl", TemplateError: "templates/error.tmpl",
 	TemplateRefresh: "templates/refresh.tmpl", TemplatePassword: "templates/password.tmpl",
 	TemplateMCP:         "templates/mcp.tmpl",
+	TemplateSkills:      "templates/skills.tmpl",
 	TemplatePlugins:     "templates/plugins.tmpl",
 	TemplateSchedules:   "templates/schedules.tmpl",
 	TemplateWebhooks:    "templates/webhooks.tmpl",
 	TemplateAliases:     "templates/aliases.tmpl",
+	TemplateChatArchive: "templates/chat-archive.tmpl",
 	TemplateFactMemory:  "templates/fact-memory.tmpl",
+	TemplateHooks:       "templates/hooks.tmpl",
 	TemplateOAuthReturn: "templates/oauth-return.tmpl",
 	TemplateGallery:     "templates/gallery.tmpl",
 	TemplateStyleGuide:  "templates/style-guide.tmpl", TemplateLayout: "templates/layout.tmpl",

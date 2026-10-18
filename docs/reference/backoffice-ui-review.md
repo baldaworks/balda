@@ -390,4 +390,146 @@ Application captures use names such as `root-390-installed-v1.png`,
 cleared and outside credential forms. Keep timestamps, actual commands/results,
 reviewed screenshots and defect/reopen evidence in Beads. If an implementation
 defect changes rendered behavior, repair its owning task and rerun the affected
-layout gate before the application gate. No SSH/asus or live data is used.
+layout gate before the application gate. Only synthetic local preview data is used.
+
+## Agent hooks layout and application gates
+
+First run `BALDA_BACKOFFICE_BROWSER_TEST=1 go test ./internal/apps/backoffice
+-run "^TestHooksLayoutBrowser$" -count=1 -v`. It checks inventory, empty and
+long content, create/edit, validation, conflict and unavailable states at
+1440×900, 1024×768, 768×1024 and 390×844, with root and prefixed mounts.
+Screenshots are written under `BALDA_HOOKS_LAYOUT_SCREENSHOTS` or
+`/tmp/balda-hooks-screens/layout`. Review placeholder contrast, required labels,
+keyboard focus, private history, fragments, active navigation and overflow.
+
+Then run `BALDA_BACKOFFICE_BROWSER_TEST=1 go test -race ./internal/apps/backoffice
+-run "^TestHooksApplicationBrowser$" -count=1 -v` against isolated SQLite and
+ordinary synthetic administrator/operator login. It proves actual definitions,
+execution, disablement, conflicts, deletion, authorization and persistence.
+Record both reviews and their screenshot findings in Beads.
+
+Native hook review extends the hook layout gate to 11 states (88 viewport/mount
+combinations), including pre-tool, post-tool and unsupported capability drafts.
+Run the opt-in native engine gate from `agent-hooks.md` after the ordered layout
+and application browser gates when changing provider adapters.
+
+## Skills layout and application gates
+
+Run the synthetic layout gate before the authenticated application gate, using
+only the optional Playwright tools above:
+
+```bash
+BALDA_BACKOFFICE_BROWSER_TEST=1 BALDA_SKILLS_LAYOUT_SCREENSHOTS=/tmp/balda-skills-screens/layout go test ./internal/apps/backoffice -run '^TestSkillsLayoutBrowser$' -count=1 -v
+```
+
+It uses production Skills templates and assets at root and
+`/balda/backoffice`, at 1440×900, 1024×768, 768×1024 and 390×844. Review the
+mixed plugin/unmanaged/managed inventory, disabled entries, read-only details,
+install and update review, confirmations, empty/long content, 400/409 errors
+and accepted pending recovery. Checks cover exact single-main fragments,
+no-store/private history, Source clearing, labels, keyboard focus, placeholder
+contrast, document/table overflow, nested Skills navigation and actual 409
+HTMX replacement after `htmx:afterSettle`. Inspect the generated screenshots
+before accepting the layout or starting application verification. Fixtures are
+synthetic and cannot mutate application state; Source inputs and credentials
+are excluded from captures.
+
+
+After the inspected Skills layout gate passes, run the real application gates:
+
+```bash
+go test -race ./internal/apps/balda -run '^TestBackofficeSkillsRuntimeContracts$' -count=1 -v
+BALDA_BACKOFFICE_BROWSER_TEST=1 BALDA_SKILLS_RUNTIME_SCREENSHOTS=/tmp/balda-skills-screens/application go test -race ./internal/apps/balda -run '^TestBackofficeSkillsBrowserWorkflow$' -count=1 -v
+```
+
+These gates use the shared production Fx catalog owners, real SQLite/ADK
+session storage, local sources and deterministic file-Git repositories. The
+runtime gate proves selected-subtree/resource retention, update while disabled,
+old session pins and seeded ADK history/state across remove and process-owner
+reopen, explicit reset,
+pre-acceptance failures, pending publication recovery and read-only inventory
+versus explicit unmanaged refresh. The provider itself is deterministic; no
+LLM, external transport or production state is used.
+
+The browser gate uses ordinary synthetic valid/invalid password login at root
+and `/balda/backoffice`, 1440×900 and 390×844. It checks administrator/operator
+authority, access refresh destination, Source clearing/history, single-main
+HTMX replacement after `htmx:afterSettle`, exact review/install/update,
+plugin ownership navigation, duplicate-source inventory, confirmation, stale
+forms, CSRF/origin/revoked-session rejection, audit rollback, accepted
+pending publication and recovery without source refetch. Controller checkpoints
+verify actual durable selection/catalog and unchanged pinned-session metadata.
+Capture only after Source clears and outside credential forms; inspect the
+actual screenshots and record results separately from synthetic layout proof.
+
+## Chat session archive layout gate
+
+Run the synthetic gate before the authenticated archive application gate:
+
+```bash
+BALDA_BACKOFFICE_BROWSER_TEST=1 BALDA_CHAT_ARCHIVE_LAYOUT_SCREENSHOTS=/tmp/balda-chat-archive-layout go test ./internal/apps/backoffice -run '^TestChatArchiveLayoutBrowser$' -count=1 -v
+```
+
+The gallery links **Chat sessions** inventory, reset-separated before/after
+lifetimes, closed, group, partial, pending, uncertain, unknown, empty transcript,
+long/multiline escaped text, empty inventory and actual 400/403/404/503 previews.
+All use the production archive projections/templates and embedded assets.
+Synthetic identifiers and attachment labels are deliberately invalid; the QA
+handler has no live archive reader and accepts GET/HEAD only.
+
+Review root and `/balda/backoffice` at 1440×900, 1024×768, 768×1024 and
+390×844. Check Workspace sidebar parent, native and HTMX inventory/detail/back,
+previous/next sessions, older inventory and message windows, preserved filters
+and inventory position, private history and fragment status, keyboard focus,
+mobile navigation, top-bar alignment, contained table scrolling, readable long
+names/locators/chat/attachments, loaded assets and browser errors.
+Inspect actual images under `<directory>/<root|balda-backoffice>/<viewport>/`,
+particularly `chat-sessions.png`, `chat-sessions-long.png`,
+`chat-sessions-group.png`, and `older-messages-htmx.png`. The fixture matrix and
+screenshots prove synthetic template/layout behavior; real administrator
+login, current authority, storage, lifecycle and passive browsing remain the
+separate authenticated application/integration gate. Record severity-ranked
+findings, exact commands, timestamps and screenshot paths in Beads. Repair and
+rerun this gate before starting the application gate.
+
+
+## Chat session archive application gate
+
+Only after the synthetic gate above passes and its screenshots are reviewed,
+run the isolated authenticated workflow:
+
+```bash
+BALDA_BACKOFFICE_BROWSER_TEST=1 BALDA_CHAT_ARCHIVE_APPLICATION_SCREENSHOTS=/tmp/balda-chat-archive-application go test -race -timeout=20m ./internal/apps/balda -run '^TestBackofficeChatArchiveBrowserWorkflow$' -count=1 -v
+go test -race -timeout=20m ./internal/apps/balda -run '^TestChatArchiveSharedProviderLifecycleAndTurns$' -count=1 -v
+```
+
+The application test uses a disposable SQLite provider shared by real ADK
+session lifecycle, deterministic provider execution, archive admission/final
+commit and production Backoffice authentication/SQL readers. It reopens the
+database before browsing. Pagination-only older rows are explicitly synthetic;
+the primary transcript comes from real admission and provider execution. No
+external chat service or model is contacted. Fixture control endpoints belong
+only to the ephemeral test server and are absent from the production listener.
+
+The four documented viewports run at both root and `/balda/backoffice` mounts.
+Normal username/password login, access-cookie refresh, admin/operator/anonymous,
+demotion, disabled user, expired family and revocation are exercised against
+full and partial requests. The workflow checks bounded SQL inventory/transcript
+pagination, preserved filters/back navigation, empty replacement/no matches,
+400/404/503 states, escaped multiline text and safe attachment labels, no-store,
+CSP, one main element and page overflow. Provider/send counters and unchanged
+live metadata/transcript counts prove browsing leaves chat state untouched.
+Inspect `transcript.png`, `older-transcript.png`, `empty-replacement.png`,
+`unavailable.png` and `refreshed-transcript.png` under each mount/viewport.
+Every screenshot contains disposable synthetic chat, never deployment data.
+
+The joined lifecycle test separately proves reset/close separation, exact
+SQLite reopen continuity, fresh fallback, memory boot separation, retained
+canceled input and committed-final replay after reset without another model
+invocation. Tagged shared SQLite/PostgreSQL contract suites supply backend
+migration, dedupe/conflict/fault and current-authority coverage. Run the complete
+[Contributing gates](../../CONTRIBUTING.md), including Goose validation and
+applicable projection/runtime/ingress jobs; browser success does not replace
+them. Record exact commands, timestamps, logs, screenshot review and the full
+REQ evidence mapping in Beads. Rendering repairs require rerunning the synthetic
+gate before this application gate. Never waive a failed backend/security gate.

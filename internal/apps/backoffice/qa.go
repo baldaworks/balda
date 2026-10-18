@@ -27,6 +27,9 @@ func QAHandler(basePath string) (http.Handler, error) {
 	mux.Handle("GET "+basePath+"/assets/", http.StripPrefix(basePath, assets))
 	mux.HandleFunc("GET "+basePath+"/qa/ui/", func(w http.ResponseWriter, r *http.Request) {
 		name := strings.TrimPrefix(r.URL.Path, basePath+"/qa/ui/")
+		if name == "hooks" && r.URL.Query().Get("new") == "1" {
+			name = "hooks/new"
+		}
 		if name == "memory" && r.URL.Query().Get("new") == "1" {
 			name = "memory/new"
 		}
@@ -42,7 +45,22 @@ func QAHandler(basePath string) (http.Handler, error) {
 		if name == "webhooks/orders" && r.URL.Query().Has("job_id") {
 			name = "webhooks-history"
 		}
+		if strings.HasPrefix(name, "skills/contributions/") {
+			for i, row := range qaSkills().Skills.Rows {
+				if row.DetailPath == "/"+name {
+					if i == 0 {
+						name = "skills-plugin"
+					} else {
+						name = "skills-unmanaged"
+					}
+					break
+				}
+			}
+		}
 		page, templateName, status, ok := qaFixture(name)
+		if chatPage, chatOK := qaChatRequest(r, name); chatOK {
+			page, templateName, status, ok = chatPage, webui.TemplateChatArchive, http.StatusOK, true
+		}
 		if !ok {
 			http.NotFound(w, r)
 			return
@@ -56,7 +74,7 @@ func QAHandler(basePath string) (http.Handler, error) {
 		if page.ReturnTo != "" {
 			page.ReturnTo = basePath + "/qa/ui/overview"
 		}
-		if page.RestartURL != "" && strings.HasPrefix(name, "plugins") {
+		if page.RestartURL != "" && (strings.HasPrefix(name, "plugins") || strings.HasPrefix(name, "skills")) {
 			page.RestartURL = basePath + "/qa/ui" + page.RestartURL
 		} else if page.RestartURL != "" {
 			page.RestartURL = basePath + "/qa/ui/mcp"
@@ -90,7 +108,7 @@ type qaEntry struct {
 	status       int
 }
 
-var qaEntries = append(append(pluginMarketplaceQAEntries, pluginLifecycleQAEntries...), []qaEntry{
+var qaEntries = append(append(append(append(pluginMarketplaceQAEntries, pluginLifecycleQAEntries...), hooksQAEntries...), skillsQAEntries...), []qaEntry{
 	{name: "memory", label: "Fact memory · inventory", templateName: webui.TemplateFactMemory, page: qaFactMemory, gallery: true},
 	{name: "memory-long", label: "Fact memory · long multiline fact", templateName: webui.TemplateFactMemory, page: func() webui.Page {
 		p := qaFactMemory()
@@ -260,6 +278,7 @@ var qaEntries = append(append(pluginMarketplaceQAEntries, pluginLifecycleQAEntri
 	{name: "password-error", label: "Password replacement · error", templateName: webui.TemplatePassword, page: qaPasswordError, gallery: true},
 	{name: "overview", label: "Overview", templateName: webui.TemplateOverview, page: qaOverview, gallery: true},
 	{name: "overview-empty", label: "Overview · empty", templateName: webui.TemplateOverview, page: qaOverviewEmpty, gallery: true},
+	{name: "agent", label: "Agent", templateName: webui.TemplateAgent, page: qaAgent, gallery: true},
 	{name: "access", label: "Access · detail", templateName: webui.TemplateAccess, page: qaAccess, gallery: true},
 	{name: "bindings-issued", label: "Bindings · one-time actions", templateName: webui.TemplateAccess, page: qaBindingsIssued, gallery: true},
 	{name: "bindings-pending", label: "Bindings · pending and expired", templateName: webui.TemplateAccess, page: qaBindingsPending, gallery: true},
@@ -290,14 +309,14 @@ var qaEntries = append(append(pluginMarketplaceQAEntries, pluginLifecycleQAEntri
 func qaFixture(name string) (webui.Page, string, int, bool) {
 	if name == "" {
 		links := make([]webui.QALink, 0, len(qaEntries))
-		for _, entry := range qaEntries {
+		for _, entry := range append(qaChatArchiveEntries(), qaEntries...) {
 			if entry.gallery {
 				links = append(links, webui.QALink{Label: entry.label, Path: "/" + entry.name})
 			}
 		}
 		return webui.Page{Title: "Backoffice UI previews · QA", Gallery: links, Navigation: qaAdminNavigation("")}, webui.TemplateGallery, http.StatusOK, true
 	}
-	for _, entry := range qaEntries {
+	for _, entry := range append(qaChatArchiveEntries(), qaEntries...) {
 		if entry.name == name {
 			status := entry.status
 			if status == 0 {
@@ -367,7 +386,7 @@ func qaWebhookHistory() webui.Page {
 
 func qaAdminNavigation(current webui.Location) []webui.NavGroup {
 	return webui.Navigation(usercmd.BackofficeCapabilities{
-		Overview: true, Account: true, ManageUsers: true, ManageMCP: true, ManageSchedules: true, ManageWebhooks: true, ManageFactMemory: true, ManagePlugins: true, ViewAudit: true,
+		Overview: true, Account: true, ViewChatArchive: true, ManageUsers: true, ManageMCP: true, ManageSchedules: true, ManageWebhooks: true, ManageFactMemory: true, ManagePlugins: true, ViewAudit: true,
 	}, current)
 }
 
@@ -444,8 +463,8 @@ func qaOverview() webui.Page {
 		Title: "Overview · QA", Current: webui.LocationOverview,
 		Navigation: qaAdminNavigation(webui.LocationOverview),
 		Capabilities: []webui.CapabilityCard{
-			{ID: "telegram", Name: "Telegram", Mode: "webhook", ListenAddr: "127.0.0.1:8080", Endpoint: "/telegram"},
-			{ID: "slackagent", Name: "Slack Agent", Mode: "agent-events", Streaming: true},
+			{ID: "telegram", Name: "Telegram", Mode: "webhook", Settings: []webui.CapabilitySetting{{Label: "Formatting", Value: "markdown"}}, Endpoints: []webui.CapabilityEndpoint{{Label: "Webhook", URL: "/gateway/telegram/webhook"}}},
+			{ID: "slackagent", Name: "Slack Agent", Mode: "agent-events", Settings: []webui.CapabilitySetting{{Label: "Streaming", Value: "Yes"}}, Endpoints: []webui.CapabilityEndpoint{{Label: "Events", URL: "/gateway/slack/events"}, {Label: "Commands", URL: "/gateway/slack/commands"}}},
 			{ID: "webhooks", Name: "Webhooks", Mode: "inbound", RouteCount: 3},
 		},
 	}
@@ -455,6 +474,13 @@ func qaOverviewEmpty() webui.Page {
 	page := qaOverview()
 	page.Capabilities = nil
 	return page
+}
+
+func qaAgent() webui.Page {
+	return webui.Page{
+		Title: "Agent · QA", Current: webui.LocationAgent, Navigation: qaAdminNavigation(webui.LocationAgent),
+		Agent: &webui.AgentView{ProviderID: "balda", ProviderType: "codex_acp", Profile: "default", Model: "gpt-6-sol", ReasoningEffort: "high", GlobalInstruction: "Answer operators clearly.\nPreserve configured safety boundaries."},
+	}
 }
 
 func qaAccess() webui.Page {

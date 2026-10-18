@@ -7,24 +7,27 @@ import (
 	"strings"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/locatorref"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 )
 
 // InboundMessage represents a normalized inbound message from Mattermost.
 type InboundMessage struct {
-	Locator     deliverycmd.Locator
-	MessageID   int
-	PostID      string
-	RootID      string
-	SenderID    string
-	SenderName  string
-	Text        string
-	Direct      bool
-	ReceivedAt  time.Time
-	Attachments []string
+	OriginalInput *chatarchivecmd.Input
+	Locator       deliverycmd.Locator
+	MessageID     int
+	PostID        string
+	RootID        string
+	SenderID      string
+	SenderName    string
+	Text          string
+	Direct        bool
+	ReceivedAt    time.Time
+	Attachments   []string
 }
 
 // BuildInboundReply converts a threaded Mattermost post into a question
@@ -49,6 +52,7 @@ func BuildInboundReply(locator deliverycmd.Locator, subject string, message Inbo
 
 // InboundCommand represents a command invocation from Mattermost.
 type InboundCommand struct {
+	OriginalInput *chatarchivecmd.Input
 	// InvocationID identifies this command invocation for durable deduplication.
 	// HTTP slash commands have no Mattermost request ID, so each delivery gets a
 	// fresh ID; websocket commands use the source post ID.
@@ -131,6 +135,7 @@ func NormalizeInbound(
 		logicalID = turncmd.InboundID("mattermost:" + providerMessageID)
 	}
 	return turncmd.NormalizedInbound{
+		OriginalInput:     originalMattermostInput(locator, post, senderName, receivedAt),
 		ID:                logicalID,
 		Text:              strings.TrimSpace(post.Message),
 		Locator:           locator,
@@ -310,4 +315,36 @@ func isBoundary(ch byte) bool {
 	default:
 		return false
 	}
+}
+
+func originalMattermostInput(locator deliverycmd.Locator, post Post, senderName string, receivedAt time.Time) *chatarchivecmd.Input {
+	location := chatarchivecmd.Location{Channel: locator.ChannelType, AddressKey: locator.AddressKey, Locator: locatorref.Format(locator), Audience: chatarchivecmd.AudienceUnknown, Subdivision: chatarchivecmd.SubdivisionUnknown}
+	if address, ok, err := DecodeLocator(locator); ok && err == nil {
+		location.Subdivision = chatarchivecmd.SubdivisionRoot
+		if address.RootID != "" {
+			location.Subdivision = chatarchivecmd.SubdivisionThread
+		}
+		switch address.Type {
+		case addressTypeDM:
+			location.Audience = chatarchivecmd.AudiencePersonal
+		case addressTypeGroupDM, addressTypeChannel:
+			location.Audience = chatarchivecmd.AudienceGroup
+		}
+	}
+	input := &chatarchivecmd.Input{Source: "mattermost:" + post.ID, Text: post.Message, Speaker: chatarchivecmd.Speaker{Principal: post.UserID, Name: senderName, Username: senderName}, ReceivedAt: receivedAt.UTC(), Location: location}
+	for range post.FileIDs {
+		input.Attachments = append(input.Attachments, chatarchivecmd.Attachment{Kind: "file"})
+	}
+	return input
+}
+
+// NormalizeInboundMessage carries the pre-normalization post snapshot to intake.
+func NormalizeInboundMessage(message InboundMessage, receivedAt time.Time) turncmd.NormalizedInbound {
+	inbound := NormalizeInbound(message.Locator, Post{ID: message.PostID, UserID: message.SenderID, RootID: message.RootID, Message: message.Text}, message.SenderName, message.Direct, receivedAt)
+	if message.OriginalInput != nil {
+		inbound.OriginalInput = message.OriginalInput.Clone()
+	}
+	inbound.OriginalInput.Source = string(inbound.ID)
+	inbound.OriginalInput.ReceivedAt = receivedAt.UTC()
+	return inbound
 }

@@ -3,6 +3,7 @@ package sessionturnapp
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -25,12 +26,15 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/usageview"
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
+	"github.com/normahq/go-adk-acpagent/v2/acperror"
 	"github.com/rs/zerolog"
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/runner"
 	adksession "google.golang.org/adk/v2/session"
 	"google.golang.org/genai"
 )
+
+var errProviderTurnFailed = errors.New("provider turn failed")
 
 type jobEventAppender interface {
 	AppendEvent(ctx context.Context, jobID string, eventType string, actor string, messageID string, payload any) error
@@ -102,6 +106,8 @@ type TurnExecutionService struct {
 	jobEvents      jobEventAppender
 	sessions       runtimeStateReader
 	turnCapture    CompletedTurnCapture
+	finalArchive   FinalArchive
+	hooks          HookRunner
 	privateOutput  PrivateOutputRecorder
 	webhookClaims  WebhookTurnClaimer
 	progressHook   ProgressTransportHook
@@ -119,26 +125,29 @@ func (s *TurnExecutionService) currentTime() time.Time {
 }
 
 type ExecutionRequest struct {
-	Text            string
-	Attachments     []attachment.Descriptor
-	Runner          *runner.Runner
-	UserID          string
-	RequesterUserID string
-	SessionID       string
-	JobID           string
-	AgentSessionID  string
-	Locator         baldasession.SessionLocator
-	DeliveryLocator baldasession.SessionLocator
-	MessageID       int
-	DeliveryOptions deliveryfmt.Options
-	Deliver         bool
-	ProgressEmitter SessionProgressEmitter
-	OutboundFrom    actorlayer.ActorAddress
-	RunOptions      []runner.RunOption
-	MemoryRefresh   sessionturn.MemoryRefresh
-	SelectedSkill   *runtimecatalogcmd.LoadedSkill
-	TurnSource      string
-	DedupeKey       string
+	ArchiveID        string
+	SteeringMessages []turncmd.SteeringMessage
+	WorkspaceDir     string
+	Text             string
+	Attachments      []attachment.Descriptor
+	Runner           *runner.Runner
+	UserID           string
+	RequesterUserID  string
+	SessionID        string
+	JobID            string
+	AgentSessionID   string
+	Locator          baldasession.SessionLocator
+	DeliveryLocator  baldasession.SessionLocator
+	MessageID        int
+	DeliveryOptions  deliveryfmt.Options
+	Deliver          bool
+	ProgressEmitter  SessionProgressEmitter
+	OutboundFrom     actorlayer.ActorAddress
+	RunOptions       []runner.RunOption
+	MemoryRefresh    sessionturn.MemoryRefresh
+	SelectedSkill    *runtimecatalogcmd.LoadedSkill
+	TurnSource       string
+	DedupeKey        string
 }
 
 func NewTurnExecutionService(dispatcher actortransport.Dispatcher, jobEvents *baldajobs.JobEventsService, sessions *baldasession.Manager, logger zerolog.Logger, autoMaxTurns int) *TurnExecutionService {
@@ -293,20 +302,27 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 	if privateRun && req.Deliver && req.DeliveryLocator.ChannelType == "" {
 		return fmt.Errorf("private report locator is required")
 	}
+	hookContext, err := s.submitHooks(ctx, req)
+	if err != nil {
+		return err
+	}
 	providerText := req.Text
+	if hookContext != "" {
+		providerText += "\n\n<balda_hook_context>\n" + hookContext + "\n</balda_hook_context>"
+	}
 	var (
 		formatState *formatStateChange
-		err         error
+		formatErr   error
 	)
 	if !privateRun && s.formatComposer != nil {
-		providerText, formatState, err = s.formatComposer.Compose(
+		providerText, formatState, formatErr = s.formatComposer.Compose(
 			ctx,
 			req.Locator,
 			req.DeliveryOptions.DeliveryFormat,
-			req.Text,
+			providerText,
 		)
-		if err != nil {
-			return fmt.Errorf("compose message format prompt: %w", err)
+		if formatErr != nil {
+			return fmt.Errorf("compose message format prompt: %w", formatErr)
 		}
 	}
 	providerText = composeApplicationMemoryPrompt(providerText, req.MemoryRefresh)
@@ -380,6 +396,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 	runCtx = permissioncmd.WithOutcomeSink(runCtx, permissionOutcomes)
 	if !privateRun {
 		runCtx = permissioncmd.WithInteraction(runCtx, questioncmd.InteractionContext{
+			ArchiveID:   req.ArchiveID,
 			SessionID:   req.SessionID,
 			ChannelKind: req.Locator.ChannelType,
 			Locator:     req.Locator,
@@ -413,6 +430,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 	terminalErrorCode := ""
 	terminalErrorMessage := ""
 	lastNonRetryErrorMessage := ""
+	var terminalProviderError *acperror.ProviderError
 	if req.TurnSource == turncmd.SourceWebhook {
 		if s.webhookClaims == nil {
 			return fmt.Errorf("%w: claimer is unavailable", turncmd.ErrWebhookTurnClaimUnavailable)
@@ -444,6 +462,9 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 			if !looksLikeRetryOnlyProviderError(errorMessage) {
 				lastNonRetryErrorMessage = errorMessage
 			}
+		}
+		if providerErr, ok := acperror.FromADKMetadata(ev.CustomMetadata); ok {
+			terminalProviderError = providerErr
 		}
 		if snapshot, ok := usageview.SnapshotFromMetadata(ev.UsageMetadata); ok {
 			if ev.Actions.StateDelta == nil {
@@ -618,9 +639,68 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 			Int("streamed_text_char_count", streamedText.Len()).
 			Msg("received provider event")
 		if ev.TurnComplete {
+			terminalStatus := terminalTurnStatus(ev)
+			if terminalStatus == TerminalStatusSuccess && (terminalErrorCode != "" || terminalErrorMessage != "") {
+				terminalStatus = TerminalStatusFailed
+			}
+			providerFailed := terminalStatus == TerminalStatusFailed
+			turnInterrupted := terminalStatus == TerminalStatusInterrupted
+			terminalUnsuccessful := providerFailed || turnInterrupted
+			if err := s.stopHooks(ctx, req, streamedText.String(), string(terminalStatus)); err != nil {
+				return err
+			}
 			sawTurnComplete = true
 			responseText := streamedText.String()
 			memoryResponseText := memoryStreamedText.String()
+			safeTerminalMessage := providerErrorTurnMessage(terminalProviderError, s.currentTime())
+			if safeTerminalMessage == "" {
+				safeTerminalMessage = terminalErrorTurnMessage(terminalErrorMessage)
+			}
+			if turnInterrupted && safeTerminalMessage == "" {
+				safeTerminalMessage = "The turn was interrupted before completion."
+			}
+			if providerFailed && safeTerminalMessage == "" {
+				safeTerminalMessage = genericProviderFailureMessage
+			}
+			if terminalUnsuccessful {
+				if strings.TrimSpace(responseText) == "" {
+					responseText = safeTerminalMessage
+				} else {
+					responseText = strings.TrimSpace(responseText) + "\n\n" + interruptedProviderTurnMessage(safeTerminalMessage)
+				}
+			}
+			// Selection follows stop approval and the existing auto replacement policy.
+			if !privateRun && req.Deliver && req.ArchiveID != "" && strings.TrimSpace(responseText) != "" {
+				status := automode.DefaultStatusWithMaxTurns(s.autoMaxTurns)
+				if !terminalUnsuccessful && req.TurnSource == turncmd.SourceAuto {
+					if loaded, err := s.autoStatus(ctx, req.Locator); err == nil {
+						status = loaded
+					}
+				}
+				notification := false
+				if !terminalUnsuccessful {
+					_, _, notification = autoDecisionNotification(status, req.TurnSource, responseText, s.currentTime())
+				}
+				if !notification {
+					change := formatState
+					if !successfulFormatTurn(ev, responseText) {
+						change = nil
+					}
+					final, err := s.commitSelectedFinalWithStatus(ctx, req, responseText, change, terminalStatus)
+					if err != nil {
+						return err
+					}
+					// Semantic memory remains a separate best-effort observer.
+					if s.turnCapture != nil && shouldCaptureTerminalTurn(ev, req.Text, memoryResponseText) {
+						if source := completedTurnSourceID(req); source != "" {
+							if err := s.turnCapture.CaptureCompletedTurn(ctx, CompletedTurn{UserText: req.Text, AssistantText: memoryResponseText, Locator: req.Locator, SessionID: req.SessionID, AgentSessionID: req.AgentSessionID, SourceTurnID: source, CompletedAt: s.currentTime().UTC(), TerminalStatus: terminalStatus, TrustedTools: append([]TrustedToolEvidence(nil), trustedTools...)}); err != nil {
+								zerolog.Ctx(runCtx).Warn().Str("source_turn_id", source).Msg("failed to publish completed turn to session memory")
+							}
+						}
+					}
+					return s.resumeFinal(ctx, final)
+				}
+			}
 			if !privateRun && formatState != nil && successfulFormatTurn(ev, responseText) {
 				if err := s.formatComposer.Commit(ctx, req.Locator, *formatState); err != nil {
 					return err
@@ -636,7 +716,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 						AgentSessionID: req.AgentSessionID,
 						SourceTurnID:   sourceTurnID,
 						CompletedAt:    s.currentTime().UTC(),
-						TerminalStatus: terminalTurnStatus(ev),
+						TerminalStatus: terminalStatus,
 						TrustedTools:   append([]TrustedToolEvidence(nil), trustedTools...),
 					})
 					if captureErr != nil {
@@ -651,10 +731,12 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 				if s.privateOutput == nil {
 					return fmt.Errorf("private output recorder is unavailable")
 				}
-				providerFailed := ev.Interrupted || terminalTurnStatus(ev) != TerminalStatusSuccess
 				failureText := ""
-				if providerFailed {
-					failureText = privateRunFailureMessage(req.TurnSource)
+				if terminalUnsuccessful {
+					failureText = safeTerminalMessage
+					if failureText == "" {
+						failureText = privateRunFailureMessage(req.TurnSource)
+					}
 				}
 				if failureText == "" {
 					failureText = permissionOutcomeTurnMessage(permissionOutcomes.Latest())
@@ -662,7 +744,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 				if failureText == "" && strings.TrimSpace(responseText) == "" {
 					failureText = terminalTurnMessage(terminalFinishReason)
 				}
-				failed := providerFailed || failureText != ""
+				failed := terminalUnsuccessful || failureText != ""
 				output := responseText
 				if failed && failureText != "" {
 					output = failureText
@@ -702,12 +784,12 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 				responseSource = "fire_and_forget"
 			case strings.TrimSpace(responseText) != "":
 				autoModeStatus := automode.DefaultStatusWithMaxTurns(s.autoMaxTurns)
-				if strings.EqualFold(strings.TrimSpace(req.TurnSource), turncmd.SourceAuto) {
+				if !terminalUnsuccessful && strings.EqualFold(strings.TrimSpace(req.TurnSource), turncmd.SourceAuto) {
 					if loadedStatus, err := s.autoStatus(ctx, req.Locator); err == nil {
 						autoModeStatus = loadedStatus
 					}
 				}
-				if notification, source, ok := autoDecisionNotification(autoModeStatus, req.TurnSource, responseText, s.currentTime()); ok {
+				if notification, source, ok := autoDecisionNotification(autoModeStatus, req.TurnSource, responseText, s.currentTime()); !terminalUnsuccessful && ok {
 					responseText = notification
 					responseSource = source
 					switch source {
@@ -717,7 +799,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 							automode.StateKeyConsecutiveTurns: autoModeStatus.ConsecutiveTurns,
 							automode.StateKeyLastTurnAt:       s.currentTime().UTC().Format(time.RFC3339),
 							automode.StateKeyLastStopReason:   "model_reported_done",
-						}); err != nil {
+						}, req.ArchiveID); err != nil {
 							return err
 						}
 					case responseSourceAutoWaitForUser:
@@ -726,7 +808,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 							automode.StateKeyConsecutiveTurns: autoModeStatus.ConsecutiveTurns,
 							automode.StateKeyLastTurnAt:       s.currentTime().UTC().Format(time.RFC3339),
 							automode.StateKeyLastStopReason:   "model_waiting_for_user",
-						}); err != nil {
+						}, req.ArchiveID); err != nil {
 							return err
 						}
 					}
@@ -758,7 +840,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 				if terminalErrorMessage == "" {
 					terminalErrorMessage = lastNonRetryErrorMessage
 				}
-				terminalMessage := terminalErrorTurnMessage(terminalErrorMessage)
+				terminalMessage := safeTerminalMessage
 				terminalSource := "provider_error"
 				if terminalMessage == "" {
 					terminalMessage = permissionOutcomeTurnMessage(permissionOutcomes.Latest())
@@ -805,6 +887,15 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 				Bool("terminal_has_error_message", terminalErrorMessage != "").
 				Bool("handled_empty_terminal_reason", handledEmptyTerminalReason).
 				Msg("processed turn complete event")
+			if providerFailed {
+				if !req.Deliver {
+					finalAccepted = true
+				}
+				return errProviderTurnFailed
+			}
+			if turnInterrupted {
+				return nil
+			}
 			if !privateRun {
 				if err := s.maybeScheduleAutoTurn(ctx, req, responseSource, strings.TrimSpace(responseText)); err != nil {
 					return err
@@ -883,7 +974,7 @@ func (s *TurnExecutionService) startAutoCycleIfNeeded(ctx context.Context, req E
 		automode.StateKeyLastTurnAt:     now,
 		automode.StateKeyMaxTurns:       status.MaxTurns,
 		automode.StateKeyLastStopReason: "",
-	}); err != nil {
+	}, req.ArchiveID); err != nil {
 		return err
 	}
 	return s.notifyAutoStateChange(ctx, req, automode.Status{
@@ -974,13 +1065,18 @@ func autoDecisionNotification(status automode.Status, turnSource, responseText s
 	}
 }
 
-func (s *TurnExecutionService) updateAutoState(ctx context.Context, locator baldasession.SessionLocator, state map[string]any) error {
+func (s *TurnExecutionService) updateAutoState(ctx context.Context, locator baldasession.SessionLocator, state map[string]any, archiveID ...string) error {
 	if s == nil || s.dispatcher == nil || len(state) == 0 {
 		return nil
 	}
+	epoch := ""
+	if len(archiveID) > 0 {
+		epoch = archiveID[0]
+	}
 	env, err := automodecmd.Envelope(automodecmd.Payload{
-		Locator: locator,
-		State:   state,
+		ArchiveID: epoch,
+		Locator:   locator,
+		State:     state,
 	})
 	if err != nil {
 		return err
@@ -1024,7 +1120,7 @@ func (s *TurnExecutionService) maybeScheduleAutoTurn(ctx context.Context, req Ex
 					automode.StateKeyConsecutiveTurns: status.ConsecutiveTurns,
 					automode.StateKeyLastTurnAt:       s.currentTime().UTC().Format(time.RFC3339),
 					automode.StateKeyLastStopReason:   "repeated_visible_output",
-				}); err != nil {
+				}, req.ArchiveID); err != nil {
 					return err
 				}
 				if status.State != automode.StateNoProgress {
@@ -1051,7 +1147,7 @@ func (s *TurnExecutionService) maybeScheduleAutoTurn(ctx context.Context, req Ex
 			automode.StateKeyConsecutiveTurns: status.MaxTurns,
 			automode.StateKeyLastTurnAt:       s.currentTime().UTC().Format(time.RFC3339),
 			automode.StateKeyLastStopReason:   "max_auto_turns_reached",
-		}); err != nil {
+		}, req.ArchiveID); err != nil {
 			return err
 		}
 		if status.State != automode.StateLimitReached {
@@ -1077,7 +1173,7 @@ func (s *TurnExecutionService) maybeScheduleAutoTurn(ctx context.Context, req Ex
 		automode.StateKeyMaxTurns:         status.MaxTurns,
 		automode.StateKeyLastOutput:       lastOutput,
 		automode.StateKeyLastStopReason:   "",
-	}); err != nil {
+	}, req.ArchiveID); err != nil {
 		return err
 	}
 	if status.State != automode.StateRunning {
@@ -1093,6 +1189,7 @@ func (s *TurnExecutionService) maybeScheduleAutoTurn(ctx context.Context, req Ex
 		}
 	}
 	env, err := turncmd.SessionTurnEnvelope(turncmd.SessionTurnPayload{
+		ArchiveID:       req.ArchiveID,
 		Text:            automode.InternalPrompt(status.MaxTurns),
 		Locator:         req.Locator,
 		UserID:          req.UserID,

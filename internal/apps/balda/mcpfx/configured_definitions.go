@@ -10,7 +10,7 @@ import (
 	"sort"
 
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
-	"github.com/normahq/runtime/v2/agentconfig"
+	"github.com/baldaworks/runtime/v2/agentconfig"
 )
 
 // ConfiguredDefinitions separates redacted inventory metadata from private

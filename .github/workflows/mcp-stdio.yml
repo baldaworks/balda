@@ -5,6 +5,10 @@ on:
     paths:
       - '.github/workflows/mcp-stdio.yml'
       - 'cmd/balda/**'
+      - 'internal/apps/balda/acp_startup*_test.go'
+      - 'internal/apps/balda/acp_wiring_test.go'
+      - 'internal/apps/balda/app.go'
+      - 'internal/apps/balda/config.go'
       - 'internal/apps/balda/mcpfx/**'
       - 'internal/apps/balda/state/**'
       - 'internal/apps/balda/catalogapp/stdio_execution_test.go'
@@ -20,6 +24,10 @@ on:
     paths:
       - '.github/workflows/mcp-stdio.yml'
       - 'cmd/balda/**'
+      - 'internal/apps/balda/acp_startup*_test.go'
+      - 'internal/apps/balda/acp_wiring_test.go'
+      - 'internal/apps/balda/app.go'
+      - 'internal/apps/balda/config.go'
       - 'internal/apps/balda/mcpfx/**'
       - 'internal/apps/balda/state/**'
       - 'internal/apps/balda/catalogapp/stdio_execution_test.go'
@@ -58,3 +66,5 @@ jobs:
         run: go test -race -count=1 ./internal/apps/balda/catalogapp -run '^TestStdio(DiscoveryAndActualProvidersUseHostEnvironmentAndOverlay|ActualACPParentTerminationReleasesChildren)$'
       - name: SQL upgrade, persisted restore, history and actual configured tools
         run: go test -race -count=1 ./internal/apps/balda/catalogapp -run '^TestConfiguredSessionUpgradeRestoresPersistedPin$'
+      - name: ACP cold restored first turn and bounded startup lifecycle
+        run: go test -race -timeout=20m -count=1 ./internal/apps/balda -run '^Test(ACPColdRestoredFirstTurn|ACPStartupLifecycle|ACPAttachmentKeepsShortBudget|ProductionACPStartupFactoryBudgets|ACPPreflightStaysLazy)$'

@@ -11,7 +11,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorymcp"
 	"github.com/baldaworks/balda/sessionmemory"
-	"github.com/normahq/runtime/v2/agentconfig"
+	"github.com/baldaworks/runtime/v2/agentconfig"
 	"go.uber.org/fx"
 	adksession "google.golang.org/adk/v2/session"
 )
@@ -77,6 +77,7 @@ func agentRuntime(runtime *baldasession.BuiltRuntime) *baldaagent.BuiltRuntime {
 
 func agentSessionContext(sessionCtx baldasession.RuntimeSessionContext) baldaagent.RuntimeSessionContext {
 	return baldaagent.RuntimeSessionContext{
+		ArchiveID:      sessionCtx.ArchiveID,
 		BaldaSessionID: sessionCtx.BaldaSessionID,
 		SessionBranch:  sessionCtx.SessionBranch,
 	}
@@ -224,6 +225,7 @@ func translateWorkspaceError(err error) error {
 
 var Module = fx.Module("balda_sessionapp",
 	fx.Provide(
+		baldaagent.NewRunnerFactory,
 		baldaagent.NewBuilder,
 		baldaagent.NewRuntimeManager,
 		fx.Annotate(

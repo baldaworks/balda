@@ -55,6 +55,7 @@ const (
 	commandUsage   = "usage"
 	commandAuto    = "auto"
 	commandReset   = "reset"
+	commandNew     = "new"
 	commandClose   = "close"
 	commandSkill   = "skill"
 
@@ -75,6 +76,7 @@ type zulipInboundHandlerParams struct {
 	InviteStore       *auth.InviteStore
 	CollaboratorStore *auth.CollaboratorStore
 	ChannelAuth       *auth.ChannelAuthService
+	SessionPreparer   ingressapp.SessionPreparer
 	SessionManager    *baldasession.Manager
 	Dispatcher        actortransport.Dispatcher
 	GoalJobs          *baldajobs.JobLifecycleService `optional:"true"`
@@ -95,6 +97,7 @@ type zulipInboundHandler struct {
 	collaboratorStore *auth.CollaboratorStore
 	channelAuth       *auth.ChannelAuthService
 	sessionManager    *baldasession.Manager
+	sessionPreparer   ingressapp.SessionPreparer
 	actorDispatcher   actortransport.Dispatcher
 	goalJobs          *baldajobs.JobLifecycleService
 	memoryStore       *memory.Store
@@ -122,6 +125,7 @@ func newZulipInboundHandler(params zulipInboundHandlerParams) zulip.InboundProce
 		collaboratorStore: params.CollaboratorStore,
 		channelAuth:       params.ChannelAuth,
 		sessionManager:    params.SessionManager,
+		sessionPreparer:   params.SessionPreparer,
 		actorDispatcher:   params.Dispatcher,
 		goalJobs:          params.GoalJobs,
 		memoryStore:       params.MemoryStore,
@@ -195,7 +199,8 @@ func (h *zulipInboundHandler) HandleCommand(ctx context.Context, cmd zulip.Inbou
 			InvocationID: fmt.Sprintf("zulip:command:%d", cmd.MessageID),
 			Payload: commandcmd.Payload{
 				Version: commandcmd.SchemaVersion, Name: cmd.Command, Args: cmd.Args,
-				Locator: cmd.Locator, Transport: zulip.ChannelType, Principal: zulipUserID(cmd.SenderID),
+				OriginalInput: cmd.OriginalInput.Clone(),
+				Locator:       cmd.Locator, Transport: zulip.ChannelType, Principal: zulipUserID(cmd.SenderID),
 				Access:       commandcmd.Access{SessionCommands: true, Owner: isOwner, Collaborator: !isOwner},
 				Conversation: commandcmd.Conversation{Direct: cmd.Direct},
 				Presentation: deliveryfmt.Options{DeliveryFormat: deliveryfmt.DeliveryFormatMarkdown, ProgressPolicy: deliveryfmt.ProgressPolicy{Typing: true, PlanUpdates: true}},
@@ -276,7 +281,7 @@ func (h *zulipInboundHandler) ProcessInbound(ctx context.Context, msg zulip.Inbo
 		}
 	}
 
-	inbound := zulip.NormalizeInbound(msg.Locator, msg.MessageID, zulipUserID(msg.SenderID), msg.Text, msg.Direct, reqAt)
+	inbound := zulip.NormalizeInboundMessage(msg, reqAt)
 	service, err := ingressapp.NewWithLogger(
 		ingressapp.AuthorizerFunc(h.authorizeZulipInbound),
 		ingressapp.SessionPreparerFunc(h.prepareZulipSession),
@@ -307,51 +312,6 @@ func (h *zulipInboundHandler) authorizeZulipInbound(ctx context.Context, inbound
 	}
 	allowed := h.canAccessCollaboratorScope(ctx, int64(userID))
 	return ingressapp.Authorization{Allowed: allowed, Reason: ingressapp.ReasonUnauthorized}, nil
-}
-
-func (h *zulipInboundHandler) prepareZulipSession(ctx context.Context, inbound ingressapp.InboundContext) (ingressapp.SessionPreparation, error) {
-	ts, err := h.getOrCreateSession(ctx, inboundLocator(inbound), inbound.UserID, h.baldaProviderName, inbound.Direct)
-	if err != nil {
-		return ingressapp.SessionPreparation{}, err
-	}
-	return buildZulipSessionPreparation(ts, inbound.UserID), nil
-}
-
-func (h *zulipInboundHandler) getOrCreateSession(
-	ctx context.Context,
-	locator deliverycmd.Locator,
-	transportUserID string,
-	providerName string,
-	isDM bool,
-) (*baldasession.TopicSession, error) {
-	if h.sessionManager == nil {
-		_ = h.sendPlain(ctx, locator, "Balda is not ready right now. Please try again.")
-		return nil, fmt.Errorf("session manager is unavailable")
-	}
-	if strings.TrimSpace(providerName) == "" {
-		_ = h.sendPlain(ctx, locator, "Balda is not ready right now. Please try again.")
-		return nil, fmt.Errorf("no provider configured")
-	}
-	ts, welcomed, err := ensureZulipSession(
-		ctx,
-		h.sessionManager,
-		locator,
-		transportUserID,
-		providerName,
-		isDM,
-		ownerSessionLabel,
-		autoSessionLabel,
-	)
-	if err != nil {
-		h.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("zulip: failed to restore session")
-		_ = h.sendPlain(ctx, locator, "Could not restore this session. Please try again.")
-		return nil, err
-	}
-	if welcomed {
-		welcomeMsg := buildZulipSessionWelcome(h.sessionManager, providerName, isDM, ts.GetSessionID(), ownerSessionLabel, autoSessionLabel)
-		_ = h.sendPlain(ctx, locator, welcomeMsg)
-	}
-	return ts, nil
 }
 
 func (h *zulipInboundHandler) handleAutoCommand(ctx context.Context, locator deliverycmd.Locator, args string) {
@@ -437,8 +397,8 @@ func (h *zulipInboundHandler) handleStartOwnerCommand(ctx context.Context, locat
 		h.logger.Warn().Err(err).Int("sender_id", senderID).Msg("failed to bootstrap owner session")
 	}
 	successMsg := "You are now registered as the bot owner."
-	if ts != nil {
-		welcomeMsg := buildZulipSessionWelcome(h.sessionManager, h.baldaProviderName, true, ts.GetSessionID(), ownerSessionLabel, autoSessionLabel)
+	if ts.Ready {
+		welcomeMsg := sessionPreparationWelcome(ts, true)
 		successMsg = fmt.Sprintf("%s\n\n%s", successMsg, welcomeMsg)
 	}
 	if bundle, ok := ownerBindTokenBundleMessage(ctx, h.channelAuth, fmt.Sprintf("%d", senderID)); ok {
@@ -714,13 +674,20 @@ func (h *zulipInboundHandler) ActivateOwner(ctx context.Context, senderID int) e
 	return err
 }
 
-func (h *zulipInboundHandler) bootstrapOwnerSession(ctx context.Context, ownerID int64) (*baldasession.TopicSession, bool, error) {
+func (h *zulipInboundHandler) bootstrapOwnerSession(ctx context.Context, ownerID int64) (ingressapp.SessionPreparation, bool, error) {
 	locator := newZulipDMLocator(int(ownerID))
 	return h.ensureSession(ctx, locator, zulipUserID(int(ownerID)), true)
 }
 
-func (h *zulipInboundHandler) ensureSession(ctx context.Context, locator deliverycmd.Locator, transportUserID string, isDM bool) (*baldasession.TopicSession, bool, error) {
-	return ensureZulipSession(ctx, h.sessionManager, locator, transportUserID, h.baldaProviderName, isDM, ownerSessionLabel, autoSessionLabel)
+func (h *zulipInboundHandler) ensureSession(ctx context.Context, locator deliverycmd.Locator, transportUserID string, isDM bool) (ingressapp.SessionPreparation, bool, error) {
+	if h.sessionPreparer == nil {
+		return ingressapp.SessionPreparation{}, false, fmt.Errorf("session preparer is unavailable")
+	}
+	prep, err := h.sessionPreparer.Prepare(ctx, ingressapp.InboundContext{
+		SessionID: locator.SessionID, ChannelType: locator.ChannelType, AddressKey: locator.AddressKey,
+		AddressJSON: locator.AddressJSON, UserID: transportUserID, Direct: isDM,
+	})
+	return prep, prep.Activated, err
 }
 
 func (h *zulipInboundHandler) sendPlain(ctx context.Context, locator deliverycmd.Locator, text string) error {
@@ -919,48 +886,6 @@ func parseZulipStartArgs(args string) (zulipStartArgs, bool) {
 	}
 }
 
-func zulipSessionWelcomeLabel(isDM bool, ownerLabel, autoLabel string) string {
-	if isDM {
-		return ownerLabel
-	}
-	return autoLabel
-}
-
-func ensureZulipSession(ctx context.Context, manager *baldasession.Manager, locator deliverycmd.Locator, transportUserID, providerName string, isDM bool, ownerLabel, autoLabel string) (*baldasession.TopicSession, bool, error) {
-	if manager == nil {
-		return nil, false, fmt.Errorf("session manager is unavailable")
-	}
-	existing, _ := manager.GetSession(locator)
-	if existing != nil {
-		return existing, false, nil
-	}
-	if strings.TrimSpace(providerName) == "" {
-		return nil, false, fmt.Errorf("no provider configured")
-	}
-	ts, err := manager.RestoreSession(ctx, baldasession.SessionContext{Locator: locator, UserID: transportUserID})
-	if err != nil && !strings.Contains(err.Error(), "no persisted session") {
-		return nil, false, err
-	}
-	if err == nil && ts != nil {
-		return ts, true, nil
-	}
-	label := zulipSessionWelcomeLabel(isDM, ownerLabel, autoLabel)
-	ts, err = manager.EnsureSession(ctx, baldasession.SessionContext{Locator: locator, UserID: transportUserID}, label)
-	if err != nil {
-		return nil, false, err
-	}
-	return ts, true, nil
-}
-
-func buildZulipSessionWelcome(manager *baldasession.Manager, providerName string, isDM bool, sessionID string, ownerLabel string, autoLabel string) string {
-	if manager == nil {
-		return ""
-	}
-	label := zulipSessionWelcomeLabel(isDM, ownerLabel, autoLabel)
-	metadata := manager.GetAgentMetadata(providerName)
-	return welcome.BuildAgentWelcomeMessage(label, sessionID, metadata.Type, metadata.Model, metadata.ReasoningEffort, metadata.MCPServers)
-}
-
 func buildZulipTopicWelcome(manager *baldasession.Manager, providerName string, topicName string, sessionID string) string {
 	if manager == nil {
 		return ""
@@ -1054,17 +979,6 @@ func normalizeGoalMaxIterations(v int) int {
 		return defaultGoalMaxIterations
 	}
 	return v
-}
-
-func buildZulipSessionPreparation(ts *baldasession.TopicSession, requesterUserID string) ingressapp.SessionPreparation {
-	return ingressapp.SessionPreparation{
-		Ready:             true,
-		UserID:            ts.GetUserID(),
-		RequesterUserID:   requesterUserID,
-		AgentSessionID:    ts.GetAgentSessionID(),
-		WorkspaceDir:      ts.GetWorkspaceDir(),
-		RuntimeSnapshotID: ts.GetRuntimeSnapshotID(),
-	}
 }
 
 func inboundLocator(inbound ingressapp.InboundContext) deliverycmd.Locator {

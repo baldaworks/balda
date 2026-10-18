@@ -31,6 +31,13 @@ Use this map to find the authoritative runtime contracts.
 - [Native session memory](session-memory-native.md)
 - [Session-memory v2 acceptance and operations](session-memory-v2-acceptance.md)
 
+## Accepted decisions
+
+These records are active architecture contracts.
+
+- [ADR 0001: Provider-neutral ADK agent tool hooks](adr/0001-adk-agent-tool-hooks.md)
+- [ADR 0003: YAML-first provider driver registry](adr/0003-yaml-first-provider-driver-registry.md)
+
 ## Invariants
 
 - Durable command/event transport is exposed to Balda runtime code through actorlayer abstractions.
@@ -40,7 +47,7 @@ Use this map to find the authoritative runtime contracts.
   `commandcmd.Payload` to the independent CommandActor; its exact-name handlers
   live under scoped families in `actors/command`, and `commandfx` contains composition only.
 - `runtimecatalog` compiles immutable application/workspace snapshots;
-  `catalogapp` reconstructs durable plugin state before provider startup and
+  `catalogapp` reconstructs durable plugin and managed standalone skill state before provider startup and
   binds one immutable capability snapshot to each session. Commands and skills
   resolve from that pin; MCP is supplied when the provider session is created
   or restored. Plugin aliases still execute only through the independent
@@ -218,3 +225,33 @@ Enabled and pending durable activation. Backoffice does not import plugin policy
 catalog implementations or command wiring. Publication failures retain the
 accepted intent for ordinary recovery; operations never reset session pins or
 remove retained packages.
+
+Managed agent lifecycle policy lives in `hooks` behind `hookcmd` contracts.
+`state` owns guarded KV/audit writes; `hookfx` supplies consuming ports in
+`session` and `sessionturnapp`, and `hookbackofficeapp` adapts management to
+Backoffice. See [Managed agent hooks](../reference/agent-hooks.md).
+
+Provider-neutral native binding and process cleanup are owned by `hookprovider`;
+registered packages under `hooknative/claude`, `hooknative/codex`, and
+`hooknative/opencode` own provider adaptation behind the neutral `hooknative`
+registry. `hooknativeapp` composes live policy, bindings, and adapters without
+provider dispatch in `hookprovider`. Private binding/process
+lifetimes are released with the session agent. `agent` and `catalogapp` connect
+through consumer ports and immutable launch defaults. Architecture rules keep
+these adapters independent of transport, session and storage implementations.
+
+Conversational final archive policy remains in `chatarchiveapp` behind the
+executor's `FinalArchive` port. `chatarchivefx` binds it to the selected SQL store.
+`sessionturnapp` owns the final delivery/bookkeeping snapshot, and `sessionturn`
+consults the executor replay seam before runtime restoration. SQL atomically
+claims each steering constituent with its final message; replay filters committed
+constituents before rebuilding the neutral `turncmd` steering prompt. Neither
+storage nor archive readers invoke a provider or send messages.
+
+Backoffice Chat sessions consumes the local `ChatArchiveOperations` read port.
+`chatarchivebackofficeapp` binds `chatarchiveapp.Reader` to the selected SQL
+archive capability. It has no runtime/session/provider-client accessor. The
+reader fences current administrator authority around bounded queries; explicit
+Backoffice view models exclude replay/source/runtime bookkeeping. Inventory
+search covers stored location/session metadata, while transcript text remains
+plain escaped content. Storage retains ownership of SQL summaries and keysets.

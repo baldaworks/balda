@@ -6,7 +6,7 @@ import (
 	"maps"
 	"slices"
 
-	"github.com/normahq/runtime/v2/agentfactory"
+	"github.com/baldaworks/runtime/v2/agentfactory"
 	adkagent "google.golang.org/adk/v2/agent"
 )
 
@@ -14,6 +14,11 @@ import (
 // defaults, including defaults used by lazily constructed pool members.
 type ScopedRuntimeFactory interface {
 	BuildScoped(ctx context.Context, request agentfactory.BuildRequest, selections map[string][]string) (adkagent.Agent, error)
+}
+
+// SessionRuntimeFactory prepares session-owned native provider capabilities.
+type SessionRuntimeFactory interface {
+	BuildSession(ctx context.Context, request agentfactory.BuildRequest, selections map[string][]string, sessionID string) (adkagent.Agent, error)
 }
 
 func (b *Builder) withProviderMCP(selections map[string][]string) (*Builder, error) {
@@ -24,6 +29,7 @@ func (b *Builder) withProviderMCP(selections map[string][]string) (*Builder, err
 		return nil, fmt.Errorf("scoped provider factory is required")
 	}
 	copyBuilder := *b
+	copyBuilder.providerMCPSelections = selections
 	copyBuilder.normaCfg.Providers = maps.Clone(b.normaCfg.Providers)
 	selected := make(map[string][]string, len(selections))
 	for id, ids := range selections {

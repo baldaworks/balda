@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +21,7 @@ import (
 
 const ingressOutboxPrefix = "command-outbox/pending/"
 const ingressReceiptPrefix = "command-outbox/receipts/"
+const ingressSequenceKey = "command-outbox/admission-sequence"
 
 // OutboxStore is the local durable handoff, independent of the command bus.
 type OutboxStore interface {
@@ -30,6 +32,7 @@ type OutboxStore interface {
 }
 
 type ingressRecord struct {
+	Sequence    uint64                          `json:"sequence,omitempty"`
 	Envelope    string                          `json:"envelope,omitempty"`
 	Receipt     *actortransport.DispatchReceipt `json:"receipt,omitempty"`
 	CreatedAt   time.Time                       `json:"created_at"`
@@ -122,7 +125,11 @@ func (d *Dispatcher) Dispatch(ctx context.Context, env actorlayer.Envelope) (*ac
 		if len(keys) >= 256 {
 			return nil, actorlayer.TransientError(fmt.Errorf("durable ingress queue is full"))
 		}
-		record = ingressRecord{Envelope: wire, CreatedAt: d.now().UTC()}
+		sequence, err := d.nextSequence(ctx)
+		if err != nil {
+			return nil, err
+		}
+		record = ingressRecord{Sequence: sequence, Envelope: wire, CreatedAt: d.now().UTC()}
 		if err := d.save(ctx, key, record); err != nil {
 			return nil, err
 		}
@@ -130,6 +137,31 @@ func (d *Dispatcher) Dispatch(ctx context.Context, env actorlayer.Envelope) (*ac
 	// Local persistence is acceptance. A bus outage cannot turn an admitted
 	// command into a retryable transport rejection while recovery still owns it.
 	return admissionReceipt(env, false), nil
+}
+
+// nextSequence runs under the single owner's admission lock. Persisting the
+// watermark before the row permits gaps after failed writes, never reused order
+// values after restart. The pending row remains the acceptance boundary.
+func (d *Dispatcher) nextSequence(ctx context.Context) (uint64, error) {
+	raw, found, err := d.store.Get(ctx, ingressSequenceKey)
+	if err != nil {
+		return 0, err
+	}
+	var sequence uint64
+	if found {
+		sequence, err = strconv.ParseUint(raw, 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("read ingress admission sequence: %w", err)
+		}
+	}
+	if sequence == ^uint64(0) {
+		return 0, fmt.Errorf("ingress admission sequence exhausted")
+	}
+	sequence++
+	if err := d.store.Set(ctx, ingressSequenceKey, strconv.FormatUint(sequence, 10)); err != nil {
+		return 0, err
+	}
+	return sequence, nil
 }
 
 func admissionReceipt(env actorlayer.Envelope, duplicate bool) *actortransport.DispatchReceipt {
@@ -283,6 +315,12 @@ func (d *Dispatcher) pending(ctx context.Context) ([]pendingIngress, error) {
 		pending = append(pending, pendingIngress{key: key, record: record, env: env})
 	}
 	sort.Slice(pending, func(i, j int) bool {
+		left, right := pending[i].record.Sequence, pending[j].record.Sequence
+		if left != right {
+			// Older pending rows have no sequence. They were admitted before
+			// sequenced rows and drain first in their existing timestamp order.
+			return left < right
+		}
 		if pending[i].record.CreatedAt.Equal(pending[j].record.CreatedAt) {
 			return pending[i].key < pending[j].key
 		}

@@ -9,15 +9,15 @@ import (
 
 func TestTopicSessionGetSessionIDReturnsTransportSessionID(t *testing.T) {
 	ts := &TopicSession{
-		sessionID: "tg-2317500-0",
-		userID:    "tg-2317500",
+		sessionID: "tg-10001-0",
+		userID:    "tg-10001",
 	}
 
-	if got := ts.GetSessionID(); got != "tg-2317500-0" {
-		t.Fatalf("GetSessionID() = %q, want tg-2317500-0", got)
+	if got := ts.GetSessionID(); got != "tg-10001-0" {
+		t.Fatalf("GetSessionID() = %q, want tg-10001-0", got)
 	}
-	if got := ts.GetUserID(); got != "tg-2317500" {
-		t.Fatalf("GetUserID() = %q, want tg-2317500", got)
+	if got := ts.GetUserID(); got != "tg-10001" {
+		t.Fatalf("GetUserID() = %q, want tg-10001", got)
 	}
 }
 
@@ -28,7 +28,7 @@ func TestTopicSessionRuntimeStateValueReadsCurrentSession(t *testing.T) {
 	sessionSvc := session.InMemoryService()
 	created, err := sessionSvc.Create(ctx, &session.CreateRequest{
 		AppName:   "balda-test",
-		UserID:    "tg-2317500",
+		UserID:    "tg-10001",
 		SessionID: "agent-session-1",
 		State: map[string]any{
 			"balda_memory_version": "1",
@@ -39,7 +39,7 @@ func TestTopicSessionRuntimeStateValueReadsCurrentSession(t *testing.T) {
 	}
 	current, err := sessionSvc.Get(ctx, &session.GetRequest{
 		AppName:   "balda-test",
-		UserID:    "tg-2317500",
+		UserID:    "tg-10001",
 		SessionID: "agent-session-1",
 	})
 	if err != nil {

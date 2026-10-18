@@ -49,7 +49,7 @@ func renderHelpMessage(canUseSessionCommands bool, isOwner bool) string {
 	if canUseSessionCommands {
 		lines = append(lines, "", "## Sessions", "")
 		lines = append(lines, "- `/topic <name>` — create a new DM topic session")
-		lines = append(lines, "- `/reset` — reset current session and start again")
+		lines = append(lines, "- `/reset` or `/new` — reset current session and start again")
 		lines = append(lines, "- `/close` — close topic or clear current DM session")
 		lines = append(lines, "- `/cancel` — request cancel for the current turn")
 		lines = append(lines, "- `/locator` — show current session locator")

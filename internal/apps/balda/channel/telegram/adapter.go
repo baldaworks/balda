@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
@@ -77,6 +78,9 @@ type Adapter struct {
 
 // MessageContext is the balda-facing Telegram message shape.
 type MessageContext struct {
+	OriginalInput    *chatarchivecmd.Input
+	ChatType         string
+	ChatTitle        string
 	Locator          deliverycmd.Locator
 	ChatID           int64
 	TopicID          int
@@ -104,6 +108,7 @@ type MessageContext struct {
 
 // CommandContext is the balda-facing Telegram command shape.
 type CommandContext struct {
+	OriginalInput   *chatarchivecmd.Input
 	Locator         deliverycmd.Locator
 	DeliveryOptions deliveryfmt.Options
 	ChatID          int64
@@ -117,7 +122,7 @@ type CommandContext struct {
 	IsDM            bool
 }
 
-var supportedCommands = []string{"start", "help", "topic", "goalkeeper", "reset", "locator", "close", "cancel", "usage", "auto", "user", "plugin", "skill"}
+var supportedCommands = []string{"start", "help", "topic", "goalkeeper", "reset", "new", "locator", "close", "cancel", "usage", "auto", "user", "plugin", "skill"}
 
 func SupportedCommands() []string { return append([]string(nil), supportedCommands...) }
 
@@ -175,6 +180,14 @@ func (a *Adapter) CollectMediaGroup(message MessageContext, dispatch func(contex
 		return false
 	}
 	return a.mediaGroups.collect(message, dispatch)
+}
+
+// StopMediaGroups cancels pending media-group work and waits for active dispatches.
+func (a *Adapter) StopMediaGroups(ctx context.Context) error {
+	if a == nil || a.mediaGroups == nil {
+		return nil
+	}
+	return a.mediaGroups.stop(ctx)
 }
 
 func (a *Adapter) SetTypingThrottleInterval(interval time.Duration) {
@@ -324,6 +337,8 @@ func (a *Adapter) MessageContextFromEvent(event *events.MessageEvent) (MessageCo
 
 	return MessageContext{
 		Locator:          NewLocator(event.Message.Chat.Id, topicID),
+		ChatType:         event.Message.Chat.Type,
+		ChatTitle:        telegramChatTitle(event.Message.Chat.Title),
 		ChatID:           event.Message.Chat.Id,
 		TopicID:          topicID,
 		MessageID:        event.Message.MessageId,
@@ -716,8 +731,14 @@ func (a *Adapter) CommandContextFromEvent(event *events.CommandEvent) (CommandCo
 	}
 	topicID := a.topicIDFromMessage(event.Message)
 
+	var original *chatarchivecmd.Input
+	if event.Command == "skill" {
+		message, _ := a.MessageContextFromEvent(&events.MessageEvent{Message: event.Message})
+		original = NormalizeInbound(message, message.Text, time.Now()).OriginalInput
+	}
 	return CommandContext{
-		Locator: NewLocator(event.Message.Chat.Id, topicID),
+		OriginalInput: original,
+		Locator:       NewLocator(event.Message.Chat.Id, topicID),
 		DeliveryOptions: deliveryfmt.Options{
 			DeliveryFormat: deliveryfmt.DeliveryFormat(a.telegramFormattingMode()),
 			ProgressPolicy: deliveryfmt.ProgressPolicy{

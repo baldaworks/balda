@@ -15,6 +15,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/webhookmanagement"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookroutecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookroutefx"
+	"github.com/baldaworks/runtime/v2/appconfig"
 )
 
 // TestSharedHTTPLayoutBrowser checks rendered URLs and layout through the
@@ -28,9 +29,9 @@ func TestSharedHTTPLayoutBrowser(t *testing.T) {
 		basePath      string
 		missingOrigin bool
 	}{
-		{name: "asus prefix", basePath: "/balda"},
+		{name: "deployment prefix", basePath: "/balda"},
 		{name: "root prefix"},
-		{name: "asus prefix without public origin", basePath: "/balda", missingOrigin: true},
+		{name: "deployment prefix without public origin", basePath: "/balda", missingOrigin: true},
 		{name: "root prefix without public origin", missingOrigin: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -41,7 +42,7 @@ func TestSharedHTTPLayoutBrowser(t *testing.T) {
 				originMode = "missing"
 				params.Config.HTTP.BaseURL = ""
 				params.Config.Backoffice.PublicURL = "http://" + address
-				config, err := backofficeRuntimeConfig(params.Config, state.DatabaseConfig{})
+				config, err := backofficeRuntimeConfig(params.Config, appconfig.RuntimeConfig{}, "", state.DatabaseConfig{})
 				if err != nil {
 					t.Fatal(err)
 				}

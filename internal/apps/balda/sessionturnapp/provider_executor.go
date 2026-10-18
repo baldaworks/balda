@@ -87,14 +87,21 @@ func (e *ProviderTurnExecutor) ExecuteSessionTurn(ctx context.Context, request s
 			execution.logger,
 		)
 	}
+	workspaceDir := ""
+	if workspace, ok := request.Session.(interface{ GetWorkspaceDir() string }); ok {
+		workspaceDir = workspace.GetWorkspaceDir()
+	}
 	return execution.Execute(ctx, ExecutionRequest{
-		Text:            payload.Text,
-		Runner:          providerRunner,
-		UserID:          request.UserID,
-		RequesterUserID: payload.RequesterUserID,
-		SessionID:       request.Session.GetSessionID(),
-		JobID:           payload.JobID,
-		AgentSessionID:  request.AgentSessionID,
+		ArchiveID:        payload.ArchiveID,
+		SteeringMessages: payload.SteeringMessages,
+		WorkspaceDir:     workspaceDir,
+		Text:             payload.Text,
+		Runner:           providerRunner,
+		UserID:           request.UserID,
+		RequesterUserID:  payload.RequesterUserID,
+		SessionID:        request.Session.GetSessionID(),
+		JobID:            payload.JobID,
+		AgentSessionID:   request.AgentSessionID,
 		Locator: session.SessionLocator{
 			SessionID:   executionLocator.SessionID,
 			ChannelType: executionLocator.ChannelType,

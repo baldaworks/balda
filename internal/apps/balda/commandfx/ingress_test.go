@@ -136,3 +136,20 @@ func TestCommandIngressFailsClosedBeforeDispatchWithoutSnapshot(t *testing.T) {
 		t.Fatalf("PublishCommand() error/envelopes = %v/%d", err, len(dispatcher.envelopes))
 	}
 }
+
+type rejectedSkillCommand struct{}
+
+func (rejectedSkillCommand) AdmitSkillCommand(context.Context, commandcmd.Payload) (commandcmd.Payload, error) {
+	return commandcmd.Payload{}, errors.New("archive unavailable")
+}
+
+func TestSkillCommandAdmissionFailurePreventsCommandPublication(t *testing.T) {
+	dispatcher := &recordingDispatcher{}
+	ingress := NewCommandIngress(dispatcher, &fixedSnapshotResolver{id: "snapshot"})
+	ingress.SetSkillAdmission(rejectedSkillCommand{})
+	req := commandcmd.Request{InvocationID: "i", Payload: testSkillCommandPayload()}
+	req.Payload.Name = "skill"
+	if err := ingress.PublishCommand(t.Context(), req); err == nil {
+		t.Fatal("command published without archive")
+	}
+}

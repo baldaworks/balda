@@ -19,7 +19,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
-	"github.com/normahq/runtime/v2/mcpregistry"
+	"github.com/baldaworks/runtime/v2/mcpregistry"
 )
 
 func TestLifecycleMigratesLegacyPluginAndReconstructsCatalog(t *testing.T) {
@@ -239,9 +239,9 @@ func TestRuntimeDiscoversGlobalSkills(t *testing.T) {
 		t.Fatalf("PublishCandidate() error = %v", err)
 	}
 
-	assertSkillContribution(t, snapshot, "default", "state-only")
-	assertSkillContribution(t, snapshot, "agents-global", "agent-only")
-	assertSkillContribution(t, snapshot, "codex-global", "go-senior-developer")
+	assertSkillContribution(t, snapshot.Snapshot, "default", "state-only")
+	assertSkillContribution(t, snapshot.Snapshot, "agents-global", "agent-only")
+	assertSkillContribution(t, snapshot.Snapshot, "codex-global", "go-senior-developer")
 	if _, ok := snapshot.Skills[runtimecatalogcmd.ContributionID{
 		Source: runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindUserSkill, Name: "agents-global"},
 		Kind:   runtimecatalogcmd.ContributionKindSkill,
@@ -249,7 +249,7 @@ func TestRuntimeDiscoversGlobalSkills(t *testing.T) {
 	}]; ok {
 		t.Fatal("malformed global skill was published")
 	}
-	assertSkillDiagnostic(t, snapshot, "agents-global", "malformed")
+	assertSkillDiagnostic(t, snapshot.Snapshot, "agents-global", "malformed")
 
 	manager, err := baldaagent.NewSkillManager(runtime, runtime, baldaagent.SkillMetadataBudget{})
 	if err != nil {
@@ -343,7 +343,7 @@ func TestRuntimeIsolatesUnsafeGlobalSkill(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PreparePluginCandidate() error = %v", err)
 	}
-	assertSkillContribution(t, snapshot, "agents-global", "good")
+	assertSkillContribution(t, snapshot.Snapshot, "agents-global", "good")
 	if _, ok := snapshot.Skills[runtimecatalogcmd.ContributionID{
 		Source: runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindUserSkill, Name: "agents-global"},
 		Kind:   runtimecatalogcmd.ContributionKindSkill,
@@ -351,7 +351,7 @@ func TestRuntimeIsolatesUnsafeGlobalSkill(t *testing.T) {
 	}]; ok {
 		t.Fatal("unsafe global skill was published")
 	}
-	assertSkillDiagnostic(t, snapshot, "agents-global", "unsafe")
+	assertSkillDiagnostic(t, snapshot.Snapshot, "agents-global", "unsafe")
 }
 
 func TestRuntimeGlobalSkillRootFallbacks(t *testing.T) {
@@ -402,7 +402,7 @@ func TestRuntimeGlobalSkillRootFallbacks(t *testing.T) {
 			if err != nil {
 				t.Fatalf("PreparePluginCandidate() error = %v", err)
 			}
-			assertSkillContribution(t, snapshot, test.wantSource, "review")
+			assertSkillContribution(t, snapshot.Snapshot, test.wantSource, "review")
 			for id := range snapshot.Skills {
 				if id.Name == "review" && id.Source.Name != test.wantSource {
 					t.Fatalf("review also published from %q", id.Source.Name)

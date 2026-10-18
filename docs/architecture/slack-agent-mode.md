@@ -54,10 +54,11 @@ semantics.
 
 In the Slack app configuration, open **Features → Slash Commands**, create the
 command `/balda`, and set its Request URL to the public HTTPS endpoint that
-forwards unchanged request bodies to `balda.slack.commands_path` (default
-`/slack/commands`). Save the command and reinstall the app to the workspace if
-Slack requests it. The supported forms are `/balda locator` and
-`/balda reset`; the transport rejects other subcommands before actor publish.
+forwards unchanged request bodies to
+`<balda.http.base_url><balda.http.base_path>/gateway/slack/commands`. Save the
+command and reinstall the app to the workspace if Slack requests it. The
+supported forms are `/balda locator` and `/balda reset`; the transport rejects
+other subcommands before actor publish.
 
 The endpoint uses the same `balda.slack.signing_secret` verification as Slack
 Events API ingress. A successful HTTP response means the command was durably

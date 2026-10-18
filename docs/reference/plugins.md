@@ -127,6 +127,18 @@ loader, validation, revision archive, and lazy reader. Enabled plugins remain a
 separate source. Balda does not assign precedence between sources, so duplicate
 unqualified names are ambiguous.
 
+## Independently managed skills
+
+**Operations → Skills** provides reviewed Git/local installation and explicit
+update, enable/disable and remove for standalone skills. Plugin skills remain
+package-owned and link to Plugins; existing global roots remain read-only with
+explicit refresh. Complete resources live in the existing immutable archive,
+using its direct-child skill layout, while private origin/selection metadata lives
+in the shared state database. See [Skills management](backoffice.md#skills-management)
+for the browser flow or [Standalone skill management](skills.md) for the
+host-local `balda skill` CLI. No management action resets or repins an existing
+session.
+
 ## One capability snapshot per session
 
 Balda compiles commands, skill metadata, and MCP server descriptors into an

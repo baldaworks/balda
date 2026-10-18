@@ -19,6 +19,7 @@ import (
 	commandtopic "github.com/baldaworks/balda/internal/apps/balda/actors/command/topic"
 	commandusage "github.com/baldaworks/balda/internal/apps/balda/actors/command/usage"
 	commanduser "github.com/baldaworks/balda/internal/apps/balda/actors/command/user"
+	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
@@ -41,6 +42,11 @@ type resetParams struct {
 	Sessions   *session.Manager
 	Canceller  appports.SessionWorkCanceller
 	Dispatcher actortransport.Dispatcher
+}
+
+func newResetHandlers(p resetParams) []command.Handler {
+	handler := commandreset.New(p.Sessions, p.Canceller, p.Dispatcher)
+	return []command.Handler{handler, command.Alias("new", handler)}
 }
 
 type usageParams struct {
@@ -165,6 +171,7 @@ type commandActorParams struct {
 }
 
 type commandIngressParams struct {
+	Skills SkillCommandAdmission
 	fx.In
 	Dispatcher CommandDispatcher         `name:"command_ingress"`
 	Snapshots  EffectiveSnapshotResolver `optional:"true"`
@@ -172,12 +179,11 @@ type commandIngressParams struct {
 
 var Module = fx.Module("balda_command",
 	fx.Provide(
+		NewSkillCommandAdmission,
 		fx.Annotate(commandlocator.New, fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`)),
 		fx.Annotate(
-			func(p resetParams) *commandreset.Handler {
-				return commandreset.New(p.Sessions, p.Canceller, p.Dispatcher)
-			},
-			fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`),
+			newResetHandlers,
+			fx.ResultTags(`group:"balda_command_handlers,flatten"`),
 		),
 		fx.Annotate(commandhelp.New, fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`)),
 		fx.Annotate(commandskill.New, fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`)),
@@ -320,12 +326,23 @@ var Module = fx.Module("balda_command",
 		),
 		fx.Annotate(
 			func(p commandIngressParams) *CommandIngress {
-				return NewCommandIngress(p.Dispatcher, p.Snapshots)
+				ingress := NewCommandIngress(p.Dispatcher, p.Snapshots)
+				ingress.SetSkillAdmission(p.Skills)
+				return ingress
 			},
 			fx.As(new(commandcmd.Ingress)),
 		),
 		fx.Annotate(NewPluginTurnExecutor, fx.As(new(command.PluginExecutor))),
-		fx.Annotate(NewSkillTurnExecutor, fx.As(new(commandskill.Executor))),
+		fx.Annotate(func(p struct {
+			fx.In
+			Skills     *baldaagent.SkillManager
+			Dispatcher actortransport.Dispatcher
+			Admission  SkillAdmission
+		}) *SkillTurnExecutor {
+			executor := NewSkillTurnExecutor(p.Skills, p.Dispatcher)
+			executor.SetAdmission(p.Admission)
+			return executor
+		}, fx.As(new(commandskill.Executor))),
 		func(p catalogStatusParams) *CatalogStatusReader {
 			return NewCatalogStatusReader(p.Catalog, p.MCP, p.Ads)
 		},

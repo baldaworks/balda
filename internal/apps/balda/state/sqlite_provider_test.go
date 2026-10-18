@@ -52,11 +52,11 @@ func TestSQLitePrimaryAdministratorUsernameMigration(t *testing.T) {
 	if _, err := provider.UpTo(t.Context(), 37); err != nil {
 		t.Fatal(err)
 	}
-	insertSQLiteUser(t, db, "admin-1", "telegram-2317500-368dcc50", true)
+	insertSQLiteUser(t, db, "admin-1", "telegram-10001-368dcc50", true)
 	insertSQLiteUser(t, db, "operator-1", "telegram-202", false)
 	if _, err := db.ExecContext(t.Context(), `INSERT INTO balda_user_bindings
 		(binding_id, user_id, channel_type, principal, display_name, provenance, created_at, updated_at)
-		VALUES ('binding-1', 'admin-1', 'telegram', '2317500', 'Owner', 'migration',
+		VALUES ('binding-1', 'admin-1', 'telegram', '10001', 'Owner', 'migration',
 		        '2026-09-23T00:00:00Z', '2026-09-23T00:00:00Z')`); err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestSQLitePrimaryAdministratorUsernameMigration(t *testing.T) {
 	if err := db.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM balda_backoffice_sessions WHERE user_id = 'admin-1'`).Scan(&sessionCount); err != nil {
 		t.Fatal(err)
 	}
-	if principal != "2317500" || sessionCount != 1 {
+	if principal != "10001" || sessionCount != 1 {
 		t.Fatalf("primary binding/session = %q/%d", principal, sessionCount)
 	}
 	if err := db.QueryRowContext(t.Context(), `SELECT username FROM balda_users WHERE user_id = 'operator-1'`).Scan(&username); err != nil {
@@ -351,8 +351,8 @@ func TestSQLiteProvider_MigratesPreviousSchemaAtVersion8(t *testing.T) {
 	if !ok {
 		t.Fatalf("GetJSON(owner) type = %T, want map[string]any", ownerValue)
 	}
-	if owner["username"] != "metalagman" {
-		t.Fatalf("owner username after namespace migration = %v, want metalagman", owner["username"])
+	if owner["username"] != "example_owner" {
+		t.Fatalf("owner username after namespace migration = %v, want example_owner", owner["username"])
 	}
 
 	token, ok, err := provider.AppKV().Get(ctx, "owner_auth_token")
@@ -407,6 +407,9 @@ func TestSQLiteProvider_Migration11BackfillsBuggyTelegramAddressColumns(t *testi
 	defer func() { _ = db.Close() }()
 
 	seedBaldaDBAtVersion10WithBuggyZeroSession(t, db)
+	if _, err := db.ExecContext(ctx, `INSERT INTO balda_runtime_sessions(id) VALUES (42)`); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := migrate(ctx, db); err != nil {
 		t.Fatalf("migrate() error = %v", err)
@@ -424,6 +427,24 @@ func TestSQLiteProvider_Migration11BackfillsBuggyTelegramAddressColumns(t *testi
 		t.Fatalf("migrated telegram address columns = %d/%d, want -1002667079342/8939", chatID, topicID)
 	}
 	assertSessionMetadataHasNoChatTopicUnique(t, ctx, db)
+
+	var runtimeID int
+	if err := db.QueryRowContext(ctx, `SELECT id FROM balda_runtime_sessions`).Scan(&runtimeID); err != nil {
+		t.Fatalf("query preserved runtime placeholder: %v", err)
+	}
+	if runtimeID != 42 {
+		t.Fatalf("runtime placeholder id = %d, want 42", runtimeID)
+	}
+	var version int64
+	if err := db.QueryRowContext(ctx, `SELECT MAX(version_id) FROM goose_db_version WHERE is_applied = 1`).Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if version < 64 {
+		t.Fatalf("migration version = %d, want at least 64", version)
+	}
+	if err := migrate(ctx, db); err != nil {
+		t.Fatalf("reopen migrated legacy database: %v", err)
+	}
 }
 
 func newTestProvider(t *testing.T) Provider {
@@ -530,7 +551,7 @@ func seedPreviousSchemaAtVersion8(t *testing.T, dbPath string) {
 			(
 				'relay.app',
 				'owner',
-				'{"user_id":2317500,"chat_id":2317500,"username":"metalagman","first_name":"Alexey","last_name":"Samoylov","has_topics_enabled":false,"registered_at":"2026-04-22T19:00:07.616352877+06:00"}',
+				'{"user_id":10001,"chat_id":10001,"username":"example_owner","first_name":"Example","last_name":"Owner","has_topics_enabled":false,"registered_at":"2026-01-01T00:00:00Z"}',
 				'2026-01-01T00:00:00Z'
 			),
 			('relay.app', 'owner_auth_token', '"relay-token"', '2026-01-01T00:00:00Z'),
@@ -665,6 +686,8 @@ func seedPreviousSchemaAtVersion8(t *testing.T, dbPath string) {
 	}
 }
 
+// Preserve this captured schema, including runtime placeholder tables. Rebuilding
+// it with current migrations would stop exercising upgrades of existing databases.
 func seedBaldaDBAtVersion10WithBuggyZeroSession(t *testing.T, db *sql.DB) {
 	t.Helper()
 

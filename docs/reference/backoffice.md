@@ -126,16 +126,14 @@ serves pages, assets, OAuth callbacks, and browser/session endpoints under
 not the sibling `/webhooks` or `/gateway` routes. A reverse proxy must forward
 the configured paths unchanged.
 
-For an illustrative asus configuration, set `balda.http.base_url` to
-`https://lab.metalagman.dev` and `balda.http.base_path` to `/balda`. The public
-URLs are `https://lab.metalagman.dev/balda/backoffice/`, its management page at
-`https://lab.metalagman.dev/balda/backoffice/webhooks`, an `orders` callback
-at `https://lab.metalagman.dev/balda/webhooks/orders`, and Slack callbacks at
-`https://lab.metalagman.dev/balda/gateway/slack/events` and
-`https://lab.metalagman.dev/balda/gateway/slack/commands`. These addresses are
-an application URL example; the live asus ingress, deployment, and external
-callback registrations are unchanged by this Story. They will be externally
-reachable only after a separate ingress and callback-registration rollout.
+For an example deployment, set `balda.http.base_url` to
+`https://balda.example.com` and `balda.http.base_path` to `/balda`. The public
+URLs are `https://balda.example.com/balda/backoffice/`, its management page at
+`https://balda.example.com/balda/backoffice/webhooks`, an `orders` callback
+at `https://balda.example.com/balda/webhooks/orders`, and Slack callbacks at
+`https://balda.example.com/balda/gateway/slack/events` and
+`https://balda.example.com/balda/gateway/slack/commands`. These example addresses require a reverse proxy and
+external callback registrations matching the configured origin and prefix.
 
 If a `balda.http` field is omitted, it falls back to its corresponding
 `balda.backoffice.listen_addr`, `public_url`, or `base_path` value and then the
@@ -283,7 +281,7 @@ raw User-Agent and token values are never displayed.
   process; stop it for file backup or restore. PostgreSQL backups must include
   schema, data, sequences, and Goose
   migration history.
-- Access is administrator-only. Account and Overview are available to active
+- Access is administrator-only. Account, Overview, and Agent are available to active
   administrators and operators; Audit is administrator-only. Account places
   **Change password** before profile details. A successful change creates a
   fresh browser session and revokes previous access and refresh credentials.
@@ -316,9 +314,13 @@ raw User-Agent and token values are never displayed.
   status. User detail separates profile, chat bindings, credential reset, and
   browser sessions. Audit lists newest events first by event time, then stable
   ID, with actor, action, target, outcome, and filters that persist on the next
-  page. Technical IDs remain available in event details. Overview lists
-  configured integrations only; a configured card makes no claim about live
-  connectivity or health.
+  page. Technical IDs remain available in event details. Agent shows the
+  effective startup profile, configured root provider ID and type, model,
+  reasoning effort, and global instruction read-only. Pool providers do not
+  claim a currently active member. Overview lists configured integrations only;
+  its cards show daily-operation channel settings and canonical callback
+  locations without legacy bind addresses. A configured card makes no claim
+  about live connectivity or health.
 - A terminal refresh failure offers sign-in as the primary action. A
   concurrent-refresh conflict offers a safe page reopen because another
   request may already have installed new cookies. Failed native and HTMX forms
@@ -363,7 +365,7 @@ CSRF-protected sign-out; a branded permission-derived sidebar; a shared content 
 in normal grid flow. The top bar and sidebar brand share the same height;
 navigation scrolls content below the top bar so page headings remain visible.
 The viewer identity is independent of an inspected user.
-The sidebar groups authorized links by purpose: Workspace contains Overview;
+The sidebar groups authorized links by purpose: Workspace contains Overview and Agent;
 Operations contains Plugins, MCP, Schedules, Webhooks, Aliases, and Fact memory; Administration contains Access and Audit.
 It omits groups with no authorized links. Active administrators see all three;
 active operators see Workspace while Account remains available in the top bar.
@@ -1083,3 +1085,133 @@ owns guarded KV/audit persistence. Backoffice consumes `FactMemoryOperations`
 through `memorybackofficeapp`, bound before startup. This feature adds no table
 or schema migration. Run the ordered synthetic layout and isolated authenticated
 browser checks in the [UI review runbook](backoffice-ui-review.md#fact-memory-layout-and-application-gates).
+
+## Agent hooks management
+
+Administrators open **Operations → Agent hooks** at `/hooks` under the
+Backoffice mount. The page manages executable lifecycle definitions with
+explicit enablement, event/provider/source selection, bounded argv and timeout,
+optimistic versions, deletion confirmation, existing browser authority and
+body-free transactional audit. Operators cannot read or mutate definitions.
+Changes apply to the next matching event. See [Managed agent hooks](agent-hooks.md)
+for event semantics, executable privileges, failures and ownership.
+
+Native tool events (`PreToolUse`, `PostToolUse`) use the same guarded Agent hooks
+editor. Its capability banner reports configured provider support and explains
+new-session activation. Unsupported configurations return 400 with the submitted
+draft intact. Tool-event matchers apply to the provider-native tool name.
+
+
+## Skills management
+
+Administrators open **Operations → Skills** at `<backoffice_path>/skills`.
+Operators cannot inspect or mutate this global catalog. Ordinary browser login,
+access refresh, CSRF and origin protections apply. Refresh returns to the
+requested Skills page. There is no additional passkey ceremony.
+
+The inventory separates managed standalone installations, existing global
+standalone roots and plugin contributions. Duplicate names remain distinct;
+unqualified selection is ambiguous and qualified selection identifies the exact
+source. Plugin rows link to their owning Plugins page. Existing filesystem
+skills are read-only here: management does not adopt, overwrite or delete them.
+Workspace skills are session-scoped and are not enumerated globally.
+
+**Install skill** accepts a local directory or Git repository **Source**, an
+optional Git **Ref**, and a relative **Skill path** containing `SKILL.md`.
+Use `.` when the source root is the skill. A repository may contain several
+skills: only the chosen subtree is installed. No `plugin.json`, marketplace
+index, Node runtime or `npx` installer is required. Review shows the skill's
+metadata, content revision and resolved Git commit before acceptance. The
+complete directory, including supporting resources, is retained without
+executing its scripts. Acceptance rechecks that reviewed bytes are unchanged.
+
+Source is private transient input. It is cleared on submission, errors and
+history restoration, never refilled. Remote labels omit credentials, query and
+fragment; local labels omit host paths. Configure source access on the host;
+these forms do not provision Git credentials.
+
+Managed payloads use Balda's immutable revision archive. The standalone archive
+layout includes `<name>/SKILL.md` beneath the retained source
+revision; accepted descriptors and private origins are stored in the shared
+state database's versioned application metadata. Mutable staging is isolated
+under `<state_dir>/skill-staging`. This does not take ownership of the runtime
+account's existing `.agents/skills` or workspace directories.
+
+**Review update** uses the recorded origin and retains Enabled. **Enable skill**,
+**Disable skill** and **Remove skill** use retained revisions without fetching
+the origin. Disable/remove require confirmation. Remove excludes the source
+from new selection while retaining archived instructions/resources and session
+pins. Existing sessions are neither reset nor repinned; new sessions and an
+explicit `/reset` select the current catalog.
+
+GET pages read retained metadata only. **Refresh sources** explicitly rebuilds
+eligible global roots with current managed/plugin/configured sources. Normal
+complete catalog reconstruction during startup or another accepted catalog
+operation also captures current unmanaged roots. Invalid refresh leaves the
+last usable catalog and displays bounded diagnostics.
+
+Stale forms or changed/expired reviews return 409 with reopen guidance. A
+change committed before publication fails appears as **Accepted; recovery
+pending** with distinct desired/current revisions. Do not repeat installation
+or update. **Recover publication** rebuilds the current desired catalog from
+retained descriptors without fetching managed origins or adding another
+mutation audit. Startup performs the same recovery. Exact generation and the
+complete enabled source set fence publication, including removal of the final
+skill. One Balda process owns a state directory.
+
+`skillapp` owns source/lifecycle policy, `catalogapp` owns capture and complete
+publication, and the shared state provider owns guarded metadata/audit. The
+Backoffice `SkillsOperations` port is bound by `skillbackofficeapp`; the Web UI
+does not own catalog policy. There is no schema migration for this app-KV data.
+Older binaries do not understand managed selections; deployment rollback needs
+a matching state backup when retained managed capabilities matter.
+
+For equivalent host-local automation while Balda is stopped, see
+[Standalone skill management](skills.md). The `balda skill` CLI uses the same
+review, optimistic state and publication lifecycle.
+
+## Chat session archive
+
+Administrators open **Workspace → Chat sessions** at
+`<balda.http.base_path>/backoffice/chat-sessions`. Operators cannot read the
+inventory, individual sessions or HTMX fragments, and do not see its navigation
+entry. The ordinary browser login and refresh flow applies; there is no extra
+factor ceremony. Every read rechecks current administrator and browser-family
+authority, including credential/MFA versions and expiry.
+
+The inventory contains individual conversational lifetimes, ordered by latest
+observed activity (creation time before any messages). A successful reset or
+close retains the earlier lifetime and its chat; exact durable restore continues
+that same lifetime. Channel, location, locator, audience and root/topic/thread
+are historical snapshots. Personal topics remain personal; group transcripts
+show each actual speaker rather than assigning one group owner. Missing names
+and location metadata stay explicitly unknown. **Active** describes the
+stored session status, not provider connectivity. Pending and uncertain records make
+no claim of successful activation. **Partial coverage** marks adopted sessions;
+messages before capture began are not backfilled.
+
+Search uses a literal, case-sensitive substring of session metadata (label,
+location, locator and topic/thread label),
+not chat text. Channel and lifecycle filters persist through **Older sessions**
+keyset navigation, with at most 50 rows per page. Each detail at
+`/chat-sessions/{archive_uuid}` shows the newest 100 messages chronologically
+within that window. **Older messages** opens the preceding window. Previous/next
+lifetime links use recorded predecessor relationships. Speaker names, timestamps,
+plain multiline text and attachment names/kinds are escaped; attachments are
+labels, without downloads or stored binaries. Private execution replay, internal
+runtime identifiers, prompts, tools, reasoning, progress and credentials are not
+browser projections.
+
+These pages are passive SQL readers. Opening them cannot restore/create a
+runtime, look up provider profiles, invoke a model, send a reply or change chat
+state. Invalid IDs/filters/cursors return a safe 400; absent records return 404;
+unavailable storage returns 503. Full pages and fragments retain private/no-store,
+CSP, prefix-aware navigation and ordinary refresh behavior. There are no runtime
+controls, composer, export or deletion actions. Archive rows follow the shared
+database backup policy and have no automatic expiry.
+
+Backoffice owns the `ChatArchiveOperations` consuming port and allowlisted SSR
+views. `chatarchivebackofficeapp` binds the SQL-only `chatarchiveapp.Reader`;
+`chatarchivecmd` holds neutral read values and `state` owns persisted summaries,
+keysets and the current durable authority fence. Startup and lazy restoration
+order are unchanged.

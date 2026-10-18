@@ -7,12 +7,10 @@ import (
 	"strings"
 
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
-	"github.com/baldaworks/balda/internal/apps/balda/channel/mattermost/mattermostfx"
+	"github.com/baldaworks/balda/internal/apps/balda/channel/mattermost"
 	baldaslackagent "github.com/baldaworks/balda/internal/apps/balda/channel/slackagent"
-	"github.com/baldaworks/balda/internal/apps/balda/channel/slackagent/slackagentfx"
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
-	"github.com/baldaworks/balda/internal/apps/balda/channel/telegram/telegramfx"
-	"github.com/baldaworks/balda/internal/apps/balda/channel/zulip/zulipfx"
+	"github.com/baldaworks/balda/internal/apps/balda/channel/zulip"
 	natsbus "github.com/baldaworks/balda/internal/apps/balda/eventbus/nats"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	"github.com/baldaworks/balda/internal/apps/balda/internalmcp"
@@ -30,11 +28,11 @@ import (
 	"github.com/baldaworks/balda/internal/git"
 	portableapp "github.com/baldaworks/balda/sessionmemory/app"
 	portmcp "github.com/baldaworks/balda/sessionmemory/mcp"
+	"github.com/baldaworks/runtime/v2/agentconfig"
+	"github.com/baldaworks/runtime/v2/agentfactory"
+	runtimeconfig "github.com/baldaworks/runtime/v2/appconfig"
+	"github.com/baldaworks/runtime/v2/mcpregistry"
 	"github.com/ipfans/fxlogger"
-	"github.com/normahq/runtime/v2/agentconfig"
-	"github.com/normahq/runtime/v2/agentfactory"
-	runtimeconfig "github.com/normahq/runtime/v2/appconfig"
-	"github.com/normahq/runtime/v2/mcpregistry"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"go.uber.org/fx"
@@ -49,6 +47,10 @@ func PreflightRuntime(
 	normaCfg runtimeconfig.RuntimeConfig,
 	runtimeLoadOpts runtimeconfig.RuntimeLoadOptions,
 ) error {
+	acpStartupTimeout, err := cfg.Balda.ResolveACPStartupTimeout()
+	if err != nil {
+		return err
+	}
 	logger := log.Logger.With().Str("component", "balda.preflight").Logger()
 	workingDir, err := paths.ResolveWorkingDir(cfg.Balda.WorkingDir)
 	if err != nil {
@@ -146,7 +148,7 @@ func PreflightRuntime(
 		cfg.Balda.SessionMemory,
 		cfg.Balda.Provider,
 		normaCfg.Providers,
-		agentfactory.New(normaCfg.Providers, mcpReg),
+		agentfactory.New(normaCfg.Providers, mcpReg, agentfactory.WithACPInitializeTimeout(acpStartupTimeout)),
 	)
 	if err != nil {
 		return err
@@ -227,6 +229,11 @@ func PreflightRuntime(
 			func(provider baldastate.Provider) *memory.Store {
 				return memory.NewStore(provider.AppKV(), stateDir, cfg.Balda.Memory.Enabled)
 			},
+			func() session.ArchiveLifecycle {
+				// Preflight admits no conversations and must not reconcile memory
+				// lifetimes as though this provider check were a new application boot.
+				return nil
+			},
 			fx.Annotate(
 				func(store *memory.Store) bool {
 					return store != nil && store.MemoryEnabled()
@@ -302,8 +309,10 @@ func PreflightRuntime(
 					reg,
 					agentfactory.WithPermissionHandler(baldaagent.NewPermissionHandler(permissionReviewer, logger)),
 					agentfactory.WithAvailabilityIndependentMCP(),
+					agentfactory.WithACPInitializeTimeout(acpStartupTimeout),
 				)
 			},
+			baldaagent.NewRunnerFactory,
 			baldaagent.NewBuilder,
 			baldaagent.NewRuntimeManager,
 			func(builder *baldaagent.Builder) session.AgentBuilder {
@@ -331,10 +340,7 @@ func PreflightRuntime(
 		),
 		natsbus.Module,
 		questions.Module,
-		telegramfx.Module,
-		slackagentfx.Module,
-		zulipfx.Module,
-		mattermostfx.Module,
+		preflightScopeClassifiers(),
 		fx.Populate(&runtimeManager, &mcpManager),
 		fx.Invoke(func(lc fx.Lifecycle, manager *internalmcp.InternalMCPManager, runtimeManager *baldaagent.RuntimeManager, memoryRuntime *portableapp.Runtime) {
 			lc.Append(fx.Hook{OnStart: func(ctx context.Context) error {
@@ -370,6 +376,16 @@ func PreflightRuntime(
 		return err
 	}
 	return nil
+}
+
+// Preflight needs locator classification, without transport clients or ingress.
+func preflightScopeClassifiers() fx.Option {
+	return fx.Supply(fx.Annotate([]sessionmemoryapp.ScopeClassifierContribution{
+		{ChannelType: baldatelegram.ChannelType, Classifier: baldatelegram.ClassifyLocatorScope},
+		{ChannelType: zulip.ChannelType, Classifier: zulip.ClassifyLocatorScope},
+		{ChannelType: mattermost.ChannelType, Classifier: mattermost.ClassifyLocatorScope},
+		{ChannelType: baldaslackagent.ChannelType, Classifier: baldaslackagent.ClassifyLocatorScope},
+	}, fx.ResultTags(`group:"balda_session_memory_scope_classifier,flatten"`)))
 }
 
 func logSlackModeDiagnostics(logger zerolog.Logger, cfg SlackConfig) {

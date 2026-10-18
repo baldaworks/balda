@@ -121,15 +121,16 @@ func (c *Client) APIBaseURL() string {
 
 // Post is the Mattermost post resource (subset used by Balda).
 type Post struct {
-	ID        string `json:"id"`
-	CreateAt  int64  `json:"create_at"`
-	UpdateAt  int64  `json:"update_at"`
-	DeleteAt  int64  `json:"delete_at"`
-	UserID    string `json:"user_id"`
-	ChannelID string `json:"channel_id"`
-	RootID    string `json:"root_id"`
-	Message   string `json:"message"`
-	Type      string `json:"type"`
+	FileIDs   []string `json:"file_ids"`
+	ID        string   `json:"id"`
+	CreateAt  int64    `json:"create_at"`
+	UpdateAt  int64    `json:"update_at"`
+	DeleteAt  int64    `json:"delete_at"`
+	UserID    string   `json:"user_id"`
+	ChannelID string   `json:"channel_id"`
+	RootID    string   `json:"root_id"`
+	Message   string   `json:"message"`
+	Type      string   `json:"type"`
 }
 
 // PostThread is the response returned by Mattermost's thread endpoint.

@@ -176,7 +176,7 @@ func TestHTTPAppServesConfiguredBasePath(t *testing.T) {
 	t.Parallel()
 	provider, config := newHTTPAppTestState(t)
 	config.Server.BasePath = "/balda"
-	config.Server.PublicURL = "https://lab.metalagman.dev"
+	config.Server.PublicURL = "https://balda.example.com"
 	config.Server.SecureCookies = true
 	config.Server.QAUI = true
 	app, err := newHTTPApp(provider.Users(), config)
@@ -270,6 +270,7 @@ func TestHTTPAppQAWorkspaceFixturesPrecedeRuntimeBinding(t *testing.T) {
 func TestHTTPAppLoginOverviewAndRefreshContinuation(t *testing.T) {
 	t.Parallel()
 	provider, config := newHTTPAppTestState(t)
+	config.Agent = AgentConfig{ProviderID: "primary", ProviderType: "codex_acp", Profile: "default", Model: "gpt-6-sol", ReasoningEffort: "high", GlobalInstruction: "operate safely"}
 	now := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
 	hash := validPasswordHash(t)
 	user := usercmd.User{ID: "admin", DisplayName: "Admin", Username: "admin", NormalizedUsername: "admin", Status: usercmd.StatusActive, Role: usercmd.RoleAdministrator, Credential: usercmd.Credential{State: usercmd.CredentialStateActive, Version: 1}, Primary: true, Version: 1, CreatedAt: now, UpdatedAt: now}
@@ -307,6 +308,13 @@ func TestHTTPAppLoginOverviewAndRefreshContinuation(t *testing.T) {
 	handler.ServeHTTP(overview, overviewRequest)
 	if overview.Code != http.StatusOK || !strings.Contains(overview.Body.String(), "Overview") {
 		t.Fatalf("overview = %d %q", overview.Code, overview.Body.String())
+	}
+	agentRequest := httptest.NewRequest(http.MethodGet, "/agent", nil)
+	agentRequest.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: access})
+	agent := httptest.NewRecorder()
+	handler.ServeHTTP(agent, agentRequest)
+	if agent.Code != http.StatusOK || !strings.Contains(agent.Body.String(), "operate safely") || !strings.Contains(agent.Body.String(), "gpt-6-sol") {
+		t.Fatalf("agent = %d %q", agent.Code, agent.Body.String())
 	}
 	expiredRequest := httptest.NewRequest(http.MethodGet, "/overview", nil)
 	expiredRequest.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: "invalid.access"})

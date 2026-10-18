@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
@@ -27,6 +28,8 @@ type Result struct {
 // Concrete transports map local inbound events into this request before
 // invoking shared conversational ingress semantics.
 type Request struct {
+	// OriginalInput preserves current human content independently of the model prompt.
+	OriginalInput     *chatarchivecmd.Input
 	ID                turncmd.InboundID
 	Text              string
 	Attachments       []attachment.Descriptor
@@ -47,6 +50,7 @@ func (r Request) NormalizedInbound() turncmd.NormalizedInbound {
 	options := deliveryfmt.NormalizeOptions(r.DeliveryOptions)
 	return turncmd.NormalizedInbound{
 		ID:                r.ID,
+		OriginalInput:     r.OriginalInput.Clone(),
 		Text:              strings.TrimSpace(r.Text),
 		Attachments:       attachment.NormalizeList(r.Attachments),
 		Locator:           r.Locator,

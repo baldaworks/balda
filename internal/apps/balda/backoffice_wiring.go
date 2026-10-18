@@ -2,7 +2,9 @@ package balda
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/baldaworks/balda/internal/apps/backoffice"
@@ -11,6 +13,8 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/mcpfx"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/runtime/v2/agentconfig"
+	runtimeconfig "github.com/baldaworks/runtime/v2/appconfig"
 )
 
 func backofficeSharedHandler(ctx context.Context, runtime *backoffice.Runtime, cfg BaldaConfig, mcp *mcpbackofficeapp.Operations) (http.Handler, error) {
@@ -46,37 +50,90 @@ func newSharedBackofficeMCP(cfg BaldaConfig, grants *mcpmanage.Grants, definitio
 	return operations, authorizations, nil
 }
 
-func backofficeRuntimeConfig(cfg BaldaConfig, database state.DatabaseConfig) (backoffice.ResolvedConfig, error) {
-	if _, err := cfg.ResolveHTTP(); err != nil {
+func backofficeRuntimeConfig(cfg BaldaConfig, runtimeCfg runtimeconfig.RuntimeConfig, profile string, database state.DatabaseConfig) (backoffice.ResolvedConfig, error) {
+	sharedHTTP, err := cfg.ResolveHTTP()
+	if err != nil {
 		return backoffice.ResolvedConfig{}, err
 	}
 	server, err := cfg.ResolveSharedBackofficeServer()
 	if err != nil {
 		return backoffice.ResolvedConfig{}, err
 	}
+	agent, err := projectBackofficeAgent(cfg, runtimeCfg, profile)
+	if err != nil {
+		return backoffice.ResolvedConfig{}, err
+	}
+	callback := func(enabled bool, transport, endpoint string) string {
+		if !enabled {
+			return ""
+		}
+		callbackPath := sharedHTTP.GatewayPath(transport, endpoint)
+		if strings.TrimSpace(cfg.HTTP.BaseURL) == "" {
+			return callbackPath
+		}
+		return sharedHTTP.PublicURL(callbackPath)
+	}
 	projected := backoffice.BaldaConfig{
-		Telegram: backoffice.TelegramConfig{Enabled: strings.TrimSpace(cfg.Telegram.Token) != "", Webhook: backoffice.TelegramWebhookConfig{
-			Enabled: cfg.Telegram.Webhook.Enabled, ListenAddr: cfg.Telegram.Webhook.ListenAddr, Path: cfg.Telegram.Webhook.Path,
+		Telegram: backoffice.TelegramConfig{Enabled: strings.TrimSpace(cfg.Telegram.Token) != "", FormattingMode: cfg.Telegram.FormattingMode, Webhook: backoffice.TelegramWebhookConfig{
+			Enabled:     cfg.Telegram.Webhook.Enabled,
+			CallbackURL: callback(cfg.Telegram.Webhook.Enabled, "telegram", "webhook"),
 		}},
 		Zulip: backoffice.ZulipConfig{Webhook: backoffice.ZulipWebhookConfig{
-			Enabled: cfg.Zulip.Webhook.Enabled, ListenAddr: cfg.Zulip.Webhook.ListenAddr, Path: cfg.Zulip.Webhook.Path,
+			Enabled:     cfg.Zulip.Webhook.Enabled,
+			CallbackURL: callback(cfg.Zulip.Webhook.Enabled, "zulip", "webhook"),
 		}},
 		Slack: backoffice.SlackConfig{
-			Enabled: cfg.Slack.Enabled, ListenAddr: cfg.Slack.ListenAddr, EventsPath: cfg.Slack.EventsPath,
 			Agent: backoffice.SlackAgentConfig{
-				Enabled: cfg.Slack.Agent.Enabled, ListenAddr: cfg.Slack.Agent.ListenAddr,
-				EventsPath: cfg.Slack.Agent.EventsPath, EnableStreaming: cfg.Slack.Agent.EnableStreaming,
+				Enabled: cfg.Slack.Agent.Enabled, IncludePrivateChannels: cfg.Slack.IncludePrivateChannels,
+				EnableStreaming: cfg.Slack.Agent.EnableStreaming, SuggestedPrompts: cfg.Slack.Agent.SuggestedPrompts,
+				EventsCallbackURL:   callback(cfg.Slack.Agent.Enabled, "slack", "events"),
+				CommandsCallbackURL: callback(cfg.Slack.Agent.Enabled, "slack", "commands"),
 			},
 		},
 		Webhooks: backoffice.WebhooksConfig{
-			Enabled: cfg.Webhooks.Enabled, ListenAddr: cfg.Webhooks.ListenAddr,
-			RouteCount: len(cfg.Webhooks.Routes),
+			Enabled: cfg.Webhooks.Enabled, RouteCount: len(cfg.Webhooks.Routes),
 		},
 		Mattermost: backoffice.MattermostConfig{
-			Enabled: cfg.Mattermost.Enabled, ServerURL: cfg.Mattermost.ServerURL,
-			CommandsEnabled: cfg.Mattermost.CommandsEnabled, ListenAddr: cfg.Mattermost.CommandsListenAddr,
-			CommandsPath: cfg.Mattermost.CommandsPath,
+			Enabled: cfg.Mattermost.Enabled, ServerURL: sanitizeBackofficeURL(cfg.Mattermost.ServerURL),
+			CommandsEnabled:     cfg.Mattermost.CommandsEnabled,
+			CommandsCallbackURL: callback(cfg.Mattermost.CommandsEnabled, "mattermost", "commands"),
 		},
 	}
-	return backoffice.ResolvedConfig{Balda: projected, Server: server, Database: database}, nil
+	return backoffice.ResolvedConfig{Agent: agent, Balda: projected, Server: server, Database: database}, nil
+}
+
+func projectBackofficeAgent(cfg BaldaConfig, runtimeCfg runtimeconfig.RuntimeConfig, profile string) (backoffice.AgentConfig, error) {
+	providerID := strings.TrimSpace(cfg.Provider)
+	projected := backoffice.AgentConfig{ProviderID: providerID, Profile: strings.TrimSpace(profile), GlobalInstruction: cfg.GlobalInstruction}
+	if providerID == "" {
+		return projected, nil
+	}
+	provider, ok := runtimeCfg.Providers[providerID]
+	if !ok {
+		return backoffice.AgentConfig{}, fmt.Errorf("backoffice agent provider %q is not configured", providerID)
+	}
+	projected.ProviderType = strings.TrimSpace(provider.Type)
+	if projected.ProviderType == agentconfig.AgentTypePool {
+		return projected, nil
+	}
+	resolved, err := agentconfig.NormalizeConfig(provider, "")
+	if err != nil {
+		return backoffice.AgentConfig{}, fmt.Errorf("normalize backoffice agent provider %q: %w", providerID, err)
+	}
+	projected.Model = strings.TrimSpace(resolved.Model)
+	projected.ReasoningEffort = strings.TrimSpace(resolved.ReasoningEffort)
+	return projected, nil
+}
+
+func sanitizeBackofficeURL(raw string) string {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return ""
+	}
+	parsed.User = nil
+	parsed.RawQuery = ""
+	parsed.ForceQuery = false
+	parsed.Fragment = ""
+	parsed.RawFragment = ""
+	return parsed.String()
 }

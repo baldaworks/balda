@@ -5,6 +5,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"io"
 	"os"
 	"path/filepath"
@@ -14,10 +15,10 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/paths"
 	"github.com/baldaworks/balda/internal/git"
-	"github.com/normahq/runtime/v2/agentconfig"
-	"github.com/normahq/runtime/v2/agentfactory"
-	runtimeconfig "github.com/normahq/runtime/v2/appconfig"
-	"github.com/normahq/runtime/v2/sessionstate"
+	"github.com/baldaworks/runtime/v2/agentconfig"
+	"github.com/baldaworks/runtime/v2/agentfactory"
+	runtimeconfig "github.com/baldaworks/runtime/v2/appconfig"
+	"github.com/baldaworks/runtime/v2/sessionstate"
 	"go.uber.org/fx"
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/runner"
@@ -47,6 +48,7 @@ const (
 )
 
 type Builder struct {
+	providerMCPSelections    map[string][]string
 	factory                  runtimeFactory
 	scopedFactory            ScopedRuntimeFactory
 	dedicatedFactory         dedicatedRuntimeFactory
@@ -60,6 +62,7 @@ type Builder struct {
 	memorySnapshotReader     MemorySnapshotReader
 	instructionContributors  []SessionInstructionContributor
 	instructionMaxTotalBytes int
+	runnerFactory            *RunnerFactory
 }
 
 // runtimeFactory is the provider-factory boundary used by chat runtimes.
@@ -76,6 +79,7 @@ type dedicatedRuntimeFactory interface {
 }
 
 type RuntimeSessionContext struct {
+	ArchiveID      string
 	BaldaSessionID string
 	SessionBranch  string
 }
@@ -209,6 +213,7 @@ type BuilderParams struct {
 	MemorySnapshotReader     MemorySnapshotReader
 	InstructionContributors  []SessionInstructionContributor `group:"balda_session_instruction_contributors"`
 	InstructionMaxTotalBytes int                             `name:"balda_session_instruction_max_total_bytes" optional:"true"`
+	RunnerFactory            *RunnerFactory                  `optional:"true"`
 }
 
 // NewBuilder creates a Builder with the given factory and config.
@@ -233,6 +238,7 @@ func NewBuilder(params BuilderParams) *Builder {
 		memorySnapshotReader:     params.MemorySnapshotReader,
 		instructionContributors:  append([]SessionInstructionContributor(nil), params.InstructionContributors...),
 		instructionMaxTotalBytes: params.InstructionMaxTotalBytes,
+		runnerFactory:            params.RunnerFactory,
 	}
 }
 
@@ -305,7 +311,12 @@ func (b *Builder) buildRuntimeWithCapabilities(
 		MCPServerIDs:     b.buildAgentMCPServerIDs(agentName, bundledMCPServerIDs, extraMCPServerIDs),
 	}
 
-	ag, err := b.factory.Build(ctx, req)
+	var ag agent.Agent
+	if sessionFactory, ok := b.scopedFactory.(SessionRuntimeFactory); ok && instructionContext.SessionID != "" {
+		ag, err = sessionFactory.BuildSession(ctx, req, b.providerMCPSelections, instructionContext.SessionID)
+	} else {
+		ag, err = b.factory.Build(ctx, req)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("creating agent %q: %w", agentName, err)
 	}
@@ -314,10 +325,14 @@ func (b *Builder) buildRuntimeWithCapabilities(
 	if sessionSvc == nil {
 		sessionSvc = adksession.InMemoryService()
 	}
-	r, err := runner.New(runner.Config{
+	r, err := b.newRunner(runner.Config{
 		AppName:        appName,
 		Agent:          ag,
 		SessionService: sessionSvc,
+	}, ToolHookScope{
+		Enabled:  true,
+		Provider: strings.TrimSpace(agentName),
+		CWD:      strings.TrimSpace(workspaceDir),
 	})
 	if err != nil {
 		if closer, ok := ag.(io.Closer); ok {
@@ -332,6 +347,13 @@ func (b *Builder) buildRuntimeWithCapabilities(
 		SessionSvc: sessionSvc,
 		AppName:    appName,
 	}, nil
+}
+
+func (b *Builder) newRunner(cfg runner.Config, scope ToolHookScope) (*runner.Runner, error) {
+	if b != nil && b.runnerFactory != nil {
+		return b.runnerFactory.New(cfg, scope)
+	}
+	return runner.New(cfg)
 }
 
 // BuildDedicatedRuntime creates an isolated provider runtime for internal
@@ -454,6 +476,9 @@ func (b *Builder) OpenExistingRuntimeSession(
 		sessionstate.CWDKey:        expectedCWD,
 		BaldaSessionIDStateKey:     strings.TrimSpace(sessionCtx.BaldaSessionID),
 		BaldaSessionBranchStateKey: b.normalizedSessionBranch(sessionCtx.SessionBranch),
+	}
+	if sessionCtx.ArchiveID != "" {
+		expected[chatarchivecmd.EpochStateKey] = sessionCtx.ArchiveID
 	}
 	for key, want := range expected {
 		got, err := sessionStateString(resp.Session, key)
@@ -583,48 +608,19 @@ func (b *Builder) GetAgentMetadata(agentName string) AgentMetadata {
 	if !ok {
 		return AgentMetadata{}
 	}
-
-	var acp *agentconfig.ACPConfig
-	switch strings.TrimSpace(agentCfg.Type) {
-	case agentconfig.AgentTypeGenericACP:
-		acp = agentCfg.GenericACP
-	case agentconfig.AgentTypeGeminiACP:
-		acp = agentCfg.GeminiACP
-	case agentconfig.AgentTypeCodexACP:
-		acp = agentCfg.CodexACP
-	case agentconfig.AgentTypeOpenCodeACP:
-		acp = agentCfg.OpenCodeACP
-	case agentconfig.AgentTypeCopilotACP:
-		acp = agentCfg.CopilotACP
-	case agentconfig.AgentTypeClaudeCodeACP, agentconfig.AgentTypeClaudeACP:
-		acp = agentCfg.ClaudeCodeACP
-	case agentconfig.AgentTypeGrokACP:
-		acp = agentCfg.GrokACP
-	case agentconfig.AgentTypeRegistryACP:
-		acp = agentCfg.RegistryACP
-	case agentconfig.AgentTypeAgyACP:
-		acp = agentCfg.AgyACP
-	case agentconfig.AgentTypeAntigravityACP:
-		acp = agentCfg.AntigravityACP
-	}
-
-	model := ""
-	reasoningEffort := ""
-	switch {
-	case acp != nil:
-		model = strings.TrimSpace(acp.Model)
-		reasoningEffort = strings.TrimSpace(acp.ReasoningEffort)
-	case agentCfg.OpenAI != nil:
-		model = strings.TrimSpace(agentCfg.OpenAI.Model)
-	case agentCfg.AIStudio != nil:
-		model = strings.TrimSpace(agentCfg.AIStudio.Model)
+	resolved, err := agentconfig.NormalizeConfig(agentCfg, "")
+	if err != nil {
+		return AgentMetadata{
+			Type:       strings.TrimSpace(agentCfg.Type),
+			MCPServers: mergeMCPServerIDsWithBase([]string{"balda"}, agentCfg.MCPServers, nil),
+		}
 	}
 
 	return AgentMetadata{
-		Type:            strings.TrimSpace(agentCfg.Type),
-		Model:           model,
-		ReasoningEffort: reasoningEffort,
-		MCPServers:      mergeMCPServerIDsWithBase([]string{"balda"}, agentCfg.MCPServers, nil),
+		Type:            resolved.ConfiguredType,
+		Model:           resolved.Model,
+		ReasoningEffort: resolved.ReasoningEffort,
+		MCPServers:      mergeMCPServerIDsWithBase([]string{"balda"}, resolved.MCPServers, nil),
 	}
 }
 
@@ -719,6 +715,9 @@ func (b *Builder) buildSessionState(ctx context.Context, agentName, workspaceDir
 		state = make(map[string]any, 4)
 	}
 	state[sessionstate.CWDKey] = absCWD
+	if sessionCtx.ArchiveID != "" {
+		state[chatarchivecmd.EpochStateKey] = sessionCtx.ArchiveID
+	}
 	state[BaldaSessionIDStateKey] = baldaSessionID
 	state[BaldaSessionBranchStateKey] = sessionBranch
 	state[BaldaRepoBranchAtStartStateKey] = repoBranchAtStart
@@ -739,7 +738,7 @@ func (b *Builder) normalizedSessionBranch(branch string) string {
 func (b *Builder) buildRootRuntimeInstruction(ctx context.Context, agentName, workspaceDir string, projection SkillMetadataProjection, input SessionInstructionContext) (string, error) {
 	base := b.buildBaldaInstructionWithSkills(
 		baldaSessionIDPlaceholder,
-		"telegram",
+		input.ChannelType,
 		agentName,
 		baldaSessionBranchPlaceholder,
 		"{"+sessionstate.CWDKey+"}",

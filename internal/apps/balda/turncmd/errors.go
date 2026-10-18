@@ -26,3 +26,10 @@ type FinalOutcomeAcceptedError struct {
 
 func (e *FinalOutcomeAcceptedError) Error() string { return e.Cause.Error() }
 func (e *FinalOutcomeAcceptedError) Unwrap() error { return e.Cause }
+
+// FinalArchiveError stops model retries after producing an unwritten final.
+// The in-memory candidate was retried; a process crash cannot recover its bytes.
+type FinalArchiveError struct{ Cause error }
+
+func (e *FinalArchiveError) Error() string { return "final archive commit failed" }
+func (e *FinalArchiveError) Unwrap() error { return e.Cause }

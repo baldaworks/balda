@@ -15,23 +15,27 @@ import (
 type Location string
 
 const (
-	LocationLogin      Location = "/login"
-	LocationOverview   Location = "/overview"
-	LocationAccess     Location = "/access"
-	LocationAccount    Location = "/account"
-	LocationAudit      Location = "/audit"
-	LocationMCP        Location = "/mcp"
-	LocationPlugins    Location = "/plugins"
-	LocationSchedules  Location = "/schedules"
-	LocationWebhooks   Location = "/webhooks"
-	LocationAliases    Location = "/aliases"
-	LocationFactMemory Location = "/memory"
+	LocationLogin       Location = "/login"
+	LocationOverview    Location = "/overview"
+	LocationAgent       Location = "/agent"
+	LocationAccess      Location = "/access"
+	LocationAccount     Location = "/account"
+	LocationAudit       Location = "/audit"
+	LocationMCP         Location = "/mcp"
+	LocationSkills      Location = "/skills"
+	LocationPlugins     Location = "/plugins"
+	LocationSchedules   Location = "/schedules"
+	LocationWebhooks    Location = "/webhooks"
+	LocationAliases     Location = "/aliases"
+	LocationHooks       Location = "/hooks"
+	LocationChatArchive Location = "/chat-sessions"
+	LocationFactMemory  Location = "/memory"
 )
 
 // Valid reports whether a location can be emitted by server navigation.
 func (l Location) Valid() bool {
 	switch l {
-	case LocationLogin, LocationOverview, LocationAccess, LocationAccount, LocationAudit, LocationMCP, LocationSchedules, LocationWebhooks, LocationAliases, LocationFactMemory, LocationPlugins:
+	case LocationChatArchive, LocationSkills, LocationHooks, LocationLogin, LocationOverview, LocationAgent, LocationAccess, LocationAccount, LocationAudit, LocationMCP, LocationSchedules, LocationWebhooks, LocationAliases, LocationFactMemory, LocationPlugins:
 		return true
 	default:
 		return false
@@ -58,10 +62,31 @@ type CapabilityCard struct {
 	ID         string
 	Name       string
 	Mode       string
-	ListenAddr string
-	Endpoint   string
 	RouteCount int
-	Streaming  bool
+	Settings   []CapabilitySetting
+	Endpoints  []CapabilityEndpoint
+}
+
+// CapabilitySetting is one explicit non-secret integration setting.
+type CapabilitySetting struct {
+	Label string
+	Value string
+}
+
+// CapabilityEndpoint is one canonical callback location.
+type CapabilityEndpoint struct {
+	Label string
+	URL   string
+}
+
+// AgentView is the safe effective agent configuration rendered read-only.
+type AgentView struct {
+	ProviderID        string
+	ProviderType      string
+	Profile           string
+	Model             string
+	ReasoningEffort   string
+	GlobalInstruction string
 }
 
 // BindingView is the optional single transport binding shown read-only.
@@ -154,12 +179,16 @@ type MFACeremonyView struct {
 
 // Page is the closed safe model accepted by production templates.
 type Page struct {
+	Agent        *AgentView
+	Skills       *SkillsView
 	Plugins      *PluginsView
 	MCP          *MCPView
 	Schedules    *SchedulesView
 	Webhooks     *WebhooksView
 	Aliases      *AliasesView
+	ChatArchive  *ChatArchiveView
 	FactMemory   *FactMemoryView
+	Hooks        *HooksView
 	RestartURL   string
 	RestartLabel string
 	MFA          *MFAView
@@ -209,12 +238,18 @@ func Navigation(capabilities usercmd.BackofficeCapabilities, current Location) [
 	if capabilities.Overview {
 		groups = append(groups, NavGroup{
 			Label: "Workspace", ID: "nav-workspace",
-			Items: []NavItem{item("Overview", LocationOverview, "bi-speedometer2")},
+			Items: []NavItem{
+				item("Overview", LocationOverview, "bi-speedometer2"),
+				item("Agent", LocationAgent, "bi-robot"),
+			},
 		})
+	}
+	if capabilities.ViewChatArchive && len(groups) > 0 {
+		groups[0].Items = append(groups[0].Items, item("Chat sessions", LocationChatArchive, "bi-chat-left-text"))
 	}
 	var operations []NavItem
 	if capabilities.ManagePlugins {
-		operations = append(operations, item("Plugins", LocationPlugins, "bi-box-seam"))
+		operations = append(operations, item("Plugins", LocationPlugins, "bi-box-seam"), item("Skills", LocationSkills, "bi-journal-code"))
 	}
 	if capabilities.ManageMCP {
 		operations = append(operations, item("MCP", LocationMCP, "bi-tools"))
@@ -227,6 +262,9 @@ func Navigation(capabilities usercmd.BackofficeCapabilities, current Location) [
 	}
 	if capabilities.ManageAliases {
 		operations = append(operations, item("Aliases", LocationAliases, "bi-signpost-split"))
+	}
+	if capabilities.ManageHooks {
+		operations = append(operations, item("Agent hooks", LocationHooks, "bi-lightning"))
 	}
 	if capabilities.ManageFactMemory {
 		operations = append(operations, item("Fact memory", LocationFactMemory, "bi-journal-text"))
@@ -344,6 +382,8 @@ func auditActionLabel(action usercmd.AuditAction) string {
 		return "Recovered two-factor access offline"
 	case usercmd.AuditActionLogout:
 		return "Signed out"
+	case usercmd.AuditActionHookChanged:
+		return "Agent hook changed"
 	case usercmd.AuditActionMemoryFactCreated:
 		return "Created fact"
 	case usercmd.AuditActionMemoryFactEdited:
@@ -373,6 +413,8 @@ func auditTargetLabel(target usercmd.AuditTargetType) string {
 		return "System"
 	case usercmd.AuditTargetMigration:
 		return "Migration"
+	case usercmd.AuditTargetHook:
+		return "Agent hook"
 	case usercmd.AuditTargetMemoryFact:
 		return "Fact"
 	case usercmd.AuditTargetAlias:

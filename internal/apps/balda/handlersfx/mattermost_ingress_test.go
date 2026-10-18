@@ -13,6 +13,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
+	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
@@ -496,5 +497,58 @@ func TestNewMattermostInboundHandlerWiresCanonicalChatHandler(t *testing.T) {
 	}
 	if handler.chat != chat {
 		t.Fatal("handler.chat does not contain the supplied canonical chat handler")
+	}
+}
+
+type failingMattermostDispatcher struct{ calls int }
+
+func (d *failingMattermostDispatcher) Dispatch(context.Context, actorlayer.Envelope) (*actortransport.DispatchReceipt, error) {
+	d.calls++
+	return nil, errors.New("delivery unavailable")
+}
+
+func unauthorizedMattermostMessage() mattermost.InboundMessage {
+	return mattermost.InboundMessage{
+		Locator:    mattermost.NewDMLocator("dm-1", "user-1"),
+		PostID:     "post-1",
+		SenderID:   "user-1",
+		Text:       "hello",
+		Direct:     true,
+		ReceivedAt: time.Now(),
+	}
+}
+
+func TestMattermostHandlerProcessInboundTellsUnauthorizedSender(t *testing.T) {
+	dispatcher := &fakeTurnDispatcher{}
+	h := &mattermostInboundHandler{actorDispatcher: dispatcher, logger: zerolog.Nop()}
+
+	settlement, err := h.ProcessInbound(context.Background(), unauthorizedMattermostMessage())
+	if err != nil {
+		t.Fatalf("ProcessInbound() error = %v, want nil", err)
+	}
+	if settlement.Outcome != turncmd.InboundTerminal || settlement.Reason != chatapp.ReasonUnauthorized {
+		t.Fatalf("settlement = %+v, want terminal unauthorized", settlement)
+	}
+	if len(dispatcher.commands) != 1 {
+		t.Fatalf("dispatched %d envelopes, want one access-denied notice", len(dispatcher.commands))
+	}
+	if !strings.Contains(string(dispatcher.commands[0].Payload.Data), mattermostAccessDeniedText) {
+		t.Fatalf("notice payload = %q, want %q", dispatcher.commands[0].Payload.Data, mattermostAccessDeniedText)
+	}
+}
+
+func TestMattermostHandlerProcessInboundSettlesWhenDenialNoticeFails(t *testing.T) {
+	dispatcher := &failingMattermostDispatcher{}
+	h := &mattermostInboundHandler{actorDispatcher: dispatcher, logger: zerolog.Nop()}
+
+	settlement, err := h.ProcessInbound(context.Background(), unauthorizedMattermostMessage())
+	if err != nil {
+		t.Fatalf("ProcessInbound() error = %v, want nil so the post is not retried", err)
+	}
+	if settlement.Outcome != turncmd.InboundTerminal || settlement.Reason != chatapp.ReasonUnauthorized {
+		t.Fatalf("settlement = %+v, want terminal unauthorized", settlement)
+	}
+	if dispatcher.calls != 1 {
+		t.Fatalf("notice send attempts = %d, want 1", dispatcher.calls)
 	}
 }

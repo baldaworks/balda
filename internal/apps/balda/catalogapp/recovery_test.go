@@ -10,7 +10,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpfx"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
-	"github.com/normahq/runtime/v2/mcpregistry"
+	"github.com/baldaworks/runtime/v2/mcpregistry"
 )
 
 func TestCurrentRecoveryForExactBoundWorkerGrant(t *testing.T) {

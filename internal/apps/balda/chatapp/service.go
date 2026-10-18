@@ -3,6 +3,7 @@ package chatapp
 import (
 	"context"
 	"fmt"
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"strings"
 
 	"github.com/baldaworks/balda/internal/apps/balda/actorcmd"
@@ -13,6 +14,7 @@ import (
 
 // ServiceParams contains dependencies for constructing a conversational ingress Service.
 type ServiceParams struct {
+	Archive    InputRecorder
 	Sessions   SessionPreparer
 	Dispatcher Dispatcher
 	Questions  QuestionResolver // optional
@@ -23,7 +25,13 @@ type ServiceParams struct {
 
 // Service owns provider-neutral conversational ingress orchestration:
 // question settlement, session preparation, and durable SessionActor publication.
+// InputRecorder commits original human input before durable dispatch.
+type InputRecorder interface {
+	RecordInput(ctx context.Context, archiveID string, input chatarchivecmd.Input) (chatarchivecmd.Message, error)
+}
+
 type Service struct {
+	archive    InputRecorder
 	sessions   SessionPreparer
 	dispatcher Dispatcher
 	questions  QuestionResolver
@@ -47,6 +55,7 @@ func NewService(params ServiceParams) (*Service, error) {
 		})
 	}
 	return &Service{
+		archive:    params.Archive,
 		sessions:   params.Sessions,
 		dispatcher: params.Dispatcher,
 		questions:  params.Questions,
@@ -60,6 +69,9 @@ func NewService(params ServiceParams) (*Service, error) {
 // when applicable, then session preparation and durable turn dispatch.
 func (s *Service) HandleChat(ctx context.Context, request Request) (Result, error) {
 	if request.QuestionReply != nil && s.questions != nil {
+		reply := *request.QuestionReply
+		reply.OriginalInput = request.OriginalInput.Clone()
+		request.QuestionReply = &reply
 		handled, activated, err := s.handleQuestionReply(ctx, request)
 		if err != nil {
 			return Result{Settlement: retryChat(ReasonDispatchFailed)}, err
@@ -98,6 +110,9 @@ func (s *Service) HandleChat(ctx context.Context, request Request) (Result, erro
 		return s.finish(logContext, terminalResult(firstNonEmpty(prep.Reason, ReasonSessionRejected)), ReasonSessionRejected, nil)
 	}
 
+	if prep.SessionID != "" {
+		payload.Locator.SessionID = prep.SessionID
+	}
 	payload.UserID = firstNonEmpty(prep.UserID, payload.UserID)
 	payload.RequesterUserID = firstNonEmpty(prep.RequesterUserID, inbound.UserID)
 	payload.AgentSessionID = strings.TrimSpace(prep.AgentSessionID)
@@ -109,6 +124,25 @@ func (s *Service) HandleChat(ctx context.Context, request Request) (Result, erro
 		}
 	}
 
+	if s.archive != nil {
+		if inbound.OriginalInput == nil {
+			return s.finish(logContext, terminalResult(ReasonInvalidInbound), ReasonInvalidInbound, actorlayer.DecodeError(chatarchivecmd.ErrInvalid))
+		}
+		recorded, archiveErr := s.archive.RecordInput(ctx, prep.ArchiveID, *inbound.OriginalInput)
+		if archiveErr != nil {
+			if archiveErr == chatarchivecmd.ErrInvalid || archiveErr == chatarchivecmd.ErrConflict {
+				archiveErr = actorlayer.PolicyError(archiveErr)
+			} else {
+				archiveErr = actorlayer.TransientError(archiveErr)
+			}
+			settled, resultErr := errorResult(ReasonSessionRejected, archiveErr)
+			return s.finish(logContext, settled, ReasonSessionRejected, resultErr)
+		}
+		if recorded.SessionID != prep.ArchiveID {
+			return s.finish(logContext, terminalResult(ReasonSessionRejected), ReasonSessionRejected, nil)
+		}
+		payload.ArchiveID = recorded.SessionID
+	}
 	envelope, err := turncmd.SessionTurnEnvelope(payload)
 	if err != nil {
 		return s.finish(logContext, terminalResult(ReasonInvalidInbound), ReasonInvalidInbound, actorlayer.DecodeError(err))

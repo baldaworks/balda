@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"testing"
 	"time"
@@ -314,6 +315,125 @@ func TestCollectMediaGroupKeepsTransportBoundariesIsolated(t *testing.T) {
 	}
 }
 
+func TestStopMediaGroupsCancelsPendingDispatch(t *testing.T) {
+	adapter := &Adapter{mediaGroups: newMediaGroupCollector(20 * time.Millisecond)}
+	dispatched := make(chan struct{}, 1)
+	message := MessageContext{ChatID: 11, UserID: 22, MessageID: 101, MediaGroupID: testMediaGroupID}
+	if !adapter.CollectMediaGroup(message, func(context.Context, MessageContext) {
+		dispatched <- struct{}{}
+	}) {
+		t.Fatal("CollectMediaGroup() = false, want true")
+	}
+
+	if err := adapter.StopMediaGroups(context.Background()); err != nil {
+		t.Fatalf("StopMediaGroups() error = %v", err)
+	}
+	select {
+	case <-dispatched:
+		t.Fatal("pending media group dispatched after stop")
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func TestCollectMediaGroupAfterStopIsDiscarded(t *testing.T) {
+	adapter := &Adapter{mediaGroups: newMediaGroupCollector(10 * time.Millisecond)}
+	if err := adapter.StopMediaGroups(context.Background()); err != nil {
+		t.Fatalf("StopMediaGroups() error = %v", err)
+	}
+	dispatched := make(chan struct{}, 1)
+	if !adapter.CollectMediaGroup(
+		MessageContext{ChatID: 11, UserID: 22, MessageID: 101, MediaGroupID: testMediaGroupID},
+		func(context.Context, MessageContext) { dispatched <- struct{}{} },
+	) {
+		t.Fatal("CollectMediaGroup(media group after stop) = false, want true")
+	}
+	if adapter.CollectMediaGroup(MessageContext{ChatID: 11}, func(context.Context, MessageContext) {
+		dispatched <- struct{}{}
+	}) {
+		t.Fatal("CollectMediaGroup(ordinary message after stop) = true, want false")
+	}
+
+	select {
+	case <-dispatched:
+		t.Fatal("media group collected after stop was dispatched")
+	case <-time.After(30 * time.Millisecond):
+	}
+}
+
+func TestStopMediaGroupsCancelsActiveDispatchAndWaits(t *testing.T) {
+	adapter := &Adapter{mediaGroups: newMediaGroupCollector(time.Millisecond)}
+	started := make(chan struct{})
+	finished := make(chan struct{})
+	message := MessageContext{ChatID: 11, UserID: 22, MessageID: 101, MediaGroupID: testMediaGroupID}
+	if !adapter.CollectMediaGroup(message, func(ctx context.Context, _ MessageContext) {
+		close(started)
+		<-ctx.Done()
+		close(finished)
+	}) {
+		t.Fatal("CollectMediaGroup() = false, want true")
+	}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for active dispatch")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := adapter.StopMediaGroups(ctx); err != nil {
+		t.Fatalf("StopMediaGroups() error = %v", err)
+	}
+	select {
+	case <-finished:
+	default:
+		t.Fatal("StopMediaGroups() returned before active dispatch finished")
+	}
+}
+
+func TestStopMediaGroupsIsSafeToRepeatConcurrently(t *testing.T) {
+	adapter := &Adapter{mediaGroups: newMediaGroupCollector(time.Second)}
+	const callers = 8
+	errs := make(chan error, callers)
+	for range callers {
+		go func() {
+			errs <- adapter.StopMediaGroups(context.Background())
+		}()
+	}
+	for range callers {
+		if err := <-errs; err != nil {
+			t.Fatalf("StopMediaGroups() error = %v", err)
+		}
+	}
+}
+
+func TestStopMediaGroupsRespectsContextDeadline(t *testing.T) {
+	adapter := &Adapter{mediaGroups: newMediaGroupCollector(time.Millisecond)}
+	started := make(chan struct{})
+	release := make(chan struct{})
+	message := MessageContext{ChatID: 11, UserID: 22, MessageID: 101, MediaGroupID: testMediaGroupID}
+	if !adapter.CollectMediaGroup(message, func(context.Context, MessageContext) {
+		close(started)
+		<-release
+	}) {
+		t.Fatal("CollectMediaGroup() = false, want true")
+	}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for active dispatch")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	if err := adapter.StopMediaGroups(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("StopMediaGroups() error = %v, want context deadline exceeded", err)
+	}
+	close(release)
+	if err := adapter.StopMediaGroups(context.Background()); err != nil {
+		t.Fatalf("second StopMediaGroups() error = %v", err)
+	}
+}
+
 func TestMessageContextFromEvent_MapsVoiceWithoutOptionalMetadata(t *testing.T) {
 	got, ok := (&Adapter{}).MessageContextFromEvent(&events.MessageEvent{
 		Message: &client.Message{
@@ -377,17 +497,17 @@ func TestMessageContextFromEvent_PrivateChatIgnoresMessageThreadID(t *testing.T)
 			MessageThreadId: &topicID,
 			IsTopicMessage:  &isTopicMessage,
 			Chat: client.Chat{
-				Id:   2317500,
+				Id:   10001,
 				Type: "private",
 			},
-			From: &client.User{Id: 2317500},
+			From: &client.User{Id: 10001},
 			Text: textPtr(testMessageText),
 		},
 	})
 	if !ok {
 		t.Fatal("MessageContextFromEvent() ok = false, want true")
 	}
-	assertPrivateMessageContext(t, got, 0, "tg-2317500-0")
+	assertPrivateMessageContext(t, got, 0, "tg-10001-0")
 }
 
 func TestMessageContextFromEvent_SupergroupPreservesMessageThreadID(t *testing.T) {
@@ -488,17 +608,17 @@ func TestMessageContextFromEvent_PrivateTopicPreservesMessageThreadID(t *testing
 			MessageThreadId: &topicID,
 			IsTopicMessage:  &isTopicMessage,
 			Chat: client.Chat{
-				Id:   2317500,
+				Id:   10001,
 				Type: "private",
 			},
-			From: &client.User{Id: 2317500},
+			From: &client.User{Id: 10001},
 			Text: textPtr(testMessageText),
 		},
 	})
 	if !ok {
 		t.Fatal("MessageContextFromEvent() ok = false, want true")
 	}
-	assertPrivateMessageContext(t, got, 523431, "tg-2317500-523431")
+	assertPrivateMessageContext(t, got, 523431, "tg-10001-523431")
 }
 
 func assertPrivateMessageContext(t *testing.T, got MessageContext, wantTopicID int, wantSessionID string) {
@@ -708,7 +828,7 @@ func TestMessageContextFromEvent_QuoteOnlyMarksReplyAndPopulatesContext(t *testi
 		Message: &client.Message{
 			MessageId: 46,
 			Chat: client.Chat{
-				Id:   2317500,
+				Id:   10001,
 				Type: "private",
 			},
 			From:  &client.User{Id: 101},
@@ -906,10 +1026,10 @@ func TestMessageContextFromEvent_BotCommandInsideTextIsNotMarkedAsCommand(t *tes
 		Message: &client.Message{
 			MessageId: 99,
 			Chat: client.Chat{
-				Id:   2317500,
+				Id:   10001,
 				Type: "private",
 			},
-			From:     &client.User{Id: 2317500},
+			From:     &client.User{Id: 10001},
 			Text:     &text,
 			Entities: &entities,
 		},
@@ -932,10 +1052,10 @@ func TestCommandContextFromEvent_PrivateChatIgnoresMessageThreadID(t *testing.T)
 			MessageThreadId: &topicID,
 			IsTopicMessage:  &isTopicMessage,
 			Chat: client.Chat{
-				Id:   2317500,
+				Id:   10001,
 				Type: "private",
 			},
-			From: &client.User{Id: 2317500},
+			From: &client.User{Id: 10001},
 		},
 	})
 	if !ok {
@@ -944,8 +1064,8 @@ func TestCommandContextFromEvent_PrivateChatIgnoresMessageThreadID(t *testing.T)
 	if got.TopicID != 0 {
 		t.Fatalf("topic_id = %d, want 0 for private chat", got.TopicID)
 	}
-	if got.Locator.SessionID != "tg-2317500-0" {
-		t.Fatalf("session_id = %q, want tg-2317500-0", got.Locator.SessionID)
+	if got.Locator.SessionID != "tg-10001-0" {
+		t.Fatalf("session_id = %q, want tg-10001-0", got.Locator.SessionID)
 	}
 }
 
@@ -955,8 +1075,8 @@ func TestCommandContextFromEvent_SkillPreservesSelectorAndPrompt(t *testing.T) {
 		Args:    "prism:story implement this feature",
 		Message: &client.Message{
 			MessageId: 99,
-			Chat:      client.Chat{Id: 2317500, Type: "private"},
-			From:      &client.User{Id: 2317500},
+			Chat:      client.Chat{Id: 10001, Type: "private"},
+			From:      &client.User{Id: 10001},
 		},
 	})
 	if !ok {
@@ -977,10 +1097,10 @@ func TestCommandContextFromEvent_PrivateTopicPreservesMessageThreadID(t *testing
 			MessageThreadId: &topicID,
 			IsTopicMessage:  &isTopicMessage,
 			Chat: client.Chat{
-				Id:   2317500,
+				Id:   10001,
 				Type: "private",
 			},
-			From: &client.User{Id: 2317500},
+			From: &client.User{Id: 10001},
 		},
 	})
 	if !ok {
@@ -989,8 +1109,8 @@ func TestCommandContextFromEvent_PrivateTopicPreservesMessageThreadID(t *testing
 	if got.TopicID != 523431 {
 		t.Fatalf("topic_id = %d, want 523431 for private topic command", got.TopicID)
 	}
-	if got.Locator.SessionID != "tg-2317500-523431" {
-		t.Fatalf("session_id = %q, want tg-2317500-523431", got.Locator.SessionID)
+	if got.Locator.SessionID != "tg-10001-523431" {
+		t.Fatalf("session_id = %q, want tg-10001-523431", got.Locator.SessionID)
 	}
 }
 
@@ -1005,10 +1125,10 @@ func TestTopicLifecycleFromEvent_IgnoresPrivateNonTopicChat(t *testing.T) {
 			MessageThreadId: &topicID,
 			IsTopicMessage:  &isTopicMessage,
 			Chat: client.Chat{
-				Id:   2317500,
+				Id:   10001,
 				Type: "private",
 			},
-			From: &client.User{Id: 2317500},
+			From: &client.User{Id: 10001},
 		},
 	})
 	if ok {
@@ -1055,10 +1175,10 @@ func TestTopicLifecycleFromEvent_AcceptsPrivateTopic(t *testing.T) {
 			MessageThreadId: &topicID,
 			IsTopicMessage:  &isTopicMessage,
 			Chat: client.Chat{
-				Id:   2317500,
+				Id:   10001,
 				Type: "private",
 			},
-			From: &client.User{Id: 2317500},
+			From: &client.User{Id: 10001},
 		},
 	})
 	if !ok {
@@ -1067,8 +1187,8 @@ func TestTopicLifecycleFromEvent_AcceptsPrivateTopic(t *testing.T) {
 	if got.TopicID != 523452 {
 		t.Fatalf("topic_id = %d, want 523452", got.TopicID)
 	}
-	if got.Locator.SessionID != "tg-2317500-523452" {
-		t.Fatalf("session_id = %q, want tg-2317500-523452", got.Locator.SessionID)
+	if got.Locator.SessionID != "tg-10001-523452" {
+		t.Fatalf("session_id = %q, want tg-10001-523452", got.Locator.SessionID)
 	}
 }
 

@@ -10,8 +10,9 @@ import (
 	"testing"
 
 	baldaapp "github.com/baldaworks/balda/internal/apps/balda"
-	"github.com/normahq/runtime/v2/appconfig"
+	"github.com/baldaworks/runtime/v2/appconfig"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 type baldaTestConfigDocument struct {
@@ -229,7 +230,7 @@ balda:
 	}
 
 	if !doc.Balda.Slack.Enabled || !doc.Balda.Slack.Agent.Enabled {
-		t.Fatal("Slack and Slack Agent enablement env overrides were not loaded")
+		t.Fatal("legacy Slack and Slack Agent enablement env overrides were not loaded")
 	}
 	if doc.Balda.Slack.BotToken != "xoxb-test" || doc.Balda.Slack.SigningSecret != "signing-secret" {
 		t.Fatalf("slack credentials were not loaded from env")
@@ -325,6 +326,52 @@ balda:
 	}
 	if doc.Balda.Execution.Commands.Consumer != "" {
 		t.Fatalf("swarm.commands.consumer = %q, want omitted from defaults YAML", doc.Balda.Execution.Commands.Consumer)
+	}
+}
+
+func TestLoadBaldaCommandConfigCapturesSelectedProfile(t *testing.T) {
+	oldWorkingDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(oldWorkingDir)
+		viper.Reset()
+	})
+
+	for _, profile := range []string{"", "production"} {
+		viper.Reset()
+		workingDir := t.TempDir()
+		if err := os.Chdir(workingDir); err != nil {
+			t.Fatal(err)
+		}
+		if err := writeFile(filepath.Join(workingDir, ".config", "balda", "config.yaml"), `runtime:
+  providers:
+    balda_agent:
+      type: opencode_acp
+      opencode_acp:
+        model: opencode/big-pickle
+profiles:
+  production:
+    balda:
+      global_instruction: production
+balda:
+  provider: balda_agent
+`); err != nil {
+			t.Fatal(err)
+		}
+		viper.Set("profile", profile)
+		prepared, err := loadBaldaCommandConfig(false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := profile
+		if want == "" {
+			want = testBaldaDefaultProfile
+		}
+		if prepared.runtimeLoadOpts.Profile != want {
+			t.Fatalf("selected profile = %q, want %q", prepared.runtimeLoadOpts.Profile, want)
+		}
 	}
 }
 

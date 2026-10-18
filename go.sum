@@ -151,6 +151,8 @@ github.com/aymanbagabas/go-osc52/v2 v2.0.1 h1:HwpRHbFMcZLEVr42D4p7XBqjyuxQH5SMiE
 github.com/aymanbagabas/go-osc52/v2 v2.0.1/go.mod h1:uYgXzlJ7ZpABp8OJ+exZzJJhRNQ2ASbcXHWsFqH8hp8=
 github.com/baldaworks/go-actorlayer v0.1.1 h1:WGpEGabO7+fitro842XEjMcXQNxNCKob44VLWOWUIb4=
 github.com/baldaworks/go-actorlayer v0.1.1/go.mod h1:ltEHBDxgIe234BeYZ0wU6eDm3KSX5EeZmGuCvbKVH7Y=
+github.com/baldaworks/runtime/v2 v2.6.3 h1:k2Xkhyh47EpiOwE3z+K+e5GbLoiAC0Zp20vyuweWEaQ=
+github.com/baldaworks/runtime/v2 v2.6.3/go.mod h1:qcQ+ac3PJdrvdWKwqbyb+t5ck5ttqjkrpybs2sityYs=
 github.com/beorn7/perks v0.0.0-20180321164747-3a771d992973/go.mod h1:Dwedo/Wpr24TaqPxmxbtue+5NUziq4I4S80YR8gNf3Q=
 github.com/beorn7/perks v1.0.0/go.mod h1:KWe93zE9D1o94FZ5RNwFwVgaQK1VOXiVxmqh+CedLV8=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
@@ -727,10 +729,8 @@ github.com/nishanths/exhaustive v0.12.0 h1:vIY9sALmw6T/yxiASewa4TQcFsVYZQQRUQJhK
 github.com/nishanths/exhaustive v0.12.0/go.mod h1:mEZ95wPIZW+x8kC4TgC+9YCUgiST7ecevsVDTgc2obs=
 github.com/nishanths/predeclared v0.2.2 h1:V2EPdZPliZymNAn79T8RkNApBjMmVKh5XRpLm/w98Vk=
 github.com/nishanths/predeclared v0.2.2/go.mod h1:RROzoN6TnGQupbC+lqggsOlcgysk3LMK/HI84Mp280c=
-github.com/normahq/go-adk-acpagent/v2 v2.3.0 h1:/93WTTb4ZPflXly1ONcOy6yzJiU8j7mgw5DslvVm264=
-github.com/normahq/go-adk-acpagent/v2 v2.3.0/go.mod h1:i6K8oWp3QKyx130V94/1i0Ii5blP9j9H0v9MFV6/ww8=
-github.com/normahq/runtime/v2 v2.3.0 h1:JD3+EqpWzFxrJQGzKp+S02WTnMGzvouNjD0HY/CKA/g=
-github.com/normahq/runtime/v2 v2.3.0/go.mod h1:WtN++21KF1Q5Q/ORnGHikQxpjdMxfEYT7QDVhzaB08s=
+github.com/normahq/go-adk-acpagent/v2 v2.6.1 h1:rc+6hJ8rMmocioPRNJjsy0lA5R1HuWiIXK85GLQhRl8=
+github.com/normahq/go-adk-acpagent/v2 v2.6.1/go.mod h1:i6K8oWp3QKyx130V94/1i0Ii5blP9j9H0v9MFV6/ww8=
 github.com/nunnatsa/ginkgolinter v0.23.0 h1:x3o4DGYOWbBMP/VdNQKgSj+25aJKx2Pe6lHr8gBcgf8=
 github.com/nunnatsa/ginkgolinter v0.23.0/go.mod h1:9qN1+0akwXEccwV1CAcCDfcoBlWXHB+ML9884pL4SZ4=
 github.com/oapi-codegen/runtime v1.1.2 h1:P2+CubHq8fO4Q6fV1tqDBZHCwpVpvPg7oKiYzQgXIyI=

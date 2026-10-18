@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/baldaworks/go-actorlayer"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/goalkeepercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 )
 
 type QuestionActor struct {
@@ -78,6 +78,7 @@ func (a *QuestionActor) resume(ctx context.Context, env actorlayer.Envelope, que
 	if resumeTo.Target == baldaexecution.ActorTypeSession {
 		dedupeKey := actorlayer.DedupeKeyOrID(env) + ":session-resume"
 		next, err := turncmd.SessionTurnEnvelope(turncmd.SessionTurnPayload{
+			ArchiveID:       interaction.ArchiveID,
 			Text:            strings.TrimSpace(text),
 			Locator:         interaction.Locator,
 			UserID:          strings.TrimSpace(interaction.RequestedBy.UserID),

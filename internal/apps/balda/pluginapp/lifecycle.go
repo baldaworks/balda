@@ -46,8 +46,8 @@ type PreparedPluginSource struct {
 // sources, compiles the complete application snapshot, and publishes it.
 type CatalogActivator interface {
 	LockCatalogMutation(ctx context.Context) (release func(), err error)
-	PreparePluginCandidate(ctx context.Context, enabledPlugins []runtimecatalogcmd.Source, prepared *PreparedPluginSource) (runtimecatalogcmd.Snapshot, error)
-	PublishCandidate(ctx context.Context, snapshot runtimecatalogcmd.Snapshot) error
+	PreparePluginCandidate(ctx context.Context, enabledPlugins []runtimecatalogcmd.Source, prepared *PreparedPluginSource) (runtimecatalogcmd.PreparedApplicationCandidate, error)
+	PublishCandidate(ctx context.Context, snapshot runtimecatalogcmd.PreparedApplicationCandidate) error
 }
 
 // CapabilitySummary is a stable count-only view used before activation.

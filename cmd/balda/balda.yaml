@@ -2,9 +2,24 @@
 # Environment variables override these settings with BALDA_ prefix
 # Example: BALDA_TELEGRAM_TOKEN=my-token
 
+# ACP provider environment is configured in the runtime provider block:
+# runtime:
+#   providers:
+#     codex-work:
+#       type: codex_acp
+#       codex_acp:
+#         inherit_env: false
+#         env:
+#           PATH: /usr/local/bin:/usr/bin:/bin
+#           CODEX_HOME: /state/providers/codex-work
+# See docs/reference/configuration.md for inheritance and secret-handling rules.
+
 balda:
   # Provider id from runtime providers registry used for Balda sessions.
   provider: ""
+
+  # ACP initialization budget; does not change session attachment or MCP deadlines.
+  acp_startup_timeout: "60s"
 
   # Agent tool permission policy: allow_all, ask, or deny_all.
   # allow_all preserves the historical behavior; production deployments should prefer ask.
@@ -99,9 +114,12 @@ balda:
     bot_username: ""
 
   slack:
-    # Enable inbound Slack HTTP receiver.
-    # Slack's public Request URLs should terminate HTTPS outside Balda and forward
-    # plain HTTP to these local endpoints.
+    # Slack Agent uses the shared HTTP listener. Configure Slack's public Request
+    # URLs as <base_url><base_path>/gateway/slack/events and
+    # <base_url><base_path>/gateway/slack/commands.
+    # Compatibility-only defaults below keep existing environment overrides
+    # decodable. They do not enable another Slack integration or define routes
+    # on the shared HTTP listener.
     enabled: false
     # Slack bot token (xoxb-...)
     # Set via BALDA_SLACK_BOT_TOKEN env var
@@ -109,24 +127,19 @@ balda:
     # Slack signing secret used to verify incoming Events API and slash requests.
     # Set via BALDA_SLACK_SIGNING_SECRET env var
     signing_secret: ""
-    # Legacy bind setting; balda.http.listen_addr owns the shared socket.
     listen_addr: "0.0.0.0:8091"
-    # Retained Slack Events setting; Slack Agent uses agent.events_path.
     events_path: "/slack/events"
-    # Obsolete path setting; shared HTTP uses <base_path>/gateway/slack/commands.
     commands_path: "/slack/commands"
     # If true, process private channel message events when the Slack app has
     # groups:history. Public channel and DM support does not require this.
     include_private_channels: false
     agent:
-      # Enable separate Slack AI Agents ingress/runtime wiring.
-      # This is distinct from balda.slack.enabled, which keeps the current Slack chat mode.
+      # Enable Slack Agent ingress and runtime wiring.
       enabled: false
-      # Legacy bind setting; balda.http.listen_addr owns the shared socket.
+      # Compatibility-only local defaults; shared HTTP owns production routes.
       listen_addr: "0.0.0.0:8092"
-      # Obsolete path setting; shared HTTP uses <base_path>/gateway/slack/events.
       events_path: "/slack/agent/events"
-      # Optional richer UX toggles. These do not affect current slack_chat behavior.
+      # Optional richer UX toggles.
       enable_streaming: false
       suggested_prompts: false
 

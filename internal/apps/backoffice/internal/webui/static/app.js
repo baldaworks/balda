@@ -125,12 +125,17 @@ document.addEventListener("htmx:beforeSwap", function (event) {
     const explanation = heading?.nextElementSibling;
     const feedback = document.getElementById("request-error");
     if (!feedback || !main) return;
+    if (event.detail.target.hasAttribute("data-agent-hooks") && main.hasAttribute("data-agent-hooks")) {
+      event.detail.shouldSwap = true;
+      event.detail.isError = false;
+      return;
+    }
     if (event.detail.target.hasAttribute("data-fact-memory") && main.hasAttribute("data-fact-memory")) {
       event.detail.shouldSwap = true;
       event.detail.isError = false;
       return;
     }
-    if (event.detail.target.hasAttribute("data-plugins") && main.hasAttribute("data-plugins")) {
+    if ((event.detail.target.hasAttribute("data-skills") && main.hasAttribute("data-skills")) || (event.detail.target.hasAttribute("data-plugins") && main.hasAttribute("data-plugins"))) {
       event.detail.shouldSwap = true;
       event.detail.isError = false;
       return;
@@ -156,11 +161,14 @@ function syncNavigation() {
     const current = location.pathname === path ||
       (path.endsWith("/access") && location.pathname.startsWith(path + "/users/")) ||
       (path.endsWith("/mcp") && location.pathname.startsWith(path + "/")) ||
+      (path.endsWith("/skills") && location.pathname.startsWith(path + "/")) ||
       (path.endsWith("/plugins") && location.pathname.startsWith(path + "/")) ||
       (path.endsWith("/schedules") && location.pathname.startsWith(path + "/")) ||
       (path.endsWith("/webhooks") && location.pathname.startsWith(path + "/")) ||
       (path.endsWith("/aliases") && location.pathname.startsWith(path + "/")) ||
-      (path.endsWith("/memory") && location.pathname.startsWith(path + "/"));
+      (path.endsWith("/chat-sessions") && location.pathname.startsWith(path + "/")) ||
+      (path.endsWith("/memory") && location.pathname.startsWith(path + "/")) ||
+      (path.endsWith("/hooks") && location.pathname.startsWith(path + "/"));
     link.classList.toggle("active", current);
     if (current) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
@@ -219,7 +227,7 @@ function clearMCPInstructions() {
 
 window.addEventListener("pagehide", function () {
   clearMCPInstructions();
-  document.querySelectorAll("[data-binding-secret], [data-mcp-secret], [data-webhook-secret], [data-plugin-source]").forEach(function (element) {
+  document.querySelectorAll("[data-binding-secret], [data-mcp-secret], [data-webhook-secret], [data-plugin-source], [data-private-source]").forEach(function (element) {
     if (element instanceof HTMLInputElement) {
       element.value = "";
       element.removeAttribute("value");
@@ -230,7 +238,7 @@ window.addEventListener("pagehide", function () {
 });
 
 window.addEventListener("pageshow", function (event) {
-  if (event.persisted) document.querySelectorAll("[data-plugin-source]").forEach(function (input) { input.value = ""; });
+  if (event.persisted) document.querySelectorAll("[data-plugin-source], [data-private-source]").forEach(function (input) { input.value = ""; });
   syncMCPTransport();
   syncPluginMarketplaceSource();
   syncWebhookDedupe();
@@ -245,6 +253,6 @@ if (oneTimeWebhook) history.replaceState(null, "", oneTimeWebhook.dataset.webhoo
 
 document.addEventListener("htmx:afterRequest", function (event) {
   const form = event.detail.elt?.closest("form");
-  form?.querySelectorAll("[data-mcp-secret], [data-plugin-source]").forEach(function (input) { input.value = ""; });
+  form?.querySelectorAll("[data-mcp-secret], [data-plugin-source], [data-private-source]").forEach(function (input) { input.value = ""; });
   syncPluginMarketplaceSource();
 });

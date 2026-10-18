@@ -12,6 +12,7 @@ import (
 
 // TopicSession represents a single channel session's provider-backed agent session.
 type TopicSession struct {
+	archiveID         string
 	sessionID         string
 	agentSessionID    string
 	userID            string
@@ -29,6 +30,8 @@ type TopicSession struct {
 	pendingBoundaries map[BoundaryReason]boundaryAttempt
 	runtimeDeleted    bool
 	runtimeClosed     bool
+	hooksStarted      bool
+	hooksEnded        bool
 }
 
 type boundaryAttempt struct {
@@ -109,3 +112,6 @@ func (s *TopicSession) UpdateRuntimeState(ctx context.Context, state map[string]
 	_, err := updater.UpdateSessionState(ctx, s.sess.AppName(), s.sess.UserID(), s.GetAgentSessionID(), state)
 	return err
 }
+
+// GetArchiveID returns the immutable identity of this conversational lifetime.
+func (s *TopicSession) GetArchiveID() string { return s.archiveID }

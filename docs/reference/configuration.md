@@ -54,6 +54,89 @@ profiles:
       provider: <provider_id>
 ```
 
+### ACP process environment
+
+Every ACP provider block accepts `inherit_env` and `env`. Omitted
+`inherit_env` defaults to `true`, preserving the current behavior. Set it to
+`false` to start the ACP child with an empty environment, then add every
+required variable explicitly. `env` overlays inherited variables by exact
+name; an empty string sets an empty value and does not remove the variable.
+
+```yaml
+runtime:
+  providers:
+    codex-work:
+      type: codex_acp
+      codex_acp:
+        inherit_env: false
+        env:
+          PATH: /usr/local/bin:/usr/bin:/bin
+          CODEX_HOME: /state/providers/codex-work
+          HTTPS_PROXY: ""
+```
+
+Home selection stays explicit because its persistence and mounts belong to
+the deployment. Common examples are `CODEX_HOME` for Codex,
+`CLAUDE_CONFIG_DIR` for Claude Code, and the `XDG_CONFIG_HOME`,
+`XDG_DATA_HOME`, `XDG_STATE_HOME`, and `XDG_CACHE_HOME` family for OpenCode.
+Generic and Registry ACP providers can use `HOME` or the same XDG variables.
+
+Treat `env` values as secrets when they contain credentials. Balda passes the
+resolved values to the child process but does not include them in provider
+metadata, diagnostics, or logs. `balda validate` only parses and normalizes the
+configuration; it does not start providers or contact external services.
+`balda preflight` retains its existing behavior of constructing the selected
+provider runtime, using the same resolved environment as normal startup.
+
+### ACP startup timeout
+
+`balda.acp_startup_timeout` sets the ACP startup budget, default `60s`.
+It applies to Balda's ACP providers, including scoped sessions and isolated
+goal agents; hosted providers do not use it. The budget covers waiting for the
+initialization gate, launching the selected process, and its ACP `initialize`
+handshake. It does not bound prompts, complete turns, or a successfully
+initialized process's lifetime.
+
+Values use Go duration syntax, such as `30s`, `2m`, or `500ms`. Surrounding
+whitespace is trimmed. Omitted, empty, whitespace-only, and YAML `null` values
+select `60s`. Explicit `0`, `0s`, negative, malformed, overflowing, or nonzero
+unitless values fail validation before provider, bundled MCP, or ingress
+startup. Every representable positive duration is accepted; there is no
+disable or unbounded sentinel.
+
+Add these settings to the existing `.config/balda/config.yaml`:
+
+```yaml
+balda:
+  acp_startup_timeout: "30s"
+profiles:
+  patient:
+    balda:
+      acp_startup_timeout: "2m"
+```
+
+The file selects `30s`; selecting `--profile patient` selects `2m`. A nonempty
+environment override wins over the selected profile, file, and defaults,
+including when the file value is `null`:
+
+```dotenv
+BALDA_ACP_STARTUP_TIMEOUT=3m
+```
+
+This override selects `3m` regardless of profile selection. An empty
+`BALDA_ACP_STARTUP_TIMEOUT` is ignored, preserving the underlying profile,
+file, or default value. A nonempty whitespace-only override selects the `60s`
+default. Restart Balda to adopt a changed value; the budget is not persisted
+in session state and does not change the selected backend, command arguments,
+saved history, or capability pin.
+
+Startup and metadata-only session restore do not launch ACP. First invocation
+launches it lazily; successful initialization allows reuse on later turns.
+Earlier caller deadlines, cancellation, and application shutdown interrupt a
+pending startup. The healthy process outlives the startup deadline and the
+completed turn's context, until its owning runtime is closed. See the
+[operation bounds and cleanup policy](#mcp-availability-and-deadlines).
+
 ### Shared HTTP listener and public URLs
 
 `balda.http.listen_addr` is the local `host:port` bind for all HTTP-facing
@@ -72,24 +155,23 @@ The three sibling areas are `<base_path>/backoffice/` for the browser,
 `<base_path>/webhooks/<name>` for every config and managed generic webhook, and
 `<base_path>/gateway/<transport>/...` for chat transport callbacks. The
 Backoffice Webhooks management page is under `/backoffice/webhooks`; it is
-separate from the inbound `/webhooks` area. For the agreed **illustrative** asus
-values:
+separate from the inbound `/webhooks` area. For example:
 
 ```yaml
 balda:
   http:
     listen_addr: "127.0.0.1:8095"
-    base_url: https://lab.metalagman.dev
+    base_url: https://balda.example.com
     base_path: /balda
 ```
 
 | Area | Public URL |
 | --- | --- |
-| Backoffice | `https://lab.metalagman.dev/balda/backoffice/` |
-| Webhook management | `https://lab.metalagman.dev/balda/backoffice/webhooks` |
-| Config or managed webhook `orders` | `https://lab.metalagman.dev/balda/webhooks/orders` |
-| Slack Events | `https://lab.metalagman.dev/balda/gateway/slack/events` |
-| Slack Commands | `https://lab.metalagman.dev/balda/gateway/slack/commands` |
+| Backoffice | `https://balda.example.com/balda/backoffice/` |
+| Webhook management | `https://balda.example.com/balda/backoffice/webhooks` |
+| Config or managed webhook `orders` | `https://balda.example.com/balda/webhooks/orders` |
+| Slack Events | `https://balda.example.com/balda/gateway/slack/events` |
+| Slack Commands | `https://balda.example.com/balda/gateway/slack/commands` |
 
 The local `listen_addr` does not appear in those public URLs. With an empty
 `base_path`, the same area paths start at `/backoffice`, `/webhooks`, and
@@ -100,16 +182,20 @@ listen-address fields are ignored for binding once the shared listener is in
 use; the old Backoffice address fields do not create a separate browser mount.
 Every generic webhook derives its callback path from the current shared prefix
 and immutable route name; changing `base_path` moves all route addresses after
-restart without rewriting route rows. For generic webhook display, only an
+restart without rewriting route rows. For Backoffice callback display, only an
 explicit `balda.http.base_url` supplies the public origin. If it is omitted,
-Backoffice shows the canonical root-relative callback path and an explanation,
-even when browser authentication uses a fallback `balda.backoffice.public_url`.
-Chat transport callbacks use only their canonical `/gateway` paths.
+generic webhook rows and Overview channel cards show canonical root-relative
+callback paths, even when browser authentication uses a fallback
+`balda.backoffice.public_url`. Chat transport callbacks use only their canonical
+`/gateway` paths. Overview also shows Telegram formatting mode, Slack Agent
+private-channel, streaming and suggested-prompt flags, and the Mattermost server
+URL with userinfo, query and fragment removed. Workspace → Agent shows the
+effective provider, selected profile, model, reasoning effort and global
+instruction read-only; configuration changes still require a restart.
 
-The live asus ingress, deployment, and Telegram/Slack/external callback
-registrations are unchanged by this Story. The table is an application URL
-example, not a claim that those addresses are already publicly reachable;
-external exposure needs a separate ingress and callback-registration rollout.
+The table illustrates application URL construction. Configure your reverse
+proxy and external callback registrations to match your chosen origin and
+prefix.
 See [Backoffice startup and browser security](backoffice.md#startup-and-configuration).
 
 ### Docker Compose Runtime
@@ -320,16 +406,29 @@ remains an error.
 | --- | --- |
 | Native ADK MCP initialization and complete tool discovery | 10 seconds |
 | Native ADK MCP tool call, including reconnect | 120 seconds |
-| ACP process initialization and each new/resume attachment RPC | 10 seconds |
+| ACP gate waiting, process launch, and initialization | `balda.acp_startup_timeout`, default 60 seconds |
+| Each ACP `session/new` or `session/resume` attachment RPC | 10 seconds |
 | Explicit candidate probe discovery | 10 seconds |
 | Balda-owned stdio handshake and discovery | 10 seconds |
-| Owned stdio graceful stop | 5 seconds, then forced termination with reaping retained by its owner |
+| Balda-owned MCP stdio graceful stop | 5 seconds, then forced termination with reaping retained by its owner |
+| ACP immediate-child cleanup | Up to 200ms graceful exit, then forced termination and up to 5 seconds waiting for cleanup |
 
-Earlier caller cancellation or deadlines win. These bounds cover MCP setup and
-tool operations, not the lifetime of a model prompt or conversation. Slow servers
+Earlier caller cancellation or deadlines win. These bounds cover ACP startup,
+session attachment, MCP setup and tool operations, not the lifetime of a model
+prompt, complete turn, or conversation. Slow servers
 can fail an invocation under these limits. Native SDK cancellation cleanup stays
 owned after a caller returns; concurrent callers wait within their own deadlines
 without starting extra setup workers or replaying an ambiguous tool call.
+
+ACP startup timeout, cancellation, or shutdown triggers cleanup of the owned
+immediate child.
+Cleanup has its own finite wait, independent of the startup budget, so returning
+an error can take that additional time. If cleanup has not finished after the
+force-kill wait, the adapter reports a cleanup-timeout error alongside the
+startup cause and retains its sole reaper until process wait completes. This
+does not guarantee that an unkillable kernel task can be reaped, and does not
+extend ownership to a wrapper's descendant process group. ACP cleanup is
+separate from Balda's MCP stdio supervision below.
 
 Balda schedules owned stdio during startup without joining readiness. Launch
 failure, failed discovery and process exit retry after 1, 2, 4, 8, 16 and at most
@@ -584,10 +683,7 @@ balda:
 - `balda.mattermost.commands_token`: Mattermost root slash-command integration token (required when `commands_enabled=true`; env: `BALDA_MATTERMOST_COMMANDS_TOKEN`)
 - `balda.slack.bot_token`: Bot OAuth Token used for Slack Agent Session and chat methods (required when Slack Agent is enabled; env: `BALDA_SLACK_BOT_TOKEN`)
 - `balda.slack.signing_secret`: signing secret used to verify exact Events API and slash-command requests (required when Slack Agent is enabled; env: `BALDA_SLACK_SIGNING_SECRET`)
-- `balda.slack.commands_path`: obsolete path setting; the shared listener uses `<base_path>/gateway/slack/commands` (env: `BALDA_SLACK_COMMANDS_PATH`)
 - `balda.slack.agent.enabled`: enable Slack Agent HTTP ingress (default: `false`; env: `BALDA_SLACK_AGENT_ENABLED`)
-- `balda.slack.agent.listen_addr`: legacy bind setting; ignored in favor of `balda.http.listen_addr` (env: `BALDA_SLACK_AGENT_LISTEN_ADDR`)
-- `balda.slack.agent.events_path`: obsolete path setting; the shared listener uses `<base_path>/gateway/slack/events` (env: `BALDA_SLACK_AGENT_EVENTS_PATH`)
 - `balda.slack.agent.enable_streaming`: deliver responses through Slack streaming methods instead of `chat.postMessage` (default: `false`; env: `BALDA_SLACK_AGENT_ENABLE_STREAMING`)
 - `balda.slack.agent.suggested_prompts`: enable Slack Agent suggested prompts (default: `false`; env: `BALDA_SLACK_AGENT_SUGGESTED_PROMPTS`)
 - `balda.features.attachments.max_files_per_message`: maximum files accepted in one inbound attachment set (default: `10`; env: `BALDA_FEATURES_ATTACHMENTS_MAX_FILES_PER_MESSAGE`); a Slack thread turn shares this count between current-message and historical files

@@ -11,6 +11,28 @@ exclude:
   - .config
 
 vendors:
+  native_hook_process_runtime:
+    in:
+      - golang.org/x/sys/unix
+
+  native_hook_provider_config:
+    in:
+      - github.com/baldaworks/runtime/v2/agentconfig
+
+  hook_policy_dependencies:
+    in:
+      - github.com/google/uuid
+
+  hook_wiring_dependencies:
+    in:
+      - go.uber.org/fx
+
+  adk_hook_dependencies:
+    in:
+      - google.golang.org/adk/v2/agent
+      - google.golang.org/adk/v2/plugin
+      - google.golang.org/adk/v2/tool
+
   command_outbox_runtime:
     in:
       - github.com/baldaworks/go-actorlayer
@@ -31,6 +53,22 @@ vendors:
       - google.golang.org/adk/v2/platform
 
 components:
+  chat_archive_app:
+    in:
+      - internal/apps/balda/chatarchiveapp
+
+  chat_archive_backoffice_wiring:
+    in:
+      - internal/apps/balda/chatarchivebackofficeapp
+
+  chat_archive_wiring:
+    in:
+      - internal/apps/balda/chatarchivefx
+
+  chat_archive_contracts:
+    in:
+      - internal/apps/balda/chatarchivecmd
+
   # Extraction-ready session-memory values and semantic API. This package may
   # use only the standard library and must remain independent of Balda policy.
   session_memory_core:
@@ -104,6 +142,7 @@ components:
       - internal/apps/balda/progress
       - internal/apps/balda/permissioncmd
       - internal/apps/balda/permissionfmt
+      - internal/apps/balda/skillcmd
       - internal/apps/balda/plugincmd
       - internal/apps/balda/progressfmt
       - internal/apps/balda/questioncmd
@@ -126,7 +165,86 @@ components:
     in:
       - internal/apps/balda/mcpcmd
 
-  # Global fact policy owns serialized mutations; persistence stays behind a port.
+  # Managed hook policy owns validation and execution; storage is behind a port.
+  hook_contracts:
+    in:
+      - internal/apps/balda/hookcmd
+
+  # Standalone skill policy consumes guarded storage through its own port.
+  skill_policy:
+    in:
+      - internal/apps/balda/skillapp
+
+  # Host-local CLI adapter projects the canonical standalone skill lifecycle
+  # into safe command DTOs and confirmation contracts.
+  skill_cli_application:
+    in:
+      - internal/apps/balda/skillcliapp
+
+  skill_backoffice_wiring:
+    in:
+      - internal/apps/balda/skillbackofficeapp
+  skill_wiring:
+    in:
+      - internal/apps/balda/skillfx
+
+  hook_policy:
+    in:
+      - internal/apps/balda/hooks
+
+  # Provider-neutral adapter from stock ADK callbacks to normalized hook
+  # events. Provider configuration and execution policy stay outside it.
+  adk_hook_adapter:
+    in:
+      - internal/apps/balda/hookadk
+
+  hook_backoffice_wiring:
+    in:
+      - internal/apps/balda/hookbackofficeapp
+
+  # Provider-neutral authenticated Event/Result bindings and process cleanup.
+  # Provider config, traversal, launch mutation, and wire codecs are forbidden.
+  native_hook_bindings:
+    in:
+      - internal/apps/balda/hookprovider
+
+  # Application service composes live policy, neutral bindings, and adapters.
+  native_hook_app:
+    in:
+      - internal/apps/balda/hooknativeapp
+
+  # Target registry iterates provider-owned adapters for one catalog leaf. It
+  # owns no provider switch and no binding transport implementation.
+  native_hook_registry:
+    in:
+      - internal/apps/balda/hooknative
+
+  native_hook_runtime:
+    in:
+      - internal/apps/balda/hooknative/proxyruntime
+
+  native_hook_host:
+    in:
+      - internal/apps/balda/hooknativehost
+
+  # Target concrete adapters own provider detection, launch mutation and wire
+  # normalization. New providers extend this component instead of hookprovider.
+  concrete_native_hook_adapters:
+    in:
+      - internal/apps/balda/hooknative/claude
+      - internal/apps/balda/hooknative/codex
+      - internal/apps/balda/hooknative/opencode
+
+  # Reusable behavior contracts for neutral bindings and concrete adapters.
+  native_hook_testkit:
+    in:
+      - internal/apps/balda/hooknativetest
+      - internal/apps/balda/hooknativeadaptertest
+
+  hook_wiring:
+    in:
+      - internal/apps/balda/hookfx
+
   memory_policy:
     in:
       - internal/apps/balda/memory
@@ -321,7 +439,10 @@ components:
       - internal/apps/balda/mcpbridge
 
   # Composition adapters for catalog sources, lifecycle, scope overlays, and
-  # command/skill/MCP projections.
+  # command/skill/MCP projections. Managed skills enter through an origin-free
+  # local storage port and exact archive descriptors. skill_policy deliberately
+  # stays outside catalog_wiring dependencies: catalog publication must not call
+  # management services while holding catalog locks.
   catalog_wiring:
     in:
       - internal/apps/balda/catalogapp
@@ -338,6 +459,9 @@ components:
       - internal/apps/balda/execution
 
   # Composition adapters bind ingress-owned ports to concrete provider runtimes.
+  # chatfx owns the shared SessionPreparer implementation. Conversational
+  # handlersfx wrappers only present its neutral result; session.Manager owns
+  # active/restore/create selection. Scoped forbidigo rules enforce that seam.
   ingress_wiring:
     in:
       - internal/apps/balda/chatfx
@@ -445,6 +569,7 @@ components:
       - internal/apps/balda/paths
       - internal/apps/balda/redaction
       - internal/apps/balda/shutdown
+      - internal/apps/balda/stateowner
       - internal/apps/sessionmcp
       - internal/apps/workspacemcp
 
@@ -458,6 +583,38 @@ components:
       - cmd/balda
 
 deps:
+  chat_archive_app:
+    mayDependOn:
+      - chat_archive_contracts
+    # Consumer-owned storage ports receive wiring adapters; constructor scanning
+    # otherwise reverses that intended dependency. Direct imports stay enforced.
+    deepScan: false
+    anyVendorDeps: false
+
+    canUse:
+      - hook_policy_dependencies
+
+  # Archive composition exposes SQL capabilities through consuming ports in
+  # session, ingress and sessionturnapp; final replay policy stays in its executor.
+  # Boot reconciliation stays in storage: no provider or transport dependency.
+  chat_archive_wiring:
+    mayDependOn:
+      - chat_archive_app
+      - contracts
+      - command_wiring
+      - chat_archive_contracts
+      - application
+      - storage
+    deepScan: false
+    anyVendorDeps: false
+    canUse:
+      - hook_wiring_dependencies
+      - command_outbox_runtime
+
+  chat_archive_contracts:
+    mayDependOn:
+      - chat_archive_contracts
+    anyVendorDeps: false
   question_outbox:
     mayDependOn:
       - question_outbox
@@ -550,6 +707,7 @@ deps:
 
   contracts:
     mayDependOn:
+      - chat_archive_contracts
       - foundation
       - contracts
       - neutral_registry
@@ -570,6 +728,153 @@ deps:
     mayDependOn:
       - mcp_contracts
     anyVendorDeps: false
+
+  hook_contracts:
+    mayDependOn:
+      - user_contracts
+    anyVendorDeps: false
+
+  skill_policy:
+    mayDependOn:
+      - contracts
+    canUse:
+      - hook_policy_dependencies
+    anyVendorDeps: false
+    deepScan: false
+
+  skill_cli_application:
+    mayDependOn:
+      - contracts
+      - skill_policy
+    anyVendorDeps: false
+    deepScan: false
+
+  skill_backoffice_wiring:
+    mayDependOn:
+      - contracts
+      - skill_policy
+      - backoffice_application
+    deepScan: false
+    anyVendorDeps: false
+  skill_wiring:
+    mayDependOn:
+      - skill_policy
+      - catalog_wiring
+      - storage
+    canUse:
+      - hook_wiring_dependencies
+    anyVendorDeps: false
+    deepScan: false
+
+  hook_policy:
+    mayDependOn:
+      - hook_contracts
+      - user_contracts
+    deepScan: false
+    anyVendorDeps: false
+    canUse:
+      - hook_policy_dependencies
+
+  hook_backoffice_wiring:
+    mayDependOn:
+      - hook_contracts
+      - hook_policy
+    deepScan: false
+    anyVendorDeps: false
+
+  native_hook_bindings:
+    mayDependOn:
+      - hook_contracts
+    deepScan: false
+    anyVendorDeps: false
+    canUse:
+      - native_hook_process_runtime
+
+  native_hook_app:
+    mayDependOn:
+      - hook_contracts
+      - native_hook_bindings
+      - native_hook_registry
+      - native_hook_host
+    deepScan: false
+    anyVendorDeps: false
+    canUse:
+      - native_hook_provider_config
+
+  native_hook_runtime:
+    mayDependOn:
+      - hook_contracts
+      - native_hook_bindings
+      - native_hook_registry
+    deepScan: false
+    anyVendorDeps: false
+    canUse:
+      - native_hook_process_runtime
+
+  native_hook_host:
+    mayDependOn:
+      - native_hook_bindings
+    deepScan: false
+    anyVendorDeps: false
+    canUse:
+      - native_hook_provider_config
+
+  native_hook_registry:
+    mayDependOn:
+      - hook_contracts
+    deepScan: false
+    anyVendorDeps: false
+    canUse:
+      - native_hook_provider_config
+
+  concrete_native_hook_adapters:
+    mayDependOn:
+      - hook_contracts
+      - native_hook_bindings
+      - native_hook_registry
+      - native_hook_runtime
+      - native_hook_host
+    deepScan: false
+    anyVendorDeps: false
+    canUse:
+      - native_hook_process_runtime
+      - native_hook_provider_config
+
+  native_hook_testkit:
+    mayDependOn:
+      - hook_contracts
+      - native_hook_bindings
+      - native_hook_registry
+      - native_hook_runtime
+      - native_hook_host
+      - native_hook_testkit
+    deepScan: false
+    anyVendorDeps: false
+    canUse:
+      - native_hook_provider_config
+
+  hook_wiring:
+    mayDependOn:
+      - adk_hook_adapter
+      - native_hook_app
+      - hook_contracts
+      - hook_policy
+      - hook_backoffice_wiring
+      - application
+      - storage
+    deepScan: false
+    anyVendorDeps: false
+    canUse:
+      - hook_wiring_dependencies
+      - adk_hook_dependencies
+
+  adk_hook_adapter:
+    mayDependOn:
+      - hook_contracts
+    deepScan: false
+    anyVendorDeps: false
+    canUse:
+      - adk_hook_dependencies
 
   memory_policy:
     mayDependOn:
@@ -664,6 +969,8 @@ deps:
 
   backoffice_application:
     mayDependOn:
+      - chat_archive_contracts
+      - hook_contracts
       - memory_contracts
       - alias_contracts
       - mcp_contracts
@@ -715,6 +1022,8 @@ deps:
 
   backoffice_webui:
     mayDependOn:
+      - chat_archive_contracts
+      - hook_contracts
       - contracts
       - memory_contracts
       - alias_contracts
@@ -739,6 +1048,8 @@ deps:
 
   application:
     mayDependOn:
+      - chat_archive_contracts
+      - hook_contracts
       - memory_policy
       - memory_contracts
       - webhook_route_contracts
@@ -826,6 +1137,13 @@ deps:
     deepScan: false
     anyVendorDeps: false
 
+  chat_archive_backoffice_wiring:
+    mayDependOn:
+      - chat_archive_app
+      - chat_archive_contracts
+    deepScan: false
+    anyVendorDeps: false
+
   memory_backoffice_wiring:
     mayDependOn:
       - memory_contracts
@@ -862,6 +1180,9 @@ deps:
 
   catalog_wiring:
     mayDependOn:
+      - native_hook_bindings
+      - native_hook_registry
+      - concrete_native_hook_adapters
       - contracts
       - mcp_contracts
       - mcp_management
@@ -902,6 +1223,7 @@ deps:
 
   ingress_wiring:
     mayDependOn:
+      - chat_archive_contracts
       - memory_policy
       - auth_payload
       - contracts
@@ -932,6 +1254,7 @@ deps:
 
   command_wiring:
     mayDependOn:
+      - chat_archive_contracts
       - contracts
       - user_contracts
       - user_application
@@ -971,6 +1294,7 @@ deps:
 
   telegram_transport:
     mayDependOn:
+      - chat_archive_contracts
       - auth_payload
       - foundation
       - contracts
@@ -995,6 +1319,7 @@ deps:
 
   zulip_transport:
     mayDependOn:
+      - chat_archive_contracts
       - foundation
       - contracts
       - neutral_registry
@@ -1017,6 +1342,7 @@ deps:
 
   slackagent_transport:
     mayDependOn:
+      - chat_archive_contracts
       - auth_payload
       - user_contracts
       - foundation
@@ -1040,6 +1366,7 @@ deps:
 
   mattermost_transport:
     mayDependOn:
+      - chat_archive_contracts
       - auth_payload
       - foundation
       - contracts
@@ -1088,6 +1415,8 @@ deps:
 
   storage:
     mayDependOn:
+      - chat_archive_contracts
+      - hook_contracts
       - memory_contracts
       - alias_contracts
       - foundation
@@ -1109,6 +1438,19 @@ deps:
 
   composition_root:
     mayDependOn:
+      - chat_archive_wiring
+      - chat_archive_backoffice_wiring
+      - chat_archive_app
+      - skill_wiring
+      - skill_backoffice_wiring
+      - native_hook_app
+      - native_hook_registry
+      - native_hook_host
+      - concrete_native_hook_adapters
+      - hook_policy
+      - hook_wiring
+      - hook_backoffice_wiring
+      - hook_contracts
       - command_outbox_wiring
       - plugin_backoffice_wiring
       - memory_backoffice_wiring
@@ -1167,6 +1509,9 @@ deps:
 
   entrypoints:
     mayDependOn:
+      - native_hook_registry
+      - concrete_native_hook_adapters
+      - native_hook_runtime
       - foundation
       - composition_root
       - application
@@ -1178,5 +1523,8 @@ deps:
       - infrastructure
       - delivery
       - mcp_wiring
+      - skill_cli_application
+      - skill_policy
+      - catalog_wiring
     deepScan: false
     anyVendorDeps: true

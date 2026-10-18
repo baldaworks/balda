@@ -16,6 +16,8 @@ type recordingBlobStore struct {
 	descriptor attachment.Descriptor
 	body       string
 	maxBytes   int64
+	maxValues  []int64
+	enforceMax bool
 	err        error
 }
 
@@ -24,11 +26,15 @@ func (s *recordingBlobStore) Enabled() bool { return s.enabled }
 func (s *recordingBlobStore) Persist(_ context.Context, descriptor attachment.Descriptor, body io.Reader, maxBytes int64) (attachment.Descriptor, error) {
 	s.descriptor = descriptor
 	s.maxBytes = maxBytes
+	s.maxValues = append(s.maxValues, maxBytes)
 	data, err := io.ReadAll(body)
 	if err != nil {
 		return attachment.Descriptor{}, err
 	}
 	s.body = string(data)
+	if s.enforceMax && int64(len(data)) > maxBytes {
+		return attachment.Descriptor{}, attachment.ErrTooLarge
+	}
 	if s.err != nil {
 		return attachment.Descriptor{}, s.err
 	}
@@ -40,6 +46,7 @@ func (s *recordingBlobStore) Persist(_ context.Context, descriptor attachment.De
 type recordingTelegramFileDownloader struct {
 	fileIDs []string
 	body    *trackingReadCloser
+	bodies  []io.ReadCloser
 	err     error
 }
 
@@ -47,6 +54,9 @@ func (d *recordingTelegramFileDownloader) DownloadFile(_ context.Context, fileID
 	d.fileIDs = append(d.fileIDs, fileID)
 	if d.err != nil {
 		return nil, d.err
+	}
+	if len(d.bodies) >= len(d.fileIDs) {
+		return d.bodies[len(d.fileIDs)-1], nil
 	}
 	return d.body, nil
 }
@@ -61,11 +71,15 @@ func (r *trackingReadCloser) Close() error {
 	return nil
 }
 
+func testTelegramAttachmentLimits() attachment.Limits {
+	return attachment.Limits{MaxFilesPerMessage: 10, MaxFileBytes: 32, MaxTotalBytes: 64}
+}
+
 func TestAttachmentStoreDownloadsAndPersistsTelegramFile(t *testing.T) {
 	blobs := &recordingBlobStore{enabled: true}
 	body := &trackingReadCloser{Reader: strings.NewReader("telegram body")}
 	downloader := &recordingTelegramFileDownloader{body: body}
-	store := &attachmentStore{blobs: blobs, downloader: downloader}
+	store := &attachmentStore{blobs: blobs, downloader: downloader, limits: testTelegramAttachmentLimits()}
 	descriptor := attachment.Descriptor{
 		Kind:      attachment.KindDocument,
 		FileID:    "telegram-file",
@@ -90,8 +104,8 @@ func TestAttachmentStoreDownloadsAndPersistsTelegramFile(t *testing.T) {
 	if blobs.body != "telegram body" {
 		t.Fatalf("persisted body = %q, want telegram body", blobs.body)
 	}
-	if blobs.maxBytes != maxTelegramAttachmentBytes {
-		t.Fatalf("max bytes = %d, want %d", blobs.maxBytes, maxTelegramAttachmentBytes)
+	if blobs.maxBytes != testTelegramAttachmentLimits().MaxFileBytes {
+		t.Fatalf("max bytes = %d, want %d", blobs.maxBytes, testTelegramAttachmentLimits().MaxFileBytes)
 	}
 	if !body.closed {
 		t.Fatal("downloaded body was not closed")
@@ -101,7 +115,7 @@ func TestAttachmentStoreDownloadsAndPersistsTelegramFile(t *testing.T) {
 func TestAttachmentStoreOffPreservesTelegramDescriptors(t *testing.T) {
 	blobs := &recordingBlobStore{enabled: false}
 	downloader := &recordingTelegramFileDownloader{body: &trackingReadCloser{Reader: strings.NewReader("unused")}}
-	store := &attachmentStore{blobs: blobs, downloader: downloader}
+	store := &attachmentStore{blobs: blobs, downloader: downloader, limits: testTelegramAttachmentLimits()}
 	descriptor := attachment.Descriptor{Kind: attachment.KindPhoto, FileID: "photo"}
 
 	got, err := store.PersistTelegram(context.Background(), []attachment.Descriptor{descriptor})
@@ -123,6 +137,7 @@ func TestAttachmentStoreClosesBodyAfterPersistenceFailure(t *testing.T) {
 	store := &attachmentStore{
 		blobs:      blobs,
 		downloader: &recordingTelegramFileDownloader{body: body},
+		limits:     testTelegramAttachmentLimits(),
 	}
 
 	_, err := store.PersistTelegram(context.Background(), []attachment.Descriptor{{Kind: attachment.KindDocument, FileID: "file"}})
@@ -131,6 +146,97 @@ func TestAttachmentStoreClosesBodyAfterPersistenceFailure(t *testing.T) {
 	}
 	if !body.closed {
 		t.Fatal("downloaded body was not closed after persistence failure")
+	}
+}
+
+func TestAttachmentStoreRejectsTooManyFilesBeforeDownload(t *testing.T) {
+	downloader := &recordingTelegramFileDownloader{body: &trackingReadCloser{Reader: strings.NewReader("unused")}}
+	store := &attachmentStore{
+		blobs:      &recordingBlobStore{enabled: true},
+		downloader: downloader,
+		limits:     attachment.Limits{MaxFilesPerMessage: 1, MaxFileBytes: 10, MaxTotalBytes: 20},
+	}
+	descriptors := []attachment.Descriptor{
+		{Kind: attachment.KindDocument, FileID: "first"},
+		{Kind: attachment.KindDocument, FileID: "second"},
+	}
+
+	_, err := store.PersistTelegram(context.Background(), descriptors)
+	if !errors.Is(err, attachment.ErrTooLarge) {
+		t.Fatalf("PersistTelegram() error = %v, want ErrTooLarge", err)
+	}
+	if len(downloader.fileIDs) != 0 {
+		t.Fatalf("downloaded file IDs = %v, want none", downloader.fileIDs)
+	}
+}
+
+func TestAttachmentStoreAppliesRemainingAggregateLimit(t *testing.T) {
+	blobs := &recordingBlobStore{enabled: true}
+	downloader := &recordingTelegramFileDownloader{bodies: []io.ReadCloser{
+		&trackingReadCloser{Reader: strings.NewReader("123456")},
+		&trackingReadCloser{Reader: strings.NewReader("7890")},
+	}}
+	store := &attachmentStore{
+		blobs:      blobs,
+		downloader: downloader,
+		limits:     attachment.Limits{MaxFilesPerMessage: 2, MaxFileBytes: 8, MaxTotalBytes: 10},
+	}
+	descriptors := []attachment.Descriptor{
+		{Kind: attachment.KindDocument, FileID: "first"},
+		{Kind: attachment.KindDocument, FileID: "second"},
+	}
+
+	got, err := store.PersistTelegram(context.Background(), descriptors)
+	if err != nil {
+		t.Fatalf("PersistTelegram() error = %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("persisted descriptors = %d, want 2", len(got))
+	}
+	if len(blobs.maxValues) != 2 || blobs.maxValues[0] != 8 || blobs.maxValues[1] != 4 {
+		t.Fatalf("persistence limits = %v, want [8 4]", blobs.maxValues)
+	}
+}
+
+func TestAttachmentStoreRejectsAggregateOverflow(t *testing.T) {
+	blobs := &recordingBlobStore{enabled: true, enforceMax: true}
+	firstBody := &trackingReadCloser{Reader: strings.NewReader("123456")}
+	secondBody := &trackingReadCloser{Reader: strings.NewReader("78901")}
+	store := &attachmentStore{
+		blobs: blobs,
+		downloader: &recordingTelegramFileDownloader{bodies: []io.ReadCloser{
+			firstBody,
+			secondBody,
+		}},
+		limits: attachment.Limits{MaxFilesPerMessage: 2, MaxFileBytes: 8, MaxTotalBytes: 10},
+	}
+	descriptors := []attachment.Descriptor{
+		{Kind: attachment.KindDocument, FileID: "first"},
+		{Kind: attachment.KindDocument, FileID: "second"},
+	}
+
+	_, err := store.PersistTelegram(context.Background(), descriptors)
+	if !errors.Is(err, attachment.ErrTooLarge) {
+		t.Fatalf("PersistTelegram() error = %v, want ErrTooLarge", err)
+	}
+	if len(blobs.maxValues) != 2 || blobs.maxValues[1] != 4 {
+		t.Fatalf("persistence limits = %v, want second limit 4", blobs.maxValues)
+	}
+	if !firstBody.closed || !secondBody.closed {
+		t.Fatalf("body closure = (%v, %v), want both closed", firstBody.closed, secondBody.closed)
+	}
+}
+
+func TestAttachmentStoreRejectsInvalidLimits(t *testing.T) {
+	downloader := &recordingTelegramFileDownloader{body: &trackingReadCloser{Reader: strings.NewReader("unused")}}
+	store := &attachmentStore{blobs: &recordingBlobStore{enabled: true}, downloader: downloader}
+
+	_, err := store.PersistTelegram(context.Background(), []attachment.Descriptor{{Kind: attachment.KindDocument, FileID: "file"}})
+	if err == nil {
+		t.Fatal("PersistTelegram() error = nil, want invalid limits error")
+	}
+	if len(downloader.fileIDs) != 0 {
+		t.Fatalf("downloaded file IDs = %v, want none", downloader.fileIDs)
 	}
 }
 

@@ -58,6 +58,10 @@ func (c sessionSettlementCoordinator) settle(ctx context.Context, env actorlayer
 			Msg("settling conversational turn after final outcome acceptance")
 		return nil
 	}
+	var archival *turncmd.FinalArchiveError
+	if errors.As(runErr, &archival) {
+		return actorlayer.PermanentError(runErr)
+	}
 	// Contract: once task terminal failure is durably recorded, settle command without retry.
 	if sessionTurnUsesJobLifecycle(env, payload) {
 		return nil

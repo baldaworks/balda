@@ -36,7 +36,7 @@ type webhooksHTTPFixture struct {
 	testErr            error
 }
 
-const testWebhookPublicOrigin = "https://lab.metalagman.dev"
+const testWebhookPublicOrigin = "https://balda.example.com"
 
 func TestWebhooksCreateWithRealManagedRoutePolicy(t *testing.T) {
 	t.Run("shared", func(t *testing.T) {

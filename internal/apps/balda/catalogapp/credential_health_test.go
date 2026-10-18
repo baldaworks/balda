@@ -15,8 +15,8 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/mcpfx"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpruntime"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
+	"github.com/baldaworks/runtime/v2/mcpregistry"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/normahq/runtime/v2/mcpregistry"
 )
 
 func TestTransientRefreshFailureReportsUnavailableAndRecovers(t *testing.T) {

@@ -14,6 +14,7 @@ var Module = fx.Module("balda_questions",
 		func(params struct {
 			fx.In
 
+			Archive    Archive
 			Store      baldastate.QuestionStore
 			Scheduled  baldastate.ScheduledJobStore
 			Controls   ControlPublisher `optional:"true"`
@@ -24,6 +25,7 @@ var Module = fx.Module("balda_questions",
 				return nil, fmt.Errorf("question store is required")
 			}
 			service := New(params.Store, params.Scheduled, params.Logger.With().Str("component", "balda.questions").Logger())
+			service.SetArchive(params.Archive)
 			service.SetControlPublisher(params.Controls)
 			service.SetStructuredRegistry(params.Structured)
 			return service, nil

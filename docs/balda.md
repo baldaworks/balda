@@ -52,7 +52,10 @@ can be read, linked, and indexed independently:
   snapshot pinning, retries, queues, and replay boundaries.
 - [Plugins and session capabilities](reference/plugins.md) — Agent Plugins
   package boundaries, the Balda extension schema, and session-bound commands,
-  skills, and MCP servers.
+  skills, and MCP servers; standalone Skills management, retained resources and
+  explicit session adoption.
+- [Standalone skill management](reference/skills.md) — the host-local
+  `balda skill` CLI, safe selectors, offline mutations and recovery.
 - [Operations and verification](reference/operations.md) — troubleshooting,
   workspace MCP verification, and acceptance checks.
 
@@ -60,3 +63,5 @@ Focused guides remain separate from the technical reference, including
 [Telegram message formatting](telegram-formatting.md),
 [Slack Agent setup](slack.md),
 [Mattermost setup](mattermost.md), and the [command reference](commands.md).
+
+- [Managed agent hooks](reference/agent-hooks.md): lifecycle boundaries, Backoffice configuration and command protocol.

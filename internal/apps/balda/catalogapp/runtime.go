@@ -24,8 +24,8 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalog"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
-	"github.com/normahq/runtime/v2/agentconfig"
-	"github.com/normahq/runtime/v2/mcpregistry"
+	"github.com/baldaworks/runtime/v2/agentconfig"
+	"github.com/baldaworks/runtime/v2/mcpregistry"
 )
 
 const builtinRevisionSeed = "balda-builtin-commands-v1"
@@ -44,6 +44,7 @@ type Runtime struct {
 	loader                     *runtimecatalog.SourceLoader
 	archive                    *runtimecatalog.RevisionArchive
 	reader                     *runtimecatalog.SkillReader
+	managedSkills              managedSkillStore
 	plugins                    baldastate.PluginStore
 	managedMCP                 baldastate.MCPStore
 	credentials                *mcpmanage.Service
@@ -55,6 +56,7 @@ type Runtime struct {
 	mcp                        *mcpruntime.Reconciler
 	mcpCredentials             mcpCredentialHealth
 	ads                        *commandfx.AdvertisementProjector
+	maintenance                bool
 }
 
 // NewRuntime creates the application catalog without publishing mutable state.
@@ -88,7 +90,7 @@ func NewRuntime(
 	}
 	runtime := &Runtime{
 		stateDir: stateDir, agentSkillDir: strings.TrimSpace(agentSkillDir), codexSkillDir: strings.TrimSpace(codexSkillDir), compiler: runtimecatalog.NewCompiler(), store: runtimecatalog.NewStore(),
-		loader: loader, archive: archive, reader: reader, plugins: provider.Plugins(), managedMCP: provider.MCP(), sessions: provider.Sessions(), kv: provider.AppKV(),
+		loader: loader, archive: archive, reader: reader, managedSkills: provider.SkillManagement(), plugins: provider.Plugins(), managedMCP: provider.MCP(), sessions: provider.Sessions(), kv: provider.AppKV(),
 		builtin: builtinSource(advertisements), configuredMCP: configuredMCPSources(configured), credentials: credentials,
 		configuredUpgradeRevisions: configuredUpgradeRevisions(configured),
 	}
@@ -144,26 +146,38 @@ func (r *Runtime) MCP() *mcpruntime.Reconciler { return r.mcp }
 func (r *Runtime) Advertisements() *commandfx.AdvertisementProjector { return r.ads }
 
 // PreparePluginCandidate compiles all host sources and enabled plugin sources.
-func (r *Runtime) PreparePluginCandidate(ctx context.Context, plugins []runtimecatalogcmd.Source, prepared *pluginapp.PreparedPluginSource) (runtimecatalogcmd.Snapshot, error) {
+func (r *Runtime) PreparePluginCandidate(ctx context.Context, plugins []runtimecatalogcmd.Source, prepared *pluginapp.PreparedPluginSource) (runtimecatalogcmd.PreparedApplicationCandidate, error) {
+	selection, err := r.managedSkills.ReadSelections(ctx)
+	if err != nil {
+		return runtimecatalogcmd.PreparedApplicationCandidate{}, err
+	}
+	return r.prepareApplicationCandidate(ctx, plugins, prepared, selection)
+}
+
+func (r *Runtime) prepareApplicationCandidate(ctx context.Context, plugins []runtimecatalogcmd.Source, prepared *pluginapp.PreparedPluginSource, selection runtimecatalogcmd.ManagedSkillSelection) (runtimecatalogcmd.PreparedApplicationCandidate, error) {
+	return r.prepareApplicationCandidateMode(ctx, plugins, prepared, selection, true)
+}
+
+func (r *Runtime) prepareApplicationCandidateMode(ctx context.Context, plugins []runtimecatalogcmd.Source, prepared *pluginapp.PreparedPluginSource, selection runtimecatalogcmd.ManagedSkillSelection, retain bool) (runtimecatalogcmd.PreparedApplicationCandidate, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if prepared != nil {
 		if err := validatePreparedPlugin(plugins, *prepared); err != nil {
-			return runtimecatalogcmd.Snapshot{}, err
+			return runtimecatalogcmd.PreparedApplicationCandidate{}, err
 		}
 		if err := r.retainPreparedPlugin(ctx, *prepared); err != nil {
-			return runtimecatalogcmd.Snapshot{}, err
+			return runtimecatalogcmd.PreparedApplicationCandidate{}, err
 		}
 	}
 	sources := []runtimecatalogcmd.Source{r.builtin}
 	configured, err := r.currentConfiguredMCPSources(ctx)
 	if err != nil {
-		return runtimecatalogcmd.Snapshot{}, err
+		return runtimecatalogcmd.PreparedApplicationCandidate{}, err
 	}
 	sources = append(sources, configured...)
 	managed, err := r.managedMCPSources(ctx)
 	if err != nil {
-		return runtimecatalogcmd.Snapshot{}, err
+		return runtimecatalogcmd.PreparedApplicationCandidate{}, err
 	}
 	sources = append(sources, managed...)
 	skillRoots := []struct {
@@ -184,26 +198,40 @@ func (r *Runtime) PreparePluginCandidate(ctx context.Context, plugins []runtimec
 			continue
 		}
 		seenSkillRoots[cleanDir] = struct{}{}
-		loaded, err := r.loadSkillSources(ctx, cleanDir, runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindUserSkill, Name: root.name})
+		loaded, err := r.loadSkillSources(ctx, cleanDir, runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindUserSkill, Name: root.name}, retain)
 		if err != nil {
-			return runtimecatalogcmd.Snapshot{}, err
+			return runtimecatalogcmd.PreparedApplicationCandidate{}, err
 		}
 		sources = append(sources, loaded...)
 	}
+	managedSources, err := r.managedSkillSources(ctx, selection)
+	if err != nil {
+		return runtimecatalogcmd.PreparedApplicationCandidate{}, err
+	}
+	sources = append(sources, managedSources...)
 	for _, source := range plugins {
-		if prepared == nil || source.Descriptor != prepared.Descriptor {
+		if retain && (prepared == nil || source.Descriptor != prepared.Descriptor) {
 			if err := r.retainPlugin(ctx, source.Descriptor); err != nil {
-				return runtimecatalogcmd.Snapshot{}, err
+				return runtimecatalogcmd.PreparedApplicationCandidate{}, err
 			}
 		}
 		sources = append(sources, source)
 	}
-	return r.compiler.CompileApplication(sources)
+	snapshot, err := r.compiler.CompileApplication(sources)
+	if err != nil {
+		return runtimecatalogcmd.PreparedApplicationCandidate{}, err
+	}
+	return runtimecatalogcmd.PreparedApplicationCandidate{Snapshot: snapshot, ManagedSkills: selection.Normalized()}, nil
 }
 
 // PublishCandidate atomically makes a compiled application snapshot current,
 // then updates process-local projections from that exact retained value.
-func (r *Runtime) PublishCandidate(ctx context.Context, snapshot runtimecatalogcmd.Snapshot) error {
+// Callers hold LockCatalogMutation through durable acceptance and completion.
+func (r *Runtime) PublishCandidate(ctx context.Context, candidate runtimecatalogcmd.PreparedApplicationCandidate) error {
+	if err := r.validateManagedSkills(ctx, candidate); err != nil {
+		return err
+	}
+	snapshot := candidate.Snapshot
 	if err := r.persistSnapshot(ctx, snapshot); err != nil {
 		return err
 	}
@@ -211,15 +239,20 @@ func (r *Runtime) PublishCandidate(ctx context.Context, snapshot runtimecatalogc
 	if err != nil {
 		return err
 	}
-	if r.mcp != nil {
-		r.mcp.Reconcile(ctx, retained)
-	}
-	if r.ads != nil {
-		if err := r.ads.Project(ctx, retained); err != nil {
+	if !r.maintenance {
+		if r.mcp != nil {
+			r.mcp.Reconcile(ctx, retained)
+		}
+		if r.ads != nil {
+			if err := r.ads.Project(ctx, retained); err != nil {
+				return err
+			}
+		}
+		if err := r.markMCPPublished(ctx, retained); err != nil {
 			return err
 		}
 	}
-	return r.markMCPPublished(ctx, retained)
+	return r.managedSkills.MarkPublished(ctx, candidate.ManagedSkills)
 }
 
 // ResolveEffectiveSnapshot pins command ingress to its trusted session scope.
@@ -337,7 +370,7 @@ func (r *Runtime) effectiveSnapshot(ctx context.Context, workspace, scopeName st
 	if err != nil {
 		return runtimecatalogcmd.Snapshot{}, err
 	}
-	sources, err := r.loadSkillSources(ctx, filepath.Join(workspace, ".agents", "skills"), runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindWorkspaceSkill, Name: scopeName})
+	sources, err := r.loadSkillSources(ctx, filepath.Join(workspace, ".agents", "skills"), runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindWorkspaceSkill, Name: scopeName}, true)
 	if err != nil {
 		return runtimecatalogcmd.Snapshot{}, err
 	}
@@ -361,6 +394,7 @@ type snapshotRecord struct {
 	Parents     []runtimecatalogcmd.SnapshotID          `json:"parents,omitempty"`
 	Sources     []runtimecatalogcmd.SourceDescriptor    `json:"sources,omitempty"`
 	Commands    []runtimecatalogcmd.CommandDescriptor   `json:"commands,omitempty"`
+	Hooks       []runtimecatalogcmd.HookDescriptor      `json:"hooks,omitempty"`
 	Skills      []runtimecatalogcmd.SkillMetadata       `json:"skills,omitempty"`
 	MCPServers  []runtimecatalogcmd.MCPServerDescriptor `json:"mcp_servers,omitempty"`
 	Diagnostics []runtimecatalogcmd.Diagnostic          `json:"diagnostics,omitempty"`
@@ -374,6 +408,9 @@ func (r *Runtime) persistSnapshot(ctx context.Context, snapshot runtimecatalogcm
 	for _, command := range snapshot.Commands {
 		record.Commands = append(record.Commands, command)
 	}
+	for _, hook := range snapshot.Hooks {
+		record.Hooks = append(record.Hooks, hook)
+	}
 	for _, skill := range snapshot.Skills {
 		record.Skills = append(record.Skills, skill)
 	}
@@ -382,6 +419,7 @@ func (r *Runtime) persistSnapshot(ctx context.Context, snapshot runtimecatalogcm
 	}
 	sort.Slice(record.Sources, func(i, j int) bool { return record.Sources[i].ID.String() < record.Sources[j].ID.String() })
 	sort.Slice(record.Commands, func(i, j int) bool { return record.Commands[i].ID.String() < record.Commands[j].ID.String() })
+	sort.Slice(record.Hooks, func(i, j int) bool { return record.Hooks[i].ID.String() < record.Hooks[j].ID.String() })
 	sort.Slice(record.Skills, func(i, j int) bool { return record.Skills[i].ID.String() < record.Skills[j].ID.String() })
 	sort.Slice(record.MCPServers, func(i, j int) bool { return record.MCPServers[i].ID.String() < record.MCPServers[j].ID.String() })
 	if err := r.kv.SetJSON(ctx, snapshotKeyPrefix+string(snapshot.ID), record); err != nil {
@@ -413,6 +451,7 @@ func (r *Runtime) retainedSnapshot(ctx context.Context, id runtimecatalogcmd.Sna
 		ID: record.ID, Scope: record.Scope, Parents: record.Parents, Diagnostics: record.Diagnostics,
 		Sources:    make(map[runtimecatalogcmd.SourceID]runtimecatalogcmd.SourceDescriptor, len(record.Sources)),
 		Commands:   make(map[runtimecatalogcmd.ContributionID]runtimecatalogcmd.CommandDescriptor, len(record.Commands)),
+		Hooks:      make(map[runtimecatalogcmd.ContributionID]runtimecatalogcmd.HookDescriptor, len(record.Hooks)),
 		Skills:     make(map[runtimecatalogcmd.ContributionID]runtimecatalogcmd.SkillMetadata, len(record.Skills)),
 		MCPServers: make(map[runtimecatalogcmd.ContributionID]runtimecatalogcmd.MCPServerDescriptor, len(record.MCPServers)),
 	}
@@ -421,6 +460,9 @@ func (r *Runtime) retainedSnapshot(ctx context.Context, id runtimecatalogcmd.Sna
 	}
 	for _, command := range record.Commands {
 		snapshot.Commands[command.ID] = command
+	}
+	for _, hook := range record.Hooks {
+		snapshot.Hooks[hook.ID] = hook
 	}
 	for _, skill := range record.Skills {
 		snapshot.Skills[skill.ID] = skill
@@ -431,7 +473,7 @@ func (r *Runtime) retainedSnapshot(ctx context.Context, id runtimecatalogcmd.Sna
 	return r.store.Publish(snapshot)
 }
 
-func (r *Runtime) loadSkillSources(ctx context.Context, root string, id runtimecatalogcmd.SourceID) ([]runtimecatalogcmd.Source, error) {
+func (r *Runtime) loadSkillSources(ctx context.Context, root string, id runtimecatalogcmd.SourceID, retain bool) ([]runtimecatalogcmd.Source, error) {
 	info, err := os.Stat(root)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
@@ -446,8 +488,10 @@ func (r *Runtime) loadSkillSources(ctx context.Context, root string, id runtimec
 	if err != nil {
 		return nil, fmt.Errorf("load skill source: %w", err)
 	}
-	if err := r.archive.Retain(ctx, root, source.Descriptor); err != nil {
-		return nil, fmt.Errorf("retain skill source: %w", err)
+	if retain {
+		if err := r.archive.Retain(ctx, root, source.Descriptor); err != nil {
+			return nil, fmt.Errorf("retain skill source: %w", err)
+		}
 	}
 	return []runtimecatalogcmd.Source{source}, nil
 }
