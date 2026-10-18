@@ -75,7 +75,7 @@ func newFixture(t *testing.T) fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return fixture{service: service, catalog: catalog, provider: provider, directory: directory, authority: skillcmd.Authority{UserID: user.ID, UserVersion: 1, CredentialVersion: 1, SessionID: family.ID, SessionVersion: 1, At: now}}
+	return fixture{service: service, catalog: catalog, provider: provider, directory: directory, authority: skillcmd.NewBrowserAuthority(user.ID, 1, 1, 0, family.ID, 1, now)}
 }
 
 func writeSkill(t *testing.T, root, name, body string) {

@@ -48,7 +48,7 @@ func TestManagedSkillsCompleteCatalogRecovery(t *testing.T) {
 			t.Fatal(err)
 		}
 		a := mcpMutation.Authority
-		err = p.SkillManagement().Commit(ctx, skillcmd.Commit{Authority: skillcmd.Authority{UserID: a.UserID, UserVersion: a.UserVersion, CredentialVersion: a.CredentialVersion, SessionID: a.SessionID, SessionVersion: a.SessionVersion, At: now}, ExpectedState: observed.Token(), Record: record, Operation: op, TargetID: installation.Descriptor.ID.Name, AuditID: strings.ReplaceAll(string(op), " ", "-") + "-" + time.Now().Format("150405.000000000")})
+		err = p.SkillManagement().Commit(ctx, skillcmd.Commit{Authority: skillcmd.NewBrowserAuthority(a.UserID, a.UserVersion, a.CredentialVersion, a.MFAVersion, a.SessionID, a.SessionVersion, now), ExpectedState: observed.Token(), Record: record, Operation: op, TargetID: installation.Descriptor.ID.Name, AuditID: strings.ReplaceAll(string(op), " ", "-") + "-" + time.Now().Format("150405.000000000")})
 		if err != nil {
 			t.Fatal(err)
 		}

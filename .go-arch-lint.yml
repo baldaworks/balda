@@ -175,6 +175,12 @@ components:
     in:
       - internal/apps/balda/skillapp
 
+  # Host-local CLI adapter projects the canonical standalone skill lifecycle
+  # into safe command DTOs and confirmation contracts.
+  skill_cli_application:
+    in:
+      - internal/apps/balda/skillcliapp
+
   skill_backoffice_wiring:
     in:
       - internal/apps/balda/skillbackofficeapp
@@ -563,6 +569,7 @@ components:
       - internal/apps/balda/paths
       - internal/apps/balda/redaction
       - internal/apps/balda/shutdown
+      - internal/apps/balda/stateowner
       - internal/apps/sessionmcp
       - internal/apps/workspacemcp
 
@@ -732,6 +739,13 @@ deps:
       - contracts
     canUse:
       - hook_policy_dependencies
+    anyVendorDeps: false
+    deepScan: false
+
+  skill_cli_application:
+    mayDependOn:
+      - contracts
+      - skill_policy
     anyVendorDeps: false
     deepScan: false
 
@@ -1509,5 +1523,8 @@ deps:
       - infrastructure
       - delivery
       - mcp_wiring
+      - skill_cli_application
+      - skill_policy
+      - catalog_wiring
     deepScan: false
     anyVendorDeps: true

@@ -11,11 +11,62 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/skillcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 )
+
+func checkSkillCLIAuthority(t *testing.T, open contractOpener) {
+	p, err := open(t.Context(), filepath.Join(t.TempDir(), "skills-cli.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { closeContractProvider(t, p) }()
+	store := p.SkillManagement()
+	now := time.Now().UTC()
+	authority := skillcmd.NewCLIAuthority(now)
+	if err := store.CheckAuthority(t.Context(), authority); err != nil {
+		t.Fatal(err)
+	}
+	initial, err := store.Observe(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := skillcmd.Record{SchemaVersion: 1, Generation: 1, Pending: true, UpdatedAt: now}
+	commit := skillcmd.Commit{Authority: authority, ExpectedState: initial.Token(), Record: record, Operation: skillcmd.OperationRefresh, AuditID: "skill-cli-refresh"}
+	if err := store.Commit(t.Context(), commit); err != nil {
+		t.Fatal(err)
+	}
+	events, err := p.Users().ListAuditEvents(t.Context(), usercmd.PageRequest{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, event := range events.Events {
+		if event.ID != "skill-cli-refresh" {
+			continue
+		}
+		found = true
+		if event.Source != "cli" || event.ActorUserID != "" || event.ActorSessionID != "" || strings.Contains(event.Reason, "credential") {
+			t.Fatalf("unsafe CLI audit: %+v", event)
+		}
+	}
+	if !found {
+		t.Fatal("CLI audit missing")
+	}
+	forged := authority
+	forged.UserID = "admin"
+	commit.Authority = forged
+	commit.ExpectedState = (skillcmd.Observation{Record: record}).Token()
+	commit.Record.Generation++
+	commit.Record.UpdatedAt = now.Add(time.Second)
+	commit.AuditID = "skill-cli-forged"
+	if err := store.Commit(t.Context(), commit); !errors.Is(err, skillcmd.ErrInvalid) {
+		t.Fatalf("forged CLI authority=%v", err)
+	}
+}
 
 func checkSkillManagement(t *testing.T, open contractOpener) {
 	path := filepath.Join(t.TempDir(), "skills.db")
@@ -25,7 +76,7 @@ func checkSkillManagement(t *testing.T, open contractOpener) {
 	}
 	defer func() { closeContractProvider(t, p) }()
 	base := contractMCPMutation(t, p).Authority
-	a := skillcmd.Authority{UserID: base.UserID, UserVersion: base.UserVersion, CredentialVersion: base.CredentialVersion, MFAVersion: base.MFAVersion, SessionID: base.SessionID, SessionVersion: base.SessionVersion, At: base.At}
+	a := skillcmd.NewBrowserAuthority(base.UserID, base.UserVersion, base.CredentialVersion, base.MFAVersion, base.SessionID, base.SessionVersion, base.At)
 	store := p.SkillManagement()
 	initial, err := store.Observe(t.Context())
 	if err != nil || initial.Record.Generation != 0 {

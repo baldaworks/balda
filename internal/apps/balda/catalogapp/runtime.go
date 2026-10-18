@@ -56,6 +56,7 @@ type Runtime struct {
 	mcp                        *mcpruntime.Reconciler
 	mcpCredentials             mcpCredentialHealth
 	ads                        *commandfx.AdvertisementProjector
+	maintenance                bool
 }
 
 // NewRuntime creates the application catalog without publishing mutable state.
@@ -154,6 +155,10 @@ func (r *Runtime) PreparePluginCandidate(ctx context.Context, plugins []runtimec
 }
 
 func (r *Runtime) prepareApplicationCandidate(ctx context.Context, plugins []runtimecatalogcmd.Source, prepared *pluginapp.PreparedPluginSource, selection runtimecatalogcmd.ManagedSkillSelection) (runtimecatalogcmd.PreparedApplicationCandidate, error) {
+	return r.prepareApplicationCandidateMode(ctx, plugins, prepared, selection, true)
+}
+
+func (r *Runtime) prepareApplicationCandidateMode(ctx context.Context, plugins []runtimecatalogcmd.Source, prepared *pluginapp.PreparedPluginSource, selection runtimecatalogcmd.ManagedSkillSelection, retain bool) (runtimecatalogcmd.PreparedApplicationCandidate, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if prepared != nil {
@@ -193,7 +198,7 @@ func (r *Runtime) prepareApplicationCandidate(ctx context.Context, plugins []run
 			continue
 		}
 		seenSkillRoots[cleanDir] = struct{}{}
-		loaded, err := r.loadSkillSources(ctx, cleanDir, runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindUserSkill, Name: root.name})
+		loaded, err := r.loadSkillSources(ctx, cleanDir, runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindUserSkill, Name: root.name}, retain)
 		if err != nil {
 			return runtimecatalogcmd.PreparedApplicationCandidate{}, err
 		}
@@ -205,7 +210,7 @@ func (r *Runtime) prepareApplicationCandidate(ctx context.Context, plugins []run
 	}
 	sources = append(sources, managedSources...)
 	for _, source := range plugins {
-		if prepared == nil || source.Descriptor != prepared.Descriptor {
+		if retain && (prepared == nil || source.Descriptor != prepared.Descriptor) {
 			if err := r.retainPlugin(ctx, source.Descriptor); err != nil {
 				return runtimecatalogcmd.PreparedApplicationCandidate{}, err
 			}
@@ -234,16 +239,18 @@ func (r *Runtime) PublishCandidate(ctx context.Context, candidate runtimecatalog
 	if err != nil {
 		return err
 	}
-	if r.mcp != nil {
-		r.mcp.Reconcile(ctx, retained)
-	}
-	if r.ads != nil {
-		if err := r.ads.Project(ctx, retained); err != nil {
+	if !r.maintenance {
+		if r.mcp != nil {
+			r.mcp.Reconcile(ctx, retained)
+		}
+		if r.ads != nil {
+			if err := r.ads.Project(ctx, retained); err != nil {
+				return err
+			}
+		}
+		if err := r.markMCPPublished(ctx, retained); err != nil {
 			return err
 		}
-	}
-	if err := r.markMCPPublished(ctx, retained); err != nil {
-		return err
 	}
 	return r.managedSkills.MarkPublished(ctx, candidate.ManagedSkills)
 }
@@ -363,7 +370,7 @@ func (r *Runtime) effectiveSnapshot(ctx context.Context, workspace, scopeName st
 	if err != nil {
 		return runtimecatalogcmd.Snapshot{}, err
 	}
-	sources, err := r.loadSkillSources(ctx, filepath.Join(workspace, ".agents", "skills"), runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindWorkspaceSkill, Name: scopeName})
+	sources, err := r.loadSkillSources(ctx, filepath.Join(workspace, ".agents", "skills"), runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindWorkspaceSkill, Name: scopeName}, true)
 	if err != nil {
 		return runtimecatalogcmd.Snapshot{}, err
 	}
@@ -466,7 +473,7 @@ func (r *Runtime) retainedSnapshot(ctx context.Context, id runtimecatalogcmd.Sna
 	return r.store.Publish(snapshot)
 }
 
-func (r *Runtime) loadSkillSources(ctx context.Context, root string, id runtimecatalogcmd.SourceID) ([]runtimecatalogcmd.Source, error) {
+func (r *Runtime) loadSkillSources(ctx context.Context, root string, id runtimecatalogcmd.SourceID, retain bool) ([]runtimecatalogcmd.Source, error) {
 	info, err := os.Stat(root)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
@@ -481,8 +488,10 @@ func (r *Runtime) loadSkillSources(ctx context.Context, root string, id runtimec
 	if err != nil {
 		return nil, fmt.Errorf("load skill source: %w", err)
 	}
-	if err := r.archive.Retain(ctx, root, source.Descriptor); err != nil {
-		return nil, fmt.Errorf("retain skill source: %w", err)
+	if retain {
+		if err := r.archive.Retain(ctx, root, source.Descriptor); err != nil {
+			return nil, fmt.Errorf("retain skill source: %w", err)
+		}
 	}
 	return []runtimecatalogcmd.Source{source}, nil
 }

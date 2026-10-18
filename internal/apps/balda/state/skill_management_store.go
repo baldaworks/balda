@@ -30,6 +30,9 @@ func (s *sqlSkillManagementStore) CheckAuthority(ctx context.Context, a skillcmd
 	if !a.Valid() {
 		return skillcmd.ErrInvalid
 	}
+	if a.CLI() {
+		return nil
+	}
 	tx, err := s.users.begin(ctx)
 	if err != nil {
 		return skillcmd.ErrUnavailable
@@ -94,10 +97,9 @@ func (s *sqlSkillManagementStore) Commit(ctx context.Context, m skillcmd.Commit)
 		return skillcmd.ErrUnavailable
 	}
 	defer func() { _ = tx.Rollback() }()
-	a := skillBrowserAuthority(m.Authority)
-	authority, err := s.users.checkBrowserAuthority(ctx, tx, a)
+	authority, err := s.checkSkillAuthority(ctx, tx, m.Authority)
 	if err != nil {
-		return skillAuthorityError(err)
+		return err
 	}
 	baseline, raw, err := s.lockedRecord(ctx, tx)
 	if err != nil {
@@ -109,8 +111,8 @@ func (s *sqlSkillManagementStore) Commit(ctx context.Context, m skillcmd.Commit)
 	if m.Record.Generation != baseline.Record.Generation+1 || !preservesSkillTombstones(baseline.Record, m.Record) {
 		return skillcmd.ErrInvalid
 	}
-	if err := authority.checkTime(a); err != nil {
-		return skillAuthorityError(err)
+	if err := authority.checkTime(m.Authority); err != nil {
+		return err
 	}
 	if err := s.replace(ctx, tx, raw, m.Record); err != nil {
 		return err
@@ -120,12 +122,12 @@ func (s *sqlSkillManagementStore) Commit(ctx context.Context, m skillcmd.Commit)
 	if m.Operation == skillcmd.OperationRefresh {
 		targetID = "skills"
 	}
-	audit := usercmd.AuditEvent{ID: m.AuditID, Action: usercmd.AuditActionSkillChanged, Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: m.Authority.UserID, ActorSessionID: m.Authority.SessionID, TargetType: usercmd.AuditTargetSkill, TargetID: targetID, Source: "backoffice", Reason: skillAuditReason(m), OccurredAt: m.Authority.At}
+	audit := usercmd.AuditEvent{ID: m.AuditID, Action: usercmd.AuditActionSkillChanged, Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: authority.actorUserID, ActorSessionID: authority.actorSessionID, TargetType: usercmd.AuditTargetSkill, TargetID: targetID, Source: authority.source, Reason: skillAuditReason(m), OccurredAt: m.Authority.At}
 	if err := s.users.insertAudit(ctx, tx, audit); err != nil {
 		return skillcmd.ErrUnavailable
 	}
-	if err := authority.checkTime(a); err != nil {
-		return skillAuthorityError(err)
+	if err := authority.checkTime(m.Authority); err != nil {
+		return err
 	}
 	if err := tx.Commit(); err != nil {
 		return skillcmd.ErrUnavailable
@@ -214,6 +216,40 @@ func (s *sqlSkillManagementStore) MarkPublished(ctx context.Context, evidence ru
 
 func skillBrowserAuthority(a skillcmd.Authority) browserAuthority {
 	return browserAuthority{userID: a.UserID, sessionID: a.SessionID, userVersion: a.UserVersion, credentialVersion: a.CredentialVersion, mfaVersion: a.MFAVersion, sessionVersion: a.SessionVersion, at: a.At}
+}
+
+type checkedSkillAuthority struct {
+	browser        *lockedBrowserAuthority
+	actorUserID    string
+	actorSessionID string
+	source         string
+}
+
+func (s *sqlSkillManagementStore) checkSkillAuthority(ctx context.Context, tx *sql.Tx, a skillcmd.Authority) (checkedSkillAuthority, error) {
+	if !a.Valid() {
+		return checkedSkillAuthority{}, skillcmd.ErrInvalid
+	}
+	if a.CLI() {
+		return checkedSkillAuthority{source: "cli"}, nil
+	}
+	if !a.Browser() {
+		return checkedSkillAuthority{}, skillcmd.ErrInvalid
+	}
+	locked, err := s.users.checkBrowserAuthority(ctx, tx, skillBrowserAuthority(a))
+	if err != nil {
+		return checkedSkillAuthority{}, skillAuthorityError(err)
+	}
+	return checkedSkillAuthority{browser: &locked, actorUserID: a.UserID, actorSessionID: a.SessionID, source: "backoffice"}, nil
+}
+
+func (a checkedSkillAuthority) checkTime(request skillcmd.Authority) error {
+	if a.browser == nil {
+		return nil
+	}
+	if err := a.browser.checkTime(skillBrowserAuthority(request)); err != nil {
+		return skillAuthorityError(err)
+	}
+	return nil
 }
 
 func skillAuthorityError(err error) error {
