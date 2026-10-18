@@ -29,7 +29,7 @@ func (a *httpApp) registerSkills(mux *http.ServeMux) {
 }
 
 func skillAuthority(p security.Principal) skillcmd.Authority {
-	return skillcmd.Authority{UserID: p.User.ID, UserVersion: p.User.Version, CredentialVersion: p.User.Credential.Version, MFAVersion: p.MFAVersion, SessionID: p.FamilyID, SessionVersion: p.Version, At: time.Now().UTC()}
+	return skillcmd.NewBrowserAuthority(p.User.ID, p.User.Version, p.User.Credential.Version, p.MFAVersion, p.FamilyID, p.Version, time.Now().UTC())
 }
 
 func (a *httpApp) skillBasePage(r *http.Request, p security.Principal) webui.Page {

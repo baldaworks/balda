@@ -16,8 +16,18 @@ var (
 	ErrUnavailable = errors.New("skill management unavailable")
 )
 
-// Authority binds a request to current administrator browser authority.
+type authorityKind uint8
+
+const (
+	authorityBrowser authorityKind = iota + 1
+	authorityCLI
+)
+
+// Authority binds a request either to current administrator browser evidence
+// or to the fixed host-local CLI authority. Its kind is intentionally closed:
+// callers cannot manufacture another privileged authority variant.
 type Authority struct {
+	kind              authorityKind
 	UserID            string
 	UserVersion       uint64
 	CredentialVersion uint64
@@ -27,10 +37,34 @@ type Authority struct {
 	At                time.Time
 }
 
+// NewBrowserAuthority constructs administrator browser authority.
+func NewBrowserAuthority(userID string, userVersion, credentialVersion, mfaVersion uint64, sessionID string, sessionVersion uint64, at time.Time) Authority {
+	return Authority{kind: authorityBrowser, UserID: userID, UserVersion: userVersion, CredentialVersion: credentialVersion, MFAVersion: mfaVersion, SessionID: sessionID, SessionVersion: sessionVersion, At: at}
+}
+
+// NewCLIAuthority constructs the fixed authority used by host-local maintenance
+// commands. Browser identity fields stay empty and cannot be supplied by flags.
+func NewCLIAuthority(at time.Time) Authority {
+	return Authority{kind: authorityCLI, At: at}
+}
+
 // Valid reports whether all required authority evidence is present.
 func (a Authority) Valid() bool {
-	return a.UserID != "" && a.UserVersion != 0 && a.CredentialVersion != 0 && a.SessionID != "" && a.SessionVersion != 0 && !a.At.IsZero()
+	switch a.kind {
+	case authorityBrowser:
+		return a.UserID != "" && a.UserVersion != 0 && a.CredentialVersion != 0 && a.SessionID != "" && a.SessionVersion != 0 && !a.At.IsZero()
+	case authorityCLI:
+		return a.UserID == "" && a.UserVersion == 0 && a.CredentialVersion == 0 && a.MFAVersion == 0 && a.SessionID == "" && a.SessionVersion == 0 && !a.At.IsZero()
+	default:
+		return false
+	}
 }
+
+// Browser reports whether this authority carries browser-session evidence.
+func (a Authority) Browser() bool { return a.kind == authorityBrowser && a.Valid() }
+
+// CLI reports whether this is the fixed host-local CLI authority.
+func (a Authority) CLI() bool { return a.kind == authorityCLI && a.Valid() }
 
 // Operation identifies an accepted administrator action.
 type Operation string

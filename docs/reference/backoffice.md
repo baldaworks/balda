@@ -1165,6 +1165,10 @@ does not own catalog policy. There is no schema migration for this app-KV data.
 Older binaries do not understand managed selections; deployment rollback needs
 a matching state backup when retained managed capabilities matter.
 
+For equivalent host-local automation while Balda is stopped, see
+[Standalone skill management](skills.md). The `balda skill` CLI uses the same
+review, optimistic state and publication lifecycle.
+
 ## Chat session archive
 
 Administrators open **Workspace → Chat sessions** at

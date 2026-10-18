@@ -20,6 +20,22 @@ func TestNewRequiresPorts(t *testing.T) {
 	}
 }
 
+func TestNewReadOnlyRejectsMutationWithoutStaging(t *testing.T) {
+	service, err := NewReadOnly(&unusedStore{}, &unusedCatalog{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if service.stagingDir != "" || !service.readOnly {
+		t.Fatalf("read-only service=%+v", service)
+	}
+	if _, err := service.ReviewInstall(t.Context(), InstallRequest{Source: "/private/source"}); err != skillcmd.ErrForbidden {
+		t.Fatalf("ReviewInstall() = %v", err)
+	}
+	if _, err := service.RetryPublication(t.Context(), skillcmd.NewCLIAuthority(time.Now())); err != skillcmd.ErrForbidden {
+		t.Fatalf("RetryPublication() = %v", err)
+	}
+}
+
 func TestReviewRejectsUnsafePathBeforeFetching(t *testing.T) {
 	service := &Service{}
 	_, err := service.ReviewInstall(context.Background(), InstallRequest{Kind: "local", Source: "/secret", Path: "../escape"})

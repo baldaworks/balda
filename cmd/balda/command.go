@@ -15,6 +15,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/paths"
 	"github.com/baldaworks/balda/internal/apps/balda/shutdown"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/balda/internal/apps/balda/stateowner"
 	"github.com/baldaworks/runtime/v2/appconfig"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -54,7 +55,16 @@ func startCommand() *cobra.Command {
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			prepared, err := prepareBaldaCommand(cmd.Context(), true)
+			prepared, err := loadBaldaCommandConfig(true)
+			if err != nil {
+				return err
+			}
+			owner, err := stateowner.Acquire(prepared.stateDir)
+			if err != nil {
+				return fmt.Errorf("acquire Balda state ownership: %w", err)
+			}
+			defer func() { _ = owner.Close() }()
+			prepared, err = prepareLoadedBaldaCommand(cmd.Context(), prepared, true)
 			if err != nil {
 				return err
 			}
@@ -179,6 +189,10 @@ func prepareBaldaCommand(ctx context.Context, requireUserReady bool) (preparedBa
 	if err != nil {
 		return preparedBaldaCommand{}, err
 	}
+	return prepareLoadedBaldaCommand(ctx, prepared, requireUserReady)
+}
+
+func prepareLoadedBaldaCommand(ctx context.Context, prepared preparedBaldaCommand, requireUserReady bool) (preparedBaldaCommand, error) {
 	if err := os.MkdirAll(prepared.stateDir, 0o700); err != nil {
 		return preparedBaldaCommand{}, fmt.Errorf("create balda state dir: %w", err)
 	}

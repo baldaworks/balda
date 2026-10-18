@@ -86,7 +86,8 @@ from the browser.
 - [Telegram formatting](docs/telegram-formatting.md)
 - [Backoffice](docs/reference/backoffice.md)
 - [Goal-driven work](docs/goal-workflow.md)
-- [Skills and plugins](docs/reference/plugins.md)
+- [Standalone skills](docs/reference/skills.md)
+- [Plugins](docs/reference/plugins.md)
 - [Agent hooks](docs/reference/agent-hooks.md)
 
 ## Documentation and development

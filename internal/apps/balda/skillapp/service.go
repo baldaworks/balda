@@ -54,6 +54,16 @@ type Service struct {
 	candidates map[string]reviewed
 	diagnostic string
 	now        func() time.Time
+	readOnly   bool
+}
+
+// NewReadOnly constructs inventory-only management without creating or
+// cleaning staging paths. Callers must not use mutation methods on this value.
+func NewReadOnly(store ManagementStore, catalog Catalog) (*Service, error) {
+	if store == nil || catalog == nil {
+		return nil, skillcmd.ErrUnavailable
+	}
+	return &Service{store: store, catalog: catalog, candidates: make(map[string]reviewed), now: time.Now, readOnly: true}, nil
 }
 
 // New constructs management without reading or fetching any source.
@@ -194,6 +204,9 @@ func installationEntry(i skillcmd.Installation) skillcmd.Entry {
 
 // ReviewInstall captures one independent subtree without changing selection.
 func (s *Service) ReviewInstall(ctx context.Context, request InstallRequest) (skillcmd.Candidate, error) {
+	if s.readOnly {
+		return skillcmd.Candidate{}, skillcmd.ErrForbidden
+	}
 	origin, err := normalizeOrigin(request)
 	if err != nil {
 		return skillcmd.Candidate{}, err
@@ -223,6 +236,9 @@ func (s *Service) ReviewInstall(ctx context.Context, request InstallRequest) (sk
 
 // ReviewUpdate uses only the accepted private origin, preserving enablement.
 func (s *Service) ReviewUpdate(ctx context.Context, mutation skillcmd.Mutation) (skillcmd.Candidate, error) {
+	if s.readOnly {
+		return skillcmd.Candidate{}, skillcmd.ErrForbidden
+	}
 	observation, err := s.observe(ctx, mutation.Authority)
 	if err != nil {
 		return skillcmd.Candidate{}, err
@@ -274,6 +290,9 @@ func sameAuthority(a, b skillcmd.Authority) bool {
 // Accept rechecks authority/state and rematerializes exact reviewed bytes under
 // the catalog gate. No browser input can exchange the reviewed origin or path.
 func (s *Service) Accept(ctx context.Context, handle string, authority skillcmd.Authority) (skillcmd.Outcome, error) {
+	if s.readOnly {
+		return skillcmd.Outcome{}, skillcmd.ErrForbidden
+	}
 	s.mu.Lock()
 	item, found := s.candidates[handle]
 	s.mu.Unlock()
@@ -361,6 +380,9 @@ func findInstallation(observation skillcmd.Observation, mutation skillcmd.Mutati
 // Change enables, disables or removes only a managed installation; it never
 // fetches an origin or deletes retained payloads, user skills, or plugin files.
 func (s *Service) Change(ctx context.Context, operation skillcmd.Operation, mutation skillcmd.Mutation) (skillcmd.Outcome, error) {
+	if s.readOnly {
+		return skillcmd.Outcome{}, skillcmd.ErrForbidden
+	}
 	if operation != skillcmd.OperationEnable && operation != skillcmd.OperationDisable && operation != skillcmd.OperationRemove {
 		return skillcmd.Outcome{}, skillcmd.ErrInvalid
 	}
@@ -395,6 +417,9 @@ func (s *Service) Change(ctx context.Context, operation skillcmd.Operation, muta
 
 // Refresh explicitly rebuilds eligible global filesystem contributions.
 func (s *Service) Refresh(ctx context.Context, mutation skillcmd.Mutation) (skillcmd.Outcome, error) {
+	if s.readOnly {
+		return skillcmd.Outcome{}, skillcmd.ErrForbidden
+	}
 	unlock, err := s.catalog.LockCatalogMutation(ctx)
 	if err != nil {
 		return skillcmd.Outcome{}, safeError(err)
@@ -443,6 +468,9 @@ func (s *Service) acceptRecord(ctx context.Context, observation skillcmd.Observa
 
 // RetryPublication rebuilds current desired state and creates no second audit.
 func (s *Service) RetryPublication(ctx context.Context, authority skillcmd.Authority) (skillcmd.Outcome, error) {
+	if s.readOnly {
+		return skillcmd.Outcome{}, skillcmd.ErrForbidden
+	}
 	unlock, err := s.catalog.LockCatalogMutation(ctx)
 	if err != nil {
 		return skillcmd.Outcome{}, safeError(err)

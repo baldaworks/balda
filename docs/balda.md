@@ -54,6 +54,8 @@ can be read, linked, and indexed independently:
   package boundaries, the Balda extension schema, and session-bound commands,
   skills, and MCP servers; standalone Skills management, retained resources and
   explicit session adoption.
+- [Standalone skill management](reference/skills.md) — the host-local
+  `balda skill` CLI, safe selectors, offline mutations and recovery.
 - [Operations and verification](reference/operations.md) — troubleshooting,
   workspace MCP verification, and acceptance checks.
 
