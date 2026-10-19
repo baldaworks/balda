@@ -14,7 +14,10 @@ import (
 	"google.golang.org/genai"
 )
 
-const genericProviderFailureMessage = "The provider could not complete this turn. Please try again."
+const (
+	genericProviderFailureMessage = "The provider could not complete this turn. Please try again."
+	providerOverloadedCode        = "serverOverloaded"
+)
 
 func sendPlain(ctx context.Context, dispatcher actortransport.Dispatcher, from actorlayer.ActorAddress, locator baldasession.SessionLocator, text string) error {
 	env, err := deliverycmd.PlainEnvelopeWithSettlement("", from, locator, deliverycmd.SettlementBypass, text, "")
@@ -32,11 +35,29 @@ func sendAgentReplyWithFormat(ctx context.Context, dispatcher actortransport.Dis
 	return dispatchOutbound(ctx, dispatcher, env)
 }
 
-func terminalErrorTurnMessage(errorMessage string) string {
-	if strings.TrimSpace(errorMessage) == "" {
-		return ""
+func terminalErrorTurnMessage(code, message string, providerErr *acperror.ProviderError, now time.Time) string {
+	original := message
+	if providerErr != nil {
+		// Metadata-only events print a synthesized error object in ErrorMessage.
+		// Its Message field is the actual provider-authored text.
+		if strings.HasPrefix(code, "acp_provider_error:") || strings.TrimSpace(original) == "" {
+			original = providerErr.Message
+		}
 	}
-	return genericProviderFailureMessage
+	var parts []string
+	if strings.TrimSpace(original) != "" {
+		parts = append(parts, "Provider error:\n"+original)
+	}
+	if code == providerOverloadedCode || (providerErr != nil && providerErr.Code == providerOverloadedCode) {
+		parts = append(parts, "The selected model is overloaded. Try again later or choose another model.")
+	} else if len(parts) == 0 {
+		if category := providerErrorTurnMessage(providerErr, now); category != "" {
+			parts = append(parts, category)
+		} else if code != "" || strings.TrimSpace(message) != "" {
+			parts = append(parts, genericProviderFailureMessage)
+		}
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 func providerErrorTurnMessage(providerErr *acperror.ProviderError, now time.Time) string {
@@ -83,8 +104,7 @@ func providerRetryHint(retryAt *int64, now time.Time) string {
 }
 
 func interruptedProviderTurnMessage(providerMessage string) string {
-	providerMessage = strings.TrimSpace(providerMessage)
-	if providerMessage == "" {
+	if strings.TrimSpace(providerMessage) == "" {
 		providerMessage = genericProviderFailureMessage
 	}
 	return "Response interrupted. " + providerMessage

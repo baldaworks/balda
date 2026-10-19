@@ -2,6 +2,7 @@ package sessionturnapp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"strings"
@@ -143,6 +144,8 @@ func TestProviderFailureWithoutPartialReplaysCommittedFinalWithoutModelRerun(t *
 	})
 	bus := &finalOutcomeDispatcher{err: errors.New("publication unavailable")}
 	svc := NewTurnExecutionServiceWithJobEvents(bus, nil, nil, zerolog.Nop(), 1)
+	registry := &testTurnFailureRegistry{prefix: "wire:", format: deliveryfmt.DeliveryFormatNone}
+	svc.structuredRegistry = registry
 	archive := &finalArchiveStub{messages: map[string]chatarchivecmd.Message{}}
 	svc.SetFinalArchive(archive)
 	locator := deliverycmd.Locator{ChannelType: "telegram", AddressKey: "101:0", SessionID: "session"}
@@ -154,10 +157,22 @@ func TestProviderFailureWithoutPartialReplaysCommittedFinalWithoutModelRerun(t *
 		t.Fatal("expected publication failure")
 	}
 	committed := archive.messages["input-id"]
-	if archive.calls != 1 || committed.Text == "" || strings.Contains(committed.Text, "SYNTHETIC_SECRET") {
-		t.Fatalf("unsafe or missing committed failure: %+v", committed)
+	if archive.calls != 1 || committed.Text == "" || !strings.Contains(committed.Text, "credential=SYNTHETIC_SECRET") {
+		t.Fatalf("missing original committed provider message: %+v", committed)
 	}
 
+	var frozen finalReplay
+	if err := json.Unmarshal(committed.Replay, &frozen); err != nil {
+		t.Fatal(err)
+	}
+	var frozenDelivery deliverycmd.Payload
+	if err := actorlayer.UnmarshalPayload(frozen.Envelope.Payload, &frozenDelivery); err != nil {
+		t.Fatal(err)
+	}
+	if frozenDelivery.Text != "wire:"+committed.Text || frozenDelivery.DeliveryFormat != deliveryfmt.DeliveryFormatNone {
+		t.Fatalf("frozen delivery = %+v", frozenDelivery)
+	}
+	registry.err = errors.New("replay must not render again")
 	bus.err = nil
 	payload := turncmd.SessionTurnPayload{ArchiveID: "epoch", DedupeKey: "input-id", Deliver: true, Source: turncmd.SourceTelegram, Locator: locator}
 	err := sessionturn.New(nil, NewProviderTurnExecutorFromService(svc), nil, zerolog.Nop()).RunSessionTurnPayload(t.Context(), payload)
@@ -165,7 +180,7 @@ func TestProviderFailureWithoutPartialReplaysCommittedFinalWithoutModelRerun(t *
 	if !errors.Is(err, errProviderTurnFailed) || !errors.As(err, &accepted) {
 		t.Fatalf("replay error=%v, want accepted provider failure", err)
 	}
-	if calls != 1 || len(bus.envelopes) != 1 {
+	if calls != 1 || len(bus.envelopes) != 1 || registry.calls != 1 {
 		t.Fatalf("provider calls=%d deliveries=%d, want 1/1", calls, len(bus.envelopes))
 	}
 }

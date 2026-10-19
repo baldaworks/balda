@@ -11,6 +11,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionturn"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionturnapp"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
@@ -110,6 +111,11 @@ func executionFailureActor(t *testing.T, run func(adkagent.InvocationContext) it
 	if len(build) != 0 {
 		execution = build[0](bus)
 	}
+	registry := deliveryfmt.NewStructuredRegistry()
+	if err := deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportTelegram, deliveryfmt.TurnFailureDescriptor, acceptedFinalFailureRenderer{}); err != nil {
+		t.Fatal(err)
+	}
+	execution.SetStructuredMessageRegistry(registry)
 	queued := sessionturn.New(failureSessionAccessor{active}, sessionturnapp.NewProviderTurnExecutorFromService(execution), nil, zerolog.Nop())
 	turns := NewTurnDispatcher(zerolog.Nop())
 	t.Cleanup(func() { _ = turns.Shutdown(context.Background()) })
@@ -117,6 +123,14 @@ func executionFailureActor(t *testing.T, run func(adkagent.InvocationContext) it
 	payload := turncmd.SessionTurnPayload{Text: "message", UserID: "telegram-user", MessageID: 5316, Source: turncmd.SourceTelegram, Deliver: true,
 		Locator: deliverycmd.Locator{SessionID: "tg-10001-0", ChannelType: "telegram", AddressKey: "10001:0", AddressJSON: `{"chat_id":10001,"topic_id":0}`}}
 	return actor, bus, payload
+}
+
+// acceptedFinalFailureRenderer keeps the actor settlement fixture independent
+// of transport-specific presentation while exercising the required registry seam.
+type acceptedFinalFailureRenderer struct{}
+
+func (acceptedFinalFailureRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[deliveryfmt.TurnFailure]) (deliveryfmt.StructuredPresentation, error) {
+	return deliveryfmt.StructuredPresentation{Text: env.Body.Text, DeliveryFormat: deliveryfmt.DeliveryFormatNone}, nil
 }
 
 type failureActiveSession struct {

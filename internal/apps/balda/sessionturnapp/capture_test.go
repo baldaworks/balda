@@ -360,6 +360,11 @@ func newCaptureTestRunner(t *testing.T, eventsFn func(string) []*adksession.Even
 	if err != nil {
 		t.Fatalf("agent.New() error = %v", err)
 	}
+	return newCaptureTestRunnerForAgent(t, ag)
+}
+
+func newCaptureTestRunnerForAgent(t *testing.T, ag adkagent.Agent) (*runner.Runner, string) {
+	t.Helper()
 	service := adksession.InMemoryService()
 	adkRunner, err := runner.New(runner.Config{
 		AppName:        "session-memory-capture-test",

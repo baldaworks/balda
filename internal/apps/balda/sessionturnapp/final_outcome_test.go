@@ -32,6 +32,7 @@ func TestFinalPublicationFailurePropagates(t *testing.T) {
 			cause := errors.New("final queue unavailable")
 			bus := &finalOutcomeDispatcher{err: cause}
 			service := NewTurnExecutionServiceWithJobEvents(bus, nil, nil, zerolog.Nop(), automode.DefaultMaxTurns)
+			service.structuredRegistry = &testTurnFailureRegistry{}
 			err := service.Execute(t.Context(), ExecutionRequest{Text: "input", Runner: runner, UserID: "tg-101", AgentSessionID: id, SessionID: "tg-origin", Deliver: true, TurnSource: turncmd.SourceTelegram, Locator: deliverycmd.Locator{SessionID: "tg-origin", ChannelType: "telegram", AddressKey: "101:0", AddressJSON: `{"chat_id":101,"topic_id":0}`}})
 			var accepted *turncmd.FinalOutcomeAcceptedError
 			if errors.As(err, &accepted) {
@@ -75,6 +76,7 @@ func TestFinalAcceptedBeforeBookkeepingFailure(t *testing.T) {
 				cause := errors.New("bookkeeping unavailable")
 				bus := &finalOutcomeDispatcher{}
 				service := NewTurnExecutionServiceWithJobEvents(bus, finalResultAppender{cause}, finalStateReader{bus: bus, err: cause}, zerolog.Nop(), automode.DefaultMaxTurns)
+				service.structuredRegistry = &testTurnFailureRegistry{}
 				req := ExecutionRequest{Text: "input", Runner: runner, UserID: "tg-101", AgentSessionID: id, SessionID: "tg-origin", Deliver: true, TurnSource: turncmd.SourceTelegram, Locator: deliverycmd.Locator{SessionID: "tg-origin", ChannelType: "telegram", AddressKey: "101:0", AddressJSON: `{"chat_id":101,"topic_id":0}`}}
 				if jobBacked {
 					req.JobID = "chat-correlation"

@@ -107,9 +107,16 @@ func (a *Adapter) Deliver(ctx context.Context, locator deliverycmd.Locator, oper
 		if operation.Question != nil {
 			status = SessionStatusSuspended
 		}
-		if a.enableStreaming {
+		if a.enableStreaming && mrkdwn {
 			result.ProviderMessageID, err = a.finishStream(ctx, locator, text, status)
 		} else {
+			// Plain finals must not enter a Markdown-only stream. Keep the prior
+			// partial stream and post the complete literal snapshot separately.
+			if a.enableStreaming {
+				if err := a.StopActiveStream(ctx, locator, status); err != nil {
+					return result, err
+				}
+			}
 			result.ProviderMessageID, err = a.deliverFinalMessage(ctx, locator, text, mrkdwn, status)
 		}
 	case deliverycmd.OperationTyping:

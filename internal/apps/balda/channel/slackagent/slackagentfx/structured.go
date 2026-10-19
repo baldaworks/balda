@@ -106,3 +106,17 @@ func NewGoalOutcomeStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar 
 		return deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportSlackAgent, goalkeepercmd.OutcomeDescriptor, slackAgentGoalOutcomeRenderer{})
 	}
 }
+
+type slackagentTurnFailureRenderer struct{}
+
+func (slackagentTurnFailureRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[deliveryfmt.TurnFailure]) (deliveryfmt.StructuredPresentation, error) {
+	return deliveryfmt.StructuredPresentation{
+		Text:           presentation.RenderTurnFailure(env.Body),
+		DeliveryFormat: deliveryfmt.DeliveryFormatNone,
+	}, nil
+}
+
+// NewTurnFailureStructuredRegistrar registers literal failed-final presentation.
+func NewTurnFailureStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
+	return deliveryfx.NewStructuredRegistrar(deliveryfmt.TransportSlackAgent, deliveryfmt.TurnFailureDescriptor, slackagentTurnFailureRenderer{})
+}

@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
+	"github.com/baldaworks/balda/internal/apps/balda/channel/slackagent/presentation"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/rs/zerolog"
@@ -411,4 +412,130 @@ func (c *recordingAgentClient) StopStream(_ context.Context, channel, ts, text s
 	defer c.mu.Unlock()
 	c.stops = append(c.stops, deliveryCall{channel: channel, ts: ts, text: text, status: status})
 	return nil
+}
+
+func TestAdapterLiteralFinalPreservesJSONTextAfterStreaming(t *testing.T) {
+	const source = "**partial**\n\nProvider error:\nМодель & < > &amp; &lt; &gt; <@synthetic> <https://example.com|label>"
+	for _, streaming := range []bool{false, true} {
+		t.Run(fmt.Sprintf("streaming-%t", streaming), func(t *testing.T) {
+			var mu sync.Mutex
+			var paths []string
+			var final map[string]any
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var body map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Errorf("decode request: %v", err)
+				}
+				mu.Lock()
+				paths = append(paths, r.URL.Path)
+				if r.URL.Path == testChatPostMessagePath {
+					final = body
+				}
+				mu.Unlock()
+				ts := "stream-ts"
+				if r.URL.Path == testChatPostMessagePath {
+					ts = "final-ts"
+				}
+				_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "ts": ts})
+			}))
+			t.Cleanup(server.Close)
+			adapter := newTestAdapter(NewClientWithBaseURL(server.URL, "synthetic-token"), AdapterConfig{EnableStreaming: streaming})
+			locator := NewThreadLocator("T123", "D456", testThreadTS)
+			if streaming {
+				if _, err := adapter.Deliver(t.Context(), locator, deliverycmd.Operation{Kind: deliverycmd.OperationProgress, Progress: deliverycmd.Progress{Kind: deliverycmd.ProgressThinking, Visible: true, Text: "**partial**"}}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			rendered := presentation.RenderTurnFailure(deliveryfmt.TurnFailure{Text: source})
+			result, err := adapter.Deliver(t.Context(), locator, deliverycmd.Operation{Kind: deliverycmd.OperationAgentReply, Message: &deliveryfmt.Message{Name: deliveryfmt.NamePlainText, Text: rendered}})
+			if err != nil {
+				t.Fatalf("literal final error=%v", err)
+			}
+			if result.ProviderMessageID != "final-ts" {
+				t.Fatalf("message ID=%q", result.ProviderMessageID)
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			want := "/chat.postMessage,/agents.sessions.setStatus"
+			if streaming {
+				want = "/chat.startStream,/chat.stopStream," + want
+			}
+			if got := strings.Join(paths, ","); got != want {
+				t.Fatalf("request sequence=%q, want %q", got, want)
+			}
+			wire, _ := final["text"].(string)
+			mrkdwn, ok := final["mrkdwn"].(bool)
+			if !ok || mrkdwn {
+				t.Fatalf("plain final mrkdwn=%v", final["mrkdwn"])
+			}
+			display := strings.NewReplacer("&amp;", "&", "&lt;", "<", "&gt;", ">").Replace(wire)
+			if display != source {
+				t.Fatalf("display=%q, want %q (wire %q)", display, source, wire)
+			}
+		})
+	}
+}
+
+type literalFinalFailureClient struct {
+	*recordingAgentClient
+	fail  string
+	cause error
+	order []string
+}
+
+func (c *literalFinalFailureClient) StopStream(ctx context.Context, channel, ts, text string, status SessionStatus) error {
+	c.order = append(c.order, "stop")
+	if c.fail == "stop" {
+		return c.cause
+	}
+	return c.recordingAgentClient.StopStream(ctx, channel, ts, text, status)
+}
+func (c *literalFinalFailureClient) PostMessage(ctx context.Context, channel, thread, text string, mrkdwn bool) (string, error) {
+	c.order = append(c.order, "post")
+	if c.fail == "post" {
+		return "", c.cause
+	}
+	return c.recordingAgentClient.PostMessage(ctx, channel, thread, text, mrkdwn)
+}
+func (c *literalFinalFailureClient) SetSessionStatus(ctx context.Context, input SetSessionStatusRequest) error {
+	c.order = append(c.order, "status")
+	if c.fail == "status" {
+		return c.cause
+	}
+	return c.recordingAgentClient.SetSessionStatus(ctx, input)
+}
+func TestAdapterLiteralFinalPropagatesStopPostAndStatusFailures(t *testing.T) {
+	for _, failure := range []string{"stop", "post", "status"} {
+		t.Run(failure, func(t *testing.T) {
+			cause := errors.New("synthetic Slack failure")
+			client := &literalFinalFailureClient{recordingAgentClient: &recordingAgentClient{nextTS: "message-ts"}, fail: failure, cause: cause}
+			adapter := newTestAdapter(client, AdapterConfig{EnableStreaming: true})
+			locator := NewThreadLocator("T123", "D456", testThreadTS)
+			if _, err := adapter.Deliver(t.Context(), locator, deliverycmd.Operation{Kind: deliverycmd.OperationProgress, Progress: deliverycmd.Progress{Kind: deliverycmd.ProgressThinking, Visible: true, Text: "partial"}}); err != nil {
+				t.Fatal(err)
+			}
+			op := deliverycmd.Operation{Kind: deliverycmd.OperationAgentReply, Message: &deliveryfmt.Message{Name: deliveryfmt.NamePlainText, Text: "partial\nProvider error: busy"}, Question: &deliverycmd.Question{}}
+			result, err := adapter.Deliver(t.Context(), locator, op)
+			if !errors.Is(err, cause) || result.ProviderMessageID != "" {
+				t.Fatalf("result=%+v error=%v", result, err)
+			}
+			want := map[string]string{"stop": "stop", "post": "stop,post", "status": "stop,post,status"}[failure]
+			if got := strings.Join(client.order, ","); got != want {
+				t.Fatalf("order=%q, want %q", got, want)
+			}
+			if len(client.appends) != 0 {
+				t.Fatalf("raw final appended to stream: %+v", client.appends)
+			}
+			if failure == "status" {
+				client.fail = ""
+				result, err = adapter.Deliver(t.Context(), locator, op)
+				if err != nil || result.ProviderMessageID != "message-ts" || len(client.posts) != 1 {
+					t.Fatalf("retry result=%+v error=%v posts=%d", result, err, len(client.posts))
+				}
+				if len(client.statuses) == 0 || client.statuses[len(client.statuses)-1].Status != SessionStatusSuspended {
+					t.Fatalf("statuses=%+v", client.statuses)
+				}
+			}
+		})
+	}
 }
