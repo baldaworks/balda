@@ -185,6 +185,7 @@ func TestHandleFrameProcessesThreadReplyWithoutMention(t *testing.T) {
 
 	frame := postedEventPayload(t, Post{
 		ID:        "reply-1",
+		CreateAt:  1760000000123,
 		UserID:    "user-1",
 		ChannelID: "channel-1",
 		RootID:    "question-1",
@@ -201,6 +202,9 @@ func TestHandleFrameProcessesThreadReplyWithoutMention(t *testing.T) {
 	messages := processor.inboundMessages()
 	if len(messages) != 1 || messages[0].RootID != "question-1" || messages[0].Text != "2" {
 		t.Fatalf("inbound messages = %+v, want one reply in question-1 with text 2", messages)
+	}
+	if !messages[0].ProviderCreatedAt.Equal(time.UnixMilli(1760000000123)) {
+		t.Fatalf("provider time=%v", messages[0].ProviderCreatedAt)
 	}
 }
 

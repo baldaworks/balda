@@ -532,16 +532,17 @@ func (s *Ingress) processPosted(ctx context.Context, data PostedData, post Post)
 	original := originalMattermostInput(locator, post, strings.TrimSpace(data.SenderName), postTime(post))
 	original.Location.Title = data.ChannelDisplayName
 	s.processInboundWithRetry(ctx, post.ID, InboundMessage{
-		OriginalInput: original,
-		Locator:       locator,
-		MessageID:     ParsePostID(post.ID),
-		PostID:        post.ID,
-		RootID:        post.RootID,
-		SenderID:      post.UserID,
-		SenderName:    strings.TrimSpace(data.SenderName),
-		Text:          text,
-		Direct:        direct,
-		ReceivedAt:    postTime(post),
+		OriginalInput:     original,
+		Locator:           locator,
+		MessageID:         ParsePostID(post.ID),
+		PostID:            post.ID,
+		RootID:            post.RootID,
+		SenderID:          post.UserID,
+		SenderName:        strings.TrimSpace(data.SenderName),
+		Text:              text,
+		Direct:            direct,
+		ReceivedAt:        postTime(post),
+		ProviderCreatedAt: providerPostTime(post),
 	})
 }
 
@@ -669,7 +670,7 @@ func (s *Ingress) acquireSlotForDispatch(ctx context.Context) (func(), bool) {
 // now when the provider omits it.
 func postTime(post Post) time.Time {
 	if post.CreateAt > 0 {
-		return time.UnixMilli(post.CreateAt).UTC()
+		return providerPostTime(post)
 	}
 	return time.Now().UTC()
 }
@@ -694,3 +695,11 @@ var _ interface {
 // InboundSettlementOutcome exposes the neutral outcome type for callers that
 // build settlement values while wiring the processor.
 func InboundSettlementOutcome() turncmd.InboundOutcome { return turncmd.InboundTerminal }
+
+// providerPostTime never substitutes a timestamp from the local clock.
+func providerPostTime(post Post) time.Time {
+	if post.CreateAt <= 0 {
+		return time.Time{}
+	}
+	return time.UnixMilli(post.CreateAt).UTC()
+}

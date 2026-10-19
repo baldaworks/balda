@@ -224,8 +224,9 @@ func (s *Service) ResolveReplyDetailed(ctx context.Context, in questioncmd.Inbou
 		return ReplyResolution{Record: record, Matched: true, Invalid: true}, nil
 	}
 	// One thread can host consecutive questions. A delayed reply must not
-	// authorize a question that did not exist when the message was sent.
-	if in.SharedReplyRef && !in.ReceivedAt.IsZero() && in.ReceivedAt.Before(record.CreatedAt) {
+	// authorize a question that was not published when the reply was sent.
+	// Compare only provider timestamps; the local clock may be skewed.
+	if in.SharedReplyRef && (in.ProviderCreatedAt.IsZero() || record.ProviderCreatedAt.IsZero() || in.ProviderCreatedAt.Before(record.ProviderCreatedAt)) {
 		return ReplyResolution{Record: record, Matched: true, Invalid: true}, nil
 	}
 	selected, valid := selectedOption(request, in.Text)

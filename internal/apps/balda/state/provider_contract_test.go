@@ -734,6 +734,7 @@ func checkProvider_QuestionStoreRoundTrip(t *testing.T, open contractOpener) {
 
 	ctx := context.Background()
 	store := provider.Questions()
+	publishedAt := time.Date(2026, 1, 1, 1, 2, 3, 456000000, time.UTC)
 
 	record := QuestionRecord{
 		QuestionID:      "question-1",
@@ -754,6 +755,7 @@ func checkProvider_QuestionStoreRoundTrip(t *testing.T, open contractOpener) {
 		Provider:          "telegram",
 		ConversationKey:   "1:0",
 		ProviderMessageID: "42",
+		ProviderCreatedAt: publishedAt,
 	}); err != nil {
 		t.Fatalf("BindQuestionDeliveryRef() error = %v", err)
 	}
@@ -763,6 +765,9 @@ func checkProvider_QuestionStoreRoundTrip(t *testing.T, open contractOpener) {
 	}
 	if !ok {
 		t.Fatal("GetQuestionByReplyRef() found = false, want true")
+	}
+	if !got.ProviderCreatedAt.Equal(publishedAt) {
+		t.Fatalf("persisted provider timestamp=%v, want %v", got.ProviderCreatedAt, publishedAt)
 	}
 	if got.QuestionID != record.QuestionID {
 		t.Fatalf("question_id = %q, want %q", got.QuestionID, record.QuestionID)
@@ -1379,6 +1384,7 @@ func checkJobStore_DeliveryOutboxLifecycle(t *testing.T, open contractOpener) {
 
 	ctx := context.Background()
 	store := provider.Jobs()
+	publishedAt := time.Date(2026, 1, 1, 1, 2, 3, 456000000, time.UTC)
 	if _, sent, err := store.SentFinalDelivery(ctx, "task-1"); err != nil || sent {
 		t.Fatalf("initial final delivery = sent %v, err %v", sent, err)
 	}
@@ -1419,7 +1425,7 @@ func checkJobStore_DeliveryOutboxLifecycle(t *testing.T, open contractOpener) {
 		t.Fatalf("ReserveDelivery(duplicate) = %+v created=%v, want existing", again, created)
 	}
 
-	if err := store.MarkDeliverySent(ctx, record.DeliveryKey, "tg-42"); err != nil {
+	if err := store.MarkDeliverySent(ctx, record.DeliveryKey, deliverycmd.Result{ProviderMessageID: "tg-42", ProviderCreatedAt: publishedAt}); err != nil {
 		t.Fatalf("MarkDeliverySent() error = %v", err)
 	}
 	sent, created, err := store.ReserveDelivery(ctx, DeliveryRecord{
@@ -1435,6 +1441,9 @@ func checkJobStore_DeliveryOutboxLifecycle(t *testing.T, open contractOpener) {
 	})
 	if err != nil {
 		t.Fatalf("ReserveDelivery(after sent) error = %v", err)
+	}
+	if !sent.ProviderCreatedAt.Equal(publishedAt) {
+		t.Fatalf("outbox publication timestamp=%v, want %v", sent.ProviderCreatedAt, publishedAt)
 	}
 	if created || sent.Status != DeliveryStatusSent || sent.ProviderMessageID != "tg-42" || sent.SentAt.IsZero() {
 		t.Fatalf("ReserveDelivery(after sent) = %+v created=%v, want sent existing", sent, created)
@@ -1458,7 +1467,7 @@ func checkJobStore_DeliveryOutboxLifecycle(t *testing.T, open contractOpener) {
 	if _, sent, err := store.SentFinalDelivery(ctx, "task-1"); err != nil || sent {
 		t.Fatalf("pending final delivery = sent %v, err %v", sent, err)
 	}
-	if err := store.MarkDeliverySent(ctx, final.DeliveryKey, "mm-post-1"); err != nil {
+	if err := store.MarkDeliverySent(ctx, final.DeliveryKey, deliverycmd.Result{ProviderMessageID: "mm-post-1"}); err != nil {
 		t.Fatal(err)
 	}
 	if id, sent, err := store.SentFinalDelivery(ctx, "task-1"); err != nil || !sent || id != "mm-post-1" {

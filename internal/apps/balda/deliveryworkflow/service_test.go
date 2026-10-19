@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	telegrampresentation "github.com/baldaworks/balda/internal/apps/balda/channel/telegram/presentation"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
@@ -25,17 +26,17 @@ const testProviderMessageID = "message-42"
 
 type testDispatcher struct{}
 
-func (testDispatcher) Dispatch(context.Context, Delivery) (string, error) {
-	return testProviderMessageID, nil
+func (testDispatcher) Dispatch(context.Context, Delivery) (deliverycmd.Result, error) {
+	return deliverycmd.Result{ProviderMessageID: testProviderMessageID}, nil
 }
 
 type recordingFormattedDispatcher struct {
 	deliveries []Delivery
 }
 
-func (d *recordingFormattedDispatcher) Dispatch(_ context.Context, delivery Delivery) (string, error) {
+func (d *recordingFormattedDispatcher) Dispatch(_ context.Context, delivery Delivery) (deliverycmd.Result, error) {
 	d.deliveries = append(d.deliveries, delivery)
-	return testProviderMessageID, nil
+	return deliverycmd.Result{ProviderMessageID: testProviderMessageID}, nil
 }
 
 type recordingDeliveryStore struct {
@@ -53,7 +54,9 @@ func (s *recordingDeliveryStore) MarkDeliveryFailed(_ context.Context, _ string,
 	s.failedReason = reason
 	return nil
 }
-func (*recordingDeliveryStore) MarkDeliverySent(context.Context, string, string) error { return nil }
+func (*recordingDeliveryStore) MarkDeliverySent(context.Context, string, deliverycmd.Result) error {
+	return nil
+}
 
 type workflowTestFormatter struct {
 	name       deliveryfmt.Name
@@ -332,12 +335,12 @@ func (e *recordingJobEvents) AppendEvent(_ context.Context, _ string, _ string, 
 	return nil
 }
 
-func (d *failingDeliveryDispatcher) Dispatch(context.Context, Delivery) (string, error) {
+func (d *failingDeliveryDispatcher) Dispatch(context.Context, Delivery) (deliverycmd.Result, error) {
 	d.calls++
 	if d.err != nil {
-		return "", d.err
+		return deliverycmd.Result{}, d.err
 	}
-	return "", errors.New("ephemeral delivery rejected")
+	return deliverycmd.Result{}, errors.New("ephemeral delivery rejected")
 }
 
 type failedQuestionBinder struct {
@@ -694,5 +697,60 @@ func TestHandleAmbiguousQuestionDeliveryDoesNotFailQuestion(t *testing.T) {
 	}
 	if len(actor.envelopes) != 0 {
 		t.Fatalf("actor.envelopes len = %d, want 0", len(actor.envelopes))
+	}
+}
+
+type publishedQuestionDispatcher struct {
+	result deliverycmd.Result
+	calls  int
+}
+
+func (d *publishedQuestionDispatcher) Dispatch(context.Context, Delivery) (deliverycmd.Result, error) {
+	d.calls++
+	return d.result, nil
+}
+
+func TestQuestionPublicationTimeSurvivesOutboxRestart(t *testing.T) {
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), "state.db")
+	provider, err := baldastate.NewSQLiteProvider(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publishedAt := time.Date(2026, 1, 1, 1, 2, 3, 456000000, time.UTC)
+	dispatcher := &publishedQuestionDispatcher{result: deliverycmd.Result{ProviderMessageID: "root", ProviderCreatedAt: publishedAt}}
+	binder := &testQuestionBinder{}
+	payload := deliverycmd.Payload{
+		Locator: deliverycmd.Locator{ChannelType: "mattermost", AddressKey: "conversation", AddressJSON: `{}`, SessionID: "session"},
+		Mode:    deliverycmd.ModeAgentReply, Settlement: deliverycmd.SettlementOutbox,
+		Refs: map[string]string{"question_id": "question-1"}, Text: "Allow operation?",
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelope := actorlayer.Envelope{ID: "question-delivery", Kind: "delivery.agent_reply", Payload: actorlayer.Payload{Encoding: actorlayer.EncodingJSON, Data: raw}}
+	service := New(dispatcher, provider.Jobs(), nil, binder, nil, zerolog.Nop())
+	if err := service.Handle(ctx, envelope, payload); err != nil {
+		t.Fatal(err)
+	}
+	if !binder.ref.ProviderCreatedAt.Equal(publishedAt) {
+		t.Fatalf("first binding=%+v", binder.ref)
+	}
+	if err := provider.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := baldastate.NewSQLiteProvider(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = reopened.Close() })
+	recovered := &testQuestionBinder{}
+	service = New(dispatcher, reopened.Jobs(), nil, recovered, nil, zerolog.Nop())
+	if err := service.Handle(ctx, envelope, payload); err != nil {
+		t.Fatal(err)
+	}
+	if dispatcher.calls != 1 || !recovered.ref.ProviderCreatedAt.Equal(publishedAt) || recovered.ref.ProviderMessageID != "root" {
+		t.Fatalf("recovered binding=%+v dispatches=%d", recovered.ref, dispatcher.calls)
 	}
 }

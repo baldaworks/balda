@@ -50,9 +50,9 @@ func (s *sqliteQuestionStore) CreatePendingQuestion(ctx context.Context, record 
 		INSERT INTO balda_questions (
 			question_id, session_id, channel_kind, address_key, address_json,
 			prompt, status, interaction_json, resume_json, request_json, answer_json, failure_json,
-			provider, conversation_key, provider_message_id, reply_handle, control_handle,
+			provider, conversation_key, provider_message_id, reply_handle, control_handle, provider_created_at,
 			expires_at, answered_at, failed_at, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		record.QuestionID,
 		record.SessionID,
 		record.ChannelKind,
@@ -70,6 +70,7 @@ func (s *sqliteQuestionStore) CreatePendingQuestion(ctx context.Context, record 
 		strings.TrimSpace(record.ProviderMessageID),
 		strings.TrimSpace(record.ReplyHandle),
 		strings.TrimSpace(record.ControlHandle),
+		optionalProviderTimeString(record.ProviderCreatedAt),
 		optionalTimeString(record.ExpiresAt),
 		optionalTimeString(record.AnsweredAt),
 		optionalTimeString(record.FailedAt),
@@ -86,13 +87,14 @@ func (s *sqliteQuestionStore) BindQuestionDeliveryRef(ctx context.Context, quest
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE balda_questions
-		SET provider = ?, conversation_key = ?, provider_message_id = ?, reply_handle = ?, control_handle = ?, answer_controls_pending = CASE WHEN status = 'answered' AND (provider <> ? OR conversation_key <> ? OR provider_message_id <> ? OR control_handle <> ?) THEN TRUE ELSE answer_controls_pending END, updated_at = ?
+		SET provider = ?, conversation_key = ?, provider_message_id = ?, reply_handle = ?, control_handle = ?, provider_created_at = ?, answer_controls_pending = CASE WHEN status = 'answered' AND (provider <> ? OR conversation_key <> ? OR provider_message_id <> ? OR control_handle <> ?) THEN TRUE ELSE answer_controls_pending END, updated_at = ?
 		WHERE question_id = ?`,
 		strings.TrimSpace(ref.Provider),
 		strings.TrimSpace(ref.ConversationKey),
 		strings.TrimSpace(ref.ProviderMessageID),
 		strings.TrimSpace(ref.ReplyHandle),
 		strings.TrimSpace(ref.ControlHandle),
+		optionalProviderTimeString(ref.ProviderCreatedAt),
 		strings.TrimSpace(ref.Provider),
 		strings.TrimSpace(ref.ConversationKey),
 		strings.TrimSpace(ref.ProviderMessageID),
@@ -233,17 +235,18 @@ const questionSelectSQL = `
 	SELECT question_id, session_id, channel_kind, address_key, address_json,
 	       prompt, status, interaction_json, resume_json, request_json, answer_json, failure_json,
 	       provider, conversation_key, provider_message_id, reply_handle, control_handle,
-	       expires_at, answered_at, failed_at, created_at, updated_at, answer_continuation_pending, answer_controls_pending
+	       expires_at, answered_at, failed_at, created_at, updated_at, answer_continuation_pending, answer_controls_pending, provider_created_at
 	FROM balda_questions`
 
 func scanQuestion(scan func(dest ...any) error) (QuestionRecord, bool, error) {
 	var (
-		record        QuestionRecord
-		expiresAtRaw  string
-		answeredAtRaw string
-		failedAtRaw   string
-		createdAtRaw  string
-		updatedAtRaw  string
+		record               QuestionRecord
+		expiresAtRaw         string
+		answeredAtRaw        string
+		failedAtRaw          string
+		createdAtRaw         string
+		updatedAtRaw         string
+		providerCreatedAtRaw string
 	)
 	err := scan(
 		&record.QuestionID,
@@ -270,6 +273,7 @@ func scanQuestion(scan func(dest ...any) error) (QuestionRecord, bool, error) {
 		&updatedAtRaw,
 		&record.AnswerContinuationPending,
 		&record.AnswerControlsPending,
+		&providerCreatedAtRaw,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -277,6 +281,7 @@ func scanQuestion(scan func(dest ...any) error) (QuestionRecord, bool, error) {
 		}
 		return QuestionRecord{}, false, fmt.Errorf("scan question: %w", err)
 	}
+	record.ProviderCreatedAt = parseOptionalTime(providerCreatedAtRaw)
 	record.ExpiresAt = parseOptionalTime(expiresAtRaw)
 	record.AnsweredAt = parseOptionalTime(answeredAtRaw)
 	record.FailedAt = parseOptionalTime(failedAtRaw)
@@ -386,4 +391,12 @@ func scanQuestionReply(rows *sql.Rows) (QuestionRecord, bool, error) {
 		}
 	}
 	return record, found, rows.Err()
+}
+
+// optionalProviderTimeString preserves the provider timestamp precision.
+func optionalProviderTimeString(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+	return value.UTC().Format(time.RFC3339Nano)
 }

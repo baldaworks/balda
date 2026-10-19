@@ -7,11 +7,12 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
-	"github.com/baldaworks/go-actorlayer"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )
@@ -37,6 +38,7 @@ type deliveryBindingProjectorParams struct {
 type deliverySentEventPayload struct {
 	Provider          string            `json:"provider,omitempty"`
 	ConversationKey   string            `json:"conversation_key,omitempty"`
+	ProviderCreatedAt time.Time         `json:"provider_created_at,omitempty"`
 	ProviderMessageID string            `json:"provider_message_id,omitempty"`
 	ReplyHandle       string            `json:"reply_handle,omitempty"`
 	ControlHandle     string            `json:"control_handle,omitempty"`
@@ -113,6 +115,7 @@ func (p *DeliveryBindingProjector) Project(ctx context.Context, subject string, 
 		Provider:          strings.TrimSpace(payload.Provider),
 		ConversationKey:   strings.TrimSpace(payload.ConversationKey),
 		ProviderMessageID: strings.TrimSpace(payload.ProviderMessageID),
+		ProviderCreatedAt: payload.ProviderCreatedAt,
 		ReplyHandle:       strings.TrimSpace(payload.ReplyHandle),
 		ControlHandle:     firstNonEmptyBinding(strings.TrimSpace(payload.ControlHandle), strings.TrimSpace(payload.Refs["question_control_handle"])),
 	}); err != nil {

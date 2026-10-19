@@ -3,9 +3,10 @@ package questions
 import (
 	"context"
 	"testing"
+	"time"
 
-	"github.com/baldaworks/go-actorlayer"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
+	"github.com/baldaworks/go-actorlayer"
 	"github.com/rs/zerolog"
 )
 
@@ -22,6 +23,7 @@ func TestDeliveryBindingProjectorBindsQuestionRefFromDeliveryEvent(t *testing.T)
 				"provider":"telegram",
 				"conversation_key":"1:0",
 				"provider_message_id":"42",
+ "provider_created_at":"2026-01-01T12:34:56.789Z",
 				"control_handle":"telegram:message:delete",
 				"refs":{"question_id":"question-1"}
 			}`),
@@ -34,6 +36,10 @@ func TestDeliveryBindingProjectorBindsQuestionRefFromDeliveryEvent(t *testing.T)
 	}
 	if store.record.ProviderMessageID != "42" {
 		t.Fatalf("provider message id = %q, want 42", store.record.ProviderMessageID)
+	}
+	want := time.Date(2026, 1, 1, 12, 34, 56, 789000000, time.UTC)
+	if !store.record.ProviderCreatedAt.Equal(want) {
+		t.Fatalf("provider publication = %v, want %v", store.record.ProviderCreatedAt, want)
 	}
 	if store.record.ControlHandle != "telegram:message:delete" {
 		t.Fatalf("control handle = %q, want telegram:message:delete", store.record.ControlHandle)

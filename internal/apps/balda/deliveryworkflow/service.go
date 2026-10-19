@@ -28,7 +28,7 @@ type Lifecycle interface {
 	ReserveDelivery(ctx context.Context, record baldastate.DeliveryRecord) (baldastate.DeliveryRecord, bool, error)
 	MarkDeliverySending(ctx context.Context, deliveryKey string) error
 	MarkDeliveryFailed(ctx context.Context, deliveryKey string, reason string) error
-	MarkDeliverySent(ctx context.Context, deliveryKey string, providerMessageID string) error
+	MarkDeliverySent(ctx context.Context, deliveryKey string, result deliverycmd.Result) error
 	AppendEvent(ctx context.Context, jobID string, eventType string, actor string, messageID string, payload any) error
 }
 
@@ -121,7 +121,7 @@ func (s *Service) Handle(ctx context.Context, env actorlayer.Envelope, payload d
 			return actorlayer.PermanentError(fmt.Errorf("delivery key %q already reserved for different payload", deliveryKey))
 		}
 		if reserved.Status == baldastate.DeliveryStatusSent {
-			if err := s.bindQuestionDelivery(ctx, payload, reserved.ProviderMessageID); err != nil {
+			if err := s.bindQuestionDelivery(ctx, payload, deliverycmd.Result{ProviderMessageID: reserved.ProviderMessageID, ProviderCreatedAt: reserved.ProviderCreatedAt}); err != nil {
 				return actorlayer.TransientError(err)
 			}
 			return nil
@@ -160,7 +160,7 @@ func (s *Service) Handle(ctx context.Context, env actorlayer.Envelope, payload d
 			Int("sequence", payload.Progress.Sequence).
 			Msg("dispatching thinking progress delivery")
 	}
-	providerMessageID, err := s.dispatcher.Dispatch(ctx, delivery)
+	result, err := s.dispatcher.Dispatch(ctx, delivery)
 	if err != nil {
 		deliveryErrorKind, classified := deliverycmd.ClassifyError(err)
 		isAmbiguous := classified && deliveryErrorKind == deliverycmd.ErrorKindAmbiguous
@@ -204,11 +204,11 @@ func (s *Service) Handle(ctx context.Context, env actorlayer.Envelope, payload d
 		return actorlayer.ExternalDeliveryError(err)
 	}
 	if durable && s.outbox != nil {
-		if err := s.outbox.MarkDeliverySent(ctx, deliveryKey, providerMessageID); err != nil {
+		if err := s.outbox.MarkDeliverySent(ctx, deliveryKey, result); err != nil {
 			return actorlayer.TransientError(err)
 		}
 	}
-	if err := s.bindQuestionDelivery(ctx, payload, providerMessageID); err != nil {
+	if err := s.bindQuestionDelivery(ctx, payload, result); err != nil {
 		return actorlayer.TransientError(err)
 	}
 	if durable && s.events != nil && strings.TrimSpace(payload.JobID) != "" {
@@ -216,7 +216,8 @@ func (s *Service) Handle(ctx context.Context, env actorlayer.Envelope, payload d
 			"mode":                payload.Mode,
 			"provider":            strings.TrimSpace(payload.Locator.ChannelType),
 			"conversation_key":    strings.TrimSpace(payload.Locator.AddressKey),
-			"provider_message_id": strings.TrimSpace(providerMessageID),
+			"provider_message_id": strings.TrimSpace(result.ProviderMessageID),
+			"provider_created_at": result.ProviderCreatedAt,
 			"text_char_count":     len(strings.TrimSpace(payload.Text)),
 			"refs_count":          len(payload.Refs),
 		}); err != nil {
@@ -390,12 +391,12 @@ func questionIDFromPayload(payload deliverycmd.Payload) string {
 	return strings.TrimSpace(payload.Refs["question_id"])
 }
 
-func (s *Service) bindQuestionDelivery(ctx context.Context, payload deliverycmd.Payload, providerMessageID string) error {
+func (s *Service) bindQuestionDelivery(ctx context.Context, payload deliverycmd.Payload, result deliverycmd.Result) error {
 	if s.questions == nil || payload.Refs == nil {
 		return nil
 	}
 	questionID := strings.TrimSpace(payload.Refs["question_id"])
-	providerMessageID = strings.TrimSpace(providerMessageID)
+	providerMessageID := strings.TrimSpace(result.ProviderMessageID)
 	if questionID == "" || providerMessageID == "" {
 		return nil
 	}
@@ -403,6 +404,7 @@ func (s *Service) bindQuestionDelivery(ctx context.Context, payload deliverycmd.
 		Provider:          strings.TrimSpace(payload.Locator.ChannelType),
 		ConversationKey:   strings.TrimSpace(payload.Locator.AddressKey),
 		ProviderMessageID: providerMessageID,
+		ProviderCreatedAt: result.ProviderCreatedAt,
 		ControlHandle:     strings.TrimSpace(payload.Refs["question_control_handle"]),
 	})
 }

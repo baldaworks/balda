@@ -20,16 +20,16 @@ func NewChannelDispatcher(router *baldachannel.Router) deliveryworkflow.Dispatch
 	return channelRouterDispatcher{router: router}
 }
 
-func (d channelRouterDispatcher) Dispatch(ctx context.Context, delivery deliveryworkflow.Delivery) (string, error) {
+func (d channelRouterDispatcher) Dispatch(ctx context.Context, delivery deliveryworkflow.Delivery) (deliverycmd.Result, error) {
 	if d.router == nil {
-		return "", fmt.Errorf("channel router is required")
+		return deliverycmd.Result{}, fmt.Errorf("channel router is required")
 	}
 	operation, err := channelOperation(delivery.Payload, delivery.Message)
 	if err != nil {
-		return "", err
+		return deliverycmd.Result{}, err
 	}
 	result, err := d.router.Deliver(ctx, delivery.Payload.Locator, operation)
-	return result.ProviderMessageID, err
+	return result, err
 }
 
 func channelOperation(payload deliverycmd.Payload, message *deliveryfmt.Message) (deliverycmd.Operation, error) {

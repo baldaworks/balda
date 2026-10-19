@@ -49,9 +49,9 @@ func (s *postgresQuestionStore) CreatePendingQuestion(ctx context.Context, recor
 		INSERT INTO balda_questions (
 			question_id, session_id, channel_kind, address_key, address_json,
 			prompt, status, interaction_json, resume_json, request_json, answer_json, failure_json,
-			provider, conversation_key, provider_message_id, reply_handle, control_handle,
+			provider, conversation_key, provider_message_id, reply_handle, control_handle, provider_created_at,
 			expires_at, answered_at, failed_at, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`), record.QuestionID,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`), record.QuestionID,
 		record.SessionID,
 		record.ChannelKind,
 		record.AddressKey,
@@ -68,6 +68,7 @@ func (s *postgresQuestionStore) CreatePendingQuestion(ctx context.Context, recor
 		strings.TrimSpace(record.ProviderMessageID),
 		strings.TrimSpace(record.ReplyHandle),
 		strings.TrimSpace(record.ControlHandle),
+		optionalProviderTimeString(record.ProviderCreatedAt),
 		optionalTimeString(record.ExpiresAt),
 		optionalTimeString(record.AnsweredAt),
 		optionalTimeString(record.FailedAt),
@@ -84,12 +85,13 @@ func (s *postgresQuestionStore) BindQuestionDeliveryRef(ctx context.Context, que
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := s.db.ExecContext(ctx, postgresBind(`
 		UPDATE balda_questions
-		SET provider = ?, conversation_key = ?, provider_message_id = ?, reply_handle = ?, control_handle = ?, answer_controls_pending = CASE WHEN status = 'answered' AND (provider <> ? OR conversation_key <> ? OR provider_message_id <> ? OR control_handle <> ?) THEN TRUE ELSE answer_controls_pending END, updated_at = ?
+		SET provider = ?, conversation_key = ?, provider_message_id = ?, reply_handle = ?, control_handle = ?, provider_created_at = ?, answer_controls_pending = CASE WHEN status = 'answered' AND (provider <> ? OR conversation_key <> ? OR provider_message_id <> ? OR control_handle <> ?) THEN TRUE ELSE answer_controls_pending END, updated_at = ?
 		WHERE question_id = ?`), strings.TrimSpace(ref.Provider),
 		strings.TrimSpace(ref.ConversationKey),
 		strings.TrimSpace(ref.ProviderMessageID),
 		strings.TrimSpace(ref.ReplyHandle),
 		strings.TrimSpace(ref.ControlHandle),
+		optionalProviderTimeString(ref.ProviderCreatedAt),
 		strings.TrimSpace(ref.Provider),
 		strings.TrimSpace(ref.ConversationKey),
 		strings.TrimSpace(ref.ProviderMessageID),

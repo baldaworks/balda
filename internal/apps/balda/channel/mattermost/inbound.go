@@ -17,17 +17,18 @@ import (
 
 // InboundMessage represents a normalized inbound message from Mattermost.
 type InboundMessage struct {
-	OriginalInput *chatarchivecmd.Input
-	Locator       deliverycmd.Locator
-	MessageID     int
-	PostID        string
-	RootID        string
-	SenderID      string
-	SenderName    string
-	Text          string
-	Direct        bool
-	ReceivedAt    time.Time
-	Attachments   []string
+	OriginalInput     *chatarchivecmd.Input
+	Locator           deliverycmd.Locator
+	MessageID         int
+	PostID            string
+	RootID            string
+	SenderID          string
+	SenderName        string
+	Text              string
+	Direct            bool
+	ReceivedAt        time.Time
+	ProviderCreatedAt time.Time
+	Attachments       []string
 }
 
 // BuildInboundReply converts a threaded Mattermost post into a question
@@ -39,15 +40,16 @@ func BuildInboundReply(locator deliverycmd.Locator, subject string, message Inbo
 		return questioncmd.InboundReply{}, false
 	}
 	return questioncmd.InboundReply{
-		SharedReplyRef:   true,
-		Provider:         ChannelType,
-		SessionID:        locator.SessionID,
-		ConversationKey:  locator.AddressKey,
-		ReplyToMessageID: replyToMessageID,
-		MessageID:        strings.TrimSpace(message.PostID),
-		User:             questioncmd.UserRef{UserID: strings.TrimSpace(subject)},
-		Text:             text,
-		ReceivedAt:       receivedAt.UTC(),
+		SharedReplyRef:    true,
+		ProviderCreatedAt: message.ProviderCreatedAt,
+		Provider:          ChannelType,
+		SessionID:         locator.SessionID,
+		ConversationKey:   locator.AddressKey,
+		ReplyToMessageID:  replyToMessageID,
+		MessageID:         strings.TrimSpace(message.PostID),
+		User:              questioncmd.UserRef{UserID: strings.TrimSpace(subject)},
+		Text:              text,
+		ReceivedAt:        receivedAt.UTC(),
 	}, true
 }
 

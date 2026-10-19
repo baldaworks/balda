@@ -128,10 +128,17 @@ answers, progress, and questions use the same delivery address. Group DMs follow
 the same rule. The DM session and public conversation key remain unchanged.
 
 Approval choices use the native threaded reply path and the requester's raw
-Mattermost user ID. Thread routing is transport behavior, not a configurable Mattermost option. A later question in the same thread supersedes answered
+Mattermost user ID. Thread routing is transport behavior, not a configurable
+Mattermost option. A later question in the same thread supersedes answered
 questions for reply lookup. If multiple questions are pending in one thread,
 a choice is rejected as ambiguous rather than approving an arbitrary operation.
-A reply sent before the current question was created cannot approve it.
+A reply sent before the current question was published cannot approve it.
+
+Thread reply freshness uses Mattermost's `create_at` for both the delivered
+question and the incoming reply. The question publication time is persisted in
+the question binding and delivery outbox, including replay after a restart.
+Balda's local clock is not used for that comparison. A shared-thread reply with
+missing provider timestamps cannot settle a question.
 
 ### Post mutations are ignored on purpose
 

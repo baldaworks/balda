@@ -77,9 +77,10 @@ func TestBuildInboundReplyMapsMattermostThreadReply(t *testing.T) {
 	// the question itself is a later bot reply in that thread.
 	locator := NewChannelLocator("team-1", "channel-1", "thread-root")
 	reply, ok := BuildInboundReply(locator, "mattermost:user-1", InboundMessage{
-		PostID: "reply-post",
-		RootID: "thread-root",
-		Text:   "  second option  ",
+		PostID:            "reply-post",
+		ProviderCreatedAt: receivedAt.Add(-time.Hour),
+		RootID:            "thread-root",
+		Text:              "  second option  ",
 	}, receivedAt)
 	if !ok {
 		t.Fatal("BuildInboundReply() ok = false, want true")
@@ -89,6 +90,9 @@ func TestBuildInboundReplyMapsMattermostThreadReply(t *testing.T) {
 	}
 	if got, want := reply.ReplyToMessageID, "thread-root"; got != want {
 		t.Fatalf("ReplyToMessageID = %q, want %q", got, want)
+	}
+	if !reply.ProviderCreatedAt.Equal(receivedAt.Add(-time.Hour)) {
+		t.Fatalf("provider timestamp=%v", reply.ProviderCreatedAt)
 	}
 	if !reply.SharedReplyRef {
 		t.Fatal("thread reply must declare its shared question reference")
@@ -432,5 +436,14 @@ func TestDirectPostThreadDeliveryPreservesConversationIdentity(t *testing.T) {
 				t.Fatal("thread delivery changed the direct conversation identity")
 			}
 		})
+	}
+}
+
+func TestProviderPostTimeDoesNotFallBackToLocalClock(t *testing.T) {
+	if got := providerPostTime(Post{}); !got.IsZero() {
+		t.Fatalf("missing provider time = %v", got)
+	}
+	if got := providerPostTime(Post{CreateAt: 1760000000123}); !got.Equal(time.UnixMilli(1760000000123)) {
+		t.Fatalf("provider time = %v", got)
 	}
 }

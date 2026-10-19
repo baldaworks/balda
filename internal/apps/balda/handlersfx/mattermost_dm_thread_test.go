@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -76,6 +77,8 @@ func TestMattermostDMRepliesStayInUserMessageThread(t *testing.T) {
 	}
 	var mu sync.Mutex
 	var posts []mattermost.Post
+	var providerClock atomic.Int64
+	providerClock.Store(time.Now().Add(-time.Hour).UnixMilli())
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/api/v4/posts" {
 			http.NotFound(w, r)
@@ -90,6 +93,7 @@ func TestMattermostDMRepliesStayInUserMessageThread(t *testing.T) {
 		mu.Lock()
 		p.ID = fmt.Sprintf("bot-post-%d", len(posts)+1)
 		p.UserID = botID
+		p.CreateAt = providerClock.Add(1000)
 		posts = append(posts, p)
 		mu.Unlock()
 		w.WriteHeader(http.StatusCreated)
@@ -110,18 +114,22 @@ func TestMattermostDMRepliesStayInUserMessageThread(t *testing.T) {
 	if len(created) != 2 || created[0].RootID != threadRoot || created[1].RootID != threadRoot {
 		t.Fatalf("both ordinary reply and question must use the user message thread: %+v", created)
 	}
+	if !delivered.ProviderCreatedAt.Equal(time.UnixMilli(created[1].CreateAt)) {
+		t.Fatalf("publication time=%v, want server time %d", delivered.ProviderCreatedAt, created[1].CreateAt)
+	}
 	if delivered.ProviderMessageID != threadRoot {
 		t.Fatalf("binding=%q, want user message thread root", delivered.ProviderMessageID)
 	}
 
-	if err = service.BindDelivery(ctx, payload.Question.ID, questioncmd.DeliveryRef{Provider: "mattermost", ConversationKey: locator.AddressKey, ProviderMessageID: delivered.ProviderMessageID}); err != nil {
+	if err = service.BindDelivery(ctx, payload.Question.ID, questioncmd.DeliveryRef{Provider: "mattermost", ConversationKey: locator.AddressKey, ProviderMessageID: delivered.ProviderMessageID, ProviderCreatedAt: delivered.ProviderCreatedAt}); err != nil {
 		t.Fatal(err)
 	}
 	replies := 0
 	reply := func(user string) questioncmd.InboundReply {
 		replies++
+		replyTime := time.UnixMilli(providerClock.Add(1000)).UTC()
 		post := mattermost.Post{ID: fmt.Sprintf("reply-%d-%s", replies, user), ChannelID: channel.ID, UserID: user, RootID: threadRoot}
-		request := mattermostChatRequest(mattermost.InboundMessage{Locator: mattermost.LocatorForPost(channel, post), PostID: post.ID, SenderID: user, Text: "1", Direct: true, RootID: post.RootID}, time.Now())
+		request := mattermostChatRequest(mattermost.InboundMessage{Locator: mattermost.LocatorForPost(channel, post), PostID: post.ID, SenderID: user, Text: "1", Direct: true, RootID: post.RootID, ProviderCreatedAt: replyTime}, time.Now())
 		if request.QuestionReply == nil {
 			t.Fatal("native threaded reply was not recognized")
 		}
@@ -160,7 +168,7 @@ func TestMattermostDMRepliesStayInUserMessageThread(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := service.BindDelivery(ctx, second.QuestionID, questioncmd.DeliveryRef{Provider: "mattermost", ConversationKey: locator.AddressKey, ProviderMessageID: threadRoot}); err != nil {
+	if err := service.BindDelivery(ctx, second.QuestionID, questioncmd.DeliveryRef{Provider: "mattermost", ConversationKey: locator.AddressKey, ProviderMessageID: threadRoot, ProviderCreatedAt: time.UnixMilli(providerClock.Add(1)).UTC()}); err != nil {
 		t.Fatal(err)
 	}
 	replayed, err := resolver.ResolveQuestionReply(ctx, correct)
@@ -184,7 +192,7 @@ func TestMattermostDMRepliesStayInUserMessageThread(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := service.BindDelivery(ctx, pending.QuestionID, questioncmd.DeliveryRef{Provider: "mattermost", ConversationKey: locator.AddressKey, ProviderMessageID: threadRoot}); err != nil {
+		if err := service.BindDelivery(ctx, pending.QuestionID, questioncmd.DeliveryRef{Provider: "mattermost", ConversationKey: locator.AddressKey, ProviderMessageID: threadRoot, ProviderCreatedAt: time.UnixMilli(providerClock.Add(1)).UTC()}); err != nil {
 			t.Fatal(err)
 		}
 	}
