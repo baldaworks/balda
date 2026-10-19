@@ -223,6 +223,11 @@ func (s *Service) ResolveReplyDetailed(ctx context.Context, in questioncmd.Inbou
 	if !allowed {
 		return ReplyResolution{Record: record, Matched: true, Invalid: true}, nil
 	}
+	// One thread can host consecutive questions. A delayed reply must not
+	// authorize a question that did not exist when the message was sent.
+	if in.SharedReplyRef && !in.ReceivedAt.IsZero() && in.ReceivedAt.Before(record.CreatedAt) {
+		return ReplyResolution{Record: record, Matched: true, Invalid: true}, nil
+	}
 	selected, valid := selectedOption(request, in.Text)
 	if !valid {
 		return ReplyResolution{Record: record, Matched: true, Invalid: true}, nil

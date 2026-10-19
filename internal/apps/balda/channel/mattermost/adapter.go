@@ -121,9 +121,8 @@ func (a *Adapter) Deliver(ctx context.Context, locator deliverycmd.Locator, oper
 }
 
 // questionReplyReference returns the ID Mattermost will place in RootID on a
-// reply to a delivered question. Channel threads always report the thread root,
-// not the immediate post being replied to; direct and channel-root questions
-// retain their delivered post ID.
+// reply to a delivered question. Threaded questions report the thread root,
+// including direct conversations. Unthreaded delivery retains its post ID.
 func questionReplyReference(locator deliverycmd.Locator, providerMessageID string) string {
 	if rootID, ok := RootIDFromLocator(locator); ok && strings.TrimSpace(rootID) != "" {
 		return rootID

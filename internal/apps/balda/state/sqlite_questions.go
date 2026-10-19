@@ -73,7 +73,7 @@ func (s *sqliteQuestionStore) CreatePendingQuestion(ctx context.Context, record 
 		optionalTimeString(record.ExpiresAt),
 		optionalTimeString(record.AnsweredAt),
 		optionalTimeString(record.FailedAt),
-		createdAt.Format(time.RFC3339),
+		createdAt.Format(time.RFC3339Nano),
 		updatedAt.Format(time.RFC3339),
 	)
 	if err != nil {
@@ -112,13 +112,14 @@ func (s *sqliteQuestionStore) GetQuestionByID(ctx context.Context, questionID st
 }
 
 func (s *sqliteQuestionStore) GetQuestionByReplyRef(ctx context.Context, provider, conversationKey, replyToMessageID string) (QuestionRecord, bool, error) {
-	row := s.db.QueryRowContext(ctx, questionSelectSQL+`
-	 WHERE provider = ? AND conversation_key = ? AND provider_message_id = ?`,
-		strings.TrimSpace(provider),
-		strings.TrimSpace(conversationKey),
-		strings.TrimSpace(replyToMessageID),
-	)
-	return scanQuestion(row.Scan)
+	rows, err := s.db.QueryContext(ctx, questionSelectSQL+`
+ WHERE provider = ? AND conversation_key = ? AND provider_message_id = ?
+ ORDER BY CASE WHEN status = 'pending' THEN 0 ELSE 1 END, created_at DESC, question_id DESC LIMIT 2`,
+		strings.TrimSpace(provider), strings.TrimSpace(conversationKey), strings.TrimSpace(replyToMessageID))
+	if err != nil {
+		return QuestionRecord{}, false, err
+	}
+	return scanQuestionReply(rows)
 }
 
 func (s *sqliteQuestionStore) MarkQuestionAnswered(ctx context.Context, questionID string, answer questioncmd.Answer) (QuestionRecord, bool, error) {
@@ -361,4 +362,28 @@ func (s *sqliteQuestionStore) MarkQuestionAnswerControlsCleared(ctx context.Cont
 		return fmt.Errorf("complete question answer controls: %w", err)
 	}
 	return nil
+}
+
+// scanQuestionReply prefers the current pending question when a transport
+// thread has hosted earlier questions. Concurrent pending questions are
+// ambiguous and must not accept a choice for an arbitrary operation.
+func scanQuestionReply(rows *sql.Rows) (QuestionRecord, bool, error) {
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		return QuestionRecord{}, false, rows.Err()
+	}
+	record, found, err := scanQuestion(rows.Scan)
+	if err != nil {
+		return record, found, err
+	}
+	if record.Status == questioncmd.StatusPending && rows.Next() {
+		next, _, err := scanQuestion(rows.Scan)
+		if err != nil {
+			return QuestionRecord{}, false, err
+		}
+		if next.Status == questioncmd.StatusPending {
+			return QuestionRecord{}, false, fmt.Errorf("multiple pending questions share this reply thread")
+		}
+	}
+	return record, found, rows.Err()
 }

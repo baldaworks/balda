@@ -152,7 +152,7 @@ func mattermostChatRequest(msg mattermost.InboundMessage, receivedAt time.Time) 
 		Direct: msg.Direct,
 		Source: turncmd.SourceMattermost,
 	}
-	if reply, ok := mattermost.BuildInboundReply(msg.Locator, auth.MattermostSubject(msg.SenderID), msg, receivedAt); ok {
+	if reply, ok := mattermost.BuildInboundReply(msg.Locator, request.UserID, msg, receivedAt); ok {
 		request.QuestionReply = &reply
 	}
 	return request

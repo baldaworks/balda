@@ -83,6 +83,9 @@ type DeliveryRef struct {
 }
 
 type InboundReply struct {
+	// SharedReplyRef identifies a thread that can host consecutive questions.
+	// Its timestamp must prevent an old reply from settling a newer question.
+	SharedReplyRef   bool                  `json:"shared_reply_ref,omitempty"`
 	OriginalInput    *chatarchivecmd.Input `json:"original_input,omitempty"`
 	Provider         string                `json:"provider,omitempty"`
 	SessionID        string                `json:"session_id,omitempty"`

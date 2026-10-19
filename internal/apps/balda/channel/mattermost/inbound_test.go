@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 )
@@ -88,6 +89,9 @@ func TestBuildInboundReplyMapsMattermostThreadReply(t *testing.T) {
 	}
 	if got, want := reply.ReplyToMessageID, "thread-root"; got != want {
 		t.Fatalf("ReplyToMessageID = %q, want %q", got, want)
+	}
+	if !reply.SharedReplyRef {
+		t.Fatal("thread reply must declare its shared question reference")
 	}
 	if got, want := reply.MessageID, "reply-post"; got != want {
 		t.Fatalf("MessageID = %q, want %q", got, want)
@@ -406,5 +410,27 @@ func TestParsePostIDIsNotUsedForMattermostIdentifiers(t *testing.T) {
 	}
 	if got := ParsePostID("42"); got != 42 {
 		t.Fatalf("ParsePostID(42) = %d, want 42", got)
+	}
+}
+
+func TestDirectPostThreadDeliveryPreservesConversationIdentity(t *testing.T) {
+	for _, kind := range []string{channelTypeDirect, channelTypeGroup} {
+		t.Run(kind, func(t *testing.T) {
+			channel := Channel{ID: "direct-channel", Type: kind}
+			first := LocatorForPost(channel, Post{ID: "user-root", ChannelID: channel.ID, UserID: "user"})
+			reply := LocatorForPost(channel, Post{ID: "user-reply", RootID: "user-root", ChannelID: channel.ID, UserID: "user"})
+			next := LocatorForPost(channel, Post{ID: "next-root", ChannelID: channel.ID, UserID: "user"})
+			for _, locator := range []deliverycmd.Locator{first, reply} {
+				if root, ok := RootIDFromLocator(locator); !ok || root != "user-root" {
+					t.Fatalf("root=%q ok=%v, want the user's thread", root, ok)
+				}
+			}
+			if root, _ := RootIDFromLocator(next); root != "next-root" {
+				t.Fatalf("next message root=%q", root)
+			}
+			if first.SessionID != reply.SessionID || first.SessionID != next.SessionID || first.AddressKey != next.AddressKey {
+				t.Fatal("thread delivery changed the direct conversation identity")
+			}
+		})
 	}
 }

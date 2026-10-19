@@ -71,7 +71,7 @@ func (s *postgresQuestionStore) CreatePendingQuestion(ctx context.Context, recor
 		optionalTimeString(record.ExpiresAt),
 		optionalTimeString(record.AnsweredAt),
 		optionalTimeString(record.FailedAt),
-		createdAt.Format(time.RFC3339),
+		createdAt.Format(time.RFC3339Nano),
 		updatedAt.Format(time.RFC3339),
 	)
 	if err != nil {
@@ -110,12 +110,14 @@ func (s *postgresQuestionStore) GetQuestionByID(ctx context.Context, questionID 
 }
 
 func (s *postgresQuestionStore) GetQuestionByReplyRef(ctx context.Context, provider, conversationKey, replyToMessageID string) (QuestionRecord, bool, error) {
-	row := s.db.QueryRowContext(ctx, postgresBind(questionSelectSQL+`
-	 WHERE provider = ? AND conversation_key = ? AND provider_message_id = ?`), strings.TrimSpace(provider),
-		strings.TrimSpace(conversationKey),
-		strings.TrimSpace(replyToMessageID),
-	)
-	record, found, err := scanQuestion(row.Scan)
+	rows, err := s.db.QueryContext(ctx, postgresBind(questionSelectSQL+`
+ WHERE provider = ? AND conversation_key = ? AND provider_message_id = ?
+ ORDER BY CASE WHEN status = 'pending' THEN 0 ELSE 1 END, created_at DESC, question_id DESC LIMIT 2`),
+		strings.TrimSpace(provider), strings.TrimSpace(conversationKey), strings.TrimSpace(replyToMessageID))
+	if err != nil {
+		return QuestionRecord{}, false, redactPostgresError(err)
+	}
+	record, found, err := scanQuestionReply(rows)
 	return record, found, redactPostgresError(err)
 }
 

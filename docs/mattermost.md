@@ -120,6 +120,19 @@ Balda maps each Mattermost conversation to a session:
 
 Group message channels are treated as direct conversations.
 
+### Replies in direct messages
+
+Balda replies inside the thread of the user's message. A new DM message is the
+root for its replies; messages already in a thread keep that root. Ordinary
+answers, progress, and questions use the same delivery address. Group DMs follow
+the same rule. The DM session and public conversation key remain unchanged.
+
+Approval choices use the native threaded reply path and the requester's raw
+Mattermost user ID. Thread routing is transport behavior, not a configurable Mattermost option. A later question in the same thread supersedes answered
+questions for reply lookup. If multiple questions are pending in one thread,
+a choice is rejected as ambiguous rather than approving an arbitrary operation.
+A reply sent before the current question was created cannot approve it.
+
 ### Post mutations are ignored on purpose
 
 Mattermost emits `post_edited` and `post_deleted` events. Balda ignores both:
