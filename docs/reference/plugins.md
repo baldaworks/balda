@@ -176,7 +176,10 @@ MCP is not supplied again with each prompt. A command does not receive an MCP
 list and cannot add tools; it merely executes inside the already-created
 ADK session runtime, where the model may use the tools already bound there.
 Every command, ordinary, and selected-skill turn uses the existing
-`TopicSession` runner. No turn constructs or swaps a session runtime.
+`TopicSession` runner. Admitted commands from different participants in the
+same topic retain that session's runtime identity, history, and pinned
+capabilities. The caller remains the requester for attribution and approvals.
+No turn constructs or swaps a session runtime.
 
 Catalog activation affects newly created sessions only. Restoring a session
 first uses its exact persisted snapshot. If that attempt fails while the caller

@@ -24,6 +24,8 @@ work from external events, too.
 - **Use your preferred agent.** Connect Codex, Claude Code, OpenCode, Copilot,
   Gemini, or a configured hosted provider.
 - **Connect your tools.** Add MCP servers, skills, and plugins for your workflow.
+  [Skill commands](docs/commands.md#skill-skill-prompt) continue the shared topic
+  conversation regardless of which participant invokes them.
 - **Automate recurring work.** Start private runs from schedules and webhooks
   and send the results back to chat.
 - **Manage it in a browser.** Backoffice brings together users, chat archives,

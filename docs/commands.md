@@ -129,6 +129,8 @@ Runs an installed skill as one ordinary turn in the current session. Telegram
 and Zulip use `/skill`; Slack uses `/balda skill`. The first whitespace-delimited
 argument is the selector and the trimmed remainder is the optional turn prompt,
 so both `/skill review` and `/skill review inspect this package` are valid.
+Admitted callers in the same topic share its existing session, conversation
+history, and pinned capabilities; changing the caller does not start a session.
 
 Standalone skills are discovered from direct children of the runtime account's
 `$HOME/.agents/skills`, `$CODEX_HOME/skills` (defaulting to
