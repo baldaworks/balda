@@ -59,13 +59,16 @@ func newTurnExecutionServiceWithCapture(
 	autoMaxTurns int,
 	capture CompletedTurnCapture,
 	registry deliveryfmt.PromptRegistry,
+	structured deliveryfmt.StructuredMessageRegistry,
 ) *TurnExecutionService {
-	return NewTurnExecutionServiceWithFormats(dispatcher, jobEvents, sessions, logger, autoMaxTurns, capture, registry)
+	service := NewTurnExecutionServiceWithFormats(dispatcher, jobEvents, sessions, logger, autoMaxTurns, capture, registry)
+	service.SetStructuredMessageRegistry(structured)
+	return service
 }
 
 var Module = fx.Module("balda_sessionturnapp",
 	fx.Provide(
-		fx.Annotate(newTurnExecutionServiceWithCapture, fx.ParamTags(``, ``, ``, ``, `name:"balda_automode_max_turns"`, ``, ``)),
+		fx.Annotate(newTurnExecutionServiceWithCapture, fx.ParamTags(``, ``, ``, ``, `name:"balda_automode_max_turns"`, ``, ``, ``)),
 		fx.Annotate(
 			func(capture *sessionmemoryapp.TurnCapture) CompletedTurnCapture {
 				return completedTurnCaptureAdapter{capture: capture}

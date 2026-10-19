@@ -63,3 +63,24 @@ func TestGoalOutcomeStructuredRegistrar(t *testing.T) {
 		t.Fatalf("DeliveryFormat = %q", presentation.DeliveryFormat)
 	}
 }
+
+func TestTurnFailureStructuredRegistrar(t *testing.T) {
+	t.Parallel()
+	registry := deliveryfmt.NewStructuredRegistry()
+	if err := NewTurnFailureStructuredRegistrar()(registry); err != nil {
+		t.Fatalf("register turn failure: %v", err)
+	}
+	got, err := deliveryfmt.RenderStructured(context.Background(), registry, deliveryfmt.TransportSlackAgent, deliveryfmt.StructuredEnvelope[deliveryfmt.TurnFailure]{
+		Descriptor: deliveryfmt.TurnFailureDescriptor,
+		Body:       deliveryfmt.TurnFailure{Text: "Provider error:\nmodel busy"},
+	})
+	if err != nil {
+		t.Fatalf("render turn failure: %v", err)
+	}
+	if got.DeliveryFormat != deliveryfmt.DeliveryFormatNone {
+		t.Fatalf("DeliveryFormat = %q", got.DeliveryFormat)
+	}
+	if got.Text != "Provider error:\nmodel busy" {
+		t.Fatalf("rendered failure = %q", got.Text)
+	}
+}

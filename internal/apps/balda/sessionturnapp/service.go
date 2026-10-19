@@ -102,19 +102,20 @@ const (
 )
 
 type TurnExecutionService struct {
-	dispatcher     actortransport.Dispatcher
-	jobEvents      jobEventAppender
-	sessions       runtimeStateReader
-	turnCapture    CompletedTurnCapture
-	finalArchive   FinalArchive
-	hooks          HookRunner
-	privateOutput  PrivateOutputRecorder
-	webhookClaims  WebhookTurnClaimer
-	progressHook   ProgressTransportHook
-	formatComposer *FormatPromptComposer
-	logger         zerolog.Logger
-	autoMaxTurns   int
-	now            func() time.Time
+	dispatcher         actortransport.Dispatcher
+	jobEvents          jobEventAppender
+	sessions           runtimeStateReader
+	turnCapture        CompletedTurnCapture
+	finalArchive       FinalArchive
+	hooks              HookRunner
+	privateOutput      PrivateOutputRecorder
+	webhookClaims      WebhookTurnClaimer
+	progressHook       ProgressTransportHook
+	formatComposer     *FormatPromptComposer
+	structuredRegistry deliveryfmt.StructuredMessageRegistry
+	logger             zerolog.Logger
+	autoMaxTurns       int
+	now                func() time.Time
 }
 
 func (s *TurnExecutionService) currentTime() time.Time {
@@ -207,6 +208,14 @@ func NewTurnExecutionServiceWithFormats(
 		logger:         logger.With().Str("component", "balda.turn_execution").Logger(),
 		autoMaxTurns:   automode.NormalizeMaxTurns(autoMaxTurns),
 		now:            time.Now,
+	}
+}
+
+// SetStructuredMessageRegistry installs the deterministic service-message renderers
+// at composition time. Delivered provider failures require this registry.
+func (s *TurnExecutionService) SetStructuredMessageRegistry(registry deliveryfmt.StructuredMessageRegistry) {
+	if s != nil {
+		s.structuredRegistry = registry
 	}
 }
 
@@ -431,6 +440,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 	terminalErrorMessage := ""
 	lastNonRetryErrorMessage := ""
 	var terminalProviderError *acperror.ProviderError
+	sawToolOutput := false
 	if req.TurnSource == turncmd.SourceWebhook {
 		if s.webhookClaims == nil {
 			return fmt.Errorf("%w: claimer is unavailable", turncmd.ErrWebhookTurnClaimUnavailable)
@@ -454,10 +464,10 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 		if finishReason := strings.TrimSpace(string(ev.FinishReason)); finishReason != "" {
 			terminalFinishReason = ev.FinishReason
 		}
-		if errorCode := strings.TrimSpace(ev.ErrorCode); errorCode != "" {
+		if errorCode := ev.ErrorCode; strings.TrimSpace(errorCode) != "" {
 			terminalErrorCode = errorCode
 		}
-		if errorMessage := strings.TrimSpace(ev.ErrorMessage); errorMessage != "" {
+		if errorMessage := ev.ErrorMessage; strings.TrimSpace(errorMessage) != "" {
 			terminalErrorMessage = errorMessage
 			if !looksLikeRetryOnlyProviderError(errorMessage) {
 				lastNonRetryErrorMessage = errorMessage
@@ -556,6 +566,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 				}
 				if part.FunctionResponse != nil {
 					functionResponsePartCount++
+					sawToolOutput = true
 					if evidence, ok := trustedToolEvidenceFromFunctionResponse(part.FunctionResponse); ok && len(trustedTools) < maxTrustedToolEvidence {
 						trustedTools = append(trustedTools, evidence)
 					}
@@ -576,6 +587,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 				}
 				if part.CodeExecutionResult != nil {
 					codeExecutionResultPartCount++
+					sawToolOutput = true
 				}
 				if part.FileData != nil {
 					fileDataPartCount++
@@ -640,7 +652,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 			Msg("received provider event")
 		if ev.TurnComplete {
 			terminalStatus := terminalTurnStatus(ev)
-			if terminalStatus == TerminalStatusSuccess && (terminalErrorCode != "" || terminalErrorMessage != "") {
+			if terminalStatus == TerminalStatusSuccess && (terminalErrorCode != "" || terminalErrorMessage != "" || terminalProviderError != nil) {
 				terminalStatus = TerminalStatusFailed
 			}
 			providerFailed := terminalStatus == TerminalStatusFailed
@@ -652,22 +664,42 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 			sawTurnComplete = true
 			responseText := streamedText.String()
 			memoryResponseText := memoryStreamedText.String()
-			safeTerminalMessage := providerErrorTurnMessage(terminalProviderError, s.currentTime())
-			if safeTerminalMessage == "" {
-				safeTerminalMessage = terminalErrorTurnMessage(terminalErrorMessage)
+			providerTerminalMessage := terminalErrorTurnMessage(terminalErrorCode, terminalErrorMessage, terminalProviderError, s.currentTime())
+			if privateRun {
+				// Private jobs retain their existing bounded report contract.
+				providerTerminalMessage = providerErrorTurnMessage(terminalProviderError, s.currentTime())
+				if providerTerminalMessage == "" && strings.TrimSpace(terminalErrorMessage) != "" {
+					providerTerminalMessage = genericProviderFailureMessage
+				}
 			}
-			if turnInterrupted && safeTerminalMessage == "" {
-				safeTerminalMessage = "The turn was interrupted before completion."
+			if turnInterrupted && providerTerminalMessage == "" {
+				providerTerminalMessage = "The turn was interrupted before completion."
 			}
-			if providerFailed && safeTerminalMessage == "" {
-				safeTerminalMessage = genericProviderFailureMessage
+			if providerFailed && providerTerminalMessage == "" {
+				providerTerminalMessage = genericProviderFailureMessage
 			}
 			if terminalUnsuccessful {
 				if strings.TrimSpace(responseText) == "" {
-					responseText = safeTerminalMessage
+					responseText = providerTerminalMessage
+					if sawToolOutput {
+						responseText = interruptedProviderTurnMessage(providerTerminalMessage)
+					}
 				} else {
-					responseText = strings.TrimSpace(responseText) + "\n\n" + interruptedProviderTurnMessage(safeTerminalMessage)
+					responseText += "\n\n" + interruptedProviderTurnMessage(providerTerminalMessage)
 				}
+			}
+			finalPresentation := deliveryfmt.StructuredPresentation{Text: responseText, DeliveryFormat: deliveryFormat}
+			if providerFailed && !privateRun && req.Deliver {
+				if s.structuredRegistry == nil {
+					return fmt.Errorf("render provider failure: structured registry is unavailable")
+				}
+				failure := deliveryfmt.StructuredEnvelope[deliveryfmt.TurnFailure]{Descriptor: deliveryfmt.TurnFailureDescriptor, Body: deliveryfmt.TurnFailure{Text: responseText}}
+				rendered, err := s.structuredRegistry.RenderStructured(ctx, req.Locator.ChannelType, failure.Type(), failure)
+				if err != nil {
+					return fmt.Errorf("render provider failure: %w", err)
+				}
+				finalPresentation = rendered
+				deliveryFormat = rendered.DeliveryFormat
 			}
 			// Selection follows stop approval and the existing auto replacement policy.
 			if !privateRun && req.Deliver && req.ArchiveID != "" && strings.TrimSpace(responseText) != "" {
@@ -686,7 +718,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 					if !successfulFormatTurn(ev, responseText) {
 						change = nil
 					}
-					final, err := s.commitSelectedFinalWithStatus(ctx, req, responseText, change, terminalStatus)
+					final, err := s.commitSelectedFinalWithPresentation(ctx, req, responseText, finalPresentation, change, terminalStatus)
 					if err != nil {
 						return err
 					}
@@ -733,7 +765,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 				}
 				failureText := ""
 				if terminalUnsuccessful {
-					failureText = safeTerminalMessage
+					failureText = providerTerminalMessage
 					if failureText == "" {
 						failureText = privateRunFailureMessage(req.TurnSource)
 					}
@@ -813,8 +845,12 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 						}
 					}
 				}
+				deliveryText := responseText
+				if providerFailed {
+					deliveryText = finalPresentation.Text
+				}
 				if jobBackedDelivery {
-					if err := s.dispatchJobDelivery(ctx, req.JobID, req.Locator, req.SessionID, deliveryFormat, responseText, "final"); err != nil {
+					if err := s.dispatchJobDelivery(ctx, req.JobID, req.Locator, req.SessionID, deliveryFormat, deliveryText, "final"); err != nil {
 						return err
 					}
 					finalAccepted = true
@@ -827,7 +863,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 					if responseSource == responseSourceNone {
 						responseSource = "streamed_text"
 					}
-				} else if sendErr := sendAgentReplyWithFormat(ctx, s.dispatcher, req.OutboundFrom, req.Locator, deliveryFormat, responseText); sendErr != nil {
+				} else if sendErr := sendAgentReplyWithFormat(ctx, s.dispatcher, req.OutboundFrom, req.Locator, deliveryFormat, deliveryText); sendErr != nil {
 					return fmt.Errorf("publish final response: %w", sendErr)
 				} else {
 					finalAccepted = true
@@ -840,7 +876,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 				if terminalErrorMessage == "" {
 					terminalErrorMessage = lastNonRetryErrorMessage
 				}
-				terminalMessage := safeTerminalMessage
+				terminalMessage := providerTerminalMessage
 				terminalSource := "provider_error"
 				if terminalMessage == "" {
 					terminalMessage = permissionOutcomeTurnMessage(permissionOutcomes.Latest())

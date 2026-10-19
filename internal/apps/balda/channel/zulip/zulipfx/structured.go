@@ -52,3 +52,16 @@ func NewGoalOutcomeStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar 
 	return deliveryfx.NewStructuredRegistrar(deliveryfmt.TransportZulip, goalkeepercmd.OutcomeDescriptor, zulipGoalOutcomeRenderer{})
 }
 
+type zulipTurnFailureRenderer struct{}
+
+func (zulipTurnFailureRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[deliveryfmt.TurnFailure]) (deliveryfmt.StructuredPresentation, error) {
+	return deliveryfmt.StructuredPresentation{
+		Text:           presentation.RenderTurnFailure(env.Body),
+		DeliveryFormat: deliveryfmt.DeliveryFormatNone,
+	}, nil
+}
+
+// NewTurnFailureStructuredRegistrar registers literal failed-final presentation.
+func NewTurnFailureStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
+	return deliveryfx.NewStructuredRegistrar(deliveryfmt.TransportZulip, deliveryfmt.TurnFailureDescriptor, zulipTurnFailureRenderer{})
+}

@@ -79,6 +79,10 @@ func (s *TurnExecutionService) commitSelectedFinal(ctx context.Context, req Exec
 }
 
 func (s *TurnExecutionService) commitSelectedFinalWithStatus(ctx context.Context, req ExecutionRequest, text string, change *formatStateChange, status TerminalStatus) (chatarchivecmd.Message, error) {
+	return s.commitSelectedFinalWithPresentation(ctx, req, text, deliveryfmt.StructuredPresentation{Text: text, DeliveryFormat: req.DeliveryOptions.DeliveryFormat}, change, status)
+}
+
+func (s *TurnExecutionService) commitSelectedFinalWithPresentation(ctx context.Context, req ExecutionRequest, text string, presentation deliveryfmt.StructuredPresentation, change *formatStateChange, status TerminalStatus) (chatarchivecmd.Message, error) {
 	if s.finalArchive == nil {
 		return chatarchivecmd.Message{}, &turncmd.FinalArchiveError{Cause: chatarchivecmd.ErrUnavailable}
 	}
@@ -95,7 +99,7 @@ func (s *TurnExecutionService) commitSelectedFinalWithStatus(ctx context.Context
 	if req.JobID != "" {
 		settlement = deliverycmd.SettlementOutbox
 	}
-	env, err := deliverycmd.AgentReplyEnvelopeWithFormatAndSettlement(req.JobID, req.OutboundFrom, req.Locator, req.DeliveryOptions.DeliveryFormat, settlement, text, "final")
+	env, err := deliverycmd.AgentReplyEnvelopeWithFormatAndSettlement(req.JobID, req.OutboundFrom, req.Locator, presentation.DeliveryFormat, settlement, presentation.Text, "final")
 	if err != nil {
 		return chatarchivecmd.Message{}, &turncmd.FinalArchiveError{Cause: err}
 	}

@@ -31,12 +31,25 @@ Ordinary conversational chat transports follow the same runtime model.
 4. Conversational ingress publishes exactly one durable `balda.v1.cmd.session` envelope directly to the session actor lane for the normalized inbound item.
 5. The session actor runs the configured provider runtime for that session and emits separate delivery envelopes for progress/final replies.
 
-Terminal provider failures use structured error classes. Balda shows bounded
-guidance for quota, rate limits, authentication, billing, availability,
-session limits, and invalid requests without forwarding raw provider details.
-If the provider fails after visible or tool output, Balda keeps the partial
-response, adds an explicit interruption notice, and records the turn as failed.
-Successful pool fallback hides diagnostics from the failed member.
+For terminal conversational provider failures, Balda preserves the original
+human-readable provider message available at its event boundary without
+redacting, summarizing, translating or replacing it. Structured overload errors
+also explain that the selected model is overloaded and suggest retrying later
+or choosing another model. When the provider supplies no message, existing
+category guidance or a generic fallback remains available.
+
+Failed finals use literal presentation, including any retained partial reply,
+so provider markup remains visible instead of becoming formatting. Transport
+escaping or code-block delimiters encode that presentation; upstream and
+transport whitespace normalization still applies. If failure follows visible
+or tool output, Balda retains the partial response, adds an explicit interruption
+notice, and records the turn as failed. In Slack, an active Markdown stream is
+stopped before the full literal final is posted, so previously streamed partial
+text can also appear in that final snapshot. Successful replies keep their
+normal formatting, and successful pool fallback omits the failed member's
+error. Structural runtime and dead-letter diagnostics remain bounded and
+body-free; preserving a provider message does not add protocol envelopes,
+headers or configuration dumps.
 
 Telegram-specific message selection rules:
 
