@@ -57,7 +57,7 @@ type zulipTurnFailureRenderer struct{}
 func (zulipTurnFailureRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[deliveryfmt.TurnFailure]) (deliveryfmt.StructuredPresentation, error) {
 	return deliveryfmt.StructuredPresentation{
 		Text:           presentation.RenderTurnFailure(env.Body),
-		DeliveryFormat: deliveryfmt.DeliveryFormatMarkdown,
+		DeliveryFormat: deliveryfmt.DeliveryFormatNone,
 	}, nil
 }
 

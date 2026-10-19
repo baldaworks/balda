@@ -6,10 +6,12 @@ import (
 	"testing"
 
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfx"
 	"github.com/baldaworks/balda/internal/apps/balda/permissioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/permissionfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/questionfmt"
+	"go.uber.org/fx"
 )
 
 func TestQuestionStructuredRegistrarRendersMarkdownOptions(t *testing.T) {
@@ -71,10 +73,31 @@ func TestTurnFailureStructuredRegistrar(t *testing.T) {
 	if err != nil {
 		t.Fatalf("render turn failure: %v", err)
 	}
-	if got.DeliveryFormat != deliveryfmt.DeliveryFormatMarkdown {
+	if got.DeliveryFormat != deliveryfmt.DeliveryFormatNone {
 		t.Fatalf("DeliveryFormat = %q", got.DeliveryFormat)
 	}
 	if got.Text != "```\nProvider error:\nmodel busy\n```" {
 		t.Fatalf("rendered failure = %q", got.Text)
+	}
+	// Use the production formatter registry and transport contribution. Failure
+	// presentation must retain the fenced body through identity formatting.
+	var formats deliveryfmt.PromptRegistry
+	app := fx.New(fx.NopLogger, deliveryfx.Module,
+		fx.Provide(fx.Annotate(NewPromptRegistryContribution, fx.ResultTags(`group:"balda_delivery_prompt_contribution"`))),
+		fx.Populate(&formats),
+	)
+	if err := app.Err(); err != nil {
+		t.Fatal(err)
+	}
+	name, _, formatter, err := formats.Resolve(deliveryfmt.TransportMattermost, got.DeliveryFormat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, err := formatter.Format(got.Text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if name != deliveryfmt.NamePlainText || message.Name != deliveryfmt.NamePlainText || message.Text != got.Text || message.PlainFallback != got.Text {
+		t.Fatalf("failure must keep identity presentation, name=%s message=%+v", name, message)
 	}
 }

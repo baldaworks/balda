@@ -144,7 +144,7 @@ type mattermostTurnFailureRenderer struct{}
 func (mattermostTurnFailureRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[deliveryfmt.TurnFailure]) (deliveryfmt.StructuredPresentation, error) {
 	return deliveryfmt.StructuredPresentation{
 		Text:           presentation.RenderTurnFailure(env.Body),
-		DeliveryFormat: deliveryfmt.DeliveryFormatMarkdown,
+		DeliveryFormat: deliveryfmt.DeliveryFormatNone,
 	}, nil
 }
 

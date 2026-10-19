@@ -142,8 +142,8 @@ func TestProviderFailureUsesRealLiteralRendererAndFrozenArchiveReplay(t *testing
 	}{
 		{deliveryfmt.TransportTelegram, telegrampresentation.RenderTurnFailure, deliveryfmt.DeliveryFormatNone},
 		{deliveryfmt.TransportSlackAgent, slackpresentation.RenderTurnFailure, deliveryfmt.DeliveryFormatNone},
-		{deliveryfmt.TransportZulip, zulippresentation.RenderTurnFailure, deliveryfmt.DeliveryFormatMarkdown},
-		{deliveryfmt.TransportMattermost, mattermostpresentation.RenderTurnFailure, deliveryfmt.DeliveryFormatMarkdown},
+		{deliveryfmt.TransportZulip, zulippresentation.RenderTurnFailure, deliveryfmt.DeliveryFormatNone},
+		{deliveryfmt.TransportMattermost, mattermostpresentation.RenderTurnFailure, deliveryfmt.DeliveryFormatNone},
 	} {
 		t.Run(tt.transport, func(t *testing.T) {
 			providerRuns := 0
