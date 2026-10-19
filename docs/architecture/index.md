@@ -41,7 +41,8 @@ These records are active architecture contracts.
 
 ## Proposed decisions
 
-No architecture decisions are currently awaiting approval.
+- [ADR 0004: Balda Unit — remote ACP provider](adr/0004-balda-unit.md) —
+  Approval: pending.
 
 ## Invariants
 
