@@ -21,6 +21,13 @@ Unit. Это уточнение закрывает прежние вариант
 identity и credentials отдельных data channels, но не меняет общий статус ADR:
 решение в целом остаётся Proposed, `Approval: pending`, а Unit ещё не реализован.
 
+Этим обновлением исправлена прежняя черновая предпосылка «один binding — один
+ACP-процесс». ACP initialization относится к connection процесса, а не к одной
+ACP-сессии: один initialized instance может обслуживать несколько независимых
+session IDs. Поэтому `AgentInstance` и `SessionAttachment` ниже имеют разные
+identity, lifecycle и capacity. Это исправление не меняет согласованный
+KISS bearer-token WebSocket contract разделов 6–7, общий статус или approval.
+
 ## Проверенное состояние репозитория
 
 На момент рассмотрения 2026-10-19 Unit ещё не реализован. Этот ADR описывает
@@ -36,6 +43,16 @@ identity и credentials отдельных data channels, но не меняет
 - [`providers`](../../../internal/apps/balda/providers) остаётся единственным
   сервисом managed provider state и выдаёт secret-free inventory; его текущие
   типы и tests не содержат Unit registration или Unit authentication.
+- [`go.mod`](../../../go.mod) закрепляет
+  `github.com/normahq/go-adk-acpagent/v2` v2.6.1. Его `Client` управляет одним
+  ACP subprocess и несколькими ACP session IDs; upstream test создаёт на одном
+  Client две сессии и выполняет concurrent prompts с раздельными updates и
+  результатами. Это подтверждает protocol/client model, но не реализацию Unit
+  или заявленную профилем production capacity.
+- Текущий [`RuntimeForSession`](../../../internal/apps/balda/agent/runtime_manager.go)
+  намеренно создаёт отдельный локальный ACP process/runtime на Balda session,
+  потому что его MCP headers статичны на lifetime процесса. Это ограничение
+  текущего host adapter, а не инвариант ACP или целевой Unit model.
 - [Backoffice client metadata](../../../internal/apps/backoffice/security/client.go)
   использует direct connection peer и игнорирует forwarded address headers,
   поскольку trusted proxy chain сейчас не настроена. Unit-specific WebSocket
@@ -106,7 +123,8 @@ Balda должна работать с ACP-агентами в отдельны�
 управляемому provider contract ADR 0002. Для такого сценария нужно определить:
 
 - управляемое создание, аутентификацию, readiness, ротацию token и отзыв Unit;
-- двусторонний ACP-транспорт и однозначную связь сессии с процессом агента;
+- двусторонний ACP-транспорт и точную маршрутизацию binding к ACP session
+  attachment и обслуживающему process instance;
 - удалённый workspace, достижимые MCP и границы локальных полномочий;
 - отмену, потерю связи, восстановление и доказанную очистку ресурсов.
 
@@ -181,8 +199,9 @@ flowchart TB
   является частью session schema и недоступна пакету `session`.
 
 `ProviderBinding` не получает нового ID или отдельной binding table. Wire
-`binding_id` Unit обозначает execution handle конкретного процесса, а не
-вторую identity provider graph. На границе построения runtime execution service
+`binding_id` Unit обозначает execution handle конкретного ACP session
+attachment, а не процесс или вторую identity provider graph. На границе
+построения runtime execution service
 получает точную entry binding и непрозрачный `owner_scope`, идентифицирующий
 неизменяемое время жизни разговора. Он не читает и не изменяет `SessionRecord`.
 Пакет `session` не знает о Unit, connection generation, admission или binding
@@ -197,9 +216,12 @@ lifecycle.
 
 ### Unit
 
-Владеет локальным запуском ACP-процесса, рабочим каталогом, процессной группой,
-ограничениями исполнения, транспортным соединением и техническим журналом
-binding. В журнале нет собственной модели бизнес-задач или очереди Story.
+Владеет локальными `AgentInstance`: ACP-процессами, их process groups,
+инициализированными ACP connections и техническим журналом. Один instance может
+обслуживать несколько независимых ACP-сессий. Отдельный `SessionAttachment`
+связывает ровно один binding и его `owner_scope` с `agent_instance_id` и
+собственным `acp_session_id`, рабочим каталогом, MCP и ограничениями исполнения.
+В журнале нет собственной модели бизнес-задач или очереди Story.
 
 ### Unit execution service
 
@@ -243,10 +265,26 @@ Unit размещается в той же среде исполнения, гд
 - На macOS Unit запускает agent bridge под принятой Seatbelt-политикой.
 - В macOS VM Unit работает внутри гостевой ОС; Virfield управляет самой VM.
 
-В первой реализации один binding соответствует одному ACP-процессу и одной
-ACP-сессии. Разные сессии получают отдельные процессы и каталоги состояния.
-При нескольких агентах Unit объявляет только проверенную оператором ёмкость;
-без отдельной приёмки значение равно одному одновременному binding.
+ACP process и ACP session имеют разные lifetimes. Unit выполняет `initialize`
+один раз для connection каждого `AgentInstance`, после чего instance обслуживает
+`1..N` независимых ACP-сессий в пределах проверенных лимитов профиля.
+`session/new` создаёт новый `SessionAttachment`; `session/load` и
+`session/resume` используются только при объявленных соответствующих
+capabilities. Каждый binding получает собственные `owner_scope`, attachment и
+ACP session ID, но не требует отдельного процесса.
+
+Профиль независимо объявляет проверенные `max_instances`,
+`max_sessions_per_instance` и `max_concurrent_prompts_per_instance`. Значение
+`max_sessions_per_instance=1` допустимо как ограничение конкретного
+agent/backend, но не является общей моделью Unit. До приёмки multiplexing профиль
+не заявляет ёмкость выше фактически проверенной.
+
+Unit выбирает shared instance только для attachments с совместимыми
+process-wide executable, environment, agent identity и credential requirements.
+Session-scoped `cwd` и MCP configuration передаются в ACP session setup. Если
+bridge или adapter удерживает MCP credentials либо другой секрет только на
+уровне процесса и не доказывает cross-session isolation, профиль разделяет такие
+attachments по compatibility key или объявляет `max_sessions_per_instance=1`.
 
 Субагент, которого Balda назначила Unit-провайдеру, выполняется на этом Unit.
 Вложенный процесс или внутренний субагент самого Codex/Claude остаётся в той же
@@ -448,7 +486,8 @@ ID и не позволяет подключиться без token.
 
 При `open_binding` execution service проверяет exact owner, provider/profile
 revision, admission и актуальный connection generation до передачи команды
-Unit. Unit journal делает open идемпотентным и связывает процесс с тем же scope.
+Unit. Unit journal делает open идемпотентным, связывает `SessionAttachment` и его
+ACP session ID с тем же owner scope и отдельно сохраняет `AgentInstance`.
 Поэтому Unit-wide bearer не даёт произвольному frame право присоединиться к
 чужому binding: Balda формирует assignments, а обе стороны проверяют точный
 scope и generation. Отдельных attach handshakes, nonce, TTL, channel credential,
@@ -456,8 +495,8 @@ scope и generation. Отдельных attach handshakes, nonce, TTL, channel c
 
 Rotation, revocation, policy denial, heartbeat loss или принятие нового
 соединения закрывают либо fence-ят прежний socket. Поздние frames не могут
-открыть процесс, подтвердить permission, принять cleanup receipt или продолжить
-ACP старого generation.
+создать attachment, запустить новый instance, подтвердить permission, принять
+cleanup receipt или продолжить ACP старого generation.
 
 ### Почему одного JSON endpoint недостаточно
 
@@ -488,9 +527,10 @@ JSON-RPC IDs, notifications, ошибки и согласованные расш
 до активации binding. Control envelopes имеют отдельную ограниченную очередь и
 приоритет над ACP output; Unit также применяет локальный heartbeat timeout и
 cleanup policy, поэтому зависший ACP producer не может бесконечно удерживать
-процесс после утраты управляющего соединения. Полностью недоступная сеть всё
-равно приводит к local timeout и reconciliation, а не к обещанию мгновенной
-удалённой отмены.
+prompt или attachment после утраты управляющего соединения. Process group
+останавливается только по instance-level policy, после чего каждый attached
+binding reconciles независимо. Полностью недоступная сеть всё равно приводит к
+local timeout и reconciliation, а не к обещанию мгновенной удалённой отмены.
 
 ## 8. Создание и жизненный цикл binding
 
@@ -518,7 +558,8 @@ owner_scope + selected_provider_id + provider_revision_id
 unit_id + profile_id + profile_revision + descriptor_digest
 connection_generation
 binding_id + admission_id + canonical_request_digest
-state + capacity_reservation + acp_session_id + cleanup_receipts
+state + instance/session/prompt reservations
+agent_instance_id + acp_session_id + cleanup_receipts
 ```
 
 Запись ссылается на retained provider revision, но не дублирует и не изменяет
@@ -536,25 +577,39 @@ provider revision, содержащей `unit_id`, `profile_id` и `profile_revi
 
 Readiness и свободные slots в Balda являются только advisory данными для выбора
 и UI. Durable admission journal Unit является авторитетным источником и
-атомарно резервирует глобальную ёмкость Unit и профильный лимит до создания
-процесса. Он охватывает все процессы Unit независимо от числа session rows,
+отдельно учитывает reservations для process instances, session attachments на
+instance и concurrent prompts. Instance slot резервируется только при запуске
+нового `AgentInstance`; session slot — до `session/new`, `session/load` или
+`session/resume`; prompt slot — непосредственно перед каждым `session/prompt` и
+освобождается только после установленного terminal outcome. Журнал охватывает
+все instances, attachments и prompts Unit независимо от числа session rows,
 экземпляров Balda и reconnect.
 
-Каждый `open_binding` содержит exact execution scope, глобальный лимит Unit и
-лимит профиля. До создания процесса Unit одной локальной транзакцией:
+Каждый `open_binding` содержит exact execution scope и лимиты профиля. До выбора
+или запуска `AgentInstance` и до создания ACP-сессии Unit одной локальной
+транзакцией:
 
 1. проверяет generation, descriptor digest, cancellation fence и отсутствие
    другого payload для admission ID;
-2. считает все active и uncertain reservations Unit и выбранного профиля;
-3. создаёт уникальную reservation и `opening` либо возвращает
-   `capacity_exhausted` без запуска процесса.
+2. считает отдельно active и uncertain instance/session reservations для Unit,
+   профиля и совместимого instance;
+3. создаёт уникальную session reservation, а при необходимости также instance
+   reservation, и переводит binding в `opening` либо возвращает
+   `capacity_exhausted` без запуска instance или session setup.
 
 Уникальность admission/reservation и лимит проверяются под одним локальным
 lock/transaction. Повтор exact request возвращает прежнюю reservation; тот же
 admission с другим digest конфликтует. Reservation освобождается только после
 durable terminal state и доказанной cleanup; `uncertain` удерживает slot.
-Поэтому две конкурентные сессии не занимают один последний slot, даже если обе
-увидели одинаковое advisory readiness.
+Поэтому две конкурентные сессии не занимают один последний session или instance
+slot, даже если обе увидели одинаковое advisory readiness.
+
+Перед `session/prompt` Unit отдельной атомарной операцией резервирует prompt slot
+для exact `(binding_id, owner_scope, agent_instance_id, acp_session_id)`. На одной
+ACP-сессии одновременно допускается не больше одного prompt; разные session IDs
+одного instance могут работать параллельно только до проверенного профильного
+лимита. Session reservation не считается prompt reservation и не блокирует
+prompt capacity всё время жизни attachment.
 
 Unit execution service владеет capacity protocol и может хранить проекцию для
 reconciliation, но не объявляет slot занятым или свободным вопреки Unit journal.
@@ -570,11 +625,14 @@ reconciliation, но не объявляет slot занятым или своб
    текущий connection generation и canonical request digest.
 3. После commit сервис отправляет `open_binding` по аутентифицированному
    соединению текущего generation. Unit атомарно резервирует capacity, проверяет grants,
-   MCP/network и sandbox, затем создаёт процесс. Повтор open идемпотентен; иной
-   payload конфликтует.
-4. Driver и agent bridge по тому же fenced соединению выполняют `initialize` и
-   создают ACP-сессию, не отправляя prompt. ACP session ID сначала durable
-   фиксируется в Unit journal.
+   MCP/network и sandbox, затем выбирает совместимый initialized
+   `AgentInstance` либо запускает и один раз инициализирует новый. Повтор open
+   идемпотентен; иной payload конфликтует.
+4. Unit вызывает `session/new` на connection выбранного instance и создаёт
+   отдельный attachment, не отправляя prompt. При exact recovery `session/load`
+   или `session/resume` допустимы только после capability check.
+   `agent_instance_id` и отдельный ACP session ID сначала durable фиксируются в
+   Unit journal вместе с owner scope binding.
 5. Execution service условно переводит `opening → active`. Условие проверяет
    owner scope, admission, revisions, digest, connection generation
    и отсутствие конкурирующего cancel.
@@ -626,8 +684,21 @@ ACP cancel и control operations идут через разные bounded queues
 аутентифицированного WebSocket. При blocked ACP producer, timeout, отзыве или
 teardown driver вызывает операции execution service:
 
-- `close_binding` прекращает prompt, ограниченно ждёт и завершает process tree;
-- `abort_binding` немедленно запускает ограниченную принудительную остановку.
+- `close_binding` адресует ACP session ID attachment: отправляет
+  `session/cancel` для активного prompt и использует `session/close`, только когда
+  capability доступна. Без `session/close` attachment fence-ится, а оставшиеся
+  agent-side ресурсы учитываются до cleanup instance;
+- `abort_binding` немедленно fence-ит тот же attachment, адресует cancel к его
+  ACP session ID и требует bounded cleanup только этого execution scope.
+
+Ни одна операция binding не завершает здоровый shared `AgentInstance`.
+Отсутствие capability `session/close` само по себе не является причиной убить
+такой instance; профиль должен учесть retained session resources и при
+необходимости перевести instance в drain. Unit останавливает process group
+только при instance-level неисправности, явном drain или отзыве применимой
+instance policy. Тогда каждый attached binding независимо переходит в
+`uncertain`/reconciliation по собственным owner scope, admission и ACP session
+ID; cleanup или failure receipt одного attachment не закрывает остальные.
 
 Операции содержат idempotency command ID, owner scope и exact
 Unit/generation/binding/admission scope. Execution store и Unit journal durable
@@ -640,19 +711,22 @@ stdout или ACP producer lock; при недоступной сети лока
 запускает cleanup, а Balda сохраняет `uncertain` до receipt и reconciliation.
 
 Unit возвращает durable cleanup receipt с owner scope, exact execution scope,
-operation ID, process/container identity, stopped state и остаточными
-обязательствами. Execution service принимает его условным переходом exact
-record; receipt другого owner scope не подходит. Он не меняет provider revision,
-`ProviderBinding`, workspace lease или VM state другого владельца.
-Недоказанная остановка даёт `uncertain` и не освобождает capacity.
+operation ID, `agent_instance_id`, ACP session ID, attachment cleanup outcome и
+остаточными обязательствами. Process/container identity и доказательство stopped
+state добавляются, только если завершался сам instance. Execution service
+принимает receipt условным переходом exact record; receipt другого owner scope
+не подходит. Он не меняет provider revision, `ProviderBinding`, workspace lease
+или VM state другого владельца. Недоказанный outcome даёт `uncertain` и не
+освобождает затронутую capacity.
 
 ## 9. Разрывы связи, часы и восстановление
 
 При утрате heartbeat Balda прекращает новые назначения. Unit перестаёт принимать
 новые bindings и незавершённые permission responses от старого соединения.
-В первой версии потеря Unit WebSocket инициирует локальную отмену и ограниченную
-остановку связанных процессов; прозрачное продолжение активного prompt не
-обещается.
+В первой версии потеря Unit WebSocket fence-ит attachments старого generation и
+инициирует session-scoped cancel. Если instance-level policy требует остановки
+process group, все attached bindings этого instance переходят в независимый
+reconciliation; прозрачное продолжение активного prompt не обещается.
 
 Запрос, записанный в соединение без полученного ответа, может иметь неизвестный
 исход. Его нельзя автоматически отправлять новому агенту или воспроизводить
@@ -794,7 +868,7 @@ ACP permission request и возвращает решение штатному �
 
 Сопоставление учитывает connection generation Unit, binding, ACP-сессию и request ID.
 Повторно доставленный запрос не создаёт второй независимый approval. Старый
-ответ не подтверждает запрос нового процесса или другой сессии. При отсутствии
+ответ не подтверждает запрос нового attachment или другой сессии. При отсутствии
 контекста, timeout, отмене или отзыве Unit не выдаёт разрешение по умолчанию.
 
 Ошибки readiness, authentication, network, workspace и user denial различаются
@@ -823,9 +897,12 @@ ACP permission request и возвращает решение штатному �
 
 ### 14.1. Остановка процесса с доказательством результата
 
-Каждый агент запускается в управляемой процессной группе. При закрытии binding
-supervisor завершает группу и отдельно проверяет, что исполняемых участников
-не осталось. Успешная отправка сигнала не считается доказательством остановки.
+Каждый `AgentInstance` запускается в управляемой процессной группе. Обычное
+закрытие binding освобождает его ACP session attachment и не завершает shared
+instance. При explicit drain, crash, instance-level неисправности или отзыве
+применимой instance policy supervisor завершает группу и отдельно проверяет,
+что исполняемых участников не осталось. Успешная отправка сигнала не считается
+доказательством остановки.
 Ошибка наблюдения сохраняет неопределённость и запрещает повторную выдачу
 эксклюзивных ресурсов.
 
@@ -835,7 +912,8 @@ supervisor завершает группу и отдельно проверяе�
 подтверждается независимым наблюдением, а не игнорированием ошибки.
 
 Для Unit нужно отделить этот механизм от состояния workflow, связать его с
-process identity конкретного binding и испытать аварийное завершение supervisor.
+process identity `AgentInstance`, учесть все attached ACP sessions и испытать
+аварийное завершение supervisor.
 Процессы, вышедшие из своей группы, требуют OS-level containment и отдельной
 приёмки. Один helper остановки группы не заменяет весь контракт изоляции.
 
@@ -901,7 +979,8 @@ credential helper связывает выдачу с конкретным bindin
 nonce. Заимствуется сочетание блокировки, проверки целостности и durable replace;
 привязки к конкретному формату или поколению записи не копируются автоматически.
 
-Unit хранит небольшой журнал connection generations, admissions, bindings и cleanup. Баланс
+Unit хранит небольшой журнал connection generations, admissions,
+`AgentInstance`, `SessionAttachment`, capacity reservations и cleanup. Баланс
 между SQLite-транзакциями и отдельными приватными файлами определяется типом
 данных. Секреты не смешиваются с обычным диагностическим журналом.
 
@@ -1068,8 +1147,9 @@ revision, а не Unit-полями session schema или усмотрением
 
 ### M1. Прямая ACP-сессия в подготовленной среде
 
-Добавить Unit binary, отдельный процесс на binding, локальный профиль, workspace
-проверки, flow control, cancel и cleanup. Сначала использовать подготовленный
+Добавить Unit binary, `AgentInstance` с `1..N` session attachments по проверенным
+лимитам профиля, локальный профиль, workspace проверки, flow control, cancel и
+cleanup. Сначала использовать подготовленный
 Linux-контейнер; выбрать один реальный agent bridge и точную модель.
 Тестовый ACP echo-agent подтверждает transport, затем реальная модель выполняет
 задачу с изменением файла и запуском проверки. Для этого сценария используется
@@ -1179,11 +1259,13 @@ cutover.
   scope до remote side effect. Новый conversational lifetime имеет другой scope;
   поздние ACK, frames и receipts прежнего scope отвергаются.
 - Fault injection до commit opening не допускает open; падение Balda после
-  отправки open, старта процесса и ACP session/new сохраняет возможность
-  lookup/abort по durable admission ID без создания второго процесса.
-- После потери ACK ACP session ID восстанавливается из Unit journal либо процесс
-  переходит в uncertain/cleanup. Первый prompt невозможен до атомарного active.
-  Cancel, выигравший race с active commit, предотвращает отправку prompt.
+  отправки open, выбора или старта `AgentInstance` и ACP session setup сохраняет
+  возможность lookup/abort по durable admission ID без создания второй
+  ACP-сессии, attachment или process instance.
+- После потери ACK ACP session ID восстанавливается из Unit journal либо binding
+  остаётся в `uncertain`/cleanup. Здоровый shared instance при этом не считается
+  потерянным. Первый prompt невозможен до атомарного active. Cancel, выигравший
+  race с active commit, предотвращает отправку prompt.
 - Restore использует exact retained provider revisions и pinned Unit/profile;
   новый generation не подменяет размещение. Profile update, исчезнувший Unit,
   утрата key/artifact и revoke не приводят к подбору «совместимой» замены.
@@ -1191,9 +1273,10 @@ cutover.
   Unit revoke при этом блокирует исполнение. Неудачный exact restore допускает
   только явно записанный bounded fresh-session fallback, без replay неизвестного
   prompt и без выдачи этого пути за exact restore.
-- Две конкурентные попытки занять последний slot дают одну reservation: лимит и
-  admission атомарно проверяет durable Unit journal до process creation.
-  `uncertain` удерживает slot до доказанной cleanup.
+- Для каждого вида capacity две конкурентные попытки занять последний slot дают
+  одну reservation: instance limit проверяется до запуска процесса, session
+  limit — до session setup, prompt limit — до `session/prompt`. `uncertain`
+  удерживает только затронутые reservations до доказанной cleanup.
 - Execution-store transitions проверены с fault injection: невозможны orphan
   assignment, assignment другой provider revision или переход между owner scopes.
 
@@ -1202,17 +1285,18 @@ cutover.
 - Два concurrent WebSocket upgrades с валидным token получают разные
   generations; только последний принятый generation может публиковать control
   или ACP frames. Неверный Unit/generation/binding/admission/profile ID или
-  revision отвергается до ACP process side effect.
-- Потеря upgrade ACK или reconnect не создаёт второй Unit record, assignment
-  или процесс. Reconciliation использует admission journal; per-binding
+  revision отвергается до запуска instance или ACP session side effect.
+- Потеря upgrade ACK или reconnect не создаёт второй Unit record, assignment,
+  ACP session attachment или `AgentInstance`. Reconciliation использует admission journal; per-binding
   credentials, attach handshakes и credential leases отсутствуют.
 - Bearer token не появляется в URL, query, cookie, WebSocket subprotocol,
   provider definition, agent environment, inventory или логах.
 - При полностью заблокированном ACP output и заполненной data queue команды
   control `close_binding`/`abort_binding` получают приоритет в отдельной bounded
-  queue. При потере сети локальный heartbeat timeout завершает process tree в
-  заданный срок, а Balda принимает только проверяемый cleanup receipt нужного
-  scope после reconciliation.
+  queue. При потере сети локальный heartbeat timeout fence-ит attachments и
+  запускает bounded cleanup. Shared process tree завершается только по policy
+  неисправного instance; каждый затронутый attachment независимо reconciles по
+  собственному owner scope, и Balda принимает только его проверяемый receipt.
 - Повтор close/abort идемпотентен. Abort до open создаёт durable fence; старый
   generation или поздний open не запускают/не оживляют binding.
   Неопределённый cleanup не даёт успешный receipt или повторное назначение slot.
@@ -1226,13 +1310,22 @@ cutover.
 - Обычный prompt проходит напрямую между Balda и agent bridge. Штатные
   permission requests обрабатываются Balda без второго Human API или
   обязательного Callee wrapper.
-- Воспроизведены изолированные параллельные bindings и размещение субагента.
-  Нельзя передать ответ, permission или MCP capability между сессиями.
+- Один initialized `AgentInstance` обслуживает несколько attachments с разными
+  owner scopes и ACP session IDs, включая параллельные prompts. Между ними
+  отдельно проверена изоляция `cwd`, MCP configuration и credentials, callbacks,
+  permissions, cancellation, updates и результатов. Закрытие или cancel одного
+  attachment не завершает здоровый process instance, не прерывает другой prompt
+  и не освобождает capacity другого attachment.
+- Профиль, не прошедший multiplexing tests, объявляет
+  `max_sessions_per_instance=1`; это ограничение capability, а не архитектурное
+  соответствие binding и процесса. Размещение субагента проверяется отдельно.
 
 ### Двусторонний ACP и подтверждения
 
 - Проходят initialize, создание сессии, prompt, updates, ошибки и cancel.
-  Resume принимается отдельно для конкретного агента либо явно не заявляется.
+  `session/load`, `session/resume` и `session/close` принимаются отдельно для
+  конкретного агента только при соответствующей capability либо явно не
+  заявляются.
 - Реальный ACP permission request появляется один раз в штатном интерфейсе
   Balda. Разрешение, отказ, timeout, чужой и повторный ответ проверены отдельно.
 - Задержки и рассинхронизация часов между Balda, Unit и чат-сервисом не позволяют
@@ -1258,8 +1351,8 @@ cutover.
 - Аварийная смерть Unit запускает независимую остановку потомков в ограниченное
   время; readiness после рестарта ждёт фактического reconciliation.
 - Reconciliation не повторяет prompt или внешнюю операцию с неизвестным исходом.
-  Недоказанная остановка остаётся `uncertain`; slot и process не назначаются
-  повторно как свободные.
+  Недоказанная остановка остаётся `uncertain`; затронутые instance, session и
+  prompt reservations не назначаются повторно как свободные.
 - Cleanup проверяется фактически по процессам, mounts и resource identity;
   успешный ответ API освобождения сам по себе не считается достаточным.
 - Отдельная fixture фиксирует внешний эффект и подтверждает отсутствие
@@ -1280,10 +1373,11 @@ cutover.
 ## 20. Наблюдаемость и поддержка
 
 Корреляция: `unit_id`, public lookup ID, connection generation,
-provider/profile revision, `binding_id`, admission ID, Balda session ID и ACP
-session ID. Метрики: authentication outcome как bounded category, connection
-generation changes, readiness, занятая ёмкость, время подготовки, выход
-процесса, причины отказа, disconnect, permission timeout и длительность cleanup.
+provider/profile revision, `binding_id`, admission ID, `owner_scope`,
+`agent_instance_id`, Balda session ID и ACP session ID. Метрики: authentication
+outcome как bounded category, connection generation changes, readiness,
+занятые instance/session/prompt capacity, время подготовки, выход процесса,
+причины отказа, disconnect, permission timeout и длительность cleanup.
 
 Логи по умолчанию содержат технические события и bounded ошибки. Полные prompts,
 исходники, ответы MCP, `Authorization`, bearer token, token digest и модельные
@@ -1352,8 +1446,20 @@ provider catalog или независимую модель pinning provider gra
 
 - [ACP v1 transports](https://agentclientprotocol.com/protocol/v1/transports):
   stdio, двусторонний custom transport и draft Streamable HTTP.
+- [ACP initialization](https://agentclientprotocol.com/protocol/v1/initialization):
+  connection согласует protocol version и capabilities до создания сессий.
 - [ACP session setup](https://agentclientprotocol.com/protocol/v1/session-setup):
-  рабочий каталог и MCP-конфигурация сессии.
+  независимый context каждой сессии; `session/new` принимает рабочий каталог и
+  MCP-конфигурацию и возвращает уникальный session ID; load, resume и close
+  capability-gated и адресуются по session ID.
+- [ACP prompt turn](https://agentclientprotocol.com/protocol/v1/prompt-turn):
+  prompts, updates, permission requests и cancellation коррелируются session ID.
+- [`go-adk-acpagent` v2.6.1 Client](https://github.com/normahq/go-adk-acpagent/blob/v2.6.1/client.go#L85-L100)
+  и [concurrent-session test](https://github.com/normahq/go-adk-acpagent/blob/v2.6.1/client_test.go#L818-L861):
+  один Client управляет одним subprocess и несколькими active session IDs; test
+  выполняет concurrent prompts на двух сессиях одного Client. Это не доказывает
+  произвольный лимит, production support конкретного agent/backend или полную
+  cross-session isolation, поэтому они остаются профильными acceptance gates.
 - [ACP Python SDK web transport](https://agentclientprotocol.github.io/python-sdk/web-transport/):
   экспериментальные HTTP/WS adapters и ограничения reconnect/resumability.
 
