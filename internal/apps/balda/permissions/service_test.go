@@ -2,6 +2,7 @@ package permissions
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -227,6 +228,9 @@ func TestAskWaitsForMattermostThreadReplyDecision(t *testing.T) {
 	var delivery deliverycmd.Payload
 	if err := actorlayer.UnmarshalPayload(envelope.Payload, &delivery); err != nil {
 		t.Fatalf("decode delivery payload: %v", err)
+	}
+	if strings.Count(delivery.Text, "Choose:") != 1 || strings.Count(delivery.Text, "Reply with the number or option name.") != 1 {
+		t.Fatalf("permission options rendered more than once: %q", delivery.Text)
 	}
 	if delivery.Question == nil || delivery.Text == "" {
 		t.Fatalf("delivery = %+v, want permission question and prompt", delivery)

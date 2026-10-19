@@ -624,6 +624,10 @@ number, exact option ID, or option name. Unknown channels, another user's
 reply, timeout, cancellation, or missing interaction context never grant the
 request.
 
+The permission prompt renders its option list once. Structured option IDs are
+retained for reply validation without appending a second menu during question
+delivery.
+
 Example:
 
 ```yaml
