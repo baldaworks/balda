@@ -33,6 +33,7 @@ type Runtime struct {
 	done              chan struct{}
 	serveErr          error
 	mcp               MCPOperations
+	providers         ProvidersOperations
 	schedules         SchedulesOperations
 	webhooks          WebhooksOperations
 	aliases           AliasesOperations
@@ -175,6 +176,7 @@ func (r *Runtime) handler(browserConfig ResolvedServerConfig, services HandlerSe
 		return nil, fmt.Errorf("construct Backoffice HTTP application: %w", err)
 	}
 	httpApplication.mcp = services.MCP
+	httpApplication.providers = r.providers
 	httpApplication.schedules = r.schedules
 	httpApplication.webhooks = r.webhooks
 	httpApplication.aliases = r.aliases

@@ -114,6 +114,8 @@ Balda treats `actorlayer` as the reusable actor library boundary and never as pr
 - `internal/apps/balda/actorcmd`: stable leaf package for product wire taxonomy. It owns actor targets, namespaces, kinds, subjects, headers, and job-scope metadata.
 - `internal/apps/balda/execution`: Balda runtime policy. It owns the host loop, lane policy, dead-letter handling, heartbeat policy, and runtime-facing transport wiring.
 - `internal/apps/balda/agent`: provider-backed runtime support. It owns root runtime construction, prompt/session-state bootstrap, isolated goal runtime preparation, and runtime-adjacent workspace support. It does not own session lifecycle semantics.
+- `internal/apps/balda/providers`: configured/managed provider reconciliation, immutable revision lifecycle, graph compilation, exact session bindings, and restore policy.
+- `internal/apps/balda/secrets`: application-scoped authenticated encryption used through domain-specific AAD; it owns no provider or MCP policy.
 - `internal/apps/balda/jobs`: durable job orchestration state and event projection. It owns job records, job events, and read-model updates, but it does not own transport execution.
 - `internal/apps/balda/actors`: product actors. It owns session, job, goalkeeper, delivery, control, and memory behavior.
 - `internal/apps/balda/sessionturn`: queued-turn restoration behind a narrow executor port.

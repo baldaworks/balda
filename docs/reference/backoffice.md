@@ -335,6 +335,33 @@ raw User-Agent and token values are never displayed.
   optionally enable a WebAuthn passkey as their second factor in Account; it is
   off by default for each user. OIDC remains deferred.
 
+## Providers management
+
+Administration → Providers combines two sources in one provider-ID namespace:
+
+- `configured` rows come from effective `runtime.providers`; they are redacted
+  and read-only;
+- `managed` rows live in the selected state database and support create, edit,
+  enable, disable, and delete.
+
+Each managed edit creates an immutable revision. Changes affect new sessions
+and `/reset`; active sessions keep their exact provider binding. Disable and
+delete stop new bindings while retained revisions remain available to existing
+exact bindings. A state-version conflict returns its original HTTP error and
+requires reopening the page before retrying.
+
+API keys and explicit ACP environment values are write-only. The page shows
+only presence and environment variable names, and supports keep, replace, or
+clear. Protected revisions require
+`balda.mcp_management.credential_key`; back up that key with the database.
+Configured secrets remain deployment-owned and are never copied into managed
+state.
+
+Provider listing, editing, and validation are passive: they do not launch an
+ACP process, call a hosted provider, authenticate, fetch Registry metadata, or
+discover models. Managed `generic_acp`, explicit commands, command overrides,
+and managed root selection are intentionally unavailable.
+
 ## Web UI foundation
 
 The foundation is:

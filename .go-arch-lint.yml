@@ -405,6 +405,16 @@ components:
     in:
       - internal/apps/balda/mcpmanage
 
+  # Shared AES-GCM framing for application-owned protected values.
+  secret_protection:
+    in:
+      - internal/apps/balda/secrets
+
+  # Managed provider policy and exact provider graph bindings.
+  providers:
+    in:
+      - internal/apps/balda/providers
+
   # Dedicated host adapter for Backoffice definition and native authorization
   # ports. Shared completion stays in mcp_management; UI cannot import its owner.
   mcp_backoffice_wiring:
@@ -982,6 +992,7 @@ deps:
       - user_security
       - storage
       - infrastructure
+      - providers
       - backoffice_application
       - backoffice_access
       - backoffice_audit
@@ -1072,6 +1083,7 @@ deps:
       - runtime_catalog
       - storage
       - infrastructure
+      - providers
     anyVendorDeps: true
 
   schedule_policy:
@@ -1118,8 +1130,16 @@ deps:
       - mcp_contracts
       - user_contracts
       - mcp_management
+      - secret_protection
     deepScan: false
     anyVendorDeps: false
+
+  providers:
+    mayDependOn:
+      - secret_protection
+      - user_contracts
+    deepScan: false
+    anyVendorDeps: true
 
   mcp_backoffice_wiring:
     mayDependOn:
@@ -1427,6 +1447,7 @@ deps:
       - session_memory_core
       - session_memory_contracts
       - storage
+      - providers
     # Constructor bypasses are checked by forbidigo in .golangci.yml.
     anyVendorDeps: false
     canUse:
@@ -1471,6 +1492,8 @@ deps:
       - mcp_wiring
       - mcp_management
       - mcp_contracts
+      - providers
+      - secret_protection
       - backoffice_application
       - contracts
       - user_contracts

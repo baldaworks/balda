@@ -3,43 +3,27 @@ package mcpmanage
 
 import (
 	"context"
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/rand"
-	"encoding/base64"
 	"encoding/json"
 	"maps"
 	"os"
 	"regexp"
 
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/secrets"
 )
 
 type Service struct {
-	credentials cipher.AEAD
+	credentials *secrets.Protector
 }
 
 // New accepts one deployment-owned base64 AES-256 key. Empty is supported for
 // installations without protected data; protected writes require a key.
 func New(credentialKey string) (*Service, error) {
-	s := &Service{}
-	if credentialKey == "" {
-		return s, nil
-	}
-	key, err := base64.StdEncoding.Strict().DecodeString(credentialKey)
-	defer clear(key)
-	if err != nil || len(key) != 32 {
-		return nil, mcpcmd.ErrCredentials
-	}
-	block, err := aes.NewCipher(key)
+	protector, err := secrets.New(credentialKey)
 	if err != nil {
 		return nil, mcpcmd.ErrCredentials
 	}
-	s.credentials, err = cipher.NewGCM(block)
-	if err != nil {
-		return nil, mcpcmd.ErrCredentials
-	}
-	return s, nil
+	return &Service{credentials: protector}, nil
 }
 
 // CredentialReader includes retained revision and worker-grant credentials.
@@ -166,7 +150,7 @@ func (s *Service) sealRevision(r mcpcmd.Revision, values protectedValues) ([]byt
 	if len(values.Env) == 0 && len(values.Headers) == 0 {
 		return nil, nil
 	}
-	if s.credentials == nil {
+	if !s.credentials.Available() {
 		return nil, mcpcmd.ErrCredentials
 	}
 	plain, err := json.Marshal(values)
@@ -174,23 +158,17 @@ func (s *Service) sealRevision(r mcpcmd.Revision, values protectedValues) ([]byt
 	if err != nil || len(plain) > maxProtectedPayload {
 		return nil, mcpcmd.ErrInvalid
 	}
-	prefix := make([]byte, 1+s.credentials.NonceSize())
-	prefix[0] = 1
-	if _, err := rand.Read(prefix[1:]); err != nil {
+	payload, err := s.credentials.Seal(plain, revisionAAD(r))
+	if err != nil {
 		return nil, mcpcmd.ErrCredentials
 	}
-	return s.credentials.Seal(prefix, prefix[1:], plain, revisionAAD(r)), nil
+	return payload, nil
 }
 
 func (s *Service) openRevision(r mcpcmd.Revision) (protectedValues, error) {
 	var values protectedValues
 	if len(r.ProtectedValues) > 0 {
-		if s.credentials == nil || len(r.ProtectedValues) < 1+s.credentials.NonceSize()+s.credentials.Overhead() ||
-			len(r.ProtectedValues) > maxProtectedPayload+1+s.credentials.NonceSize()+s.credentials.Overhead() || r.ProtectedValues[0] != 1 {
-			return values, mcpcmd.ErrCredentials
-		}
-		prefixEnd := 1 + s.credentials.NonceSize()
-		plain, err := s.credentials.Open(nil, r.ProtectedValues[1:prefixEnd], r.ProtectedValues[prefixEnd:], revisionAAD(r))
+		plain, err := s.credentials.Open(r.ProtectedValues, revisionAAD(r))
 		if err != nil {
 			return values, mcpcmd.ErrCredentials
 		}

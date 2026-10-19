@@ -24,7 +24,7 @@ func (s *Definitions) PrepareAuthorization(ctx context.Context, request mcpcmd.P
 	if err := s.store.CheckMCPAuthority(ctx, request.Authority); err != nil {
 		return mcpcmd.Revision{}, safeOperationError(err)
 	}
-	if s.credentials.credentials == nil {
+	if !s.credentials.credentials.Available() {
 		return mcpcmd.Revision{}, mcpcmd.ErrCredentials
 	}
 	c, found, err := s.store.GetMCPConnection(ctx, request.ConnectionID)
@@ -147,7 +147,7 @@ func (s *Definitions) CreateForAuthorization(ctx context.Context, request mcpcmd
 	if err := s.store.CheckMCPAuthority(ctx, request.Authority); err != nil {
 		return mcpcmd.Item{}, safeOperationError(err)
 	}
-	if s.credentials.credentials == nil {
+	if !s.credentials.credentials.Available() {
 		return mcpcmd.Item{}, mcpcmd.ErrCredentials
 	}
 	request.Definition.OAuth = true

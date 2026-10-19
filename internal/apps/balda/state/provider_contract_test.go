@@ -19,12 +19,14 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/aliases"
 	"github.com/baldaworks/balda/internal/apps/balda/authcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/providers"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/schedulecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookcmd"
 	"github.com/baldaworks/balda/sessionmemory"
+	"github.com/baldaworks/runtime/v2/agentconfig"
 	adksession "google.golang.org/adk/v2/session"
 )
 
@@ -80,6 +82,7 @@ func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) 
 	t.Run("Provider_KVRoundTrip", func(t *testing.T) { checkProvider_KVRoundTrip(t, factory(t)) })
 	t.Run("Provider_KVConsumeJSONConcurrentConsumeOnce", func(t *testing.T) { checkProvider_KVConsumeJSONConcurrentConsumeOnce(t, factory(t)) })
 	t.Run("Provider_SessionStoreRoundTrip", func(t *testing.T) { checkProvider_SessionStoreRoundTrip(t, factory(t)) })
+	t.Run("Provider_ManagedProviderState", func(t *testing.T) { checkProviderManagedProviderState(t, factory(t)) })
 	t.Run("Provider_SessionStoreUpsert_AllowsMultipleTelegramSessions", func(t *testing.T) { checkProvider_SessionStoreUpsert_AllowsMultipleTelegramSessions(t, factory(t)) })
 	t.Run("Provider_QuestionStoreRoundTrip", func(t *testing.T) { checkProvider_QuestionStoreRoundTrip(t, factory(t)) })
 	t.Run("QuestionAnswerHandoffSurvivesRestart", func(t *testing.T) { checkQuestionAnswerHandoffSurvivesRestart(t, factory(t)) })
@@ -654,16 +657,17 @@ func checkProvider_SessionStoreRoundTrip(t *testing.T, open contractOpener) {
 	store := provider.Sessions()
 
 	record := SessionRecord{
-		SessionID:         "tg-1-2",
-		UserID:            "tg-101",
-		ChannelType:       ChannelTypeTelegram,
-		AddressKey:        "1:2",
-		AddressJSON:       `{"chat_id":1,"topic_id":2}`,
-		AgentName:         "agent",
-		WorkspaceDir:      "/tmp/ws",
-		BranchName:        "norma/balda/tg-1-2",
-		RuntimeSnapshotID: "snapshot-1",
-		Status:            SessionStatusActive,
+		SessionID:           "tg-1-2",
+		UserID:              "tg-101",
+		ChannelType:         ChannelTypeTelegram,
+		AddressKey:          "1:2",
+		AddressJSON:         `{"chat_id":1,"topic_id":2}`,
+		AgentName:           "agent",
+		WorkspaceDir:        "/tmp/ws",
+		BranchName:          "norma/balda/tg-1-2",
+		RuntimeSnapshotID:   "snapshot-1",
+		ProviderBindingJSON: `{"root_provider_id":"managed"}`,
+		Status:              SessionStatusActive,
 	}
 	if err := store.Upsert(ctx, record); err != nil {
 		t.Fatalf("Upsert() error = %v", err)
@@ -686,6 +690,85 @@ func checkProvider_SessionStoreRoundTrip(t *testing.T, open contractOpener) {
 	}
 	if got.RuntimeSnapshotID != record.RuntimeSnapshotID {
 		t.Fatalf("runtime_snapshot_id = %q, want %q", got.RuntimeSnapshotID, record.RuntimeSnapshotID)
+	}
+	if got.ProviderBindingJSON != record.ProviderBindingJSON {
+		t.Fatalf("provider_binding_json = %q, want %q", got.ProviderBindingJSON, record.ProviderBindingJSON)
+	}
+}
+
+func checkProviderManagedProviderState(t *testing.T, open contractOpener) {
+	provider := newContractProvider(t, open)
+	defer closeContractProvider(t, provider)
+	ctx := t.Context()
+	store := provider.ProviderManagement()
+	initial, err := store.Read(ctx)
+	if err != nil || initial.Version != 0 || len(initial.Records) != 0 {
+		t.Fatalf("initial provider state = %+v, %v", initial, err)
+	}
+	now := time.Date(2026, 10, 19, 10, 0, 0, 0, time.UTC)
+	audit := func(id string) usercmd.AuditEvent {
+		return usercmd.AuditEvent{ID: id, Action: usercmd.AuditActionProviderChanged, Outcome: usercmd.AuditOutcomeSucceeded,
+			TargetType: usercmd.AuditTargetProvider, TargetID: "managed", Source: "test", OccurredAt: now}
+	}
+	first := providers.Revision{ID: "revision-1", ProviderID: "managed", DriverType: agentconfig.AgentTypeCodexACP,
+		ContractVersion: 1, FormatVersion: providers.StorageFormatVersion, CreatedAt: now,
+		Definition: providers.Definition{Config: agentconfig.Config{Type: agentconfig.AgentTypeCodexACP, CodexACP: &agentconfig.ACPConfig{Model: "first"}}, Reproducible: true}}
+	state, err := store.Apply(ctx, providers.Mutation{Record: providers.Record{ID: "managed", CurrentRevisionID: first.ID, Enabled: true}, Revision: &first, Audit: audit("provider-1")})
+	if err != nil || state.Version != 1 || len(state.Revisions) != 1 {
+		t.Fatalf("first mutation = %+v, %v", state, err)
+	}
+	stale := providers.Mutation{ExpectedVersion: 0, Record: providers.Record{ID: "managed", CurrentRevisionID: first.ID}, Audit: audit("provider-stale")}
+	if _, err := store.Apply(ctx, stale); !errors.Is(err, providers.ErrConflict) {
+		t.Fatalf("stale mutation error = %v", err)
+	}
+	failed := providers.Mutation{ExpectedVersion: 1, Record: providers.Record{ID: "managed", CurrentRevisionID: first.ID, Enabled: false}, Audit: audit("provider-1")}
+	if _, err := store.Apply(ctx, failed); err == nil {
+		t.Fatal("duplicate audit mutation succeeded")
+	}
+	afterFailure, err := store.Read(ctx)
+	if err != nil || afterFailure.Version != 1 || !afterFailure.Records[0].Enabled {
+		t.Fatalf("failed mutation changed state = %+v, %v", afterFailure, err)
+	}
+	second := first
+	second.ID = "revision-2"
+	second.Definition.Config.CodexACP.Model = "second"
+	second.CreatedAt = now.Add(time.Second)
+	state, err = store.Apply(ctx, providers.Mutation{ExpectedVersion: 1, Record: providers.Record{ID: "managed", CurrentRevisionID: second.ID, Enabled: true}, Revision: &second, Audit: audit("provider-2")})
+	if err != nil || state.Version != 2 || state.Revisions[0].ID != second.ID {
+		t.Fatalf("second mutation = %+v, %v", state, err)
+	}
+	retained, err := store.Revisions(ctx, []providers.RevisionRef{{ProviderID: "managed", RevisionID: first.ID}})
+	if err != nil || len(retained) != 1 || retained[0].Definition.Config.CodexACP.Model != "first" {
+		t.Fatalf("retained revisions = %+v, %v", retained, err)
+	}
+
+	current := state.Version
+	results := make(chan error, 2)
+	for i := range 2 {
+		go func(index int) {
+			_, applyErr := store.Apply(ctx, providers.Mutation{ExpectedVersion: current,
+				Record: providers.Record{ID: "managed", CurrentRevisionID: second.ID, Enabled: index == 0},
+				Audit:  audit(fmt.Sprintf("provider-concurrent-%d", index))})
+			results <- applyErr
+		}(i)
+	}
+	successes, conflicts := 0, 0
+	for range 2 {
+		switch err := <-results; {
+		case err == nil:
+			successes++
+		case errors.Is(err, providers.ErrConflict):
+			conflicts++
+		default:
+			t.Fatalf("concurrent mutation error = %v", err)
+		}
+	}
+	if successes != 1 || conflicts != 1 {
+		t.Fatalf("concurrent mutations = %d success, %d conflict", successes, conflicts)
+	}
+	final, err := store.Read(ctx)
+	if err != nil || final.Version != current+1 || len(final.Revisions) != 1 || final.Revisions[0].ID != final.Records[0].CurrentRevisionID {
+		t.Fatalf("final provider snapshot = %+v, %v", final, err)
 	}
 }
 

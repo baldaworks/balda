@@ -12,26 +12,27 @@ import (
 
 // TopicSession represents a single channel session's provider-backed agent session.
 type TopicSession struct {
-	archiveID         string
-	sessionID         string
-	agentSessionID    string
-	userID            string
-	locator           SessionLocator
-	agentName         string
-	agent             agent.Agent
-	runner            *runner.Runner
-	sessionSvc        session.Service
-	sess              session.Session
-	runtimeClose      func() error
-	runtimeSnapshotID string
-	workspaceDir      string
-	branchName        string
-	startupNotice     string
-	pendingBoundaries map[BoundaryReason]boundaryAttempt
-	runtimeDeleted    bool
-	runtimeClosed     bool
-	hooksStarted      bool
-	hooksEnded        bool
+	archiveID           string
+	sessionID           string
+	agentSessionID      string
+	userID              string
+	locator             SessionLocator
+	agentName           string
+	agent               agent.Agent
+	runner              *runner.Runner
+	sessionSvc          session.Service
+	sess                session.Session
+	runtimeClose        func() error
+	runtimeSnapshotID   string
+	providerBindingJSON string
+	workspaceDir        string
+	branchName          string
+	startupNotice       string
+	pendingBoundaries   map[BoundaryReason]boundaryAttempt
+	runtimeDeleted      bool
+	runtimeClosed       bool
+	hooksStarted        bool
+	hooksEnded          bool
 }
 
 type boundaryAttempt struct {

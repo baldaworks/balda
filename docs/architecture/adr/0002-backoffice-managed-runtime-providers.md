@@ -1,13 +1,13 @@
 # ADR 0002: Backoffice-managed runtime providers
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-10-17
-- Last reviewed: 2026-10-17
+- Last reviewed: 2026-10-19
 - Owners: Balda maintainers
 - Decision scope: managed provider definitions, protected values, session binding, and restore
 - Depends on: ADR 0003, YAML-first provider driver registry
 - Supersedes: none
-- Approval: pending
+- Approval: Prism Story `balda-2pss`, Human gate approved 2026-10-19
 
 ## Context
 
@@ -26,64 +26,27 @@ artifact retention, and custom executables are deferred.
 
 ## Repository status at last review
 
-This decision remains **Proposed** with **Approval: pending**. Repository
-history records the proposal and wording refinements, but no approval record.
-The acceptance criteria below therefore remain implementation expectations,
-not claims about current behavior.
+This decision was approved and implemented on 2026-10-19 through Prism Story
+`balda-2pss`.
 
-The 2026-10-17 review verified these foundations:
+- [`go.mod`](../../../go.mod) pins `github.com/baldaworks/runtime/v2` v2.7.0,
+  whose driver descriptors expose the contract versions stored by managed
+  revisions.
+- [`internal/apps/balda/providers`](../../../internal/apps/balda/providers)
+  reconciles configured and managed sources, validates mutations, compiles
+  exact bindings, and restores their revisions.
+- [`internal/apps/balda/secrets`](../../../internal/apps/balda/secrets) is the
+  shared AES-GCM boundary used by managed providers and MCP management with
+  separate AAD domains.
+- SQLite migration 67 and PostgreSQL migration 32 add provider state,
+  immutable revisions, the global state version, audit writes, and the inline
+  session provider binding.
+- [`internal/apps/backoffice/providers.go`](../../../internal/apps/backoffice/providers.go)
+  exposes the administrator Providers inventory and lifecycle actions through
+  the existing SSR/HTMX UI contract.
 
-- [`go.mod`](../../../go.mod) pins `github.com/baldaworks/runtime/v2` v2.6.1.
-  Its built-in driver registry supplies canonical types, aliases, driver
-  classes, immutable identity fields, passive normalization, and ACP
-  environment policy. Balda's configuration test verifies disabled
-  inheritance and preservation of an explicitly empty environment value in
-  [`cmd/balda/acp_config_test.go`](../../../cmd/balda/acp_config_test.go).
-- Managed MCP revisions already use revision-bound AES-GCM with the deployment
-  key configured by `balda.mcp_management.credential_key`. The implementation
-  and its protected-value tests are in
-  [`internal/apps/balda/mcpmanage/credentials.go`](../../../internal/apps/balda/mcpmanage/credentials.go)
-  and
-  [`internal/apps/balda/mcpmanage/credentials_test.go`](../../../internal/apps/balda/mcpmanage/credentials_test.go).
-  This primitive is still owned by `mcpmanage`; the application-scoped
-  `SecretProtector` selected by this ADR does not yet exist.
-- Sessions already pin one runtime-catalog capability snapshot, attempt exact
-  restoration, and use the documented fresh-session fallback if that snapshot
-  or saved ADK session cannot be restored. The behavior and tests live in
-  [`internal/apps/balda/session/manager.go`](../../../internal/apps/balda/session/manager.go)
-  and
-  [`internal/apps/balda/session/manager_test.go`](../../../internal/apps/balda/session/manager_test.go).
-  That `RuntimeSnapshotID` covers commands, skills, and MCP contributions; it
-  is not the `ProviderBinding` defined here.
-- `balda validate` remains configuration-only and does not open the state
-  database; `preflight` opens state and constructs the configured provider
-  runtime. The command boundary is visible in
-  [`cmd/balda/command.go`](../../../cmd/balda/command.go).
-
-The same review verified that managed runtime providers are not implemented:
-
-- The pinned runtime descriptor has `ImmutableIdentityFields` but no
-  `ContractVersion`, which section 2 requires before managed revisions can pin
-  a driver contract.
-- Balda constructs `catalogapp.ProviderFactory` from the startup
-  `runtime.providers` map and retains that configured map. There is no
-  configured-plus-managed graph resolver; see
-  [`internal/apps/balda/app.go`](../../../internal/apps/balda/app.go) and
-  [`internal/apps/balda/catalogapp/provider_factory.go`](../../../internal/apps/balda/catalogapp/provider_factory.go).
-- `state.SessionRecord` persists the runtime-catalog snapshot ID but has no
-  provider binding. The SQLite and PostgreSQL migration sets contain no
-  managed-provider records, immutable provider revisions, provider state
-  version, or session provider-binding field; see
-  [`internal/apps/balda/state/types.go`](../../../internal/apps/balda/state/types.go),
-  [`internal/apps/balda/state/migrations.go`](../../../internal/apps/balda/state/migrations.go),
-  and
-  [`internal/apps/balda/state/postgres_migrations.go`](../../../internal/apps/balda/state/postgres_migrations.go).
-- Backoffice exposes the configured root provider on its read-only `/agent`
-  page. It has no Providers inventory or mutation routes; see
-  [`internal/apps/backoffice/httpapp.go`](../../../internal/apps/backoffice/httpapp.go).
-
-These gaps are implementation status, not amendments to the proposed decision.
-They do not establish approval or acceptance.
+The deferred decisions at the end of this record remain outside the
+implementation.
 
 ## Decision
 
@@ -107,8 +70,9 @@ providers into the database.
 ### 2. Store immutable managed revisions
 
 Each managed edit creates an immutable revision. A provider record contains its
-stable ID, current revision ID, enabled/deleted state, and optimistic version.
-A global `provider_state_version` changes with every managed mutation.
+stable ID, current revision ID, and enabled/deleted state. One global
+`provider_state_version` changes with every managed mutation and is the only
+optimistic token because each mutation validates the complete graph.
 
 One revision contains:
 
@@ -200,9 +164,8 @@ contract with an appropriate transaction isolation level or a version-checked
 retry; callers cannot assemble a state from unrelated reads.
 
 Mutation validation uses the same state version later supplied to the
-compare-and-swap. An implementation may cache compiled state by
-`provider_state_version`, but the database remains authoritative and cache
-invalidation is not part of correctness.
+compare-and-swap. The database remains authoritative; this increment adds no
+provider cache or invalidation mechanism.
 
 ### 5. Persist the provider graph with the session
 
@@ -297,6 +260,14 @@ Configured rows are read-only. Managed rows support create, edit, enable,
 disable, and delete. Protected fields accept replace or clear and otherwise
 show presence only.
 
+The surface uses the existing Backoffice Web UI foundation: Go
+`html/template`, the shared `webui.Page` and shell, AdminLTE 4.9.1, HTMX
+2.0.10, local Bootstrap Icons, embedded versioned assets, and limited vanilla
+JavaScript. It preserves the existing full-document, HTMX fragment, history
+restore, mutation redirect, and error-status contracts. Synthetic QA states
+reuse production templates and assets and receive the standard responsive and
+keyboard browser review.
+
 Listing, validation, mutations, startup compilation, and page loads do not
 launch ACP, call hosted providers, authenticate accounts, fetch Registry
 metadata, or discover models.
@@ -308,9 +279,9 @@ optimistic state, and an audit event in the same transaction.
 
 - `runtime/v2/agentconfig` owns provider types, driver descriptors,
   `ContractVersion`, validation, and normalization.
-- A Balda provider service owns source reconciliation, graph validation,
+- `internal/apps/balda/providers` owns source reconciliation, graph validation,
   revisions, mutations, and binding resolution.
-- The application-scoped `SecretProtector` owns encryption only.
+- `internal/apps/balda/secrets` owns encryption only.
 - `internal/apps/balda/state` owns records, revisions, opaque ciphertext,
   state version, tombstones, and atomic audit writes.
 - The session capability binder carries `ProviderBinding` beside the catalog
@@ -364,9 +335,8 @@ Older binaries ignore managed-provider tables.
 ## Consequences
 
 The design adds one state version, immutable managed revisions, one inline
-session binding, and one application encryption boundary. New sessions perform
-a consistent provider-state read; an optional version-keyed cache may reduce
-that cost.
+session binding, and one encryption boundary. New sessions perform one
+consistent provider-state read.
 
 Configured credentials retain legacy behavior and remain outside exact restore.
 Managed auth, discovery, custom commands, artifact retention, rollback, purge,

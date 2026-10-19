@@ -298,6 +298,9 @@ func TestSQLiteProvider_MigratesPreviousSchema(t *testing.T) {
 	if record.RuntimeSnapshotID != "" {
 		t.Fatalf("runtime_snapshot_id after migration = %q, want empty for legacy row", record.RuntimeSnapshotID)
 	}
+	if record.ProviderBindingJSON != "" {
+		t.Fatalf("provider_binding_json after migration = %q, want empty for legacy row", record.ProviderBindingJSON)
+	}
 
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {

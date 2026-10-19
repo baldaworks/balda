@@ -84,7 +84,8 @@ type SessionRuntimeRequest struct {
 	WorkspaceDir   string
 	// RuntimeSnapshotID requests an exact persisted capability snapshot.
 	// An empty value lets the runtime select the current effective snapshot.
-	RuntimeSnapshotID string
+	RuntimeSnapshotID   string
+	ProviderBindingJSON string
 }
 
 type WorkspaceManager interface {
@@ -116,8 +117,9 @@ type BuiltRuntime struct {
 	SessionSvc adksession.Service
 	AppName    string
 	// RuntimeSnapshotID identifies the capabilities bound to this runtime.
-	RuntimeSnapshotID string
-	Close             func() error
+	RuntimeSnapshotID   string
+	ProviderBindingJSON string
+	Close               func() error
 }
 
 type EnsureWorkspaceResult struct {
@@ -469,7 +471,7 @@ func (m *Manager) createSessionLocked(ctx context.Context, sessionCtx SessionCon
 	var sess adksession.Session
 	createdFresh := false
 	if persisted == nil {
-		sessionRuntime, err = m.bindSessionRuntime(ctx, rootRuntime, locator, userID, agentSessionID, workspaceDir, "")
+		sessionRuntime, err = m.bindSessionRuntime(ctx, rootRuntime, locator, userID, agentSessionID, workspaceDir, "", "")
 		if err == nil {
 			if transient {
 				sess, err = builder.CreateRuntimeSession(
@@ -509,20 +511,21 @@ func (m *Manager) createSessionLocked(ctx context.Context, sessionCtx SessionCon
 	}
 
 	ts := &TopicSession{
-		sessionID:         sessionID,
-		agentSessionID:    agentSessionID,
-		userID:            userID,
-		locator:           locator,
-		agentName:         agentName,
-		agent:             sessionRuntime.Agent,
-		runner:            sessionRuntime.Runner,
-		sessionSvc:        sessionRuntime.SessionSvc,
-		runtimeClose:      sessionRuntime.Close,
-		runtimeSnapshotID: strings.TrimSpace(sessionRuntime.RuntimeSnapshotID),
-		sess:              sess,
-		workspaceDir:      workspaceDir,
-		branchName:        branchName,
-		startupNotice:     startupNotice,
+		sessionID:           sessionID,
+		agentSessionID:      agentSessionID,
+		userID:              userID,
+		locator:             locator,
+		agentName:           agentName,
+		agent:               sessionRuntime.Agent,
+		runner:              sessionRuntime.Runner,
+		sessionSvc:          sessionRuntime.SessionSvc,
+		runtimeClose:        sessionRuntime.Close,
+		runtimeSnapshotID:   strings.TrimSpace(sessionRuntime.RuntimeSnapshotID),
+		providerBindingJSON: strings.TrimSpace(sessionRuntime.ProviderBindingJSON),
+		sess:                sess,
+		workspaceDir:        workspaceDir,
+		branchName:          branchName,
+		startupNotice:       startupNotice,
 	}
 	if activation != nil {
 		ts.archiveID = activation.Session.ID
@@ -555,6 +558,9 @@ func (m *Manager) createSessionLocked(ctx context.Context, sessionCtx SessionCon
 		}
 	}
 	shouldPersist := activation == nil && !transient && (persisted == nil || createdFresh)
+	if activation == nil && !transient && persisted != nil && strings.TrimSpace(persisted.ProviderBindingJSON) == "" && strings.TrimSpace(ts.providerBindingJSON) != "" {
+		shouldPersist = true
+	}
 	if shouldPersist {
 		if err := m.persistSessionRecord(ctx, ts, baldastate.SessionStatusActive); err != nil {
 			if closeErr := m.cleanupTopicSession(ctx, ts, sessionCleanupOptions{
@@ -627,7 +633,7 @@ func (m *Manager) bindSessionRuntime(
 	ctx context.Context,
 	rootRuntime *BuiltRuntime,
 	locator SessionLocator,
-	userID, agentSessionID, workspaceDir, snapshotID string,
+	userID, agentSessionID, workspaceDir, snapshotID, providerBindingJSON string,
 ) (*BuiltRuntime, error) {
 	if rootRuntime == nil {
 		return nil, fmt.Errorf("runtime is required")
@@ -635,17 +641,21 @@ func (m *Manager) bindSessionRuntime(
 	runtimeManager := m.runtimeManager
 	scopedManager, ok := runtimeManager.(SessionRuntimeManager)
 	if !ok {
+		if strings.TrimSpace(providerBindingJSON) != "" {
+			return nil, fmt.Errorf("persisted provider binding requires a scoped runtime manager")
+		}
 		nonOwningRuntime := *rootRuntime
 		nonOwningRuntime.Close = nil
 		return &nonOwningRuntime, nil
 	}
 
 	sessionRuntime, err := scopedManager.RuntimeForSession(ctx, SessionRuntimeRequest{
-		Locator:           locator,
-		UserID:            userID,
-		AgentSessionID:    agentSessionID,
-		WorkspaceDir:      workspaceDir,
-		RuntimeSnapshotID: strings.TrimSpace(snapshotID),
+		Locator:             locator,
+		UserID:              userID,
+		AgentSessionID:      agentSessionID,
+		WorkspaceDir:        workspaceDir,
+		RuntimeSnapshotID:   strings.TrimSpace(snapshotID),
+		ProviderBindingJSON: strings.TrimSpace(providerBindingJSON),
 	})
 	if err != nil {
 		return nil, err
@@ -661,6 +671,10 @@ func (m *Manager) bindSessionRuntime(
 	if requested := strings.TrimSpace(snapshotID); requested != "" && resolvedSnapshotID != requested {
 		closeBuiltRuntime(sessionRuntime)
 		return nil, fmt.Errorf("session runtime snapshot %q does not match persisted snapshot %q", resolvedSnapshotID, requested)
+	}
+	if requested := strings.TrimSpace(providerBindingJSON); requested != "" && strings.TrimSpace(sessionRuntime.ProviderBindingJSON) != requested {
+		closeBuiltRuntime(sessionRuntime)
+		return nil, fmt.Errorf("session provider binding does not match persisted binding")
 	}
 	return sessionRuntime, nil
 }
@@ -678,6 +692,7 @@ func (m *Manager) restoreRuntimeSession(
 	sessionID := strings.TrimSpace(record.SessionID)
 	exactRuntime, restoreErr := m.bindSessionRuntime(
 		ctx, rootRuntime, locator, userID, sessionID, workspaceDir, record.RuntimeSnapshotID,
+		record.ProviderBindingJSON,
 	)
 	if restoreErr == nil {
 		var sess adksession.Session
@@ -700,9 +715,10 @@ func (m *Manager) restoreRuntimeSession(
 		Err(restoreErr).
 		Str("session_id", sessionID).
 		Str("runtime_snapshot_id", strings.TrimSpace(record.RuntimeSnapshotID)).
+		Bool("provider_binding_present", strings.TrimSpace(record.ProviderBindingJSON) != "").
 		Msg("saved session restore failed; starting fresh with current capabilities")
 
-	currentRuntime, err := m.bindSessionRuntime(ctx, rootRuntime, locator, userID, sessionID, workspaceDir, "")
+	currentRuntime, err := m.bindSessionRuntime(ctx, rootRuntime, locator, userID, sessionID, workspaceDir, "", "")
 	if err != nil {
 		return nil, nil, false, fmt.Errorf("bind current runtime after restore failure: %w", err)
 	}
@@ -1315,17 +1331,18 @@ func (m *Manager) persistSessionRecord(ctx context.Context, ts *TopicSession, st
 
 func (m *Manager) sessionRecord(ts *TopicSession, status string) baldastate.SessionRecord {
 	return baldastate.SessionRecord{
-		ArchiveID:         ts.archiveID,
-		SessionID:         ts.sessionID,
-		UserID:            ts.userID,
-		ChannelType:       ts.locator.ChannelType,
-		AddressKey:        ts.locator.AddressKey,
-		AddressJSON:       ts.locator.AddressJSON,
-		AgentName:         ts.agentName,
-		WorkspaceDir:      ts.workspaceDir,
-		BranchName:        ts.branchName,
-		RuntimeSnapshotID: ts.runtimeSnapshotID,
-		Status:            status,
+		ArchiveID:           ts.archiveID,
+		SessionID:           ts.sessionID,
+		UserID:              ts.userID,
+		ChannelType:         ts.locator.ChannelType,
+		AddressKey:          ts.locator.AddressKey,
+		AddressJSON:         ts.locator.AddressJSON,
+		AgentName:           ts.agentName,
+		WorkspaceDir:        ts.workspaceDir,
+		BranchName:          ts.branchName,
+		RuntimeSnapshotID:   ts.runtimeSnapshotID,
+		ProviderBindingJSON: ts.providerBindingJSON,
+		Status:              status,
 	}
 }
 

@@ -62,9 +62,11 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/permissions"
 	"github.com/baldaworks/balda/internal/apps/balda/pluginapp"
 	"github.com/baldaworks/balda/internal/apps/balda/pluginbackofficeapp"
+	"github.com/baldaworks/balda/internal/apps/balda/providers"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
 	"github.com/baldaworks/balda/internal/apps/balda/schedulebackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/scheduledjobs"
+	"github.com/baldaworks/balda/internal/apps/balda/secrets"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionapp"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
@@ -314,7 +316,7 @@ func Module(
 		mcpServers[k] = v
 	}
 	mcpReg := mcpregistry.New(mcpServers)
-	sessionMemoryProviderID, err := validateSessionMemoryProviderConfig(
+	sessionMemoryProviderID, err := resolveSessionMemoryProviderForComposition(
 		cfg.Balda.SessionMemory,
 		cfg.Balda.Provider,
 		normaCfg.Providers,
@@ -373,8 +375,8 @@ func Module(
 				sessionmemoryapp.NewScopeResolverFromContributions,
 				fx.ParamTags(`group:"balda_session_memory_scope_classifier"`),
 			),
-			func(builder *baldaagent.Builder) (*portableapp.Runtime, error) {
-				return newCanonicalSessionMemoryRuntime(cfg.Balda.SessionMemory, builder, sessionMemoryProviderID, workingDir, stateDir)
+			func(manager *baldaagent.RuntimeManager) (*portableapp.Runtime, error) {
+				return newCanonicalSessionMemoryRuntime(cfg.Balda.SessionMemory, manager, sessionMemoryProviderID, workingDir, stateDir)
 			},
 			func(provider baldastate.Provider, bus *natsbus.Bus) (*sessionmemoryapp.IngressOutboxPublisher, error) {
 				outboxCfg, err := sessionMemoryIngressOutboxConfig(cfg.Balda.SessionMemory)
@@ -442,7 +444,13 @@ func Module(
 				})
 				return provider, nil
 			},
-			func(provider baldastate.Provider, invitations *auth.BindingInvitations, channels *auth.BindingChannels, mcp *mcpbackofficeapp.Operations, schedules *schedulebackofficeapp.Operations, aliases *aliasbackofficeapp.Operations, webhooks *webhookbackofficeapp.Operations, facts *memorybackofficeapp.Operations, plugins *pluginbackofficeapp.Operations, hooks *hookbackofficeapp.Operations, skills *skillbackofficeapp.Operations, archive *chatarchivebackofficeapp.Operations) (*backoffice.Runtime, error) {
+			func() (*secrets.Protector, error) {
+				return secrets.New(cfg.Balda.MCPManagement.CredentialKey)
+			},
+			func(provider baldastate.Provider, protector *secrets.Protector) *providers.Service {
+				return providers.New(normaCfg.Providers, provider.ProviderManagement(), protector)
+			},
+			func(provider baldastate.Provider, invitations *auth.BindingInvitations, channels *auth.BindingChannels, mcp *mcpbackofficeapp.Operations, providerOperations *providers.Service, schedules *schedulebackofficeapp.Operations, aliases *aliasbackofficeapp.Operations, webhooks *webhookbackofficeapp.Operations, facts *memorybackofficeapp.Operations, plugins *pluginbackofficeapp.Operations, hooks *hookbackofficeapp.Operations, skills *skillbackofficeapp.Operations, archive *chatarchivebackofficeapp.Operations) (*backoffice.Runtime, error) {
 				runtime, err := backoffice.NewRuntime(backofficeConfig, provider)
 				if err != nil {
 					return nil, err
@@ -451,6 +459,9 @@ func Module(
 					return nil, err
 				}
 				if err := runtime.ConfigureMCPOperations(mcp); err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigureProvidersOperations(providerOperations); err != nil {
 					return nil, err
 				}
 				if err := runtime.ConfigureSchedulesOperations(schedules); err != nil {
@@ -740,6 +751,12 @@ func Module(
 					return cfg.Balda.Provider
 				},
 				fx.ResultTags(`name:"balda_provider"`),
+			),
+		),
+		fx.Provide(
+			fx.Annotate(
+				func() string { return sessionMemoryProviderID },
+				fx.ResultTags(`name:"balda_session_memory_provider"`),
 			),
 		),
 		// Zulip transport

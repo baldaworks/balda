@@ -34,6 +34,7 @@ type httpApp struct {
 	invitations       BindingInvitations
 	bindingChannels   BindingChannels
 	mcp               MCPOperations
+	providers         ProvidersOperations
 	schedules         SchedulesOperations
 	webhooks          WebhooksOperations
 	aliases           AliasesOperations
@@ -130,6 +131,13 @@ func (a *httpApp) handler() (http.Handler, error) {
 	mux.HandleFunc("POST "+a.path("/mcp/connections/{connection_id}/selection"), a.mcpSelection)
 	mux.HandleFunc("POST "+a.path("/mcp/connections/{connection_id}/delete"), a.mcpDelete)
 	mux.HandleFunc("POST "+a.path("/mcp/connections/{connection_id}/diagnostic"), a.mcpDiagnostic)
+	for _, route := range []string{"/providers", "/providers/{provider_id}"} {
+		mux.Handle("GET "+a.path(route), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.providersPage))))
+	}
+	mux.HandleFunc("POST "+a.path("/providers"), a.providerCreate)
+	mux.HandleFunc("POST "+a.path("/providers/{provider_id}"), a.providerUpdate)
+	mux.HandleFunc("POST "+a.path("/providers/{provider_id}/selection"), a.providerSelection)
+	mux.HandleFunc("POST "+a.path("/providers/{provider_id}/delete"), a.providerDelete)
 	for _, route := range []string{"/schedules", "/schedules/{schedule_id}"} {
 		mux.Handle("GET "+a.path(route), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.schedulesPage))))
 	}

@@ -8,6 +8,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/authcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/providers"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
@@ -115,6 +116,7 @@ type Provider interface {
 	Collaborators() CollaboratorStore
 	Plugins() PluginStore
 	MCP() MCPStore
+	ProviderManagement() providers.Store
 	Users() usercmd.Store
 	Close() error
 }
@@ -268,7 +270,9 @@ type SessionRecord struct {
 	BranchName   string
 	// RuntimeSnapshotID pins provider capabilities for the lifetime of the session.
 	RuntimeSnapshotID string
-	Status            string
+	// ProviderBindingJSON pins the exact provider graph beside RuntimeSnapshotID.
+	ProviderBindingJSON string
+	Status              string
 }
 
 // SessionStore persists balda session metadata.

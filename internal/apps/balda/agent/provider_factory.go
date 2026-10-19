@@ -6,6 +6,7 @@ import (
 	"maps"
 	"slices"
 
+	"github.com/baldaworks/runtime/v2/agentconfig"
 	"github.com/baldaworks/runtime/v2/agentfactory"
 	adkagent "google.golang.org/adk/v2/agent"
 )
@@ -14,6 +15,18 @@ import (
 // defaults, including defaults used by lazily constructed pool members.
 type ScopedRuntimeFactory interface {
 	BuildScoped(ctx context.Context, request agentfactory.BuildRequest, selections map[string][]string) (adkagent.Agent, error)
+	WithProviders(configs map[string]agentconfig.Config) ScopedRuntimeFactory
+}
+
+func (b *Builder) withProviders(configs map[string]agentconfig.Config) (*Builder, error) {
+	if b == nil || b.scopedFactory == nil {
+		return nil, fmt.Errorf("scoped provider factory is required")
+	}
+	copyBuilder := *b
+	copyBuilder.normaCfg.Providers = maps.Clone(configs)
+	copyBuilder.scopedFactory = b.scopedFactory.WithProviders(configs)
+	copyBuilder.factory = &scopedRuntimeFactory{owner: copyBuilder.scopedFactory, original: b.factory}
+	return &copyBuilder, nil
 }
 
 // SessionRuntimeFactory prepares session-owned native provider capabilities.

@@ -27,7 +27,7 @@ import (
 // user chat sessions.
 type NormaInvoker struct {
 	mu         sync.Mutex
-	builder    *baldaagent.Builder
+	builder    DedicatedRuntimeBuilder
 	providerID string
 	workingDir string
 	runtime    *baldaagent.BuiltRuntime
@@ -36,11 +36,17 @@ type NormaInvoker struct {
 	closed     bool
 }
 
+// DedicatedRuntimeBuilder constructs an isolated runtime through Balda's
+// provider binding owner.
+type DedicatedRuntimeBuilder interface {
+	BuildDedicatedRuntime(ctx context.Context, providerID, workspaceDir, instruction string) (*baldaagent.BuiltRuntime, error)
+}
+
 // NormaInvokerConfig selects the extraction provider and working dir for an
 // isolated memory derivation runtime. The provider ID is resolved by Balda's
 // composition root and remains opaque to this adapter.
 type NormaInvokerConfig struct {
-	Builder    *baldaagent.Builder
+	Builder    DedicatedRuntimeBuilder
 	ProviderID string
 	WorkingDir string
 	MaxBytes   int

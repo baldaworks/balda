@@ -144,7 +144,7 @@ func (m *Manager) recoverArchiveActivation(ctx context.Context, root *BuiltRunti
 	if err != nil {
 		return nil, err
 	}
-	runtime, err := m.bindSessionRuntime(ctx, root, loc, userID, intent.Session.RuntimeID, live.WorkspaceDir, live.RuntimeSnapshotID)
+	runtime, err := m.bindSessionRuntime(ctx, root, loc, userID, intent.Session.RuntimeID, live.WorkspaceDir, live.RuntimeSnapshotID, live.ProviderBindingJSON)
 	if err != nil {
 		return nil, err
 	}
@@ -157,7 +157,7 @@ func (m *Manager) recoverArchiveActivation(ctx context.Context, root *BuiltRunti
 		closeBuiltRuntime(runtime)
 		return nil, err
 	}
-	return &TopicSession{sessionID: live.SessionID, archiveID: live.ArchiveID, agentSessionID: intent.Session.RuntimeID, userID: userID, locator: loc, agentName: live.AgentName, agent: runtime.Agent, runner: runtime.Runner, sessionSvc: runtime.SessionSvc, sess: sess, runtimeClose: runtime.Close, runtimeSnapshotID: live.RuntimeSnapshotID, workspaceDir: live.WorkspaceDir, branchName: live.BranchName, hooksStarted: m.hooks != nil}, nil
+	return &TopicSession{sessionID: live.SessionID, archiveID: live.ArchiveID, agentSessionID: intent.Session.RuntimeID, userID: userID, locator: loc, agentName: live.AgentName, agent: runtime.Agent, runner: runtime.Runner, sessionSvc: runtime.SessionSvc, sess: sess, runtimeClose: runtime.Close, runtimeSnapshotID: live.RuntimeSnapshotID, providerBindingJSON: live.ProviderBindingJSON, workspaceDir: live.WorkspaceDir, branchName: live.BranchName, hooksStarted: m.hooks != nil}, nil
 }
 
 // A failed constructor may already have persisted a runtime. Absence is the

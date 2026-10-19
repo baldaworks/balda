@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
+	"github.com/baldaworks/balda/internal/apps/balda/providers"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/sessionmemory"
@@ -185,7 +185,45 @@ func validateSessionMemoryProviderConfig(
 	return providerID, nil
 }
 
-func newSessionMemoryDeriver(cfg SessionMemoryConfig, builder *baldaagent.Builder, providerID, workingDir string) (*portableapp.Deriver, portableapp.StructuredInvoker, error) {
+// resolveSessionMemoryProviderForComposition validates configured providers
+// eagerly and defers unknown IDs to the managed provider store. This keeps
+// config-only validation independent from the database while preflight/start
+// still resolve the exact graph before ingress.
+func resolveSessionMemoryProviderForComposition(
+	cfg SessionMemoryConfig,
+	chatProvider string,
+	configured map[string]agentconfig.Config,
+	factory *agentfactory.Factory,
+) (string, error) {
+	providerID, err := resolveSessionMemoryProviderID(cfg, chatProvider)
+	if err != nil || !cfg.Enabled {
+		return providerID, err
+	}
+	if _, ok := configured[providerID]; !ok {
+		return providerID, nil
+	}
+	return validateSessionMemoryProviderConfig(cfg, chatProvider, configured, factory)
+}
+
+func resolveCurrentProviderGraphs(ctx context.Context, service *providers.Service, ids ...string) error {
+	seen := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		if _, err := service.CompileCurrent(ctx, id); err != nil {
+			return fmt.Errorf("resolve provider graph %q: %w", id, err)
+		}
+	}
+	return nil
+}
+
+func newSessionMemoryDeriver(cfg SessionMemoryConfig, builder sessionmemoryapp.DedicatedRuntimeBuilder, providerID, workingDir string) (*portableapp.Deriver, portableapp.StructuredInvoker, error) {
 	if err := validateSessionMemoryConfig(cfg); err != nil {
 		return nil, nil, err
 	}
@@ -266,7 +304,7 @@ func (r *canonicalRuntimeResources) Close(ctx context.Context) error {
 // Balda contributes only the Norma invoker, paths, redaction/delivery seams,
 // and the authenticated locator adapter; canonical semantics and capability
 // ownership remain in sessionmemory/app and its public adapters.
-func newCanonicalSessionMemoryRuntime(cfg SessionMemoryConfig, builder *baldaagent.Builder, providerID, workingDir, stateDir string) (*portableapp.Runtime, error) {
+func newCanonicalSessionMemoryRuntime(cfg SessionMemoryConfig, builder sessionmemoryapp.DedicatedRuntimeBuilder, providerID, workingDir, stateDir string) (*portableapp.Runtime, error) {
 	if !cfg.Enabled {
 		return portableapp.NewRuntime(portableapp.RuntimeConfig{})
 	}

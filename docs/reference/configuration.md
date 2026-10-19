@@ -88,6 +88,28 @@ configuration; it does not start providers or contact external services.
 `balda preflight` retains its existing behavior of constructing the selected
 provider runtime, using the same resolved environment as normal startup.
 
+### Configured and managed providers
+
+Backoffice-managed provider definitions supplement `runtime.providers`; they
+do not replace or rewrite YAML. Both sources share one provider-ID namespace,
+and `balda.provider` may name either source. A collision fails startup rather
+than selecting a source by precedence.
+
+`balda validate` remains database-free. A root or pool reference absent from
+YAML is deferred because it may be managed. `balda preflight` and `balda start`
+open the selected state database, compile the complete selected graph, and fail
+before ingress if the graph, driver contract, protected values, or source
+namespace is invalid.
+
+Managed provider changes are available under Backoffice Administration →
+Providers. They apply to new sessions and `/reset`; active sessions use their
+stored binding. The managed source excludes generic ACP definitions, explicit
+commands, and command overrides. Root selection remains in configuration.
+Protected API keys and ACP environment values use
+`balda.mcp_management.credential_key`; see
+[Providers management](backoffice.md#providers-management) and
+[database backup and restore](database.md#backup-restore-and-changing-engines).
+
 ### ACP startup timeout
 
 `balda.acp_startup_timeout` sets the ACP startup budget, default `60s`.
