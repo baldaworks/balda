@@ -239,14 +239,10 @@ func (r *Runner) RunSessionTurnPayload(ctx context.Context, payload turncmd.Sess
 			return fmt.Errorf("queued turn lifetime: %w", chatarchivecmd.ErrConflict)
 		}
 	}
-	userID := strings.TrimSpace(payload.UserID)
-	if userID == "" {
-		userID = topicSession.GetUserID()
-	}
-	agentSessionID := strings.TrimSpace(payload.AgentSessionID)
-	if agentSessionID == "" {
-		agentSessionID = topicSession.GetAgentSessionID()
-	}
+	// The selected session owns the whole provider binding. Payload identity is
+	// only a creation seed; the requester remains separate for attribution.
+	userID := topicSession.GetUserID()
+	agentSessionID := topicSession.GetAgentSessionID()
 	deliveryLocator := payload.Locator
 	if payload.ReportTo != nil {
 		deliveryLocator = *payload.ReportTo

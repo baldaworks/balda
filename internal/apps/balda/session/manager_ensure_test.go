@@ -49,6 +49,9 @@ func TestEnsureSessionRestoresSQLiteHistoryAfterRestart(t *testing.T) {
 	if restored.GetSessionID() != locator.SessionID || restored.GetUserID() != ensureTestUserID || restored.GetAgentName() != "saved-label" {
 		t.Fatalf("restored identity = %q/%q/%q", restored.GetSessionID(), restored.GetUserID(), restored.GetAgentName())
 	}
+	if restored.GetAgentSessionID() != first.GetAgentSessionID() {
+		t.Fatalf("restored provider identity = %q, want original %q", restored.GetAgentSessionID(), first.GetAgentSessionID())
+	}
 	if restored.GetRuntimeSnapshotID() != currentSnapshotID {
 		t.Fatalf("snapshot = %q", restored.GetRuntimeSnapshotID())
 	}

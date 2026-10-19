@@ -3,6 +3,7 @@ package sessionturn
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -14,6 +15,7 @@ import (
 )
 
 const (
+	testRuntimeUserID   = "user-1"
 	testMemoryUpdatedAt = "2026-08-20T10:00:00Z"
 	testPriorMemoryAt   = "2026-08-20T09:00:00Z"
 )
@@ -431,7 +433,7 @@ func testTurnPayload() turncmd.SessionTurnPayload {
 			SessionID:   "tg-1-0",
 			ChannelType: "telegram",
 		},
-		UserID: "user-1",
+		UserID: testRuntimeUserID,
 	}
 }
 
@@ -492,6 +494,8 @@ func (p testMemoryProvider) Snapshot(context.Context) (MemorySnapshot, error) {
 
 type testSessionAccessor struct {
 	active        ActiveSession
+	ensured       ActiveSession
+	ensureCtx     []SessionContext
 	getErr        error
 	restored      ActiveSession
 	restoreErr    error
@@ -509,7 +513,11 @@ func (a *testSessionAccessor) RestoreSession(context.Context, SessionContext) (A
 	return a.restored, a.restoreErr
 }
 
-func (a *testSessionAccessor) EnsureSession(context.Context, SessionContext, string) (ActiveSession, error) {
+func (a *testSessionAccessor) EnsureSession(_ context.Context, ctx SessionContext, _ string) (ActiveSession, error) {
+	a.ensureCtx = append(a.ensureCtx, ctx)
+	if a.ensured != nil {
+		return a.ensured, nil
+	}
 	return nil, errors.New("unexpected EnsureSession call")
 }
 
@@ -532,7 +540,7 @@ func (s *testActiveSession) GetRunner() *adkrunner.Runner { return s.runner }
 func (s *testActiveSession) GetRuntimeSnapshotID() string { return s.runtimeSnapshotID }
 func (*testActiveSession) GetSessionID() string           { return "tg-1-0" }
 func (*testActiveSession) GetAgentSessionID() string      { return "agent-session-1" }
-func (*testActiveSession) GetUserID() string              { return "user-1" }
+func (*testActiveSession) GetUserID() string              { return testRuntimeUserID }
 
 func (s *testActiveSession) RuntimeStateValue(_ context.Context, key string) (any, bool, error) {
 	if s.stateErr != nil {
@@ -570,5 +578,58 @@ func TestRunnerRejectsInputFromDifferentLifetime(t *testing.T) {
 	payload.ArchiveID = "old"
 	if err := runner.RunSessionTurnPayload(t.Context(), payload); err == nil {
 		t.Fatal("executed input from a destroyed lifetime")
+	}
+}
+
+func TestRunnerUsesSelectedSessionBinding(t *testing.T) {
+	for _, restored := range []bool{false, true} {
+		for _, caller := range []string{testRuntimeUserID, "user-2"} {
+			t.Run(fmt.Sprintf("restored=%t/caller=%s", restored, caller), func(t *testing.T) {
+				active := &testActiveSession{runner: &adkrunner.Runner{}}
+				accessor := &testSessionAccessor{active: active}
+				if restored {
+					accessor.active = nil
+					accessor.getErr = errors.New("inactive")
+					accessor.restored = active
+				}
+				executor := &testExecutor{}
+				payload := testTurnPayload()
+				payload.UserID = caller
+				payload.RequesterUserID = caller
+				payload.AgentSessionID = "stale-provider-session"
+				if err := New(accessor, executor, nil, zerolog.Nop()).RunSessionTurnPayload(t.Context(), payload); err != nil {
+					t.Fatal(err)
+				}
+				request := executor.singleRequest(t)
+				if request.UserID != testRuntimeUserID || request.AgentSessionID != "agent-session-1" || request.Runner != active.runner {
+					t.Fatalf("provider binding = %q/%q/%p, want selected session", request.UserID, request.AgentSessionID, request.Runner)
+				}
+				if request.Payload.RequesterUserID != caller || request.Payload.Locator != payload.Locator {
+					t.Fatalf("requester/locator changed: %+v", request.Payload)
+				}
+			})
+		}
+	}
+}
+
+func TestRunnerKeepsCreationSeedAndRestoreFailure(t *testing.T) {
+	for _, restoreErr := range []error{ErrNoPersistedSession, errors.New("restore unavailable")} {
+		t.Run(restoreErr.Error(), func(t *testing.T) {
+			accessor := &testSessionAccessor{getErr: errors.New("inactive"), restoreErr: restoreErr, ensured: &testActiveSession{}}
+			executor := &testExecutor{}
+			payload := testTurnPayload()
+			payload.UserID = "creation-seed"
+			err := New(accessor, executor, nil, zerolog.Nop()).RunSessionTurnPayload(t.Context(), payload)
+			if errors.Is(restoreErr, ErrNoPersistedSession) {
+				if err != nil || len(accessor.ensureCtx) != 1 || accessor.ensureCtx[0].UserID != "creation-seed" {
+					t.Fatalf("lazy creation: err=%v contexts=%+v", err, accessor.ensureCtx)
+				}
+				if executor.singleRequest(t).UserID != testRuntimeUserID {
+					t.Fatal("creation seed overrode resulting runtime identity")
+				}
+			} else if !errors.Is(err, restoreErr) || len(accessor.ensureCtx) != 0 || len(executor.requests) != 0 {
+				t.Fatalf("restore failure: err=%v creates=%d executions=%d", err, len(accessor.ensureCtx), len(executor.requests))
+			}
+		})
 	}
 }

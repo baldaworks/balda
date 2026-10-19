@@ -42,9 +42,9 @@ type SessionTurnPayload struct {
 	Locator          deliverycmd.Locator               `json:"locator"`
 	ReportTo         *deliverycmd.Locator              `json:"report_to,omitempty"`
 	ParentJobID      string                            `json:"parent_job_id,omitempty"`
-	UserID           string                            `json:"user_id,omitempty"`
-	RequesterUserID  string                            `json:"requester_user_id,omitempty"`
-	AgentSessionID   string                            `json:"agent_session_id,omitempty"`
+	UserID           string                            `json:"user_id,omitempty"`           // Creation seed; selected session owns runtime identity.
+	RequesterUserID  string                            `json:"requester_user_id,omitempty"` // Actual caller for attribution and approvals.
+	AgentSessionID   string                            `json:"agent_session_id,omitempty"`  // Producer context; selected session owns provider lookup.
 	ScheduledJobID   string                            `json:"scheduled_job_id,omitempty"`
 	ScheduleOneShot  *bool                             `json:"schedule_one_shot,omitempty"`
 	MessageID        int                               `json:"message_id,omitempty"`

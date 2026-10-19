@@ -161,6 +161,10 @@ the existing session runner loads the pinned body and resources only when the
 turn executes. Skill content remains user-level context and cannot override
 system policy, access, or approval controls.
 
+At the same topic locator, admitted skill and declarative plugin commands use
+the existing session's runtime identity and conversation, regardless of caller.
+The actual caller remains the requester for attribution and approvals.
+
 The catalog supplies those candidates from the runtime account's
 `$HOME/.agents/skills`, `$CODEX_HOME/skills` (defaulting to
 `$HOME/.codex/skills`), `<state_dir>/skills`, the session workspace's
