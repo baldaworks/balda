@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/authcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/providers"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	adksession "google.golang.org/adk/v2/session"
 	_ "modernc.org/sqlite" // pure-Go SQLite driver
@@ -35,6 +36,7 @@ type sqliteProvider struct {
 	plugins        *sqlitePluginStore
 	users          usercmd.Store
 	mcp            *sqlMCPStore
+	providers      *sqlProviderManagementStore
 }
 
 var _ Provider = (*sqliteProvider)(nil)
@@ -184,6 +186,7 @@ func NewSQLiteProvider(ctx context.Context, path string) (Provider, error) {
 		plugins:        &sqlitePluginStore{db: db},
 		users:          newSQLiteUserStore(db),
 		mcp:            &sqlMCPStore{users: newSQLiteUserStore(db)},
+		providers:      newSQLiteProviderManagementStore(db),
 	}
 	return provider, nil
 }
@@ -258,6 +261,8 @@ func (p *sqliteProvider) Collaborators() CollaboratorStore {
 }
 
 func (p *sqliteProvider) Plugins() PluginStore { return p.plugins }
+
+func (p *sqliteProvider) ProviderManagement() providers.Store { return p.providers }
 
 func (p *sqliteProvider) MCP() MCPStore { return p.mcp }
 

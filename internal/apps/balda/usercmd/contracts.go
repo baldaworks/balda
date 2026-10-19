@@ -118,6 +118,7 @@ type BackofficeCapabilities struct {
 	Overview         bool
 	Account          bool
 	ManageMCP        bool
+	ManageProviders  bool
 	ManageSchedules  bool
 	ManageWebhooks   bool
 	ManageAliases    bool
@@ -324,6 +325,8 @@ const (
 	AuditActionWebhookRouteChanged AuditAction = "webhook.route.changed"
 	// AuditActionWebhookTestRequested records an administrator Test POST admission.
 	AuditActionWebhookTestRequested AuditAction = "webhook.test.requested"
+	// AuditActionProviderChanged records a managed runtime-provider mutation.
+	AuditActionProviderChanged AuditAction = "provider.definition.changed"
 )
 
 // Valid reports whether the action belongs to the bounded security audit vocabulary.
@@ -332,7 +335,7 @@ func (a AuditAction) Valid() bool {
 	case AuditActionSkillChanged, AuditActionHookChanged, AuditActionPluginRevisionPurged, AuditActionPluginMarketplaceRefreshFailed, AuditActionPluginOriginAdopted, AuditActionPluginInstalled, AuditActionPluginUpgraded, AuditActionPluginEnabled, AuditActionPluginDisabled, AuditActionPluginRolledBack, AuditActionPluginRemoved, AuditActionPluginMarketplaceAdded, AuditActionPluginMarketplaceRefreshed, AuditActionPluginMarketplaceRemoved, AuditActionUserCreated, AuditActionUserUpdated, AuditActionUserAccessChanged,
 		AuditActionUserRoleChanged, AuditActionUserStatusChanged, AuditActionCredentialChanged,
 		AuditActionSessionRevoked, AuditActionBindingAttached, AuditActionBindingDetached, AuditActionBindingClaimCreated,
-		AuditActionUserMigrated, AuditActionLoginSucceeded, AuditActionRefreshSucceeded,
+		AuditActionUserMigrated, AuditActionLoginSucceeded, AuditActionRefreshSucceeded, AuditActionProviderChanged,
 		AuditActionRefreshReplay, AuditActionMFAEnabled, AuditActionMFAReplaced, AuditActionMFADisabled, AuditActionMFARecovered, AuditActionMFAVerified, AuditActionLogout, AuditActionInvitationIssued, AuditActionInvitationRevoked, AuditActionMCPDefinitionChanged, AuditActionMCPAuthorizationChanged, AuditActionMCPCredentialsRenewed, AuditActionScheduleDefinitionChanged, AuditActionScheduleRunRequested, AuditActionMemoryFactCreated, AuditActionMemoryFactEdited, AuditActionMemoryFactDeleted, AuditActionAliasCreated, AuditActionAliasRetargeted, AuditActionAliasDeleted, AuditActionWebhookRouteChanged, AuditActionWebhookTestRequested:
 		return true
 	default:
@@ -387,12 +390,14 @@ const (
 	AuditTargetAlias AuditTargetType = "alias"
 	// AuditTargetWebhookRoute identifies a webhook route without its secret or input.
 	AuditTargetWebhookRoute AuditTargetType = "webhook_route"
+	// AuditTargetProvider identifies a managed runtime provider without protected values.
+	AuditTargetProvider AuditTargetType = "provider"
 )
 
 // Valid reports whether the audit target type is supported.
 func (t AuditTargetType) Valid() bool {
 	switch t {
-	case AuditTargetSkill, AuditTargetHook, AuditTargetPlugin, AuditTargetPluginMarketplace, AuditTargetUser, AuditTargetSession, AuditTargetBinding, AuditTargetSystem, AuditTargetMigration, AuditTargetMCP, AuditTargetSchedule, AuditTargetMemoryFact, AuditTargetAlias, AuditTargetWebhookRoute:
+	case AuditTargetSkill, AuditTargetHook, AuditTargetPlugin, AuditTargetPluginMarketplace, AuditTargetUser, AuditTargetSession, AuditTargetBinding, AuditTargetSystem, AuditTargetMigration, AuditTargetMCP, AuditTargetSchedule, AuditTargetMemoryFact, AuditTargetAlias, AuditTargetWebhookRoute, AuditTargetProvider:
 		return true
 	default:
 		return false

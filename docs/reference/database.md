@@ -116,13 +116,21 @@ migrations and checks canonical users before listeners become ready. Schema
 recovery is forward migration or backup restore, not automatic migration
 downgrade.
 
-Back up the deployment MCP credential key securely alongside the database if
-protected MCP values or worker grants are stored. Restore the matching
+Back up the deployment credential key securely alongside the database if
+protected MCP values, worker grants, or managed provider values are stored.
+Restore the matching
 `balda.mcp_management.credential_key` (or
 `BALDA_MCP_MANAGEMENT_CREDENTIAL_KEY`) before starting the restored deployment.
-The database alone cannot decrypt that data. Retained session revisions need
-the same key even after a connection is edited or deleted. See
+The database alone cannot decrypt that data. Retained MCP and provider
+revisions need the same key even after a definition is edited or deleted. See
 [MCP credential configuration](configuration.md#protected-values-and-worker-grants).
+
+SQLite migration 67 and PostgreSQL migration 32 add managed provider records,
+immutable revisions, one global provider state version, and the inline session
+provider binding. They are additive and forward-only. Before rolling back to a
+binary without managed providers, configure the complete selected root graph
+in YAML and reset affected sessions; older binaries ignore the provider tables
+but cannot reconstruct managed bindings. Schema downgrade is unsupported.
 
 Changing `type` does **not** copy data between engines. An empty PostgreSQL
 database starts empty: existing users do not appear there automatically.

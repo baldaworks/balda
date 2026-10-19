@@ -22,6 +22,7 @@ const (
 	LocationAccount     Location = "/account"
 	LocationAudit       Location = "/audit"
 	LocationMCP         Location = "/mcp"
+	LocationProviders   Location = "/providers"
 	LocationSkills      Location = "/skills"
 	LocationPlugins     Location = "/plugins"
 	LocationSchedules   Location = "/schedules"
@@ -35,7 +36,7 @@ const (
 // Valid reports whether a location can be emitted by server navigation.
 func (l Location) Valid() bool {
 	switch l {
-	case LocationChatArchive, LocationSkills, LocationHooks, LocationLogin, LocationOverview, LocationAgent, LocationAccess, LocationAccount, LocationAudit, LocationMCP, LocationSchedules, LocationWebhooks, LocationAliases, LocationFactMemory, LocationPlugins:
+	case LocationChatArchive, LocationSkills, LocationHooks, LocationLogin, LocationOverview, LocationAgent, LocationAccess, LocationAccount, LocationAudit, LocationMCP, LocationProviders, LocationSchedules, LocationWebhooks, LocationAliases, LocationFactMemory, LocationPlugins:
 		return true
 	default:
 		return false
@@ -183,6 +184,7 @@ type Page struct {
 	Skills       *SkillsView
 	Plugins      *PluginsView
 	MCP          *MCPView
+	Providers    *ProvidersView
 	Schedules    *SchedulesView
 	Webhooks     *WebhooksView
 	Aliases      *AliasesView
@@ -273,6 +275,9 @@ func Navigation(capabilities usercmd.BackofficeCapabilities, current Location) [
 		groups = append(groups, NavGroup{Label: "Operations", ID: "nav-operations", Items: operations})
 	}
 	var administration []NavItem
+	if capabilities.ManageProviders {
+		administration = append(administration, item("Providers", LocationProviders, "bi-cpu"))
+	}
 	if capabilities.ManageUsers {
 		administration = append(administration, item("Access", LocationAccess, "bi-people"))
 	}

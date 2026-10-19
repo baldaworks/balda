@@ -42,6 +42,9 @@ func QAHandler(basePath string) (http.Handler, error) {
 		if name == "webhooks" && r.URL.Query().Get("new") == "1" {
 			name = "webhooks/new"
 		}
+		if name == "providers" && r.URL.Query().Get("new") == "1" {
+			name = "providers/new"
+		}
 		if name == "webhooks/orders" && r.URL.Query().Has("job_id") {
 			name = "webhooks-history"
 		}
@@ -108,7 +111,7 @@ type qaEntry struct {
 	status       int
 }
 
-var qaEntries = append(append(append(append(pluginMarketplaceQAEntries, pluginLifecycleQAEntries...), hooksQAEntries...), skillsQAEntries...), []qaEntry{
+var qaEntries = append(append(append(append(append(pluginMarketplaceQAEntries, pluginLifecycleQAEntries...), hooksQAEntries...), skillsQAEntries...), providerQAEntries...), []qaEntry{
 	{name: "memory", label: "Fact memory · inventory", templateName: webui.TemplateFactMemory, page: qaFactMemory, gallery: true},
 	{name: "memory-long", label: "Fact memory · long multiline fact", templateName: webui.TemplateFactMemory, page: func() webui.Page {
 		p := qaFactMemory()
@@ -386,7 +389,7 @@ func qaWebhookHistory() webui.Page {
 
 func qaAdminNavigation(current webui.Location) []webui.NavGroup {
 	return webui.Navigation(usercmd.BackofficeCapabilities{
-		Overview: true, Account: true, ViewChatArchive: true, ManageUsers: true, ManageMCP: true, ManageSchedules: true, ManageWebhooks: true, ManageFactMemory: true, ManagePlugins: true, ViewAudit: true,
+		Overview: true, Account: true, ViewChatArchive: true, ManageUsers: true, ManageMCP: true, ManageProviders: true, ManageSchedules: true, ManageWebhooks: true, ManageFactMemory: true, ManagePlugins: true, ViewAudit: true,
 	}, current)
 }
 

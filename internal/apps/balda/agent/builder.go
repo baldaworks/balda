@@ -249,6 +249,8 @@ type BuiltRuntime struct {
 	AppName    string
 	// RuntimeSnapshotID identifies the catalog capabilities bound to this runtime.
 	RuntimeSnapshotID string
+	// ProviderBindingJSON identifies the exact provider graph bound to this runtime.
+	ProviderBindingJSON string
 	// Close releases resources owned by a scoped runtime. The app-scoped
 	// runtime leaves this nil and is closed by RuntimeManager.Stop.
 	Close func() error

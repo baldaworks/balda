@@ -62,11 +62,15 @@ func (b *sessionCapabilityBinder) BindSessionCapabilities(ctx context.Context, p
 	var ids []string
 	var selections map[string][]string
 	var release func()
-	if len(b.providers) == 0 && len(snapshot.MCPServers) == 0 {
+	providerConfigs := request.ProviderConfigs
+	if len(providerConfigs) == 0 {
+		providerConfigs = b.providers
+	}
+	if len(providerConfigs) == 0 && len(snapshot.MCPServers) == 0 {
 		ids, release, err = b.catalog.AcquireMCPServerIDs(ctx, snapshot.ID)
 	} else {
 		var defaults map[string][]string
-		defaults, err = providerMCPDefaults(b.providers, providerID, b.extra)
+		defaults, err = providerMCPDefaults(providerConfigs, providerID, b.extra)
 		if err == nil {
 			selections, release, err = b.catalog.AcquireProviderMCPServerIDs(ctx, snapshot.ID, defaults)
 			ids = selections[providerID]

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
+	"github.com/baldaworks/balda/internal/apps/balda/catalogapp"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/mattermost"
 	baldaslackagent "github.com/baldaworks/balda/internal/apps/balda/channel/slackagent"
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
@@ -18,7 +19,9 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/paths"
 	"github.com/baldaworks/balda/internal/apps/balda/permissionfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/permissions"
+	"github.com/baldaworks/balda/internal/apps/balda/providers"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
+	"github.com/baldaworks/balda/internal/apps/balda/secrets"
 	"github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionapp"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
@@ -144,7 +147,7 @@ func PreflightRuntime(
 		mcpServers[k] = v
 	}
 	mcpReg := mcpregistry.New(mcpServers)
-	sessionMemoryProviderID, err := validateSessionMemoryProviderConfig(
+	sessionMemoryProviderID, err := resolveSessionMemoryProviderForComposition(
 		cfg.Balda.SessionMemory,
 		cfg.Balda.Provider,
 		normaCfg.Providers,
@@ -174,8 +177,8 @@ func PreflightRuntime(
 				sessionmemoryapp.NewScopeResolverFromContributions,
 				fx.ParamTags(`group:"balda_session_memory_scope_classifier"`),
 			),
-			func(builder *baldaagent.Builder) (*portableapp.Runtime, error) {
-				return newCanonicalSessionMemoryRuntime(cfg.Balda.SessionMemory, builder, sessionMemoryProviderID, workingDir, stateDir)
+			func(manager *baldaagent.RuntimeManager) (*portableapp.Runtime, error) {
+				return newCanonicalSessionMemoryRuntime(cfg.Balda.SessionMemory, manager, sessionMemoryProviderID, workingDir, stateDir)
 			},
 			func(provider baldastate.Provider, bus *natsbus.Bus) (*sessionmemoryapp.IngressOutboxPublisher, error) {
 				outboxCfg, err := sessionMemoryIngressOutboxConfig(cfg.Balda.SessionMemory)
@@ -225,6 +228,12 @@ func PreflightRuntime(
 				}
 				lc.Append(fx.Hook{OnStop: func(context.Context) error { return provider.Close() }})
 				return provider, nil
+			},
+			func() (*secrets.Protector, error) {
+				return secrets.New(cfg.Balda.MCPManagement.CredentialKey)
+			},
+			func(provider baldastate.Provider, protector *secrets.Protector) *providers.Service {
+				return providers.New(normaCfg.Providers, provider.ProviderManagement(), protector)
 			},
 			func(provider baldastate.Provider) *memory.Store {
 				return memory.NewStore(provider.AppKV(), stateDir, cfg.Balda.Memory.Enabled)
@@ -312,6 +321,14 @@ func PreflightRuntime(
 					agentfactory.WithACPInitializeTimeout(acpStartupTimeout),
 				)
 			},
+			func(reg *mcpregistry.MapRegistry) baldaagent.ScopedRuntimeFactory {
+				return catalogapp.NewProviderFactory(
+					normaCfg.Providers,
+					reg,
+					agentfactory.WithPermissionHandler(baldaagent.NewPermissionHandler(permissionReviewer, logger)),
+					agentfactory.WithACPInitializeTimeout(acpStartupTimeout),
+				)
+			},
 			baldaagent.NewRunnerFactory,
 			baldaagent.NewBuilder,
 			baldaagent.NewRuntimeManager,
@@ -342,8 +359,11 @@ func PreflightRuntime(
 		questions.Module,
 		preflightScopeClassifiers(),
 		fx.Populate(&runtimeManager, &mcpManager),
-		fx.Invoke(func(lc fx.Lifecycle, manager *internalmcp.InternalMCPManager, runtimeManager *baldaagent.RuntimeManager, memoryRuntime *portableapp.Runtime) {
+		fx.Invoke(func(lc fx.Lifecycle, manager *internalmcp.InternalMCPManager, runtimeManager *baldaagent.RuntimeManager, providerService *providers.Service, memoryRuntime *portableapp.Runtime) {
 			lc.Append(fx.Hook{OnStart: func(ctx context.Context) error {
+				if err := resolveCurrentProviderGraphs(ctx, providerService, cfg.Balda.Provider, sessionMemoryProviderID); err != nil {
+					return err
+				}
 				if err := manager.EnsureStarted(ctx); err != nil {
 					_ = manager.Stop(context.Background())
 					return fmt.Errorf("start bundled internal MCP servers: %w", err)

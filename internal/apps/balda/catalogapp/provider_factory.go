@@ -166,6 +166,13 @@ func NewProviderFactory(providers map[string]agentconfig.Config, registry mcpreg
 	return &ProviderFactory{providers: copyProviders, registry: registry, options: factoryOptions}
 }
 
+// WithProviders returns an invocation-local factory for an exact provider graph.
+func (f *ProviderFactory) WithProviders(providers map[string]agentconfig.Config) baldaagent.ScopedRuntimeFactory {
+	copyFactory := *f
+	copyFactory.providers = cloneProviderConfigs(providers)
+	return &copyFactory
+}
+
 func cloneProviderConfigs(providers map[string]agentconfig.Config) map[string]agentconfig.Config {
 	cloned := make(map[string]agentconfig.Config, len(providers))
 	for id, config := range providers {

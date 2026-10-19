@@ -103,11 +103,13 @@ func (a SessionRuntimeManagerAdapter) Runtime(ctx context.Context) (*baldasessio
 		return nil, err
 	}
 	return &baldasession.BuiltRuntime{
-		Agent:      runtime.Agent,
-		Runner:     runtime.Runner,
-		SessionSvc: runtime.SessionSvc,
-		AppName:    runtime.AppName,
-		Close:      runtime.Close,
+		Agent:               runtime.Agent,
+		Runner:              runtime.Runner,
+		SessionSvc:          runtime.SessionSvc,
+		AppName:             runtime.AppName,
+		RuntimeSnapshotID:   runtime.RuntimeSnapshotID,
+		ProviderBindingJSON: runtime.ProviderBindingJSON,
+		Close:               runtime.Close,
 	}, nil
 }
 
@@ -123,22 +125,24 @@ func (a SessionRuntimeManagerAdapter) RuntimeForSession(ctx context.Context, req
 			AddressJSON: request.Locator.AddressJSON,
 			SessionID:   request.Locator.SessionID,
 		},
-		UserID:            request.UserID,
-		AgentSessionID:    request.AgentSessionID,
-		LineageID:         request.LineageID,
-		WorkspaceDir:      request.WorkspaceDir,
-		RuntimeSnapshotID: request.RuntimeSnapshotID,
+		UserID:              request.UserID,
+		AgentSessionID:      request.AgentSessionID,
+		LineageID:           request.LineageID,
+		WorkspaceDir:        request.WorkspaceDir,
+		RuntimeSnapshotID:   request.RuntimeSnapshotID,
+		ProviderBindingJSON: request.ProviderBindingJSON,
 	})
 	if err != nil {
 		return nil, err
 	}
 	return &baldasession.BuiltRuntime{
-		Agent:             runtime.Agent,
-		Runner:            runtime.Runner,
-		SessionSvc:        runtime.SessionSvc,
-		AppName:           runtime.AppName,
-		RuntimeSnapshotID: runtime.RuntimeSnapshotID,
-		Close:             runtime.Close,
+		Agent:               runtime.Agent,
+		Runner:              runtime.Runner,
+		SessionSvc:          runtime.SessionSvc,
+		AppName:             runtime.AppName,
+		RuntimeSnapshotID:   runtime.RuntimeSnapshotID,
+		ProviderBindingJSON: runtime.ProviderBindingJSON,
+		Close:               runtime.Close,
 	}, nil
 }
 

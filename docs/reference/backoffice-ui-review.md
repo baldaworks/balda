@@ -62,6 +62,17 @@ browser history and focus, sidebar collapse/overlay/backdrop/Escape,
 short-page footer position, grouped navigation, Audit details, and recovery actions.
 It needs no application credentials or deployment access.
 
+For the Providers surface, run its focused production-template gate:
+
+```bash
+BALDA_BACKOFFICE_BROWSER_TEST=1 go test ./internal/apps/backoffice -run '^TestProvidersLayoutBrowser$' -count=1 -v
+```
+
+It covers inventory, empty, create, managed, configured read-only, and conflict
+states at all four required viewports, for root and prefixed mounts. It also
+checks full/fragment/history rendering, keyboard focus, contained mobile table
+overflow, local assets, console failures, and secret-free HTML/screenshots.
+
 Run the separate authenticated browser gate from the repository root after
 installing the same optional Playwright tooling:
 

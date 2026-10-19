@@ -1,7 +1,6 @@
 package mcpmanage
 
 import (
-	"crypto/rand"
 	"encoding/json"
 	"strconv"
 	"strings"
@@ -25,7 +24,7 @@ func (s *Service) ProtectGrant(g mcpcmd.Grant, secrets GrantSecrets) ([]byte, er
 	if secrets.AccessToken == "" && secrets.RefreshToken == "" && secrets.ClientSecret == "" {
 		return nil, nil
 	}
-	if s.credentials == nil {
+	if !s.credentials.Available() {
 		return nil, mcpcmd.ErrCredentials
 	}
 	plain, err := json.Marshal(map[string]string{"access_token": secrets.AccessToken, "refresh_token": secrets.RefreshToken, "client_secret": secrets.ClientSecret, "token_type": secrets.TokenType})
@@ -33,12 +32,11 @@ func (s *Service) ProtectGrant(g mcpcmd.Grant, secrets GrantSecrets) ([]byte, er
 	if err != nil || len(plain) > maxProtectedPayload {
 		return nil, mcpcmd.ErrInvalid
 	}
-	prefix := make([]byte, 1+s.credentials.NonceSize())
-	prefix[0] = 1
-	if _, err := rand.Read(prefix[1:]); err != nil {
+	payload, err := s.credentials.Seal(plain, grantAAD(g))
+	if err != nil {
 		return nil, mcpcmd.ErrCredentials
 	}
-	return s.credentials.Seal(prefix, prefix[1:], plain, grantAAD(g)), nil
+	return payload, nil
 }
 
 // OpenGrant decrypts solely for trusted OAuth/MCP execution boundaries.
@@ -48,11 +46,7 @@ func (s *Service) OpenGrant(g mcpcmd.Grant) (GrantSecrets, error) {
 	}
 	var secrets GrantSecrets
 	if len(g.ProtectedValues) > 0 {
-		if s.credentials == nil || len(g.ProtectedValues) < 1+s.credentials.NonceSize()+s.credentials.Overhead() || len(g.ProtectedValues) > maxProtectedPayload+1+s.credentials.NonceSize()+s.credentials.Overhead() || g.ProtectedValues[0] != 1 {
-			return secrets, mcpcmd.ErrCredentials
-		}
-		end := 1 + s.credentials.NonceSize()
-		plain, err := s.credentials.Open(nil, g.ProtectedValues[1:end], g.ProtectedValues[end:], grantAAD(g))
+		plain, err := s.credentials.Open(g.ProtectedValues, grantAAD(g))
 		if err != nil {
 			return secrets, mcpcmd.ErrCredentials
 		}

@@ -23,6 +23,7 @@ const (
 	TemplateAccount     = "account"
 	TemplateAudit       = "audit"
 	TemplateMCP         = "mcp"
+	TemplateProviders   = "providers"
 	TemplateSkills      = "skills"
 	TemplatePlugins     = "plugins"
 	TemplateSchedules   = "schedules"
@@ -47,6 +48,7 @@ var templateFiles = map[string]string{
 	TemplateAudit: "templates/audit.tmpl", TemplateError: "templates/error.tmpl",
 	TemplateRefresh: "templates/refresh.tmpl", TemplatePassword: "templates/password.tmpl",
 	TemplateMCP:         "templates/mcp.tmpl",
+	TemplateProviders:   "templates/providers.tmpl",
 	TemplateSkills:      "templates/skills.tmpl",
 	TemplatePlugins:     "templates/plugins.tmpl",
 	TemplateSchedules:   "templates/schedules.tmpl",

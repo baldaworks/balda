@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/authcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/providers"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	adksession "google.golang.org/adk/v2/session"
 )
@@ -31,6 +32,7 @@ type postgresProvider struct {
 	plugins        *postgresPluginStore
 	users          usercmd.Store
 	mcp            *sqlMCPStore
+	providers      *sqlProviderManagementStore
 }
 
 var _ Provider = (*postgresProvider)(nil)
@@ -73,6 +75,7 @@ func initializePostgresProvider(ctx context.Context, db *sql.DB) (Provider, erro
 		plugins:        &postgresPluginStore{db: db},
 		users:          newPostgresUserStore(db),
 		mcp:            &sqlMCPStore{users: newPostgresUserStore(db)},
+		providers:      newPostgresProviderManagementStore(db),
 	}, nil
 }
 
@@ -222,6 +225,8 @@ func (p *postgresProvider) Collaborators() CollaboratorStore {
 func (p *postgresProvider) Plugins() PluginStore { return p.plugins }
 
 func (p *postgresProvider) MCP() MCPStore { return p.mcp }
+
+func (p *postgresProvider) ProviderManagement() providers.Store { return p.providers }
 
 func (p *postgresProvider) Users() usercmd.Store { return p.users }
 

@@ -2,6 +2,7 @@ package balda
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -9,6 +10,8 @@ import (
 
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
+	"github.com/baldaworks/balda/internal/apps/balda/providers"
+	"github.com/baldaworks/balda/internal/apps/balda/secrets"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	badgerstore "github.com/baldaworks/balda/sessionmemory/store/badger"
@@ -35,6 +38,38 @@ func TestSessionMemoryConfigDisabledIgnoresOptionalValues(t *testing.T) {
 	}
 	if workerCfg.Enabled {
 		t.Fatal("disabled worker config unexpectedly enabled")
+	}
+}
+
+func TestSessionMemoryCompositionDefersManagedProviderValidation(t *testing.T) {
+	providerID, err := resolveSessionMemoryProviderForComposition(
+		SessionMemoryConfig{Enabled: true, Provider: "managed-memory"},
+		"configured-chat",
+		map[string]agentconfig.Config{"configured-chat": sessionMemoryTestProviderConfig("chat")},
+		agentfactory.New(map[string]agentconfig.Config{"configured-chat": sessionMemoryTestProviderConfig("chat")}, nil),
+	)
+	if err != nil {
+		t.Fatalf("resolveSessionMemoryProviderForComposition() error = %v", err)
+	}
+	if providerID != "managed-memory" {
+		t.Fatalf("provider ID = %q, want managed-memory", providerID)
+	}
+}
+
+func TestProviderGraphReadinessRejectsUnavailableManagedReference(t *testing.T) {
+	provider, err := baldastate.NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = provider.Close() }()
+	protector, err := secrets.New("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := providers.New(nil, provider.ProviderManagement(), protector)
+	err = resolveCurrentProviderGraphs(t.Context(), service, "managed-chat")
+	if !errors.Is(err, providers.ErrUnavailable) {
+		t.Fatalf("resolveCurrentProviderGraphs() error = %v, want unavailable", err)
 	}
 }
 

@@ -130,6 +130,7 @@ func TestApplicationLifecycleStagesStartQuestionProjectorAfterTransport(t *testi
 		"managed MCP credential readiness",
 		"MCP credential bridge",
 		"runtime contribution catalog",
+		"provider graph readiness",
 		"session-memory runtime",
 		"provider runtime",
 		"session manager",

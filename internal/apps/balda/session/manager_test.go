@@ -1115,7 +1115,7 @@ func TestCreateSessionPersistsRuntimeSnapshot(t *testing.T) {
 	workingDir := t.TempDir()
 	runtimeManager := &fakeScopedRuntimeManager{
 		fakeBaldaRuntimeManager: fakeBaldaRuntimeManager{providerID: "balda-provider"},
-		sessionRuntime:          &BuiltRuntime{RuntimeSnapshotID: currentSnapshotID},
+		sessionRuntime:          &BuiltRuntime{RuntimeSnapshotID: currentSnapshotID, ProviderBindingJSON: `{"root_provider_id":"current"}`},
 	}
 	m := &Manager{
 		baldaProviderName: "balda-provider",
@@ -1145,6 +1145,9 @@ func TestCreateSessionPersistsRuntimeSnapshot(t *testing.T) {
 	}
 	if got := store.upsertedRecords[0].RuntimeSnapshotID; got != currentSnapshotID {
 		t.Fatalf("persisted runtime snapshot = %q, want snapshot-current", got)
+	}
+	if got := store.upsertedRecords[0].ProviderBindingJSON; got != `{"root_provider_id":"current"}` {
+		t.Fatalf("persisted provider binding = %q", got)
 	}
 	ts, err := m.GetSession(locator)
 	if err != nil {
@@ -1405,21 +1408,22 @@ func TestCreateSessionRejectsRuntimeWithoutSnapshot(t *testing.T) {
 func TestRestoreSessionRequestsPersistedRuntimeSnapshot(t *testing.T) {
 	locator := testTelegramLocator(10, 42)
 	record := baldastate.SessionRecord{
-		SessionID:         locator.SessionID,
-		UserID:            "tg-101",
-		ChannelType:       locator.ChannelType,
-		AddressKey:        locator.AddressKey,
-		AddressJSON:       locator.AddressJSON,
-		AgentName:         "topic",
-		RuntimeSnapshotID: "snapshot-persisted",
-		Status:            baldastate.SessionStatusActive,
+		SessionID:           locator.SessionID,
+		UserID:              "tg-101",
+		ChannelType:         locator.ChannelType,
+		AddressKey:          locator.AddressKey,
+		AddressJSON:         locator.AddressJSON,
+		AgentName:           "topic",
+		RuntimeSnapshotID:   "snapshot-persisted",
+		ProviderBindingJSON: `{"root_provider_id":"persisted"}`,
+		Status:              baldastate.SessionStatusActive,
 	}
 	store := &fakeSessionStore{recordsByAddress: map[string]baldastate.SessionRecord{
 		sessionAddressKey(locator.ChannelType, locator.AddressKey): record,
 	}}
 	runtimeManager := &fakeScopedRuntimeManager{
 		fakeBaldaRuntimeManager: fakeBaldaRuntimeManager{providerID: "balda-provider"},
-		sessionRuntime:          &BuiltRuntime{RuntimeSnapshotID: "snapshot-persisted"},
+		sessionRuntime:          &BuiltRuntime{RuntimeSnapshotID: "snapshot-persisted", ProviderBindingJSON: record.ProviderBindingJSON},
 	}
 	builder := &fakeAgentBuilder{}
 	m := &Manager{
@@ -1441,11 +1445,44 @@ func TestRestoreSessionRequestsPersistedRuntimeSnapshot(t *testing.T) {
 	if got := runtimeManager.sessionRequests[0].RuntimeSnapshotID; got != "snapshot-persisted" {
 		t.Fatalf("requested runtime snapshot = %q, want snapshot-persisted", got)
 	}
+	if got := runtimeManager.sessionRequests[0].ProviderBindingJSON; got != record.ProviderBindingJSON {
+		t.Fatalf("requested provider binding = %q, want persisted binding", got)
+	}
 	if builder.openRuntimeSessionCalls != 1 || builder.freshRuntimeSessionCalls != 0 {
 		t.Fatalf("builder calls = open %d, fresh %d; want open 1, fresh 0", builder.openRuntimeSessionCalls, builder.freshRuntimeSessionCalls)
 	}
 	if len(store.upsertedRecords) != 0 {
 		t.Fatalf("exact restore metadata writes = %d, want 0", len(store.upsertedRecords))
+	}
+}
+
+func TestRestoreLegacySessionAdoptsProviderBindingOnce(t *testing.T) {
+	locator := testTelegramLocator(20, 84)
+	record := baldastate.SessionRecord{
+		SessionID: locator.SessionID, UserID: "tg-201", ChannelType: locator.ChannelType,
+		AddressKey: locator.AddressKey, AddressJSON: locator.AddressJSON, AgentName: "topic",
+		RuntimeSnapshotID: "snapshot-persisted", Status: baldastate.SessionStatusActive,
+	}
+	store := &fakeSessionStore{recordsByAddress: map[string]baldastate.SessionRecord{
+		sessionAddressKey(locator.ChannelType, locator.AddressKey): record,
+	}}
+	runtimeManager := &fakeScopedRuntimeManager{
+		fakeBaldaRuntimeManager: fakeBaldaRuntimeManager{providerID: "balda-provider"},
+		sessionRuntime: &BuiltRuntime{RuntimeSnapshotID: record.RuntimeSnapshotID,
+			ProviderBindingJSON: `{"root_provider_id":"adopted"}`},
+	}
+	m := &Manager{
+		baldaProviderName: "balda-provider", runtimeManager: runtimeManager, agentBuilder: &fakeAgentBuilder{},
+		workingDir: t.TempDir(), logger: zerolog.Nop(), sessions: make(map[string]*TopicSession), sessionStore: store,
+	}
+	if _, err := m.RestoreSession(t.Context(), SessionContext{Locator: locator}); err != nil {
+		t.Fatal(err)
+	}
+	if got := runtimeManager.sessionRequests[0].ProviderBindingJSON; got != "" {
+		t.Fatalf("legacy restore requested binding = %q", got)
+	}
+	if len(store.upsertedRecords) != 1 || store.upsertedRecords[0].ProviderBindingJSON != runtimeManager.sessionRuntime.ProviderBindingJSON {
+		t.Fatalf("adopted records = %+v", store.upsertedRecords)
 	}
 }
 

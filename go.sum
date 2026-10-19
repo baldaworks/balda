@@ -153,6 +153,8 @@ github.com/baldaworks/go-actorlayer v0.1.1 h1:WGpEGabO7+fitro842XEjMcXQNxNCKob44
 github.com/baldaworks/go-actorlayer v0.1.1/go.mod h1:ltEHBDxgIe234BeYZ0wU6eDm3KSX5EeZmGuCvbKVH7Y=
 github.com/baldaworks/runtime/v2 v2.6.3 h1:k2Xkhyh47EpiOwE3z+K+e5GbLoiAC0Zp20vyuweWEaQ=
 github.com/baldaworks/runtime/v2 v2.6.3/go.mod h1:qcQ+ac3PJdrvdWKwqbyb+t5ck5ttqjkrpybs2sityYs=
+github.com/baldaworks/runtime/v2 v2.7.0 h1:4afqXbUFNfcT/u3556SyG4k5YV7XWfArrmhT6KrOu2E=
+github.com/baldaworks/runtime/v2 v2.7.0/go.mod h1:qcQ+ac3PJdrvdWKwqbyb+t5ck5ttqjkrpybs2sityYs=
 github.com/beorn7/perks v0.0.0-20180321164747-3a771d992973/go.mod h1:Dwedo/Wpr24TaqPxmxbtue+5NUziq4I4S80YR8gNf3Q=
 github.com/beorn7/perks v1.0.0/go.mod h1:KWe93zE9D1o94FZ5RNwFwVgaQK1VOXiVxmqh+CedLV8=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=

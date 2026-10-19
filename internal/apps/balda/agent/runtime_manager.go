@@ -2,13 +2,16 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"strings"
 	"sync"
 
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/providers"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/shutdown"
 	"github.com/baldaworks/runtime/v2/agentconfig"
@@ -31,6 +34,11 @@ type SessionRuntimeRequest struct {
 	WorkspaceDir   string
 	// RuntimeSnapshotID requests an exact persisted capability snapshot.
 	RuntimeSnapshotID string
+	// ProviderBindingJSON requests the exact persisted provider graph.
+	// An empty value resolves the current committed graph.
+	ProviderBindingJSON string
+	// ProviderConfigs carries the already bound graph to capability projection.
+	ProviderConfigs map[string]agentconfig.Config
 }
 
 // SessionCapabilityBinding is one immutable catalog projection owned by a session runtime.
@@ -74,6 +82,7 @@ type RuntimeManager struct {
 	goalWorkspaces    *WorkspaceManager
 	sessionMCPBinder  SessionMCPBinder
 	capabilityBinder  SessionCapabilityBinder
+	providerService   *providers.Service
 	mcpRegistry       *mcpregistry.MapRegistry
 	logger            zerolog.Logger
 
@@ -82,6 +91,7 @@ type RuntimeManager struct {
 	runtimeBuilder      *Builder
 	runtimeMCPServerIDs []string
 	scopedRuntimes      map[string]*BuiltRuntime
+	sessionBases        map[string]childRuntimeBase
 	scopedSequence      uint64
 }
 
@@ -98,6 +108,7 @@ type RuntimeManagerParams struct {
 	BaldaMCPServerIDs []string                `name:"balda_mcp_servers"`
 	SessionMCPBinder  SessionMCPBinder        `optional:"true"`
 	CapabilityBinder  SessionCapabilityBinder `optional:"true"`
+	ProviderService   *providers.Service      `optional:"true"`
 	MCPRegistry       *mcpregistry.MapRegistry
 	Logger            zerolog.Logger
 }
@@ -185,10 +196,12 @@ func NewRuntimeManager(p RuntimeManagerParams) *RuntimeManager {
 		baldaMCPServerIDs: append([]string(nil), p.BaldaMCPServerIDs...),
 		sessionMCPBinder:  p.SessionMCPBinder,
 		capabilityBinder:  p.CapabilityBinder,
+		providerService:   p.ProviderService,
 		mcpRegistry:       p.MCPRegistry,
 		goalWorkspaces:    NewWorkspaceManagerWithSessionsDir(p.WorkingDir, p.StateDir, p.WorkspaceBaseRef, "goals"),
 		logger:            p.Logger.With().Str("component", "balda.runtime_manager").Logger(),
 		scopedRuntimes:    make(map[string]*BuiltRuntime),
+		sessionBases:      make(map[string]childRuntimeBase),
 	}
 
 	return m
@@ -233,10 +246,13 @@ func (m *RuntimeManager) Runtime(ctx context.Context) (*BuiltRuntime, error) {
 	if providerID == "" {
 		return nil, fmt.Errorf("balda provider is not configured")
 	}
+	builder, providerID, providerBindingJSON, err := m.resolveProviderGraph(ctx, builder, providerID, "")
+	if err != nil {
+		return nil, err
+	}
 	var capabilities SessionCapabilityBinding
 	if binder != nil {
-		var err error
-		capabilities, err = binder.BindSessionCapabilities(ctx, providerID, SessionRuntimeRequest{WorkspaceDir: workingDir})
+		capabilities, err = binder.BindSessionCapabilities(ctx, providerID, SessionRuntimeRequest{WorkspaceDir: workingDir, ProviderConfigs: maps.Clone(builder.normaCfg.Providers)})
 		if err != nil {
 			return nil, fmt.Errorf("bind provider capabilities: %w", err)
 		}
@@ -282,6 +298,7 @@ func (m *RuntimeManager) Runtime(ctx context.Context) (*BuiltRuntime, error) {
 		return closeErr
 	}
 	runtime.RuntimeSnapshotID = string(capabilities.SnapshotID)
+	runtime.ProviderBindingJSON = providerBindingJSON
 
 	m.mu.Lock()
 	if existing := m.runtime; existing != nil {
@@ -313,9 +330,17 @@ func (m *RuntimeManager) RuntimeForSession(ctx context.Context, request SessionR
 	m.mu.RLock()
 	binder := m.capabilityBinder
 	providerID := m.providerID
+	builder := m.builder
 	m.mu.RUnlock()
+	builder, providerID, providerBindingJSON, err := m.resolveProviderGraph(ctx, builder, providerID, request.ProviderBindingJSON)
+	if err != nil {
+		return nil, err
+	}
 	if binder == nil {
 		return nil, fmt.Errorf("session capability binder is required")
+	}
+	if builder != nil {
+		request.ProviderConfigs = maps.Clone(builder.normaCfg.Providers)
 	}
 	capabilities, err := binder.BindSessionCapabilities(ctx, providerID, request)
 	if err != nil {
@@ -331,16 +356,16 @@ func (m *RuntimeManager) RuntimeForSession(ctx context.Context, request SessionR
 		closeSessionCapabilities(capabilities)
 		return nil, fmt.Errorf("session capability snapshot %q does not match requested snapshot %q", snapshotID, requestedSnapshotID)
 	}
-	return m.runtimeForSession(ctx, request, capabilities)
+	return m.runtimeForSession(ctx, request, capabilities, builder, providerID, providerBindingJSON)
 }
 
-func (m *RuntimeManager) runtimeForSession(ctx context.Context, request SessionRuntimeRequest, capabilities SessionCapabilityBinding) (*BuiltRuntime, error) {
+func (m *RuntimeManager) runtimeForSession(ctx context.Context, request SessionRuntimeRequest, capabilities SessionCapabilityBinding,
+	builder *Builder, providerID, providerBindingJSON string,
+) (*BuiltRuntime, error) {
 	if m == nil {
 		return nil, fmt.Errorf("balda runtime manager is required")
 	}
 	m.mu.RLock()
-	builder := m.builder
-	providerID := strings.TrimSpace(m.providerID)
 	workingDir := strings.TrimSpace(request.WorkspaceDir)
 	binder := m.sessionMCPBinder
 	registry := m.mcpRegistry
@@ -354,7 +379,7 @@ func (m *RuntimeManager) runtimeForSession(ctx context.Context, request SessionR
 		bindingEnabled = false
 	}
 	hasCapabilities := strings.TrimSpace(string(capabilities.SnapshotID)) != ""
-	if !bindingEnabled && !hasCapabilities {
+	if !bindingEnabled && !hasCapabilities && providerBindingJSON == "" {
 		return m.Runtime(ctx)
 	}
 	if len(capabilities.MCPServerIDs) > 0 && registry == nil {
@@ -444,19 +469,81 @@ func (m *RuntimeManager) runtimeForSession(ctx context.Context, request SessionR
 			}
 			m.mu.Lock()
 			delete(m.scopedRuntimes, scopedID)
+			sessionID := strings.TrimSpace(request.Locator.SessionID)
+			if current, ok := m.sessionBases[sessionID]; ok && current.runtime == runtime {
+				delete(m.sessionBases, sessionID)
+			}
 			m.mu.Unlock()
 		})
 		return closeErr
 	}
 	runtime.Close = closeScoped
 	runtime.RuntimeSnapshotID = string(capabilities.SnapshotID)
+	runtime.ProviderBindingJSON = providerBindingJSON
 	m.mu.Lock()
 	if m.scopedRuntimes == nil {
 		m.scopedRuntimes = make(map[string]*BuiltRuntime)
 	}
 	m.scopedRuntimes[scopedID] = runtime
+	if sessionID := strings.TrimSpace(request.Locator.SessionID); sessionID != "" {
+		m.sessionBases[sessionID] = childRuntimeBase{
+			runtime: runtime, builder: builder, providerID: providerID, workingDir: workingDir,
+			extraMCPServerIDs: append([]string(nil), extraMCPServerIDs...),
+		}
+	}
 	m.mu.Unlock()
 	return runtime, nil
+}
+
+func (m *RuntimeManager) resolveProviderGraph(ctx context.Context, builder *Builder, rootID, bindingJSON string) (*Builder, string, string, error) {
+	rootID = strings.TrimSpace(rootID)
+	bindingJSON = strings.TrimSpace(bindingJSON)
+	m.mu.RLock()
+	service := m.providerService
+	m.mu.RUnlock()
+	if service == nil {
+		if bindingJSON != "" {
+			return nil, "", "", fmt.Errorf("restore provider binding: %w", providers.ErrUnavailable)
+		}
+		return builder, rootID, "", nil
+	}
+	var (
+		compiled providers.Compiled
+		err      error
+	)
+	if bindingJSON == "" {
+		compiled, err = service.CompileCurrent(ctx, rootID)
+	} else {
+		var binding providers.Binding
+		if json.Unmarshal([]byte(bindingJSON), &binding) != nil {
+			return nil, "", "", fmt.Errorf("decode provider binding: %w", providers.ErrUnavailable)
+		}
+		compiled, err = service.Restore(ctx, binding)
+	}
+	if err != nil {
+		return nil, "", "", fmt.Errorf("resolve provider graph: %w", err)
+	}
+	boundBuilder, err := builder.withProviders(compiled.Configs)
+	if err != nil {
+		return nil, "", "", err
+	}
+	encoded, err := json.Marshal(compiled.Binding)
+	if err != nil {
+		return nil, "", "", fmt.Errorf("encode provider binding: %w", err)
+	}
+	return boundBuilder, compiled.Binding.RootProviderID, string(encoded), nil
+}
+
+// BuildDedicatedRuntime resolves the current graph for an isolated internal provider.
+func (m *RuntimeManager) BuildDedicatedRuntime(ctx context.Context, providerID, workspaceDir, instruction string) (*BuiltRuntime, error) {
+	m.mu.RLock()
+	builder := m.builder
+	m.mu.RUnlock()
+	bound, resolvedID, _, err := m.resolveProviderGraph(ctx, builder, providerID, "")
+	if err != nil {
+		return nil, err
+	}
+	return bound.BuildDedicatedRuntime(ctx, resolvedID, workspaceDir, instruction)
 }
 
 // runtimeLifecycleContext preserves request values without tying an owned
@@ -486,10 +573,6 @@ func (m *RuntimeManager) PrepareGoalRun(
 	ctx context.Context,
 	cfg GoalRunConfig,
 ) (*GoalRun, error) {
-	base, err := m.childRuntimeBase(ctx)
-	if err != nil {
-		return nil, err
-	}
 	userID := strings.TrimSpace(cfg.UserID)
 	if userID == "" {
 		return nil, fmt.Errorf("goal user id is required")
@@ -501,6 +584,10 @@ func (m *RuntimeManager) PrepareGoalRun(
 	sourceSessionID := strings.TrimSpace(cfg.SourceSessionID)
 	if sourceSessionID == "" {
 		return nil, fmt.Errorf("source session id is required")
+	}
+	base, err := m.childRuntimeBase(ctx, sourceSessionID)
+	if err != nil {
+		return nil, err
 	}
 	goalSessionID := jobID
 	workerSessionID := goalSessionID + "-worker"
@@ -679,7 +766,13 @@ func (m *RuntimeManager) PrepareGoalRun(
 	}, nil
 }
 
-func (m *RuntimeManager) childRuntimeBase(ctx context.Context) (childRuntimeBase, error) {
+func (m *RuntimeManager) childRuntimeBase(ctx context.Context, sourceSessionID string) (childRuntimeBase, error) {
+	m.mu.RLock()
+	bound, ok := m.sessionBases[strings.TrimSpace(sourceSessionID)]
+	m.mu.RUnlock()
+	if ok && bound.runtime != nil && bound.builder != nil {
+		return bound, nil
+	}
 	runtime, err := m.Runtime(ctx)
 	if err != nil {
 		return childRuntimeBase{}, err
@@ -812,6 +905,7 @@ func (m *RuntimeManager) close() error {
 		scoped = append(scoped, item)
 	}
 	m.scopedRuntimes = make(map[string]*BuiltRuntime)
+	m.sessionBases = make(map[string]childRuntimeBase)
 	m.runtime = nil
 	m.runtimeBuilder = nil
 	m.runtimeMCPServerIDs = nil
