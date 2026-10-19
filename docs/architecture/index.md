@@ -42,6 +42,8 @@ These records are active architecture contracts.
 ## Proposed decisions
 
 - [ADR 0004: Balda Unit — remote ACP provider](adr/0004-balda-unit.md) —
+  proposed remote ACP execution contract, including Backoffice-issued
+  digest-only bearer authentication and connection-generation fencing;
   Approval: pending.
 
 ## Invariants
