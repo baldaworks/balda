@@ -24,6 +24,8 @@ type SessionOption struct {
 }
 
 type SessionRequest struct {
+	// PromptRendered preserves a presentation already rendered by the permission layer.
+	PromptRendered  bool
 	Interaction     questioncmd.InteractionContext
 	Resume          questioncmd.ResumeTarget
 	Prompt          string
@@ -225,6 +227,9 @@ func buildSessionDeliveryEnvelope(questionID string, req SessionRequest, present
 }
 
 func (s *Service) renderSessionQuestion(req SessionRequest, options []questioncmd.Option) questionfmt.Presentation {
+	if req.PromptRendered {
+		return questionfmt.Presentation{Prompt: req.Prompt, DeliveryFormat: req.DeliveryFormat}
+	}
 	if s == nil || s.structured == nil {
 		return questionfmt.Render(questionfmt.Request{
 			Prompt:  req.Prompt,

@@ -118,6 +118,7 @@ func (s *Service) ask(ctx context.Context, request permissioncmd.Request) (permi
 		Interaction:    interaction,
 		Resume:         sessionquestionResumeTarget(interaction),
 		Prompt:         presentation.Prompt,
+		PromptRendered: true,
 		Options:        options,
 		Timeout:        s.config.Timeout,
 		Audience:       permissionQuestionAudience(interaction),
