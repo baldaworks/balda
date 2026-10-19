@@ -310,10 +310,14 @@ protocol должны быть согласованы до реализации.
    криптографически проверяет secret по сохранённому digest, проверяет, что Unit
    enabled и не revoked, и применяет server-owned policy. Присланные клиентом
    или proxy forwarded identity headers не участвуют в identity или policy.
-6. Для принятого соединения Balda атомарно назначает свежий монотонный
-   connection generation. Новый принятый generation fence-ит прежнее соединение
-   и все его поздние сообщения. Затем Balda и Unit выполняют стандартный ACP
-   `initialize`; до успешного ответа session methods не допускаются.
+6. Для первого соединения либо после terminal loss прежнего Balda атомарно
+   назначает принятому соединению свежий монотонный connection generation.
+   Параллельный upgrade при ещё живом соединении того же Unit отвергается.
+   Unit supervisor обязан выполнить `stop + reap` прежнего ACP process до
+   попытки reconnect; Balda не получает отдельного cleanup receipt и проверяет
+   этот локальный инвариант acceptance-тестами Unit. Затем Balda и Unit выполняют
+   стандартный ACP `initialize`; до успешного ответа session methods не
+   допускаются.
 
 Создание Unit и подключение не изменяют provider
 definitions, provider graph или `provider_state_version`. Token является
@@ -447,15 +451,18 @@ header. Проверка token, enabled/revoked state и server-owned policy п�
 Принятому socket Balda атомарно назначает свежий connection generation и
 связывает его с `unit_id`. Generation принадлежит самому соединению и не
 добавляется в каждый ACP message: только текущий socket данного Unit может
-доставлять ACP. Принятие нового соединения закрывает прежнее и запускает
-reconciliation его admissions и sessions. Generation не является credential,
-provider revision или ACP session ID и не позволяет подключиться без token.
+доставлять ACP. Пока прежнее соединение считается живым, конкурентный upgrade
+того же Unit получает bounded conflict и не заменяет его. После terminal loss
+прежний generation fence-ится, а его admissions и sessions переходят в
+reconciliation. Generation не является credential, provider revision или ACP
+session ID и не позволяет подключиться без token.
 
 Каждый принятый WebSocket является ровно одним ACP connection и соответствует
 ровно одному ACP process instance Unit. На нём допускается ровно один
 `initialize`; session methods до успешного initialize и повторный initialize
-отвергаются. Reconnect закрывает старый socket, останавливает и reap-ит прежний
-ACP process, затем создаёт новый process и выполняет новый `initialize`.
+отвергаются. После потери соединения Unit сначала останавливает и reap-ит
+прежний ACP process и только затем начинает reconnect. Успешный reconnect
+создаёт новый generation, новый process и выполняет новый `initialize`.
 Существующие sessions не переносятся молча: `session/load` или `session/resume`
 в новом generation возможны только при соответствующей ACP capability.
 
@@ -465,9 +472,9 @@ durable связывается с binding и owner scope до первого pro
 маршрутизация использует этот session ID. Отдельных attach handshakes, nonce,
 TTL или channel credential нет.
 
-Rotation, revocation, policy denial, потеря WebSocket или принятие нового
-соединения закрывают прежний socket. Поздние frames с него не могут создать
-сессию, подтвердить permission или продолжить ACP.
+Rotation, revocation, active policy denial или потеря WebSocket закрывают
+прежний socket. Поздние frames с него не могут создать сессию, подтвердить
+permission или продолжить ACP.
 
 ### Почему одного JSON endpoint недостаточно
 
@@ -666,8 +673,19 @@ Execution store durable сохраняет owner scope, generation и fence. П�
 новые bindings и незавершённые permission responses от старого соединения,
 останавливает и reap-ит ACP process потерянного generation. Все bindings Unit
 переходят в независимый reconciliation; прозрачное продолжение активного prompt
-не обещается. Новый generation не принимается, пока процесс предыдущего
-generation не остановлен и не собран.
+не обещается. Unit не пытается выполнить reconnect и получить новый generation,
+пока процесс предыдущего generation не остановлен и не собран.
+
+Reconnect использует тот же действующий bearer token. Retry loop принадлежит
+Unit и в первой версии имеет встроенные параметры: base delay 1 second, cap 30
+seconds и full jitter, равномерно выбранный из
+`[0, min(cap, base * 2^attempt)]` по монотонным часам. Одновременно выполняется
+не более одного upgrade. Счётчик сбрасывается только после успешных WebSocket
+authentication и ACP `initialize`, поэтому короткие подключения не создают
+reconnect storm. `401`, `403`, revoked или disabled state останавливают
+автоматический retry. После исправления token или server-owned state оператор
+явно перезапускает Unit; это и только это запускает новый retry loop в первой
+версии.
 
 Запрос, записанный в соединение без полученного ответа, может иметь неизвестный
 исход. Его нельзя автоматически отправлять новому агенту или воспроизводить
@@ -1058,14 +1076,16 @@ cutover.
   Balda проверяется на loopback, защищённой сети или отдельно защищённом
   transport. Acceptance не заявляет end-to-end confidentiality через proxy вне
   trust boundary.
-- Для каждого принятого соединения Balda атомарно назначает свежий generation.
-  Новый generation закрывает прежний socket и отвергает его поздние ACP frames.
-  Rotation и revocation явно fence-ят активное соединение; старый token больше
-  не подключается.
+- Для первого соединения либо после terminal loss прежнего Balda атомарно
+  назначает принятому соединению свежий generation. Конкурентный upgrade при ещё
+  живом socket получает bounded conflict; поздние ACP frames старого generation
+  отвергаются. Unit supervisor локально гарантирует `stop + reap` до reconnect;
+  отдельный cleanup receipt не вводится. Rotation и revocation явно fence-ят
+  активное соединение; старый token больше не подключается.
 - Каждый accepted WebSocket создаёт один ACP process и принимает ровно один
   `initialize`. Session methods до успешного initialize и повторный initialize
-  отвергаются. Reconnect останавливает прежний process, создаёт новый и снова
-  выполняет initialize.
+  отвергаются. Reconnect после `stop + reap` прежнего process создаёт новый и
+  снова выполняет initialize с exponential backoff и jitter между попытками.
 - Создание Unit и подключение создают одну `UnitRegistration`, но provider graph,
   definitions и `provider_state_version` до явного managed-provider действия не
   изменяются.
@@ -1113,13 +1133,20 @@ cutover.
 
 ### Connection fencing и отмена
 
-- Два concurrent WebSocket upgrades с валидным token получают разные
-  generations; Balda принимает ACP только с последнего socket. Неверный
-  internal binding/admission/profile scope отвергается до отправки `session/new`;
-  эти IDs не добавляются в ACP messages.
+- Два concurrent WebSocket upgrades с валидным token не создают два активных
+  generations: пока прежний socket жив, второй получает bounded conflict.
+  Неверный internal binding/admission/profile scope отвергается до отправки
+  `session/new`; эти IDs не добавляются в ACP messages.
 - Потеря HTTP `101 Switching Protocols` response или reconnect не создаёт второй Unit record, assignment,
   ACP-сессию или одновременно живой ACP process. Per-binding credentials,
   attach handshakes и credential leases отсутствуют.
+- Unit не начинает reconnect до подтверждённого `stop + reap` прежнего ACP
+  process. Инструментированный process fixture доказывает этот порядок событий.
+  Fake clock и deterministic RNG проверяют одну попытку одновременно, интервалы
+  full jitter с base 1 second и cap 30 seconds, отсутствие reset после короткого
+  подключения и reset только после authentication плюс успешного `initialize`.
+  После `401`, `403`, revoked или disabled автоматических попыток нет до явного
+  перезапуска Unit оператором.
 - Bearer token не появляется в URL, query, cookie, WebSocket subprotocol,
   provider definition, agent environment, inventory или логах.
 - При полностью заблокированном ACP output timeout приводит к явной ошибке и
