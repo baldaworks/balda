@@ -81,11 +81,14 @@ func (a *Adapter) Deliver(ctx context.Context, locator deliverycmd.Locator, oper
 			err = a.SendMarkdownWithFormat(ctx, locator, operation.DeliveryFormat, operation.Text)
 		}
 	case deliverycmd.OperationAgentReply:
+		var post Post
 		if operation.Message != nil {
-			result.ProviderMessageID, err = a.sendMessage(ctx, locator, *operation.Message)
+			post, err = a.sendMessage(ctx, locator, *operation.Message)
 		} else {
-			result.ProviderMessageID, err = a.SendAgentReplyWithProviderMessageIDAndFormat(ctx, locator, operation.DeliveryFormat, operation.Text)
+			post, err = a.sendAgentReply(ctx, locator, operation.DeliveryFormat, operation.Text)
 		}
+		result.ProviderMessageID = post.ID
+		result.ProviderCreatedAt = providerPostTime(post)
 		if err == nil && operation.Question != nil {
 			result.ProviderMessageID = questionReplyReference(locator, result.ProviderMessageID)
 		}
@@ -121,9 +124,8 @@ func (a *Adapter) Deliver(ctx context.Context, locator deliverycmd.Locator, oper
 }
 
 // questionReplyReference returns the ID Mattermost will place in RootID on a
-// reply to a delivered question. Channel threads always report the thread root,
-// not the immediate post being replied to; direct and channel-root questions
-// retain their delivered post ID.
+// reply to a delivered question. Threaded questions report the thread root,
+// including direct conversations. Unthreaded delivery retains its post ID.
 func questionReplyReference(locator deliverycmd.Locator, providerMessageID string) string {
 	if rootID, ok := RootIDFromLocator(locator); ok && strings.TrimSpace(rootID) != "" {
 		return rootID
@@ -131,18 +133,18 @@ func questionReplyReference(locator deliverycmd.Locator, providerMessageID strin
 	return strings.TrimSpace(providerMessageID)
 }
 
-func (a *Adapter) sendMessage(ctx context.Context, locator deliverycmd.Locator, message deliveryfmt.Message) (string, error) {
+func (a *Adapter) sendMessage(ctx context.Context, locator deliverycmd.Locator, message deliveryfmt.Message) (Post, error) {
 	switch message.Name {
 	case deliveryfmt.NameMattermostMarkdown:
 		return a.sendWithPlainFallback(ctx, locator, message.Text, message.PlainFallback)
 	case deliveryfmt.NamePlainText:
 		post, err := a.send(ctx, locator, message.Text)
 		if err != nil {
-			return "", err
+			return Post{}, err
 		}
-		return post.ID, nil
+		return post, nil
 	default:
-		return "", fmt.Errorf("unsupported mattermost message format %q", message.Name)
+		return Post{}, fmt.Errorf("unsupported mattermost message format %q", message.Name)
 	}
 }
 
@@ -196,12 +198,17 @@ func (a *Adapter) SendAgentReplyWithProviderMessageIDAndFormat(
 	format deliveryfmt.DeliveryFormat,
 	text string,
 ) (string, error) {
+	post, err := a.sendAgentReply(ctx, locator, format, text)
+	return post.ID, err
+}
+
+func (a *Adapter) sendAgentReply(ctx context.Context, locator deliverycmd.Locator, format deliveryfmt.DeliveryFormat, text string) (Post, error) {
 	if deliveryfmt.NormalizeDeliveryFormat(format) == deliveryfmt.DeliveryFormatNone {
 		post, err := a.send(ctx, locator, MarkdownPlainText(text))
 		if err != nil {
-			return "", err
+			return Post{}, err
 		}
-		return post.ID, nil
+		return post, nil
 	}
 	return a.sendWithPlainFallback(ctx, locator, text, MarkdownPlainText(text))
 }
@@ -313,17 +320,17 @@ func (a *Adapter) sendWithPlainFallback(
 	locator deliverycmd.Locator,
 	text string,
 	plainFallback string,
-) (string, error) {
+) (Post, error) {
 	post, err := a.send(ctx, locator, text)
 	if err == nil {
-		return post.ID, nil
+		return post, nil
 	}
 	if !isContentRejectedError(err) {
-		return "", err
+		return Post{}, err
 	}
 	fallback := strings.TrimSpace(plainFallback)
 	if fallback == "" || fallback == text {
-		return "", err
+		return Post{}, err
 	}
 	a.logger.Warn().
 		Err(err).
@@ -331,12 +338,12 @@ func (a *Adapter) sendWithPlainFallback(
 		Msg("mattermost rejected markdown content, retrying as plain text")
 	fallbackPost, fallbackErr := a.send(ctx, locator, fallback)
 	if fallbackErr != nil {
-		return "", errors.Join(
+		return Post{}, errors.Join(
 			fmt.Errorf("mattermost content rejected before plain text fallback: %w", err),
 			fmt.Errorf("send mattermost plain text fallback after content rejection: %w", fallbackErr),
 		)
 	}
-	return fallbackPost.ID, nil
+	return fallbackPost, nil
 }
 
 // MarkdownPlainText degrades Mattermost Markdown to readable plain text.

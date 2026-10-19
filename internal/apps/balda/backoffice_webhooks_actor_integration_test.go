@@ -100,13 +100,13 @@ type browserDeliveryTransport struct {
 	payloads chan deliverycmd.Payload
 }
 
-func (d *browserDeliveryTransport) Dispatch(_ context.Context, delivery deliveryworkflow.Delivery) (string, error) {
+func (d *browserDeliveryTransport) Dispatch(_ context.Context, delivery deliveryworkflow.Delivery) (deliverycmd.Result, error) {
 	if delivery.Payload.Text == "" {
-		return "", fmt.Errorf("empty test delivery")
+		return deliverycmd.Result{}, fmt.Errorf("empty test delivery")
 	}
 	d.sent.Add(1)
 	d.payloads <- delivery.Payload
-	return "synthetic-provider-message", nil
+	return deliverycmd.Result{ProviderMessageID: "synthetic-provider-message"}, nil
 }
 
 type browserRunSessionCloser struct{ sessions adksession.Service }

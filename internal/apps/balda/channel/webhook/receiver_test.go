@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -206,7 +207,7 @@ func TestReceiver_LegacyCredentialDedupePreservesDeliveredAdmission(t *testing.T
 		}
 		previousRequestID = got.RequestID
 		if attempt == 0 {
-			if err := provider.Jobs().MarkDeliverySent(t.Context(), jobID+":delivery:final", "provider-message"); err != nil {
+			if err := provider.Jobs().MarkDeliverySent(t.Context(), jobID+":delivery:final", deliverycmd.Result{ProviderMessageID: "provider-message"}); err != nil {
 				t.Fatalf("mark delivery sent: %v", err)
 			}
 		}

@@ -102,7 +102,7 @@ func TestWebhookFinalizerWaitsForReportAndRetriesCleanupAfterRestart(t *testing.
 	if err := finalizer.Settle(t.Context(), 10); err != nil || len(closer.calls) != 0 {
 		t.Fatalf("cleanup before sent receipt: calls=%v err=%v", closer.calls, err)
 	}
-	if err := provider.Jobs().MarkDeliverySent(t.Context(), key, "provider-message"); err != nil {
+	if err := provider.Jobs().MarkDeliverySent(t.Context(), key, deliverycmd.Result{ProviderMessageID: "provider-message"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := finalizer.Settle(t.Context(), 10); err == nil {
@@ -180,7 +180,7 @@ func TestWebhookFinalizerRecordsTerminalFailureBeforeReporting(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := provider.Jobs().MarkDeliverySent(t.Context(), key, "provider-message"); err != nil {
+	if err := provider.Jobs().MarkDeliverySent(t.Context(), key, deliverycmd.Result{ProviderMessageID: "provider-message"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := finalizer.Settle(t.Context(), 10); err != nil || len(closer.calls) != 1 {

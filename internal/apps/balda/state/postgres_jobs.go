@@ -6,6 +6,8 @@ import (
 
 	"strings"
 	"time"
+
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 )
 
 type postgresJobStore struct {
@@ -524,9 +526,9 @@ func (s *postgresJobStore) ReserveDelivery(ctx context.Context, record DeliveryR
 	res, err := s.db.ExecContext(ctx, postgresBind(`
 		INSERT INTO execution_delivery_outbox (
 			id, delivery_key, job_id, session_id, channel, address_key, kind, payload_json, payload,
-			payload_hash, status, provider_message_id, sent_at, error, created_at, updated_at
+			payload_hash, status, provider_message_id, provider_created_at, sent_at, error, created_at, updated_at
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`), normalized.ID,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`), normalized.ID,
 		normalized.DeliveryKey,
 		nullIfEmpty(normalized.JobID),
 		nullIfEmpty(normalized.SessionID),
@@ -538,6 +540,7 @@ func (s *postgresJobStore) ReserveDelivery(ctx context.Context, record DeliveryR
 		normalized.PayloadHash,
 		normalized.Status,
 		nullIfEmpty(normalized.ProviderMessageID),
+		optionalProviderTimeString(normalized.ProviderCreatedAt),
 		optionalTimeValue(normalized.SentAt),
 		nullIfEmpty(normalized.Error),
 		normalized.CreatedAt.Format(time.RFC3339),
@@ -580,7 +583,7 @@ func (s *postgresJobStore) MarkDeliverySending(ctx context.Context, deliveryKey 
 	return nil
 }
 
-func (s *postgresJobStore) MarkDeliverySent(ctx context.Context, deliveryKey string, providerMessageID string) error {
+func (s *postgresJobStore) MarkDeliverySent(ctx context.Context, deliveryKey string, result deliverycmd.Result) error {
 	trimmedKey := strings.TrimSpace(deliveryKey)
 	if trimmedKey == "" {
 		return postgresErrorf("delivery key is required")
@@ -590,11 +593,13 @@ func (s *postgresJobStore) MarkDeliverySent(ctx context.Context, deliveryKey str
 		UPDATE execution_delivery_outbox
 		SET status = ?,
 		    provider_message_id = ?,
+		    provider_created_at = ?,
 		    sent_at = COALESCE(sent_at, ?),
 		    error = NULL,
 		    updated_at = ?
 		WHERE delivery_key = ?`), DeliveryStatusSent,
-		nullIfEmpty(providerMessageID),
+		nullIfEmpty(result.ProviderMessageID),
+		optionalProviderTimeString(result.ProviderCreatedAt),
 		now.Format(time.RFC3339),
 		now.Format(time.RFC3339),
 		trimmedKey,

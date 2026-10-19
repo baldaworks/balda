@@ -302,12 +302,12 @@ type terminalNoticeTransport struct {
 	err        error
 }
 
-func (d *terminalNoticeTransport) Dispatch(_ context.Context, delivery deliveryworkflow.Delivery) (string, error) {
+func (d *terminalNoticeTransport) Dispatch(_ context.Context, delivery deliveryworkflow.Delivery) (deliverycmd.Result, error) {
 	d.deliveries = append(d.deliveries, delivery)
 	if d.err != nil {
-		return "", d.err
+		return deliverycmd.Result{}, d.err
 	}
-	return fmt.Sprintf("fake-telegram-message-%d", len(d.deliveries)), nil
+	return deliverycmd.Result{ProviderMessageID: fmt.Sprintf("fake-telegram-message-%d", len(d.deliveries))}, nil
 }
 
 // Fail only the terminal notice: earlier progress publication is a separate

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 )
 
 type sqliteJobStore struct {
@@ -536,9 +538,9 @@ func (s *sqliteJobStore) ReserveDelivery(ctx context.Context, record DeliveryRec
 	res, err := s.db.ExecContext(ctx, `
 		INSERT OR IGNORE INTO execution_delivery_outbox (
 			id, delivery_key, job_id, session_id, channel, address_key, kind, payload_json, payload,
-			payload_hash, status, provider_message_id, sent_at, error, created_at, updated_at
+			payload_hash, status, provider_message_id, provider_created_at, sent_at, error, created_at, updated_at
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		normalized.ID,
 		normalized.DeliveryKey,
 		nullIfEmpty(normalized.JobID),
@@ -551,6 +553,7 @@ func (s *sqliteJobStore) ReserveDelivery(ctx context.Context, record DeliveryRec
 		normalized.PayloadHash,
 		normalized.Status,
 		nullIfEmpty(normalized.ProviderMessageID),
+		optionalProviderTimeString(normalized.ProviderCreatedAt),
 		optionalTimeValue(normalized.SentAt),
 		nullIfEmpty(normalized.Error),
 		normalized.CreatedAt.Format(time.RFC3339),
@@ -594,7 +597,7 @@ func (s *sqliteJobStore) MarkDeliverySending(ctx context.Context, deliveryKey st
 	return nil
 }
 
-func (s *sqliteJobStore) MarkDeliverySent(ctx context.Context, deliveryKey string, providerMessageID string) error {
+func (s *sqliteJobStore) MarkDeliverySent(ctx context.Context, deliveryKey string, result deliverycmd.Result) error {
 	trimmedKey := strings.TrimSpace(deliveryKey)
 	if trimmedKey == "" {
 		return fmt.Errorf("delivery key is required")
@@ -604,12 +607,14 @@ func (s *sqliteJobStore) MarkDeliverySent(ctx context.Context, deliveryKey strin
 		UPDATE execution_delivery_outbox
 		SET status = ?,
 		    provider_message_id = ?,
+		    provider_created_at = ?,
 		    sent_at = COALESCE(sent_at, ?),
 		    error = NULL,
 		    updated_at = ?
 		WHERE delivery_key = ?`,
 		DeliveryStatusSent,
-		nullIfEmpty(providerMessageID),
+		nullIfEmpty(result.ProviderMessageID),
+		optionalProviderTimeString(result.ProviderCreatedAt),
 		now.Format(time.RFC3339),
 		now.Format(time.RFC3339),
 		trimmedKey,
@@ -778,7 +783,7 @@ const executionJobEventSelectSQL = `
 const executionDeliverySelectSQL = `
 	SELECT id, delivery_key, COALESCE(job_id, ''), COALESCE(session_id, ''), channel, address_key, kind,
 	       COALESCE(payload, payload_json, ''), payload_hash, status, COALESCE(provider_message_id, ''), COALESCE(sent_at, ''),
-	       COALESCE(error, ''), created_at, updated_at
+	       COALESCE(error, ''), created_at, updated_at, provider_created_at
 	FROM execution_delivery_outbox`
 
 const executionAgentStepSelectSQL = `
@@ -874,10 +879,11 @@ func scanExecutionJobEvent(scan func(dest ...any) error) (JobEventRecord, error)
 
 func scanExecutionDelivery(scan func(dest ...any) error) (DeliveryRecord, bool, error) {
 	var (
-		record       DeliveryRecord
-		sentAtRaw    string
-		createdAtRaw string
-		updatedAtRaw string
+		providerCreatedAtRaw string
+		record               DeliveryRecord
+		sentAtRaw            string
+		createdAtRaw         string
+		updatedAtRaw         string
 	)
 	err := scan(
 		&record.ID,
@@ -895,6 +901,7 @@ func scanExecutionDelivery(scan func(dest ...any) error) (DeliveryRecord, bool, 
 		&record.Error,
 		&createdAtRaw,
 		&updatedAtRaw,
+		&providerCreatedAtRaw,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -916,6 +923,7 @@ func scanExecutionDelivery(scan func(dest ...any) error) (DeliveryRecord, bool, 
 	}
 	record.CreatedAt = createdAt
 	record.UpdatedAt = updatedAt
+	record.ProviderCreatedAt = parseOptionalTime(providerCreatedAtRaw)
 	record.SentAt = sentAt
 	return record, true, nil
 }

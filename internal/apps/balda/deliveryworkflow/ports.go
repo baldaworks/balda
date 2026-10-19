@@ -12,7 +12,7 @@ type DeliveryStore interface {
 	ReserveDelivery(ctx context.Context, record baldastate.DeliveryRecord) (baldastate.DeliveryRecord, bool, error)
 	MarkDeliverySending(ctx context.Context, deliveryKey string) error
 	MarkDeliveryFailed(ctx context.Context, deliveryKey string, reason string) error
-	MarkDeliverySent(ctx context.Context, deliveryKey string, providerMessageID string) error
+	MarkDeliverySent(ctx context.Context, deliveryKey string, result deliverycmd.Result) error
 }
 
 type JobEvents interface {
@@ -28,7 +28,7 @@ type Delivery struct {
 }
 
 type Dispatcher interface {
-	Dispatch(ctx context.Context, delivery Delivery) (string, error)
+	Dispatch(ctx context.Context, delivery Delivery) (deliverycmd.Result, error)
 }
 
 type PromptRegistry = deliveryfmt.PromptRegistry

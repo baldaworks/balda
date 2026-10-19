@@ -2,6 +2,7 @@ package deliverycmd
 
 import (
 	"context"
+	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 )
@@ -58,6 +59,8 @@ type Media struct {
 
 // Result contains transport metadata returned by a delivery.
 type Result struct {
+	// ProviderCreatedAt is the publication time reported by the provider.
+	ProviderCreatedAt time.Time `json:"provider_created_at,omitempty"`
 	ProviderMessageID string
 }
 

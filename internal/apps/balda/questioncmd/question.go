@@ -75,23 +75,30 @@ type Request struct {
 }
 
 type DeliveryRef struct {
-	Provider          string `json:"provider,omitempty"`
-	ConversationKey   string `json:"conversation_key,omitempty"`
-	ProviderMessageID string `json:"provider_message_id,omitempty"`
-	ReplyHandle       string `json:"reply_handle,omitempty"`
-	ControlHandle     string `json:"control_handle,omitempty"`
+	Provider        string `json:"provider,omitempty"`
+	ConversationKey string `json:"conversation_key,omitempty"`
+	// ProviderCreatedAt is the publication time reported by the provider.
+	ProviderCreatedAt time.Time `json:"provider_created_at,omitempty"`
+	ProviderMessageID string    `json:"provider_message_id,omitempty"`
+	ReplyHandle       string    `json:"reply_handle,omitempty"`
+	ControlHandle     string    `json:"control_handle,omitempty"`
 }
 
 type InboundReply struct {
-	OriginalInput    *chatarchivecmd.Input `json:"original_input,omitempty"`
-	Provider         string                `json:"provider,omitempty"`
-	SessionID        string                `json:"session_id,omitempty"`
-	ConversationKey  string                `json:"conversation_key,omitempty"`
-	ReplyToMessageID string                `json:"reply_to_message_id,omitempty"`
-	MessageID        string                `json:"message_id,omitempty"`
-	User             UserRef               `json:"user,omitempty"`
-	Text             string                `json:"text,omitempty"`
-	ReceivedAt       time.Time             `json:"received_at,omitempty"`
+	// SharedReplyRef identifies a thread that can host consecutive questions.
+	// ProviderCreatedAt must prevent an old reply from settling a newer question.
+	SharedReplyRef bool `json:"shared_reply_ref,omitempty"`
+	// ProviderCreatedAt comes from the reply provider, without a local fallback.
+	ProviderCreatedAt time.Time             `json:"provider_created_at,omitempty"`
+	OriginalInput     *chatarchivecmd.Input `json:"original_input,omitempty"`
+	Provider          string                `json:"provider,omitempty"`
+	SessionID         string                `json:"session_id,omitempty"`
+	ConversationKey   string                `json:"conversation_key,omitempty"`
+	ReplyToMessageID  string                `json:"reply_to_message_id,omitempty"`
+	MessageID         string                `json:"message_id,omitempty"`
+	User              UserRef               `json:"user,omitempty"`
+	Text              string                `json:"text,omitempty"`
+	ReceivedAt        time.Time             `json:"received_at,omitempty"`
 }
 
 // InboundSelection describes a structured choice made through channel-native

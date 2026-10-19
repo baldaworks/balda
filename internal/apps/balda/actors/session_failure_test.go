@@ -306,10 +306,10 @@ type preparationDeliveryTransport struct {
 	sent int
 }
 
-func (d *preparationDeliveryTransport) Dispatch(context.Context, deliveryworkflow.Delivery) (string, error) {
+func (d *preparationDeliveryTransport) Dispatch(context.Context, deliveryworkflow.Delivery) (deliverycmd.Result, error) {
 	if d.err != nil {
-		return "", d.err
+		return deliverycmd.Result{}, d.err
 	}
 	d.sent++
-	return "fixture-message", nil
+	return deliverycmd.Result{ProviderMessageID: "fixture-message"}, nil
 }

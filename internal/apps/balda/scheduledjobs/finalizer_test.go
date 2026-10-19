@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"path/filepath"
 	"testing"
 	"time"
@@ -88,7 +89,7 @@ func TestRunFinalizerWaitsForSentReportAndRunDetailUsesItsPayload(t *testing.T) 
 	if err := finalizer.Settle(ctx, 10); err != nil || len(closer.calls) != 0 {
 		t.Fatalf("closed before delivery settled: calls=%v err=%v", closer.calls, err)
 	}
-	if err := provider.Jobs().MarkDeliverySent(ctx, jobID+":delivery:final", "telegram-message"); err != nil {
+	if err := provider.Jobs().MarkDeliverySent(ctx, jobID+":delivery:final", deliverycmd.Result{ProviderMessageID: "telegram-message"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := finalizer.Settle(ctx, 10); err != nil || len(closer.calls) != 1 ||

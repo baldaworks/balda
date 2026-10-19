@@ -49,9 +49,9 @@ func (s *postgresQuestionStore) CreatePendingQuestion(ctx context.Context, recor
 		INSERT INTO balda_questions (
 			question_id, session_id, channel_kind, address_key, address_json,
 			prompt, status, interaction_json, resume_json, request_json, answer_json, failure_json,
-			provider, conversation_key, provider_message_id, reply_handle, control_handle,
+			provider, conversation_key, provider_message_id, reply_handle, control_handle, provider_created_at,
 			expires_at, answered_at, failed_at, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`), record.QuestionID,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`), record.QuestionID,
 		record.SessionID,
 		record.ChannelKind,
 		record.AddressKey,
@@ -68,10 +68,11 @@ func (s *postgresQuestionStore) CreatePendingQuestion(ctx context.Context, recor
 		strings.TrimSpace(record.ProviderMessageID),
 		strings.TrimSpace(record.ReplyHandle),
 		strings.TrimSpace(record.ControlHandle),
+		optionalProviderTimeString(record.ProviderCreatedAt),
 		optionalTimeString(record.ExpiresAt),
 		optionalTimeString(record.AnsweredAt),
 		optionalTimeString(record.FailedAt),
-		createdAt.Format(time.RFC3339),
+		createdAt.Format(time.RFC3339Nano),
 		updatedAt.Format(time.RFC3339),
 	)
 	if err != nil {
@@ -84,12 +85,13 @@ func (s *postgresQuestionStore) BindQuestionDeliveryRef(ctx context.Context, que
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := s.db.ExecContext(ctx, postgresBind(`
 		UPDATE balda_questions
-		SET provider = ?, conversation_key = ?, provider_message_id = ?, reply_handle = ?, control_handle = ?, answer_controls_pending = CASE WHEN status = 'answered' AND (provider <> ? OR conversation_key <> ? OR provider_message_id <> ? OR control_handle <> ?) THEN TRUE ELSE answer_controls_pending END, updated_at = ?
+		SET provider = ?, conversation_key = ?, provider_message_id = ?, reply_handle = ?, control_handle = ?, provider_created_at = ?, answer_controls_pending = CASE WHEN status = 'answered' AND (provider <> ? OR conversation_key <> ? OR provider_message_id <> ? OR control_handle <> ?) THEN TRUE ELSE answer_controls_pending END, updated_at = ?
 		WHERE question_id = ?`), strings.TrimSpace(ref.Provider),
 		strings.TrimSpace(ref.ConversationKey),
 		strings.TrimSpace(ref.ProviderMessageID),
 		strings.TrimSpace(ref.ReplyHandle),
 		strings.TrimSpace(ref.ControlHandle),
+		optionalProviderTimeString(ref.ProviderCreatedAt),
 		strings.TrimSpace(ref.Provider),
 		strings.TrimSpace(ref.ConversationKey),
 		strings.TrimSpace(ref.ProviderMessageID),
@@ -110,12 +112,14 @@ func (s *postgresQuestionStore) GetQuestionByID(ctx context.Context, questionID 
 }
 
 func (s *postgresQuestionStore) GetQuestionByReplyRef(ctx context.Context, provider, conversationKey, replyToMessageID string) (QuestionRecord, bool, error) {
-	row := s.db.QueryRowContext(ctx, postgresBind(questionSelectSQL+`
-	 WHERE provider = ? AND conversation_key = ? AND provider_message_id = ?`), strings.TrimSpace(provider),
-		strings.TrimSpace(conversationKey),
-		strings.TrimSpace(replyToMessageID),
-	)
-	record, found, err := scanQuestion(row.Scan)
+	rows, err := s.db.QueryContext(ctx, postgresBind(questionSelectSQL+`
+ WHERE provider = ? AND conversation_key = ? AND provider_message_id = ?
+ ORDER BY CASE WHEN status = 'pending' THEN 0 ELSE 1 END, created_at DESC, question_id DESC LIMIT 2`),
+		strings.TrimSpace(provider), strings.TrimSpace(conversationKey), strings.TrimSpace(replyToMessageID))
+	if err != nil {
+		return QuestionRecord{}, false, redactPostgresError(err)
+	}
+	record, found, err := scanQuestionReply(rows)
 	return record, found, redactPostgresError(err)
 }
 

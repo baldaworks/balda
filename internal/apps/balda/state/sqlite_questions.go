@@ -50,9 +50,9 @@ func (s *sqliteQuestionStore) CreatePendingQuestion(ctx context.Context, record 
 		INSERT INTO balda_questions (
 			question_id, session_id, channel_kind, address_key, address_json,
 			prompt, status, interaction_json, resume_json, request_json, answer_json, failure_json,
-			provider, conversation_key, provider_message_id, reply_handle, control_handle,
+			provider, conversation_key, provider_message_id, reply_handle, control_handle, provider_created_at,
 			expires_at, answered_at, failed_at, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		record.QuestionID,
 		record.SessionID,
 		record.ChannelKind,
@@ -70,10 +70,11 @@ func (s *sqliteQuestionStore) CreatePendingQuestion(ctx context.Context, record 
 		strings.TrimSpace(record.ProviderMessageID),
 		strings.TrimSpace(record.ReplyHandle),
 		strings.TrimSpace(record.ControlHandle),
+		optionalProviderTimeString(record.ProviderCreatedAt),
 		optionalTimeString(record.ExpiresAt),
 		optionalTimeString(record.AnsweredAt),
 		optionalTimeString(record.FailedAt),
-		createdAt.Format(time.RFC3339),
+		createdAt.Format(time.RFC3339Nano),
 		updatedAt.Format(time.RFC3339),
 	)
 	if err != nil {
@@ -86,13 +87,14 @@ func (s *sqliteQuestionStore) BindQuestionDeliveryRef(ctx context.Context, quest
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE balda_questions
-		SET provider = ?, conversation_key = ?, provider_message_id = ?, reply_handle = ?, control_handle = ?, answer_controls_pending = CASE WHEN status = 'answered' AND (provider <> ? OR conversation_key <> ? OR provider_message_id <> ? OR control_handle <> ?) THEN TRUE ELSE answer_controls_pending END, updated_at = ?
+		SET provider = ?, conversation_key = ?, provider_message_id = ?, reply_handle = ?, control_handle = ?, provider_created_at = ?, answer_controls_pending = CASE WHEN status = 'answered' AND (provider <> ? OR conversation_key <> ? OR provider_message_id <> ? OR control_handle <> ?) THEN TRUE ELSE answer_controls_pending END, updated_at = ?
 		WHERE question_id = ?`,
 		strings.TrimSpace(ref.Provider),
 		strings.TrimSpace(ref.ConversationKey),
 		strings.TrimSpace(ref.ProviderMessageID),
 		strings.TrimSpace(ref.ReplyHandle),
 		strings.TrimSpace(ref.ControlHandle),
+		optionalProviderTimeString(ref.ProviderCreatedAt),
 		strings.TrimSpace(ref.Provider),
 		strings.TrimSpace(ref.ConversationKey),
 		strings.TrimSpace(ref.ProviderMessageID),
@@ -112,13 +114,14 @@ func (s *sqliteQuestionStore) GetQuestionByID(ctx context.Context, questionID st
 }
 
 func (s *sqliteQuestionStore) GetQuestionByReplyRef(ctx context.Context, provider, conversationKey, replyToMessageID string) (QuestionRecord, bool, error) {
-	row := s.db.QueryRowContext(ctx, questionSelectSQL+`
-	 WHERE provider = ? AND conversation_key = ? AND provider_message_id = ?`,
-		strings.TrimSpace(provider),
-		strings.TrimSpace(conversationKey),
-		strings.TrimSpace(replyToMessageID),
-	)
-	return scanQuestion(row.Scan)
+	rows, err := s.db.QueryContext(ctx, questionSelectSQL+`
+ WHERE provider = ? AND conversation_key = ? AND provider_message_id = ?
+ ORDER BY CASE WHEN status = 'pending' THEN 0 ELSE 1 END, created_at DESC, question_id DESC LIMIT 2`,
+		strings.TrimSpace(provider), strings.TrimSpace(conversationKey), strings.TrimSpace(replyToMessageID))
+	if err != nil {
+		return QuestionRecord{}, false, err
+	}
+	return scanQuestionReply(rows)
 }
 
 func (s *sqliteQuestionStore) MarkQuestionAnswered(ctx context.Context, questionID string, answer questioncmd.Answer) (QuestionRecord, bool, error) {
@@ -232,17 +235,18 @@ const questionSelectSQL = `
 	SELECT question_id, session_id, channel_kind, address_key, address_json,
 	       prompt, status, interaction_json, resume_json, request_json, answer_json, failure_json,
 	       provider, conversation_key, provider_message_id, reply_handle, control_handle,
-	       expires_at, answered_at, failed_at, created_at, updated_at, answer_continuation_pending, answer_controls_pending
+	       expires_at, answered_at, failed_at, created_at, updated_at, answer_continuation_pending, answer_controls_pending, provider_created_at
 	FROM balda_questions`
 
 func scanQuestion(scan func(dest ...any) error) (QuestionRecord, bool, error) {
 	var (
-		record        QuestionRecord
-		expiresAtRaw  string
-		answeredAtRaw string
-		failedAtRaw   string
-		createdAtRaw  string
-		updatedAtRaw  string
+		record               QuestionRecord
+		expiresAtRaw         string
+		answeredAtRaw        string
+		failedAtRaw          string
+		createdAtRaw         string
+		updatedAtRaw         string
+		providerCreatedAtRaw string
 	)
 	err := scan(
 		&record.QuestionID,
@@ -269,6 +273,7 @@ func scanQuestion(scan func(dest ...any) error) (QuestionRecord, bool, error) {
 		&updatedAtRaw,
 		&record.AnswerContinuationPending,
 		&record.AnswerControlsPending,
+		&providerCreatedAtRaw,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -276,6 +281,7 @@ func scanQuestion(scan func(dest ...any) error) (QuestionRecord, bool, error) {
 		}
 		return QuestionRecord{}, false, fmt.Errorf("scan question: %w", err)
 	}
+	record.ProviderCreatedAt = parseOptionalTime(providerCreatedAtRaw)
 	record.ExpiresAt = parseOptionalTime(expiresAtRaw)
 	record.AnsweredAt = parseOptionalTime(answeredAtRaw)
 	record.FailedAt = parseOptionalTime(failedAtRaw)
@@ -361,4 +367,36 @@ func (s *sqliteQuestionStore) MarkQuestionAnswerControlsCleared(ctx context.Cont
 		return fmt.Errorf("complete question answer controls: %w", err)
 	}
 	return nil
+}
+
+// scanQuestionReply prefers the current pending question when a transport
+// thread has hosted earlier questions. Concurrent pending questions are
+// ambiguous and must not accept a choice for an arbitrary operation.
+func scanQuestionReply(rows *sql.Rows) (QuestionRecord, bool, error) {
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		return QuestionRecord{}, false, rows.Err()
+	}
+	record, found, err := scanQuestion(rows.Scan)
+	if err != nil {
+		return record, found, err
+	}
+	if record.Status == questioncmd.StatusPending && rows.Next() {
+		next, _, err := scanQuestion(rows.Scan)
+		if err != nil {
+			return QuestionRecord{}, false, err
+		}
+		if next.Status == questioncmd.StatusPending {
+			return QuestionRecord{}, false, fmt.Errorf("multiple pending questions share this reply thread")
+		}
+	}
+	return record, found, rows.Err()
+}
+
+// optionalProviderTimeString preserves the provider timestamp precision.
+func optionalProviderTimeString(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+	return value.UTC().Format(time.RFC3339Nano)
 }

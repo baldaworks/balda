@@ -415,6 +415,7 @@ type QuestionRecord struct {
 	FailureJSON               string
 	Provider                  string
 	ConversationKey           string
+	ProviderCreatedAt         time.Time
 	ProviderMessageID         string
 	ReplyHandle               string
 	ControlHandle             string
@@ -496,6 +497,7 @@ type DeliveryRecord struct {
 	Payload           string
 	PayloadHash       string
 	Status            string
+	ProviderCreatedAt time.Time
 	ProviderMessageID string
 	SentAt            time.Time
 	Error             string
@@ -568,7 +570,7 @@ type JobEventOutboxStore interface {
 type DeliveryStore interface {
 	ReserveDelivery(ctx context.Context, record DeliveryRecord) (DeliveryRecord, bool, error)
 	MarkDeliverySending(ctx context.Context, deliveryKey string) error
-	MarkDeliverySent(ctx context.Context, deliveryKey string, providerMessageID string) error
+	MarkDeliverySent(ctx context.Context, deliveryKey string, result deliverycmd.Result) error
 	MarkDeliveryFailed(ctx context.Context, deliveryKey string, reason string) error
 	SentFinalDelivery(ctx context.Context, jobID string) (string, bool, error)
 	FinalDelivery(ctx context.Context, jobID string) (DeliveryRecord, bool, error)

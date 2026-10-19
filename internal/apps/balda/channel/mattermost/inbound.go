@@ -17,17 +17,18 @@ import (
 
 // InboundMessage represents a normalized inbound message from Mattermost.
 type InboundMessage struct {
-	OriginalInput *chatarchivecmd.Input
-	Locator       deliverycmd.Locator
-	MessageID     int
-	PostID        string
-	RootID        string
-	SenderID      string
-	SenderName    string
-	Text          string
-	Direct        bool
-	ReceivedAt    time.Time
-	Attachments   []string
+	OriginalInput     *chatarchivecmd.Input
+	Locator           deliverycmd.Locator
+	MessageID         int
+	PostID            string
+	RootID            string
+	SenderID          string
+	SenderName        string
+	Text              string
+	Direct            bool
+	ReceivedAt        time.Time
+	ProviderCreatedAt time.Time
+	Attachments       []string
 }
 
 // BuildInboundReply converts a threaded Mattermost post into a question
@@ -39,14 +40,16 @@ func BuildInboundReply(locator deliverycmd.Locator, subject string, message Inbo
 		return questioncmd.InboundReply{}, false
 	}
 	return questioncmd.InboundReply{
-		Provider:         ChannelType,
-		SessionID:        locator.SessionID,
-		ConversationKey:  locator.AddressKey,
-		ReplyToMessageID: replyToMessageID,
-		MessageID:        strings.TrimSpace(message.PostID),
-		User:             questioncmd.UserRef{UserID: strings.TrimSpace(subject)},
-		Text:             text,
-		ReceivedAt:       receivedAt.UTC(),
+		SharedReplyRef:    true,
+		ProviderCreatedAt: message.ProviderCreatedAt,
+		Provider:          ChannelType,
+		SessionID:         locator.SessionID,
+		ConversationKey:   locator.AddressKey,
+		ReplyToMessageID:  replyToMessageID,
+		MessageID:         strings.TrimSpace(message.PostID),
+		User:              questioncmd.UserRef{UserID: strings.TrimSpace(subject)},
+		Text:              text,
+		ReceivedAt:        receivedAt.UTC(),
 	}, true
 }
 
@@ -151,27 +154,29 @@ func NormalizeInbound(
 }
 
 // LocatorForPost builds the canonical Balda locator for one inbound post.
-//
-// A reply inside a thread resolves to the thread root so the whole thread maps
-// to one session. A channel-level mention starts a thread rooted at that post.
-// A direct or group message channel maps to the direct conversation address.
+// Replies are delivered into the source post's thread, including direct and
+// group messages. Direct conversations retain their existing session identity.
 func LocatorForPost(channel Channel, post Post) deliverycmd.Locator {
 	channelID := strings.TrimSpace(post.ChannelID)
 	if channelID == "" {
 		channelID = strings.TrimSpace(channel.ID)
 	}
-	if IsGroupChannelType(channel.Type) {
-		return NewGroupDMLocator(channelID)
-	}
-	if IsDirectChannelType(channel.Type) {
-		return NewDMLocator(channelID, strings.TrimSpace(post.UserID))
-	}
 	rootID := strings.TrimSpace(post.RootID)
 	if rootID == "" {
-		// A channel-level mention starts a new Mattermost thread. Keeping the
-		// source post as the root makes the first answer and all later replies
-		// share the same session and delivery target.
 		rootID = strings.TrimSpace(post.ID)
+	}
+	if IsDirectChannelType(channel.Type) {
+		address := LocatorAddress{
+			Type:      addressTypeDM,
+			ChannelID: channelID,
+			UserID:    strings.TrimSpace(post.UserID),
+			RootID:    rootID,
+		}
+		if IsGroupChannelType(channel.Type) {
+			address.Type = addressTypeGroupDM
+			address.UserID = ""
+		}
+		return newLocator(address, dmAddressKey(address), dmSessionID(address))
 	}
 	return NewChannelLocator(channel.TeamID, channelID, rootID)
 }
@@ -321,7 +326,7 @@ func originalMattermostInput(locator deliverycmd.Locator, post Post, senderName 
 	location := chatarchivecmd.Location{Channel: locator.ChannelType, AddressKey: locator.AddressKey, Locator: locatorref.Format(locator), Audience: chatarchivecmd.AudienceUnknown, Subdivision: chatarchivecmd.SubdivisionUnknown}
 	if address, ok, err := DecodeLocator(locator); ok && err == nil {
 		location.Subdivision = chatarchivecmd.SubdivisionRoot
-		if address.RootID != "" {
+		if address.Type == addressTypeChannel && address.RootID != "" {
 			location.Subdivision = chatarchivecmd.SubdivisionThread
 		}
 		switch address.Type {

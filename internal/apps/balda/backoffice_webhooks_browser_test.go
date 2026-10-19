@@ -3,6 +3,7 @@ package balda
 import (
 	"context"
 	"errors"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"net"
 	"os"
 	"os/exec"
@@ -82,7 +83,7 @@ func browserWebhookPublisher(provider state.Provider) webhookapp.JobPublisher {
 			}); err != nil {
 				return nil, "", err
 			}
-			if err := provider.Jobs().MarkDeliverySent(ctx, deliveryKey, "synthetic-provider-message"); err != nil {
+			if err := provider.Jobs().MarkDeliverySent(ctx, deliveryKey, deliverycmd.Result{ProviderMessageID: "synthetic-provider-message"}); err != nil {
 				return nil, "", err
 			}
 		}

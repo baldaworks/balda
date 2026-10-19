@@ -3,6 +3,7 @@
 package state
 
 import (
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"path/filepath"
 	"testing"
 	"time"
@@ -77,7 +78,7 @@ func checkProvider_WebhookHistory(t *testing.T, open contractOpener) {
 	}); err != nil || !created {
 		t.Fatalf("reserve delivery: created=%t err=%v", created, err)
 	}
-	if err := p.Jobs().MarkDeliverySent(t.Context(), admissions[2].JobID+":delivery:final", "provider-message"); err != nil {
+	if err := p.Jobs().MarkDeliverySent(t.Context(), admissions[2].JobID+":delivery:final", deliverycmd.Result{ProviderMessageID: "provider-message"}); err != nil {
 		t.Fatalf("mark delivery sent: %v", err)
 	}
 

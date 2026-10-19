@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"go.uber.org/fx"
 )
@@ -32,11 +34,11 @@ func (s *DeliveryService) ReserveDelivery(ctx context.Context, record baldastate
 	return s.store.ReserveDelivery(ctx, record)
 }
 
-func (s *DeliveryService) MarkDeliverySent(ctx context.Context, deliveryKey string, providerMessageID string) error {
+func (s *DeliveryService) MarkDeliverySent(ctx context.Context, deliveryKey string, result deliverycmd.Result) error {
 	if s == nil {
 		return nil
 	}
-	return s.store.MarkDeliverySent(ctx, deliveryKey, providerMessageID)
+	return s.store.MarkDeliverySent(ctx, deliveryKey, result)
 }
 
 func (s *DeliveryService) MarkDeliverySending(ctx context.Context, deliveryKey string) error {

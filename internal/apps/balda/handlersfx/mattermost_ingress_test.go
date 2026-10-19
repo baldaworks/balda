@@ -461,7 +461,7 @@ func TestMattermostHandlerProcessInboundUsesCanonicalChatHandlerForQuestionReply
 	if got, want := request.QuestionReply.ReplyToMessageID, "question-post"; got != want {
 		t.Fatalf("QuestionReply.ReplyToMessageID = %q, want %q", got, want)
 	}
-	if got, want := request.QuestionReply.User.UserID, auth.MattermostSubject(ownerID); got != want {
+	if got, want := request.QuestionReply.User.UserID, request.UserID; got != want {
 		t.Fatalf("QuestionReply.User.UserID = %q, want %q", got, want)
 	}
 }

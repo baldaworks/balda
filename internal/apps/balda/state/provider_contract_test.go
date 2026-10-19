@@ -85,6 +85,7 @@ func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) 
 	t.Run("Provider_ManagedProviderState", func(t *testing.T) { checkProviderManagedProviderState(t, factory(t)) })
 	t.Run("Provider_SessionStoreUpsert_AllowsMultipleTelegramSessions", func(t *testing.T) { checkProvider_SessionStoreUpsert_AllowsMultipleTelegramSessions(t, factory(t)) })
 	t.Run("Provider_QuestionStoreRoundTrip", func(t *testing.T) { checkProvider_QuestionStoreRoundTrip(t, factory(t)) })
+	t.Run("QuestionThreadReplyLookup", func(t *testing.T) { checkQuestionThreadReplyLookup(t, factory(t)) })
 	t.Run("QuestionAnswerHandoffSurvivesRestart", func(t *testing.T) { checkQuestionAnswerHandoffSurvivesRestart(t, factory(t)) })
 	t.Run("Provider_SessionStoreUpsert_DoesNotDecodeAddressJSON", func(t *testing.T) { checkProvider_SessionStoreUpsert_DoesNotDecodeAddressJSON(t, factory(t)) })
 	t.Run("Provider_ScheduledJobStoreRoundTrip", func(t *testing.T) { checkProvider_ScheduledJobStoreRoundTrip(t, factory(t)) })
@@ -816,6 +817,7 @@ func checkProvider_QuestionStoreRoundTrip(t *testing.T, open contractOpener) {
 
 	ctx := context.Background()
 	store := provider.Questions()
+	publishedAt := time.Date(2026, 1, 1, 1, 2, 3, 456000000, time.UTC)
 
 	record := QuestionRecord{
 		QuestionID:      "question-1",
@@ -836,6 +838,7 @@ func checkProvider_QuestionStoreRoundTrip(t *testing.T, open contractOpener) {
 		Provider:          "telegram",
 		ConversationKey:   "1:0",
 		ProviderMessageID: "42",
+		ProviderCreatedAt: publishedAt,
 	}); err != nil {
 		t.Fatalf("BindQuestionDeliveryRef() error = %v", err)
 	}
@@ -845,6 +848,9 @@ func checkProvider_QuestionStoreRoundTrip(t *testing.T, open contractOpener) {
 	}
 	if !ok {
 		t.Fatal("GetQuestionByReplyRef() found = false, want true")
+	}
+	if !got.ProviderCreatedAt.Equal(publishedAt) {
+		t.Fatalf("persisted provider timestamp=%v, want %v", got.ProviderCreatedAt, publishedAt)
 	}
 	if got.QuestionID != record.QuestionID {
 		t.Fatalf("question_id = %q, want %q", got.QuestionID, record.QuestionID)
@@ -1461,6 +1467,7 @@ func checkJobStore_DeliveryOutboxLifecycle(t *testing.T, open contractOpener) {
 
 	ctx := context.Background()
 	store := provider.Jobs()
+	publishedAt := time.Date(2026, 1, 1, 1, 2, 3, 456000000, time.UTC)
 	if _, sent, err := store.SentFinalDelivery(ctx, "task-1"); err != nil || sent {
 		t.Fatalf("initial final delivery = sent %v, err %v", sent, err)
 	}
@@ -1501,7 +1508,7 @@ func checkJobStore_DeliveryOutboxLifecycle(t *testing.T, open contractOpener) {
 		t.Fatalf("ReserveDelivery(duplicate) = %+v created=%v, want existing", again, created)
 	}
 
-	if err := store.MarkDeliverySent(ctx, record.DeliveryKey, "tg-42"); err != nil {
+	if err := store.MarkDeliverySent(ctx, record.DeliveryKey, deliverycmd.Result{ProviderMessageID: "tg-42", ProviderCreatedAt: publishedAt}); err != nil {
 		t.Fatalf("MarkDeliverySent() error = %v", err)
 	}
 	sent, created, err := store.ReserveDelivery(ctx, DeliveryRecord{
@@ -1517,6 +1524,9 @@ func checkJobStore_DeliveryOutboxLifecycle(t *testing.T, open contractOpener) {
 	})
 	if err != nil {
 		t.Fatalf("ReserveDelivery(after sent) error = %v", err)
+	}
+	if !sent.ProviderCreatedAt.Equal(publishedAt) {
+		t.Fatalf("outbox publication timestamp=%v, want %v", sent.ProviderCreatedAt, publishedAt)
 	}
 	if created || sent.Status != DeliveryStatusSent || sent.ProviderMessageID != "tg-42" || sent.SentAt.IsZero() {
 		t.Fatalf("ReserveDelivery(after sent) = %+v created=%v, want sent existing", sent, created)
@@ -1540,7 +1550,7 @@ func checkJobStore_DeliveryOutboxLifecycle(t *testing.T, open contractOpener) {
 	if _, sent, err := store.SentFinalDelivery(ctx, "task-1"); err != nil || sent {
 		t.Fatalf("pending final delivery = sent %v, err %v", sent, err)
 	}
-	if err := store.MarkDeliverySent(ctx, final.DeliveryKey, "mm-post-1"); err != nil {
+	if err := store.MarkDeliverySent(ctx, final.DeliveryKey, deliverycmd.Result{ProviderMessageID: "mm-post-1"}); err != nil {
 		t.Fatal(err)
 	}
 	if id, sent, err := store.SentFinalDelivery(ctx, "task-1"); err != nil || !sent || id != "mm-post-1" {
@@ -1991,5 +2001,53 @@ func contractDatabase(p Provider) struct{ db *sql.DB } {
 		return struct{ db *sql.DB }{v.db}
 	default:
 		panic("unknown contract provider")
+	}
+}
+
+func checkQuestionThreadReplyLookup(t *testing.T, open contractOpener) {
+	provider := newContractProvider(t, open)
+	defer closeContractProvider(t, provider)
+	ctx := t.Context()
+	store := provider.Questions()
+	const transport = "mattermost"
+	const conversation = "d:fixture-channel"
+	const root = "fixture-user-post"
+	const currentID = "a-current"
+	createdAt := time.Date(2026, time.January, 1, 12, 0, 0, 123456789, time.UTC)
+	create := func(id, addressKey string) {
+		t.Helper()
+		record := QuestionRecord{
+			QuestionID: id, SessionID: "fixture-session", ChannelKind: transport,
+			AddressKey: addressKey, AddressJSON: `{"type":"dm","channel_id":"fixture-channel"}`,
+			Prompt: "Continue?", Status: questioncmd.StatusPending,
+			InteractionJSON: `{}`, ResumeJSON: `{}`, RequestJSON: `{}`, CreatedAt: createdAt,
+		}
+		if err := store.CreatePendingQuestion(ctx, record); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.BindQuestionDeliveryRef(ctx, id, questioncmd.DeliveryRef{Provider: transport, ConversationKey: addressKey, ProviderMessageID: root}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	create("z-history", conversation)
+	if _, settled, err := store.MarkQuestionAnswered(ctx, "z-history", questioncmd.Answer{Text: "yes", AnsweredAt: createdAt}); err != nil || !settled {
+		t.Fatalf("answer previous question: settled=%v error=%v", settled, err)
+	}
+	create(currentID, conversation)
+	create("another-conversation", "d:another-channel")
+	current, found, err := store.GetQuestionByReplyRef(ctx, transport, conversation, root)
+	if err != nil || !found || current.QuestionID != currentID || !current.CreatedAt.Equal(createdAt) {
+		t.Fatalf("lookup must select the pending question in this conversation: %+v found=%v error=%v", current, found, err)
+	}
+	create("concurrent", conversation)
+	_, found, err = store.GetQuestionByReplyRef(ctx, transport, conversation, root)
+	if err == nil || found {
+		t.Fatalf("ambiguous pending questions must not select an operation: found=%v error=%v", found, err)
+	}
+	for _, id := range []string{currentID, "concurrent"} {
+		record, found, err := store.GetQuestionByID(ctx, id)
+		if err != nil || !found || record.Status != questioncmd.StatusPending {
+			t.Fatalf("ambiguous lookup changed question %q: %+v found=%v error=%v", id, record, found, err)
+		}
 	}
 }

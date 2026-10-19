@@ -44,6 +44,7 @@ func (f *fakeStore) BindQuestionDeliveryRef(_ context.Context, questionID string
 	f.record.Provider = ref.Provider
 	f.record.ConversationKey = ref.ConversationKey
 	f.record.ProviderMessageID = ref.ProviderMessageID
+	f.record.ProviderCreatedAt = ref.ProviderCreatedAt
 	f.record.ControlHandle = ref.ControlHandle
 	return nil
 }
@@ -591,5 +592,45 @@ func TestReplyArchiveFailureLeavesQuestionPending(t *testing.T) {
 	_, err := svc.ResolveReplyDetailed(t.Context(), questioncmd.InboundReply{MessageID: "inbound", Text: "answer"})
 	if err == nil || store.replyMatch.Status != questioncmd.StatusPending {
 		t.Fatalf("answer settled without archive: %+v,%v", store.replyMatch, err)
+	}
+}
+
+func TestThreadReplyUsesProviderPublicationClock(t *testing.T) {
+	localCreatedAt := time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)
+	for _, skew := range []time.Duration{-time.Hour, time.Hour} {
+		t.Run(skew.String(), func(t *testing.T) {
+			publishedAt := localCreatedAt.Add(skew)
+			for _, test := range []struct {
+				name       string
+				questionAt time.Time
+				replyAt    time.Time
+				settled    bool
+			}{
+				{"fresh", publishedAt, publishedAt.Add(time.Second), true},
+				{"same millisecond", publishedAt, publishedAt, true},
+				{"delayed old reply", publishedAt, publishedAt.Add(-time.Millisecond), false},
+				{"missing publication time", time.Time{}, publishedAt.Add(time.Second), false},
+				{"missing reply time", publishedAt, time.Time{}, false},
+			} {
+				t.Run(test.name, func(t *testing.T) {
+					store := &fakeStore{replyMatch: baldastate.QuestionRecord{
+						QuestionID: "question-1", Status: questioncmd.StatusPending,
+						Provider: "fixture", ConversationKey: "conversation", ProviderMessageID: "root",
+						CreatedAt: localCreatedAt, ProviderCreatedAt: test.questionAt,
+						RequestJSON:     mustJSON(questioncmd.Request{Options: []questioncmd.Option{{ID: "allow", Label: "Allow once"}}}),
+						InteractionJSON: mustJSON(questioncmd.InteractionContext{SessionID: "session"}),
+						ResumeJSON:      mustJSON(questioncmd.ResumeTarget{To: "permission:review"}),
+					}}
+					result, err := New(store, nil, zerolog.Nop()).ResolveReplyDetailed(t.Context(), questioncmd.InboundReply{
+						Provider: "fixture", ConversationKey: "conversation", ReplyToMessageID: "root",
+						MessageID: "reply", Text: "1", SharedReplyRef: true,
+						ReceivedAt: localCreatedAt.Add(time.Second), ProviderCreatedAt: test.replyAt,
+					})
+					if err != nil || !result.Matched || result.Settled != test.settled || result.Invalid == test.settled {
+						t.Fatalf("reply=%+v error=%v, want settled=%v", result, err, test.settled)
+					}
+				})
+			}
+		})
 	}
 }
