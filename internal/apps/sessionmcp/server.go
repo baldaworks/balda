@@ -10,16 +10,18 @@ import (
 )
 
 const (
-	codeValidationError = "validation_error"
-	codeBackendError    = "backend_error"
+	codeValidationError  = "validation_error"
+	codeBackendError     = "backend_error"
+	maxProgressTextBytes = 4096
+	maxProgressKeyBytes  = 256
 )
 
 // RegisterTools adds session-state MCP tools to an existing server.
-func RegisterTools(server *mcp.Server, store Store, waitService SessionWaitService, questionService SessionQuestionService, sendAttachmentService SessionSendAttachmentService) {
+func RegisterTools(server *mcp.Server, store Store, waitService SessionWaitService, questionService SessionQuestionService, sendAttachmentService SessionSendAttachmentService, progressService SessionProgressService) {
 	if server == nil || store == nil {
 		return
 	}
-	svc := &service{store: store, waitService: waitService, questionService: questionService, sendAttachmentService: sendAttachmentService}
+	svc := &service{store: store, waitService: waitService, questionService: questionService, sendAttachmentService: sendAttachmentService, progressService: progressService}
 	svc.registerTools(server)
 }
 
@@ -28,6 +30,7 @@ type service struct {
 	waitService           SessionWaitService
 	questionService       SessionQuestionService
 	sendAttachmentService SessionSendAttachmentService
+	progressService       SessionProgressService
 }
 
 func (s *service) registerTools(server *mcp.Server) {
@@ -54,6 +57,15 @@ func (s *service) registerTools(server *mcp.Server) {
 		Description: "Manage one-shot wake-ups for a specific Balda session. Use action=schedule, list, or cancel. This is a session-level action, not an instance-level control action.",
 	}, s.sessionWait)
 	mcp.AddTool(server, &mcp.Tool{
+		Name:        "balda.session.progress",
+		Description: "Report visible progress for one active Balda session. Conversation progress is delivered to that session; schedule and webhook progress is recorded on the owning job.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Report session progress",
+			DestructiveHint: boolPointer(false),
+			OpenWorldHint:   boolPointer(false),
+		},
+	}, s.sessionProgress)
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "balda.session.question",
 		Description: "Start a generic interactive question in a specific Balda session and return immediately with its question_id. The settled answer resumes the session as a new turn. Supports transport-native buttons, optional default_option_id timeout fallback, and private requester-scoped questions.",
 		Annotations: &mcp.ToolAnnotations{
@@ -71,6 +83,43 @@ func (s *service) registerTools(server *mcp.Server) {
 			OpenWorldHint:   boolPointer(false),
 		},
 	}, s.sessionSendAttachments)
+}
+
+func (s *service) sessionProgress(ctx context.Context, _ *mcp.CallToolRequest, in SessionProgressInput) (*mcp.CallToolResult, SessionProgressOutput, error) {
+	if s.progressService == nil {
+		result, out := backendFailure("balda.session.progress", fmt.Errorf("session progress service is required"))
+		return result, SessionProgressOutput{ToolOutcome: out}, nil
+	}
+	if strings.TrimSpace(in.Locator.SessionID) == "" || strings.TrimSpace(in.Locator.ChannelType) == "" || strings.TrimSpace(in.Locator.AddressKey) == "" {
+		result, out := validationFailure("balda.session.progress", "locator.session_id, locator.channel_type, and locator.address_key are required")
+		return result, SessionProgressOutput{ToolOutcome: out}, nil
+	}
+	text := strings.TrimSpace(in.Text)
+	if text == "" {
+		result, out := validationFailure("balda.session.progress", "text is required")
+		return result, SessionProgressOutput{ToolOutcome: out}, nil
+	}
+	if len(text) > maxProgressTextBytes {
+		result, out := validationFailure("balda.session.progress", "text exceeds 4096 bytes")
+		return result, SessionProgressOutput{ToolOutcome: out}, nil
+	}
+	key := strings.TrimSpace(in.IdempotencyKey)
+	if key == "" {
+		result, out := validationFailure("balda.session.progress", "idempotency_key is required")
+		return result, SessionProgressOutput{ToolOutcome: out}, nil
+	}
+	if len(key) > maxProgressKeyBytes {
+		result, out := validationFailure("balda.session.progress", "idempotency_key exceeds 256 bytes")
+		return result, SessionProgressOutput{ToolOutcome: out}, nil
+	}
+	in.Text = text
+	in.IdempotencyKey = key
+	out, err := s.progressService.ReportSessionProgress(ctx, in)
+	if err != nil {
+		result, toolOut := backendFailure("balda.session.progress", err)
+		return result, SessionProgressOutput{ToolOutcome: toolOut}, nil
+	}
+	return jsonToolResult(out), out, nil
 }
 
 // nsKey builds a namespaced key for isolation.

@@ -20,6 +20,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
 	"github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionapp"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorymcp"
 	"github.com/baldaworks/balda/internal/apps/balda/skillmcp"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
@@ -50,6 +51,7 @@ type InternalMCPManager struct {
 	memoryStore      *memory.Store
 	dispatcher       actortransport.Dispatcher
 	questionService  *questions.Service
+	progressService  *sessionapp.ProgressService
 	sessionMemoryCfg portmcp.Config
 	contextBroker    *sessionmemorymcp.ContextBroker
 	skills           *baldaagent.SkillManager
@@ -76,6 +78,7 @@ type internalMCPParams struct {
 	MemoryStore      *memory.Store
 	Dispatcher       actortransport.Dispatcher
 	QuestionService  *questions.Service `optional:"true"`
+	ProgressService  *sessionapp.ProgressService
 	SessionMemory    portmcp.Config
 	ContextBroker    *sessionmemorymcp.ContextBroker
 	Skills           *baldaagent.SkillManager `optional:"true"`
@@ -94,6 +97,7 @@ func NewInternalMCPManager(params internalMCPParams) *InternalMCPManager {
 		memoryStore:      params.MemoryStore,
 		dispatcher:       params.Dispatcher,
 		questionService:  params.QuestionService,
+		progressService:  params.ProgressService,
 		sessionMemoryCfg: params.SessionMemory,
 		contextBroker:    params.ContextBroker,
 		skills:           params.Skills,
@@ -152,6 +156,7 @@ func (m *InternalMCPManager) ensureBundledServers(ctx context.Context) error {
 
 - balda.state stores persistent Balda session and app state in state.db.
 - balda.session.send_attachments can send one or more Telegram photos or documents into the active session from local files. Use source.engine=local with source.local_path.
+- balda.session.progress reports visible progress to an active session locator. Reuse one idempotency_key for retries of the same update.
 - balda config editing is not exposed through MCP; edit the balda config file directly.
 - balda.control.shutdown gracefully stops the whole Balda process; use it only when the user explicitly asks for restart or shutdown. After installing a new override binary, prefer balda.control.shutdown for restart. Use kill -TERM 1 only as a fallback when the in-process shutdown path is unavailable or broken.`
 	if m.memoryStore.MemoryEnabled() {
@@ -178,6 +183,7 @@ func (m *InternalMCPManager) ensureBundledServers(ctx context.Context) error {
 		sessionWaitService{dispatcher: m.dispatcher, jobs: m.scheduledJobs},
 		sessionQuestionService{service: m.questionService, dispatcher: m.dispatcher},
 		sessionSendAttachmentService{dispatcher: m.dispatcher},
+		sessionProgressService{service: m.progressService},
 	)
 	memory.RegisterTools(server, m.memoryStore)
 	portmcp.RegisterTools(server, m.sessionMemoryCfg)
@@ -246,6 +252,28 @@ type sessionQuestionService struct {
 
 type sessionSendAttachmentService struct {
 	dispatcher actortransport.Dispatcher
+}
+
+type sessionProgressService struct {
+	service *sessionapp.ProgressService
+}
+
+func (s sessionProgressService) ReportSessionProgress(ctx context.Context, in sessionmcp.SessionProgressInput) (sessionmcp.SessionProgressOutput, error) {
+	if s.service == nil {
+		return sessionmcp.SessionProgressOutput{}, fmt.Errorf("session progress service is required")
+	}
+	locator, err := canonicalSessionLocator(in.Locator)
+	if err != nil {
+		return sessionmcp.SessionProgressOutput{}, err
+	}
+	result, err := s.service.Report(ctx, locator, in.Text, in.IdempotencyKey)
+	if err != nil {
+		return sessionmcp.SessionProgressOutput{}, err
+	}
+	return sessionmcp.SessionProgressOutput{
+		ToolOutcome: sessionmcp.ToolOutcome{OK: true}, Accepted: true,
+		ProgressID: result.ProgressID, Disposition: result.Disposition,
+	}, nil
 }
 
 func (s sessionWaitService) ScheduleSessionWait(ctx context.Context, in sessionmcp.SessionWaitInput) error {
@@ -416,11 +444,21 @@ func (s sessionSendAttachmentService) SendSessionAttachments(ctx context.Context
 func canonicalSessionLocator(in sessionmcp.SessionLocatorInput) (deliverycmd.Locator, error) {
 	channelType := strings.ToLower(strings.TrimSpace(in.ChannelType))
 	addressKey := strings.TrimSpace(in.AddressKey)
+	expectedSessionID := strings.TrimSpace(in.SessionID)
+	if channelType == "schedule" || channelType == "webhook" {
+		if expectedSessionID == "" || expectedSessionID != addressKey {
+			return deliverycmd.Locator{}, fmt.Errorf("session locator mismatch: session_id=%q canonical=%q", expectedSessionID, addressKey)
+		}
+		addressJSON := `{}`
+		if channelType == "schedule" {
+			addressJSON = fmt.Sprintf(`{"run_id":%q}`, expectedSessionID)
+		}
+		return deliverycmd.NewLocator(channelType, addressKey, addressJSON, expectedSessionID)
+	}
 	locator, err := locatorref.Parse(channelType + ":" + addressKey)
 	if err != nil {
 		return deliverycmd.Locator{}, fmt.Errorf("canonicalize session locator: %w", err)
 	}
-	expectedSessionID := strings.TrimSpace(in.SessionID)
 	if expectedSessionID == "" || expectedSessionID != locator.SessionID {
 		return deliverycmd.Locator{}, fmt.Errorf("session locator mismatch: session_id=%q canonical=%q", expectedSessionID, locator.SessionID)
 	}

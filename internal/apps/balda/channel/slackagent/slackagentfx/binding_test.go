@@ -21,6 +21,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/slackagent"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
+	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
@@ -208,7 +209,7 @@ func (r *bindingChatRecorder) ProcessInbound(context.Context, slackagent.Ingress
 
 func TestSlackInvitationRemovedBeforeHistoricalHydrationAndDispatch(t *testing.T) {
 	envelope := contextualMentionEnvelope(t, "1.1", "2.0")
-	manager := existingSessionManager(t, envelope.Locator, envelope.Subject)
+	manager := existingSessionManager(t, envelope.Locator, envelope.Subject, baldasession.KindChat)
 	dispatcher := &dispatcherRecorder{}
 	historyFiles := &historicalContextHydratorStub{}
 	payload := "bind_" + strings.Repeat("x", 32)

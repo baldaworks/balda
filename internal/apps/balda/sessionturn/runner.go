@@ -51,8 +51,10 @@ type SessionLocator struct {
 }
 
 type SessionContext struct {
-	Locator SessionLocator
-	UserID  string
+	Locator    SessionLocator
+	UserID     string
+	Kind       string
+	OwnerJobID string
 }
 
 type ActiveSession interface {
@@ -195,7 +197,7 @@ func (r *Runner) RunSessionTurnPayload(ctx context.Context, payload turncmd.Sess
 				return fmt.Errorf("private execution user id is required")
 			}
 			topicSession, err = r.sessions.EnsureTransientSession(ctx, SessionContext{
-				Locator: locator, UserID: userID,
+				Locator: locator, UserID: userID, Kind: payload.Source, OwnerJobID: payload.JobID,
 			}, ownerSessionLabel)
 			if err != nil {
 				return fmt.Errorf("create private execution session: %w", err)

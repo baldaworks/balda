@@ -48,6 +48,9 @@ func TestRunnerRestoresQueuedScheduleTurnAsPrivateSession(t *testing.T) {
 	if accessor.transientCtx[0].Locator.SessionID != privateID {
 		t.Fatalf("private session = %+v", accessor.transientCtx[0])
 	}
+	if got := accessor.transientCtx[0]; got.Kind != turncmd.SourceSchedule || got.OwnerJobID != payload.JobID {
+		t.Fatalf("schedule execution context = %+v", got)
+	}
 	request := executor.singleRequest(t)
 	if request.Payload.Locator.SessionID != privateID || request.DeliveryLocator.SessionID != privateID ||
 		request.Payload.Deliver || request.Payload.ReportTo != nil {
@@ -83,6 +86,12 @@ func TestRunnerRunsWebhookInNewTransientSessionWithoutRestoringReportChat(t *tes
 		if request.Payload.Locator.ChannelType != "webhook" || request.DeliveryLocator.SessionID != report.SessionID ||
 			request.DeliveryLocator.AddressKey != report.AddressKey {
 			t.Fatalf("execution or report locator changed: %+v", request)
+		}
+	}
+	for i, got := range accessor.transientCtx {
+		wantOwner := "webhook-test-" + got.Locator.SessionID
+		if got.Kind != turncmd.SourceWebhook || got.OwnerJobID != wantOwner {
+			t.Fatalf("webhook execution context %d = %+v, want owner %q", i, got, wantOwner)
 		}
 	}
 }
@@ -502,14 +511,16 @@ type testSessionAccessor struct {
 	transient     ActiveSession
 	transientCtx  []SessionContext
 	restoreCalled bool
+	restoreCtx    []SessionContext
 }
 
 func (a *testSessionAccessor) GetSession(SessionLocator) (ActiveSession, error) {
 	return a.active, a.getErr
 }
 
-func (a *testSessionAccessor) RestoreSession(context.Context, SessionContext) (ActiveSession, error) {
+func (a *testSessionAccessor) RestoreSession(_ context.Context, ctx SessionContext) (ActiveSession, error) {
 	a.restoreCalled = true
+	a.restoreCtx = append(a.restoreCtx, ctx)
 	return a.restored, a.restoreErr
 }
 

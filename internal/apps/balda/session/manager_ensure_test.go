@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -16,6 +17,28 @@ const (
 	ensureTestUserID = "tg-101"
 	ensureTestAuthor = "user"
 )
+
+func TestCreateSessionRejectsServiceKindWithoutOwnerBeforeRuntime(t *testing.T) {
+	t.Parallel()
+
+	builder := &fakeAgentBuilder{}
+	manager := &Manager{
+		agentBuilder: builder,
+		logger:       zerolog.Nop(),
+		sessions:     make(map[string]*TopicSession),
+	}
+	err := manager.CreateSession(t.Context(), SessionContext{
+		Locator: testTelegramLocator(10, 0),
+		UserID:  ensureTestUserID,
+		Kind:    KindSchedule,
+	}, "balda")
+	if err == nil || !strings.Contains(err.Error(), "service session requires an owner job") {
+		t.Fatalf("error = %v, want missing service owner", err)
+	}
+	if builder.freshRuntimeSessionCalls != 0 {
+		t.Fatal("created runtime after rejecting execution context")
+	}
+}
 
 func TestEnsureSessionRestoresSQLiteHistoryAfterRestart(t *testing.T) {
 	provider, err := baldastate.NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "state.db"))

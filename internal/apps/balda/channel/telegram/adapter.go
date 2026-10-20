@@ -1063,6 +1063,8 @@ func (a *Adapter) SendProgressMessage(ctx context.Context, locator deliverycmd.L
 		return nil
 	}
 	switch progress.Kind {
+	case deliverycmd.ProgressStatus:
+		return a.SendPlain(ctx, locator, progress.Text)
 	case deliverycmd.ProgressThinking:
 		a.logger.Debug().
 			Str("session_id", locator.SessionID).

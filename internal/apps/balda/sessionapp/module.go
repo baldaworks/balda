@@ -97,6 +97,28 @@ type SessionRuntimeManagerAdapter struct {
 	Manager *baldaagent.RuntimeManager
 }
 
+// SessionKindResolverAdapter derives conversation policy from the transport
+// classifiers already registered at the composition root.
+type SessionKindResolverAdapter struct {
+	Resolver sessionmemoryapp.ScopeResolver
+}
+
+// ResolveKind implements session.KindResolver.
+func (a SessionKindResolverAdapter) ResolveKind(locator baldasession.SessionLocator) (baldasession.Kind, error) {
+	scope, err := a.Resolver.Resolve(locator)
+	if err != nil {
+		return "", err
+	}
+	switch scope.Kind {
+	case sessionmemory.ScopeKindPersonal:
+		return baldasession.KindDM, nil
+	case sessionmemory.ScopeKindGroup:
+		return baldasession.KindChat, nil
+	default:
+		return "", errors.New("unsupported locator scope kind")
+	}
+}
+
 func (a SessionRuntimeManagerAdapter) Runtime(ctx context.Context) (*baldasession.BuiltRuntime, error) {
 	runtime, err := a.Manager.Runtime(ctx)
 	if err != nil {
@@ -235,6 +257,7 @@ var Module = fx.Module("balda_sessionapp",
 		baldaagent.NewRunnerFactory,
 		baldaagent.NewBuilder,
 		baldaagent.NewRuntimeManager,
+		NewProgressService,
 		fx.Annotate(
 			NewBoundaryObserverComposite,
 			fx.ParamTags(`group:"balda_session_boundary_observer"`),
@@ -244,6 +267,9 @@ var Module = fx.Module("balda_sessionapp",
 		},
 		func(manager *baldaagent.RuntimeManager) baldasession.RuntimeManager {
 			return SessionRuntimeManagerAdapter{Manager: manager}
+		},
+		func(resolver sessionmemoryapp.ScopeResolver) baldasession.KindResolver {
+			return SessionKindResolverAdapter{Resolver: resolver}
 		},
 		fx.Annotate(
 			func(broker *sessionmemorymcp.ContextBroker, enabled bool) baldaagent.SessionMCPBinder {

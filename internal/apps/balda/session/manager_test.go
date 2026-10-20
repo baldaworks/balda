@@ -877,7 +877,7 @@ func TestRuntimeStateAccessRestoresPersistedSession(t *testing.T) {
 func TestRestoreSessionReusesActivePersistedSessionWhenLocatorIDChanged(t *testing.T) {
 	address := testTelegramLocator(10, 42)
 	legacyID := "legacy-session-id"
-	active := &TopicSession{sessionID: legacyID, locator: address}
+	active := &TopicSession{sessionID: legacyID, locator: address, kind: KindChat}
 	record := baldastate.SessionRecord{
 		SessionID:   legacyID,
 		UserID:      "tg-201",
@@ -1174,10 +1174,20 @@ func TestEnsureTransientSessionDoesNotPersistAddressMetadata(t *testing.T) {
 	second.ChannelType = "webhook"
 	second.AddressKey = second.SessionID
 	second.AddressJSON = "{}"
-	for _, locator := range []SessionLocator{first, second, first} {
-		if _, err := m.EnsureTransientSession(t.Context(), SessionContext{Locator: locator, UserID: "tg-101"}, "balda"); err != nil {
+	contexts := []SessionContext{
+		{Locator: first, UserID: "tg-101", Kind: KindSchedule, OwnerJobID: "scheduled-a"},
+		{Locator: second, UserID: "tg-101", Kind: KindWebhook, OwnerJobID: "webhook-b"},
+		{Locator: first, UserID: "tg-101", Kind: KindSchedule, OwnerJobID: "scheduled-a"},
+	}
+	for _, sessionCtx := range contexts {
+		if _, err := m.EnsureTransientSession(t.Context(), sessionCtx, "balda"); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if _, err := m.EnsureTransientSession(t.Context(), SessionContext{
+		Locator: first, UserID: "tg-101", Kind: KindSchedule, OwnerJobID: "scheduled-other",
+	}, "balda"); err == nil {
+		t.Fatal("active private session accepted a different owner")
 	}
 	if len(store.upsertedRecords) != 0 {
 		t.Fatalf("private sessions persisted address metadata: %+v", store.upsertedRecords)
@@ -1204,7 +1214,9 @@ func TestEnsureTransientSessionDoesNotPersistAddressMetadata(t *testing.T) {
 	restarted := &Manager{baldaProviderName: m.baldaProviderName, runtimeManager: m.runtimeManager,
 		agentBuilder: builder, workingDir: m.workingDir, logger: zerolog.Nop(),
 		sessions: make(map[string]*TopicSession), sessionStore: store, sessionsPersistent: true}
-	if _, err := restarted.EnsureTransientSession(t.Context(), SessionContext{Locator: first, UserID: "tg-101"}, "balda"); err != nil {
+	if _, err := restarted.EnsureTransientSession(t.Context(), SessionContext{
+		Locator: first, UserID: "tg-101", Kind: KindSchedule, OwnerJobID: "scheduled-a",
+	}, "balda"); err != nil {
 		t.Fatal(err)
 	}
 	if len(builder.createRuntimeSessionSessionIDs) != 3 || builder.createRuntimeSessionSessionIDs[2] != first.SessionID ||
@@ -1239,10 +1251,14 @@ func TestEnsureTransientSessionReopensSQLiteRuntimeAfterRestart(t *testing.T) {
 		}
 	}
 
-	if _, err := newManager().EnsureTransientSession(t.Context(), SessionContext{Locator: locator, UserID: "tg-101"}, "balda"); err != nil {
+	if _, err := newManager().EnsureTransientSession(t.Context(), SessionContext{
+		Locator: locator, UserID: "tg-101", Kind: KindSchedule, OwnerJobID: "scheduled-a",
+	}, "balda"); err != nil {
 		t.Fatalf("first EnsureTransientSession() error = %v", err)
 	}
-	if _, err := newManager().EnsureTransientSession(t.Context(), SessionContext{Locator: locator, UserID: "tg-101"}, "balda"); err != nil {
+	if _, err := newManager().EnsureTransientSession(t.Context(), SessionContext{
+		Locator: locator, UserID: "tg-101", Kind: KindSchedule, OwnerJobID: "scheduled-a",
+	}, "balda"); err != nil {
 		t.Fatalf("restart EnsureTransientSession() error = %v", err)
 	}
 	if builder.legacyCalls != 2 || builder.freshCalls != 0 {
