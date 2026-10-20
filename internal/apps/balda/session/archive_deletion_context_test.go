@@ -59,7 +59,7 @@ func TestArchiveDeletionReconcilesExpiredContext(t *testing.T) {
 				}
 				return nil, adksession.ErrNotFound
 			}}
-			destroyed, err := m.completeArchiveDeletion(ctx, &chatarchivecmd.Intent{}, svc, "app", "user", context.DeadlineExceeded)
+			destroyed, err := m.completeArchiveDeletion(ctx, &chatarchivecmd.Intent{}, svc, "app", ensureTestAuthor, context.DeadlineExceeded)
 			if !destroyed || !errors.Is(err, completionErr) {
 				t.Fatalf("destroyed=%v, error=%v; want true, %v", destroyed, err, completionErr)
 			}
@@ -80,7 +80,7 @@ func TestArchiveDeletionOutcomeReadIsBounded(t *testing.T) {
 			<-ctx.Done()
 			return nil, ctx.Err()
 		}}
-		destroyed, err := m.completeArchiveDeletion(t.Context(), &chatarchivecmd.Intent{}, svc, "app", "user", context.DeadlineExceeded)
+		destroyed, err := m.completeArchiveDeletion(t.Context(), &chatarchivecmd.Intent{}, svc, "app", ensureTestAuthor, context.DeadlineExceeded)
 		if destroyed || !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("destroyed=%v, error=%v", destroyed, err)
 		}
@@ -106,7 +106,9 @@ func (s committedDeadlineService) Delete(ctx context.Context, r *adksession.Dele
 }
 
 func TestArchiveResetReconcilesCommittedDeadline(t *testing.T) {
-	for _, mode := range []string{"active", "persisted", "caller canceled", "manager stopping"} {
+	const callerCanceled = "caller canceled"
+	const managerStopping = "manager stopping"
+	for _, mode := range []string{"active", "persisted", callerCanceled, managerStopping} {
 		t.Run(mode, func(t *testing.T) {
 			f := newArchiveFixture(t)
 			f.runtime.ProviderBindingJSON = `{"root_provider_id":"old"}`
@@ -116,22 +118,22 @@ func TestArchiveResetReconcilesCommittedDeadline(t *testing.T) {
 				t.Fatal(err)
 			}
 			event := adksession.NewEvent(t.Context(), "old-turn")
-			event.Author = "user"
+			event.Author = ensureTestAuthor
 			event.Actions.StateDelta = map[string]any{"old-conversation": "old-state"}
 			if err := first.sessionSvc.AppendEvent(t.Context(), first.sess, event); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := f.provider.ChatArchive().Record(t.Context(), chatarchivecmd.Message{SessionID: first.GetArchiveID(), Source: "original", Role: "user", Text: "retain me", ObservedAt: m.currentTime()}); err != nil {
+			if _, err := f.provider.ChatArchive().Record(t.Context(), chatarchivecmd.Message{SessionID: first.GetArchiveID(), Source: "original", Role: ensureTestAuthor, Text: "retain me", ObservedAt: m.currentTime()}); err != nil {
 				t.Fatal(err)
 			}
 			f.runtime.ProviderBindingJSON = `{"root_provider_id":"current"}`
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			svc := committedDeadlineService{Service: first.sessionSvc, afterDelete: func() {
-				if mode == "caller canceled" {
+				if mode == callerCanceled {
 					cancel()
 				}
-				if mode == "manager stopping" {
+				if mode == managerStopping {
 					m.stopping.Store(true)
 				}
 			}}
@@ -142,11 +144,11 @@ func TestArchiveResetReconcilesCommittedDeadline(t *testing.T) {
 			}
 			err = m.ResetSession(ctx, archiveInput().Locator)
 			switch mode {
-			case "caller canceled":
+			case callerCanceled:
 				if !errors.Is(err, context.Canceled) {
 					t.Fatalf("reset=%v, want cancellation", err)
 				}
-			case "manager stopping":
+			case managerStopping:
 				if !errors.Is(err, errManagerStopping) {
 					t.Fatalf("reset=%v, want stopping", err)
 				}
@@ -164,7 +166,7 @@ func TestArchiveResetReconcilesCommittedDeadline(t *testing.T) {
 				t.Fatalf("messages=%#v, %v", messages, err)
 			}
 			next, err := m.EnsureSession(ctx, archiveInput(), "saved")
-			if mode == "caller canceled" || mode == "manager stopping" {
+			if mode == callerCanceled || mode == managerStopping {
 				if err == nil || f.builder.freshCalls != 1 {
 					t.Fatalf("replacement exposed: %p, %v; fresh calls=%d", next, err, f.builder.freshCalls)
 				}
@@ -231,11 +233,11 @@ func TestArchiveResetExpiredDeletionCompletesCleanup(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		svc := expiredDeleteService{Service: adksession.InMemoryService()}
 		loc := testTelegramLocator(10, 0)
-		created, err := svc.Create(t.Context(), &adksession.CreateRequest{AppName: baldaRuntimeAppName, UserID: "user", SessionID: loc.SessionID})
+		created, err := svc.Create(t.Context(), &adksession.CreateRequest{AppName: baldaRuntimeAppName, UserID: ensureTestAuthor, SessionID: loc.SessionID})
 		if err != nil {
 			t.Fatal(err)
 		}
-		ts := &TopicSession{sessionID: loc.SessionID, agentSessionID: loc.SessionID, archiveID: "old", userID: "user", locator: loc, sessionSvc: svc, sess: created.Session, hooksStarted: true, workspaceDir: dir}
+		ts := &TopicSession{sessionID: loc.SessionID, agentSessionID: loc.SessionID, archiveID: "old", userID: ensureTestAuthor, locator: loc, sessionSvc: svc, sess: created.Session, hooksStarted: true, workspaceDir: dir}
 		completions, ends, closes := 0, 0, 0
 		ts.runtimeClose = func() error { closes++; return nil }
 		m := &Manager{logger: zerolog.Nop(), sessions: map[string]*TopicSession{loc.SessionID: ts}, archive: resetOutcomeArchive{
