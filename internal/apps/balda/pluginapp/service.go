@@ -5,12 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/plugincmd"
@@ -51,7 +49,6 @@ type Service struct {
 	kv         baldastate.KVStore
 	managed    *managedLifecycle
 	management ManagementStore
-	ownerMu    sync.Mutex
 }
 
 // InstalledState is the application-owned durable plugin state exposed only
@@ -121,7 +118,7 @@ type marketplaceSourceSpec struct {
 	RepoRoot  string
 }
 
-func New(stateDir string, kv baldastate.KVStore) (*Service, error) {
+func newService(stateDir string, kv baldastate.KVStore) (*Service, error) {
 	trimmed := strings.TrimSpace(stateDir)
 	if trimmed == "" {
 		return nil, fmt.Errorf("state dir is required")
@@ -134,7 +131,7 @@ func NewManaged(stateDir string, kv baldastate.KVStore, store PluginStore, activ
 	if management == nil {
 		return nil, fmt.Errorf("management store is required")
 	}
-	service, err := New(stateDir, kv)
+	service, err := newService(stateDir, kv)
 	if err != nil {
 		return nil, err
 	}
@@ -170,74 +167,23 @@ func InferMarketplaceName(source string) string {
 }
 
 func (s *Service) ListInstalled(ctx context.Context) ([]PluginSummary, error) {
-	if s.managed != nil {
-		installs, err := s.managed.store.ListPluginInstalls(ctx)
-		if err != nil {
-			return nil, err
-		}
-		out := make([]PluginSummary, 0, len(installs))
-		for _, install := range installs {
-			out = append(out, PluginSummary{Name: install.PluginID, Version: install.Version, Description: install.Description})
-		}
-		return out, nil
-	}
-	_ = ctx
-	plugins, err := s.legacyInstalled()
+	installs, err := s.managed.store.ListPluginInstalls(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return plugins, nil
+	out := make([]PluginSummary, 0, len(installs))
+	for _, install := range installs {
+		out = append(out, PluginSummary{Name: install.PluginID, Version: install.Version, Description: install.Description})
+	}
+	return out, nil
 }
 
 func (s *Service) GetInstalled(ctx context.Context, name string) (PluginSummary, bool, error) {
-	trimmed := strings.TrimSpace(name)
-	if trimmed == "" {
-		return PluginSummary{}, false, nil
+	install, found, err := s.managed.store.GetPluginInstall(ctx, strings.TrimSpace(name))
+	if err != nil || !found {
+		return PluginSummary{}, found, err
 	}
-	if s.managed != nil {
-		install, found, err := s.managed.store.GetPluginInstall(ctx, trimmed)
-		if err != nil || !found {
-			return PluginSummary{}, found, err
-		}
-		return PluginSummary{Name: install.PluginID, Version: install.Version, Description: install.Description}, true, nil
-	}
-	plugins, err := s.legacyInstalled()
-	if err != nil {
-		return PluginSummary{}, false, err
-	}
-	for _, plugin := range plugins {
-		if plugin.Name == trimmed {
-			return plugin, true, nil
-		}
-	}
-	return PluginSummary{}, false, nil
-}
-
-func (s *Service) legacyInstalled() ([]PluginSummary, error) {
-	loader, err := runtimecatalog.NewSourceLoader(runtimecatalog.SourceLimits{})
-	if err != nil {
-		return nil, err
-	}
-	entries, err := os.ReadDir(filepath.Join(s.stateDir, "plugins"))
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("read installed plugins: %w", err)
-	}
-	plugins := make([]PluginSummary, 0, len(entries))
-	for _, entry := range entries {
-		if !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
-			continue
-		}
-		pkg, err := loader.LoadPluginPackage(filepath.Join(s.stateDir, "plugins", entry.Name()))
-		if err != nil {
-			continue
-		}
-		plugins = append(plugins, PluginSummary{Name: pkg.Source.Descriptor.ID.Name, Version: pkg.Version, Description: pkg.Description})
-	}
-	sort.Slice(plugins, func(i, j int) bool { return plugins[i].Name < plugins[j].Name })
-	return plugins, nil
+	return PluginSummary{Name: install.PluginID, Version: install.Version, Description: install.Description}, true, nil
 }
 
 const marketplacePrefix = "plugin_marketplace:"
@@ -308,181 +254,34 @@ func (s *Service) ListMarketplaces(ctx context.Context) ([]MarketplaceSource, er
 }
 
 func (s *Service) ListMarketplaceStatuses(ctx context.Context) ([]MarketplaceStatus, error) {
-	if s.management != nil {
-		unlock := s.lockOwner()
-		defer unlock()
-		return s.marketplaceStatusesLocked(ctx)
-	}
-	sources, err := s.ListMarketplaces(ctx)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]MarketplaceStatus, 0, len(sources))
-	for _, src := range sources {
-		status, err := s.marketplaceStatus(ctx, src)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, status)
-	}
-	return out, nil
+	unlock := s.lockOwner()
+	defer unlock()
+	return s.marketplaceStatusesLocked(ctx)
 }
 
 func (s *Service) GetMarketplaceStatus(ctx context.Context, name string) (MarketplaceStatus, bool, error) {
-	if s.management != nil {
-		unlock := s.lockOwner()
-		defer unlock()
-		detail, err := s.marketplaceDetailLocked(ctx, strings.TrimSpace(name))
-		if errors.Is(err, plugincmd.ErrNotFound) {
-			return MarketplaceStatus{}, false, nil
-		}
-		if err != nil {
-			return MarketplaceStatus{}, false, err
-		}
-		return marketplaceStatusView(detail), true, nil
-	}
-	trimmed := strings.TrimSpace(name)
-	if trimmed == "" {
+	unlock := s.lockOwner()
+	defer unlock()
+	detail, err := s.marketplaceDetailLocked(ctx, strings.TrimSpace(name))
+	if errors.Is(err, plugincmd.ErrNotFound) {
 		return MarketplaceStatus{}, false, nil
 	}
-	sources, err := s.ListMarketplaces(ctx)
 	if err != nil {
 		return MarketplaceStatus{}, false, err
 	}
-	for _, src := range sources {
-		if src.Name != trimmed {
-			continue
-		}
-		status, err := s.marketplaceStatus(ctx, src)
-		if err != nil {
-			return MarketplaceStatus{}, false, err
-		}
-		return status, true, nil
-	}
-	return MarketplaceStatus{}, false, nil
+	return marketplaceStatusView(detail), true, nil
 }
 
 func (s *Service) AddMarketplace(ctx context.Context, src MarketplaceSource) error {
-	if s.management != nil {
-		return s.addMarketplaceTrusted(ctx, src)
-	}
-	if s.kv == nil {
-		return fmt.Errorf("marketplace store is unavailable")
-	}
-	normalized := normalizeSource(src)
-	if normalized.Name == "" {
-		return fmt.Errorf("marketplace name is required")
-	}
-	if normalized.Source == "" {
-		return fmt.Errorf("marketplace source is required")
-	}
-	return s.kv.SetJSON(ctx, marketplacePrefix+normalized.Name, normalized)
+	return s.addMarketplaceTrusted(ctx, src)
 }
 
 func (s *Service) RemoveMarketplace(ctx context.Context, name string) error {
-	if s.management != nil {
-		return s.removeMarketplaceTrusted(ctx, name)
-	}
-	if s.kv == nil {
-		return fmt.Errorf("marketplace store is unavailable")
-	}
-	trimmed := strings.TrimSpace(name)
-	if trimmed == "" {
-		return fmt.Errorf("marketplace name is required")
-	}
-	return s.kv.Delete(ctx, marketplacePrefix+trimmed)
+	return s.removeMarketplaceTrusted(ctx, name)
 }
 
 func (s *Service) UpgradeMarketplaces(ctx context.Context, name string) ([]MarketplaceUpgradeResult, error) {
-	if s.management != nil {
-		return s.refreshMarketplacesTrusted(ctx, name)
-	}
-	sources, err := s.ListMarketplaces(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if len(sources) == 0 {
-		return nil, nil
-	}
-
-	trimmedName := strings.TrimSpace(name)
-	if trimmedName != "" {
-		filtered := make([]MarketplaceSource, 0, 1)
-		for _, src := range sources {
-			if src.Name == trimmedName {
-				filtered = append(filtered, src)
-				break
-			}
-		}
-		if len(filtered) == 0 {
-			return nil, fmt.Errorf("marketplace not found")
-		}
-		sources = filtered
-	}
-
-	results := make([]MarketplaceUpgradeResult, 0, len(sources))
-	for _, src := range sources {
-		root, err := s.materializeMarketplaceSource(ctx, src)
-		if err != nil {
-			return nil, err
-		}
-		manifestPath := filepath.Join(root, marketplaceManifestPath)
-		data, err := os.ReadFile(manifestPath)
-		if err != nil {
-			return nil, fmt.Errorf("read marketplace manifest for %q: %w", src.Name, err)
-		}
-		var index marketplaceIndex
-		if err := json.Unmarshal(data, &index); err != nil {
-			return nil, fmt.Errorf("decode marketplace manifest for %q: %w", src.Name, err)
-		}
-		if strings.TrimSpace(index.Name) == "" {
-			index.Name = src.Name
-		}
-		if strings.TrimSpace(index.Name) == "" {
-			return nil, fmt.Errorf("marketplace name is required")
-		}
-		plugins, err := s.readMarketplacePlugins(ctx, src)
-		if err != nil {
-			return nil, fmt.Errorf("load marketplace plugins for %q: %w", src.Name, err)
-		}
-		if normalized := normalizeSource(src); s.kv != nil {
-			if err := s.kv.SetJSON(ctx, marketplacePrefix+normalized.Name, normalized); err != nil {
-				return nil, err
-			}
-		}
-		results = append(results, MarketplaceUpgradeResult{
-			Name:         src.Name,
-			Source:       src.Source,
-			PluginCount:  len(plugins),
-			Refreshed:    true,
-			ManifestPath: manifestPath,
-			Status:       s.mustMarketplaceStatus(ctx, src, len(plugins), manifestPath),
-		})
-	}
-	return results, nil
-}
-
-func (s *Service) mustMarketplaceStatus(ctx context.Context, src MarketplaceSource, pluginCount int, manifestPath string) MarketplaceStatus {
-	status, err := s.marketplaceStatus(ctx, src)
-	if err != nil {
-		return MarketplaceStatus{
-			Name:             src.Name,
-			Source:           src.Source,
-			Ref:              src.Ref,
-			Sparse:           append([]string(nil), src.Sparse...),
-			ManifestPath:     manifestPath,
-			ManifestPresent:  true,
-			AvailablePlugins: pluginCount,
-		}
-	}
-	if pluginCount >= 0 {
-		status.AvailablePlugins = pluginCount
-	}
-	if strings.TrimSpace(manifestPath) != "" {
-		status.ManifestPath = manifestPath
-		status.ManifestPresent = true
-	}
-	return status
+	return s.refreshMarketplacesTrusted(ctx, name)
 }
 
 func normalizeSource(src MarketplaceSource) MarketplaceSource {
@@ -504,53 +303,9 @@ func normalizeSource(src MarketplaceSource) MarketplaceSource {
 }
 
 func (s *Service) ListAvailable(ctx context.Context) ([]AvailablePlugin, error) {
-	if s.management != nil {
-		unlock := s.lockOwner()
-		defer unlock()
-		return s.availableLocked(ctx)
-	}
-	return s.listAvailableLocked(ctx)
-}
-
-func (s *Service) listAvailableLocked(ctx context.Context) ([]AvailablePlugin, error) {
-	sources, err := s.ListMarketplaces(ctx)
-	if err != nil {
-		return nil, err
-	}
-	installed, err := s.ListInstalled(ctx)
-	if err != nil {
-		return nil, err
-	}
-	installedSet := make(map[string]PluginSummary, len(installed))
-	for _, plugin := range installed {
-		installedSet[plugin.Name] = plugin
-	}
-	out := make([]AvailablePlugin, 0)
-	for _, src := range sources {
-		plugins, err := s.readMarketplacePlugins(ctx, src)
-		if err != nil {
-			continue
-		}
-		for _, plugin := range plugins {
-			if current, ok := installedSet[plugin.Name]; ok {
-				plugin.Installed = true
-				if strings.TrimSpace(plugin.Description) == "" {
-					plugin.Description = current.Description
-				}
-				if strings.TrimSpace(plugin.Version) == "" {
-					plugin.Version = current.Version
-				}
-			}
-			out = append(out, plugin)
-		}
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Marketplace == out[j].Marketplace {
-			return out[i].Name < out[j].Name
-		}
-		return out[i].Marketplace < out[j].Marketplace
-	})
-	return out, nil
+	unlock := s.lockOwner()
+	defer unlock()
+	return s.availableLocked(ctx)
 }
 
 func (s *Service) GetAvailable(ctx context.Context, selector string) (AvailablePlugin, bool, error) {
@@ -569,7 +324,7 @@ func (s *Service) GetAvailable(ctx context.Context, selector string) (AvailableP
 			continue
 		}
 		if found {
-			return AvailablePlugin{}, false, fmt.Errorf("multiple marketplace matches for plugin %q", name)
+			return AvailablePlugin{}, false, fmt.Errorf("%w: multiple marketplace matches for plugin %q", plugincmd.ErrConflict, name)
 		}
 		match = plugin
 		found = true
@@ -578,88 +333,11 @@ func (s *Service) GetAvailable(ctx context.Context, selector string) (AvailableP
 }
 
 func (s *Service) Install(ctx context.Context, selector string) error {
-	if s.management != nil {
-		return s.mutatePluginTrusted(ctx, selector, "install")
-	}
-	plugin, ok, err := s.GetAvailable(ctx, selector)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return fmt.Errorf("plugin not found")
-	}
-	if s.managed != nil {
-		return s.managed.install(ctx, plugin)
-	}
-	if installed, installedOK, err := s.GetInstalled(ctx, plugin.Name); err != nil {
-		return err
-	} else if installedOK && sameInstalledPluginVersion(installed, plugin) {
-		return nil
-	}
-	destRoot := filepath.Join(s.stateDir, "plugins", plugin.Name)
-	parentDir := filepath.Dir(destRoot)
-	if err := os.MkdirAll(parentDir, 0o755); err != nil {
-		return fmt.Errorf("create plugin parent dir: %w", err)
-	}
-	stageRoot := destRoot + ".tmp-install"
-	backupRoot := destRoot + ".bak-install"
-	_ = os.RemoveAll(stageRoot)
-	_ = os.RemoveAll(backupRoot)
-	if err := copyDir(plugin.PluginPath, stageRoot); err != nil {
-		return fmt.Errorf("copy plugin package: %w", err)
-	}
-	if _, err := os.Stat(destRoot); err == nil {
-		if err := os.Rename(destRoot, backupRoot); err != nil {
-			_ = os.RemoveAll(stageRoot)
-			return fmt.Errorf("backup existing plugin root: %w", err)
-		}
-	}
-	if err := os.Rename(stageRoot, destRoot); err != nil {
-		if _, backupErr := os.Stat(backupRoot); backupErr == nil {
-			_ = os.Rename(backupRoot, destRoot)
-		}
-		_ = os.RemoveAll(stageRoot)
-		return fmt.Errorf("activate installed plugin root: %w", err)
-	}
-	loader, err := runtimecatalog.NewSourceLoader(runtimecatalog.SourceLimits{})
-	if err != nil {
-		rollbackInstalledPlugin(destRoot, backupRoot)
-		return err
-	}
-	source, err := loader.LoadPlugin(destRoot)
-	if err != nil {
-		rollbackInstalledPlugin(destRoot, backupRoot)
-		return err
-	}
-	if source.Descriptor.ID.Name == plugin.Name {
-		_ = os.RemoveAll(backupRoot)
-		return nil
-	}
-	rollbackInstalledPlugin(destRoot, backupRoot)
-	return fmt.Errorf("installed plugin %q did not validate", plugin.Name)
-}
-
-func sameInstalledPluginVersion(installed PluginSummary, available AvailablePlugin) bool {
-	if strings.TrimSpace(installed.Name) != strings.TrimSpace(available.Name) {
-		return false
-	}
-	installedVersion := strings.TrimSpace(installed.Version)
-	availableVersion := strings.TrimSpace(available.Version)
-	return installedVersion != "" && installedVersion == availableVersion
+	return s.mutatePluginTrusted(ctx, selector, "install")
 }
 
 func (s *Service) RemoveInstalled(ctx context.Context, name string) error {
-	if s.managed != nil {
-		return s.managed.remove(ctx, strings.TrimSpace(name))
-	}
-	_, ok, err := s.GetInstalled(ctx, name)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return fmt.Errorf("plugin not installed")
-	}
-	return os.RemoveAll(filepath.Join(s.stateDir, "plugins", strings.TrimSpace(name)))
+	return s.managed.remove(ctx, strings.TrimSpace(name))
 }
 
 func (s *Service) Enable(ctx context.Context, name string) error {
@@ -671,39 +349,13 @@ func (s *Service) Enable(ctx context.Context, name string) error {
 
 // Upgrade validates and atomically upgrades an existing managed installation.
 func (s *Service) Upgrade(ctx context.Context, selector string) error {
-	if s.management != nil {
-		return s.mutatePluginTrusted(ctx, selector, string(plugincmd.Upgrade))
-	}
-	if s.managed == nil {
-		return errors.New("managed plugin lifecycle is unavailable")
-	}
-	plugin, found, err := s.GetAvailable(ctx, selector)
-	if err != nil {
-		return err
-	}
-	if !found {
-		return errors.New("plugin not found")
-	}
-	return s.managed.upgrade(ctx, plugin)
+	return s.mutatePluginTrusted(ctx, selector, string(plugincmd.Upgrade))
 }
 
 // AdoptOrigin explicitly locks an origin-unknown migrated install to one
 // unambiguous marketplace package before its first managed upgrade.
 func (s *Service) AdoptOrigin(ctx context.Context, selector string) error {
-	if s.management != nil {
-		return s.mutatePluginTrusted(ctx, selector, pluginAdoptOrigin)
-	}
-	if s.managed == nil {
-		return errors.New("managed plugin lifecycle is unavailable")
-	}
-	plugin, found, err := s.GetAvailable(ctx, selector)
-	if err != nil {
-		return err
-	}
-	if !found {
-		return errors.New("plugin not found")
-	}
-	return s.managed.adoptOrigin(ctx, plugin)
+	return s.mutatePluginTrusted(ctx, selector, pluginAdoptOrigin)
 }
 
 func (s *Service) Disable(ctx context.Context, name string) error {
@@ -809,76 +461,6 @@ func splitSelector(selector string) (name string, marketplace string) {
 	return name, marketplace
 }
 
-func (s *Service) readMarketplacePlugins(ctx context.Context, src MarketplaceSource) ([]AvailablePlugin, error) {
-	root, err := s.materializeMarketplaceSource(ctx, src)
-	if err != nil {
-		return nil, err
-	}
-	data, err := os.ReadFile(filepath.Join(root, marketplaceManifestPath))
-	if err != nil {
-		return nil, err
-	}
-	var index marketplaceIndex
-	if err := json.Unmarshal(data, &index); err != nil {
-		return nil, err
-	}
-	if duplicateMarketplaceNames(index.Plugins) {
-		return nil, fmt.Errorf("duplicate marketplace plugin name")
-	}
-	marketplaceName := strings.TrimSpace(index.Name)
-	if marketplaceName == "" {
-		marketplaceName = strings.TrimSpace(src.Name)
-	}
-	marketplaceLabel := strings.TrimSpace(index.Interface.DisplayName)
-	if marketplaceLabel == "" {
-		marketplaceLabel = marketplaceName
-	}
-	out := make([]AvailablePlugin, 0, len(index.Plugins))
-	for _, entry := range index.Plugins {
-		if strings.TrimSpace(entry.Name) == "" {
-			continue
-		}
-		packagePath, transitional := entry.packagePath()
-		if packagePath == "" || filepath.IsAbs(packagePath) {
-			continue
-		}
-		pluginRoot, err := containedMarketplacePath(root, packagePath)
-		if err != nil {
-			continue
-		}
-		summary, err := readPluginSummary(pluginRoot, strings.TrimSpace(entry.ManifestPath))
-		if err != nil {
-			continue
-		}
-		if summary.Name != strings.TrimSpace(entry.Name) {
-			continue
-		}
-		plugin := AvailablePlugin{
-			Name:             summary.Name,
-			DisplayName:      summary.Name,
-			Description:      summary.Description,
-			Version:          summary.Version,
-			Marketplace:      marketplaceName,
-			MarketplaceLabel: marketplaceLabel,
-			Category:         strings.TrimSpace(entry.Category),
-			SourceRoot:       root,
-			PluginPath:       pluginRoot,
-		}
-		if transitional {
-			plugin.Diagnostics = append(plugin.Diagnostics, runtimecatalogcmd.Diagnostic{
-				Severity: runtimecatalogcmd.DiagnosticSeverityWarning,
-				Code:     runtimecatalogcmd.DiagnosticMarketplaceSourcePathDeprecated,
-				Source: runtimecatalogcmd.SourceID{
-					Kind: runtimecatalogcmd.SourceKindPlugin,
-					Name: summary.Name,
-				},
-			})
-		}
-		out = append(out, plugin)
-	}
-	return out, nil
-}
-
 func containedMarketplacePath(root, relative string) (string, error) {
 	root, err := filepath.EvalSymlinks(root)
 	if err != nil {
@@ -956,53 +538,6 @@ func (s *Service) marketplaceSourceSpec(src MarketplaceSource) (marketplaceSourc
 		return spec, nil
 	}
 	return marketplaceSourceSpec{}, fmt.Errorf("unsupported marketplace source %q", spec.RawSource)
-}
-
-func (s *Service) marketplaceStatus(ctx context.Context, src MarketplaceSource) (MarketplaceStatus, error) {
-	spec, err := s.marketplaceSourceSpec(src)
-	if err != nil {
-		return MarketplaceStatus{}, err
-	}
-	status := MarketplaceStatus{
-		Name:   spec.Name,
-		Source: spec.RawSource,
-		Kind:   string(spec.Kind),
-		Ref:    spec.Ref,
-		Sparse: append([]string(nil), spec.Sparse...),
-	}
-	switch spec.Kind {
-	case marketplaceSourceKindLocal:
-		status.CachePath = spec.LocalRoot
-		status.Cached = true
-		status.ManifestPath = filepath.Join(spec.LocalRoot, marketplaceManifestPath)
-		if info, err := os.Stat(status.ManifestPath); err == nil {
-			status.ManifestPresent = true
-			status.LastRefreshedAt = info.ModTime().UTC().Format(time.RFC3339)
-		}
-	case marketplaceSourceKindGit:
-		status.CachePath = spec.RepoRoot
-		status.ManifestPath = filepath.Join(spec.RepoRoot, marketplaceManifestPath)
-		if info, err := os.Stat(filepath.Join(spec.RepoRoot, ".git")); err == nil && info.IsDir() {
-			status.Cached = true
-		}
-		if info, err := os.Stat(status.ManifestPath); err == nil {
-			status.ManifestPresent = true
-			status.LastRefreshedAt = info.ModTime().UTC().Format(time.RFC3339)
-		}
-		resolved, err := marketplaceGitOutput(ctx, spec.RepoRoot, "rev-parse", "HEAD")
-		if err == nil {
-			status.ResolvedRef = strings.TrimSpace(resolved)
-		}
-	default:
-		return MarketplaceStatus{}, fmt.Errorf("unsupported marketplace source kind")
-	}
-	if status.ManifestPresent {
-		plugins, err := s.readMarketplacePlugins(ctx, src)
-		if err == nil {
-			status.AvailablePlugins = len(plugins)
-		}
-	}
-	return status, nil
 }
 
 func isGitMarketplaceSource(source string) bool {
@@ -1196,63 +731,4 @@ func resolveLocalMarketplaceRoot(source string) string {
 		}
 	}
 	return ""
-}
-
-func copyDir(src, dst string) error {
-	info, err := os.Stat(src)
-	if err != nil {
-		return err
-	}
-	if !info.IsDir() {
-		return fmt.Errorf("source is not a directory")
-	}
-	if err := os.MkdirAll(dst, 0o755); err != nil {
-		return err
-	}
-	entries, err := os.ReadDir(src)
-	if err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		srcPath := filepath.Join(src, entry.Name())
-		dstPath := filepath.Join(dst, entry.Name())
-		if entry.IsDir() {
-			if err := copyDir(srcPath, dstPath); err != nil {
-				return err
-			}
-			continue
-		}
-		if err := copyFile(srcPath, dstPath); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = in.Close() }()
-	info, err := in.Stat()
-	if err != nil {
-		return err
-	}
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, info.Mode().Perm())
-	if err != nil {
-		return err
-	}
-	defer func() { _ = out.Close() }()
-	if _, err := io.Copy(out, in); err != nil {
-		return err
-	}
-	return out.Close()
-}
-
-func rollbackInstalledPlugin(destRoot, backupRoot string) {
-	_ = os.RemoveAll(destRoot)
-	if _, err := os.Stat(backupRoot); err == nil {
-		_ = os.Rename(backupRoot, destRoot)
-	}
 }

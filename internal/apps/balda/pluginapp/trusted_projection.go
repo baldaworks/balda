@@ -62,8 +62,8 @@ func (s *Service) availableLocked(ctx context.Context) ([]AvailablePlugin, error
 		if err != nil {
 			return nil, err
 		}
-		for _, candidate := range detail.Candidates {
-			plugin := AvailablePlugin{Name: candidate.Name, DisplayName: candidate.Name, Description: candidate.Description, Version: candidate.Version, Marketplace: source.Name, MarketplaceLabel: source.Name, Installed: installed[candidate.Name], Revision: candidate.Revision, Installable: candidate.CandidateToken != "", Stale: detail.LastAttemptStatus != discoverySucceeded, DeclaresBaldaExtension: candidate.DeclaresBaldaExtension,
+		for i, candidate := range detail.Candidates {
+			plugin := AvailablePlugin{Category: metadata.LastSuccessful.Candidates[i].Category, Name: candidate.Name, DisplayName: candidate.Name, Description: candidate.Description, Version: candidate.Version, Marketplace: source.Name, MarketplaceLabel: source.Name, Installed: installed[candidate.Name], Revision: candidate.Revision, Installable: candidate.CandidateToken != "", Stale: detail.LastAttemptStatus != discoverySucceeded, DeclaresBaldaExtension: candidate.DeclaresBaldaExtension,
 				capabilities: CapabilitySummary{Commands: candidate.Capabilities.Commands, Skills: candidate.Capabilities.Skills, MCPServers: candidate.Capabilities.MCPServers, Diagnostics: candidate.Capabilities.Diagnostics}, marketplaceAlias: metadata.LastSuccessful.IndexName}
 			codes := append([]string(nil), candidate.DiagnosticCodes...)
 			if plugin.Stale {

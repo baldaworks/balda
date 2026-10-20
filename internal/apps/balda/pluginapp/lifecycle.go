@@ -712,7 +712,7 @@ func (m *managedLifecycle) removeLocked(ctx context.Context, pluginID string, ac
 		if reconciled {
 			return nil
 		}
-		return errors.New("plugin not installed")
+		return plugincmd.ErrNotFound
 	}
 	source, err := m.loadRevision(ctx, install)
 	if err != nil {

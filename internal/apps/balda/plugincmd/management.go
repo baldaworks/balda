@@ -146,7 +146,8 @@ type RetainedRevision struct {
 
 // InstalledView describes durable selection separately from runtime health.
 type InstalledView struct {
-	Removed bool
+	Description string
+	Removed     bool
 	PluginStatus
 	ExpectedState          string
 	OriginAvailable        bool

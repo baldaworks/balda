@@ -105,13 +105,13 @@ func (s *Service) detailLocked(ctx context.Context, name string) (plugincmd.Plug
 				if revision.RevisionID != intent.FromRevisionID {
 					continue
 				}
-				sourceInstall = &state.PluginInstallRecord{PluginID: name, ActiveRevisionID: revision.RevisionID, Version: revision.Version, CapabilityJSON: revision.CapabilityJSON}
+				sourceInstall = &state.PluginInstallRecord{PluginID: name, ActiveRevisionID: revision.RevisionID, Version: revision.Version, Description: revision.Description, CapabilityJSON: revision.CapabilityJSON}
 			}
 		}
 		if sourceInstall == nil {
 			return plugincmd.PluginDetail{}, plugincmd.ErrNotFound
 		}
-		view = plugincmd.InstalledView{Removed: true, RecoveryPending: true, ExpectedState: token, PluginStatus: plugincmd.PluginStatus{Name: name, Version: sourceInstall.Version, Revision: sourceInstall.ActiveRevisionID}}
+		view = plugincmd.InstalledView{Description: sourceInstall.Description, Removed: true, RecoveryPending: true, ExpectedState: token, PluginStatus: plugincmd.PluginStatus{Name: name, Version: sourceInstall.Version, Revision: sourceInstall.ActiveRevisionID}}
 		if json.Unmarshal([]byte(sourceInstall.CapabilityJSON), &view.Capabilities) != nil {
 			return plugincmd.PluginDetail{}, plugincmd.ErrUnavailable
 		}
@@ -163,7 +163,7 @@ func (s *Service) installedViewLocked(ctx context.Context, observed state.Plugin
 	if json.Unmarshal([]byte(install.CapabilityJSON), &capabilities) != nil {
 		return plugincmd.InstalledView{}, plugincmd.ErrUnavailable
 	}
-	view := plugincmd.InstalledView{PluginStatus: plugincmd.PluginStatus{Name: install.PluginID, Version: install.Version, Marketplace: install.OriginMarketplace, Revision: install.ActiveRevisionID, Enabled: install.Enabled, Capabilities: capabilities}, ExpectedState: token, RecoveryPending: len(observed.Pending) > 0}
+	view := plugincmd.InstalledView{Description: install.Description, PluginStatus: plugincmd.PluginStatus{Name: install.PluginID, Version: install.Version, Marketplace: install.OriginMarketplace, Revision: install.ActiveRevisionID, Enabled: install.Enabled, Capabilities: capabilities}, ExpectedState: token, RecoveryPending: len(observed.Pending) > 0}
 	// Origin describes proof availability, never the private package path.
 	view.Origin = "Locked"
 	if install.OriginMarketplace == originUnknown {

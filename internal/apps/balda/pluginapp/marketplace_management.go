@@ -51,6 +51,7 @@ type discoverySuccess struct {
 }
 
 type discoveryCandidate struct {
+	Category     string `json:",omitempty"`
 	Installable  bool
 	Name         string
 	Version      string
@@ -64,14 +65,7 @@ type discoveryCandidate struct {
 	DiagnosticCodes        []string
 }
 
-func (s *Service) lockOwner() func() {
-	if s.managed != nil {
-		s.managed.mu.Lock()
-		return s.managed.mu.Unlock
-	}
-	s.ownerMu.Lock()
-	return s.ownerMu.Unlock
-}
+func (s *Service) lockOwner() func() { s.managed.mu.Lock(); return s.managed.mu.Unlock }
 
 func (s *Service) managementAuthority(ctx context.Context, a plugincmd.Authority) error {
 	if s.management == nil {
