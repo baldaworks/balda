@@ -101,18 +101,6 @@ func (m *managedLifecycle) upgrade(ctx context.Context, plugin AvailablePlugin) 
 	return m.installLocked(ctx, plugin, true, nil)
 }
 
-func (m *managedLifecycle) adoptOrigin(ctx context.Context, plugin AvailablePlugin) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	release, err := m.activator.LockCatalogMutation(ctx)
-	if err != nil {
-		return err
-	}
-	defer release()
-
-	return m.adoptOriginLocked(ctx, plugin, nil)
-}
-
 func (m *managedLifecycle) adoptOriginLocked(ctx context.Context, plugin AvailablePlugin, acceptance *pluginAcceptance) error {
 	if _, err := m.reconcilePending(ctx, plugin.Name); err != nil {
 		return fmt.Errorf("reconcile plugin before origin adoption: %w", err)

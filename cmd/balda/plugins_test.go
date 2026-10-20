@@ -56,6 +56,7 @@ balda:
 		".agents/plugins/marketplace.json":    `{"name":"manifest-market","plugins":[{"name":"demo","path":"plugins/demo"}]}`,
 		"plugins/demo/plugin.json":            `{"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json","name":"demo","version":"1.0.0","description":"Demo plugin"}`,
 		"plugins/demo/skills/review/SKILL.md": "---\nname: review\ndescription: Review changes.\n---\nReview instructions.\n",
+		"plugins/demo/skills/plan/SKILL.md":   "---\nname: plan\ndescription: Plan changes.\n---\nPlan instructions.\n",
 	}
 	for path, body := range files {
 		if err := writeFile(filepath.Join(root, path), body); err != nil {

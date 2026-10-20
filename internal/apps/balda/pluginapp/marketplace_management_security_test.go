@@ -39,7 +39,7 @@ func TestMarketplaceDiscoveryGitLogsArePrivate(t *testing.T) {
 
 func TestMarketplaceDiscoverySafeSource(t *testing.T) {
 	for _, source := range []string{"/private/local-source", "./private/relative-source"} {
-		if got := safeMarketplaceSource(source, marketplaceSourceKindLocal); got != "local" {
+		if got := safeMarketplaceSource(source, marketplaceSourceKindLocal); got != string(marketplaceSourceKindLocal) {
 			t.Errorf("local source projection=%q", got)
 		}
 	}

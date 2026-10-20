@@ -171,6 +171,11 @@ components:
       - internal/apps/balda/hookcmd
 
   # Standalone skill policy consumes guarded storage through its own port.
+  # Plugin lifecycle owns guarded acceptance and consumes catalog publication ports.
+  plugin_policy:
+    in:
+      - internal/apps/balda/pluginapp
+
   skill_policy:
     in:
       - internal/apps/balda/skillapp
@@ -349,7 +354,6 @@ components:
       - internal/apps/balda/ingressapp
       - internal/apps/balda/questions
       - internal/apps/balda/permissions
-      - internal/apps/balda/pluginapp
       - internal/apps/balda/session
       - internal/apps/balda/sessionmemorymcp
       - internal/apps/balda/sessionturn
@@ -743,6 +747,19 @@ deps:
     mayDependOn:
       - user_contracts
     anyVendorDeps: false
+
+  plugin_policy:
+    mayDependOn:
+      - contracts
+      - runtime_catalog
+      - storage
+    canUse:
+      - hook_policy_dependencies
+      - hook_wiring_dependencies
+    anyVendorDeps: false
+    # Concrete catalog/persistence implementations bind consuming ports at composition.
+    # Keep direct imports narrow without reversing constructor injection into policy.
+    deepScan: false
 
   skill_policy:
     mayDependOn:
@@ -1200,6 +1217,7 @@ deps:
 
   catalog_wiring:
     mayDependOn:
+      - plugin_policy
       - native_hook_bindings
       - native_hook_registry
       - concrete_native_hook_adapters
@@ -1274,6 +1292,7 @@ deps:
 
   command_wiring:
     mayDependOn:
+      - plugin_policy
       - chat_archive_contracts
       - contracts
       - user_contracts
@@ -1459,6 +1478,7 @@ deps:
 
   composition_root:
     mayDependOn:
+      - plugin_policy
       - chat_archive_wiring
       - chat_archive_backoffice_wiring
       - chat_archive_app
@@ -1532,6 +1552,7 @@ deps:
 
   entrypoints:
     mayDependOn:
+      - plugin_policy
       - native_hook_registry
       - concrete_native_hook_adapters
       - native_hook_runtime

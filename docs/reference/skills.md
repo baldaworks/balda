@@ -106,10 +106,17 @@ balda skill recover
 Recovery does not require `--yes`, fetch the managed origin or create another
 mutation audit.
 
-The maintenance CLI does not update a running process. After a successful
-mutation, restart Balda so it loads the published catalog. Existing restored
-sessions keep their pinned capability snapshot; use `/reset` in each session
-that should adopt the new catalog.
+Maintenance mutations require the normal runtime to be stopped. A later normal
+`balda start` loads the published catalog. Existing restored sessions keep their
+pinned capability snapshot; use `/reset` in each session that should adopt the
+current catalog.
+
+Plugin-owned skills are installed through the shared managed
+[`balda plugin` lifecycle](plugins.md#host-local-plugin-cli), not the standalone
+skill installer. After a published plugin install, a fresh `balda skill list/show`
+sees its enabled skills from managed state. Files under a plugin directory alone
+do not prove registration, and a process restart cannot replace explicit managed
+registration of a stranded package.
 
 ## JSON contract
 
