@@ -3,7 +3,7 @@ module github.com/baldaworks/balda
 go 1.26.9
 
 require (
-	github.com/baldaworks/runtime/v2 v2.7.0
+	github.com/baldaworks/runtime/v2 v2.7.1
 	github.com/blevesearch/bleve/v2 v2.4.0
 	github.com/coder/acp-go-sdk v0.13.5
 	github.com/dgraph-io/badger/v4 v4.9.6

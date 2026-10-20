@@ -22,6 +22,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/mcpbridge"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorymcp"
 	"github.com/baldaworks/runtime/v2/agentconfig"
 	"github.com/baldaworks/runtime/v2/agentfactory"
 	runtimeconfig "github.com/baldaworks/runtime/v2/appconfig"
@@ -59,10 +60,14 @@ func testACPInvocationWithServers(t *testing.T, catalog *Runtime, registry *mcpr
 		t.Fatal(err)
 	}
 	t.Setenv("BALDA_MCP_ACP_CHILD_FIXTURE", "1")
-	bundled := mcp.NewServer(&mcp.Implementation{Name: "bundled-fixture", Version: "1"}, nil)
-	bundledHTTP := httptest.NewServer(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return bundled }, nil))
-	defer func() { bundledHTTP.CloseClientConnections(); bundledHTTP.Close() }()
-	registry.Set("balda", agentconfig.MCPServerConfig{Type: agentconfig.MCPServerTypeHTTP, URL: bundledHTTP.URL})
+	bundledURL := option.bundledURL
+	if bundledURL == "" {
+		bundled := mcp.NewServer(&mcp.Implementation{Name: "bundled-fixture", Version: "1"}, nil)
+		bundledHTTP := httptest.NewServer(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return bundled }, nil))
+		defer func() { bundledHTTP.CloseClientConnections(); bundledHTTP.Close() }()
+		bundledURL = bundledHTTP.URL
+	}
+	registry.Set("balda", agentconfig.MCPServerConfig{Type: agentconfig.MCPServerTypeHTTP, URL: bundledURL, DedupKey: sessionmemorymcp.BundledDedupKey})
 	providers := map[string]agentconfig.Config{
 		poolAlphaID: {Type: agentconfig.AgentTypePool, PoolConfig: &agentconfig.PoolConfig{Members: []string{alphaID}}},
 		"pool-beta": {Type: agentconfig.AgentTypePool, PoolConfig: &agentconfig.PoolConfig{Members: []string{"beta"}}},
@@ -202,6 +207,9 @@ func (*mcpACPProvider) Initialize(context.Context, acp.InitializeRequest) (acp.I
 }
 
 func (p *mcpACPProvider) NewSession(ctx context.Context, request acp.NewSessionRequest) (acp.NewSessionResponse, error) {
+	if os.Getenv("BALDA_MCP_SKILL_FIXTURE") == "1" && len(request.McpServers) != 1 {
+		return acp.NewSessionResponse{}, fmt.Errorf("skill session received %d bundled endpoints, want one", len(request.McpServers))
+	}
 	var sessions []*mcp.ClientSession
 	complete := false
 	defer func() {
@@ -283,7 +291,7 @@ func (p *mcpACPProvider) Prompt(ctx context.Context, request acp.PromptRequest) 
 			return acp.PromptResponse{}, fmt.Errorf("external ACP MCP list failed")
 		}
 		for _, tool := range tools.Tools {
-			isSkill := skillFixture && tool.Name != "echo" && tool.Name != "echo_two"
+			isSkill := skillFixture && tool.Name == "balda.skill.load"
 			if tool.Name != "echo" && tool.Name != "echo_two" && !isSkill {
 				continue
 			}
