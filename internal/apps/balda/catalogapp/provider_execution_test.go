@@ -15,6 +15,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorymcp"
 	"github.com/baldaworks/runtime/v2/agentconfig"
 	"github.com/baldaworks/runtime/v2/agentfactory"
 	runtimeconfig "github.com/baldaworks/runtime/v2/appconfig"
@@ -28,6 +29,7 @@ import (
 type providerExecutionOptions struct {
 	sessionMCPBinder baldaagent.SessionMCPBinder
 	skillLoader      bool
+	bundledURL       string
 }
 
 func providerExecutionSessionRequest(snapshotID runtimecatalogcmd.SnapshotID, withLocator bool) baldaagent.SessionRuntimeRequest {
@@ -150,10 +152,14 @@ func testHostedPoolInvocationWithTools(t *testing.T, catalog *Runtime, registry 
 	}))
 	defer model.Close()
 	t.Setenv("OPENAI_BASE_URL", model.URL)
-	bundled := mcp.NewServer(&mcp.Implementation{Name: "bundled-fixture", Version: "1"}, nil)
-	bundledHTTP := httptest.NewServer(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return bundled }, nil))
-	defer func() { bundledHTTP.CloseClientConnections(); bundledHTTP.Close() }()
-	registry.Set("balda", agentconfig.MCPServerConfig{Type: agentconfig.MCPServerTypeHTTP, URL: bundledHTTP.URL})
+	bundledURL := option.bundledURL
+	if bundledURL == "" {
+		bundled := mcp.NewServer(&mcp.Implementation{Name: "bundled-fixture", Version: "1"}, nil)
+		bundledHTTP := httptest.NewServer(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return bundled }, nil))
+		defer func() { bundledHTTP.CloseClientConnections(); bundledHTTP.Close() }()
+		bundledURL = bundledHTTP.URL
+	}
+	registry.Set("balda", agentconfig.MCPServerConfig{Type: agentconfig.MCPServerTypeHTTP, URL: bundledURL, DedupKey: sessionmemorymcp.BundledDedupKey})
 	providers := map[string]agentconfig.Config{
 		"pool-alpha": {Type: agentconfig.AgentTypePool, PoolConfig: &agentconfig.PoolConfig{Members: []string{"alpha"}}},
 		"pool-beta":  {Type: agentconfig.AgentTypePool, PoolConfig: &agentconfig.PoolConfig{Members: []string{"beta"}}},

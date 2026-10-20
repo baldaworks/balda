@@ -60,12 +60,22 @@ func TestSkillLoaderExecutesThroughHostedACPAndPoolProviders(t *testing.T) {
 	option := providerExecutionOptions{
 		sessionMCPBinder: sessionapp.SessionMCPBinderAdapter{Broker: broker},
 		skillLoader:      true,
+		bundledURL:       httpServer.URL,
 	}
+
+	// The provider must read the retained revision, not the now-changed source.
+	writeFile(t, filepath.Join(skillRoot, "provider-skill", "SKILL.md"), "---\nname: provider-skill\ndescription: Changed source.\n---\nchanged after pin\n")
 
 	t.Run("hosted and pool", func(t *testing.T) {
 		testHostedPoolInvocationWithTools(t, catalog, registry, snapshot.ID, nil, nil, []string{"balda.skill.load"}, nil, false, option)
 	})
 	t.Run("ACP and pool", func(t *testing.T) {
-		testACPInvocationWithServers(t, catalog, registry, snapshot.ID, nil, nil, nil, false, false, option)
+		for _, name := range []string{"fresh", "replacement"} {
+			t.Run(name, func(t *testing.T) {
+				// Each helper call stops its managers. The next call creates new
+				// runtimes, ADK sessions and broker bindings at the same locator.
+				testACPInvocationWithServers(t, catalog, registry, snapshot.ID, nil, nil, nil, false, false, option)
+			})
+		}
 	})
 }
