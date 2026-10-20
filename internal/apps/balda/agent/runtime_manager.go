@@ -69,7 +69,7 @@ type SessionMCPBinder interface {
 }
 
 type sessionMCPBinderStatus interface {
-	SessionMCPEnabled() bool
+	SessionMCPEnabled(capabilities SessionCapabilityBinding) bool
 }
 
 // RuntimeManager owns the app-scoped runtime and optional per-session runtimes.
@@ -356,6 +356,7 @@ func (m *RuntimeManager) RuntimeForSession(ctx context.Context, request SessionR
 		closeSessionCapabilities(capabilities)
 		return nil, fmt.Errorf("session capability snapshot %q does not match requested snapshot %q", snapshotID, requestedSnapshotID)
 	}
+	request.RuntimeSnapshotID = snapshotID
 	return m.runtimeForSession(ctx, request, capabilities, builder, providerID, providerBindingJSON)
 }
 
@@ -375,7 +376,7 @@ func (m *RuntimeManager) runtimeForSession(ctx context.Context, request SessionR
 	}
 	m.mu.RUnlock()
 	bindingEnabled := binder != nil && registry != nil
-	if status, ok := binder.(sessionMCPBinderStatus); ok && !status.SessionMCPEnabled() {
+	if status, ok := binder.(sessionMCPBinderStatus); ok && !status.SessionMCPEnabled(capabilities) {
 		bindingEnabled = false
 	}
 	hasCapabilities := strings.TrimSpace(string(capabilities.SnapshotID)) != ""

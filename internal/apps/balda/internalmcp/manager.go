@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/actorcmd"
+	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
 	"github.com/baldaworks/balda/internal/apps/balda/controlcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/controlmcp"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
@@ -20,6 +21,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
 	"github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorymcp"
+	"github.com/baldaworks/balda/internal/apps/balda/skillmcp"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/sessionmcp"
 	"github.com/baldaworks/balda/internal/apps/workspacemcp"
@@ -50,6 +52,7 @@ type InternalMCPManager struct {
 	questionService  *questions.Service
 	sessionMemoryCfg portmcp.Config
 	contextBroker    *sessionmemorymcp.ContextBroker
+	skills           *baldaagent.SkillManager
 	cleanups         []func() error
 }
 
@@ -75,6 +78,7 @@ type internalMCPParams struct {
 	QuestionService  *questions.Service `optional:"true"`
 	SessionMemory    portmcp.Config
 	ContextBroker    *sessionmemorymcp.ContextBroker
+	Skills           *baldaagent.SkillManager `optional:"true"`
 }
 
 // NewInternalMCPManager creates an internal MCP lifecycle manager.
@@ -92,6 +96,7 @@ func NewInternalMCPManager(params internalMCPParams) *InternalMCPManager {
 		questionService:  params.QuestionService,
 		sessionMemoryCfg: params.SessionMemory,
 		contextBroker:    params.ContextBroker,
+		skills:           params.Skills,
 	}
 
 	return manager
@@ -177,6 +182,7 @@ func (m *InternalMCPManager) ensureBundledServers(ctx context.Context) error {
 	memory.RegisterTools(server, m.memoryStore)
 	portmcp.RegisterTools(server, m.sessionMemoryCfg)
 	controlmcp.RegisterTools(server, m.shutdowner, m.dispatcher)
+	skillmcp.RegisterTools(server, m.skills, sessionmemorymcp.HeaderSessionResolver{Broker: m.contextBroker})
 
 	if m.workspaceEnabled {
 		workspaceSvc := session.NewWorkspaceService(m.sessionManager)

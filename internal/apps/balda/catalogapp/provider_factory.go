@@ -231,6 +231,10 @@ func (f *ProviderFactory) BuildScoped(ctx context.Context, request agentfactory.
 		providers[id] = config
 	}
 	if root, ok := providers[request.AgentID]; ok && agentconfig.IsPoolType(root.Type) {
+		root.MCPServers = append(slices.Clone(root.MCPServers), request.MCPServerIDs...)
+		slices.Sort(root.MCPServers)
+		root.MCPServers = slices.Compact(root.MCPServers)
+		providers[request.AgentID] = root
 		defaults, err := providerMCPDefaults(providers, request.AgentID, nil)
 		if err != nil {
 			return nil, err

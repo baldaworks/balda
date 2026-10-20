@@ -12,13 +12,18 @@ import (
 	"sync"
 	"testing"
 
+	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
 	"github.com/baldaworks/balda/internal/apps/balda/controlcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorymcp"
 	"github.com/baldaworks/balda/internal/apps/sessionmcp"
+	"github.com/baldaworks/balda/sessionmemory"
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/baldaworks/runtime/v2/mcpregistry"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )
@@ -390,6 +395,86 @@ func TestEnsureBundledServers_RegistersSharedListenerURLs(t *testing.T) {
 	}
 	if strings.TrimSpace(u.Host) == "" {
 		t.Fatal("shared host is empty")
+	}
+}
+
+type retainedSkillFixture struct {
+	snapshot runtimecatalogcmd.Snapshot
+}
+
+func (f retainedSkillFixture) RetainedSkillSnapshot(_ context.Context, id runtimecatalogcmd.SnapshotID) (runtimecatalogcmd.Snapshot, error) {
+	if id != f.snapshot.ID {
+		return runtimecatalogcmd.Snapshot{}, runtimecatalogcmd.ErrSnapshotUnavailable
+	}
+	return f.snapshot, nil
+}
+
+func (f retainedSkillFixture) ReadSkill(_ context.Context, request runtimecatalogcmd.SkillReadRequest) (runtimecatalogcmd.LoadedSkill, error) {
+	return runtimecatalogcmd.LoadedSkill{Ref: request.Ref, Instructions: "loaded through bundled MCP"}, nil
+}
+
+func TestEnsureBundledServers_LoadsSkillFromAuthenticatedRuntimeSnapshot(t *testing.T) {
+	source := runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindPlugin, Name: "prism"}
+	id := runtimecatalogcmd.ContributionID{Source: source, Kind: runtimecatalogcmd.ContributionKindSkill, Name: "story"}
+	fixture := retainedSkillFixture{snapshot: runtimecatalogcmd.Snapshot{
+		ID: "snapshot-prism",
+		Skills: map[runtimecatalogcmd.ContributionID]runtimecatalogcmd.SkillMetadata{
+			id: {ID: id, Name: "story", Revision: "revision-prism", Resource: "skills/story/SKILL.md"},
+		},
+	}}
+	skills, err := baldaagent.NewSkillManager(fixture, fixture, baldaagent.SkillMetadataBudget{})
+	if err != nil {
+		t.Fatalf("NewSkillManager() error = %v", err)
+	}
+	broker := sessionmemorymcp.NewContextBroker()
+	manager := &InternalMCPManager{
+		logger:         zerolog.Nop(),
+		registry:       mcpregistry.New(nil),
+		sessionManager: &session.Manager{},
+		stateStore:     newTestSessionStore(),
+		shutdowner:     noopShutdowner{},
+		contextBroker:  broker,
+		skills:         skills,
+	}
+	if err := manager.ensureBundledServers(t.Context()); err != nil {
+		t.Fatalf("ensureBundledServers() error = %v", err)
+	}
+	t.Cleanup(func() {
+		for i := len(manager.cleanups) - 1; i >= 0; i-- {
+			_ = manager.cleanups[i]()
+		}
+	})
+	locator, err := deliverycmd.NewLocator("telegram", "101:77", `{"chat_id":101,"topic_id":77}`, "tg-101-77")
+	if err != nil {
+		t.Fatalf("NewLocator() error = %v", err)
+	}
+	binding, err := broker.Bind(sessionmemorymcp.CurrentSession{
+		Locator:           locator,
+		Session:           sessionmemory.SessionRef{SessionID: locator.SessionID, AgentSessionID: "agent-101-77"},
+		RuntimeSnapshotID: "snapshot-prism",
+	})
+	if err != nil {
+		t.Fatalf("Bind() error = %v", err)
+	}
+	t.Cleanup(func() { _ = binding.Release() })
+	client := mcp.NewClient(&mcp.Implementation{Name: "bundled-skill-test", Version: "1"}, nil)
+	connected, err := client.Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: binding.URL}, nil)
+	if err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
+	t.Cleanup(func() { _ = connected.Close() })
+	result, err := connected.CallTool(t.Context(), &mcp.CallToolParams{Name: "balda.skill.load", Arguments: map[string]any{
+		"source_kind": "plugin", "source_name": "prism", "skill_name": "story",
+	}})
+	if err != nil {
+		t.Fatalf("CallTool() error = %v", err)
+	}
+	encoded, err := json.Marshal(result.StructuredContent)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	if result.IsError || !strings.Contains(string(encoded), "loaded through bundled MCP") || !strings.Contains(string(encoded), "revision-prism") {
+		t.Fatalf("CallTool() result = %s, IsError = %v", encoded, result.IsError)
 	}
 }
 

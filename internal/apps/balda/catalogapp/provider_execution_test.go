@@ -12,6 +12,7 @@ import (
 	"time"
 
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/baldaworks/runtime/v2/agentconfig"
@@ -24,6 +25,25 @@ import (
 	"google.golang.org/genai"
 )
 
+type providerExecutionOptions struct {
+	sessionMCPBinder baldaagent.SessionMCPBinder
+	skillLoader      bool
+}
+
+func providerExecutionSessionRequest(snapshotID runtimecatalogcmd.SnapshotID, withLocator bool) baldaagent.SessionRuntimeRequest {
+	request := baldaagent.SessionRuntimeRequest{RuntimeSnapshotID: string(snapshotID)}
+	if withLocator {
+		request.Locator = deliverycmd.Locator{
+			ChannelType: "telegram",
+			AddressKey:  "1:0",
+			AddressJSON: `{"chat_id":1,"topic_id":0}`,
+			SessionID:   "provider-session",
+		}
+		request.AgentSessionID = "provider-agent-session"
+	}
+	return request
+}
+
 func testHostedPoolInvocation(t *testing.T, catalog *Runtime, registry *mcpregistry.MapRegistry, snapshotID runtimecatalogcmd.SnapshotID, source mcpcmd.Source, worker *workerGrantFixture) {
 	t.Helper()
 	var configuredIDs []string
@@ -33,8 +53,12 @@ func testHostedPoolInvocation(t *testing.T, catalog *Runtime, registry *mcpregis
 	testHostedPoolInvocationWithTools(t, catalog, registry, snapshotID, configuredIDs, worker, []string{"echo"}, nil, false)
 }
 
-func testHostedPoolInvocationWithTools(t *testing.T, catalog *Runtime, registry *mcpregistry.MapRegistry, snapshotID runtimecatalogcmd.SnapshotID, configuredIDs []string, worker *workerGrantFixture, names []string, observe providerLifecycleObserver, poolOnly bool) {
+func testHostedPoolInvocationWithTools(t *testing.T, catalog *Runtime, registry *mcpregistry.MapRegistry, snapshotID runtimecatalogcmd.SnapshotID, configuredIDs []string, worker *workerGrantFixture, names []string, observe providerLifecycleObserver, poolOnly bool, options ...providerExecutionOptions) {
 	t.Helper()
+	var option providerExecutionOptions
+	if len(options) > 0 {
+		option = options[0]
+	}
 	var excludedLeaf atomic.Bool
 	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var request struct {
@@ -55,7 +79,7 @@ func testHostedPoolInvocationWithTools(t *testing.T, catalog *Runtime, registry 
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		if request.Model == "beta" {
+		if request.Model == "beta" && !option.skillLoader {
 			if len(request.Tools) != 0 {
 				t.Error("pool beta member received alpha-only MCP tools")
 				w.WriteHeader(http.StatusBadRequest)
@@ -64,7 +88,7 @@ func testHostedPoolInvocationWithTools(t *testing.T, catalog *Runtime, registry 
 			_, _ = io.WriteString(w, `{"choices":[{"message":{"role":"assistant","content":"beta has no worker tool"}}]}`)
 			return
 		}
-		if excludedLeaf.Load() {
+		if excludedLeaf.Load() && !option.skillLoader {
 			if len(request.Tools) != 0 {
 				t.Error("direct alpha member received pool-only MCP tools")
 				w.WriteHeader(http.StatusBadRequest)
@@ -78,21 +102,27 @@ func testHostedPoolInvocationWithTools(t *testing.T, catalog *Runtime, registry 
 			_, _ = io.WriteString(w, `{"choices":[{"message":{"role":"assistant","content":"worker tool missing"}}]}`)
 			return
 		}
-		for _, name := range names {
-			found := false
-			for _, tool := range request.Tools {
-				found = found || tool.Function.Name == name
-			}
-			if !found {
-				t.Errorf("hosted provider is missing selected tool %s", name)
-				w.WriteHeader(http.StatusBadRequest)
-				return
+		if !option.skillLoader {
+			for _, name := range names {
+				found := false
+				for _, tool := range request.Tools {
+					found = found || tool.Function.Name == name
+				}
+				if !found {
+					t.Errorf("hosted provider is missing selected tool %s", name)
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
 			}
 		}
 		if len(request.Messages) > 0 {
 			message := request.Messages[len(request.Messages)-1]
 			if message.Role == "tool" {
-				if !strings.Contains(string(message.Content), "actual hosted tool") {
+				wantResult := "actual hosted tool"
+				if option.skillLoader {
+					wantResult = "loaded by provider"
+				}
+				if !strings.Contains(string(message.Content), wantResult) {
 					t.Errorf("hosted provider did not receive the real MCP tool result: %s", message.Content)
 					w.WriteHeader(http.StatusBadRequest)
 					return
@@ -101,9 +131,20 @@ func testHostedPoolInvocationWithTools(t *testing.T, catalog *Runtime, registry 
 				return
 			}
 		}
-		calls := make([]any, 0, len(names))
-		for _, name := range names {
-			calls = append(calls, map[string]any{"id": "call-" + name, "type": "function", "function": map[string]string{"name": name, "arguments": `{"text":"actual hosted tool"}`}})
+		callNames := append([]string(nil), names...)
+		if option.skillLoader {
+			callNames = callNames[:0]
+			for _, tool := range request.Tools {
+				callNames = append(callNames, tool.Function.Name)
+			}
+		}
+		calls := make([]any, 0, len(callNames))
+		for _, name := range callNames {
+			arguments := `{"text":"actual hosted tool"}`
+			if option.skillLoader {
+				arguments = `{"source_kind":"user-skill","source_name":"agents-global","skill_name":"provider-skill"}`
+			}
+			calls = append(calls, map[string]any{"id": "call-" + name, "type": "function", "function": map[string]string{"name": name, "arguments": arguments}})
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "tool_calls": calls}}}})
 	}))
@@ -130,6 +171,9 @@ func testHostedPoolInvocationWithTools(t *testing.T, catalog *Runtime, registry 
 	}
 	binder := &sessionCapabilityBinder{catalog: catalog, skills: skills, providers: providers}
 	providerIDs := []string{"alpha", "pool-alpha", "pool-beta", "root-alpha"}
+	if option.skillLoader {
+		providerIDs = []string{"alpha", "pool-alpha"}
+	}
 	if poolOnly {
 		providers["pool-shared-alpha"] = agentconfig.Config{Type: agentconfig.AgentTypePool, PoolConfig: &agentconfig.PoolConfig{Members: []string{"alpha"}}}
 		providerIDs = append(providerIDs, "pool-shared-alpha", "alpha")
@@ -150,14 +194,14 @@ func testHostedPoolInvocationWithTools(t *testing.T, catalog *Runtime, registry 
 		manager := baldaagent.NewRuntimeManager(baldaagent.RuntimeManagerParams{
 			Builder:         builder,
 			BaldaProviderID: providerID, WorkingDir: workspace, StateDir: t.TempDir(),
-			CapabilityBinder: binder, MCPRegistry: registry, Logger: zerolog.Nop(),
+			SessionMCPBinder: option.sessionMCPBinder, CapabilityBinder: binder, MCPRegistry: registry, Logger: zerolog.Nop(),
 		})
 		ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 		var runtime *baldaagent.BuiltRuntime
 		if root {
 			runtime, err = manager.Runtime(ctx)
 		} else {
-			runtime, err = manager.RuntimeForSession(ctx, baldaagent.SessionRuntimeRequest{RuntimeSnapshotID: string(snapshotID)})
+			runtime, err = manager.RuntimeForSession(ctx, providerExecutionSessionRequest(snapshotID, option.skillLoader))
 		}
 		if err != nil {
 			cancel()

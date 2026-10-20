@@ -6,9 +6,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/sessionmemory"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func TestHeaderSessionResolverRequiresActiveBrokerBinding(t *testing.T) {
@@ -23,8 +23,9 @@ func TestHeaderSessionResolverRequiresActiveBrokerBinding(t *testing.T) {
 		t.Fatalf("NewLocator() error = %v", err)
 	}
 	current := CurrentSession{
-		Locator: locator,
-		Session: sessionmemory.SessionRef{SessionID: locator.SessionID, AgentSessionID: "agent-101-77"},
+		Locator:           locator,
+		Session:           sessionmemory.SessionRef{SessionID: locator.SessionID, AgentSessionID: "agent-101-77"},
+		RuntimeSnapshotID: "snapshot-101-77",
 	}
 	binding, err := broker.Bind(current)
 	if err != nil {
@@ -41,7 +42,7 @@ func TestHeaderSessionResolverRequiresActiveBrokerBinding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve(bound) error = %v", err)
 	}
-	if got.Locator.AddressKey != locator.AddressKey || got.Session.AgentSessionID != current.Session.AgentSessionID {
+	if got.Locator.AddressKey != locator.AddressKey || got.Session.AgentSessionID != current.Session.AgentSessionID || got.RuntimeSnapshotID != current.RuntimeSnapshotID {
 		t.Fatalf("Resolve(bound) = %+v, want %+v", got, current)
 	}
 
@@ -55,6 +56,7 @@ func TestHeaderSessionResolverRequiresActiveBrokerBinding(t *testing.T) {
 		{name: "agent session", header: HeaderAgentSessionID, value: "attacker-agent"},
 		{name: "lineage", header: HeaderLineageID, value: "attacker-lineage"},
 		{name: "binding", header: HeaderSessionBinding, value: "attacker-binding"},
+		{name: "runtime snapshot", header: HeaderRuntimeSnapshotID, value: "attacker-snapshot"},
 	} {
 		t.Run("rejects tampered "+test.name, func(t *testing.T) {
 			tampered := injected.Clone()
@@ -64,6 +66,9 @@ func TestHeaderSessionResolverRequiresActiveBrokerBinding(t *testing.T) {
 				t.Fatalf("Resolve(tampered %s) error = nil, want authentication failure", test.name)
 			}
 		})
+	}
+	if gotSnapshot, err := resolver.ResolveRuntimeSnapshot(context.Background(), request); err != nil || gotSnapshot != "snapshot-101-77" {
+		t.Fatalf("ResolveRuntimeSnapshot() = %q, %v", gotSnapshot, err)
 	}
 	if _, err := (HeaderSessionResolver{}).Resolve(context.Background(), request); err == nil {
 		t.Fatal("Resolve(without broker) error = nil, want authentication failure")

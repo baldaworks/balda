@@ -38,9 +38,10 @@ func TestContextBrokerBindsConcurrentSessionsAndOverwritesCallerHeaders(t *testi
 
 	handler := broker.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		payload := map[string]string{
-			"locator": r.Header.Get(HeaderSessionLocator),
-			"session": r.Header.Get(HeaderSessionID),
-			"agent":   r.Header.Get(HeaderAgentSessionID),
+			"locator":  r.Header.Get(HeaderSessionLocator),
+			"session":  r.Header.Get(HeaderSessionID),
+			"agent":    r.Header.Get(HeaderAgentSessionID),
+			"snapshot": r.Header.Get(HeaderRuntimeSnapshotID),
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(payload)
@@ -75,7 +76,7 @@ func TestContextBrokerBindsConcurrentSessionsAndOverwritesCallerHeaders(t *testi
 				t.Errorf("decode injected locator: %v", err)
 				return
 			}
-			if wantLocator.AddressKey != test.want.Locator.AddressKey || got["session"] != test.want.Session.SessionID || got["agent"] != test.want.Session.AgentSessionID {
+			if wantLocator.AddressKey != test.want.Locator.AddressKey || got["session"] != test.want.Session.SessionID || got["agent"] != test.want.Session.AgentSessionID || got["snapshot"] != test.want.RuntimeSnapshotID {
 				t.Errorf("injected context = %#v/%#v, want locator %q session %q agent %q", wantLocator, got, test.want.Locator.AddressKey, test.want.Session.SessionID, test.want.Session.AgentSessionID)
 			}
 		}()
@@ -101,7 +102,8 @@ func brokerTestSession(t *testing.T, addressKey, sessionID, agentSessionID strin
 		t.Fatalf("NewLocator() error = %v", err)
 	}
 	return CurrentSession{
-		Locator: locator,
-		Session: sessionmemory.SessionRef{SessionID: sessionID, AgentSessionID: agentSessionID},
+		Locator:           locator,
+		Session:           sessionmemory.SessionRef{SessionID: sessionID, AgentSessionID: agentSessionID},
+		RuntimeSnapshotID: "snapshot-" + sessionID,
 	}
 }
