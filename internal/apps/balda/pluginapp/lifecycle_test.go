@@ -310,6 +310,9 @@ func TestManagedLifecycleReportsDriftAndSeparatesRemoveFromPurge(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if _, err := service.UpgradeMarketplaces(ctx, testMarketplaceName); err != nil {
+		t.Fatal(err)
+	}
 	diff, err := service.Capabilities(ctx, testPluginName+"@"+testMarketplaceName)
 	if err != nil {
 		t.Fatalf("Capabilities() error = %v", err)

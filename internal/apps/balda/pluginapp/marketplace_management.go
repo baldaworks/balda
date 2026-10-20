@@ -88,6 +88,13 @@ func (s *Service) ManagementMarketplaces(ctx context.Context, a plugincmd.Author
 	}
 	unlock := s.lockOwner()
 	defer unlock()
+	if err := s.managementAuthority(ctx, a); err != nil {
+		return nil, err
+	}
+	return s.marketplacesLocked(ctx)
+}
+
+func (s *Service) marketplacesLocked(ctx context.Context) ([]plugincmd.MarketplaceView, error) {
 	sources, err := s.ListMarketplaces(ctx)
 	if err != nil {
 		return nil, plugincmd.ErrUnavailable
@@ -110,6 +117,9 @@ func (s *Service) ManagementMarketplace(ctx context.Context, name string, a plug
 	}
 	unlock := s.lockOwner()
 	defer unlock()
+	if err := s.managementAuthority(ctx, a); err != nil {
+		return plugincmd.MarketplaceDetail{}, err
+	}
 	return s.marketplaceDetailLocked(ctx, name)
 }
 

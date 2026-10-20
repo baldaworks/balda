@@ -21,6 +21,24 @@ func (s *Service) ManagementInventory(ctx context.Context, a plugincmd.Authority
 	if err := s.managementAuthority(ctx, a); err != nil {
 		return nil, err
 	}
+	return s.inventoryLocked(ctx)
+}
+
+// InstalledInventory reads managed selections without browser authority or comparison tokens.
+func (s *Service) InstalledInventory(ctx context.Context) ([]plugincmd.InstalledView, error) {
+	if s.managed == nil {
+		return nil, plugincmd.ErrUnavailable
+	}
+	unlock := s.lockOwner()
+	defer unlock()
+	views, err := s.inventoryLocked(ctx)
+	for i := range views {
+		views[i].ExpectedState = ""
+	}
+	return views, err
+}
+
+func (s *Service) inventoryLocked(ctx context.Context) ([]plugincmd.InstalledView, error) {
 	installs, err := s.managed.store.ListPluginInstalls(ctx)
 	if err != nil {
 		return nil, plugincmd.ErrUnavailable
@@ -54,6 +72,22 @@ func (s *Service) ManagementDetail(ctx context.Context, name string, a plugincmd
 	if err := s.managementAuthority(ctx, a); err != nil {
 		return plugincmd.PluginDetail{}, err
 	}
+	return s.detailLocked(ctx, name)
+}
+
+// InstalledDetail reads retained managed content, including an accepted pending removal.
+func (s *Service) InstalledDetail(ctx context.Context, name string) (plugincmd.PluginDetail, error) {
+	if s.managed == nil {
+		return plugincmd.PluginDetail{}, plugincmd.ErrUnavailable
+	}
+	unlock := s.lockOwner()
+	defer unlock()
+	detail, err := s.detailLocked(ctx, name)
+	detail.ExpectedState = ""
+	return detail, err
+}
+
+func (s *Service) detailLocked(ctx context.Context, name string) (plugincmd.PluginDetail, error) {
 	observed, token, err := s.pluginObservationLocked(ctx, name)
 	if err != nil {
 		return plugincmd.PluginDetail{}, boundedPluginError(err)

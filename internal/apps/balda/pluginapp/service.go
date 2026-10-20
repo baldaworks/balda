@@ -27,17 +27,23 @@ type PluginSummary struct {
 }
 
 type AvailablePlugin struct {
-	Name             string
-	DisplayName      string
-	Description      string
-	Version          string
-	Marketplace      string
-	MarketplaceLabel string
-	Category         string
-	SourceRoot       string
-	PluginPath       string
-	Installed        bool
-	Diagnostics      []runtimecatalogcmd.Diagnostic
+	Revision               string
+	Installable            bool
+	Stale                  bool
+	DeclaresBaldaExtension bool
+	capabilities           CapabilitySummary
+	marketplaceAlias       string
+	Name                   string
+	DisplayName            string
+	Description            string
+	Version                string
+	Marketplace            string
+	MarketplaceLabel       string
+	Category               string
+	SourceRoot             string
+	PluginPath             string
+	Installed              bool
+	Diagnostics            []runtimecatalogcmd.Diagnostic
 }
 
 type Service struct {
@@ -69,18 +75,21 @@ type MarketplaceSource struct {
 }
 
 type MarketplaceStatus struct {
-	Name             string
-	Source           string
-	Kind             string
-	Ref              string
-	Sparse           []string
-	CachePath        string
-	Cached           bool
-	LastRefreshedAt  string
-	ResolvedRef      string
-	ManifestPath     string
-	ManifestPresent  bool
-	AvailablePlugins int
+	LastAttemptAt     string
+	LastAttemptStatus string
+	FailureCode       string
+	Name              string
+	Source            string
+	Kind              string
+	Ref               string
+	Sparse            []string
+	CachePath         string
+	Cached            bool
+	LastRefreshedAt   string
+	ResolvedRef       string
+	ManifestPath      string
+	ManifestPresent   bool
+	AvailablePlugins  int
 }
 
 type MarketplaceUpgradeResult struct {
@@ -302,6 +311,7 @@ func (s *Service) ListMarketplaceStatuses(ctx context.Context) ([]MarketplaceSta
 	if s.management != nil {
 		unlock := s.lockOwner()
 		defer unlock()
+		return s.marketplaceStatusesLocked(ctx)
 	}
 	sources, err := s.ListMarketplaces(ctx)
 	if err != nil {
@@ -322,6 +332,14 @@ func (s *Service) GetMarketplaceStatus(ctx context.Context, name string) (Market
 	if s.management != nil {
 		unlock := s.lockOwner()
 		defer unlock()
+		detail, err := s.marketplaceDetailLocked(ctx, strings.TrimSpace(name))
+		if errors.Is(err, plugincmd.ErrNotFound) {
+			return MarketplaceStatus{}, false, nil
+		}
+		if err != nil {
+			return MarketplaceStatus{}, false, err
+		}
+		return marketplaceStatusView(detail), true, nil
 	}
 	trimmed := strings.TrimSpace(name)
 	if trimmed == "" {
@@ -489,6 +507,7 @@ func (s *Service) ListAvailable(ctx context.Context) ([]AvailablePlugin, error) 
 	if s.management != nil {
 		unlock := s.lockOwner()
 		defer unlock()
+		return s.availableLocked(ctx)
 	}
 	return s.listAvailableLocked(ctx)
 }
@@ -546,10 +565,10 @@ func (s *Service) GetAvailable(ctx context.Context, selector string) (AvailableP
 		if plugin.Name != name {
 			continue
 		}
-		if marketplace != "" && plugin.Marketplace != marketplace {
+		if marketplace != "" && plugin.Marketplace != marketplace && plugin.marketplaceAlias != marketplace {
 			continue
 		}
-		if found && marketplace == "" {
+		if found {
 			return AvailablePlugin{}, false, fmt.Errorf("multiple marketplace matches for plugin %q", name)
 		}
 		match = plugin
@@ -743,7 +762,18 @@ func (s *Service) Capabilities(ctx context.Context, selector string) (Capability
 	if !found {
 		return CapabilityDiff{}, errors.New("plugin not found")
 	}
-	return s.managed.capabilityDiff(ctx, plugin)
+	install, installed, err := s.managed.store.GetPluginInstall(ctx, plugin.Name)
+	if err != nil {
+		return CapabilityDiff{}, err
+	}
+	if !installed {
+		return CapabilityDiff{}, plugincmd.ErrNotFound
+	}
+	var active CapabilitySummary
+	if err := json.Unmarshal([]byte(install.CapabilityJSON), &active); err != nil {
+		return CapabilityDiff{}, plugincmd.ErrUnavailable
+	}
+	return CapabilityDiff{Active: active, Candidate: plugin.capabilities}, nil
 }
 
 // Inspect returns bounded durable state for one managed installation.

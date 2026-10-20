@@ -907,25 +907,3 @@ func (m *managedLifecycle) purge(ctx context.Context, pluginID, revisionID strin
 	}
 	return nil
 }
-
-func (m *managedLifecycle) capabilityDiff(
-	ctx context.Context,
-	plugin AvailablePlugin,
-) (CapabilityDiff, error) {
-	install, found, err := m.store.GetPluginInstall(ctx, plugin.Name)
-	if err != nil {
-		return CapabilityDiff{}, err
-	}
-	if !found {
-		return CapabilityDiff{}, errors.New("plugin not installed")
-	}
-	var active CapabilitySummary
-	if err := json.Unmarshal([]byte(install.CapabilityJSON), &active); err != nil {
-		return CapabilityDiff{}, fmt.Errorf("decode active plugin capabilities: %w", err)
-	}
-	candidate, err := m.loader.LoadPlugin(plugin.PluginPath)
-	if err != nil {
-		return CapabilityDiff{}, err
-	}
-	return CapabilityDiff{Active: active, Candidate: capabilitySummary(candidate)}, nil
-}
