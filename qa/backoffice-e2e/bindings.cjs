@@ -1,3 +1,4 @@
+const { submit } = require('./actions.cjs');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const { chromium } = require('playwright');
@@ -43,8 +44,8 @@ async function consume(channel, payload, sender) {
           assert.equal(await page.locator('.viewer strong').textContent(), 'administrator');
           const panel = () => page.locator(`[data-binding-channel="${channel}"]`);
           async function issue(replace = false) {
-            if (replace) { await panel().getByText('Replace invitation', { exact: true }).click(); await panel().locator('input[name=replace]').check(); }
-            const [response] = await Promise.all([page.waitForResponse(response => response.url() === `${detailURL}/invitations/${channel}` && response.request().method() === 'POST'), panel().getByRole('button', { name: replace ? 'Generate replacement' : 'Generate invitation', exact: true }).click()]);
+            if (replace) { await panel().getByText('Replace invitation', { exact: true }).click();  }
+            const [response] = await Promise.all([page.waitForResponse(response => response.url() === `${detailURL}/invitations/${channel}` && response.request().method() === 'POST'), submit(page, panel().getByRole('button', { name: replace ? 'Generate replacement' : 'Generate invitation', exact: true }))]);
             assert.equal(response.status(), 200);
             assert.equal(response.headers()['cache-control'], 'no-store');
             const field = page.locator(`#binding-message-${channel}`);
@@ -79,8 +80,8 @@ async function consume(channel, payload, sender) {
           assert.equal(await consume(channel, old, sender), false, 'replaced credential rejected');
           if (channel === 'telegram') {
             await panel().locator('summary').filter({ hasText: 'Cancel invitation' }).click();
-            await panel().locator('input[name=confirm_cancel]').check();
-            await panel().getByRole('button', { name: 'Cancel invitation', exact: true }).click();
+
+            await submit(page, panel().getByRole('button', { name: 'Cancel invitation', exact: true }));
             await page.waitForFunction(() => !document.querySelector('[data-binding-channel="telegram"] input[name=replace]'));
             assert.equal(await consume(channel, payload, sender), false, 'cancelled credential rejected');
             payload = await issue();

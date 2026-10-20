@@ -1,3 +1,4 @@
+const { submit, cancelConfirmation } = require('./actions.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -17,6 +18,25 @@ async function screenshot(page, name, viewport) {
 async function assertNoDocumentOverflow(page, name) {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   assert.ok(overflow <= 1, `${name} overflows the document horizontally by ${overflow}px`);
+}
+
+async function saveDestination(page) {
+  const form = page.locator('form').filter({ has: page.getByRole('button', { name: 'Save destination', exact: true }) });
+  const version = await form.locator('input[name=expected_version]').inputValue();
+  const response = page.waitForResponse(r => r.request().method() === 'POST' && new URL(r.url()).pathname === new URL(page.url()).pathname);
+  await page.getByRole('button', { name: 'Save destination', exact: true }).click();
+  assert.equal((await response).status(), 204, 'alias save accepted');
+  await page.waitForFunction(old => { const field = document.querySelector('form input[name=expected_version]'); return field && field.value !== old; }, version);
+}
+
+async function runSchedule(page) {
+  const selector = '[aria-label^="Schedule run history"] tbody tr a';
+  const before = await page.evaluate(selector => document.querySelector(selector)?.getAttribute('href') || null, selector);
+  await submit(page, page.getByRole('button', { name: 'Run now', exact: true }));
+  await page.waitForFunction(({ selector, before }) => {
+    const href = document.querySelector(selector)?.getAttribute('href');
+    return href && href !== before;
+  }, { selector, before });
 }
 
 async function textLineCount(locator) {
@@ -67,8 +87,8 @@ async function textLineCount(locator) {
       await page.getByRole('heading', { name: 'Edit schedule' }).waitFor();
       assert.equal(await page.getByLabel('Report to (optional)').inputValue(), 'telegram:9001:0');
       await page.waitForFunction(() => document.querySelector('.app-sidebar [data-nav-link][href$="/schedules"]')?.getAttribute('aria-current') === 'page');
-      await page.getByRole('button', { name: 'Run now' }).click();
-      await page.getByText('Queued', { exact: true }).waitFor();
+      await runSchedule(page);
+      await page.getByRole('region', { name: /Schedule run history/ }).locator('tbody tr').first().getByText('Queued', { exact: true }).waitFor();
       await page.getByRole('region', { name: /Schedule run history/ }).locator('tbody tr a').first().click();
       await page.getByRole('heading', { name: 'Run detail · Queued' }).waitFor();
       await page.getByText("Summarize yesterday's work", { exact: true }).last().waitFor();
@@ -110,24 +130,42 @@ async function textLineCount(locator) {
       await page.getByRole('heading', { name: 'Edit schedule' }).waitFor();
       if (viewport.name === 'desktop') {
         assert.equal(await page.getByLabel('Report to (optional)').inputValue(), 'main_chat');
-        await page.getByRole('button', { name: 'Run now' }).click();
+        await runSchedule(page);
         await page.getByRole('region', { name: /Schedule run history/ }).locator('tbody tr a').first().click();
         await page.getByText('telegram:9001:0', { exact: true }).waitFor();
         const firstRunURL = page.url();
         assert.ok(new URL(firstRunURL).searchParams.has('run_id'), 'first run has a durable detail URL');
         await page.goto(`${baseURL}/aliases/main_chat`);
         await page.getByLabel('Public locator').fill('telegram:9002:0');
-        await page.getByRole('button', { name: 'Save destination' }).click();
+        await saveDestination(page);
         assert.equal(await page.getByLabel('Public locator').inputValue(), 'telegram:9002:0');
         await page.goto(`${baseURL}/schedules/${newID}`);
         assert.equal(await page.getByLabel('Report to (optional)').inputValue(), 'main_chat');
-        await page.getByRole('button', { name: 'Run now' }).click();
+        await runSchedule(page);
         await page.getByRole('region', { name: /Schedule run history/ }).locator('tbody tr a').first().click();
         await page.getByText('telegram:9002:0', { exact: true }).waitFor();
         await page.goto(firstRunURL);
         await page.getByText('telegram:9001:0', { exact: true }).waitFor();
       }
       await screenshot(page, 'created', viewport.name);
+      await submit(page, page.getByRole('button', { name: 'Disable schedule', exact: true }));
+      await page.getByRole('button', { name: 'Enable schedule', exact: true }).waitFor();
+      let manualRequests = 0;
+      const observeManual = request => {
+        if (request.method() === 'POST' && new URL(request.url()).pathname.endsWith(`/schedules/${newID}/runs`)) manualRequests++;
+      };
+      page.on('request', observeManual);
+      const run = page.getByRole('button', { name: 'Run now', exact: true });
+      await cancelConfirmation(page, run);
+      assert.equal(manualRequests, 0, 'cancelled disabled run sends no mutation');
+      const acceptedRun = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith(`/schedules/${newID}/runs`));
+      await runSchedule(page);
+      assert.equal((await acceptedRun).status(), 204);
+      assert.equal(manualRequests, 1, 'confirmed disabled schedule queues once');
+      page.off('request', observeManual);
+      await submit(page, page.getByRole('button', { name: 'Enable schedule', exact: true }));
+      await page.getByRole('button', { name: 'Disable schedule', exact: true }).waitFor();
+
 
       await Promise.all([page.waitForURL(`${baseURL}/schedules`), page.getByRole('link', { name: 'All schedules' }).click()]);
       const createdRow = page.locator('.schedule-inventory-table tbody tr').filter({ has: page.getByRole('link', { name: newID }) });
@@ -135,8 +173,8 @@ async function textLineCount(locator) {
       await Promise.all([page.waitForURL(`${baseURL}/schedules/config:morning`), page.getByRole('link', { name: 'config:morning' }).click()]);
       await page.getByRole('heading', { name: 'Configuration schedule' }).waitFor();
       assert.equal(await page.getByRole('button', { name: 'Save schedule' }).count(), 0);
-      await page.getByRole('button', { name: 'Run now' }).click();
-      await page.getByText('Queued', { exact: true }).waitFor();
+      await runSchedule(page);
+      await page.getByRole('region', { name: /Schedule run history/ }).locator('tbody tr').first().getByText('Queued', { exact: true }).waitFor();
       await assertNoDocumentOverflow(page, `${viewport.name} configured detail`);
       await screenshot(page, 'configured', viewport.name);
 

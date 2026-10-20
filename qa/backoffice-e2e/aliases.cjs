@@ -1,3 +1,4 @@
+const { submit } = require('./actions.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -46,8 +47,8 @@ async function screenshot(page, name, viewport) {
       await page.getByLabel('Public locator').waitFor();
       assert.equal(await page.getByLabel('Public locator').inputValue(), 'telegram:-1003953132278:0');
       await screenshot(page, 'detail', viewport.name);
-      await page.getByLabel('Confirm deleting this alias.').check();
-      await Promise.all([page.waitForURL(`${baseURL}/aliases`), page.getByRole('button', { name: 'Delete alias' }).click()]);
+
+      await Promise.all([page.waitForURL(`${baseURL}/aliases`), submit(page, page.getByRole('button', { name: 'Delete alias' }))]);
       assert.equal(await page.getByRole('link', { name, exact: true }).count(), 0);
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${viewport.name} has no horizontal overflow`);
       assert.deepEqual(errors, [], `${viewport.name} browser errors`);

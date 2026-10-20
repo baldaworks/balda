@@ -2,6 +2,7 @@ package balda
 
 import (
 	"context"
+	"encoding/json"
 	"net"
 	"os"
 	"os/exec"
@@ -106,7 +107,7 @@ func TestBackofficeSchedulesBrowserWorkflow(t *testing.T) {
 			}
 			for _, id := range []string{"weekly-review-desktop", "weekly-review-mobile"} {
 				created, found, err := provider.ScheduledJobs().GetByID(t.Context(), id)
-				if err != nil || !found || created.Source != state.ScheduledJobSourceManaged {
+				if err != nil || !found || created.Source != state.ScheduledJobSourceManaged || !created.Enabled || created.DefinitionVersion != 3 {
 					t.Fatalf("managed schedule %s was not saved: %+v, found=%t, err=%v", id, created, found, err)
 				}
 				if created.ReportToEnabled != (id == "weekly-review-desktop") {
@@ -123,10 +124,26 @@ func TestBackofficeSchedulesBrowserWorkflow(t *testing.T) {
 			}
 			aliasRuns, err := provider.ScheduleRuns().ListBySchedule(t.Context(), "weekly-review-desktop",
 				time.Time{}, "", 10)
-			if err != nil || len(aliasRuns) != 2 ||
+			if err != nil || len(aliasRuns) != 3 ||
 				aliasRuns[0].ReportLocatorRef != "telegram:9002:0" ||
-				aliasRuns[1].ReportLocatorRef != "telegram:9001:0" {
+				aliasRuns[1].ReportLocatorRef != "telegram:9002:0" ||
+				aliasRuns[2].ReportLocatorRef != "telegram:9001:0" {
 				t.Fatalf("browser alias run selections = %+v, err=%v", aliasRuns, err)
+			}
+			var nextRun time.Time
+			for i, run := range aliasRuns {
+				var selected state.ScheduledJobRecord
+				if err := json.Unmarshal([]byte(run.PayloadJSON), &selected); err != nil {
+					t.Fatal(err)
+				}
+				wantVersion := uint64(1)
+				if i == 0 {
+					wantVersion = 2
+					nextRun = selected.NextRunAt
+				}
+				if selected.Enabled != (i > 0) || run.DefinitionVersion != wantVersion || !selected.NextRunAt.Equal(nextRun) {
+					t.Fatalf("manual run %d selected enabled=%t version=%d next=%s", i, selected.Enabled, run.DefinitionVersion, selected.NextRunAt)
+				}
 			}
 			for _, id := range []string{"daily-summary", "config:morning"} {
 				runs, err := provider.ScheduleRuns().ListBySchedule(t.Context(), id, time.Time{}, "", 10)

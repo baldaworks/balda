@@ -1,3 +1,4 @@
+const { submit } = require('./actions.cjs');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
@@ -105,14 +106,14 @@ async function signedSlackPost() {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'prompt_template=blocked',
       })).status, `${basePath}/backoffice/webhooks/orders`);
       assert.equal(csrfDenied, 403);
-      await page.getByLabel(/Confirm disabling this webhook route/).check();
-      await page.getByRole('button', { name: 'Disable webhook' }).click();
+
+      await submit(page, page.getByRole('button', { name: 'Disable webhook' }));
       await page.getByRole('button', { name: 'Enable webhook' }).waitFor();
       assert.equal((await post(callbackPath('orders'), 'disabled', {
         'X-Balda-Webhook-Secret': createdSecret,
       })).status, 404);
-      await page.getByLabel(/Confirm enabling this webhook route/).check();
-      await page.getByRole('button', { name: 'Enable webhook' }).click();
+
+      await submit(page, page.getByRole('button', { name: 'Enable webhook' }));
       await page.getByRole('button', { name: 'Disable webhook' }).waitFor();
       assert.equal((await post(callbackPath('orders'), 'reenabled', {
         'X-Balda-Webhook-Secret': createdSecret, 'X-Request-Id': 'shared-reenabled',

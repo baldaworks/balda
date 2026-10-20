@@ -1,3 +1,4 @@
+const { submit } = require('./actions.cjs');
 const assert = require('node:assert/strict');
 const { chromium } = require('playwright');
 const [baseURL, workerURL, mode = 'crud', recorderURL = ''] = process.argv.slice(2);
@@ -36,7 +37,7 @@ async function mutation(page, button, path, status) {
   try {
     [response] = await Promise.all([
       page.waitForResponse(r => r.request().method() === 'POST' && new URL(r.url()).pathname === path),
-      page.getByRole('button',{name:button,exact:true}).click(),
+      submit(page, page.getByRole('button',{name:button,exact:true})),
     ]);
   } catch (error) {
     const invalid = await page.locator('input:invalid, select:invalid, textarea:invalid').evaluateAll(inputs => inputs.map(i=>({name:i.name,reason:i.validationMessage})));
@@ -218,7 +219,7 @@ async function configuredDiagnostic(browser) {
     await mutation(page,'Save definition',detailPath,204);
     await page.getByRole('heading',{name:'Current state',exact:true}).waitFor();
     await page.waitForFunction(v=>document.querySelector('input[name="expected_version"]')?.value!==v,version);
-    await page.locator('#mcp-confirm-selection').check();
+
     await mutation(page,'Disable connection',`${detailPath}/selection`,204);
     await page.locator('.status-chip').filter({hasText:/^Disabled$/}).waitFor();
     const beforeDisabledSave=await page.locator('input[name="expected_version"]').first().inputValue();
@@ -235,13 +236,13 @@ async function configuredDiagnostic(browser) {
     await mutation(page,'Probe candidate',detailPath,200);
     await page.locator('.status-chip').filter({hasText:/^Disabled$/}).waitFor();
     assert.equal(await page.locator('input[name="expected_version"]').first().inputValue(),disabledVersion,'disabled probe does not save');
-    await page.locator('#mcp-confirm-selection').check();
+
     await mutation(page,'Enable connection',`${detailPath}/selection`,204);
     await page.waitForFunction(() => document.querySelector('.status-chip')?.textContent.trim() !== 'Disabled');
     const enabledStatus = (await page.locator('.status-chip').first().textContent()).trim();
     assert.equal(['Not checked', 'Available'].includes(enabledStatus), true, `enabled connection has a supported observed state, got ${enabledStatus}`);
     assert.equal(await page.getByLabel('hosted',{exact:true}).isChecked(),true,'enable retains provider target');
-    await page.locator('#mcp-confirm-delete').check();
+
     await mutation(page,'Delete connection',`${detailPath}/delete`,204);
     await page.waitForURL(`${baseURL}/mcp`);
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'no document overflow');

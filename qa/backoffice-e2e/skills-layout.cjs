@@ -1,3 +1,4 @@
+const { cancelConfirmation } = require('./actions.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -79,8 +80,8 @@ async function settleClick(page, locator) {
    await settleClick(page,page.getByRole('link',{name:'Cancel',exact:true}));
    await settleClick(page,page.getByRole('link',{name:'Inspect review from user-skill/managed-synthetic',exact:true}));
    assert.equal(await page.getByRole('heading',{name:'Skill details',exact:true}).count(),1);
-   await page.getByLabel(/^Confirm disabling this skill for new sessions/).check();
-   await page.getByLabel(/^Confirm removing this managed skill/).check();
+   await cancelConfirmation(page, page.getByRole('button', { name: 'Disable skill', exact: true }));
+   await cancelConfirmation(page, page.getByRole('button', { name: 'Remove skill', exact: true }));
    await page.evaluate(url=>new Promise(resolve=>{document.body.addEventListener('htmx:afterSettle',()=>resolve(),{once:true});htmx.ajax('GET',url,{target:'#main-content',swap:'outerHTML'});}),`${prefix}/skills-conflict`);
    assert.equal(await page.locator('main#main-content').count(),1,'actual 409 HTMX one main');
    assert.equal(await page.getByRole('alert').filter({hasText:'Skills changed'}).count(),1,'actual 409 feedback');

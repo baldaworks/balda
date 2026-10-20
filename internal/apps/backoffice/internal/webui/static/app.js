@@ -273,6 +273,12 @@ function confirmationError() {
   feedback.hidden = false;
   feedback.focus();
 }
+// Keep the Access page's capability projection separate from the presenter.
+function requiresConfirmation(form) {
+  if (!form.hasAttribute("data-confirm-bot-role")) return true;
+  const capability = (role, status) => status !== "active" ? "none" : role === "administrator" ? "owner" : "collaborator";
+  return capability(form.dataset.confirmBotRole, form.dataset.confirmBotStatus) !== capability(form.elements.role.value, form.elements.status.value);
+}
 function confirmAction(form, submitter, resume) {
   if (pendingConfirmation || acceptedConfirmation || confirmationInFlight.has(form)) return;
   const consent = form.querySelector("input[data-confirm-consent]");
@@ -328,7 +334,7 @@ confirmationElement?.addEventListener("hidden.bs.modal", function () {
 document.addEventListener("submit", function (event) {
   const form = event.target;
   if (!(form instanceof HTMLFormElement) || !form.matches("[data-confirm-title]")) return;
-  if (nativeConfirmation.delete(form) || event.defaultPrevented) return;
+  if (nativeConfirmation.delete(form) || event.defaultPrevented || !requiresConfirmation(form)) return;
   event.preventDefault();
   confirmAction(form, event.submitter, function () {
     confirmationInFlight.add(form);
@@ -339,7 +345,7 @@ document.addEventListener("submit", function (event) {
 });
 document.addEventListener("htmx:confirm", function (event) {
   const form = event.detail.elt?.closest("form[data-confirm-title]");
-  if (!form || event.detail.verb === "get") return;
+  if (!form || event.detail.verb === "get" || !requiresConfirmation(form)) return;
   event.preventDefault();
   const trigger = event.detail.triggeringEvent;
   const submitter = trigger?.submitter || trigger?.target?.closest('button[type="submit"], input[type="submit"]');

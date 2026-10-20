@@ -1,3 +1,4 @@
+const { cancelConfirmation } = require('./actions.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -51,7 +52,7 @@ const viewports = [{ width: 1440, height: 900 }, { width: 1024, height: 768 }, {
       await page.getByRole('link', { name: 'Edit guard', exact: true }).click();
       await page.getByRole('heading', { name: 'Edit agent hook', exact: true }).waitFor();
       assert.deepEqual((await page.locator('.app-sidebar [aria-current="page"]').allTextContents()).map(s => s.trim()), ['Agent hooks'], 'nested navigation');
-      await page.getByLabel('Confirm deleting this hook.', { exact: true }).check();
+      await cancelConfirmation(page, page.getByRole('button', { name: 'Delete hook', exact: true }));
       assert.deepEqual(failures, [], 'navigation failures');
       console.log(`PASS ${base || '/'} ${viewport.width}x${viewport.height}: ${states.length} states, fragments, navigation, keyboard, screenshots`);
       await page.close();
