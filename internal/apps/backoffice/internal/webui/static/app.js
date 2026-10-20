@@ -256,3 +256,119 @@ document.addEventListener("htmx:afterRequest", function (event) {
   form?.querySelectorAll("[data-mcp-secret], [data-plugin-source], [data-private-source]").forEach(function (input) { input.value = ""; });
   syncPluginMarketplaceSource();
 });
+
+// Consent belongs to one invocation, never to the form or HTMX history.
+const confirmationElement = document.getElementById("action-confirmation");
+const confirmationModal = confirmationElement && window.bootstrap?.Modal.getOrCreateInstance(confirmationElement);
+let pendingConfirmation = null;
+let acceptedConfirmation = null;
+const nativeConfirmation = new WeakSet();
+const enhancedConfirmation = new WeakMap();
+const confirmationInFlight = new WeakSet();
+
+function confirmationError() {
+  const feedback = document.getElementById("request-error");
+  if (!feedback) return;
+  feedback.textContent = "Confirmation is unavailable. Reload the page and try again.";
+  feedback.hidden = false;
+  feedback.focus();
+}
+function confirmAction(form, submitter, resume) {
+  if (pendingConfirmation || acceptedConfirmation || confirmationInFlight.has(form)) return;
+  const consent = form.querySelector("input[data-confirm-consent]");
+  if (!confirmationModal || !consent?.name || !form.dataset.confirmTitle || !form.dataset.confirmMessage || !form.dataset.confirmAction) {
+    confirmationError();
+    return;
+  }
+  if (!form.reportValidity()) return;
+  closeMobileSidebar();
+  syncSidebar();
+  const invocation = { form, submitter, consent, resume, action: form.action, values: new URLSearchParams(new FormData(form)).toString() };
+  pendingConfirmation = invocation;
+  confirmationElement.querySelector("#action-confirmation-title").textContent = form.dataset.confirmTitle;
+  confirmationElement.querySelector("#action-confirmation-body").textContent = form.dataset.confirmMessage;
+  confirmationElement.querySelector("[data-confirm-accept]").textContent = form.dataset.confirmAction;
+  confirmationModal.show();
+}
+function cancelConfirmation() {
+  pendingConfirmation = null;
+  acceptedConfirmation = null;
+  confirmationModal?.hide();
+}
+confirmationElement?.addEventListener("shown.bs.modal", function () {
+  confirmationElement.querySelector("[data-confirm-cancel]").focus();
+});
+confirmationElement?.querySelector("[data-confirm-accept]").addEventListener("click", function () {
+  if (!pendingConfirmation) return;
+  acceptedConfirmation = pendingConfirmation;
+  pendingConfirmation = null;
+  confirmationModal.hide();
+});
+confirmationElement?.addEventListener("hide.bs.modal", function () {
+  // Bootstrap also dismisses through Escape, backdrop and close controls.
+  if (!acceptedConfirmation && pendingConfirmation) {
+    acceptedConfirmation = { ...pendingConfirmation, resume: null };
+    pendingConfirmation = null;
+  }
+});
+confirmationElement?.addEventListener("hidden.bs.modal", function () {
+  const invocation = acceptedConfirmation;
+  acceptedConfirmation = null;
+  if (!invocation) return;
+  const { form, submitter, consent } = invocation;
+  const usable = form.isConnected && (!submitter || submitter.isConnected && submitter.form === form && !submitter.disabled);
+  if (usable) (submitter || form.querySelector('button[type="submit"], input[type="submit"]'))?.focus();
+  else document.getElementById("main-content")?.focus({ preventScroll: true });
+  if (!invocation.resume || !usable || form.action !== invocation.action || new URLSearchParams(new FormData(form)).toString() !== invocation.values) return;
+  if (!form.reportValidity()) return;
+  consent.disabled = false;
+  try { invocation.resume(invocation); }
+  finally { consent.disabled = true; }
+});
+document.addEventListener("submit", function (event) {
+  const form = event.target;
+  if (!(form instanceof HTMLFormElement) || !form.matches("[data-confirm-title]")) return;
+  if (nativeConfirmation.delete(form) || event.defaultPrevented) return;
+  event.preventDefault();
+  confirmAction(form, event.submitter, function () {
+    confirmationInFlight.add(form);
+    nativeConfirmation.add(form);
+    try { form.requestSubmit(event.submitter || undefined); }
+    finally { nativeConfirmation.delete(form); }
+  });
+});
+document.addEventListener("htmx:confirm", function (event) {
+  const form = event.detail.elt?.closest("form[data-confirm-title]");
+  if (!form || event.detail.verb === "get") return;
+  event.preventDefault();
+  const trigger = event.detail.triggeringEvent;
+  const submitter = trigger?.submitter || trigger?.target?.closest('button[type="submit"], input[type="submit"]');
+  confirmAction(form, submitter, function (invocation) {
+    enhancedConfirmation.set(form, invocation);
+    confirmationInFlight.add(form);
+    try { event.detail.issueRequest(true); }
+    finally { enhancedConfirmation.delete(form); }
+  });
+});
+document.addEventListener("htmx:configRequest", function (event) {
+  const form = event.detail.elt?.closest("form");
+  const invocation = enhancedConfirmation.get(form);
+  if (!invocation) return;
+  event.detail.parameters[invocation.consent.name] = invocation.consent.value;
+  if (invocation.submitter?.name) event.detail.parameters[invocation.submitter.name] = invocation.submitter.value;
+});
+document.addEventListener("htmx:afterRequest", function (event) {
+  const form = event.detail.elt?.closest("form");
+  if (form) confirmationInFlight.delete(form);
+});
+document.addEventListener("htmx:beforeCleanupElement", function (event) {
+  const form = (pendingConfirmation || acceptedConfirmation)?.form;
+  if (form && event.detail.elt?.contains(form)) cancelConfirmation();
+});
+document.addEventListener("htmx:historyRestore", cancelConfirmation);
+window.addEventListener("popstate", cancelConfirmation);
+window.addEventListener("pagehide", cancelConfirmation);
+window.addEventListener("pageshow", function (event) {
+  if (event.persisted) cancelConfirmation();
+  document.querySelectorAll("form[data-confirm-title]").forEach(form => confirmationInFlight.delete(form));
+});

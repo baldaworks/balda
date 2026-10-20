@@ -3,6 +3,7 @@ const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require('playwright');
+const checkConfirmations = require('./confirmations.cjs');
 
 const routes = [
   'memory', 'memory-long', 'memory-search', 'memory-no-results', 'memory-empty', 'memory-disabled',
@@ -445,11 +446,14 @@ async function checkPage(browser, baseURL, viewport) {
     const browser = await chromium.launch({ headless: true });
     try {
       for (const viewport of [{ width: 1440, height: 900 }, { width: 1024, height: 768 }, { width: 768, height: 1024 }, { width: 390, height: 844 }]) {
+        await checkConfirmations(browser, url, viewport);
+        if (process.env.BACKOFFICE_CONFIRMATIONS_ONLY) continue;
         await checkWebhooks(browser, url, viewport);
         await checkMCPTransport(browser, url, viewport);
         await checkPage(browser, url, viewport);
       }
-      console.log(`Backoffice E2E: ${routes.length} gallery pages and states at 390/768/1024/1440px, consistent heading colors, native/HTMX layout, audit, refresh, and navigation passed`);
+      if (process.env.BACKOFFICE_CONFIRMATIONS_ONLY) console.log('Backoffice confirmations: native/HTMX behavior at 390/768/1024/1440px passed');
+      else console.log(`Backoffice E2E: ${routes.length} gallery pages and states at 390/768/1024/1440px, consistent heading colors, native/HTMX layout, audit, refresh, and navigation passed`);
     } finally { await browser.close(); }
   } finally { process.kill(-server.pid, 'SIGINT'); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

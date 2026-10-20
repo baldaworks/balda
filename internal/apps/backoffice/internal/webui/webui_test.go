@@ -58,6 +58,11 @@ func TestRendererFullFragmentAndHistoryContracts(t *testing.T) {
 			if full != tt.wantFull {
 				t.Fatalf("full document = %t, want %t: %q", full, tt.wantFull, body)
 			}
+			if tt.wantFull {
+				if strings.Count(body, `id="action-confirmation"`) != 1 || !strings.Contains(body, `assets/vendor/bootstrap/bootstrap.min.js`) {
+					t.Fatal("document must include one shared confirmation dialog and its local Bootstrap asset")
+				}
+			}
 			if !tt.wantFull && !strings.HasPrefix(body, "<title>Overview · Balda</title><main") {
 				t.Fatalf("fragment shape = %q", body)
 			}
