@@ -576,6 +576,7 @@ components:
       - internal/apps/balda/eventbus
       - internal/apps/balda/eventbus/**
       - internal/apps/balda/internalmcp
+      - internal/apps/balda/skillmcp
       - internal/apps/balda/paths
       - internal/apps/balda/redaction
       - internal/apps/balda/shutdown

@@ -154,14 +154,17 @@ type SessionMCPBinderAdapter struct {
 	Enabled bool
 }
 
-func (a SessionMCPBinderAdapter) SessionMCPEnabled() bool { return a.Enabled }
+func (a SessionMCPBinderAdapter) SessionMCPEnabled(capabilities baldaagent.SessionCapabilityBinding) bool {
+	return a.Enabled || len(capabilities.Skills.Skills) > 0
+}
 
 func (a SessionMCPBinderAdapter) BindSession(_ context.Context, request baldaagent.SessionRuntimeRequest) (baldaagent.ScopedMCPServer, error) {
 	if a.Broker == nil {
 		return baldaagent.ScopedMCPServer{}, errors.New("session MCP context broker is required")
 	}
 	binding, err := a.Broker.Bind(sessionmemorymcp.CurrentSession{
-		Locator: request.Locator,
+		Locator:           request.Locator,
+		RuntimeSnapshotID: request.RuntimeSnapshotID,
 		Session: sessionmemory.SessionRef{
 			SessionID:      request.Locator.SessionID,
 			AgentSessionID: request.AgentSessionID,

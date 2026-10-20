@@ -2,6 +2,7 @@ package catalogapp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -44,8 +45,15 @@ func testACPInvocation(t *testing.T, catalog *Runtime, registry *mcpregistry.Map
 	testACPInvocationWithServers(t, catalog, registry, snapshotID, configuredIDs, worker, nil, false, false)
 }
 
-func testACPInvocationWithServers(t *testing.T, catalog *Runtime, registry *mcpregistry.MapRegistry, snapshotID runtimecatalogcmd.SnapshotID, configuredIDs []string, worker *workerGrantFixture, observe providerLifecycleObserver, forcedExit, poolOnly bool) {
+func testACPInvocationWithServers(t *testing.T, catalog *Runtime, registry *mcpregistry.MapRegistry, snapshotID runtimecatalogcmd.SnapshotID, configuredIDs []string, worker *workerGrantFixture, observe providerLifecycleObserver, forcedExit, poolOnly bool, options ...providerExecutionOptions) {
 	t.Helper()
+	var option providerExecutionOptions
+	if len(options) > 0 {
+		option = options[0]
+	}
+	if option.skillLoader {
+		t.Setenv("BALDA_MCP_SKILL_FIXTURE", "1")
+	}
 	executable, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -72,6 +80,9 @@ func testACPInvocationWithServers(t *testing.T, catalog *Runtime, registry *mcpr
 	}
 	binder := &sessionCapabilityBinder{catalog: catalog, skills: skills, providers: providers}
 	providerIDs := []string{alphaID, poolAlphaID, "pool-beta", "root-alpha"}
+	if option.skillLoader {
+		providerIDs = []string{alphaID, poolAlphaID}
+	}
 	if poolOnly {
 		providers["pool-shared-alpha"] = agentconfig.Config{Type: agentconfig.AgentTypePool, PoolConfig: &agentconfig.PoolConfig{Members: []string{alphaID}}}
 		providerIDs = append(providerIDs, "pool-shared-alpha", alphaID)
@@ -88,13 +99,13 @@ func testACPInvocationWithServers(t *testing.T, catalog *Runtime, registry *mcpr
 		}
 		workspace := t.TempDir()
 		builder := baldaagent.NewBuilder(baldaagent.BuilderParams{Factory: agentfactory.New(providers, registry), ScopedFactory: scopedFactory, NormaCfg: runtimeconfig.RuntimeConfig{Providers: providers}})
-		manager := baldaagent.NewRuntimeManager(baldaagent.RuntimeManagerParams{Builder: builder, BaldaProviderID: providerID, WorkingDir: workspace, StateDir: t.TempDir(), CapabilityBinder: binder, MCPRegistry: registry, Logger: zerolog.Nop()})
+		manager := baldaagent.NewRuntimeManager(baldaagent.RuntimeManagerParams{Builder: builder, BaldaProviderID: providerID, WorkingDir: workspace, StateDir: t.TempDir(), SessionMCPBinder: option.sessionMCPBinder, CapabilityBinder: binder, MCPRegistry: registry, Logger: zerolog.Nop()})
 		ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 		var runtime *baldaagent.BuiltRuntime
 		if root {
 			runtime, err = manager.Runtime(ctx)
 		} else {
-			runtime, err = manager.RuntimeForSession(ctx, baldaagent.SessionRuntimeRequest{RuntimeSnapshotID: string(snapshotID)})
+			runtime, err = manager.RuntimeForSession(ctx, providerExecutionSessionRequest(snapshotID, option.skillLoader))
 		}
 		if err != nil {
 			cancel()
@@ -124,6 +135,9 @@ func testACPInvocationWithServers(t *testing.T, catalog *Runtime, registry *mcpr
 		}
 		cancel()
 		want := "actual ACP tool"
+		if option.skillLoader {
+			want = "ACP skill completed"
+		}
 		if providerID == "pool-beta" || (poolOnly && (providerID == alphaID || providerID == "pool-shared-alpha")) {
 			want = "ACP has no worker tool"
 		}
@@ -262,17 +276,34 @@ func (p *mcpACPProvider) Prompt(ctx context.Context, request acp.PromptRequest) 
 	sessions := append([]*mcp.ClientSession(nil), p.sessions[request.SessionId]...)
 	p.mu.Unlock()
 	text := "ACP has no worker tool"
+	skillFixture := os.Getenv("BALDA_MCP_SKILL_FIXTURE") == "1"
 	for _, session := range sessions {
 		tools, err := session.ListTools(ctx, &mcp.ListToolsParams{})
 		if err != nil {
 			return acp.PromptResponse{}, fmt.Errorf("external ACP MCP list failed")
 		}
 		for _, tool := range tools.Tools {
-			if tool.Name != "echo" && tool.Name != "echo_two" {
+			isSkill := skillFixture && tool.Name != "echo" && tool.Name != "echo_two"
+			if tool.Name != "echo" && tool.Name != "echo_two" && !isSkill {
 				continue
 			}
-			result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: tool.Name, Arguments: map[string]any{"text": "actual ACP tool"}})
-			if err != nil || result.IsError || len(result.Content) != 1 {
+			arguments := map[string]any{"text": "actual ACP tool"}
+			if isSkill {
+				arguments = map[string]any{"source_kind": "user-skill", "source_name": "agents-global", "skill_name": "provider-skill"}
+			}
+			result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: tool.Name, Arguments: arguments})
+			if err != nil || result.IsError {
+				return acp.PromptResponse{}, fmt.Errorf("external ACP MCP invocation failed")
+			}
+			if isSkill {
+				encoded, marshalErr := json.Marshal(result.StructuredContent)
+				if marshalErr != nil || !strings.Contains(string(encoded), "loaded by provider") {
+					return acp.PromptResponse{}, fmt.Errorf("external ACP skill result invalid")
+				}
+				text = "ACP skill completed"
+				continue
+			}
+			if len(result.Content) != 1 {
 				return acp.PromptResponse{}, fmt.Errorf("external ACP MCP invocation failed")
 			}
 			content, ok := result.Content[0].(*mcp.TextContent)

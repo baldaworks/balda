@@ -5,28 +5,31 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
 	"github.com/baldaworks/balda/sessionmemory"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 const (
 	// HeaderSessionLocator is populated by the authenticated Balda runtime
 	// adapter. It is deliberately not part of the tool input schema.
-	HeaderSessionLocator = "X-Balda-Session-Locator"
-	HeaderSessionID      = "X-Balda-Session-ID"
-	HeaderAgentSessionID = "X-Balda-Agent-Session-ID"
-	HeaderLineageID      = "X-Balda-Session-Lineage-ID"
-	HeaderSessionBinding = "X-Balda-Session-Binding"
+	HeaderSessionLocator    = "X-Balda-Session-Locator"
+	HeaderSessionID         = "X-Balda-Session-ID"
+	HeaderAgentSessionID    = "X-Balda-Agent-Session-ID"
+	HeaderLineageID         = "X-Balda-Session-Lineage-ID"
+	HeaderSessionBinding    = "X-Balda-Session-Binding"
+	HeaderRuntimeSnapshotID = "X-Balda-Runtime-Snapshot-ID"
 )
 
 // CurrentSession is the authenticated identity attached to one MCP call.
 // The neutral MCP adapter receives only the locator-derived scope; Balda
 // keeps the provider session identity here for binding and authentication.
 type CurrentSession struct {
-	Locator deliverycmd.Locator
-	Session sessionmemory.SessionRef
+	Locator           deliverycmd.Locator
+	Session           sessionmemory.SessionRef
+	RuntimeSnapshotID string
 }
 
 // SessionResolver supplies the authenticated current identity out of band.
@@ -72,13 +75,28 @@ func (r HeaderSessionResolver) Resolve(_ context.Context, req *mcp.CallToolReque
 		return CurrentSession{}, sessionmemory.PermanentError(sessionmemory.CodeInvalidSession, "current session context is invalid", nil)
 	}
 	return CurrentSession{
-		Locator: locator,
+		Locator:           locator,
+		RuntimeSnapshotID: strings.TrimSpace(headers.Get(HeaderRuntimeSnapshotID)),
 		Session: sessionmemory.SessionRef{
 			SessionID:      sessionID,
 			AgentSessionID: agentSessionID,
 			LineageID:      strings.TrimSpace(headers.Get(HeaderLineageID)),
 		},
 	}, nil
+}
+
+// ResolveRuntimeSnapshot returns the authenticated immutable snapshot bound to
+// the current provider runtime. The snapshot never comes from tool arguments.
+func (r HeaderSessionResolver) ResolveRuntimeSnapshot(ctx context.Context, req *mcp.CallToolRequest) (runtimecatalogcmd.SnapshotID, error) {
+	current, err := r.Resolve(ctx, req)
+	if err != nil {
+		return "", err
+	}
+	snapshot := runtimecatalogcmd.SnapshotID(strings.TrimSpace(current.RuntimeSnapshotID))
+	if snapshot == "" {
+		return "", sessionmemory.PermanentError(sessionmemory.CodeInvalidSession, "current runtime snapshot is unavailable", nil)
+	}
+	return snapshot, nil
 }
 
 var _ SessionResolver = HeaderSessionResolver{}

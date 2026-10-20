@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -67,6 +68,30 @@ type recordingRuntimeFactory struct {
 	requests []agentfactory.BuildRequest
 }
 
+type recordingSessionMCPBinder struct {
+	requests     []SessionRuntimeRequest
+	releaseCalls int
+}
+
+func (b *recordingSessionMCPBinder) SessionMCPEnabled(capabilities SessionCapabilityBinding) bool {
+	return len(capabilities.Skills.Skills) > 0
+}
+
+func (b *recordingSessionMCPBinder) BindSession(_ context.Context, request SessionRuntimeRequest) (ScopedMCPServer, error) {
+	b.requests = append(b.requests, request)
+	return ScopedMCPServer{
+		ID: "session-skill-mcp",
+		Config: agentconfig.MCPServerConfig{
+			Type: agentconfig.MCPServerTypeHTTP,
+			URL:  "http://127.0.0.1:1/mcp/session-skill-mcp",
+		},
+		Release: func() error {
+			b.releaseCalls++
+			return nil
+		},
+	}, nil
+}
+
 func (f *recordingRuntimeFactory) Build(_ context.Context, request agentfactory.BuildRequest) (adkagent.Agent, error) {
 	f.requests = append(f.requests, request)
 	return adkagent.New(adkagent.Config{Name: request.Name, Description: request.Description})
@@ -125,6 +150,61 @@ func TestRuntimeForSessionProjectsSkillMetadataAndExtensionInstructionsToProvide
 	}
 	if contributorInput.SnapshotID != "snapshot-prism" || contributorInput.SessionID != "session-1" || contributorInput.ChannelType != "telegram" {
 		t.Fatalf("contributor input = %+v, want pinned session context", contributorInput)
+	}
+}
+
+func TestRuntimeForSessionBindsSkillLoaderToResolvedSnapshot(t *testing.T) {
+	factory := &recordingRuntimeFactory{}
+	builder := &Builder{factory: factory}
+	capabilityBinder := &recordingCapabilityBinder{binding: SessionCapabilityBinding{
+		SnapshotID: "snapshot-prism",
+		Skills: SkillMetadataProjection{
+			Snapshot: "snapshot-prism",
+			Skills: []SkillPromptMetadata{{
+				Source: runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindPlugin, Name: "prism"},
+				Name:   "story",
+			}},
+		},
+	}}
+	sessionBinder := &recordingSessionMCPBinder{}
+	registry := mcpregistry.New(nil)
+	manager := NewRuntimeManager(RuntimeManagerParams{
+		Builder:          builder,
+		BaldaProviderID:  "alpha",
+		WorkingDir:       t.TempDir(),
+		StateDir:         t.TempDir(),
+		SessionMCPBinder: sessionBinder,
+		CapabilityBinder: capabilityBinder,
+		MCPRegistry:      registry,
+		Logger:           zerolog.Nop(),
+	})
+
+	runtime, err := manager.RuntimeForSession(context.Background(), SessionRuntimeRequest{
+		Locator: deliverycmd.Locator{SessionID: "session-1", ChannelType: "telegram"},
+	})
+	if err != nil {
+		t.Fatalf("RuntimeForSession() error = %v", err)
+	}
+	if len(sessionBinder.requests) != 1 {
+		t.Fatalf("session MCP bind requests = %d, want 1", len(sessionBinder.requests))
+	}
+	if got := sessionBinder.requests[0].RuntimeSnapshotID; got != "snapshot-prism" {
+		t.Fatalf("session MCP snapshot = %q, want snapshot-prism", got)
+	}
+	if _, ok := registry.Get("session-skill-mcp"); !ok {
+		t.Fatal("scoped skill MCP server is not registered")
+	}
+	if len(factory.requests) != 1 || !slices.Contains(factory.requests[0].MCPServerIDs, "session-skill-mcp") {
+		t.Fatalf("provider MCP servers = %+v, want session-skill-mcp", factory.requests)
+	}
+	if err := runtime.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	if _, ok := registry.Get("session-skill-mcp"); ok {
+		t.Fatal("scoped skill MCP server remains registered after close")
+	}
+	if sessionBinder.releaseCalls != 1 {
+		t.Fatalf("session MCP release calls = %d, want 1", sessionBinder.releaseCalls)
 	}
 }
 

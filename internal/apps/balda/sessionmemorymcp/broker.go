@@ -33,11 +33,12 @@ type ContextBinding struct {
 }
 
 type boundContext struct {
-	token        string
-	locatorJSON  string
-	sessionID    string
-	agentSession string
-	lineageID    string
+	token             string
+	locatorJSON       string
+	sessionID         string
+	agentSession      string
+	lineageID         string
+	runtimeSnapshotID string
 }
 
 // ContextBroker binds one internal MCP client endpoint to one authenticated
@@ -95,11 +96,12 @@ func (b *ContextBroker) Bind(current CurrentSession) (ContextBinding, error) {
 		return ContextBinding{}, err
 	}
 	bound := boundContext{
-		token:        token,
-		locatorJSON:  string(locatorJSON),
-		sessionID:    strings.TrimSpace(current.Session.SessionID),
-		agentSession: strings.TrimSpace(current.Session.AgentSessionID),
-		lineageID:    strings.TrimSpace(current.Session.LineageID),
+		token:             token,
+		locatorJSON:       string(locatorJSON),
+		sessionID:         strings.TrimSpace(current.Session.SessionID),
+		agentSession:      strings.TrimSpace(current.Session.AgentSessionID),
+		lineageID:         strings.TrimSpace(current.Session.LineageID),
+		runtimeSnapshotID: strings.TrimSpace(current.RuntimeSnapshotID),
 	}
 	b.mu.Lock()
 	if b.bound == nil {
@@ -153,6 +155,7 @@ func (b *ContextBroker) Wrap(next http.Handler) http.Handler {
 		request.Header.Set(HeaderSessionID, bound.sessionID)
 		request.Header.Set(HeaderAgentSessionID, bound.agentSession)
 		request.Header.Set(HeaderSessionBinding, bound.token)
+		request.Header.Set(HeaderRuntimeSnapshotID, bound.runtimeSnapshotID)
 		if bound.lineageID == "" {
 			request.Header.Del(HeaderLineageID)
 		} else {
@@ -182,7 +185,8 @@ func (b *ContextBroker) Verify(headers http.Header) bool {
 	return headers.Get(HeaderSessionLocator) == bound.locatorJSON &&
 		headers.Get(HeaderSessionID) == bound.sessionID &&
 		headers.Get(HeaderAgentSessionID) == bound.agentSession &&
-		headers.Get(HeaderLineageID) == bound.lineageID
+		headers.Get(HeaderLineageID) == bound.lineageID &&
+		headers.Get(HeaderRuntimeSnapshotID) == bound.runtimeSnapshotID
 }
 
 func cloneURL(raw *url.URL) *url.URL {
