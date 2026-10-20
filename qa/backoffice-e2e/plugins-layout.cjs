@@ -10,7 +10,7 @@ const base = process.argv[3] || '';
 const prefix = `${base}/qa/ui`;
 const screenshots = process.env.BALDA_PLUGINS_LAYOUT_SCREENSHOTS || '/tmp/balda-plugins-screens/layout';
 const states = [
-  ['plugins', 200], ['plugins-installed', 200], ['plugins/marketplaces', 200],
+  ['plugins-callee', 200], ['plugins', 200], ['plugins-installed', 200], ['plugins/marketplaces', 200],
   ['plugins-marketplaces-empty', 200], ['plugins/marketplaces/new', 200],
   ['plugins/marketplaces/definitions/new', 200], ['plugins-marketplace-failed', 200],
   ['plugins-marketplace-long', 200], ['plugins-marketplace-invalid', 400],
@@ -158,6 +158,16 @@ function labelled(page, name) {
         if (state === 'plugins-conflict') {
           assert.equal(await page.locator('main form').count(), 0, `${label} stale no blind replay`);
           assert.equal(await page.getByRole('link', { name: 'Reopen plugin', exact: true }).getAttribute('href'), `${prefix}/plugins/installed/demo`, `${label} stale target`);
+        }
+        if (state === 'plugins-callee') {
+          for (const [action, consequence] of [['Disable plugin', /callee.*new sessions/], ['Rollback', /callee.*sha256:synthetic-retained.*Enabled state is preserved/], ['Remove plugin', /callee.*Data and retained revisions/]]) {
+            await page.getByRole('button', { name: action, exact: true }).click();
+            const dialog = page.getByRole('dialog');
+            await dialog.waitFor({ state: 'visible' });
+            assert.match(await dialog.innerText(), consequence, 'context and retained consequences');
+            await page.screenshot({ path: path.join(directory, `callee-${action.replaceAll(' ', '-')}.png`) });
+            await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+          }
         }
         if (state === 'plugins/installed/demo') {
           const confirms = page.locator('input[name="confirm"]');

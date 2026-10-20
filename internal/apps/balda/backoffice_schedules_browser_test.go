@@ -118,15 +118,16 @@ func TestBackofficeSchedulesBrowserWorkflow(t *testing.T) {
 					t.Fatalf("managed schedule %s report reference = %+v", id, created)
 				}
 			}
+			const retargetedLocator = "telegram:9002:0"
 			alias, found, err := provider.Aliases().Get(t.Context(), "main_chat")
-			if err != nil || !found || alias.LocatorRef != "telegram:9002:0" {
+			if err != nil || !found || alias.LocatorRef != retargetedLocator {
 				t.Fatalf("browser alias retarget = %+v, found=%t err=%v", alias, found, err)
 			}
 			aliasRuns, err := provider.ScheduleRuns().ListBySchedule(t.Context(), "weekly-review-desktop",
 				time.Time{}, "", 10)
 			if err != nil || len(aliasRuns) != 3 ||
-				aliasRuns[0].ReportLocatorRef != "telegram:9002:0" ||
-				aliasRuns[1].ReportLocatorRef != "telegram:9002:0" ||
+				aliasRuns[0].ReportLocatorRef != retargetedLocator ||
+				aliasRuns[1].ReportLocatorRef != retargetedLocator ||
 				aliasRuns[2].ReportLocatorRef != "telegram:9001:0" {
 				t.Fatalf("browser alias run selections = %+v, err=%v", aliasRuns, err)
 			}

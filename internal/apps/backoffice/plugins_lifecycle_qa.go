@@ -29,6 +29,11 @@ func qaPluginReview(upgrade bool) webui.Page {
 }
 
 var pluginLifecycleQAEntries = []qaEntry{
+	{name: "plugins-callee", label: "Plugins · Callee confirmations", templateName: webui.TemplatePlugins, page: func() webui.Page {
+		p := qaInstalledDetail()
+		p.Plugins.PluginDetail.Name = "callee"
+		return p
+	}, gallery: true},
 	{name: "plugins-installed", label: "Plugins · Installed inventory", templateName: webui.TemplatePlugins, page: func() webui.Page {
 		p := qaPlugins()
 		p.Plugins.InstalledRows = []plugincmd.InstalledView{qaInstalledPlugin().InstalledView}

@@ -318,6 +318,16 @@ func TestBackofficeMCPOAuthBrowserWorkflow(t *testing.T) {
 			if retryChecks.Load() < 4 {
 				t.Fatal("native retries were not verified against actual returned revision identities")
 			}
+			runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "managed-revoke", scenario.width)
+			currentManaged := oauthBrowserConnectionRevision(t, p, "managed-tools")
+			for _, retained := range []mcpcmd.Revision{managedBefore, currentManaged} {
+				if retained.Definition.AuthBinding == nil {
+					t.Fatal("managed revision lost its authorization context")
+				}
+				if _, err := grants.RequestCredentials(t.Context(), *retained.Definition.AuthBinding, retained.Definition.Scopes); !errors.Is(err, mcpcmd.ErrDisconnected) {
+					t.Fatalf("native revocation retained worker credentials: %v", err)
+				}
+			}
 		})
 	}
 }

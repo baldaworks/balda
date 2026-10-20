@@ -66,7 +66,7 @@ const forbidden = ['managed-secret', 'configured-secret', 'synthetic-api-key'];
         assert.ok((await history.text()).includes('<!doctype html>'), `${label} history full document`);
 
         if (state === 'providers/new') {
-          const id = page.getByLabel('Provider ID', {exact: true});
+          const id = page.getByLabel(/^Provider ID(?: \(required\))?$/);
           await id.focus();
           assert.notEqual(await id.evaluate(element => getComputedStyle(element).boxShadow), 'none', `${label} focus`);
           await assertPlaceholderDistinct(page.getByLabel('Hosted timeout', {exact: true}), label);

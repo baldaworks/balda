@@ -382,6 +382,7 @@ The pinned stack is:
 | --- | --- | --- |
 | Go `html/template` | Go 1.26.9 | Authoritative SSR and HTML fragments |
 | AdminLTE | 4.9.1 | Shell and UI components |
+| Bootstrap | 5.3.8 | Shared confirmation modal |
 | HTMX | 2.0.10 | Browser navigation and fragment updates |
 | Bootstrap Icons | 1.13.1 | Local icons |
 | Vanilla JavaScript | Built in | HTMX lifecycle, focus, sidebar and create-form field visibility |
@@ -412,6 +413,34 @@ Backoffice requires JavaScript for navigation, session refresh, and interactive 
 HTMX may improve navigation and interaction, but it must not own
 authentication, authorization, validation, or domain state. Those concerns
 remain server-side and authoritative.
+
+## Confirmation dialogs
+
+Actions that require acknowledgement open a shared Bootstrap dialog with the
+specific target, consequences, Cancel and the action button. Cancel, Close,
+Escape and the backdrop leave the action unsubmitted. Affirmative confirmation
+submits once; a later attempt needs fresh consent, including after an error.
+Keyboard focus stays in the dialog and returns to the initiating control when
+it remains available. The standard modal opens without a fade animation so
+immediate dismissal and navigation cannot race its transition.
+
+Ordinary settings remain checkboxes: hook enablement, MCP provider targets and
+webhook delivery acknowledgement still select their own values. Conditional
+confirmations keep their existing meaning: own credential/current browser
+session revocation, changes to effective bot access, pending invitation
+replacement, and running or testing an inactive definition. Enabling a plugin
+does not introduce an acknowledgement.
+
+Go templates author the dialog shell outside the replaceable/history content,
+plain confirmation metadata on the relevant form and a disabled hidden consent
+field with the server's exact name/value. The shared script presents text and
+resumes the original native or HTMX form with its entered data, submitter,
+versions and request keys. It does not generate HTML or authorize a mutation.
+Consent is transient and cleared on cancellation, replacement and navigation;
+malformed or unavailable confirmation machinery fails closed with a visible
+reload message. Existing server acknowledgement, authority, CSRF/origin,
+assurance and stale-state checks remain authoritative. Native password and
+WebAuthn flows retain their transport and history restrictions.
 
 ## Packaging and frontend provenance
 

@@ -10,7 +10,7 @@ module.exports = async function checkConfirmations(browser, baseURL, viewport) {
   await page.route('**/confirmation-preview*', async route => {
     requests.push({ url: route.request().url(), body: route.request().postData() });
     await new Promise(resolve => { const timeout = setTimeout(resolve, 5000); releaseRequest = () => { clearTimeout(timeout); resolve(); }; });
-    await route.fulfill(route.request().isNavigationRequest() ? { status: 303, headers: { location: `${baseURL}/qa/ui/style-guide` } } : { status: 204 });
+    await route.fulfill(route.request().isNavigationRequest() ? { status: 303, headers: { location: `${baseURL}/qa/ui/style-guide` } } : { status: 503 });
   });
   for (const mode of ['native', 'htmx']) {
     await page.goto(`${baseURL}/qa/ui/style-guide`);
@@ -27,6 +27,7 @@ module.exports = async function checkConfirmations(browser, baseURL, viewport) {
       await modal.waitFor({ state: 'visible' });
       assert.match(await modal.textContent(), /<example> & retained history/);
       assert.equal(await modal.locator('script, img').count(), 0, 'target remains plain text');
+      assert.equal(await modal.locator('.modal-body').evaluate(e => e.scrollWidth <= e.clientWidth), true, 'long escaped target wraps inside dialog');
       await page.waitForFunction(() => document.querySelector('[data-confirm-cancel]') === document.activeElement);
       await page.keyboard.press('Shift+Tab');
       assert.equal(await modal.evaluate(e => e.contains(document.activeElement)), true, 'focus stays inside dialog');
@@ -69,7 +70,7 @@ module.exports = async function checkConfirmations(browser, baseURL, viewport) {
     requests.length = 0;
     await trigger.click();
     await modal.waitFor({ state: 'visible' });
-    assert.equal(requests.length, 0, 'subsequent attempt needs fresh consent');
+    assert.equal(requests.length, 0, 'subsequent attempt after completed response, including enhanced503, needs fresh consent');
     await form.getByLabel('Example name').evaluate(e => { e.value = 'changed during dialog'; });
     await modal.getByRole('button', { name: 'Remove example', exact: true }).click();
     await page.waitForFunction(() => !document.querySelector('#action-confirmation').classList.contains('show'));
