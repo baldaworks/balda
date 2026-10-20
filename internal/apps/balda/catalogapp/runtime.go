@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -28,7 +29,6 @@ import (
 	"github.com/baldaworks/runtime/v2/mcpregistry"
 )
 
-const builtinRevisionSeed = "balda-builtin-commands-v1"
 const snapshotKeyPrefix = "runtime_catalog_snapshot:"
 const transportStreamableHTTP = "streamable-http"
 
@@ -51,6 +51,7 @@ type Runtime struct {
 	sessions                   baldastate.SessionStore
 	kv                         baldastate.KVStore
 	builtin                    runtimecatalogcmd.Source
+	builtinFS                  fs.FS
 	configuredMCP              []runtimecatalogcmd.Source
 	configuredUpgradeRevisions map[runtimecatalogcmd.ContributionID]runtimecatalogcmd.RevisionID
 	mcp                        *mcpruntime.Reconciler
@@ -88,10 +89,14 @@ func NewRuntime(
 	if err != nil {
 		return nil, err
 	}
+	builtin, builtinFS, err := buildBuiltinSource(loader, advertisements)
+	if err != nil {
+		return nil, err
+	}
 	runtime := &Runtime{
 		stateDir: stateDir, agentSkillDir: strings.TrimSpace(agentSkillDir), codexSkillDir: strings.TrimSpace(codexSkillDir), compiler: runtimecatalog.NewCompiler(), store: runtimecatalog.NewStore(),
 		loader: loader, archive: archive, reader: reader, managedSkills: provider.SkillManagement(), plugins: provider.Plugins(), managedMCP: provider.MCP(), sessions: provider.Sessions(), kv: provider.AppKV(),
-		builtin: builtinSource(advertisements), configuredMCP: configuredMCPSources(configured), credentials: credentials,
+		builtin: builtin, builtinFS: builtinFS, configuredMCP: configuredMCPSources(configured), credentials: credentials,
 		configuredUpgradeRevisions: configuredUpgradeRevisions(configured),
 	}
 	if bridge != nil {
@@ -232,6 +237,9 @@ func (r *Runtime) PublishCandidate(ctx context.Context, candidate runtimecatalog
 		return err
 	}
 	snapshot := candidate.Snapshot
+	if err := validateBuiltinSnapshot(snapshot, r.builtin); err != nil {
+		return fmt.Errorf("validate built-in catalog source: %w", err)
+	}
 	if err := r.persistSnapshot(ctx, snapshot); err != nil {
 		return err
 	}
@@ -253,6 +261,24 @@ func (r *Runtime) PublishCandidate(ctx context.Context, candidate runtimecatalog
 		}
 	}
 	return r.managedSkills.MarkPublished(ctx, candidate.ManagedSkills)
+}
+
+// RetainBuiltin archives the exact embedded built-in source before durable
+// catalog recovery or publication.
+func (r *Runtime) RetainBuiltin(ctx context.Context) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.retainBuiltinLocked(ctx)
+}
+
+func (r *Runtime) retainBuiltinLocked(ctx context.Context) error {
+	if r.builtinFS == nil {
+		return errors.New("built-in source is unavailable")
+	}
+	if err := r.archive.RetainFS(ctx, r.builtinFS, r.builtin.Descriptor); err != nil {
+		return fmt.Errorf("retain built-in source: %w", err)
+	}
+	return nil
 }
 
 // ResolveEffectiveSnapshot pins command ingress to its trusted session scope.
@@ -512,30 +538,6 @@ func (r *Runtime) retainPlugin(ctx context.Context, descriptor runtimecatalogcmd
 		return fmt.Errorf("retain plugin revision: %w", err)
 	}
 	return nil
-}
-
-func builtinSource(advertisements []commandcmd.Advertisement) runtimecatalogcmd.Source {
-	revision := hashValue(builtinRevisionSeed)
-	id := runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindBuiltin, Name: "balda"}
-	names := make(map[string]struct{})
-	for _, advertisement := range advertisements {
-		for _, name := range advertisement.Names {
-			name = strings.ToLower(strings.TrimSpace(name))
-			if name != "" {
-				names[name] = struct{}{}
-			}
-		}
-	}
-	ordered := make([]string, 0, len(names))
-	for name := range names {
-		ordered = append(ordered, name)
-	}
-	sort.Strings(ordered)
-	source := runtimecatalogcmd.Source{Descriptor: runtimecatalogcmd.SourceDescriptor{ID: id, Revision: revision}}
-	for _, name := range ordered {
-		source.Commands = append(source.Commands, runtimecatalogcmd.CommandDescriptor{ID: runtimecatalogcmd.ContributionID{Source: id, Kind: runtimecatalogcmd.ContributionKindCommand, Name: name}, Revision: revision, Name: name})
-	}
-	return source
 }
 
 func configuredMCPSources(configs map[string]agentconfig.MCPServerConfig) []runtimecatalogcmd.Source {

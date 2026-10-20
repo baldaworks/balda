@@ -139,7 +139,7 @@ func TestPluginCLIReinstallPublishesFreshSkillsAndPreservesSession(t *testing.T)
 		t.Fatal(err)
 	}
 	inventory := realSkillCLI(t, "list", "--json")
-	if inventory.Inventory == nil || len(inventory.Inventory.Entries) != 2 {
+	if inventory.Inventory == nil || len(inventory.Inventory.Entries) != 3 {
 		t.Fatalf("fresh skill inventory=%+v", inventory)
 	}
 	for _, name := range []string{"review", "plan"} {
@@ -219,7 +219,7 @@ func TestPluginCLIReinstallPublishesFreshSkillsAndPreservesSession(t *testing.T)
 		t.Fatal(err)
 	}
 	disabled := realSkillCLI(t, "list", "--json")
-	if disabled.Inventory == nil || len(disabled.Inventory.Entries) != 0 {
+	if disabled.Inventory == nil || len(disabled.Inventory.Entries) != 1 || disabled.Inventory.Entries[0].Name != "balda-system" {
 		t.Fatalf("disabled eligible skills=%+v", disabled)
 	}
 	if output, err := executePluginCommand(t, t.Context(), "show", "demo"); err != nil || !strings.Contains(output, "Enabled: false") || !strings.Contains(output, "Skill: review") {
@@ -295,9 +295,9 @@ func TestPluginCLIPendingPublicationRecoversThroughStartup(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := 0
+			want := 1
 			if operation == pluginInstallOperation {
-				want = 2
+				want = 3
 			}
 			if len(snapshot.Skills) != want {
 				t.Fatalf("recovered skill count=%d want=%d", len(snapshot.Skills), want)

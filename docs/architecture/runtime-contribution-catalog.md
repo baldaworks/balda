@@ -164,7 +164,21 @@ storage contracts.
 Every mutable source also has a content-derived `RevisionID`. Plugin revisions
 cover the validated package tree, standalone-skill revisions cover their
 validated skill roots, and configured-MCP revisions cover normalized non-secret
-configuration. Built-in revisions come from the Balda build contract version.
+configuration. Built-in revisions come from the canonical embedded source tree.
+
+The `builtin/balda` source includes the protected `balda-system` skill at
+`balda-system/SKILL.md`. Its canonical contribution identity is
+`builtin/balda/skill/balda-system`; no short-name alias is registered. The
+source revision is the deterministic digest of the embedded built-in source
+tree, so changing the skill changes the revision shared by the source's command
+and skill descriptors. Command implementations remain part of the running
+binary rather than archived source content.
+
+The ordinary available-skills projection exposes only the skill descriptor.
+The body is loaded as user-level context from the session-pinned revision by
+explicit `$skill:builtin/balda/balda-system` selection or by the standard
+`balda.skill.load` MCP tool. Neither path accepts a caller-selected revision or
+filesystem path.
 
 ### Plugin identity, origin, and revision
 

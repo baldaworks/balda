@@ -7,9 +7,34 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 )
+
+func TestLoadBuiltinSkillSourceUsesDirectChildLayoutAndContentRevision(t *testing.T) {
+	loader := newTestSourceLoader(t)
+	id := runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindBuiltin, Name: "balda"}
+	root := fstest.MapFS{
+		"BUILTIN_SOURCE_VERSION": {Data: []byte("builtin-source-v2\n")},
+		"balda-system/SKILL.md":  {Data: []byte("---\nname: balda-system\ndescription: Understand Balda.\n---\nFirst body.\n")},
+	}
+	first, err := loader.LoadBuiltinSkillSource(root, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.Skills) != 1 || first.Skills[0].Resource != "balda-system/SKILL.md" || first.Skills[0].ID.String() != "builtin/balda/skill/balda-system" {
+		t.Fatalf("built-in source = %+v", first)
+	}
+	root["balda-system/SKILL.md"] = &fstest.MapFile{Data: []byte("---\nname: balda-system\ndescription: Understand Balda.\n---\nSecond body.\n")}
+	second, err := loader.LoadBuiltinSkillSource(root, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Descriptor.Revision == first.Descriptor.Revision {
+		t.Fatal("built-in body change did not change source revision")
+	}
+}
 
 const testSkillName = "good"
 

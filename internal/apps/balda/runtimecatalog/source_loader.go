@@ -34,6 +34,7 @@ const (
 	sourceRevisionRulesVersion = "runtime-source-v1"
 	windowsGOOS                = "windows"
 	windowsCommandExtension    = ".cmd"
+	sourceModeRegular          = "regular"
 )
 
 //go:embed schemas/balda-extension-v1.schema.json
@@ -279,6 +280,26 @@ func (l *SourceLoader) LoadSkillSource(root string, id runtimecatalogcmd.SourceI
 		return runtimecatalogcmd.Source{}, errors.New("normalized skill source name is required")
 	}
 	revision, tree, err := l.captureTree(root)
+	if err != nil {
+		return runtimecatalogcmd.Source{}, err
+	}
+	descriptor := runtimecatalogcmd.SourceDescriptor{ID: id, Revision: revision}
+	source := runtimecatalogcmd.Source{Descriptor: descriptor}
+	source.Skills, source.Diagnostics = loadSkills(tree, ".", descriptor, nil)
+	source.Diagnostics = boundDiagnostics(source.Diagnostics, l.limits.MaxDiagnostics)
+	return source, nil
+}
+
+// LoadBuiltinSkillSource validates one trusted, embedded built-in skill root.
+// Mutable filesystem-backed skill sources must use LoadSkillSource instead.
+func (l *SourceLoader) LoadBuiltinSkillSource(root fs.FS, id runtimecatalogcmd.SourceID) (runtimecatalogcmd.Source, error) {
+	if id.Kind != runtimecatalogcmd.SourceKindBuiltin {
+		return runtimecatalogcmd.Source{}, fmt.Errorf("source %q is not a built-in skill source", id.String())
+	}
+	if root == nil || strings.TrimSpace(id.Name) == "" || id.Name != strings.TrimSpace(id.Name) {
+		return runtimecatalogcmd.Source{}, errors.New("normalized built-in skill source is required")
+	}
+	revision, tree, err := l.captureFS(root)
 	if err != nil {
 		return runtimecatalogcmd.Source{}, err
 	}
@@ -852,7 +873,7 @@ func (l *SourceLoader) captureOpenRoot(secureRoot *os.Root) (runtimecatalogcmd.R
 		if files > l.limits.MaxFiles {
 			return errors.New("source file-count limit exceeded")
 		}
-		modeClass := "regular"
+		modeClass := sourceModeRegular
 		if entry.Type()&os.ModeSymlink != 0 {
 			modeClass = "symlink"
 			target, err := secureRoot.Readlink(relative)
@@ -876,7 +897,7 @@ func (l *SourceLoader) captureOpenRoot(secureRoot *os.Root) (runtimecatalogcmd.R
 			tree.issues = append(tree.issues, treeIssue{path: relative, kind: "special file"})
 			return hashTreeIssue(hash, relative, "special-file")
 		}
-		if modeClass == "regular" && fileInfo.Mode().Perm()&0o111 != 0 {
+		if modeClass == sourceModeRegular && fileInfo.Mode().Perm()&0o111 != 0 {
 			modeClass = "executable"
 		}
 		data, walkErr := readRootFile(secureRoot, relative, l.limits.MaxFileBytes)
@@ -901,6 +922,73 @@ func (l *SourceLoader) captureOpenRoot(secureRoot *os.Root) (runtimecatalogcmd.R
 	})
 	if err != nil {
 		return "", capturedTree{}, fmt.Errorf("capture source tree: %w", err)
+	}
+	return runtimecatalogcmd.RevisionID(hex.EncodeToString(hash.Sum(nil))), tree, nil
+}
+
+func (l *SourceLoader) captureFS(root fs.FS) (runtimecatalogcmd.RevisionID, capturedTree, error) {
+	tree := capturedTree{
+		files: make(map[string][]byte), dirs: map[string]bool{".": true},
+		links: make(map[string]string), modes: make(map[string]fs.FileMode),
+	}
+	hash := sha256.New()
+	_, _ = io.WriteString(hash, sourceRevisionRulesVersion)
+	_, _ = hash.Write([]byte{0})
+	entries, files, total := 0, 0, int64(0)
+	err := fs.WalkDir(root, ".", func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if path == "." {
+			return nil
+		}
+		entries++
+		if entries > l.limits.MaxEntries {
+			return errors.New("source entry-count limit exceeded")
+		}
+		if entry.IsDir() {
+			tree.dirs[path] = true
+			_, _ = io.WriteString(hash, path)
+			_, _ = io.WriteString(hash, "\x00directory\x00")
+			return nil
+		}
+		files++
+		if files > l.limits.MaxFiles {
+			return errors.New("source file-count limit exceeded")
+		}
+		info, err := entry.Info()
+		if err != nil || !info.Mode().IsRegular() {
+			return fmt.Errorf("built-in source entry %q is not a regular file", path)
+		}
+		data, err := fs.ReadFile(root, path)
+		if err != nil {
+			return err
+		}
+		if int64(len(data)) > l.limits.MaxFileBytes {
+			return errors.New("source file-size limit exceeded")
+		}
+		total += int64(len(data))
+		if total > l.limits.MaxTotalBytes {
+			return errors.New("source total-size limit exceeded")
+		}
+		modeClass := sourceModeRegular
+		if info.Mode().Perm()&0o111 != 0 {
+			modeClass = "executable"
+		}
+		tree.files[path] = data
+		tree.modes[path] = info.Mode().Perm()
+		_, _ = io.WriteString(hash, path)
+		_, _ = hash.Write([]byte{0})
+		_, _ = io.WriteString(hash, modeClass)
+		_, _ = hash.Write([]byte{0})
+		_, _ = io.WriteString(hash, fmt.Sprintf("%d", len(data)))
+		_, _ = hash.Write([]byte{0})
+		_, _ = hash.Write(data)
+		_, _ = hash.Write([]byte{0})
+		return nil
+	})
+	if err != nil {
+		return "", capturedTree{}, fmt.Errorf("capture built-in source tree: %w", err)
 	}
 	return runtimecatalogcmd.RevisionID(hex.EncodeToString(hash.Sum(nil))), tree, nil
 }

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,12 +33,17 @@ func NewRevisionArchive(root string, limits SourceLimits) (*RevisionArchive, err
 	if err != nil {
 		return nil, errors.New("resolve revision archive root")
 	}
-	if err := os.MkdirAll(absRoot, 0o700); err != nil {
-		return nil, errors.New("create revision archive root")
-	}
-	resolvedRoot, err := filepath.EvalSymlinks(absRoot)
+	parent, err := filepath.EvalSymlinks(filepath.Dir(absRoot))
 	if err != nil {
-		return nil, errors.New("resolve revision archive root")
+		return nil, errors.New("resolve revision archive parent")
+	}
+	resolvedRoot := filepath.Join(parent, filepath.Base(absRoot))
+	if info, statErr := os.Lstat(resolvedRoot); statErr == nil {
+		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			return nil, errors.New("revision archive root is not managed")
+		}
+	} else if !errors.Is(statErr, os.ErrNotExist) {
+		return nil, errors.New("inspect revision archive root")
 	}
 	loader, err := NewSourceLoader(limits)
 	if err != nil {
@@ -65,8 +71,36 @@ func (a *RevisionArchive) Retain(ctx context.Context, sourceRoot string, descrip
 		return ErrRevisionUnavailable
 	}
 
+	return a.retainCapturedTree(tree, descriptor)
+}
+
+// RetainFS durably retains a trusted in-memory source tree.
+func (a *RevisionArchive) RetainFS(ctx context.Context, sourceFS fs.FS, descriptor runtimecatalogcmd.SourceDescriptor) error {
+	if a == nil || a.loader == nil {
+		return errors.New("revision archive is unavailable")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if sourceFS == nil || descriptor.ID.Kind == "" || strings.TrimSpace(descriptor.ID.Name) == "" || !validRevisionID(descriptor.Revision) {
+		return errors.New("valid source descriptor is required")
+	}
+	revision, tree, err := a.loader.captureFS(sourceFS)
+	if err != nil {
+		return fmt.Errorf("capture source revision: %w", err)
+	}
+	if revision != descriptor.Revision {
+		return ErrRevisionUnavailable
+	}
+	return a.retainCapturedTree(tree, descriptor)
+}
+
+func (a *RevisionArchive) retainCapturedTree(tree capturedTree, descriptor runtimecatalogcmd.SourceDescriptor) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if err := ensureArchiveDirectory(a.root); err != nil {
+		return err
+	}
 	sourceDir := filepath.Join(a.root, sourceArchiveKey(descriptor.ID))
 	if err := ensureArchiveDirectory(sourceDir); err != nil {
 		return err

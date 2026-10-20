@@ -7,6 +7,7 @@ import (
 	adksession "google.golang.org/adk/v2/session"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -306,7 +307,7 @@ func exerciseSkillsRecovery(t *testing.T) {
 	f.change(t, skillcmd.OperationRemove, id)
 	// Reopening after removing the last source must reconstruct absence, not replay install.
 	f.reopen(t)
-	if i := f.inventory(t); i.Pending || len(i.Entries) != 0 {
+	if i := f.inventory(t); i.Pending || slices.ContainsFunc(i.Entries, func(entry skillcmd.Entry) bool { return entry.Ownership == skillcmd.OwnershipManaged }) {
 		t.Fatalf("reopen inventory=%+v", i)
 	}
 }

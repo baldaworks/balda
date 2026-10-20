@@ -108,6 +108,7 @@ func TestConfiguredUpgradeRequiresMarkedMatchingDefinition(t *testing.T) {
 				tc.change(&current, &descriptor)
 			}
 			dir := t.TempDir()
+			t.Cleanup(func() { makeWritable(dir) })
 			path := filepath.Join(dir, "state.db")
 			db := prepareConfiguredUpgradeDatabase(t, path)
 			if tc.marked {
@@ -174,6 +175,7 @@ func TestConfiguredSessionUpgradeFreshensIncompleteADKState(t *testing.T) {
 			configs := map[string]agentconfig.MCPServerConfig{"worker-tools": config}
 			snapshot := configuredUpgradeSnapshot(t, configs)
 			dir := t.TempDir()
+			t.Cleanup(func() { makeWritable(dir) })
 			path := filepath.Join(dir, "state.db")
 			workspace := t.TempDir()
 			db := prepareConfiguredUpgradeDatabase(t, path)

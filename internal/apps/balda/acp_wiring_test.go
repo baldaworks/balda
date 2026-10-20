@@ -221,6 +221,14 @@ func TestACPPreflightPreservesConversationLifetimes(t *testing.T) {
 func acpWiringConfig(t *testing.T, budget, delay string) (Config, runtimeconfig.RuntimeConfig, string) {
 	t.Helper()
 	dir := t.TempDir()
+	t.Cleanup(func() {
+		_ = filepath.WalkDir(dir, func(path string, entry os.DirEntry, err error) error {
+			if err == nil && entry.IsDir() {
+				_ = os.Chmod(path, 0o700)
+			}
+			return nil
+		})
+	})
 	defaults, err := os.ReadFile("../../../cmd/balda/balda.yaml")
 	if err != nil {
 		t.Fatal(err)

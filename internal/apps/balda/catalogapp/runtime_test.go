@@ -495,8 +495,8 @@ func TestSessionCapabilityBinderUsesExactRetainedSnapshot(t *testing.T) {
 	if binding.SnapshotID != retained.ID || binding.Skills.Snapshot != retained.ID {
 		t.Fatalf("binding snapshots = (%q, %q), want %q", binding.SnapshotID, binding.Skills.Snapshot, retained.ID)
 	}
-	if len(binding.Skills.Skills) != 1 || binding.Skills.Skills[0].Name != "review" {
-		t.Fatalf("bound skills = %+v, want retained review skill", binding.Skills.Skills)
+	if len(binding.Skills.Skills) != 2 || binding.Skills.Skills[0].Name != builtinSystemSkill || binding.Skills.Skills[1].Name != "review" {
+		t.Fatalf("bound skills = %+v, want built-in and retained review skills", binding.Skills.Skills)
 	}
 	if err := binding.Close(); err != nil {
 		t.Fatalf("Close() error = %v", err)

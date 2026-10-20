@@ -308,6 +308,12 @@ func prepareManagedPluginCLI(ctx context.Context, mutation bool) (*pluginapp.Ser
 		cleanup()
 		return nil, nil, err
 	}
+	if mutation {
+		if err := catalog.RetainBuiltin(ctx); err != nil {
+			cleanup()
+			return nil, nil, err
+		}
+	}
 	service, err := pluginapp.NewManaged(prepared.stateDir, provider.AppKV(), provider.Plugins(), catalog, provider.PluginManagement())
 	if err != nil {
 		cleanup()
