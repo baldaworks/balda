@@ -1,6 +1,8 @@
 package catalogapp
 
 import (
+	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -31,5 +33,8 @@ func TestMaintenanceRuntimeLoadsReadModelWithoutPersistence(t *testing.T) {
 	}
 	if _, found, err := provider.AppKV().GetJSON(t.Context(), snapshotKeyPrefix+string(snapshot.ID)); err != nil || found {
 		t.Fatalf("read snapshot persisted: found=%v err=%v", found, err)
+	}
+	if _, err := os.Stat(filepath.Join(stateDir, "catalog-revisions")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("read-only maintenance created revision archive: %v", err)
 	}
 }

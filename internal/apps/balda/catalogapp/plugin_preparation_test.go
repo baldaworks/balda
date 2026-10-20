@@ -57,12 +57,12 @@ func TestPluginPreparationRetainsExplicitUncommittedRevision(t *testing.T) {
 		t.Fatalf("durable-only preparation without row=%v", err)
 	}
 	snapshot, err := catalog.PreparePluginCandidate(t.Context(), []runtimecatalogcmd.Source{source}, &proof)
-	if err != nil || len(snapshot.Skills) != 1 {
+	if err != nil || len(snapshot.Skills) != 2 {
 		t.Fatalf("explicit prepared candidate=%+v %v", snapshot, err)
 	}
 	// Disabled new revisions are retained without being selected.
 	disabled, err := catalog.PreparePluginCandidate(t.Context(), nil, &proof)
-	if err != nil || len(disabled.Skills) != 0 {
+	if err != nil || len(disabled.Skills) != 1 {
 		t.Fatalf("disabled prepared candidate=%+v %v", disabled, err)
 	}
 	if _, found, err := provider.Plugins().GetPluginRevision(t.Context(), source.Descriptor.ID.Name, string(source.Descriptor.Revision)); err != nil || found {

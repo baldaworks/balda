@@ -177,6 +177,9 @@ func NewLifecycle(runtime *Runtime, plugins *pluginapp.Service) *Lifecycle {
 
 // Start migrates startup-era installs, then reconstructs one complete snapshot.
 func (l *Lifecycle) Start(ctx context.Context) error {
+	if err := l.runtime.RetainBuiltin(ctx); err != nil {
+		return err
+	}
 	if err := l.plugins.MigrateLegacy(ctx); err != nil {
 		return err
 	}

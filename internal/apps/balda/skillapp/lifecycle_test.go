@@ -99,6 +99,27 @@ func (f fixture) inventory(t *testing.T) skillcmd.Inventory {
 	}
 	return inventory
 }
+
+func nonBuiltinEntries(inventory skillcmd.Inventory) []skillcmd.Entry {
+	var entries []skillcmd.Entry
+	for _, entry := range inventory.Entries {
+		if entry.ID.Source.Kind != runtimecatalogcmd.SourceKindBuiltin {
+			entries = append(entries, entry)
+		}
+	}
+	return entries
+}
+
+func nonBuiltinSkills(snapshot runtimecatalogcmd.Snapshot) []runtimecatalogcmd.SkillMetadata {
+	var skills []runtimecatalogcmd.SkillMetadata
+	for _, skill := range snapshot.Skills {
+		if skill.ID.Source.Kind != runtimecatalogcmd.SourceKindBuiltin {
+			skills = append(skills, skill)
+		}
+	}
+	return skills
+}
+
 func (f fixture) mutation(t *testing.T, id runtimecatalogcmd.SourceID) skillcmd.Mutation {
 	t.Helper()
 	return skillcmd.Mutation{ID: id, ExpectedState: f.inventory(t).ExpectedState, Authority: f.authority}
@@ -127,7 +148,7 @@ func TestLocalLifecyclePreservesArchivedContentAndDisabledUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(pinned.Skills) != 1 {
+	if skills := nonBuiltinSkills(pinned); len(skills) != 1 || skills[0].Name != "selected" {
 		t.Fatalf("installed siblings: %+v", pinned.Skills)
 	}
 	if _, err := f.service.ReviewInstall(t.Context(), skillapp.InstallRequest{Source: root, Path: "picked", ExpectedState: f.inventory(t).ExpectedState, Authority: f.authority}); err != skillcmd.ErrConflict {
@@ -148,7 +169,8 @@ func TestLocalLifecyclePreservesArchivedContentAndDisabledUpdate(t *testing.T) {
 		t.Fatalf("update=%+v,%v", outcome, err)
 	}
 	inventory := f.inventory(t)
-	if len(inventory.Entries) != 1 || inventory.Entries[0].Enabled || inventory.Entries[0].Revision == candidate.Entry.Revision {
+	entries := nonBuiltinEntries(inventory)
+	if len(entries) != 1 || entries[0].Enabled || entries[0].Revision == candidate.Entry.Revision {
 		t.Fatalf("disabled updated inventory=%+v", inventory)
 	}
 	if err := os.RemoveAll(root); err != nil {
@@ -160,7 +182,7 @@ func TestLocalLifecyclePreservesArchivedContentAndDisabledUpdate(t *testing.T) {
 	if _, err := f.service.Change(t.Context(), skillcmd.OperationRemove, f.mutation(t, id)); err != nil {
 		t.Fatal(err)
 	}
-	if len(f.inventory(t).Entries) != 0 {
+	if len(nonBuiltinEntries(f.inventory(t))) != 0 {
 		t.Fatal("removed installation visible")
 	}
 	loaded, err := f.catalog.ReadSkill(t.Context(), runtimecatalogcmd.SkillReadRequest{Ref: runtimecatalogcmd.SkillRef{Source: id, Revision: candidate.Entry.Revision, Name: "selected"}, MainResource: "selected/SKILL.md", Resources: []string{"references/details.txt"}})
@@ -195,7 +217,7 @@ func TestReviewRejectsChangedContentStateIdentityAndAuthority(t *testing.T) {
 	if _, err := f.service.Accept(t.Context(), candidate.Handle, f.authority); err != skillcmd.ErrConflict {
 		t.Fatalf("changed source=%v", err)
 	}
-	if len(f.inventory(t).Entries) != 0 {
+	if len(nonBuiltinEntries(f.inventory(t))) != 0 {
 		t.Fatal("changed candidate accepted")
 	}
 	fresh, err := f.service.ReviewInstall(t.Context(), request)
@@ -260,7 +282,7 @@ func TestGitReviewSelectsSubtreeAndRejectsMovedRef(t *testing.T) {
 	if outcome, err := f.service.Accept(t.Context(), fresh.Handle, f.authority); err != nil || outcome.Pending {
 		t.Fatalf("Git accept=%+v,%v", outcome, err)
 	}
-	if len(f.inventory(t).Entries) != 1 {
+	if len(nonBuiltinEntries(f.inventory(t))) != 1 {
 		t.Fatal("Git sibling installed")
 	}
 	request.Ref = "main"
@@ -326,7 +348,8 @@ func TestPublicationFaultIsAcceptedPendingAndRetryDoesNotFetchOrAuditAgain(t *te
 		t.Fatalf("postcommit failure=%+v,%v", outcome, err)
 	}
 	inventory := f.inventory(t)
-	if !inventory.Pending || len(inventory.Entries) != 1 || !inventory.Entries[0].Pending || inventory.Entries[0].CurrentRevision != "" {
+	entries := nonBuiltinEntries(inventory)
+	if !inventory.Pending || len(entries) != 1 || !entries[0].Pending || entries[0].CurrentRevision != "" {
 		t.Fatalf("pending inventory=%+v", inventory)
 	}
 	if _, err := service.Accept(t.Context(), candidate.Handle, f.authority); err != skillcmd.ErrConflict {
@@ -359,13 +382,13 @@ func TestInventoryDoesNotFetchAndExplicitRefreshAdoptsUnmanagedSkill(t *testing.
 	writeSkill(t, filepath.Join(f.directory, "skills", "unmanaged"), "unmanaged", "body")
 	before := f.inventory(t)
 	still, _ := f.catalog.CurrentSkillSnapshot(t.Context(), "")
-	if original.ID != still.ID || len(before.Entries) != 0 {
+	if original.ID != still.ID || len(nonBuiltinEntries(before)) != 0 {
 		t.Fatal("inventory activated filesystem change")
 	}
 	if _, err := f.service.Refresh(t.Context(), skillcmd.Mutation{ExpectedState: before.ExpectedState, Authority: f.authority}); err != nil {
 		t.Fatal(err)
 	}
-	if inventory := f.inventory(t); len(inventory.Entries) != 1 || inventory.Entries[0].Ownership != skillcmd.OwnershipUnmanaged {
+	if inventory := f.inventory(t); len(nonBuiltinEntries(inventory)) != 1 || nonBuiltinEntries(inventory)[0].Ownership != skillcmd.OwnershipUnmanaged {
 		t.Fatalf("refreshed=%+v", inventory)
 	}
 	fault := &catalogFault{Catalog: f.catalog, prepareErr: errors.New("sensitive filesystem path")}
@@ -379,7 +402,7 @@ func TestInventoryDoesNotFetchAndExplicitRefreshAdoptsUnmanagedSkill(t *testing.
 		t.Fatalf("refresh failure=%v", err)
 	}
 	after := f.inventory(t)
-	if after.ExpectedState != before.ExpectedState || len(after.Entries) != 1 || len(after.Diagnostics) == 0 {
+	if after.ExpectedState != before.ExpectedState || len(nonBuiltinEntries(after)) != 1 || len(after.Diagnostics) == 0 {
 		t.Fatalf("refresh failure state=%+v", after)
 	}
 }

@@ -353,6 +353,12 @@ func prepareSkillCLIApplication(ctx context.Context, mutation bool) (skillCLI, f
 		cleanup()
 		return nil, nil, err
 	}
+	if mutation {
+		if err := catalog.RetainBuiltin(ctx); err != nil {
+			cleanup()
+			return nil, nil, err
+		}
+	}
 	if err := catalog.LoadMaintenanceSnapshot(ctx); err != nil {
 		cleanup()
 		return nil, nil, err
