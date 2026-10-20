@@ -92,6 +92,7 @@ func (h *Handler) Handle(ctx context.Context, env actorlayer.Envelope, p command
 	if err := h.sessions.CreateSession(ctx, session.SessionContext{
 		Locator: topicLocator,
 		UserID:  p.Principal,
+		Kind:    session.KindForConversation(p.Conversation.Direct),
 	}, topicName); err != nil {
 		h.logger.Error().Err(err).Str("topic_name", topicName).Msg("failed to create topic session")
 		_ = h.channel.CloseTopic(ctx, topicLocator)

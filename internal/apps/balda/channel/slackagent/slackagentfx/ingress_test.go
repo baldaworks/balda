@@ -31,6 +31,7 @@ func TestInboundProcessorHydratesMentionedChannelThreadAndPublishesTurn(t *testi
 	setPrivateField(t, topic, "sessionID", locator.SessionID)
 	setPrivateField(t, topic, "userID", "slackagent:T123:U456")
 	setPrivateField(t, topic, "agentSessionID", "agent-session-1")
+	setPrivateField(t, topic, "kind", baldasession.KindChat)
 	manager := &baldasession.Manager{}
 	setPrivateField(t, manager, "sessions", map[string]*baldasession.TopicSession{locator.SessionID: topic})
 	setPrivateField(t, manager, "sessionStore", restoreStoreStub{})
@@ -126,7 +127,7 @@ func TestInboundProcessorHistoricalMediaFailureSettlesBeforeDispatch(t *testing.
 	historyFiles := &historicalContextHydratorStub{err: errors.New("temporary media failure")}
 	processor := newTestInboundProcessorWithHistoricalFiles(
 		t,
-		existingSessionManager(t, locator, "slackagent:T123:U456"),
+		existingSessionManager(t, locator, "slackagent:T123:U456", baldasession.KindChat),
 		dispatcher,
 		lifecycle,
 		&threadHistoryStub{snapshot: slackagent.ThreadSnapshot{RootTS: "100.1", CutoffTS: "100.2", Available: true}},
@@ -168,7 +169,7 @@ func TestInboundProcessorHistoryFailuresSettleBeforeDispatch(t *testing.T) {
 			lifecycle := &sessionLifecycleStub{}
 			processor := newTestInboundProcessor(
 				t,
-				existingSessionManager(t, locator, "slackagent:T123:U456"),
+				existingSessionManager(t, locator, "slackagent:T123:U456", baldasession.KindChat),
 				dispatcher,
 				lifecycle,
 				&threadHistoryStub{err: test.err},
@@ -209,6 +210,10 @@ func TestInboundProcessorSkipsHistoryForDMAndTopLevelMention(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			kind := baldasession.KindChat
+			if test.channelType == "im" {
+				kind = baldasession.KindDM
+			}
 			locator := slackagent.NewThreadLocator("T123", test.channel, test.rootTS)
 			envelope, err := slackagent.BuildIngressEnvelope(slackagent.EventEnvelope{Type: "event_callback", Event: slackagent.Event{
 				EventID: "Ev-" + test.name, EventType: test.eventType, UserID: "U456", Text: "hello", ChannelType: test.channelType,
@@ -221,7 +226,7 @@ func TestInboundProcessorSkipsHistoryForDMAndTopLevelMention(t *testing.T) {
 			history := &threadHistoryStub{err: errors.New("must not be called")}
 			processor := newTestInboundProcessor(
 				t,
-				existingSessionManager(t, locator, "slackagent:T123:U456"),
+				existingSessionManager(t, locator, "slackagent:T123:U456", kind),
 				&dispatcherRecorder{},
 				&sessionLifecycleStub{},
 				history,
@@ -249,7 +254,7 @@ func TestInboundProcessorDoesNotBeginLifecycleBeforeDispatchAcceptance(t *testin
 	lifecycle := &sessionLifecycleStub{}
 	processor := newTestInboundProcessor(
 		t,
-		existingSessionManager(t, locator, "slackagent:T123:U456"),
+		existingSessionManager(t, locator, "slackagent:T123:U456", baldasession.KindChat),
 		dispatcher,
 		lifecycle,
 		nil,
@@ -494,11 +499,12 @@ func contextualMentionEnvelope(t *testing.T, rootTS, messageTS string) slackagen
 	return envelope
 }
 
-func existingSessionManager(t *testing.T, locator baldasession.SessionLocator, userID string) *baldasession.Manager {
+func existingSessionManager(t *testing.T, locator baldasession.SessionLocator, userID string, kind baldasession.Kind) *baldasession.Manager {
 	t.Helper()
 	topic := &baldasession.TopicSession{}
 	setPrivateField(t, topic, "sessionID", locator.SessionID)
 	setPrivateField(t, topic, "userID", userID)
+	setPrivateField(t, topic, "kind", kind)
 	manager := &baldasession.Manager{}
 	setPrivateField(t, manager, "sessions", map[string]*baldasession.TopicSession{locator.SessionID: topic})
 	setPrivateField(t, manager, "sessionStore", restoreStoreStub{})

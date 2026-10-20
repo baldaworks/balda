@@ -39,7 +39,11 @@ func (a *SessionAdapter) Prepare(ctx context.Context, inbound chatapp.InboundCon
 	if inbound.Direct && inbound.TopicID == 0 && a.directLabel != "" {
 		label = a.directLabel
 	}
-	topicSession, err := a.sessions.EnsureSession(ctx, baldasession.SessionContext{Locator: locator, UserID: inbound.UserID}, label)
+	topicSession, err := a.sessions.EnsureSession(ctx, baldasession.SessionContext{
+		Locator: locator,
+		UserID:  inbound.UserID,
+		Kind:    baldasession.KindForConversation(inbound.Direct),
+	}, label)
 	if err != nil {
 		return chatapp.SessionPreparation{}, err
 	}

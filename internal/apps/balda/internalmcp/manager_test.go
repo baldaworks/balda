@@ -209,6 +209,32 @@ func TestCanonicalSessionLocatorReconstructsTelegramAddress(t *testing.T) {
 	}
 }
 
+func TestCanonicalSessionLocatorReconstructsPrivateExecutionAddress(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		channelType string
+		sessionID   string
+		addressJSON string
+	}{
+		{channelType: "schedule", sessionID: "sch-any-stable-id", addressJSON: `{"run_id":"sch-any-stable-id"}`},
+		{channelType: "webhook", sessionID: "wh-any-stable-id", addressJSON: `{}`},
+	} {
+		t.Run(test.channelType, func(t *testing.T) {
+			got, err := canonicalSessionLocator(sessionmcp.SessionLocatorInput{
+				SessionID: test.sessionID, ChannelType: test.channelType,
+				AddressKey: test.sessionID, AddressJSON: `{"caller":"ignored"}`,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.AddressJSON != test.addressJSON || got.SessionID != test.sessionID {
+				t.Fatalf("locator = %+v", got)
+			}
+		})
+	}
+}
+
 func TestSessionSendAttachmentServiceDispatchesLocalAttachmentsBatch(t *testing.T) {
 	t.Parallel()
 

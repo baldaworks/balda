@@ -7,9 +7,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/baldaworks/go-actorlayer"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/go-actorlayer"
 )
 
 type recordingJobCommandBus struct {
@@ -114,6 +114,16 @@ func TestJobEventsServiceAppendEventUsesDeterministicIDsExceptProgress(t *testin
 	}
 	if got := bus.envs[2].ID; got == "" || got == bus.envs[3].ID {
 		t.Fatalf("progress event ids = %q/%q, want append-only unique ids", bus.envs[2].ID, bus.envs[3].ID)
+	}
+
+	if err := service.AppendEvent(ctx, "task-1", JobEventAgentProgress, "agent:planner", "progress-stable", map[string]any{"text": "updated text is ignored for identity"}); err != nil {
+		t.Fatalf("AppendEvent(first keyed progress) error = %v", err)
+	}
+	if err := service.AppendEvent(ctx, "task-1", JobEventAgentProgress, "agent:planner", "progress-stable", map[string]any{"text": "working"}); err != nil {
+		t.Fatalf("AppendEvent(second keyed progress) error = %v", err)
+	}
+	if got := bus.envs[4].ID; got == "" || got != bus.envs[5].ID {
+		t.Fatalf("keyed progress event ids = %q/%q, want deterministic duplicate id", bus.envs[4].ID, bus.envs[5].ID)
 	}
 }
 

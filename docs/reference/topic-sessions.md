@@ -62,6 +62,21 @@ format listed above. The complete implementation flow is documented in
 package ownership is documented in the
 [transport presentation boundary](../architecture/transport-presentation-boundary.md).
 
+## Session progress
+
+The bundled `balda.session.progress` MCP tool accepts a canonical session
+locator, visible text, and an idempotency key. It resolves only an active
+session. DM and chat progress is delivered to that session through the normal
+DeliveryActor path. Schedule and webhook progress is recorded as
+`agent.progress` on the owning job and is never sent to the job's terminal
+`report_to` destination.
+
+Balda derives the session kind and job owner from server-owned runtime state.
+Callers cannot select the family, owner, or delivery destination. Reusing the
+same idempotency key for one session reuses the same progress identity and does
+not create another durable effect. Progress text is bounded and redacted before
+delivery or persistence.
+
 ## Session restore/create behavior
 
 - Balda restores persisted session metadata on first message after restart.

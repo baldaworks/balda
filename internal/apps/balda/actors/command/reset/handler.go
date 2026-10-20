@@ -68,7 +68,11 @@ func (h *Handler) Handle(ctx context.Context, env actorlayer.Envelope, p command
 	if err := h.sessions.ResetSession(ctx, p.Locator); err != nil {
 		return commandactor.SendPlain(ctx, h.dispatcher, env.ID, p.Locator, "Could not reset this session.", "reset-failed")
 	}
-	if err := h.sessions.CreateSession(ctx, session.SessionContext{Locator: p.Locator, UserID: userID}, label); err != nil {
+	if err := h.sessions.CreateSession(ctx, session.SessionContext{
+		Locator: p.Locator,
+		UserID:  userID,
+		Kind:    session.KindForConversation(p.Conversation.Direct),
+	}, label); err != nil {
 		return commandactor.SendPlain(ctx, h.dispatcher, env.ID, p.Locator, "Could not reset this session.", "recreate-failed")
 	}
 	return h.deliverResult(ctx, env.ID, p, label)

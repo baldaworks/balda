@@ -252,6 +252,8 @@ func (a *Adapter) SendProgress(ctx context.Context, locator deliverycmd.Locator,
 		return nil
 	}
 	switch progress.Kind {
+	case deliverycmd.ProgressStatus:
+		return a.SendPlain(ctx, locator, progress.Text)
 	case deliverycmd.ProgressThinking:
 		return nil
 	case deliverycmd.ProgressPlanUpdate:

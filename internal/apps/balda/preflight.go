@@ -31,6 +31,7 @@ import (
 	"github.com/baldaworks/balda/internal/git"
 	portableapp "github.com/baldaworks/balda/sessionmemory/app"
 	portmcp "github.com/baldaworks/balda/sessionmemory/mcp"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/baldaworks/runtime/v2/agentconfig"
 	"github.com/baldaworks/runtime/v2/agentfactory"
 	runtimeconfig "github.com/baldaworks/runtime/v2/appconfig"
@@ -353,6 +354,9 @@ func PreflightRuntime(
 				fx.As(new(session.BoundaryObserver)),
 			),
 			session.NewManager,
+			func(manager *session.Manager, dispatcher actortransport.Dispatcher, logger zerolog.Logger) *sessionapp.ProgressService {
+				return sessionapp.NewProgressService(manager, dispatcher, nil, logger)
+			},
 			internalmcp.NewInternalMCPManager,
 		),
 		natsbus.Module,

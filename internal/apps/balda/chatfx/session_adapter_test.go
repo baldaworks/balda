@@ -36,7 +36,7 @@ func TestSessionAdapterPrepareDependencyFailureIsRetryable(t *testing.T) {
 func TestConversationalPreparationPortsUseSavedSessionIdentity(t *testing.T) {
 	manager := newTestSessionManager(t)
 	first, err := NewSessionAdapter(manager).Prepare(t.Context(), chatapp.InboundContext{
-		ChannelType: "telegram", AddressKey: "9001:0", AddressJSON: `{"chat_id":9001,"topic_id":0}`, SessionID: "saved-id", UserID: "saved-user",
+		ChannelType: "telegram", AddressKey: "9001:0", AddressJSON: `{"chat_id":9001,"topic_id":0}`, SessionID: "saved-id", UserID: "saved-user", Direct: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -59,7 +59,8 @@ func TestConversationalPreparationPortsUseSavedSessionIdentity(t *testing.T) {
 }
 
 func TestIngressPreparationMainDMLabelIsCompositionDefault(t *testing.T) {
-	prepared, err := NewIngressSessionAdapter(newTestSessionManager(t)).Prepare(t.Context(), ingressapp.InboundContext{
+	manager := newTestSessionManager(t)
+	prepared, err := NewIngressSessionAdapter(manager).Prepare(t.Context(), ingressapp.InboundContext{
 		ChannelType: "telegram", AddressKey: "9001:0", AddressJSON: `{"chat_id":9001,"topic_id":0}`, SessionID: "new-dm", UserID: "user", Direct: true,
 	})
 	if err != nil {
@@ -67,5 +68,30 @@ func TestIngressPreparationMainDMLabelIsCompositionDefault(t *testing.T) {
 	}
 	if prepared.SessionLabel != "balda" {
 		t.Fatalf("main DM label = %q", prepared.SessionLabel)
+	}
+	topic, err := manager.GetSession(baldasession.SessionLocator{SessionID: prepared.SessionID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := topic.GetKind(); got != baldasession.KindDM {
+		t.Fatalf("session kind = %q, want %q", got, baldasession.KindDM)
+	}
+}
+
+func TestSessionAdapterClassifiesSharedConversation(t *testing.T) {
+	manager := newTestSessionManager(t)
+	prepared, err := NewSessionAdapter(manager).Prepare(t.Context(), chatapp.InboundContext{
+		ChannelType: "telegram", AddressKey: "9002:0", AddressJSON: `{"chat_id":9002,"topic_id":0}`,
+		SessionID: "group-chat", UserID: "user", Direct: false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	topic, err := manager.GetSession(baldasession.SessionLocator{SessionID: prepared.SessionID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := topic.GetKind(); got != baldasession.KindChat {
+		t.Fatalf("session kind = %q, want %q", got, baldasession.KindChat)
 	}
 }

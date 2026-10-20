@@ -17,6 +17,8 @@ type TopicSession struct {
 	agentSessionID      string
 	userID              string
 	locator             SessionLocator
+	kind                Kind
+	ownerJobID          string
 	agentName           string
 	agent               agent.Agent
 	runner              *runner.Runner
@@ -59,6 +61,12 @@ func (s *TopicSession) GetAgentSessionID() string {
 func (s *TopicSession) GetUserID() string {
 	return s.userID
 }
+
+// GetKind returns the immutable execution kind selected at admission.
+func (s *TopicSession) GetKind() Kind { return s.kind }
+
+// GetOwnerJobID returns the service job that owns this session, when present.
+func (s *TopicSession) GetOwnerJobID() string { return s.ownerJobID }
 
 func (s *TopicSession) GetWorkspaceDir() string {
 	return s.workspaceDir

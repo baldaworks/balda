@@ -57,7 +57,15 @@ func (m *Manager) EnsureTransientSession(ctx context.Context, sessionCtx Session
 	if !isPrivateScheduleSessionID(sessionID) && !isPrivateWebhookSessionID(sessionID) {
 		return nil, fmt.Errorf("private execution session id is required")
 	}
+	resolvedCtx, err := m.resolveExecutionContext(sessionCtx)
+	if err != nil {
+		return nil, err
+	}
+	sessionCtx = resolvedCtx
 	if existing, err := m.GetSession(sessionCtx.Locator); err == nil {
+		if existing.kind != sessionCtx.Kind || existing.ownerJobID != sessionCtx.OwnerJobID {
+			return nil, fmt.Errorf("active session execution context does not match requested kind and owner")
+		}
 		return existing, nil
 	}
 	if err := m.createSession(ctx, sessionCtx, agentName, nil, true); err != nil {
@@ -134,6 +142,11 @@ func (m *Manager) prepareSessionLocked(ctx context.Context, sessionCtx SessionCo
 		}
 		persisted = &record
 	}
+	resolvedCtx, err := m.resolveExecutionContext(sessionCtx)
+	if err != nil {
+		return nil, err
+	}
+	sessionCtx = resolvedCtx
 	if err := m.reconcileArchiveDestruction(ctx, sessionCtx.Locator, sessionCtx.UserID); err != nil {
 		return nil, err
 	}
@@ -142,6 +155,9 @@ func (m *Manager) prepareSessionLocked(ctx context.Context, sessionCtx SessionCo
 	active := m.sessions[sessionID]
 	m.mu.RUnlock()
 	if active != nil {
+		if active.kind != sessionCtx.Kind || active.ownerJobID != strings.TrimSpace(sessionCtx.OwnerJobID) {
+			return nil, fmt.Errorf("active session execution context does not match requested kind and owner")
+		}
 		return active, nil
 	}
 	if !found && !createIfMissing {
@@ -194,6 +210,8 @@ type TopicSessionInfo struct {
 	SessionID    string
 	UserID       string
 	Locator      SessionLocator
+	Kind         Kind
+	OwnerJobID   string
 	ChannelType  string
 	AgentName    string
 	WorkspaceDir string
@@ -215,6 +233,8 @@ func (m *Manager) GetSessionInfo(ctx context.Context, sessionID string) (TopicSe
 			SessionID:    ts.sessionID,
 			UserID:       ts.userID,
 			Locator:      ts.locator,
+			Kind:         ts.kind,
+			OwnerJobID:   ts.ownerJobID,
 			ChannelType:  ts.locator.ChannelType,
 			AgentName:    ts.agentName,
 			WorkspaceDir: ts.workspaceDir,

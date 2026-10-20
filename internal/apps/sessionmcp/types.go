@@ -218,3 +218,20 @@ type SessionSendAttachmentsOutput struct {
 type SessionSendAttachmentService interface {
 	SendSessionAttachments(ctx context.Context, in SessionSendAttachmentsInput) (SessionSendAttachmentsOutput, error)
 }
+
+type SessionProgressInput struct {
+	Locator        SessionLocatorInput `json:"locator" jsonschema:"active target session locator"`
+	Text           string              `json:"text" jsonschema:"visible progress text"`
+	IdempotencyKey string              `json:"idempotency_key" jsonschema:"stable caller key for this progress update"`
+}
+
+type SessionProgressOutput struct {
+	ToolOutcome
+	Accepted    bool   `json:"accepted" jsonschema:"true when the progress effect was durably accepted"`
+	ProgressID  string `json:"progress_id,omitempty" jsonschema:"stable progress identity derived by Balda"`
+	Disposition string `json:"disposition,omitempty" jsonschema:"delivered for conversation sessions or recorded for service sessions"`
+}
+
+type SessionProgressService interface {
+	ReportSessionProgress(ctx context.Context, in SessionProgressInput) (SessionProgressOutput, error)
+}

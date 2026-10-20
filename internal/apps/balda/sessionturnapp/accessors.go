@@ -34,7 +34,9 @@ func (a sessionAccessor) RestoreSession(ctx context.Context, sessionCtx sessiont
 			AddressKey:  sessionCtx.Locator.AddressKey,
 			AddressJSON: sessionCtx.Locator.AddressJSON,
 		},
-		UserID: sessionCtx.UserID,
+		UserID:     sessionCtx.UserID,
+		Kind:       baldasession.Kind(sessionCtx.Kind),
+		OwnerJobID: sessionCtx.OwnerJobID,
 	})
 	if errors.Is(err, baldasession.ErrNoPersistedSession) {
 		return ts, errors.Join(sessionturn.ErrNoPersistedSession, err)
@@ -50,7 +52,9 @@ func (a sessionAccessor) EnsureSession(ctx context.Context, sessionCtx sessiontu
 			AddressKey:  sessionCtx.Locator.AddressKey,
 			AddressJSON: sessionCtx.Locator.AddressJSON,
 		},
-		UserID: sessionCtx.UserID,
+		UserID:     sessionCtx.UserID,
+		Kind:       baldasession.Kind(sessionCtx.Kind),
+		OwnerJobID: sessionCtx.OwnerJobID,
 	}, agentName)
 }
 
@@ -60,7 +64,9 @@ func (a sessionAccessor) EnsureTransientSession(ctx context.Context, sessionCtx 
 			SessionID: sessionCtx.Locator.SessionID, ChannelType: sessionCtx.Locator.ChannelType,
 			AddressKey: sessionCtx.Locator.AddressKey, AddressJSON: sessionCtx.Locator.AddressJSON,
 		},
-		UserID: sessionCtx.UserID,
+		UserID:     sessionCtx.UserID,
+		Kind:       baldasession.Kind(sessionCtx.Kind),
+		OwnerJobID: sessionCtx.OwnerJobID,
 	}, agentName)
 }
 

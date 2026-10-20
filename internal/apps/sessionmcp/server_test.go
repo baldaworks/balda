@@ -25,6 +25,17 @@ type recordingSendAttachmentService struct {
 	batchOutput SessionSendAttachmentsOutput
 }
 
+type recordingProgressService struct {
+	inputs []SessionProgressInput
+	output SessionProgressOutput
+	err    error
+}
+
+func (r *recordingProgressService) ReportSessionProgress(_ context.Context, in SessionProgressInput) (SessionProgressOutput, error) {
+	r.inputs = append(r.inputs, in)
+	return r.output, r.err
+}
+
 func (r *recordingWaitScheduler) ScheduleSessionWait(_ context.Context, in SessionWaitInput) error {
 	r.inputs = append(r.inputs, in)
 	return nil
@@ -72,6 +83,7 @@ func TestSessionStateServerListsTools(t *testing.T) {
 	}
 
 	want := []string{
+		"balda.session.progress",
 		"balda.session.question",
 		"balda.session.send_attachments",
 		"balda.session.wait",
@@ -158,6 +170,57 @@ func TestSessionStateToolDescriptionsAndSchemas(t *testing.T) {
 	questionProps := questionSchema["properties"].(map[string]any)
 	if _, ok := questionProps["options"]; !ok {
 		t.Fatal("balda.session.question input schema missing options property")
+	}
+	progressSchema, ok := toolByName["balda.session.progress"].InputSchema.(map[string]any)
+	if !ok {
+		t.Fatalf("balda.session.progress input schema type = %T, want map[string]any", toolByName["balda.session.progress"].InputSchema)
+	}
+	progressProps := progressSchema["properties"].(map[string]any)
+	if len(progressProps) != 3 {
+		t.Fatalf("balda.session.progress properties = %v, want exactly locator/text/idempotency_key", progressProps)
+	}
+	for _, name := range []string{"locator", "text", "idempotency_key"} {
+		if _, ok := progressProps[name]; !ok {
+			t.Fatalf("balda.session.progress input schema missing %q", name)
+		}
+	}
+}
+
+func TestSessionProgressCallsService(t *testing.T) {
+	progress := &recordingProgressService{output: SessionProgressOutput{
+		ToolOutcome: ToolOutcome{OK: true}, Accepted: true,
+		ProgressID: "progress-1", Disposition: "delivered",
+	}}
+	ctx, cleanup, client := newTestSessionWithServices(t, NewMemoryStore(), nil, nil, nil, progress)
+	defer cleanup()
+
+	result := callTool(t, ctx, client, "balda.session.progress", map[string]any{
+		"locator": map[string]any{
+			"session_id": "tg-1-0", "channel_type": "telegram", "address_key": "1:0",
+		},
+		"text": "  working  ", "idempotency_key": "  step-1  ",
+	})
+	if result.IsError || len(progress.inputs) != 1 {
+		t.Fatalf("result=%+v inputs=%+v", result, progress.inputs)
+	}
+	if progress.inputs[0].Text != "working" || progress.inputs[0].IdempotencyKey != "step-1" {
+		t.Fatalf("input = %+v", progress.inputs[0])
+	}
+}
+
+func TestSessionProgressRejectsOversizedInputBeforeService(t *testing.T) {
+	progress := &recordingProgressService{}
+	ctx, cleanup, client := newTestSessionWithServices(t, NewMemoryStore(), nil, nil, nil, progress)
+	defer cleanup()
+
+	result := callTool(t, ctx, client, "balda.session.progress", map[string]any{
+		"locator": map[string]any{
+			"session_id": "tg-1-0", "channel_type": "telegram", "address_key": "1:0",
+		},
+		"text": strings.Repeat("x", maxProgressTextBytes+1), "idempotency_key": "step-1",
+	})
+	if !result.IsError || len(progress.inputs) != 0 {
+		t.Fatalf("result=%+v inputs=%+v", result, progress.inputs)
 	}
 }
 
@@ -562,14 +625,14 @@ func TestSharedStateAcrossStores(t *testing.T) {
 // Test helpers
 
 func newTestSession(t *testing.T, store Store, waitScheduler SessionWaitService) (context.Context, func(), *mcp.ClientSession) {
-	return newTestSessionWithServices(t, store, waitScheduler, nil, nil)
+	return newTestSessionWithServices(t, store, waitScheduler, nil, nil, nil)
 }
 
 func newTestSessionWithQuestionService(t *testing.T, store Store, waitScheduler SessionWaitService, questionService SessionQuestionService) (context.Context, func(), *mcp.ClientSession) {
-	return newTestSessionWithServices(t, store, waitScheduler, questionService, nil)
+	return newTestSessionWithServices(t, store, waitScheduler, questionService, nil, nil)
 }
 
-func newTestSessionWithServices(t *testing.T, store Store, waitScheduler SessionWaitService, questionService SessionQuestionService, sendAttachmentService SessionSendAttachmentService) (context.Context, func(), *mcp.ClientSession) {
+func newTestSessionWithServices(t *testing.T, store Store, waitScheduler SessionWaitService, questionService SessionQuestionService, sendAttachmentService SessionSendAttachmentService, progressService SessionProgressService) (context.Context, func(), *mcp.ClientSession) {
 	t.Helper()
 	if store == nil {
 		t.Fatal("store is required")
@@ -578,7 +641,7 @@ func newTestSessionWithServices(t *testing.T, store Store, waitScheduler Session
 		&mcp.Implementation{Name: "test-session-state", Version: "1.0.0"},
 		nil,
 	)
-	RegisterTools(server, store, waitScheduler, questionService, sendAttachmentService)
+	RegisterTools(server, store, waitScheduler, questionService, sendAttachmentService, progressService)
 
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -613,7 +676,7 @@ func TestSessionSendAttachmentsToolInvokesService(t *testing.T) {
 			Message:     "attachments sent",
 		},
 	}
-	ctx, cleanup, session := newTestSessionWithServices(t, NewMemoryStore(), nil, nil, sendSvc)
+	ctx, cleanup, session := newTestSessionWithServices(t, NewMemoryStore(), nil, nil, sendSvc, nil)
 	defer cleanup()
 
 	result := callTool(t, ctx, session, "balda.session.send_attachments", map[string]any{

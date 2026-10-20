@@ -1392,6 +1392,40 @@ func checkJobStore_JobMutationAndEventOutboxAreAtomic(t *testing.T, open contrac
 	if len(pending) != 1 || pending[0].ID != "event-outbox-1" {
 		t.Fatalf("pending events = %+v, want event-outbox-1", pending)
 	}
+	if err := store.EnqueueJobEvent(ctx, pending[0]); err != nil {
+		t.Fatalf("EnqueueJobEvent(duplicate) error = %v", err)
+	}
+	pending, err = store.ListPendingJobEvents(ctx, 10)
+	if err != nil {
+		t.Fatalf("ListPendingJobEvents(after duplicate) error = %v", err)
+	}
+	if len(pending) != 1 || pending[0].ID != "event-outbox-1" {
+		t.Fatalf("pending events after duplicate = %+v, want one event-outbox-1", pending)
+	}
+	const concurrentRetries = 8
+	errs := make(chan error, concurrentRetries)
+	var retryGroup sync.WaitGroup
+	for range concurrentRetries {
+		retryGroup.Add(1)
+		go func() {
+			defer retryGroup.Done()
+			errs <- store.EnqueueJobEvent(ctx, pending[0])
+		}()
+	}
+	retryGroup.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("EnqueueJobEvent(concurrent duplicate) error = %v", err)
+		}
+	}
+	pending, err = store.ListPendingJobEvents(ctx, 10)
+	if err != nil {
+		t.Fatalf("ListPendingJobEvents(after concurrent duplicates) error = %v", err)
+	}
+	if len(pending) != 1 || pending[0].ID != "event-outbox-1" {
+		t.Fatalf("pending events after concurrent duplicates = %+v, want one event-outbox-1", pending)
+	}
 
 	invalidEvent := JobEventOutboxRecord{
 		ID:       "event-outbox-invalid",

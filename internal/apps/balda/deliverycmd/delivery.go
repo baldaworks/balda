@@ -104,6 +104,7 @@ const (
 	ProgressActivity   ProgressKind = "activity"
 	ProgressThinking   ProgressKind = "thinking"
 	ProgressPlanUpdate ProgressKind = "plan_update"
+	ProgressStatus     ProgressKind = "status"
 )
 
 func AgentReplyEnvelope(jobID string, from actorlayer.ActorAddress, locator Locator, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
@@ -300,10 +301,36 @@ func ProgressActivityEnvelope(jobID string, from actorlayer.ActorAddress, locato
 }
 
 func ProgressThinkingEnvelope(jobID string, from actorlayer.ActorAddress, locator Locator, policy ProgressPolicy, visible bool, text string, sequence int, dedupeSuffix string) (actorlayer.Envelope, error) {
+	return progressThinkingEnvelope(jobID, from, locator, "", policy, visible, text, sequence, dedupeSuffix)
+}
+
+// ProgressThinkingEnvelopeWithSettlement builds a thinking progress delivery
+// with an explicit durable settlement policy.
+func ProgressThinkingEnvelopeWithSettlement(jobID string, from actorlayer.ActorAddress, locator Locator, settlement SettlementPolicy, policy ProgressPolicy, visible bool, text string, sequence int, dedupeSuffix string) (actorlayer.Envelope, error) {
+	return progressThinkingEnvelope(jobID, from, locator, normalizeSettlementPolicy(settlement), policy, visible, text, sequence, dedupeSuffix)
+}
+
+// ProgressStatusEnvelope builds an explicit user-visible progress message.
+func ProgressStatusEnvelope(jobID string, from actorlayer.ActorAddress, locator Locator, settlement SettlementPolicy, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
 	return envelope(jobID, from, Payload{
-		JobID:   strings.TrimSpace(jobID),
-		Locator: locator,
-		Mode:    ModeProgress,
+		JobID:      strings.TrimSpace(jobID),
+		Locator:    locator,
+		Mode:       ModeProgress,
+		Settlement: normalizeSettlementPolicy(settlement),
+		Progress: &Progress{
+			Kind:    ProgressStatus,
+			Text:    strings.TrimSpace(text),
+			Visible: true,
+		},
+	}, dedupeSuffix)
+}
+
+func progressThinkingEnvelope(jobID string, from actorlayer.ActorAddress, locator Locator, settlement SettlementPolicy, policy ProgressPolicy, visible bool, text string, sequence int, dedupeSuffix string) (actorlayer.Envelope, error) {
+	return envelope(jobID, from, Payload{
+		JobID:      strings.TrimSpace(jobID),
+		Locator:    locator,
+		Mode:       ModeProgress,
+		Settlement: settlement,
 		Progress: &Progress{
 			Kind:     ProgressThinking,
 			Text:     strings.TrimSpace(text),
@@ -367,6 +394,10 @@ func Validate(payload Payload) error {
 		switch payload.Progress.Kind {
 		case ProgressActivity:
 			return nil
+		case ProgressStatus:
+			if strings.TrimSpace(payload.Progress.Text) == "" {
+				return fmt.Errorf("status progress text is required")
+			}
 		case ProgressThinking:
 		case ProgressPlanUpdate:
 			if strings.TrimSpace(payload.Progress.Text) == "" && (payload.Progress.Plan == nil || len(payload.Progress.Plan.Entries) == 0) {

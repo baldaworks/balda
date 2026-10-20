@@ -145,6 +145,7 @@ type Manager struct {
 	logger             zerolog.Logger
 	hooks              HookRunner
 	boundaryObserver   BoundaryObserver
+	kindResolver       KindResolver
 	now                func() time.Time
 
 	mu                 sync.RWMutex
@@ -179,6 +180,7 @@ type ManagerParams struct {
 	SessionsPersistent bool `name:"balda_sessions_persistent"`
 	SessionStore       baldastate.SessionStore
 	BoundaryObserver   BoundaryObserver `optional:"true"`
+	KindResolver       KindResolver     `optional:"true"`
 	Hooks              HookRunner       `optional:"true"`
 	Logger             zerolog.Logger
 }
@@ -202,6 +204,7 @@ func NewManager(p ManagerParams) (*Manager, error) {
 		sessionsPersistent: p.SessionsPersistent,
 		sessionStore:       p.SessionStore,
 		boundaryObserver:   p.BoundaryObserver,
+		kindResolver:       p.KindResolver,
 		hooks:              p.Hooks,
 		logger:             p.Logger.With().Str("component", "balda.session_manager").Logger(),
 		sessions:           make(map[string]*TopicSession),
@@ -357,6 +360,11 @@ func (m *Manager) createSessionLocked(ctx context.Context, sessionCtx SessionCon
 	if err := m.lifecycleInterruption(ctx); err != nil {
 		return err
 	}
+	var err error
+	sessionCtx, err = m.resolveExecutionContext(sessionCtx)
+	if err != nil {
+		return err
+	}
 	locator := sessionCtx.Locator
 	userID := strings.TrimSpace(sessionCtx.UserID)
 	if userID == "" {
@@ -451,6 +459,8 @@ func (m *Manager) createSessionLocked(ctx context.Context, sessionCtx SessionCon
 		if err != nil {
 			return err
 		}
+		recovered.kind = sessionCtx.Kind
+		recovered.ownerJobID = strings.TrimSpace(sessionCtx.OwnerJobID)
 		m.mu.Lock()
 		m.sessions[sessionID] = recovered
 		m.mu.Unlock()
@@ -515,6 +525,8 @@ func (m *Manager) createSessionLocked(ctx context.Context, sessionCtx SessionCon
 		agentSessionID:      agentSessionID,
 		userID:              userID,
 		locator:             locator,
+		kind:                sessionCtx.Kind,
+		ownerJobID:          strings.TrimSpace(sessionCtx.OwnerJobID),
 		agentName:           agentName,
 		agent:               sessionRuntime.Agent,
 		runner:              sessionRuntime.Runner,
@@ -585,6 +597,29 @@ func (m *Manager) createSessionLocked(ctx context.Context, sessionCtx SessionCon
 		Msg("session created successfully")
 
 	return nil
+}
+
+func (m *Manager) resolveExecutionContext(sessionCtx SessionContext) (SessionContext, error) {
+	if sessionCtx.Kind == "" {
+		if m.kindResolver != nil {
+			kind, err := m.kindResolver.ResolveKind(sessionCtx.Locator)
+			if err != nil {
+				return SessionContext{}, fmt.Errorf("resolve session kind: %w", err)
+			}
+			sessionCtx.Kind = kind
+		} else {
+			// Direct Manager construction is retained for package-level tests and
+			// compatibility embedders. Production composition always supplies the
+			// transport resolver; the shared-chat fallback keeps legacy records
+			// executable without inspecting transport-specific locator encodings.
+			sessionCtx.Kind = KindChat
+		}
+	}
+	if err := validateExecutionContext(sessionCtx.Kind, sessionCtx.OwnerJobID); err != nil {
+		return SessionContext{}, fmt.Errorf("validate session execution context: %w", err)
+	}
+	sessionCtx.OwnerJobID = strings.TrimSpace(sessionCtx.OwnerJobID)
+	return sessionCtx, nil
 }
 
 func (m *Manager) prepareSessionWorkspace(

@@ -168,6 +168,9 @@ func (a *Adapter) sendThinking(_ context.Context, locator deliverycmd.Locator) e
 
 func (a *Adapter) sendProgress(ctx context.Context, locator deliverycmd.Locator, progress deliverycmd.Progress) error {
 	switch progress.Kind {
+	case deliverycmd.ProgressStatus:
+		_, err := a.send(ctx, locator, progress.Text, false)
+		return err
 	case deliverycmd.ProgressActivity:
 		return a.sendThinking(ctx, locator)
 	case deliverycmd.ProgressThinking:

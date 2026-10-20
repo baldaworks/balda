@@ -91,7 +91,8 @@ func jobEventRecord(jobID string, eventType string, actor string, messageID stri
 		return baldastate.JobEventRecord{}, err
 	}
 	eventID := ""
-	if strings.TrimSpace(eventType) == JobEventAgentProgress {
+	isProgress := strings.TrimSpace(eventType) == JobEventAgentProgress
+	if isProgress && strings.TrimSpace(messageID) == "" {
 		eventID = uuid.NewString()
 	} else {
 		parts := []string{
@@ -99,7 +100,9 @@ func jobEventRecord(jobID string, eventType string, actor string, messageID stri
 			strings.TrimSpace(eventType),
 			strings.TrimSpace(actor),
 			strings.TrimSpace(messageID),
-			strings.TrimSpace(data),
+		}
+		if !isProgress {
+			parts = append(parts, strings.TrimSpace(data))
 		}
 		sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
 		eventTypePart := strings.ToLower(strings.TrimSpace(eventType))
