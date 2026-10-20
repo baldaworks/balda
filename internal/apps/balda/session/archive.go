@@ -209,6 +209,10 @@ func (m *Manager) completeArchiveDeletion(ctx context.Context, intent *chatarchi
 	if intent == nil {
 		return deleteErr == nil, deleteErr
 	}
+	// A failed delete may have committed before its context expired. Give the
+	// outcome read and durable completion one independent, bounded budget.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
+	defer cancel()
 	outcome := chatarchivecmd.OutcomeDestroyed
 	if deleteErr != nil {
 		outcome = chatarchivecmd.StatusUncertain
@@ -219,7 +223,13 @@ func (m *Manager) completeArchiveDeletion(ctx context.Context, intent *chatarchi
 			outcome = chatarchivecmd.OutcomeRetained
 		}
 	}
-	return outcome == chatarchivecmd.OutcomeDestroyed, errors.Join(deleteErr, m.archive.Complete(ctx, intent.Token, outcome))
+	completionErr := m.archive.Complete(ctx, intent.Token, outcome)
+	if outcome == chatarchivecmd.OutcomeDestroyed {
+		// Authoritative destruction supersedes the failed delete receipt, but a
+		// failed journal write still prevents exposing a replacement.
+		return true, completionErr
+	}
+	return false, errors.Join(deleteErr, completionErr)
 }
 
 func (m *Manager) reconcileArchiveDestruction(ctx context.Context, loc SessionLocator, userID string) error {

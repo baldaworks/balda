@@ -167,6 +167,14 @@ replacement until lazy reconciliation under the canonical operation lock proves
 the old runtime retained or destroyed. Reconciliation never repeats lifecycle
 hooks. Later hook/workspace cleanup failure cannot undo a proved destruction.
 
+Active reset uses separate finite budgets for deletion, outcome reconciliation
+and context-aware old-resource cleanup. A deletion timeout does not by itself prove that the runtime
+survived: a fresh bounded read and journal completion can establish destruction
+and let the same reset proceed. Caller cancellation and application shutdown
+still prevent fresh replacement; detached cleanup contexts do not authorize it.
+This reconciles deletion outcomes; it does not resolve the underlying cause of
+slow storage operations or extend the deletion timeout.
+
 A fresh replacement uses a new archive UUID and retains the ended predecessor
 where available, even when its Balda and ADK routing IDs are reused. If deletion
 succeeds but replacement creation fails, the old transcript remains ended and no

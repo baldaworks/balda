@@ -956,7 +956,7 @@ func (m *Manager) resetSessionWithReason(ctx context.Context, locator SessionLoc
 			return err
 		}
 		if old.Status == chatarchivecmd.StatusEnded {
-			return nil
+			return m.lifecycleInterruption(ctx)
 		}
 	}
 	destruction, err := m.beginArchiveDestruction(ctx, record.ArchiveID, reason)
@@ -994,7 +994,7 @@ func (m *Manager) resetSessionWithReason(ctx context.Context, locator SessionLoc
 	}
 	deleteErr := rootRuntime.SessionSvc.Delete(ctx, &adksession.DeleteRequest{AppName: appName, UserID: userID, SessionID: sessionID})
 	_, journalErr := m.completeArchiveDeletion(ctx, destruction, rootRuntime.SessionSvc, appName, userID, deleteErr)
-	return errors.Join(boundaryErr, journalErr)
+	return errors.Join(boundaryErr, journalErr, m.lifecycleInterruption(ctx))
 }
 
 func (m *Manager) hardDeleteSession(locator SessionLocator) {
@@ -1118,24 +1118,24 @@ func (m *Manager) resetActiveSession(ctx context.Context, locator SessionLocator
 			ts.pendingBoundaries[reason] = attempt
 		}
 	}
-	cleanupCtx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
-	defer cancel()
+	deleteCtx, cancelDelete := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
 	// Keep the active runtime available if storage cannot delete its history.
-	deleteErr := deleteTopicRuntimeSession(cleanupCtx, ts)
-	destroyed, journalErr := m.completeArchiveDeletion(cleanupCtx, destruction, ts.sessionSvc, topicAppName(ts), ts.userID, deleteErr)
+	deleteErr := deleteTopicRuntimeSession(deleteCtx, ts)
+	cancelDelete()
+	destroyed, journalErr := m.completeArchiveDeletion(ctx, destruction, ts.sessionSvc, topicAppName(ts), ts.userID, deleteErr)
 	ts.runtimeDeleted = destroyed
 	if !destroyed {
-		return true, errors.Join(boundaryErr, journalErr)
+		return true, errors.Join(boundaryErr, journalErr, m.lifecycleInterruption(ctx))
 	}
 	m.mu.Lock()
 	if m.sessions[sessionID] == ts {
 		delete(m.sessions, sessionID)
 	}
 	m.mu.Unlock()
-	if err := m.cleanupTopicSession(cleanupCtx, ts, sessionCleanupOptions{}); err != nil {
-		return true, errors.Join(boundaryErr, journalErr, err)
-	}
-	return true, errors.Join(boundaryErr, journalErr)
+	cleanupCtx, cancelCleanup := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
+	defer cancelCleanup()
+	cleanupErr := m.cleanupTopicSession(cleanupCtx, ts, sessionCleanupOptions{})
+	return true, errors.Join(boundaryErr, journalErr, cleanupErr, m.lifecycleInterruption(ctx))
 }
 
 func (m *Manager) lockSessionOperation(sessionID string) func() {

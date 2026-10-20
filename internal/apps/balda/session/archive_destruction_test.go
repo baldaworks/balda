@@ -355,6 +355,8 @@ func TestArchiveFallbackCreatesDistinctEpochAtSameRuntimeID(t *testing.T) {
 	if err := first.sessionSvc.AppendEvent(t.Context(), first.sess, event); err != nil {
 		t.Fatal(err)
 	}
+	// Rotation must also reconcile a committed deletion whose receipt timed out.
+	f.runtime.SessionSvc = committedDeadlineService{Service: f.runtime.SessionSvc}
 	second, err := f.manager().EnsureSession(t.Context(), archiveInput(), "saved")
 	if err != nil {
 		t.Fatal(err)
