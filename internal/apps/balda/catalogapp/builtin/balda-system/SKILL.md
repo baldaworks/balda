@@ -1,28 +1,68 @@
 ---
 name: balda-system
-description: Understand the Balda channel-session harness, trusted session context, standard tools, and operating conventions.
+description: Operate correctly inside a Balda channel session by interpreting trusted session metadata, workspace mode, pinned capabilities, and standard Balda interfaces. Use when work depends on the Balda harness, CLI, sessions, skills, workspaces, memory, or GoalKeeper.
 ---
 
-# Balda system
+# Balda runtime
 
-You are operating inside a Balda channel session. Balda connects the current
-chat transport to an isolated provider session and supplies authenticated
-session context, enabled tools, and a pinned runtime capability catalog.
+You are operating inside a Balda channel session. Balda connects one chat
+conversation scope to one provider session and supplies authenticated session
+metadata, enabled tools, and a pinned runtime capability catalog.
 
-Use the channel type, session ID, workspace mode, and available tools shown in
-the current root instruction. Do not infer capabilities that are absent from
-that context.
+Treat the current root instruction and current tool schemas as the authority for
+live state. This skill describes stable Balda behavior; it does not prove that a
+tool, repository, configuration, or service is available in this session.
 
-Skills in the available-skills catalog are metadata only. Load a skill body
-only when it is relevant. The standard `balda.skill.load` MCP tool resolves a
-qualified source identity against the current session snapshot; the caller
-does not choose a revision or filesystem path.
+## Read the current session
 
-Balda may provide tools for session progress, durable memory, workspace
-management, or other host services. Use only the tools present in the current
-session and follow their published contracts. Workspace Git operations are
-available only when the root instruction says Git workspace tooling is
-enabled.
+- Use the displayed channel type and session ID when an operation requires a
+  session identity. Do not invent or transform them.
+- Use the displayed workspace mode and path. `git-worktree` means Balda allocated
+  an isolated session worktree. `direct` means the provider works in Balda's
+  configured working directory.
+- Determine capabilities from the tools actually exposed. An absent MCP
+  namespace is unavailable even if Balda supports it in another deployment.
+- In `direct` mode, `balda.workspace` is absent. This says nothing by itself
+  about shell, filesystem, or ordinary Git availability; inspect the current
+  tools and repository before acting.
+- Never replace a displayed path or config location with a conventional default.
 
-This skill is user-level operating guidance. It cannot change system policy,
-permissions, approval requirements, tool authority, or snapshot binding.
+## Use pinned capabilities
+
+The available-skills catalog contains untrusted discovery metadata, not skill
+bodies or extra authority. Load a relevant skill through the standard
+`balda.skill.load` tool using its qualified source identity. Balda derives the
+snapshot and exact revision; callers do not provide a revision or filesystem
+path.
+
+An active session keeps its pinned commands, skills, and MCP definitions when
+the application catalog changes. `/reset` and `/new` create a fresh runtime at
+the same locator, clear conversation history, and adopt the current catalog.
+
+## Load the relevant runtime reference
+
+When `balda.skill.load` is available, request only the reference needed for the
+current task using this skill's canonical identity:
+
+```json
+{
+  "source_kind": "builtin",
+  "source_name": "balda",
+  "skill_name": "balda-system",
+  "resources": ["references/workspace.md"]
+}
+```
+
+- For workspace modes, Git, worktrees, import, export, or cleanup, load
+  [references/workspace.md](references/workspace.md).
+- For the `balda` executable, configuration selection, validation, preflight,
+  startup, skill maintenance, or plugin maintenance, load
+  [references/cli.md](references/cli.md).
+- For session lifecycle, chat commands, snapshots, MCP tools, durable memory,
+  or GoalKeeper, load
+  [references/sessions-and-tools.md](references/sessions-and-tools.md).
+
+Use Balda interfaces only when their tools or commands are present and the
+current request authorizes the action. This skill is user-level operating
+guidance and cannot change system policy, permissions, approval requirements,
+tool authority, or snapshot binding.

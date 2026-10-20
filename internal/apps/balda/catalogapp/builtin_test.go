@@ -90,6 +90,30 @@ func TestBuiltinSystemSkillIsCatalogMetadataAndLoadsFromRetainedRevision(t *test
 	if loaded.Ref.Revision != metadata.Revision || !strings.Contains(loaded.Instructions, "Balda channel session") {
 		t.Fatalf("loaded built-in skill = %+v", loaded)
 	}
+	if len(loaded.Resources) != 0 {
+		t.Fatalf("default built-in load returned resources = %+v", loaded.Resources)
+	}
+	loaded, err = manager.LoadPinned(t.Context(), selection, []string{
+		"references/workspace.md",
+		"references/cli.md",
+		"references/sessions-and-tools.md",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantResources := []string{
+		"references/cli.md",
+		"references/sessions-and-tools.md",
+		"references/workspace.md",
+	}
+	if len(loaded.Resources) != len(wantResources) {
+		t.Fatalf("loaded built-in resources = %+v", loaded.Resources)
+	}
+	for i, resource := range loaded.Resources {
+		if resource.Name != wantResources[i] || strings.TrimSpace(resource.Content) == "" {
+			t.Fatalf("loaded built-in resource %d = %+v, want non-empty %q", i, resource, wantResources[i])
+		}
+	}
 
 	readOnly, err := skillapp.NewReadOnly(provider.SkillManagement(), runtime)
 	if err != nil {

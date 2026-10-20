@@ -178,7 +178,10 @@ The ordinary available-skills projection exposes only the skill descriptor.
 The body is loaded as user-level context from the session-pinned revision by
 explicit `$skill:builtin/balda/balda-system` selection or by the standard
 `balda.skill.load` MCP tool. Neither path accepts a caller-selected revision or
-filesystem path.
+filesystem path. The entrypoint provides the stable runtime map and routes
+CLI, workspace, and session/tool details to supporting references. Those
+references remain archived with the same source revision and are returned only
+when explicitly requested through the loader's `resources` field.
 
 ### Plugin identity, origin, and revision
 
