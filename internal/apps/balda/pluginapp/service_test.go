@@ -2,10 +2,11 @@ package pluginapp
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
@@ -21,6 +22,7 @@ func TestServiceMarketplaceAndAvailableInstallFlow(t *testing.T) {
 	t.Parallel()
 
 	stateDir := t.TempDir()
+	t.Cleanup(func() { _ = makeTreeWritable(stateDir) })
 	provider, err := state.NewSQLiteProvider(context.Background(), filepath.Join(stateDir, "state.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteProvider() error = %v", err)
@@ -48,9 +50,9 @@ func TestServiceMarketplaceAndAvailableInstallFlow(t *testing.T) {
   "description": "Demo plugin"
 }`)
 
-	svc, err := New(stateDir, provider.AppKV())
+	svc, err := NewManaged(stateDir, provider.AppKV(), provider.Plugins(), &recordingActivator{}, provider.PluginManagement())
 	if err != nil {
-		t.Fatalf("New() error = %v", err)
+		t.Fatalf("NewManaged() error = %v", err)
 	}
 	if err := svc.AddMarketplace(context.Background(), MarketplaceSource{
 		Name:   testMarketplaceName,
@@ -92,8 +94,17 @@ func TestServiceMarketplaceAndAvailableInstallFlow(t *testing.T) {
 	if err := svc.Install(context.Background(), testPluginName+"@"+testMarketplaceName); err != nil {
 		t.Fatalf("Install() error = %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(stateDir, "plugins", testPluginName, "plugin.json")); err != nil {
-		t.Fatalf("installed plugin manifest missing: %v", err)
+	install, found, err := provider.Plugins().GetPluginInstall(t.Context(), testPluginName)
+	if err != nil || !found {
+		t.Fatalf("managed installation found=%v, error=%v", found, err)
+	}
+	revision, found, err := provider.Plugins().GetPluginRevision(t.Context(), testPluginName, install.ActiveRevisionID)
+	if err != nil || !found {
+		t.Fatalf("managed revision found=%v, error=%v", found, err)
+	}
+	retainedRoot := filepath.Join(stateDir, filepath.FromSlash(revision.RelativeRoot))
+	if _, err := os.Stat(filepath.Join(retainedRoot, "plugin.json")); err != nil {
+		t.Fatal(err)
 	}
 
 	installed, err := svc.ListInstalled(context.Background())
@@ -115,8 +126,11 @@ func TestServiceMarketplaceAndAvailableInstallFlow(t *testing.T) {
 	if err := svc.RemoveInstalled(context.Background(), testPluginName); err != nil {
 		t.Fatalf("RemoveInstalled() error = %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(stateDir, "plugins", testPluginName)); !os.IsNotExist(err) {
-		t.Fatalf("installed plugin dir still exists, stat err = %v", err)
+	if _, found, err := provider.Plugins().GetPluginInstall(t.Context(), testPluginName); err != nil || found {
+		t.Fatalf("removed selection found=%v, error=%v", found, err)
+	}
+	if _, err := os.Stat(retainedRoot); err != nil {
+		t.Fatalf("retained revision after remove: %v", err)
 	}
 }
 
@@ -124,6 +138,7 @@ func TestServiceMarketplaceGitSourceFlow(t *testing.T) {
 	t.Parallel()
 
 	stateDir := t.TempDir()
+	t.Cleanup(func() { _ = makeTreeWritable(stateDir) })
 	provider, err := state.NewSQLiteProvider(context.Background(), filepath.Join(stateDir, "state.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteProvider() error = %v", err)
@@ -156,9 +171,9 @@ func TestServiceMarketplaceGitSourceFlow(t *testing.T) {
 	runGit(t, repoRoot, "add", ".")
 	runGit(t, repoRoot, "commit", "-m", "initial marketplace")
 
-	svc, err := New(stateDir, provider.AppKV())
+	svc, err := NewManaged(stateDir, provider.AppKV(), provider.Plugins(), &recordingActivator{}, provider.PluginManagement())
 	if err != nil {
-		t.Fatalf("New() error = %v", err)
+		t.Fatalf("NewManaged() error = %v", err)
 	}
 	if err := svc.AddMarketplace(context.Background(), MarketplaceSource{
 		Name:   "git-market",
@@ -217,6 +232,7 @@ func TestServiceMarketplaceReadsManifestPath(t *testing.T) {
 	t.Parallel()
 
 	stateDir := t.TempDir()
+	t.Cleanup(func() { _ = makeTreeWritable(stateDir) })
 	provider, err := state.NewSQLiteProvider(context.Background(), filepath.Join(stateDir, "state.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteProvider() error = %v", err)
@@ -244,9 +260,9 @@ func TestServiceMarketplaceReadsManifestPath(t *testing.T) {
   "description": "Demo plugin"
 }`)
 
-	svc, err := New(stateDir, provider.AppKV())
+	svc, err := NewManaged(stateDir, provider.AppKV(), provider.Plugins(), &recordingActivator{}, provider.PluginManagement())
 	if err != nil {
-		t.Fatalf("New() error = %v", err)
+		t.Fatalf("NewManaged() error = %v", err)
 	}
 	if err := svc.AddMarketplace(context.Background(), MarketplaceSource{
 		Name:   "demo-market",
@@ -255,6 +271,9 @@ func TestServiceMarketplaceReadsManifestPath(t *testing.T) {
 		t.Fatalf("AddMarketplace() error = %v", err)
 	}
 
+	if _, err := svc.UpgradeMarketplaces(t.Context(), "demo-market"); err != nil {
+		t.Fatal(err)
+	}
 	available, err := svc.ListAvailable(context.Background())
 	if err != nil {
 		t.Fatalf("ListAvailable() error = %v", err)
@@ -264,187 +283,6 @@ func TestServiceMarketplaceReadsManifestPath(t *testing.T) {
 	}
 	if available[0].Name != "demo" || available[0].Version != "1.2.3" {
 		t.Fatalf("available[0] = %#v", available[0])
-	}
-}
-
-func TestServiceMarketplaceSkipsPortableDotPluginManifestByDefault(t *testing.T) {
-	t.Parallel()
-
-	stateDir := t.TempDir()
-	provider, err := state.NewSQLiteProvider(context.Background(), filepath.Join(stateDir, "state.db"))
-	if err != nil {
-		t.Fatalf("NewSQLiteProvider() error = %v", err)
-	}
-	defer func() { _ = provider.Close() }()
-
-	marketplaceRoot := filepath.Join(t.TempDir(), "market")
-	mustMkdirAll(t, filepath.Join(marketplaceRoot, ".agents", "plugins"))
-	mustMkdirAll(t, filepath.Join(marketplaceRoot, "plugins", "demo", ".plugin"))
-	mustWriteFile(t, filepath.Join(marketplaceRoot, ".agents", "plugins", "marketplace.json"), `{
-  "name": "demo-market",
-  "plugins": [
-    {
-      "name": "demo",
-      "source": { "source": "local", "path": "./plugins/demo" },
-      "category": "Developer Tools"
-    }
-  ]
-}`)
-	mustWriteFile(t, filepath.Join(marketplaceRoot, "plugins", "demo", ".plugin", "plugin.json"), `{
-  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-  "name": "demo",
-  "version": "2.3.4",
-  "description": "Demo plugin"
-}`)
-
-	svc, err := New(stateDir, provider.AppKV())
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
-	if err := svc.AddMarketplace(context.Background(), MarketplaceSource{
-		Name:   "demo-market",
-		Source: marketplaceRoot,
-	}); err != nil {
-		t.Fatalf("AddMarketplace() error = %v", err)
-	}
-
-	available, err := svc.ListAvailable(context.Background())
-	if err != nil {
-		t.Fatalf("ListAvailable() error = %v", err)
-	}
-	if len(available) != 0 {
-		t.Fatalf("len(available) = %d, want 0", len(available))
-	}
-}
-
-func TestServiceInstallReplacesExistingPluginAtomically(t *testing.T) {
-	t.Parallel()
-
-	stateDir := t.TempDir()
-	provider, err := state.NewSQLiteProvider(context.Background(), filepath.Join(stateDir, "state.db"))
-	if err != nil {
-		t.Fatalf("NewSQLiteProvider() error = %v", err)
-	}
-	defer func() { _ = provider.Close() }()
-
-	marketplaceRoot := filepath.Join(t.TempDir(), "market")
-	mustMkdirAll(t, filepath.Join(marketplaceRoot, ".agents", "plugins"))
-	mustMkdirAll(t, filepath.Join(marketplaceRoot, "plugins", "demo"))
-	mustWriteFile(t, filepath.Join(marketplaceRoot, ".agents", "plugins", "marketplace.json"), `{
-  "name": "demo-market",
-  "plugins": [
-    {
-      "name": "demo",
-      "source": { "source": "local", "path": "./plugins/demo" }
-    }
-  ]
-}`)
-	mustWriteFile(t, filepath.Join(marketplaceRoot, "plugins", "demo", "plugin.json"), `{
-  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-  "name": "demo",
-  "version": "9.9.9",
-  "description": "Fresh plugin"
-}`)
-
-	svc, err := New(stateDir, provider.AppKV())
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
-	if err := svc.AddMarketplace(context.Background(), MarketplaceSource{
-		Name:   "demo-market",
-		Source: marketplaceRoot,
-	}); err != nil {
-		t.Fatalf("AddMarketplace() error = %v", err)
-	}
-
-	existingRoot := filepath.Join(stateDir, "plugins", "demo")
-	mustMkdirAll(t, existingRoot)
-	mustWriteFile(t, filepath.Join(existingRoot, "plugin.json"), `{
-  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-  "name":"demo",
-  "version":"0.1.0",
-  "description":"Old plugin"
-}`)
-	if err := svc.Install(context.Background(), "demo@demo-market"); err != nil {
-		t.Fatalf("Install() error = %v", err)
-	}
-	data, err := os.ReadFile(filepath.Join(existingRoot, "plugin.json"))
-	if err != nil {
-		t.Fatalf("ReadFile(installed plugin.json) error = %v", err)
-	}
-	if !strings.Contains(string(data), `"version": "9.9.9"`) && !strings.Contains(string(data), `"version":"9.9.9"`) {
-		t.Fatalf("installed plugin manifest = %s, want upgraded version", string(data))
-	}
-	if _, err := os.Stat(existingRoot + ".bak-install"); !os.IsNotExist(err) {
-		t.Fatalf("backup root still exists, stat err = %v", err)
-	}
-	if _, err := os.Stat(existingRoot + ".tmp-install"); !os.IsNotExist(err) {
-		t.Fatalf("stage root still exists, stat err = %v", err)
-	}
-}
-
-func TestServiceInstallSkipsWhenSameVersionAlreadyInstalled(t *testing.T) {
-	t.Parallel()
-
-	stateDir := t.TempDir()
-	provider, err := state.NewSQLiteProvider(context.Background(), filepath.Join(stateDir, "state.db"))
-	if err != nil {
-		t.Fatalf("NewSQLiteProvider() error = %v", err)
-	}
-	defer func() { _ = provider.Close() }()
-
-	marketplaceRoot := filepath.Join(t.TempDir(), "market")
-	mustMkdirAll(t, filepath.Join(marketplaceRoot, ".agents", "plugins"))
-	mustMkdirAll(t, filepath.Join(marketplaceRoot, "plugins", "demo"))
-	mustWriteFile(t, filepath.Join(marketplaceRoot, ".agents", "plugins", "marketplace.json"), `{
-  "name": "demo-market",
-  "plugins": [
-    {
-      "name": "demo",
-      "source": { "source": "local", "path": "./plugins/demo" }
-    }
-  ]
-}`)
-	mustWriteFile(t, filepath.Join(marketplaceRoot, "plugins", "demo", "plugin.json"), `{
-  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-  "name": "demo",
-  "version": "1.2.3",
-  "description": "Marketplace plugin"
-}`)
-
-	svc, err := New(stateDir, provider.AppKV())
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
-	if err := svc.AddMarketplace(context.Background(), MarketplaceSource{
-		Name:   "demo-market",
-		Source: marketplaceRoot,
-	}); err != nil {
-		t.Fatalf("AddMarketplace() error = %v", err)
-	}
-
-	existingRoot := filepath.Join(stateDir, "plugins", "demo")
-	mustMkdirAll(t, existingRoot)
-	mustWriteFile(t, filepath.Join(existingRoot, "plugin.json"), `{
-  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-  "name":"demo",
-  "version":"1.2.3",
-  "description":"Installed plugin"
-}`)
-	markerPath := filepath.Join(existingRoot, "keep.txt")
-	mustWriteFile(t, markerPath, "keep")
-
-	if err := svc.Install(context.Background(), "demo@demo-market"); err != nil {
-		t.Fatalf("Install() error = %v", err)
-	}
-	if _, err := os.Stat(markerPath); err != nil {
-		t.Fatalf("marker file missing after skipped install: %v", err)
-	}
-	if _, err := os.Stat(existingRoot + ".bak-install"); !os.IsNotExist(err) {
-		t.Fatalf("backup root exists after skipped install, stat err = %v", err)
-	}
-	if _, err := os.Stat(existingRoot + ".tmp-install"); !os.IsNotExist(err) {
-		t.Fatalf("stage root exists after skipped install, stat err = %v", err)
 	}
 }
 
@@ -470,4 +308,55 @@ func runGit(t *testing.T, dir string, args ...string) {
 	if err != nil {
 		t.Fatalf("git %v failed: %v: %s", args, err, string(out))
 	}
+}
+
+func copyDir(src, dst string) error {
+	info, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("source is not a directory")
+	}
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		srcPath := filepath.Join(src, entry.Name())
+		dstPath := filepath.Join(dst, entry.Name())
+		if entry.IsDir() {
+			if err := copyDir(srcPath, dstPath); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := copyFile(srcPath, dstPath); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = in.Close() }()
+	info, err := in.Stat()
+	if err != nil {
+		return err
+	}
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, info.Mode().Perm())
+	if err != nil {
+		return err
+	}
+	defer func() { _ = out.Close() }()
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+	return out.Close()
 }

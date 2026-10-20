@@ -87,8 +87,8 @@ func (s *Service) refreshMarketplacesTrusted(ctx context.Context, name string) (
 		if err != nil {
 			return nil, err
 		}
-		status := MarketplaceStatus{Name: src.Name, Source: src.Source, Kind: detail.Kind, Ref: src.Ref, Sparse: append([]string(nil), src.Sparse...), Cached: true, LastRefreshedAt: now.Format(time.RFC3339), ResolvedRef: detail.ResolvedRevision, ManifestPresent: true, AvailablePlugins: detail.AvailablePlugins}
-		results = append(results, MarketplaceUpgradeResult{Name: src.Name, Source: src.Source, PluginCount: detail.AvailablePlugins, Refreshed: true, Status: status})
+		status := marketplaceStatusView(detail)
+		results = append(results, MarketplaceUpgradeResult{Name: src.Name, Source: detail.Source, PluginCount: detail.AvailablePlugins, Refreshed: true, Status: status})
 	}
 	return results, nil
 }

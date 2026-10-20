@@ -58,6 +58,91 @@ Balda-owned plugin stdio discovery starts asynchronously under bounded
 supervision; provider execution retains its separate child ownership. See
 [MCP deadlines](configuration.md#mcp-availability-and-deadlines) for limits and recovery scope.
 
+## Host-local plugin CLI
+
+The `balda plugin` CLI uses the same durable installation and complete catalog
+publication lifecycle as Backoffice. Package files alone do not establish an
+installation: successful installation records the validated exact revision,
+origin and enablement in the configured database, then publishes its catalog.
+A fresh `balda skill list` reads that managed selection; it does not depend on a
+previous server process's memory.
+
+Run CLI mutations while Balda is stopped. Install/remove and marketplace
+add/upgrade/remove acquire exclusive ownership of `<state_dir>/balda.lock`
+before opening the provider or changing packages, discovery or catalog state.
+An existing owner causes a nonzero `runtime_active` result. For online changes,
+use the existing authorized Backoffice **Operations → Plugins** pages. The CLI
+does not stop or restart Balda. Inspection closes its provider resources and
+never refreshes a source, recovers publication or activates files on disk.
+
+Configure a known local marketplace, refresh discovery explicitly, and install:
+
+```bash
+balda plugin marketplace add /srv/balda/marketplace
+balda plugin marketplace upgrade marketplace
+balda plugin list --available
+balda plugin install review-tools@marketplace
+balda plugin list
+balda plugin show review-tools
+balda skill list
+```
+
+The configured name is inferred from the source (`marketplace` here), and is the
+identity used after `@`. A Git source can select an explicit ref and sparse paths:
+
+```bash
+balda plugin marketplace add https://plugins.example.com/team/tool-market.git \
+  --ref v1.2.0 --sparse .agents/plugins --sparse plugins
+balda plugin marketplace upgrade tool-market
+balda plugin install review-tools@tool-market
+```
+
+Ref and sparse flags apply only to Git sources. Configure host Git credentials
+separately; do not put credentials in source URLs. `marketplace list/show` and
+`plugin list --available/show` inspect accepted discovery without fetching it.
+A new definition is **not refreshed** until explicit upgrade or install discovery;
+a failed refresh retains earlier candidates as stale and un-installable until a
+successful refresh. Installed inspection shows the exact revision, Enabled and
+activation outcome. Disabled packages remain inspectable, while their skills
+are excluded from the current eligible catalog.
+
+### Outcomes and recovery
+
+A fully successful install reports **Accepted and published**. Invalid input,
+conflicts, missing targets and unavailable storage/source produce bounded,
+nonzero outcomes without exposing private source paths or internal diagnostics.
+
+A failure after durable acceptance reports nonzero `recovery_pending` and
+**Accepted; recovery pending**, with identity/revision when available. Reopen
+`balda plugin show <name>` before any further mutation. An accepted removal can
+still be inspected while publication is pending; it is absent from active
+installed inventory. Do not blindly repeat an accepted install or remove.
+Normal `balda start`, after acquiring ownership, reconstructs the accepted
+catalog from retained revisions and completes pending activation intents without
+fetching managed origins or creating another plugin mutation audit. Missing or
+invalid retained revisions leave recovery visibly unavailable.
+
+### Register a package stranded on disk
+
+If an earlier CLI copied a package into `<state_dir>/plugins/<name>` without a
+managed installation, use the explicit marketplace setup/refresh/install sequence
+above with the package's proven source. This accepts the selected source revision,
+even after the one-time filesystem migration has completed. Abandoned directory
+bytes stay inert and unchanged; their display version cannot short-circuit the
+managed install. The command validates the selected package and honors an existing
+installation's origin lock. It cannot infer or trust an unknown publisher from
+file presence. Revision archives, referenced content and plugin data are retained.
+
+Restarting alone does not reliably register a disk-only package: startup migration
+is one-time. Starting Balda recovers already accepted pending publication; it is
+not a replacement for explicit registration.
+
+Publication affects new eligible sessions. Existing sessions retain their exact
+capability snapshot and history; use `/reset` in a conversation that should adopt
+the current catalog. Global CLI inventory and that saved session's capabilities
+are separate views. Installation does not copy skill instructions into unrelated
+knowledge or memory stores.
+
 ## Package boundaries
 
 An installed package uses the Agent Plugins 1.0 `plugin.json` as its portable

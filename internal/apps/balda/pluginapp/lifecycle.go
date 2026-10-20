@@ -101,18 +101,6 @@ func (m *managedLifecycle) upgrade(ctx context.Context, plugin AvailablePlugin) 
 	return m.installLocked(ctx, plugin, true, nil)
 }
 
-func (m *managedLifecycle) adoptOrigin(ctx context.Context, plugin AvailablePlugin) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	release, err := m.activator.LockCatalogMutation(ctx)
-	if err != nil {
-		return err
-	}
-	defer release()
-
-	return m.adoptOriginLocked(ctx, plugin, nil)
-}
-
 func (m *managedLifecycle) adoptOriginLocked(ctx context.Context, plugin AvailablePlugin, acceptance *pluginAcceptance) error {
 	if _, err := m.reconcilePending(ctx, plugin.Name); err != nil {
 		return fmt.Errorf("reconcile plugin before origin adoption: %w", err)
@@ -259,11 +247,6 @@ func (m *managedLifecycle) installLocked(ctx context.Context, plugin AvailablePl
 			PluginID: plugin.Name, RevisionID: revisionID, Version: pluginPackage.Version,
 			Description:  pluginPackage.Description,
 			RelativeRoot: relativeRoot, CapabilityJSON: capabilities, CreatedAt: now,
-		}
-		if m.management == nil {
-			if err := m.store.PutPluginRevision(ctx, revision); err != nil {
-				return err
-			}
 		}
 	} else if revision.RelativeRoot != relativeRoot || revision.CapabilityJSON != capabilities ||
 		revision.Version != pluginPackage.Version || revision.Description != pluginPackage.Description {
@@ -717,7 +700,7 @@ func (m *managedLifecycle) removeLocked(ctx context.Context, pluginID string, ac
 		if reconciled {
 			return nil
 		}
-		return errors.New("plugin not installed")
+		return plugincmd.ErrNotFound
 	}
 	source, err := m.loadRevision(ctx, install)
 	if err != nil {
@@ -833,14 +816,11 @@ func (m *managedLifecycle) purge(ctx context.Context, pluginID, revisionID strin
 	}
 	defer release()
 
-	var expected string
-	if m.management != nil {
-		observed, err := m.management.ObservePlugin(ctx, pluginID)
-		if err != nil {
-			return err
-		}
-		expected = observed.Token()
+	observed, err := m.management.ObservePlugin(ctx, pluginID)
+	if err != nil {
+		return err
 	}
+	expected := observed.Token()
 
 	revision, found, err := m.store.GetPluginRevision(ctx, pluginID, revisionID)
 	if err != nil {
@@ -893,12 +873,7 @@ func (m *managedLifecycle) purge(ctx context.Context, pluginID, revisionID strin
 			return fmt.Errorf("prepare purged plugin revision deletion: %w", err)
 		}
 	}
-	var purgeErr error
-	if m.management != nil {
-		purgeErr = m.management.PurgePluginRevisionTrusted(ctx, pluginID, revisionID, expected, uuid.NewString(), m.now().UTC())
-	} else {
-		purgeErr = m.store.PurgePluginRevision(ctx, pluginID, revisionID)
-	}
+	purgeErr := m.management.PurgePluginRevisionTrusted(ctx, pluginID, revisionID, expected, uuid.NewString(), m.now().UTC())
 	if err := purgeErr; err != nil {
 		if !moved {
 			return err
@@ -919,26 +894,4 @@ func (m *managedLifecycle) purge(ctx context.Context, pluginID, revisionID strin
 		}
 	}
 	return nil
-}
-
-func (m *managedLifecycle) capabilityDiff(
-	ctx context.Context,
-	plugin AvailablePlugin,
-) (CapabilityDiff, error) {
-	install, found, err := m.store.GetPluginInstall(ctx, plugin.Name)
-	if err != nil {
-		return CapabilityDiff{}, err
-	}
-	if !found {
-		return CapabilityDiff{}, errors.New("plugin not installed")
-	}
-	var active CapabilitySummary
-	if err := json.Unmarshal([]byte(install.CapabilityJSON), &active); err != nil {
-		return CapabilityDiff{}, fmt.Errorf("decode active plugin capabilities: %w", err)
-	}
-	candidate, err := m.loader.LoadPlugin(plugin.PluginPath)
-	if err != nil {
-		return CapabilityDiff{}, err
-	}
-	return CapabilityDiff{Active: active, Candidate: capabilitySummary(candidate)}, nil
 }

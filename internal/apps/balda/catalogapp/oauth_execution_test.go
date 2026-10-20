@@ -91,7 +91,15 @@ func (f *workerGrantFixture) expire(t *testing.T) {
 	}
 	expected := g.Generation
 	g.Generation++
-	g.UpdatedAt, g.AccessExpiresAt = time.Now().UTC(), time.Now().Add(-time.Minute)
+	now := time.Now().UTC()
+	// Match production renewal metadata when the wall clock moves backwards.
+	if now.After(g.UpdatedAt) {
+		g.UpdatedAt = now
+	}
+	if g.UpdatedAt.Before(g.CreatedAt) {
+		g.UpdatedAt = g.CreatedAt
+	}
+	g.AccessExpiresAt = now.Add(-time.Minute)
 	f.save(t, g, secrets, mcpcmd.GrantRenew, expected, nil)
 }
 
@@ -109,7 +117,7 @@ func (f *workerGrantFixture) save(t *testing.T, grant mcpcmd.Grant, secrets mcpm
 	t.Helper()
 	payload, err := f.credentials.ProtectGrant(grant, secrets)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("protect fixture grant: operation=%s generation=%d status=%s: %v", operation, grant.Generation, grant.Status, err)
 	}
 	grant.ProtectedValues = payload
 	audit := usercmd.AuditEvent{ID: rand.Text(), Action: usercmd.AuditActionMCPAuthorizationChanged, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetMCP, TargetID: grant.Binding.ConnectionID, Source: "worker-fixture", OccurredAt: grant.UpdatedAt}
@@ -123,6 +131,45 @@ func (f *workerGrantFixture) save(t *testing.T, grant mcpcmd.Grant, secrets mcpm
 		t.Fatal("fixture grant connection missing")
 	}
 	if err := f.provider.MCP().SaveMCPGrant(t.Context(), state.MCPGrantMutation{Grant: grant, Operation: operation, ExpectedGeneration: expected, ExpectedRevisionID: connection.CurrentRevisionID, Authority: authority, Audit: audit}); err != nil {
+		current, found, readErr := f.provider.MCP().GetMCPGrant(t.Context(), grant.Binding)
+		t.Fatalf("save fixture grant: operation=%s expected=%d attempted=%d current=%d found=%v readError=%v created=%s updated=%s currentCreated=%s currentUpdated=%s: %v", operation, expected, grant.Generation, current.Generation, found, readErr, grant.CreatedAt.Format(time.RFC3339Nano), grant.UpdatedAt.Format(time.RFC3339Nano), current.CreatedAt.Format(time.RFC3339Nano), current.UpdatedAt.Format(time.RFC3339Nano), err)
+	}
+}
+
+func TestWorkerGrantExpiryPreservesMetadataTime(t *testing.T) {
+	provider, _, _, mutation, credentials := hybridCatalogFixture(t)
+	worker := newWorkerGrantFixture(t, provider, credentials, mutation.Authority, mutation.Connection.ID, "https://worker.example/mcp")
+	revision := *mutation.Revision
+	revision.Definition = mcpcmd.Definition{Transport: mcpcmd.TransportHTTP, URL: worker.binding.Resource, OAuth: true, AuthBinding: &worker.binding, Scopes: []string{"tools:read"}, Targets: mcpcmd.Targets{All: true}}
+	var err error
+	revision, err = credentials.PrepareRevision(nil, revision, mcpcmd.ValueEdits{})
+	if err != nil {
 		t.Fatal(err)
+	}
+	mutation.Revision = &revision
+	if err := provider.MCP().SaveMCPConnection(t.Context(), mutation); err != nil {
+		t.Fatal(err)
+	}
+	worker.authorize(t)
+	grant, found, err := provider.MCP().GetMCPGrant(t.Context(), worker.binding)
+	if err != nil || !found {
+		t.Fatalf("fixture grant found = %v, error = %v", found, err)
+	}
+	secrets, err := credentials.OpenGrant(grant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := grant.Generation
+	grant.Generation++
+	// A retained timestamp may be ahead of the wall clock after clock correction.
+	grant.UpdatedAt = time.Now().UTC().Add(time.Hour)
+	worker.save(t, grant, secrets, mcpcmd.GrantRenew, expected, nil)
+	worker.expire(t)
+	expired, found, err := provider.MCP().GetMCPGrant(t.Context(), worker.binding)
+	if err != nil || !found {
+		t.Fatalf("expired grant found = %v, error = %v", found, err)
+	}
+	if expired.Generation != grant.Generation+1 || !expired.CreatedAt.Equal(grant.CreatedAt) || !expired.UpdatedAt.Equal(grant.UpdatedAt) || !expired.AccessExpiresAt.Before(time.Now()) {
+		t.Fatalf("expiration changed metadata ordering: generation = %d, created = %s, updated = %s, expires = %s", expired.Generation, expired.CreatedAt, expired.UpdatedAt, expired.AccessExpiresAt)
 	}
 }

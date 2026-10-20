@@ -51,6 +51,7 @@ type discoverySuccess struct {
 }
 
 type discoveryCandidate struct {
+	Category     string `json:",omitempty"`
 	Installable  bool
 	Name         string
 	Version      string
@@ -64,14 +65,7 @@ type discoveryCandidate struct {
 	DiagnosticCodes        []string
 }
 
-func (s *Service) lockOwner() func() {
-	if s.managed != nil {
-		s.managed.mu.Lock()
-		return s.managed.mu.Unlock
-	}
-	s.ownerMu.Lock()
-	return s.ownerMu.Unlock
-}
+func (s *Service) lockOwner() func() { s.managed.mu.Lock(); return s.managed.mu.Unlock }
 
 func (s *Service) managementAuthority(ctx context.Context, a plugincmd.Authority) error {
 	if s.management == nil {
@@ -88,6 +82,13 @@ func (s *Service) ManagementMarketplaces(ctx context.Context, a plugincmd.Author
 	}
 	unlock := s.lockOwner()
 	defer unlock()
+	if err := s.managementAuthority(ctx, a); err != nil {
+		return nil, err
+	}
+	return s.marketplacesLocked(ctx)
+}
+
+func (s *Service) marketplacesLocked(ctx context.Context) ([]plugincmd.MarketplaceView, error) {
 	sources, err := s.ListMarketplaces(ctx)
 	if err != nil {
 		return nil, plugincmd.ErrUnavailable
@@ -110,6 +111,9 @@ func (s *Service) ManagementMarketplace(ctx context.Context, name string, a plug
 	}
 	unlock := s.lockOwner()
 	defer unlock()
+	if err := s.managementAuthority(ctx, a); err != nil {
+		return plugincmd.MarketplaceDetail{}, err
+	}
 	return s.marketplaceDetailLocked(ctx, name)
 }
 

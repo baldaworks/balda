@@ -32,62 +32,41 @@ func (m *managedLifecycle) acceptAndPublish(ctx context.Context, operation, name
 		install.UpdatedAt = now
 	}
 	intent := state.PluginActivationIntent{IntentID: uuid.NewString(), PluginID: name, FromRevisionID: from, ToRevisionID: to, Operation: operation, State: state.PluginActivationIntentPending, CreatedAt: now, UpdatedAt: now}
-	if m.management == nil {
-		var err error
-		switch operation {
-		case "remove":
-			err = m.store.DeactivatePlugin(ctx, intent)
-		case pluginAdoptOrigin:
-			err = m.store.AdoptPluginOrigin(ctx, intent, *install)
-		default:
-			err = m.store.ActivatePlugin(ctx, intent, *install)
+	observed, err := m.management.ObservePlugin(ctx, name)
+	if err != nil {
+		return err
+	}
+	mutation := state.PluginCommit{PluginID: name, ExpectedState: observed.Token(), Install: install, Revision: revision, Intent: intent, AuditID: uuid.NewString()}
+	if a != nil {
+		if observed.Token() != a.expectedSQL || m.revisionAvailability(observed) != a.availability {
+			return plugincmd.ErrConflict
 		}
-		if err != nil {
-			return err
+		mutation.ExpectedState = a.expectedSQL
+		mutation.MarketplaceName = a.marketplace
+		mutation.ExpectedMarketplaceState = a.expectedMarketplace
+		mutation.OriginIdentity = a.originIdentity
+		if a.authority != nil {
+			authority := *a.authority
+			authority.At = now
+			mutation.Authority = &authority
 		}
+	}
+	if mutation.Authority != nil {
+		err = m.management.CommitPlugin(ctx, mutation)
 	} else {
-		observed, err := m.management.ObservePlugin(ctx, name)
-		if err != nil {
-			return err
-		}
-		mutation := state.PluginCommit{PluginID: name, ExpectedState: observed.Token(), Install: install, Revision: revision, Intent: intent, AuditID: uuid.NewString()}
-		if a != nil {
-			if observed.Token() != a.expectedSQL || m.revisionAvailability(observed) != a.availability {
-				return plugincmd.ErrConflict
-			}
-			mutation.ExpectedState = a.expectedSQL
-			mutation.MarketplaceName = a.marketplace
-			mutation.ExpectedMarketplaceState = a.expectedMarketplace
-			mutation.OriginIdentity = a.originIdentity
-			if a.authority != nil {
-				authority := *a.authority
-				authority.At = now
-				mutation.Authority = &authority
-			}
-		}
-		if mutation.Authority != nil {
-			err = m.management.CommitPlugin(ctx, mutation)
-		} else {
-			err = m.management.CommitPluginTrusted(ctx, mutation)
-		}
-		if err != nil {
-			return err
-		}
+		err = m.management.CommitPluginTrusted(ctx, mutation)
+	}
+	if err != nil {
+		return err
 	}
 	if a != nil {
 		a.accepted = true
 	}
 	if err := m.activator.PublishCandidate(ctx, snapshot); err != nil {
-		if m.management != nil {
-			return errors.Join(plugincmd.ErrRecoveryPending, err)
-		}
-		return err
+		return errors.Join(plugincmd.ErrRecoveryPending, err)
 	}
 	if err := m.store.CompletePluginActivation(ctx, intent.IntentID, m.now().UTC()); err != nil {
-		if m.management != nil {
-			return errors.Join(plugincmd.ErrRecoveryPending, err)
-		}
-		return err
+		return errors.Join(plugincmd.ErrRecoveryPending, err)
 	}
 	return nil
 }

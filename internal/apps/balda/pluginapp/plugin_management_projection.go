@@ -21,6 +21,24 @@ func (s *Service) ManagementInventory(ctx context.Context, a plugincmd.Authority
 	if err := s.managementAuthority(ctx, a); err != nil {
 		return nil, err
 	}
+	return s.inventoryLocked(ctx)
+}
+
+// InstalledInventory reads managed selections without browser authority or comparison tokens.
+func (s *Service) InstalledInventory(ctx context.Context) ([]plugincmd.InstalledView, error) {
+	if s.managed == nil {
+		return nil, plugincmd.ErrUnavailable
+	}
+	unlock := s.lockOwner()
+	defer unlock()
+	views, err := s.inventoryLocked(ctx)
+	for i := range views {
+		views[i].ExpectedState = ""
+	}
+	return views, err
+}
+
+func (s *Service) inventoryLocked(ctx context.Context) ([]plugincmd.InstalledView, error) {
 	installs, err := s.managed.store.ListPluginInstalls(ctx)
 	if err != nil {
 		return nil, plugincmd.ErrUnavailable
@@ -54,6 +72,22 @@ func (s *Service) ManagementDetail(ctx context.Context, name string, a plugincmd
 	if err := s.managementAuthority(ctx, a); err != nil {
 		return plugincmd.PluginDetail{}, err
 	}
+	return s.detailLocked(ctx, name)
+}
+
+// InstalledDetail reads retained managed content, including an accepted pending removal.
+func (s *Service) InstalledDetail(ctx context.Context, name string) (plugincmd.PluginDetail, error) {
+	if s.managed == nil {
+		return plugincmd.PluginDetail{}, plugincmd.ErrUnavailable
+	}
+	unlock := s.lockOwner()
+	defer unlock()
+	detail, err := s.detailLocked(ctx, name)
+	detail.ExpectedState = ""
+	return detail, err
+}
+
+func (s *Service) detailLocked(ctx context.Context, name string) (plugincmd.PluginDetail, error) {
 	observed, token, err := s.pluginObservationLocked(ctx, name)
 	if err != nil {
 		return plugincmd.PluginDetail{}, boundedPluginError(err)
@@ -71,13 +105,13 @@ func (s *Service) ManagementDetail(ctx context.Context, name string, a plugincmd
 				if revision.RevisionID != intent.FromRevisionID {
 					continue
 				}
-				sourceInstall = &state.PluginInstallRecord{PluginID: name, ActiveRevisionID: revision.RevisionID, Version: revision.Version, CapabilityJSON: revision.CapabilityJSON}
+				sourceInstall = &state.PluginInstallRecord{PluginID: name, ActiveRevisionID: revision.RevisionID, Version: revision.Version, Description: revision.Description, CapabilityJSON: revision.CapabilityJSON}
 			}
 		}
 		if sourceInstall == nil {
 			return plugincmd.PluginDetail{}, plugincmd.ErrNotFound
 		}
-		view = plugincmd.InstalledView{Removed: true, RecoveryPending: true, ExpectedState: token, PluginStatus: plugincmd.PluginStatus{Name: name, Version: sourceInstall.Version, Revision: sourceInstall.ActiveRevisionID}}
+		view = plugincmd.InstalledView{Description: sourceInstall.Description, Removed: true, RecoveryPending: true, ExpectedState: token, PluginStatus: plugincmd.PluginStatus{Name: name, Version: sourceInstall.Version, Revision: sourceInstall.ActiveRevisionID}}
 		if json.Unmarshal([]byte(sourceInstall.CapabilityJSON), &view.Capabilities) != nil {
 			return plugincmd.PluginDetail{}, plugincmd.ErrUnavailable
 		}
@@ -129,7 +163,7 @@ func (s *Service) installedViewLocked(ctx context.Context, observed state.Plugin
 	if json.Unmarshal([]byte(install.CapabilityJSON), &capabilities) != nil {
 		return plugincmd.InstalledView{}, plugincmd.ErrUnavailable
 	}
-	view := plugincmd.InstalledView{PluginStatus: plugincmd.PluginStatus{Name: install.PluginID, Version: install.Version, Marketplace: install.OriginMarketplace, Revision: install.ActiveRevisionID, Enabled: install.Enabled, Capabilities: capabilities}, ExpectedState: token, RecoveryPending: len(observed.Pending) > 0}
+	view := plugincmd.InstalledView{Description: install.Description, PluginStatus: plugincmd.PluginStatus{Name: install.PluginID, Version: install.Version, Marketplace: install.OriginMarketplace, Revision: install.ActiveRevisionID, Enabled: install.Enabled, Capabilities: capabilities}, ExpectedState: token, RecoveryPending: len(observed.Pending) > 0}
 	// Origin describes proof availability, never the private package path.
 	view.Origin = "Locked"
 	if install.OriginMarketplace == originUnknown {

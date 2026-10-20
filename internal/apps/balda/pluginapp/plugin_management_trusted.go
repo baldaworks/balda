@@ -89,7 +89,7 @@ func (s *Service) mutatePluginTrusted(ctx context.Context, selector, operation s
 }
 
 func (m *managedLifecycle) trustedBaseline(ctx context.Context, name string, a *pluginAcceptance) (*pluginAcceptance, error) {
-	if a != nil || m.management == nil {
+	if a != nil {
 		return a, nil
 	}
 	observed, err := m.management.ObservePlugin(ctx, name)

@@ -13,6 +13,8 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 )
 
+const managementFixtureMarketplace = "market"
+
 const managementTestVersion = "1.0.0"
 
 const managementFixtureLoginAuditID = "login"
@@ -49,21 +51,21 @@ func newMarketplaceManagementTestService(t *testing.T) (*Service, state.Provider
 
 func TestMarketplaceManagementAcceptedDiscovery(t *testing.T) {
 	s, _, a, root := newMarketplaceManagementTestService(t)
-	added, err := s.ManagementAddMarketplace(t.Context(), plugincmd.MarketplaceAdd{Name: "market", Source: root, Authority: a})
+	added, err := s.ManagementAddMarketplace(t.Context(), plugincmd.MarketplaceAdd{Name: managementFixtureMarketplace, Source: root, Authority: a})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if added.Source != "local" || added.LastAttemptStatus != "" {
 		t.Fatalf("unexpected initial safe view: %+v", added)
 	}
-	if _, err := s.ManagementAddMarketplace(t.Context(), plugincmd.MarketplaceAdd{Name: "market", Source: root, Authority: a}); !errors.Is(err, plugincmd.ErrConflict) {
+	if _, err := s.ManagementAddMarketplace(t.Context(), plugincmd.MarketplaceAdd{Name: managementFixtureMarketplace, Source: root, Authority: a}); !errors.Is(err, plugincmd.ErrConflict) {
 		t.Fatalf("duplicate add: %v", err)
 	}
-	refreshed, err := s.ManagementRefreshMarketplace(t.Context(), plugincmd.MarketplaceMutation{Name: "market", ExpectedState: added.ExpectedState, Authority: a})
+	refreshed, err := s.ManagementRefreshMarketplace(t.Context(), plugincmd.MarketplaceMutation{Name: managementFixtureMarketplace, ExpectedState: added.ExpectedState, Authority: a})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(refreshed.Candidates) != 1 || refreshed.Candidates[0].Marketplace != "market" || refreshed.Candidates[0].CandidateToken == "" {
+	if len(refreshed.Candidates) != 1 || refreshed.Candidates[0].Marketplace != managementFixtureMarketplace || refreshed.Candidates[0].CandidateToken == "" {
 		t.Fatalf("accepted candidates: %+v", refreshed)
 	}
 }
@@ -75,18 +77,18 @@ func TestMarketplaceManagementInstallsThroughSymlinkedRoot(t *testing.T) {
 	if err := os.Symlink(root, alias); err != nil {
 		t.Fatal(err)
 	}
-	added, err := s.ManagementAddMarketplace(t.Context(), plugincmd.MarketplaceAdd{Name: "market", Source: alias, Authority: authority})
+	added, err := s.ManagementAddMarketplace(t.Context(), plugincmd.MarketplaceAdd{Name: managementFixtureMarketplace, Source: alias, Authority: authority})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.ManagementRefreshMarketplace(t.Context(), plugincmd.MarketplaceMutation{Name: added.Name, ExpectedState: added.ExpectedState, Authority: authority}); err != nil {
 		t.Fatal(err)
 	}
-	candidate, err := s.ManagementCandidate(t.Context(), "demo", "market", authority)
+	candidate, err := s.ManagementCandidate(t.Context(), "demo", managementFixtureMarketplace, authority)
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := s.ManagementMutatePlugin(t.Context(), plugincmd.PluginMutation{Operation: plugincmd.Install, PluginName: "demo", MarketplaceName: "market", CandidateToken: candidate.CandidateToken, ExpectedState: candidate.ExpectedState, Authority: authority})
+	result, err := s.ManagementMutatePlugin(t.Context(), plugincmd.PluginMutation{Operation: plugincmd.Install, PluginName: "demo", MarketplaceName: managementFixtureMarketplace, CandidateToken: candidate.CandidateToken, ExpectedState: candidate.ExpectedState, Authority: authority})
 	if err != nil || !result.Accepted {
 		t.Fatalf("install from aliased root: %+v %v", result, err)
 	}
@@ -100,13 +102,13 @@ func TestMarketplaceDiscoveryKeepsDeclarationWithAcceptedCandidate(t *testing.T)
 		mustWriteFile(t, filepath.Join(pluginRoot, "plugin.json"), `{"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json","name":"demo","version":"1.0.0"`+extension+`}`)
 	}
 	manifest(`,"extensions":{"other":{}}`)
-	added, err := s.ManagementAddMarketplace(t.Context(), plugincmd.MarketplaceAdd{Name: "market", Source: root, Authority: a})
+	added, err := s.ManagementAddMarketplace(t.Context(), plugincmd.MarketplaceAdd{Name: managementFixtureMarketplace, Source: root, Authority: a})
 	if err != nil {
 		t.Fatal(err)
 	}
 	refresh := func(expected string) plugincmd.MarketplaceDetail {
 		t.Helper()
-		detail, err := s.ManagementRefreshMarketplace(t.Context(), plugincmd.MarketplaceMutation{Name: "market", ExpectedState: expected, Authority: a})
+		detail, err := s.ManagementRefreshMarketplace(t.Context(), plugincmd.MarketplaceMutation{Name: managementFixtureMarketplace, ExpectedState: expected, Authority: a})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -117,7 +119,7 @@ func TestMarketplaceDiscoveryKeepsDeclarationWithAcceptedCandidate(t *testing.T)
 		t.Fatalf("nondeclaring candidate = %+v", first.Candidates)
 	}
 	manifest(`,"extensions":{"dev.baldaworks.balda":{}}`)
-	unchanged, err := s.ManagementMarketplace(t.Context(), "market", a)
+	unchanged, err := s.ManagementMarketplace(t.Context(), managementFixtureMarketplace, a)
 	if err != nil || unchanged.Candidates[0].DeclaresBaldaExtension || unchanged.ExpectedState != first.ExpectedState {
 		t.Fatalf("unrefreshed candidate = %+v, error %v", unchanged, err)
 	}
@@ -126,12 +128,12 @@ func TestMarketplaceDiscoveryKeepsDeclarationWithAcceptedCandidate(t *testing.T)
 		t.Fatalf("declaring candidate = %+v", declared.Candidates)
 	}
 	manifest(`,"extensions":[]`)
-	stale, err := s.ManagementMarketplace(t.Context(), "market", a)
+	stale, err := s.ManagementMarketplace(t.Context(), managementFixtureMarketplace, a)
 	if err != nil || !stale.Candidates[0].DeclaresBaldaExtension {
 		t.Fatalf("stale candidate before refresh = %+v, error %v", stale, err)
 	}
 	mustWriteFile(t, filepath.Join(root, marketplaceManifestPath), `{"plugins":[{"name":"demo","path":"plugins/demo"},{"name":"DEMO","path":"missing"}]}`)
-	failed, err := s.ManagementRefreshMarketplace(t.Context(), plugincmd.MarketplaceMutation{Name: "market", ExpectedState: declared.ExpectedState, Authority: a})
+	failed, err := s.ManagementRefreshMarketplace(t.Context(), plugincmd.MarketplaceMutation{Name: managementFixtureMarketplace, ExpectedState: declared.ExpectedState, Authority: a})
 	if !errors.Is(err, plugincmd.ErrUnavailable) || len(failed.Candidates) != 1 || !failed.Candidates[0].DeclaresBaldaExtension || failed.Candidates[0].CandidateToken != "" {
 		t.Fatalf("failed refresh candidate = %+v, error %v", failed.Candidates, err)
 	}
@@ -245,7 +247,7 @@ func TestMarketplaceManagementInvalidPackageIsNotActionable(t *testing.T) {
 		t.Fatal(err)
 	}
 	mustWriteFile(t, filepath.Join(root, marketplaceManifestPath), `{"plugins":[{"name":"demo","path":"plugins/demo","manifest_path":".plugin/plugin.json"}]}`)
-	added, err := s.ManagementAddMarketplace(t.Context(), plugincmd.MarketplaceAdd{Name: "market", Source: root, Authority: a})
+	added, err := s.ManagementAddMarketplace(t.Context(), plugincmd.MarketplaceAdd{Name: managementFixtureMarketplace, Source: root, Authority: a})
 	if err != nil {
 		t.Fatal(err)
 	}
