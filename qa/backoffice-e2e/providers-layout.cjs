@@ -1,3 +1,4 @@
+const { cancelConfirmation } = require('./actions.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -65,7 +66,7 @@ const forbidden = ['managed-secret', 'configured-secret', 'synthetic-api-key'];
         assert.ok((await history.text()).includes('<!doctype html>'), `${label} history full document`);
 
         if (state === 'providers/new') {
-          const id = page.getByLabel('Provider ID', {exact: true});
+          const id = page.getByLabel(/^Provider ID(?: \(required\))?$/);
           await id.focus();
           assert.notEqual(await id.evaluate(element => getComputedStyle(element).boxShadow), 'none', `${label} focus`);
           await assertPlaceholderDistinct(page.getByLabel('Hosted timeout', {exact: true}), label);
@@ -75,8 +76,8 @@ const forbidden = ['managed-secret', 'configured-secret', 'synthetic-api-key'];
         if (state === 'providers/managed') {
           assert.equal(await page.getByLabel('Replacement API key', {exact: true}).inputValue(), '', `${label} managed api key blank`);
           assert.equal(await page.getByLabel('Replacement environment', {exact: true}).inputValue(), '', `${label} managed environment blank`);
-          await page.getByLabel(/^Confirm disabling/).check();
-          await page.getByLabel(/^Confirm deleting/).check();
+          await cancelConfirmation(page, page.getByRole('button', { name: 'Disable provider', exact: true }));
+          await cancelConfirmation(page, page.getByRole('button', { name: 'Delete provider', exact: true }));
         }
         if (state === 'providers/configured') {
           assert.equal(await page.getByRole('button', {name: /Save|Delete|Disable|Enable/}).count(), 0, `${label} configured read-only`);

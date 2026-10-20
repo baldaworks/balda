@@ -1,3 +1,4 @@
+const { submit } = require('./actions.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -60,8 +61,8 @@ assert.equal(new URL(origin).hostname, '127.0.0.1', 'isolated loopback fixture')
     await page.getByRole('heading', { name: 'Edit agent hook', exact: true }).waitFor();
     assert.equal(await page.getByLabel('Timeout in seconds', { exact: true }).inputValue(), '0', 'unlimited deadline retained');
     await screen('disabled-editor');
-    await page.getByLabel('Confirm deleting this hook.', { exact: true }).check();
-    await page.getByRole('button', { name: 'Delete hook', exact: true }).click();
+
+    await submit(page, page.getByRole('button', { name: 'Delete hook', exact: true }));
     await page.getByText('No agent hooks yet.', { exact: true }).waitFor();
     await page.getByRole('link', { name: 'Add hook', exact: true }).click();
     await page.getByRole('heading', { name: 'Add agent hook', exact: true }).waitFor();

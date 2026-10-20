@@ -1,3 +1,4 @@
+const { submit } = require('./actions.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -126,8 +127,8 @@ const factLabel = /^Fact(?: \(required\))?$/;
     await operatorContext.close();
 
     await page.goto(`${url}/memory/1`);
-    await page.getByLabel('Confirm deleting this fact.').check();
-    await page.getByRole('button', { name: 'Delete fact', exact: true }).click();
+
+    await submit(page, page.getByRole('button', { name: 'Delete fact', exact: true }));
     await page.getByRole('heading', { name: 'Fact memory', exact: true }).waitFor();
     await version(6);
     for (const [id, current] of [[2, 6], [3, 7], [4, 8]]) {

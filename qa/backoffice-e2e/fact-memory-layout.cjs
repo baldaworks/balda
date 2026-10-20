@@ -1,3 +1,4 @@
+const { cancelConfirmation } = require('./actions.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -83,7 +84,7 @@ const viewports = [{ width: 1440, height: 900 }, { width: 1024, height: 768 },
         }
         if (state === 'memory') assert.ok(await page.locator('main').textContent().then(text => text.includes('<script>window.syntheticFactExecuted = true</script>')), `${label} escaped fact visible`);
         if (state === 'memory-disabled') assert.equal(await page.locator('main input,main textarea,main button,main form').count(), 0, `${label} disabled controls`);
-        if (state === 'memory-delete') await page.getByLabel('Confirm deleting this fact.').check();
+        if (state === 'memory-delete') await cancelConfirmation(page, page.getByRole('button', { name: 'Delete fact', exact: true }));
         if (state === 'memory-conflict') assert.equal(await page.locator('input[name="expected_version"]').first().inputValue(), '3', `${label} stale version preserved`);
         await page.screenshot({ path: path.join(directory, `${state.replaceAll('/', '-')}.png`), fullPage: true });
         assert.deepEqual(failures, [], `${label} browser and asset failures`);

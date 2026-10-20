@@ -145,7 +145,7 @@ func TestFactMemoryEditorPreservesConflictAndFailureStatus(t *testing.T) {
 				if response.Code != status || strings.Count(body, `id="main-content"`) != 1 {
 					t.Fatalf("status/shape=%d", response.Code)
 				}
-				for _, want := range []string{`<label class="form-label" for="fact-text">Fact</label>`, `name="fact"`, `submitted &lt;fact&gt;` + "\nunchanged text", `name="expected_version" value="8"`, `name="csrf_token" value="safe-csrf"`, `action="/balda/backoffice/memory/4"`, `action="/balda/backoffice/memory/4/delete"`, `name="confirm" value="yes"`, `Confirm deleting this fact.`, `href="/balda/backoffice/memory/4"`, `Reopen this fact`, `Save fact`, `Cancel`, `Conversation history remains.`} {
+				for _, want := range []string{`<label class="form-label" for="fact-text">Fact</label>`, `name="fact"`, `submitted &lt;fact&gt;` + "\nunchanged text", `name="expected_version" value="8"`, `name="csrf_token" value="safe-csrf"`, `action="/balda/backoffice/memory/4"`, `action="/balda/backoffice/memory/4/delete"`, `name="confirm" value="yes"`, `Remove fact 4 from current global memory.`, `href="/balda/backoffice/memory/4"`, `Reopen this fact`, `Save fact`, `Cancel`, `Conversation history remains.`} {
 					if !strings.Contains(body, want) {
 						t.Errorf("editor missing %q", want)
 					}

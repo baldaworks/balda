@@ -1,3 +1,4 @@
+const { submit } = require('./actions.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -30,7 +31,7 @@ async function mutate(page, name, route, expected=204, within=page) {
   await settle(page, async()=> {
     [response] = await Promise.all([
       page.waitForResponse(r=>r.request().method()==='POST' && new URL(r.url()).pathname===`${base}${route}`),
-      within.getByRole('button',{name,exact:true}).click(),
+      submit(page, within.getByRole('button',{name,exact:true})),
     ]);
     assert.equal(response.status(),expected,`${name} HTTP status`);
     assert.equal(response.headers()['cache-control']?.includes('no-store'),true,`${name} no-store`);
@@ -113,7 +114,7 @@ async function install(page,name) {
   assert.equal(await page.locator('[data-plugin-source]').evaluateAll(inputs=>inputs.every(i=>i.value==='')),true,'history never restores credential-bearing Source');
   assert.equal(await page.evaluate(secrets=>Object.values(sessionStorage).every(v=>secrets.every(secret=>!v.includes(secret))),sourceSecrets),true,'HTMX history excludes source secrets');
   await open(page,'/plugins/marketplaces/definitions/redaction');
-  await page.getByLabel(/^Confirm removing this marketplace\.(?: \(required\))?$/).check();
+
   await mutate(page,'Remove marketplace','/plugins/marketplaces/definitions/redaction/remove');
   await page.waitForURL(url('/plugins/marketplaces'));
   await settle(page,()=>page.getByRole('link',{name:'Add marketplace',exact:true}).click());
@@ -147,7 +148,7 @@ async function install(page,name) {
   for(const name of ['install','marketplaces']) {
     await install(page,name);
     assert.equal(new URL(page.url()).pathname,`${base}/plugins/installed/${name}`,'valid colliding name resolves exact detail');
-    await page.getByLabel(new RegExp(`^Confirm removing ${name}\\.(?: \\(required\\))?$`)).check();
+
     await mutate(page,'Remove plugin',`/plugins/installed/${name}/remove`);
     await page.waitForURL(url('/plugins'));
   }
@@ -162,7 +163,7 @@ async function install(page,name) {
   await disableForm.getByRole('link',{name:'Cancel',exact:true}).click();await page.waitForLoadState('networkidle');
   await assertState({enabled:true});
   await stage('chat-disable');
-  await page.getByLabel(/^Confirm disabling runtime-demo for new sessions\.(?: \(required\))?$/).check();
+
   await mutate(page,'Disable plugin',`${detail}/disable`,409);
   await page.getByRole('link',{name:'Reopen plugin',exact:true}).click();await page.waitForLoadState('networkidle');
   await page.getByRole('button',{name:'Enable plugin',exact:true}).waitFor();
@@ -176,12 +177,12 @@ async function install(page,name) {
   await mutate(page,'Upgrade plugin',`${detail}/upgrade`);
   await assertState({version:'2.0.0',enabled:true,revisionCount:2});
   await stage('audit-fail');
-  await page.getByLabel(/^Confirm disabling runtime-demo for new sessions\.(?: \(required\))?$/).check();
+
   await mutate(page,'Disable plugin',`${detail}/disable`,503);
   await snapshot(page,'audit-failure');await stage('audit-clear');
   await open(page,detail);await assertState({version:'2.0.0',enabled:true,revisionCount:2,pending:0});
   await stage('complete-fail');
-  await page.getByLabel(/^Confirm disabling runtime-demo for new sessions\.(?: \(required\))?$/).check();
+
   await mutate(page,'Disable plugin',`${detail}/disable`,503);
   await page.getByText('Accepted; recovery pending',{exact:false}).waitFor();
   await assertState({enabled:false,pending:1});
@@ -190,7 +191,7 @@ async function install(page,name) {
   await stage('recover');await open(page,detail);await assertState({enabled:false,pending:0});
   const rollback=page.locator(`form[action="${base}${detail}/rollback"]`).first();
   const retained=await rollback.locator('input[name=revision]').inputValue();assert.notEqual(retained,'');
-  await rollback.getByRole('checkbox').check();await mutate(page,'Rollback',`${detail}/rollback`,204,rollback);
+  await mutate(page,'Rollback',`${detail}/rollback`,204,rollback);
   await assertState({version:'1.0.0',enabled:false,revisionCount:2});
   await mutate(page,'Enable plugin',`${detail}/enable`);
   await stage('malformed');await open(page,market);
@@ -202,16 +203,16 @@ async function install(page,name) {
   await stage('restore-source');await open(page,market);await mutate(page,'Refresh marketplace',`${market}/refresh`);
   assert.equal(await discoveryReviews.count(),2,'successful refresh restores review for both uninstalled candidates');
   await open(page,detail);await stage('catalog-block');
-  await page.getByLabel(/^Confirm disabling runtime-demo for new sessions\.(?: \(required\))?$/).check();
+
   const blockedMutation=mutate(page,'Disable plugin',`${detail}/disable`,403);
   // The controller waits for actual entry to the production catalog gate.
   await stage('revoke-blocked');await blockedMutation;
   await assertState({enabled:true,pending:0});
   await snapshot(page,'revoked');
   await login(page,'administrator');await open(page,detail);
-  await page.getByLabel(/^Confirm removing runtime-demo\.(?: \(required\))?$/).check();await mutate(page,'Remove plugin',`${detail}/remove`);
+  await mutate(page,'Remove plugin',`${detail}/remove`);
   await page.waitForURL(url('/plugins'));await assertState({installed:false,revisionCount:2,pending:0});
-  await open(page,market);await page.getByLabel(/^Confirm removing this marketplace\.(?: \(required\))?$/).check();await mutate(page,'Remove marketplace',`${market}/remove`);
+  await open(page,market);await mutate(page,'Remove marketplace',`${market}/remove`);
   await page.waitForURL(url('/plugins/marketplaces'));await snapshot(page,'final-marketplaces');
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'no viewport overflow');
   assert.deepEqual(errors,[],'no browser errors');

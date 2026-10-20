@@ -1,3 +1,4 @@
+const { submit, cancelConfirmation } = require('./actions.cjs');
 const assert = require('node:assert/strict');
 const { chromium } = require('playwright');
 const [baseURL, issuerURL, flow, phase, widthString, markerDirectory] = process.argv.slice(2);
@@ -12,7 +13,7 @@ const staticEntry = phase.startsWith('managed-static-');
 const scopeChange = phase.startsWith('managed-scopes-');
 const missingScopes = phase.startsWith('managed-missing-');
 const identityOnly = missingScopes || phase.startsWith('managed-equal-');
-const existingEntry = scopeChange || identityOnly || phase.startsWith('managed-restore-') || pendingRestart;
+const existingEntry = phase === 'managed-revoke' || scopeChange || identityOnly || phase.startsWith('managed-restore-') || pendingRestart;
 const serverName = managed ? (staticEntry ? 'static-tools' : partialEntry ? 'partial-tools' : 'managed-tools') : phase === 'configured-public' ? 'public-tools' : 'worker-tools';
 const providerPrefix = staticEntry ? 'static' : partialEntry ? 'partial' : 'managed';
 const clientSecret = 'synthetic-client-secret';
@@ -274,6 +275,24 @@ async function complete(page, context, denied = false) {
       await page.waitForURL(`${baseURL}/login`);
       await context.close();
       console.log(`MCP OAuth-neutral ${phase}: ordinary login, explicit ownership and passive metadata passed (${widthString}px)`);
+      return;
+    }
+    if (phase === 'managed-revoke') {
+      stage = 'native shared authorization revocation';
+      let mutations = 0;
+      page.on('request', request => { if (request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/oauth/disconnect')) mutations++; });
+      const revoke = page.getByRole('button', { name: 'Revoke authorization', exact: true });
+      await cancelConfirmation(page, revoke);
+      assert.equal(mutations, 0, 'cancelled revoke has no request');
+      const response = page.waitForResponse(r => r.request().method() === 'POST' && new URL(r.url()).pathname.endsWith('/oauth/disconnect'));
+      await submit(page, revoke);
+      const accepted = await response;
+      assert.equal(accepted.status(), 303, 'revoke remains native');
+      assert.equal(new URLSearchParams(accepted.request().postData()).get('confirm'), 'yes');
+      assert.equal(mutations, 1, 'authorization revokes once');
+      assert.deepEqual(errors, []);
+      await context.close();
+      console.log('Native OAuth revoke cancel/confirm passed');
       return;
     }
     assert.equal(await page.getByRole('button', { name: 'Authorize in browser', exact: true }).count(), 1, 'saved managed OAuth entry does not require a recovery marker');

@@ -1,3 +1,4 @@
+const { cancelConfirmation } = require('./actions.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -9,7 +10,7 @@ const base = process.argv[3] || '';
 const prefix = `${base}/qa/ui`;
 const screenshots = process.env.BALDA_PLUGINS_LAYOUT_SCREENSHOTS || '/tmp/balda-plugins-screens/layout';
 const states = [
-  ['plugins', 200], ['plugins-installed', 200], ['plugins/marketplaces', 200],
+  ['plugins-callee', 200], ['plugins', 200], ['plugins-installed', 200], ['plugins/marketplaces', 200],
   ['plugins-marketplaces-empty', 200], ['plugins/marketplaces/new', 200],
   ['plugins/marketplaces/definitions/new', 200], ['plugins-marketplace-failed', 200],
   ['plugins-marketplace-long', 200], ['plugins-marketplace-invalid', 400],
@@ -158,18 +159,28 @@ function labelled(page, name) {
           assert.equal(await page.locator('main form').count(), 0, `${label} stale no blind replay`);
           assert.equal(await page.getByRole('link', { name: 'Reopen plugin', exact: true }).getAttribute('href'), `${prefix}/plugins/installed/demo`, `${label} stale target`);
         }
+        if (state === 'plugins-callee') {
+          for (const [action, consequence] of [['Disable plugin', /callee.*new sessions/], ['Rollback', /callee.*sha256:synthetic-retained.*Enabled state is preserved/], ['Remove plugin', /callee.*Data and retained revisions/]]) {
+            await page.getByRole('button', { name: action, exact: true }).click();
+            const dialog = page.getByRole('dialog');
+            await dialog.waitFor({ state: 'visible' });
+            assert.match(await dialog.innerText(), consequence, 'context and retained consequences');
+            await page.screenshot({ path: path.join(directory, `callee-${action.replaceAll(' ', '-')}.png`) });
+            await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+          }
+        }
         if (state === 'plugins/installed/demo') {
           const confirms = page.locator('input[name="confirm"]');
           assert.equal(await confirms.count(), 3, `${label} disable rollback remove confirmations`);
-          for (const checkbox of await confirms.all()) assert.equal(await checkbox.isChecked(), false, `${label} explicit confirmation`);
+          for (const consent of await confirms.all()) assert.equal(await consent.isDisabled(), true, `${label} consent waits for a dialog`);
+          await cancelConfirmation(page, page.getByRole('button', { name: 'Disable plugin', exact: true }));
+          await cancelConfirmation(page, page.getByRole('button', { name: 'Remove plugin', exact: true }));
           assert.ok(await page.getByRole('heading', { name: 'Commands', exact: true }).count(), `${label} retained commands`);
           assert.ok(await page.getByRole('heading', { name: 'Skills', exact: true }).count(), `${label} retained skills`);
           assert.ok(await page.getByRole('heading', { name: 'MCP servers', exact: true }).count(), `${label} retained MCP`);
           if(viewport.width===390){
             const region=page.getByRole('region',{name:'Retained revisions table, horizontally scrollable',exact:true});
             await region.focus();await page.keyboard.press('Tab');
-            assert.equal(await region.locator('input[name="confirm"]').evaluate(element=>element===document.activeElement),true,`${label} keyboard reaches rollback confirmation`);
-            await page.keyboard.press('Tab');
             assert.equal(await region.getByRole('button',{name:'Rollback',exact:true}).evaluate(element=>element===document.activeElement),true,`${label} keyboard reaches rollback action`);
             const bounds=await region.evaluate(element=>{const button=element.querySelector('button').getBoundingClientRect();const wrapper=element.getBoundingClientRect();return {left:button.left,right:button.right,wrapperLeft:wrapper.left,wrapperRight:wrapper.right,scroll:element.scrollLeft};});
             assert.ok(bounds.scroll>0&&bounds.left>=bounds.wrapperLeft-1&&bounds.right<=bounds.wrapperRight+1,`${label} rollback remains reachable inside table scroll`);

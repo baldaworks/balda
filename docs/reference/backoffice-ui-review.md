@@ -340,6 +340,46 @@ Its private protocol inputs are excluded from diagnostics; no real
 administrator, deployment or transport credentials are used. Synthetic gallery
 results remain separate from this authenticated runtime evidence.
 
+## Confirmation dialog gates
+
+Use the optional Playwright installation above. Before authenticated application
+verification, run the focused synthetic dialog checks:
+
+```bash
+BALDA_BACKOFFICE_BROWSER_TEST=1 BACKOFFICE_CONFIRMATION_SCREENSHOTS=/tmp/balda-confirmation-layout go test ./internal/apps/backoffice -run '^TestConfirmationsLayoutBrowser$' -count=1 -v
+BALDA_BACKOFFICE_BROWSER_TEST=1 BALDA_CONFIRMATION_MIGRATION_SCREENSHOTS=/tmp/balda-confirmation-actions go test ./internal/apps/backoffice -run '^TestConfirmationConditionsBrowser$' -count=1 -v
+```
+
+The first gate exercises native and HTMX forms with actual intercepted request
+counts/payloads, named submitters, edited values, validation, keyboard focus,
+Cancel/Close/Escape/backdrop, long escaped text, a completed error followed by
+fresh consent, stale forms and newly swapped fragments. It checks root and
+prefixed mounts at desktop/mobile widths; `npm test` also covers the shared
+mechanism at all four gallery widths. The conditional gate uses production
+Access, Account and Webhook templates and captures representative migrated
+dialogs. It verifies effective bot-capability changes, inactive-role and
+unbound edits, own/other credential and session revocation, disabled tests and
+native MFA `confirm=on` with the entered password. These are synthetic previews
+and intercepted requests, not persistence evidence.
+
+Inspect the settled dialog images: legible contextual title/body, wrapped long
+identifiers, reachable action/Cancel controls and visible keyboard focus. The
+Plugins layout gate additionally captures Callee disable, retained rollback
+and removal consequences at all four viewports and both mounts. Ordinary
+settings remain editable checkboxes. Dismissing a dialog must send no mutation;
+affirming it must send exactly one, and a repeated attempt asks again.
+
+Then run the documented authenticated gates against disposable SQLite and
+normal login. Invitation gates prove replacement/cancellation; WebAuthn gates
+prove native passkey replacement/disable;
+Schedules proves enabled and confirmed-disabled manual runs, cancellation,
+exact retained destinations and unchanged next scheduled time. MCP OAuth also
+checks native shared-authorization revoke cancellation, one confirmed request
+and actual credential invalidation for current/retained contexts. Existing
+missing-consent, authority, CSRF/origin and stale-state checks remain required.
+Record actual commands, screenshots and distinct synthetic/application evidence
+in Beads; finish with the repository quality gates in CONTRIBUTING.md.
+
 ## Plugins layout and application gates
 
 Run Plugins verification in this order, using the same optional Playwright

@@ -1,3 +1,4 @@
+const { submit } = require('./actions.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -99,7 +100,7 @@ async function externalPost(pathname, secret, body, requestID) {
       await page.reload();
       await page.getByRole('region', { name: /Webhook request history/ }).getByText('External').first().waitFor();
       await page.getByLabel('Request body').fill('config test input');
-      await page.getByRole('button', { name: 'Send test POST' }).click();
+      await submit(page, page.getByRole('button', { name: 'Send test POST' }));
       await page.getByRole('heading', { name: 'Request detail' }).waitFor();
       await page.getByText('config test input', { exact: true }).waitFor();
       await page.getByText('Processed: Configured: config test input', { exact: true }).waitFor();
@@ -150,7 +151,7 @@ async function externalPost(pathname, secret, body, requestID) {
       await capture(page, 'external-history', viewport.name);
 
       await page.getByLabel('Request body').fill('test input');
-      await page.getByRole('button', { name: 'Send test POST' }).click();
+      await submit(page, page.getByRole('button', { name: 'Send test POST' }));
       await page.getByRole('heading', { name: 'Request detail' }).waitFor();
       await page.getByText('test input', { exact: true }).waitFor();
       await page.getByText('Processed: Browser: test input', { exact: true }).first().waitFor();
@@ -171,8 +172,7 @@ async function externalPost(pathname, secret, body, requestID) {
       await page.getByRole('heading', { name: 'Request detail' }).waitFor();
       await page.getByText('Processed: Edited: edited input', { exact: true }).first().waitFor();
 
-      await page.getByLabel(/Confirm replacing the current secret/).check();
-      await page.getByRole('button', { name: 'Rotate secret' }).click();
+      await submit(page, page.getByRole('button', { name: 'Rotate secret' }));
       await page.getByRole('heading', { name: 'Webhook secret · shown once' }).waitFor();
       const rotatedSecret = await page.getByLabel('Generated secret').inputValue();
       assert.notEqual(rotatedSecret, firstSecret);
@@ -183,13 +183,12 @@ async function externalPost(pathname, secret, body, requestID) {
       await page.goto(`${baseURL}/webhooks/${routeName}`);
       assert.equal(await page.getByLabel('Generated secret').count(), 0);
 
-      await page.getByLabel(/Confirm disabling this webhook route/).check();
-      await page.getByRole('button', { name: 'Disable webhook' }).click();
+      await submit(page, page.getByRole('button', { name: 'Disable webhook' }));
       await page.getByRole('button', { name: 'Enable webhook' }).waitFor();
       result = await externalPost(callbackPath(routeName), rotatedSecret, 'disabled', `${routeName}-disabled`);
       assert.equal(result.status, 404);
-      await page.getByLabel(/Confirm enabling this webhook route/).check();
-      await page.getByRole('button', { name: 'Enable webhook' }).click();
+
+      await submit(page, page.getByRole('button', { name: 'Enable webhook' }));
       await page.getByRole('button', { name: 'Disable webhook' }).waitFor();
       result = await externalPost(callbackPath(routeName), rotatedSecret, 'reenabled', `${routeName}-reenabled`);
       assert.equal(result.status, 202);
@@ -214,10 +213,9 @@ async function externalPost(pathname, secret, body, requestID) {
       }, new URL(page.url()).pathname);
       assert.equal(blocked, 403);
 
-      await page.getByLabel(/Confirm deleting this route/).check();
       const [deleteResponse] = await Promise.all([
         page.waitForResponse(response => response.url().endsWith(`/webhooks/${routeName}/delete`) && response.request().method() === 'POST'),
-        page.getByRole('button', { name: 'Delete webhook' }).click(),
+        submit(page, page.getByRole('button', { name: 'Delete webhook' })),
       ]);
       assert.equal(deleteResponse.status(), 204);
       await page.goto(`${baseURL}/webhooks/${routeName}`);
