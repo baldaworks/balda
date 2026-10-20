@@ -260,11 +260,6 @@ func (m *managedLifecycle) installLocked(ctx context.Context, plugin AvailablePl
 			Description:  pluginPackage.Description,
 			RelativeRoot: relativeRoot, CapabilityJSON: capabilities, CreatedAt: now,
 		}
-		if m.management == nil {
-			if err := m.store.PutPluginRevision(ctx, revision); err != nil {
-				return err
-			}
-		}
 	} else if revision.RelativeRoot != relativeRoot || revision.CapabilityJSON != capabilities ||
 		revision.Version != pluginPackage.Version || revision.Description != pluginPackage.Description {
 		return errors.New("plugin revision metadata conflicts with immutable package")
@@ -833,14 +828,11 @@ func (m *managedLifecycle) purge(ctx context.Context, pluginID, revisionID strin
 	}
 	defer release()
 
-	var expected string
-	if m.management != nil {
-		observed, err := m.management.ObservePlugin(ctx, pluginID)
-		if err != nil {
-			return err
-		}
-		expected = observed.Token()
+	observed, err := m.management.ObservePlugin(ctx, pluginID)
+	if err != nil {
+		return err
 	}
+	expected := observed.Token()
 
 	revision, found, err := m.store.GetPluginRevision(ctx, pluginID, revisionID)
 	if err != nil {
@@ -893,12 +885,7 @@ func (m *managedLifecycle) purge(ctx context.Context, pluginID, revisionID strin
 			return fmt.Errorf("prepare purged plugin revision deletion: %w", err)
 		}
 	}
-	var purgeErr error
-	if m.management != nil {
-		purgeErr = m.management.PurgePluginRevisionTrusted(ctx, pluginID, revisionID, expected, uuid.NewString(), m.now().UTC())
-	} else {
-		purgeErr = m.store.PurgePluginRevision(ctx, pluginID, revisionID)
-	}
+	purgeErr := m.management.PurgePluginRevisionTrusted(ctx, pluginID, revisionID, expected, uuid.NewString(), m.now().UTC())
 	if err := purgeErr; err != nil {
 		if !moved {
 			return err

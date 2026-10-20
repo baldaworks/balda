@@ -266,7 +266,7 @@ func TestUnavailableMCPStartupKeepsBothProviderShellsAndManagementRunning(t *tes
 						fx.Annotate(func() string { return "alpha" }, fx.ResultTags(`name:"balda_provider"`)),
 						fx.Annotate(func() []string { return nil }, fx.ResultTags(`name:"balda_mcp_servers"`)),
 						func(r *catalogapp.Runtime) (*pluginapp.Service, error) {
-							return pluginapp.NewManaged(stateDir, provider.AppKV(), provider.Plugins(), r)
+							return pluginapp.NewManaged(stateDir, provider.AppKV(), provider.Plugins(), r, provider.PluginManagement())
 						}),
 					fx.Populate(&catalog, &lifecycle, &binder))
 				if err := container.Err(); err != nil {

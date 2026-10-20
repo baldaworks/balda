@@ -389,7 +389,7 @@ func TestRecoveryFailsExplicitlyOnConfiguredManagedIDCollision(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plugins, err := pluginapp.NewManaged(runtime.stateDir, p.AppKV(), p.Plugins(), runtime)
+	plugins, err := pluginapp.NewManaged(runtime.stateDir, p.AppKV(), p.Plugins(), runtime, p.PluginManagement())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -438,7 +438,7 @@ func TestConfiguredHealthIsUnobservedBeforeInvocation(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = runtime.MCP().Shutdown(t.Context()) }()
-	plugins, err := pluginapp.NewManaged(runtime.stateDir, p.AppKV(), p.Plugins(), runtime)
+	plugins, err := pluginapp.NewManaged(runtime.stateDir, p.AppKV(), p.Plugins(), runtime, p.PluginManagement())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -502,7 +502,7 @@ func TestPublicationRecoveryAfterCommitOrCompletionFailureUsesLatestState(t *tes
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { _ = reopened.MCP().Shutdown(t.Context()) })
-			plugins, err := pluginapp.NewManaged(runtime.stateDir, p.AppKV(), p.Plugins(), reopened)
+			plugins, err := pluginapp.NewManaged(runtime.stateDir, p.AppKV(), p.Plugins(), reopened, p.PluginManagement())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -564,15 +564,15 @@ func TestManagedResolverRestoresExactProtectedRevisionAfterEditAndDisable(t *tes
 }
 
 type gatedPluginCommit struct {
-	state.PluginStore
+	state.PluginManagementStore
 	prepared chan struct{}
 	release  chan struct{}
 }
 
-func (s *gatedPluginCommit) ActivatePlugin(ctx context.Context, intent state.PluginActivationIntent, install state.PluginInstallRecord) error {
+func (s *gatedPluginCommit) CommitPluginTrusted(ctx context.Context, mutation state.PluginCommit) error {
 	close(s.prepared)
 	<-s.release
-	return s.PluginStore.ActivatePlugin(ctx, intent, install)
+	return s.PluginManagementStore.CommitPluginTrusted(ctx, mutation)
 }
 
 func TestConcurrentPluginAndMCPPublicationKeepsBothDurableChanges(t *testing.T) {
@@ -595,8 +595,8 @@ func testConcurrentPluginAndMCPPublication(t *testing.T, enable bool) {
 			t.Fatal(err)
 		}
 	}
-	gated := &gatedPluginCommit{PluginStore: p.Plugins(), prepared: make(chan struct{}), release: make(chan struct{})}
-	plugins, err := pluginapp.NewManaged(runtime.stateDir, p.AppKV(), gated, runtime)
+	gated := &gatedPluginCommit{PluginManagementStore: p.PluginManagement(), prepared: make(chan struct{}), release: make(chan struct{})}
+	plugins, err := pluginapp.NewManaged(runtime.stateDir, p.AppKV(), p.Plugins(), runtime, gated)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -735,7 +735,7 @@ func hybridCatalogFixtureWithDatabase(t *testing.T, databasePath string) (state.
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = runtime.MCP().Shutdown(t.Context()) })
-	plugins, err := pluginapp.NewManaged(dir, p.AppKV(), p.Plugins(), runtime)
+	plugins, err := pluginapp.NewManaged(dir, p.AppKV(), p.Plugins(), runtime, p.PluginManagement())
 	if err != nil {
 		t.Fatal(err)
 	}

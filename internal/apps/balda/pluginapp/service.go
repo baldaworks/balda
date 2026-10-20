@@ -121,9 +121,9 @@ func New(stateDir string, kv baldastate.KVStore) (*Service, error) {
 }
 
 // NewManaged creates the durable plugin lifecycle service.
-func NewManaged(stateDir string, kv baldastate.KVStore, store PluginStore, activator CatalogActivator, management ...ManagementStore) (*Service, error) {
-	if len(management) > 1 || (len(management) == 1 && management[0] == nil) {
-		return nil, fmt.Errorf("exactly one nonnil management store is supported")
+func NewManaged(stateDir string, kv baldastate.KVStore, store PluginStore, activator CatalogActivator, management ManagementStore) (*Service, error) {
+	if management == nil {
+		return nil, fmt.Errorf("management store is required")
 	}
 	service, err := New(stateDir, kv)
 	if err != nil {
@@ -139,9 +139,7 @@ func NewManaged(stateDir string, kv baldastate.KVStore, store PluginStore, activ
 	if err := os.MkdirAll(service.stateDir, 0o700); err != nil {
 		return nil, fmt.Errorf("create plugin state directory: %w", err)
 	}
-	if len(management) == 1 {
-		service.management = management[0]
-	}
+	service.management = management
 	service.managed = &managedLifecycle{stateDir: service.stateDir, store: store, kv: kv, activator: activator, loader: loader, now: time.Now, management: service.management}
 	return service, nil
 }

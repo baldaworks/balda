@@ -45,7 +45,7 @@ func TestLifecycleMigratesLegacyPluginAndReconstructsCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plugins, err := pluginapp.NewManaged(stateDir, provider.AppKV(), provider.Plugins(), runtime)
+	plugins, err := pluginapp.NewManaged(stateDir, provider.AppKV(), provider.Plugins(), runtime, provider.PluginManagement())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestRuntimeBuildsIsolatedWorkspaceOverlayAndReadsPinnedSkill(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	plugins, err := pluginapp.NewManaged(stateDir, provider.AppKV(), provider.Plugins(), runtime)
+	plugins, err := pluginapp.NewManaged(stateDir, provider.AppKV(), provider.Plugins(), runtime, provider.PluginManagement())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +180,7 @@ func TestRuntimeBuildsIsolatedWorkspaceOverlayAndReadsPinnedSkill(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	pluginsAfterRestart, err := pluginapp.NewManaged(stateDir, provider.AppKV(), provider.Plugins(), runtimeAfterRestart)
+	pluginsAfterRestart, err := pluginapp.NewManaged(stateDir, provider.AppKV(), provider.Plugins(), runtimeAfterRestart, provider.PluginManagement())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -466,7 +466,7 @@ func TestSessionCapabilityBinderUsesExactRetainedSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plugins, err := pluginapp.NewManaged(stateDir, provider.AppKV(), provider.Plugins(), runtime)
+	plugins, err := pluginapp.NewManaged(stateDir, provider.AppKV(), provider.Plugins(), runtime, provider.PluginManagement())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -12,6 +12,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalog"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 )
 
 type recordingActivator struct {
@@ -462,7 +463,7 @@ func newManagedTestService(
 			Revision: "builtin-v1",
 		},
 	}}}
-	service, err := NewManaged(stateDir, provider.AppKV(), provider.Plugins(), activator)
+	service, err := NewManaged(stateDir, provider.AppKV(), provider.Plugins(), activator, provider.PluginManagement())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -608,5 +609,73 @@ func TestLegacyMigrationCaptureRemainsAnchoredAfterRootSwap(t *testing.T) {
 	}
 	if _, found, err := service.GetInstalled(ctx, "outside"); err != nil || found {
 		t.Fatalf("GetInstalled(outside) = (_, %v, %v), want absent", found, err)
+	}
+}
+
+func TestManagedInstallPreservesAbandonedPackageAndRecordsAudit(t *testing.T) {
+	t.Parallel()
+	stateDir, root, service, _, store := newManagedTestService(t)
+	writeManagedPlugin(t, root, "1.0.0", true)
+	if err := service.kv.Set(t.Context(), legacyMigrationCompleteKey, "v1"); err != nil {
+		t.Fatal(err)
+	}
+	abandoned := filepath.Join(stateDir, "plugins", testPluginName, "plugin.json")
+	mustMkdirAll(t, filepath.Dir(abandoned))
+	mustWriteFile(t, abandoned, "inert abandoned bytes")
+	if err := service.Install(t.Context(), testPluginName+"@"+testMarketplaceName); err != nil {
+		t.Fatal(err)
+	}
+	first, found, err := store.GetPluginInstall(t.Context(), testPluginName)
+	if err != nil || !found || !first.Enabled {
+		t.Fatalf("install = %+v, found = %v, error = %v", first, found, err)
+	}
+	writeManagedPlugin(t, root, "1.0.0", false)
+	if err := service.Install(t.Context(), testPluginName+"@"+testMarketplaceName); err != nil {
+		t.Fatal(err)
+	}
+	second, found, err := store.GetPluginInstall(t.Context(), testPluginName)
+	if err != nil || !found || second.ActiveRevisionID == first.ActiveRevisionID || second.Version != first.Version {
+		t.Fatalf("same-version reinstall = %+v, first = %+v, error = %v", second, first, err)
+	}
+	if err := service.RemoveInstalled(t.Context(), testPluginName); err != nil {
+		t.Fatal(err)
+	}
+	if contents, err := os.ReadFile(abandoned); err != nil || string(contents) != "inert abandoned bytes" {
+		t.Fatalf("abandoned contents = %q, error = %v", contents, err)
+	}
+	if marker, found, err := service.kv.Get(t.Context(), legacyMigrationCompleteKey); err != nil || !found || marker != "v1" {
+		t.Fatalf("migration marker = %q, found = %v, error = %v", marker, found, err)
+	}
+	for _, revisionID := range []string{first.ActiveRevisionID, second.ActiveRevisionID} {
+		revision, found, err := store.GetPluginRevision(t.Context(), testPluginName, revisionID)
+		if err != nil || !found {
+			t.Fatalf("retained revision %s: found = %v, error = %v", revisionID, found, err)
+		}
+		if _, err := os.Stat(filepath.Join(stateDir, filepath.FromSlash(revision.RelativeRoot))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(stateDir, first.DataRelativePath)); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := state.NewSQLiteProvider(t.Context(), filepath.Join(stateDir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = reopened.Close() }()
+	page, err := reopened.Users().ListAuditEvents(t.Context(), usercmd.PageRequest{Limit: usercmd.MaxPageSize})
+	if err != nil {
+		t.Fatal(err)
+	}
+	counts := map[usercmd.AuditAction]int{}
+	for _, event := range page.Events {
+		if event.TargetType == usercmd.AuditTargetPlugin {
+			counts[event.Action]++
+		}
+	}
+	for _, action := range []usercmd.AuditAction{usercmd.AuditActionPluginInstalled, usercmd.AuditActionPluginUpgraded, usercmd.AuditActionPluginRemoved} {
+		if counts[action] != 1 {
+			t.Errorf("%s audit count = %d, want 1", action, counts[action])
+		}
 	}
 }

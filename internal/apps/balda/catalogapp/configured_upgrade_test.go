@@ -218,7 +218,7 @@ func TestConfiguredSessionUpgradeFreshensIncompleteADKState(t *testing.T) {
 			if err := catalog.configureProviderMCP(providers, "alpha", nil); err != nil {
 				t.Fatal(err)
 			}
-			plugins, err := pluginapp.NewManaged(dir, p.AppKV(), p.Plugins(), catalog)
+			plugins, err := pluginapp.NewManaged(dir, p.AppKV(), p.Plugins(), catalog, p.PluginManagement())
 			if err != nil {
 				t.Fatal(err)
 			}

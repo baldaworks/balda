@@ -232,7 +232,7 @@ func TestManagedSkillsCompleteCatalogRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = recovered.MCP().Shutdown(ctx) })
-	recoveredPlugins, err := pluginapp.NewManaged(stateDir, reopened.AppKV(), reopened.Plugins(), recovered)
+	recoveredPlugins, err := pluginapp.NewManaged(stateDir, reopened.AppKV(), reopened.Plugins(), recovered, reopened.PluginManagement())
 	if err != nil {
 		t.Fatal(err)
 	}
