@@ -28,6 +28,7 @@ type DirectMessageResolver interface {
 // ResolverBinding associates a resolver with one enabled channel integration.
 type ResolverBinding struct {
 	ChannelType string
+	Enabled     bool
 	Resolver    DirectMessageResolver
 }
 
@@ -46,8 +47,17 @@ type Service struct {
 
 // New constructs the startup readiness service from enabled transport resolvers.
 func New(users UserReader, sender Sender, bindings []ResolverBinding, logger zerolog.Logger) (*Service, error) {
+	if users == nil {
+		return nil, fmt.Errorf("startup notification user reader is required")
+	}
+	if sender == nil {
+		return nil, fmt.Errorf("startup notification sender is required")
+	}
 	resolvers := make(map[string]DirectMessageResolver, len(bindings))
 	for _, binding := range bindings {
+		if !binding.Enabled {
+			continue
+		}
 		channelType := normalizeChannelType(binding.ChannelType)
 		if channelType == "" || binding.Resolver == nil {
 			return nil, fmt.Errorf("startup notification resolver requires a channel type and implementation")
@@ -63,45 +73,58 @@ func New(users UserReader, sender Sender, bindings []ResolverBinding, logger zer
 	}, nil
 }
 
-// Notify sends readiness messages best-effort. Recipient lookup, resolution,
-// and delivery failures never make the otherwise-ready application unavailable.
+// Notify sends readiness messages best-effort. Resolution and delivery
+// failures never make the otherwise-ready application unavailable.
 func (s *Service) Notify(ctx context.Context) error {
-	if s == nil || s.users == nil || s.sender == nil || len(s.resolvers) == 0 {
+	if s == nil {
 		return nil
 	}
 	admin, found, err := s.primaryAdministrator(ctx)
 	if err != nil {
-		s.logger.Warn().Err(err).Msg("failed to read startup notification recipient")
-		return nil
+		return fmt.Errorf("read startup notification recipient: %w", err)
 	}
 	if !found {
 		return nil
 	}
 
-	bindings := eligibleBindings(admin.Bindings, s.resolvers)
+	bindings := orderedBindings(admin.Bindings)
 	for _, binding := range bindings {
-		resolver := s.resolvers[normalizeChannelType(binding.ChannelType)]
+		if binding.ChannelType == "" || binding.Principal == "" {
+			s.logResult(binding, "skipped", "invalid_binding")
+			continue
+		}
+		resolver := s.resolvers[binding.ChannelType]
+		if resolver == nil {
+			s.logResult(binding, "skipped", "integration_disabled")
+			continue
+		}
 		locator, err := resolver.ResolveDM(ctx, binding)
 		if err != nil {
-			s.logger.Warn().Err(err).
-				Str("channel_type", binding.ChannelType).
-				Str("binding_id", binding.ID).
-				Msg("failed to resolve startup notification DM")
+			s.logResult(binding, "failed", "resolve_failed")
 			continue
 		}
 		if err := s.sender.SendPlain(ctx, locator, ReadyMessage); err != nil {
-			s.logger.Warn().Err(err).
-				Str("channel_type", binding.ChannelType).
-				Str("binding_id", binding.ID).
-				Msg("failed to send startup readiness notification")
+			s.logResult(binding, "failed", "send_failed")
 			continue
 		}
-		s.logger.Info().
-			Str("channel_type", binding.ChannelType).
-			Str("binding_id", binding.ID).
-			Msg("startup readiness notification sent")
+		s.logResult(binding, "sent", "")
 	}
 	return nil
+}
+
+func (s *Service) logResult(binding usercmd.Binding, outcome, reason string) {
+	event := s.logger.Info()
+	if outcome == "failed" {
+		event = s.logger.Warn()
+	}
+	event = event.
+		Str("channel_type", binding.ChannelType).
+		Str("binding_id", binding.ID).
+		Str("outcome", outcome)
+	if reason != "" {
+		event = event.Str("reason", reason)
+	}
+	event.Msg("startup readiness notification result")
 }
 
 func (s *Service) primaryAdministrator(ctx context.Context) (usercmd.User, bool, error) {
@@ -129,34 +152,23 @@ func (s *Service) primaryAdministrator(ctx context.Context) (usercmd.User, bool,
 	}
 }
 
-func eligibleBindings(bindings []usercmd.Binding, resolvers map[string]DirectMessageResolver) []usercmd.Binding {
-	eligible := make([]usercmd.Binding, 0, len(bindings))
-	seen := make(map[string]bool, len(bindings))
+func orderedBindings(bindings []usercmd.Binding) []usercmd.Binding {
+	ordered := make([]usercmd.Binding, 0, len(bindings))
 	for _, binding := range bindings {
-		channelType := normalizeChannelType(binding.ChannelType)
-		principal := strings.TrimSpace(binding.Principal)
-		if principal == "" || resolvers[channelType] == nil {
-			continue
-		}
-		key := channelType + "\x00" + principal
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
-		binding.ChannelType = channelType
-		binding.Principal = principal
-		eligible = append(eligible, binding)
+		binding.ChannelType = normalizeChannelType(binding.ChannelType)
+		binding.Principal = strings.TrimSpace(binding.Principal)
+		ordered = append(ordered, binding)
 	}
-	sort.Slice(eligible, func(i, j int) bool {
-		if eligible[i].ChannelType != eligible[j].ChannelType {
-			return eligible[i].ChannelType < eligible[j].ChannelType
+	sort.Slice(ordered, func(i, j int) bool {
+		if ordered[i].ChannelType != ordered[j].ChannelType {
+			return ordered[i].ChannelType < ordered[j].ChannelType
 		}
-		if eligible[i].Principal != eligible[j].Principal {
-			return eligible[i].Principal < eligible[j].Principal
+		if ordered[i].Principal != ordered[j].Principal {
+			return ordered[i].Principal < ordered[j].Principal
 		}
-		return eligible[i].ID < eligible[j].ID
+		return ordered[i].ID < ordered[j].ID
 	})
-	return eligible
+	return ordered
 }
 
 func normalizeChannelType(value string) string {

@@ -1,9 +1,11 @@
 package startupnotifyapp
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
@@ -79,8 +81,8 @@ func TestNotifySelectsEligibleBindingsDeterministically(t *testing.T) {
 		}}},
 	}}
 	service, err := New(reader, sender, []ResolverBinding{
-		{ChannelType: "telegram", Resolver: telegram},
-		{ChannelType: "slackagent", Resolver: slack},
+		{ChannelType: "telegram", Enabled: true, Resolver: telegram},
+		{ChannelType: "slackagent", Enabled: true, Resolver: slack},
 	}, zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
@@ -89,7 +91,7 @@ func TestNotifySelectsEligibleBindingsDeterministically(t *testing.T) {
 	if err := service.Notify(t.Context()); err != nil {
 		t.Fatalf("Notify() error = %v", err)
 	}
-	wantTargets := []string{"slackagent:U2", "telegram:2", "telegram:9"}
+	wantTargets := []string{"slackagent:U2", "telegram:2", "telegram:2", "telegram:9"}
 	if !reflect.DeepEqual(sender.targets, wantTargets) {
 		t.Fatalf("delivery targets = %v, want %v", sender.targets, wantTargets)
 	}
@@ -114,7 +116,7 @@ func TestNotifyIsolatesResolverAndDeliveryFailures(t *testing.T) {
 		{ID: "two", ChannelType: "telegram", Principal: "2"},
 		{ID: "three", ChannelType: "telegram", Principal: "3"},
 	})
-	service, err := New(reader, sender, []ResolverBinding{{ChannelType: "telegram", Resolver: resolver}}, zerolog.Nop())
+	service, err := New(reader, sender, []ResolverBinding{{ChannelType: "telegram", Enabled: true, Resolver: resolver}}, zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,10 +129,49 @@ func TestNotifyIsolatesResolverAndDeliveryFailures(t *testing.T) {
 	}
 }
 
+func TestNotifyLogsBoundedOutcomes(t *testing.T) {
+	var logs bytes.Buffer
+	resolver := &fakeResolver{
+		channelType: "telegram",
+		errors:      map[string]error{"1": errors.New("secret resolver response")},
+	}
+	sender := &fakeSender{errors: map[string]error{"telegram:2": errors.New("secret send response")}}
+	reader := primaryReader([]usercmd.Binding{
+		{ID: "resolve", ChannelType: "telegram", Principal: "1"},
+		{ID: "send", ChannelType: "telegram", Principal: "2"},
+		{ID: "sent", ChannelType: "telegram", Principal: "3"},
+		{ID: "disabled", ChannelType: "zulip", Principal: "4"},
+	})
+	service, err := New(reader, sender, []ResolverBinding{{
+		ChannelType: "telegram", Enabled: true, Resolver: resolver,
+	}}, zerolog.New(&logs))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.Notify(t.Context()); err != nil {
+		t.Fatalf("Notify() error = %v", err)
+	}
+	got := logs.String()
+	for _, field := range []string{
+		`"outcome":"failed","reason":"resolve_failed"`,
+		`"outcome":"failed","reason":"send_failed"`,
+		`"outcome":"sent"`,
+		`"outcome":"skipped","reason":"integration_disabled"`,
+	} {
+		if !strings.Contains(got, field) {
+			t.Errorf("logs missing %s: %s", field, got)
+		}
+	}
+	if strings.Contains(got, "secret") || strings.Contains(got, ReadyMessage) {
+		t.Fatalf("logs contain upstream error or message body: %s", got)
+	}
+}
+
 func TestNotifyWithNoEligibleBindingsIsNoOp(t *testing.T) {
 	resolver := &fakeResolver{channelType: "telegram", errors: map[string]error{}}
 	sender := &fakeSender{errors: map[string]error{}}
-	service, err := New(primaryReader(nil), sender, []ResolverBinding{{ChannelType: "telegram", Resolver: resolver}}, zerolog.Nop())
+	service, err := New(primaryReader(nil), sender, []ResolverBinding{{ChannelType: "telegram", Enabled: true, Resolver: resolver}}, zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,16 +184,42 @@ func TestNotifyWithNoEligibleBindingsIsNoOp(t *testing.T) {
 	}
 }
 
-func TestNotifyUserReadFailureDoesNotFailStartup(t *testing.T) {
+func TestNotifyUserReadFailureFailsStartup(t *testing.T) {
 	reader := &fakeUserReader{err: errors.New("database unavailable")}
 	service, err := New(reader, &fakeSender{}, []ResolverBinding{{
-		ChannelType: "telegram", Resolver: &fakeResolver{channelType: "telegram"},
+		ChannelType: "telegram", Enabled: true, Resolver: &fakeResolver{channelType: "telegram"},
 	}}, zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := service.Notify(t.Context()); !errors.Is(err, reader.err) {
+		t.Fatalf("Notify() error = %v, want %v", err, reader.err)
+	}
+}
+
+func TestNewRejectsMissingMandatoryWiring(t *testing.T) {
+	if _, err := New(nil, &fakeSender{}, nil, zerolog.Nop()); err == nil {
+		t.Fatal("New() error = nil with no user reader")
+	}
+	if _, err := New(primaryReader(nil), nil, nil, zerolog.Nop()); err == nil {
+		t.Fatal("New() error = nil with no sender")
+	}
+}
+
+func TestDisabledResolverIsSkipped(t *testing.T) {
+	resolver := &fakeResolver{channelType: "telegram", errors: map[string]error{}}
+	sender := &fakeSender{errors: map[string]error{}}
+	service, err := New(primaryReader([]usercmd.Binding{{
+		ID: "telegram", ChannelType: "telegram", Principal: "1",
+	}}), sender, []ResolverBinding{{ChannelType: "telegram", Resolver: resolver}}, zerolog.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := service.Notify(t.Context()); err != nil {
-		t.Fatalf("Notify() error = %v, want best-effort success", err)
+		t.Fatalf("Notify() error = %v", err)
+	}
+	if len(resolver.principals) != 0 || len(sender.targets) != 0 {
+		t.Fatalf("disabled resolver resolved %v and sent %v", resolver.principals, sender.targets)
 	}
 }
 
