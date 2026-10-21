@@ -9,7 +9,7 @@ command.
 Telegram and Zulip use one slash command per action, such as `/locator`.
 Slack registers one workspace slash command, `/balda`, and the first word of
 its text selects the Balda command. The current Slack command surface contains
-`/balda locator`, `/balda reset`, and `/balda skill`; `/balda` with no command
+`/balda locator`, `/balda status`, `/balda reset`, and `/balda skill`; `/balda` with no command
 or any other subcommand returns the enabled-command usage.
 
 `owner` means the account bootstrapped with the deployment owner token.
@@ -43,6 +43,8 @@ locator`) instead of one command per action (`/locator`); both shapes are accept
 | `/skill <skill> [prompt...]` | yes | yes | yes | `/balda skill <skill> [prompt...]` | owner, collaborator; signed Slack workspace member | current session |
 | `/locator` | yes | yes | yes | no | owner, collaborator | current session |
 | `/balda locator` | no | no | no | yes | workspace member | current conversation |
+| `/status` | yes | yes | yes | no | owner, collaborator | current session |
+| `/balda status` | no | no | no | yes | workspace member | current conversation |
 | `/close` | yes | yes | yes | no | owner, collaborator | direct message |
 | `/cancel` | yes | yes | yes | no | owner, collaborator | current session |
 | `/user ...` | yes | yes | yes | no | owner | direct message recommended |
@@ -209,6 +211,21 @@ renderer is absent or fails, Balda sends no partial or plain fallback locator
 response. Operators should use the checks in
 [Balda operations](reference/topic-sessions.md#locator-response-delivery).
 
+## Status
+
+### `/status` and `/balda status`
+
+Returns a structured, read-only snapshot of the configured provider type,
+model and reasoning effort; channel and session state; and the current turn.
+An active turn includes its UTC start time, queued-turn count, and up to 1000
+Unicode characters of the originating user text. The response marks truncated
+text explicitly.
+
+Each transport renders the same `balda.status.response.v1` contract with its
+own Markdown rules. The command does not create or restore a runtime, start a
+turn, or modify session state. If the transport renderer is absent or fails,
+Balda fails closed and sends no plain-text status fallback.
+
 ## Command execution architecture
 
 Each transport owns its command syntax and explicit whitelist. All supported
@@ -225,7 +242,7 @@ transport parser + whitelist
 
 `commandcmd` owns the neutral envelope. `actors/command` owns exact-name
 routing and command policy across scoped handler packages (`start`, `help`,
-`usage`, `locator`, `topic`, `reset`, `skill`, `closecmd`, `cancel`, `auto`,
+`usage`, `locator`, `status`, `topic`, `reset`, `skill`, `closecmd`, `cancel`, `auto`,
 `goalkeeper`, `user`, and `plugin`). `commandfx` wires actor ports. Transport
 packages do not import actor or application packages. Ingress handlers parse,
 perform auth/session checks, and publish `commandcmd.Request` envelopes.

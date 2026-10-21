@@ -12,6 +12,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/permissioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/permissionfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/questionfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/statusfmt"
 )
 
 // NewPromptRegistryContribution registers Mattermost Markdown as this
@@ -51,6 +52,8 @@ func (markdownFormatter) Format(text string) (deliveryfmt.Message, error) {
 
 type mattermostLocatorRenderer struct{}
 
+type mattermostStatusRenderer struct{}
+
 type mattermostQuestionRenderer struct{}
 
 type mattermostPermissionRenderer struct{}
@@ -60,6 +63,10 @@ func (mattermostQuestionRenderer) RenderStructured(_ context.Context, env delive
 		Text:           presentation.RenderQuestion(env.Body),
 		DeliveryFormat: deliveryfmt.DeliveryFormatMarkdown,
 	}, nil
+}
+
+func (mattermostStatusRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[statusfmt.Response]) (deliveryfmt.StructuredPresentation, error) {
+	return deliveryfmt.StructuredPresentation{Text: presentation.RenderStatus(env.Body), DeliveryFormat: deliveryfmt.DeliveryFormatMarkdown}, nil
 }
 
 // NewQuestionStructuredRegistrar registers Mattermost question presentation.
@@ -101,6 +108,11 @@ func NewLocatorStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
 		locatorfmt.ResponseDescriptor,
 		mattermostLocatorRenderer{},
 	)
+}
+
+// NewStatusStructuredRegistrar registers Mattermost status presentation.
+func NewStatusStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
+	return deliveryfx.NewStructuredRegistrar(deliveryfmt.TransportMattermost, statusfmt.ResponseDescriptor, mattermostStatusRenderer{})
 }
 
 type mattermostGoalProgressRenderer struct{}

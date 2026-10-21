@@ -23,7 +23,7 @@ var Module = fx.Module(
 		),
 		fx.Annotate(
 			func(enabled bool) commandcmd.Advertisement {
-				return commandcmd.Advertisement{Transport: zulip.ChannelType, Enabled: enabled, Names: []string{"locator", "reset", "new", "usage", "auto", "cancel", "goalkeeper", "topic", "close", "start", "user", "skill"}}
+				return commandcmd.Advertisement{Transport: zulip.ChannelType, Enabled: enabled, Names: []string{"locator", "status", "reset", "new", "usage", "auto", "cancel", "goalkeeper", "topic", "close", "start", "user", "skill"}}
 			},
 			fx.ParamTags(`name:"balda_zulip_webhook_enabled"`),
 			fx.ResultTags(`group:"balda_command_advertisements"`),
@@ -50,6 +50,10 @@ var Module = fx.Module(
 		),
 		fx.Annotate(
 			NewLocatorStructuredRegistrar,
+			fx.ResultTags(`group:"balda_delivery_structured_registrar"`),
+		),
+		fx.Annotate(
+			NewStatusStructuredRegistrar,
 			fx.ResultTags(`group:"balda_delivery_structured_registrar"`),
 		),
 		fx.Annotate(

@@ -148,6 +148,11 @@ The transport packages own markup renderers and registration. `locatorref` and
 `locatorfmt` remain transport-neutral. `actors/command/locator` owns the
 behavior; the removed `locatorapp` service is no longer part of the path.
 
+`/status` follows the same structured path with the
+`balda.status.response.v1` contract. Its handler reads session and active-turn
+snapshots, while Telegram, Slack Agent, Zulip, and Mattermost own the final
+markup and escaping.
+
 ## Summary
 
 Balda will keep prompt injection for channel-specific model text formatting, and use typed structured rendering for system-authored service messages. Structured service messages will be identified by stable contract types, with AsyncAPI as the schema source of truth where applicable. Presentation routing will be resolved by `(integration, message type)`.

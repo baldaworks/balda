@@ -40,6 +40,7 @@ type sessionTurnQueue struct {
 	pending        []*queuedTurn
 	running        bool
 	runningTurn    *queuedTurn
+	startedAt      time.Time
 	inFlightCancel context.CancelFunc
 	wakeCh         chan struct{}
 }
@@ -151,8 +152,14 @@ func (d *TurnDispatcher) CurrentTurn(sessionID string) (appports.CurrentTurn, bo
 		return appports.CurrentTurn{}, false
 	}
 
-	requesterUserID := strings.TrimSpace(queue.runningTurn.task.SessionTurn.RequesterUserID)
-	return appports.CurrentTurn{SessionID: sessionID, RequesterUserID: requesterUserID}, true
+	payload := queue.runningTurn.task.SessionTurn
+	return appports.CurrentTurn{
+		SessionID:       sessionID,
+		RequesterUserID: strings.TrimSpace(payload.RequesterUserID),
+		Text:            payload.Text,
+		StartedAt:       queue.startedAt,
+		PendingTurns:    len(queue.pending),
+	}, true
 }
 
 func (d *TurnDispatcher) CancelSession(locator session.SessionLocator, clearQueued bool) (bool, int, error) {
@@ -247,6 +254,7 @@ func (d *TurnDispatcher) sessionWorker(sessionID string, queue *sessionTurnQueue
 		d.mu.Lock()
 		queue.running = false
 		queue.runningTurn = nil
+		queue.startedAt = time.Time{}
 		queue.inFlightCancel = nil
 		d.mu.Unlock()
 		completeTurn(turn, err)
@@ -274,6 +282,7 @@ func (d *TurnDispatcher) nextTask(
 			runCtx, cancel := context.WithCancel(turn.ctx)
 			queue.running = true
 			queue.runningTurn = turn
+			queue.startedAt = time.Now().UTC()
 			queue.inFlightCancel = cancel
 			d.mu.Unlock()
 			return turn, runCtx, cancel, true

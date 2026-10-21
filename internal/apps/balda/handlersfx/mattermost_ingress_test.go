@@ -65,7 +65,7 @@ func TestMattermostHandlerPublishesCommands(t *testing.T) {
 	const ownerID = "owner-user-1"
 	ownerStore := newOwnerStoreWithMattermostSubject(t, ownerID)
 
-	for _, name := range []string{"start", "topic", "locator", "cancel", "goalkeeper", "user", "usage", "auto", "reset", "close", "skill"} {
+	for _, name := range []string{"start", "topic", "locator", "status", "cancel", "goalkeeper", "user", "usage", "auto", "reset", "close", "skill"} {
 		t.Run(name, func(t *testing.T) {
 			ingress := &recordingMattermostCommandIngress{}
 			h := &mattermostInboundHandler{

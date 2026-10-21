@@ -32,7 +32,7 @@ var Module = fx.Module(
 					Transport: mattermost.ChannelType,
 					Enabled:   enabled,
 					Names: []string{
-						"locator", "reset", "usage", "auto", "cancel",
+						"locator", "status", "reset", "usage", "auto", "cancel",
 						"goalkeeper", "topic", "close", "start",
 						"user", "skill",
 					},
@@ -85,6 +85,10 @@ var Module = fx.Module(
 		),
 		fx.Annotate(
 			NewLocatorStructuredRegistrar,
+			fx.ResultTags(`group:"balda_delivery_structured_registrar"`),
+		),
+		fx.Annotate(
+			NewStatusStructuredRegistrar,
 			fx.ResultTags(`group:"balda_delivery_structured_registrar"`),
 		),
 		fx.Annotate(

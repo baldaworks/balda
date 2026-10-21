@@ -16,6 +16,7 @@ import (
 	commandreset "github.com/baldaworks/balda/internal/apps/balda/actors/command/reset"
 	commandskill "github.com/baldaworks/balda/internal/apps/balda/actors/command/skill"
 	commandstart "github.com/baldaworks/balda/internal/apps/balda/actors/command/start"
+	commandstatus "github.com/baldaworks/balda/internal/apps/balda/actors/command/status"
 	commandtopic "github.com/baldaworks/balda/internal/apps/balda/actors/command/topic"
 	commandusage "github.com/baldaworks/balda/internal/apps/balda/actors/command/usage"
 	commanduser "github.com/baldaworks/balda/internal/apps/balda/actors/command/user"
@@ -24,6 +25,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/controlapp"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/jobs"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpruntime"
 	"github.com/baldaworks/balda/internal/apps/balda/pluginapp"
@@ -52,6 +54,15 @@ func newResetHandlers(p resetParams) []command.Handler {
 type usageParams struct {
 	fx.In
 	Sessions   *session.Manager
+	Dispatcher actortransport.Dispatcher
+	Logger     zerolog.Logger
+}
+
+type statusParams struct {
+	fx.In
+	Sessions   *session.Manager
+	Turns      appports.CurrentTurnResolver
+	Registry   deliveryfmt.StructuredMessageRegistry
 	Dispatcher actortransport.Dispatcher
 	Logger     zerolog.Logger
 }
@@ -191,6 +202,12 @@ var Module = fx.Module("balda_command",
 		fx.Annotate(
 			func(p usageParams) *commandusage.Handler {
 				return commandusage.New(p.Sessions, p.Dispatcher, p.Logger)
+			},
+			fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`),
+		),
+		fx.Annotate(
+			func(p statusParams) *commandstatus.Handler {
+				return commandstatus.New(p.Sessions, p.Turns, p.Registry, p.Dispatcher, p.Logger)
 			},
 			fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`),
 		),

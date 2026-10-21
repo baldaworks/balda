@@ -2,6 +2,7 @@ package appports
 
 import (
 	"context"
+	"time"
 
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
@@ -21,6 +22,9 @@ type TurnQueue interface {
 type CurrentTurn struct {
 	SessionID       string
 	RequesterUserID string
+	Text            string
+	StartedAt       time.Time
+	PendingTurns    int
 }
 
 type CurrentTurnResolver interface {
