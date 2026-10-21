@@ -46,6 +46,11 @@ func (c *fakeTelegramClient) SendMessageWithResponse(_ context.Context, body cli
 	if c.sendErr != nil {
 		return nil, c.sendErr
 	}
+	result := client.Message{MessageId: len(c.messages)}
+	if body.EphemeralMessageParameters != nil {
+		ephemeralMessageID := len(c.messages)
+		result.EphemeralMessageId = &ephemeralMessageID
+	}
 	return &client.SendMessageResponse{
 		HTTPResponse: &http.Response{StatusCode: http.StatusOK, Status: "200 OK"},
 		JSON200: &struct {
@@ -53,7 +58,7 @@ func (c *fakeTelegramClient) SendMessageWithResponse(_ context.Context, body cli
 			Result client.Message          `json:"result"`
 		}{
 			Ok:     true,
-			Result: client.Message{MessageId: len(c.messages)},
+			Result: result,
 		},
 	}, nil
 }
@@ -63,6 +68,11 @@ func (c *fakeTelegramClient) SendRichMessageWithResponse(_ context.Context, body
 	if c.sendErr != nil {
 		return nil, c.sendErr
 	}
+	result := client.Message{MessageId: len(c.richMessages)}
+	if body.EphemeralMessageParameters != nil {
+		ephemeralMessageID := len(c.richMessages)
+		result.EphemeralMessageId = &ephemeralMessageID
+	}
 	return &client.SendRichMessageResponse{
 		HTTPResponse: &http.Response{StatusCode: http.StatusOK, Status: "200 OK"},
 		JSON200: &struct {
@@ -70,7 +80,7 @@ func (c *fakeTelegramClient) SendRichMessageWithResponse(_ context.Context, body
 			Result client.Message              `json:"result"`
 		}{
 			Ok:     true,
-			Result: client.Message{MessageId: len(c.richMessages)},
+			Result: result,
 		},
 	}, nil
 }

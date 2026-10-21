@@ -690,6 +690,108 @@ func (m *Messenger) SendEphemeralAgentReplyMessageWithInlineKeyboardLastMessageI
 	return m.sendEphemeralMessageWithInlineKeyboard(ctx, chatID, receiverUserID, text, topicID, "", keyboard)
 }
 
+// SendEphemeralMessage sends a technical message visible only to receiverUserID.
+// Provider or formatting errors are returned without a public fallback.
+func (m *Messenger) SendEphemeralMessage(
+	ctx context.Context,
+	chatID, receiverUserID int64,
+	message deliveryfmt.Message,
+	topicID int,
+) error {
+	receiver, err := ephemeralReceiver(receiverUserID)
+	if err != nil {
+		return err
+	}
+	parameters := &client.EphemeralMessageParameters{ReceiverUserId: receiver}
+	switch message.Name {
+	case deliveryfmt.NameTelegramRichHTML:
+		return m.sendEphemeralRichMessage(ctx, chatID, richHTML(message.Text), topicID, parameters)
+	case deliveryfmt.NameTelegramRichMarkdown:
+		return m.sendEphemeralRichMessage(ctx, chatID, richMarkdown(message.Text), topicID, parameters)
+	case deliveryfmt.NamePlainText:
+		return m.sendEphemeralPlainMessage(ctx, chatID, message.Text, topicID, parameters)
+	default:
+		return fmt.Errorf("unsupported telegram message format %q", message.Name)
+	}
+}
+
+func ephemeralReceiver(receiverUserID int64) (int, error) {
+	if receiverUserID <= 0 || int64(int(receiverUserID)) != receiverUserID {
+		return 0, fmt.Errorf("ephemeral telegram receiver is invalid")
+	}
+	return int(receiverUserID), nil
+}
+
+func (m *Messenger) sendEphemeralPlainMessage(ctx context.Context, chatID int64, text string, topicID int, parameters *client.EphemeralMessageParameters) error {
+	req := client.SendMessageJSONRequestBody{
+		ChatId:                     chatID,
+		Text:                       text,
+		EphemeralMessageParameters: parameters,
+	}
+	if topicID != 0 {
+		req.MessageThreadId = &topicID
+	}
+	sendCtx, cancel := telegramSendContext(ctx)
+	defer cancel()
+	resp, err := m.client.SendMessageWithResponse(sendCtx, req)
+	if err != nil {
+		return telegramTransportError("send ephemeral technical message", chatID, err)
+	}
+	if resp == nil {
+		return telegramNoResponseError("send ephemeral technical message", chatID)
+	}
+	var result *client.Message
+	if resp.JSON200 != nil {
+		result = &resp.JSON200.Result
+	}
+	return validateEphemeralTechnicalResponse(chatID, resp.StatusCode(), result, resp.JSON400, resp.JSON401, false)
+}
+
+func (m *Messenger) sendEphemeralRichMessage(ctx context.Context, chatID int64, rich client.InputRichMessage, topicID int, parameters *client.EphemeralMessageParameters) error {
+	req := client.SendRichMessageJSONRequestBody{
+		ChatId:                     chatID,
+		RichMessage:                rich,
+		EphemeralMessageParameters: parameters,
+	}
+	if topicID != 0 {
+		req.MessageThreadId = &topicID
+	}
+	sendCtx, cancel := telegramSendContext(ctx)
+	defer cancel()
+	resp, err := m.client.SendRichMessageWithResponse(sendCtx, req)
+	if err != nil {
+		return richTransportError("send ephemeral technical message", chatID, err)
+	}
+	if resp == nil {
+		return richNoResponseError("send ephemeral technical message", chatID)
+	}
+	var result *client.Message
+	if resp.JSON200 != nil {
+		result = &resp.JSON200.Result
+	}
+	return validateEphemeralTechnicalResponse(chatID, resp.StatusCode(), result, resp.JSON400, resp.JSON401, true)
+}
+
+func validateEphemeralTechnicalResponse(chatID int64, statusCode int, result *client.Message, badRequest, unauthorized *client.ErrorResponse, rich bool) error {
+	httpError := telegramHTTPError
+	if rich {
+		httpError = richHTTPError
+	}
+	if badRequest != nil {
+		return httpError("send ephemeral technical message", chatID, http.StatusBadRequest, badRequest.Description)
+	}
+	if unauthorized != nil {
+		return httpError("send ephemeral technical message", chatID, http.StatusUnauthorized, unauthorized.Description)
+	}
+	if result == nil {
+		return httpError("send ephemeral technical message", chatID, statusCode, "")
+	}
+	if result.EphemeralMessageId == nil || *result.EphemeralMessageId <= 0 {
+		return fmt.Errorf("send ephemeral technical message to chat %d: missing ephemeral message id", chatID)
+	}
+	return nil
+}
+
 func (m *Messenger) sendAgentReplyMessageWithInlineKeyboard(ctx context.Context, chatID int64, message deliveryfmt.Message, topicID int, keyboard client.InlineKeyboardMarkup) (int, error) {
 	switch message.Name {
 	case deliveryfmt.NameTelegramRichHTML:
@@ -749,16 +851,27 @@ type sendMessageWithInlineKeyboardRequest struct {
 }
 
 type sendEphemeralMessageWithInlineKeyboardRequest struct {
-	ChatID          int64                       `json:"chat_id"`
-	ReceiverUserID  int64                       `json:"receiver_user_id"`
-	Text            string                      `json:"text"`
-	ParseMode       *string                     `json:"parse_mode,omitempty"`
-	MessageThreadID *int                        `json:"message_thread_id,omitempty"`
-	ReplyMarkup     client.InlineKeyboardMarkup `json:"reply_markup"`
+	ChatID                     int64                              `json:"chat_id"`
+	EphemeralMessageParameters *client.EphemeralMessageParameters `json:"ephemeral_message_parameters,omitempty"`
+	Text                       string                             `json:"text"`
+	ParseMode                  *string                            `json:"parse_mode,omitempty"`
+	MessageThreadID            *int                               `json:"message_thread_id,omitempty"`
+	ReplyMarkup                client.InlineKeyboardMarkup        `json:"reply_markup"`
 }
 
 func (m *Messenger) sendEphemeralMessageWithInlineKeyboard(ctx context.Context, chatID, receiverUserID int64, text string, topicID int, mode string, keyboard client.InlineKeyboardMarkup) (int, error) {
-	request := sendEphemeralMessageWithInlineKeyboardRequest{ChatID: chatID, ReceiverUserID: receiverUserID, Text: text, ReplyMarkup: keyboard}
+	receiver, err := ephemeralReceiver(receiverUserID)
+	if err != nil {
+		return 0, err
+	}
+	request := sendEphemeralMessageWithInlineKeyboardRequest{
+		ChatID: chatID,
+		EphemeralMessageParameters: &client.EphemeralMessageParameters{
+			ReceiverUserId: receiver,
+		},
+		Text:        text,
+		ReplyMarkup: keyboard,
+	}
 	if mode != "" {
 		request.ParseMode = &mode
 	}
