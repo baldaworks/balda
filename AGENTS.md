@@ -145,6 +145,7 @@ Use this checklist before merging any architecture-affecting change.
 - `/reset` or `/new`: owner/collaborator; cancels current session work, clears current session history, and immediately starts a fresh runtime session without closing the chat/topic.
 - `/skill <skill> [prompt...]` or `/skill <plugin>:<skill> [prompt...]`: owner/collaborator; runs one skill from the current session snapshot as an ordinary turn. Slack uses `/balda skill ...`.
 - `/locator`: owner/collaborator; replies with the current transport type and locator ref in the public config form `<channel_type>:<address_key>` for scheduler/webhook `target: locator` config.
+- `/status`: owner/collaborator; returns a read-only structured snapshot of provider/model/reasoning, session state, and the active turn with bounded user text. Slack uses `/balda status`.
 - `/close`: owner/collaborator, direct message only; resets the current session history and closes the topic when used from a topic session.
 - `/cancel`: owner/collaborator; cancels the current session turn and drops queued turns for that session. It does not stop active `/goalkeeper` runs.
 - `/user add`: owner only; generate a collaborator invite link.

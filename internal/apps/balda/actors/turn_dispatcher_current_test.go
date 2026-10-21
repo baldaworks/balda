@@ -34,12 +34,17 @@ func TestTurnDispatcherCurrentTurnLifecycleAndIsolation(t *testing.T) {
 	assertCurrentTurn(t, dispatcher, "session-a", appports.CurrentTurn{
 		SessionID:       "session-a",
 		RequesterUserID: "requester-a",
+		Text:            "text-session-a",
 	})
 	assertCurrentTurn(t, dispatcher, "session-b", appports.CurrentTurn{
 		SessionID:       "session-b",
 		RequesterUserID: "requester-b",
+		Text:            "text-session-b",
 	})
-	assertCurrentTurn(t, dispatcher, "session-service", appports.CurrentTurn{SessionID: "session-service"})
+	assertCurrentTurn(t, dispatcher, "session-service", appports.CurrentTurn{
+		SessionID: "session-service",
+		Text:      "text-session-service",
+	})
 
 	identity, ok := dispatcher.CurrentTurn("session-a")
 	if !ok {
@@ -49,6 +54,7 @@ func TestTurnDispatcherCurrentTurnLifecycleAndIsolation(t *testing.T) {
 	assertCurrentTurn(t, dispatcher, "session-a", appports.CurrentTurn{
 		SessionID:       "session-a",
 		RequesterUserID: "requester-a",
+		Text:            "text-session-a",
 	})
 
 	close(release)
@@ -73,6 +79,49 @@ func TestTurnDispatcherCurrentTurnLifecycleAndIsolation(t *testing.T) {
 	}
 }
 
+func TestTurnDispatcherCurrentTurnReportsPendingTurns(t *testing.T) {
+	t.Parallel()
+
+	dispatcher := NewTurnDispatcher(zerolog.Nop())
+	defer func() { _ = dispatcher.Shutdown(context.Background()) }()
+
+	release := make(chan struct{})
+	started := make(chan struct{})
+	running := enqueueCurrentTurnTest(t, dispatcher, "session", "requester", started, release)
+	waitForSignal(t, started, "running turn start")
+
+	pending, _, err := dispatcher.Enqueue(context.Background(), TurnTask{
+		SessionID: "session",
+		SessionTurn: &turncmd.SessionTurnPayload{
+			RequesterUserID: "requester",
+			Text:            "pending text",
+		},
+		Run: func(context.Context) error { return nil },
+	})
+	if err != nil {
+		t.Fatalf("Enqueue(pending) error = %v", err)
+	}
+
+	got, ok := dispatcher.CurrentTurn("session")
+	if !ok {
+		t.Fatal("CurrentTurn(session) = absent, want present")
+	}
+	if got.PendingTurns != 1 {
+		t.Errorf("CurrentTurn(session).PendingTurns = %d, want 1", got.PendingTurns)
+	}
+	if got.Text != "text-session" {
+		t.Errorf("CurrentTurn(session).Text = %q, want running turn text", got.Text)
+	}
+
+	close(release)
+	if err := <-running; err != nil {
+		t.Fatalf("running result = %v", err)
+	}
+	if err := <-pending; err != nil {
+		t.Fatalf("pending result = %v", err)
+	}
+}
+
 func enqueueCurrentTurnTest(
 	t *testing.T,
 	dispatcher *TurnDispatcher,
@@ -87,6 +136,7 @@ func enqueueCurrentTurnTest(
 		SessionID: sessionID,
 		SessionTurn: &turncmd.SessionTurnPayload{
 			RequesterUserID: requesterUserID,
+			Text:            "text-" + sessionID,
 		},
 		Run: func(context.Context) error {
 			close(started)
@@ -108,7 +158,10 @@ func assertCurrentTurn(t *testing.T, dispatcher *TurnDispatcher, sessionID strin
 	if !ok {
 		t.Fatalf("CurrentTurn(%q) = absent, want %+v", sessionID, want)
 	}
-	if got != want {
-		t.Errorf("CurrentTurn(%q) = %+v, want %+v", sessionID, got, want)
+	if got.SessionID != want.SessionID || got.RequesterUserID != want.RequesterUserID || got.Text != want.Text || got.PendingTurns != want.PendingTurns {
+		t.Errorf("CurrentTurn(%q) = %+v, want fields %+v", sessionID, got, want)
+	}
+	if got.StartedAt.IsZero() {
+		t.Errorf("CurrentTurn(%q).StartedAt is zero", sessionID)
 	}
 }

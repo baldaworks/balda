@@ -2,12 +2,14 @@ package zulipfx
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfx"
 	"github.com/baldaworks/balda/internal/apps/balda/goalkeepercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/locatorfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/statusfmt"
 	"go.uber.org/fx"
 )
 
@@ -27,6 +29,28 @@ func TestLocatorStructuredRegistrar(t *testing.T) {
 	}
 	if presentation.DeliveryFormat != deliveryfmt.DeliveryFormatMarkdown {
 		t.Fatalf("DeliveryFormat = %q", presentation.DeliveryFormat)
+	}
+}
+
+func TestStatusStructuredRegistrar(t *testing.T) {
+	t.Parallel()
+	registry := deliveryfmt.NewStructuredRegistry()
+	if err := NewStatusStructuredRegistrar()(registry); err != nil {
+		t.Fatal(err)
+	}
+	got, err := deliveryfmt.RenderStructured(context.Background(), registry, deliveryfmt.TransportZulip, deliveryfmt.StructuredEnvelope[statusfmt.Response]{
+		Descriptor: statusfmt.ResponseDescriptor,
+		Body:       statusfmt.Response{ProviderID: "codex", TurnActive: true, UserText: "**unsafe**"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.DeliveryFormat != deliveryfmt.DeliveryFormatMarkdown || !strings.Contains(got.Text, "\\*\\*unsafe\\*\\*") {
+		t.Fatalf("presentation = %+v", got)
+	}
+	idle, err := deliveryfmt.RenderStructured(context.Background(), registry, deliveryfmt.TransportZulip, deliveryfmt.StructuredEnvelope[statusfmt.Response]{Descriptor: statusfmt.ResponseDescriptor})
+	if err != nil || !strings.Contains(idle.Text, "idle") || strings.Contains(idle.Text, "User text") {
+		t.Fatalf("idle presentation = %+v, error = %v", idle, err)
 	}
 }
 

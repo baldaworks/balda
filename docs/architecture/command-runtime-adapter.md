@@ -22,7 +22,7 @@ Status: active
 
 ## Command routing scope
 
-All supported chat commands (`locator`, `reset`, `help`, `usage`, `auto`, `cancel`,
+All supported chat commands (`locator`, `status`, `reset`, `help`, `usage`, `auto`, `cancel`,
 `goalkeeper`, `topic`, `close`, `start`, `user`, `plugin`) route via the
 transport-neutral `CommandActor`. Handlers are organized in scoped families under
 `internal/apps/balda/actors/command/<family>` and registered through `commandfx`.

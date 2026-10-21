@@ -11,6 +11,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/permissionfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/questionfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/statusfmt"
 	"go.uber.org/fx"
 )
 
@@ -34,6 +35,28 @@ func TestQuestionStructuredRegistrarRendersMarkdownOptions(t *testing.T) {
 	}
 	if !strings.Contains(presentation.Text, "Production") {
 		t.Fatalf("presentation text = %q, want rendered option", presentation.Text)
+	}
+}
+
+func TestStatusStructuredRegistrar(t *testing.T) {
+	t.Parallel()
+	registry := deliveryfmt.NewStructuredRegistry()
+	if err := NewStatusStructuredRegistrar()(registry); err != nil {
+		t.Fatal(err)
+	}
+	got, err := deliveryfmt.RenderStructured(context.Background(), registry, deliveryfmt.TransportMattermost, deliveryfmt.StructuredEnvelope[statusfmt.Response]{
+		Descriptor: statusfmt.ResponseDescriptor,
+		Body:       statusfmt.Response{ProviderID: "codex", TurnActive: true, UserText: "**unsafe**"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.DeliveryFormat != deliveryfmt.DeliveryFormatMarkdown || !strings.Contains(got.Text, "\\*\\*unsafe\\*\\*") {
+		t.Fatalf("presentation = %+v", got)
+	}
+	idle, err := deliveryfmt.RenderStructured(context.Background(), registry, deliveryfmt.TransportMattermost, deliveryfmt.StructuredEnvelope[statusfmt.Response]{Descriptor: statusfmt.ResponseDescriptor})
+	if err != nil || !strings.Contains(idle.Text, "idle") || strings.Contains(idle.Text, "User text") {
+		t.Fatalf("idle presentation = %+v, error = %v", idle, err)
 	}
 }
 

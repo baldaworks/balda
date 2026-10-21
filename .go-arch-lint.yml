@@ -140,6 +140,7 @@ components:
       - internal/apps/balda/locatorref
       - internal/apps/balda/mattermostref
       - internal/apps/balda/locatorfmt
+      - internal/apps/balda/statusfmt
       - internal/apps/balda/progress
       - internal/apps/balda/permissioncmd
       - internal/apps/balda/permissionfmt

@@ -8,9 +8,12 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfx"
 	"github.com/baldaworks/balda/internal/apps/balda/goalkeepercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/locatorfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/statusfmt"
 )
 
 type zulipLocatorRenderer struct{}
+
+type zulipStatusRenderer struct{}
 
 func (zulipLocatorRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[locatorfmt.Response]) (deliveryfmt.StructuredPresentation, error) {
 	return deliveryfmt.StructuredPresentation{
@@ -19,9 +22,18 @@ func (zulipLocatorRenderer) RenderStructured(_ context.Context, env deliveryfmt.
 	}, nil
 }
 
+func (zulipStatusRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[statusfmt.Response]) (deliveryfmt.StructuredPresentation, error) {
+	return deliveryfmt.StructuredPresentation{Text: presentation.RenderStatus(env.Body), DeliveryFormat: deliveryfmt.DeliveryFormatMarkdown}, nil
+}
+
 // NewLocatorStructuredRegistrar registers Zulip locator response presentation.
 func NewLocatorStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
 	return deliveryfx.NewStructuredRegistrar(deliveryfmt.TransportZulip, locatorfmt.ResponseDescriptor, zulipLocatorRenderer{})
+}
+
+// NewStatusStructuredRegistrar registers Zulip status response presentation.
+func NewStatusStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
+	return deliveryfx.NewStructuredRegistrar(deliveryfmt.TransportZulip, statusfmt.ResponseDescriptor, zulipStatusRenderer{})
 }
 
 type zulipGoalProgressRenderer struct{}

@@ -63,6 +63,8 @@ with a teammate. For a focused topic or a longer goal:
 ```
 
 Use `/cancel` to stop the current turn and `/reset` to start a fresh session.
+Use `/status` to inspect the provider, model, reasoning effort, session state,
+and current turn without changing the runtime.
 Command availability varies by chat provider; see the
 [command guide](docs/commands.md).
 

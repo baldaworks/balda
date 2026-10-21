@@ -2,11 +2,13 @@ package slackagentfx
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/goalkeepercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/locatorfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/statusfmt"
 )
 
 func TestLocatorStructuredRegistrar(t *testing.T) {
@@ -25,6 +27,28 @@ func TestLocatorStructuredRegistrar(t *testing.T) {
 	}
 	if presentation.DeliveryFormat != deliveryfmt.DeliveryFormatMrkdwn {
 		t.Fatalf("DeliveryFormat = %q", presentation.DeliveryFormat)
+	}
+}
+
+func TestStatusStructuredRegistrar(t *testing.T) {
+	t.Parallel()
+	registry := deliveryfmt.NewStructuredRegistry()
+	if err := NewStatusStructuredRegistrar()(registry); err != nil {
+		t.Fatal(err)
+	}
+	got, err := deliveryfmt.RenderStructured(context.Background(), registry, deliveryfmt.TransportSlackAgent, deliveryfmt.StructuredEnvelope[statusfmt.Response]{
+		Descriptor: statusfmt.ResponseDescriptor,
+		Body:       statusfmt.Response{ProviderID: "codex", TurnActive: true, UserText: "```breakout```"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.DeliveryFormat != deliveryfmt.DeliveryFormatMrkdwn || strings.Contains(got.Text, "```breakout```") || !strings.Contains(got.Text, "`\u200b``breakout") {
+		t.Fatalf("presentation = %+v", got)
+	}
+	idle, err := deliveryfmt.RenderStructured(context.Background(), registry, deliveryfmt.TransportSlackAgent, deliveryfmt.StructuredEnvelope[statusfmt.Response]{Descriptor: statusfmt.ResponseDescriptor})
+	if err != nil || !strings.Contains(idle.Text, "idle") || strings.Contains(idle.Text, "User text") {
+		t.Fatalf("idle presentation = %+v, error = %v", idle, err)
 	}
 }
 

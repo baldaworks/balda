@@ -115,13 +115,14 @@ Balda supports these commands in Zulip:
 | `/new` | Alias for `/reset` |
 | `/cancel` | Cancel current session turn; active goal runs continue |
 | `/locator` | Show current locator ref |
+| `/status` | Show provider, session, and current turn status |
 | `/close` | Reset DM session history (DM only) |
 | `/user add` | Generate collaborator invite token |
 | `/user list` | List collaborators |
 | `/user remove <id>` | Remove a collaborator |
 
-Zulip owns parsing and the supported-command whitelist. `/locator` and
-`/reset` are normalized and durably published to CommandActor; their behavior
+Zulip owns parsing and the supported-command whitelist. `/locator`, `/status`,
+and `/reset` are normalized and durably published to CommandActor; their behavior
 is transport-neutral. The remaining commands keep their existing handlers
 while they are migrated separately.
 

@@ -16,6 +16,8 @@ after restart.
   its changes.
 - `/locator` reports the public transport locator. The internal Balda session ID
   is not a substitute for that locator in scheduler or webhook configuration.
+- `/status` reports a read-only provider, session, and current-turn snapshot.
+  It does not create or restore a runtime.
 
 Use chat commands only when the user asks for their behavior or invokes them.
 Answer ordinary questions directly instead of redirecting the user to a command.
