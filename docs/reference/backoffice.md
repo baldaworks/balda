@@ -388,7 +388,7 @@ The pinned stack is:
 
 | Component | Version | Responsibility |
 | --- | --- | --- |
-| Go `html/template` | Go 1.26.9 | Authoritative SSR and HTML fragments |
+| Go `html/template` | Go 1.26.10 | Authoritative SSR and HTML fragments |
 | AdminLTE | 4.9.1 | Shell and UI components |
 | Bootstrap | 5.3.8 | Shared confirmation modal |
 | HTMX | 2.0.10 | Browser navigation and fragment updates |
