@@ -470,7 +470,7 @@ func (m *RuntimeManager) runtimeForSession(ctx context.Context, request SessionR
 			_ = binding.Release()
 		}
 		closeSessionCapabilities(capabilities)
-		return nil, err
+		return nil, providerUnavailableError(err)
 	}
 	m.mu.Lock()
 	m.scopedSequence++

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/providers"
 	"github.com/baldaworks/runtime/v2/agentconfig"
 	"github.com/baldaworks/runtime/v2/agentfactory"
@@ -51,6 +52,22 @@ type providerGraphCapture struct{ models []string }
 type graphFactory struct {
 	configs map[string]agentconfig.Config
 	capture *providerGraphCapture
+}
+
+type sessionFailingGraphFactory struct {
+	err error
+}
+
+func (f *sessionFailingGraphFactory) WithProviders(map[string]agentconfig.Config) ScopedRuntimeFactory {
+	return f
+}
+
+func (f *sessionFailingGraphFactory) BuildScoped(_ context.Context, request agentfactory.BuildRequest, _ map[string][]string) (adkagent.Agent, error) {
+	return adkagent.New(adkagent.Config{Name: request.Name, Description: request.Description})
+}
+
+func (f *sessionFailingGraphFactory) BuildSession(context.Context, agentfactory.BuildRequest, map[string][]string, string) (adkagent.Agent, error) {
+	return nil, f.err
 }
 
 func (f *graphFactory) WithProviders(configs map[string]agentconfig.Config) ScopedRuntimeFactory {
@@ -162,6 +179,38 @@ func TestRuntimeManagerDefersUnavailableManagedProviderUntilFirstUse(t *testing.
 	}
 	if store.readCalls != 1 {
 		t.Fatalf("provider reads after first use = %d, want 1", store.readCalls)
+	}
+}
+
+func TestRuntimeManagerReportsSessionProviderLaunchFailureAsUnavailable(t *testing.T) {
+	launchErr := errors.New("launch provider session")
+	factory := &sessionFailingGraphFactory{err: launchErr}
+	manager := NewRuntimeManager(RuntimeManagerParams{
+		Builder: &Builder{
+			factory:       &recordingRuntimeFactory{},
+			scopedFactory: factory,
+		},
+		BaldaProviderID: "configured",
+		WorkingDir:      t.TempDir(),
+		StateDir:        t.TempDir(),
+		CapabilityBinder: &recordingCapabilityBinder{binding: SessionCapabilityBinding{
+			SnapshotID: "snapshot",
+			Skills:     SkillMetadataProjection{Snapshot: "snapshot"},
+		}},
+		MCPRegistry: mcpregistry.New(nil),
+		Logger:      zerolog.Nop(),
+	})
+
+	if err := manager.EnsureProviderAvailable(t.Context()); err != nil {
+		t.Fatalf("EnsureProviderAvailable() error = %v, want app runtime available", err)
+	}
+	_, err := manager.RuntimeForSession(t.Context(), SessionRuntimeRequest{
+		Locator:        deliverycmd.Locator{ChannelType: "telegram", AddressKey: "1:0", SessionID: "tg-1-0"},
+		UserID:         "telegram:1",
+		AgentSessionID: "tg-1-0",
+	})
+	if !errors.Is(err, ErrProviderUnavailable) || !errors.Is(err, launchErr) {
+		t.Fatalf("RuntimeForSession() error = %v, want typed provider launch failure", err)
 	}
 }
 
