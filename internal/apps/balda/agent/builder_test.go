@@ -410,6 +410,36 @@ func TestBuildBaldaInstruction_IncludesDirectConversationPolicyWithoutGoalSteeri
 	}
 }
 
+func TestBuildBaldaInstruction_IncludesProgressPolicy(t *testing.T) {
+	t.Parallel()
+
+	builder := &Builder{}
+	got := builder.buildBaldaInstruction(
+		"tg-1-2",
+		"telegram",
+		"alpha",
+		"norma/balda/tg-1-2",
+		"/tmp/work",
+		"main",
+	)
+
+	wantSnippets := []string{
+		"During authorized long-running work, use `balda.session.progress` when it is exposed",
+		"real milestone, changed plan, blocker, or useful next action",
+		"do not send repetitive heartbeats, content-free status, hidden reasoning, secrets, credentials, or raw configuration",
+		"Progress is intermediate and does not replace the final response.",
+		"Reuse one stable `idempotency_key` when retrying the same logical update.",
+		"Use a new key for each distinct update, and never include sensitive data in it.",
+		"Check the structured tool result before claiming that Balda accepted or delivered an update.",
+		"Tool availability does not authorize unrelated messages or external actions.",
+	}
+	for _, snippet := range wantSnippets {
+		if !strings.Contains(got, snippet) {
+			t.Fatalf("buildBaldaInstruction() missing progress policy %q:\n%s", snippet, got)
+		}
+	}
+}
+
 func TestBuildRootRuntimeInstruction_UsesPerSessionPlaceholders(t *testing.T) {
 	t.Parallel()
 

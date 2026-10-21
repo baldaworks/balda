@@ -114,6 +114,14 @@ func TestBuiltinSystemSkillIsCatalogMetadataAndLoadsFromRetainedRevision(t *test
 			t.Fatalf("loaded built-in resource %d = %+v, want non-empty %q", i, resource, wantResources[i])
 		}
 	}
+	if strings.Contains(loaded.Instructions, "balda.session.progress") {
+		t.Fatalf("loaded built-in instructions retain progress policy:\n%s", loaded.Instructions)
+	}
+	for _, resource := range loaded.Resources {
+		if strings.Contains(resource.Content, "balda.session.progress") {
+			t.Fatalf("loaded built-in resource %q retains progress policy:\n%s", resource.Name, resource.Content)
+		}
+	}
 
 	readOnly, err := skillapp.NewReadOnly(provider.SkillManagement(), runtime)
 	if err != nil {
