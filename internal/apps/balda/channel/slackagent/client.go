@@ -48,6 +48,10 @@ type postMessageRequest struct {
 	Mrkdwn   bool   `json:"mrkdwn"`
 }
 
+type openConversationRequest struct {
+	Users string `json:"users"`
+}
+
 type SetSessionStatusRequest struct {
 	ChannelID       string
 	ThreadTS        string
@@ -149,6 +153,33 @@ func (c *Client) PostMessage(ctx context.Context, channel, threadTS, text string
 		return "", fmt.Errorf("slack message text is required")
 	}
 	return c.callWithTS(ctx, "chat.postMessage", req)
+}
+
+// OpenConversation resolves or creates the direct conversation with one Slack user.
+func (c *Client) OpenConversation(ctx context.Context, userID string) (string, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return "", fmt.Errorf("slack user id is required")
+	}
+	var response struct {
+		OK      bool   `json:"ok"`
+		Error   string `json:"error"`
+		Channel struct {
+			ID string `json:"id"`
+		} `json:"channel"`
+	}
+	if err := c.postJSON(ctx, "conversations.open", openConversationRequest{Users: userID}, &response); err != nil {
+		return "", err
+	}
+	if !response.OK {
+		code := strings.TrimSpace(response.Error)
+		return "", &APIError{Method: "conversations.open", StatusCode: http.StatusOK, Code: code, Message: code, Retryable: retryableSlackCode(code)}
+	}
+	conversationID := strings.TrimSpace(response.Channel.ID)
+	if conversationID == "" {
+		return "", &APIError{Method: "conversations.open", StatusCode: http.StatusOK, Code: malformedResponseCode, Message: "missing channel id"}
+	}
+	return conversationID, nil
 }
 
 func (c *Client) SetSessionStatus(ctx context.Context, input SetSessionStatusRequest) error {

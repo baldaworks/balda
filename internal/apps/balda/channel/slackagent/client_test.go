@@ -80,6 +80,57 @@ func TestClientCurrentAgentMethodsUseExactJSONContracts(t *testing.T) {
 	}
 }
 
+func TestClientOpenConversationUsesExactJSONContract(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got, want := r.URL.Path, "/conversations.open"; got != want {
+			t.Errorf("path = %q, want %q", got, want)
+		}
+		var body openConversationRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if got, want := body.Users, "U123"; got != want {
+			t.Errorf("users = %q, want %q", got, want)
+		}
+		_, _ = w.Write([]byte(`{"ok":true,"channel":{"id":"D456"}}`))
+	}))
+	t.Cleanup(server.Close)
+
+	got, err := NewClientWithBaseURL(server.URL, "xoxb-test-token").OpenConversation(t.Context(), " U123 ")
+	if err != nil {
+		t.Fatalf("OpenConversation() error = %v", err)
+	}
+	if want := "D456"; got != want {
+		t.Fatalf("OpenConversation() = %q, want %q", got, want)
+	}
+}
+
+func TestClientOpenConversationRejectsAPIAndMalformedResponses(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		response string
+		wantCode string
+	}{
+		{name: "api failure", response: `{"ok":false,"error":"invalid_auth"}`, wantCode: "invalid_auth"},
+		{name: "missing channel", response: `{"ok":true,"channel":{}}`, wantCode: malformedResponseCode},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(test.response))
+			}))
+			t.Cleanup(server.Close)
+			_, err := NewClientWithBaseURL(server.URL, "xoxb-test-token").OpenConversation(t.Context(), "U123")
+			var apiErr *APIError
+			if !errors.As(err, &apiErr) || apiErr.Code != test.wantCode {
+				t.Fatalf("OpenConversation() error = %T %v, want APIError code %q", err, err, test.wantCode)
+			}
+		})
+	}
+}
+
 func TestClientValidatesSessionStatusAndRuneSafeTitleLimit(t *testing.T) {
 	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

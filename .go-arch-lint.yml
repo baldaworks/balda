@@ -553,6 +553,12 @@ components:
     in:
       - internal/apps/balda/channel/mattermost/mattermostfx
 
+  # Composition adapters that translate canonical bindings into concrete
+  # transport DM locators for the transport-neutral startup use case.
+  startup_notify_wiring:
+    in:
+      - internal/apps/balda/startupnotifyfx
+
   # Provider-owned inbound webhook transport.
   webhook_transport:
     in:
@@ -1429,6 +1435,17 @@ deps:
       - mattermost_wiring
     anyVendorDeps: true
 
+  startup_notify_wiring:
+    mayDependOn:
+      - application
+      - contracts
+      - user_contracts
+      - telegram_transport
+      - zulip_transport
+      - slackagent_transport
+      - mattermost_transport
+    anyVendorDeps: true
+
   webhook_transport:
     mayDependOn:
       - foundation
@@ -1544,6 +1561,7 @@ deps:
       - slackagent_wiring
       - mattermost_transport
       - mattermost_wiring
+      - startup_notify_wiring
       - webhook_transport
       - webhook_wiring
       - http_composition

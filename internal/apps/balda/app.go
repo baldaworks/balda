@@ -76,6 +76,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/skillbackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/skillfx"
 	"github.com/baldaworks/balda/internal/apps/balda/startupnotifyapp"
+	"github.com/baldaworks/balda/internal/apps/balda/startupnotifyfx"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
@@ -961,6 +962,7 @@ func Module(
 		controlapp.Module,
 		deliveryfx.Module,
 		startupnotifyapp.Module,
+		startupnotifyfx.Module,
 		slackagentfx.Module,
 		telegramfx.Module,
 		zulipfx.Module,
