@@ -12,6 +12,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
+	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	"github.com/baldaworks/balda/internal/apps/balda/controlcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/controlmcp"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
@@ -52,6 +53,7 @@ type InternalMCPManager struct {
 	dispatcher       actortransport.Dispatcher
 	questionService  *questions.Service
 	progressService  *sessionapp.ProgressService
+	currentTurns     appports.CurrentTurnResolver
 	sessionMemoryCfg portmcp.Config
 	contextBroker    *sessionmemorymcp.ContextBroker
 	skills           *baldaagent.SkillManager
@@ -79,6 +81,7 @@ type internalMCPParams struct {
 	Dispatcher       actortransport.Dispatcher
 	QuestionService  *questions.Service `optional:"true"`
 	ProgressService  *sessionapp.ProgressService
+	CurrentTurns     appports.CurrentTurnResolver `optional:"true"`
 	SessionMemory    portmcp.Config
 	ContextBroker    *sessionmemorymcp.ContextBroker
 	Skills           *baldaagent.SkillManager `optional:"true"`
@@ -98,6 +101,7 @@ func NewInternalMCPManager(params internalMCPParams) *InternalMCPManager {
 		dispatcher:       params.Dispatcher,
 		questionService:  params.QuestionService,
 		progressService:  params.ProgressService,
+		currentTurns:     params.CurrentTurns,
 		sessionMemoryCfg: params.SessionMemory,
 		contextBroker:    params.ContextBroker,
 		skills:           params.Skills,

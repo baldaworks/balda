@@ -18,6 +18,15 @@ type TurnQueue interface {
 	CancelSession(locator baldasession.SessionLocator, clearQueued bool) (bool, int, error)
 }
 
+type CurrentTurn struct {
+	SessionID       string
+	RequesterUserID string
+}
+
+type CurrentTurnResolver interface {
+	CurrentTurn(sessionID string) (CurrentTurn, bool)
+}
+
 type SessionTurnRunner interface {
 	RunSessionTurnPayload(ctx context.Context, payload turncmd.SessionTurnPayload) error
 }
