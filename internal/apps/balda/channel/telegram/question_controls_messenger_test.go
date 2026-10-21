@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/telegramfmt"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
@@ -17,6 +18,7 @@ import (
 type inlineKeyboardClient struct {
 	client.ClientWithResponsesInterface
 	richBody              []byte
+	messageBody           []byte
 	richBodyError         error
 	richBodyResponse      *client.SendRichMessageResponse
 	richFallback          []client.SendRichMessageJSONRequestBody
@@ -77,6 +79,18 @@ func (f *inlineKeyboardClient) SendMessageWithResponse(_ context.Context, body c
 	return successfulSendMessageResponse(44), nil
 }
 
+func (f *inlineKeyboardClient) SendMessageWithBodyWithResponse(_ context.Context, _ string, body io.Reader, _ ...client.RequestEditorFn) (*client.SendMessageResponse, error) {
+	f.messageBody, _ = io.ReadAll(body)
+	ephemeralMessageID := 73
+	return &client.SendMessageResponse{JSON200: &struct {
+		Ok     client.SendMessage200Ok `json:"ok"`
+		Result client.Message          `json:"result"`
+	}{
+		Ok:     true,
+		Result: client.Message{EphemeralMessageId: &ephemeralMessageID},
+	}}, nil
+}
+
 func TestSendAgentReplyWithInlineKeyboardIncludesMarkup(t *testing.T) {
 	tgClient := &inlineKeyboardClient{}
 	messenger := NewMessenger(tgClient, zerolog.Nop())
@@ -107,6 +121,41 @@ func TestSendAgentReplyWithInlineKeyboardIncludesMarkup(t *testing.T) {
 	}
 	if got := *request.ReplyMarkup.InlineKeyboard[0][0].CallbackData; got != callback {
 		t.Fatalf("callback data = %q", got)
+	}
+}
+
+func TestSendEphemeralQuestionUsesNestedParameters(t *testing.T) {
+	tgClient := &inlineKeyboardClient{}
+	messenger := NewMessenger(tgClient, zerolog.Nop())
+	callback := "balda:q:question-1:1"
+	keyboard := client.InlineKeyboardMarkup{InlineKeyboard: [][]client.InlineKeyboardButton{{{
+		Text: "Allow", CallbackData: &callback,
+	}}}}
+
+	messageID, err := messenger.SendEphemeralAgentReplyMessageWithInlineKeyboardLastMessageID(
+		context.Background(), -1001, 101,
+		deliveryfmt.Message{Name: deliveryfmt.NamePlainText, Text: "Choose", PlainFallback: "Choose"},
+		77, keyboard,
+	)
+	if err != nil {
+		t.Fatalf("SendEphemeralAgentReplyMessageWithInlineKeyboardLastMessageID() error = %v", err)
+	}
+	if messageID != 73 {
+		t.Fatalf("message id = %d, want 73", messageID)
+	}
+	var request map[string]json.RawMessage
+	if err := json.Unmarshal(tgClient.messageBody, &request); err != nil {
+		t.Fatalf("decode request: %v", err)
+	}
+	if _, ok := request["receiver_user_id"]; ok {
+		t.Fatal("legacy top-level receiver_user_id is present")
+	}
+	var parameters client.EphemeralMessageParameters
+	if err := json.Unmarshal(request["ephemeral_message_parameters"], &parameters); err != nil {
+		t.Fatalf("decode ephemeral parameters: %v", err)
+	}
+	if parameters.ReceiverUserId != 101 {
+		t.Fatalf("receiver user id = %d, want 101", parameters.ReceiverUserId)
 	}
 }
 

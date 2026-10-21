@@ -62,11 +62,11 @@ func TestProgressServiceRoutesConversationWithStableIdentity(t *testing.T) {
 		logger:     zerolog.Nop(),
 	}
 
-	first, err := service.Report(t.Context(), locator, "working token=private-value", "step-1")
+	first, err := service.Report(t.Context(), locator, "requester-42", "working token=private-value", "step-1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := service.Report(t.Context(), locator, "working token=private-value", "step-1")
+	second, err := service.Report(t.Context(), locator, "requester-42", "working token=private-value", "step-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,6 +86,8 @@ func TestProgressServiceRoutesConversationWithStableIdentity(t *testing.T) {
 		}
 		if payload.Locator != locator || payload.Settlement != deliverycmd.SettlementOutbox ||
 			payload.Progress == nil || !payload.Progress.Visible ||
+			payload.Progress.Kind != deliverycmd.ProgressTechnical ||
+			payload.Progress.Audience.UserID != "requester-42" ||
 			strings.Contains(payload.Progress.Text, "private-value") {
 			t.Fatalf("progress payload = %+v", payload)
 		}
@@ -108,7 +110,7 @@ func TestProgressServiceRecordsServiceWithoutDelivery(t *testing.T) {
 		logger:     zerolog.Nop(),
 	}
 
-	result, err := service.Report(t.Context(), locator, "working", "step-1")
+	result, err := service.Report(t.Context(), locator, "", "working", "step-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,6 +123,10 @@ func TestProgressServiceRecordsServiceWithoutDelivery(t *testing.T) {
 	if events.calls != 1 || events.jobID != "webhook-job" || events.eventType != "agent.progress" ||
 		events.messageID != result.ProgressID {
 		t.Fatalf("event = %+v", events)
+	}
+	payload, ok := events.payload.(map[string]any)
+	if !ok || len(payload) != 1 || payload["text"] != "working" {
+		t.Fatalf("service progress payload = %#v, want text only", events.payload)
 	}
 }
 
@@ -136,7 +142,7 @@ func TestProgressServiceCoversChatAndScheduleKinds(t *testing.T) {
 		dispatcher: chatDispatcher,
 		logger:     zerolog.Nop(),
 	}
-	if result, err := chatService.Report(t.Context(), chat, "chat progress", "chat-step"); err != nil ||
+	if result, err := chatService.Report(t.Context(), chat, "requester-chat", "chat progress", "chat-step"); err != nil ||
 		result.Disposition != progressDispositionDelivered || len(chatDispatcher.envelopes) != 1 {
 		t.Fatalf("chat result=%+v deliveries=%d error=%v", result, len(chatDispatcher.envelopes), err)
 	}
@@ -152,7 +158,7 @@ func TestProgressServiceCoversChatAndScheduleKinds(t *testing.T) {
 		jobEvents:  scheduleEvents,
 		logger:     zerolog.Nop(),
 	}
-	if result, err := scheduleService.Report(t.Context(), schedule, "schedule progress", "schedule-step"); err != nil ||
+	if result, err := scheduleService.Report(t.Context(), schedule, "", "schedule progress", "schedule-step"); err != nil ||
 		result.Disposition != progressDispositionRecorded || scheduleEvents.calls != 1 || len(scheduleDispatcher.envelopes) != 0 {
 		t.Fatalf("schedule result=%+v events=%d deliveries=%d error=%v", result, scheduleEvents.calls, len(scheduleDispatcher.envelopes), err)
 	}
@@ -171,7 +177,7 @@ func TestProgressServiceLogsNoTextOrAddress(t *testing.T) {
 		jobEvents: events,
 		logger:    zerolog.New(&logs),
 	}
-	if _, err := service.Report(t.Context(), locator, "private progress text", "step-1"); err != nil {
+	if _, err := service.Report(t.Context(), locator, "", "private progress text", "step-1"); err != nil {
 		t.Fatal(err)
 	}
 	if got := logs.String(); strings.Contains(got, "private progress text") || strings.Contains(got, "secret_route") {
@@ -191,8 +197,29 @@ func TestProgressServiceReturnsBackendFailures(t *testing.T) {
 		dispatcher: &progressDispatcherStub{err: wantErr},
 		logger:     zerolog.Nop(),
 	}
-	if _, err := service.Report(t.Context(), locator, "working", "step-1"); !errors.Is(err, wantErr) {
+	if _, err := service.Report(t.Context(), locator, "requester", "working", "step-1"); !errors.Is(err, wantErr) {
 		t.Fatalf("error = %v, want backend failure", err)
+	}
+}
+
+func TestProgressServiceRequiresConversationRequester(t *testing.T) {
+	t.Parallel()
+
+	locator := testProgressLocator(t, "telegram", "10:42", `{"chat_id":10,"topic_id":42}`, "tg-10-42")
+	dispatcher := &progressDispatcherStub{}
+	service := &ProgressService{
+		targets: progressTargetStub{target: baldasession.ProgressTarget{
+			Locator: locator, SessionID: locator.SessionID, Kind: baldasession.KindChat,
+		}},
+		dispatcher: dispatcher,
+		logger:     zerolog.Nop(),
+	}
+
+	if _, err := service.Report(t.Context(), locator, "", "working", "step-1"); err == nil {
+		t.Fatal("Report() error = nil, want missing requester error")
+	}
+	if len(dispatcher.envelopes) != 0 {
+		t.Fatalf("missing requester dispatched %d envelopes", len(dispatcher.envelopes))
 	}
 }
 

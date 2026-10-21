@@ -136,6 +136,25 @@ func (d *TurnDispatcher) Enqueue(ctx context.Context, task appports.TurnTask) (<
 	return queued.result, position, nil
 }
 
+// CurrentTurn returns the caller identity for the turn currently running in a session.
+func (d *TurnDispatcher) CurrentTurn(sessionID string) (appports.CurrentTurn, bool) {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return appports.CurrentTurn{}, false
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	queue := d.sessions[sessionID]
+	if queue == nil || !queue.running || queue.runningTurn == nil || queue.runningTurn.task.SessionTurn == nil {
+		return appports.CurrentTurn{}, false
+	}
+
+	requesterUserID := strings.TrimSpace(queue.runningTurn.task.SessionTurn.RequesterUserID)
+	return appports.CurrentTurn{SessionID: sessionID, RequesterUserID: requesterUserID}, true
+}
+
 func (d *TurnDispatcher) CancelSession(locator session.SessionLocator, clearQueued bool) (bool, int, error) {
 	sessionID := strings.TrimSpace(locator.SessionID)
 	if sessionID == "" {

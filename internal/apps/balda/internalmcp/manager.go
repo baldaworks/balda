@@ -12,6 +12,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
+	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	"github.com/baldaworks/balda/internal/apps/balda/controlcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/controlmcp"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
@@ -52,6 +53,7 @@ type InternalMCPManager struct {
 	dispatcher       actortransport.Dispatcher
 	questionService  *questions.Service
 	progressService  *sessionapp.ProgressService
+	currentTurns     appports.CurrentTurnResolver
 	sessionMemoryCfg portmcp.Config
 	contextBroker    *sessionmemorymcp.ContextBroker
 	skills           *baldaagent.SkillManager
@@ -79,6 +81,7 @@ type internalMCPParams struct {
 	Dispatcher       actortransport.Dispatcher
 	QuestionService  *questions.Service `optional:"true"`
 	ProgressService  *sessionapp.ProgressService
+	CurrentTurns     appports.CurrentTurnResolver `optional:"true"`
 	SessionMemory    portmcp.Config
 	ContextBroker    *sessionmemorymcp.ContextBroker
 	Skills           *baldaagent.SkillManager `optional:"true"`
@@ -98,6 +101,7 @@ func NewInternalMCPManager(params internalMCPParams) *InternalMCPManager {
 		dispatcher:       params.Dispatcher,
 		questionService:  params.QuestionService,
 		progressService:  params.ProgressService,
+		currentTurns:     params.CurrentTurns,
 		sessionMemoryCfg: params.SessionMemory,
 		contextBroker:    params.ContextBroker,
 		skills:           params.Skills,
@@ -156,7 +160,7 @@ func (m *InternalMCPManager) ensureBundledServers(ctx context.Context) error {
 
 - balda.state stores persistent Balda session and app state in state.db.
 - balda.session.send_attachments can send one or more Telegram photos or documents into the active session from local files. Use source.engine=local with source.local_path.
-- balda.session.progress reports visible progress to an active session locator. Reuse one idempotency_key for retries of the same update.
+- balda.session.progress reports visible progress to the authenticated current session. Reuse one idempotency_key for retries of the same update.
 - balda config editing is not exposed through MCP; edit the balda config file directly.
 - balda.control.shutdown gracefully stops the whole Balda process; use it only when the user explicitly asks for restart or shutdown. After installing a new override binary, prefer balda.control.shutdown for restart. Use kill -TERM 1 only as a fallback when the in-process shutdown path is unavailable or broken.`
 	if m.memoryStore.MemoryEnabled() {
@@ -183,7 +187,11 @@ func (m *InternalMCPManager) ensureBundledServers(ctx context.Context) error {
 		sessionWaitService{dispatcher: m.dispatcher, jobs: m.scheduledJobs},
 		sessionQuestionService{service: m.questionService, dispatcher: m.dispatcher},
 		sessionSendAttachmentService{dispatcher: m.dispatcher},
-		sessionProgressService{service: m.progressService},
+		sessionProgressService{
+			service:      m.progressService,
+			sessions:     sessionmemorymcp.HeaderSessionResolver{Broker: m.contextBroker},
+			currentTurns: m.currentTurns,
+		},
 	)
 	memory.RegisterTools(server, m.memoryStore)
 	portmcp.RegisterTools(server, m.sessionMemoryCfg)
@@ -255,18 +263,38 @@ type sessionSendAttachmentService struct {
 }
 
 type sessionProgressService struct {
-	service *sessionapp.ProgressService
+	service      sessionProgressReporter
+	sessions     sessionmemorymcp.SessionResolver
+	currentTurns appports.CurrentTurnResolver
 }
 
-func (s sessionProgressService) ReportSessionProgress(ctx context.Context, in sessionmcp.SessionProgressInput) (sessionmcp.SessionProgressOutput, error) {
+type sessionProgressReporter interface {
+	Report(ctx context.Context, locator session.SessionLocator, requesterUserID, text, idempotencyKey string) (sessionapp.ProgressResult, error)
+}
+
+func (s sessionProgressService) ReportSessionProgress(ctx context.Context, req *mcp.CallToolRequest, in sessionmcp.SessionProgressInput) (sessionmcp.SessionProgressOutput, error) {
 	if s.service == nil {
 		return sessionmcp.SessionProgressOutput{}, fmt.Errorf("session progress service is required")
 	}
-	locator, err := canonicalSessionLocator(in.Locator)
+	if s.sessions == nil {
+		return sessionmcp.SessionProgressOutput{}, fmt.Errorf("session progress context resolver is required")
+	}
+	current, err := s.sessions.Resolve(ctx, req)
 	if err != nil {
 		return sessionmcp.SessionProgressOutput{}, err
 	}
-	result, err := s.service.Report(ctx, locator, in.Text, in.IdempotencyKey)
+	if s.currentTurns == nil {
+		return sessionmcp.SessionProgressOutput{}, fmt.Errorf("current turn resolver is required")
+	}
+	sessionID := strings.TrimSpace(current.Session.SessionID)
+	if strings.TrimSpace(current.Locator.SessionID) != sessionID {
+		return sessionmcp.SessionProgressOutput{}, fmt.Errorf("current session context is inconsistent")
+	}
+	turn, ok := s.currentTurns.CurrentTurn(sessionID)
+	if !ok || strings.TrimSpace(turn.SessionID) != sessionID {
+		return sessionmcp.SessionProgressOutput{}, fmt.Errorf("current session turn is unavailable")
+	}
+	result, err := s.service.Report(ctx, current.Locator, turn.RequesterUserID, in.Text, in.IdempotencyKey)
 	if err != nil {
 		return sessionmcp.SessionProgressOutput{}, err
 	}

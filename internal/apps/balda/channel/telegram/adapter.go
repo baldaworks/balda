@@ -42,6 +42,7 @@ type TelegramMessenger interface {
 	SendAgentReplyMessageLastMessageID(ctx context.Context, chatID int64, message deliveryfmt.Message, topicID int) (int, error)
 	SendAgentReplyMessageWithInlineKeyboardLastMessageID(ctx context.Context, chatID int64, message deliveryfmt.Message, topicID int, keyboard client.InlineKeyboardMarkup, fallbackText string) (int, error)
 	SendEphemeralAgentReplyMessageWithInlineKeyboardLastMessageID(ctx context.Context, chatID, receiverUserID int64, message deliveryfmt.Message, topicID int, keyboard client.InlineKeyboardMarkup) (int, error)
+	SendEphemeralMessage(ctx context.Context, chatID, receiverUserID int64, message deliveryfmt.Message, topicID int) error
 	SendPlainReply(ctx context.Context, chatID int64, text string, topicID, replyToMessageID int) error
 	ClearInlineKeyboard(ctx context.Context, chatID int64, messageID int) error
 	DeleteMessage(ctx context.Context, chatID int64, messageID int) error
@@ -1054,6 +1055,9 @@ func (a *Adapter) SendProgressMessage(ctx context.Context, locator deliverycmd.L
 	if message != nil {
 		richMarkdown = message.Name == deliveryfmt.NameTelegramRichMarkdown
 	}
+	if progress.Kind == deliverycmd.ProgressTechnical {
+		return a.sendTechnicalProgress(ctx, locator, progress, message)
+	}
 	if progress.Policy.Typing {
 		if err := a.SendTyping(ctx, locator); err != nil {
 			a.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("telegram typing progress sugar failed")
@@ -1112,6 +1116,38 @@ func (a *Adapter) SendProgressMessage(ctx context.Context, locator deliverycmd.L
 	default:
 		return fmt.Errorf("unsupported telegram progress kind %q", progress.Kind)
 	}
+}
+
+func (a *Adapter) sendTechnicalProgress(ctx context.Context, locator deliverycmd.Locator, progress deliverycmd.Progress, message *deliveryfmt.Message) error {
+	receiverUserID, err := telegramref.ParseUserID(progress.Audience.UserID)
+	if err != nil {
+		return fmt.Errorf("resolve technical telegram progress audience: %w", err)
+	}
+	scope, err := ClassifyLocatorScope(locator)
+	if err != nil {
+		return fmt.Errorf("classify technical telegram progress locator: %w", err)
+	}
+	chatID, topicID, err := telegramTuple(locator)
+	if err != nil {
+		return err
+	}
+	if scope == deliverycmd.LocatorScopePersonal {
+		if message != nil {
+			return a.SendMessage(ctx, locator, *message)
+		}
+		return a.SendPlain(ctx, locator, progress.Text)
+	}
+	if scope != deliverycmd.LocatorScopeGroup {
+		return fmt.Errorf("unsupported technical telegram progress scope %q", scope)
+	}
+	if message == nil {
+		message = &deliveryfmt.Message{
+			Name:          deliveryfmt.NamePlainText,
+			Text:          progress.Text,
+			PlainFallback: progress.Text,
+		}
+	}
+	return a.messenger.SendEphemeralMessage(ctx, chatID, receiverUserID, *message, topicID)
 }
 
 func (a *Adapter) SendPhotoByFileID(ctx context.Context, locator deliverycmd.Locator, fileID, caption string) error {

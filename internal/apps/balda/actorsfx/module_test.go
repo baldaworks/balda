@@ -40,17 +40,19 @@ func (r dummyTurnRunner) RunSessionTurnPayload(ctx context.Context, payload turn
 func TestActorsfxModule_ProvidesAllProductActors(t *testing.T) {
 	var actorsList []dispatch.Actor
 	var queue appports.TurnQueue
+	var currentTurns appports.CurrentTurnResolver
 	var turnDisp *actors.TurnDispatcher
 	var registry *actors.JobRunRegistry
 	var runs controlapp.JobRuns
 
 	type params struct {
 		fx.In
-		Actors     []dispatch.Actor `group:"balda_product_actors"`
-		Queue      appports.TurnQueue
-		TurnDisp   *actors.TurnDispatcher
-		Registry   *actors.JobRunRegistry
-		Runs       controlapp.JobRuns
+		Actors       []dispatch.Actor `group:"balda_product_actors"`
+		Queue        appports.TurnQueue
+		CurrentTurns appports.CurrentTurnResolver
+		TurnDisp     *actors.TurnDispatcher
+		Registry     *actors.JobRunRegistry
+		Runs         controlapp.JobRuns
 	}
 
 	app := fx.New(
@@ -101,6 +103,7 @@ func TestActorsfxModule_ProvidesAllProductActors(t *testing.T) {
 		fx.Invoke(func(p params) {
 			actorsList = p.Actors
 			queue = p.Queue
+			currentTurns = p.CurrentTurns
 			turnDisp = p.TurnDisp
 			registry = p.Registry
 			runs = p.Runs
@@ -109,7 +112,10 @@ func TestActorsfxModule_ProvidesAllProductActors(t *testing.T) {
 
 	require.NoError(t, app.Err())
 	require.NotNil(t, queue)
+	require.NotNil(t, currentTurns)
 	require.NotNil(t, turnDisp)
+	require.Same(t, turnDisp, queue)
+	require.Same(t, turnDisp, currentTurns)
 	require.NotNil(t, registry)
 	require.NotNil(t, runs)
 	require.Len(t, actorsList, 8)

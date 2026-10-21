@@ -68,6 +68,27 @@ Per model turn:
    - `none`: Balda sends literal text without Telegram `parse_mode`.
 3. If Telegram explicitly rejects rich formatting, Balda makes at most one parse-mode-free plain send. Ambiguous transport failures, timeouts, authentication errors, rate limits, and provider errors do not trigger presentation fallback.
 
+### Tool-authored technical progress
+
+`balda.session.progress` is a structured technical message, separate from
+provider activity, thinking, and plan progress. Its MCP input contains only
+`text` and `idempotency_key`. Balda obtains the locator from the authenticated
+session binding and the audience from the matching turn currently owned by
+`TurnDispatcher`; neither value is model-selectable.
+
+| Telegram destination | Delivery |
+| --- | --- |
+| Direct chat | Ordinary prepared message |
+| Group or supergroup | Ephemeral message for the current requester |
+| Group topic | Ephemeral message for the current requester, preserving the topic ID |
+
+Technical progress does not emit Telegram typing sugar. Invalid session,
+current-turn, audience, locator, format, or provider responses fail closed. In
+group contexts Balda never retries the content as an ordinary public message.
+Both plain and rich sends use Bot API 10.3
+`ephemeral_message_parameters`. Existing private questions use the same nested
+request object while retaining callback correlation, edit, and delete behavior.
+
 ## Slack Agent messaging behavior
 
 Slackagent keeps ingress, correlation, rendering, and delivery inside the

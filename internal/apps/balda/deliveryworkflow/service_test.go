@@ -183,9 +183,10 @@ func TestPrepareDeliveryAppliesStructuredProgressPresentation(t *testing.T) {
 		Mode:           deliverycmd.ModeProgress,
 		DeliveryFormat: "",
 		Progress: &deliverycmd.Progress{
-			Kind:    deliverycmd.ProgressPlanUpdate,
-			Text:    "plan",
-			Visible: true,
+			Kind:     deliverycmd.ProgressTechnical,
+			Text:     "plan",
+			Audience: deliverycmd.ProgressAudience{UserID: "user-42"},
+			Visible:  true,
 		},
 	})
 	if err != nil {
@@ -196,6 +197,9 @@ func TestPrepareDeliveryAppliesStructuredProgressPresentation(t *testing.T) {
 	}
 	if delivery.Message == nil || delivery.Message.Text != "formatted:plan" {
 		t.Fatalf("typed message = %+v, want formatted progress text", delivery.Message)
+	}
+	if delivery.Payload.Progress == nil || delivery.Payload.Progress.Audience.UserID != "user-42" {
+		t.Fatalf("technical audience = %+v, want user-42", delivery.Payload.Progress)
 	}
 }
 

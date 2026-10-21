@@ -53,6 +53,32 @@ func TestAdapterSendAgentReplyFallsBackToPlainTextOnContentRejection(t *testing.
 	}
 }
 
+func TestAdapterSendsTechnicalProgressAsVisibleText(t *testing.T) {
+	var content string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm() error = %v", err)
+		}
+		content = r.Form.Get("content")
+		_ = json.NewEncoder(w).Encode(sendMessageResult{Result: "success", ID: 456})
+	}))
+	t.Cleanup(server.Close)
+
+	adapter := NewAdapter(NewClient(server.URL, "bot@example.com", "api-key"), zerolog.Nop())
+	err := adapter.SendProgress(t.Context(), NewStreamLocator(42, "ops"), deliverycmd.Progress{
+		Kind:     deliverycmd.ProgressTechnical,
+		Text:     "Working",
+		Audience: deliverycmd.ProgressAudience{UserID: "user-42"},
+		Visible:  true,
+	})
+	if err != nil {
+		t.Fatalf("SendProgress() error = %v", err)
+	}
+	if content != "Working" {
+		t.Fatalf("content = %q, want Working", content)
+	}
+}
+
 func TestAdapterDeliversTypedMarkdownAndPlainMessages(t *testing.T) {
 	t.Parallel()
 

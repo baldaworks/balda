@@ -58,10 +58,8 @@ type goalkeeperActorParams struct {
 var Module = fx.Module("balda_actorsfx",
 	fx.Provide(
 		actors.NewTurnDispatcher,
-		fx.Annotate(
-			actors.NewTurnDispatcher,
-			fx.As(new(appports.TurnQueue)),
-		),
+		func(dispatcher *actors.TurnDispatcher) appports.TurnQueue { return dispatcher },
+		func(dispatcher *actors.TurnDispatcher) appports.CurrentTurnResolver { return dispatcher },
 		actors.NewJobRunRegistry,
 		fx.Annotate(
 			func(r *actors.JobRunRegistry) controlapp.JobRuns { return r },

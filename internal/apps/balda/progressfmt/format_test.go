@@ -46,6 +46,24 @@ func TestZulipUsesPlainText(t *testing.T) {
 	}
 }
 
+func TestTechnicalProgressUsesStructuredRenderer(t *testing.T) {
+	presentation, err := deliveryfmt.RenderStructured(t.Context(), mustRegistry(t), deliveryfmt.TransportTelegram, deliveryfmt.StructuredEnvelope[Request]{
+		Descriptor: RequestDescriptor,
+		Body: Request{Progress: deliverycmd.Progress{
+			Kind:     deliverycmd.ProgressTechnical,
+			Text:     "Working",
+			Audience: deliverycmd.ProgressAudience{UserID: "user-42"},
+			Visible:  true,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("RenderStructured() error = %v", err)
+	}
+	if presentation.Text != "Working" || presentation.DeliveryFormat != deliveryfmt.DeliveryFormatRichMarkdown {
+		t.Fatalf("presentation = %+v", presentation)
+	}
+}
+
 func mustRegistry(t *testing.T) *deliveryfmt.StructuredRegistry {
 	t.Helper()
 	reg, err := NewStructuredRegistry()
