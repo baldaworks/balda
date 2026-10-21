@@ -43,10 +43,11 @@ then binds one shared HTTP listener before enabling inbound transports. A failed
 prerequisite, route conflict, or listener bind aborts startup. Shutdown stops
 inbound transports and the shared HTTP listener before the shared provider.
 
-Both hosted and ACP provider shells start with the complete selected MCP
-configuration, including unreachable, unresponsive or unauthorized servers.
-Startup, catalog publication and inventory do not connect to configured HTTP/SSE
-servers. Balda schedules owned stdio discovery before advancing startup, with
+When provider-backed work first builds a hosted or ACP provider shell, it uses
+the complete selected MCP configuration, including unreachable, unresponsive
+or unauthorized servers. Base startup, catalog publication and inventory do
+not compile, authenticate, or launch the selected agent provider and do not
+connect to configured HTTP/SSE servers. Balda schedules owned stdio discovery before advancing startup, with
 handshake and restart work in supervised workers. MCP failure is an invocation
 or observed-health outcome; during a healthy active session it does not remove
 selected revisions or reset a conversation. Missing historical revisions,
@@ -361,6 +362,13 @@ Provider listing, editing, and validation are passive: they do not launch an
 ACP process, call a hosted provider, authenticate, fetch Registry metadata, or
 discover models. Managed `generic_acp`, explicit commands, command overrides,
 and managed root selection are intentionally unavailable.
+
+The selected agent provider is also outside the base startup readiness gate.
+Backoffice remains available when `balda.provider` is empty or points to a
+disabled, deleted, incomplete, or otherwise unusable managed provider, so an
+administrator can repair it here. The first provider-backed operation resolves
+and builds the current graph; failure is limited to that operation and does not
+select a fallback provider.
 
 ## Web UI foundation
 

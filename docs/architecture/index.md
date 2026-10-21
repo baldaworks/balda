@@ -52,7 +52,7 @@ No architecture decisions are currently awaiting approval.
   `commandcmd.Payload` to the independent CommandActor; its exact-name handlers
   live under scoped families in `actors/command`, and `commandfx` contains composition only.
 - `runtimecatalog` compiles immutable application/workspace snapshots;
-  `catalogapp` reconstructs durable plugin and managed standalone skill state before provider startup and
+  `catalogapp` reconstructs durable plugin and managed standalone skill state before provider-backed work and
   binds one immutable capability snapshot to each session. Commands and skills
   resolve from that pin; MCP is supplied when the provider session is created
   or restored. Plugin aliases still execute only through the independent
@@ -65,6 +65,9 @@ No architecture decisions are currently awaiting approval.
 - `session` owns session lifecycle and restore semantics, but does not own transport delivery contracts.
 - `channel/*` packages are concrete transport adapters only. They must not define shared cross-transport contracts and must not import Balda application/session internals for convenience.
 - `chatapp` owns conversational ingress preconditions and durable session publication. `webhookapp` owns webhook admission and private job publication behind a port consumed by `channel/webhook`; `webhookfx` composes them. `commandfx` owns command publication; `handlersfx` binds conversational transport ports to concrete provider runtimes.
+- `startupnotifyapp` owns provider-independent readiness delivery to confirmed
+  primary-administrator bindings; `startupnotifyfx` adapts channel-owned DM
+  resolution without moving transport rules into the application service.
 - `internal/apps/balda/httpfx` owns only the checked shared HTTP listener and route registry. Backoffice, generic webhook, and chat transport packages keep their own handlers, authentication, and admission policy. `balda.http.base_path` places them in sibling `/backoffice`, `/webhooks`, and `/gateway` areas.
 - `locatorref` owns the public `<channel_type>:<address_key>` reference form and must stay independent from concrete transport adapter packages.
 - Use-case packages such as `sessionturn` and MCP surfaces own local ports and depend on small interfaces; composition/wiring code provides concrete adapters.
@@ -83,11 +86,15 @@ No architecture decisions are currently awaiting approval.
   `session_memory.trace`. Scope is injected by Balda's authenticated context;
   locators are not tool arguments.
 - One composition-root lifecycle coordinator starts durable infrastructure before every ingress and stops it in reverse order.
-- Actor execution contract is split: core actor mechanics in Norma; Balda owns product actors, the configured provider runtime, command runtime adapter policy, and all queue/retry/dead-letter policy.
+- Actor execution contract is split: core actor mechanics in Norma; Balda owns product actors, lazy construction of the selected provider runtime, command runtime adapter policy, and all queue/retry/dead-letter policy. Base startup and non-agent administration remain available without a usable provider.
 
 ## Runtime Flow
 
-Telegram/Zulip/Slackagent/webhook/scheduler ingress -> actorlayer transport dispatcher -> NATS adapter -> actorlayer `Source`/`Delivery` -> local dispatch runtime -> Balda product actor -> event projection/read-model updates.
+Telegram/Zulip/Slackagent/Mattermost/webhook/scheduler ingress -> actorlayer transport dispatcher -> NATS adapter -> actorlayer `Source`/`Delivery` -> local dispatch runtime -> Balda product actor -> event projection/read-model updates.
+
+After enabled channel transports start, canonical primary-user bindings ->
+`startupnotifyapp` -> channel DM resolver -> plain delivery. This path performs
+no provider or conversational-session work.
 
 Completed turns and session boundaries additionally flow through Balda redaction
 and the SQLite ingress outbox, JetStream/PubAck, a bounded per-scope worker,

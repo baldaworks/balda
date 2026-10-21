@@ -116,6 +116,13 @@ Event subscriptions and history scopes solve different problems:
 
 ## Messaging Behavior
 
+After Slack ingress starts, Balda uses Slack `conversations.open` to resolve the
+confirmed `superuser` binding to a direct conversation and sends the process
+readiness message there. This best-effort notification is independent of agent
+provider availability and does not create a Slack agent session. Failures are
+logged with bounded integration/binding metadata and do not fail startup or
+prevent readiness delivery to other integrations.
+
 - Balda accepts human `message.im` events and explicit `app_mention` events in
   public and private channels. A DM may be text-only, mixed text and files, or
   an attachment-only `file_share`. A channel request may carry files but still

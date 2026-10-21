@@ -37,7 +37,7 @@ runtime:
       type: <provider_type>
   mcp_servers: {}
 balda:
-  provider: <provider_id>
+  provider: <provider_id>  # optional until an agent-backed feature is used
   http:
     listen_addr: "127.0.0.1:8095"
     base_url: "http://127.0.0.1:8095"
@@ -85,8 +85,10 @@ Treat `env` values as secrets when they contain credentials. Balda passes the
 resolved values to the child process but does not include them in provider
 metadata, diagnostics, or logs. `balda validate` only parses and normalizes the
 configuration; it does not start providers or contact external services.
-`balda preflight` retains its existing behavior of constructing the selected
-provider runtime, using the same resolved environment as normal startup.
+`balda preflight` starts and stops the base runtime without compiling,
+authenticating, or launching the selected agent provider. `balda doctor` uses
+the same base-runtime preflight. Provider environment and connectivity errors
+therefore surface when provider-backed work first uses that provider.
 
 ### Configured and managed providers
 
@@ -97,9 +99,19 @@ than selecting a source by precedence.
 
 `balda validate` remains database-free. A root or pool reference absent from
 YAML is deferred because it may be managed. `balda preflight` and `balda start`
-open the selected state database, compile the complete selected graph, and fail
-before ingress if the graph, driver contract, protected values, or source
-namespace is invalid.
+open the selected state database but do not resolve or compile the selected
+agent graph. An empty `balda.provider`, or a selected managed provider that is
+disabled, deleted, incomplete, or temporarily unusable, does not prevent the
+base runtime, Backoffice, or enabled integrations from starting. Static
+application configuration and source-ID collisions remain startup errors.
+
+Agent-backed work resolves the selected graph on first use. A missing or
+unusable provider returns the fixed unavailable outcome for that operation
+without creating a partial conversational session or GoalKeeper job. Balda
+does not choose a fallback provider. This lazy boundary applies to ordinary
+chat turns, GoalKeeper, and any explicitly enabled feature that requires an
+agent provider; delivery, account binding, Backoffice, and provider repair do
+not require one.
 
 Managed provider changes are available under Backoffice Administration →
 Providers. They apply to new sessions and `/reset`; active sessions use their

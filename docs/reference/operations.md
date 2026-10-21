@@ -23,13 +23,17 @@
 
 ## Acceptance and verification scenarios
 
-1. Startup order enforces internal MCP -> Balda provider -> bot runtime.
+1. Startup order brings up internal MCP, durable runtime, Backoffice, and
+   enabled transports without resolving the selected agent provider. The first
+   provider-backed operation builds it lazily.
 2. Polling mode starts by default when `balda.telegram.webhook.enabled=false`.
 3. Webhook mode (`balda.telegram.webhook.enabled=true`) fails fast without `balda.telegram.webhook.url` or `balda.telegram.webhook.auth_token`.
 4. `/start owner=<token>` registers owner once; `/start invite=<token>` onboards collaborators; `/start <balda_token>` binds a generated channel token to the existing owner; users who are neither owner nor collaborator are otherwise rejected.
 5. `/topic <name>` creates topic + Balda session and persists session metadata.
 6. `/topic` without name returns usage error.
-7. Restart clears active process sessions; persisted non-owner sessions are lazy-restored from metadata when addressed again, while the owner main-DM session is bootstrapped during startup.
+7. Restart clears active process sessions; every persisted session, including
+   the owner's main DM, is restored lazily when addressed again. Startup
+   readiness delivery creates no conversational session.
 8. Polling mode resumes from persisted Telegram offset in balda state DB.
    Retryable polling intake failures leave that offset unchanged and replay the
    same provider update after restart or the next poll cycle; accepted and

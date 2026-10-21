@@ -3,6 +3,7 @@ package startupnotifyfx
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/baldaworks/balda/internal/apps/balda/channel/mattermost"
@@ -126,6 +127,44 @@ func TestDisabledResolverMakesNoNetworkCall(t *testing.T) {
 	}
 }
 
+func TestReadinessNotifiesEveryEnabledIntegrationDM(t *testing.T) {
+	t.Parallel()
+	slack := &fakeSlackClient{conversationID: "D-slack"}
+	mattermostClient := &fakeMattermostClient{channel: mattermost.Channel{ID: "D-mattermost", Type: "D"}}
+	sender := &fakeSender{}
+	user := primaryUser(
+		usercmd.Binding{ID: "telegram", ChannelType: telegram.ChannelType, Principal: "42", Provenance: "chat_id=42"},
+		usercmd.Binding{ID: "zulip", ChannelType: zulip.ChannelType, Principal: "101"},
+		usercmd.Binding{ID: "slack", ChannelType: slackagent.ChannelType, Principal: "T1:U1"},
+		usercmd.Binding{ID: "mattermost", ChannelType: mattermost.ChannelType, Principal: "mm-user"},
+	)
+	service, err := startupnotifyapp.New(fakeUserReader{user: user}, sender, []startupnotifyapp.ResolverBinding{
+		{ChannelType: telegram.ChannelType, Enabled: true, Resolver: telegramResolver{}},
+		{ChannelType: zulip.ChannelType, Enabled: true, Resolver: zulipResolver{}},
+		{ChannelType: slackagent.ChannelType, Enabled: true, Resolver: slackResolver{client: slack}},
+		{ChannelType: mattermost.ChannelType, Enabled: true, Resolver: mattermostResolver{client: mattermostClient, botUserID: "mm-bot"}},
+	}, zerolog.Nop())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	if err := service.Notify(t.Context()); err != nil {
+		t.Fatalf("Notify() error = %v", err)
+	}
+	want := []string{
+		"mattermost:d:D-mattermost",
+		"slackagent:c:T1:D-slack",
+		"telegram:42:0",
+		"zulip:dm:101",
+	}
+	if !reflect.DeepEqual(sender.targets, want) {
+		t.Fatalf("readiness targets = %v, want %v", sender.targets, want)
+	}
+	if slack.calls != 1 || mattermostClient.calls != 1 {
+		t.Fatalf("remote DM lookups = slack:%d mattermost:%d, want one each", slack.calls, mattermostClient.calls)
+	}
+}
+
 type fakeSlackClient struct {
 	conversationID string
 	userID         string
@@ -144,9 +183,11 @@ type fakeMattermostClient struct {
 	botUserID   string
 	otherUserID string
 	err         error
+	calls       int
 }
 
 func (c *fakeMattermostClient) GetDirectChannel(_ context.Context, botUserID, otherUserID string) (mattermost.Channel, error) {
+	c.calls++
 	c.botUserID, c.otherUserID = botUserID, otherUserID
 	return c.channel, c.err
 }
@@ -157,12 +198,15 @@ func (r fakeUserReader) ListUsers(context.Context, usercmd.PageRequest) (usercmd
 	return usercmd.UserPage{Users: []usercmd.User{r.user}}, nil
 }
 
-type fakeSender struct{}
+type fakeSender struct{ targets []string }
 
-func (*fakeSender) SendPlain(context.Context, deliverycmd.Locator, string) error { return nil }
+func (s *fakeSender) SendPlain(_ context.Context, locator deliverycmd.Locator, _ string) error {
+	s.targets = append(s.targets, locator.ChannelType+":"+locator.AddressKey)
+	return nil
+}
 
-func primaryUser(binding usercmd.Binding) usercmd.User {
-	return usercmd.User{Username: usercmd.PrimaryUsername, Primary: true, Role: usercmd.RoleAdministrator, Status: usercmd.StatusActive, Bindings: []usercmd.Binding{binding}}
+func primaryUser(bindings ...usercmd.Binding) usercmd.User {
+	return usercmd.User{Username: usercmd.PrimaryUsername, Primary: true, Role: usercmd.RoleAdministrator, Status: usercmd.StatusActive, Bindings: bindings}
 }
 
 func classifyScope(locator deliverycmd.Locator) (deliverycmd.LocatorScopeKind, error) {

@@ -14,6 +14,11 @@ presentation markup must remain literal.
 This setting is Telegram-specific. Slack uses its native `mrkdwn` route and
 Zulip uses its native Markdown route.
 
+The startup readiness message is a provider-independent plain delivery to the
+confirmed `superuser` Telegram DM. It is attempted together with every other
+enabled integration binding, does not create or restore a conversational
+session, and a Telegram send failure does not fail process startup.
+
 ## Configuration and migration
 
 Configure the mode in YAML or with its environment override:

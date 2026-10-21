@@ -70,8 +70,9 @@ contract. It does not introduce database-owned providers, browser forms, or a
 second configuration model.
 
 The selected profile and environment substitutions continue to be applied
-before provider validation. `balda validate`, preflight, and ordinary runtime
-construction consume the same normalized provider definitions.
+before provider validation. `balda validate` and ordinary runtime construction
+consume the same normalized provider definitions. Base preflight remains
+provider-independent.
 
 Example:
 
@@ -177,8 +178,8 @@ Environment construction follows these rules:
    arguments.
 
 The same resolved environment is used for every launch path of the provider,
-including lazy construction, preflight construction, and future explicit
-probes. A diagnostic may add bounded internal marker variables, but it cannot
+including lazy construction and future explicit provider probes. A diagnostic
+may add bounded internal marker variables, but it cannot
 change or omit the provider overlay.
 
 `cmd` and `extra_args` remain argv. Environment values do not introduce shell
@@ -405,7 +406,7 @@ and free of provider process execution.
 - Every ACP configuration block accepts the common `inherit_env` and `env`
   fields.
 - Environment overlay and inheritance semantics are identical across direct,
-  alias, Registry, preflight, and lazy ACP launch paths.
+  alias, Registry, explicit provider probes, and lazy ACP launch paths.
 - Provider validation performs no network access and starts no child process.
 - `registry_acp` accepts unknown registry IDs through generic ACP behavior and
   applies the configured environment to the launcher and its child.
