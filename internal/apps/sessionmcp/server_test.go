@@ -27,12 +27,14 @@ type recordingSendAttachmentService struct {
 
 type recordingProgressService struct {
 	inputs []SessionProgressInput
+	reqs   []*mcp.CallToolRequest
 	output SessionProgressOutput
 	err    error
 }
 
-func (r *recordingProgressService) ReportSessionProgress(_ context.Context, in SessionProgressInput) (SessionProgressOutput, error) {
+func (r *recordingProgressService) ReportSessionProgress(_ context.Context, req *mcp.CallToolRequest, in SessionProgressInput) (SessionProgressOutput, error) {
 	r.inputs = append(r.inputs, in)
+	r.reqs = append(r.reqs, req)
 	return r.output, r.err
 }
 
@@ -176,12 +178,17 @@ func TestSessionStateToolDescriptionsAndSchemas(t *testing.T) {
 		t.Fatalf("balda.session.progress input schema type = %T, want map[string]any", toolByName["balda.session.progress"].InputSchema)
 	}
 	progressProps := progressSchema["properties"].(map[string]any)
-	if len(progressProps) != 3 {
-		t.Fatalf("balda.session.progress properties = %v, want exactly locator/text/idempotency_key", progressProps)
+	if len(progressProps) != 2 {
+		t.Fatalf("balda.session.progress properties = %v, want exactly text/idempotency_key", progressProps)
 	}
-	for _, name := range []string{"locator", "text", "idempotency_key"} {
+	for _, name := range []string{"text", "idempotency_key"} {
 		if _, ok := progressProps[name]; !ok {
 			t.Fatalf("balda.session.progress input schema missing %q", name)
+		}
+	}
+	for _, name := range []string{"locator", "user_id"} {
+		if _, ok := progressProps[name]; ok {
+			t.Fatalf("balda.session.progress input schema contains server-owned %q", name)
 		}
 	}
 }
@@ -195,9 +202,6 @@ func TestSessionProgressCallsService(t *testing.T) {
 	defer cleanup()
 
 	result := callTool(t, ctx, client, "balda.session.progress", map[string]any{
-		"locator": map[string]any{
-			"session_id": "tg-1-0", "channel_type": "telegram", "address_key": "1:0",
-		},
 		"text": "  working  ", "idempotency_key": "  step-1  ",
 	})
 	if result.IsError || len(progress.inputs) != 1 {
@@ -205,6 +209,9 @@ func TestSessionProgressCallsService(t *testing.T) {
 	}
 	if progress.inputs[0].Text != "working" || progress.inputs[0].IdempotencyKey != "step-1" {
 		t.Fatalf("input = %+v", progress.inputs[0])
+	}
+	if len(progress.reqs) != 1 || progress.reqs[0] == nil {
+		t.Fatalf("requests = %+v, want forwarded CallToolRequest", progress.reqs)
 	}
 }
 
@@ -214,9 +221,6 @@ func TestSessionProgressRejectsOversizedInputBeforeService(t *testing.T) {
 	defer cleanup()
 
 	result := callTool(t, ctx, client, "balda.session.progress", map[string]any{
-		"locator": map[string]any{
-			"session_id": "tg-1-0", "channel_type": "telegram", "address_key": "1:0",
-		},
 		"text": strings.Repeat("x", maxProgressTextBytes+1), "idempotency_key": "step-1",
 	})
 	if !result.IsError || len(progress.inputs) != 0 {

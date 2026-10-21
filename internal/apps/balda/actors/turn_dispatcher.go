@@ -152,10 +152,6 @@ func (d *TurnDispatcher) CurrentTurn(sessionID string) (appports.CurrentTurn, bo
 	}
 
 	requesterUserID := strings.TrimSpace(queue.runningTurn.task.SessionTurn.RequesterUserID)
-	if requesterUserID == "" {
-		return appports.CurrentTurn{}, false
-	}
-
 	return appports.CurrentTurn{SessionID: sessionID, RequesterUserID: requesterUserID}, true
 }
 

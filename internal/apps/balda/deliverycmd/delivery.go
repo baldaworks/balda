@@ -74,12 +74,18 @@ type QuestionOption struct {
 }
 
 type Progress struct {
-	Kind     ProgressKind   `json:"kind"`
-	Text     string         `json:"text,omitempty"`
-	Plan     *PlanSnapshot  `json:"plan,omitempty"`
-	Visible  bool           `json:"visible,omitempty"`
-	Policy   ProgressPolicy `json:"policy,omitempty,omitzero"`
-	Sequence int            `json:"sequence,omitempty"`
+	Kind     ProgressKind     `json:"kind"`
+	Text     string           `json:"text,omitempty"`
+	Plan     *PlanSnapshot    `json:"plan,omitempty"`
+	Audience ProgressAudience `json:"audience,omitempty,omitzero"`
+	Visible  bool             `json:"visible,omitempty"`
+	Policy   ProgressPolicy   `json:"policy,omitempty,omitzero"`
+	Sequence int              `json:"sequence,omitempty"`
+}
+
+// ProgressAudience identifies the user targeted by a technical progress message.
+type ProgressAudience struct {
+	UserID string `json:"user_id,omitempty"`
 }
 
 const (
@@ -105,6 +111,7 @@ const (
 	ProgressThinking   ProgressKind = "thinking"
 	ProgressPlanUpdate ProgressKind = "plan_update"
 	ProgressStatus     ProgressKind = "status"
+	ProgressTechnical  ProgressKind = "technical"
 )
 
 func AgentReplyEnvelope(jobID string, from actorlayer.ActorAddress, locator Locator, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
@@ -325,6 +332,22 @@ func ProgressStatusEnvelope(jobID string, from actorlayer.ActorAddress, locator 
 	}, dedupeSuffix)
 }
 
+// ProgressTechnicalEnvelope builds user-targeted tool-authored progress.
+func ProgressTechnicalEnvelope(jobID string, from actorlayer.ActorAddress, locator Locator, settlement SettlementPolicy, text string, audience ProgressAudience, dedupeSuffix string) (actorlayer.Envelope, error) {
+	return envelope(jobID, from, Payload{
+		JobID:      strings.TrimSpace(jobID),
+		Locator:    locator,
+		Mode:       ModeProgress,
+		Settlement: normalizeSettlementPolicy(settlement),
+		Progress: &Progress{
+			Kind:     ProgressTechnical,
+			Text:     strings.TrimSpace(text),
+			Audience: ProgressAudience{UserID: strings.TrimSpace(audience.UserID)},
+			Visible:  true,
+		},
+	}, dedupeSuffix)
+}
+
 func progressThinkingEnvelope(jobID string, from actorlayer.ActorAddress, locator Locator, settlement SettlementPolicy, policy ProgressPolicy, visible bool, text string, sequence int, dedupeSuffix string) (actorlayer.Envelope, error) {
 	return envelope(jobID, from, Payload{
 		JobID:      strings.TrimSpace(jobID),
@@ -397,6 +420,13 @@ func Validate(payload Payload) error {
 		case ProgressStatus:
 			if strings.TrimSpace(payload.Progress.Text) == "" {
 				return fmt.Errorf("status progress text is required")
+			}
+		case ProgressTechnical:
+			if strings.TrimSpace(payload.Progress.Text) == "" {
+				return fmt.Errorf("technical progress text is required")
+			}
+			if strings.TrimSpace(payload.Progress.Audience.UserID) == "" {
+				return fmt.Errorf("technical progress audience user id is required")
 			}
 		case ProgressThinking:
 		case ProgressPlanUpdate:

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"sort"
 	"strings"
@@ -13,10 +14,12 @@ import (
 	"testing"
 
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
+	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	"github.com/baldaworks/balda/internal/apps/balda/controlcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionapp"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorymcp"
 	"github.com/baldaworks/balda/internal/apps/sessionmcp"
 	"github.com/baldaworks/balda/sessionmemory"
@@ -30,6 +33,42 @@ import (
 
 type recordingDispatcher struct {
 	envelopes []actorlayer.Envelope
+}
+
+type recordingProgressReporter struct {
+	locator         session.SessionLocator
+	requesterUserID string
+	text            string
+	idempotencyKey  string
+	calls           int
+}
+
+func (r *recordingProgressReporter) Report(
+	_ context.Context,
+	locator session.SessionLocator,
+	requesterUserID string,
+	text string,
+	idempotencyKey string,
+) (sessionapp.ProgressResult, error) {
+	r.calls++
+	r.locator = locator
+	r.requesterUserID = requesterUserID
+	r.text = text
+	r.idempotencyKey = idempotencyKey
+	return sessionapp.ProgressResult{ProgressID: "progress-1", Disposition: "delivered"}, nil
+}
+
+type currentTurnResolverStub struct {
+	wantSessionID string
+	turn          appports.CurrentTurn
+	ok            bool
+}
+
+func (s currentTurnResolverStub) CurrentTurn(sessionID string) (appports.CurrentTurn, bool) {
+	if s.wantSessionID != "" && sessionID != s.wantSessionID {
+		return appports.CurrentTurn{}, false
+	}
+	return s.turn, s.ok
 }
 
 func (d *recordingDispatcher) Dispatch(_ context.Context, env actorlayer.Envelope) (*actortransport.DispatchReceipt, error) {
@@ -207,6 +246,111 @@ func TestCanonicalSessionLocatorReconstructsTelegramAddress(t *testing.T) {
 	if got.AddressJSON != `{"chat_id":10001,"topic_id":536036}` {
 		t.Fatalf("address_json = %q, want canonical Telegram topic", got.AddressJSON)
 	}
+}
+
+func TestSessionProgressServiceUsesAuthenticatedCurrentTurn(t *testing.T) {
+	t.Parallel()
+
+	locator, err := deliverycmd.NewLocator("telegram", "101:77", `{"chat_id":101,"topic_id":77}`, "tg-101-77")
+	if err != nil {
+		t.Fatalf("NewLocator() error = %v", err)
+	}
+	broker := sessionmemorymcp.NewContextBroker()
+	request := authenticatedSessionRequest(t, broker, sessionmemorymcp.CurrentSession{
+		Locator: locator,
+		Session: sessionmemory.SessionRef{SessionID: locator.SessionID, AgentSessionID: "agent-101-77"},
+	})
+	reporter := &recordingProgressReporter{}
+	service := sessionProgressService{
+		service:  reporter,
+		sessions: sessionmemorymcp.HeaderSessionResolver{Broker: broker},
+		currentTurns: currentTurnResolverStub{
+			wantSessionID: locator.SessionID,
+			turn:          appports.CurrentTurn{SessionID: locator.SessionID, RequesterUserID: "user-42"},
+			ok:            true,
+		},
+	}
+
+	out, err := service.ReportSessionProgress(t.Context(), request, sessionmcp.SessionProgressInput{
+		Text: "Working", IdempotencyKey: "step-1",
+	})
+	if err != nil {
+		t.Fatalf("ReportSessionProgress() error = %v", err)
+	}
+	if !out.Accepted || out.ProgressID != "progress-1" || reporter.calls != 1 {
+		t.Fatalf("output = %+v, calls = %d", out, reporter.calls)
+	}
+	if reporter.locator != locator || reporter.requesterUserID != "user-42" ||
+		reporter.text != "Working" || reporter.idempotencyKey != "step-1" {
+		t.Fatalf("report = %+v", reporter)
+	}
+}
+
+func TestSessionProgressServiceRejectsMissingContextOrTurnWithoutReporting(t *testing.T) {
+	t.Parallel()
+
+	locator, err := deliverycmd.NewLocator("telegram", "101:77", `{"chat_id":101,"topic_id":77}`, "tg-101-77")
+	if err != nil {
+		t.Fatalf("NewLocator() error = %v", err)
+	}
+	broker := sessionmemorymcp.NewContextBroker()
+	request := authenticatedSessionRequest(t, broker, sessionmemorymcp.CurrentSession{
+		Locator: locator,
+		Session: sessionmemory.SessionRef{SessionID: locator.SessionID, AgentSessionID: "agent-101-77"},
+	})
+	reporter := &recordingProgressReporter{}
+	service := sessionProgressService{
+		service:      reporter,
+		sessions:     sessionmemorymcp.HeaderSessionResolver{Broker: broker},
+		currentTurns: currentTurnResolverStub{},
+	}
+	input := sessionmcp.SessionProgressInput{Text: "Working", IdempotencyKey: "step-1"}
+
+	if _, err := service.ReportSessionProgress(t.Context(), request, input); err == nil {
+		t.Fatal("ReportSessionProgress() without running turn error = nil")
+	}
+	service.currentTurns = currentTurnResolverStub{
+		turn: appports.CurrentTurn{SessionID: "other-session", RequesterUserID: "user-42"},
+		ok:   true,
+	}
+	if _, err := service.ReportSessionProgress(t.Context(), request, input); err == nil {
+		t.Fatal("ReportSessionProgress() with mismatched running turn error = nil")
+	}
+	if _, err := service.ReportSessionProgress(t.Context(), nil, input); err == nil {
+		t.Fatal("ReportSessionProgress() without authenticated context error = nil")
+	}
+	tamperedHeaders := request.GetExtra().Header.Clone()
+	tamperedHeaders.Set(sessionmemorymcp.HeaderSessionID, "other-session")
+	tampered := &mcp.CallToolRequest{Extra: &mcp.RequestExtra{Header: tamperedHeaders}}
+	if _, err := service.ReportSessionProgress(t.Context(), tampered, input); err == nil {
+		t.Fatal("ReportSessionProgress() with tampered context error = nil")
+	}
+	if reporter.calls != 0 {
+		t.Fatalf("reporter calls = %d, want 0", reporter.calls)
+	}
+}
+
+func authenticatedSessionRequest(
+	t *testing.T,
+	broker *sessionmemorymcp.ContextBroker,
+	current sessionmemorymcp.CurrentSession,
+) *mcp.CallToolRequest {
+	t.Helper()
+
+	if err := broker.SetBaseURL("http://127.0.0.1:12345/mcp/balda"); err != nil {
+		t.Fatalf("SetBaseURL() error = %v", err)
+	}
+	binding, err := broker.Bind(current)
+	if err != nil {
+		t.Fatalf("Bind() error = %v", err)
+	}
+	t.Cleanup(func() { _ = binding.Release() })
+
+	var headers http.Header
+	broker.Wrap(http.HandlerFunc(func(_ http.ResponseWriter, req *http.Request) {
+		headers = req.Header.Clone()
+	})).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, binding.URL, nil))
+	return &mcp.CallToolRequest{Extra: &mcp.RequestExtra{Header: headers}}
 }
 
 func TestCanonicalSessionLocatorReconstructsPrivateExecutionAddress(t *testing.T) {

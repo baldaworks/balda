@@ -22,11 +22,14 @@ func TestTurnDispatcherCurrentTurnLifecycleAndIsolation(t *testing.T) {
 	release := make(chan struct{})
 	startedA := make(chan struct{})
 	startedB := make(chan struct{})
+	startedService := make(chan struct{})
 
 	resultA := enqueueCurrentTurnTest(t, dispatcher, "session-a", " requester-a ", startedA, release)
 	resultB := enqueueCurrentTurnTest(t, dispatcher, "session-b", "requester-b", startedB, release)
+	resultService := enqueueCurrentTurnTest(t, dispatcher, "session-service", "", startedService, release)
 	waitForSignal(t, startedA, "session A start")
 	waitForSignal(t, startedB, "session B start")
+	waitForSignal(t, startedService, "service session start")
 
 	assertCurrentTurn(t, dispatcher, "session-a", appports.CurrentTurn{
 		SessionID:       "session-a",
@@ -36,6 +39,7 @@ func TestTurnDispatcherCurrentTurnLifecycleAndIsolation(t *testing.T) {
 		SessionID:       "session-b",
 		RequesterUserID: "requester-b",
 	})
+	assertCurrentTurn(t, dispatcher, "session-service", appports.CurrentTurn{SessionID: "session-service"})
 
 	identity, ok := dispatcher.CurrentTurn("session-a")
 	if !ok {
@@ -54,11 +58,17 @@ func TestTurnDispatcherCurrentTurnLifecycleAndIsolation(t *testing.T) {
 	if err := <-resultB; err != nil {
 		t.Fatalf("session B result = %v", err)
 	}
+	if err := <-resultService; err != nil {
+		t.Fatalf("service session result = %v", err)
+	}
 
 	if _, ok := dispatcher.CurrentTurn("session-a"); ok {
 		t.Fatal("CurrentTurn after execution = present, want absent")
 	}
 	if _, ok := dispatcher.CurrentTurn("session-b"); ok {
+		t.Fatal("CurrentTurn after execution = present, want absent")
+	}
+	if _, ok := dispatcher.CurrentTurn("session-service"); ok {
 		t.Fatal("CurrentTurn after execution = present, want absent")
 	}
 }

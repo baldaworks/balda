@@ -1,6 +1,10 @@
 package sessionmcp
 
-import "context"
+import (
+	"context"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
 
 type noInput struct{}
 
@@ -220,9 +224,8 @@ type SessionSendAttachmentService interface {
 }
 
 type SessionProgressInput struct {
-	Locator        SessionLocatorInput `json:"locator" jsonschema:"active target session locator"`
-	Text           string              `json:"text" jsonschema:"visible progress text"`
-	IdempotencyKey string              `json:"idempotency_key" jsonschema:"stable caller key for this progress update"`
+	Text           string `json:"text" jsonschema:"visible progress text"`
+	IdempotencyKey string `json:"idempotency_key" jsonschema:"stable caller key for this progress update"`
 }
 
 type SessionProgressOutput struct {
@@ -233,5 +236,5 @@ type SessionProgressOutput struct {
 }
 
 type SessionProgressService interface {
-	ReportSessionProgress(ctx context.Context, in SessionProgressInput) (SessionProgressOutput, error)
+	ReportSessionProgress(ctx context.Context, req *mcp.CallToolRequest, in SessionProgressInput) (SessionProgressOutput, error)
 }

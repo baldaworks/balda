@@ -148,6 +148,32 @@ func TestAdapterStreamsMonotonicSnapshotsAndFinalizesOnce(t *testing.T) {
 	}
 }
 
+func TestAdapterSendsTechnicalProgressAsVisibleText(t *testing.T) {
+	t.Parallel()
+
+	client := &recordingAgentClient{nextTS: "progress-ts"}
+	adapter := newTestAdapter(client, AdapterConfig{})
+	locator := NewThreadLocator("T123", "D456", testThreadTS)
+
+	_, err := adapter.Deliver(t.Context(), locator, deliverycmd.Operation{
+		Kind: deliverycmd.OperationProgress,
+		Progress: deliverycmd.Progress{
+			Kind:     deliverycmd.ProgressTechnical,
+			Text:     "Working",
+			Audience: deliverycmd.ProgressAudience{UserID: "user-42"},
+			Visible:  true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("SendProgress() error = %v", err)
+	}
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if len(client.posts) != 1 || client.posts[0].text != "Working" {
+		t.Fatalf("posts = %+v, want one visible technical message", client.posts)
+	}
+}
+
 func TestAdapterFinalOnlyStreamAndQuestionSuspension(t *testing.T) {
 	t.Parallel()
 	client := &recordingAgentClient{nextTS: "stream-ts"}

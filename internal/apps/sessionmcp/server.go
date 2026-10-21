@@ -58,7 +58,7 @@ func (s *service) registerTools(server *mcp.Server) {
 	}, s.sessionWait)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "balda.session.progress",
-		Description: "Report visible progress for one active Balda session. Conversation progress is delivered to that session; schedule and webhook progress is recorded on the owning job.",
+		Description: "Report visible progress for the authenticated current Balda session. Conversation progress is delivered to that session; schedule and webhook progress is recorded on the owning job.",
 		Annotations: &mcp.ToolAnnotations{
 			Title:           "Report session progress",
 			DestructiveHint: boolPointer(false),
@@ -85,13 +85,9 @@ func (s *service) registerTools(server *mcp.Server) {
 	}, s.sessionSendAttachments)
 }
 
-func (s *service) sessionProgress(ctx context.Context, _ *mcp.CallToolRequest, in SessionProgressInput) (*mcp.CallToolResult, SessionProgressOutput, error) {
+func (s *service) sessionProgress(ctx context.Context, req *mcp.CallToolRequest, in SessionProgressInput) (*mcp.CallToolResult, SessionProgressOutput, error) {
 	if s.progressService == nil {
 		result, out := backendFailure("balda.session.progress", fmt.Errorf("session progress service is required"))
-		return result, SessionProgressOutput{ToolOutcome: out}, nil
-	}
-	if strings.TrimSpace(in.Locator.SessionID) == "" || strings.TrimSpace(in.Locator.ChannelType) == "" || strings.TrimSpace(in.Locator.AddressKey) == "" {
-		result, out := validationFailure("balda.session.progress", "locator.session_id, locator.channel_type, and locator.address_key are required")
 		return result, SessionProgressOutput{ToolOutcome: out}, nil
 	}
 	text := strings.TrimSpace(in.Text)
@@ -114,7 +110,7 @@ func (s *service) sessionProgress(ctx context.Context, _ *mcp.CallToolRequest, i
 	}
 	in.Text = text
 	in.IdempotencyKey = key
-	out, err := s.progressService.ReportSessionProgress(ctx, in)
+	out, err := s.progressService.ReportSessionProgress(ctx, req, in)
 	if err != nil {
 		result, toolOut := backendFailure("balda.session.progress", err)
 		return result, SessionProgressOutput{ToolOutcome: toolOut}, nil

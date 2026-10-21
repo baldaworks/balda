@@ -62,6 +62,53 @@ func TestAgentReplyEnvelopeCarriesOnlyDeliveryFormat(t *testing.T) {
 	}
 }
 
+func TestTechnicalProgressEnvelopeCarriesAudience(t *testing.T) {
+	t.Parallel()
+
+	env, err := ProgressTechnicalEnvelope(
+		"",
+		actorlayer.SystemAddress("session"),
+		testLocator(),
+		SettlementOutbox,
+		"Working",
+		ProgressAudience{UserID: " user-42 "},
+		"progress-1",
+	)
+	if err != nil {
+		t.Fatalf("ProgressTechnicalEnvelope() error = %v", err)
+	}
+
+	var payload Payload
+	if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if payload.Progress == nil || payload.Progress.Kind != ProgressTechnical || !payload.Progress.Visible {
+		t.Fatalf("progress = %+v", payload.Progress)
+	}
+	if payload.Progress.Text != "Working" || payload.Progress.Audience.UserID != "user-42" {
+		t.Fatalf("technical progress = %+v", payload.Progress)
+	}
+	if payload.Settlement != SettlementOutbox {
+		t.Fatalf("settlement = %q, want %q", payload.Settlement, SettlementOutbox)
+	}
+}
+
+func TestTechnicalProgressRequiresAudience(t *testing.T) {
+	t.Parallel()
+
+	err := Validate(Payload{
+		Mode: ModeProgress,
+		Progress: &Progress{
+			Kind:    ProgressTechnical,
+			Text:    "Working",
+			Visible: true,
+		},
+	})
+	if err == nil {
+		t.Fatal("Validate() error = nil, want missing audience error")
+	}
+}
+
 func TestMarkdownEnvelopeWithFormatAndSettlementCarriesSystemPresentation(t *testing.T) {
 	t.Parallel()
 

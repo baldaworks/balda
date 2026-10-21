@@ -69,27 +69,20 @@ language. Do not send repetitive heartbeats, content-free status messages,
 hidden reasoning, secrets, credentials, or raw configuration. Progress is an
 intermediate update, not a substitute for the final response.
 
-The tool input has three parts:
+The tool input has two parts. Balda derives the locator and recipient from the
+authenticated current session and its running turn; callers cannot select or
+override either value.
 
-- `locator` identifies the active target session. Copy `channel_type`,
-  `address_key`, and `session_id` from trusted current-session context. Do not
-  invent, normalize, or retarget them. Omit the compatibility-only
-  `address_json` field unless the current context explicitly supplies it.
 - `text` is the bounded user-visible update. State what changed and what happens
   next; include a blocker only when it affects the requested work.
 - `idempotency_key` identifies one logical update. Reuse the exact key when
   retrying that same update after an uncertain or transient outcome. Use a new
   stable key for every distinct update, and do not put sensitive data in it.
 
-For example, with placeholder values copied from trusted session context:
+For example:
 
 ```json
 {
-  "locator": {
-    "channel_type": "telegram",
-    "address_key": "<chat-id>:<topic-id>",
-    "session_id": "tg-<chat-id>-<topic-id>"
-  },
   "idempotency_key": "dependency-install-complete",
   "text": "Dependencies are installed. Running the verification suite now."
 }
@@ -103,9 +96,9 @@ the accepted update. A delivered disposition does not prove that a human read
 the message. On an error or unaccepted result, do not claim delivery; follow the
 tool error and retry only when appropriate.
 
-The tool's canonical locator and idempotency contract bound the external effect.
-They do not grant authority to send arbitrary messages or select another
-delivery destination.
+The authenticated current-session binding and idempotency contract bound the
+external effect. They do not grant authority to send arbitrary messages or
+select another delivery destination.
 
 Tool availability never supplies user authorization. Follow the current request,
 higher-level policy, repository instructions, and each tool's approval contract

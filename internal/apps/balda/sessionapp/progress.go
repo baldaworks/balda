@@ -64,6 +64,7 @@ func NewProgressService(
 func (s *ProgressService) Report(
 	ctx context.Context,
 	locator baldasession.SessionLocator,
+	requesterUserID string,
 	text string,
 	idempotencyKey string,
 ) (ProgressResult, error) {
@@ -97,15 +98,20 @@ func (s *ProgressService) Report(
 	result := ProgressResult{ProgressID: progressID}
 	switch target.Kind.Family() {
 	case baldasession.FamilyConversation:
+		requesterUserID = strings.TrimSpace(requesterUserID)
+		if requesterUserID == "" {
+			return ProgressResult{}, fmt.Errorf("session progress requester is required")
+		}
 		if s.dispatcher == nil {
 			return ProgressResult{}, fmt.Errorf("session progress delivery is unavailable")
 		}
-		env, err := deliverycmd.ProgressStatusEnvelope(
+		env, err := deliverycmd.ProgressTechnicalEnvelope(
 			"",
 			actorlayer.ActorAddress{Target: actorcmd.ActorTypeSession, Key: target.SessionID},
 			target.Locator,
 			deliverycmd.SettlementOutbox,
 			safeText,
+			deliverycmd.ProgressAudience{UserID: requesterUserID},
 			progressID,
 		)
 		if err != nil {

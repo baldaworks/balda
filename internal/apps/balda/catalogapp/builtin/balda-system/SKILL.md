@@ -66,7 +66,7 @@ For authorized long-running work, use `balda.session.progress` when it is
 exposed to report concise, meaningful progress to the active session. Send a
 new update for a real milestone, changed plan, or blocker; avoid repetitive or
 content-free status messages. Load the sessions-and-tools reference for the
-locator, idempotency, result, and content-safety contract.
+session binding, idempotency, result, and content-safety contract.
 
 Use Balda interfaces only when their tools or commands are present and the
 current request authorizes the action. This skill is user-level operating

@@ -113,6 +113,25 @@ func TestSendPlainPostsToChannel(t *testing.T) {
 	}
 }
 
+func TestSendTechnicalProgressPostsVisibleText(t *testing.T) {
+	fake := &fakeServer{}
+	adapter := newTestAdapter(t, fake)
+
+	err := adapter.SendProgress(context.Background(), NewChannelLocator(testTeamID, testChannelID, ""), deliverycmd.Progress{
+		Kind:     deliverycmd.ProgressTechnical,
+		Text:     "Working",
+		Audience: deliverycmd.ProgressAudience{UserID: testUserID},
+		Visible:  true,
+	})
+	if err != nil {
+		t.Fatalf("SendProgress() error = %v", err)
+	}
+	requests := fake.recorded()
+	if len(requests) != 1 || requests[0].Message != "Working" {
+		t.Fatalf("requests = %+v, want one visible technical message", requests)
+	}
+}
+
 func TestSendPlainPostsIntoThreadRoot(t *testing.T) {
 	fake := &fakeServer{}
 	adapter := newTestAdapter(t, fake)
