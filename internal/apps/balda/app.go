@@ -316,12 +316,7 @@ func Module(
 		mcpServers[k] = v
 	}
 	mcpReg := mcpregistry.New(mcpServers)
-	sessionMemoryProviderID, err := resolveSessionMemoryProviderForComposition(
-		cfg.Balda.SessionMemory,
-		cfg.Balda.Provider,
-		normaCfg.Providers,
-		agentfactory.New(normaCfg.Providers, mcpReg, agentfactory.WithACPInitializeTimeout(acpStartupTimeout)),
-	)
+	sessionMemoryProviderID, err := resolveSessionMemoryProviderID(cfg.Balda.SessionMemory, cfg.Balda.Provider)
 	if err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}

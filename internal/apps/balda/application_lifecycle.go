@@ -20,7 +20,6 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/mcpbackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpbridge"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
-	"github.com/baldaworks/balda/internal/apps/balda/providers"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
 	"github.com/baldaworks/balda/internal/apps/balda/scheduledjobs"
 	"github.com/baldaworks/balda/internal/apps/balda/session"
@@ -161,41 +160,39 @@ func (t *telegramLifecycle) Stop(ctx context.Context) error {
 type applicationLifecycleParams struct {
 	fx.In
 
-	LC                    fx.Lifecycle
-	Shutdowner            fx.Shutdowner
-	Logger                zerolog.Logger
-	Config                BaldaConfig
-	HTTPConfig            ResolvedHTTPConfig
-	HTTPRegistry          *httpfx.Registry
-	WebhookHTTP           webhookfx.HTTPContribution
-	GatewayCallbacks      []httpfx.GatewayCallbackProvider `group:"balda_http_gateway_callback_providers"`
-	TelegramSource        runtime.UpdateSource
-	Backoffice            *backoffice.Runtime
-	BackofficeMCP         *mcpbackofficeapp.Operations
-	MCP                   *internalmcp.InternalMCPManager
-	MCPManagement         *mcpmanage.Service
-	MCPBridge             *mcpbridge.Bridge
-	MCPAuthorizations     *mcpmanage.Authorizations
-	StateProvider         state.Provider
-	Providers             *providers.Service
-	Catalog               *catalogapp.Lifecycle
-	Runtime               *baldaagent.RuntimeManager
-	SessionMemoryProvider string `name:"balda_session_memory_provider"`
-	Sessions              *session.Manager
-	Bus                   *natsbus.Bus
-	SessionMemoryIngress  *sessionmemoryapp.IngressOutboxPublisher
-	SessionMemoryWorker   *sessionmemoryapp.Worker
-	SessionMemoryRuntime  *portableapp.Runtime
-	QuestionProjector     *questions.DeliveryBindingProjector
-	Projector             *baldajobs.EventProjector
-	OutboxPublisher       *baldajobs.OutboxPublisher
-	ActorHost             *baldaexecution.ActorHost
-	TurnDispatcher        *actors.TurnDispatcher
-	Scheduler             *scheduledjobs.ScheduledJobScheduler
-	WebhookRunFinalizer   *jobexec.WebhookRunFinalizer
-	TransportStages       []appports.TransportLifecycleStage `group:"balda_transport_lifecycle_stage"`
-	TelegramBot           *runtime.Bot
-	TelegramEnabled       bool `name:"balda_telegram_enabled"`
+	LC                   fx.Lifecycle
+	Shutdowner           fx.Shutdowner
+	Logger               zerolog.Logger
+	Config               BaldaConfig
+	HTTPConfig           ResolvedHTTPConfig
+	HTTPRegistry         *httpfx.Registry
+	WebhookHTTP          webhookfx.HTTPContribution
+	GatewayCallbacks     []httpfx.GatewayCallbackProvider `group:"balda_http_gateway_callback_providers"`
+	TelegramSource       runtime.UpdateSource
+	Backoffice           *backoffice.Runtime
+	BackofficeMCP        *mcpbackofficeapp.Operations
+	MCP                  *internalmcp.InternalMCPManager
+	MCPManagement        *mcpmanage.Service
+	MCPBridge            *mcpbridge.Bridge
+	MCPAuthorizations    *mcpmanage.Authorizations
+	StateProvider        state.Provider
+	Catalog              *catalogapp.Lifecycle
+	Runtime              *baldaagent.RuntimeManager
+	Sessions             *session.Manager
+	Bus                  *natsbus.Bus
+	SessionMemoryIngress *sessionmemoryapp.IngressOutboxPublisher
+	SessionMemoryWorker  *sessionmemoryapp.Worker
+	SessionMemoryRuntime *portableapp.Runtime
+	QuestionProjector    *questions.DeliveryBindingProjector
+	Projector            *baldajobs.EventProjector
+	OutboxPublisher      *baldajobs.OutboxPublisher
+	ActorHost            *baldaexecution.ActorHost
+	TurnDispatcher       *actors.TurnDispatcher
+	Scheduler            *scheduledjobs.ScheduledJobScheduler
+	WebhookRunFinalizer  *jobexec.WebhookRunFinalizer
+	TransportStages      []appports.TransportLifecycleStage `group:"balda_transport_lifecycle_stage"`
+	TelegramBot          *runtime.Bot
+	TelegramEnabled      bool `name:"balda_telegram_enabled"`
 }
 
 func registerApplicationLifecycle(p applicationLifecycleParams) {
@@ -223,15 +220,14 @@ func applicationLifecycleStages(p applicationLifecycleParams, telegram *telegram
 		}},
 		{name: "MCP credential bridge", start: p.MCPBridge.Start, stop: p.MCPBridge.Close},
 		{name: "runtime contribution catalog", start: p.Catalog.Start, stop: p.Catalog.Stop},
-		{name: "provider graph readiness", start: func(ctx context.Context) error {
-			return resolveCurrentProviderGraphs(ctx, p.Providers, p.Runtime.ProviderID(), p.SessionMemoryProvider)
-		}},
 		{name: "session-memory runtime", start: func(ctx context.Context) error {
 			return startSessionMemoryRuntime(ctx, p.SessionMemoryRuntime)
 		}, stop: func(ctx context.Context) error {
 			return closeSessionMemoryRuntime(ctx, p.SessionMemoryRuntime)
 		}},
-		{name: "provider runtime", start: p.Runtime.EnsureRuntime, stop: p.Runtime.Stop},
+		// Provider construction is lazy. Keep cleanup in the lifecycle so a
+		// runtime created by the first agent request is still stopped normally.
+		{name: "provider runtime", stop: p.Runtime.Stop},
 		{name: "session manager", start: p.Sessions.Start, stop: p.Sessions.Stop},
 		{name: "durable transport", start: p.Bus.Start, stop: p.Bus.Drain},
 		{name: "session-memory ingress outbox", start: p.SessionMemoryIngress.Start, stop: p.SessionMemoryIngress.Stop},

@@ -17,9 +17,15 @@ import (
 	adkagent "google.golang.org/adk/v2/agent"
 )
 
-type providerStateFixture struct{ state providers.State }
+type providerStateFixture struct {
+	state     providers.State
+	readCalls int
+}
 
-func (s *providerStateFixture) Read(context.Context) (providers.State, error) { return s.state, nil }
+func (s *providerStateFixture) Read(context.Context) (providers.State, error) {
+	s.readCalls++
+	return s.state, nil
+}
 func (s *providerStateFixture) Apply(context.Context, providers.Mutation) (providers.State, error) {
 	return providers.State{}, errors.New("unexpected mutation")
 }
@@ -85,6 +91,9 @@ func TestRuntimeManagerPinsAndRestoresProviderGraph(t *testing.T) {
 		Builder: builder, BaldaProviderID: "managed", WorkingDir: t.TempDir(), StateDir: t.TempDir(),
 		CapabilityBinder: binder, ProviderService: service, MCPRegistry: mcpregistry.New(nil), Logger: zerolog.Nop(),
 	})
+	if store.readCalls != 0 {
+		t.Fatalf("provider reads during construction = %d, want 0", store.readCalls)
+	}
 
 	fresh, err := manager.RuntimeForSession(t.Context(), SessionRuntimeRequest{})
 	if err != nil {
@@ -113,6 +122,46 @@ func TestRuntimeManagerPinsAndRestoresProviderGraph(t *testing.T) {
 	}
 	if got, want := capture.models, []string{"old-model", "new-model", "old-model"}; !slicesEqualStrings(got, want) {
 		t.Fatalf("built models = %v, want %v", got, want)
+	}
+}
+
+func TestRuntimeManagerReportsEmptyProviderAsUnavailable(t *testing.T) {
+	manager := NewRuntimeManager(RuntimeManagerParams{
+		Builder:     &Builder{},
+		WorkingDir:  t.TempDir(),
+		StateDir:    t.TempDir(),
+		MCPRegistry: mcpregistry.New(nil),
+		Logger:      zerolog.Nop(),
+	})
+
+	if _, err := manager.Runtime(t.Context()); !errors.Is(err, ErrProviderUnavailable) {
+		t.Fatalf("Runtime() error = %v, want ErrProviderUnavailable", err)
+	}
+}
+
+func TestRuntimeManagerDefersUnavailableManagedProviderUntilFirstUse(t *testing.T) {
+	store := &providerStateFixture{state: providers.State{
+		Records: []providers.Record{{ID: "managed", CurrentRevisionID: "deleted", Deleted: true}},
+	}}
+	manager := NewRuntimeManager(RuntimeManagerParams{
+		Builder:         &Builder{scopedFactory: &graphFactory{capture: &providerGraphCapture{}}},
+		BaldaProviderID: "managed",
+		WorkingDir:      t.TempDir(),
+		StateDir:        t.TempDir(),
+		ProviderService: providers.New(nil, store, nil),
+		MCPRegistry:     mcpregistry.New(nil),
+		Logger:          zerolog.Nop(),
+	})
+	if store.readCalls != 0 {
+		t.Fatalf("provider reads during construction = %d, want 0", store.readCalls)
+	}
+
+	_, err := manager.RuntimeForSession(t.Context(), SessionRuntimeRequest{})
+	if !errors.Is(err, ErrProviderUnavailable) || !errors.Is(err, providers.ErrUnavailable) {
+		t.Fatalf("RuntimeForSession() error = %v, want typed unavailable provider error", err)
+	}
+	if store.readCalls != 1 {
+		t.Fatalf("provider reads after first use = %d, want 1", store.readCalls)
 	}
 }
 

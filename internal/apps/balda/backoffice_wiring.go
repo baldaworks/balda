@@ -110,7 +110,9 @@ func projectBackofficeAgent(cfg BaldaConfig, runtimeCfg runtimeconfig.RuntimeCon
 	}
 	provider, ok := runtimeCfg.Providers[providerID]
 	if !ok {
-		return backoffice.AgentConfig{}, fmt.Errorf("backoffice agent provider %q is not configured", providerID)
+		// The selected ID may belong to a Backoffice-managed provider. Its
+		// definition is resolved from durable state only when agent work starts.
+		return projected, nil
 	}
 	projected.ProviderType = strings.TrimSpace(provider.Type)
 	if projected.ProviderType == agentconfig.AgentTypePool {

@@ -29,6 +29,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpruntime"
 	"github.com/baldaworks/balda/internal/apps/balda/pluginapp"
+	"github.com/baldaworks/balda/internal/apps/balda/providers"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookfx"
@@ -153,7 +154,7 @@ func verifyUnavailableStartupShutdown(t *testing.T, err error, hosted bool) {
 	}
 }
 
-func TestUnavailableMCPStartupKeepsBothProviderShellsAndManagementRunning(t *testing.T) {
+func TestUnavailableMCPStartupKeepsManagementRunningAndDefersProviderBuild(t *testing.T) {
 	const hostedProvider = "hosted"
 	for _, providerKind := range []string{hostedProvider, "acp"} {
 		for _, validProvider := range []bool{true, false} {
@@ -273,7 +274,11 @@ func TestUnavailableMCPStartupKeepsBothProviderShellsAndManagementRunning(t *tes
 					t.Fatal(err)
 				}
 				builder := baldaagent.NewBuilder(baldaagent.BuilderParams{Factory: agentfactory.New(config.Providers, registry), ScopedFactory: catalogapp.NewProviderFactory(config.Providers, registry), NormaCfg: config})
-				manager := baldaagent.NewRuntimeManager(baldaagent.RuntimeManagerParams{Builder: builder, BaldaProviderID: "alpha", WorkingDir: stateDir, StateDir: stateDir, CapabilityBinder: binder, MCPRegistry: registry, Logger: zerolog.Nop()})
+				manager := baldaagent.NewRuntimeManager(baldaagent.RuntimeManagerParams{
+					Builder: builder, BaldaProviderID: "alpha", WorkingDir: stateDir, StateDir: stateDir,
+					CapabilityBinder: binder, ProviderService: providers.New(config.Providers, provider.ProviderManagement(), nil),
+					MCPRegistry: registry, Logger: zerolog.Nop(),
+				})
 				httpRegistry, err := httpfx.NewRegistry("")
 				if err != nil {
 					t.Fatal(err)
@@ -291,26 +296,26 @@ func TestUnavailableMCPStartupKeepsBothProviderShellsAndManagementRunning(t *tes
 					}
 				}
 				coordinator := newApplicationLifecycle(zerolog.Nop(), stages)
-				startErr := coordinator.Start(t.Context())
-				if !validProvider {
-					if startErr == nil {
-						_ = coordinator.Stop(context.Background())
-						t.Fatal("invalid selected provider bypassed startup rollback")
-					}
-					return
-				}
-				if err := startErr; err != nil {
+				if err := coordinator.Start(t.Context()); err != nil {
 					t.Fatalf("fresh authorization-required startup: %v", err)
 				}
 				defer func() {
 					verifyUnavailableStartupShutdown(t, coordinator.Stop(context.Background()), providerKind == hostedProvider)
 				}()
-				built, err := manager.Runtime(t.Context())
-				if err != nil || built == nil {
-					t.Fatalf("startup did not construct complete provider shell: %v", err)
-				}
 				if attempts.Load() != 0 {
 					t.Fatalf("startup initiated %d remote MCP requests", attempts.Load())
+				}
+				managementClient := verifyAuthenticatedMCPManagement(t, "http://"+address+"/backoffice")
+				if !validProvider {
+					if _, err := manager.Runtime(t.Context()); err == nil {
+						t.Fatal("first provider use unexpectedly accepted invalid static configuration")
+					}
+					verifyMCPManagementOverview(t, managementClient, "http://"+address+"/backoffice")
+					return
+				}
+				built, err := manager.Runtime(t.Context())
+				if err != nil || built == nil {
+					t.Fatalf("first provider use did not construct complete provider shell: %v", err)
 				}
 				snapshot, err := catalog.Store().Application()
 				if err != nil || len(snapshot.MCPServers) != len(selected)+1 {
@@ -326,7 +331,6 @@ func TestUnavailableMCPStartupKeepsBothProviderShellsAndManagementRunning(t *tes
 				if err != nil || len(captures) != 1 {
 					t.Fatal("startup captured OAuth without administrator action")
 				}
-				managementClient := verifyAuthenticatedMCPManagement(t, "http://"+address+"/backoffice")
 				verifyUnavailableInvocationKeepsRuntime(t, builder, manager, built, stateDir)
 				verifyMCPManagementOverview(t, managementClient, "http://"+address+"/backoffice")
 				// Release the deliberately stalled peer before owner shutdown so

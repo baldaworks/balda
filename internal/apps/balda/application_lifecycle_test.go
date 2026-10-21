@@ -121,6 +121,9 @@ func TestApplicationLifecycleStagesStartQuestionProjectorAfterTransport(t *testi
 	names := make([]string, 0, len(stages))
 	for _, stage := range stages {
 		names = append(names, stage.name)
+		if stage.name == "provider runtime" && stage.start != nil {
+			t.Fatal("provider runtime has an eager startup hook")
+		}
 	}
 
 	want := []string{
@@ -130,7 +133,6 @@ func TestApplicationLifecycleStagesStartQuestionProjectorAfterTransport(t *testi
 		"managed MCP credential readiness",
 		"MCP credential bridge",
 		"runtime contribution catalog",
-		"provider graph readiness",
 		"session-memory runtime",
 		"provider runtime",
 		"session manager",

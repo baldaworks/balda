@@ -10,15 +10,12 @@ import (
 	"time"
 
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
-	"github.com/baldaworks/balda/internal/apps/balda/providers"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/sessionmemory"
 	portableapp "github.com/baldaworks/balda/sessionmemory/app"
 	blevestore "github.com/baldaworks/balda/sessionmemory/index/bleve"
 	badgerstore "github.com/baldaworks/balda/sessionmemory/store/badger"
-	"github.com/baldaworks/runtime/v2/agentconfig"
-	"github.com/baldaworks/runtime/v2/agentfactory"
 )
 
 const (
@@ -151,76 +148,6 @@ func resolveSessionMemoryProviderID(cfg SessionMemoryConfig, chatProvider string
 		return providerID, nil
 	}
 	return "", fmt.Errorf("balda.session_memory.provider: provider is required when balda.provider is empty")
-}
-
-// validateSessionMemoryProviderConfig validates the selected provider without
-// starting an external model process. The runtime factory later applies that
-// provider's model and reasoning settings when the first derivation is run.
-func validateSessionMemoryProviderConfig(
-	cfg SessionMemoryConfig,
-	chatProvider string,
-	providers map[string]agentconfig.Config,
-	factory *agentfactory.Factory,
-) (string, error) {
-	providerID, err := resolveSessionMemoryProviderID(cfg, chatProvider)
-	if err != nil {
-		return "", err
-	}
-	if !cfg.Enabled {
-		return "", nil
-	}
-	providerCfg, ok := providers[providerID]
-	if !ok {
-		return "", fmt.Errorf("balda.session_memory.provider %q: provider is not configured", providerID)
-	}
-	if err := providerCfg.Validate(); err != nil {
-		return "", fmt.Errorf("balda.session_memory.provider %q: invalid provider configuration: %w", providerID, err)
-	}
-	if factory == nil {
-		return "", fmt.Errorf("balda.session_memory.provider %q: provider factory is required", providerID)
-	}
-	if err := factory.ValidateAgent(providerID); err != nil {
-		return "", fmt.Errorf("balda.session_memory.provider %q: provider is not buildable: %w", providerID, err)
-	}
-	return providerID, nil
-}
-
-// resolveSessionMemoryProviderForComposition validates configured providers
-// eagerly and defers unknown IDs to the managed provider store. This keeps
-// config-only validation independent from the database while preflight/start
-// still resolve the exact graph before ingress.
-func resolveSessionMemoryProviderForComposition(
-	cfg SessionMemoryConfig,
-	chatProvider string,
-	configured map[string]agentconfig.Config,
-	factory *agentfactory.Factory,
-) (string, error) {
-	providerID, err := resolveSessionMemoryProviderID(cfg, chatProvider)
-	if err != nil || !cfg.Enabled {
-		return providerID, err
-	}
-	if _, ok := configured[providerID]; !ok {
-		return providerID, nil
-	}
-	return validateSessionMemoryProviderConfig(cfg, chatProvider, configured, factory)
-}
-
-func resolveCurrentProviderGraphs(ctx context.Context, service *providers.Service, ids ...string) error {
-	seen := make(map[string]struct{}, len(ids))
-	for _, id := range ids {
-		id = strings.TrimSpace(id)
-		if id == "" {
-			continue
-		}
-		if _, ok := seen[id]; ok {
-			continue
-		}
-		seen[id] = struct{}{}
-		if _, err := service.CompileCurrent(ctx, id); err != nil {
-			return fmt.Errorf("resolve provider graph %q: %w", id, err)
-		}
-	}
-	return nil
 }
 
 func newSessionMemoryDeriver(cfg SessionMemoryConfig, builder sessionmemoryapp.DedicatedRuntimeBuilder, providerID, workingDir string) (*portableapp.Deriver, portableapp.StructuredInvoker, error) {

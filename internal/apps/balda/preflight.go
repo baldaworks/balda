@@ -43,8 +43,8 @@ import (
 	adksession "google.golang.org/adk/v2/session"
 )
 
-// PreflightRuntime validates Balda app wiring and verifies that the configured
-// provider runtime can be started and stopped without launching channel loops.
+// PreflightRuntime validates Balda app wiring and base runtime lifecycle without
+// resolving or launching the selected agent provider or channel loops.
 func PreflightRuntime(
 	ctx context.Context,
 	cfg Config,
@@ -148,12 +148,7 @@ func PreflightRuntime(
 		mcpServers[k] = v
 	}
 	mcpReg := mcpregistry.New(mcpServers)
-	sessionMemoryProviderID, err := resolveSessionMemoryProviderForComposition(
-		cfg.Balda.SessionMemory,
-		cfg.Balda.Provider,
-		normaCfg.Providers,
-		agentfactory.New(normaCfg.Providers, mcpReg, agentfactory.WithACPInitializeTimeout(acpStartupTimeout)),
-	)
+	sessionMemoryProviderID, err := resolveSessionMemoryProviderID(cfg.Balda.SessionMemory, cfg.Balda.Provider)
 	if err != nil {
 		return err
 	}
@@ -363,11 +358,8 @@ func PreflightRuntime(
 		questions.Module,
 		preflightScopeClassifiers(),
 		fx.Populate(&runtimeManager, &mcpManager),
-		fx.Invoke(func(lc fx.Lifecycle, manager *internalmcp.InternalMCPManager, runtimeManager *baldaagent.RuntimeManager, providerService *providers.Service, memoryRuntime *portableapp.Runtime) {
+		fx.Invoke(func(lc fx.Lifecycle, manager *internalmcp.InternalMCPManager, runtimeManager *baldaagent.RuntimeManager, memoryRuntime *portableapp.Runtime) {
 			lc.Append(fx.Hook{OnStart: func(ctx context.Context) error {
-				if err := resolveCurrentProviderGraphs(ctx, providerService, cfg.Balda.Provider, sessionMemoryProviderID); err != nil {
-					return err
-				}
 				if err := manager.EnsureStarted(ctx); err != nil {
 					_ = manager.Stop(context.Background())
 					return fmt.Errorf("start bundled internal MCP servers: %w", err)
@@ -375,11 +367,6 @@ func PreflightRuntime(
 				if err := startSessionMemoryRuntime(ctx, memoryRuntime); err != nil {
 					_ = manager.Stop(context.Background())
 					return fmt.Errorf("start session-memory runtime: %w", err)
-				}
-				if err := runtimeManager.EnsureRuntime(ctx); err != nil {
-					_ = closeSessionMemoryRuntime(context.Background(), memoryRuntime)
-					_ = manager.Stop(context.Background())
-					return fmt.Errorf("start Balda provider runtime: %w", err)
 				}
 				return nil
 			}, OnStop: func(ctx context.Context) error {
