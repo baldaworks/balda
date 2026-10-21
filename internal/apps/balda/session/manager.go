@@ -68,6 +68,10 @@ type RuntimeManager interface {
 	ProviderID() string
 }
 
+type providerAvailabilityChecker interface {
+	EnsureProviderAvailable(ctx context.Context) error
+}
+
 // SessionRuntimeManager is an optional composition-root extension. It gives
 // one session a provider runtime whose internal MCP capability is bound to
 // that session, while preserving RuntimeManager compatibility for tests and
@@ -394,6 +398,23 @@ func (m *Manager) createSessionLocked(ctx context.Context, sessionCtx SessionCon
 		return fmt.Errorf("session already exists for %s", locator.AddressKey)
 	}
 
+	runtimeManager := m.runtimeManager
+	if runtimeManager == nil {
+		return fmt.Errorf("balda runtime manager is required")
+	}
+	if checker, ok := runtimeManager.(providerAvailabilityChecker); ok {
+		if err := checker.EnsureProviderAvailable(ctx); err != nil {
+			return err
+		}
+	}
+	rootRuntime, err := runtimeManager.Runtime(ctx)
+	if err != nil {
+		return err
+	}
+	if err := m.lifecycleInterruption(ctx); err != nil {
+		return err
+	}
+
 	branchName, workspaceDir, startupNotice, workspaceCreated, err := m.prepareSessionWorkspace(ctx, sessionID, persisted)
 	if err != nil {
 		return err
@@ -409,21 +430,6 @@ func (m *Manager) createSessionLocked(ctx context.Context, sessionCtx SessionCon
 		if cleanupWorkspace {
 			_ = m.workspaces.CleanupWorkspace(ctx, workspaceDir)
 		}
-	}
-
-	runtimeManager := m.runtimeManager
-	if runtimeManager == nil {
-		cleanupPreparedWorkspace()
-		return fmt.Errorf("balda runtime manager is required")
-	}
-	rootRuntime, err := runtimeManager.Runtime(ctx)
-	if err != nil {
-		cleanupPreparedWorkspace()
-		return err
-	}
-	if err := m.lifecycleInterruption(ctx); err != nil {
-		cleanupPreparedWorkspace()
-		return err
 	}
 	baldaProvider := strings.TrimSpace(runtimeManager.ProviderID())
 	if baldaProvider == "" {

@@ -3,11 +3,13 @@ package chatapp
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/actorcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/agentcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
@@ -264,6 +266,42 @@ func TestService_HandleChat_SessionPreparationFailure(t *testing.T) {
 	}
 	if res.Activated {
 		t.Fatal("expected Activated = false")
+	}
+}
+
+func TestServiceProviderUnavailableSettlesWithBoundedPlainDelivery(t *testing.T) {
+	t.Parallel()
+
+	dispatcher := &recordingDispatcher{receipt: &actortransport.DispatchReceipt{MsgID: "notice-1"}}
+	archive := &archiveRecorder{}
+	sessions := &stubSessionPreparer{err: errors.Join(agentcmd.ErrProviderUnavailable, errors.New("secret managed provider failure"))}
+	service, err := NewService(ServiceParams{Archive: archive, Sessions: sessions, Dispatcher: dispatcher, Logger: zerolog.Nop()})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := service.HandleChat(t.Context(), testRequest("in-providerless", "hello"))
+	if err != nil {
+		t.Fatalf("HandleChat() error = %v", err)
+	}
+	if result.Activated || result.Settlement.Outcome != turncmd.InboundTerminal || result.Settlement.Reason != ReasonProviderUnavailable {
+		t.Fatalf("result = %+v, want terminal provider unavailable", result)
+	}
+	if archive.id != "" {
+		t.Fatalf("archive recorded session %q before provider rejection", archive.id)
+	}
+	if len(dispatcher.envelopes) != 1 {
+		t.Fatalf("envelopes = %d, want one delivery", len(dispatcher.envelopes))
+	}
+	var delivery deliverycmd.Payload
+	if err := actorlayer.UnmarshalPayload(dispatcher.envelopes[0].Payload, &delivery); err != nil {
+		t.Fatal(err)
+	}
+	if delivery.Mode != deliverycmd.ModePlain || delivery.Text != agentcmd.ProviderUnavailableMessage || strings.Contains(delivery.Text, "secret") {
+		t.Fatalf("delivery = %+v, want bounded plain unavailable response", delivery)
+	}
+	if dispatcher.envelopes[0].DedupeKey != "in-providerless:provider-unavailable" {
+		t.Fatalf("dedupe key = %q", dispatcher.envelopes[0].DedupeKey)
 	}
 }
 

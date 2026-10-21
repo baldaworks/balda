@@ -3,10 +3,12 @@ package ingressapp
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"strings"
 
+	"github.com/baldaworks/balda/internal/apps/balda/agentcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/baldaworks/go-actorlayer"
@@ -15,12 +17,13 @@ import (
 )
 
 const (
-	ReasonAccepted        = "accepted"
-	ReasonInvalidInbound  = "invalid_inbound"
-	ReasonEmptyInbound    = "empty_inbound"
-	ReasonUnauthorized    = "unauthorized"
-	ReasonSessionRejected = "session_rejected"
-	ReasonDispatchFailed  = "dispatch_failed"
+	ReasonAccepted            = "accepted"
+	ReasonInvalidInbound      = "invalid_inbound"
+	ReasonEmptyInbound        = "empty_inbound"
+	ReasonUnauthorized        = "unauthorized"
+	ReasonSessionRejected     = "session_rejected"
+	ReasonProviderUnavailable = "provider_unavailable"
+	ReasonDispatchFailed      = "dispatch_failed"
 )
 
 // Authorization is the provider-neutral result of an access check.
@@ -202,6 +205,10 @@ func (s *Service) Process(ctx context.Context, inbound turncmd.NormalizedInbound
 
 	preparation, err := s.sessions.Prepare(ctx, portContext)
 	if err != nil {
+		if errors.Is(err, agentcmd.ErrProviderUnavailable) {
+			s.sendProviderUnavailable(ctx, inbound, err)
+			return s.finish(logContext, terminalResult(result, ReasonProviderUnavailable), ReasonProviderUnavailable, nil)
+		}
 		settled, resultErr := errorResult(result, ReasonSessionRejected, err)
 		return s.finish(logContext, settled, ReasonSessionRejected, resultErr)
 	}
@@ -261,6 +268,21 @@ func (s *Service) Process(ctx context.Context, inbound turncmd.NormalizedInbound
 		Reason:  ReasonAccepted,
 	}
 	return s.finish(logContext, result, ReasonAccepted, nil)
+}
+
+func (s *Service) sendProviderUnavailable(ctx context.Context, inbound turncmd.NormalizedInbound, cause error) {
+	env, err := agentcmd.ProviderUnavailableEnvelope(string(inbound.ID), inbound.Locator)
+	if err != nil {
+		s.logger.Error().Err(err).Msg("failed to build provider unavailable delivery")
+		return
+	}
+	if _, err := s.dispatcher.Dispatch(ctx, env); err != nil {
+		s.logger.Warn().Err(err).Msg("failed to dispatch provider unavailable delivery")
+	}
+	s.logger.Warn().Err(cause).
+		Str("transport", strings.TrimSpace(inbound.Locator.ChannelType)).
+		Str("session_id", strings.TrimSpace(inbound.Locator.SessionID)).
+		Msg("agent provider unavailable for conversational request")
 }
 
 func (s *Service) finish(inbound InboundContext, result Result, stage string, resultErr error) (Result, error) {

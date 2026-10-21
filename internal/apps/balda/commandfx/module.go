@@ -75,6 +75,7 @@ type goalkeeperParams struct {
 	fx.In
 	Control       *controlapp.CommandDispatcher
 	GoalJobs      *jobs.JobLifecycleService `optional:"true"`
+	Runtime       *baldaagent.RuntimeManager
 	Dispatcher    actortransport.Dispatcher
 	MaxIterations int `name:"balda_goal_max_iterations" optional:"true"`
 	Logger        zerolog.Logger
@@ -211,7 +212,7 @@ var Module = fx.Module("balda_command",
 				if p.GoalJobs != nil {
 					checker = p.GoalJobs
 				}
-				return commandgoalkeeper.New(p.Control, checker, p.Dispatcher, p.MaxIterations, p.Logger)
+				return commandgoalkeeper.New(p.Control, checker, p.Runtime, p.Dispatcher, p.MaxIterations, p.Logger)
 			},
 			fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`),
 		),

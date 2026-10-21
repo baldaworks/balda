@@ -2,11 +2,13 @@ package chatapp
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"strings"
 
 	"github.com/baldaworks/balda/internal/apps/balda/actorcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/agentcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/baldaworks/go-actorlayer"
 	"github.com/rs/zerolog"
@@ -103,6 +105,10 @@ func (s *Service) HandleChat(ctx context.Context, request Request) (Result, erro
 
 	prep, err := s.sessions.Prepare(ctx, logContext)
 	if err != nil {
+		if errors.Is(err, agentcmd.ErrProviderUnavailable) {
+			s.sendProviderUnavailable(ctx, request, err)
+			return s.finish(logContext, terminalResult(ReasonProviderUnavailable), ReasonProviderUnavailable, nil)
+		}
 		settled, resultErr := errorResult(ReasonSessionRejected, err)
 		return s.finish(logContext, settled, ReasonSessionRejected, resultErr)
 	}
@@ -172,6 +178,21 @@ func (s *Service) HandleChat(ctx context.Context, request Request) (Result, erro
 		Activated: true,
 	}
 	return s.finish(logContext, res, ReasonAccepted, nil)
+}
+
+func (s *Service) sendProviderUnavailable(ctx context.Context, request Request, cause error) {
+	env, err := agentcmd.ProviderUnavailableEnvelope(string(request.ID), request.Locator)
+	if err != nil {
+		s.logger.Error().Err(err).Msg("failed to build provider unavailable delivery")
+		return
+	}
+	if _, err := s.dispatcher.Dispatch(ctx, env); err != nil {
+		s.logger.Warn().Err(err).Msg("failed to dispatch provider unavailable delivery")
+	}
+	s.logger.Warn().Err(cause).
+		Str("transport", strings.TrimSpace(request.Locator.ChannelType)).
+		Str("session_id", strings.TrimSpace(request.Locator.SessionID)).
+		Msg("agent provider unavailable for conversational request")
 }
 
 func (s *Service) handleQuestionReply(ctx context.Context, request Request) (bool, bool, error) {

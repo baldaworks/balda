@@ -127,6 +127,7 @@ components:
     in:
       - internal/apps/balda/attachment
       - internal/apps/balda/actorcmd
+      - internal/apps/balda/agentcmd
       - internal/apps/balda/authcmd
       - internal/apps/balda/automodecmd
       - internal/apps/balda/controlcmd
