@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/baldaworks/balda/internal/apps/balda/actors/command/goalkeeper"
+	"github.com/baldaworks/balda/internal/apps/balda/agentcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
@@ -53,6 +54,16 @@ type mockChecker struct {
 	calls  int
 }
 
+type mockProvider struct {
+	err   error
+	calls int
+}
+
+func (m *mockProvider) EnsureProviderAvailable(context.Context) error {
+	m.calls++
+	return m.err
+}
+
 func (m *mockChecker) HasActiveGoalJob(_ context.Context, _ string) (bool, error) {
 	m.calls++
 	return m.active, m.err
@@ -60,7 +71,7 @@ func (m *mockChecker) HasActiveGoalJob(_ context.Context, _ string) (bool, error
 
 func TestGoalkeeperHandlerAccessDenied(t *testing.T) {
 	d := &mockDispatcher{}
-	h := goalkeeper.New(nil, nil, d, 20, zerolog.Nop())
+	h := goalkeeper.New(nil, nil, &mockProvider{}, d, 20, zerolog.Nop())
 
 	payload := commandcmd.Payload{
 		Name:    "goalkeeper",
@@ -85,7 +96,7 @@ func TestGoalkeeperHandlerAccessDenied(t *testing.T) {
 
 func TestGoalkeeperHandlerUsageOnEmptyArgs(t *testing.T) {
 	d := &mockDispatcher{}
-	h := goalkeeper.New(nil, nil, d, 20, zerolog.Nop())
+	h := goalkeeper.New(nil, nil, &mockProvider{}, d, 20, zerolog.Nop())
 
 	payload := commandcmd.Payload{
 		Name:    "goalkeeper",
@@ -112,7 +123,7 @@ func TestGoalkeeperHandlerUsageOnEmptyArgs(t *testing.T) {
 func TestGoalkeeperHandlerClearSuccess(t *testing.T) {
 	d := &mockDispatcher{}
 	c := &mockClearer{}
-	h := goalkeeper.New(c, nil, d, 20, zerolog.Nop())
+	h := goalkeeper.New(c, nil, &mockProvider{}, d, 20, zerolog.Nop())
 
 	targetLocator := deliverycmd.Locator{ChannelType: "telegram", AddressKey: "chat-1:topic-2", SessionID: "s-123"}
 	payload := commandcmd.Payload{
@@ -147,7 +158,7 @@ func TestGoalkeeperHandlerClearSuccess(t *testing.T) {
 func TestGoalkeeperHandlerClearError(t *testing.T) {
 	d := &mockDispatcher{}
 	c := &mockClearer{err: errors.New("cannot clear")}
-	h := goalkeeper.New(c, nil, d, 20, zerolog.Nop())
+	h := goalkeeper.New(c, nil, &mockProvider{}, d, 20, zerolog.Nop())
 
 	payload := commandcmd.Payload{
 		Name:      "goalkeeper",
@@ -175,7 +186,7 @@ func TestGoalkeeperHandlerClearError(t *testing.T) {
 func TestGoalkeeperHandlerStartAlreadyActive(t *testing.T) {
 	d := &mockDispatcher{}
 	chk := &mockChecker{active: true}
-	h := goalkeeper.New(nil, chk, d, 20, zerolog.Nop())
+	h := goalkeeper.New(nil, chk, &mockProvider{}, d, 20, zerolog.Nop())
 
 	payload := commandcmd.Payload{
 		Name:    "goalkeeper",
@@ -205,7 +216,7 @@ func TestGoalkeeperHandlerStartAlreadyActive(t *testing.T) {
 func TestGoalkeeperHandlerStartSuccess(t *testing.T) {
 	d := &mockDispatcher{}
 	chk := &mockChecker{active: false}
-	h := goalkeeper.New(nil, chk, d, 15, zerolog.Nop())
+	h := goalkeeper.New(nil, chk, &mockProvider{}, d, 15, zerolog.Nop())
 
 	targetLocator := deliverycmd.Locator{ChannelType: "telegram", AddressKey: "chat-10:topic-5", SessionID: "s-456"}
 	payload := commandcmd.Payload{
@@ -253,6 +264,40 @@ func TestGoalkeeperHandlerStartSuccess(t *testing.T) {
 	}
 }
 
+func TestGoalkeeperHandlerRejectsUnavailableProviderBeforeJobAdmission(t *testing.T) {
+	d := &mockDispatcher{}
+	chk := &mockChecker{}
+	provider := &mockProvider{err: errors.Join(agentcmd.ErrProviderUnavailable, errors.New("secret provider detail"))}
+	h := goalkeeper.New(nil, chk, provider, d, 15, zerolog.Nop())
+
+	payload := commandcmd.Payload{
+		Name:      "goalkeeper",
+		Args:      "build feature X",
+		Locator:   deliverycmd.Locator{ChannelType: "telegram", AddressKey: "chat-10:0", SessionID: "s-456"},
+		Principal: "telegram:user:88",
+		Access:    commandcmd.Access{Owner: true},
+	}
+	if err := h.Handle(t.Context(), actorlayer.Envelope{ID: "env-providerless"}, payload); err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if provider.calls != 1 {
+		t.Fatalf("provider calls = %d, want 1", provider.calls)
+	}
+	if chk.calls != 0 {
+		t.Fatalf("active goal checks = %d, want 0 before admission", chk.calls)
+	}
+	if len(d.dispatched) != 1 {
+		t.Fatalf("dispatched count = %d, want one bounded reply", len(d.dispatched))
+	}
+	var delivery deliverycmd.Payload
+	if err := actorlayer.UnmarshalPayload(d.dispatched[0].Payload, &delivery); err != nil {
+		t.Fatal(err)
+	}
+	if delivery.Text != agentcmd.ProviderUnavailableMessage || strings.Contains(delivery.Text, "secret") {
+		t.Fatalf("delivery text = %q, want bounded provider unavailable message", delivery.Text)
+	}
+}
+
 func TestGoalkeeperHandlerStartCrossTransportProvenance(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -284,7 +329,7 @@ func TestGoalkeeperHandlerStartCrossTransportProvenance(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			d := &mockDispatcher{}
 			chk := &mockChecker{active: false}
-			h := goalkeeper.New(nil, chk, d, 10, zerolog.Nop())
+			h := goalkeeper.New(nil, chk, &mockProvider{}, d, 10, zerolog.Nop())
 
 			payload := commandcmd.Payload{
 				Name:         "goalkeeper",
@@ -316,7 +361,7 @@ func TestGoalkeeperHandlerStartCrossTransportProvenance(t *testing.T) {
 func TestGoalkeeperHandlerStartInvalidProvenanceFails(t *testing.T) {
 	d := &mockDispatcher{}
 	chk := &mockChecker{active: false}
-	h := goalkeeper.New(nil, chk, d, 10, zerolog.Nop())
+	h := goalkeeper.New(nil, chk, &mockProvider{}, d, 10, zerolog.Nop())
 
 	payload := commandcmd.Payload{
 		Name:         "goalkeeper",

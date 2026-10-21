@@ -12,7 +12,19 @@ Status: active
   capability pins, conversation events and all later user/provider instructions.
   SQLite repair inspects the runtime schema first and preserves older placeholder
   tables that have no persisted ACP state.
-- Startup order stays strict: config -> bundled MCP -> runtime contribution catalog reconstruction -> provider runtime -> session/mailbox and durable actor infrastructure -> scheduler -> checked shared HTTP listener -> enabled Telegram/Zulip/Slackagent ingress. Shutdown runs these stages in reverse.
+- Startup order stays strict: config -> bundled MCP -> runtime contribution catalog reconstruction -> session/mailbox and durable actor infrastructure -> scheduler -> checked shared HTTP listener -> enabled channel transports -> best-effort readiness notification. The selected agent provider is resolved and built only by the first provider-backed operation. Shutdown runs started lifecycle stages in reverse.
+- Base startup is provider-independent. An empty selection or an unusable
+  Backoffice-managed selection does not prevent Backoffice, channel delivery,
+  bindings, provider repair, or other non-agent surfaces from becoming ready.
+  Agent turns and GoalKeeper resolve provider availability before durable
+  session/job mutation, return a bounded fixed unavailable result on failure,
+  and never invent a fallback provider.
+- After enabled transports start, `startupnotifyapp` selects confirmed bindings
+  of the active primary administrator and asks each channel adapter for a DM
+  locator. It sends one readiness message per eligible binding in deterministic
+  order. Resolution and delivery are best-effort per binding, log only bounded
+  identity/outcome metadata, and neither create an agent session nor resolve a
+  provider.
 - The shared HTTP listener binds `balda.http.listen_addr` once after Backoffice, generic webhook, and enabled gateway handlers are prepared. `httpfx` reserves `<base_path>/backoffice`, `<base_path>/webhooks`, and `<base_path>/gateway`, rejects conflicting handler registrations before binding, and forwards each request to its owning handler without replacing browser, webhook, or transport authorization. Transport callbacks use canonical `/gateway` paths. Every generic webhook, whether configured or managed, uses its immutable name as the slug at `<base_path>/webhooks/<name>`; route definitions store no path. `webhookapp` selects by canonical slug and rejects unknown, disabled or archived names before admission. Changing the shared prefix moves every generic callback address after restart without changing its durable identity, secret verifier or history.
 - Scheduler startup reconciles only config-owned recurring definitions; managed definitions survive restart. A source ID collision fails startup. Due and manual runs have separate durable keys and preserve their exact definition snapshots; manual runs do not advance the cron cursor.
 - Global explicit fact memory has one process-shared Store for UI, MCP and actor
@@ -45,8 +57,8 @@ Status: active
 - Balda owns the app-scoped ACP startup budget through
   `balda.acp_startup_timeout` / `BALDA_ACP_STARTUP_TIMEOUT`, default `60s`.
   Configuration validation precedes provider, bundled MCP, and ingress side
-  effects; the resolved positive duration reaches direct, scoped, goal, and
-  preflight factories. This budget covers gate waiting, process launch, and
+  effects; the resolved positive duration reaches direct, scoped, and goal
+  runtime factories. This budget covers gate waiting, process launch, and
   ACP `initialize`, with earlier caller deadlines, cancellation, and shutdown
   winning. Launch remains invocation-lazy, including after metadata-only
   restore. A successfully initialized process survives the startup deadline

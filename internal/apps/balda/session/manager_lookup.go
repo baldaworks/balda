@@ -147,13 +147,18 @@ func (m *Manager) prepareSessionLocked(ctx context.Context, sessionCtx SessionCo
 		return nil, err
 	}
 	sessionCtx = resolvedCtx
-	if err := m.reconcileArchiveDestruction(ctx, sessionCtx.Locator, sessionCtx.UserID); err != nil {
-		return nil, err
-	}
 	sessionID := strings.TrimSpace(sessionCtx.Locator.SessionID)
 	m.mu.RLock()
 	active := m.sessions[sessionID]
 	m.mu.RUnlock()
+	if active != nil {
+		if err := m.reconcileArchiveDestruction(ctx, sessionCtx.Locator, sessionCtx.UserID); err != nil {
+			return nil, err
+		}
+		m.mu.RLock()
+		active = m.sessions[sessionID]
+		m.mu.RUnlock()
+	}
 	if active != nil {
 		if active.kind != sessionCtx.Kind || active.ownerJobID != strings.TrimSpace(sessionCtx.OwnerJobID) {
 			return nil, fmt.Errorf("active session execution context does not match requested kind and owner")

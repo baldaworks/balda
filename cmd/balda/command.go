@@ -135,8 +135,8 @@ func validateCommand() *cobra.Command {
 func preflightCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           "preflight",
-		Short:         "Validate Balda configuration and provider runtime readiness",
-		Long:          "Load Balda configuration, validate app wiring, start the configured provider runtime, and stop it cleanly.",
+		Short:         "Validate Balda configuration and base runtime readiness",
+		Long:          "Load Balda configuration, validate app wiring, and start and stop the base runtime without launching an agent provider.",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -160,8 +160,8 @@ func preflightCommand() *cobra.Command {
 func doctorCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           "doctor",
-		Short:         "Run full Balda operator checks",
-		Long:          "Load Balda configuration, validate app wiring, preflight the configured provider runtime, and report overall readiness.",
+		Short:         "Check Balda base-service readiness",
+		Long:          "Load Balda configuration, validate app wiring, and preflight the base runtime without resolving or launching the selected agent provider.",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, _ []string) error {

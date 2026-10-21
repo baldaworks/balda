@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/baldaworks/balda/internal/apps/balda/agentcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/providers"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
@@ -23,6 +24,11 @@ import (
 	adksession "google.golang.org/adk/v2/session"
 	"google.golang.org/genai"
 )
+
+// ErrProviderUnavailable identifies provider-dependent work that cannot run
+// with the current provider selection. Callers should present a bounded error
+// and leave the base application running.
+var ErrProviderUnavailable = agentcmd.ErrProviderUnavailable
 
 // SessionRuntimeRequest identifies the authenticated session that owns a
 // scoped provider runtime and its internal MCP capability.
@@ -221,6 +227,25 @@ func (m *RuntimeManager) ProviderID() string {
 
 // EnsureRuntime initializes the runtime if it has not been created yet.
 func (m *RuntimeManager) EnsureRuntime(ctx context.Context) error {
+	return m.EnsureProviderAvailable(ctx)
+}
+
+// EnsureProviderAvailable validates the current managed-provider graph before
+// reusing or lazily building the provider runtime.
+func (m *RuntimeManager) EnsureProviderAvailable(ctx context.Context) error {
+	m.mu.RLock()
+	builder := m.builder
+	providerID := strings.TrimSpace(m.providerID)
+	m.mu.RUnlock()
+	if builder == nil {
+		return fmt.Errorf("agent builder is required")
+	}
+	if providerID == "" {
+		return fmt.Errorf("%w: balda provider is not configured", ErrProviderUnavailable)
+	}
+	if _, _, _, err := m.resolveProviderGraph(ctx, builder, providerID, ""); err != nil {
+		return providerUnavailableError(err)
+	}
 	_, err := m.Runtime(ctx)
 	return err
 }
@@ -244,11 +269,11 @@ func (m *RuntimeManager) Runtime(ctx context.Context) (*BuiltRuntime, error) {
 		return nil, fmt.Errorf("agent builder is required")
 	}
 	if providerID == "" {
-		return nil, fmt.Errorf("balda provider is not configured")
+		return nil, fmt.Errorf("%w: balda provider is not configured", ErrProviderUnavailable)
 	}
 	builder, providerID, providerBindingJSON, err := m.resolveProviderGraph(ctx, builder, providerID, "")
 	if err != nil {
-		return nil, err
+		return nil, providerUnavailableError(err)
 	}
 	var capabilities SessionCapabilityBinding
 	if binder != nil {
@@ -284,7 +309,7 @@ func (m *RuntimeManager) Runtime(ctx context.Context) (*BuiltRuntime, error) {
 	if err != nil {
 		closeSessionCapabilities(capabilities)
 		m.logger.Error().Err(err).Str("agent", providerID).Msg("failed to build balda provider runtime")
-		return nil, err
+		return nil, providerUnavailableError(err)
 	}
 	var once sync.Once
 	runtime.Close = func() error {
@@ -334,7 +359,7 @@ func (m *RuntimeManager) RuntimeForSession(ctx context.Context, request SessionR
 	m.mu.RUnlock()
 	builder, providerID, providerBindingJSON, err := m.resolveProviderGraph(ctx, builder, providerID, request.ProviderBindingJSON)
 	if err != nil {
-		return nil, err
+		return nil, providerUnavailableError(err)
 	}
 	if binder == nil {
 		return nil, fmt.Errorf("session capability binder is required")
@@ -393,13 +418,13 @@ func (m *RuntimeManager) runtimeForSession(ctx context.Context, request SessionR
 	}
 	if providerID == "" {
 		closeSessionCapabilities(capabilities)
-		return nil, fmt.Errorf("balda provider is not configured")
+		return nil, fmt.Errorf("%w: balda provider is not configured", ErrProviderUnavailable)
 	}
 	var err error
 	builder, err = builder.withProviderMCP(capabilities.ProviderMCPServerIDs)
 	if err != nil {
 		closeSessionCapabilities(capabilities)
-		return nil, err
+		return nil, providerUnavailableError(err)
 	}
 	if capabilities.ProviderMCPServerIDs != nil {
 		// Host defaults have already been resolved to this exact snapshot.
@@ -445,7 +470,7 @@ func (m *RuntimeManager) runtimeForSession(ctx context.Context, request SessionR
 			_ = binding.Release()
 		}
 		closeSessionCapabilities(capabilities)
-		return nil, err
+		return nil, providerUnavailableError(err)
 	}
 	m.mu.Lock()
 	m.scopedSequence++
@@ -535,6 +560,13 @@ func (m *RuntimeManager) resolveProviderGraph(ctx context.Context, builder *Buil
 	return boundBuilder, compiled.Binding.RootProviderID, string(encoded), nil
 }
 
+func providerUnavailableError(err error) error {
+	if err == nil || errors.Is(err, ErrProviderUnavailable) {
+		return err
+	}
+	return fmt.Errorf("%w: %w", ErrProviderUnavailable, err)
+}
+
 // BuildDedicatedRuntime resolves the current graph for an isolated internal provider.
 func (m *RuntimeManager) BuildDedicatedRuntime(ctx context.Context, providerID, workspaceDir, instruction string) (*BuiltRuntime, error) {
 	m.mu.RLock()
@@ -542,9 +574,13 @@ func (m *RuntimeManager) BuildDedicatedRuntime(ctx context.Context, providerID, 
 	m.mu.RUnlock()
 	bound, resolvedID, _, err := m.resolveProviderGraph(ctx, builder, providerID, "")
 	if err != nil {
-		return nil, err
+		return nil, providerUnavailableError(err)
 	}
-	return bound.BuildDedicatedRuntime(ctx, resolvedID, workspaceDir, instruction)
+	runtime, err := bound.BuildDedicatedRuntime(ctx, resolvedID, workspaceDir, instruction)
+	if err != nil {
+		return nil, providerUnavailableError(err)
+	}
+	return runtime, nil
 }
 
 // runtimeLifecycleContext preserves request values without tying an owned
@@ -793,7 +829,7 @@ func (m *RuntimeManager) childRuntimeBase(ctx context.Context, sourceSessionID s
 		return childRuntimeBase{}, fmt.Errorf("agent builder is required")
 	}
 	if base.providerID == "" {
-		return childRuntimeBase{}, fmt.Errorf("balda provider is not configured")
+		return childRuntimeBase{}, fmt.Errorf("%w: balda provider is not configured", ErrProviderUnavailable)
 	}
 	return base, nil
 }

@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/baldaworks/balda/internal/apps/balda/agentcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/rs/zerolog"
 	adksession "google.golang.org/adk/v2/session"
@@ -38,6 +40,103 @@ func TestCreateSessionRejectsServiceKindWithoutOwnerBeforeRuntime(t *testing.T) 
 	if builder.freshRuntimeSessionCalls != 0 {
 		t.Fatal("created runtime after rejecting execution context")
 	}
+}
+
+func TestEnsureSessionRejectsUnavailableProviderBeforeDurableMutation(t *testing.T) {
+	t.Parallel()
+
+	runtimeManager := &fakeAvailabilityRuntimeManager{
+		fakeBaldaRuntimeManager: fakeBaldaRuntimeManager{runtime: &BuiltRuntime{}},
+		availabilityErr:         errors.Join(agentcmd.ErrProviderUnavailable, errors.New("managed provider invalid")),
+	}
+	workspaces := &mutationRecordingWorkspace{}
+	archive := &mutationRecordingArchive{}
+	store := &fakeSessionStore{}
+	manager := &Manager{
+		archive:          archive,
+		agentBuilder:     &fakeAgentBuilder{},
+		runtimeManager:   runtimeManager,
+		workingDir:       t.TempDir(),
+		workspaces:       workspaces,
+		workspaceEnabled: true,
+		sessionStore:     store,
+		logger:           zerolog.Nop(),
+		sessions:         make(map[string]*TopicSession),
+	}
+
+	_, err := manager.EnsureSession(t.Context(), SessionContext{
+		Locator: testTelegramLocator(10, 0),
+		UserID:  ensureTestUserID,
+	}, "balda")
+	if !errors.Is(err, agentcmd.ErrProviderUnavailable) {
+		t.Fatalf("EnsureSession() error = %v, want provider unavailable", err)
+	}
+	if runtimeManager.availabilityCalls != 1 || runtimeManager.runtimeCalls != 0 {
+		t.Fatalf("availability/runtime calls = %d/%d, want 1/0", runtimeManager.availabilityCalls, runtimeManager.runtimeCalls)
+	}
+	if workspaces.mutations != 0 || archive.mutations != 0 || len(store.upsertedRecords) != 0 || len(manager.sessions) != 0 {
+		t.Fatalf("mutations: workspace=%d archive=%d records=%d sessions=%d", workspaces.mutations, archive.mutations, len(store.upsertedRecords), len(manager.sessions))
+	}
+}
+
+type fakeAvailabilityRuntimeManager struct {
+	fakeBaldaRuntimeManager
+	availabilityErr   error
+	availabilityCalls int
+}
+
+func (m *fakeAvailabilityRuntimeManager) EnsureProviderAvailable(context.Context) error {
+	m.availabilityCalls++
+	return m.availabilityErr
+}
+
+type mutationRecordingWorkspace struct{ mutations int }
+
+func (m *mutationRecordingWorkspace) CanonicalWorkspaceDir(string) string { return "workspace" }
+func (m *mutationRecordingWorkspace) ForceRemountCanonicalWorkspace(context.Context, string, string) (EnsureWorkspaceResult, error) {
+	m.mutations++
+	return EnsureWorkspaceResult{}, nil
+}
+func (m *mutationRecordingWorkspace) EnsureWorkspace(context.Context, string, string, string) (EnsureWorkspaceResult, error) {
+	m.mutations++
+	return EnsureWorkspaceResult{}, nil
+}
+func (m *mutationRecordingWorkspace) Import(context.Context, string) error { m.mutations++; return nil }
+func (m *mutationRecordingWorkspace) Export(context.Context, string, string, string) error {
+	m.mutations++
+	return nil
+}
+func (m *mutationRecordingWorkspace) CleanupWorkspace(context.Context, string) error {
+	m.mutations++
+	return nil
+}
+func (m *mutationRecordingWorkspace) DeleteBranch(context.Context, string) error {
+	m.mutations++
+	return nil
+}
+
+type mutationRecordingArchive struct{ mutations int }
+
+func (*mutationRecordingArchive) ReconcileMemory(context.Context, string) error { return nil }
+func (a *mutationRecordingArchive) Begin(context.Context, chatarchivecmd.Intent) (chatarchivecmd.Intent, error) {
+	a.mutations++
+	return chatarchivecmd.Intent{}, nil
+}
+func (a *mutationRecordingArchive) Activate(context.Context, string, *baldastate.SessionRecord) (chatarchivecmd.Session, error) {
+	a.mutations++
+	return chatarchivecmd.Session{}, nil
+}
+func (a *mutationRecordingArchive) Complete(context.Context, string, string) error {
+	a.mutations++
+	return nil
+}
+func (a *mutationRecordingArchive) Pending(context.Context, string, string) (chatarchivecmd.Intent, error) {
+	a.mutations++
+	return chatarchivecmd.Intent{}, chatarchivecmd.ErrNotFound
+}
+func (a *mutationRecordingArchive) Get(context.Context, string) (chatarchivecmd.Session, error) {
+	a.mutations++
+	return chatarchivecmd.Session{}, chatarchivecmd.ErrNotFound
 }
 
 func TestEnsureSessionRestoresSQLiteHistoryAfterRestart(t *testing.T) {

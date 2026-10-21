@@ -63,6 +63,14 @@ non-terminal stdin can provide an operator-chosen password.
 `balda start` applies embedded schema and data migrations and refuses bot ingress
 or Backoffice HTTP until canonical users and administrator credentials are ready.
 
+An agent provider is optional for base startup. With no `balda.provider`, or
+while a selected Backoffice-managed provider is disabled or unusable, Balda
+still starts Backoffice and configured integrations so the administrator can
+manage accounts, bindings, and providers. The first chat turn, GoalKeeper run,
+or other agent-backed operation resolves the provider lazily. If none is
+available, that operation receives a bounded unavailable response and creates
+no partial agent session or job.
+
 Owner onboarding is completed in a direct message with the bot by opening the
 printed auth link or sending:
 
@@ -77,6 +85,14 @@ existing user, preserving its role and primary status; no owner bootstrap token
 is required. A token is scoped to the configured bot, expires after 24 hours and
 is consumed atomically with the binding and audit. Replace or cancel a pending
 invitation in Backoffice instead of reusing a lost or already consumed token.
+
+On every successful process start, Balda sends `Boss, I'm online and ready to
+work.` once to each confirmed direct-message binding of the active `superuser`
+across enabled Telegram, Zulip, Slack, and Mattermost integrations. Delivery is
+best-effort per integration: one failed DM does not block the others or fail
+startup. The notification does not create or restore an agent session and does
+not require an agent provider. A binding completed after startup is eligible on
+the next start; Balda does not replay the earlier notification.
 
 After owner auth, users can send normal direct messages to the bot's main DM
 session or create a named topic session:

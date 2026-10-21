@@ -85,6 +85,11 @@ To connect Zulip to an owner that was already registered in another channel,
 send the generated `balda_...` channel token in a DM, or send
 `/start <balda_token>`.
 
+On later process starts, an enabled Zulip integration sends the readiness
+message to the confirmed `superuser` Zulip DM together with readiness messages
+for that user's other enabled integrations. Delivery is best-effort and does
+not create an agent session or require an agent provider.
+
 ## Streams and Topics
 
 Balda maps each stream+topic pair to its own session:

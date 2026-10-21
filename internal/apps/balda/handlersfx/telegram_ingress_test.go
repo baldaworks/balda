@@ -642,6 +642,7 @@ func TestTelegramInboundHandler_HandleForumTopic_ClosedPublishesCancel(t *testin
 
 func TestTelegramInboundHandler_OnBotStarted_RestoresPersistedOwner(t *testing.T) {
 	h := newTestHarness(t)
+	openCalls, freshCalls := h.agentBuilder.openCalls, h.agentBuilder.freshCalls
 
 	if err := h.handler.OnBotStarted(context.Background(), 4242, "testbot"); err != nil {
 		t.Fatalf("OnBotStarted() error = %v", err)
@@ -650,6 +651,14 @@ func TestTelegramInboundHandler_OnBotStarted_RestoresPersistedOwner(t *testing.T
 	ownerID, chatID := h.handler.getOwnerBinding()
 	if ownerID != 101 || chatID != 9001 {
 		t.Fatalf("owner binding = (%d, %d), want (101, 9001)", ownerID, chatID)
+	}
+	if h.agentBuilder.openCalls != openCalls || h.agentBuilder.freshCalls != freshCalls {
+		t.Fatalf("OnBotStarted() prepared a session: open %d -> %d, fresh %d -> %d", openCalls, h.agentBuilder.openCalls, freshCalls, h.agentBuilder.freshCalls)
+	}
+	h.dispatcher.commandsMu.Lock()
+	defer h.dispatcher.commandsMu.Unlock()
+	if len(h.dispatcher.commands) != 0 {
+		t.Fatalf("OnBotStarted() dispatched %d commands, want 0", len(h.dispatcher.commands))
 	}
 }
 

@@ -49,6 +49,53 @@ func TestAPIBaseURLIncludesVersionPrefix(t *testing.T) {
 	}
 }
 
+func TestGetDirectChannelUsesExactContract(t *testing.T) {
+	t.Parallel()
+	client := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got, want := r.URL.Path, "/api/v4/channels/direct"; got != want {
+			t.Errorf("path = %q, want %q", got, want)
+		}
+		var users []string
+		if err := json.NewDecoder(r.Body).Decode(&users); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if len(users) != 2 || users[0] != "bot-1" || users[1] != testUserID {
+			t.Errorf("users = %v, want [bot-1 user-1]", users)
+		}
+		_, _ = w.Write([]byte(`{"id":"dm-1","type":"D"}`))
+	}))
+	channel, err := client.GetDirectChannel(t.Context(), " bot-1 ", " "+testUserID+" ")
+	if err != nil {
+		t.Fatalf("GetDirectChannel() error = %v", err)
+	}
+	if channel.ID != "dm-1" || channel.Type != "D" {
+		t.Fatalf("GetDirectChannel() = %+v", channel)
+	}
+}
+
+func TestGetDirectChannelRejectsMalformedAndAPIFailures(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		status int
+		body   string
+	}{
+		{name: "missing id", status: http.StatusOK, body: `{"type":"D"}`},
+		{name: "api failure", status: http.StatusForbidden, body: `{"id":"api.context.permissions.app_error","message":"denied"}`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			client := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(test.status)
+				_, _ = w.Write([]byte(test.body))
+			}))
+			if _, err := client.GetDirectChannel(t.Context(), "bot-1", testUserID); err == nil {
+				t.Fatal("GetDirectChannel() error = nil, want response error")
+			}
+		})
+	}
+}
+
 func TestValidateConfigRequiresServerURLAndToken(t *testing.T) {
 	cases := []struct {
 		name      string

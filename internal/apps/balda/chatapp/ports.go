@@ -12,12 +12,13 @@ import (
 )
 
 const (
-	ReasonAccepted        = "accepted"
-	ReasonInvalidInbound  = "invalid_inbound"
-	ReasonEmptyInbound    = "empty_inbound"
-	ReasonUnauthorized    = "unauthorized"
-	ReasonSessionRejected = "session_rejected"
-	ReasonDispatchFailed  = "dispatch_failed"
+	ReasonAccepted            = "accepted"
+	ReasonInvalidInbound      = "invalid_inbound"
+	ReasonEmptyInbound        = "empty_inbound"
+	ReasonUnauthorized        = "unauthorized"
+	ReasonSessionRejected     = "session_rejected"
+	ReasonProviderUnavailable = "provider_unavailable"
+	ReasonDispatchFailed      = "dispatch_failed"
 )
 
 // Authorization is the provider-neutral result of an access check.

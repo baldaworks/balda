@@ -366,9 +366,12 @@ func TestBackofficeRuntimeConfigProjectsOperationalConfig(t *testing.T) {
 	}
 }
 
-func TestBackofficeRuntimeConfigRejectsMissingAgentProvider(t *testing.T) {
-	_, err := backofficeRuntimeConfig(BaldaConfig{Provider: "missing"}, appconfig.RuntimeConfig{}, "default", state.DatabaseConfig{})
-	if err == nil || !strings.Contains(err.Error(), `provider "missing" is not configured`) {
-		t.Fatalf("missing provider error = %v", err)
+func TestBackofficeRuntimeConfigDefersManagedAgentProviderResolution(t *testing.T) {
+	resolved, err := backofficeRuntimeConfig(BaldaConfig{Provider: "managed"}, appconfig.RuntimeConfig{}, "default", state.DatabaseConfig{})
+	if err != nil {
+		t.Fatalf("backofficeRuntimeConfig() error = %v", err)
+	}
+	if resolved.Agent.ProviderID != "managed" || resolved.Agent.ProviderType != "" {
+		t.Fatalf("agent projection = %+v, want unresolved managed provider", resolved.Agent)
 	}
 }

@@ -248,9 +248,12 @@ exact restore.
 `balda validate` remains database-free. It validates configured definitions
 and reports references that may come from managed state as deferred.
 
-`balda preflight` and `balda start` open state and require the selected root
-graph before conversational ingress. Collisions, invalid graphs, missing
-contracts, and undecryptable required revisions fail startup.
+`balda preflight` and `balda start` open state but do not require or compile the
+selected root graph. This supersedes the original eager-readiness decision:
+Backoffice must start even when the selected managed provider needs repair.
+Provider-backed work resolves the graph on first use; collisions, invalid
+graphs, missing contracts, and undecryptable required revisions fail that
+operation without making the base application unavailable.
 
 Administration → Providers shows source, canonical type, public model or mode,
 pool members, enabled/deleted state, revision, reproducibility warning, and

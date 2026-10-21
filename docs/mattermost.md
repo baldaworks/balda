@@ -107,6 +107,12 @@ services share a Docker network.
 
 ## Conversation Behavior
 
+After the Mattermost transport starts, Balda resolves the confirmed
+`superuser` binding with the Mattermost direct-channel API and sends the process
+readiness message to that DM. This best-effort notification does not create an
+agent session or require a usable agent provider. A lookup or send failure does
+not fail startup or block readiness delivery to other integrations.
+
 Balda maps each Mattermost conversation to a session:
 
 - **Direct message** — the direct channel between the bot and one user. Every

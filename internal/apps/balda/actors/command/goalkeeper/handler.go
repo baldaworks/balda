@@ -3,9 +3,11 @@ package goalkeeper
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	commandactor "github.com/baldaworks/balda/internal/apps/balda/actors/command"
+	"github.com/baldaworks/balda/internal/apps/balda/agentcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
@@ -27,23 +29,30 @@ type GoalJobChecker interface {
 	HasActiveGoalJob(ctx context.Context, sessionID string) (bool, error)
 }
 
+// ProviderAvailability resolves the selected provider before goal work is admitted.
+type ProviderAvailability interface {
+	EnsureProviderAvailable(ctx context.Context) error
+}
+
 // Handler executes the goalkeeper command.
 type Handler struct {
 	clearer       GoalClearer
 	checker       GoalJobChecker
+	provider      ProviderAvailability
 	dispatcher    actortransport.Dispatcher
 	maxIterations int
 	logger        zerolog.Logger
 }
 
 // New creates a goalkeeper command handler.
-func New(clearer GoalClearer, checker GoalJobChecker, dispatcher actortransport.Dispatcher, maxIterations int, logger zerolog.Logger) *Handler {
+func New(clearer GoalClearer, checker GoalJobChecker, provider ProviderAvailability, dispatcher actortransport.Dispatcher, maxIterations int, logger zerolog.Logger) *Handler {
 	if maxIterations <= 0 {
 		maxIterations = defaultMaxIterations
 	}
 	return &Handler{
 		clearer:       clearer,
 		checker:       checker,
+		provider:      provider,
 		dispatcher:    dispatcher,
 		maxIterations: maxIterations,
 		logger:        logger.With().Str("component", "balda.actors.command.goalkeeper").Logger(),
@@ -86,6 +95,16 @@ func (h *Handler) handleClear(ctx context.Context, env actorlayer.Envelope, p co
 }
 
 func (h *Handler) handleStart(ctx context.Context, env actorlayer.Envelope, p commandcmd.Payload, objective string) error {
+	if h.provider == nil {
+		return commandactor.SendPlain(ctx, h.dispatcher, env.ID, p.Locator, "Could not start goal run.", "goalkeeper-start-unavailable")
+	}
+	if err := h.provider.EnsureProviderAvailable(ctx); err != nil {
+		h.logger.Warn().Err(err).Str("session_id", p.Locator.SessionID).Msg("agent provider unavailable for goal run")
+		if errors.Is(err, agentcmd.ErrProviderUnavailable) {
+			return commandactor.SendPlain(ctx, h.dispatcher, env.ID, p.Locator, agentcmd.ProviderUnavailableMessage, "goalkeeper-provider-unavailable")
+		}
+		return commandactor.SendPlain(ctx, h.dispatcher, env.ID, p.Locator, "Could not start goal run.", "goalkeeper-start-failed")
+	}
 	if h.checker != nil {
 		active, err := h.checker.HasActiveGoalJob(ctx, p.Locator.SessionID)
 		if err != nil {

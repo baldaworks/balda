@@ -125,6 +125,9 @@ Balda treats `actorlayer` as the reusable actor library boundary and never as pr
 - `internal/apps/balda/channel/webhook`, `webhookapp`, and `webhookfx`: HTTP receiver, frozen report admission/private-job policy, and composition adapter, respectively. The concrete receiver consumes a local port and neutral webhook contracts.
 - `internal/apps/balda/handlersfx`: composition-root adapters that bind transport-owned ports to concrete provider runtimes.
 - `internal/apps/balda/channel/*`: concrete channel delivery semantics. They adapt provider-specific messaging APIs behind Balda delivery commands.
+- `internal/apps/balda/startupnotifyapp`: transport-neutral startup readiness
+  policy over canonical users, channel DM-resolver ports, and plain delivery.
+  `startupnotifyfx` owns the channel-specific resolver adapters.
 - `internal/apps/balda/state`: SQLite/PostgreSQL product state and read models. It owns sessions, scheduler state, job tables, delivery idempotency, and the session-memory ingress outbox/audit records. It does not own canonical session-memory domain state.
 - `internal/apps/balda/aliases`, `aliascmd`, and `aliasfx`: managed destination policy, neutral values, and host resolution wiring. A schedule run or webhook admission stores its selected concrete report locator before actor publication; accepted work does not reread the alias.
 - `internal/apps/balda/schedulecmd`, `scheduledjobs`, and `schedulebackofficeapp`: neutral Schedules management values, host-owned recurring policy/dispatch and optional-delivery-aware run finalization, and the narrow Backoffice port adapter, respectively. `state` persists source-owned definitions, selected report locators, frozen run input, execution job output, and delivery state. Private run sessions are removed through a small session port after execution and any requested delivery settle.
@@ -133,7 +136,12 @@ Balda treats `actorlayer` as the reusable actor library boundary and never as pr
 - `sessionmemory/store/badger`: canonical session-memory state; `sessionmemory/index/bleve`: rebuildable lexical projection.
 - `sessionmemory/mcp`: neutral search/trace tools; Balda's `sessionmemorymcp` supplies authenticated scope context and no transport locator is accepted from tool input.
 
-- `balda.provider` selects one app-scoped provider runtime for all Balda sessions and `/goalkeeper` worker-validator runs in the process. `/goalkeeper` still creates isolated worker/validator ADK sessions and workspace state, but it reuses the same provider runtime/client ownership as normal session turns.
+- `balda.provider` selects one app-scoped provider runtime for Balda sessions and
+  `/goalkeeper` worker-validator runs. Selection is optional for base startup;
+  the runtime graph is resolved and built on first provider-backed use.
+  `/goalkeeper` still creates isolated worker/validator ADK sessions and
+  workspace state after that availability gate, reusing the same provider
+  runtime/client ownership as normal session turns.
 - Actorlayer owns generic actor mechanics: registration, addressing, envelopes, retry/error helpers, lane execution, lifecycle state, and transport-facing contracts.
 - Balda owns product actors and product behavior implemented as actors: session turns, job routing, goal execution, delivery, control, and memory.
 - Balda exposes its durable transport to product/runtime code only as actorlayer source, delivery, and dispatch abstractions; the concrete transport stays inside the NATS adapter.
@@ -181,16 +189,25 @@ Balda startup order is strict:
    open the shared state provider, and apply its embedded schema migrations.
 2. Require completed legacy-user conversion and an active administrator before
    any listener or ingress becomes ready.
-3. Start internal MCP, the runtime contribution catalog, the enabled portable
-   session-memory runtime, and Balda provider runtime in that order.
+3. Start internal MCP, the runtime contribution catalog, and enabled portable
+   session-memory infrastructure. Do not resolve or launch the selected chat
+   provider.
 4. Start session/mailbox and durable actor infrastructure: event projector,
    job-event outbox publisher, actor host, and scheduler.
 5. Bind Backoffice HTTP over the same state provider and canonical users.
-6. Start inbound webhooks and enabled Zulip, Slack, and Telegram ingress.
+6. Start inbound webhooks and enabled channel ingress.
+7. Send the readiness message best-effort to every confirmed direct-message
+   binding of the active primary administrator through channel-owned resolvers.
+
+The first agent-backed operation resolves and builds `balda.provider`. An empty
+or unusable selection fails only that operation before session/job mutation;
+Backoffice and channel control/delivery remain available for diagnosis and
+repair.
 
 One composition-root coordinator owns this order. Migration, readiness,
 configuration, or registry errors fail before any ingress stage can become
-ready. Shutdown runs stages in reverse, so ingress and Backoffice HTTP stop
-before the actor/provider/MCP resources and shared state provider.
+ready. A readiness-recipient failure is isolated and cannot fail startup.
+Shutdown runs stages in reverse, so ingress and Backoffice HTTP stop before the
+actor/provider/MCP resources and shared state provider.
 
 Internal MCP v1 scope is config + lifecycle plumbing; server implementations can be added incrementally.

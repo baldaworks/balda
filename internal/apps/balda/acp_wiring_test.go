@@ -175,6 +175,22 @@ func TestACPPreflightStaysLazy(t *testing.T) {
 	}
 }
 
+func TestPreflightDoesNotResolveSelectedAgentProvider(t *testing.T) {
+	for _, providerID := range []string{"", "unavailable-managed"} {
+		name := "empty"
+		if providerID != "" {
+			name = "unavailable-managed"
+		}
+		t.Run(name, func(t *testing.T) {
+			cfg, _, _ := acpWiringConfig(t, "300ms", "30s")
+			cfg.Balda.Provider = providerID
+			if err := PreflightRuntime(t.Context(), cfg, runtimeconfig.RuntimeConfig{}, runtimeconfig.RuntimeLoadOptions{}); err != nil {
+				t.Fatalf("PreflightRuntime() error = %v", err)
+			}
+		})
+	}
+}
+
 func TestACPPreflightPreservesConversationLifetimes(t *testing.T) {
 	cfg, norma, _ := acpWiringConfig(t, "300ms", "30s")
 	if err := os.MkdirAll(cfg.Balda.StateDir, 0o700); err != nil {

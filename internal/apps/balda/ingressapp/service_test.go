@@ -7,12 +7,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/baldaworks/go-actorlayer"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
+	"github.com/baldaworks/balda/internal/apps/balda/agentcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 )
 
@@ -243,6 +245,40 @@ func TestProcessPublishesOneSessionActorEnvelopeWithStableIdentity(t *testing.T)
 	}
 	if len(payload.Attachments) != 2 || payload.Attachments[0].FileID != "first" || payload.Attachments[1].FileID != "second" {
 		t.Fatalf("attachments = %+v, want stable order", payload.Attachments)
+	}
+}
+
+func TestProcessProviderUnavailableSettlesWithBoundedPlainDelivery(t *testing.T) {
+	t.Parallel()
+
+	dispatcher := &recordingDispatcher{receipt: &actortransport.DispatchReceipt{MsgID: "notice-1"}}
+	service, err := New(
+		&stubAuthorizer{result: Authorization{Allowed: true}},
+		&stubSessionPreparer{err: errors.Join(agentcmd.ErrProviderUnavailable, errors.New("secret provider detail"))},
+		dispatcher,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := service.Process(t.Context(), validInbound("providerless"))
+	if err != nil {
+		t.Fatalf("Process() error = %v", err)
+	}
+	if result.Settlement.Outcome != turncmd.InboundTerminal || result.Settlement.Reason != ReasonProviderUnavailable {
+		t.Fatalf("result = %+v, want terminal provider unavailable", result)
+	}
+	if len(dispatcher.envelopes) != 1 {
+		t.Fatalf("envelopes = %d, want one bounded delivery", len(dispatcher.envelopes))
+	}
+	var delivery deliverycmd.Payload
+	if err := actorlayer.UnmarshalPayload(dispatcher.envelopes[0].Payload, &delivery); err != nil {
+		t.Fatal(err)
+	}
+	if delivery.Mode != deliverycmd.ModePlain || delivery.Text != agentcmd.ProviderUnavailableMessage || strings.Contains(delivery.Text, "secret") {
+		t.Fatalf("delivery = %+v, want bounded plain unavailable response", delivery)
+	}
+	if dispatcher.envelopes[0].DedupeKey != "providerless:provider-unavailable" {
+		t.Fatalf("dedupe key = %q", dispatcher.envelopes[0].DedupeKey)
 	}
 }
 
