@@ -11,9 +11,9 @@ installed binary. The important lifecycle commands are:
   it does not overwrite an existing configuration.
 - `balda validate`: parse and validate configuration and application graph
   construction without opening or migrating the state database.
-- `balda preflight`: validate app wiring, start the configured provider runtime,
-  check readiness, and stop it cleanly without enabling ingress; individual ACP
-  conversation processes may remain lazy.
+- `balda preflight`: validate app wiring, start and stop the base runtime without
+  enabling ingress, and leave the selected agent provider unresolved and
+  unlaunched.
 - `balda doctor`: run validation and preflight as one operator readiness check.
 - `balda start`: open state, apply embedded migrations, initialize the runtime,
   then enable configured channels, Backoffice, webhooks, and other ingress.

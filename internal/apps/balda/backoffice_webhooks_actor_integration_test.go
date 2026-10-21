@@ -55,6 +55,7 @@ type browserActorTurnRunner struct {
 const (
 	browserWebhookAppName   = "webhook-browser-fixture"
 	browserManagedAliasName = "main_chat"
+	browserManagedRouteName = "managed"
 	browserManagedOutput    = "Processed: Actor: alias input"
 )
 
@@ -180,7 +181,7 @@ func TestWebhookActorRuntimeFromHTTP(t *testing.T) {
 	managedRef.Store("")
 	publisher := webhookapp.JobPublisherFunc(func(ctx context.Context, payload turncmd.SessionTurnPayload,
 		routeName, requestID string) (*actortransport.DispatchReceipt, string, error) {
-		if routeName == "managed" {
+		if routeName == browserManagedRouteName {
 			managedRef.Store("telegram:9003:0")
 		}
 		env, jobID, err := turncmd.WebhookJobEnvelope(payload, routeName, requestID)
@@ -206,7 +207,7 @@ func TestWebhookActorRuntimeFromHTTP(t *testing.T) {
 		AuthType: webhookroutecmd.AuthTypeHeader, AuthHeader: "X-Actor-Secret", AuthValue: "synthetic-actor-secret",
 		DedupeSource: webhookroutecmd.DedupeSourceRequestID}
 	managed := configured
-	managed.Name = "managed"
+	managed.Name = browserManagedRouteName
 	managed.ReportToKind, managed.ReportToKey = envelopetarget.TargetManagedAlias, browserManagedAliasName
 	ingress, err := webhookapp.NewIngress("", []webhookapp.ConfiguredRoute{configured, managed}, nil, service)
 	if err != nil {
@@ -218,7 +219,7 @@ func TestWebhookActorRuntimeFromHTTP(t *testing.T) {
 			ReportTo: &webhook.RouteTargetConfig{Target: "locator", Key: "telegram:9001:0"}},
 			Auth: webhook.RouteAuthConfig{Type: "header", Header: configured.AuthHeader,
 				Value: configured.AuthValue}},
-			"managed": {PromptTemplate: managed.PromptTemplate, Envelope: webhook.RouteEnvelopeConfig{
+			browserManagedRouteName: {PromptTemplate: managed.PromptTemplate, Envelope: webhook.RouteEnvelopeConfig{
 				ReportTo: &webhook.RouteTargetConfig{Target: envelopetarget.TargetManagedAlias, Key: browserManagedAliasName}},
 				Auth: webhook.RouteAuthConfig{Type: "header", Header: managed.AuthHeader,
 					Value: managed.AuthValue}}}}, ingress, zerolog.Nop())
@@ -283,7 +284,7 @@ func TestWebhookActorRuntimeFromHTTP(t *testing.T) {
 		t.Fatalf("literal route delivery = %+v, provider calls=%d", firstDelivery, invocations.Load())
 	}
 
-	missing := post("managed", "missing-alias-request", "missing alias input")
+	missing := post(browserManagedRouteName, "missing-alias-request", "missing alias input")
 	if missing.StatusCode != http.StatusNotFound {
 		body, _ := io.ReadAll(missing.Body)
 		t.Fatalf("missing alias status = %d, body=%s", missing.StatusCode, body)
@@ -291,13 +292,13 @@ func TestWebhookActorRuntimeFromHTTP(t *testing.T) {
 	if err := missing.Body.Close(); err != nil {
 		t.Fatal(err)
 	}
-	missingHistory, err := provider.WebhookAdmissions().ListHistory(ctx, "managed", time.Time{}, "", 10)
+	missingHistory, err := provider.WebhookAdmissions().ListHistory(ctx, browserManagedRouteName, time.Time{}, "", 10)
 	if err != nil || len(missingHistory) != 0 || invocations.Load() != 1 {
 		t.Fatalf("missing alias admitted work: history=%+v provider calls=%d err=%v", missingHistory, invocations.Load(), err)
 	}
 
 	managedRef.Store("telegram:9002:0")
-	managedResponse := post("managed", "managed-alias-request", "alias input")
+	managedResponse := post(browserManagedRouteName, "managed-alias-request", "alias input")
 	defer func() { _ = managedResponse.Body.Close() }()
 	if managedResponse.StatusCode != http.StatusAccepted {
 		body, _ := io.ReadAll(managedResponse.Body)
@@ -310,7 +311,7 @@ func TestWebhookActorRuntimeFromHTTP(t *testing.T) {
 		t.Fatalf("managed alias receipt = %+v, err=%v", managedAccepted, err)
 	}
 	for {
-		history, found, err := provider.WebhookAdmissions().GetHistory(ctx, "managed", managedAccepted.JobID)
+		history, found, err := provider.WebhookAdmissions().GetHistory(ctx, browserManagedRouteName, managedAccepted.JobID)
 		if err != nil {
 			t.Fatal(err)
 		}
