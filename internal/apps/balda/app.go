@@ -20,6 +20,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
 	"github.com/baldaworks/balda/internal/apps/balda/catalogapp"
+	baldachannel "github.com/baldaworks/balda/internal/apps/balda/channel"
 	baldamattermost "github.com/baldaworks/balda/internal/apps/balda/channel/mattermost"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/mattermost/mattermostfx"
 	baldaslackagent "github.com/baldaworks/balda/internal/apps/balda/channel/slackagent"
@@ -74,6 +75,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/sessionturnapp"
 	"github.com/baldaworks/balda/internal/apps/balda/skillbackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/skillfx"
+	"github.com/baldaworks/balda/internal/apps/balda/startupnotifyapp"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
@@ -958,6 +960,7 @@ func Module(
 		hookfx.Module,
 		controlapp.Module,
 		deliveryfx.Module,
+		startupnotifyapp.Module,
 		slackagentfx.Module,
 		telegramfx.Module,
 		zulipfx.Module,
@@ -970,6 +973,10 @@ func Module(
 		fx.Provide(fx.Annotate(
 			func(service *questions.Service) deliveryworkflow.QuestionDeliveryBinder { return service },
 		)),
+		fx.Provide(
+			func(provider baldastate.Provider) startupnotifyapp.UserReader { return provider.Users() },
+			func(router *baldachannel.Router) startupnotifyapp.Sender { return router },
+		),
 		jobexec.Module,
 		actorsfx.Module,
 		scheduledjobs.Module,

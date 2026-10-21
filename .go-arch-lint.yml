@@ -359,6 +359,7 @@ components:
       - internal/apps/balda/sessionturn
       - internal/apps/balda/sessionturnapp
       - internal/apps/balda/sessionmemoryapp
+      - internal/apps/balda/startupnotifyapp
       - internal/apps/balda/welcome
       - internal/apps/balda/webhookapp
 

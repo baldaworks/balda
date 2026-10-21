@@ -25,6 +25,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
 	"github.com/baldaworks/balda/internal/apps/balda/shutdown"
+	"github.com/baldaworks/balda/internal/apps/balda/startupnotifyapp"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookfx"
@@ -191,6 +192,7 @@ type applicationLifecycleParams struct {
 	Scheduler            *scheduledjobs.ScheduledJobScheduler
 	WebhookRunFinalizer  *jobexec.WebhookRunFinalizer
 	TransportStages      []appports.TransportLifecycleStage `group:"balda_transport_lifecycle_stage"`
+	StartupNotifier      *startupnotifyapp.Service
 	TelegramBot          *runtime.Bot
 	TelegramEnabled      bool `name:"balda_telegram_enabled"`
 }
@@ -276,6 +278,7 @@ func applicationLifecycleStages(p applicationLifecycleParams, telegram *telegram
 		})
 	}
 	stages = append(stages, lifecycleStage{name: "telegram ingress", start: telegram.Start, stop: telegram.Stop})
+	stages = append(stages, lifecycleStage{name: "startup readiness notification", start: p.StartupNotifier.Notify})
 	return stages
 }
 

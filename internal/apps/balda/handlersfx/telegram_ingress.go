@@ -34,8 +34,6 @@ const (
 	ownerSessionLabel = "balda"
 	autoSessionLabel  = "auto"
 
-	startupReadyMessage = "Boss, I'm online and ready to work."
-
 	telegramIngressReasonOwnerUnavailable    = "owner_unavailable"
 	telegramIngressReasonProviderUnavailable = "provider_unavailable"
 	telegramIngressReasonSessionUnavailable  = "session_unavailable"
@@ -133,14 +131,7 @@ func (h *telegramInboundHandler) OnBotStarted(ctx context.Context, botUserID int
 	}
 
 	h.logOwnerAuthIfNeeded()
-	ownerID, chatID, bound := h.restorePersistedOwner()
-	if bound {
-		if _, err := h.bootstrapOwnerSession(ctx, ownerID, chatID); err != nil {
-			h.logger.Error().Err(err).Int64("owner_id", ownerID).Msg("failed to bootstrap owner session during startup")
-			return fmt.Errorf("bootstrap owner session during startup: %w", err)
-		}
-	}
-	h.sendStartupReadyMessage(ctx)
+	h.restorePersistedOwner()
 	return nil
 }
 
@@ -456,32 +447,19 @@ func (h *telegramInboundHandler) bootstrapOwnerSession(ctx context.Context, owne
 	})
 }
 
-func (h *telegramInboundHandler) restorePersistedOwner() (ownerID, chatID int64, bound bool) {
+func (h *telegramInboundHandler) restorePersistedOwner() {
 	if h.ownerStore == nil {
-		return 0, 0, false
+		return
 	}
 	owner := h.ownerStore.GetOwner()
 	if owner == nil || owner.UserID == 0 {
-		return 0, 0, false
+		return
 	}
 	h.setOwner(owner.UserID, owner.ChatID)
 	h.logger.Info().
 		Int64("owner_id", owner.UserID).
 		Int64("chat_id", owner.ChatID).
 		Msg("restored persisted telegram owner")
-	return owner.UserID, owner.ChatID, owner.ChatID != 0
-}
-
-func (h *telegramInboundHandler) sendStartupReadyMessage(ctx context.Context) {
-	ownerID, chatID := h.getOwnerBinding()
-	if ownerID == 0 || chatID == 0 {
-		return
-	}
-	if err := sendPlain(ctx, h.actorDispatcher, serverActorAddress, baldatelegram.NewLocator(chatID, 0), startupReadyMessage); err != nil {
-		h.logger.Warn().Err(err).Int64("owner_id", ownerID).Msg("failed to send startup ready message to owner")
-		return
-	}
-	h.logger.Info().Int64("owner_id", ownerID).Msg("startup ready message sent to owner")
 }
 
 func (h *telegramInboundHandler) logOwnerAuthIfNeeded() {

@@ -150,6 +150,7 @@ func TestApplicationLifecycleStagesStartQuestionProjectorAfterTransport(t *testi
 		"zulip ingress",
 		"slack agent ingress",
 		"telegram ingress",
+		"startup readiness notification",
 	}
 	if !reflect.DeepEqual(names, want) {
 		t.Fatalf("lifecycle stages = %v, want %v", names, want)
