@@ -620,7 +620,7 @@ balda:
 The balda MCP server (`balda`) is automatically included in all sessions. It provides:
 
 - `balda.state` - persistent key-value storage
-- `balda.session.progress` - deliver visible progress to an active DM/chat session or record it on an active schedule/webhook job; retries reuse `idempotency_key`
+- `balda.session.progress` - accept only `text` and `idempotency_key`; derive the active session and current requester server-side, then deliver technical progress to chat or record it on the owning schedule/webhook job
 - `balda.memory.read` - read durable memory from `state.db` when `balda.memory.enabled=true`
 - `balda.memory.remember` - append a durable fact to `state.db` memory when `balda.memory.enabled=true`
 - `balda.workspace.import` - import workspace from base branch

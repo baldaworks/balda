@@ -106,7 +106,7 @@ Status: active
   active outbox owners sharing one database.
 
 - The session actor is the only code path that can enqueue `TurnDispatcher` work; `sessionturn` is the only queued-turn restoration use case.
-- `TurnDispatcher` is the authoritative per-session mailbox. Canceling a session resolves every dropped completion (including constituent steering waiters) with `context.Canceled` and cancels the active turn.
+- `TurnDispatcher` is the authoritative per-session mailbox and the sole owner of current-turn state. Its read-only current-turn lookup exposes a copied session/requester identity while the turn runs; bundled MCP progress combines that identity with the independently authenticated session binding and keeps no second active-turn registry. Canceling a session resolves every dropped completion (including constituent steering waiters) with `context.Canceled` and cancels the active turn.
 - Coalesced steering messages retain individual constituent completion channels; constituent envelopes remain unacknowledged to durable transport until batch execution finishes, fails, or cancels.
 - Pre-execution process restart safely replays unacknowledged envelopes. Pending and running batches deduplicate constituents by stable identity (`DedupeKey` / message ID), attaching duplicate arrivals as waiters without duplicate text fragments. Transport delivery interruptions remain retryable rather than falsely settled.
 - SQLite does not own command selection, claim, retry, or wakeup semantics.

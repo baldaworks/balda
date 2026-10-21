@@ -64,18 +64,27 @@ package ownership is documented in the
 
 ## Session progress
 
-The bundled `balda.session.progress` MCP tool accepts a canonical session
-locator, visible text, and an idempotency key. It resolves only an active
-session. DM and chat progress is delivered to that session through the normal
-DeliveryActor path. Schedule and webhook progress is recorded as
-`agent.progress` on the owning job and is never sent to the job's terminal
-`report_to` destination.
+The bundled `balda.session.progress` MCP tool accepts only visible `text` and an
+`idempotency_key`. The authenticated MCP binding supplies the canonical session
+and locator. `TurnDispatcher`, the sole owner of running-turn state, supplies a
+read-only copy of the current turn's `RequesterUserID`. The tool fails without
+delivery when either authority is absent or they refer to different sessions.
 
-Balda derives the session kind and job owner from server-owned runtime state.
-Callers cannot select the family, owner, or delivery destination. Reusing the
-same idempotency key for one session reuses the same progress identity and does
-not create another durable effect. Progress text is bounded and redacted before
-delivery or persistence.
+Conversation progress is a transport-neutral technical message sent through the
+normal durable DeliveryActor path. Telegram delivers it as an ordinary message
+in a direct chat and as a receiver-targeted ephemeral message in a group,
+supergroup, or topic. A missing or invalid audience, invalid locator, formatting
+failure, or Telegram rejection never falls back to a public message. Other
+transports retain visible-text delivery. Schedule and webhook progress is
+recorded as `agent.progress` on the owning job and is never sent to the job's
+terminal `report_to` destination.
+
+Callers cannot select the session, locator, recipient, family, owner, or delivery
+destination. Reusing the same idempotency key for one session reuses the same
+progress identity and does not create another durable effect. Progress text is
+bounded and omitted from structural diagnostics. MCP request signing remains a
+separate concern; the existing opaque session capability is the current
+authentication boundary.
 
 ## Session restore/create behavior
 
