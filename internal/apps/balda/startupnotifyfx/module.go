@@ -48,8 +48,8 @@ func (telegramResolver) ResolveDM(_ context.Context, binding usercmd.Binding) (d
 	if !found {
 		chatID = principal
 	}
-	if chatID <= 0 {
-		return deliverycmd.Locator{}, fmt.Errorf("telegram chat_id must be positive")
+	if chatID != principal {
+		return deliverycmd.Locator{}, fmt.Errorf("telegram chat_id must match the bound principal")
 	}
 	return telegram.NewLocator(chatID, 0), nil
 }

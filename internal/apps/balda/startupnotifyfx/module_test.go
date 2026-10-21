@@ -24,7 +24,7 @@ func TestLocalResolversReturnPersonalLocators(t *testing.T) {
 		wantType string
 		wantKey  string
 	}{
-		{name: "telegram provenance", resolver: telegramResolver{}, binding: usercmd.Binding{Principal: "41", Provenance: "verified;chat_id=42"}, wantType: "telegram", wantKey: "42:0"},
+		{name: "telegram provenance", resolver: telegramResolver{}, binding: usercmd.Binding{Principal: "42", Provenance: "verified;chat_id=42"}, wantType: "telegram", wantKey: "42:0"},
 		{name: "telegram legacy fallback", resolver: telegramResolver{}, binding: usercmd.Binding{Principal: "41", Provenance: "legacy-owner"}, wantType: "telegram", wantKey: "41:0"},
 		{name: "zulip", resolver: zulipResolver{}, binding: usercmd.Binding{Principal: "101"}, wantType: "zulip", wantKey: "dm:101"},
 	}
@@ -53,6 +53,7 @@ func TestLocalResolversRejectMalformedBindings(t *testing.T) {
 	}{
 		{name: "telegram principal", resolver: telegramResolver{}, binding: usercmd.Binding{Principal: "group"}},
 		{name: "telegram provenance", resolver: telegramResolver{}, binding: usercmd.Binding{Principal: "41", Provenance: "chat_id=-1"}},
+		{name: "telegram mismatched provenance", resolver: telegramResolver{}, binding: usercmd.Binding{Principal: "41", Provenance: "chat_id=42"}},
 		{name: "zulip principal", resolver: zulipResolver{}, binding: usercmd.Binding{Principal: "0"}},
 		{name: "slack principal", resolver: slackResolver{client: &fakeSlackClient{}}, binding: usercmd.Binding{Principal: "T1"}},
 		{name: "mattermost principal", resolver: mattermostResolver{client: &fakeMattermostClient{}, botUserID: "bot"}, binding: usercmd.Binding{}},

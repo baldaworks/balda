@@ -114,6 +114,7 @@ func TestClientOpenConversationRejectsAPIAndMalformedResponses(t *testing.T) {
 		wantCode string
 	}{
 		{name: "api failure", response: `{"ok":false,"error":"invalid_auth"}`, wantCode: "invalid_auth"},
+		{name: "missing api error", response: `{"ok":false}`, wantCode: malformedResponseCode},
 		{name: "missing channel", response: `{"ok":true,"channel":{}}`, wantCode: malformedResponseCode},
 	}
 	for _, test := range tests {

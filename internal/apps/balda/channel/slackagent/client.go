@@ -173,6 +173,9 @@ func (c *Client) OpenConversation(ctx context.Context, userID string) (string, e
 	}
 	if !response.OK {
 		code := strings.TrimSpace(response.Error)
+		if code == "" {
+			code = malformedResponseCode
+		}
 		return "", &APIError{Method: "conversations.open", StatusCode: http.StatusOK, Code: code, Message: code, Retryable: retryableSlackCode(code)}
 	}
 	conversationID := strings.TrimSpace(response.Channel.ID)
