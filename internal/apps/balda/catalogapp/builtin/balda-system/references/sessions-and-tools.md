@@ -62,10 +62,50 @@ successful landing.
 
 ## Progress and external effects
 
-If `balda.session.progress` is exposed, it reports bounded visible progress to an
-active session using the tool's canonical locator and idempotency contract. It
-does not grant authority to send arbitrary messages or select another delivery
-destination.
+If `balda.session.progress` is exposed, use it during authorized long-running
+work when the user would otherwise wait without useful feedback. Report a real
+milestone, a changed plan, a blocker, or the next action in concise and truthful
+language. Do not send repetitive heartbeats, content-free status messages,
+hidden reasoning, secrets, credentials, or raw configuration. Progress is an
+intermediate update, not a substitute for the final response.
+
+The tool input has three parts:
+
+- `locator` identifies the active target session. Copy `channel_type`,
+  `address_key`, and `session_id` from trusted current-session context. Do not
+  invent, normalize, or retarget them. Omit the compatibility-only
+  `address_json` field unless the current context explicitly supplies it.
+- `text` is the bounded user-visible update. State what changed and what happens
+  next; include a blocker only when it affects the requested work.
+- `idempotency_key` identifies one logical update. Reuse the exact key when
+  retrying that same update after an uncertain or transient outcome. Use a new
+  stable key for every distinct update, and do not put sensitive data in it.
+
+For example, with placeholder values copied from trusted session context:
+
+```json
+{
+  "locator": {
+    "channel_type": "telegram",
+    "address_key": "<chat-id>:<topic-id>",
+    "session_id": "tg-<chat-id>-<topic-id>"
+  },
+  "idempotency_key": "dependency-install-complete",
+  "text": "Dependencies are installed. Running the verification suite now."
+}
+```
+
+Check the returned result before describing the effect. `ok` and `accepted`
+confirm that Balda durably accepted the update. `disposition` distinguishes a
+conversation update delivered to the session from progress recorded on the
+owning schedule or webhook job. `progress_id` is the stable Balda identity for
+the accepted update. A delivered disposition does not prove that a human read
+the message. On an error or unaccepted result, do not claim delivery; follow the
+tool error and retry only when appropriate.
+
+The tool's canonical locator and idempotency contract bound the external effect.
+They do not grant authority to send arbitrary messages or select another
+delivery destination.
 
 Tool availability never supplies user authorization. Follow the current request,
 higher-level policy, repository instructions, and each tool's approval contract
