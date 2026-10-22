@@ -44,7 +44,16 @@ jobs:
       - name: Validate SQLite Goose migrations
         run: go tool goose -dir internal/apps/balda/state/migrations validate
       - name: SQLite state integration
-        run: go test -race -tags=integration,sqlite ./internal/apps/balda/state
+        env:
+          BALDA_CI_TIMING_DIR: ${{ runner.temp }}/balda-ci-timing/sqlite
+        run: ./scripts/ci/run-go-test-with-timing.sh sqlite
+      - name: Upload SQLite timing
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: sqlite-integration-timing
+          path: ${{ runner.temp }}/balda-ci-timing/sqlite
+          if-no-files-found: warn
 
   postgres-integration:
     runs-on: ubuntu-latest
@@ -89,9 +98,8 @@ jobs:
       - name: Test
         env:
           TMPDIR: ${{ github.workspace }}/.tmp
-        run: |
-          set -o pipefail
-          go test -v -race -covermode=atomic -coverprofile=coverage.out -timeout=20m ./... 2>&1 | tee test.log
+          BALDA_CI_TIMING_DIR: ${{ runner.temp }}/balda-ci-timing/test
+        run: ./scripts/ci/run-go-test-with-timing.sh test
       - name: Vulnerability check
         run: |
           set -o pipefail
@@ -103,8 +111,16 @@ jobs:
           name: test-failure-artifacts
           path: |
             test.log
+            ${{ runner.temp }}/balda-ci-timing/test
             .tmp/**/*.db
             .tmp/**/.config/balda/nats/**
+          if-no-files-found: warn
+      - name: Upload test timing
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-timing
+          path: ${{ runner.temp }}/balda-ci-timing/test
           if-no-files-found: warn
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v7

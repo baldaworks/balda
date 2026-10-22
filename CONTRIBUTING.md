@@ -42,6 +42,23 @@ rule also applies to repository administrators. A PR is required, but no
 approving review is required. Auto-merge is currently disabled for this
 repository; enabling it later does not remove these required checks.
 
+The `test` and `sqlite-integration` jobs run through
+`scripts/ci/run-go-test-with-timing.sh`. The runner preserves the race,
+coverage, timeout, and integration-tag scope while publishing a Markdown job
+summary and an artifact containing the exact command, sorted package inventory,
+raw `go test -json` stream, readable test log, and the 20 slowest packages and
+tests. Run the same instrumentation locally with:
+
+```bash
+./scripts/ci/run-go-test-with-timing.sh test
+./scripts/ci/run-go-test-with-timing.sh sqlite
+```
+
+For before/after comparisons, use three successful pull-request runs with the
+same workflow, runner class, cache policy, and test inventory. Compare the
+median `test` and `sqlite-integration` job wall times, and retain the run URLs
+and timing artifacts in the related Story.
+
 The `MCP native execution and persistence` workflow runs only for selected paths,
 so its `native-launch` jobs are additional checks when triggered, not required
 branch checks. Keep every required job enabled for all pull requests to `main`.
