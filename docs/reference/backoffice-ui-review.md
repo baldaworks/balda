@@ -45,14 +45,21 @@ state: preview routes accept GET and HEAD only. The standalone server binds a
 loopback address and serves no authenticated application endpoints. Stop it with
 Ctrl-C. Do not expose this listener through an ingress.
 
-Run the browser regression suite against the same synthetic gallery:
+Run the browser regression suite against the same synthetic gallery from the
+repository root:
 
 ```bash
-cd qa/backoffice-e2e
-npm ci
-npx playwright install chromium
-npm test
+task backoffice-e2e
 ```
+
+The task uses `scripts/qa/run-backoffice-e2e.sh` to install the lockfile-pinned
+Chromium build together with Playwright's supported Linux libraries and fonts,
+then runs the complete suite. In an already provisioned Linux image, use
+`./scripts/qa/run-backoffice-e2e.sh --no-system-install`. Logs are retained under
+`${BALDA_BACKOFFICE_E2E_ARTIFACTS:-${TMPDIR:-/tmp}/balda-backoffice-e2e}`. Set
+`BALDA_BACKOFFICE_E2E_SCREENSHOTS=1` when full-page screenshots are useful.
+GitHub Actions runs the same script on a clean Ubuntu runner and uploads its
+diagnostic directory when the job fails.
 
 The suite starts its own loopback preview on an ephemeral port. It checks every
 gallery page and state at 1440×900, 1024×768, 768×1024 and 390×844. It checks

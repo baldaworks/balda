@@ -6,6 +6,32 @@ on:
   pull_request:
     branches: [ master, main ]
 jobs:
+  backoffice-e2e:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: qa/backoffice-e2e/package-lock.json
+      - name: Backoffice browser regression
+        env:
+          BALDA_BACKOFFICE_E2E_ARTIFACTS: ${{ runner.temp }}/balda-backoffice-e2e
+        run: ./scripts/qa/run-backoffice-e2e.sh
+      - name: Upload browser failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: backoffice-e2e-failure-artifacts
+          path: ${{ runner.temp }}/balda-backoffice-e2e
+          if-no-files-found: warn
+
   sqlite-integration:
     runs-on: ubuntu-latest
     permissions:
@@ -18,7 +44,16 @@ jobs:
       - name: Validate SQLite Goose migrations
         run: go tool goose -dir internal/apps/balda/state/migrations validate
       - name: SQLite state integration
-        run: go test -race -tags=integration,sqlite ./internal/apps/balda/state
+        env:
+          BALDA_CI_TIMING_DIR: ${{ runner.temp }}/balda-ci-timing/sqlite
+        run: ./scripts/ci/run-go-test-with-timing.sh sqlite
+      - name: Upload SQLite timing
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: sqlite-integration-timing
+          path: ${{ runner.temp }}/balda-ci-timing/sqlite
+          if-no-files-found: warn
 
   postgres-integration:
     runs-on: ubuntu-latest
@@ -48,11 +83,15 @@ jobs:
           BALDA_TEST_POSTGRES_DSN: postgres://postgres:balda-test-only@localhost:5432/postgres?sslmode=disable
         run: go test -race -tags=integration,postgres ./internal/apps/balda/state
 
-  test:
+  test-shards:
+    name: test-shard-${{ matrix.shard }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1]
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
@@ -60,25 +99,80 @@ jobs:
           go-version-file: 'go.mod'
       - name: Prepare test artifact workspace
         run: mkdir -p .tmp
-      - name: Test
+      - name: Generate complete test shards
+        run: ./scripts/ci/make-go-test-shards.sh .tmp/test-shards
+      - name: Test shard ${{ matrix.shard }}
         env:
           TMPDIR: ${{ github.workspace }}/.tmp
+          BALDA_CI_SHARD: ${{ matrix.shard }}
+          BALDA_CI_PACKAGE_FILE: ${{ github.workspace }}/.tmp/test-shards/shard-${{ matrix.shard }}.txt
+          BALDA_CI_TIMING_DIR: ${{ runner.temp }}/balda-ci-timing/test-shard-${{ matrix.shard }}
+          BALDA_CI_COVERAGE_FILE: ${{ runner.temp }}/balda-ci-timing/test-shard-${{ matrix.shard }}/coverage.out
+        run: ./scripts/ci/run-go-test-with-timing.sh test-shard
+      - name: Retain shard inventory
+        if: always()
+        run: cp .tmp/test-shards/shard-${{ matrix.shard }}.txt ${{ runner.temp }}/balda-ci-timing/test-shard-${{ matrix.shard }}/packages.txt
+      - name: Upload test shard artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-shard-${{ matrix.shard }}
+          path: ${{ runner.temp }}/balda-ci-timing/test-shard-${{ matrix.shard }}
+          if-no-files-found: warn
+      - name: Upload shard failure state
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-shard-${{ matrix.shard }}-failure-state
+          path: |
+            .tmp/**/*.db
+            .tmp/**/.config/balda/nats/**
+          if-no-files-found: warn
+
+  test:
+    if: always()
+    needs: test-shards
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Require every test shard
+        env:
+          SHARD_RESULT: ${{ needs.test-shards.result }}
+        run: test "$SHARD_RESULT" = success
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+      - uses: actions/download-artifact@v8
+        with:
+          name: test-shard-0
+          path: .tmp/test-shards/0
+      - uses: actions/download-artifact@v8
+        with:
+          name: test-shard-1
+          path: .tmp/test-shards/1
+      - name: Verify inventory and merge atomic coverage
         run: |
-          set -o pipefail
-          go test -v -race -covermode=atomic -coverprofile=coverage.out -timeout=20m ./... 2>&1 | tee test.log
+          cat .tmp/test-shards/0/packages.txt .tmp/test-shards/1/packages.txt | LC_ALL=C sort > .tmp/test-shards/actual.txt
+          go list ./... | LC_ALL=C sort > .tmp/test-shards/expected.txt
+          cmp .tmp/test-shards/expected.txt .tmp/test-shards/actual.txt
+          test "$(sort .tmp/test-shards/actual.txt | uniq -d | wc -l)" -eq 0
+          ./scripts/ci/merge-go-coverprofiles.sh coverage.out .tmp/test-shards/0/coverage.out .tmp/test-shards/1/coverage.out
+          cat .tmp/test-shards/0/timing.md .tmp/test-shards/1/timing.md >> "$GITHUB_STEP_SUMMARY"
       - name: Vulnerability check
         run: |
           set -o pipefail
-          go tool govulncheck ./... 2>&1 | tee -a test.log
-      - name: Upload failure artifacts
+          go tool govulncheck ./... 2>&1 | tee test.log
+      - name: Upload aggregation failure artifacts
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: test-failure-artifacts
           path: |
             test.log
-            .tmp/**/*.db
-            .tmp/**/.config/balda/nats/**
+            .tmp/test-shards
           if-no-files-found: warn
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v7
