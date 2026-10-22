@@ -581,6 +581,11 @@ components:
     in:
       - internal/apps/balda/state
 
+  # Repository-local CI diagnostics use only the standard library.
+  ci_tools:
+    in:
+      - scripts/ci/gotestsummary
+
   # Storage and adapter-heavy infrastructure that does not fit a narrower semantic layer.
   infrastructure:
     in:
@@ -1492,6 +1497,11 @@ deps:
     anyVendorDeps: false
     canUse:
       - state_adapters
+
+  ci_tools:
+    mayDependOn:
+      - ci_tools
+    anyVendorDeps: false
 
   infrastructure:
     anyProjectDeps: true
