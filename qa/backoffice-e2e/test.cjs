@@ -254,10 +254,47 @@ async function checkTopBar(page, label) {
   assert.equal(geometry.headingTop >= geometry.bottom, true, `${label} heading stays below top bar: ${JSON.stringify(geometry)}`);
 }
 
+async function checkBranding(page, baseURL, viewport) {
+  const response = await page.goto(`${baseURL}/qa/ui/overview`);
+  assert.equal(response.status(), 200, `branding page status at ${viewport.width}px`);
+  const icon = page.locator('link[rel~="icon"]');
+  const faviconPath = await icon.getAttribute('href');
+  assert.match(faviconPath, /^\/assets\/baldaworks-logo\.[0-9a-f]{16}\.png$/, 'favicon uses the versioned Baldaworks logo');
+  const faviconResponse = await page.request.get(new URL(faviconPath, baseURL).href);
+  assert.equal(faviconResponse.status(), 200, 'favicon loads');
+  assert.match(faviconResponse.headers()['content-type'], /^image\/png\b/, 'favicon is served as PNG');
+
+  const logo = page.locator('.sidebar-brand .brand-logo');
+  assert.equal(await logo.count(), 1, 'sidebar has one Baldaworks logo');
+  await logo.waitFor({ state: 'visible' });
+  const branding = await logo.evaluate(element => {
+    const bounds = element.getBoundingClientRect();
+    return {
+      complete: element.complete,
+      naturalWidth: element.naturalWidth,
+      naturalHeight: element.naturalHeight,
+      width: bounds.width,
+      height: bounds.height,
+      sourcePath: new URL(element.currentSrc).pathname,
+      alt: element.getAttribute('alt'),
+      ariaHidden: element.getAttribute('aria-hidden'),
+    };
+  });
+  assert.equal(branding.complete, true, 'sidebar logo finished loading');
+  assert.deepEqual([branding.naturalWidth, branding.naturalHeight], [460, 460], 'sidebar logo keeps the source resolution');
+  assert.equal(branding.width, branding.height, `sidebar logo is square at ${viewport.width}px`);
+  assert.ok(branding.width >= 35 && branding.width <= 36, `sidebar logo has the expected rendered size at ${viewport.width}px`);
+  assert.equal(branding.sourcePath, faviconPath, 'sidebar and favicon reuse one asset');
+  assert.deepEqual([branding.alt, branding.ariaHidden], ['', 'true'], 'sidebar logo is decorative');
+  assert.equal(await page.getByRole('link', { name: 'Balda', exact: true }).count(), 1, 'brand link keeps its accessible name');
+  assert.equal(await page.getByRole('img').count(), 0, 'decorative logo stays out of the accessibility tree');
+}
+
 async function checkPage(browser, baseURL, viewport) {
   const page = await browser.newPage({ viewport });
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
+  await checkBranding(page, baseURL, viewport);
   for (const route of routes) {
     const response = await page.goto(`${baseURL}/qa/ui/${route}`);
     assert.equal(response.status(), expectedStatus.get(route) ?? 200, `${route} HTTP status at ${viewport.width}px`);
@@ -446,13 +483,28 @@ async function checkPage(browser, baseURL, viewport) {
     const browser = await chromium.launch({ headless: true });
     try {
       for (const viewport of [{ width: 1440, height: 900 }, { width: 1024, height: 768 }, { width: 768, height: 1024 }, { width: 390, height: 844 }]) {
+        if (process.env.BACKOFFICE_BRANDING_ONLY) {
+          const page = await browser.newPage({ viewport });
+          const errors = [];
+          page.on('pageerror', error => errors.push(error.message));
+          page.on('requestfailed', request => errors.push(`${request.url()}: ${request.failure()?.errorText}`));
+          await checkBranding(page, url, viewport);
+          assert.deepEqual(errors, [], `branding asset and browser errors at ${viewport.width}px`);
+          if (process.env.BACKOFFICE_E2E_SCREENSHOTS) {
+            fs.mkdirSync(process.env.BACKOFFICE_E2E_SCREENSHOTS, { recursive: true });
+            await page.screenshot({ path: path.join(process.env.BACKOFFICE_E2E_SCREENSHOTS, `branding-${viewport.width}.png`), fullPage: true });
+          }
+          await page.close();
+          continue;
+        }
         await checkConfirmations(browser, url, viewport);
         if (process.env.BACKOFFICE_CONFIRMATIONS_ONLY) continue;
         await checkWebhooks(browser, url, viewport);
         await checkMCPTransport(browser, url, viewport);
         await checkPage(browser, url, viewport);
       }
-      if (process.env.BACKOFFICE_CONFIRMATIONS_ONLY) console.log('Backoffice confirmations: native/HTMX behavior at 390/768/1024/1440px passed');
+      if (process.env.BACKOFFICE_BRANDING_ONLY) console.log('Backoffice branding: logo and favicon at 390/768/1024/1440px passed');
+      else if (process.env.BACKOFFICE_CONFIRMATIONS_ONLY) console.log('Backoffice confirmations: native/HTMX behavior at 390/768/1024/1440px passed');
       else console.log(`Backoffice E2E: ${routes.length} gallery pages and states at 390/768/1024/1440px, consistent heading colors, native/HTMX layout, audit, refresh, and navigation passed`);
     } finally { await browser.close(); }
   } finally { process.kill(-server.pid, 'SIGINT'); }
