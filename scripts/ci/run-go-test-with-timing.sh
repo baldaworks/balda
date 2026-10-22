@@ -38,6 +38,7 @@ esac
 mkdir -p "$artifacts_root"
 raw_json="$artifacts_root/go-test.jsonl"
 plain_log="$artifacts_root/test.log"
+stderr_log="$artifacts_root/stderr.log"
 summary="$artifacts_root/timing.md"
 inventory_file="$artifacts_root/inventory.txt"
 summary_tool="$artifacts_root/gotestsummary"
@@ -53,7 +54,7 @@ cd "$repo_root"
 
 go build -o "$summary_tool" ./scripts/ci/gotestsummary
 set +e
-"${command[@]}" 2>&1 \
+"${command[@]}" 2> >(tee "$stderr_log" >&2) \
   | tee "$raw_json" \
   | "$summary_tool" -title "$title" -output "$summary" -log "$plain_log"
 status=$?
