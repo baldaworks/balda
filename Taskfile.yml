@@ -6,6 +6,11 @@ tasks:
     cmds:
       - go tool go-arch-lint check --project-path .
 
+  backoffice-e2e:
+    desc: Provision Chromium and run the Backoffice browser regression suite
+    cmds:
+      - ./scripts/qa/run-backoffice-e2e.sh
+
   dev:
     desc: Run Balda with the embedded local runtime
     cmds:

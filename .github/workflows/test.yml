@@ -6,6 +6,32 @@ on:
   pull_request:
     branches: [ master, main ]
 jobs:
+  backoffice-e2e:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: qa/backoffice-e2e/package-lock.json
+      - name: Backoffice browser regression
+        env:
+          BALDA_BACKOFFICE_E2E_ARTIFACTS: ${{ runner.temp }}/balda-backoffice-e2e
+        run: ./scripts/qa/run-backoffice-e2e.sh
+      - name: Upload browser failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: backoffice-e2e-failure-artifacts
+          path: ${{ runner.temp }}/balda-backoffice-e2e
+          if-no-files-found: warn
+
   sqlite-integration:
     runs-on: ubuntu-latest
     permissions:
