@@ -177,7 +177,7 @@ func RespondMutationPath(w http.ResponseWriter, request *http.Request, location 
 
 // Assets returns the embedded offline static asset handler.
 func Assets() (http.Handler, error) {
-	_, originals, err := versionedAssets()
+	versioned, originals, err := versionedAssets()
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +199,7 @@ func Assets() (http.Handler, error) {
 		name := strings.TrimPrefix(path.Clean("/"+strings.TrimPrefix(request.URL.Path, "/assets/")), "/")
 		if original, ok := originals[name]; ok {
 			name = original
-		} else if name == "app.js" || name == "app.css" || name == "webauthn.js" {
+		} else if _, ok := versioned["/assets/"+name]; ok {
 			http.NotFound(w, request)
 			return
 		}
@@ -217,9 +217,9 @@ func Assets() (http.Handler, error) {
 }
 
 func versionedAssets() (map[string]string, map[string]string, error) {
-	paths := make(map[string]string, 2)
-	originals := make(map[string]string, 2)
-	for _, name := range []string{"app.css", "app.js", "webauthn.js"} {
+	paths := make(map[string]string, 4)
+	originals := make(map[string]string, 4)
+	for _, name := range []string{"app.css", "app.js", "webauthn.js", "baldaworks-logo.png"} {
 		contents, err := embedded.ReadFile("static/" + name)
 		if err != nil {
 			return nil, nil, fmt.Errorf("read embedded asset %s: %w", name, err)

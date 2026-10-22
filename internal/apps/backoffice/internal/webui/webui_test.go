@@ -1,7 +1,9 @@
 package webui
 
 import (
+	"bytes"
 	"encoding/json"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -62,9 +64,15 @@ func TestRendererFullFragmentAndHistoryContracts(t *testing.T) {
 				if strings.Count(body, `id="action-confirmation"`) != 1 || !strings.Contains(body, `assets/vendor/bootstrap/bootstrap.min.js`) {
 					t.Fatal("document must include one shared confirmation dialog and its local Bootstrap asset")
 				}
+				if strings.Count(body, `rel="icon"`) != 1 || strings.Count(body, `class="brand-logo"`) != 1 || strings.Contains(body, `class="brand-mark"`) {
+					t.Fatal("document must include one favicon and one sidebar logo without the placeholder mark")
+				}
 			}
 			if !tt.wantFull && !strings.HasPrefix(body, "<title>Overview · Balda</title><main") {
 				t.Fatalf("fragment shape = %q", body)
+			}
+			if !tt.wantFull && (strings.Contains(body, `rel="icon"`) || strings.Contains(body, `class="brand-logo"`)) {
+				t.Fatal("fragment must not duplicate document branding")
 			}
 			if !strings.Contains(body, "/gateway/telegram/webhook") || !strings.Contains(body, "Callback locations") {
 				t.Fatalf("overview callback details are missing: %q", body)
@@ -329,14 +337,19 @@ func TestRenderedAssetsUseContentVersions(t *testing.T) {
 		t.Fatal(err)
 	}
 	response := httptest.NewRecorder()
-	if err := renderer.Render(response, httptest.NewRequest(http.MethodGet, "/balda/login", nil),
-		http.StatusOK, TemplateLogin, Page{Title: "Login"}); err != nil {
+	page := Page{Title: "Overview", Navigation: Navigation(usercmd.BackofficeCapabilities{Overview: true}, LocationOverview)}
+	if err := renderer.Render(response, httptest.NewRequest(http.MethodGet, "/balda/overview", nil),
+		http.StatusOK, TemplateOverview, page); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"app.css", "app.js"} {
+	for _, name := range []string{"app.css", "app.js", "baldaworks-logo.png"} {
 		assetPath := versioned["/assets/"+name]
-		if !strings.Contains(response.Body.String(), "/balda"+assetPath) {
-			t.Errorf("rendered page does not reference %s", assetPath)
+		wantReferences := 1
+		if name == "baldaworks-logo.png" {
+			wantReferences = 2
+		}
+		if references := strings.Count(response.Body.String(), "/balda"+assetPath); references != wantReferences {
+			t.Errorf("rendered page references %s %d times, want %d", assetPath, references, wantReferences)
 		}
 		assetResponse := httptest.NewRecorder()
 		handler.ServeHTTP(assetResponse, httptest.NewRequest(http.MethodGet, assetPath, nil))
@@ -344,11 +357,43 @@ func TestRenderedAssetsUseContentVersions(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if assetResponse.Code != http.StatusOK || assetResponse.Body.String() != string(contents) ||
-			assetResponse.Header().Get("Cache-Control") != "public, max-age=31536000, immutable" {
+		if assetResponse.Code != http.StatusOK || !bytes.Equal(assetResponse.Body.Bytes(), contents) ||
+			assetResponse.Header().Get("Cache-Control") != "public, max-age=31536000, immutable" ||
+			assetResponse.Header().Get("X-Content-Type-Options") != "nosniff" {
 			t.Errorf("versioned %s response: status=%d, cache=%q", name, assetResponse.Code,
 				assetResponse.Header().Get("Cache-Control"))
 		}
+		headResponse := httptest.NewRecorder()
+		handler.ServeHTTP(headResponse, httptest.NewRequest(http.MethodHead, assetPath, nil))
+		if headResponse.Code != http.StatusOK || headResponse.Body.Len() != 0 {
+			t.Errorf("versioned %s HEAD response: status=%d, body=%d bytes", name, headResponse.Code, headResponse.Body.Len())
+		}
+	}
+	logoPath := versioned["/assets/baldaworks-logo.png"]
+	logoResponse := httptest.NewRecorder()
+	handler.ServeHTTP(logoResponse, httptest.NewRequest(http.MethodGet, logoPath, nil))
+	if got := logoResponse.Header().Get("Content-Type"); got != "image/png" {
+		t.Errorf("logo content type = %q, want image/png", got)
+	}
+	config, err := png.DecodeConfig(bytes.NewReader(logoResponse.Body.Bytes()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Width != 460 || config.Height != 460 {
+		t.Errorf("logo dimensions = %dx%d, want 460x460", config.Width, config.Height)
+	}
+	unversioned := httptest.NewRecorder()
+	handler.ServeHTTP(unversioned, httptest.NewRequest(http.MethodGet, "/assets/baldaworks-logo.png", nil))
+	if unversioned.Code != http.StatusNotFound {
+		t.Errorf("unversioned logo status = %d, want %d", unversioned.Code, http.StatusNotFound)
+	}
+	login := httptest.NewRecorder()
+	if err := renderer.Render(login, httptest.NewRequest(http.MethodGet, "/balda/login", nil),
+		http.StatusOK, TemplateLogin, Page{Title: "Login"}); err != nil {
+		t.Fatal(err)
+	}
+	if references := strings.Count(login.Body.String(), "/balda"+logoPath); references != 1 || strings.Contains(login.Body.String(), `class="brand-logo"`) {
+		t.Errorf("login logo references = %d, want favicon only", references)
 	}
 }
 
