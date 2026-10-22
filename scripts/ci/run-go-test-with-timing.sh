@@ -9,8 +9,20 @@ artifacts_root="${BALDA_CI_TIMING_DIR:-$repo_root/.tmp/ci-timing/$mode}"
 case "$mode" in
   test)
     title="General Go test"
-    command=(go test -json -v -race -covermode=atomic -coverprofile=coverage.out -timeout=20m ./...)
+    coverage_file="${BALDA_CI_COVERAGE_FILE:-coverage.out}"
+    command=(go test -json -v -race -covermode=atomic -coverprofile="$coverage_file" -timeout=20m ./...)
     inventory=(go list ./...)
+    ;;
+  test-shard)
+    if [[ -z "${BALDA_CI_PACKAGE_FILE:-}" || ! -s "${BALDA_CI_PACKAGE_FILE:-}" ]]; then
+      printf 'BALDA_CI_PACKAGE_FILE must identify a non-empty shard file\n' >&2
+      exit 2
+    fi
+    mapfile -t packages <"$BALDA_CI_PACKAGE_FILE"
+    title="General Go test shard ${BALDA_CI_SHARD:-unknown}"
+    coverage_file="${BALDA_CI_COVERAGE_FILE:-$artifacts_root/coverage.out}"
+    command=(go test -json -v -race -covermode=atomic -coverprofile="$coverage_file" -timeout=20m "${packages[@]}")
+    inventory=(printf '%s\n' "${packages[@]}")
     ;;
   sqlite)
     title="SQLite integration"
@@ -18,7 +30,7 @@ case "$mode" in
     inventory=(go list -tags=integration,sqlite ./internal/apps/balda/state)
     ;;
   *)
-    printf 'usage: %s {test|sqlite}\n' "$0" >&2
+    printf 'usage: %s {test|test-shard|sqlite}\n' "$0" >&2
     exit 2
     ;;
 esac

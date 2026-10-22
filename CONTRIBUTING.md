@@ -59,6 +59,14 @@ same workflow, runner class, cache policy, and test inventory. Compare the
 median `test` and `sqlite-integration` job wall times, and retain the run URLs
 and timing artifacts in the related Story.
 
+CI divides the general package inventory into two deterministic shards. The
+`test` job remains the required aggregation check: it fails unless both shards
+pass, verifies that their union exactly matches `go list ./...` with no
+duplicates, merges their atomic coverage profiles, runs `govulncheck`, and
+uploads the same final `coverage.out`. Measure the optimized critical path from
+the start of the slower shard through completion of this aggregation job, and
+record the sum of both shard durations when comparing runner-minute cost.
+
 The `MCP native execution and persistence` workflow runs only for selected paths,
 so its `native-launch` jobs are additional checks when triggered, not required
 branch checks. Keep every required job enabled for all pull requests to `main`.

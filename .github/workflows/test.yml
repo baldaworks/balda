@@ -83,11 +83,15 @@ jobs:
           BALDA_TEST_POSTGRES_DSN: postgres://postgres:balda-test-only@localhost:5432/postgres?sslmode=disable
         run: go test -race -tags=integration,postgres ./internal/apps/balda/state
 
-  test:
+  test-shards:
+    name: test-shard-${{ matrix.shard }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1]
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
@@ -95,32 +99,74 @@ jobs:
           go-version-file: 'go.mod'
       - name: Prepare test artifact workspace
         run: mkdir -p .tmp
-      - name: Test
+      - name: Generate complete test shards
+        run: ./scripts/ci/make-go-test-shards.sh .tmp/test-shards
+      - name: Test shard ${{ matrix.shard }}
         env:
           TMPDIR: ${{ github.workspace }}/.tmp
-          BALDA_CI_TIMING_DIR: ${{ runner.temp }}/balda-ci-timing/test
-        run: ./scripts/ci/run-go-test-with-timing.sh test
+          BALDA_CI_SHARD: ${{ matrix.shard }}
+          BALDA_CI_PACKAGE_FILE: ${{ github.workspace }}/.tmp/test-shards/shard-${{ matrix.shard }}.txt
+          BALDA_CI_TIMING_DIR: ${{ runner.temp }}/balda-ci-timing/test-shard-${{ matrix.shard }}
+          BALDA_CI_COVERAGE_FILE: ${{ runner.temp }}/balda-ci-timing/test-shard-${{ matrix.shard }}/coverage.out
+        run: ./scripts/ci/run-go-test-with-timing.sh test-shard
+      - name: Retain shard inventory
+        if: always()
+        run: cp .tmp/test-shards/shard-${{ matrix.shard }}.txt ${{ runner.temp }}/balda-ci-timing/test-shard-${{ matrix.shard }}/packages.txt
+      - name: Upload test shard artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-shard-${{ matrix.shard }}
+          path: |
+            ${{ runner.temp }}/balda-ci-timing/test-shard-${{ matrix.shard }}
+            .tmp/**/*.db
+            .tmp/**/.config/balda/nats/**
+          if-no-files-found: warn
+
+  test:
+    if: always()
+    needs: test-shards
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Require every test shard
+        env:
+          SHARD_RESULT: ${{ needs.test-shards.result }}
+        run: test "$SHARD_RESULT" = success
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+      - uses: actions/download-artifact@v8
+        with:
+          name: test-shard-0
+          path: .tmp/test-shards/0
+      - uses: actions/download-artifact@v8
+        with:
+          name: test-shard-1
+          path: .tmp/test-shards/1
+      - name: Verify inventory and merge atomic coverage
+        run: |
+          cat .tmp/test-shards/0/packages.txt .tmp/test-shards/1/packages.txt | LC_ALL=C sort > .tmp/test-shards/actual.txt
+          go list ./... | LC_ALL=C sort > .tmp/test-shards/expected.txt
+          cmp .tmp/test-shards/expected.txt .tmp/test-shards/actual.txt
+          test "$(sort .tmp/test-shards/actual.txt | uniq -d | wc -l)" -eq 0
+          ./scripts/ci/merge-go-coverprofiles.sh coverage.out .tmp/test-shards/0/coverage.out .tmp/test-shards/1/coverage.out
+          cat .tmp/test-shards/0/timing.md .tmp/test-shards/1/timing.md >> "$GITHUB_STEP_SUMMARY"
       - name: Vulnerability check
         run: |
           set -o pipefail
-          go tool govulncheck ./... 2>&1 | tee -a test.log
-      - name: Upload failure artifacts
+          go tool govulncheck ./... 2>&1 | tee test.log
+      - name: Upload aggregation failure artifacts
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: test-failure-artifacts
           path: |
             test.log
-            ${{ runner.temp }}/balda-ci-timing/test
-            .tmp/**/*.db
-            .tmp/**/.config/balda/nats/**
-          if-no-files-found: warn
-      - name: Upload test timing
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: test-timing
-          path: ${{ runner.temp }}/balda-ci-timing/test
+            .tmp/test-shards
           if-no-files-found: warn
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v7
