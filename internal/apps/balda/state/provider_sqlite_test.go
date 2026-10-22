@@ -5,6 +5,8 @@ package state
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -13,7 +15,33 @@ import (
 )
 
 func TestSQLiteProviderContract(t *testing.T) {
-	runProviderContract(t, func(*testing.T) contractOpener { return NewSQLiteProvider })
+	// Contract cases need isolated databases, but repeating every migration for
+	// each case adds no coverage. Seed each fresh path from one migrated template.
+	templatePath := filepath.Join(t.TempDir(), "contract-template.db")
+	provider, err := NewSQLiteProvider(t.Context(), templatePath)
+	if err != nil {
+		t.Fatalf("create contract template: %v", err)
+	}
+	if err := provider.Close(); err != nil {
+		t.Fatalf("close contract template: %v", err)
+	}
+	template, err := os.ReadFile(templatePath)
+	if err != nil {
+		t.Fatalf("read contract template: %v", err)
+	}
+
+	runProviderContract(t, func(*testing.T) contractOpener {
+		return func(ctx context.Context, path string) (Provider, error) {
+			if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+				if err := os.WriteFile(path, template, 0o600); err != nil {
+					return nil, fmt.Errorf("seed SQLite contract database: %w", err)
+				}
+			} else if err != nil {
+				return nil, fmt.Errorf("inspect SQLite contract database: %w", err)
+			}
+			return NewSQLiteProvider(ctx, path)
+		}
+	})
 }
 
 func TestSQLiteRuntimeSessionDeleteRetriesAfterPoolContention(t *testing.T) {
