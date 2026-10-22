@@ -117,8 +117,14 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: test-shard-${{ matrix.shard }}
+          path: ${{ runner.temp }}/balda-ci-timing/test-shard-${{ matrix.shard }}
+          if-no-files-found: warn
+      - name: Upload shard failure state
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-shard-${{ matrix.shard }}-failure-state
           path: |
-            ${{ runner.temp }}/balda-ci-timing/test-shard-${{ matrix.shard }}
             .tmp/**/*.db
             .tmp/**/.config/balda/nats/**
           if-no-files-found: warn
