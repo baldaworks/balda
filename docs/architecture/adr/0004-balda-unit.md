@@ -23,6 +23,12 @@ immutable revisions, full-graph validation, CAS и audit сохраняют си
 `AgentInstance`, `SessionAttachment`, `agent_instance_id` и `attachment_id` в
 контракт не вводятся.
 
+Первая реализация требует ровно один активный application process Balda для
+одного deployment. Этот process владеет Unit WebSocket, ingress, admission,
+execution и callbacks. Несколько одновременно активных процессов Balda, routing
+к process-local socket и failover connection ownership не входят в этот ADR;
+для них потребуется отдельное принятое решение.
+
 ## Проверенное состояние репозитория
 
 На момент рассмотрения 2026-10-19 Unit ещё не реализован. Этот ADR описывает
@@ -81,14 +87,19 @@ Balda управляет агентскими сессиями и ходом р�
 2. Администратор заранее создаёт Unit в Backoffice. Balda один раз показывает
    высокоэнтропийный bearer token вида `<public_lookup_id>.<secret>` и сохраняет
    только его криптографический digest.
-3. Оператор запускает Unit с адресом интеграции Balda, локальным профилем и
-   bearer token, переданным через защищённый канал. Unit открывает исходящий
-   WebSocket over TLS и предъявляет token в `Authorization: Bearer`.
+3. Оператор запускает Unit с адресом интеграции Balda, точной локальной копией
+   server-owned profile revision и bearer token, переданным через защищённый
+   канал. Unit вычисляет canonical descriptor digest локального профиля,
+   открывает исходящий WebSocket over TLS и предъявляет token в
+   `Authorization: Bearer`, а profile tuple и digest — в отдельных
+   неавторизационных upgrade headers.
 4. Balda аутентифицирует заранее созданный Unit, проверяет server-owned policy,
-   enabled/revoked state и назначает соединению свежий generation. После этого
-   Balda выполняет ACP `initialize` и выводит readiness из состояния соединения.
-   Unit не публикует profiles или readiness; создание Unit и подключение сами по
-   себе не создают провайдера.
+   enabled/revoked state и точное совпадение `(profile_id, profile_revision,
+   descriptor_digest)` до `101 Switching Protocols`. Только после этого она
+   назначает соединению свежий generation, Unit запускает ACP process, а Balda
+   выполняет ACP `initialize` и выводит readiness из состояния соединения.
+   Unit не публикует полный profile или readiness; создание Unit и подключение
+   сами по себе не создают провайдера.
 5. Администратор через штатный provider service создаёт managed-provider revision,
    ссылающуюся на `(unit_id, profile_id, profile_revision)`, и явно включает её
    в требуемый provider graph.
@@ -99,8 +110,10 @@ Balda управляет агентскими сессиями и ходом р�
 7. Агент работает в выбранной среде; пользователь получает обычные сообщения,
    запросы разрешений и результат через Balda.
 
-URL определяет только адрес подключения. Bearer token передаётся исключительно
-в заголовке WebSocket upgrade и не помещается в URL или query.
+URL определяет только адрес подключения. Bearer token, profile tuple и
+descriptor digest передаются исключительно в заголовках WebSocket upgrade и не
+помещаются в URL или query. Tuple и digest не являются credentials и не
+заменяют bearer-аутентификацию.
 
 ## 2. Контекст и проблема
 
@@ -230,6 +243,11 @@ boundary только непрозрачный неизменяемый `owner_s
 driver является его клиентом; session lifecycle не импортирует Unit-контракты
 и не координирует их переходы.
 
+В первой реализации сервис работает внутри единственного активного application
+process Balda, который также держит WebSocket Unit. Durable store переживает
+restart этого process, но сам по себе не маршрутизирует команды и callbacks к
+socket другого process и не предоставляет distributed ownership lease.
+
 ### Workspace Manager
 
 Владеет выдачей конкретного каталога конкретному получателю, RO/RW, сроком
@@ -300,30 +318,43 @@ protocol должны быть согласованы до реализации.
    аутентификатором. Balda сохраняет public lookup ID, криптографический digest
    token secret и необходимую служебную metadata, но не plaintext token или
    secret.
-3. Оператор передаёт Unit integration URL и token через защищённый ввод,
-   secret file или secret mount. Token не передаётся аргументом CLI и не
-   наследуется запускаемым agent process.
-4. Unit открывает исходящий WebSocket over TLS и посылает
-   `Authorization: Bearer <public_lookup_id>.<secret>` в HTTP upgrade. Token не
-   помещается в URL, query, cookie, WebSocket subprotocol или первое сообщение.
-5. До upgrade Balda находит заранее созданный Unit по public lookup ID,
-   криптографически проверяет secret по сохранённому digest, проверяет, что Unit
-   enabled и не revoked, и применяет server-owned policy. Присланные клиентом
-   или proxy forwarded identity headers не участвуют в identity или policy.
+3. Оператор передаёт Unit integration URL, exact profile descriptor и token
+   через защищённый ввод, secret file или secret mount. Token не передаётся
+   аргументом CLI и не наследуется запускаемым agent process. Локальный
+   descriptor обязан соответствовать exact server-owned profile revision.
+4. Unit канонизирует локальный descriptor по его versioned schema, вычисляет
+   SHA-256 и открывает исходящий WebSocket over TLS. HTTP upgrade содержит
+   `Authorization: Bearer <public_lookup_id>.<secret>`, а также
+   `X-Balda-Unit-Profile-ID`, `X-Balda-Unit-Profile-Revision` и
+   `X-Balda-Unit-Descriptor-Digest: sha256:<lowercase hex>`. Эти три заголовка
+   не являются credentials. Token и profile metadata не помещаются в URL,
+   query, cookie, WebSocket subprotocol или первое сообщение.
+5. До `101 Switching Protocols` Balda находит заранее созданный Unit по public
+   lookup ID, криптографически проверяет secret по сохранённому digest,
+   проверяет enabled/revoked state и server-owned policy, затем сравнивает
+   profile tuple и descriptor digest с exact server-owned revision. Missing,
+   malformed, unknown, stale или mismatched profile metadata отвергаются до
+   создания generation, запуска ACP process и admission. Присланные клиентом
+   или proxy forwarded identity headers не могут выбрать другой Unit или
+   ослабить policy; profile headers только заявляют локальную конфигурацию для
+   exact-match проверки с уже выбранной token-ом server-owned записью.
 6. Для первого соединения либо после terminal loss прежнего Balda атомарно
    назначает принятому соединению свежий монотонный connection generation.
    Параллельный upgrade при ещё живом соединении того же Unit отвергается.
    Unit supervisor обязан выполнить `stop + reap` прежнего ACP process до
    попытки reconnect; Balda не получает отдельного cleanup receipt и проверяет
-   этот локальный инвариант acceptance-тестами Unit. Затем Balda и Unit выполняют
-   стандартный ACP `initialize`; до успешного ответа session methods не
-   допускаются.
+   этот локальный инвариант acceptance-тестами Unit. Только после принятого
+   upgrade Unit запускает process точного локального profile descriptor. Затем
+   Balda и Unit выполняют стандартный ACP `initialize`; до успешного ответа
+   session methods не допускаются.
 
 Создание Unit и подключение не изменяют provider
 definitions, provider graph или `provider_state_version`. Token является
-единственным credential Unit для WebSocket-аутентификации: отдельные enrollment
-credentials, asymmetric key pairs, challenge-response, message signatures и
-вторая persistent identity credential не используются.
+единственным credential Unit для WebSocket-аутентификации: profile tuple и
+descriptor digest являются неавторизационной проверкой конфигурационной
+целостности. Отдельные enrollment credentials, asymmetric key pairs,
+challenge-response, message signatures и вторая persistent identity credential
+не используются.
 
 Rotation и revocation — явные операции Backoffice. Rotation генерирует новый
 token, показывает его один раз, атомарно заменяет digest и fence-ит текущее
@@ -335,11 +366,13 @@ token, показывает его один раз, атомарно замен�
 ### Граница TLS и reverse proxy
 
 Публичный TLS завершается на доверенном reverse proxy. Proxy обязан передавать
-`Authorization` в Balda без удаления или подмены. Участок proxy → Balda проходит
-по loopback, защищённой сети или отдельно защищённому transport. Balda игнорирует
-forwarded identity headers, включая заголовки, которые заявляют Unit, user или
-роль: bearer token и server-owned state являются единственным основанием
-аутентификации и авторизации Unit.
+`Authorization` и три `X-Balda-Unit-*` profile headers в Balda без удаления или
+подмены. Участок proxy → Balda проходит по loopback, защищённой сети или отдельно
+защищённому transport. Balda игнорирует forwarded identity headers, включая
+заголовки, которые заявляют Unit, user или роль: bearer token и server-owned
+state являются единственным основанием аутентификации и авторизации Unit, а
+profile headers принимаются только после token lookup и только для exact-match
+проверки найденной записи.
 
 Reverse proxy входит в trust boundary этого решения, потому что видит bearer
 token после TLS termination. Если proxy находится вне доверенной границы и
@@ -352,10 +385,17 @@ confidentiality. Такой deployment требует другого приня�
 Unit не публикует по ACP socket собственные profiles, capacity, readiness,
 shell command, image, host paths или Docker flags. `UnitRegistration` содержит
 стабильный `unit_id`, public lookup ID, lifecycle state, текущий connection
-generation и server-owned configuration единственного ACP process: профиль,
-revision, лимит sessions и лимит concurrent prompts. Digest и token не входят в
-inventory projection. Readiness выводится из `enabled` state, живого WebSocket и
-успешного ACP `initialize`.
+generation и server-owned configuration единственного ACP process: canonical
+public profile descriptor, schema/contract version, descriptor digest, лимит
+sessions и лимит concurrent prompts. Descriptor включает поля, определяющие
+process identity и enforcement: executable или artifact identity, допустимые
+args, agent/model identity, sandbox/resource policy, workspace/MCP policy и
+limits. Protected values в него не входят; при необходимости descriptor хранит
+только непрозрачную immutable revision защищённого набора. Token secret и его
+digest не входят в inventory projection. Descriptor digest является
+несекретной revision metadata, но полный descriptor не попадает в access logs.
+Readiness выводится из `enabled` state, принятого exact descriptor match, живого
+WebSocket и успешного ACP `initialize`.
 
 Managed provider создаётся отдельным явным действием администратора через
 существующий provider service. Его immutable revision содержит публичную typed
@@ -363,7 +403,9 @@ Managed provider создаётся отдельным явным действи
 type и `ContractVersion`; protected values сохраняются по ADR 0002. Reconnect
 не создаёт такую revision и не заменяет pins действующих сессий. Изменение
 server-owned executable, image, policy или limits требует новой Unit profile
-revision через Backoffice; Unit не может изменить её сетевым сообщением.
+revision и нового canonical descriptor digest через Backoffice; Unit не может
+изменить их сетевым сообщением. Оператор устанавливает exact local revision и
+перезапускает Unit; connection прежней revision не подменяет новую и наоборот.
 
 Для этого нужен встроенный remote ACP driver в registry ADR 0003. Рабочее имя
 `unit_acp` не является готовым API. Descriptor задаёт typed config, passive
@@ -444,9 +486,10 @@ transport adapter при сохранении границ и lifecycle этог
 
 WebSocket upgrade аутентифицируется ровно bearer token из раздела 6. Balda не
 принимает token из query, cookie, subprotocol, body или forwarded identity
-header. Проверка token, enabled/revoked state и server-owned policy происходит
-до `101 Switching Protocols`; failure не создаёт connection generation и не
-открывает доступ к inventory или ACP.
+header. Проверка token, enabled/revoked state, server-owned policy и exact
+profile tuple/descriptor digest происходит до `101 Switching Protocols`;
+failure не создаёт connection generation, не запускает ACP process и не
+открывает доступ к inventory, admission или ACP.
 
 Принятому socket Balda атомарно назначает свежий connection generation и
 связывает его с `unit_id`. Generation принадлежит самому соединению и не
@@ -457,12 +500,14 @@ header. Проверка token, enabled/revoked state и server-owned policy п�
 reconciliation. Generation не является credential, provider revision или ACP
 session ID и не позволяет подключиться без token.
 
-Каждый принятый WebSocket является ровно одним ACP connection и соответствует
-ровно одному ACP process instance Unit. На нём допускается ровно один
-`initialize`; session methods до успешного initialize и повторный initialize
-отвергаются. После потери соединения Unit сначала останавливает и reap-ит
-прежний ACP process и только затем начинает reconnect. Успешный reconnect
-создаёт новый generation, новый process и выполняет новый `initialize`.
+Каждый принятый WebSocket закреплён за exact принятой profile revision, является
+ровно одним ACP connection и соответствует ровно одному ACP process instance
+Unit. Unit запускает process только после принятого upgrade. На соединении
+допускается ровно один `initialize`; session methods до успешного initialize и
+повторный initialize отвергаются. После потери соединения Unit сначала
+останавливает и reap-ит прежний ACP process и только затем начинает reconnect.
+Успешный reconnect с тем же exact descriptor создаёт новый generation, новый
+process и выполняет новый `initialize`.
 Существующие sessions не переносятся молча: `session/load` или `session/resume`
 в новом generation возможны только при соответствующей ACP capability.
 
@@ -503,8 +548,9 @@ JSON-RPC IDs, notifications, ошибки и согласованные расш
 Транспорт должен иметь ограниченные размеры сообщений и очередей, backpressure,
 таймауты записи и корректное закрытие. Переполнение приводит к видимой ошибке
 и завершению binding; потеря сообщений прогресса или permission request ради
-продолжения работы недопустима. Лимиты задаются версией профиля и проверяются
-до активации binding. WebSocket ping/pong обнаруживает потерю соединения, после
+продолжения работы недопустима. Лимиты входят в canonical descriptor точной
+profile revision и проверяются по его digest до WebSocket upgrade и активации
+binding. WebSocket ping/pong обнаруживает потерю соединения, после
 чего Unit применяет локальную cleanup policy. Полностью недоступная сеть всё
 равно приводит к timeout и reconciliation, а не к обещанию мгновенной удалённой
 отмены.
@@ -552,12 +598,13 @@ provider revision, содержащей `unit_id`, `profile_id` и `profile_revi
 
 ### Авторитетная ёмкость и durable admission
 
-Shared `UnitExecutionStore` Balda является авторитетным источником capacity для
+Durable `UnitExecutionStore` Balda является авторитетным источником capacity для
 ACP-сессий и concurrent prompts единственного process instance Unit. Session
 slot резервируется до `session/new`, `session/load` или `session/resume`; prompt
 slot — непосредственно перед каждым `session/prompt` и освобождается после
 установленного terminal outcome. Журнал охватывает все sessions и prompts Unit
-независимо от числа session rows, экземпляров Balda и reconnect.
+независимо от числа session rows, restart единственного активного process Balda
+и reconnect Unit.
 
 До создания ACP-сессии Balda одной транзакцией:
 
@@ -567,7 +614,7 @@ slot — непосредственно перед каждым `session/prompt`
 3. создаёт уникальную session reservation и переводит binding в `opening` либо
    возвращает `capacity_exhausted` без `session/new`.
 
-Уникальность admission/reservation и лимит проверяются в одной транзакции shared
+Уникальность admission/reservation и лимит проверяются в одной транзакции durable
 store. Повтор exact request возвращает прежнюю reservation; тот же
 admission с другим digest конфликтует. Reservation освобождается только после
 durable terminal state и доказанной cleanup; `uncertain` удерживает slot.
@@ -582,7 +629,7 @@ durable terminal state и доказанной cleanup; `uncertain` удержи
 reservation не считается prompt reservation и не блокирует prompt capacity всё
 время жизни сессии.
 
-Unit execution service владеет этой shared capacity ledger и не объявляет slot
+Unit execution service владеет этой durable capacity ledger и не объявляет slot
 свободным до terminal transition. Если Unit недоступен, новый admission не
 создаётся.
 
@@ -620,6 +667,13 @@ records. Session layer не загружает и не интерпретиру�
 Retained revisions работают после disable/tombstone по ADR 0002, но live policy
 сохраняется: revoked Unit, недоступная profile revision или неподтверждённая
 process identity запрещают исполнение.
+
+Exact restore допускается только через соединение, подтвердившее те же
+`profile_id`, `profile_revision` и canonical descriptor digest, которые
+закреплены provider revision. Старый pin не может исполняться через новый
+profile descriptor даже при совместимых на вид executable и limits. Если
+точная revision или её локальный descriptor недоступны, restore завершается
+явным отказом либо согласованным fresh-session fallback.
 
 Generation — fencing epoch Unit connection, а не provider revision. Он не
 разрешает frame старого socket или предполагаемый resume. После доказанной
@@ -858,7 +912,7 @@ sessions. Профили, которым нужны binding-exclusive agent home
 process credentials, в этой модели не поддерживаются.
 
 Capacity reservations, admission и terminal state сохраняются транзакционно в
-shared `UnitExecutionStore` Balda до ACP side effect. Unit не вводит второй
+durable `UnitExecutionStore` Balda до ACP side effect. Unit не вводит второй
 management journal или lookup protocol поверх ACP WebSocket. При неопределённом
 ответе `session/new` Balda закрывает connection generation и ждёт подтверждённой
 остановки соответствующего process instance перед освобождением reservations.
@@ -867,6 +921,13 @@ management journal или lookup protocol поверх ACP WebSocket. При н�
 sandbox, resource limits и process-wide credentials. Prompt, репозиторий и сам
 Unit не могут расширить эти полномочия или объявить новую profile revision по
 сети.
+
+До запуска ACP process Balda сопоставляет `profile_id`, `profile_revision` и
+digest canonical public descriptor из authenticated upgrade с server-owned
+revision. Digest обнаруживает drift конфигурации на доверенном Unit host, но не
+является remote attestation и не доказывает, какой binary, process или container
+фактически запущен. Такое доказательство требует независимых process/container
+identity checks.
 
 ## 15. Организация кода и зависимостей
 
@@ -960,6 +1021,13 @@ contract, явная обработка remote cwd/MCP и повторная п�
 Приёмка отдельных заимствованных механизмов не доказывает работоспособность
 всей новой связки.
 
+Первая версия не предоставляет active-active или failover нескольких процессов
+Balda: deployment запускает ровно один активный application process. Общая БД
+не снимает это ограничение, потому что WebSocket Unit и ACP callbacks принадлежат
+памяти конкретного process. Multi-instance deployment потребует отдельного
+решения для connection ownership lease, request/callback routing, fencing и
+recovery после смены владельца.
+
 Минимальный Unit не включает immutable artifact dependencies, автоматический
 checkout/cache, publication, workflow checkpoints и управляемые host operations.
 Для каждого необходимого сценария должен быть назван отдельный владелец функции
@@ -983,9 +1051,12 @@ deployment secret handling. TLS-terminating proxy входит в trust boundary
 ### M0. Согласовать контракт с Balda
 
 Согласовать wire schema заранее созданного Unit, bearer-authenticated reverse
-WebSocket, proxy forwarding, connection generation, binding scope,
+WebSocket, обязательные profile revision/digest headers, canonical descriptor
+schema, proxy forwarding, connection generation, binding scope,
 standard ACP session lifecycle, remote cwd и MCP callbacks. Authentication choice не
 переоткрывается через enrollment, key exchange или per-channel credentials.
+Зафиксировать deployment с одним активным application process Balda и не
+заявлять multi-instance routing или failover.
 Проверить extension ADR 0002/0003: inventory/managed separation,
 provider service CAS/audit, отдельный Unit execution store, opaque owner scope и
 условные execution transitions. Policy restore фиксируется exact provider
@@ -996,8 +1067,9 @@ revision, а не Unit-полями session schema или усмотрением
 ### M1. Прямая ACP-сессия в подготовленной среде
 
 Добавить Unit binary с одним ACP process и `1..N` ACP sessions по проверенным
-лимитам профиля, локальный профиль, workspace проверки, flow control, cancel и
-cleanup. Сначала использовать подготовленный
+лимитам точного локального profile descriptor, его canonical digest, workspace
+проверки, flow control, cancel и cleanup. ACP process запускается только после
+принятого WebSocket upgrade. Сначала использовать подготовленный
 Linux-контейнер; выбрать один реальный agent bridge и точную модель.
 Тестовый ACP echo-agent подтверждает transport, затем реальная модель выполняет
 задачу с изменением файла и запуском проверки. Для этого сценария используется
@@ -1007,11 +1079,13 @@ Linux-контейнер; выбрать один реальный agent bridge 
 
 Добавить Backoffice create/rotate/revoke, одноразовый показ token, digest-only
 storage, отдельный Unit inventory, bearer authentication WebSocket upgrade,
-trusted-proxy header forwarding, readiness, connection-generation fencing,
+проверку exact profile tuple и descriptor digest до `101`, trusted-proxy
+forwarding authentication и profile headers, readiness, connection-generation fencing,
 managed-provider service integration, standard ACP cancel/close, drain/revoke,
 recovery admission и наблюдаемость. Проверить reconnect за NAT, concurrent
-connections одного Unit, rotation/revocation, потерю JSON-RPC response, restart обоих процессов
-и отсутствие двойного запуска. Настроенный вручную endpoint не закрывает этот
+connections одного Unit, rotation/revocation, потерю JSON-RPC response, restart
+единственного active Balda process и Unit и отсутствие двойного запуска.
+Настроенный вручную endpoint не закрывает этот
 этап.
 
 ### M3. Workspace, MCP и macOS
@@ -1063,29 +1137,40 @@ cutover.
 
 ### Подключение
 
+- Deployment запускает ровно один активный application process Balda, который
+  владеет ingress, Unit WebSocket, execution и callbacks. Запуск второго
+  активного process не поддерживается; shared storage не считается routing или
+  failover к process-local socket.
 - Администратор заранее создаёт один Unit в Backoffice. Create и rotation
   показывают новый высокоэнтропийный `<public_lookup_id>.<secret>` ровно один
   раз в приватном `no-store` ответе; из secret material persistent state
-  содержит только digest, а inventory не содержит token, secret или digest.
-- Unit проходит WebSocket upgrade только с валидным `Authorization: Bearer`.
-  Missing/malformed header, unknown public ID, неверный secret, Unit без
-  `enabled` state, revoked Unit и server-policy denial отвергаются до `101` и до
-  любого ACP message.
+  содержит только token digest, а inventory не содержит token, secret или token
+  digest.
+- Unit проходит WebSocket upgrade только с валидным `Authorization: Bearer` и
+  обязательными `X-Balda-Unit-Profile-ID`,
+  `X-Balda-Unit-Profile-Revision` и
+  `X-Balda-Unit-Descriptor-Digest: sha256:<lowercase hex>`. Missing/malformed
+  header, unknown public ID, неверный secret, Unit без `enabled` state, revoked
+  Unit, unknown/stale profile revision, descriptor digest mismatch и
+  server-policy denial отвергаются до `101`, allocation generation, запуска ACP
+  process, admission и любого ACP message.
   Forwarded identity headers не могут разрешить или переназначить Unit.
-- Доверенный TLS-terminating proxy сохраняет `Authorization` до Balda; proxy →
-  Balda проверяется на loopback, защищённой сети или отдельно защищённом
-  transport. Acceptance не заявляет end-to-end confidentiality через proxy вне
-  trust boundary.
+- Доверенный TLS-terminating proxy сохраняет `Authorization` и все три profile
+  headers до Balda; proxy → Balda проверяется на loopback, защищённой сети или
+  отдельно защищённом transport. Acceptance не заявляет end-to-end
+  confidentiality через proxy вне trust boundary.
 - Для первого соединения либо после terminal loss прежнего Balda атомарно
   назначает принятому соединению свежий generation. Конкурентный upgrade при ещё
   живом socket получает bounded conflict; поздние ACP frames старого generation
   отвергаются. Unit supervisor локально гарантирует `stop + reap` до reconnect;
   отдельный cleanup receipt не вводится. Rotation и revocation явно fence-ят
   активное соединение; старый token больше не подключается.
-- Каждый accepted WebSocket создаёт один ACP process и принимает ровно один
-  `initialize`. Session methods до успешного initialize и повторный initialize
-  отвергаются. Reconnect после `stop + reap` прежнего process создаёт новый и
-  снова выполняет initialize с exponential backoff и jitter между попытками.
+- Каждый accepted WebSocket закреплён за exact profile tuple и canonical
+  descriptor digest, создаёт после `101` один ACP process из этого descriptor и
+  принимает ровно один `initialize`. Session methods до успешного initialize и
+  повторный initialize отвергаются. Reconnect после `stop + reap` прежнего
+  process предъявляет тот же exact tuple/digest, создаёт новый process и снова
+  выполняет initialize с exponential backoff и jitter между попытками.
 - Создание Unit и подключение создают одну `UnitRegistration`, но provider graph,
   definitions и `provider_state_version` до явного managed-provider действия не
   изменяются.
@@ -1099,8 +1184,14 @@ cutover.
   connection generation; он не создаёт Unit или provider revision. Несовместимая
   protocol version и concurrent stale connection дают bounded ошибку.
 - Unit не может изменить profile revision, executable, image, policy или limits
-  сообщением по ACP socket. Такое изменение выполняется только в Backoffice и
-  создаёт новую server-owned revision.
+  сообщением по ACP socket или upgrade headers. Такое изменение выполняется
+  только в Backoffice, создаёт новую server-owned revision и canonical digest и
+  требует reconnect с точно установленным локальным descriptor.
+- Canonicalization fixture даёт стабильный digest для одинакового public
+  descriptor при разном порядке входных полей и другой digest при изменении
+  identity/enforcement field. Protected plaintext, token и token digest в
+  descriptor не входят. Проверка digest принимается только как обнаружение
+  configuration drift, а не как remote attestation process или container.
 - Offline, drain и revoke реально прекращают новые назначения. Старый generation
   не получает binding после reconnect.
 
@@ -1118,8 +1209,9 @@ cutover.
 - Первый prompt невозможен до атомарного active. Cancel, выигравший race с
   active commit, предотвращает отправку prompt.
 - Restore использует exact retained provider revisions и pinned Unit/profile;
-  новый generation не подменяет размещение. Profile update, исчезнувший Unit,
-  утрата key/artifact и revoke не приводят к подбору «совместимой» замены.
+  соединение должно подтвердить тот же profile tuple и canonical descriptor
+  digest. Новый generation не подменяет размещение. Profile update, исчезнувший
+  Unit, утрата key/artifact и revoke не приводят к подбору «совместимой» замены.
 - Disable/tombstone provider не ломает retained revision restore по ADR 0002;
   Unit revoke при этом блокирует исполнение. Неудачный exact restore допускает
   только явно записанный bounded fresh-session fallback, без replay неизвестного
@@ -1227,23 +1319,24 @@ cutover.
 ## 20. Наблюдаемость и поддержка
 
 Корреляция: `unit_id`, public lookup ID, connection generation,
-provider/profile revision, `binding_id`, admission ID, `owner_scope`,
+provider/profile revision, bounded descriptor digest, `binding_id`, admission ID, `owner_scope`,
 Balda session ID и ACP session ID. Метрики: authentication
 outcome как bounded category, connection generation changes, readiness,
 занятые session/prompt capacity, время подготовки, выход процесса,
 причины отказа, disconnect, permission timeout и длительность cleanup.
 
 Логи по умолчанию содержат технические события и bounded ошибки. Полные prompts,
-исходники, ответы MCP, `Authorization`, bearer token, token digest и модельные
-credentials не становятся audit-логом. Redaction действует и для upgrade
-errors, proxy diagnostics и debug capture; public lookup ID допустим как
-несекретная correlation metadata. Debug capture отдельно включается оператором
+исходники, ответы MCP, `Authorization`, bearer token, token digest, полный
+profile descriptor, protected values и модельные credentials не становятся
+audit-логом. Redaction действует и для upgrade errors, proxy diagnostics и debug
+capture; public lookup ID, profile tuple и bounded descriptor digest допустимы
+как несекретная correlation metadata. Debug capture отдельно включается оператором
 с ограниченным сроком и доступом. Файлы ACP/stdout не смешиваются с обычными
 логами сервиса.
 
-Readiness не отправляет модельный prompt: она означает только accepted socket и
-успешный `initialize`. Наличие capability не означает, что конкретный аккаунт
-имеет доступ к любой модели.
+Readiness не отправляет модельный prompt: она означает exact match profile
+tuple/digest, accepted socket и успешный `initialize`. Наличие capability не
+означает, что конкретный аккаунт имеет доступ к любой модели.
 
 ## 21. Открытые вопросы для согласования
 
@@ -1251,10 +1344,10 @@ Readiness не отправляет модельный prompt: она означ
    `cmd/balda` executable, canonical remote driver и размещение integration API
    в Balda/runtime с соблюдением ADR 0002/0003.
 2. Точный URL и WebSocket transport profile прямого ACP connection. Служебные
-   lifecycle messages в socket не добавляются; bearer format, digest-only
-   storage, `Authorization` upgrade, trusted-proxy boundary,
-   rotation/revocation и отсутствие per-channel credentials уже определены
-   разделами 6–7.
+   lifecycle messages в socket не добавляются; bearer format, digest-only token
+   storage, `Authorization` upgrade, обязательные profile tuple/digest headers,
+   canonical public descriptor, trusted-proxy boundary, rotation/revocation и
+   отсутствие per-channel credentials уже определены разделами 6–7.
 3. Поддерживаемый reverse WebSocket profile либо выбранный upstream transport;
    точные версии ACP/SDK и правила закрытия соединения.
 4. Размещение remote cwd/MCP/file/terminal adapters в provider lifecycle Balda.
@@ -1268,6 +1361,9 @@ Readiness не отправляет модельный prompt: она означ
    параллельность подтверждена для модельной identity.
 8. Какие дополнительные сценарии требуют provisioning, артефактов или Git
    publication и какой компонент будет владеть каждым из них.
+9. Какая архитектура даст multi-instance connection ownership, routing запросов
+   и callbacks к process-local WebSocket, fencing и failover. До отдельного
+   принятого решения поддерживается только один активный process Balda.
 Эти вопросы уточняют wire contract и порядок реализации. Основная предлагаемая
 граница зафиксирована: Balda управляет работой, Unit обслуживает обычную
 ACP-сессию в ограниченной среде, provisioning и доступ к файлам имеют отдельных
