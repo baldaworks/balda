@@ -10,6 +10,7 @@ import (
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorymcp"
+	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/sessionmemory"
 	"github.com/baldaworks/runtime/v2/agentconfig"
 	"go.uber.org/fx"
@@ -298,6 +299,13 @@ var Module = fx.Module("balda_sessionapp",
 		fx.Annotate(
 			func(capture *sessionmemoryapp.BoundaryCapture) baldasession.BoundaryObserver {
 				return SessionBoundaryObserverAdapter{Capture: capture}
+			},
+			fx.As(new(baldasession.BoundaryObserver)),
+			fx.ResultTags(`group:"balda_session_boundary_observer"`),
+		),
+		fx.Annotate(
+			func(provider state.Provider) baldasession.BoundaryObserver {
+				return TurnStatusBoundaryObserver{Store: provider.TurnStatus()}
 			},
 			fx.As(new(baldasession.BoundaryObserver)),
 			fx.ResultTags(`group:"balda_session_boundary_observer"`),

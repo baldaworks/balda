@@ -215,16 +215,18 @@ response. Operators should use the checks in
 
 ### `/status` and `/balda status`
 
-Returns a structured, read-only snapshot of the configured provider type,
-model and reasoning effort; channel and session state; and the current turn.
-An active turn includes its UTC start time, queued-turn count, and up to 1000
-Unicode characters of the originating user text. The response marks truncated
-text explicitly.
+Returns a structured operational snapshot led by the conversation state:
+working, waiting for a response, no active conversation turn, or temporarily
+unavailable. Active turns include elapsed time, last activity, start time,
+queued-turn count, and up to 240 Unicode characters of the in-memory request.
+Completed turns include their outcome and duration. Request text is never
+persisted and is therefore absent after a restart.
 
-Each transport renders the same `balda.status.response.v1` contract with its
-own Markdown rules. The command does not create or restore a runtime, start a
-turn, or modify session state. If the transport renderer is absent or fails,
-Balda fails closed and sends no plain-text status fallback.
+Each transport renders the same `balda.status.response.v2` contract with its
+own Markdown rules; the v1 renderer registration remains available for
+compatibility. The command does not create or restore a runtime, start a turn,
+or modify question, permission, or auto-mode state. If the transport renderer
+is absent or fails, Balda fails closed and sends no plain-text status fallback.
 
 ## Command execution architecture
 

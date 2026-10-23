@@ -30,6 +30,7 @@ type sqliteProvider struct {
 	webhookRoutes  *sqlWebhookRouteStore
 	runs           *sqlScheduleRunStore
 	questions      *sqliteQuestionStore
+	turnStatus     *sqlTurnStatusStore
 	runtime        *sqliteJobStore
 	ingress        *sqliteSessionMemoryIngressOutboxStore
 	offset         *sqliteOffsetStore
@@ -180,6 +181,7 @@ func NewSQLiteProvider(ctx context.Context, path string) (Provider, error) {
 		webhookRoutes:  &sqlWebhookRouteStore{users: newSQLiteUserStore(db)},
 		runs:           &sqlScheduleRunStore{db: db, bind: func(query string) string { return query }},
 		questions:      &sqliteQuestionStore{db: db},
+		turnStatus:     &sqlTurnStatusStore{db: db, bind: func(query string) string { return query }},
 		runtime:        &sqliteJobStore{db: db},
 		ingress:        &sqliteSessionMemoryIngressOutboxStore{db: db},
 		offset:         &sqliteOffsetStore{db: db},
@@ -243,6 +245,8 @@ func (p *sqliteProvider) ScheduleRuns() ScheduleRunStore {
 func (p *sqliteProvider) Questions() QuestionStore {
 	return p.questions
 }
+
+func (p *sqliteProvider) TurnStatus() TurnStatusStore { return p.turnStatus }
 
 func (p *sqliteProvider) SessionMemoryIngressOutbox() SessionMemoryIngressOutboxStore {
 	return p.ingress

@@ -5,20 +5,24 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	commandactor "github.com/baldaworks/balda/internal/apps/balda/actors/command"
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/statusapp"
 	"github.com/baldaworks/balda/internal/apps/balda/statusfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/turnstatuscmd"
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 )
 
 const (
-	maxUserTextRunes = 1000
+	maxUserTextRunes = 240
 	unavailableValue = "unavailable"
 )
 
@@ -29,23 +33,31 @@ type SessionReader interface {
 	GetAgentMetadata(agentName string) session.AgentMetadata
 }
 
+type Coordinator interface {
+	Snapshot(ctx context.Context, locator deliverycmd.Locator) statusapp.Snapshot
+}
+
 // Handler handles the /status command.
 type Handler struct {
 	sessions   SessionReader
 	turns      appports.CurrentTurnResolver
+	status     Coordinator
 	registry   deliveryfmt.StructuredMessageRegistry
 	dispatcher actortransport.Dispatcher
 	logger     zerolog.Logger
+	now        func() time.Time
 }
 
 // New creates a status command handler.
-func New(sessions SessionReader, turns appports.CurrentTurnResolver, registry deliveryfmt.StructuredMessageRegistry, dispatcher actortransport.Dispatcher, logger zerolog.Logger) *Handler {
+func New(sessions SessionReader, turns appports.CurrentTurnResolver, status Coordinator, registry deliveryfmt.StructuredMessageRegistry, dispatcher actortransport.Dispatcher, logger zerolog.Logger) *Handler {
 	return &Handler{
 		sessions:   sessions,
 		turns:      turns,
+		status:     status,
 		registry:   registry,
 		dispatcher: dispatcher,
 		logger:     logger.With().Str("component", "balda.actors.command.status").Logger(),
+		now:        time.Now,
 	}
 }
 
@@ -86,6 +98,7 @@ func (h *Handler) render(ctx context.Context, p commandcmd.Payload) (deliveryfmt
 	providerID := strings.TrimSpace(h.sessions.BaldaProviderID())
 	metadata := h.sessions.GetAgentMetadata(providerID)
 	response := statusfmt.Response{
+		ObservedAt:      h.now().UTC(),
 		ProviderID:      valueOrUnavailable(providerID),
 		ProviderType:    valueOrUnavailable(metadata.Type),
 		Model:           valueOrUnavailable(metadata.Model),
@@ -93,6 +106,24 @@ func (h *Handler) render(ctx context.Context, p commandcmd.Payload) (deliveryfmt
 		ChannelType:     valueOrUnavailable(p.Locator.ChannelType),
 		SessionID:       valueOrUnavailable(p.Locator.SessionID),
 		SessionState:    unavailableValue,
+	}
+	if h.status != nil {
+		snapshot := h.status.Snapshot(ctx, p.Locator)
+		response.ConversationState = string(snapshot.State)
+		response.DegradedSources = append([]string(nil), snapshot.Degraded...)
+		if snapshot.HasWait {
+			response.WaitingKind = string(snapshot.Waiting.Kind)
+			response.WaitingSince = snapshot.Waiting.Since
+		}
+		if snapshot.HasTurn {
+			response.TurnState = string(snapshot.Turn.State)
+			response.TurnActive = snapshot.Turn.State == turnstatuscmd.StateActive
+			response.TurnStartedAt = snapshot.Turn.StartedAt
+			response.LastActivityAt = snapshot.Turn.LastActivityAt
+			response.ActivityKind = string(snapshot.Turn.ActivityKind)
+			response.TurnCompletedAt = snapshot.Turn.CompletedAt
+			response.TurnOutcome = string(snapshot.Turn.Outcome)
+		}
 	}
 
 	info, err := h.sessions.GetSessionInfo(ctx, p.Locator.SessionID)
@@ -105,9 +136,18 @@ func (h *Handler) render(ctx context.Context, p commandcmd.Payload) (deliveryfmt
 	if h.turns != nil {
 		if turn, ok := h.turns.CurrentTurn(p.Locator.SessionID); ok {
 			response.TurnActive = true
-			response.TurnStartedAt = turn.StartedAt
+			if response.ConversationState == "" || response.ConversationState == string(statusapp.StateInactive) || response.ConversationState == string(statusapp.StateUnavailable) {
+				response.ConversationState = string(statusapp.StateWorking)
+			}
+			if response.TurnStartedAt.IsZero() {
+				response.TurnStartedAt = turn.StartedAt
+			}
+			if response.LastActivityAt.IsZero() {
+				response.LastActivityAt = turn.StartedAt
+				response.ActivityKind = string(turnstatuscmd.ActivityStart)
+			}
 			response.PendingTurns = turn.PendingTurns
-			response.UserText, response.UserTextTruncated = truncateRunes(turn.Text, maxUserTextRunes)
+			response.RequestExcerpt, response.RequestTruncated = truncateRunes(turn.Text, maxUserTextRunes)
 		}
 	}
 
