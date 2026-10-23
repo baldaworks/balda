@@ -1,3 +1,12 @@
+---
+title: Plugins and session capabilities
+description: Manage plugin packages and understand which capabilities a session uses.
+category: Extensions
+audience: operator
+status: stable
+outline: deep
+---
+
 # Plugins and session capabilities
 
 This page is the canonical reference for Balda's Agent Plugins package support,

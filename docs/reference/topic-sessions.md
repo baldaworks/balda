@@ -1,3 +1,12 @@
+---
+title: Topic sessions
+description: Understand conversation scope, session lifecycle, locators, and workspace isolation.
+category: Sessions
+audience: user
+status: stable
+outline: deep
+---
+
 # Topic sessions
 
 ## Overview

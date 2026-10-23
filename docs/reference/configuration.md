@@ -1,3 +1,12 @@
+---
+title: Configuration reference
+description: Deployment settings, accepted values, defaults, and environment overrides.
+category: Configuration
+audience: operator
+status: stable
+outline: deep
+---
+
 # Configuration reference
 
 ## Configuration
@@ -671,6 +680,25 @@ balda:
     mode: ask
     timeout: 2m
 ```
+
+### Auto mode
+
+`balda.features.automode.max_turns` limits consecutive automatic continuation
+turns in a session's `/auto` chain. The default is `10`; zero and negative
+values use that default. The ordinary turn that starts a chain is not counted.
+The environment override is `BALDA_FEATURES_AUTOMODE_MAX_TURNS`.
+
+```yaml
+balda:
+  features:
+    automode:
+      max_turns: 10
+```
+
+Restart Balda after changing deployment configuration. `/auto on` captures the
+configured limit for that session, so re-enable the mode to apply a changed cap
+to an existing session. See [Auto mode](/features/auto-mode) for behavior and
+[Use Auto mode](/guides/auto-mode) for the task sequence.
 
 ### Telegram settings
 

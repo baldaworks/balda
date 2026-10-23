@@ -1,3 +1,12 @@
+---
+title: Balda operations
+description: Verify, troubleshoot, update, and recover a Balda deployment.
+category: Operations
+audience: operator
+status: stable
+outline: deep
+---
+
 # Operations and verification
 
 ## Troubleshooting

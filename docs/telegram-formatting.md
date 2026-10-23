@@ -1,3 +1,12 @@
+---
+title: Telegram message formatting
+description: Configure and understand Telegram rich-text and plain-text delivery.
+category: Chat integrations
+audience: operator
+status: stable
+outline: deep
+---
+
 # Telegram Message Formatting
 
 Balda sends formatted assistant output according to

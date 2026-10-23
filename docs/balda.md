@@ -65,3 +65,11 @@ Focused guides remain separate from the technical reference, including
 [Mattermost setup](mattermost.md), and the [command reference](commands.md).
 
 - [Managed agent hooks](reference/agent-hooks.md): lifecycle boundaries, Backoffice configuration and command protocol.
+
+## User documentation
+
+- [Feature overview](features/index.md) — choose the Balda workflow that fits the task.
+- [Auto mode](features/auto-mode.md) — continue multi-step work in the current
+  session until it finishes or needs user input.
+- [Use Auto mode](guides/auto-mode.md) — enable, inspect, steer, and stop
+  automatic continuation.

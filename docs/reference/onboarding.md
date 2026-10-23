@@ -1,3 +1,12 @@
+---
+title: User onboarding reference
+description: Install Balda, connect an account, and verify initial readiness.
+category: Getting started
+audience: operator
+status: stable
+outline: deep
+---
+
 # User onboarding reference
 
 ## Primary onboarding path

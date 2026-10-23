@@ -1,3 +1,12 @@
+---
+title: Balda state database
+description: Select, back up, and restore the database shared by Balda and Backoffice.
+category: Storage
+audience: operator
+status: stable
+outline: deep
+---
+
 # Balda state database
 
 `balda.database` selects the database for the existing Balda state provider.

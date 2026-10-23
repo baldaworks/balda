@@ -1,3 +1,12 @@
+---
+title: Balda command reference
+description: Current chat commands, channel availability, access, and effects.
+category: Commands
+audience: user
+status: stable
+outline: deep
+---
+
 # Balda command reference
 
 This is the authoritative reference for Balda's current chat command surface.
@@ -111,7 +120,9 @@ example, `clear old deployment` is treated as a new objective.
 
 Reads, enables, or disables automatic continuation for the current session.
 The state is session-scoped. Unsupported arguments return the three valid
-forms. Toggling auto mode does not reset history or start GoalKeeper.
+forms. Toggling auto mode does not reset history or start GoalKeeper. See
+[Auto mode](/features/auto-mode) for behavior and limits, then follow the
+[Auto mode guide](/guides/auto-mode) to enable, steer, and stop it.
 
 ### `/usage`
 

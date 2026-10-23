@@ -1,3 +1,12 @@
+---
+title: Zulip webhook integration
+description: Connect a Zulip outgoing webhook bot to Balda conversations.
+category: Chat integrations
+audience: operator
+status: stable
+outline: deep
+---
+
 # Zulip Webhook Integration
 
 Balda supports Zulip as a channel transport alongside Telegram. Zulip uses an
