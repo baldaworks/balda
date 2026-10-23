@@ -48,10 +48,10 @@ func (s *postgresQuestionStore) CreatePendingQuestion(ctx context.Context, recor
 	_, err := s.db.ExecContext(ctx, postgresBind(`
 		INSERT INTO balda_questions (
 			question_id, session_id, channel_kind, address_key, address_json,
-			prompt, status, interaction_json, resume_json, request_json, answer_json, failure_json,
+			prompt, status, interaction_json, resume_json, resume_target_kind, resume_target_key, request_json, answer_json, failure_json,
 			provider, conversation_key, provider_message_id, reply_handle, control_handle, provider_created_at,
 			expires_at, answered_at, failed_at, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`), record.QuestionID,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`), record.QuestionID,
 		record.SessionID,
 		record.ChannelKind,
 		record.AddressKey,
@@ -60,6 +60,8 @@ func (s *postgresQuestionStore) CreatePendingQuestion(ctx context.Context, recor
 		record.Status,
 		emptyJSON(record.InteractionJSON),
 		emptyJSON(record.ResumeJSON),
+		strings.TrimSpace(record.ResumeTargetKind),
+		strings.TrimSpace(record.ResumeTargetKey),
 		emptyJSON(record.RequestJSON),
 		strings.TrimSpace(record.AnswerJSON),
 		strings.TrimSpace(record.FailureJSON),
@@ -109,6 +111,24 @@ func (s *postgresQuestionStore) GetQuestionByID(ctx context.Context, questionID 
 	row := s.db.QueryRowContext(ctx, postgresBind(questionSelectSQL+` WHERE question_id = ?`), strings.TrimSpace(questionID))
 	record, found, err := scanQuestion(row.Scan)
 	return record, found, redactPostgresError(err)
+}
+
+func (s *postgresQuestionStore) LatestPendingConversationQuestion(ctx context.Context, sessionID string) (QuestionRecord, bool, error) {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return QuestionRecord{}, false, postgresErrorf("session id is required")
+	}
+	row := s.db.QueryRowContext(ctx, postgresBind(questionSelectSQL+`
+		WHERE session_id = ? AND status = ? AND (
+			(resume_target_kind = 'session' AND resume_target_key = ?) OR
+			(resume_target_kind = 'permission' AND resume_target_key = ?)
+		)
+		ORDER BY created_at DESC, question_id DESC LIMIT 1`), sessionID, questioncmd.StatusPending, sessionID, sessionID)
+	record, found, err := scanQuestion(row.Scan)
+	if err != nil {
+		return QuestionRecord{}, false, postgresErrorf("latest pending conversation question: %w", err)
+	}
+	return record, found, nil
 }
 
 func (s *postgresQuestionStore) GetQuestionByReplyRef(ctx context.Context, provider, conversationKey, replyToMessageID string) (QuestionRecord, bool, error) {

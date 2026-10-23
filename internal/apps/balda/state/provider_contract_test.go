@@ -87,6 +87,7 @@ func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) 
 	t.Run("Provider_ManagedProviderState", func(t *testing.T) { checkProviderManagedProviderState(t, factory(t)) })
 	t.Run("Provider_SessionStoreUpsert_AllowsMultipleTelegramSessions", func(t *testing.T) { checkProvider_SessionStoreUpsert_AllowsMultipleTelegramSessions(t, factory(t)) })
 	t.Run("Provider_QuestionStoreRoundTrip", func(t *testing.T) { checkProvider_QuestionStoreRoundTrip(t, factory(t)) })
+	t.Run("Provider_ConversationQuestionLookup", func(t *testing.T) { checkProvider_ConversationQuestionLookup(t, factory(t)) })
 	t.Run("QuestionThreadReplyLookup", func(t *testing.T) { checkQuestionThreadReplyLookup(t, factory(t)) })
 	t.Run("QuestionAnswerHandoffSurvivesRestart", func(t *testing.T) { checkQuestionAnswerHandoffSurvivesRestart(t, factory(t)) })
 	t.Run("Provider_SessionStoreUpsert_DoesNotDecodeAddressJSON", func(t *testing.T) { checkProvider_SessionStoreUpsert_DoesNotDecodeAddressJSON(t, factory(t)) })
@@ -750,6 +751,35 @@ func checkProvider_TurnStatus(t *testing.T, open contractOpener) {
 	}
 	if changed, err := provider.TurnStatus().Start(t.Context(), turnstatuscmd.Start{Identity: identity, StartedAt: startedAt, BootID: "boot-2"}); err != nil || changed {
 		t.Fatalf("old-epoch Start() = %t, %v", changed, err)
+	}
+}
+
+func checkProvider_ConversationQuestionLookup(t *testing.T, open contractOpener) {
+	provider := newContractProvider(t, open)
+	defer closeContractProvider(t, provider)
+	store := provider.Questions()
+	base := QuestionRecord{
+		SessionID: "session-wait", ChannelKind: "telegram", AddressKey: "42:0", AddressJSON: `{}`,
+		Prompt: "waiting", Status: questioncmd.StatusPending, InteractionJSON: `{}`, ResumeJSON: `{}`, RequestJSON: `{}`,
+	}
+	createdAt := time.Date(2026, 10, 23, 11, 0, 0, 0, time.UTC)
+	rows := []QuestionRecord{
+		{QuestionID: "eligible-session", ResumeTargetKind: "session", ResumeTargetKey: "session-wait", CreatedAt: createdAt},
+		{QuestionID: "legacy", CreatedAt: createdAt.Add(time.Second)},
+		{QuestionID: "goalkeeper", ResumeTargetKind: "goalkeeper", ResumeTargetKey: "job", CreatedAt: createdAt.Add(2 * time.Second)},
+		{QuestionID: "eligible-permission", ResumeTargetKind: "permission", ResumeTargetKey: "session-wait", CreatedAt: createdAt.Add(3 * time.Second)},
+		{QuestionID: "unknown", ResumeTargetKind: "other", ResumeTargetKey: "session-wait", CreatedAt: createdAt.Add(4 * time.Second)},
+	}
+	for _, row := range rows {
+		record := base
+		record.QuestionID, record.ResumeTargetKind, record.ResumeTargetKey, record.CreatedAt = row.QuestionID, row.ResumeTargetKind, row.ResumeTargetKey, row.CreatedAt
+		if err := store.CreatePendingQuestion(t.Context(), record); err != nil {
+			t.Fatalf("create %s: %v", row.QuestionID, err)
+		}
+	}
+	got, found, err := store.LatestPendingConversationQuestion(t.Context(), base.SessionID)
+	if err != nil || !found || got.QuestionID != "eligible-permission" || got.ResumeTargetKind != "permission" {
+		t.Fatalf("LatestPendingConversationQuestion() = %+v, %t, %v", got, found, err)
 	}
 }
 

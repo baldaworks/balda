@@ -421,6 +421,8 @@ type QuestionRecord struct {
 	Status                    string
 	InteractionJSON           string
 	ResumeJSON                string
+	ResumeTargetKind          string
+	ResumeTargetKey           string
 	RequestJSON               string
 	AnswerJSON                string
 	FailureJSON               string
@@ -448,6 +450,7 @@ type QuestionStore interface {
 	MarkQuestionAnswered(ctx context.Context, questionID string, answer questioncmd.Answer) (QuestionRecord, bool, error)
 	MarkQuestionTimedOut(ctx context.Context, questionID string, timedOutAt time.Time) (QuestionRecord, bool, error)
 	MarkQuestionFailed(ctx context.Context, questionID string, failure questioncmd.Failure) (QuestionRecord, bool, error)
+	LatestPendingConversationQuestion(ctx context.Context, sessionID string) (QuestionRecord, bool, error)
 }
 
 // JobRecord persists one assignable work item.

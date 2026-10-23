@@ -57,3 +57,11 @@ func (r *Recorder) Complete(ctx context.Context, outcome turnstatuscmd.Outcome, 
 }
 
 func (r *Recorder) BootID() string { return r.bootID }
+
+// Snapshot reads the current epoch and reconciles a turn left active by an older boot.
+func (r *Recorder) Snapshot(ctx context.Context, sessionID string) (turnstatuscmd.Snapshot, bool, error) {
+	if r == nil || r.store == nil {
+		return turnstatuscmd.Snapshot{}, false, nil
+	}
+	return r.store.Snapshot(ctx, sessionID, r.bootID)
+}
