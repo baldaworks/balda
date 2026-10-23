@@ -23,6 +23,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/schedulecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/turnstatuscmd"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookcmd"
 	"github.com/baldaworks/balda/sessionmemory"
@@ -82,9 +83,11 @@ func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) 
 	t.Run("Provider_KVRoundTrip", func(t *testing.T) { checkProvider_KVRoundTrip(t, factory(t)) })
 	t.Run("Provider_KVConsumeJSONConcurrentConsumeOnce", func(t *testing.T) { checkProvider_KVConsumeJSONConcurrentConsumeOnce(t, factory(t)) })
 	t.Run("Provider_SessionStoreRoundTrip", func(t *testing.T) { checkProvider_SessionStoreRoundTrip(t, factory(t)) })
+	t.Run("Provider_TurnStatus", func(t *testing.T) { checkProvider_TurnStatus(t, factory(t)) })
 	t.Run("Provider_ManagedProviderState", func(t *testing.T) { checkProviderManagedProviderState(t, factory(t)) })
 	t.Run("Provider_SessionStoreUpsert_AllowsMultipleTelegramSessions", func(t *testing.T) { checkProvider_SessionStoreUpsert_AllowsMultipleTelegramSessions(t, factory(t)) })
 	t.Run("Provider_QuestionStoreRoundTrip", func(t *testing.T) { checkProvider_QuestionStoreRoundTrip(t, factory(t)) })
+	t.Run("Provider_ConversationQuestionLookup", func(t *testing.T) { checkProvider_ConversationQuestionLookup(t, factory(t)) })
 	t.Run("QuestionThreadReplyLookup", func(t *testing.T) { checkQuestionThreadReplyLookup(t, factory(t)) })
 	t.Run("QuestionAnswerHandoffSurvivesRestart", func(t *testing.T) { checkQuestionAnswerHandoffSurvivesRestart(t, factory(t)) })
 	t.Run("Provider_SessionStoreUpsert_DoesNotDecodeAddressJSON", func(t *testing.T) { checkProvider_SessionStoreUpsert_DoesNotDecodeAddressJSON(t, factory(t)) })
@@ -694,6 +697,89 @@ func checkProvider_SessionStoreRoundTrip(t *testing.T, open contractOpener) {
 	}
 	if got.ProviderBindingJSON != record.ProviderBindingJSON {
 		t.Fatalf("provider_binding_json = %q, want %q", got.ProviderBindingJSON, record.ProviderBindingJSON)
+	}
+}
+
+func checkProvider_TurnStatus(t *testing.T, open contractOpener) {
+	dbPath := filepath.Join(t.TempDir(), "turn-status.db")
+	provider, err := open(t.Context(), dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := SessionRecord{
+		ArchiveID: "archive-1", SessionID: "tg-turn-status", UserID: "tg-user",
+		ChannelType: ChannelTypeTelegram, AddressKey: "42:0", AddressJSON: `{}`,
+		AgentName: "agent", WorkspaceDir: "/tmp/ws", BranchName: "branch", Status: SessionStatusActive,
+	}
+	if err := provider.Sessions().Upsert(t.Context(), record); err != nil {
+		t.Fatal(err)
+	}
+	startedAt := time.Date(2026, 10, 23, 10, 0, 0, 0, time.UTC)
+	identity := turnstatuscmd.Identity{SessionID: record.SessionID, ArchiveID: record.ArchiveID, TurnID: "turn-1"}
+	if changed, err := provider.TurnStatus().Start(t.Context(), turnstatuscmd.Start{Identity: identity, StartedAt: startedAt, BootID: "boot-1"}); err != nil || !changed {
+		t.Fatalf("Start() = %t, %v", changed, err)
+	}
+	if changed, err := provider.TurnStatus().Observe(t.Context(), turnstatuscmd.Activity{Identity: identity, Kind: turnstatuscmd.ActivityToolResult, OccurredAt: startedAt.Add(time.Second)}); err != nil || !changed {
+		t.Fatalf("Observe() = %t, %v", changed, err)
+	}
+	if changed, err := provider.TurnStatus().Observe(t.Context(), turnstatuscmd.Activity{Identity: turnstatuscmd.Identity{SessionID: record.SessionID, ArchiveID: record.ArchiveID, TurnID: "stale"}, Kind: turnstatuscmd.ActivityProvider, OccurredAt: startedAt.Add(2 * time.Second)}); err != nil || changed {
+		t.Fatalf("stale Observe() = %t, %v", changed, err)
+	}
+	snapshot, found, err := provider.TurnStatus().Snapshot(t.Context(), record.SessionID, "boot-1")
+	if err != nil || !found || snapshot.State != turnstatuscmd.StateActive || snapshot.ActivityKind != turnstatuscmd.ActivityToolResult {
+		t.Fatalf("Snapshot() = %+v, %t, %v", snapshot, found, err)
+	}
+	closeContractProvider(t, provider)
+	provider, err = open(t.Context(), dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeContractProvider(t, provider)
+	snapshot, found, err = provider.TurnStatus().Snapshot(t.Context(), record.SessionID, "boot-2")
+	if err != nil || !found || snapshot.State != turnstatuscmd.StateTerminal || snapshot.Outcome != turnstatuscmd.OutcomeInterrupted || !snapshot.CompletedAt.IsZero() {
+		t.Fatalf("restarted Snapshot() = %+v, %t, %v", snapshot, found, err)
+	}
+	if changed, err := provider.TurnStatus().Complete(t.Context(), turnstatuscmd.Completion{Identity: identity, Outcome: turnstatuscmd.OutcomeSucceeded, CompletedAt: startedAt.Add(3 * time.Second)}); err != nil || changed {
+		t.Fatalf("late Complete() = %t, %v", changed, err)
+	}
+	record.ArchiveID = "archive-2"
+	if err := provider.Sessions().Upsert(t.Context(), record); err != nil {
+		t.Fatal(err)
+	}
+	if _, found, err := provider.TurnStatus().Snapshot(t.Context(), record.SessionID, "boot-2"); err != nil || found {
+		t.Fatalf("epoch-fenced Snapshot() found=%t, err=%v", found, err)
+	}
+	if changed, err := provider.TurnStatus().Start(t.Context(), turnstatuscmd.Start{Identity: identity, StartedAt: startedAt, BootID: "boot-2"}); err != nil || changed {
+		t.Fatalf("old-epoch Start() = %t, %v", changed, err)
+	}
+}
+
+func checkProvider_ConversationQuestionLookup(t *testing.T, open contractOpener) {
+	provider := newContractProvider(t, open)
+	defer closeContractProvider(t, provider)
+	store := provider.Questions()
+	base := QuestionRecord{
+		SessionID: "session-wait", ChannelKind: "telegram", AddressKey: "42:0", AddressJSON: `{}`,
+		Prompt: "waiting", Status: questioncmd.StatusPending, InteractionJSON: `{}`, ResumeJSON: `{}`, RequestJSON: `{}`,
+	}
+	createdAt := time.Date(2026, 10, 23, 11, 0, 0, 0, time.UTC)
+	rows := []QuestionRecord{
+		{QuestionID: "eligible-session", ResumeTargetKind: "session", ResumeTargetKey: "session-wait", CreatedAt: createdAt},
+		{QuestionID: "legacy", CreatedAt: createdAt.Add(time.Second)},
+		{QuestionID: "goalkeeper", ResumeTargetKind: "goalkeeper", ResumeTargetKey: "job", CreatedAt: createdAt.Add(2 * time.Second)},
+		{QuestionID: "eligible-permission", ResumeTargetKind: "permission", ResumeTargetKey: "session-wait", CreatedAt: createdAt.Add(3 * time.Second)},
+		{QuestionID: "unknown", ResumeTargetKind: "other", ResumeTargetKey: "session-wait", CreatedAt: createdAt.Add(4 * time.Second)},
+	}
+	for _, row := range rows {
+		record := base
+		record.QuestionID, record.ResumeTargetKind, record.ResumeTargetKey, record.CreatedAt = row.QuestionID, row.ResumeTargetKind, row.ResumeTargetKey, row.CreatedAt
+		if err := store.CreatePendingQuestion(t.Context(), record); err != nil {
+			t.Fatalf("create %s: %v", row.QuestionID, err)
+		}
+	}
+	got, found, err := store.LatestPendingConversationQuestion(t.Context(), base.SessionID)
+	if err != nil || !found || got.QuestionID != "eligible-permission" || got.ResumeTargetKind != "permission" {
+		t.Fatalf("LatestPendingConversationQuestion() = %+v, %t, %v", got, found, err)
 	}
 }
 

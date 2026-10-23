@@ -49,10 +49,10 @@ func (s *sqliteQuestionStore) CreatePendingQuestion(ctx context.Context, record 
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO balda_questions (
 			question_id, session_id, channel_kind, address_key, address_json,
-			prompt, status, interaction_json, resume_json, request_json, answer_json, failure_json,
+			prompt, status, interaction_json, resume_json, resume_target_kind, resume_target_key, request_json, answer_json, failure_json,
 			provider, conversation_key, provider_message_id, reply_handle, control_handle, provider_created_at,
 			expires_at, answered_at, failed_at, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		record.QuestionID,
 		record.SessionID,
 		record.ChannelKind,
@@ -62,6 +62,8 @@ func (s *sqliteQuestionStore) CreatePendingQuestion(ctx context.Context, record 
 		record.Status,
 		emptyJSON(record.InteractionJSON),
 		emptyJSON(record.ResumeJSON),
+		strings.TrimSpace(record.ResumeTargetKind),
+		strings.TrimSpace(record.ResumeTargetKey),
 		emptyJSON(record.RequestJSON),
 		strings.TrimSpace(record.AnswerJSON),
 		strings.TrimSpace(record.FailureJSON),
@@ -110,6 +112,20 @@ func (s *sqliteQuestionStore) BindQuestionDeliveryRef(ctx context.Context, quest
 
 func (s *sqliteQuestionStore) GetQuestionByID(ctx context.Context, questionID string) (QuestionRecord, bool, error) {
 	row := s.db.QueryRowContext(ctx, questionSelectSQL+` WHERE question_id = ?`, strings.TrimSpace(questionID))
+	return scanQuestion(row.Scan)
+}
+
+func (s *sqliteQuestionStore) LatestPendingConversationQuestion(ctx context.Context, sessionID string) (QuestionRecord, bool, error) {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return QuestionRecord{}, false, fmt.Errorf("session id is required")
+	}
+	row := s.db.QueryRowContext(ctx, questionSelectSQL+`
+		WHERE session_id = ? AND status = ? AND (
+			(resume_target_kind = 'session' AND resume_target_key = ?) OR
+			(resume_target_kind = 'permission' AND resume_target_key = ?)
+		)
+		ORDER BY created_at DESC, question_id DESC LIMIT 1`, sessionID, questioncmd.StatusPending, sessionID, sessionID)
 	return scanQuestion(row.Scan)
 }
 
@@ -233,7 +249,7 @@ func (s *sqliteQuestionStore) updateQuestionResolution(
 
 const questionSelectSQL = `
 	SELECT question_id, session_id, channel_kind, address_key, address_json,
-	       prompt, status, interaction_json, resume_json, request_json, answer_json, failure_json,
+	       prompt, status, interaction_json, resume_json, resume_target_kind, resume_target_key, request_json, answer_json, failure_json,
 	       provider, conversation_key, provider_message_id, reply_handle, control_handle,
 	       expires_at, answered_at, failed_at, created_at, updated_at, answer_continuation_pending, answer_controls_pending, provider_created_at
 	FROM balda_questions`
@@ -258,6 +274,8 @@ func scanQuestion(scan func(dest ...any) error) (QuestionRecord, bool, error) {
 		&record.Status,
 		&record.InteractionJSON,
 		&record.ResumeJSON,
+		&record.ResumeTargetKind,
+		&record.ResumeTargetKey,
 		&record.RequestJSON,
 		&record.AnswerJSON,
 		&record.FailureJSON,

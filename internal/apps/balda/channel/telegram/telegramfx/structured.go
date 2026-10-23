@@ -76,7 +76,12 @@ func NewLocatorStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
 
 // NewStatusStructuredRegistrar registers Telegram status response presentation.
 func NewStatusStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
-	return deliveryfx.NewStructuredRegistrar(deliveryfmt.TransportTelegram, statusfmt.ResponseDescriptor, telegramStatusRenderer{})
+	return func(registry *deliveryfmt.StructuredRegistry) error {
+		if err := deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportTelegram, statusfmt.ResponseDescriptor, telegramStatusRenderer{}); err != nil {
+			return err
+		}
+		return deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportTelegram, statusfmt.LegacyResponseDescriptor, telegramStatusRenderer{})
+	}
 }
 
 type telegramGoalProgressRenderer struct{}

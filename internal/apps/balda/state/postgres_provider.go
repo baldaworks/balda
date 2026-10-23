@@ -26,6 +26,7 @@ type postgresProvider struct {
 	webhookRoutes  *sqlWebhookRouteStore
 	runs           *sqlScheduleRunStore
 	questions      *postgresQuestionStore
+	turnStatus     *sqlTurnStatusStore
 	runtime        *postgresJobStore
 	ingress        *postgresSessionMemoryIngressOutboxStore
 	offset         *postgresOffsetStore
@@ -69,6 +70,7 @@ func initializePostgresProvider(ctx context.Context, db *sql.DB) (Provider, erro
 		webhookRoutes:  &sqlWebhookRouteStore{users: newPostgresUserStore(db)},
 		runs:           &sqlScheduleRunStore{db: db, bind: postgresBind, postgres: true},
 		questions:      &postgresQuestionStore{db: db},
+		turnStatus:     &sqlTurnStatusStore{db: db, bind: postgresBind, postgres: true},
 		runtime:        &postgresJobStore{db: db},
 		ingress:        &postgresSessionMemoryIngressOutboxStore{db: db},
 		offset:         &postgresOffsetStore{db: db},
@@ -205,6 +207,8 @@ func (p *postgresProvider) ScheduleRuns() ScheduleRunStore {
 func (p *postgresProvider) Questions() QuestionStore {
 	return p.questions
 }
+
+func (p *postgresProvider) TurnStatus() TurnStatusStore { return p.turnStatus }
 
 func (p *postgresProvider) SessionMemoryIngressOutbox() SessionMemoryIngressOutboxStore {
 	return p.ingress

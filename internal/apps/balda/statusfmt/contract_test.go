@@ -27,10 +27,14 @@ func TestResponseDescriptorCarriesTypedStatusData(t *testing.T) {
 			UserText:        "hello",
 		},
 	}
-	if got, want := env.Type(), deliveryfmt.MessageType("balda.status.response.v1"); got != want {
+	if got, want := env.Type(), deliveryfmt.MessageType("balda.status.response.v2"); got != want {
 		t.Fatalf("Type() = %q, want %q", got, want)
 	}
 	if env.Body.ProviderID != "codex" || env.Body.TurnStartedAt != startedAt || env.Body.UserText != "hello" {
 		t.Fatalf("Body = %+v", env.Body)
+	}
+	legacy := deliveryfmt.StructuredEnvelope[Response]{Descriptor: LegacyResponseDescriptor}
+	if got, want := legacy.Type(), deliveryfmt.MessageType("balda.status.response.v1"); got != want {
+		t.Fatalf("legacy Type() = %q, want %q", got, want)
 	}
 }

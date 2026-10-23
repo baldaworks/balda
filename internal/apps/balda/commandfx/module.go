@@ -32,6 +32,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalog"
 	"github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionapp"
+	"github.com/baldaworks/balda/internal/apps/balda/statusapp"
 	"github.com/baldaworks/go-actorlayer/dispatch"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
@@ -62,6 +63,7 @@ type statusParams struct {
 	fx.In
 	Sessions   *session.Manager
 	Turns      appports.CurrentTurnResolver
+	Status     *statusapp.Coordinator
 	Registry   deliveryfmt.StructuredMessageRegistry
 	Dispatcher actortransport.Dispatcher
 	Logger     zerolog.Logger
@@ -191,6 +193,7 @@ type commandIngressParams struct {
 
 var Module = fx.Module("balda_command",
 	fx.Provide(
+		statusapp.NewCoordinator,
 		NewSkillCommandAdmission,
 		fx.Annotate(commandlocator.New, fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`)),
 		fx.Annotate(
@@ -207,7 +210,7 @@ var Module = fx.Module("balda_command",
 		),
 		fx.Annotate(
 			func(p statusParams) *commandstatus.Handler {
-				return commandstatus.New(p.Sessions, p.Turns, p.Registry, p.Dispatcher, p.Logger)
+				return commandstatus.New(p.Sessions, p.Turns, p.Status, p.Registry, p.Dispatcher, p.Logger)
 			},
 			fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`),
 		),

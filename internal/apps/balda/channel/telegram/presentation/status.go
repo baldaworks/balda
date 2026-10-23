@@ -1,36 +1,25 @@
 package presentation
 
 import (
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/statusfmt"
 )
 
 // RenderStatus renders a status response as Telegram Rich Markdown.
 func RenderStatus(body statusfmt.Response) string {
-	lines := []string{
-		"🤖 **Balda Status**",
-		"",
-		"- **Provider:** " + escapeStatusMarkdown(body.ProviderID) + " (" + escapeStatusMarkdown(body.ProviderType) + ")",
-		"- **Model:** " + escapeStatusMarkdown(body.Model),
-		"- **Reasoning:** " + escapeStatusMarkdown(body.ReasoningEffort),
-		"- **Channel:** " + escapeStatusMarkdown(body.ChannelType),
-		"- **Session:** " + escapeStatusMarkdown(body.SessionID),
-		"- **Session state:** " + escapeStatusMarkdown(body.SessionState),
-		"- **Turn:** " + statusTurnState(body.TurnActive),
+	model := statusfmt.ModelFor(body)
+	lines := []string{"**" + escapeStatusMarkdown(model.Headline) + "**", ""}
+	for _, field := range model.Operational {
+		lines = append(lines, "- **"+escapeStatusMarkdown(field.Label)+":** "+escapeStatusMarkdown(field.Value))
 	}
-	if !body.TurnActive {
-		return strings.Join(lines, "\n")
+	if model.Request != "" {
+		lines = append(lines, "", "**Request"+statusTruncationSuffix(model.Truncated)+":**", quoteStatusMarkdown(model.Request))
 	}
-	lines = append(lines,
-		"- **Started:** "+escapeStatusMarkdown(formatStatusTime(body.TurnStartedAt)),
-		"- **Queued turns:** "+strconv.Itoa(body.PendingTurns),
-		"",
-		"**User text"+statusTruncationSuffix(body.UserTextTruncated)+":**",
-		quoteStatusMarkdown(body.UserText),
-	)
+	lines = append(lines, "")
+	for _, field := range model.Diagnostics {
+		lines = append(lines, "- **"+escapeStatusMarkdown(field.Label)+":** "+escapeStatusMarkdown(field.Value))
+	}
 	return strings.Join(lines, "\n")
 }
 
@@ -56,23 +45,9 @@ func quoteStatusMarkdown(value string) string {
 	return strings.Join(parts, "\n")
 }
 
-func statusTurnState(active bool) string {
-	if active {
-		return "active"
-	}
-	return "idle"
-}
-
 func statusTruncationSuffix(truncated bool) string {
 	if truncated {
 		return " (truncated)"
 	}
 	return ""
-}
-
-func formatStatusTime(value time.Time) string {
-	if value.IsZero() {
-		return "unavailable"
-	}
-	return value.UTC().Format(time.RFC3339)
 }

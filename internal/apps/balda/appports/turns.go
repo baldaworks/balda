@@ -6,6 +6,7 @@ import (
 
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/turnstatuscmd"
 )
 
 type TurnTask struct {
@@ -17,6 +18,13 @@ type TurnTask struct {
 type TurnQueue interface {
 	Enqueue(ctx context.Context, task TurnTask) (<-chan error, int, error)
 	CancelSession(locator baldasession.SessionLocator, clearQueued bool) (bool, int, error)
+}
+
+// TurnStatusRecorder records lifecycle evidence for conversation turns.
+type TurnStatusRecorder interface {
+	Begin(ctx context.Context, sessionID, archiveID string, startedAt time.Time) (context.Context, error)
+	Observe(ctx context.Context, kind turnstatuscmd.ActivityKind, occurredAt time.Time) error
+	Complete(ctx context.Context, outcome turnstatuscmd.Outcome, completedAt time.Time) error
 }
 
 type CurrentTurn struct {

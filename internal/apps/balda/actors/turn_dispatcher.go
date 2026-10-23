@@ -13,6 +13,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	"github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/turnstatuscmd"
 	"github.com/rs/zerolog"
 )
 
@@ -34,6 +35,7 @@ type TurnDispatcher struct {
 	stopping bool
 	stopCh   chan struct{}
 	wg       sync.WaitGroup
+	recorder appports.TurnStatusRecorder
 }
 
 type sessionTurnQueue struct {
@@ -53,10 +55,15 @@ type queuedTurn struct {
 }
 
 func NewTurnDispatcher(logger zerolog.Logger) *TurnDispatcher {
+	return NewTurnDispatcherWithStatus(logger, nil)
+}
+
+func NewTurnDispatcherWithStatus(logger zerolog.Logger, recorder appports.TurnStatusRecorder) *TurnDispatcher {
 	dispatcher := &TurnDispatcher{
 		logger:   logger.With().Str("component", "balda.turn_dispatcher").Logger(),
 		sessions: make(map[string]*sessionTurnQueue),
 		stopCh:   make(chan struct{}),
+		recorder: recorder,
 	}
 	return dispatcher
 }
@@ -244,10 +251,28 @@ func (d *TurnDispatcher) sessionWorker(sessionID string, queue *sessionTurnQueue
 		}
 
 		var err error
+		if d.recorder != nil && isConversationTurn(turn.task.SessionTurn) {
+			trackedCtx, trackErr := d.recorder.Begin(runCtx, sessionID, turn.task.SessionTurn.ArchiveID, queue.startedAt)
+			if trackErr != nil {
+				d.logger.Warn().Err(trackErr).Str("session_id", sessionID).Msg("record turn start")
+			}
+			runCtx = trackedCtx
+		}
 		if runCtx.Err() != nil {
 			err = runCtx.Err()
 		} else {
 			err = turn.task.Run(runCtx)
+		}
+		if d.recorder != nil {
+			outcome := turnstatuscmd.OutcomeSucceeded
+			if errors.Is(err, context.Canceled) {
+				outcome = turnstatuscmd.OutcomeCanceled
+			} else if err != nil {
+				outcome = turnstatuscmd.OutcomeFailed
+			}
+			if trackErr := d.recorder.Complete(context.WithoutCancel(runCtx), outcome, time.Now().UTC()); trackErr != nil {
+				d.logger.Warn().Err(trackErr).Str("session_id", sessionID).Msg("record turn completion")
+			}
 		}
 		cancel()
 
@@ -263,6 +288,13 @@ func (d *TurnDispatcher) sessionWorker(sessionID string, queue *sessionTurnQueue
 			d.logger.Error().Err(err).Str("session_id", sessionID).Msg("turn task failed")
 		}
 	}
+}
+
+func isConversationTurn(payload *turncmd.SessionTurnPayload) bool {
+	if payload == nil || strings.TrimSpace(payload.ArchiveID) == "" {
+		return false
+	}
+	return payload.Source != turncmd.SourceSchedule && payload.Source != turncmd.SourceWebhook
 }
 
 func (d *TurnDispatcher) nextTask(

@@ -33,7 +33,12 @@ func NewLocatorStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
 
 // NewStatusStructuredRegistrar registers Zulip status response presentation.
 func NewStatusStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
-	return deliveryfx.NewStructuredRegistrar(deliveryfmt.TransportZulip, statusfmt.ResponseDescriptor, zulipStatusRenderer{})
+	return func(registry *deliveryfmt.StructuredRegistry) error {
+		if err := deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportZulip, statusfmt.ResponseDescriptor, zulipStatusRenderer{}); err != nil {
+			return err
+		}
+		return deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportZulip, statusfmt.LegacyResponseDescriptor, zulipStatusRenderer{})
+	}
 }
 
 type zulipGoalProgressRenderer struct{}

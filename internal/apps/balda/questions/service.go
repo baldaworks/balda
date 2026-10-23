@@ -137,6 +137,7 @@ func (s *Service) Ask(ctx context.Context, interaction questioncmd.InteractionCo
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	}
+	record.ResumeTargetKind, record.ResumeTargetKey = normalizedResumeTarget(record.SessionID, resume.To)
 	if req.Timeout > 0 {
 		expiresAt := now.Add(req.Timeout)
 		record.ExpiresAt = expiresAt
@@ -166,6 +167,24 @@ func (s *Service) Ask(ctx context.Context, interaction questioncmd.InteractionCo
 		}
 	}
 	return record, nil
+}
+
+func normalizedResumeTarget(sessionID, target string) (string, string) {
+	kind, key, ok := strings.Cut(strings.TrimSpace(target), ":")
+	kind, key = strings.TrimSpace(kind), strings.TrimSpace(key)
+	if !ok || kind == "" || key == "" {
+		return "", ""
+	}
+	switch kind {
+	case "session":
+		return kind, key
+	case "permission":
+		return kind, strings.TrimSpace(sessionID)
+	case "goalkeeper":
+		return kind, key
+	default:
+		return "", ""
+	}
 }
 
 func (s *Service) BindDelivery(ctx context.Context, questionID string, ref questioncmd.DeliveryRef) error {

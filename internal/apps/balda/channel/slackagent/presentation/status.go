@@ -1,35 +1,30 @@
 package presentation
 
 import (
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/statusfmt"
 )
 
 // RenderStatus renders a status response as Slack mrkdwn.
 func RenderStatus(body statusfmt.Response) string {
-	lines := []string{
-		"🤖 *Balda Status*", "",
-		"• *Provider:* " + statusCode(body.ProviderID) + " (" + statusCode(body.ProviderType) + ")",
-		"• *Model:* " + statusCode(body.Model),
-		"• *Reasoning:* " + statusCode(body.ReasoningEffort),
-		"• *Channel:* " + statusCode(body.ChannelType),
-		"• *Session:* " + statusCode(body.SessionID),
-		"• *Session state:* " + statusCode(body.SessionState),
-		"• *Turn:* " + statusTurnState(body.TurnActive),
+	model := statusfmt.ModelFor(body)
+	lines := []string{"*" + escapeStatusInline(model.Headline) + "*", ""}
+	for _, field := range model.Operational {
+		lines = append(lines, "• *"+escapeStatusInline(field.Label)+":* "+statusCode(field.Value))
 	}
-	if !body.TurnActive {
-		return strings.Join(lines, "\n")
+	if model.Request != "" {
+		lines = append(lines, "", "*Request"+statusTruncationSuffix(model.Truncated)+":*", "```\n"+escapeStatusCodeBlock(model.Request)+"\n```")
 	}
-	lines = append(lines,
-		"• *Started:* "+statusCode(formatStatusTime(body.TurnStartedAt)),
-		"• *Queued turns:* "+strconv.Itoa(body.PendingTurns), "",
-		"*User text"+statusTruncationSuffix(body.UserTextTruncated)+":*",
-		"```\n"+escapeStatusCodeBlock(body.UserText)+"\n```",
-	)
+	lines = append(lines, "")
+	for _, field := range model.Diagnostics {
+		lines = append(lines, "• *"+escapeStatusInline(field.Label)+":* "+statusCode(field.Value))
+	}
 	return strings.Join(lines, "\n")
+}
+
+func escapeStatusInline(value string) string {
+	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", "*", "").Replace(strings.TrimSpace(value))
 }
 
 func statusCode(value string) string {
@@ -47,23 +42,9 @@ func escapeStatusCodeBlock(value string) string {
 	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(value)
 }
 
-func statusTurnState(active bool) string {
-	if active {
-		return "active"
-	}
-	return "idle"
-}
-
 func statusTruncationSuffix(truncated bool) string {
 	if truncated {
 		return " (truncated)"
 	}
 	return ""
-}
-
-func formatStatusTime(value time.Time) string {
-	if value.IsZero() {
-		return "unavailable"
-	}
-	return value.UTC().Format(time.RFC3339)
 }
