@@ -21,8 +21,6 @@ work from external events, too.
 - **Keep tasks separate.** Give each topic or thread its own session and context.
 - **Run longer goals.** Start a GoalKeeper run with progress updates, validation,
   and a final result to review.
-- **Continue multi-step tasks.** Enable [Auto mode](docs/features/auto-mode.md)
-  to continue multi-step work in the current session within configured limits.
 - **Use your preferred agent.** Connect Codex, Claude Code, OpenCode, Copilot,
   Gemini, or a configured hosted provider.
 - **Connect your tools.** Add MCP servers, skills, and plugins for your workflow.
@@ -101,8 +99,6 @@ from the browser.
 Start with the [documentation index](docs/balda.md) for the complete reference,
 or the [operations guide](docs/reference/operations.md) when maintaining an
 installation.
-
-For user-facing documentation, start with the [feature overview](docs/features/index.md).
 
 Want to contribute? See [CONTRIBUTING.md](CONTRIBUTING.md) and the
 [architecture map](docs/architecture/index.md).

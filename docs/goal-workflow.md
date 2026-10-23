@@ -1,12 +1,3 @@
----
-title: GoalKeeper workflow
-description: Run durable goal work with an isolated worker, validator, and explicit completion result.
-category: Autonomous work
-audience: user
-status: stable
-outline: deep
----
-
 # Goal Workflow
 
 Balda `/goalkeeper <objective>` starts goal work from the current session context in an isolated GoalKeeper runtime.

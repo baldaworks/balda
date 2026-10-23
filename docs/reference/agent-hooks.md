@@ -1,12 +1,3 @@
----
-title: Managed agent hooks
-description: Configure guarded lifecycle and tool hooks for supported agent providers.
-category: Extensions
-audience: operator
-status: stable
-outline: deep
----
-
 # Managed agent hooks
 
 Administrators configure agent hooks in **Operations → Agent hooks** at

@@ -1,12 +1,3 @@
----
-title: Balda Backoffice
-description: Administer users, integrations, providers, tools, automation, memory, and chat archives.
-category: Administration
-audience: operator
-status: stable
-outline: deep
----
-
 # Backoffice application
 
 This page is the authoritative application and Web UI foundation for

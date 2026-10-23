@@ -1,12 +1,3 @@
----
-title: Mattermost integration
-description: Connect Mattermost messages and slash commands to Balda.
-category: Chat integrations
-audience: operator
-status: stable
-outline: deep
----
-
 # Mattermost Integration
 
 Prepared conversational and slash commands use shared durable admission before

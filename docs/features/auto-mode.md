@@ -1,77 +1,116 @@
 ---
 title: Auto mode
-description: Continue multi-step work in the current chat session, with explicit controls and limits.
-category: Autonomous work
-audience: user
-status: stable
-outline: deep
+description: Let Balda continue a multi-step task in the current session until it finishes, needs input, or reaches a safety limit.
 ---
 
 # Auto mode
 
-Auto mode lets Balda continue the current task across several conversational
-turns without a new prompt for each step. Use it for a clear task that needs
-several rounds of investigation, editing, or verification.
+Auto mode lets Balda continue a multi-step task without waiting for a new
+message after every step. It is useful when a task needs several rounds of
+investigation, editing, or verification and Balda already has enough
+information to keep working.
 
-Auto mode is off by default and belongs to one session. Enabling it in a topic
-or thread does not enable it in other conversations. It uses that session's
-history and tools and remains enabled after a task finishes.
+Auto mode is off by default and belongs to one chat session. Enabling it in a
+topic or thread does not enable it anywhere else. It uses the same conversation
+history, tools, and permissions as an ordinary turn.
 
-To enable it, check status, steer work, or stop, follow the
-[Auto mode guide](/guides/auto-mode). The command is available to authorized
-session users in Telegram, Zulip, and Mattermost. Slack does not expose `/auto`.
-See the [command matrix](/commands#invocation-and-access).
+## Start and control Auto mode
 
-## What you see
+1. Enable it in the session where you want to work:
 
-After a normal turn completes, Balda can schedule automatic continuation.
-Useful responses and progress appear in the conversation. Internal continuation
-instructions and decision tokens are hidden; completion or a request for input
-produces a short status notification.
+   ```text
+   /auto on
+   ```
 
-Ordinary messages steer the conversation without disabling Auto mode. A new
-ordinary turn starts a new continuation count. Enabling the mode alone does
-not start a task.
+2. Send the task as an ordinary message. Enabling Auto mode does not start a
+   task by itself.
 
-## Understand the status
+3. Check its current state at any time:
 
-`/auto` shows mode on/off, state, consecutive automatic turns and their limit,
-last-turn time, and the last stop reason. Read the mode flag alongside the state:
-`idle` can also appear when the mode is off or has just been enabled.
+   ```text
+   /auto
+   ```
 
-| State | Meaning | Next action |
+4. Send an ordinary message to clarify or redirect the work. It becomes a
+   normal turn without disabling Auto mode. If a turn is running, your message
+   is queued; it does not interrupt that turn.
+
+5. Stop future automatic continuations when you no longer need them:
+
+   ```text
+   /auto off
+   ```
+
+Turning Auto mode off does not cancel a turn that is already running or queued.
+Use `/cancel` to cancel the current conversational turn and drop queued turns
+for this session. `/cancel` does not disable Auto mode. To stop current work
+and future automatic continuations, use `/auto off` and `/cancel`.
+
+The `/auto` command is available to the owner and collaborators in Telegram,
+Zulip, and Mattermost. Slack does not currently expose it. See the
+[command reference](../commands.md#auto-auto-on-auto-off) for the command and
+access matrix.
+
+## How continuation works
+
+After Balda completes a normal turn, Auto mode checks whether it can continue.
+If it can, Balda schedules an internal continuation turn using the same session
+runtime and delivers its visible response to the same conversation. The model
+decides whether to continue, report completion, or wait for you. Internal
+instructions and decision markers are hidden; completion and waiting decisions
+produce a short state notification instead.
+
+The chain stops when:
+
+- the model reports that the task is complete;
+- the model reports that it needs your input, clarification, or approval;
+- the automatic-turn limit is reached;
+- an automatic turn repeats the previous visible output after surrounding
+  whitespace is removed; or
+- Auto mode is disabled before the next continuation is scheduled.
+
+Completion returns the state to `idle`. Completion, waiting for input, reaching
+the limit, and repeated output leave Auto mode enabled. A later ordinary
+message can start a new continuation chain in the same session, with a fresh
+automatic-turn count.
+
+## Read the status
+
+`/auto` reports whether the mode is on, its current state, the automatic-turn
+count and limit, a last-turn timestamp, and the last stop reason.
+
+| State | Meaning | What to do |
 | --- | --- | --- |
-| `idle` | No active continuation chain; a completed task returns here. | Send another task, or disable the mode. |
-| `running` | A task or its continuation chain is running. | Wait for a result or send steering input. |
-| `waiting for user` | The model reported that it needs input, clarification, or approval. | Supply the missing information or decision. |
-| `limit reached` | The chain reached its automatic-turn limit. | Review the work, then send a new instruction if needed. |
-| `no progress` | An automatic turn repeated the previous visible output. | Review the result and give a different next step. |
+| `idle` | No continuation chain is active. | Send a task, or use `/auto off` if you are finished. |
+| `running` | Balda is working through the current chain. | Wait, or send a message to steer the next normal turn. |
+| `waiting for user` | Balda needs information, clarification, or approval. | Reply with what is missing. |
+| `limit reached` | The chain reached its automatic-turn limit. | Review the result and send a new instruction if more work is needed. |
+| `no progress` | An automatic turn repeated the preceding turn's visible output, ignoring surrounding whitespace. | Give Balda a different or more specific next step. |
 
-## Limits and permissions
+The default limit is **10 automatic turns** after the ordinary turn that starts
+the chain. A deployment may configure another limit with
+`balda.features.automode.max_turns`; `/auto` shows the current session's limit.
 
-The default cap is **10 consecutive automatic turns**, in addition to the
-ordinary turn that starts a chain. Completion and waiting decisions also use
-an automatic turn. A new ordinary turn starts a new chain.
+Repeated-output detection only catches identical visible responses. It does
+not decide whether two different responses made meaningful progress.
 
-Balda stops scheduling continuations when the model reports completion or
-needs user input, when the turn cap is reached, when consecutive output is
-identical after trimming whitespace, or when you disable the mode. Repetition
-detection is a guard against identical output; it does not evaluate whether
-different responses make useful progress.
+## Permissions and approvals
 
-Auto mode uses the normal session runtime and permission controls. It does not
-run a separate background job or grant extra permissions. Turning it off
-prevents future scheduling; it does not cancel running or already queued work.
-See [how to stop](/guides/auto-mode#stop-automatic-work).
+Auto mode uses Balda's normal session runtime. It does not create a separate
+background job, grant additional capabilities, or bypass required approval.
+When the model reports that it needs an explicit decision before continuing,
+the chain enters `waiting for user`. Permission requests during a turn follow
+the deployment's [permission review policy](../reference/configuration.md#agent-permission-review);
+enabling Auto mode does not enable approval prompts or change that policy.
 
-Administrators can change the cap through the
-[configuration reference](/reference/configuration#auto-mode).
+For the technical state and continuation contract, see the
+[Auto mode architecture](../architecture/auto-mode.md).
 
-## Choose Auto mode or GoalKeeper
+## Auto mode or GoalKeeper?
 
-Use Auto mode to continue work inside the current conversation, with ordinary
-messages for steering. Use [GoalKeeper](/features/#goalkeeper) for a separate
-worker-and-validator loop with its own goal lifecycle.
-
-Supplemental contributor contracts are in the repository's
-[Auto mode specification](https://github.com/baldaworks/balda/blob/main/docs/architecture/auto-mode.md).
+Use Auto mode when you want the current conversation to continue and you may
+steer it with ordinary messages. Use [GoalKeeper](../goal-workflow.md) when you
+want a durable goal with separate worker and validator sessions and its own
+lifecycle. Auto mode does not start GoalKeeper or perform its separate
+validation and export workflow. Stop GoalKeeper with `/goalkeeper clear`;
+`/auto off` and `/cancel` do not stop a GoalKeeper run.

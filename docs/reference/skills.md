@@ -1,12 +1,3 @@
----
-title: Standalone skill management
-description: Inspect, install, update, and recover standalone skills with the host-local CLI.
-category: Extensions
-audience: operator
-status: stable
-outline: deep
----
-
 # Standalone skill management
 
 Balda provides two different skill interfaces:

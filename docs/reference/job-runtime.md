@@ -1,12 +1,3 @@
----
-title: Jobs, schedules, and webhooks
-description: Configure durable scheduled and event-driven work with optional final-result delivery.
-category: Automation
-audience: operator
-status: stable
-outline: deep
----
-
 # Job, scheduler, and webhook runtime
 
 ## Job runtime semantics (internal)

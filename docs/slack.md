@@ -1,12 +1,3 @@
----
-title: Slack Agent integration
-description: Configure signed Slack events, commands, and conversation behavior.
-category: Chat integrations
-audience: operator
-status: stable
-outline: deep
----
-
 # Slack Agent Integration
 
 Slack Agent is Balda's Slack integration. It uses Slack's `agent_view` over the

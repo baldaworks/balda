@@ -1,8 +1,5 @@
 # Auto mode (`/auto`) v1
 
-For user-facing behavior and examples, see the
-[Auto mode overview](../features/auto-mode.md).
-
 `/auto` is a session-scoped continuation mode for Balda sessions.
 
 When enabled, Balda schedules an internal synthetic user turn after each
@@ -65,8 +62,8 @@ It uses a fixed steering prompt that tells the model:
   user-visible response
 
 Balda intercepts these sentinels, suppresses the sentinel text, and emits a
-short user-visible lifecycle notification showing the state as `idle` after
-completion or `waiting for user` when input is needed.
+short user-visible lifecycle notification (`Auto mode is idle.` or
+`Auto mode is waiting for user.`).
 
 ## Session state
 
@@ -79,17 +76,16 @@ The session runtime state stores:
 - `balda_auto_last_turn_at`
 - `balda_auto_last_stop_reason`
 
-Current default:
+Recommended default:
 
-- `balda_auto_max_turns = 10`
+- `balda_auto_max_turns = 5`
 
 ## States
 
 - `idle` — auto mode enabled but no active continuation chain is currently
   running
 - `running` — Balda is scheduling or executing synthetic continuation turns
-- `waiting_for_user` — the model reported it needs user input, clarification,
-  or approval
+- `waiting_for_user` — the model reported it is done or cannot safely continue
 - `limit_reached` — Balda hit the configured consecutive auto-turn limit
 - `no_progress` — Balda observed repeated auto output and stopped the loop
 
