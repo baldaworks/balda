@@ -84,7 +84,12 @@ func NewLocatorStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
 
 // NewStatusStructuredRegistrar registers Slack status response presentation.
 func NewStatusStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
-	return deliveryfx.NewStructuredRegistrar(deliveryfmt.TransportSlackAgent, statusfmt.ResponseDescriptor, slackAgentStatusRenderer{})
+	return func(registry *deliveryfmt.StructuredRegistry) error {
+		if err := deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportSlackAgent, statusfmt.ResponseDescriptor, slackAgentStatusRenderer{}); err != nil {
+			return err
+		}
+		return deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportSlackAgent, statusfmt.LegacyResponseDescriptor, slackAgentStatusRenderer{})
+	}
 }
 
 type slackAgentGoalProgressRenderer struct{}

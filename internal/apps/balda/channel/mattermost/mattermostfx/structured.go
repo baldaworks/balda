@@ -112,7 +112,12 @@ func NewLocatorStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
 
 // NewStatusStructuredRegistrar registers Mattermost status presentation.
 func NewStatusStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
-	return deliveryfx.NewStructuredRegistrar(deliveryfmt.TransportMattermost, statusfmt.ResponseDescriptor, mattermostStatusRenderer{})
+	return func(registry *deliveryfmt.StructuredRegistry) error {
+		if err := deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportMattermost, statusfmt.ResponseDescriptor, mattermostStatusRenderer{}); err != nil {
+			return err
+		}
+		return deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportMattermost, statusfmt.LegacyResponseDescriptor, mattermostStatusRenderer{})
+	}
 }
 
 type mattermostGoalProgressRenderer struct{}

@@ -49,7 +49,7 @@ func TestStatusStructuredRegistrar(t *testing.T) {
 		t.Fatalf("presentation = %+v", got)
 	}
 	idle, err := deliveryfmt.RenderStructured(context.Background(), registry, deliveryfmt.TransportZulip, deliveryfmt.StructuredEnvelope[statusfmt.Response]{Descriptor: statusfmt.ResponseDescriptor})
-	if err != nil || !strings.Contains(idle.Text, "idle") || strings.Contains(idle.Text, "User text") {
+	if err != nil || !strings.Contains(idle.Text, "No conversation turn is active") || strings.Contains(strings.ToLower(idle.Text), "idle") || strings.Contains(idle.Text, "Request") {
 		t.Fatalf("idle presentation = %+v, error = %v", idle, err)
 	}
 }

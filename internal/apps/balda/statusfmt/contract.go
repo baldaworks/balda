@@ -11,6 +11,10 @@ import (
 // Response contains the semantic values shown by a successful status command.
 // Transport renderers own all labels and presentation markup.
 type Response struct {
+	ConversationState string
+	WaitingKind       string
+	WaitingSince      time.Time
+	ObservedAt        time.Time
 	ProviderID        string
 	ProviderType      string
 	Model             string
@@ -23,9 +27,20 @@ type Response struct {
 	PendingTurns      int
 	UserText          string
 	UserTextTruncated bool
+	TurnState         string
+	LastActivityAt    time.Time
+	ActivityKind      string
+	TurnCompletedAt   time.Time
+	TurnOutcome       string
+	RequestExcerpt    string
+	RequestTruncated  bool
+	DegradedSources   []string
 }
 
 // ResponseDescriptor identifies the versioned structured status response.
 var ResponseDescriptor = deliveryfmt.Descriptor[Response]{
-	Type: "balda.status.response.v1",
+	Type: "balda.status.response.v2",
 }
+
+// LegacyResponseDescriptor keeps the v1 renderer registration available.
+var LegacyResponseDescriptor = deliveryfmt.Descriptor[Response]{Type: "balda.status.response.v1"}

@@ -12,7 +12,9 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/statusapp"
 	"github.com/baldaworks/balda/internal/apps/balda/statusfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/turnstatuscmd"
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
@@ -33,6 +35,12 @@ func (s *statusSessions) GetAgentMetadata(string) session.AgentMetadata { return
 type statusTurns struct {
 	turn appports.CurrentTurn
 	ok   bool
+}
+
+type statusCoordinator struct{ snapshot statusapp.Snapshot }
+
+func (s statusCoordinator) Snapshot(context.Context, deliverycmd.Locator) statusapp.Snapshot {
+	return s.snapshot
 }
 
 func (s statusTurns) CurrentTurn(string) (appports.CurrentTurn, bool) { return s.turn, s.ok }
@@ -74,7 +82,8 @@ func TestHandlerUsesStructuredStatusRenderer(t *testing.T) {
 	}
 	turns := statusTurns{ok: true, turn: appports.CurrentTurn{StartedAt: startedAt, PendingTurns: 2, Text: strings.Repeat("я", 1001)}}
 	registry, dispatcher := &statusRegistry{}, &statusDispatcher{}
-	handler := New(sessions, turns, registry, dispatcher, zerolog.Nop())
+	coordinator := statusCoordinator{snapshot: statusapp.Snapshot{State: statusapp.StateWorking, HasTurn: true, Turn: turnstatuscmd.Snapshot{State: turnstatuscmd.StateActive, StartedAt: startedAt, LastActivityAt: startedAt.Add(time.Second), ActivityKind: turnstatuscmd.ActivityProvider}}}
+	handler := New(sessions, turns, coordinator, registry, dispatcher, zerolog.Nop())
 	payload := statusPayload()
 
 	if err := handler.Handle(context.Background(), actorlayer.Envelope{ID: "op-1"}, payload); err != nil {
@@ -90,8 +99,11 @@ func TestHandlerUsesStructuredStatusRenderer(t *testing.T) {
 	if got.SessionState != "active" || !got.TurnActive || got.TurnStartedAt != startedAt || got.PendingTurns != 2 {
 		t.Errorf("runtime status = %+v", got)
 	}
-	if len([]rune(got.UserText)) != maxUserTextRunes || !got.UserTextTruncated {
-		t.Errorf("user text runes=%d truncated=%v", len([]rune(got.UserText)), got.UserTextTruncated)
+	if got.ConversationState != "working" || got.ActivityKind != "provider" {
+		t.Errorf("conversation status = %+v", got)
+	}
+	if len([]rune(got.RequestExcerpt)) != maxUserTextRunes || !got.RequestTruncated {
+		t.Errorf("request runes=%d truncated=%v", len([]rune(got.RequestExcerpt)), got.RequestTruncated)
 	}
 	if dispatcher.envelopes[0].DedupeKey != "op-1:delivery:status-result" {
 		t.Errorf("dedupe key = %q", dispatcher.envelopes[0].DedupeKey)
@@ -100,7 +112,7 @@ func TestHandlerUsesStructuredStatusRenderer(t *testing.T) {
 
 func TestHandlerFailsClosedWhenRendererIsUnavailable(t *testing.T) {
 	wantErr := errors.New("renderer unavailable")
-	handler := New(&statusSessions{}, statusTurns{}, &statusRegistry{err: wantErr}, &statusDispatcher{}, zerolog.Nop())
+	handler := New(&statusSessions{}, statusTurns{}, nil, &statusRegistry{err: wantErr}, &statusDispatcher{}, zerolog.Nop())
 
 	err := handler.Handle(context.Background(), actorlayer.Envelope{ID: "op-2"}, statusPayload())
 	if !errors.Is(err, wantErr) {
@@ -110,12 +122,12 @@ func TestHandlerFailsClosedWhenRendererIsUnavailable(t *testing.T) {
 
 func TestHandlerReportsNoActiveTurn(t *testing.T) {
 	registry := &statusRegistry{}
-	handler := New(&statusSessions{infoErr: errors.New("not found")}, statusTurns{}, registry, &statusDispatcher{}, zerolog.Nop())
+	handler := New(&statusSessions{infoErr: errors.New("not found")}, statusTurns{}, nil, registry, &statusDispatcher{}, zerolog.Nop())
 
 	if err := handler.Handle(context.Background(), actorlayer.Envelope{ID: "op-3"}, statusPayload()); err != nil {
 		t.Fatal(err)
 	}
-	if registry.response.SessionState != unavailableValue || registry.response.ProviderType != unavailableValue || registry.response.Model != unavailableValue || registry.response.ReasoningEffort != unavailableValue || registry.response.TurnActive || registry.response.UserText != "" {
+	if registry.response.SessionState != unavailableValue || registry.response.ProviderType != unavailableValue || registry.response.Model != unavailableValue || registry.response.ReasoningEffort != unavailableValue || registry.response.TurnActive || registry.response.RequestExcerpt != "" {
 		t.Fatalf("response = %+v", registry.response)
 	}
 }
@@ -130,7 +142,7 @@ func TestHandlerRejectsUnauthorizedAndInvalidRequestsBeforeRendering(t *testing.
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			registry, dispatcher := &statusRegistry{}, &statusDispatcher{}
-			handler := New(&statusSessions{}, statusTurns{}, registry, dispatcher, zerolog.Nop())
+			handler := New(&statusSessions{}, statusTurns{}, nil, registry, dispatcher, zerolog.Nop())
 			if err := handler.Handle(context.Background(), actorlayer.Envelope{ID: "op-4"}, test.payload); err != nil {
 				t.Fatal(err)
 			}

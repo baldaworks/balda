@@ -7,6 +7,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/turnstatusapp"
 	"github.com/baldaworks/balda/internal/apps/balda/turnstatuscmd"
@@ -69,7 +70,7 @@ type Coordinator struct {
 	runtime   activeRuntimeReader
 }
 
-func NewCoordinator(provider state.Provider, turns *turnstatusapp.Recorder, runtime activeRuntimeReader) *Coordinator {
+func NewCoordinator(provider state.Provider, turns *turnstatusapp.Recorder, runtime *session.Manager) *Coordinator {
 	return &Coordinator{turns: turns, questions: provider.Questions(), runtime: runtime}
 }
 
