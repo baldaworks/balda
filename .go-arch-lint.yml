@@ -153,6 +153,7 @@ components:
       - internal/apps/balda/telegramref
       - internal/apps/balda/telegramfmt
       - internal/apps/balda/turncmd
+      - internal/apps/balda/turnstatuscmd
       - internal/apps/balda/usageview
       - internal/apps/balda/webhookcmd
 
@@ -362,6 +363,8 @@ components:
       - internal/apps/balda/sessionturnapp
       - internal/apps/balda/sessionmemoryapp
       - internal/apps/balda/startupnotifyapp
+      - internal/apps/balda/statusapp
+      - internal/apps/balda/turnstatusapp
       - internal/apps/balda/welcome
       - internal/apps/balda/webhookapp
 

@@ -6,6 +6,8 @@ import (
 	"time"
 )
 
+const unavailable = "unavailable"
+
 type Field struct {
 	Label string
 	Value string
@@ -51,9 +53,9 @@ func ModelFor(body Response) Model {
 		if !body.LastActivityAt.IsZero() {
 			model.Operational = append(model.Operational, Field{"Last activity", activityValue(body, now)})
 		}
-	case "unavailable":
+	case unavailable:
 		model.Headline = "🟠 Conversation status is temporarily unavailable"
-		model.Operational = append(model.Operational, Field{"Turn status", "unavailable"})
+		model.Operational = append(model.Operational, Field{"Turn status", unavailable})
 	default:
 		model.Headline = "⚪ No conversation turn is active"
 		if body.TurnState == "terminal" || strings.TrimSpace(body.TurnOutcome) != "" {
@@ -75,10 +77,10 @@ func ModelFor(body Response) Model {
 	}
 	model.Request = firstNonEmpty(body.RequestExcerpt, body.UserText)
 	model.Truncated = body.RequestTruncated || body.UserTextTruncated
-	if model.Request == "" || state == "inactive" || state == "unavailable" {
+	if model.Request == "" || state == "inactive" || state == unavailable {
 		model.Request = ""
 	}
-	if len(body.DegradedSources) > 0 && state != "unavailable" {
+	if len(body.DegradedSources) > 0 && state != unavailable {
 		model.Operational = append(model.Operational, Field{"Status data", "partial"})
 	}
 	model.Diagnostics = []Field{
@@ -106,7 +108,7 @@ func waitingLabel(kind string) string {
 
 func activityValue(body Response, now time.Time) string {
 	if body.LastActivityAt.IsZero() {
-		return "unavailable"
+		return unavailable
 	}
 	label := strings.ReplaceAll(strings.TrimSpace(body.ActivityKind), "_", " ")
 	return joinNonEmpty(formatDuration(elapsed(body.LastActivityAt, now))+" ago", label)
@@ -139,7 +141,7 @@ func formatDuration(value time.Duration) string {
 
 func formatTime(value time.Time) string {
 	if value.IsZero() {
-		return "unavailable"
+		return unavailable
 	}
 	return value.UTC().Format("15:04:05 UTC")
 }
@@ -147,12 +149,12 @@ func formatTime(value time.Time) string {
 func joinNonEmpty(values ...string) string {
 	result := make([]string, 0, len(values))
 	for _, value := range values {
-		if value = strings.TrimSpace(value); value != "" && value != "unavailable" {
+		if value = strings.TrimSpace(value); value != "" && value != unavailable {
 			result = append(result, value)
 		}
 	}
 	if len(result) == 0 {
-		return "unavailable"
+		return unavailable
 	}
 	return strings.Join(result, " · ")
 }
