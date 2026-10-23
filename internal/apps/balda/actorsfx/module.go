@@ -14,6 +14,8 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/permissions"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/balda/internal/apps/balda/turnstatusapp"
 	"github.com/baldaworks/go-actorlayer/dispatch"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
@@ -25,6 +27,16 @@ type memoryActorParams struct {
 
 	Store  *memory.Store
 	Events actortransport.EventPublisher `optional:"true"`
+}
+
+type turnStatusRecorderParams struct {
+	fx.In
+
+	Provider state.Provider `optional:"true"`
+}
+
+func newTurnStatusRecorder(params turnStatusRecorderParams) *turnstatusapp.Recorder {
+	return turnstatusapp.NewRecorder(params.Provider)
 }
 
 type sessionActorParams struct {
@@ -57,7 +69,11 @@ type goalkeeperActorParams struct {
 // Module provides Balda product actors and their composition adapters.
 var Module = fx.Module("balda_actorsfx",
 	fx.Provide(
-		actors.NewTurnDispatcher,
+		newTurnStatusRecorder,
+		func(recorder *turnstatusapp.Recorder) appports.TurnStatusRecorder { return recorder },
+		func(logger zerolog.Logger, recorder *turnstatusapp.Recorder) *actors.TurnDispatcher {
+			return actors.NewTurnDispatcherWithStatus(logger, recorder)
+		},
 		func(dispatcher *actors.TurnDispatcher) appports.TurnQueue { return dispatcher },
 		func(dispatcher *actors.TurnDispatcher) appports.CurrentTurnResolver { return dispatcher },
 		actors.NewJobRunRegistry,

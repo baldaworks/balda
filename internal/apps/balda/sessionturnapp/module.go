@@ -89,5 +89,8 @@ var Module = fx.Module("balda_sessionturnapp",
 			service.SetPrivateOutputRecorder(jobs)
 			service.SetWebhookTurnClaimer(jobs)
 		},
+		func(service *TurnExecutionService, recorder appports.TurnStatusRecorder) {
+			service.SetTurnStatusRecorder(recorder)
+		},
 	),
 )

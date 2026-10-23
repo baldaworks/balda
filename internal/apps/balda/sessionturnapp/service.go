@@ -9,6 +9,7 @@ import (
 	"time"
 
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
 	"github.com/baldaworks/balda/internal/apps/balda/automodecmd"
@@ -23,6 +24,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/sessionturn"
 	"github.com/baldaworks/balda/internal/apps/balda/telegramref"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/turnstatuscmd"
 	"github.com/baldaworks/balda/internal/apps/balda/usageview"
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
@@ -106,6 +108,7 @@ type TurnExecutionService struct {
 	jobEvents          jobEventAppender
 	sessions           runtimeStateReader
 	turnCapture        CompletedTurnCapture
+	turnActivity       appports.TurnStatusRecorder
 	finalArchive       FinalArchive
 	hooks              HookRunner
 	privateOutput      PrivateOutputRecorder
@@ -226,6 +229,13 @@ func (s *TurnExecutionService) SetCompletedTurnCapture(capture CompletedTurnCapt
 		return
 	}
 	s.turnCapture = capture
+}
+
+// SetTurnStatusRecorder installs operational activity recording.
+func (s *TurnExecutionService) SetTurnStatusRecorder(recorder appports.TurnStatusRecorder) {
+	if s != nil {
+		s.turnActivity = recorder
+	}
 }
 
 // SetPrivateOutputRecorder binds the durable result writer at composition time.
@@ -609,6 +619,20 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 			currentText := memoryStreamedText.String()
 			if memoryEventText != currentText {
 				memoryStreamedText.WriteString(memoryEventText)
+			}
+		}
+		if s.turnActivity != nil {
+			kind := turnstatuscmd.ActivityProvider
+			switch {
+			case functionResponsePartCount > 0 || codeExecutionResultPartCount > 0:
+				kind = turnstatuscmd.ActivityToolResult
+			case functionCallPartCount > 0 || executableCodePartCount > 0:
+				kind = turnstatuscmd.ActivityToolCall
+			case hasPlanUpdate || hasThoughtUpdate:
+				kind = turnstatuscmd.ActivityProgress
+			}
+			if err := s.turnActivity.Observe(runCtx, kind, s.currentTime().UTC()); err != nil {
+				zerolog.Ctx(runCtx).Warn().Err(err).Msg("record turn activity")
 			}
 		}
 		zerolog.Ctx(runCtx).Debug().

@@ -1,7 +1,10 @@
 // Package turnstatuscmd defines the durable conversation-turn status contract.
 package turnstatuscmd
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 type State string
 
@@ -65,4 +68,17 @@ type Snapshot struct {
 	Outcome        Outcome
 	BootID         string
 	Version        uint64
+}
+
+type identityContextKey struct{}
+
+// ContextWithIdentity attaches the active turn identity to provider execution.
+func ContextWithIdentity(ctx context.Context, identity Identity) context.Context {
+	return context.WithValue(ctx, identityContextKey{}, identity)
+}
+
+// IdentityFromContext returns the active turn identity when one is attached.
+func IdentityFromContext(ctx context.Context) (Identity, bool) {
+	identity, ok := ctx.Value(identityContextKey{}).(Identity)
+	return identity, ok
 }
