@@ -24,7 +24,7 @@ Use this map to find the authoritative runtime contracts.
 - [Plugins and session capabilities](../reference/plugins.md)
 - [Runtime contribution catalog](runtime-contribution-catalog.md)
 - [Actor runtime](actor-runtime.md)
-- [Local actorlayer contract boundary](actor-runtime.md#local-actorlayer-contract-boundaries)
+- [Local actorlayer contract boundary](actor-runtime.md#actorlayer-contract-boundaries)
 - [Projections and read models](projections-and-read-models.md)
 - [Reliability](reliability.md)
 - [Testing and evals](testing-and-evals.md)
@@ -41,7 +41,11 @@ These records are active architecture contracts.
 
 ## Proposed decisions
 
-No architecture decisions are currently awaiting approval.
+- [ADR 0004: Balda Unit — remote ACP provider](adr/0004-balda-unit.md) —
+  proposed remote ACP execution contract where one Unit owns one ACP process
+  serving multiple ACP sessions, with Backoffice-issued digest-only bearer
+  authentication, exact profile descriptor checks, connection-generation
+  fencing, and an initial single-process Balda scope; Approval: pending.
 
 ## Invariants
 
