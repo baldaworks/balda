@@ -16,6 +16,7 @@ var baldaMigrationsFS embed.FS
 var requiredBaldaStateTables = []string{
 	"balda_app_kv",
 	"balda_session_metadata",
+	"balda_turn_status",
 	"balda_telegram_offsets",
 	"balda_collaborators",
 	"balda_runtime_app_state",

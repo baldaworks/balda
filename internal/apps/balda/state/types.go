@@ -11,6 +11,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/providers"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/turnstatuscmd"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookcmd"
 	adksession "google.golang.org/adk/v2/session"
@@ -108,6 +109,7 @@ type Provider interface {
 	WebhookAdmissions() WebhookAdmissionStore
 	WebhookRoutes() WebhookRouteStore
 	Questions() QuestionStore
+	TurnStatus() TurnStatusStore
 	// SessionMemoryIngressOutbox returns producer-local exports awaiting
 	// JetStream PubAck. It is distinct from canonical memory delivery state.
 	SessionMemoryIngressOutbox() SessionMemoryIngressOutboxStore
@@ -119,6 +121,15 @@ type Provider interface {
 	ProviderManagement() providers.Store
 	Users() usercmd.Store
 	Close() error
+}
+
+// TurnStatusStore persists one epoch-fenced status snapshot per session.
+type TurnStatusStore interface {
+	Start(ctx context.Context, start turnstatuscmd.Start) (bool, error)
+	Observe(ctx context.Context, activity turnstatuscmd.Activity) (bool, error)
+	Complete(ctx context.Context, completion turnstatuscmd.Completion) (bool, error)
+	Snapshot(ctx context.Context, sessionID, currentBootID string) (turnstatuscmd.Snapshot, bool, error)
+	ClearSession(ctx context.Context, sessionID string) error
 }
 
 // WebhookAdmissionStore freezes inbound job input and delivery selection.
