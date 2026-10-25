@@ -512,15 +512,31 @@ func TestExecuteDoesNotCaptureWithoutTurnCompleteOrVisibleText(t *testing.T) {
 	t.Parallel()
 
 	for _, test := range []struct {
-		name   string
-		events func(string) []*adksession.Event
+		name    string
+		events  func(string) []*adksession.Event
+		wantErr bool
 	}{
 		{
-			name: "no turn complete",
+			name:    "empty stream",
+			events:  func(string) []*adksession.Event { return nil },
+			wantErr: true,
+		},
+		{
+			name:    "no turn complete",
+			wantErr: true,
 			events: func(invocationID string) []*adksession.Event {
 				answer := adksession.NewEvent(context.Background(), invocationID)
 				answer.Content = genai.NewContentFromText("partial answer", genai.RoleModel)
 				answer.Partial = true
+				return []*adksession.Event{answer}
+			},
+		},
+		{
+			name:    "visible text without turn complete",
+			wantErr: true,
+			events: func(invocationID string) []*adksession.Event {
+				answer := adksession.NewEvent(context.Background(), invocationID)
+				answer.Content = genai.NewContentFromText("unfinished answer", genai.RoleModel)
 				return []*adksession.Event{answer}
 			},
 		},
@@ -550,7 +566,8 @@ func TestExecuteDoesNotCaptureWithoutTurnCompleteOrVisibleText(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			hook := &captureHook{}
-			service := NewTurnExecutionServiceWithJobEventsAndCapture(nil, nil, nil, zerolog.Nop(), automode.DefaultMaxTurns, hook)
+			bus := &captureDispatcher{}
+			service := NewTurnExecutionServiceWithJobEventsAndCapture(bus, nil, nil, zerolog.Nop(), automode.DefaultMaxTurns, hook)
 			adkRunner, agentSessionID := newCaptureTestRunner(t, test.events)
 			err := service.Execute(context.Background(), ExecutionRequest{
 				Text:           "question",
@@ -559,15 +576,47 @@ func TestExecuteDoesNotCaptureWithoutTurnCompleteOrVisibleText(t *testing.T) {
 				SessionID:      "session-1",
 				AgentSessionID: agentSessionID,
 				Locator:        baldasession.SessionLocator{ChannelType: "telegram", AddressKey: "123:0", SessionID: "tg-123-0"},
-				Deliver:        false,
+				Deliver:        true,
 				DedupeKey:      "turn-1",
 			})
-			if err != nil {
-				t.Fatalf("Execute() error = %v", err)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("Execute() error = %v, want error = %t", err, test.wantErr)
+			}
+			if test.wantErr {
+				var accepted *turncmd.FinalOutcomeAcceptedError
+				if errors.As(err, &accepted) {
+					t.Fatal("incomplete stream marked as having an accepted final outcome")
+				}
+				for _, envelope := range bus.envelopes {
+					var delivery deliverycmd.Payload
+					if err := actorlayer.UnmarshalPayload(envelope.Payload, &delivery); err != nil {
+						t.Fatal(err)
+					}
+					if delivery.Mode == "agent_reply" {
+						t.Fatal("incomplete stream published a final reply")
+					}
+				}
 			}
 			if len(hook.turns) != 0 {
 				t.Fatalf("captured turns = %d, want 0", len(hook.turns))
 			}
 		})
+	}
+}
+
+func TestExecuteCanceledStreamPreservesCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	adkRunner, agentSessionID := newCaptureTestRunner(t, func(string) []*adksession.Event {
+		cancel()
+		return nil
+	})
+	service := NewTurnExecutionServiceWithJobEvents(nil, nil, nil, zerolog.Nop(), automode.DefaultMaxTurns)
+	err := service.Execute(ctx, ExecutionRequest{
+		Text: "question", Runner: adkRunner, UserID: "tg-101", SessionID: "session-1", AgentSessionID: agentSessionID,
+		Locator: baldasession.SessionLocator{ChannelType: "telegram", AddressKey: "123:0", SessionID: "tg-123-0"},
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Execute() error = %v, want context.Canceled", err)
 	}
 }

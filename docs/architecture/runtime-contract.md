@@ -117,6 +117,12 @@ Status: active
 - Balda keeps that ownership inside explicit app layers: `actorcmd` owns the canonical wire taxonomy; `execution` owns runtime policy and re-exports that taxonomy as the runtime-facing compatibility facade; `jobs` owns durable job state, event outbox, and projections; `actors` owns product behavior; `actorsfx` owns actor composition and Fx wiring; `runtimecatalog` owns immutable compilation and bounded reads; `catalogapp` owns catalog lifecycle and consumer adapters; `sessionturn` owns queued-turn restoration; `internalmcp` owns bundled MCP lifecycle; `handlers` owns ingress normalization and publication; and `handlersfx` binds ingress-owned ports to concrete provider runtimes.
 - `agent` owns provider-backed runtime construction, root runtime prompt/session-state bootstrap, isolated goal runtime preparation, runtime-adjacent workspace support, and adaptation of ADK-facing permission callbacks into provider-neutral Balda contracts. It does not own session lifecycle semantics, queued-turn orchestration, or permission policy.
 - `permissions` owns provider-neutral agent permission policy and interactive review orchestration; provider protocol types stay below the `agent` adapter boundary.
+- `sessionturnapp` requires a provider `TurnComplete` event for successful turn
+  completion. A closed stream without it returns an execution error, including
+  after partial text; partial text is not published as a final reply or captured
+  as a completed turn. The existing actor retry and terminal-failure delivery
+  policy handles that error. If the request context was canceled or expired,
+  its context error is preserved. This does not impose a timeout on active turns.
 - `sessionturnapp` records failed ADK tool responses with redacted error metadata and never logs raw tool arguments or complete tool responses.
 - `github.com/baldaworks/go-actorlayer` owns generic envelopes, retry/error helpers, runtime primitives, and transport-facing contracts, but does not make Balda-specific product policy decisions.
 - CommandActor is an independently registered Balda product actor on
