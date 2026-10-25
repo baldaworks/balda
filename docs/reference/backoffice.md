@@ -898,6 +898,8 @@ in logs, URLs used for recovery, exported read models or browser history caches.
 
 ## Schedules management
 
+For the user-facing workflow, see [Schedules](../features/schedules.md).
+
 Administrators with a normal browser session can open **Schedules** at
 `<balda.http.base_path>/backoffice/schedules`. Operators cannot view or mutate
 schedules. The
@@ -982,6 +984,8 @@ authority/audit fences. Balda configures the port before the Backoffice
 route starts on the shared listener, preserving the existing startup order.
 
 ## Webhooks management
+
+For the user-facing workflow, see [Webhooks](../features/webhooks.md).
 
 Administrators can open **Webhooks** at
 `<balda.http.base_path>/backoffice/webhooks`. Operators cannot view or change

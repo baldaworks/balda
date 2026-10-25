@@ -89,6 +89,8 @@ from the browser.
 - [Configuration](docs/reference/configuration.md)
 - [Telegram formatting](docs/telegram-formatting.md)
 - [Backoffice](docs/reference/backoffice.md)
+- [Schedules](docs/features/schedules.md)
+- [Webhooks](docs/features/webhooks.md)
 - [Goal-driven work](docs/goal-workflow.md)
 - [Standalone skills](docs/reference/skills.md)
 - [Plugins](docs/reference/plugins.md)
