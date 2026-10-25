@@ -25,6 +25,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorymcp"
 	"github.com/baldaworks/runtime/v2/agentconfig"
 	"github.com/baldaworks/runtime/v2/agentfactory"
+	"github.com/baldaworks/runtime/v2/agentproduct"
 	runtimeconfig "github.com/baldaworks/runtime/v2/appconfig"
 	"github.com/baldaworks/runtime/v2/mcpregistry"
 	acp "github.com/coder/acp-go-sdk"
@@ -158,6 +159,12 @@ func testACPInvocationWithServers(t *testing.T, catalog *Runtime, registry *mcpr
 }
 
 func forcedProcessExit(err error) bool {
+	if errors.Is(err, agentproduct.ErrCloseFailed) {
+		// Product.Close intentionally redacts provider shutdown details. The
+		// parent process was killed by this test, so the bounded close result is
+		// the expected product-level evidence.
+		return true
+	}
 	if joined, ok := err.(interface{ Unwrap() []error }); ok {
 		for _, child := range joined.Unwrap() {
 			if !forcedProcessExit(child) {

@@ -2,16 +2,19 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/baldaworks/runtime/v2/agentconfig"
 	"github.com/baldaworks/runtime/v2/agentfactory"
+	"github.com/baldaworks/runtime/v2/agentproduct"
 	runtimeconfig "github.com/baldaworks/runtime/v2/appconfig"
 	"github.com/baldaworks/runtime/v2/mcpregistry"
 	"github.com/rs/zerolog"
@@ -66,6 +69,58 @@ type recordingCapabilityBinder struct {
 
 type recordingRuntimeFactory struct {
 	requests []agentfactory.BuildRequest
+}
+
+type orderedProductFactory struct {
+	order    *[]string
+	closeErr error
+}
+
+func (f *orderedProductFactory) BuildScoped(_ context.Context, request agentfactory.BuildRequest, _ map[string][]string) (adkagent.Agent, error) {
+	return adkagent.New(adkagent.Config{Name: request.Name})
+}
+
+func (f *orderedProductFactory) WithProviders(map[string]agentconfig.Config) ScopedRuntimeFactory {
+	return f
+}
+
+func (f *orderedProductFactory) BuildSessionProduct(_ context.Context, request agentfactory.BuildRequest, _ map[string][]string, _ string) (*RuntimeProduct, error) {
+	ag, err := adkagent.New(adkagent.Config{Name: request.Name})
+	if err != nil {
+		return nil, err
+	}
+	return NewRuntimeProduct(ag, nil, func() error {
+		*f.order = append(*f.order, "product")
+		return f.closeErr
+	})
+}
+
+type orderedSessionMCPBinder struct {
+	order      *[]string
+	releaseErr error
+}
+
+func (b *orderedSessionMCPBinder) BindSession(context.Context, SessionRuntimeRequest) (ScopedMCPServer, error) {
+	return ScopedMCPServer{
+		ID: "ordered-session-mcp",
+		Config: agentconfig.MCPServerConfig{
+			Type: agentconfig.MCPServerTypeHTTP,
+			URL:  "http://127.0.0.1:1/mcp/ordered",
+		},
+		Release: func() error {
+			*b.order = append(*b.order, "binding")
+			return b.releaseErr
+		},
+	}, nil
+}
+
+type partialSessionMCPBinder struct {
+	binding ScopedMCPServer
+	err     error
+}
+
+func (b *partialSessionMCPBinder) BindSession(context.Context, SessionRuntimeRequest) (ScopedMCPServer, error) {
+	return b.binding, b.err
 }
 
 type recordingSessionMCPBinder struct {
@@ -263,6 +318,248 @@ func TestRuntimeForSessionOwnsCapabilityBinding(t *testing.T) {
 	if closeCalls != 1 {
 		t.Fatalf("capability close calls = %d, want 1", closeCalls)
 	}
+}
+
+func TestRuntimeForSessionClosesLayersInReverseAcquisitionOrder(t *testing.T) {
+	var order []string
+	factory := &orderedProductFactory{order: &order}
+	builder := &Builder{factory: &recordingRuntimeFactory{}, scopedFactory: factory}
+	binder := &recordingCapabilityBinder{binding: SessionCapabilityBinding{
+		SnapshotID: "snapshot-ordered",
+		Skills:     SkillMetadataProjection{Snapshot: "snapshot-ordered"},
+		Close: func() error {
+			order = append(order, "capabilities")
+			return nil
+		},
+	}}
+	manager := NewRuntimeManager(RuntimeManagerParams{
+		Builder:          builder,
+		BaldaProviderID:  "alpha",
+		WorkingDir:       t.TempDir(),
+		StateDir:         t.TempDir(),
+		SessionMCPBinder: &orderedSessionMCPBinder{order: &order},
+		CapabilityBinder: binder,
+		MCPRegistry:      mcpregistry.New(nil),
+		Logger:           zerolog.Nop(),
+	})
+
+	runtime, err := manager.RuntimeForSession(t.Context(), SessionRuntimeRequest{
+		Locator: deliverycmd.Locator{SessionID: "session-ordered", ChannelType: "telegram"},
+	})
+	if err != nil {
+		t.Fatalf("RuntimeForSession() error = %v", err)
+	}
+	if err := runtime.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	want := []string{"product", "binding", "capabilities"}
+	if !slices.Equal(order, want) {
+		t.Fatalf("close order = %v, want %v", order, want)
+	}
+}
+
+func TestRuntimeManagerCloseReturnsStableFailureForConcurrentCallers(t *testing.T) {
+	t.Run("app runtime", func(t *testing.T) {
+		privateErr := errors.New("private provider close detail")
+		capabilityDetail := errors.New("private capability cleanup detail")
+		capabilityCalls := 0
+		ag := mustProductTestAgent(t, "app-close")
+		ag.closeErr = privateErr
+		product, err := agentproduct.New(ag, nil)
+		if err != nil {
+			t.Fatalf("agentproduct.New() error = %v", err)
+		}
+		manager := NewRuntimeManager(RuntimeManagerParams{
+			Builder:         &Builder{factory: &productAwareFactory{product: product}},
+			BaldaProviderID: "alpha",
+			WorkingDir:      t.TempDir(),
+			StateDir:        t.TempDir(),
+			CapabilityBinder: &recordingCapabilityBinder{binding: SessionCapabilityBinding{
+				SnapshotID: "snapshot-app-close",
+				Skills:     SkillMetadataProjection{Snapshot: "snapshot-app-close"},
+				Close: func() error {
+					capabilityCalls++
+					return capabilityDetail
+				},
+			}},
+			MCPRegistry: mcpregistry.New(nil),
+			Logger:      zerolog.Nop(),
+		})
+		runtime, err := manager.Runtime(t.Context())
+		if err != nil {
+			t.Fatalf("Runtime() error = %v", err)
+		}
+		assertConcurrentCloseResult(t, runtime,
+			[]error{agentproduct.ErrCloseFailed, ErrSessionCapabilityCleanup},
+			[]string{privateErr.Error(), capabilityDetail.Error()},
+		)
+		if ag.closeCalls != 1 {
+			t.Fatalf("product close calls = %d, want 1", ag.closeCalls)
+		}
+		if capabilityCalls != 1 {
+			t.Fatalf("capability close calls = %d, want 1", capabilityCalls)
+		}
+	})
+
+	t.Run("session runtime", func(t *testing.T) {
+		var order []string
+		bindingDetail := errors.New("private binding cleanup detail")
+		capabilityDetail := errors.New("private capability cleanup detail")
+		factory := &orderedProductFactory{order: &order, closeErr: ErrRuntimeProductClose}
+		binder := &recordingCapabilityBinder{binding: SessionCapabilityBinding{
+			SnapshotID: "snapshot-close",
+			Skills:     SkillMetadataProjection{Snapshot: "snapshot-close"},
+			Close: func() error {
+				order = append(order, "capabilities")
+				return capabilityDetail
+			},
+		}}
+		manager := NewRuntimeManager(RuntimeManagerParams{
+			Builder:          &Builder{factory: &recordingRuntimeFactory{}, scopedFactory: factory},
+			BaldaProviderID:  "alpha",
+			WorkingDir:       t.TempDir(),
+			StateDir:         t.TempDir(),
+			SessionMCPBinder: &orderedSessionMCPBinder{order: &order, releaseErr: bindingDetail},
+			CapabilityBinder: binder,
+			MCPRegistry:      mcpregistry.New(nil),
+			Logger:           zerolog.Nop(),
+		})
+		runtime, err := manager.RuntimeForSession(t.Context(), SessionRuntimeRequest{
+			Locator: deliverycmd.Locator{SessionID: "session-close", ChannelType: "telegram"},
+		})
+		if err != nil {
+			t.Fatalf("RuntimeForSession() error = %v", err)
+		}
+		assertConcurrentCloseResult(t, runtime,
+			[]error{ErrRuntimeProductClose, ErrSessionBindingCleanup, ErrSessionCapabilityCleanup},
+			[]string{bindingDetail.Error(), capabilityDetail.Error()},
+		)
+		wantOrder := []string{"product", "binding", "capabilities"}
+		if !slices.Equal(order, wantOrder) {
+			t.Fatalf("close order = %v, want %v", order, wantOrder)
+		}
+	})
+}
+
+func assertConcurrentCloseResult(t *testing.T, runtime *BuiltRuntime, wants []error, privateDetails []string) {
+	t.Helper()
+	const callers = 16
+	errs := make(chan error, callers)
+	var wg sync.WaitGroup
+	for range callers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs <- runtime.Close()
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		for _, want := range wants {
+			if !errors.Is(err, want) {
+				t.Errorf("Close() error = %v, want errors.Is(%v)", err, want)
+			}
+		}
+		for _, privateDetail := range privateDetails {
+			if strings.Contains(err.Error(), privateDetail) {
+				t.Errorf("Close() leaked private cleanup detail: %v", err)
+			}
+		}
+	}
+	repeatedErr := runtime.Close()
+	for _, want := range wants {
+		if !errors.Is(repeatedErr, want) {
+			t.Errorf("repeated Close() error = %v, want errors.Is(%v)", repeatedErr, want)
+		}
+	}
+}
+
+func TestRuntimeManagerConstructionFailureBoundsOuterCleanup(t *testing.T) {
+	t.Run("partial capability binding", func(t *testing.T) {
+		primaryErr := errors.New("capability bind failed")
+		privateDetail := errors.New("private capability cleanup detail")
+		closeCalls := 0
+		binder := &recordingCapabilityBinder{
+			err: primaryErr,
+			binding: SessionCapabilityBinding{Close: func() error {
+				closeCalls++
+				return privateDetail
+			}},
+		}
+		manager := NewRuntimeManager(RuntimeManagerParams{
+			Builder:          &Builder{factory: &recordingRuntimeFactory{}},
+			BaldaProviderID:  "alpha",
+			WorkingDir:       t.TempDir(),
+			StateDir:         t.TempDir(),
+			CapabilityBinder: binder,
+			MCPRegistry:      mcpregistry.New(nil),
+			Logger:           zerolog.Nop(),
+		})
+		_, err := manager.Runtime(t.Context())
+		if !errors.Is(err, primaryErr) || !errors.Is(err, ErrSessionCapabilityCleanup) {
+			t.Fatalf("Runtime() error = %v, want primary and bounded capability cleanup", err)
+		}
+		if strings.Contains(err.Error(), privateDetail.Error()) {
+			t.Fatalf("Runtime() leaked capability cleanup detail: %v", err)
+		}
+		if closeCalls != 1 {
+			t.Fatalf("capability close calls = %d, want 1", closeCalls)
+		}
+	})
+
+	t.Run("partial session binding", func(t *testing.T) {
+		primaryErr := errors.New("session binding failed")
+		bindingDetail := errors.New("private binding cleanup detail")
+		capabilityDetail := errors.New("private capability cleanup detail")
+		var order []string
+		capabilities := &recordingCapabilityBinder{binding: SessionCapabilityBinding{
+			SnapshotID: "snapshot-partial",
+			Skills:     SkillMetadataProjection{Snapshot: "snapshot-partial"},
+			Close: func() error {
+				order = append(order, "capabilities")
+				return capabilityDetail
+			},
+		}}
+		binding := ScopedMCPServer{
+			ID: "partial-binding",
+			Config: agentconfig.MCPServerConfig{
+				Type: agentconfig.MCPServerTypeHTTP,
+				URL:  "http://127.0.0.1:1/mcp/partial",
+			},
+			Release: func() error {
+				order = append(order, "binding")
+				return bindingDetail
+			},
+		}
+		manager := NewRuntimeManager(RuntimeManagerParams{
+			Builder:          &Builder{factory: &recordingRuntimeFactory{}},
+			BaldaProviderID:  "alpha",
+			WorkingDir:       t.TempDir(),
+			StateDir:         t.TempDir(),
+			SessionMCPBinder: &partialSessionMCPBinder{binding: binding, err: primaryErr},
+			CapabilityBinder: capabilities,
+			MCPRegistry:      mcpregistry.New(nil),
+			Logger:           zerolog.Nop(),
+		})
+		_, err := manager.RuntimeForSession(t.Context(), SessionRuntimeRequest{
+			Locator: deliverycmd.Locator{SessionID: "session-partial", ChannelType: "telegram"},
+		})
+		for _, want := range []error{primaryErr, ErrSessionBindingCleanup, ErrSessionCapabilityCleanup} {
+			if !errors.Is(err, want) {
+				t.Fatalf("RuntimeForSession() error = %v, want errors.Is(%v)", err, want)
+			}
+		}
+		for _, privateDetail := range []error{bindingDetail, capabilityDetail} {
+			if strings.Contains(err.Error(), privateDetail.Error()) {
+				t.Fatalf("RuntimeForSession() leaked cleanup detail %q: %v", privateDetail, err)
+			}
+		}
+		wantOrder := []string{"binding", "capabilities"}
+		if !slices.Equal(order, wantOrder) {
+			t.Fatalf("cleanup order = %v, want %v", order, wantOrder)
+		}
+	})
 }
 
 func TestRuntimeForSessionRejectsIncompleteCapabilityBinding(t *testing.T) {

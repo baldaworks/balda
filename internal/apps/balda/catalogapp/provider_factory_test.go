@@ -1,15 +1,19 @@
 package catalogapp
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
+	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
 	"github.com/baldaworks/runtime/v2/agentconfig"
 	"github.com/baldaworks/runtime/v2/agentfactory"
 	"github.com/baldaworks/runtime/v2/mcpregistry"
+	adkagent "google.golang.org/adk/v2/agent"
 )
 
 func TestProviderFactoryConstructsCompleteUnavailableMCPShells(t *testing.T) {
@@ -44,5 +48,98 @@ func TestProviderFactoryConstructsCompleteUnavailableMCPShells(t *testing.T) {
 				t.Fatal("missing exact selected config accepted")
 			}
 		})
+	}
+}
+
+func TestRuntimeProductWithReleaseClosesInReverseAcquisitionOrder(t *testing.T) {
+	var order []string
+	ag, err := adkagent.New(adkagent.Config{Name: "ordered"})
+	if err != nil {
+		t.Fatalf("agent.New() error = %v", err)
+	}
+	product, err := baldaagent.NewRuntimeProduct(ag, nil, func() error {
+		order = append(order, "product")
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("NewRuntimeProduct() error = %v", err)
+	}
+	adapted, err := runtimeProductWithRelease(product, func() error {
+		order = append(order, "native-hook")
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("runtimeProductWithRelease() error = %v", err)
+	}
+	if err := adapted.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	if err := adapted.Close(); err != nil {
+		t.Fatalf("second Close() error = %v", err)
+	}
+	want := []string{"product", "native-hook"}
+	if len(order) != len(want) || order[0] != want[0] || order[1] != want[1] {
+		t.Fatalf("close order = %v, want %v", order, want)
+	}
+}
+
+func TestCatalogCleanupPreservesPrimaryErrorAndBoundsCleanupDetails(t *testing.T) {
+	primaryErr := errors.New("primary construction failure")
+	productDetail := errors.New("private product cleanup detail")
+	hookDetail := errors.New("private native hook detail")
+	var productCalls, hookCalls int
+	ag, err := adkagent.New(adkagent.Config{Name: "cleanup"})
+	if err != nil {
+		t.Fatalf("agent.New() error = %v", err)
+	}
+	product, err := baldaagent.NewRuntimeProduct(ag, nil, func() error {
+		productCalls++
+		return productDetail
+	})
+	if err != nil {
+		t.Fatalf("NewRuntimeProduct() error = %v", err)
+	}
+	cleanupErr := joinCatalogConstructionError(primaryErr, product, func() error {
+		hookCalls++
+		return hookDetail
+	})
+	for _, want := range []error{primaryErr, baldaagent.ErrRuntimeProductClose, ErrNativeHookRelease} {
+		if !errors.Is(cleanupErr, want) {
+			t.Fatalf("construction error = %v, want errors.Is(%v)", cleanupErr, want)
+		}
+	}
+	for _, private := range []error{productDetail, hookDetail} {
+		if strings.Contains(cleanupErr.Error(), private.Error()) {
+			t.Fatalf("construction error leaked cleanup detail %q: %v", private, cleanupErr)
+		}
+	}
+	if productCalls != 1 || hookCalls != 1 {
+		t.Fatalf("cleanup calls product/hook = %d/%d, want 1/1", productCalls, hookCalls)
+	}
+}
+
+func TestCatalogProductCloseReturnsStableBoundedClassifications(t *testing.T) {
+	productDetail := errors.New("private product cleanup detail")
+	hookDetail := errors.New("private native hook detail")
+	ag, err := adkagent.New(adkagent.Config{Name: "cleanup"})
+	if err != nil {
+		t.Fatalf("agent.New() error = %v", err)
+	}
+	product, err := baldaagent.NewRuntimeProduct(ag, nil, func() error { return productDetail })
+	if err != nil {
+		t.Fatalf("NewRuntimeProduct() error = %v", err)
+	}
+	adapted, err := runtimeProductWithRelease(product, func() error { return hookDetail })
+	if err != nil {
+		t.Fatalf("runtimeProductWithRelease() error = %v", err)
+	}
+	for i := 0; i < 2; i++ {
+		closeErr := adapted.Close()
+		if !errors.Is(closeErr, baldaagent.ErrRuntimeProductClose) || !errors.Is(closeErr, ErrNativeHookRelease) {
+			t.Fatalf("Close() error = %v, want bounded product and hook classifications", closeErr)
+		}
+		if strings.Contains(closeErr.Error(), productDetail.Error()) || strings.Contains(closeErr.Error(), hookDetail.Error()) {
+			t.Fatalf("Close() leaked cleanup details: %v", closeErr)
+		}
 	}
 }

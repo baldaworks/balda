@@ -18,6 +18,10 @@ import (
 	adkagent "google.golang.org/adk/v2/agent"
 )
 
+// ErrNativeHookRelease is the bounded classification returned when native
+// hook cleanup fails. Hook/provider details remain below the catalog boundary.
+var ErrNativeHookRelease = errors.New("native hook release failed")
+
 // ProviderFactory keeps shared provider config immutable while adapting exact
 // catalog selections to the pinned factory's root and pool-member build paths.
 type ProviderFactory struct {
@@ -51,12 +55,65 @@ func (f *ProviderFactory) BuildSession(ctx context.Context, request agentfactory
 	copyFactory.providers = providers
 	built, err := copyFactory.BuildScoped(ctx, request, selections)
 	if err != nil {
-		if release != nil {
-			_ = release()
-		}
-		return nil, err
+		return nil, errors.Join(err, releaseNativeHooks(release))
 	}
 	return &launchAgent{Agent: built, release: release}, nil
+}
+
+// BuildSessionProduct attaches native hooks to one independently owned runtime
+// product. Hooks are acquired first, so close releases the product before them.
+func (f *ProviderFactory) BuildSessionProduct(ctx context.Context, request agentfactory.BuildRequest, selections map[string][]string, sessionID string) (*baldaagent.RuntimeProduct, error) {
+	if f.nativeHooks == nil {
+		return f.BuildScopedProduct(ctx, request, selections)
+	}
+	providers, release, err := f.prepareNativeHooks(ctx, request, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	copyFactory := *f
+	copyFactory.providers = providers
+	product, err := copyFactory.BuildScopedProduct(ctx, request, selections)
+	if err != nil {
+		return nil, joinCatalogConstructionError(err, nil, release)
+	}
+	return runtimeProductWithRelease(product, release)
+}
+
+func runtimeProductWithRelease(product *baldaagent.RuntimeProduct, release func() error) (*baldaagent.RuntimeProduct, error) {
+	if product == nil {
+		return nil, joinCatalogConstructionError(fmt.Errorf("runtime product is required"), nil, release)
+	}
+	adapted, err := baldaagent.NewRuntimeProduct(product.Agent, product.Control, func() error {
+		return errors.Join(closeCatalogProduct(product), releaseNativeHooks(release))
+	})
+	if err != nil {
+		return nil, joinCatalogConstructionError(err, product, release)
+	}
+	return adapted, nil
+}
+
+func joinCatalogConstructionError(primary error, product *baldaagent.RuntimeProduct, release func() error) error {
+	return errors.Join(primary, closeCatalogProduct(product), releaseNativeHooks(release))
+}
+
+func closeCatalogProduct(product *baldaagent.RuntimeProduct) error {
+	if product == nil {
+		return nil
+	}
+	if err := product.Close(); err != nil {
+		return baldaagent.ErrRuntimeProductClose
+	}
+	return nil
+}
+
+func releaseNativeHooks(release func() error) error {
+	if release == nil {
+		return nil
+	}
+	if err := release(); err != nil {
+		return ErrNativeHookRelease
+	}
+	return nil
 }
 
 func (f *ProviderFactory) prepareNativeHooks(ctx context.Context, request agentfactory.BuildRequest, sessionID string) (map[string]agentconfig.Config, func() error, error) {
@@ -135,7 +192,7 @@ func (f *ProviderFactory) prepareNativeHooks(ctx context.Context, request agentf
 		return nil
 	}
 	if err := visit(request.AgentID); err != nil {
-		return nil, nil, errors.Join(err, release())
+		return nil, nil, errors.Join(err, releaseNativeHooks(release))
 	}
 	return providers, release, nil
 }
@@ -149,11 +206,11 @@ type launchAgent struct {
 
 func (a *launchAgent) Close() error {
 	a.once.Do(func() {
-		if a.release != nil {
-			a.err = a.release()
-		}
 		if closer, ok := a.Agent.(io.Closer); ok {
-			a.err = errors.Join(a.err, closer.Close())
+			a.err = closer.Close()
+		}
+		if a.release != nil {
+			a.err = errors.Join(a.err, releaseNativeHooks(a.release))
 		}
 	})
 	return a.err
@@ -221,6 +278,35 @@ func cloneACPConfig(config *agentconfig.ACPConfig) *agentconfig.ACPConfig {
 
 // BuildScoped applies selection to private defaults before any member is built.
 func (f *ProviderFactory) BuildScoped(ctx context.Context, request agentfactory.BuildRequest, selections map[string][]string) (adkagent.Agent, error) {
+	providers, err := f.selectedProviders(request, selections)
+	if err != nil {
+		return nil, err
+	}
+	return agentfactory.New(providers, f.registry, f.options...).Build(ctx, request)
+}
+
+// BuildScopedProduct applies selection before returning a product-aware runtime.
+func (f *ProviderFactory) BuildScopedProduct(ctx context.Context, request agentfactory.BuildRequest, selections map[string][]string) (*baldaagent.RuntimeProduct, error) {
+	providers, err := f.selectedProviders(request, selections)
+	if err != nil {
+		return nil, err
+	}
+	product, err := agentfactory.New(providers, f.registry, f.options...).BuildProduct(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	adapted, err := baldaagent.NewRuntimeProduct(product.Agent, product.Control, product.Close)
+	if err != nil {
+		var closeErr error
+		if product.Close() != nil {
+			closeErr = baldaagent.ErrRuntimeProductClose
+		}
+		return nil, errors.Join(err, closeErr)
+	}
+	return adapted, nil
+}
+
+func (f *ProviderFactory) selectedProviders(request agentfactory.BuildRequest, selections map[string][]string) (map[string]agentconfig.Config, error) {
 	providers := maps.Clone(f.providers)
 	for id, ids := range selections {
 		config, ok := providers[id]
@@ -252,7 +338,9 @@ func (f *ProviderFactory) BuildScoped(ctx context.Context, request agentfactory.
 			providers[id] = config
 		}
 	}
-	return agentfactory.New(providers, f.registry, f.options...).Build(ctx, request)
+	return providers, nil
 }
 
 var _ baldaagent.ScopedRuntimeFactory = (*ProviderFactory)(nil)
+var _ baldaagent.ScopedProductRuntimeFactory = (*ProviderFactory)(nil)
+var _ baldaagent.SessionProductRuntimeFactory = (*ProviderFactory)(nil)

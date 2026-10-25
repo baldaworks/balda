@@ -56,6 +56,15 @@ type SessionCapabilityBinding struct {
 	Close                func() error
 }
 
+var (
+	// ErrSessionBindingCleanup is the bounded classification for failure to
+	// release a session-scoped MCP binding.
+	ErrSessionBindingCleanup = errors.New("session binding cleanup failed")
+	// ErrSessionCapabilityCleanup is the bounded classification for failure to
+	// release a session capability snapshot.
+	ErrSessionCapabilityCleanup = errors.New("session capability cleanup failed")
+)
+
 // SessionCapabilityBinder selects commands, skills, and MCP from one catalog snapshot.
 type SessionCapabilityBinder interface {
 	BindSessionCapabilities(ctx context.Context, providerID string, request SessionRuntimeRequest) (SessionCapabilityBinding, error)
@@ -279,16 +288,14 @@ func (m *RuntimeManager) Runtime(ctx context.Context) (*BuiltRuntime, error) {
 	if binder != nil {
 		capabilities, err = binder.BindSessionCapabilities(ctx, providerID, SessionRuntimeRequest{WorkspaceDir: workingDir, ProviderConfigs: maps.Clone(builder.normaCfg.Providers)})
 		if err != nil {
-			return nil, fmt.Errorf("bind provider capabilities: %w", err)
+			return nil, errors.Join(fmt.Errorf("bind provider capabilities: %w", err), closeSessionCapabilities(capabilities))
 		}
 		if capabilities.SnapshotID == "" || capabilities.Skills.Snapshot != capabilities.SnapshotID {
-			closeSessionCapabilities(capabilities)
-			return nil, fmt.Errorf("provider capability binding is incomplete")
+			return nil, errors.Join(fmt.Errorf("provider capability binding is incomplete"), closeSessionCapabilities(capabilities))
 		}
 		builder, err = builder.withProviderMCP(capabilities.ProviderMCPServerIDs)
 		if err != nil {
-			closeSessionCapabilities(capabilities)
-			return nil, err
+			return nil, errors.Join(err, closeSessionCapabilities(capabilities))
 		}
 		if capabilities.ProviderMCPServerIDs != nil {
 			extraMCPServerIDs = append([]string(nil), capabilities.MCPServerIDs...)
@@ -307,18 +314,20 @@ func (m *RuntimeManager) Runtime(ctx context.Context) (*BuiltRuntime, error) {
 		SessionInstructionContext{SnapshotID: capabilities.SnapshotID},
 	)
 	if err != nil {
-		closeSessionCapabilities(capabilities)
 		m.logger.Error().Err(err).Str("agent", providerID).Msg("failed to build balda provider runtime")
-		return nil, providerUnavailableError(err)
+		return nil, errors.Join(providerUnavailableError(err), closeSessionCapabilities(capabilities))
 	}
+	closeProduct := runtime.Close
 	var once sync.Once
+	var closeErr error
 	runtime.Close = func() error {
-		var closeErr error
 		once.Do(func() {
-			closeErr = closeRuntimeAgent(runtime.Agent)
-			if capabilities.Close != nil {
-				closeErr = errors.Join(closeErr, capabilities.Close())
+			if closeProduct != nil {
+				closeErr = closeProduct()
+			} else {
+				closeErr = closeRuntimeAgent(runtime.Agent)
 			}
+			closeErr = errors.Join(closeErr, closeSessionCapabilities(capabilities))
 		})
 		return closeErr
 	}
@@ -369,17 +378,18 @@ func (m *RuntimeManager) RuntimeForSession(ctx context.Context, request SessionR
 	}
 	capabilities, err := binder.BindSessionCapabilities(ctx, providerID, request)
 	if err != nil {
-		return nil, fmt.Errorf("bind session capabilities: %w", err)
+		return nil, errors.Join(fmt.Errorf("bind session capabilities: %w", err), closeSessionCapabilities(capabilities))
 	}
 	snapshotID := strings.TrimSpace(string(capabilities.SnapshotID))
 	if snapshotID == "" || capabilities.Skills.Snapshot != capabilities.SnapshotID {
-		closeSessionCapabilities(capabilities)
-		return nil, fmt.Errorf("session capability binding is incomplete")
+		return nil, errors.Join(fmt.Errorf("session capability binding is incomplete"), closeSessionCapabilities(capabilities))
 	}
 	requestedSnapshotID := strings.TrimSpace(request.RuntimeSnapshotID)
 	if requestedSnapshotID != "" && snapshotID != requestedSnapshotID {
-		closeSessionCapabilities(capabilities)
-		return nil, fmt.Errorf("session capability snapshot %q does not match requested snapshot %q", snapshotID, requestedSnapshotID)
+		return nil, errors.Join(
+			fmt.Errorf("session capability snapshot %q does not match requested snapshot %q", snapshotID, requestedSnapshotID),
+			closeSessionCapabilities(capabilities),
+		)
 	}
 	request.RuntimeSnapshotID = snapshotID
 	return m.runtimeForSession(ctx, request, capabilities, builder, providerID, providerBindingJSON)
@@ -409,22 +419,21 @@ func (m *RuntimeManager) runtimeForSession(ctx context.Context, request SessionR
 		return m.Runtime(ctx)
 	}
 	if len(capabilities.MCPServerIDs) > 0 && registry == nil {
-		closeSessionCapabilities(capabilities)
-		return nil, fmt.Errorf("MCP registry is required for session capabilities")
+		return nil, errors.Join(fmt.Errorf("MCP registry is required for session capabilities"), closeSessionCapabilities(capabilities))
 	}
 	if builder == nil {
-		closeSessionCapabilities(capabilities)
-		return nil, fmt.Errorf("agent builder is required")
+		return nil, errors.Join(fmt.Errorf("agent builder is required"), closeSessionCapabilities(capabilities))
 	}
 	if providerID == "" {
-		closeSessionCapabilities(capabilities)
-		return nil, fmt.Errorf("%w: balda provider is not configured", ErrProviderUnavailable)
+		return nil, errors.Join(
+			fmt.Errorf("%w: balda provider is not configured", ErrProviderUnavailable),
+			closeSessionCapabilities(capabilities),
+		)
 	}
 	var err error
 	builder, err = builder.withProviderMCP(capabilities.ProviderMCPServerIDs)
 	if err != nil {
-		closeSessionCapabilities(capabilities)
-		return nil, providerUnavailableError(err)
+		return nil, errors.Join(providerUnavailableError(err), closeSessionCapabilities(capabilities))
 	}
 	if capabilities.ProviderMCPServerIDs != nil {
 		// Host defaults have already been resolved to this exact snapshot.
@@ -436,15 +445,18 @@ func (m *RuntimeManager) runtimeForSession(ctx context.Context, request SessionR
 		var err error
 		binding, err = binder.BindSession(ctx, request)
 		if err != nil {
-			closeSessionCapabilities(capabilities)
-			return nil, fmt.Errorf("bind session MCP context: %w", err)
+			return nil, errors.Join(
+				fmt.Errorf("bind session MCP context: %w", err),
+				releaseSessionBinding(binding),
+				closeSessionCapabilities(capabilities),
+			)
 		}
 		if strings.TrimSpace(binding.ID) == "" || strings.TrimSpace(binding.Config.URL) == "" {
-			if binding.Release != nil {
-				_ = binding.Release()
-			}
-			closeSessionCapabilities(capabilities)
-			return nil, fmt.Errorf("session MCP binding is incomplete")
+			return nil, errors.Join(
+				fmt.Errorf("session MCP binding is incomplete"),
+				releaseSessionBinding(binding),
+				closeSessionCapabilities(capabilities),
+			)
 		}
 		registry.Set(binding.ID, binding.Config)
 		extraMCPServerIDs = append(extraMCPServerIDs, binding.ID)
@@ -466,12 +478,13 @@ func (m *RuntimeManager) runtimeForSession(ctx context.Context, request SessionR
 		if binding.ID != "" {
 			registry.Delete(binding.ID)
 		}
-		if binding.Release != nil {
-			_ = binding.Release()
-		}
-		closeSessionCapabilities(capabilities)
-		return nil, providerUnavailableError(err)
+		return nil, errors.Join(
+			providerUnavailableError(err),
+			releaseSessionBinding(binding),
+			closeSessionCapabilities(capabilities),
+		)
 	}
+	closeProduct := runtime.Close
 	m.mu.Lock()
 	m.scopedSequence++
 	scopedID := binding.ID
@@ -480,19 +493,18 @@ func (m *RuntimeManager) runtimeForSession(ctx context.Context, request SessionR
 	}
 	m.mu.Unlock()
 	var once sync.Once
+	var closeErr error
 	closeScoped := func() error {
-		var closeErr error
 		once.Do(func() {
+			if closeProduct != nil {
+				closeErr = closeProduct()
+			} else {
+				closeErr = closeRuntimeAgent(runtime.Agent)
+			}
 			if binding.ID != "" {
 				registry.Delete(binding.ID)
 			}
-			if binding.Release != nil {
-				closeErr = errors.Join(closeErr, binding.Release())
-			}
-			closeErr = errors.Join(closeErr, closeRuntimeAgent(runtime.Agent))
-			if capabilities.Close != nil {
-				closeErr = errors.Join(closeErr, capabilities.Close())
-			}
+			closeErr = errors.Join(closeErr, releaseSessionBinding(binding), closeSessionCapabilities(capabilities))
 			m.mu.Lock()
 			delete(m.scopedRuntimes, scopedID)
 			sessionID := strings.TrimSpace(request.Locator.SessionID)
@@ -593,10 +605,24 @@ func runtimeLifecycleContext(ctx context.Context) context.Context {
 	return context.WithoutCancel(ctx)
 }
 
-func closeSessionCapabilities(capabilities SessionCapabilityBinding) {
-	if capabilities.Close != nil {
-		_ = capabilities.Close()
+func releaseSessionBinding(binding ScopedMCPServer) error {
+	if binding.Release == nil {
+		return nil
 	}
+	if err := binding.Release(); err != nil {
+		return ErrSessionBindingCleanup
+	}
+	return nil
+}
+
+func closeSessionCapabilities(capabilities SessionCapabilityBinding) error {
+	if capabilities.Close == nil {
+		return nil
+	}
+	if err := capabilities.Close(); err != nil {
+		return ErrSessionCapabilityCleanup
+	}
+	return nil
 }
 
 func pinnedRuntimeMCPServerIDs(hostConfigured, snapshotPinned []string) []string {

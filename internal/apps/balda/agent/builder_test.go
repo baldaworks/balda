@@ -108,6 +108,9 @@ func TestBuildDedicatedRuntimeUsesSelectedProviderSettingsAndIsolation(t *testin
 	if runtime == nil || runtime.Agent == nil || runtime.SessionSvc == nil {
 		t.Fatalf("BuildDedicatedRuntime() = %+v, want isolated agent and session service", runtime)
 	}
+	if runtime.SessionControl != nil {
+		t.Fatal("dedicated background runtime unexpectedly advertised SessionControl")
+	}
 	if runtime.AppName != defaultRuntimeAppName+"-session-memory" {
 		t.Fatalf("dedicated runtime app name = %q, want isolated app name", runtime.AppName)
 	}
