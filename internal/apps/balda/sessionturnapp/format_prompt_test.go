@@ -150,7 +150,8 @@ func TestTurnExecutionCommitsFormatOnlyAfterSuccessfulTerminalCompletion(t *test
 			},
 		},
 		{
-			name: "retrying stream without terminal completion",
+			name:      "retrying stream without terminal completion",
+			wantError: true,
 			events: func(invocationID string) ([]*adksession.Event, error) {
 				retry := adksession.NewEvent(context.Background(), invocationID)
 				retry.ErrorMessage = "Reconnecting... 1/5"

@@ -965,12 +965,13 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 		}
 	}
 	if !sawTurnComplete {
+		if err := runCtx.Err(); err != nil {
+			return err
+		}
 		zerolog.Ctx(runCtx).Warn().
 			Int("streamed_text_char_count", streamedText.Len()).
 			Msg("provider event stream ended without turn complete; suppressing balda response")
-	}
-	if privateRun && !sawTurnComplete {
-		return fmt.Errorf("private run ended without turn completion")
+		return fmt.Errorf("provider event stream ended without turn completion")
 	}
 
 	return nil
