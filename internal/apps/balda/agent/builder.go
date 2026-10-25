@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	_ "embed"
+	"errors"
 	"fmt"
 	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"io"
@@ -17,6 +18,7 @@ import (
 	"github.com/baldaworks/balda/internal/git"
 	"github.com/baldaworks/runtime/v2/agentconfig"
 	"github.com/baldaworks/runtime/v2/agentfactory"
+	"github.com/baldaworks/runtime/v2/agentproduct"
 	runtimeconfig "github.com/baldaworks/runtime/v2/appconfig"
 	"github.com/baldaworks/runtime/v2/sessionstate"
 	"go.uber.org/fx"
@@ -243,17 +245,22 @@ func NewBuilder(params BuilderParams) *Builder {
 }
 
 type BuiltRuntime struct {
-	Agent      agent.Agent
-	Runner     *runner.Runner
-	SessionSvc adksession.Service
-	AppName    string
+	Agent          agent.Agent
+	SessionControl agentproduct.SessionControl
+	Runner         *runner.Runner
+	SessionSvc     adksession.Service
+	AppName        string
 	// RuntimeSnapshotID identifies the catalog capabilities bound to this runtime.
 	RuntimeSnapshotID string
 	// ProviderBindingJSON identifies the exact provider graph bound to this runtime.
 	ProviderBindingJSON string
-	// Close releases resources owned by a scoped runtime. The app-scoped
-	// runtime leaves this nil and is closed by RuntimeManager.Stop.
+	// Close releases all resources owned by this adapted runtime product.
+	// RuntimeManager composes it with resources acquired by outer layers.
 	Close func() error
+
+	productClose func() error
+	runnerScope  ToolHookScope
+	newRunner    func(runner.Config, ToolHookScope) (*runner.Runner, error)
 }
 
 type AgentMetadata struct {
@@ -313,12 +320,7 @@ func (b *Builder) buildRuntimeWithCapabilities(
 		MCPServerIDs:     b.buildAgentMCPServerIDs(agentName, bundledMCPServerIDs, extraMCPServerIDs),
 	}
 
-	var ag agent.Agent
-	if sessionFactory, ok := b.scopedFactory.(SessionRuntimeFactory); ok && instructionContext.SessionID != "" {
-		ag, err = sessionFactory.BuildSession(ctx, req, b.providerMCPSelections, instructionContext.SessionID)
-	} else {
-		ag, err = b.factory.Build(ctx, req)
-	}
+	product, err := b.buildRuntimeProduct(ctx, req, instructionContext.SessionID)
 	if err != nil {
 		return nil, fmt.Errorf("creating agent %q: %w", agentName, err)
 	}
@@ -327,28 +329,77 @@ func (b *Builder) buildRuntimeWithCapabilities(
 	if sessionSvc == nil {
 		sessionSvc = adksession.InMemoryService()
 	}
-	r, err := b.newRunner(runner.Config{
-		AppName:        appName,
-		Agent:          ag,
-		SessionService: sessionSvc,
-	}, ToolHookScope{
+	scope := ToolHookScope{
 		Enabled:  true,
 		Provider: strings.TrimSpace(agentName),
 		CWD:      strings.TrimSpace(workspaceDir),
-	})
+	}
+	r, err := b.newRunner(runner.Config{
+		AppName:        appName,
+		Agent:          product.Agent,
+		SessionService: sessionSvc,
+	}, scope)
 	if err != nil {
-		if closer, ok := ag.(io.Closer); ok {
-			_ = closer.Close()
-		}
-		return nil, fmt.Errorf("creating runner: %w", err)
+		return nil, errors.Join(fmt.Errorf("creating runner: %w", err), closeRuntimeProduct(product))
 	}
 
-	return &BuiltRuntime{
-		Agent:      ag,
-		Runner:     r,
-		SessionSvc: sessionSvc,
-		AppName:    appName,
-	}, nil
+	runtime := &BuiltRuntime{
+		Agent:          product.Agent,
+		SessionControl: product.Control,
+		Runner:         r,
+		SessionSvc:     sessionSvc,
+		AppName:        appName,
+		productClose:   product.Close,
+		runnerScope:    scope,
+		newRunner:      b.newRunner,
+	}
+	runtime.Close = runtime.closeProduct
+	return runtime, nil
+}
+
+func (b *Builder) buildRuntimeProduct(ctx context.Context, req agentfactory.BuildRequest, sessionID string) (*RuntimeProduct, error) {
+	if sessionID != "" {
+		if factory, ok := b.scopedFactory.(SessionProductRuntimeFactory); ok {
+			return factory.BuildSessionProduct(ctx, req, b.providerMCPSelections, sessionID)
+		}
+		if factory, ok := b.scopedFactory.(SessionRuntimeFactory); ok {
+			ag, err := factory.BuildSession(ctx, req, b.providerMCPSelections, sessionID)
+			if err != nil {
+				return nil, err
+			}
+			product, err := agentproduct.New(ag, nil)
+			if err != nil {
+				return nil, err
+			}
+			return adaptProduct(product)
+		}
+	}
+	if factory, ok := b.scopedFactory.(ScopedProductRuntimeFactory); ok {
+		return factory.BuildScopedProduct(ctx, req, b.providerMCPSelections)
+	}
+	if factory, ok := b.factory.(runtimeProductFactory); ok {
+		product, err := factory.BuildProduct(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		return adaptProduct(product)
+	}
+	ag, err := b.factory.Build(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	product, err := agentproduct.New(ag, nil)
+	if err != nil {
+		return nil, err
+	}
+	return adaptProduct(product)
+}
+
+func (r *BuiltRuntime) closeProduct() error {
+	if r == nil || r.productClose == nil {
+		return nil
+	}
+	return r.productClose()
 }
 
 func (b *Builder) newRunner(cfg runner.Config, scope ToolHookScope) (*runner.Runner, error) {
