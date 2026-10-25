@@ -62,6 +62,34 @@ decides whether to continue, report completion, or wait for you. Internal
 instructions and decision markers are hidden; completion and waiting decisions
 produce a short state notification instead.
 
+```mermaid
+flowchart TD
+    Enable["/auto on"] --> Enabled["Auto mode enabled for this session"]
+    Enabled --> Task["User sends a task"]
+    Task --> Normal["Balda runs a normal turn"]
+    Normal --> Decision{"Continuation decision"}
+    Auto["Balda runs an automatic turn"] --> Decision
+
+    Decision -->|Continue| Check{"Can another automatic turn run?"}
+    Check -->|Yes| Schedule["Schedule automatic turn"]
+    Schedule --> Auto
+    Check -->|Mode disabled| Idle["idle"]
+    Check -->|Turn limit reached| Limit["limit reached"]
+    Check -->|Repeated visible output| NoProgress["no progress"]
+
+    Decision -->|Task complete| Idle
+    Decision -->|Input or approval needed| Waiting["waiting for user"]
+
+    Waiting -->|User replies| Normal
+    Limit -->|User sends another instruction| Normal
+    NoProgress -->|User sends a more specific instruction| Normal
+
+    Steering["User steering message"] -. "queued for a later normal turn" .-> Normal
+    Disable["/auto off"] -. "disables future continuations" .-> Idle
+    Cancel["/cancel"] -. "requests cancellation" .-> Cancelled["Queued turns dropped"]
+    Cancelled -.-> Setting["Auto mode setting unchanged"]
+```
+
 The chain stops when:
 
 - the model reports that the task is complete;
