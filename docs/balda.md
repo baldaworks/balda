@@ -60,6 +60,8 @@ can be read, linked, and indexed independently:
   workspace MCP verification, and acceptance checks.
 
 Focused guides remain separate from the technical reference, including
+[Auto mode](features/auto-mode.md), [Schedules](features/schedules.md),
+[Webhooks](features/webhooks.md),
 [Telegram message formatting](telegram-formatting.md),
 [Slack Agent setup](slack.md),
 [Mattermost setup](mattermost.md), and the [command reference](commands.md).
