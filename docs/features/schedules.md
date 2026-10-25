@@ -54,6 +54,94 @@ Write the content as a complete, self-contained instruction. A scheduled run
 does not inherit a recipient chat's conversation, even when it sends the result
 there.
 
+## Schedule examples
+
+### Daily engineering digest
+
+Use this schedule to send a weekday summary to a managed `main_chat` alias.
+
+| Field | Value |
+| --- | --- |
+| ID | `daily_engineering_digest` |
+| Cron | `0 9 * * 1-5` |
+| Report to | `main_chat` |
+
+Paste this into **Content**:
+
+```text
+Review the changes merged into the base branch during the previous 24 hours.
+
+Return a concise engineering digest with:
+- shipped user-visible changes;
+- important fixes and maintenance work;
+- failed or missing validation;
+- follow-up actions, with owners when the repository identifies them.
+
+Use repository history and available project tools as evidence. Do not modify
+the repository.
+```
+
+Balda runs it at 09:00 UTC from Monday through Friday, stores the complete run
+in history, and sends the final digest to the locator currently mapped by
+`main_chat`.
+
+### Weekly dependency review
+
+Use this schedule to prepare a Monday dependency report without automatically
+changing versions.
+
+| Field | Value |
+| --- | --- |
+| ID | `weekly_dependency_review` |
+| Cron | `30 8 * * 1` |
+| Report to | `main_chat` |
+
+Paste this into **Content**:
+
+```text
+Review this repository's dependency manifests and lockfiles.
+
+Identify:
+- dependencies that are clearly outdated or unsupported;
+- known security or compatibility concerns available through configured tools;
+- upgrades likely to require migration work;
+- a prioritized, low-risk update plan.
+
+Do not change dependency files. State which checks were unavailable instead of
+guessing.
+```
+
+The report arrives every Monday at 08:30 UTC. Because the instruction forbids
+edits, the run produces a reviewable plan rather than an automated upgrade.
+
+### Nightly repository health check
+
+Use a history-only schedule when the result should remain in Backoffice until
+an administrator reviews it.
+
+| Field | Value |
+| --- | --- |
+| ID | `nightly_repository_health` |
+| Cron | `0 2 * * *` |
+| Report to | Leave empty |
+
+Paste this into **Content**:
+
+```text
+Inspect the repository and run its documented fast validation checks.
+
+Report:
+- the exact checks attempted and their results;
+- new test, lint, or build failures;
+- suspicious uncommitted or generated files;
+- the smallest concrete next action for each failure.
+
+Do not modify files and do not run deployment commands.
+```
+
+Balda stores the nightly result at 02:00 UTC in run history. No chat message is
+sent because **Report to** is empty.
+
 ## How a run works
 
 ```mermaid

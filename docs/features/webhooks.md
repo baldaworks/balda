@@ -88,6 +88,142 @@ Treat the secret as a credential. It cannot be read from Backoffice later. If
 it is lost or exposed, rotate it on the route detail page; rotation immediately
 invalidates the previous secret for new requests.
 
+## Webhook examples
+
+### Analyze a CI failure
+
+Create a managed route with these Backoffice fields:
+
+| Field | Value |
+| --- | --- |
+| Route name | `ci_failure` |
+| Report to | `main_chat` |
+| Deduplication | Header: `X-Event-ID` |
+| Wait for report delivery | Off |
+
+Paste this into **Prompt template**:
+
+```text
+A CI run failed. Analyze the event below and return:
+- the most likely root cause;
+- evidence from the payload and repository;
+- the smallest safe fix;
+- validation commands to run.
+
+Do not modify files.
+
+Event:
+{{ .RawBody }}
+```
+
+Send a test event:
+
+```bash
+curl --request POST \
+  --header 'Content-Type: application/json' \
+  --header 'X-Balda-Webhook-Secret: <secret>' \
+  --header 'X-Event-ID: ci-run-1842' \
+  --data '{"workflow":"test","branch":"main","failed_job":"unit-tests"}' \
+  'https://balda.example.com/webhooks/ci_failure'
+```
+
+Retries with `X-Event-ID: ci-run-1842` reuse the same admission and do not
+start another agent run.
+
+### Summarize a deployment result
+
+Create a route that turns deployment events into a concise release update:
+
+| Field | Value |
+| --- | --- |
+| Route name | `deployment_result` |
+| Report to | `release_chat` |
+| Deduplication | Header: `X-Deployment-ID` |
+| Wait for report delivery | Off |
+
+Paste this into **Prompt template**:
+
+```text
+Summarize this deployment for the engineering team.
+
+Include the environment, version, outcome, duration, and any follow-up action.
+Use a clear warning when the deployment failed or rolled back. Do not modify
+the repository or deployment environment.
+
+Deployment event:
+{{ .RawBody }}
+```
+
+Send an event:
+
+```bash
+curl --request POST \
+  --header 'Content-Type: application/json' \
+  --header 'X-Balda-Webhook-Secret: <secret>' \
+  --header 'X-Deployment-ID: prod-api-20261025-17' \
+  --data '{
+    "environment":"production",
+    "version":"v0.9.0",
+    "status":"succeeded",
+    "duration_seconds":318
+  }' \
+  'https://balda.example.com/webhooks/deployment_result'
+```
+
+The stable deployment ID makes retries safe even if the sender repeats the
+callback after a timeout.
+
+### Acknowledge a monitoring alert after report delivery
+
+Use delivery acknowledgement when the sender should keep retrying until the
+final report reaches the incident chat.
+
+| Field | Value |
+| --- | --- |
+| Route name | `monitoring_alert` |
+| Report to | `incident_chat` |
+| Deduplication | Header: `X-Alert-ID` |
+| Wait for report delivery | On |
+
+Paste this into **Prompt template**:
+
+```text
+Triage this monitoring alert.
+
+Return:
+- severity and likely user impact;
+- the strongest available evidence;
+- immediate diagnostic steps;
+- safe mitigation options;
+- information still needed from an operator.
+
+Do not execute a mitigation or deployment.
+
+Alert:
+{{ .RawBody }}
+```
+
+Send the alert:
+
+```bash
+curl --request POST \
+  --header 'Content-Type: application/json' \
+  --header 'X-Balda-Webhook-Secret: <secret>' \
+  --header 'X-Alert-ID: api-latency-20261025-001' \
+  --data '{
+    "service":"api",
+    "metric":"p95_latency_ms",
+    "value":1800,
+    "threshold":750
+  }' \
+  'https://balda.example.com/webhooks/monitoring_alert'
+```
+
+Balda returns `202` while execution or delivery is pending. Retry the same
+request with the same `X-Alert-ID` until it returns `200`, which confirms that
+the final report was delivered. A `202` does not mean the agent should run
+again: deduplication keeps the request attached to its original admission.
+
 ## How a request works
 
 ```mermaid
