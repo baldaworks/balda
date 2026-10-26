@@ -228,10 +228,14 @@ func checkRuntimeOperationStore(t *testing.T, provider Provider) {
 		if err := store.MarkApplying(t.Context(), failed.OperationID, failed.InputHash); err != nil {
 			t.Fatal(err)
 		}
+		applying, found, err := store.Get(t.Context(), failed.OperationID)
+		if err != nil || !found || applying.State != RuntimeOperationApplying {
+			t.Fatalf("Get(applying missing-session failure) = %+v, %t, %v", applying, found, err)
+		}
 		terminal, err = store.Finalize(t.Context(), RuntimeOperationFinalization{
 			OperationID: failed.OperationID, InputHash: failed.InputHash,
 			Outcome: RuntimeOperationOutcomeFailed, ReasonCode: RuntimeOperationReasonFailed,
-			At: baseTime.Add(3 * time.Hour),
+			At: applying.UpdatedAt.Add(time.Hour),
 		})
 		if err != nil || terminal.State != RuntimeOperationTerminal || terminal.Outcome != string(RuntimeOperationOutcomeFailed) {
 			t.Fatalf("Finalize(missing-session failure) = %+v, %v", terminal, err)

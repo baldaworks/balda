@@ -162,7 +162,7 @@ func (m *Manager) recoverArchiveActivation(ctx context.Context, root *BuiltRunti
 		return nil, err
 	}
 	ts := &TopicSession{sessionID: live.SessionID, userID: userID, locator: loc, agentName: live.AgentName, workspaceDir: live.WorkspaceDir, branchName: live.BranchName, hooksStarted: m.hooks != nil}
-	ts.runtime = newRuntimeSlot(runtimeSlotConfig{
+	ts.runtime = newPublishedRuntimeSlot(runtimeSlotConfig{
 		runtime:        runtime,
 		session:        sess,
 		userID:         userID,

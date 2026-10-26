@@ -20,6 +20,13 @@ var (
 	// ErrRuntimeCloseFailed is the bounded classification for aggregate runtime
 	// cleanup failures. Provider-specific details do not cross this boundary.
 	ErrRuntimeCloseFailed = errors.New("session runtime close failed")
+	// ErrRuntimeRecoveryRequired reports that durable and in-memory runtime
+	// authority may disagree and admission must remain fenced.
+	ErrRuntimeRecoveryRequired = errors.New("session runtime recovery required")
+	// ErrRuntimePublicationConflict reports a definitive stale publication guard.
+	ErrRuntimePublicationConflict = errors.New("session runtime publication conflict")
+	// ErrRuntimePublicationInvalid reports a malformed publication request.
+	ErrRuntimePublicationInvalid = errors.New("invalid session runtime publication")
 )
 
 // RuntimeLease is an immutable view of one coherent session runtime. Release
@@ -110,18 +117,20 @@ type runtimeSlotConfig struct {
 	outcome        string
 }
 
-// RuntimeSlot owns one immutable runtime value and only mutable lease/drain
-// bookkeeping. Publication is owned by a later task.
+// RuntimeSlot owns one immutable runtime value and only mutable publication,
+// lease, and drain bookkeeping.
 type RuntimeSlot struct {
 	value runtimeSlotValue
 	owner *runtimeOwner
 
-	mu            sync.Mutex
-	leases        int
-	retired       bool
-	ownerReleased bool
-	drainErr      error
-	drained       chan struct{}
+	mu                 sync.Mutex
+	leases             int
+	retired            bool
+	ownerReleased      bool
+	publicationClaimed bool
+	published          bool
+	drainErr           error
+	drained            chan struct{}
 }
 
 func newRuntimeSlot(config runtimeSlotConfig) *RuntimeSlot {
@@ -154,6 +163,21 @@ func newRuntimeSlotWithOwner(value runtimeSlotValue, owner *runtimeOwner) *Runti
 	return &RuntimeSlot{value: value, owner: owner, drained: make(chan struct{})}
 }
 
+func newPublishedRuntimeSlot(config runtimeSlotConfig) *RuntimeSlot {
+	slot := newRuntimeSlot(config)
+	slot.markPublished()
+	return slot
+}
+
+func (s *RuntimeSlot) markPublished() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.published = true
+	s.mu.Unlock()
+}
+
 // sharedSuccessor creates another immutable slot over the same aggregate
 // runtime. The caller still owns publication or abort of the returned slot.
 func (s *RuntimeSlot) sharedSuccessor(generation uint64, effectiveModel, outcome string) (*RuntimeSlot, error) {
@@ -183,6 +207,52 @@ func (s *RuntimeSlot) acquire() (*RuntimeLease, error) {
 	}
 	s.leases++
 	return &RuntimeLease{slot: s}, nil
+}
+
+func (s *RuntimeSlot) claimPublication() bool {
+	if s == nil {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.retired || s.ownerReleased || s.owner == nil || s.leases != 0 || s.publicationClaimed || s.published {
+		return false
+	}
+	s.publicationClaimed = true
+	return true
+}
+
+func (s *RuntimeSlot) releasePublicationClaim(published bool) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	if s.publicationClaimed {
+		s.publicationClaimed = false
+		s.published = published
+	}
+	s.mu.Unlock()
+}
+
+func (s *RuntimeSlot) abortUnpublished(ctx context.Context) error {
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	if s.publicationClaimed || s.published {
+		s.mu.Unlock()
+		return nil
+	}
+	s.retired = true
+	releaseOwner := s.leases == 0 && !s.ownerReleased
+	if releaseOwner {
+		s.ownerReleased = true
+	}
+	s.mu.Unlock()
+	if releaseOwner {
+		s.releaseOwner()
+	}
+	return s.waitDrain(ctx)
 }
 
 func (s *RuntimeSlot) releaseLease() {
