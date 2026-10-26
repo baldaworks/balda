@@ -156,10 +156,9 @@ func TestCloseActiveWebhookRunPublishesPrivateBoundaryAndDeletesRuntime(t *testi
 		AddressJSON: "{}", SessionID: sessionID}
 	observer := &fakeBoundaryObserver{}
 	manager := &Manager{
-		sessions: map[string]*TopicSession{sessionID: {
+		sessions: map[string]*TopicSession{sessionID: withTestRuntime(&TopicSession{
 			sessionID: sessionID, userID: sessionID, locator: locator,
-			sessionSvc: service, sess: created.Session,
-		}},
+		}, service, created.Session, nil)},
 		boundaryObserver: observer,
 	}
 	if err := manager.CloseRunSession(t.Context(), sessionID, sessionID); err != nil {

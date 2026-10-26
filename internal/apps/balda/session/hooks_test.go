@@ -104,6 +104,37 @@ func TestSessionLifecycleHooksObserveCreateAndCloseOnce(t *testing.T) {
 	}
 }
 
+func TestSessionHooksUsePreparedADKIdentity(t *testing.T) {
+	hooks := &lifecycleHooks{}
+	manager := hookTestManager(t, hooks)
+	service := adksession.InMemoryService()
+	prepared, err := service.Create(t.Context(), &adksession.CreateRequest{
+		AppName:   baldaRuntimeAppName,
+		UserID:    "user",
+		SessionID: "prepared-adk-identity",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager.runtimeManager.(*fakeScopedRuntimeManager).sessionRuntime.SessionSvc = service
+	manager.agentBuilder.(*fakeAgentBuilder).runtimeSession = prepared.Session
+	locator := testTelegramLocator(101, 0)
+	if err := manager.CreateSession(t.Context(), SessionContext{Locator: locator, UserID: "user"}, "balda"); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Stop(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if len(hooks.events) != 2 {
+		t.Fatalf("events = %+v, want start and end", hooks.events)
+	}
+	for _, event := range hooks.events {
+		if event.AgentSessionID != prepared.Session.ID() {
+			t.Fatalf("%s hook ADK identity = %q, want %q", event.Name, event.AgentSessionID, prepared.Session.ID())
+		}
+	}
+}
+
 func TestSessionStartHookDenialPreventsActivation(t *testing.T) {
 	hooks := &lifecycleHooks{deny: true}
 	manager := hookTestManager(t, hooks)

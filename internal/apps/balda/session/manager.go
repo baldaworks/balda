@@ -12,6 +12,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/git"
+	"github.com/baldaworks/runtime/v2/agentproduct"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
@@ -116,10 +117,11 @@ type RuntimeSessionContext struct {
 }
 
 type BuiltRuntime struct {
-	Agent      agent.Agent
-	Runner     *runner.Runner
-	SessionSvc adksession.Service
-	AppName    string
+	Agent          agent.Agent
+	SessionControl agentproduct.SessionControl
+	Runner         *runner.Runner
+	SessionSvc     adksession.Service
+	AppName        string
 	// RuntimeSnapshotID identifies the capabilities bound to this runtime.
 	RuntimeSnapshotID   string
 	ProviderBindingJSON string
@@ -277,10 +279,14 @@ func (m *Manager) PublishShutdownBoundaries(ctx context.Context) error {
 		if ts == nil {
 			continue
 		}
+		value, ok := ts.runtimeValue()
+		if !ok {
+			continue
+		}
 		if err := m.notifyBoundary(ctx, SessionBoundary{
 			Locator:        ts.locator,
 			SessionID:      ts.sessionID,
-			AgentSessionID: ts.GetAgentSessionID(),
+			AgentSessionID: value.sessionID,
 			Reason:         BoundaryReasonShutdown,
 		}); err != nil {
 			errs = append(errs, fmt.Errorf("publish shutdown boundary for %s: %w", ts.sessionID, err))
@@ -527,27 +533,39 @@ func (m *Manager) createSessionLocked(ctx context.Context, sessionCtx SessionCon
 	}
 
 	ts := &TopicSession{
-		sessionID:           sessionID,
-		agentSessionID:      agentSessionID,
-		userID:              userID,
-		locator:             locator,
-		kind:                sessionCtx.Kind,
-		ownerJobID:          strings.TrimSpace(sessionCtx.OwnerJobID),
-		agentName:           agentName,
-		agent:               sessionRuntime.Agent,
-		runner:              sessionRuntime.Runner,
-		sessionSvc:          sessionRuntime.SessionSvc,
-		runtimeClose:        sessionRuntime.Close,
-		runtimeSnapshotID:   strings.TrimSpace(sessionRuntime.RuntimeSnapshotID),
-		providerBindingJSON: strings.TrimSpace(sessionRuntime.ProviderBindingJSON),
-		sess:                sess,
-		workspaceDir:        workspaceDir,
-		branchName:          branchName,
-		startupNotice:       startupNotice,
+		sessionID:     sessionID,
+		userID:        userID,
+		locator:       locator,
+		kind:          sessionCtx.Kind,
+		ownerJobID:    strings.TrimSpace(sessionCtx.OwnerJobID),
+		agentName:     agentName,
+		workspaceDir:  workspaceDir,
+		branchName:    branchName,
+		startupNotice: startupNotice,
 	}
+	archiveID := ""
 	if activation != nil {
-		ts.archiveID = activation.Session.ID
+		archiveID = activation.Session.ID
 	}
+	var generation uint64
+	var effectiveModel, runtimeOutcome string
+	if persisted != nil && !createdFresh {
+		generation = persisted.RuntimeGeneration
+		effectiveModel = persisted.EffectiveModel
+		runtimeOutcome = persisted.RuntimeOutcome
+	} else {
+		effectiveModel = builder.GetAgentMetadata(baldaProvider).Model
+	}
+	ts.runtime = newRuntimeSlot(runtimeSlotConfig{
+		runtime:        sessionRuntime,
+		session:        sess,
+		userID:         userID,
+		sessionID:      agentSessionID,
+		archiveID:      archiveID,
+		generation:     generation,
+		effectiveModel: strings.TrimSpace(effectiveModel),
+		outcome:        strings.TrimSpace(runtimeOutcome),
+	})
 	source := "startup"
 	if persisted != nil && !createdFresh {
 		source = "resume"
@@ -566,21 +584,23 @@ func (m *Manager) createSessionLocked(ctx context.Context, sessionCtx SessionCon
 
 	if activation != nil {
 		if err := m.markArchiveReady(ctx, ts, activation); err != nil {
-			closeBuiltRuntime(sessionRuntime)
-			return err
+			return errors.Join(err, ts.DrainRuntime(ctx))
 		}
 		live := m.sessionRecord(ts, baldastate.SessionStatusActive)
 		if _, err := m.archive.Activate(ctx, activation.Token, &live); err != nil {
-			closeBuiltRuntime(sessionRuntime)
-			return fmt.Errorf("commit archive activation: %w", err)
+			return errors.Join(fmt.Errorf("commit archive activation: %w", err), ts.DrainRuntime(ctx))
 		}
 	}
 	shouldPersist := activation == nil && !transient && (persisted == nil || createdFresh)
-	if activation == nil && !transient && persisted != nil && strings.TrimSpace(persisted.ProviderBindingJSON) == "" && strings.TrimSpace(ts.providerBindingJSON) != "" {
+	value, hasRuntime := ts.runtimeValue()
+	if !hasRuntime {
+		return ErrRuntimeUnavailable
+	}
+	if activation == nil && !transient && persisted != nil && strings.TrimSpace(persisted.ProviderBindingJSON) == "" && strings.TrimSpace(value.runtime.ProviderBindingJSON) != "" {
 		shouldPersist = true
 	}
 	if shouldPersist {
-		if err := m.persistSessionRecord(ctx, ts, baldastate.SessionStatusActive); err != nil {
+		if err := m.sessionStore.Upsert(ctx, m.sessionRecordFromValue(ts, baldastate.SessionStatusActive, value)); err != nil {
 			if closeErr := m.cleanupTopicSession(ctx, ts, sessionCleanupOptions{
 				deleteRuntimeSession: createdFresh,
 				cleanupWorkspace:     cleanupWorkspace,
@@ -1048,11 +1068,16 @@ func (m *Manager) stopAllWithContext(ctx context.Context) {
 			continue
 		}
 		unlock := m.lockSessionOperation(ts.sessionID)
+		value, ok := ts.runtimeValue()
+		if !ok {
+			unlock()
+			continue
+		}
 		if !ts.runtimeDeleted && !ts.runtimeClosed {
 			if err := m.notifyBoundary(ctx, SessionBoundary{
 				Locator:        ts.locator,
 				SessionID:      ts.sessionID,
-				AgentSessionID: ts.GetAgentSessionID(),
+				AgentSessionID: value.sessionID,
 				Reason:         BoundaryReasonShutdown,
 			}); err != nil {
 				m.logger.Warn().Err(err).Str("session_id", ts.sessionID).Msg("session shutdown boundary failed")
@@ -1060,17 +1085,18 @@ func (m *Manager) stopAllWithContext(ctx context.Context) {
 		}
 		cleanupOpts := opts
 		if opts.deleteRuntimeSession {
-			intent, err := m.beginArchiveDestruction(ctx, ts.archiveID, BoundaryReasonShutdown)
+			archiveID := value.archiveID
+			intent, err := m.beginArchiveDestruction(ctx, archiveID, BoundaryReasonShutdown)
 			if err != nil {
 				cleanupOpts.deleteRuntimeSession = false
-				m.logger.Warn().Err(err).Str("archive_id", ts.archiveID).Msg("runtime retained because shutdown journal is unavailable")
+				m.logger.Warn().Err(err).Str("archive_id", archiveID).Msg("runtime retained because shutdown journal is unavailable")
 			} else {
-				deleteErr := deleteTopicRuntimeSession(ctx, ts)
-				destroyed, journalErr := m.completeArchiveDeletion(ctx, intent, ts.sessionSvc, topicAppName(ts), ts.userID, deleteErr)
+				deleteErr := deleteTopicRuntimeSessionValue(ctx, ts, value)
+				destroyed, journalErr := m.completeArchiveDeletion(ctx, intent, value.runtime.SessionSvc, runtimeAppName(value), value.userID, deleteErr)
 				ts.runtimeDeleted = destroyed
 				cleanupOpts.deleteRuntimeSession = false
 				if journalErr != nil {
-					m.logger.Warn().Err(journalErr).Str("archive_id", ts.archiveID).Msg("shutdown destruction remains pending")
+					m.logger.Warn().Err(journalErr).Str("archive_id", archiveID).Msg("shutdown destruction remains pending")
 				}
 			}
 		}
@@ -1100,19 +1126,23 @@ func (m *Manager) resetActiveSession(ctx context.Context, locator SessionLocator
 		ts.pendingBoundaries = make(map[BoundaryReason]boundaryAttempt)
 	}
 	attempt, ok := ts.pendingBoundaries[reason]
+	value, hasRuntime := ts.runtimeValue()
+	if !hasRuntime {
+		return true, ErrRuntimeUnavailable
+	}
 	if !ok {
 		occurredAt := m.currentTime()
 		attempt.boundary = SessionBoundary{
 			Locator:        ts.locator,
 			SessionID:      ts.sessionID,
-			AgentSessionID: ts.GetAgentSessionID(),
+			AgentSessionID: value.sessionID,
 			Reason:         reason,
 			OccurredAt:     occurredAt,
 			TransitionID:   m.newBoundaryID(reason, ts.sessionID, occurredAt),
 		}
 		ts.pendingBoundaries[reason] = attempt
 	}
-	destruction, err := m.beginArchiveDestruction(ctx, ts.archiveID, reason)
+	destruction, err := m.beginArchiveDestruction(ctx, value.archiveID, reason)
 	if err != nil {
 		return true, err
 	}
@@ -1126,9 +1156,9 @@ func (m *Manager) resetActiveSession(ctx context.Context, locator SessionLocator
 	}
 	deleteCtx, cancelDelete := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
 	// Keep the active runtime available if storage cannot delete its history.
-	deleteErr := deleteTopicRuntimeSession(deleteCtx, ts)
+	deleteErr := deleteTopicRuntimeSessionValue(deleteCtx, ts, value)
 	cancelDelete()
-	destroyed, journalErr := m.completeArchiveDeletion(ctx, destruction, ts.sessionSvc, topicAppName(ts), ts.userID, deleteErr)
+	destroyed, journalErr := m.completeArchiveDeletion(ctx, destruction, value.runtime.SessionSvc, runtimeAppName(value), value.userID, deleteErr)
 	ts.runtimeDeleted = destroyed
 	if !destroyed {
 		return true, errors.Join(boundaryErr, journalErr, m.lifecycleInterruption(ctx))
@@ -1190,10 +1220,14 @@ func (m *Manager) removeActiveSession(ctx context.Context, locator SessionLocato
 	if !exists {
 		return false, nil
 	}
+	value, ok := ts.runtimeValue()
+	if !ok {
+		return true, ErrRuntimeUnavailable
+	}
 	boundaryErr := m.notifyBoundary(ctx, SessionBoundary{
 		Locator:        ts.locator,
 		SessionID:      ts.sessionID,
-		AgentSessionID: ts.GetAgentSessionID(),
+		AgentSessionID: value.sessionID,
 		Reason:         reason,
 	})
 	cleanupCtx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
@@ -1317,13 +1351,11 @@ func (m *Manager) cleanupTopicSession(ctx context.Context, ts *TopicSession, opt
 		}
 	}
 	if ts != nil && !ts.runtimeClosed {
-		if ts.runtimeClose != nil {
-			if err := ts.runtimeClose(); err != nil {
-				if firstErr == nil {
-					firstErr = fmt.Errorf("close scoped runtime: %w", err)
-				}
-				return firstErr
+		if err := ts.DrainRuntime(ctx); err != nil {
+			if firstErr == nil {
+				firstErr = err
 			}
+			return firstErr
 		}
 		ts.runtimeClosed = true
 	}
@@ -1331,24 +1363,27 @@ func (m *Manager) cleanupTopicSession(ctx context.Context, ts *TopicSession, opt
 }
 
 func deleteTopicRuntimeSession(ctx context.Context, ts *TopicSession) error {
-	if ts == nil || ts.sessionSvc == nil || ts.runtimeDeleted {
+	value, ok := ts.runtimeValue()
+	if !ok {
 		return nil
 	}
-	sessionID := strings.TrimSpace(ts.GetAgentSessionID())
-	userID := strings.TrimSpace(ts.userID)
+	return deleteTopicRuntimeSessionValue(ctx, ts, value)
+}
+
+func deleteTopicRuntimeSessionValue(ctx context.Context, ts *TopicSession, value runtimeSlotValue) error {
+	if value.runtime.SessionSvc == nil || ts.runtimeDeleted {
+		return nil
+	}
+	sessionID := strings.TrimSpace(value.sessionID)
+	userID := strings.TrimSpace(value.userID)
 	appName := baldaRuntimeAppName
-	if ts.sess != nil {
-		if sessionAppName := strings.TrimSpace(ts.sess.AppName()); sessionAppName != "" {
-			appName = sessionAppName
-		}
-		if sessionUserID := strings.TrimSpace(ts.sess.UserID()); sessionUserID != "" {
-			userID = sessionUserID
-		}
+	if sessionAppName := strings.TrimSpace(value.appName); sessionAppName != "" {
+		appName = sessionAppName
 	}
 	if sessionID == "" || userID == "" {
 		return nil
 	}
-	if err := ts.sessionSvc.Delete(ctx, &adksession.DeleteRequest{
+	if err := value.runtime.SessionSvc.Delete(ctx, &adksession.DeleteRequest{
 		AppName:   appName,
 		UserID:    userID,
 		SessionID: sessionID,
@@ -1371,18 +1406,26 @@ func (m *Manager) persistSessionRecord(ctx context.Context, ts *TopicSession, st
 }
 
 func (m *Manager) sessionRecord(ts *TopicSession, status string) baldastate.SessionRecord {
+	value, _ := ts.runtimeValue()
+	return m.sessionRecordFromValue(ts, status, value)
+}
+
+func (m *Manager) sessionRecordFromValue(ts *TopicSession, status string, value runtimeSlotValue) baldastate.SessionRecord {
 	return baldastate.SessionRecord{
-		ArchiveID:           ts.archiveID,
+		ArchiveID:           value.archiveID,
 		SessionID:           ts.sessionID,
-		UserID:              ts.userID,
+		UserID:              value.userID,
 		ChannelType:         ts.locator.ChannelType,
 		AddressKey:          ts.locator.AddressKey,
 		AddressJSON:         ts.locator.AddressJSON,
 		AgentName:           ts.agentName,
 		WorkspaceDir:        ts.workspaceDir,
 		BranchName:          ts.branchName,
-		RuntimeSnapshotID:   ts.runtimeSnapshotID,
-		ProviderBindingJSON: ts.providerBindingJSON,
+		RuntimeSnapshotID:   value.runtime.RuntimeSnapshotID,
+		ProviderBindingJSON: value.runtime.ProviderBindingJSON,
+		RuntimeGeneration:   value.generation,
+		EffectiveModel:      value.effectiveModel,
+		RuntimeOutcome:      value.outcome,
 		Status:              status,
 	}
 }

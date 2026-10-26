@@ -120,7 +120,7 @@ func TestArchiveResetReconcilesCommittedDeadline(t *testing.T) {
 			event := adksession.NewEvent(t.Context(), "old-turn")
 			event.Author = ensureTestAuthor
 			event.Actions.StateDelta = map[string]any{"old-conversation": "old-state"}
-			if err := first.sessionSvc.AppendEvent(t.Context(), first.sess, event); err != nil {
+			if err := testRuntimeService(first).AppendEvent(t.Context(), testRuntimeSession(first), event); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := f.provider.ChatArchive().Record(t.Context(), chatarchivecmd.Message{SessionID: first.GetArchiveID(), Source: "original", Role: ensureTestAuthor, Text: "retain me", ObservedAt: m.currentTime()}); err != nil {
@@ -129,7 +129,7 @@ func TestArchiveResetReconcilesCommittedDeadline(t *testing.T) {
 			f.runtime.ProviderBindingJSON = `{"root_provider_id":"current"}`
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
-			svc := committedDeadlineService{Service: first.sessionSvc, afterDelete: func() {
+			svc := committedDeadlineService{Service: testRuntimeService(first), afterDelete: func() {
 				if mode == callerCanceled {
 					cancel()
 				}
@@ -137,7 +137,7 @@ func TestArchiveResetReconcilesCommittedDeadline(t *testing.T) {
 					m.stopping.Store(true)
 				}
 			}}
-			first.sessionSvc = svc
+			first.runtime.value.runtime.SessionSvc = svc
 			if mode == "persisted" {
 				m = f.manager()
 				f.runtime.SessionSvc = svc
@@ -179,16 +179,16 @@ func TestArchiveResetReconcilesCommittedDeadline(t *testing.T) {
 				t.Fatal("reset did not create exactly one fresh lifetime at same routing identity")
 			}
 			// Fresh archive activation may record its own epoch event.
-			for i := 0; i < next.sess.Events().Len(); i++ {
-				if next.sess.Events().At(i).ID == event.ID {
+			for i := 0; i < testRuntimeSession(next).Events().Len(); i++ {
+				if testRuntimeSession(next).Events().At(i).ID == event.ID {
 					t.Fatal("fresh session retained predecessor event")
 				}
 			}
-			if _, err := next.sess.State().Get("old-conversation"); err == nil {
+			if _, err := testRuntimeSession(next).State().Get("old-conversation"); err == nil {
 				t.Fatal("fresh session retained predecessor state")
 			}
-			if next.providerBindingJSON != f.runtime.ProviderBindingJSON || next.providerBindingJSON == first.providerBindingJSON {
-				t.Fatalf("fresh provider binding=%s, old=%s", next.providerBindingJSON, first.providerBindingJSON)
+			if next.runtime.value.runtime.ProviderBindingJSON != f.runtime.ProviderBindingJSON || next.runtime.value.runtime.ProviderBindingJSON == first.runtime.value.runtime.ProviderBindingJSON {
+				t.Fatalf("fresh provider binding=%s, old=%s", next.runtime.value.runtime.ProviderBindingJSON, first.runtime.value.runtime.ProviderBindingJSON)
 			}
 		})
 	}
@@ -237,9 +237,9 @@ func TestArchiveResetExpiredDeletionCompletesCleanup(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		ts := &TopicSession{sessionID: loc.SessionID, agentSessionID: loc.SessionID, archiveID: "old", userID: ensureTestAuthor, locator: loc, sessionSvc: svc, sess: created.Session, hooksStarted: true, workspaceDir: dir}
+		ts := &TopicSession{sessionID: loc.SessionID, userID: ensureTestAuthor, locator: loc, hooksStarted: true, workspaceDir: dir}
 		completions, ends, closes := 0, 0, 0
-		ts.runtimeClose = func() error { closes++; return nil }
+		ts.runtime = newRuntimeSlot(runtimeSlotConfig{runtime: &BuiltRuntime{SessionSvc: svc, Close: func() error { closes++; return nil }}, session: created.Session, userID: ensureTestAuthor, sessionID: loc.SessionID, archiveID: "old"})
 		m := &Manager{logger: zerolog.Nop(), sessions: map[string]*TopicSession{loc.SessionID: ts}, archive: resetOutcomeArchive{
 			session: chatarchivecmd.Session{ID: "old", RuntimeID: loc.SessionID},
 			outcomeArchive: outcomeArchive{complete: func(ctx context.Context, _, outcome string) error {
@@ -278,7 +278,7 @@ func TestArchiveShutdownReconcilesCommittedDeadline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	first.sessionSvc = committedDeadlineService{Service: first.sessionSvc}
+	first.runtime.value.runtime.SessionSvc = committedDeadlineService{Service: testRuntimeService(first)}
 	m.sessionsPersistent = false
 	m.stopping.Store(true)
 	m.stopAllWithContext(t.Context())

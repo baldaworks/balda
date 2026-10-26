@@ -97,7 +97,7 @@ func TestArchiveFailedDeleteRetainsLifetime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	first.sessionSvc = &trackingSessionService{Service: first.sessionSvc, deleteErr: errors.New("delete failed")}
+	first.runtime.value.runtime.SessionSvc = &trackingSessionService{Service: testRuntimeService(first), deleteErr: errors.New("delete failed")}
 	if err := m.ResetSession(t.Context(), archiveInput().Locator); err == nil {
 		t.Fatal("failed delete accepted")
 	}
@@ -239,7 +239,7 @@ func TestArchiveDestructionContradictoryEpochStaysUncertain(t *testing.T) {
 	event := adksession.NewEvent(t.Context(), "other-epoch")
 	event.Author = archiveStateAuthor
 	event.Actions.StateDelta = map[string]any{chatarchivecmd.EpochStateKey: "contradictory"}
-	if err := first.sessionSvc.AppendEvent(t.Context(), first.sess, event); err != nil {
+	if err := testRuntimeService(first).AppendEvent(t.Context(), testRuntimeSession(first), event); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.manager().EnsureSession(t.Context(), archiveInput(), "saved"); !errors.Is(err, chatarchivecmd.ErrConflict) {
@@ -292,7 +292,7 @@ func TestArchiveLateDestructionEvidenceEvictsCachedRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	first.sessionSvc = uncertainDeletionService{Service: first.sessionSvc}
+	first.runtime.value.runtime.SessionSvc = uncertainDeletionService{Service: testRuntimeService(first)}
 	if err := m.ResetSession(t.Context(), archiveInput().Locator); err == nil {
 		t.Fatal("uncertain reset accepted")
 	}
@@ -352,7 +352,7 @@ func TestArchiveFallbackCreatesDistinctEpochAtSameRuntimeID(t *testing.T) {
 	event := adksession.NewEvent(t.Context(), "lost-binding")
 	event.Author = archiveStateAuthor
 	event.Actions.StateDelta = map[string]any{chatarchivecmd.EpochStateKey: "unavailable-epoch"}
-	if err := first.sessionSvc.AppendEvent(t.Context(), first.sess, event); err != nil {
+	if err := testRuntimeService(first).AppendEvent(t.Context(), testRuntimeSession(first), event); err != nil {
 		t.Fatal(err)
 	}
 	// Rotation must also reconcile a committed deletion whose receipt timed out.
@@ -382,7 +382,7 @@ func TestArchiveRetainedDestructionCompletionRecoversWithoutHooks(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	first.sessionSvc = &trackingSessionService{Service: first.sessionSvc, deleteErr: errors.New("delete failed")}
+	first.runtime.value.runtime.SessionSvc = &trackingSessionService{Service: testRuntimeService(first), deleteErr: errors.New("delete failed")}
 	fault := &destructionFault{ArchiveLifecycle: m.archive, completeErr: chatarchivecmd.ErrUnavailable}
 	m.archive = fault
 	if err := m.ResetSession(t.Context(), archiveInput().Locator); err == nil {

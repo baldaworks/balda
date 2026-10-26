@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/baldaworks/go-actorlayer"
 	baldaactorcmd "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/actors/goalkeeper"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
@@ -20,6 +19,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
 	"github.com/baldaworks/balda/internal/apps/balda/session"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/go-actorlayer"
 	"github.com/rs/zerolog"
 	adkagent "google.golang.org/adk/v2/agent"
 	adkrunner "google.golang.org/adk/v2/runner"
@@ -35,7 +35,6 @@ func TestGoalKeeperActorRejectsMismatchedEnvelopeAndPayloadJobID(t *testing.T) {
 	locator := session.SessionLocator{ChannelType: "telegram", SessionID: "tg-101-202", AddressKey: "101", AddressJSON: `{"chat_id":101}`}
 	ts := newBaldaTopicSession(t, locator.SessionID)
 	setUnexportedField(t, ts, "userID", "101")
-	setUnexportedField(t, ts, "agentSessionID", "adk-session-1")
 	setUnexportedField(t, ts, "workspaceDir", t.TempDir())
 	manager := newBaldaSessionManagerWithSession(t, locator, ts)
 	actor := goalkeeper.NewActor(goalkeeper.ActorParams{
@@ -71,7 +70,6 @@ func TestGoalKeeperActorCompletesPassingRun(t *testing.T) {
 	locator := session.SessionLocator{ChannelType: "telegram", SessionID: "tg-101-202", AddressKey: "101", AddressJSON: `{"chat_id":101}`}
 	ts := newBaldaTopicSession(t, locator.SessionID)
 	setUnexportedField(t, ts, "userID", "101")
-	setUnexportedField(t, ts, "agentSessionID", "adk-session-1")
 	setUnexportedField(t, ts, "workspaceDir", t.TempDir())
 	manager := newBaldaSessionManagerWithSession(t, locator, ts)
 	runtimeBuilder := &fakeGoalRunPreparer{t: t, finalValidatorText: "verdict: pass\nvalidated"}
@@ -140,7 +138,6 @@ func TestGoalKeeperActorCompletesPassingRunWithoutWorkspaceExport(t *testing.T) 
 	locator := session.SessionLocator{ChannelType: "telegram", SessionID: "tg-101-202", AddressKey: "101"}
 	ts := newBaldaTopicSession(t, locator.SessionID)
 	setUnexportedField(t, ts, "userID", "101")
-	setUnexportedField(t, ts, "agentSessionID", "adk-session-1")
 	setUnexportedField(t, ts, "workspaceDir", t.TempDir())
 	manager := newBaldaSessionManagerWithSession(t, locator, ts)
 	runtimeBuilder := &fakeGoalRunPreparer{
@@ -198,7 +195,6 @@ func TestGoalKeeperActorUsesLatestValidatorVerdictForCompletion(t *testing.T) {
 	locator := session.SessionLocator{ChannelType: "telegram", SessionID: "tg-101-202", AddressKey: "101"}
 	ts := newBaldaTopicSession(t, locator.SessionID)
 	setUnexportedField(t, ts, "userID", "101")
-	setUnexportedField(t, ts, "agentSessionID", "adk-session-1")
 	setUnexportedField(t, ts, "workspaceDir", t.TempDir())
 	manager := newBaldaSessionManagerWithSession(t, locator, ts)
 	runtimeBuilder := &fakeGoalRunPreparer{
@@ -283,7 +279,6 @@ func TestGoalKeeperActorFinalFailureUsesLatestValidatorOutput(t *testing.T) {
 	locator := session.SessionLocator{ChannelType: "telegram", SessionID: "tg-101-202", AddressKey: "101"}
 	ts := newBaldaTopicSession(t, locator.SessionID)
 	setUnexportedField(t, ts, "userID", "101")
-	setUnexportedField(t, ts, "agentSessionID", "adk-session-1")
 	setUnexportedField(t, ts, "workspaceDir", t.TempDir())
 	manager := newBaldaSessionManagerWithSession(t, locator, ts)
 	runtimeBuilder := &fakeGoalRunPreparer{
@@ -358,7 +353,6 @@ func TestGoalKeeperActorRejectsSecondActiveGoalInSession(t *testing.T) {
 	locator := session.SessionLocator{ChannelType: "telegram", SessionID: "tg-101-202", AddressKey: "101"}
 	ts := newBaldaTopicSession(t, locator.SessionID)
 	setUnexportedField(t, ts, "userID", "101")
-	setUnexportedField(t, ts, "agentSessionID", "adk-session-1")
 	setUnexportedField(t, ts, "workspaceDir", t.TempDir())
 	manager := newBaldaSessionManagerWithSession(t, locator, ts)
 	if _, err := tasks.Create(ctx, baldastate.JobRecord{
@@ -417,7 +411,6 @@ func TestGoalKeeperActorDeliversWorkerProgressAndDedupesRepeatedOutput(t *testin
 	locator := session.SessionLocator{ChannelType: "telegram", SessionID: "tg-101-202", AddressKey: "101"}
 	ts := newBaldaTopicSession(t, locator.SessionID)
 	setUnexportedField(t, ts, "userID", "101")
-	setUnexportedField(t, ts, "agentSessionID", "adk-session-1")
 	setUnexportedField(t, ts, "workspaceDir", t.TempDir())
 	manager := newBaldaSessionManagerWithSession(t, locator, ts)
 	runtimeBuilder := &fakeGoalRunPreparer{
@@ -491,7 +484,6 @@ func TestGoalKeeperActorDeliversPlanUpdatesWhenEnabled(t *testing.T) {
 	locator := session.SessionLocator{ChannelType: "telegram", SessionID: "tg-101-202", AddressKey: "101"}
 	ts := newBaldaTopicSession(t, locator.SessionID)
 	setUnexportedField(t, ts, "userID", "101")
-	setUnexportedField(t, ts, "agentSessionID", "adk-session-1")
 	setUnexportedField(t, ts, "workspaceDir", t.TempDir())
 	manager := newBaldaSessionManagerWithSession(t, locator, ts)
 	runtimeBuilder := &fakeGoalRunPreparer{
@@ -662,7 +654,6 @@ func TestGoalKeeperActorQuestionFlowResumesAfterAnswer(t *testing.T) {
 	locator := session.SessionLocator{ChannelType: "telegram", SessionID: "tg-101-202", AddressKey: "101", AddressJSON: `{"chat_id":101}`}
 	ts := newBaldaTopicSession(t, locator.SessionID)
 	setUnexportedField(t, ts, "userID", "101")
-	setUnexportedField(t, ts, "agentSessionID", "adk-session-1")
 	setUnexportedField(t, ts, "workspaceDir", t.TempDir())
 	manager := newBaldaSessionManagerWithSession(t, locator, ts)
 	questionService := questions.New(provider.Questions(), provider.ScheduledJobs(), zerolog.Nop())
@@ -819,7 +810,6 @@ func TestGoalKeeperActorQuestionTimeoutFlow(t *testing.T) {
 	locator := session.SessionLocator{ChannelType: "telegram", SessionID: "tg-101-303", AddressKey: "101", AddressJSON: `{"chat_id":101}`}
 	ts := newBaldaTopicSession(t, locator.SessionID)
 	setUnexportedField(t, ts, "userID", "101")
-	setUnexportedField(t, ts, "agentSessionID", "adk-session-1")
 	setUnexportedField(t, ts, "workspaceDir", t.TempDir())
 	manager := newBaldaSessionManagerWithSession(t, locator, ts)
 	questionService := questions.New(provider.Questions(), provider.ScheduledJobs(), zerolog.Nop())
@@ -955,7 +945,6 @@ func TestGoalKeeperActorPreservesWorkspaceOnExportFailure(t *testing.T) {
 	locator := session.SessionLocator{ChannelType: "telegram", SessionID: "tg-101-202", AddressKey: "101"}
 	ts := newBaldaTopicSession(t, locator.SessionID)
 	setUnexportedField(t, ts, "userID", "101")
-	setUnexportedField(t, ts, "agentSessionID", "adk-session-1")
 	setUnexportedField(t, ts, "workspaceDir", t.TempDir())
 	manager := newBaldaSessionManagerWithSession(t, locator, ts)
 	runtimeBuilder := &fakeGoalRunPreparer{

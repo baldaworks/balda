@@ -106,7 +106,11 @@ func (m *Manager) markArchiveReady(ctx context.Context, ts *TopicSession, intent
 	if intent == nil {
 		return nil
 	}
-	rec := m.sessionRecord(ts, baldastate.SessionStatusActive)
+	value, ok := ts.runtimeValue()
+	if !ok || value.runtime.SessionSvc == nil || value.session == nil {
+		return ErrRuntimeUnavailable
+	}
+	rec := m.sessionRecordFromValue(ts, baldastate.SessionStatusActive, value)
 	body, err := json.Marshal(rec)
 	if err != nil {
 		return err
@@ -114,7 +118,7 @@ func (m *Manager) markArchiveReady(ctx context.Context, ts *TopicSession, intent
 	event := adksession.NewEvent(ctx, intent.Token)
 	event.Author = archiveStateAuthor
 	event.Actions.StateDelta = map[string]any{chatarchivecmd.EpochStateKey: intent.Session.ID, chatarchivecmd.ReadyStateKey: intent.Token, chatarchivecmd.BindingStateKey: string(body)}
-	if err := ts.sessionSvc.AppendEvent(ctx, ts.sess, event); err != nil {
+	if err := value.runtime.SessionSvc.AppendEvent(ctx, value.session, event); err != nil {
 		return fmt.Errorf("persist archive readiness: %w", err)
 	}
 	return nil
@@ -157,7 +161,18 @@ func (m *Manager) recoverArchiveActivation(ctx context.Context, root *BuiltRunti
 		closeBuiltRuntime(runtime)
 		return nil, err
 	}
-	return &TopicSession{sessionID: live.SessionID, archiveID: live.ArchiveID, agentSessionID: intent.Session.RuntimeID, userID: userID, locator: loc, agentName: live.AgentName, agent: runtime.Agent, runner: runtime.Runner, sessionSvc: runtime.SessionSvc, sess: sess, runtimeClose: runtime.Close, runtimeSnapshotID: live.RuntimeSnapshotID, providerBindingJSON: live.ProviderBindingJSON, workspaceDir: live.WorkspaceDir, branchName: live.BranchName, hooksStarted: m.hooks != nil}, nil
+	ts := &TopicSession{sessionID: live.SessionID, userID: userID, locator: loc, agentName: live.AgentName, workspaceDir: live.WorkspaceDir, branchName: live.BranchName, hooksStarted: m.hooks != nil}
+	ts.runtime = newRuntimeSlot(runtimeSlotConfig{
+		runtime:        runtime,
+		session:        sess,
+		userID:         userID,
+		sessionID:      intent.Session.RuntimeID,
+		archiveID:      live.ArchiveID,
+		generation:     live.RuntimeGeneration,
+		effectiveModel: live.EffectiveModel,
+		outcome:        live.RuntimeOutcome,
+	})
+	return ts, nil
 }
 
 // A failed constructor may already have persisted a runtime. Absence is the
@@ -270,7 +285,7 @@ func (m *Manager) reconcileArchiveDestruction(ctx context.Context, loc SessionLo
 	if outcome == chatarchivecmd.OutcomeDestroyed {
 		m.mu.Lock()
 		old := m.sessions[intent.Session.StableID]
-		if old != nil && old.archiveID == intent.OldID {
+		if old != nil && old.GetArchiveID() == intent.OldID {
 			delete(m.sessions, intent.Session.StableID)
 		} else {
 			old = nil
@@ -289,9 +304,9 @@ func (m *Manager) reconcileArchiveDestruction(ctx context.Context, loc SessionLo
 	return nil
 }
 
-func topicAppName(ts *TopicSession) string {
-	if ts != nil && ts.sess != nil && ts.sess.AppName() != "" {
-		return ts.sess.AppName()
+func runtimeAppName(value runtimeSlotValue) string {
+	if value.appName != "" {
+		return value.appName
 	}
 	return baldaRuntimeAppName
 }

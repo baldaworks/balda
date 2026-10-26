@@ -160,7 +160,7 @@ func TestEnsureSessionRestoresSQLiteHistoryAfterRestart(t *testing.T) {
 	event := adksession.NewEvent(t.Context(), "saved-turn")
 	event.Author = ensureTestAuthor
 	event.Actions.StateDelta = map[string]any{"saved_value": "keep"}
-	if err := runtime.SessionSvc.AppendEvent(t.Context(), first.sess, event); err != nil {
+	if err := runtime.SessionSvc.AppendEvent(t.Context(), testRuntimeSession(first), event); err != nil {
 		t.Fatal(err)
 	}
 	inbound := locator
@@ -177,10 +177,10 @@ func TestEnsureSessionRestoresSQLiteHistoryAfterRestart(t *testing.T) {
 	if restored.GetRuntimeSnapshotID() != currentSnapshotID {
 		t.Fatalf("snapshot = %q", restored.GetRuntimeSnapshotID())
 	}
-	if got := restored.sess.Events().Len(); got != 1 {
+	if got := testRuntimeSession(restored).Events().Len(); got != 1 {
 		t.Fatalf("history events = %d, want 1", got)
 	}
-	if got, err := restored.sess.State().Get("saved_value"); err != nil || got != "keep" {
+	if got, err := testRuntimeSession(restored).State().Get("saved_value"); err != nil || got != "keep" {
 		t.Fatalf("saved state = %v, %v", got, err)
 	}
 	inbound.SessionID = "new-inbound-id"
@@ -188,7 +188,7 @@ func TestEnsureSessionRestoresSQLiteHistoryAfterRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if canonical.GetSessionID() != locator.SessionID || canonical.sess.Events().Len() != 1 {
+	if canonical.GetSessionID() != locator.SessionID || testRuntimeSession(canonical).Events().Len() != 1 {
 		t.Fatal("saved identity/history lost for changed inbound ID")
 	}
 
@@ -289,7 +289,7 @@ func TestEnsureSessionRecoversFailedSQLiteRestore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if prepared.sess.Events().Len() != 0 || prepared.GetRuntimeSnapshotID() != currentSnapshotID {
+	if testRuntimeSession(prepared).Events().Len() != 0 || prepared.GetRuntimeSnapshotID() != currentSnapshotID {
 		t.Fatal("fallback did not create fresh current runtime")
 	}
 	saved, found, err := provider.Sessions().GetByAddress(t.Context(), locator.ChannelType, locator.AddressKey)
@@ -324,7 +324,7 @@ func TestEnsureSessionMemoryRestoreUsesPreparedADKIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if restored.GetAgentSessionID() != restored.sess.ID() {
-		t.Fatalf("published ADK identity = %q, actual = %q", restored.GetAgentSessionID(), restored.sess.ID())
+	if restored.GetAgentSessionID() != testRuntimeSession(restored).ID() {
+		t.Fatalf("published ADK identity = %q, actual = %q", restored.GetAgentSessionID(), testRuntimeSession(restored).ID())
 	}
 }

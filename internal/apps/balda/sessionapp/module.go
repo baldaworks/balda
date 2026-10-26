@@ -68,11 +68,13 @@ func (a SessionAgentBuilderAdapter) CreateFreshRuntimeSession(
 
 func agentRuntime(runtime *baldasession.BuiltRuntime) *baldaagent.BuiltRuntime {
 	return &baldaagent.BuiltRuntime{
-		Agent:             runtime.Agent,
-		Runner:            runtime.Runner,
-		SessionSvc:        runtime.SessionSvc,
-		AppName:           runtime.AppName,
-		RuntimeSnapshotID: runtime.RuntimeSnapshotID,
+		Agent:               runtime.Agent,
+		SessionControl:      runtime.SessionControl,
+		Runner:              runtime.Runner,
+		SessionSvc:          runtime.SessionSvc,
+		AppName:             runtime.AppName,
+		RuntimeSnapshotID:   runtime.RuntimeSnapshotID,
+		ProviderBindingJSON: runtime.ProviderBindingJSON,
 	}
 }
 
@@ -125,15 +127,7 @@ func (a SessionRuntimeManagerAdapter) Runtime(ctx context.Context) (*baldasessio
 	if err != nil {
 		return nil, err
 	}
-	return &baldasession.BuiltRuntime{
-		Agent:               runtime.Agent,
-		Runner:              runtime.Runner,
-		SessionSvc:          runtime.SessionSvc,
-		AppName:             runtime.AppName,
-		RuntimeSnapshotID:   runtime.RuntimeSnapshotID,
-		ProviderBindingJSON: runtime.ProviderBindingJSON,
-		Close:               runtime.Close,
-	}, nil
+	return sessionRuntime(runtime), nil
 }
 
 func (a SessionRuntimeManagerAdapter) ProviderID() string {
@@ -158,15 +152,23 @@ func (a SessionRuntimeManagerAdapter) RuntimeForSession(ctx context.Context, req
 	if err != nil {
 		return nil, err
 	}
+	return sessionRuntime(runtime), nil
+}
+
+func sessionRuntime(runtime *baldaagent.BuiltRuntime) *baldasession.BuiltRuntime {
+	if runtime == nil {
+		return nil
+	}
 	return &baldasession.BuiltRuntime{
 		Agent:               runtime.Agent,
+		SessionControl:      runtime.SessionControl,
 		Runner:              runtime.Runner,
 		SessionSvc:          runtime.SessionSvc,
 		AppName:             runtime.AppName,
 		RuntimeSnapshotID:   runtime.RuntimeSnapshotID,
 		ProviderBindingJSON: runtime.ProviderBindingJSON,
 		Close:               runtime.Close,
-	}, nil
+	}
 }
 
 // SessionMCPBinderAdapter bridges the MCP context broker to the runtime port.

@@ -21,7 +21,11 @@ func (m *Manager) startSessionHooks(ctx context.Context, ts *TopicSession, provi
 	if err != nil {
 		return fmt.Errorf("session hook workspace: %w", err)
 	}
-	_, err = m.hooks.Run(ctx, hookcmd.Event{Name: hookcmd.SessionStart, SessionID: ts.sessionID, AgentSessionID: ts.agentSessionID, CWD: cwd, Provider: provider, Source: source})
+	value, ok := ts.runtimeValue()
+	if !ok {
+		return fmt.Errorf("session start hook: %w", ErrRuntimeUnavailable)
+	}
+	_, err = m.hooks.Run(ctx, hookcmd.Event{Name: hookcmd.SessionStart, SessionID: ts.sessionID, AgentSessionID: value.sessionID, CWD: cwd, Provider: provider, Source: source})
 	if err != nil {
 		return fmt.Errorf("session start hook: %w", err)
 	}
@@ -38,7 +42,8 @@ func (m *Manager) endSessionHooks(ctx context.Context, ts *TopicSession) {
 	defer cancel()
 	cwd, err := filepath.Abs(ts.workspaceDir)
 	if err == nil {
-		_, err = m.hooks.Run(endCtx, hookcmd.Event{Name: hookcmd.SessionEnd, SessionID: ts.sessionID, AgentSessionID: ts.agentSessionID, CWD: cwd, Provider: m.getProviderName(), Source: "close"})
+		value, _ := ts.runtimeValue()
+		_, err = m.hooks.Run(endCtx, hookcmd.Event{Name: hookcmd.SessionEnd, SessionID: ts.sessionID, AgentSessionID: value.sessionID, CWD: cwd, Provider: m.getProviderName(), Source: "close"})
 	}
 	if err != nil {
 		m.logger.Warn().Str("session_id", ts.sessionID).Msg("session end hook failed; continuing cleanup")
