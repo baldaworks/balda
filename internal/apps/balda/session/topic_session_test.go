@@ -52,11 +52,9 @@ func TestTopicSessionRuntimeStateValueReadsCurrentSession(t *testing.T) {
 	}
 
 	ts := &TopicSession{
-		sessionID:      "transport-session-1",
-		agentSessionID: "agent-session-1",
-		sessionSvc:     sessionSvc,
-		sess:           created.Session,
+		sessionID: "transport-session-1",
 	}
+	withTestRuntime(ts, sessionSvc, created.Session, nil)
 	got, ok, err := ts.RuntimeStateValue(ctx, "balda_memory_version")
 	if err != nil {
 		t.Fatalf("RuntimeStateValue() error = %v", err)

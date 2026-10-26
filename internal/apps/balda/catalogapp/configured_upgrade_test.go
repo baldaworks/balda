@@ -255,6 +255,7 @@ func TestConfiguredSessionUpgradeFreshensIncompleteADKState(t *testing.T) {
 			afterRecord, found, err := p.Sessions().GetBySessionID(t.Context(), record.SessionID)
 			wantRecord := record
 			wantRecord.RuntimeSnapshotID = restored.GetRuntimeSnapshotID()
+			wantRecord.EffectiveModel = manager.GetAgentMetadata("alpha").Model
 			if err != nil || !found || afterRecord != wantRecord {
 				t.Fatalf("session metadata changed: %+v / %v", afterRecord, err)
 			}

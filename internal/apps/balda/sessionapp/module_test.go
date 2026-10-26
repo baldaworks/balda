@@ -10,7 +10,39 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorymcp"
+	"github.com/baldaworks/runtime/v2/agentproduct"
+	adksession "google.golang.org/adk/v2/session"
 )
+
+type adapterSessionControl struct{}
+
+func (*adapterSessionControl) Inspect(context.Context, adksession.Session) agentproduct.SessionControlSnapshot {
+	return agentproduct.SessionControlSnapshot{}
+}
+func (*adapterSessionControl) ValidateModel(context.Context, adksession.Session, string) agentproduct.ModelValidation {
+	return agentproduct.ModelValidation{}
+}
+func (*adapterSessionControl) ChangeModel(context.Context, adksession.Session, string) agentproduct.ModelChange {
+	return agentproduct.ModelChange{}
+}
+func (*adapterSessionControl) FastForward(context.Context, adksession.Session, agentproduct.ContextPackage) agentproduct.ContextChange {
+	return agentproduct.ContextChange{}
+}
+
+func TestRuntimeAdaptersPreserveSessionControl(t *testing.T) {
+	t.Parallel()
+
+	control := &adapterSessionControl{}
+	agentSide := &baldaagent.BuiltRuntime{SessionControl: control, ProviderBindingJSON: `{"root_provider_id":"provider"}`}
+	sessionSide := sessionRuntime(agentSide)
+	if sessionSide.SessionControl != control || sessionSide.ProviderBindingJSON != agentSide.ProviderBindingJSON {
+		t.Fatal("agent-to-session adapter lost runtime product metadata")
+	}
+	roundTrip := agentRuntime(sessionSide)
+	if roundTrip.SessionControl != control || roundTrip.ProviderBindingJSON != agentSide.ProviderBindingJSON {
+		t.Fatal("session-to-agent adapter lost runtime product metadata")
+	}
+}
 
 func TestSessionMCPBinderAdapterEnabledForSessionCapabilities(t *testing.T) {
 	t.Parallel()

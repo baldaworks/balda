@@ -30,7 +30,6 @@ func TestInboundProcessorHydratesMentionedChannelThreadAndPublishesTurn(t *testi
 	topic := &baldasession.TopicSession{}
 	setPrivateField(t, topic, "sessionID", locator.SessionID)
 	setPrivateField(t, topic, "userID", "slackagent:T123:U456")
-	setPrivateField(t, topic, "agentSessionID", "agent-session-1")
 	setPrivateField(t, topic, "kind", baldasession.KindChat)
 	manager := &baldasession.Manager{}
 	setPrivateField(t, manager, "sessions", map[string]*baldasession.TopicSession{locator.SessionID: topic})

@@ -37,11 +37,11 @@ func TestStopAllWithContext_CleansWorkspaceWhenRootContextCanceled(t *testing.T)
 		workspaceEnabled: true,
 		logger:           zerolog.Nop(),
 		sessions: map[string]*TopicSession{
-			"tg-1-1": {
+			"tg-1-1": withTestRuntime(&TopicSession{
 				sessionID:    "tg-1-1",
 				locator:      testTelegramLocator(1, 1),
 				workspaceDir: workspaceDir,
-			},
+			}, nil, nil, nil),
 		},
 	}
 
@@ -67,8 +67,8 @@ func TestStopAllHidesEverySessionBeforeCleanup(t *testing.T) {
 	m := &Manager{
 		logger: zerolog.Nop(),
 		sessions: map[string]*TopicSession{
-			first.SessionID:  {sessionID: first.SessionID, locator: first, runtimeClose: closeRuntime(first.SessionID)},
-			second.SessionID: {sessionID: second.SessionID, locator: second, runtimeClose: closeRuntime(second.SessionID)},
+			first.SessionID:  withTestRuntime(&TopicSession{sessionID: first.SessionID, locator: first}, nil, nil, closeRuntime(first.SessionID)),
+			second.SessionID: withTestRuntime(&TopicSession{sessionID: second.SessionID, locator: second}, nil, nil, closeRuntime(second.SessionID)),
 		},
 	}
 	stopped := make(chan struct{})
@@ -116,11 +116,9 @@ func TestStopAllDoesNotRepeatCompletedResetCleanup(t *testing.T) {
 	observer := &fakeBoundaryObserver{}
 	m := &Manager{
 		logger: zerolog.Nop(), sessionStore: &fakeSessionStore{}, boundaryObserver: observer,
-		sessions: map[string]*TopicSession{locator.SessionID: {
+		sessions: map[string]*TopicSession{locator.SessionID: withTestRuntime(&TopicSession{
 			sessionID: locator.SessionID, userID: "tg-101", locator: locator,
-			sessionSvc: service, sess: created.Session,
-			runtimeClose: func() error { closeCalls.Add(1); return nil },
-		}},
+		}, service, created.Session, func() error { closeCalls.Add(1); return nil })},
 	}
 	resetDone := make(chan error, 1)
 	go func() { resetDone <- m.ResetSession(ctx, locator) }()
@@ -174,10 +172,10 @@ func TestStopSession_UsesNonCanceledCleanupContext(t *testing.T) {
 		logger:       zerolog.Nop(),
 		sessionStore: store,
 		sessions: map[string]*TopicSession{
-			"tg-10-42": {
+			"tg-10-42": withTestRuntime(&TopicSession{
 				sessionID: "tg-10-42",
 				locator:   testTelegramLocator(10, 42),
-			},
+			}, nil, nil, nil),
 		},
 	}
 
@@ -198,10 +196,10 @@ func TestStopSession_PersistentModeSuspendsWithoutDeletingMetadata(t *testing.T)
 		sessionStore:       store,
 		sessionsPersistent: true,
 		sessions: map[string]*TopicSession{
-			"tg-10-42": {
+			"tg-10-42": withTestRuntime(&TopicSession{
 				sessionID: "tg-10-42",
 				locator:   testTelegramLocator(10, 42),
-			},
+			}, nil, nil, nil),
 		},
 	}
 
@@ -224,10 +222,10 @@ func TestStopSessionPublishesOneCloseBoundary(t *testing.T) {
 		sessionStore:     store,
 		boundaryObserver: observer,
 		sessions: map[string]*TopicSession{
-			locator.SessionID: {
+			locator.SessionID: withTestRuntime(&TopicSession{
 				sessionID: locator.SessionID,
 				locator:   locator,
-			},
+			}, nil, nil, nil),
 		},
 	}
 
@@ -258,14 +256,11 @@ func TestResetSession_DeletesRuntimeHistoryAndPreservesMetadata(t *testing.T) {
 		logger:       zerolog.Nop(),
 		sessionStore: store,
 		sessions: map[string]*TopicSession{
-			"tg-10-42": {
-				sessionID:      "tg-10-42",
-				agentSessionID: "tg-10-42",
-				userID:         "tg-101",
-				locator:        testTelegramLocator(10, 42),
-				sessionSvc:     svc,
-				sess:           created.Session,
-			},
+			"tg-10-42": withTestRuntime(&TopicSession{
+				sessionID: "tg-10-42",
+				userID:    "tg-101",
+				locator:   testTelegramLocator(10, 42),
+			}, svc, created.Session, nil),
 		},
 	}
 
@@ -309,14 +304,11 @@ func TestResetSessionDeleteTimeoutKeepsSessionForRetry(t *testing.T) {
 	}
 	closed := false
 	active := &TopicSession{
-		sessionID:      locator.SessionID,
-		agentSessionID: locator.SessionID,
-		userID:         "tg-101",
-		locator:        locator,
-		sessionSvc:     service,
-		sess:           created.Session,
-		runtimeClose:   func() error { closed = true; return nil },
+		sessionID: locator.SessionID,
+		userID:    "tg-101",
+		locator:   locator,
 	}
+	withTestRuntime(active, service, created.Session, func() error { closed = true; return nil })
 	observer := &fakeBoundaryObserver{}
 	m := &Manager{
 		logger:           zerolog.Nop(),
@@ -434,10 +426,9 @@ func TestConcurrentResetsDoNotDeleteTheSameActiveRuntimeTogether(t *testing.T) {
 	m := &Manager{
 		logger:       zerolog.Nop(),
 		sessionStore: &fakeSessionStore{},
-		sessions: map[string]*TopicSession{locator.SessionID: {
+		sessions: map[string]*TopicSession{locator.SessionID: withTestRuntime(&TopicSession{
 			sessionID: locator.SessionID, userID: "tg-101", locator: locator,
-			sessionSvc: service, sess: created.Session,
-		}},
+		}, service, created.Session, nil)},
 	}
 	firstDone := make(chan error, 1)
 	go func() { firstDone <- m.ResetSession(ctx, locator) }()
@@ -486,8 +477,8 @@ func TestSessionLookupWaitsForFailedResetDeletion(t *testing.T) {
 	}
 	active := &TopicSession{
 		sessionID: locator.SessionID, userID: "tg-101", locator: locator,
-		sessionSvc: service, sess: created.Session,
 	}
+	withTestRuntime(active, service, created.Session, nil)
 	m := &Manager{
 		logger: zerolog.Nop(), sessionStore: &fakeSessionStore{},
 		sessions: map[string]*TopicSession{locator.SessionID: active},
@@ -548,11 +539,9 @@ func TestStopSessionWaitsForResetDeletion(t *testing.T) {
 	closed := false
 	m := &Manager{
 		logger: zerolog.Nop(), sessionStore: &fakeSessionStore{}, sessionsPersistent: true,
-		sessions: map[string]*TopicSession{locator.SessionID: {
+		sessions: map[string]*TopicSession{locator.SessionID: withTestRuntime(&TopicSession{
 			sessionID: locator.SessionID, userID: "tg-101", locator: locator,
-			sessionSvc: service, sess: created.Session,
-			runtimeClose: func() error { closed = true; return nil },
-		}},
+		}, service, created.Session, func() error { closed = true; return nil })},
 	}
 	resetDone := make(chan error, 1)
 	go func() { resetDone <- m.ResetSession(ctx, locator) }()
@@ -649,14 +638,11 @@ func TestResetSessionPublishesBoundaryBeforeRuntimeDeletion(t *testing.T) {
 		sessionStore:     &fakeSessionStore{},
 		boundaryObserver: observer,
 		sessions: map[string]*TopicSession{
-			"tg-10-42": {
-				sessionID:      "tg-10-42",
-				agentSessionID: "tg-10-42",
-				userID:         "tg-101",
-				locator:        testTelegramLocator(10, 42),
-				sessionSvc:     svc,
-				sess:           created.Session,
-			},
+			"tg-10-42": withTestRuntime(&TopicSession{
+				sessionID: "tg-10-42",
+				userID:    "tg-101",
+				locator:   testTelegramLocator(10, 42),
+			}, svc, created.Session, nil),
 		},
 	}
 
@@ -691,14 +677,11 @@ func TestResetSessionBoundaryFailureDoesNotPreventRuntimeDeletion(t *testing.T) 
 		sessionStore:     &fakeSessionStore{},
 		boundaryObserver: &fakeBoundaryObserver{err: errors.New("publisher unavailable")},
 		sessions: map[string]*TopicSession{
-			"tg-10-42": {
-				sessionID:      "tg-10-42",
-				agentSessionID: "tg-10-42",
-				userID:         "tg-101",
-				locator:        testTelegramLocator(10, 42),
-				sessionSvc:     svc,
-				sess:           created.Session,
-			},
+			"tg-10-42": withTestRuntime(&TopicSession{
+				sessionID: "tg-10-42",
+				userID:    "tg-101",
+				locator:   testTelegramLocator(10, 42),
+			}, svc, created.Session, nil),
 		},
 	}
 
@@ -722,9 +705,12 @@ func TestShutdownBoundaryIsPublishedOnceAcrossLifecycleAndManagerStop(t *testing
 		boundaryObserver: observer,
 		sessions: map[string]*TopicSession{
 			locator.SessionID: {
-				sessionID:      locator.SessionID,
-				agentSessionID: "adk-42",
-				locator:        locator,
+				sessionID: locator.SessionID,
+				locator:   locator,
+				runtime: newRuntimeSlot(runtimeSlotConfig{
+					runtime:   &BuiltRuntime{},
+					sessionID: "adk-42",
+				}),
 			},
 		},
 	}
@@ -931,6 +917,8 @@ func TestGetSessionInfo_ReturnsActiveTransportUserID(t *testing.T) {
 
 type fakeAgentBuilder struct {
 	agentMetadata                     AgentMetadata
+	metadataAgentNames                []string
+	runtimeSession                    adksession.Session
 	createRuntimeSessionCalls         int
 	openRuntimeSessionCalls           int
 	freshRuntimeSessionCalls          int
@@ -998,10 +986,11 @@ func (f *fakeAgentBuilder) recordRuntimeSession(
 	if f.createRuntimeSessionErr != nil {
 		return nil, f.createRuntimeSessionErr
 	}
-	return nil, nil
+	return f.runtimeSession, nil
 }
 
-func (f *fakeAgentBuilder) GetAgentMetadata(string) AgentMetadata {
+func (f *fakeAgentBuilder) GetAgentMetadata(agentName string) AgentMetadata {
+	f.metadataAgentNames = append(f.metadataAgentNames, agentName)
 	return f.agentMetadata
 }
 
@@ -1351,18 +1340,15 @@ func TestResetThenCreateSessionAdoptsCurrentRuntimeSnapshot(t *testing.T) {
 		logger:            zerolog.Nop(),
 		sessionStore:      store,
 		sessions: map[string]*TopicSession{
-			locator.SessionID: {
-				sessionID:         locator.SessionID,
-				agentSessionID:    locator.SessionID,
-				userID:            oldRecord.UserID,
-				locator:           locator,
-				agentName:         oldRecord.AgentName,
-				runtimeSnapshotID: oldRecord.RuntimeSnapshotID,
-				runtimeClose: func() error {
-					closed++
-					return nil
-				},
-			},
+			locator.SessionID: withTestRuntime(&TopicSession{
+				sessionID: locator.SessionID,
+				userID:    oldRecord.UserID,
+				locator:   locator,
+				agentName: oldRecord.AgentName,
+			}, nil, nil, func() error {
+				closed++
+				return nil
+			}),
 		},
 	}
 
@@ -1421,6 +1407,41 @@ func TestCreateSessionRejectsRuntimeWithoutSnapshot(t *testing.T) {
 	}
 }
 
+func TestCreateSessionPublishesCurrentEffectiveModel(t *testing.T) {
+	locator := testTelegramLocator(9, 81)
+	builder := &fakeAgentBuilder{agentMetadata: AgentMetadata{Model: "current-model"}}
+	m := &Manager{
+		baldaProviderName: "balda-provider",
+		runtimeManager: &fakeScopedRuntimeManager{
+			fakeBaldaRuntimeManager: fakeBaldaRuntimeManager{providerID: "balda-provider"},
+			sessionRuntime:          &BuiltRuntime{RuntimeSnapshotID: currentSnapshotID},
+		},
+		agentBuilder: builder,
+		workingDir:   t.TempDir(),
+		logger:       zerolog.Nop(),
+		sessions:     make(map[string]*TopicSession),
+		sessionStore: &fakeSessionStore{},
+	}
+	if err := m.CreateSession(t.Context(), SessionContext{Locator: locator, UserID: "user"}, "topic"); err != nil {
+		t.Fatal(err)
+	}
+	created, err := m.GetSession(locator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := created.AcquireRuntime()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lease.Release()
+	if lease.EffectiveModel() != "current-model" {
+		t.Fatalf("fresh effective model = %q, want current-model", lease.EffectiveModel())
+	}
+	if len(builder.metadataAgentNames) != 1 || builder.metadataAgentNames[0] != "balda-provider" {
+		t.Fatalf("model metadata lookup keys = %v, want [balda-provider] for named topic", builder.metadataAgentNames)
+	}
+}
+
 func TestRestoreSessionRequestsPersistedRuntimeSnapshot(t *testing.T) {
 	locator := testTelegramLocator(10, 42)
 	record := baldastate.SessionRecord{
@@ -1441,7 +1462,7 @@ func TestRestoreSessionRequestsPersistedRuntimeSnapshot(t *testing.T) {
 		fakeBaldaRuntimeManager: fakeBaldaRuntimeManager{providerID: "balda-provider"},
 		sessionRuntime:          &BuiltRuntime{RuntimeSnapshotID: "snapshot-persisted", ProviderBindingJSON: record.ProviderBindingJSON},
 	}
-	builder := &fakeAgentBuilder{}
+	builder := &fakeAgentBuilder{agentMetadata: AgentMetadata{Model: "current-default-model"}}
 	m := &Manager{
 		baldaProviderName: "balda-provider",
 		runtimeManager:    runtimeManager,
@@ -1452,8 +1473,20 @@ func TestRestoreSessionRequestsPersistedRuntimeSnapshot(t *testing.T) {
 		sessionStore:      store,
 	}
 
-	if _, err := m.RestoreSession(context.Background(), SessionContext{Locator: locator}); err != nil {
+	restored, err := m.RestoreSession(context.Background(), SessionContext{Locator: locator})
+	if err != nil {
 		t.Fatalf("RestoreSession() error = %v", err)
+	}
+	lease, err := restored.AcquireRuntime()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lease.EffectiveModel() != "" {
+		t.Fatalf("restored blank effective model = %q, want unknown", lease.EffectiveModel())
+	}
+	lease.Release()
+	if len(builder.metadataAgentNames) != 0 {
+		t.Fatalf("exact restore model metadata lookups = %v, want none", builder.metadataAgentNames)
 	}
 	if len(runtimeManager.sessionRequests) != 1 {
 		t.Fatalf("RuntimeForSession() calls = %d, want 1", len(runtimeManager.sessionRequests))
@@ -1487,11 +1520,13 @@ func TestRestoreLegacySessionAdoptsProviderBindingOnce(t *testing.T) {
 		sessionRuntime: &BuiltRuntime{RuntimeSnapshotID: record.RuntimeSnapshotID,
 			ProviderBindingJSON: `{"root_provider_id":"adopted"}`},
 	}
+	builder := &fakeAgentBuilder{agentMetadata: AgentMetadata{Model: "different-current-default"}}
 	m := &Manager{
-		baldaProviderName: "balda-provider", runtimeManager: runtimeManager, agentBuilder: &fakeAgentBuilder{},
+		baldaProviderName: "balda-provider", runtimeManager: runtimeManager, agentBuilder: builder,
 		workingDir: t.TempDir(), logger: zerolog.Nop(), sessions: make(map[string]*TopicSession), sessionStore: store,
 	}
-	if _, err := m.RestoreSession(t.Context(), SessionContext{Locator: locator}); err != nil {
+	restored, err := m.RestoreSession(t.Context(), SessionContext{Locator: locator})
+	if err != nil {
 		t.Fatal(err)
 	}
 	if got := runtimeManager.sessionRequests[0].ProviderBindingJSON; got != "" {
@@ -1499,6 +1534,40 @@ func TestRestoreLegacySessionAdoptsProviderBindingOnce(t *testing.T) {
 	}
 	if len(store.upsertedRecords) != 1 || store.upsertedRecords[0].ProviderBindingJSON != runtimeManager.sessionRuntime.ProviderBindingJSON {
 		t.Fatalf("adopted records = %+v", store.upsertedRecords)
+	}
+	lease, err := restored.AcquireRuntime()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lease.EffectiveModel() != "" || store.upsertedRecords[0].EffectiveModel != "" {
+		t.Fatalf("legacy blank model changed to lease=%q persisted=%q", lease.EffectiveModel(), store.upsertedRecords[0].EffectiveModel)
+	}
+	lease.Release()
+}
+
+func TestSessionRecordPreservesRuntimeSlotMetadata(t *testing.T) {
+	store := &fakeSessionStore{}
+	ts := &TopicSession{sessionID: "session", userID: ensureTestAuthor, locator: testTelegramLocator(10, 0)}
+	ts.runtime = newRuntimeSlot(runtimeSlotConfig{
+		runtime:        &BuiltRuntime{RuntimeSnapshotID: "snapshot", ProviderBindingJSON: `{"root_provider_id":"provider"}`},
+		userID:         ensureTestAuthor,
+		sessionID:      "runtime-session",
+		archiveID:      "archive",
+		generation:     11,
+		effectiveModel: "model-persisted",
+		outcome:        "context_preserved",
+	})
+	m := &Manager{sessionStore: store}
+	if err := m.persistSessionRecord(t.Context(), ts, baldastate.SessionStatusActive); err != nil {
+		t.Fatal(err)
+	}
+	if len(store.upsertedRecords) != 1 {
+		t.Fatalf("upserted records = %d, want 1", len(store.upsertedRecords))
+	}
+	record := store.upsertedRecords[0]
+	if record.ArchiveID != "archive" || record.RuntimeGeneration != 11 || record.EffectiveModel != "model-persisted" || record.RuntimeOutcome != "context_preserved" ||
+		record.RuntimeSnapshotID != "snapshot" || record.ProviderBindingJSON != `{"root_provider_id":"provider"}` {
+		t.Fatalf("runtime metadata lost: %+v", record)
 	}
 }
 

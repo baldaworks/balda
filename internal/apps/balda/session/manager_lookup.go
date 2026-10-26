@@ -31,7 +31,7 @@ func (m *Manager) GetSession(locator SessionLocator) (*TopicSession, error) {
 		return nil, fmt.Errorf("no session for %s", locator.AddressKey)
 	}
 
-	if m.archive != nil && ts.archiveID != "" {
+	if m.archive != nil && ts.GetArchiveID() != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
 		defer cancel()
 		pending, err := m.archive.Pending(ctx, ts.locator.ChannelType, ts.locator.AddressKey)
@@ -310,7 +310,7 @@ func (m *Manager) UpdateRuntimeStateForArchive(ctx context.Context, locator Sess
 	m.mu.RLock()
 	ts := m.sessions[locator.SessionID]
 	m.mu.RUnlock()
-	if ts == nil || ts.archiveID != epoch {
+	if ts == nil || ts.GetArchiveID() != epoch {
 		return false, nil
 	}
 	if err := ts.UpdateRuntimeState(ctx, values); err != nil {
@@ -337,7 +337,7 @@ func (m *Manager) ResumeArchiveRuntime(ctx context.Context, locator SessionLocat
 	active := m.sessions[locator.SessionID]
 	m.mu.RUnlock()
 	if active != nil {
-		return active.archiveID == epoch, nil
+		return active.GetArchiveID() == epoch, nil
 	}
 	if !m.sessionsPersistent || m.archive == nil || m.sessionStore == nil {
 		return false, nil
@@ -368,5 +368,5 @@ func (m *Manager) ResumeArchiveRuntime(ctx context.Context, locator SessionLocat
 	if err != nil {
 		return false, err
 	}
-	return restored != nil && restored.archiveID == epoch, nil
+	return restored != nil && restored.GetArchiveID() == epoch, nil
 }
