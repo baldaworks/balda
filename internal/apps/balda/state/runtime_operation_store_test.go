@@ -13,6 +13,8 @@ import (
 
 const testRuntimeBinding = `{"RootProviderID":"provider-next","Entries":[{"ProviderID":"provider-next","Source":"managed","RevisionID":"revision-next"}],"Reproducible":true,"Warnings":null}`
 
+const genericRuntimeMustNotWin = "generic-must-not-win"
+
 func TestSQLiteRuntimeOperationStore(t *testing.T) {
 	provider, err := NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "runtime-operations.db"))
 	if err != nil {
@@ -33,6 +35,15 @@ func TestSQLiteRuntimeOperationFinalizeRollsBackSessionUpdate(t *testing.T) {
 	}
 	defer func() { _ = providerValue.Close() }()
 	checkRuntimeOperationFinalizeRollback(t, providerValue)
+}
+
+func TestSQLiteRuntimeOperationFinalizeConcurrentGenericUpsert(t *testing.T) {
+	provider, err := NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "runtime-operation-concurrent-upsert.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = provider.Close() }()
+	checkRuntimeOperationFinalizeConcurrentGenericUpsert(t, provider)
 }
 
 func checkRuntimeOperationFinalizeRollback(t *testing.T, provider Provider) {
@@ -75,6 +86,58 @@ func checkRuntimeOperationFinalizeRollback(t *testing.T, provider Provider) {
 	operation, found, err := provider.RuntimeOperations().Get(t.Context(), intent.OperationID)
 	if err != nil || !found || operation.State != RuntimeOperationApplying || operation.Outcome != "" {
 		t.Fatalf("operation after failed transaction = %+v, %t, %v", operation, found, err)
+	}
+}
+
+func checkRuntimeOperationFinalizeConcurrentGenericUpsert(t *testing.T, provider Provider) {
+	t.Helper()
+	putRuntimeSession(t, provider, "session-concurrent-upsert", "archive-one", 4)
+	intent := testRuntimeIntent("operation-concurrent-upsert", "session-concurrent-upsert", "8", time.Now().UTC())
+	if _, err := provider.RuntimeOperations().Begin(t.Context(), intent); err != nil {
+		t.Fatal(err)
+	}
+	if err := provider.RuntimeOperations().MarkApplying(t.Context(), intent.OperationID, intent.InputHash); err != nil {
+		t.Fatal(err)
+	}
+	generic, found, err := provider.Sessions().GetBySessionID(t.Context(), intent.SessionID)
+	if err != nil || !found {
+		t.Fatalf("GetBySessionID() = %+v, %t, %v", generic, found, err)
+	}
+	generic.UserID = "metadata-writer"
+	generic.ArchiveID = genericRuntimeMustNotWin
+	generic.RuntimeSnapshotID = genericRuntimeMustNotWin
+	generic.RuntimeGeneration = 99
+	generic.EffectiveModel = genericRuntimeMustNotWin
+	generic.RuntimeOutcome = string(RuntimeOperationOutcomeFailed)
+
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	go func() {
+		<-start
+		errs <- provider.Sessions().Upsert(t.Context(), generic)
+	}()
+	go func() {
+		<-start
+		_, finalizeErr := provider.RuntimeOperations().Finalize(t.Context(), RuntimeOperationFinalization{
+			OperationID: intent.OperationID, InputHash: intent.InputHash,
+			Outcome: RuntimeOperationOutcomeContextPreserved, At: time.Now().UTC().Add(time.Second),
+		})
+		errs <- finalizeErr
+	}()
+	close(start)
+	for range 2 {
+		if err := <-errs; err != nil {
+			t.Fatalf("concurrent writer error = %v", err)
+		}
+	}
+	committed, found, err := provider.Sessions().GetBySessionID(t.Context(), intent.SessionID)
+	if err != nil || !found {
+		t.Fatalf("GetBySessionID() = %+v, %t, %v", committed, found, err)
+	}
+	if committed.UserID != generic.UserID || committed.ArchiveID != intent.TargetArchiveID ||
+		committed.RuntimeGeneration != intent.ExpectedGeneration+1 || committed.RuntimeSnapshotID != intent.TargetSnapshotID ||
+		committed.EffectiveModel != intent.TargetModel || committed.RuntimeOutcome != string(RuntimeOperationOutcomeContextPreserved) {
+		t.Fatalf("committed session = %+v", committed)
 	}
 }
 

@@ -44,6 +44,7 @@ func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) 
 	t.Run("ChatArchiveExactRecovery", func(t *testing.T) { checkChatArchiveExactRecovery(t, factory(t)) })
 	t.Run("ChatArchiveLifecycleFences", func(t *testing.T) { checkChatArchiveLifecycleFences(t, factory(t)) })
 	t.Run("ChatArchiveLifecycle", func(t *testing.T) { checkChatArchiveLifecycle(t, factory(t)) })
+	t.Run("ChatArchiveRuntimeMetadata", func(t *testing.T) { checkChatArchiveRuntimeMetadata(t, factory(t)) })
 	t.Run("ChatArchive", func(t *testing.T) { checkChatArchive(t, factory(t)) })
 	t.Run("SkillManagement", func(t *testing.T) { checkSkillManagement(t, factory(t)) })
 	t.Run("SkillCLIAuthority", func(t *testing.T) { checkSkillCLIAuthority(t, factory(t)) })
@@ -83,7 +84,7 @@ func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) 
 	t.Run("Provider_KVRoundTrip", func(t *testing.T) { checkProvider_KVRoundTrip(t, factory(t)) })
 	t.Run("Provider_KVConsumeJSONConcurrentConsumeOnce", func(t *testing.T) { checkProvider_KVConsumeJSONConcurrentConsumeOnce(t, factory(t)) })
 	t.Run("Provider_SessionStoreRoundTrip", func(t *testing.T) { checkProvider_SessionStoreRoundTrip(t, factory(t)) })
-	t.Run("Provider_SessionStoreUpsertKeepsLegacyRuntimeBehavior", func(t *testing.T) { checkProviderSessionStoreUpsertKeepsLegacyRuntimeBehavior(t, factory(t)) })
+	t.Run("Provider_SessionStoreUpsertPreservesGuardedRuntime", func(t *testing.T) { checkProviderSessionStoreUpsertPreservesGuardedRuntime(t, factory(t)) })
 	t.Run("Provider_SessionStoreRejectsInvalidRuntimeMetadata", func(t *testing.T) { checkProviderSessionStoreRejectsInvalidRuntimeMetadata(t, factory(t)) })
 	t.Run("Provider_RuntimeOperationStore", func(t *testing.T) {
 		provider := newContractProvider(t, factory(t))
@@ -94,6 +95,11 @@ func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) 
 		provider := newContractProvider(t, factory(t))
 		defer closeContractProvider(t, provider)
 		checkRuntimeOperationFinalizeRollback(t, provider)
+	})
+	t.Run("Provider_RuntimeOperationFinalizeConcurrentGenericUpsert", func(t *testing.T) {
+		provider := newContractProvider(t, factory(t))
+		defer closeContractProvider(t, provider)
+		checkRuntimeOperationFinalizeConcurrentGenericUpsert(t, provider)
 	})
 	t.Run("Provider_TurnStatus", func(t *testing.T) { checkProvider_TurnStatus(t, factory(t)) })
 	t.Run("Provider_ManagedProviderState", func(t *testing.T) { checkProviderManagedProviderState(t, factory(t)) })
@@ -721,7 +727,7 @@ func checkProvider_SessionStoreRoundTrip(t *testing.T, open contractOpener) {
 	}
 }
 
-func checkProviderSessionStoreUpsertKeepsLegacyRuntimeBehavior(t *testing.T, open contractOpener) {
+func checkProviderSessionStoreUpsertPreservesGuardedRuntime(t *testing.T, open contractOpener) {
 	provider := newContractProvider(t, open)
 	defer closeContractProvider(t, provider)
 
@@ -759,9 +765,9 @@ func checkProviderSessionStoreUpsertKeepsLegacyRuntimeBehavior(t *testing.T, ope
 	if got.UserID != update.UserID || got.WorkspaceDir != update.WorkspaceDir || got.BranchName != update.BranchName || got.Status != update.Status {
 		t.Fatalf("ordinary metadata not updated: %+v", got)
 	}
-	if got.ArchiveID != update.ArchiveID || got.RuntimeSnapshotID != update.RuntimeSnapshotID || got.ProviderBindingJSON != update.ProviderBindingJSON ||
-		got.RuntimeGeneration != update.RuntimeGeneration || got.EffectiveModel != update.EffectiveModel || got.RuntimeOutcome != update.RuntimeOutcome {
-		t.Fatalf("generic upsert did not preserve legacy replacement behavior: %+v", got)
+	if got.ArchiveID != original.ArchiveID || got.RuntimeSnapshotID != original.RuntimeSnapshotID || got.ProviderBindingJSON != original.ProviderBindingJSON ||
+		got.RuntimeGeneration != original.RuntimeGeneration || got.EffectiveModel != original.EffectiveModel || got.RuntimeOutcome != original.RuntimeOutcome {
+		t.Fatalf("generic upsert changed guarded runtime metadata: %+v", got)
 	}
 }
 
@@ -835,8 +841,27 @@ func checkProvider_TurnStatus(t *testing.T, open contractOpener) {
 	if changed, err := provider.TurnStatus().Complete(t.Context(), turnstatuscmd.Completion{Identity: identity, Outcome: turnstatuscmd.OutcomeSucceeded, CompletedAt: startedAt.Add(3 * time.Second)}); err != nil || changed {
 		t.Fatalf("late Complete() = %t, %v", changed, err)
 	}
-	record.ArchiveID = "archive-2"
-	if err := provider.Sessions().Upsert(t.Context(), record); err != nil {
+	operationAt := time.Now().UTC()
+	operation := RuntimeOperationRecord{
+		OperationID: "turn-status-archive-cutover", SessionID: record.SessionID,
+		InputHash: strings.Repeat("7", 64), Kind: string(RuntimeOperationKindLifetime), State: RuntimeOperationPrepared,
+		ExpectedArchiveID: record.ArchiveID, ExpectedGeneration: 0, TargetArchiveID: "archive-2",
+		CreatedAt: operationAt, UpdatedAt: operationAt,
+	}
+	if _, err := provider.RuntimeOperations().Begin(t.Context(), operation); err != nil {
+		t.Fatal(err)
+	}
+	if err := provider.RuntimeOperations().MarkApplying(t.Context(), operation.OperationID, operation.InputHash); err != nil {
+		t.Fatal(err)
+	}
+	applying, found, err := provider.RuntimeOperations().Get(t.Context(), operation.OperationID)
+	if err != nil || !found || applying.State != RuntimeOperationApplying {
+		t.Fatalf("Get() = %+v, %t, %v", applying, found, err)
+	}
+	if _, err := provider.RuntimeOperations().Finalize(t.Context(), RuntimeOperationFinalization{
+		OperationID: operation.OperationID, InputHash: operation.InputHash,
+		Outcome: RuntimeOperationOutcomeContextReset, At: applying.UpdatedAt.Add(time.Second),
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if _, found, err := provider.TurnStatus().Snapshot(t.Context(), record.SessionID, "boot-2"); err != nil || found {

@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"strings"
@@ -23,7 +24,14 @@ import (
 
 const cleanupTimeout = 10 * time.Second
 
-const sessionStatusPersisted = "persisted"
+const (
+	sessionStatusPersisted        = "persisted"
+	sessionStatusRecoveryRequired = "recovery_required"
+	runtimeRecoveryReady          = "ready"
+	runtimeRecoveryPrepared       = "prepared"
+	runtimeRecoveryAmbiguous      = "ambiguous"
+	runtimeRecoveryCleanup        = "cleanup_incomplete"
+)
 
 const baldaRuntimeAppName = "norma-balda"
 
@@ -364,6 +372,9 @@ func (m *Manager) createSession(ctx context.Context, sessionCtx SessionContext, 
 	defer endLifecycle()
 	unlock := m.lockSessionOperation(sessionID)
 	defer unlock()
+	if err := m.recoverRuntimeOperation(ctx, sessionID); err != nil {
+		return err
+	}
 	return m.createSessionLocked(ctx, sessionCtx, agentName, persisted, transient)
 }
 
@@ -495,6 +506,7 @@ func (m *Manager) createSessionLocked(ctx context.Context, sessionCtx SessionCon
 	var sessionRuntime *BuiltRuntime
 	var sess adksession.Session
 	createdFresh := false
+	var fallbackCommit *baldastate.RuntimeOperationRecord
 	if persisted == nil {
 		sessionRuntime, err = m.bindSessionRuntime(ctx, rootRuntime, locator, userID, agentSessionID, workspaceDir, "", "")
 		if err == nil {
@@ -510,7 +522,7 @@ func (m *Manager) createSessionLocked(ctx context.Context, sessionCtx SessionCon
 			createdFresh = err == nil
 		}
 	} else {
-		sessionRuntime, sess, createdFresh, err = m.restoreRuntimeSession(
+		sessionRuntime, sess, createdFresh, fallbackCommit, err = m.restoreRuntimeSession(
 			ctx, builder, rootRuntime, locator, userID, baldaProvider, workspaceDir, runtimeSessionCtx, *persisted, &activation,
 		)
 	}
@@ -552,11 +564,17 @@ func (m *Manager) createSessionLocked(ctx context.Context, sessionCtx SessionCon
 	}
 	var generation uint64
 	var effectiveModel, runtimeOutcome string
-	if persisted != nil && !createdFresh {
+	switch {
+	case fallbackCommit != nil:
+		generation = fallbackCommit.ExpectedGeneration + 1
+		effectiveModel = fallbackCommit.TargetModel
+		runtimeOutcome = fallbackCommit.Outcome
+		archiveID = fallbackCommit.TargetArchiveID
+	case persisted != nil && !createdFresh:
 		generation = persisted.RuntimeGeneration
 		effectiveModel = persisted.EffectiveModel
 		runtimeOutcome = persisted.RuntimeOutcome
-	} else {
+	default:
 		effectiveModel = builder.GetAgentMetadata(baldaProvider).Model
 	}
 	ts.runtime = newPublishedRuntimeSlot(runtimeSlotConfig{
@@ -594,13 +612,10 @@ func (m *Manager) createSessionLocked(ctx context.Context, sessionCtx SessionCon
 			return errors.Join(fmt.Errorf("commit archive activation: %w", err), ts.DrainRuntime(ctx))
 		}
 	}
-	shouldPersist := activation == nil && !transient && (persisted == nil || createdFresh)
+	shouldPersist := activation == nil && !transient && fallbackCommit == nil && (persisted == nil || createdFresh)
 	value, hasRuntime := ts.runtimeValue()
 	if !hasRuntime {
 		return ErrRuntimeUnavailable
-	}
-	if activation == nil && !transient && persisted != nil && strings.TrimSpace(persisted.ProviderBindingJSON) == "" && strings.TrimSpace(value.runtime.ProviderBindingJSON) != "" {
-		shouldPersist = true
 	}
 	if shouldPersist {
 		if err := m.sessionStore.Upsert(ctx, m.sessionRecordFromValue(ts, baldastate.SessionStatusActive, value)); err != nil {
@@ -752,7 +767,7 @@ func (m *Manager) restoreRuntimeSession(
 	sessionCtx RuntimeSessionContext,
 	record baldastate.SessionRecord,
 	activation **chatarchivecmd.Intent,
-) (*BuiltRuntime, adksession.Session, bool, error) {
+) (*BuiltRuntime, adksession.Session, bool, *baldastate.RuntimeOperationRecord, error) {
 	sessionID := strings.TrimSpace(record.SessionID)
 	exactRuntime, restoreErr := m.bindSessionRuntime(
 		ctx, rootRuntime, locator, userID, sessionID, workspaceDir, record.RuntimeSnapshotID,
@@ -764,15 +779,15 @@ func (m *Manager) restoreRuntimeSession(
 			ctx, exactRuntime, provider, userID, sessionID, workspaceDir, sessionCtx,
 		)
 		if restoreErr == nil {
-			return exactRuntime, sess, false, nil
+			return exactRuntime, sess, false, nil, nil
 		}
 		closeBuiltRuntime(exactRuntime)
 	}
 	if replay, _ := ctx.Value(archiveReplayRestoreKey{}).(bool); replay {
-		return nil, nil, false, fmt.Errorf("restore committed-final lifetime: %w", restoreErr)
+		return nil, nil, false, nil, fmt.Errorf("restore committed-final lifetime: %w", restoreErr)
 	}
 	if err := m.lifecycleInterruption(ctx); err != nil {
-		return nil, nil, false, err
+		return nil, nil, false, nil, err
 	}
 
 	m.logger.Warn().
@@ -784,11 +799,49 @@ func (m *Manager) restoreRuntimeSession(
 
 	currentRuntime, err := m.bindSessionRuntime(ctx, rootRuntime, locator, userID, sessionID, workspaceDir, "", "")
 	if err != nil {
-		return nil, nil, false, fmt.Errorf("bind current runtime after restore failure: %w", err)
+		return nil, nil, false, nil, fmt.Errorf("bind current runtime after restore failure: %w", err)
 	}
 	if err := m.lifecycleInterruption(ctx); err != nil {
 		closeBuiltRuntime(currentRuntime)
-		return nil, nil, false, err
+		return nil, nil, false, nil, err
+	}
+	var fallbackOperation *baldastate.RuntimeOperationRecord
+	if *activation == nil && m.runtimeOperations != nil {
+		now := time.Now().UTC()
+		targetModel := strings.TrimSpace(builder.GetAgentMetadata(provider).Model)
+		input := strings.Join([]string{
+			sessionID,
+			strings.TrimSpace(record.ArchiveID),
+			fmt.Sprint(record.RuntimeGeneration),
+			strings.TrimSpace(currentRuntime.RuntimeSnapshotID),
+			strings.TrimSpace(currentRuntime.ProviderBindingJSON),
+			targetModel,
+		}, "\x00")
+		intent := baldastate.RuntimeOperationRecord{
+			OperationID:               uuid.NewString(),
+			SessionID:                 sessionID,
+			InputHash:                 fmt.Sprintf("%x", sha256.Sum256([]byte(input))),
+			Kind:                      string(baldastate.RuntimeOperationKindLifetime),
+			State:                     baldastate.RuntimeOperationPrepared,
+			ExpectedArchiveID:         strings.TrimSpace(record.ArchiveID),
+			ExpectedGeneration:        record.RuntimeGeneration,
+			TargetArchiveID:           strings.TrimSpace(record.ArchiveID),
+			TargetSnapshotID:          strings.TrimSpace(currentRuntime.RuntimeSnapshotID),
+			TargetProviderBindingJSON: strings.TrimSpace(currentRuntime.ProviderBindingJSON),
+			TargetModel:               targetModel,
+			CreatedAt:                 now,
+			UpdatedAt:                 now,
+		}
+		prepared, prepareErr := m.runtimeOperations.Begin(ctx, intent)
+		if prepareErr != nil || prepared.State != baldastate.RuntimeOperationPrepared {
+			closeBuiltRuntime(currentRuntime)
+			return nil, nil, false, nil, ErrRuntimeRecoveryRequired
+		}
+		if err := m.runtimeOperations.MarkApplying(ctx, prepared.OperationID, prepared.InputHash); err != nil {
+			closeBuiltRuntime(currentRuntime)
+			return nil, nil, false, nil, ErrRuntimeRecoveryRequired
+		}
+		fallbackOperation = &prepared
 	}
 	if err := m.notifyBoundary(ctx, SessionBoundary{
 		Locator:        locator,
@@ -797,11 +850,11 @@ func (m *Manager) restoreRuntimeSession(
 		Reason:         BoundaryReasonRotation,
 	}); err != nil {
 		closeBuiltRuntime(currentRuntime)
-		return nil, nil, false, err
+		return nil, nil, false, nil, err
 	}
 	if err := m.lifecycleInterruption(ctx); err != nil {
 		closeBuiltRuntime(currentRuntime)
-		return nil, nil, false, err
+		return nil, nil, false, nil, err
 	}
 	appName := strings.TrimSpace(currentRuntime.AppName)
 	if appName == "" {
@@ -809,34 +862,34 @@ func (m *Manager) restoreRuntimeSession(
 	}
 	if currentRuntime.SessionSvc == nil {
 		closeBuiltRuntime(currentRuntime)
-		return nil, nil, false, fmt.Errorf("session service is required")
+		return nil, nil, false, nil, fmt.Errorf("session service is required")
 	}
 	var destruction *chatarchivecmd.Intent
 	if *activation != nil && (*activation).Kind == chatarchivecmd.KindExact {
 		if err := m.archive.Complete(ctx, (*activation).Token, chatarchivecmd.OutcomeAborted); err != nil {
 			closeBuiltRuntime(currentRuntime)
-			return nil, nil, false, err
+			return nil, nil, false, nil, err
 		}
 		destruction, err = m.beginArchiveDestruction(ctx, record.ArchiveID, BoundaryReasonRotation)
 		if err != nil {
 			closeBuiltRuntime(currentRuntime)
-			return nil, nil, false, err
+			return nil, nil, false, nil, err
 		}
 	}
 	deleteErr := currentRuntime.SessionSvc.Delete(ctx, &adksession.DeleteRequest{AppName: appName, UserID: userID, SessionID: sessionID})
 	if _, err := m.completeArchiveDeletion(ctx, destruction, currentRuntime.SessionSvc, appName, userID, deleteErr); err != nil {
 		closeBuiltRuntime(currentRuntime)
-		return nil, nil, false, fmt.Errorf("delete failed runtime session: %w", err)
+		return nil, nil, false, nil, fmt.Errorf("delete failed runtime session: %w", err)
 	}
 	if err := m.lifecycleInterruption(ctx); err != nil {
 		closeBuiltRuntime(currentRuntime)
-		return nil, nil, false, err
+		return nil, nil, false, nil, err
 	}
 	if *activation != nil {
 		if (*activation).Kind == chatarchivecmd.KindAdopt {
 			if err := m.archive.Complete(ctx, (*activation).Token, chatarchivecmd.OutcomeAborted); err != nil {
 				closeBuiltRuntime(currentRuntime)
-				return nil, nil, false, err
+				return nil, nil, false, nil, err
 			}
 		}
 		prior := record
@@ -846,7 +899,7 @@ func (m *Manager) restoreRuntimeSession(
 		next, _, err := m.beginArchiveActivation(ctx, locator, sessionID, record.AgentName, &prior)
 		if err != nil {
 			closeBuiltRuntime(currentRuntime)
-			return nil, nil, false, err
+			return nil, nil, false, nil, err
 		}
 		*activation = next
 		sessionCtx.ArchiveID = next.Session.ID
@@ -857,13 +910,31 @@ func (m *Manager) restoreRuntimeSession(
 	)
 	if err != nil {
 		closeBuiltRuntime(currentRuntime)
-		return nil, nil, false, fmt.Errorf("create fresh runtime session: %w", err)
+		return nil, nil, false, nil, fmt.Errorf("create fresh runtime session: %w", err)
 	}
 	if err := m.lifecycleInterruption(ctx); err != nil {
 		closeBuiltRuntime(currentRuntime)
-		return nil, nil, false, err
+		return nil, nil, false, nil, err
 	}
-	return currentRuntime, sess, true, nil
+	if fallbackOperation != nil {
+		terminalAt := time.Now().UTC()
+		if fallbackOperation.UpdatedAt.After(terminalAt) {
+			terminalAt = fallbackOperation.UpdatedAt
+		}
+		terminal, finalizeErr := m.runtimeOperations.Finalize(ctx, baldastate.RuntimeOperationFinalization{
+			OperationID: fallbackOperation.OperationID,
+			InputHash:   fallbackOperation.InputHash,
+			Outcome:     baldastate.RuntimeOperationOutcomeContextReset,
+			At:          terminalAt,
+		})
+		if finalizeErr != nil || terminal.State != baldastate.RuntimeOperationTerminal ||
+			terminal.Outcome != string(baldastate.RuntimeOperationOutcomeContextReset) {
+			closeBuiltRuntime(currentRuntime)
+			return nil, nil, false, nil, ErrRuntimeRecoveryRequired
+		}
+		fallbackOperation = &terminal
+	}
+	return currentRuntime, sess, true, fallbackOperation, nil
 }
 
 func (m *Manager) beginLifecycleOperation(ctx context.Context) (func(), error) {

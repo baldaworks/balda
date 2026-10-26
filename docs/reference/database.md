@@ -224,9 +224,16 @@ terminalize only the matching operation identity and state; they work after a
 stale session guard or session deletion and never mutate canonical session
 fields.
 
-Existing generic session upserts keep their current conflict behavior until
-runtime publication and every caller has moved to guarded writes. The operation
-table has no session-delete cascade; unresolved and retained terminal evidence
+Generic session upserts insert complete session rows, but on conflict update
+only ordinary session metadata. Runtime-owned archive, snapshot, binding,
+generation, model and outcome fields change only through guarded runtime
+finalization or the existing archive activation transaction. Manager restore
+safely aborts a prepared operation before admission, fences an applying
+operation as ambiguous, and reconstructs terminal state from the canonical
+session row. Read-only status projects the canonical public fields plus the
+bounded unresolved-operation classification without opening a runtime.
+
+The operation table has no session-delete cascade; unresolved and retained terminal evidence
 therefore survives deletion of live session metadata. New operation timestamps
 use fixed-width UTC microseconds, matching PostgreSQL's supported precision and
 allowing the retention index to serve the primary text range. Pruning is
