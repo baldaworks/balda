@@ -27,9 +27,10 @@ func TestPromptHookContextSurvivesFormatComposition(t *testing.T) {
 		event.TurnComplete = true
 		return []*adksession.Event{event}, nil
 	})
-	service := NewTurnExecutionServiceWithFormats(nil, nil, &formatTestState{}, zerolog.Nop(), 1, nil, newFormatTestRegistry(t))
+	state := &formatTestState{}
+	service := NewTurnExecutionServiceWithFormats(nil, nil, state, zerolog.Nop(), 1, nil, newFormatTestRegistry(t))
 	service.SetHooks(&turnHooks{})
-	err := service.Execute(t.Context(), ExecutionRequest{Text: "question", Runner: runner, UserID: "telegram-user", SessionID: "session", AgentSessionID: id, WorkspaceDir: t.TempDir(), Locator: baldasession.SessionLocator{ChannelType: deliveryfmt.TransportTelegram, SessionID: "session"}, DeliveryOptions: deliveryfmt.Options{DeliveryFormat: deliveryfmt.DeliveryFormatRichMarkdown}})
+	err := service.Execute(t.Context(), ExecutionRequest{Text: "question", Runner: runner, UserID: "telegram-user", SessionID: "session", AgentSessionID: id, WorkspaceDir: t.TempDir(), Locator: baldasession.SessionLocator{ChannelType: deliveryfmt.TransportTelegram, SessionID: "session"}, DeliveryOptions: deliveryfmt.Options{DeliveryFormat: deliveryfmt.DeliveryFormatRichMarkdown}, RuntimeState: formatTurnState{state}})
 	if err != nil {
 		t.Fatal(err)
 	}

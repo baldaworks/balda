@@ -18,11 +18,6 @@ type messageFormatRegistry interface {
 	deliveryfmt.PromptRegistry
 }
 
-type runtimeStateStore interface {
-	RuntimeStateValue(ctx context.Context, locator baldasession.SessionLocator, key string) (any, bool, error)
-	UpdateRuntimeState(ctx context.Context, locator baldasession.SessionLocator, state map[string]any) error
-}
-
 type formatStateChange struct {
 	announced bool
 	name      deliveryfmt.Name
@@ -32,23 +27,23 @@ type formatStateChange struct {
 // effective registered format changes for one runtime session.
 type FormatPromptComposer struct {
 	registry messageFormatRegistry
-	state    runtimeStateStore
 }
 
-func NewFormatPromptComposer(registry messageFormatRegistry, state runtimeStateStore) *FormatPromptComposer {
-	return &FormatPromptComposer{registry: registry, state: state}
+func NewFormatPromptComposer(registry messageFormatRegistry) *FormatPromptComposer {
+	return &FormatPromptComposer{registry: registry}
 }
 
 func (c *FormatPromptComposer) Compose(
 	ctx context.Context,
+	state TurnRuntimeState,
 	locator baldasession.SessionLocator,
 	format deliveryfmt.DeliveryFormat,
 	userText string,
 ) (string, *formatStateChange, error) {
-	if c == nil || c.state == nil {
+	if c == nil || state == nil {
 		return "", nil, fmt.Errorf("message format runtime state is required")
 	}
-	announced, previousName, err := c.readState(ctx, locator)
+	announced, previousName, err := c.readState(ctx, state)
 	if err != nil {
 		return "", nil, err
 	}
@@ -75,13 +70,13 @@ func (c *FormatPromptComposer) Compose(
 
 func (c *FormatPromptComposer) Commit(
 	ctx context.Context,
-	locator baldasession.SessionLocator,
+	state TurnRuntimeState,
 	change formatStateChange,
 ) error {
-	if c == nil || c.state == nil {
+	if c == nil || state == nil {
 		return fmt.Errorf("message format runtime state is required")
 	}
-	if err := c.state.UpdateRuntimeState(ctx, locator, map[string]any{
+	if err := state.UpdateRuntimeState(ctx, map[string]any{
 		stateKeyMessageFormatAnnounced: change.announced,
 		stateKeyMessageFormatName:      string(change.name),
 	}); err != nil {
@@ -92,9 +87,9 @@ func (c *FormatPromptComposer) Commit(
 
 func (c *FormatPromptComposer) readState(
 	ctx context.Context,
-	locator baldasession.SessionLocator,
+	state TurnRuntimeState,
 ) (bool, deliveryfmt.Name, error) {
-	announcedValue, announcedSet, err := c.state.RuntimeStateValue(ctx, locator, stateKeyMessageFormatAnnounced)
+	announcedValue, announcedSet, err := state.RuntimeStateValue(ctx, stateKeyMessageFormatAnnounced)
 	if err != nil {
 		return false, "", fmt.Errorf("read announced message format state: %w", err)
 	}
@@ -107,7 +102,7 @@ func (c *FormatPromptComposer) readState(
 		}
 	}
 
-	nameValue, nameSet, err := c.state.RuntimeStateValue(ctx, locator, stateKeyMessageFormatName)
+	nameValue, nameSet, err := state.RuntimeStateValue(ctx, stateKeyMessageFormatName)
 	if err != nil {
 		return false, "", fmt.Errorf("read message format name state: %w", err)
 	}

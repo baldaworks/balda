@@ -202,11 +202,7 @@ func newBindingSession(t *testing.T, id, user string, observe func(adkagent.Invo
 	}
 	return s
 }
-func (s *bindingSession) GetRunner() *adkrunner.Runner { return s.runner }
-func (*bindingSession) GetRuntimeSnapshotID() string   { return "snapshot-one" }
-func (s *bindingSession) GetSessionID() string         { return s.id }
-func (s *bindingSession) GetAgentSessionID() string    { return s.providerID }
-func (s *bindingSession) GetUserID() string            { return s.user }
+func (s *bindingSession) GetSessionID() string { return s.id }
 func (s *bindingSession) RuntimeStateValue(ctx context.Context, key string) (any, bool, error) {
 	response, err := s.service.Get(ctx, &adksession.GetRequest{AppName: "binding-test", UserID: s.user, SessionID: s.providerID})
 	if err != nil {
@@ -218,6 +214,13 @@ func (s *bindingSession) RuntimeStateValue(ctx context.Context, key string) (any
 	}
 	return value, err == nil, err
 }
+func (s *bindingSession) AcquireRuntime() (sessionturn.RuntimeLease, error) { return s, nil }
+func (s *bindingSession) Runner() *adkrunner.Runner                         { return s.runner }
+func (s *bindingSession) UserID() string                                    { return s.user }
+func (s *bindingSession) SessionID() string                                 { return s.providerID }
+func (*bindingSession) ArchiveID() string                                   { return "" }
+func (*bindingSession) RuntimeSnapshotID() string                           { return "snapshot-one" }
+func (*bindingSession) Release()                                            {}
 func assertBindingHistory(t *testing.T, s *bindingSession, turns int) {
 	t.Helper()
 	response, err := s.service.Get(t.Context(), &adksession.GetRequest{AppName: "binding-test", UserID: s.user, SessionID: s.providerID})
@@ -324,7 +327,7 @@ type bindingProviderExecutor struct{ request sessionturn.Request }
 
 func (e *bindingProviderExecutor) ExecuteSessionTurn(ctx context.Context, request sessionturn.Request) error {
 	e.request = request
-	for _, err := range request.Runner.Run(ctx, request.UserID, request.AgentSessionID, genai.NewContentFromText(request.Payload.Text, genai.RoleUser), adkagent.RunConfig{}) {
+	for _, err := range request.Runtime.Runner().Run(ctx, request.Runtime.UserID(), request.Runtime.SessionID(), genai.NewContentFromText(request.Payload.Text, genai.RoleUser), adkagent.RunConfig{}) {
 		if err != nil {
 			return err
 		}

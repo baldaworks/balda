@@ -138,14 +138,17 @@ type failureActiveSession struct {
 	id     string
 }
 
-func (s *failureActiveSession) GetRunner() *adkrunner.Runner { return s.runner }
-func (*failureActiveSession) GetRuntimeSnapshotID() string   { return "" }
-func (*failureActiveSession) GetSessionID() string           { return "tg-10001-0" }
-func (s *failureActiveSession) GetAgentSessionID() string    { return s.id }
-func (*failureActiveSession) GetUserID() string              { return "telegram-user" }
+func (*failureActiveSession) GetSessionID() string { return "tg-10001-0" }
 func (*failureActiveSession) RuntimeStateValue(context.Context, string) (any, bool, error) {
 	return nil, false, nil
 }
+func (s *failureActiveSession) AcquireRuntime() (sessionturn.RuntimeLease, error) { return s, nil }
+func (s *failureActiveSession) Runner() *adkrunner.Runner                         { return s.runner }
+func (*failureActiveSession) UserID() string                                      { return "telegram-user" }
+func (s *failureActiveSession) SessionID() string                                 { return s.id }
+func (*failureActiveSession) ArchiveID() string                                   { return "" }
+func (*failureActiveSession) RuntimeSnapshotID() string                           { return "" }
+func (*failureActiveSession) Release()                                            {}
 
 type failureSessionAccessor struct{ active sessionturn.ActiveSession }
 

@@ -165,11 +165,7 @@ type refreshActiveSession struct {
 	id       string
 }
 
-func (s *refreshActiveSession) GetRunner() *adkrunner.Runner { return s.runner }
-func (*refreshActiveSession) GetRuntimeSnapshotID() string   { return "" }
-func (*refreshActiveSession) GetSessionID() string           { return "tg-1-0" }
-func (s *refreshActiveSession) GetAgentSessionID() string    { return s.id }
-func (*refreshActiveSession) GetUserID() string              { return "telegram-user" }
+func (*refreshActiveSession) GetSessionID() string { return "tg-1-0" }
 func (s *refreshActiveSession) runtimeSession(ctx context.Context) (adksession.Session, error) {
 	r, err := s.sessions.Get(ctx, &adksession.GetRequest{AppName: "memory-refresh-test", UserID: "telegram-user", SessionID: s.id})
 	if err != nil {
@@ -188,6 +184,13 @@ func (s *refreshActiveSession) RuntimeStateValue(ctx context.Context, key string
 	}
 	return value, err == nil, err
 }
+func (s *refreshActiveSession) AcquireRuntime() (sessionturn.RuntimeLease, error) { return s, nil }
+func (s *refreshActiveSession) Runner() *adkrunner.Runner                         { return s.runner }
+func (*refreshActiveSession) UserID() string                                      { return "telegram-user" }
+func (s *refreshActiveSession) SessionID() string                                 { return s.id }
+func (*refreshActiveSession) ArchiveID() string                                   { return "" }
+func (*refreshActiveSession) RuntimeSnapshotID() string                           { return "" }
+func (*refreshActiveSession) Release()                                            {}
 
 type refreshSessionAccessor struct {
 	session  sessionturn.ActiveSession

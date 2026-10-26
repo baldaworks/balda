@@ -71,6 +71,7 @@ func TestApplicationMemoryComposesAfterMessageFormat(t *testing.T) {
 			DeliveryFormat: deliveryfmt.DeliveryFormatRichMarkdown,
 		},
 		MemoryRefresh: sessionturn.MemoryRefresh{Content: "first fact\n\nnewest fact", UpdatedAt: "2026-10-11T06:00:00Z"},
+		RuntimeState:  formatTurnState{state},
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
@@ -99,11 +100,10 @@ func TestProviderTurnExecutorMapsMemoryRefresh(t *testing.T) {
 	service := NewTurnExecutionServiceWithJobEvents(nil, nil, nil, zerolog.Nop(), automode.DefaultMaxTurns)
 	executor := NewProviderTurnExecutorFromService(service)
 	err := executor.ExecuteSessionTurn(context.Background(), sessionturn.Request{
-		Payload:        testProviderPayload("original request"),
-		Session:        memoryPromptActiveSession{runner: adkRunner, agentSessionID: agentSessionID},
-		UserID:         "telegram-user",
-		AgentSessionID: agentSessionID,
-		MemoryRefresh:  sessionturn.MemoryRefresh{Content: "complete memory", UpdatedAt: "2026-10-11T06:00:00Z"},
+		Payload:       testProviderPayload("original request"),
+		Session:       memoryPromptActiveSession{runner: adkRunner, agentSessionID: agentSessionID},
+		Runtime:       memoryPromptActiveSession{runner: adkRunner, agentSessionID: agentSessionID},
+		MemoryRefresh: sessionturn.MemoryRefresh{Content: "complete memory", UpdatedAt: "2026-10-11T06:00:00Z"},
 	})
 	if err != nil {
 		t.Fatalf("ExecuteSessionTurn() error = %v", err)
@@ -127,7 +127,7 @@ func TestProviderTurnExecutorMapsCurrentEmptyMemory(t *testing.T) {
 	service := NewTurnExecutionServiceWithJobEvents(nil, nil, nil, zerolog.Nop(), automode.DefaultMaxTurns)
 	err := NewProviderTurnExecutorFromService(service).ExecuteSessionTurn(t.Context(), sessionturn.Request{
 		Payload: testProviderPayload("continue"), Session: memoryPromptActiveSession{runner: adkRunner, agentSessionID: agentSessionID},
-		UserID: "telegram-user", AgentSessionID: agentSessionID,
+		Runtime:       memoryPromptActiveSession{runner: adkRunner, agentSessionID: agentSessionID},
 		MemoryRefresh: sessionturn.MemoryRefresh{UpdatedAt: "2026-10-11T06:00:00Z"},
 	})
 	if err != nil {
@@ -171,12 +171,13 @@ type memoryPromptActiveSession struct {
 	agentSessionID string
 }
 
-func (s memoryPromptActiveSession) GetRunner() *adkrunner.Runner { return s.runner }
-func (memoryPromptActiveSession) GetRuntimeSnapshotID() string   { return "" }
-func (memoryPromptActiveSession) GetSessionID() string           { return "tg-1-0" }
-func (s memoryPromptActiveSession) GetAgentSessionID() string    { return s.agentSessionID }
-func (memoryPromptActiveSession) GetUserID() string              { return "telegram-user" }
+func (memoryPromptActiveSession) GetSessionID() string { return "tg-1-0" }
 
 func (memoryPromptActiveSession) RuntimeStateValue(context.Context, string) (any, bool, error) {
 	return nil, false, nil
 }
+func (s memoryPromptActiveSession) Runner() *adkrunner.Runner { return s.runner }
+func (memoryPromptActiveSession) UserID() string              { return "telegram-user" }
+func (s memoryPromptActiveSession) SessionID() string         { return s.agentSessionID }
+func (memoryPromptActiveSession) ArchiveID() string           { return "" }
+func (memoryPromptActiveSession) RuntimeSnapshotID() string   { return "" }

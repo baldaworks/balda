@@ -28,14 +28,30 @@ const (
 type Request struct {
 	Payload          turncmd.SessionTurnPayload
 	Session          ActiveSession
-	UserID           string
-	AgentSessionID   string
+	Runtime          RuntimeView
 	DeliveryLocator  SessionLocator
 	DeliveryOptions  deliveryfmt.Options
 	MemoryRefresh    MemoryRefresh
 	MemoryRunOptions []adkrunner.RunOption
 	SelectedSkill    *runtimecatalogcmd.LoadedSkill
-	Runner           *adkrunner.Runner
+}
+
+// RuntimeView is the coherent immutable runtime identity used by one turn.
+// Release remains owned by Runner and is intentionally not part of this view.
+type RuntimeView interface {
+	Runner() *adkrunner.Runner
+	UserID() string
+	SessionID() string
+	ArchiveID() string
+	RuntimeSnapshotID() string
+	RuntimeStateValue(ctx context.Context, key string) (any, bool, error)
+}
+
+// RuntimeLease extends the execution view with lease-owned state reads and
+// exactly-once release.
+type RuntimeLease interface {
+	RuntimeView
+	Release()
 }
 
 // Executor performs the provider iteration and delivery side effects.
@@ -58,12 +74,11 @@ type SessionContext struct {
 }
 
 type ActiveSession interface {
-	GetRunner() *adkrunner.Runner
-	GetRuntimeSnapshotID() string
 	GetSessionID() string
-	GetAgentSessionID() string
-	GetUserID() string
-	RuntimeStateValue(ctx context.Context, key string) (any, bool, error)
+}
+
+type runtimeSession interface {
+	AcquireRuntime() (RuntimeLease, error)
 }
 
 type SessionAccessor interface {
@@ -232,26 +247,30 @@ func (r *Runner) RunSessionTurnPayload(ctx context.Context, payload turncmd.Sess
 	if topicSession == nil {
 		return fmt.Errorf("session turn: session %s unavailable after restore", payload.Locator.SessionID)
 	}
+	leaseSource, ok := topicSession.(runtimeSession)
+	if !ok {
+		return fmt.Errorf("session turn: runtime lease is unavailable")
+	}
+	lease, err := leaseSource.AcquireRuntime()
+	if err != nil {
+		return fmt.Errorf("acquire session runtime: %w", err)
+	}
+	defer lease.Release()
 	if payload.ArchiveID != "" {
-		epoch, found, err := topicSession.RuntimeStateValue(ctx, chatarchivecmd.EpochStateKey)
-		if err != nil {
-			return fmt.Errorf("read queued turn lifetime: %w", err)
-		}
-		if !found || epoch != payload.ArchiveID {
+		if lease.ArchiveID() != payload.ArchiveID {
 			return fmt.Errorf("queued turn lifetime: %w", chatarchivecmd.ErrConflict)
 		}
 	}
+	payload.ArchiveID = lease.ArchiveID()
 	// The selected session owns the whole provider binding. Payload identity is
 	// only a creation seed; the requester remains separate for attribution.
-	userID := topicSession.GetUserID()
-	agentSessionID := topicSession.GetAgentSessionID()
 	deliveryLocator := payload.Locator
 	if payload.ReportTo != nil {
 		deliveryLocator = *payload.ReportTo
 	}
 	var preparedMemory memoryPreparation
 	if payload.Source != turncmd.SourceWebhook {
-		preparedMemory, err = prepareMemory(ctx, r.memory, topicSession, payload.Metadata)
+		preparedMemory, err = prepareMemory(ctx, r.memory, lease, payload.Metadata)
 		if err != nil {
 			return err
 		}
@@ -260,12 +279,11 @@ func (r *Runner) RunSessionTurnPayload(ctx context.Context, payload turncmd.Sess
 		payload.Metadata = &turncmd.SessionTurnMetadata{LatestMemoryAt: preparedMemory.updatedAt}
 	}
 	var selectedSkill *runtimecatalogcmd.LoadedSkill
-	providerRunner := topicSession.GetRunner()
 	if payload.Skill != nil {
 		if r.skills == nil {
 			return fmt.Errorf("session turn: selected skill loader is unavailable")
 		}
-		sessionSnapshotID := runtimecatalogcmd.SnapshotID(strings.TrimSpace(topicSession.GetRuntimeSnapshotID()))
+		sessionSnapshotID := runtimecatalogcmd.SnapshotID(strings.TrimSpace(lease.RuntimeSnapshotID()))
 		if sessionSnapshotID == "" {
 			return fmt.Errorf("session turn: session runtime snapshot is unavailable")
 		}
@@ -277,10 +295,9 @@ func (r *Runner) RunSessionTurnPayload(ctx context.Context, payload turncmd.Sess
 	}
 	providerStarted = true
 	return r.executor.ExecuteSessionTurn(ctx, Request{
-		Payload:        payload,
-		Session:        topicSession,
-		UserID:         userID,
-		AgentSessionID: agentSessionID,
+		Payload: payload,
+		Session: topicSession,
+		Runtime: lease,
 		DeliveryLocator: SessionLocator{
 			SessionID:   deliveryLocator.SessionID,
 			ChannelType: deliveryLocator.ChannelType,
@@ -291,7 +308,6 @@ func (r *Runner) RunSessionTurnPayload(ctx context.Context, payload turncmd.Sess
 		MemoryRefresh:    preparedMemory.refresh,
 		MemoryRunOptions: preparedMemory.runOptions,
 		SelectedSkill:    selectedSkill,
-		Runner:           providerRunner,
 	})
 }
 
@@ -306,10 +322,10 @@ type memoryPreparation struct {
 func prepareMemory(
 	ctx context.Context,
 	store MemoryStateProvider,
-	topicSession ActiveSession,
+	runtime RuntimeLease,
 	metadata *turncmd.SessionTurnMetadata,
 ) (memoryPreparation, error) {
-	if store == nil || !store.Enabled() || topicSession == nil {
+	if store == nil || !store.Enabled() || runtime == nil {
 		return memoryPreparation{}, nil
 	}
 	snapshot, err := store.Snapshot(ctx)
@@ -320,7 +336,7 @@ func prepareMemory(
 	if content == "" && snapshot.Version == 0 && strings.TrimSpace(snapshot.UpdatedAt) == "" {
 		return memoryPreparation{}, nil
 	}
-	cursor, err := memoryCursor(ctx, topicSession, metadata)
+	cursor, err := memoryCursor(ctx, runtime, metadata)
 	if err != nil {
 		return memoryPreparation{}, err
 	}
@@ -344,7 +360,7 @@ func prepareMemory(
 
 func memoryCursor(
 	ctx context.Context,
-	topicSession ActiveSession,
+	runtime RuntimeLease,
 	metadata *turncmd.SessionTurnMetadata,
 ) (*time.Time, error) {
 	if metadata != nil && strings.TrimSpace(metadata.LatestMemoryAt) != "" {
@@ -354,7 +370,7 @@ func memoryCursor(
 		}
 		return &cursor, nil
 	}
-	value, ok, err := topicSession.RuntimeStateValue(ctx, baldaMemoryUpdatedAtKey)
+	value, ok, err := runtime.RuntimeStateValue(ctx, baldaMemoryUpdatedAtKey)
 	if err != nil {
 		return nil, fmt.Errorf("read balda memory updated_at: %w", err)
 	}

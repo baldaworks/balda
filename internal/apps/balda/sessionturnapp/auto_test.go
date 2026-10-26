@@ -5,13 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/baldaworks/go-actorlayer"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
-	"github.com/baldaworks/balda/internal/apps/balda/automodecmd"
-	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 )
 
@@ -94,21 +92,22 @@ func (f *fakeAutoRuntimeState) UpdateRuntimeState(_ context.Context, _ baldasess
 	return nil
 }
 
+type fakeAutoTurnState struct{ state *fakeAutoRuntimeState }
+
+func (s fakeAutoTurnState) RuntimeStateValue(ctx context.Context, key string) (any, bool, error) {
+	return s.state.RuntimeStateValue(ctx, baldasession.SessionLocator{}, key)
+}
+
+func (s fakeAutoTurnState) UpdateRuntimeState(ctx context.Context, values map[string]any) error {
+	return s.state.UpdateRuntimeState(ctx, baldasession.SessionLocator{}, values)
+}
+
 type fakeAutoDispatcher struct {
 	envelopes []actorlayer.Envelope
 	state     *fakeAutoRuntimeState
 }
 
 func (f *fakeAutoDispatcher) Dispatch(_ context.Context, env actorlayer.Envelope) (*actortransport.DispatchReceipt, error) {
-	if env.Namespace == baldaexecution.NamespaceAutoModeCommand && f.state != nil {
-		var payload automodecmd.Payload
-		if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
-			return nil, err
-		}
-		if err := f.state.UpdateRuntimeState(context.Background(), payload.Locator, payload.State); err != nil {
-			return nil, err
-		}
-	}
 	f.envelopes = append(f.envelopes, env)
 	return &actortransport.DispatchReceipt{}, nil
 }
@@ -134,15 +133,16 @@ func TestMaybeScheduleAutoTurnDispatchesSyntheticTurn(t *testing.T) {
 		Locator:         locator,
 		DedupeKey:       "human-turn-1",
 		DeliveryOptions: turncmd.NormalizeSessionDeliveryOptions(turncmd.SessionTurnPayload{}),
+		RuntimeState:    fakeAutoTurnState{state},
 	}, "streamed_text", "visible output")
 	if err != nil {
 		t.Fatalf("maybeScheduleAutoTurn() error = %v", err)
 	}
-	if len(dispatcher.envelopes) != 2 {
-		t.Fatalf("dispatches = %d, want 2", len(dispatcher.envelopes))
+	if len(dispatcher.envelopes) != 1 {
+		t.Fatalf("dispatches = %d, want 1", len(dispatcher.envelopes))
 	}
 	var payload turncmd.SessionTurnPayload
-	if err := actorlayer.UnmarshalPayload(dispatcher.envelopes[1].Payload, &payload); err != nil {
+	if err := actorlayer.UnmarshalPayload(dispatcher.envelopes[0].Payload, &payload); err != nil {
 		t.Fatalf("decode payload: %v", err)
 	}
 	if payload.Source != turncmd.SourceAuto {
@@ -151,11 +151,11 @@ func TestMaybeScheduleAutoTurnDispatchesSyntheticTurn(t *testing.T) {
 	if payload.Text != automode.InternalPrompt(automode.DefaultMaxTurns) {
 		t.Fatalf("payload.Text = %q, want internal prompt", payload.Text)
 	}
-	if got, want := dispatcher.envelopes[1].DedupeKey, autoTurnDedupeKey(locator.SessionID, "human-turn-1", 1); got != want {
+	if got, want := dispatcher.envelopes[0].DedupeKey, autoTurnDedupeKey(locator.SessionID, "human-turn-1", 1); got != want {
 		t.Fatalf("dedupe key = %q, want %q", got, want)
 	}
-	if payload.DedupeKey != dispatcher.envelopes[1].DedupeKey {
-		t.Fatalf("payload dedupe key = %q, want envelope dedupe key %q", payload.DedupeKey, dispatcher.envelopes[1].DedupeKey)
+	if payload.DedupeKey != dispatcher.envelopes[0].DedupeKey {
+		t.Fatalf("payload dedupe key = %q, want envelope dedupe key %q", payload.DedupeKey, dispatcher.envelopes[0].DedupeKey)
 	}
 	if got := automode.ParseInt(state.state[automode.StateKeyConsecutiveTurns], 0); got != 1 {
 		t.Fatalf("consecutive turns state = %d, want 1", got)
@@ -183,11 +183,12 @@ func TestStartAutoCycleIfNeededTransitionsToRunningImmediately(t *testing.T) {
 		Locator:         locator,
 		TurnSource:      turncmd.SourceTelegram,
 		DeliveryOptions: turncmd.NormalizeSessionDeliveryOptions(turncmd.SessionTurnPayload{}),
+		RuntimeState:    fakeAutoTurnState{state},
 	}); err != nil {
 		t.Fatalf("startAutoCycleIfNeeded() error = %v", err)
 	}
-	if len(dispatcher.envelopes) != 1 {
-		t.Fatalf("dispatches = %d, want only state update without visible running notification", len(dispatcher.envelopes))
+	if len(dispatcher.envelopes) != 0 {
+		t.Fatalf("dispatches = %d, want no visible running notification", len(dispatcher.envelopes))
 	}
 	if got := state.state[automode.StateKeyMode]; got != automode.StateRunning {
 		t.Fatalf("state mode = %#v, want %q", got, automode.StateRunning)
@@ -293,12 +294,13 @@ func TestMaybeScheduleAutoTurnStopsOnNoProgressForAutoTurns(t *testing.T) {
 		AgentSessionID:  "tg-1-0",
 		Locator:         locator,
 		TurnSource:      turncmd.SourceAuto,
+		RuntimeState:    fakeAutoTurnState{state},
 	}, "same-output", "same-output")
 	if err != nil {
 		t.Fatalf("maybeScheduleAutoTurn() error = %v", err)
 	}
-	if len(dispatcher.envelopes) != 2 {
-		t.Fatalf("dispatches = %d, want 2", len(dispatcher.envelopes))
+	if len(dispatcher.envelopes) != 1 {
+		t.Fatalf("dispatches = %d, want 1", len(dispatcher.envelopes))
 	}
 	if got := state.state[automode.StateKeyMode]; got != automode.StateNoProgress {
 		t.Fatalf("state mode = %#v, want %q", got, automode.StateNoProgress)
