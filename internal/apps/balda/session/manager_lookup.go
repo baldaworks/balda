@@ -302,6 +302,27 @@ func (m *Manager) ActiveRuntimeStateValue(ctx context.Context, locator SessionLo
 	return ts.RuntimeStateValue(ctx, key)
 }
 
+// ActiveRuntimeStateValueForArchive reads only when the loaded runtime still
+// belongs to the expected archive. The existing session-operation lock keeps
+// the archive proof and leased state read in one critical section.
+func (m *Manager) ActiveRuntimeStateValueForArchive(
+	ctx context.Context,
+	locator SessionLocator,
+	archiveID string,
+	key string,
+) (value any, found bool, matched bool, err error) {
+	unlock := m.lockSessionOperation(locator.SessionID)
+	defer unlock()
+	m.mu.RLock()
+	ts := m.sessions[locator.SessionID]
+	m.mu.RUnlock()
+	if ts == nil || ts.GetArchiveID() != archiveID {
+		return nil, false, false, nil
+	}
+	value, found, err = ts.RuntimeStateValue(ctx, key)
+	return value, found, true, err
+}
+
 // UpdateRuntimeStateForArchive fences late bookkeeping against replacement.
 // The same operation lock protects epoch verification and the runtime write.
 func (m *Manager) UpdateRuntimeStateForArchive(ctx context.Context, locator SessionLocator, epoch string, values map[string]any) (bool, error) {

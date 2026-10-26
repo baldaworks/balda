@@ -59,6 +59,12 @@ func TestFinalRuntimeStateWriteFencesReplacement(t *testing.T) {
 	if value, found, err := next.RuntimeStateValue(t.Context(), "final-format"); err != nil || !found || value != "current" {
 		t.Fatalf("current=%v %t %v", value, found, err)
 	}
+	if value, found, matched, err := m.ActiveRuntimeStateValueForArchive(t.Context(), archiveInput().Locator, first.GetArchiveID(), "final-format"); err != nil || matched || found || value != nil {
+		t.Fatalf("old guarded read=%v found=%t matched=%t error=%v", value, found, matched, err)
+	}
+	if value, found, matched, err := m.ActiveRuntimeStateValueForArchive(t.Context(), archiveInput().Locator, next.GetArchiveID(), "final-format"); err != nil || !matched || !found || value != "current" {
+		t.Fatalf("current guarded read=%v found=%t matched=%t error=%v", value, found, matched, err)
+	}
 }
 
 func TestFinalReplayResumesExactLifetimeForBookkeeping(t *testing.T) {

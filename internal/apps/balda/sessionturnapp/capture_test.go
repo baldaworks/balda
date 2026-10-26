@@ -84,14 +84,15 @@ type oneShotActiveSession struct {
 	runner *runner.Runner
 }
 
-func (s *oneShotActiveSession) GetRunner() *runner.Runner  { return s.runner }
-func (*oneShotActiveSession) GetRuntimeSnapshotID() string { return "" }
-func (*oneShotActiveSession) GetSessionID() string         { return "tg-origin" }
-func (*oneShotActiveSession) GetAgentSessionID() string    { return "agent-origin" }
-func (*oneShotActiveSession) GetUserID() string            { return "tg-101" }
+func (*oneShotActiveSession) GetSessionID() string { return "tg-origin" }
 func (*oneShotActiveSession) RuntimeStateValue(context.Context, string) (any, bool, error) {
 	return nil, false, nil
 }
+func (s *oneShotActiveSession) Runner() *runner.Runner  { return s.runner }
+func (*oneShotActiveSession) UserID() string            { return "tg-101" }
+func (*oneShotActiveSession) SessionID() string         { return "agent-origin" }
+func (*oneShotActiveSession) ArchiveID() string         { return "" }
+func (*oneShotActiveSession) RuntimeSnapshotID() string { return "" }
 
 func TestOneShotTurnKeepsDistinctReportToLocator(t *testing.T) {
 	dispatcher := &captureDispatcher{}
@@ -113,8 +114,8 @@ func TestOneShotTurnKeepsDistinctReportToLocator(t *testing.T) {
 		Payload: turncmd.SessionTurnPayload{Source: turncmd.SourceSchedule,
 			ScheduleOneShot: &oneShot, JobID: "scheduled-once", Text: "input",
 			Locator: origin, ReportTo: &report, Deliver: true},
-		Session: &oneShotActiveSession{runner: adkRunner}, UserID: "tg-101",
-		AgentSessionID: agentSessionID, Runner: adkRunner,
+		Session: &oneShotActiveSession{runner: adkRunner},
+		Runtime: &oneShotRuntime{runner: adkRunner, sessionID: agentSessionID},
 		DeliveryLocator: sessionturn.SessionLocator{ChannelType: report.ChannelType,
 			AddressKey: report.AddressKey, AddressJSON: report.AddressJSON, SessionID: report.SessionID},
 	}); err != nil {
@@ -130,6 +131,20 @@ func TestOneShotTurnKeepsDistinctReportToLocator(t *testing.T) {
 	if delivery.Locator.AddressKey != report.AddressKey || delivery.Text != "one-shot answer" {
 		t.Fatalf("one-shot delivery = %+v", delivery)
 	}
+}
+
+type oneShotRuntime struct {
+	runner    *runner.Runner
+	sessionID string
+}
+
+func (r *oneShotRuntime) Runner() *runner.Runner  { return r.runner }
+func (*oneShotRuntime) UserID() string            { return "tg-101" }
+func (r *oneShotRuntime) SessionID() string       { return r.sessionID }
+func (*oneShotRuntime) ArchiveID() string         { return "" }
+func (*oneShotRuntime) RuntimeSnapshotID() string { return "" }
+func (*oneShotRuntime) RuntimeStateValue(context.Context, string) (any, bool, error) {
+	return nil, false, nil
 }
 
 func (r *recordedScheduleOutput) RecordPrivateOutput(_ context.Context, jobID, output string, _ bool) error {

@@ -2,11 +2,13 @@ package sessionturnapp
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionturn"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
@@ -20,6 +22,34 @@ type ProviderTurnExecutor struct {
 	dispatcher actortransport.Dispatcher
 	jobEvents  jobEventAppender
 	logger     zerolog.Logger
+}
+
+type leasedTurnRuntimeState struct {
+	runtime   sessionturn.RuntimeView
+	writer    archiveRuntimeStateWriter
+	locator   session.SessionLocator
+	archiveID string
+}
+
+func (s leasedTurnRuntimeState) RuntimeStateValue(ctx context.Context, key string) (any, bool, error) {
+	return s.runtime.RuntimeStateValue(ctx, key)
+}
+
+func (s leasedTurnRuntimeState) UpdateRuntimeState(ctx context.Context, state map[string]any) error {
+	if len(state) == 0 {
+		return nil
+	}
+	if s.writer == nil {
+		return fmt.Errorf("update leased runtime state: %w", chatarchivecmd.ErrUnavailable)
+	}
+	updated, err := s.writer.UpdateRuntimeStateForArchive(ctx, s.locator, s.archiveID, state)
+	if err != nil {
+		return fmt.Errorf("update leased runtime state: %w", err)
+	}
+	if !updated {
+		return fmt.Errorf("update leased runtime state: %w", chatarchivecmd.ErrConflict)
+	}
+	return nil
 }
 
 func NewProviderTurnExecutorFromService(execution *TurnExecutionService) *ProviderTurnExecutor {
@@ -53,9 +83,20 @@ func (e *ProviderTurnExecutor) ExecuteSessionTurn(ctx context.Context, request s
 		}
 	}
 	payload := request.Payload
-	providerRunner := request.Runner
-	if providerRunner == nil {
-		providerRunner = request.Session.GetRunner()
+	if request.Runtime == nil {
+		return session.ErrRuntimeUnavailable
+	}
+	providerRunner := request.Runtime.Runner()
+	runtimeState := leasedTurnRuntimeState{
+		runtime: request.Runtime,
+		writer:  execution.runtimeStateWriter,
+		locator: session.SessionLocator{
+			SessionID:   payload.Locator.SessionID,
+			ChannelType: payload.Locator.ChannelType,
+			AddressKey:  payload.Locator.AddressKey,
+			AddressJSON: payload.Locator.AddressJSON,
+		},
+		archiveID: request.Runtime.ArchiveID(),
 	}
 	from := actorlayer.ActorAddress{Target: actorcmd.ActorTypeSession, Key: request.Session.GetSessionID()}
 	var progressEmitter SessionProgressEmitter
@@ -92,16 +133,16 @@ func (e *ProviderTurnExecutor) ExecuteSessionTurn(ctx context.Context, request s
 		workspaceDir = workspace.GetWorkspaceDir()
 	}
 	return execution.Execute(ctx, ExecutionRequest{
-		ArchiveID:        payload.ArchiveID,
+		ArchiveID:        request.Runtime.ArchiveID(),
 		SteeringMessages: payload.SteeringMessages,
 		WorkspaceDir:     workspaceDir,
 		Text:             payload.Text,
 		Runner:           providerRunner,
-		UserID:           request.UserID,
+		UserID:           request.Runtime.UserID(),
 		RequesterUserID:  payload.RequesterUserID,
 		SessionID:        request.Session.GetSessionID(),
 		JobID:            payload.JobID,
-		AgentSessionID:   request.AgentSessionID,
+		AgentSessionID:   request.Runtime.SessionID(),
 		Locator: session.SessionLocator{
 			SessionID:   executionLocator.SessionID,
 			ChannelType: executionLocator.ChannelType,
@@ -125,6 +166,7 @@ func (e *ProviderTurnExecutor) ExecuteSessionTurn(ctx context.Context, request s
 		SelectedSkill:   request.SelectedSkill,
 		TurnSource:      payload.Source,
 		DedupeKey:       payload.DedupeKey,
+		RuntimeState:    runtimeState,
 	})
 }
 

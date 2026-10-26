@@ -3,7 +3,6 @@ package session
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"sync"
 
@@ -150,25 +149,7 @@ func (s *TopicSession) RuntimeStateValue(ctx context.Context, key string) (any, 
 		return nil, false, err
 	}
 	defer lease.Release()
-	if lease.Session() == nil || lease.SessionService() == nil {
-		return nil, false, nil
-	}
-	current, err := lease.SessionService().Get(ctx, &session.GetRequest{
-		AppName:   lease.AppName(),
-		UserID:    lease.UserID(),
-		SessionID: lease.SessionID(),
-	})
-	if err != nil {
-		return nil, false, fmt.Errorf("get runtime session: %w", err)
-	}
-	if current == nil || current.Session == nil || current.Session.State() == nil {
-		return nil, false, nil
-	}
-	stateValue, err := current.Session.State().Get(strings.TrimSpace(key))
-	if err != nil {
-		return nil, false, nil
-	}
-	return stateValue, true, nil
+	return lease.RuntimeStateValue(ctx, key)
 }
 
 func (s *TopicSession) UpdateRuntimeState(ctx context.Context, state map[string]any) error {

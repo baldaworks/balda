@@ -3,6 +3,8 @@ package session
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/baldaworks/runtime/v2/agentproduct"
@@ -84,6 +86,30 @@ func (l *RuntimeLease) RuntimeSnapshotID() string {
 // ProviderBindingJSON returns the canonical public provider binding.
 func (l *RuntimeLease) ProviderBindingJSON() string {
 	return l.slot.value.runtime.ProviderBindingJSON
+}
+
+// RuntimeStateValue reads one state value through the exact ADK identity held
+// by this lease. It never consults the session's current runtime.
+func (l *RuntimeLease) RuntimeStateValue(ctx context.Context, key string) (any, bool, error) {
+	if l == nil || l.slot == nil || l.Session() == nil || l.SessionService() == nil {
+		return nil, false, nil
+	}
+	current, err := l.SessionService().Get(ctx, &adksession.GetRequest{
+		AppName:   l.AppName(),
+		UserID:    l.UserID(),
+		SessionID: l.SessionID(),
+	})
+	if err != nil {
+		return nil, false, fmt.Errorf("get runtime session: %w", err)
+	}
+	if current == nil || current.Session == nil || current.Session.State() == nil {
+		return nil, false, nil
+	}
+	value, err := current.Session.State().Get(strings.TrimSpace(key))
+	if err != nil {
+		return nil, false, nil
+	}
+	return value, true, nil
 }
 
 // Release gives up the lease exactly once.

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
@@ -145,8 +146,8 @@ func TestRunnerLoadsExactSelectedSkillBeforeProviderExecution(t *testing.T) {
 	if request.SelectedSkill == nil || request.SelectedSkill.Ref.Revision != "revision-1" {
 		t.Fatalf("selected skill = %+v, want pinned loaded content", request.SelectedSkill)
 	}
-	if request.Runner != pinnedRunner {
-		t.Fatalf("runner = %p, want existing session runner %p", request.Runner, pinnedRunner)
+	if request.Runtime.Runner() != pinnedRunner {
+		t.Fatalf("runner = %p, want existing session runner %p", request.Runtime.Runner(), pinnedRunner)
 	}
 }
 
@@ -545,13 +546,19 @@ type testActiveSession struct {
 	stateErr          error
 	runner            *adkrunner.Runner
 	runtimeSnapshotID string
+	archiveID         string
+	releases          atomic.Int32
 }
 
-func (s *testActiveSession) GetRunner() *adkrunner.Runner { return s.runner }
-func (s *testActiveSession) GetRuntimeSnapshotID() string { return s.runtimeSnapshotID }
-func (*testActiveSession) GetSessionID() string           { return "tg-1-0" }
-func (*testActiveSession) GetAgentSessionID() string      { return "agent-session-1" }
-func (*testActiveSession) GetUserID() string              { return testRuntimeUserID }
+func (*testActiveSession) GetSessionID() string { return "tg-1-0" }
+
+func (s *testActiveSession) AcquireRuntime() (RuntimeLease, error) { return s, nil }
+func (s *testActiveSession) Runner() *adkrunner.Runner             { return s.runner }
+func (*testActiveSession) UserID() string                          { return testRuntimeUserID }
+func (*testActiveSession) SessionID() string                       { return "agent-session-1" }
+func (s *testActiveSession) ArchiveID() string                     { return s.archiveID }
+func (s *testActiveSession) RuntimeSnapshotID() string             { return s.runtimeSnapshotID }
+func (s *testActiveSession) Release()                              { s.releases.Add(1) }
 
 func (s *testActiveSession) RuntimeStateValue(_ context.Context, key string) (any, bool, error) {
 	if s.stateErr != nil {
@@ -584,13 +591,62 @@ func TestRunnerClassifiesOnlyPreparationFailure(t *testing.T) {
 
 func TestRunnerRejectsInputFromDifferentLifetime(t *testing.T) {
 	executor := &testExecutor{}
-	runner := New(&testSessionAccessor{active: &testActiveSession{state: map[string]any{"balda_archive_epoch": "new"}}}, executor, nil, zerolog.Nop())
+	active := &testActiveSession{archiveID: "new"}
+	runner := New(&testSessionAccessor{active: active}, executor, nil, zerolog.Nop())
 	payload := testTurnPayload()
 	payload.ArchiveID = "old"
 	if err := runner.RunSessionTurnPayload(t.Context(), payload); err == nil {
 		t.Fatal("executed input from a destroyed lifetime")
 	}
+	if len(executor.requests) != 0 || active.releases.Load() != 1 {
+		t.Fatalf("stale turn executions/releases = %d/%d, want 0/1", len(executor.requests), active.releases.Load())
+	}
 }
+
+func TestRunnerReleasesRuntimeAfterEveryTerminalPath(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{name: "success"},
+		{name: "error", err: errors.New("provider failed")},
+		{name: "cancellation", err: context.Canceled},
+		{name: "closed stream", err: errors.New("provider stream closed")},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			active := &testActiveSession{archiveID: "epoch"}
+			err := New(&testSessionAccessor{active: active}, &testExecutor{err: test.err}, nil, zerolog.Nop()).
+				RunSessionTurnPayload(t.Context(), turncmd.SessionTurnPayload{ArchiveID: "epoch", Locator: baldasession.SessionLocator{SessionID: "tg-1-0"}})
+			if !errors.Is(err, test.err) {
+				t.Fatalf("RunSessionTurnPayload() error = %v, want %v", err, test.err)
+			}
+			if got := active.releases.Load(); got != 1 {
+				t.Fatalf("runtime releases = %d, want 1", got)
+			}
+		})
+	}
+}
+
+func TestRunnerReleasesRuntimeAfterPanic(t *testing.T) {
+	active := &testActiveSession{archiveID: "epoch"}
+	runner := New(&testSessionAccessor{active: active}, panicExecutor{}, nil, zerolog.Nop())
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Fatal("RunSessionTurnPayload() did not propagate panic")
+			}
+		}()
+		_ = runner.RunSessionTurnPayload(t.Context(), turncmd.SessionTurnPayload{ArchiveID: "epoch", Locator: baldasession.SessionLocator{SessionID: "tg-1-0"}})
+	}()
+	if got := active.releases.Load(); got != 1 {
+		t.Fatalf("runtime releases = %d, want 1", got)
+	}
+}
+
+type panicExecutor struct{}
+
+func (panicExecutor) ExecuteSessionTurn(context.Context, Request) error { panic("provider panic") }
 
 func TestRunnerUsesSelectedSessionBinding(t *testing.T) {
 	for _, restored := range []bool{false, true} {
@@ -612,8 +668,8 @@ func TestRunnerUsesSelectedSessionBinding(t *testing.T) {
 					t.Fatal(err)
 				}
 				request := executor.singleRequest(t)
-				if request.UserID != testRuntimeUserID || request.AgentSessionID != "agent-session-1" || request.Runner != active.runner {
-					t.Fatalf("provider binding = %q/%q/%p, want selected session", request.UserID, request.AgentSessionID, request.Runner)
+				if request.Runtime.UserID() != testRuntimeUserID || request.Runtime.SessionID() != "agent-session-1" || request.Runtime.Runner() != active.runner {
+					t.Fatalf("provider binding = %q/%q/%p, want selected session", request.Runtime.UserID(), request.Runtime.SessionID(), request.Runtime.Runner())
 				}
 				if request.Payload.RequesterUserID != caller || request.Payload.Locator != payload.Locator {
 					t.Fatalf("requester/locator changed: %+v", request.Payload)
@@ -635,7 +691,7 @@ func TestRunnerKeepsCreationSeedAndRestoreFailure(t *testing.T) {
 				if err != nil || len(accessor.ensureCtx) != 1 || accessor.ensureCtx[0].UserID != "creation-seed" {
 					t.Fatalf("lazy creation: err=%v contexts=%+v", err, accessor.ensureCtx)
 				}
-				if executor.singleRequest(t).UserID != testRuntimeUserID {
+				if executor.singleRequest(t).Runtime.UserID() != testRuntimeUserID {
 					t.Fatal("creation seed overrode resulting runtime identity")
 				}
 			} else if !errors.Is(err, restoreErr) || len(accessor.ensureCtx) != 0 || len(executor.requests) != 0 {

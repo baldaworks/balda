@@ -48,11 +48,21 @@ func (s *formatTestState) UpdateRuntimeState(_ context.Context, _ baldasession.S
 	return nil
 }
 
+type formatTurnState struct{ state *formatTestState }
+
+func (s formatTurnState) RuntimeStateValue(ctx context.Context, key string) (any, bool, error) {
+	return s.state.RuntimeStateValue(ctx, baldasession.SessionLocator{}, key)
+}
+
+func (s formatTurnState) UpdateRuntimeState(ctx context.Context, values map[string]any) error {
+	return s.state.UpdateRuntimeState(ctx, baldasession.SessionLocator{}, values)
+}
+
 func TestFormatPromptComposerTracksRegisteredNameChanges(t *testing.T) {
 	t.Parallel()
 
 	state := &formatTestState{values: make(map[string]any)}
-	composer := NewFormatPromptComposer(newFormatTestRegistry(t), state)
+	composer := NewFormatPromptComposer(newFormatTestRegistry(t))
 	locator := baldasession.SessionLocator{ChannelType: deliveryfmt.TransportTelegram, SessionID: "tg-1-0"}
 
 	tests := []struct {
@@ -72,7 +82,7 @@ func TestFormatPromptComposerTracksRegisteredNameChanges(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			got, change, err := composer.Compose(context.Background(), locator, test.format, "hello")
+			got, change, err := composer.Compose(context.Background(), formatTurnState{state}, locator, test.format, "hello")
 			if err != nil {
 				t.Fatalf("Compose() error = %v", err)
 			}
@@ -87,7 +97,7 @@ func TestFormatPromptComposerTracksRegisteredNameChanges(t *testing.T) {
 				t.Fatalf("Compose() change = %#v, wantChange %t", change, test.wantChange)
 			}
 			if change != nil {
-				if err := composer.Commit(context.Background(), locator, *change); err != nil {
+				if err := composer.Commit(context.Background(), formatTurnState{state}, *change); err != nil {
 					t.Fatalf("Commit() error = %v", err)
 				}
 			}
@@ -98,9 +108,11 @@ func TestFormatPromptComposerTracksRegisteredNameChanges(t *testing.T) {
 func TestFormatPromptComposerRejectsUnknownRoute(t *testing.T) {
 	t.Parallel()
 
-	composer := NewFormatPromptComposer(newFormatTestRegistry(t), &formatTestState{values: make(map[string]any)})
+	state := &formatTestState{values: make(map[string]any)}
+	composer := NewFormatPromptComposer(newFormatTestRegistry(t))
 	_, _, err := composer.Compose(
 		context.Background(),
+		formatTurnState{state},
 		baldasession.SessionLocator{ChannelType: deliveryfmt.TransportTelegram, SessionID: "tg-1-0"},
 		"unknown",
 		"hello",
@@ -196,7 +208,8 @@ func TestTurnExecutionCommitsFormatOnlyAfterSuccessfulTerminalCompletion(t *test
 				DeliveryOptions: deliveryfmt.Options{
 					DeliveryFormat: deliveryfmt.DeliveryFormatRichMarkdown,
 				},
-				Deliver: false,
+				Deliver:      false,
+				RuntimeState: formatTurnState{state},
 			})
 			if (err != nil) != test.wantError {
 				t.Fatalf("Execute() error = %v, wantError %t", err, test.wantError)

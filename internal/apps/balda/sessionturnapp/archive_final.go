@@ -156,16 +156,20 @@ func (s *TurnExecutionService) resumeFinal(ctx context.Context, final chatarchiv
 		if _, err := active.ResumeArchiveRuntime(ctx, replay.Locator, replay.ArchiveID); err != nil {
 			return fmt.Errorf("resume final runtime: %w", err)
 		}
-		epoch, found, err := active.ActiveRuntimeStateValue(ctx, replay.Locator, chatarchivecmd.EpochStateKey)
+		epoch, found, matched, err := active.ActiveRuntimeStateValueForArchive(ctx, replay.Locator, replay.ArchiveID, chatarchivecmd.EpochStateKey)
 		if err != nil {
 			return fmt.Errorf("read final runtime epoch: %w", err)
 		}
-		current = found && epoch == replay.ArchiveID
+		current = matched && found && epoch == replay.ArchiveID
 	}
 	// Never mutate a replacement runtime during late reply recovery.
 	if current && replay.CommitFormat && s.formatComposer != nil {
-		if _, err := active.UpdateRuntimeStateForArchive(ctx, replay.Locator, replay.ArchiveID, map[string]any{stateKeyMessageFormatAnnounced: replay.FormatAnnounced, stateKeyMessageFormatName: string(replay.FormatName)}); err != nil {
+		updated, err := active.UpdateRuntimeStateForArchive(ctx, replay.Locator, replay.ArchiveID, map[string]any{stateKeyMessageFormatAnnounced: replay.FormatAnnounced, stateKeyMessageFormatName: string(replay.FormatName)})
+		if err != nil {
 			return err
+		}
+		if !updated {
+			return chatarchivecmd.ErrConflict
 		}
 	}
 	if err := dispatchOutbound(ctx, s.dispatcher, replay.Envelope); err != nil {
@@ -189,8 +193,7 @@ func (s *TurnExecutionService) resumeFinal(ctx context.Context, final chatarchiv
 	}
 	if current {
 		clone := *s
-		clone.sessions = activeStateReader{active}
-		return clone.maybeScheduleAutoTurn(ctx, ExecutionRequest{ArchiveID: replay.ArchiveID, Locator: replay.Locator, SessionID: replay.SessionID, AgentSessionID: replay.AgentSessionID, UserID: replay.UserID, RequesterUserID: replay.RequesterUserID, JobID: replay.JobID, TurnSource: replay.TurnSource, DedupeKey: replay.DedupeKey, DeliveryOptions: replay.Options, Deliver: true, OutboundFrom: replay.Envelope.From}, "streamed_text", strings.TrimSpace(final.Text))
+		return clone.maybeScheduleAutoTurn(ctx, ExecutionRequest{ArchiveID: replay.ArchiveID, Locator: replay.Locator, SessionID: replay.SessionID, AgentSessionID: replay.AgentSessionID, UserID: replay.UserID, RequesterUserID: replay.RequesterUserID, JobID: replay.JobID, TurnSource: replay.TurnSource, DedupeKey: replay.DedupeKey, DeliveryOptions: replay.Options, Deliver: true, OutboundFrom: replay.Envelope.From, RuntimeState: replayTurnRuntimeState{active: active, locator: replay.Locator, archiveID: replay.ArchiveID}}, "streamed_text", strings.TrimSpace(final.Text))
 	}
 	return nil
 }
@@ -267,12 +270,34 @@ func (e *ProviderTurnExecutor) ReplaySessionTurn(ctx context.Context, payload tu
 // active reads never restore and writes fence the lifecycle operation lock.
 type activeRuntimeState interface {
 	ResumeArchiveRuntime(ctx context.Context, locator session.SessionLocator, epoch string) (bool, error)
-	ActiveRuntimeStateValue(ctx context.Context, locator session.SessionLocator, key string) (any, bool, error)
+	ActiveRuntimeStateValueForArchive(ctx context.Context, locator session.SessionLocator, archiveID string, key string) (value any, found bool, matched bool, err error)
 	UpdateRuntimeStateForArchive(ctx context.Context, locator session.SessionLocator, epoch string, values map[string]any) (bool, error)
 }
 
-type activeStateReader struct{ activeRuntimeState }
+type replayTurnRuntimeState struct {
+	active    activeRuntimeState
+	locator   session.SessionLocator
+	archiveID string
+}
 
-func (r activeStateReader) RuntimeStateValue(ctx context.Context, locator session.SessionLocator, key string) (any, bool, error) {
-	return r.ActiveRuntimeStateValue(ctx, locator, key)
+func (s replayTurnRuntimeState) RuntimeStateValue(ctx context.Context, key string) (any, bool, error) {
+	value, found, matched, err := s.active.ActiveRuntimeStateValueForArchive(ctx, s.locator, s.archiveID, key)
+	if err != nil {
+		return nil, false, err
+	}
+	if !matched {
+		return nil, false, chatarchivecmd.ErrConflict
+	}
+	return value, found, nil
+}
+
+func (s replayTurnRuntimeState) UpdateRuntimeState(ctx context.Context, values map[string]any) error {
+	updated, err := s.active.UpdateRuntimeStateForArchive(ctx, s.locator, s.archiveID, values)
+	if err != nil {
+		return err
+	}
+	if !updated {
+		return chatarchivecmd.ErrConflict
+	}
+	return nil
 }

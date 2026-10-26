@@ -77,7 +77,8 @@ func TestFinalAcceptedBeforeBookkeepingFailure(t *testing.T) {
 				bus := &finalOutcomeDispatcher{}
 				service := NewTurnExecutionServiceWithJobEvents(bus, finalResultAppender{cause}, finalStateReader{bus: bus, err: cause}, zerolog.Nop(), automode.DefaultMaxTurns)
 				service.structuredRegistry = &testTurnFailureRegistry{}
-				req := ExecutionRequest{Text: "input", Runner: runner, UserID: "tg-101", AgentSessionID: id, SessionID: "tg-origin", Deliver: true, TurnSource: turncmd.SourceTelegram, Locator: deliverycmd.Locator{SessionID: "tg-origin", ChannelType: "telegram", AddressKey: "101:0", AddressJSON: `{"chat_id":101,"topic_id":0}`}}
+				state := finalStateReader{bus: bus, err: cause}
+				req := ExecutionRequest{Text: "input", Runner: runner, UserID: "tg-101", AgentSessionID: id, SessionID: "tg-origin", Deliver: true, TurnSource: turncmd.SourceTelegram, Locator: deliverycmd.Locator{SessionID: "tg-origin", ChannelType: "telegram", AddressKey: "101:0", AddressJSON: `{"chat_id":101,"topic_id":0}`}, RuntimeState: finalTurnState{state}}
 				if jobBacked {
 					req.JobID = "chat-correlation"
 				}
@@ -105,6 +106,14 @@ type finalStateReader struct {
 	bus *finalOutcomeDispatcher
 	err error
 }
+
+type finalTurnState struct{ state finalStateReader }
+
+func (s finalTurnState) RuntimeStateValue(ctx context.Context, key string) (any, bool, error) {
+	return s.state.RuntimeStateValue(ctx, deliverycmd.Locator{}, key)
+}
+
+func (finalTurnState) UpdateRuntimeState(context.Context, map[string]any) error { return nil }
 
 func (r finalStateReader) RuntimeStateValue(context.Context, deliverycmd.Locator, string) (any, bool, error) {
 	if len(r.bus.envelopes) > 0 {

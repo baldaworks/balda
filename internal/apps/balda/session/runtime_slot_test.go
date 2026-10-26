@@ -33,6 +33,7 @@ func TestRuntimeSlotLeaseCarriesOneImmutableRuntime(t *testing.T) {
 	service := adksession.InMemoryService()
 	created, err := service.Create(t.Context(), &adksession.CreateRequest{
 		AppName: "app", UserID: ensureTestAuthor, SessionID: "runtime-session",
+		State: map[string]any{"lease-key": "lease-value"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -78,6 +79,9 @@ func TestRuntimeSlotLeaseCarriesOneImmutableRuntime(t *testing.T) {
 	}
 	if lease.RuntimeSnapshotID() != "snapshot-1" || lease.ProviderBindingJSON() != `{"root_provider_id":"provider-1"}` {
 		t.Fatalf("binding = %q/%q", lease.RuntimeSnapshotID(), lease.ProviderBindingJSON())
+	}
+	if value, found, err := lease.RuntimeStateValue(t.Context(), "lease-key"); err != nil || !found || value != "lease-value" {
+		t.Fatalf("RuntimeStateValue() = %v, %t, %v", value, found, err)
 	}
 }
 

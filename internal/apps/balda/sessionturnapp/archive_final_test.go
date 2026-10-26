@@ -214,6 +214,16 @@ type failingFormatState struct {
 	err error
 }
 
+type failingFormatTurnState struct{ state *failingFormatState }
+
+func (s failingFormatTurnState) RuntimeStateValue(ctx context.Context, key string) (any, bool, error) {
+	return s.state.RuntimeStateValue(ctx, deliverycmd.Locator{}, key)
+}
+
+func (s failingFormatTurnState) UpdateRuntimeState(ctx context.Context, values map[string]any) error {
+	return s.state.UpdateRuntimeState(ctx, deliverycmd.Locator{}, values)
+}
+
 func (s *failingFormatState) UpdateRuntimeState(ctx context.Context, locator deliverycmd.Locator, values map[string]any) error {
 	if s.err != nil {
 		return s.err
@@ -235,7 +245,7 @@ func TestFinalSurvivesFormatFailureAndLateReplay(t *testing.T) {
 	archive := &finalArchiveStub{messages: map[string]chatarchivecmd.Message{}}
 	svc.SetFinalArchive(archive)
 	locator := deliverycmd.Locator{ChannelType: "telegram", AddressKey: "101:0", AddressJSON: `{"chat_id":101,"topic_id":0}`, SessionID: "session"}
-	req := ExecutionRequest{ArchiveID: "epoch", Runner: runner, AgentSessionID: id, UserID: "tg-101", SessionID: "session", Text: "input", DedupeKey: "input-id", Deliver: true, TurnSource: turncmd.SourceTelegram, Locator: locator, DeliveryOptions: deliveryfmt.Options{DeliveryFormat: deliveryfmt.DeliveryFormatRichMarkdown}}
+	req := ExecutionRequest{ArchiveID: "epoch", Runner: runner, AgentSessionID: id, UserID: "tg-101", SessionID: "session", Text: "input", DedupeKey: "input-id", Deliver: true, TurnSource: turncmd.SourceTelegram, Locator: locator, DeliveryOptions: deliveryfmt.Options{DeliveryFormat: deliveryfmt.DeliveryFormatRichMarkdown}, RuntimeState: failingFormatTurnState{state}}
 	if err := svc.Execute(t.Context(), req); !errors.Is(err, state.err) {
 		t.Fatalf("format error=%v", err)
 	}
@@ -284,7 +294,8 @@ func TestArchiveFinalEligibilityAndStopApproval(t *testing.T) {
 			if tc.deny {
 				svc.SetHooks(&turnHooks{deny: hookcmd.Stop})
 			}
-			err := svc.Execute(t.Context(), ExecutionRequest{ArchiveID: "epoch", Runner: runner, AgentSessionID: id, UserID: "tg-101", SessionID: "session", Text: "synthetic or real prompt", DedupeKey: "input-id", Deliver: tc.deliver, TurnSource: tc.source, Locator: deliverycmd.Locator{ChannelType: "telegram", AddressKey: "101:0", AddressJSON: `{"chat_id":101,"topic_id":0}`, SessionID: "session"}})
+			state := &formatTestState{}
+			err := svc.Execute(t.Context(), ExecutionRequest{ArchiveID: "epoch", Runner: runner, AgentSessionID: id, UserID: "tg-101", SessionID: "session", Text: "synthetic or real prompt", DedupeKey: "input-id", Deliver: tc.deliver, TurnSource: tc.source, Locator: deliverycmd.Locator{ChannelType: "telegram", AddressKey: "101:0", AddressJSON: `{"chat_id":101,"topic_id":0}`, SessionID: "session"}, RuntimeState: formatTurnState{state}})
 			if tc.deny {
 				if !errors.Is(err, hookcmd.ErrDenied) {
 					t.Fatalf("denial=%v", err)
@@ -324,6 +335,13 @@ func TestArchivedFinalAcceptedBookkeepingError(t *testing.T) {
 func (s *failingFormatState) ActiveRuntimeStateValue(ctx context.Context, locator deliverycmd.Locator, key string) (any, bool, error) {
 	return s.RuntimeStateValue(ctx, locator, key)
 }
+func (s *failingFormatState) ActiveRuntimeStateValueForArchive(ctx context.Context, locator deliverycmd.Locator, archiveID string, key string) (any, bool, bool, error) {
+	if s.values[chatarchivecmd.EpochStateKey] != archiveID {
+		return nil, false, false, nil
+	}
+	value, found, err := s.ActiveRuntimeStateValue(ctx, locator, key)
+	return value, found, true, err
+}
 func (s *failingFormatState) UpdateRuntimeStateForArchive(ctx context.Context, locator deliverycmd.Locator, epoch string, values map[string]any) (bool, error) {
 	if s.values[chatarchivecmd.EpochStateKey] != epoch {
 		return false, nil
@@ -357,6 +375,9 @@ type failedEpochState struct {
 
 func (s *failedEpochState) ActiveRuntimeStateValue(context.Context, deliverycmd.Locator, string) (any, bool, error) {
 	return nil, false, s.readErr
+}
+func (s *failedEpochState) ActiveRuntimeStateValueForArchive(context.Context, deliverycmd.Locator, string, string) (any, bool, bool, error) {
+	return nil, false, true, s.readErr
 }
 func TestCommittedReplayEpochReadFailurePreventsPublication(t *testing.T) {
 	bus := &finalOutcomeDispatcher{}
@@ -419,6 +440,81 @@ func (s *restartingFinalState) ResumeArchiveRuntime(_ context.Context, _ deliver
 	s.values[chatarchivecmd.EpochStateKey] = epoch
 	return true, nil
 }
+
+type swappingReplayState struct {
+	failingFormatState
+	guardedKeys   []string
+	mismatchReads int
+}
+
+func (s *swappingReplayState) ResumeArchiveRuntime(context.Context, deliverycmd.Locator, string) (bool, error) {
+	return true, nil
+}
+
+func (s *swappingReplayState) ActiveRuntimeStateValueForArchive(
+	_ context.Context,
+	_ deliverycmd.Locator,
+	archiveID string,
+	key string,
+) (any, bool, bool, error) {
+	if s.values[chatarchivecmd.EpochStateKey] != archiveID {
+		s.mismatchReads++
+		return nil, false, false, nil
+	}
+	value, found := s.values[key]
+	s.guardedKeys = append(s.guardedKeys, key)
+	if len(s.guardedKeys) == 1 {
+		s.values[chatarchivecmd.EpochStateKey] = "archive-successor"
+		s.values[automode.StateKeyEnabled] = false
+		s.values[automode.StateKeyLastOutput] = "successor-only-output"
+	}
+	return value, found, true, nil
+}
+
+func TestCommittedReplayRejectsSuccessorStateAfterInitialArchiveProof(t *testing.T) {
+	bus := &finalOutcomeDispatcher{}
+	state := &swappingReplayState{failingFormatState: failingFormatState{formatTestState: formatTestState{values: map[string]any{
+		chatarchivecmd.EpochStateKey: "archive-old",
+		automode.StateKeyEnabled:     true,
+		automode.StateKeyMode:        automode.StateRunning,
+		automode.StateKeyLastOutput:  "predecessor-output",
+	}}}}
+	svc := NewTurnExecutionServiceWithJobEvents(bus, nil, state, zerolog.Nop(), 3)
+	archive := &finalArchiveStub{messages: map[string]chatarchivecmd.Message{}}
+	svc.SetFinalArchive(archive)
+	locator := deliverycmd.Locator{ChannelType: "telegram", AddressKey: "101:0", SessionID: "session"}
+	_, err := svc.commitSelectedFinal(t.Context(), ExecutionRequest{
+		ArchiveID:  "archive-old",
+		DedupeKey:  "turn",
+		Locator:    locator,
+		SessionID:  "session",
+		UserID:     "user",
+		TurnSource: turncmd.SourceAuto,
+	}, "predecessor-output", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := turncmd.SessionTurnPayload{
+		ArchiveID: "archive-old",
+		DedupeKey: "turn",
+		Deliver:   true,
+		Source:    turncmd.SourceAuto,
+		Locator:   locator,
+	}
+	err = sessionturn.New(nil, NewProviderTurnExecutorFromService(svc), nil, zerolog.Nop()).
+		RunSessionTurnPayload(t.Context(), payload)
+	var accepted *turncmd.FinalOutcomeAcceptedError
+	if !errors.Is(err, chatarchivecmd.ErrConflict) || !errors.As(err, &accepted) {
+		t.Fatalf("error=%v want accepted archive conflict", err)
+	}
+	if len(state.guardedKeys) != 1 || state.guardedKeys[0] != chatarchivecmd.EpochStateKey || state.mismatchReads != 1 {
+		t.Fatalf("guarded keys=%v mismatches=%d", state.guardedKeys, state.mismatchReads)
+	}
+	if len(bus.envelopes) != 1 {
+		t.Fatalf("deliveries=%d want=1", len(bus.envelopes))
+	}
+}
+
 func TestCommittedRestartReplayFinishesFormatAndAutoWithoutModel(t *testing.T) {
 	bus := &finalOutcomeDispatcher{}
 	state := &restartingFinalState{failingFormatState: failingFormatState{formatTestState: formatTestState{values: map[string]any{automode.StateKeyEnabled: true, automode.StateKeyMode: automode.StateRunning}}}}

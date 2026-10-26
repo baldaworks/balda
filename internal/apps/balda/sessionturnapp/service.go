@@ -12,7 +12,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
-	"github.com/baldaworks/balda/internal/apps/balda/automodecmd"
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	baldajobs "github.com/baldaworks/balda/internal/apps/balda/jobs"
@@ -54,6 +54,17 @@ type WebhookTurnClaimer interface {
 
 type runtimeStateReader interface {
 	RuntimeStateValue(ctx context.Context, locator baldasession.SessionLocator, key string) (any, bool, error)
+}
+
+type archiveRuntimeStateWriter interface {
+	UpdateRuntimeStateForArchive(ctx context.Context, locator baldasession.SessionLocator, archiveID string, state map[string]any) (bool, error)
+}
+
+// TurnRuntimeState is the state view fenced to the runtime lease and archive
+// used by one provider turn.
+type TurnRuntimeState interface {
+	RuntimeStateValue(ctx context.Context, key string) (any, bool, error)
+	UpdateRuntimeState(ctx context.Context, state map[string]any) error
 }
 
 // CompletedTurn is the transport-neutral input handed to the optional
@@ -115,6 +126,7 @@ type TurnExecutionService struct {
 	webhookClaims      WebhookTurnClaimer
 	progressHook       ProgressTransportHook
 	formatComposer     *FormatPromptComposer
+	runtimeStateWriter archiveRuntimeStateWriter
 	structuredRegistry deliveryfmt.StructuredMessageRegistry
 	logger             zerolog.Logger
 	autoMaxTurns       int
@@ -152,6 +164,7 @@ type ExecutionRequest struct {
 	SelectedSkill    *runtimecatalogcmd.LoadedSkill
 	TurnSource       string
 	DedupeKey        string
+	RuntimeState     TurnRuntimeState
 }
 
 func NewTurnExecutionService(dispatcher actortransport.Dispatcher, jobEvents *baldajobs.JobEventsService, sessions *baldasession.Manager, logger zerolog.Logger, autoMaxTurns int) *TurnExecutionService {
@@ -198,19 +211,20 @@ func NewTurnExecutionServiceWithFormats(
 ) *TurnExecutionService {
 	var formatComposer *FormatPromptComposer
 	if registry != nil {
-		state, _ := sessions.(runtimeStateStore)
-		formatComposer = NewFormatPromptComposer(registry, state)
+		formatComposer = NewFormatPromptComposer(registry)
 	}
+	stateWriter, _ := sessions.(archiveRuntimeStateWriter)
 	return &TurnExecutionService{
-		dispatcher:     dispatcher,
-		jobEvents:      jobEvents,
-		sessions:       sessions,
-		turnCapture:    turnCapture,
-		progressHook:   noopProgressTransportHook{},
-		formatComposer: formatComposer,
-		logger:         logger.With().Str("component", "balda.turn_execution").Logger(),
-		autoMaxTurns:   automode.NormalizeMaxTurns(autoMaxTurns),
-		now:            time.Now,
+		dispatcher:         dispatcher,
+		jobEvents:          jobEvents,
+		sessions:           sessions,
+		turnCapture:        turnCapture,
+		progressHook:       noopProgressTransportHook{},
+		formatComposer:     formatComposer,
+		runtimeStateWriter: stateWriter,
+		logger:             logger.With().Str("component", "balda.turn_execution").Logger(),
+		autoMaxTurns:       automode.NormalizeMaxTurns(autoMaxTurns),
+		now:                time.Now,
 	}
 }
 
@@ -336,6 +350,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 	if !privateRun && s.formatComposer != nil {
 		providerText, formatState, formatErr = s.formatComposer.Compose(
 			ctx,
+			req.RuntimeState,
 			req.Locator,
 			req.DeliveryOptions.DeliveryFormat,
 			providerText,
@@ -729,7 +744,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 			if !privateRun && req.Deliver && req.ArchiveID != "" && strings.TrimSpace(responseText) != "" {
 				status := automode.DefaultStatusWithMaxTurns(s.autoMaxTurns)
 				if !terminalUnsuccessful && req.TurnSource == turncmd.SourceAuto {
-					if loaded, err := s.autoStatus(ctx, req.Locator); err == nil {
+					if loaded, err := s.autoStatus(ctx, req.RuntimeState); err == nil {
 						status = loaded
 					}
 				}
@@ -758,7 +773,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 				}
 			}
 			if !privateRun && formatState != nil && successfulFormatTurn(ev, responseText) {
-				if err := s.formatComposer.Commit(ctx, req.Locator, *formatState); err != nil {
+				if err := s.formatComposer.Commit(ctx, req.RuntimeState, *formatState); err != nil {
 					return err
 				}
 			}
@@ -841,7 +856,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 			case strings.TrimSpace(responseText) != "":
 				autoModeStatus := automode.DefaultStatusWithMaxTurns(s.autoMaxTurns)
 				if !terminalUnsuccessful && strings.EqualFold(strings.TrimSpace(req.TurnSource), turncmd.SourceAuto) {
-					if loadedStatus, err := s.autoStatus(ctx, req.Locator); err == nil {
+					if loadedStatus, err := s.autoStatus(ctx, req.RuntimeState); err == nil {
 						autoModeStatus = loadedStatus
 					}
 				}
@@ -850,21 +865,21 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 					responseSource = source
 					switch source {
 					case responseSourceAutoDone:
-						if err := s.updateAutoState(ctx, req.Locator, map[string]any{
+						if err := s.updateAutoState(ctx, req.RuntimeState, map[string]any{
 							automode.StateKeyMode:             automode.StateIdle,
 							automode.StateKeyConsecutiveTurns: autoModeStatus.ConsecutiveTurns,
 							automode.StateKeyLastTurnAt:       s.currentTime().UTC().Format(time.RFC3339),
 							automode.StateKeyLastStopReason:   "model_reported_done",
-						}, req.ArchiveID); err != nil {
+						}); err != nil {
 							return err
 						}
 					case responseSourceAutoWaitForUser:
-						if err := s.updateAutoState(ctx, req.Locator, map[string]any{
+						if err := s.updateAutoState(ctx, req.RuntimeState, map[string]any{
 							automode.StateKeyMode:             automode.StateWaitingForUser,
 							automode.StateKeyConsecutiveTurns: autoModeStatus.ConsecutiveTurns,
 							automode.StateKeyLastTurnAt:       s.currentTime().UTC().Format(time.RFC3339),
 							automode.StateKeyLastStopReason:   "model_waiting_for_user",
-						}, req.ArchiveID); err != nil {
+						}); err != nil {
 							return err
 						}
 					}
@@ -1025,17 +1040,17 @@ func (s *TurnExecutionService) startAutoCycleIfNeeded(ctx context.Context, req E
 	if s == nil || strings.EqualFold(strings.TrimSpace(req.TurnSource), turncmd.SourceAuto) {
 		return nil
 	}
-	status, err := s.autoStatus(ctx, req.Locator)
+	status, err := s.autoStatus(ctx, req.RuntimeState)
 	if err != nil || !status.Enabled || status.State == automode.StateRunning {
 		return err
 	}
 	now := s.currentTime().UTC().Format(time.RFC3339)
-	if err := s.updateAutoState(ctx, req.Locator, map[string]any{
+	if err := s.updateAutoState(ctx, req.RuntimeState, map[string]any{
 		automode.StateKeyMode:           automode.StateRunning,
 		automode.StateKeyLastTurnAt:     now,
 		automode.StateKeyMaxTurns:       status.MaxTurns,
 		automode.StateKeyLastStopReason: "",
-	}, req.ArchiveID); err != nil {
+	}); err != nil {
 		return err
 	}
 	return s.notifyAutoStateChange(ctx, req, automode.Status{
@@ -1048,45 +1063,45 @@ func (s *TurnExecutionService) startAutoCycleIfNeeded(ctx context.Context, req E
 	})
 }
 
-func (s *TurnExecutionService) autoStatus(ctx context.Context, locator baldasession.SessionLocator) (automode.Status, error) {
+func (s *TurnExecutionService) autoStatus(ctx context.Context, state TurnRuntimeState) (automode.Status, error) {
 	defaultMaxTurns := automode.DefaultMaxTurns
 	if s != nil {
 		defaultMaxTurns = automode.NormalizeMaxTurns(s.autoMaxTurns)
 	}
 	status := automode.DefaultStatusWithMaxTurns(defaultMaxTurns)
-	if s == nil || s.sessions == nil {
+	if s == nil || state == nil {
 		return status, nil
 	}
-	if value, ok, err := s.sessions.RuntimeStateValue(ctx, locator, automode.StateKeyEnabled); err != nil {
+	if value, ok, err := state.RuntimeStateValue(ctx, automode.StateKeyEnabled); err != nil {
 		return status, err
 	} else if ok {
 		status.Enabled = automode.ParseBool(value)
 	}
-	if value, ok, err := s.sessions.RuntimeStateValue(ctx, locator, automode.StateKeyMode); err != nil {
+	if value, ok, err := state.RuntimeStateValue(ctx, automode.StateKeyMode); err != nil {
 		return status, err
 	} else if ok {
 		if text, ok := value.(string); ok {
 			status.State = strings.TrimSpace(text)
 		}
 	}
-	if value, ok, err := s.sessions.RuntimeStateValue(ctx, locator, automode.StateKeyConsecutiveTurns); err != nil {
+	if value, ok, err := state.RuntimeStateValue(ctx, automode.StateKeyConsecutiveTurns); err != nil {
 		return status, err
 	} else if ok {
 		status.ConsecutiveTurns = automode.ParseInt(value, 0)
 	}
-	if value, ok, err := s.sessions.RuntimeStateValue(ctx, locator, automode.StateKeyMaxTurns); err != nil {
+	if value, ok, err := state.RuntimeStateValue(ctx, automode.StateKeyMaxTurns); err != nil {
 		return status, err
 	} else if ok {
 		status.MaxTurns = automode.ParseInt(value, defaultMaxTurns)
 	}
-	if value, ok, err := s.sessions.RuntimeStateValue(ctx, locator, automode.StateKeyLastTurnAt); err != nil {
+	if value, ok, err := state.RuntimeStateValue(ctx, automode.StateKeyLastTurnAt); err != nil {
 		return status, err
 	} else if ok {
 		if text, ok := value.(string); ok {
 			status.LastTurnAt = strings.TrimSpace(text)
 		}
 	}
-	if value, ok, err := s.sessions.RuntimeStateValue(ctx, locator, automode.StateKeyLastStopReason); err != nil {
+	if value, ok, err := state.RuntimeStateValue(ctx, automode.StateKeyLastStopReason); err != nil {
 		return status, err
 	} else if ok {
 		if text, ok := value.(string); ok {
@@ -1126,24 +1141,17 @@ func autoDecisionNotification(status automode.Status, turnSource, responseText s
 	}
 }
 
-func (s *TurnExecutionService) updateAutoState(ctx context.Context, locator baldasession.SessionLocator, state map[string]any, archiveID ...string) error {
-	if s == nil || s.dispatcher == nil || len(state) == 0 {
+func (s *TurnExecutionService) updateAutoState(ctx context.Context, runtimeState TurnRuntimeState, state map[string]any) error {
+	if s == nil || len(state) == 0 {
 		return nil
 	}
-	epoch := ""
-	if len(archiveID) > 0 {
-		epoch = archiveID[0]
+	if runtimeState == nil {
+		return fmt.Errorf("update auto mode runtime state: %w", chatarchivecmd.ErrUnavailable)
 	}
-	env, err := automodecmd.Envelope(automodecmd.Payload{
-		ArchiveID: epoch,
-		Locator:   locator,
-		State:     state,
-	})
-	if err != nil {
-		return err
+	if err := runtimeState.UpdateRuntimeState(ctx, state); err != nil {
+		return fmt.Errorf("update auto mode runtime state: %w", err)
 	}
-	_, err = s.dispatcher.Dispatch(ctx, env)
-	return err
+	return nil
 }
 
 func (s *TurnExecutionService) notifyAutoStateChange(ctx context.Context, req ExecutionRequest, status automode.Status) error {
@@ -1159,29 +1167,29 @@ func (s *TurnExecutionService) notifyAutoStateChange(ctx context.Context, req Ex
 }
 
 func (s *TurnExecutionService) maybeScheduleAutoTurn(ctx context.Context, req ExecutionRequest, responseSource string, visibleOutput string) error {
-	if s == nil || s.dispatcher == nil || s.sessions == nil {
+	if s == nil || s.dispatcher == nil || req.RuntimeState == nil {
 		return nil
 	}
 	if responseSource == responseSourceAutoDone || responseSource == responseSourceAutoWaitForUser {
 		return nil
 	}
-	status, err := s.autoStatus(ctx, req.Locator)
+	status, err := s.autoStatus(ctx, req.RuntimeState)
 	if err != nil || !status.Enabled {
 		return err
 	}
 	if strings.EqualFold(strings.TrimSpace(req.TurnSource), turncmd.SourceAuto) {
-		if lastOutput, ok, err := s.sessions.RuntimeStateValue(ctx, req.Locator, automode.StateKeyLastOutput); err == nil && ok {
+		if lastOutput, ok, err := req.RuntimeState.RuntimeStateValue(ctx, automode.StateKeyLastOutput); err == nil && ok {
 			currentOutput := strings.TrimSpace(visibleOutput)
 			if currentOutput == "" {
 				currentOutput = strings.TrimSpace(responseSource)
 			}
 			if lastText, ok := lastOutput.(string); ok && strings.TrimSpace(lastText) != "" && strings.TrimSpace(lastText) == currentOutput {
-				if err := s.updateAutoState(ctx, req.Locator, map[string]any{
+				if err := s.updateAutoState(ctx, req.RuntimeState, map[string]any{
 					automode.StateKeyMode:             automode.StateNoProgress,
 					automode.StateKeyConsecutiveTurns: status.ConsecutiveTurns,
 					automode.StateKeyLastTurnAt:       s.currentTime().UTC().Format(time.RFC3339),
 					automode.StateKeyLastStopReason:   "repeated_visible_output",
-				}, req.ArchiveID); err != nil {
+				}); err != nil {
 					return err
 				}
 				if status.State != automode.StateNoProgress {
@@ -1203,12 +1211,12 @@ func (s *TurnExecutionService) maybeScheduleAutoTurn(ctx context.Context, req Ex
 		nextCount = status.ConsecutiveTurns + 1
 	}
 	if nextCount > status.MaxTurns {
-		if err := s.updateAutoState(ctx, req.Locator, map[string]any{
+		if err := s.updateAutoState(ctx, req.RuntimeState, map[string]any{
 			automode.StateKeyMode:             automode.StateLimitReached,
 			automode.StateKeyConsecutiveTurns: status.MaxTurns,
 			automode.StateKeyLastTurnAt:       s.currentTime().UTC().Format(time.RFC3339),
 			automode.StateKeyLastStopReason:   "max_auto_turns_reached",
-		}, req.ArchiveID); err != nil {
+		}); err != nil {
 			return err
 		}
 		if status.State != automode.StateLimitReached {
@@ -1227,14 +1235,14 @@ func (s *TurnExecutionService) maybeScheduleAutoTurn(ctx context.Context, req Ex
 	if lastOutput == "" {
 		lastOutput = strings.TrimSpace(responseSource)
 	}
-	if err := s.updateAutoState(ctx, req.Locator, map[string]any{
+	if err := s.updateAutoState(ctx, req.RuntimeState, map[string]any{
 		automode.StateKeyMode:             automode.StateRunning,
 		automode.StateKeyConsecutiveTurns: nextCount,
 		automode.StateKeyLastTurnAt:       s.currentTime().UTC().Format(time.RFC3339),
 		automode.StateKeyMaxTurns:         status.MaxTurns,
 		automode.StateKeyLastOutput:       lastOutput,
 		automode.StateKeyLastStopReason:   "",
-	}, req.ArchiveID); err != nil {
+	}); err != nil {
 		return err
 	}
 	if status.State != automode.StateRunning {
