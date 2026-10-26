@@ -19,6 +19,7 @@ type postgresProvider struct {
 	runtimeSession *postgresRuntimeSessionService
 	archive        *sqlChatArchiveStore
 	session        *postgresSessionStore
+	operations     *sqlRuntimeOperationStore
 	jobs           *postgresScheduledJobStore
 	management     *sqlScheduleManagementStore
 	aliases        *sqlAliasStore
@@ -56,6 +57,7 @@ func initializePostgresProvider(ctx context.Context, db *sql.DB) (Provider, erro
 		_ = db.Close()
 		return nil, err
 	}
+	users := newPostgresUserStore(db)
 	return &postgresProvider{
 		db:             db,
 		appKV:          &postgresKVStore{db: db, namespace: NamespaceApp},
@@ -63,6 +65,7 @@ func initializePostgresProvider(ctx context.Context, db *sql.DB) (Provider, erro
 		runtimeSession: &postgresRuntimeSessionService{db: db},
 		archive:        &sqlChatArchiveStore{users: newPostgresUserStore(db)},
 		session:        &postgresSessionStore{db: db},
+		operations:     &sqlRuntimeOperationStore{users: users},
 		jobs:           &postgresScheduledJobStore{db: db},
 		management:     &sqlScheduleManagementStore{users: newPostgresUserStore(db)},
 		aliases:        &sqlAliasStore{users: newPostgresUserStore(db)},
@@ -185,6 +188,8 @@ func (p *postgresProvider) SessionMCPKV() KVStore {
 func (p *postgresProvider) Sessions() SessionStore {
 	return p.session
 }
+
+func (p *postgresProvider) RuntimeOperations() RuntimeOperationStore { return p.operations }
 
 func (p *postgresProvider) ScheduledJobs() ScheduledJobStore {
 	return p.jobs

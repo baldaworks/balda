@@ -213,12 +213,29 @@ also add one minimal runtime-operation table with `prepared`, `applying` and
 rows or reserialize `provider_binding_json`, so legacy sessions continue to read
 their exact binding at generation zero.
 
-This migration is an inert rollout stage. Existing generic session upserts keep
-their current conflict behavior until runtime publication and every caller has
-moved to guarded writes. The operation table has no session-delete cascade;
-unresolved and retained terminal evidence therefore survives deletion of live
-session metadata. Its only JSON field is the exact public provider binding for a
-target runtime. Credentials, protected provider configuration, raw errors,
+`Provider.RuntimeOperations` exposes only begin, applying-marker, guarded
+finalize, lookup and bounded terminal-prune operations. Begin is idempotent for
+the same normalized intent and conflicts on identity reuse or another unresolved
+operation for the session. A `context_preserved` or `context_reset` finalize
+checks the expected archive and generation in the same transaction that
+advances the canonical generation, applies the operation's non-empty target
+fields and records the terminal result. Authoritative non-publishing results
+terminalize only the matching operation identity and state; they work after a
+stale session guard or session deletion and never mutate canonical session
+fields.
+
+Existing generic session upserts keep their current conflict behavior until
+runtime publication and every caller has moved to guarded writes. The operation
+table has no session-delete cascade; unresolved and retained terminal evidence
+therefore survives deletion of live session metadata. New operation timestamps
+use fixed-width UTC microseconds, matching PostgreSQL's supported precision and
+allowing the retention index to serve the primary text range. Pruning is
+explicitly limited; a second bounded pass normalizes legacy RFC3339 fractional
+or whole-second rows to the same representation before comparison. SQLite and
+PostgreSQL therefore share exact cutoff behavior without relying on SQLite
+floating-point date functions. The table's only JSON field is the exact public
+provider binding for a target runtime. Credentials, protected provider
+configuration, raw errors,
 conversation history, transferred context and provider-native payloads do not
 belong in runtime-operation rows.
 
