@@ -21,6 +21,7 @@ type TopicSession struct {
 	agentName         string
 	runtimeMu         sync.RWMutex
 	runtime           *RuntimeSlot
+	recoveryRequired  bool
 	workspaceDir      string
 	branchName        string
 	startupNotice     string
@@ -37,21 +38,28 @@ type boundaryAttempt struct {
 }
 
 func (s *TopicSession) GetRunner() *runner.Runner {
-	runtime := s.currentRuntime()
-	if runtime == nil {
+	if s == nil {
 		return nil
 	}
-	return runtime.value.runtime.Runner
+	s.runtimeMu.RLock()
+	defer s.runtimeMu.RUnlock()
+	if s.recoveryRequired || s.runtime == nil {
+		return nil
+	}
+	return s.runtime.value.runtime.Runner
 }
 
-// AcquireRuntime leases the current coherent runtime view. Publication is
-// added separately; this method already refuses leases once drain begins.
+// AcquireRuntime leases the current coherent runtime view and refuses leases
+// while publication recovery is required or drain has begun.
 func (s *TopicSession) AcquireRuntime() (*RuntimeLease, error) {
 	if s == nil {
 		return nil, ErrRuntimeUnavailable
 	}
 	s.runtimeMu.RLock()
 	defer s.runtimeMu.RUnlock()
+	if s.recoveryRequired {
+		return nil, ErrRuntimeRecoveryRequired
+	}
 	return s.runtime.acquire()
 }
 

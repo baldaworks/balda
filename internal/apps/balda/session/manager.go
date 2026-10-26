@@ -148,6 +148,7 @@ type Manager struct {
 	workspaceBaseRef   string
 	sessionsPersistent bool
 	sessionStore       baldastate.SessionStore
+	runtimeOperations  baldastate.RuntimeOperationStore
 	logger             zerolog.Logger
 	hooks              HookRunner
 	boundaryObserver   BoundaryObserver
@@ -185,9 +186,10 @@ type ManagerParams struct {
 	Workspaces         WorkspaceManager
 	SessionsPersistent bool `name:"balda_sessions_persistent"`
 	SessionStore       baldastate.SessionStore
-	BoundaryObserver   BoundaryObserver `optional:"true"`
-	KindResolver       KindResolver     `optional:"true"`
-	Hooks              HookRunner       `optional:"true"`
+	RuntimeOperations  baldastate.RuntimeOperationStore `optional:"true"`
+	BoundaryObserver   BoundaryObserver                 `optional:"true"`
+	KindResolver       KindResolver                     `optional:"true"`
+	Hooks              HookRunner                       `optional:"true"`
 	Logger             zerolog.Logger
 }
 
@@ -209,6 +211,7 @@ func NewManager(p ManagerParams) (*Manager, error) {
 		workspaceBaseRef:   p.WorkspaceBaseRef,
 		sessionsPersistent: p.SessionsPersistent,
 		sessionStore:       p.SessionStore,
+		runtimeOperations:  p.RuntimeOperations,
 		boundaryObserver:   p.BoundaryObserver,
 		kindResolver:       p.KindResolver,
 		hooks:              p.Hooks,
@@ -556,7 +559,7 @@ func (m *Manager) createSessionLocked(ctx context.Context, sessionCtx SessionCon
 	} else {
 		effectiveModel = builder.GetAgentMetadata(baldaProvider).Model
 	}
-	ts.runtime = newRuntimeSlot(runtimeSlotConfig{
+	ts.runtime = newPublishedRuntimeSlot(runtimeSlotConfig{
 		runtime:        sessionRuntime,
 		session:        sess,
 		userID:         userID,

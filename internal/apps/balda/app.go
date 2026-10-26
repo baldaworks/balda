@@ -500,6 +500,9 @@ func Module(
 			func(provider baldastate.Provider) baldastate.SessionStore {
 				return provider.Sessions()
 			},
+			func(provider baldastate.Provider) baldastate.RuntimeOperationStore {
+				return provider.RuntimeOperations()
+			},
 			func(provider baldastate.Provider) baldastate.ScheduledJobStore {
 				return provider.ScheduledJobs()
 			},
