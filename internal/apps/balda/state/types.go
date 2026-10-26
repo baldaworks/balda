@@ -283,7 +283,43 @@ type SessionRecord struct {
 	RuntimeSnapshotID string
 	// ProviderBindingJSON pins the exact provider graph beside RuntimeSnapshotID.
 	ProviderBindingJSON string
-	Status              string
+	// RuntimeGeneration is the monotonic generation of the committed runtime binding.
+	RuntimeGeneration uint64
+	// EffectiveModel is the public model selected for the committed runtime.
+	EffectiveModel string
+	// RuntimeOutcome is the bounded semantic outcome of the committed publication.
+	RuntimeOutcome string
+	Status         string
+}
+
+// RuntimeOperationState is the durable progress of a runtime operation.
+type RuntimeOperationState string
+
+const (
+	RuntimeOperationPrepared RuntimeOperationState = "prepared"
+	RuntimeOperationApplying RuntimeOperationState = "applying"
+	RuntimeOperationTerminal RuntimeOperationState = "terminal"
+)
+
+// RuntimeOperationRecord is the bounded public evidence for one runtime operation.
+// The canonical session row, not this record, remains authoritative for committed runtime state.
+type RuntimeOperationRecord struct {
+	OperationID               string
+	SessionID                 string
+	InputHash                 string
+	Kind                      string
+	State                     RuntimeOperationState
+	ExpectedArchiveID         string
+	ExpectedGeneration        uint64
+	TargetArchiveID           string
+	TargetSnapshotID          string
+	TargetProviderBindingJSON string
+	TargetModel               string
+	Outcome                   string
+	ReasonCode                string
+	CreatedAt                 time.Time
+	UpdatedAt                 time.Time
+	TerminalAt                *time.Time
 }
 
 // SessionStore persists balda session metadata.

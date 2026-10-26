@@ -203,3 +203,24 @@ and bounded result, never transcript content. Rollback uses a compatible binary
 or a validated pre-upgrade backup restored while stopped. Schema downgrade is
 unsupported; running an older binary loses subsequent capture. Verify health,
 normal ingress and archive access after the restore.
+
+## Runtime operation state
+
+SQLite migration 71 and PostgreSQL migration 36 add runtime generation,
+effective model and bounded outcome fields to the canonical session row. They
+also add one minimal runtime-operation table with `prepared`, `applying` and
+`terminal` states. The migrations are additive: they do not rewrite existing
+rows or reserialize `provider_binding_json`, so legacy sessions continue to read
+their exact binding at generation zero.
+
+This migration is an inert rollout stage. Existing generic session upserts keep
+their current conflict behavior until runtime publication and every caller has
+moved to guarded writes. The operation table has no session-delete cascade;
+unresolved and retained terminal evidence therefore survives deletion of live
+session metadata. Its only JSON field is the exact public provider binding for a
+target runtime. Credentials, protected provider configuration, raw errors,
+conversation history, transferred context and provider-native payloads do not
+belong in runtime-operation rows.
+
+The added evidence is forward-only once populated. Roll back with a compatible
+binary or a validated pre-upgrade backup rather than dropping operation state.
