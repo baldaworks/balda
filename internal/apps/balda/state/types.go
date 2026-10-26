@@ -20,6 +20,18 @@ import (
 // ErrScheduledJobSourceConflict means an ID is already owned by another source.
 var ErrScheduledJobSourceConflict = errors.New("scheduled job source conflict")
 
+var (
+	// ErrRuntimeOperationInvalid means an operation does not satisfy the bounded
+	// public persistence contract.
+	ErrRuntimeOperationInvalid = errors.New("invalid runtime operation")
+	// ErrRuntimeOperationConflict means durable state no longer matches an
+	// operation's identity or expected session generation.
+	ErrRuntimeOperationConflict = errors.New("runtime operation conflict")
+	// ErrRuntimeOperationUnavailable means the store could not authoritatively
+	// determine or persist an operation result.
+	ErrRuntimeOperationUnavailable = errors.New("runtime operation store unavailable")
+)
+
 const (
 	// NamespaceApp stores balda app internal state (for example owner auth).
 	NamespaceApp = "balda.app"
@@ -97,6 +109,7 @@ type Provider interface {
 	RuntimeSessions() adksession.Service
 	SessionMCPKV() KVStore
 	Sessions() SessionStore
+	RuntimeOperations() RuntimeOperationStore
 	ChatArchive() ChatArchiveStore
 	ScheduledJobs() ScheduledJobStore
 	ScheduleManagement() ScheduleManagementStore
@@ -295,10 +308,41 @@ type SessionRecord struct {
 // RuntimeOperationState is the durable progress of a runtime operation.
 type RuntimeOperationState string
 
+// RuntimeOperationKind is an allowlisted runtime transition class. Command
+// policy remains outside the state package.
+type RuntimeOperationKind string
+
+// RuntimeOperationOutcome is bounded terminal evidence. Only the two context
+// outcomes publish a new canonical runtime generation.
+type RuntimeOperationOutcome string
+
+// RuntimeOperationReason is a public, credential-free reason classification.
+type RuntimeOperationReason string
+
 const (
 	RuntimeOperationPrepared RuntimeOperationState = "prepared"
 	RuntimeOperationApplying RuntimeOperationState = "applying"
 	RuntimeOperationTerminal RuntimeOperationState = "terminal"
+
+	RuntimeOperationKindModel    RuntimeOperationKind = "model"
+	RuntimeOperationKindProvider RuntimeOperationKind = "provider"
+	RuntimeOperationKindLifetime RuntimeOperationKind = "lifetime"
+
+	RuntimeOperationOutcomeContextPreserved  RuntimeOperationOutcome = "context_preserved"
+	RuntimeOperationOutcomeContextReset      RuntimeOperationOutcome = "context_reset"
+	RuntimeOperationOutcomeAborted           RuntimeOperationOutcome = "aborted"
+	RuntimeOperationOutcomeConflict          RuntimeOperationOutcome = "conflict"
+	RuntimeOperationOutcomeFailed            RuntimeOperationOutcome = "failed"
+	RuntimeOperationOutcomeCleanupIncomplete RuntimeOperationOutcome = "cleanup_incomplete"
+
+	RuntimeOperationReasonUnsupported       RuntimeOperationReason = "unsupported"
+	RuntimeOperationReasonInvalid           RuntimeOperationReason = "invalid"
+	RuntimeOperationReasonFailed            RuntimeOperationReason = "failed"
+	RuntimeOperationReasonCanceled          RuntimeOperationReason = "canceled"
+	RuntimeOperationReasonDeadlineExceeded  RuntimeOperationReason = "deadline_exceeded"
+	RuntimeOperationReasonGuardConflict     RuntimeOperationReason = "guard_conflict"
+	RuntimeOperationReasonRecoveryAborted   RuntimeOperationReason = "recovery_aborted"
+	RuntimeOperationReasonCleanupIncomplete RuntimeOperationReason = "cleanup_incomplete"
 )
 
 // RuntimeOperationRecord is the bounded public evidence for one runtime operation.
@@ -320,6 +364,27 @@ type RuntimeOperationRecord struct {
 	CreatedAt                 time.Time
 	UpdatedAt                 time.Time
 	TerminalAt                *time.Time
+}
+
+// RuntimeOperationFinalization describes one terminal semantic result. The
+// target runtime metadata is read from the durable prepared operation.
+type RuntimeOperationFinalization struct {
+	OperationID string
+	InputHash   string
+	Outcome     RuntimeOperationOutcome
+	ReasonCode  RuntimeOperationReason
+	At          time.Time
+}
+
+// RuntimeOperationStore persists the minimal three-state runtime publication
+// journal. It does not execute transitions or reconcile external effects.
+type RuntimeOperationStore interface {
+	Begin(ctx context.Context, intent RuntimeOperationRecord) (RuntimeOperationRecord, error)
+	MarkApplying(ctx context.Context, operationID, inputHash string) error
+	Finalize(ctx context.Context, finalization RuntimeOperationFinalization) (RuntimeOperationRecord, error)
+	Get(ctx context.Context, operationID string) (RuntimeOperationRecord, bool, error)
+	GetUnresolvedBySession(ctx context.Context, sessionID string) (RuntimeOperationRecord, bool, error)
+	Prune(ctx context.Context, before time.Time, limit int) (int64, error)
 }
 
 // SessionStore persists balda session metadata.

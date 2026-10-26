@@ -23,6 +23,7 @@ type sqliteProvider struct {
 	runtimeSession *sqliteRuntimeSessionService
 	archive        *sqlChatArchiveStore
 	session        *sqliteSessionStore
+	operations     *sqlRuntimeOperationStore
 	jobs           *sqliteScheduledJobStore
 	management     *sqlScheduleManagementStore
 	aliases        *sqlAliasStore
@@ -167,6 +168,7 @@ func NewSQLiteProvider(ctx context.Context, path string) (Provider, error) {
 		return nil, err
 	}
 
+	users := newSQLiteUserStore(db)
 	var provider = &sqliteProvider{
 		db:             db,
 		appKV:          &sqliteKVStore{db: db, namespace: NamespaceApp},
@@ -174,6 +176,7 @@ func NewSQLiteProvider(ctx context.Context, path string) (Provider, error) {
 		runtimeSession: &sqliteRuntimeSessionService{db: db},
 		archive:        &sqlChatArchiveStore{users: newSQLiteUserStore(db)},
 		session:        &sqliteSessionStore{db: db},
+		operations:     &sqlRuntimeOperationStore{users: users},
 		jobs:           &sqliteScheduledJobStore{db: db},
 		management:     &sqlScheduleManagementStore{users: newSQLiteUserStore(db)},
 		aliases:        &sqlAliasStore{users: newSQLiteUserStore(db)},
@@ -223,6 +226,8 @@ func (p *sqliteProvider) SessionMCPKV() KVStore {
 func (p *sqliteProvider) Sessions() SessionStore {
 	return p.session
 }
+
+func (p *sqliteProvider) RuntimeOperations() RuntimeOperationStore { return p.operations }
 
 func (p *sqliteProvider) ScheduledJobs() ScheduledJobStore {
 	return p.jobs
