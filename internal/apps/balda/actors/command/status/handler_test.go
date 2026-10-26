@@ -23,14 +23,11 @@ import (
 type statusSessions struct {
 	info    session.TopicSessionInfo
 	infoErr error
-	meta    session.AgentMetadata
 }
 
 func (s *statusSessions) GetSessionInfo(context.Context, string) (session.TopicSessionInfo, error) {
 	return s.info, s.infoErr
 }
-func (*statusSessions) BaldaProviderID() string                         { return "codex" }
-func (s *statusSessions) GetAgentMetadata(string) session.AgentMetadata { return s.meta }
 
 type statusTurns struct {
 	turn appports.CurrentTurn
@@ -77,8 +74,7 @@ func (d *statusDispatcher) Dispatch(_ context.Context, env actorlayer.Envelope) 
 func TestHandlerUsesStructuredStatusRenderer(t *testing.T) {
 	startedAt := time.Date(2026, time.October, 21, 12, 30, 0, 0, time.UTC)
 	sessions := &statusSessions{
-		info: session.TopicSessionInfo{Status: "active"},
-		meta: session.AgentMetadata{Type: "openai", Model: "gpt-6", ReasoningEffort: "high"},
+		info: session.TopicSessionInfo{Status: "active", ProviderID: "codex", Model: "gpt-6"},
 	}
 	turns := statusTurns{ok: true, turn: appports.CurrentTurn{StartedAt: startedAt, PendingTurns: 2, Text: strings.Repeat("я", 1001)}}
 	registry, dispatcher := &statusRegistry{}, &statusDispatcher{}
@@ -93,7 +89,7 @@ func TestHandlerUsesStructuredStatusRenderer(t *testing.T) {
 		t.Fatalf("transport=%q deliveries=%d", registry.transport, len(dispatcher.envelopes))
 	}
 	got := registry.response
-	if got.ProviderID != "codex" || got.ProviderType != "openai" || got.Model != "gpt-6" || got.ReasoningEffort != "high" {
+	if got.ProviderID != "codex" || got.ProviderType != unavailableValue || got.Model != "gpt-6" || got.ReasoningEffort != unavailableValue {
 		t.Errorf("provider status = %+v", got)
 	}
 	if got.SessionState != "active" || !got.TurnActive || got.TurnStartedAt != startedAt || got.PendingTurns != 2 {

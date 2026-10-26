@@ -235,6 +235,40 @@ func checkChatArchiveLifecycle(t *testing.T, open contractOpener) {
 	}
 }
 
+func checkChatArchiveRuntimeMetadata(t *testing.T, open contractOpener) {
+	p := newContractProvider(t, open)
+	defer closeContractProvider(t, p)
+	now := time.Now().UTC()
+	archive := chatarchivecmd.Session{
+		ID: "6b81c897-b406-49eb-a98b-25bd22319c34", StableID: "runtime-metadata-session",
+		RuntimeID: "runtime-metadata-session", Persistence: chatarchivecmd.PersistenceDurable, BootID: "runtime-metadata-boot", StartedAt: now, ObservedAt: now,
+		Location: chatarchivecmd.Location{Channel: "telegram", AddressKey: "88:0", Locator: "telegram:88:0"},
+	}
+	intent := chatarchivecmd.Intent{Token: "runtime-metadata-activation", Kind: chatarchivecmd.KindFresh, Session: archive, At: now}
+	if _, err := p.ChatArchive().Begin(t.Context(), intent); err != nil {
+		t.Fatal(err)
+	}
+	live := SessionRecord{
+		SessionID: archive.StableID, UserID: "user", ChannelType: archive.Location.Channel,
+		AddressKey: archive.Location.AddressKey, AddressJSON: `{}`, AgentName: "agent",
+		RuntimeSnapshotID: "snapshot-current", ProviderBindingJSON: testRuntimeBinding,
+		RuntimeGeneration: 7, EffectiveModel: "model-current",
+		RuntimeOutcome: string(RuntimeOperationOutcomeContextPreserved), Status: SessionStatusActive,
+	}
+	if _, err := p.ChatArchive().Activate(t.Context(), intent.Token, &live); err != nil {
+		t.Fatal(err)
+	}
+	got, found, err := p.Sessions().GetBySessionID(t.Context(), live.SessionID)
+	if err != nil || !found {
+		t.Fatalf("GetBySessionID() = %+v, %t, %v", got, found, err)
+	}
+	if got.ArchiveID != archive.ID || got.RuntimeSnapshotID != live.RuntimeSnapshotID ||
+		got.ProviderBindingJSON != live.ProviderBindingJSON || got.RuntimeGeneration != live.RuntimeGeneration ||
+		got.EffectiveModel != live.EffectiveModel || got.RuntimeOutcome != live.RuntimeOutcome {
+		t.Fatalf("activated runtime metadata = %+v", got)
+	}
+}
+
 func checkChatArchiveLifecycleFences(t *testing.T, open contractOpener) {
 	p := newContractProvider(t, open)
 	defer closeContractProvider(t, p)

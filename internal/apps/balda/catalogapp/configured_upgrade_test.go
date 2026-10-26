@@ -236,7 +236,7 @@ func TestConfiguredSessionUpgradeFreshensIncompleteADKState(t *testing.T) {
 			builder := baldaagent.NewBuilder(baldaagent.BuilderParams{Factory: agentfactory.New(providers, registry), ScopedFactory: NewProviderFactory(providers, registry), NormaCfg: runtimeconfig.RuntimeConfig{Providers: providers}, SessionService: p.RuntimeSessions()})
 			runtimes := baldaagent.NewRuntimeManager(baldaagent.RuntimeManagerParams{Builder: builder, BaldaProviderID: "alpha", WorkingDir: workspace, StateDir: dir, CapabilityBinder: binder, MCPRegistry: registry, Logger: zerolog.Nop()})
 			t.Cleanup(func() { _ = runtimes.Stop(context.Background()) })
-			manager, err := session.NewManager(session.ManagerParams{AgentBuilder: sessionapp.SessionAgentBuilderAdapter{Builder: builder}, RuntimeManager: sessionapp.SessionRuntimeManagerAdapter{Manager: runtimes}, BaldaProviderID: "alpha", WorkingDir: workspace, SessionsPersistent: true, SessionStore: p.Sessions(), Logger: zerolog.Nop()})
+			manager, err := session.NewManager(session.ManagerParams{AgentBuilder: sessionapp.SessionAgentBuilderAdapter{Builder: builder}, RuntimeManager: sessionapp.SessionRuntimeManagerAdapter{Manager: runtimes}, BaldaProviderID: "alpha", WorkingDir: workspace, SessionsPersistent: true, SessionStore: p.Sessions(), RuntimeOperations: p.RuntimeOperations(), Logger: zerolog.Nop()})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -256,6 +256,8 @@ func TestConfiguredSessionUpgradeFreshensIncompleteADKState(t *testing.T) {
 			wantRecord := record
 			wantRecord.RuntimeSnapshotID = restored.GetRuntimeSnapshotID()
 			wantRecord.EffectiveModel = manager.GetAgentMetadata("alpha").Model
+			wantRecord.RuntimeGeneration++
+			wantRecord.RuntimeOutcome = string(state.RuntimeOperationOutcomeContextReset)
 			if err != nil || !found || afterRecord != wantRecord {
 				t.Fatalf("session metadata changed: %+v / %v", afterRecord, err)
 			}

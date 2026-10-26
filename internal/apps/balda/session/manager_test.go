@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -863,7 +864,7 @@ func TestRuntimeStateAccessRestoresPersistedSession(t *testing.T) {
 func TestRestoreSessionReusesActivePersistedSessionWhenLocatorIDChanged(t *testing.T) {
 	address := testTelegramLocator(10, 42)
 	legacyID := "legacy-session-id"
-	active := &TopicSession{sessionID: legacyID, locator: address, kind: KindChat}
+	active := &TopicSession{sessionID: legacyID, locator: address, kind: KindChat, runtime: newPublishedRuntimeSlot(runtimeSlotConfig{})}
 	record := baldastate.SessionRecord{
 		SessionID:   legacyID,
 		UserID:      "tg-201",
@@ -893,9 +894,16 @@ func TestRestoreSessionReusesActivePersistedSessionWhenLocatorIDChanged(t *testi
 	}
 }
 
-func TestGetSessionInfo_ReturnsActiveTransportUserID(t *testing.T) {
+func TestGetSessionInfo_UsesPersistedTransportUserID(t *testing.T) {
+	store := &fakeSessionStore{recordsByID: map[string]baldastate.SessionRecord{
+		"tg-10-42": {
+			SessionID: "tg-10-42", UserID: "tg-201", ChannelType: baldastate.ChannelTypeTelegram,
+			AddressKey: "10:42", AddressJSON: `{"chat_id":10,"topic_id":42}`, Status: baldastate.SessionStatusActive,
+		},
+	}}
 	m := &Manager{
-		logger: zerolog.Nop(),
+		logger:       zerolog.Nop(),
+		sessionStore: store,
 		sessions: map[string]*TopicSession{
 			"tg-10-42": {
 				sessionID: "tg-10-42",
@@ -910,8 +918,8 @@ func TestGetSessionInfo_ReturnsActiveTransportUserID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetSessionInfo() error = %v", err)
 	}
-	if info.UserID != "tg-101" {
-		t.Fatalf("GetSessionInfo() user_id = %q, want tg-101", info.UserID)
+	if info.UserID != "tg-201" {
+		t.Fatalf("GetSessionInfo() user_id = %q, want tg-201", info.UserID)
 	}
 }
 
@@ -1505,26 +1513,51 @@ func TestRestoreSessionRequestsPersistedRuntimeSnapshot(t *testing.T) {
 	}
 }
 
-func TestRestoreLegacySessionAdoptsProviderBindingOnce(t *testing.T) {
+func TestRestoreLegacySessionKeepsBlankBindingWithoutWrite(t *testing.T) {
 	locator := testTelegramLocator(20, 84)
+	dbPath := filepath.Join(t.TempDir(), "legacy-runtime.db")
+	provider, err := baldastate.NewSQLiteProvider(t.Context(), dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = provider.Close() })
 	record := baldastate.SessionRecord{
 		SessionID: locator.SessionID, UserID: "tg-201", ChannelType: locator.ChannelType,
 		AddressKey: locator.AddressKey, AddressJSON: locator.AddressJSON, AgentName: "topic",
 		RuntimeSnapshotID: "snapshot-persisted", Status: baldastate.SessionStatusActive,
 	}
-	store := &fakeSessionStore{recordsByAddress: map[string]baldastate.SessionRecord{
-		sessionAddressKey(locator.ChannelType, locator.AddressKey): record,
-	}}
-	runtimeManager := &fakeScopedRuntimeManager{
-		fakeBaldaRuntimeManager: fakeBaldaRuntimeManager{providerID: "balda-provider"},
-		sessionRuntime: &BuiltRuntime{RuntimeSnapshotID: record.RuntimeSnapshotID,
-			ProviderBindingJSON: `{"root_provider_id":"adopted"}`},
+	if err := provider.Sessions().Upsert(t.Context(), record); err != nil {
+		t.Fatal(err)
 	}
-	builder := &fakeAgentBuilder{agentMetadata: AgentMetadata{Model: "different-current-default"}}
+	service := provider.RuntimeSessions()
+	if _, err := service.Create(t.Context(), &adksession.CreateRequest{
+		AppName: baldaRuntimeAppName, UserID: record.UserID, SessionID: record.SessionID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	runtime := &BuiltRuntime{
+		AppName: baldaRuntimeAppName, SessionSvc: service, RuntimeSnapshotID: record.RuntimeSnapshotID,
+		ProviderBindingJSON: publicationBinding,
+	}
+	runtimeManager := &fakeScopedRuntimeManager{
+		fakeBaldaRuntimeManager: fakeBaldaRuntimeManager{providerID: "balda-provider", runtime: runtime},
+		sessionRuntime:          runtime,
+	}
+	builder := &sqliteAgentBuilder{}
 	m := &Manager{
 		baldaProviderName: "balda-provider", runtimeManager: runtimeManager, agentBuilder: builder,
-		workingDir: t.TempDir(), logger: zerolog.Nop(), sessions: make(map[string]*TopicSession), sessionStore: store,
+		workingDir: t.TempDir(), logger: zerolog.Nop(), sessions: make(map[string]*TopicSession),
+		sessionStore: provider.Sessions(), runtimeOperations: provider.RuntimeOperations(),
 	}
+	probe, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = probe.Close() })
+	if _, err := probe.ExecContext(t.Context(), `CREATE TRIGGER reject_legacy_binding_adoption BEFORE UPDATE ON balda_session_metadata BEGIN SELECT RAISE(ABORT,'legacy row must not be rewritten'); END`); err != nil {
+		t.Fatal(err)
+	}
+
 	restored, err := m.RestoreSession(t.Context(), SessionContext{Locator: locator})
 	if err != nil {
 		t.Fatal(err)
@@ -1532,17 +1565,22 @@ func TestRestoreLegacySessionAdoptsProviderBindingOnce(t *testing.T) {
 	if got := runtimeManager.sessionRequests[0].ProviderBindingJSON; got != "" {
 		t.Fatalf("legacy restore requested binding = %q", got)
 	}
-	if len(store.upsertedRecords) != 1 || store.upsertedRecords[0].ProviderBindingJSON != runtimeManager.sessionRuntime.ProviderBindingJSON {
-		t.Fatalf("adopted records = %+v", store.upsertedRecords)
+	repeated, err := m.RestoreSession(t.Context(), SessionContext{Locator: locator})
+	if err != nil || repeated != restored {
+		t.Fatalf("repeated RestoreSession() = %p, %v; want %p", repeated, err, restored)
 	}
 	lease, err := restored.AcquireRuntime()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if lease.EffectiveModel() != "" || store.upsertedRecords[0].EffectiveModel != "" {
-		t.Fatalf("legacy blank model changed to lease=%q persisted=%q", lease.EffectiveModel(), store.upsertedRecords[0].EffectiveModel)
+	if lease.EffectiveModel() != "" || lease.Generation() != 0 || lease.ProviderBindingJSON() != publicationBinding {
+		t.Fatalf("legacy runtime = model %q generation %d binding %q", lease.EffectiveModel(), lease.Generation(), lease.ProviderBindingJSON())
 	}
 	lease.Release()
+	got, found, err := provider.Sessions().GetBySessionID(t.Context(), record.SessionID)
+	if err != nil || !found || got != record {
+		t.Fatalf("legacy metadata = %+v, %t, %v; want unchanged %+v", got, found, err, record)
+	}
 }
 
 func TestSessionRecordPreservesRuntimeSlotMetadata(t *testing.T) {

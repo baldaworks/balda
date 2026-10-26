@@ -2,11 +2,14 @@ package session
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
+	"github.com/baldaworks/balda/internal/apps/balda/providers"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 )
 
@@ -116,6 +119,10 @@ func (m *Manager) prepareSession(ctx context.Context, sessionCtx SessionContext,
 			unlock()
 			continue
 		}
+		if err := m.recoverRuntimeOperation(ctx, currentID); err != nil {
+			unlock()
+			return nil, err
+		}
 		sess, err := m.prepareSessionLocked(ctx, sessionCtx, label, createIfMissing, record, found)
 		unlock()
 		return sess, err
@@ -151,6 +158,10 @@ func (m *Manager) prepareSessionLocked(ctx context.Context, sessionCtx SessionCo
 	m.mu.RLock()
 	active := m.sessions[sessionID]
 	m.mu.RUnlock()
+	if active != nil && found && !runtimeMatchesSessionRecord(active, record) {
+		active.fenceRuntimeRecovery()
+		return nil, ErrRuntimeRecoveryRequired
+	}
 	if active != nil {
 		if err := m.reconcileArchiveDestruction(ctx, sessionCtx.Locator, sessionCtx.UserID); err != nil {
 			return nil, err
@@ -162,6 +173,10 @@ func (m *Manager) prepareSessionLocked(ctx context.Context, sessionCtx SessionCo
 	if active != nil {
 		if active.kind != sessionCtx.Kind || active.ownerJobID != strings.TrimSpace(sessionCtx.OwnerJobID) {
 			return nil, fmt.Errorf("active session execution context does not match requested kind and owner")
+		}
+		if found && !runtimeMatchesSessionRecord(active, record) {
+			active.fenceRuntimeRecovery()
+			return nil, ErrRuntimeRecoveryRequired
 		}
 		return active, nil
 	}
@@ -185,6 +200,78 @@ func (m *Manager) prepareSessionLocked(ctx context.Context, sessionCtx SessionCo
 		return nil, fmt.Errorf("prepared session %q was not published", sessionID)
 	}
 	return prepared, nil
+}
+
+func (m *Manager) recoverRuntimeOperation(ctx context.Context, sessionID string) error {
+	if m.runtimeOperations == nil {
+		return nil
+	}
+	operation, found, err := m.runtimeOperations.GetUnresolvedBySession(ctx, strings.TrimSpace(sessionID))
+	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		m.fenceRuntimeRecovery(sessionID)
+		return ErrRuntimeRecoveryRequired
+	}
+	if !found {
+		return nil
+	}
+	if operation.State != baldastate.RuntimeOperationPrepared {
+		m.fenceRuntimeRecovery(sessionID)
+		return ErrRuntimeRecoveryRequired
+	}
+	terminalAt := time.Now().UTC()
+	if operation.UpdatedAt.After(terminalAt) {
+		terminalAt = operation.UpdatedAt
+	}
+	terminal, err := m.runtimeOperations.Finalize(ctx, baldastate.RuntimeOperationFinalization{
+		OperationID: operation.OperationID,
+		InputHash:   operation.InputHash,
+		Outcome:     baldastate.RuntimeOperationOutcomeAborted,
+		ReasonCode:  baldastate.RuntimeOperationReasonRecoveryAborted,
+		At:          terminalAt,
+	})
+	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		m.fenceRuntimeRecovery(sessionID)
+		return ErrRuntimeRecoveryRequired
+	}
+	if terminal.State != baldastate.RuntimeOperationTerminal ||
+		terminal.Outcome != string(baldastate.RuntimeOperationOutcomeAborted) ||
+		terminal.ReasonCode != string(baldastate.RuntimeOperationReasonRecoveryAborted) {
+		m.fenceRuntimeRecovery(sessionID)
+		return ErrRuntimeRecoveryRequired
+	}
+	return nil
+}
+
+func (m *Manager) fenceRuntimeRecovery(sessionID string) {
+	m.mu.RLock()
+	topic := m.sessions[strings.TrimSpace(sessionID)]
+	m.mu.RUnlock()
+	if topic != nil {
+		topic.fenceRuntimeRecovery()
+	}
+}
+
+func runtimeMatchesSessionRecord(topic *TopicSession, record baldastate.SessionRecord) bool {
+	value, ok := topic.runtimeValue()
+	if !ok {
+		return false
+	}
+	bindingMatches := strings.TrimSpace(value.runtime.ProviderBindingJSON) == strings.TrimSpace(record.ProviderBindingJSON)
+	if record.RuntimeGeneration == 0 && strings.TrimSpace(record.ProviderBindingJSON) == "" {
+		bindingMatches = true
+	}
+	return value.archiveID == strings.TrimSpace(record.ArchiveID) &&
+		value.generation == record.RuntimeGeneration &&
+		strings.TrimSpace(value.runtime.RuntimeSnapshotID) == strings.TrimSpace(record.RuntimeSnapshotID) &&
+		bindingMatches &&
+		value.effectiveModel == strings.TrimSpace(record.EffectiveModel) &&
+		value.outcome == strings.TrimSpace(record.RuntimeOutcome)
 }
 
 func (m *Manager) RuntimeStateValue(ctx context.Context, locator SessionLocator, key string) (any, bool, error) {
@@ -222,30 +309,18 @@ type TopicSessionInfo struct {
 	WorkspaceDir string
 	BranchName   string
 	Status       string
+	ArchiveID    string
+	Generation   uint64
+	Model        string
+	Outcome      string
+	ProviderID   string
+	Recovery     string
 }
 
 func (m *Manager) GetSessionInfo(ctx context.Context, sessionID string) (TopicSessionInfo, error) {
 	trimmedID := strings.TrimSpace(sessionID)
 	if trimmedID == "" {
 		return TopicSessionInfo{}, fmt.Errorf("session_id is required")
-	}
-
-	m.mu.RLock()
-	ts := m.sessions[trimmedID]
-	m.mu.RUnlock()
-	if ts != nil {
-		return TopicSessionInfo{
-			SessionID:    ts.sessionID,
-			UserID:       ts.userID,
-			Locator:      ts.locator,
-			Kind:         ts.kind,
-			OwnerJobID:   ts.ownerJobID,
-			ChannelType:  ts.locator.ChannelType,
-			AgentName:    ts.agentName,
-			WorkspaceDir: ts.workspaceDir,
-			BranchName:   ts.branchName,
-			Status:       baldastate.SessionStatusActive,
-		}, nil
 	}
 
 	record, ok, err := m.sessionStore.GetBySessionID(ctx, trimmedID)
@@ -268,11 +343,48 @@ func (m *Manager) GetSessionInfo(ctx context.Context, sessionID string) (TopicSe
 		AgentName:    record.AgentName,
 		WorkspaceDir: record.WorkspaceDir,
 		BranchName:   record.BranchName,
+		ArchiveID:    record.ArchiveID,
+		Generation:   record.RuntimeGeneration,
+		Model:        record.EffectiveModel,
+		Outcome:      record.RuntimeOutcome,
+		Recovery:     runtimeRecoveryReady,
+	}
+	if bindingJSON := strings.TrimSpace(record.ProviderBindingJSON); bindingJSON != "" {
+		canonical, canonicalErr := providers.CanonicalBindingJSON(bindingJSON)
+		if canonicalErr != nil || canonical != bindingJSON {
+			return TopicSessionInfo{}, ErrRuntimeRecoveryRequired
+		}
+		var binding providers.Binding
+		if unmarshalErr := json.Unmarshal([]byte(canonical), &binding); unmarshalErr != nil {
+			return TopicSessionInfo{}, ErrRuntimeRecoveryRequired
+		}
+		info.ProviderID = binding.RootProviderID
 	}
 	if strings.TrimSpace(record.Status) == "" || record.Status == baldastate.SessionStatusActive {
 		info.Status = sessionStatusPersisted
 	} else {
 		info.Status = record.Status
+	}
+	if m.runtimeOperations != nil {
+		operation, found, operationErr := m.runtimeOperations.GetUnresolvedBySession(ctx, trimmedID)
+		if operationErr != nil {
+			info.Status = sessionStatusRecoveryRequired
+			info.Recovery = runtimeRecoveryAmbiguous
+		} else if found {
+			info.Status = sessionStatusRecoveryRequired
+			switch operation.State {
+			case baldastate.RuntimeOperationPrepared:
+				info.Recovery = runtimeRecoveryPrepared
+			case baldastate.RuntimeOperationApplying:
+				info.Recovery = runtimeRecoveryAmbiguous
+			default:
+				info.Recovery = runtimeRecoveryAmbiguous
+			}
+		}
+	}
+	if info.Outcome == string(baldastate.RuntimeOperationOutcomeCleanupIncomplete) {
+		info.Status = sessionStatusRecoveryRequired
+		info.Recovery = runtimeRecoveryCleanup
 	}
 	return info, nil
 }

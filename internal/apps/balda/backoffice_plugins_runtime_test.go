@@ -292,7 +292,7 @@ func (f *pluginsRuntimeFixture) open(t *testing.T) {
 	runtime := &pluginsFixtureRuntime{binder: binder, service: adksession.InMemoryService(), bindings: make(map[string]baldaagent.SessionCapabilityBinding)}
 	f.runtime = runtime
 	builder := baldaagent.NewBuilder(baldaagent.BuilderParams{NormaCfg: config})
-	f.sessions, err = session.NewManager(session.ManagerParams{AgentBuilder: sessionapp.SessionAgentBuilderAdapter{Builder: builder}, RuntimeManager: runtime, BaldaProviderID: pluginsRuntimeFixtureID, WorkingDir: f.dir, SessionsPersistent: true, SessionStore: f.provider.Sessions(), Logger: zerolog.Nop()})
+	f.sessions, err = session.NewManager(session.ManagerParams{AgentBuilder: sessionapp.SessionAgentBuilderAdapter{Builder: builder}, RuntimeManager: runtime, BaldaProviderID: pluginsRuntimeFixtureID, WorkingDir: f.dir, SessionsPersistent: true, SessionStore: f.provider.Sessions(), RuntimeOperations: f.provider.RuntimeOperations(), Logger: zerolog.Nop()})
 	if err != nil {
 		t.Fatal(err)
 	}

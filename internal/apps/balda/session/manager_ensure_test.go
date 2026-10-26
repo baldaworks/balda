@@ -284,7 +284,7 @@ func TestEnsureSessionRecoversFailedSQLiteRestore(t *testing.T) {
 			return nil, errors.New("saved capabilities unavailable")
 		}
 		return runtime, nil
-	}}, agentBuilder: builder, workingDir: t.TempDir(), logger: zerolog.Nop(), sessions: make(map[string]*TopicSession), sessionStore: provider.Sessions(), sessionsPersistent: true, boundaryObserver: observer}
+	}}, agentBuilder: builder, workingDir: t.TempDir(), logger: zerolog.Nop(), sessions: make(map[string]*TopicSession), sessionStore: provider.Sessions(), runtimeOperations: provider.RuntimeOperations(), sessionsPersistent: true, boundaryObserver: observer}
 	prepared, err := manager.EnsureSession(t.Context(), SessionContext{Locator: locator, UserID: ensureTestUserID}, "new")
 	if err != nil {
 		t.Fatal(err)
@@ -293,7 +293,7 @@ func TestEnsureSessionRecoversFailedSQLiteRestore(t *testing.T) {
 		t.Fatal("fallback did not create fresh current runtime")
 	}
 	saved, found, err := provider.Sessions().GetByAddress(t.Context(), locator.ChannelType, locator.AddressKey)
-	if err != nil || !found || saved.RuntimeSnapshotID != currentSnapshotID {
+	if err != nil || !found || saved.RuntimeSnapshotID != currentSnapshotID || saved.RuntimeGeneration != 1 || saved.RuntimeOutcome != string(baldastate.RuntimeOperationOutcomeContextReset) {
 		t.Fatalf("saved fallback = %+v, %v, %v", saved, found, err)
 	}
 	if len(observer.boundaries) != 1 || observer.boundaries[0].Reason != BoundaryReasonRotation {

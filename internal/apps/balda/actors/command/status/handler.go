@@ -29,8 +29,6 @@ const (
 // SessionReader exposes read-only session and provider metadata.
 type SessionReader interface {
 	GetSessionInfo(ctx context.Context, sessionID string) (session.TopicSessionInfo, error)
-	BaldaProviderID() string
-	GetAgentMetadata(agentName string) session.AgentMetadata
 }
 
 type Coordinator interface {
@@ -95,14 +93,12 @@ func (h *Handler) render(ctx context.Context, p commandcmd.Payload) (deliveryfmt
 		return deliveryfmt.StructuredPresentation{}, fmt.Errorf("structured message registry is required")
 	}
 
-	providerID := strings.TrimSpace(h.sessions.BaldaProviderID())
-	metadata := h.sessions.GetAgentMetadata(providerID)
 	response := statusfmt.Response{
 		ObservedAt:      h.now().UTC(),
-		ProviderID:      valueOrUnavailable(providerID),
-		ProviderType:    valueOrUnavailable(metadata.Type),
-		Model:           valueOrUnavailable(metadata.Model),
-		ReasoningEffort: valueOrUnavailable(metadata.ReasoningEffort),
+		ProviderID:      unavailableValue,
+		ProviderType:    unavailableValue,
+		Model:           unavailableValue,
+		ReasoningEffort: unavailableValue,
 		ChannelType:     valueOrUnavailable(p.Locator.ChannelType),
 		SessionID:       valueOrUnavailable(p.Locator.SessionID),
 		SessionState:    unavailableValue,
@@ -131,6 +127,8 @@ func (h *Handler) render(ctx context.Context, p commandcmd.Payload) (deliveryfmt
 		h.logger.Warn().Err(err).Str("session_id", p.Locator.SessionID).Msg("failed to read status session metadata")
 	} else {
 		response.SessionState = valueOrUnavailable(info.Status)
+		response.ProviderID = valueOrUnavailable(info.ProviderID)
+		response.Model = valueOrUnavailable(info.Model)
 	}
 
 	if h.turns != nil {
