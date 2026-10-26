@@ -83,6 +83,8 @@ func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) 
 	t.Run("Provider_KVRoundTrip", func(t *testing.T) { checkProvider_KVRoundTrip(t, factory(t)) })
 	t.Run("Provider_KVConsumeJSONConcurrentConsumeOnce", func(t *testing.T) { checkProvider_KVConsumeJSONConcurrentConsumeOnce(t, factory(t)) })
 	t.Run("Provider_SessionStoreRoundTrip", func(t *testing.T) { checkProvider_SessionStoreRoundTrip(t, factory(t)) })
+	t.Run("Provider_SessionStoreUpsertKeepsLegacyRuntimeBehavior", func(t *testing.T) { checkProviderSessionStoreUpsertKeepsLegacyRuntimeBehavior(t, factory(t)) })
+	t.Run("Provider_SessionStoreRejectsInvalidRuntimeMetadata", func(t *testing.T) { checkProviderSessionStoreRejectsInvalidRuntimeMetadata(t, factory(t)) })
 	t.Run("Provider_TurnStatus", func(t *testing.T) { checkProvider_TurnStatus(t, factory(t)) })
 	t.Run("Provider_ManagedProviderState", func(t *testing.T) { checkProviderManagedProviderState(t, factory(t)) })
 	t.Run("Provider_SessionStoreUpsert_AllowsMultipleTelegramSessions", func(t *testing.T) { checkProvider_SessionStoreUpsert_AllowsMultipleTelegramSessions(t, factory(t)) })
@@ -670,7 +672,10 @@ func checkProvider_SessionStoreRoundTrip(t *testing.T, open contractOpener) {
 		WorkspaceDir:        "/tmp/ws",
 		BranchName:          "norma/balda/tg-1-2",
 		RuntimeSnapshotID:   "snapshot-1",
-		ProviderBindingJSON: `{"root_provider_id":"managed"}`,
+		ProviderBindingJSON: `{"RootProviderID":"managed","Entries":[{"ProviderID":"managed","Source":"managed","RevisionID":"revision-managed"}],"Reproducible":true,"Warnings":null}`,
+		RuntimeGeneration:   7,
+		EffectiveModel:      "public-model",
+		RuntimeOutcome:      "context_preserved",
 		Status:              SessionStatusActive,
 	}
 	if err := store.Upsert(ctx, record); err != nil {
@@ -697,6 +702,84 @@ func checkProvider_SessionStoreRoundTrip(t *testing.T, open contractOpener) {
 	}
 	if got.ProviderBindingJSON != record.ProviderBindingJSON {
 		t.Fatalf("provider_binding_json = %q, want %q", got.ProviderBindingJSON, record.ProviderBindingJSON)
+	}
+	if got.RuntimeGeneration != record.RuntimeGeneration {
+		t.Fatalf("runtime_generation = %d, want %d", got.RuntimeGeneration, record.RuntimeGeneration)
+	}
+	if got.EffectiveModel != record.EffectiveModel || got.RuntimeOutcome != record.RuntimeOutcome {
+		t.Fatalf("runtime metadata = %q/%q, want %q/%q", got.EffectiveModel, got.RuntimeOutcome, record.EffectiveModel, record.RuntimeOutcome)
+	}
+}
+
+func checkProviderSessionStoreUpsertKeepsLegacyRuntimeBehavior(t *testing.T, open contractOpener) {
+	provider := newContractProvider(t, open)
+	defer closeContractProvider(t, provider)
+
+	store := provider.Sessions()
+	original := SessionRecord{
+		ArchiveID: "archive-exact", SessionID: "runtime-guarded", UserID: "user-1",
+		ChannelType: ChannelTypeTelegram, AddressKey: "91:0", AddressJSON: `{}`,
+		AgentName: "agent", WorkspaceDir: "/workspace/one", BranchName: "branch-one",
+		RuntimeSnapshotID: "snapshot-exact", ProviderBindingJSON: `{"RootProviderID":"provider-exact","Entries":[{"ProviderID":"provider-exact","Source":"managed","RevisionID":"revision-exact"}],"Reproducible":true,"Warnings":null}`,
+		RuntimeGeneration: 9, EffectiveModel: "model-exact", RuntimeOutcome: "context_preserved",
+		Status: SessionStatusActive,
+	}
+	if err := store.Upsert(t.Context(), original); err != nil {
+		t.Fatalf("initial Upsert() error = %v", err)
+	}
+	update := original
+	update.UserID = "user-2"
+	update.WorkspaceDir = "/workspace/two"
+	update.BranchName = "branch-two"
+	update.Status = "archived"
+	update.ArchiveID = "archive-overwrite"
+	update.RuntimeSnapshotID = "snapshot-overwrite"
+	update.ProviderBindingJSON = `{"RootProviderID":"provider-overwrite","Entries":[{"ProviderID":"provider-overwrite","Source":"managed","RevisionID":"revision-overwrite"}],"Reproducible":true,"Warnings":null}`
+	update.RuntimeGeneration = 10
+	update.EffectiveModel = "model-overwrite"
+	update.RuntimeOutcome = "context_reset"
+	if err := store.Upsert(t.Context(), update); err != nil {
+		t.Fatalf("generic Upsert() error = %v", err)
+	}
+
+	got, found, err := store.GetBySessionID(t.Context(), original.SessionID)
+	if err != nil || !found {
+		t.Fatalf("GetBySessionID() = %+v, %t, %v", got, found, err)
+	}
+	if got.UserID != update.UserID || got.WorkspaceDir != update.WorkspaceDir || got.BranchName != update.BranchName || got.Status != update.Status {
+		t.Fatalf("ordinary metadata not updated: %+v", got)
+	}
+	if got.ArchiveID != update.ArchiveID || got.RuntimeSnapshotID != update.RuntimeSnapshotID || got.ProviderBindingJSON != update.ProviderBindingJSON ||
+		got.RuntimeGeneration != update.RuntimeGeneration || got.EffectiveModel != update.EffectiveModel || got.RuntimeOutcome != update.RuntimeOutcome {
+		t.Fatalf("generic upsert did not preserve legacy replacement behavior: %+v", got)
+	}
+}
+
+func checkProviderSessionStoreRejectsInvalidRuntimeMetadata(t *testing.T, open contractOpener) {
+	provider := newContractProvider(t, open)
+	defer closeContractProvider(t, provider)
+
+	base := SessionRecord{
+		SessionID: "invalid-runtime", UserID: "user", ChannelType: ChannelTypeTelegram,
+		AddressKey: "92:0", AddressJSON: `{}`, Status: SessionStatusActive,
+	}
+	tests := []struct {
+		name   string
+		mutate func(*SessionRecord)
+	}{
+		{"oversized model", func(record *SessionRecord) { record.EffectiveModel = strings.Repeat("m", maxEffectiveModelBytes+1) }},
+		{"oversized outcome", func(record *SessionRecord) { record.RuntimeOutcome = strings.Repeat("o", maxRuntimeOutcomeBytes+1) }},
+		{"control character in model", func(record *SessionRecord) { record.EffectiveModel = "model\nsecret" }},
+		{"generation outside signed storage", func(record *SessionRecord) { record.RuntimeGeneration = math.MaxUint64 }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			record := base
+			test.mutate(&record)
+			if err := provider.Sessions().Upsert(t.Context(), record); err == nil {
+				t.Fatal("Upsert() error = nil, want invalid runtime metadata")
+			}
+		})
 	}
 }
 

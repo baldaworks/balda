@@ -54,6 +54,7 @@ var requiredBaldaStateTables = []string{
 	"balda_provider_state",
 	"balda_provider_records",
 	"balda_provider_revisions",
+	"balda_runtime_operations",
 }
 
 func migrate(ctx context.Context, db *sql.DB) error {

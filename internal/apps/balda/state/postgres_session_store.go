@@ -33,14 +33,18 @@ func (s *postgresSessionStore) Upsert(ctx context.Context, record SessionRecord)
 	if strings.TrimSpace(record.Status) == "" {
 		record.Status = SessionStatusActive
 	}
+	runtimeGeneration, err := prepareSessionRuntimeMetadata(&record)
+	if err != nil {
+		return postgresErrorf("invalid runtime metadata: %w", err)
+	}
 
 	chatID, topicID := telegramAddressColumns(record)
 
 	if _, err := s.db.ExecContext(ctx, postgresBind(`
 		INSERT INTO balda_session_metadata (
-			session_id, user_id, chat_id, topic_id, channel_type, address_key, address_json, agent_name, workspace_dir, branch_name, runtime_snapshot_id, provider_binding_json, archive_id, status, updated_at
+			session_id, user_id, chat_id, topic_id, channel_type, address_key, address_json, agent_name, workspace_dir, branch_name, runtime_snapshot_id, provider_binding_json, archive_id, runtime_generation, effective_model, runtime_outcome, status, updated_at
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(session_id) DO UPDATE SET
 			user_id = excluded.user_id,
 			chat_id = excluded.chat_id,
@@ -53,7 +57,10 @@ func (s *postgresSessionStore) Upsert(ctx context.Context, record SessionRecord)
 			branch_name = excluded.branch_name,
 			runtime_snapshot_id = excluded.runtime_snapshot_id,
 			provider_binding_json = excluded.provider_binding_json,
- archive_id = excluded.archive_id,
+			archive_id = excluded.archive_id,
+			runtime_generation = excluded.runtime_generation,
+			effective_model = excluded.effective_model,
+			runtime_outcome = excluded.runtime_outcome,
 			status = excluded.status,
 			updated_at = excluded.updated_at`), sessionID,
 		strings.TrimSpace(record.UserID),
@@ -68,6 +75,9 @@ func (s *postgresSessionStore) Upsert(ctx context.Context, record SessionRecord)
 		strings.TrimSpace(record.RuntimeSnapshotID),
 		nullableSessionMetadata(strings.TrimSpace(record.ProviderBindingJSON)),
 		record.ArchiveID,
+		runtimeGeneration,
+		record.EffectiveModel,
+		record.RuntimeOutcome,
 		record.Status,
 		time.Now().UTC().Format(time.RFC3339),
 	); err != nil {
@@ -79,7 +89,7 @@ func (s *postgresSessionStore) Upsert(ctx context.Context, record SessionRecord)
 
 func (s *postgresSessionStore) GetByAddress(ctx context.Context, channelType, addressKey string) (SessionRecord, bool, error) {
 	row := s.db.QueryRowContext(ctx, postgresBind(`
-		SELECT session_id, user_id, channel_type, address_key, address_json, agent_name, workspace_dir, branch_name, runtime_snapshot_id, COALESCE(provider_binding_json,''), archive_id, status
+		SELECT session_id, user_id, channel_type, address_key, address_json, agent_name, workspace_dir, branch_name, runtime_snapshot_id, COALESCE(provider_binding_json,''), archive_id, runtime_generation, effective_model, runtime_outcome, status
 		FROM balda_session_metadata
 		WHERE channel_type = ? AND address_key = ?`), strings.TrimSpace(channelType), strings.TrimSpace(addressKey),
 	)
@@ -97,6 +107,9 @@ func (s *postgresSessionStore) GetByAddress(ctx context.Context, channelType, ad
 		&record.RuntimeSnapshotID,
 		&record.ProviderBindingJSON,
 		&record.ArchiveID,
+		&record.RuntimeGeneration,
+		&record.EffectiveModel,
+		&record.RuntimeOutcome,
 		&record.Status,
 	); err != nil {
 		if err == sql.ErrNoRows {
@@ -110,7 +123,7 @@ func (s *postgresSessionStore) GetByAddress(ctx context.Context, channelType, ad
 
 func (s *postgresSessionStore) GetBySessionID(ctx context.Context, sessionID string) (SessionRecord, bool, error) {
 	row := s.db.QueryRowContext(ctx, postgresBind(`
-		SELECT session_id, user_id, channel_type, address_key, address_json, agent_name, workspace_dir, branch_name, runtime_snapshot_id, COALESCE(provider_binding_json,''), archive_id, status
+		SELECT session_id, user_id, channel_type, address_key, address_json, agent_name, workspace_dir, branch_name, runtime_snapshot_id, COALESCE(provider_binding_json,''), archive_id, runtime_generation, effective_model, runtime_outcome, status
 		FROM balda_session_metadata
 		WHERE session_id = ?`), strings.TrimSpace(sessionID),
 	)
@@ -128,6 +141,9 @@ func (s *postgresSessionStore) GetBySessionID(ctx context.Context, sessionID str
 		&record.RuntimeSnapshotID,
 		&record.ProviderBindingJSON,
 		&record.ArchiveID,
+		&record.RuntimeGeneration,
+		&record.EffectiveModel,
+		&record.RuntimeOutcome,
 		&record.Status,
 	); err != nil {
 		if err == sql.ErrNoRows {
@@ -156,7 +172,7 @@ func (s *postgresSessionStore) DeleteBySessionID(ctx context.Context, sessionID 
 
 func (s *postgresSessionStore) List(ctx context.Context) ([]SessionRecord, error) {
 	rows, err := s.db.QueryContext(ctx, postgresBind(`
-		SELECT session_id, user_id, channel_type, address_key, address_json, agent_name, workspace_dir, branch_name, runtime_snapshot_id, COALESCE(provider_binding_json,''), archive_id, status
+		SELECT session_id, user_id, channel_type, address_key, address_json, agent_name, workspace_dir, branch_name, runtime_snapshot_id, COALESCE(provider_binding_json,''), archive_id, runtime_generation, effective_model, runtime_outcome, status
 		FROM balda_session_metadata
 		ORDER BY updated_at DESC`))
 	if err != nil {
@@ -179,6 +195,9 @@ func (s *postgresSessionStore) List(ctx context.Context) ([]SessionRecord, error
 			&record.RuntimeSnapshotID,
 			&record.ProviderBindingJSON,
 			&record.ArchiveID,
+			&record.RuntimeGeneration,
+			&record.EffectiveModel,
+			&record.RuntimeOutcome,
 			&record.Status,
 		); err != nil {
 			return nil, postgresErrorf("scan balda session: %w", err)
