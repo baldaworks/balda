@@ -14,6 +14,8 @@ import (
 	adksession "google.golang.org/adk/v2/session"
 )
 
+const runtimeSlotTestArchiveID = "archive"
+
 type testSessionControl struct{}
 
 func (*testSessionControl) Inspect(context.Context, adksession.Session) agentproduct.SessionControlSnapshot {
@@ -85,6 +87,52 @@ func TestRuntimeSlotLeaseCarriesOneImmutableRuntime(t *testing.T) {
 	}
 }
 
+func TestIndependentModelSuccessorRequiresExactIdentity(t *testing.T) {
+	service := adksession.InMemoryService()
+	created, err := service.Create(t.Context(), &adksession.CreateRequest{
+		AppName: "app", UserID: "user", SessionID: "session",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	incumbent := newRuntimeSlot(runtimeSlotConfig{
+		runtime: &BuiltRuntime{SessionSvc: service, AppName: "app", RuntimeSnapshotID: "snapshot", ProviderBindingJSON: "binding"},
+		session: created.Session, archiveID: runtimeSlotTestArchiveID, generation: 4, effectiveModel: "old",
+	})
+	replacement := &BuiltRuntime{SessionSvc: service, AppName: "app", RuntimeSnapshotID: "snapshot", ProviderBindingJSON: "binding"}
+	candidate, err := incumbent.independentModelSuccessor(replacement, created.Session, "new", publicationOutcome)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if candidate.value.generation != 5 || candidate.value.archiveID != runtimeSlotTestArchiveID || candidate.value.session != created.Session {
+		t.Fatalf("candidate = %+v", candidate.value)
+	}
+
+	wrongService := *replacement
+	wrongService.SessionSvc = adksession.InMemoryService()
+	if _, err := incumbent.independentModelSuccessor(&wrongService, created.Session, "new", publicationOutcome); !errors.Is(err, ErrRuntimePublicationInvalid) {
+		t.Fatalf("wrong service error = %v", err)
+	}
+	wrongSnapshot := *replacement
+	wrongSnapshot.RuntimeSnapshotID = "other"
+	if _, err := incumbent.independentModelSuccessor(&wrongSnapshot, created.Session, "new", publicationOutcome); !errors.Is(err, ErrRuntimePublicationInvalid) {
+		t.Fatalf("wrong snapshot error = %v", err)
+	}
+}
+
+func TestSharedModelSuccessorAdvancesExactlyOneGeneration(t *testing.T) {
+	incumbent := newRuntimeSlot(runtimeSlotConfig{
+		runtime: &BuiltRuntime{}, archiveID: runtimeSlotTestArchiveID, generation: 8, effectiveModel: "old",
+	})
+	candidate, err := incumbent.sharedModelSuccessor("new", publicationOutcome)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if candidate.value.generation != 9 || candidate.value.archiveID != runtimeSlotTestArchiveID || candidate.owner != incumbent.owner {
+		t.Fatalf("candidate = %+v", candidate.value)
+	}
+}
+
 func TestRuntimeSlotDrainWaitsForLeaseWithoutForcedClose(t *testing.T) {
 	var closes atomic.Int32
 	slot := newRuntimeSlot(runtimeSlotConfig{runtime: &BuiltRuntime{Close: func() error {
@@ -152,7 +200,7 @@ func TestRuntimeSlotSharedOwnerClosesAfterFinalSlot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if lease.ArchiveID() != "archive" || lease.Generation() != 2 || lease.Runner() == nil {
+	if lease.ArchiveID() != runtimeSlotTestArchiveID || lease.Generation() != 2 || lease.Runner() == nil {
 		t.Fatalf("successor lease = generation %d, runner %p", lease.Generation(), lease.Runner())
 	}
 	lease.Release()

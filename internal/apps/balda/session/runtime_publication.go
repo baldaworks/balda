@@ -25,36 +25,85 @@ func (m *Manager) publishRuntime(
 		return baldastate.RuntimeOperationRecord{}, false, ErrRuntimePublicationInvalid
 	}
 
+	return m.publishRuntimeState(ctx, incumbent, candidate, intent, outcome, false)
+}
+
+// publishApplyingModelRuntime completes a model operation whose external work
+// has already begun. It deliberately shares the guarded durable commit and
+// pointer swap with every other runtime publication.
+func (m *Manager) publishApplyingModelRuntime(
+	ctx context.Context,
+	incumbent, candidate *RuntimeSlot,
+	intent baldastate.RuntimeOperationRecord,
+	outcome baldastate.RuntimeOperationOutcome,
+) (baldastate.RuntimeOperationRecord, bool, error) {
+	if m == nil || m.runtimeOperations == nil ||
+		intent.State != baldastate.RuntimeOperationApplying || intent.Kind != string(baldastate.RuntimeOperationKindModel) ||
+		intent.SessionID == "" || outcome != baldastate.RuntimeOperationOutcomeContextPreserved {
+		return baldastate.RuntimeOperationRecord{}, false, ErrRuntimePublicationInvalid
+	}
+	return m.publishRuntimeState(ctx, incumbent, candidate, intent, outcome, true)
+}
+
+func (m *Manager) publishRuntimeState(
+	ctx context.Context,
+	incumbent, candidate *RuntimeSlot,
+	intent baldastate.RuntimeOperationRecord,
+	outcome baldastate.RuntimeOperationOutcome,
+	alreadyApplying bool,
+) (baldastate.RuntimeOperationRecord, bool, error) {
 	unlock := m.lockSessionOperation(intent.SessionID)
 	defer unlock()
 	topic := m.activeTopicSession(intent.SessionID)
 	if topic == nil {
+		if alreadyApplying {
+			_ = candidate.abortUnpublished(ctx)
+			return baldastate.RuntimeOperationRecord{}, false, ErrRuntimeRecoveryRequired
+		}
 		return baldastate.RuntimeOperationRecord{}, false, ErrRuntimePublicationConflict
 	}
 
-	operation, err := m.runtimeOperations.Begin(ctx, intent)
+	operation, err := m.loadPublicationOperation(ctx, intent, alreadyApplying)
 	if err != nil {
+		if alreadyApplying {
+			return m.failApplyingPublication(ctx, topic, candidate, operation, false)
+		}
 		return baldastate.RuntimeOperationRecord{}, false, m.publicationStoreError(ctx, topic, intent, err, true)
 	}
 	if !samePublicationIntent(operation, intent) {
-		topic.fenceRuntimeRecovery()
-		return baldastate.RuntimeOperationRecord{}, false, ErrRuntimeRecoveryRequired
+		return m.failPublication(ctx, topic, candidate, operation, alreadyApplying, false)
 	}
 	if operation.State == baldastate.RuntimeOperationTerminal {
 		if isPublicationTerminal(operation, intent, baldastate.RuntimeOperationOutcomeConflict, baldastate.RuntimeOperationReasonGuardConflict) {
+			if alreadyApplying {
+				_ = candidate.abortUnpublished(ctx)
+			}
 			return operation, false, ErrRuntimePublicationConflict
 		}
-		if !isPublicationTerminal(operation, intent, outcome, "") || !topic.matchesCommittedRuntime(incumbent, intent, outcome) {
-			topic.fenceRuntimeRecovery()
-			return operation, false, ErrRuntimeRecoveryRequired
+		committed := topic.matchesCommittedRuntime(incumbent, intent, outcome)
+		if alreadyApplying {
+			committed = topic.matchesCommittedModelRuntime(incumbent, intent, outcome)
+		}
+		if !isPublicationTerminal(operation, intent, outcome, "") || !committed {
+			return m.failPublication(ctx, topic, candidate, operation, alreadyApplying, false)
 		}
 		return operation, false, nil
 	}
-	if operation.State != baldastate.RuntimeOperationPrepared {
-		topic.fenceRuntimeRecovery()
-		return operation, false, ErrRuntimeRecoveryRequired
+	if alreadyApplying && (!runtimeCandidateMatches(incumbent, candidate, intent, outcome) ||
+		!modelCandidateIdentityMatches(incumbent, candidate)) {
+		return m.failApplyingPublication(ctx, topic, candidate, operation, false)
+	}
+	wantState := baldastate.RuntimeOperationPrepared
+	if alreadyApplying {
+		wantState = baldastate.RuntimeOperationApplying
+	}
+	if operation.State != wantState {
+		return m.failPublication(ctx, topic, candidate, operation, alreadyApplying, false)
 	}
 	if !topic.matchesRuntimeGuard(incumbent, intent.ExpectedArchiveID, intent.ExpectedGeneration) {
+		if alreadyApplying {
+			return m.failApplyingPublication(ctx, topic, candidate, operation, false)
+		}
 		terminal, finalizeErr := m.finalizePublicationConflict(ctx, intent)
 		if finalizeErr != nil {
 			return baldastate.RuntimeOperationRecord{}, false, m.publicationStoreError(ctx, topic, intent, finalizeErr, false)
@@ -66,6 +115,9 @@ func (m *Manager) publishRuntime(
 		return terminal, false, ErrRuntimePublicationConflict
 	}
 	if !candidate.claimPublication() {
+		if alreadyApplying {
+			return m.failApplyingPublication(ctx, topic, candidate, operation, false)
+		}
 		terminal, finalizeErr := m.finalizePublicationConflict(ctx, intent)
 		if finalizeErr != nil {
 			return baldastate.RuntimeOperationRecord{}, false, m.publicationStoreError(ctx, topic, intent, finalizeErr, false)
@@ -77,9 +129,11 @@ func (m *Manager) publishRuntime(
 		return terminal, false, ErrRuntimePublicationConflict
 	}
 
-	if err := m.runtimeOperations.MarkApplying(ctx, intent.OperationID, intent.InputHash); err != nil {
-		candidate.releasePublicationClaim(false)
-		return baldastate.RuntimeOperationRecord{}, false, m.publicationStoreError(ctx, topic, intent, err, false)
+	if !alreadyApplying {
+		if err := m.runtimeOperations.MarkApplying(ctx, intent.OperationID, intent.InputHash); err != nil {
+			candidate.releasePublicationClaim(false)
+			return baldastate.RuntimeOperationRecord{}, false, m.publicationStoreError(ctx, topic, intent, err, false)
+		}
 	}
 	terminal, err := m.runtimeOperations.Finalize(ctx, baldastate.RuntimeOperationFinalization{
 		OperationID: intent.OperationID,
@@ -88,6 +142,9 @@ func (m *Manager) publishRuntime(
 		At:          time.Now().UTC(),
 	})
 	if errors.Is(err, baldastate.ErrRuntimeOperationConflict) {
+		if alreadyApplying {
+			return m.failApplyingPublication(ctx, topic, candidate, operation, true)
+		}
 		candidate.releasePublicationClaim(false)
 		conflict, finalizeErr := m.finalizePublicationConflict(ctx, intent)
 		if finalizeErr != nil {
@@ -100,22 +157,67 @@ func (m *Manager) publishRuntime(
 		return conflict, false, ErrRuntimePublicationConflict
 	}
 	if err != nil {
+		if alreadyApplying {
+			return m.failApplyingPublication(ctx, topic, candidate, operation, true)
+		}
 		candidate.releasePublicationClaim(false)
 		return baldastate.RuntimeOperationRecord{}, false, m.publicationStoreError(ctx, topic, intent, err, false)
 	}
 	if !isPublicationTerminal(terminal, intent, outcome, "") {
-		candidate.releasePublicationClaim(false)
-		topic.fenceRuntimeRecovery()
-		return baldastate.RuntimeOperationRecord{}, false, ErrRuntimeRecoveryRequired
+		return m.failPublication(ctx, topic, candidate, terminal, alreadyApplying, true)
 	}
 	if !topic.swapRuntime(incumbent, candidate, intent.ExpectedArchiveID, intent.ExpectedGeneration) {
-		candidate.releasePublicationClaim(false)
-		topic.fenceRuntimeRecovery()
-		return terminal, false, ErrRuntimeRecoveryRequired
+		return m.failPublication(ctx, topic, candidate, terminal, alreadyApplying, true)
 	}
 	candidate.releasePublicationClaim(true)
 	incumbent.beginDrain()
 	return terminal, true, nil
+}
+
+func (m *Manager) failPublication(
+	ctx context.Context,
+	topic *TopicSession,
+	candidate *RuntimeSlot,
+	operation baldastate.RuntimeOperationRecord,
+	applying, claimed bool,
+) (baldastate.RuntimeOperationRecord, bool, error) {
+	if applying {
+		return m.failApplyingPublication(ctx, topic, candidate, operation, claimed)
+	}
+	if claimed {
+		candidate.releasePublicationClaim(false)
+	}
+	topic.fenceRuntimeRecovery()
+	return operation, false, ErrRuntimeRecoveryRequired
+}
+
+func (*Manager) failApplyingPublication(
+	ctx context.Context,
+	topic *TopicSession,
+	candidate *RuntimeSlot,
+	operation baldastate.RuntimeOperationRecord,
+	claimed bool,
+) (baldastate.RuntimeOperationRecord, bool, error) {
+	topic.fenceRuntimeRecovery()
+	if claimed {
+		candidate.releasePublicationClaim(false)
+	}
+	_ = candidate.abortUnpublished(ctx)
+	return operation, false, ErrRuntimeRecoveryRequired
+}
+
+func (m *Manager) loadPublicationOperation(ctx context.Context, intent baldastate.RuntimeOperationRecord, applying bool) (baldastate.RuntimeOperationRecord, error) {
+	if !applying {
+		return m.runtimeOperations.Begin(ctx, intent)
+	}
+	operation, found, err := m.runtimeOperations.Get(ctx, intent.OperationID)
+	if err != nil {
+		return baldastate.RuntimeOperationRecord{}, err
+	}
+	if !found {
+		return baldastate.RuntimeOperationRecord{}, baldastate.ErrRuntimeOperationConflict
+	}
+	return operation, nil
 }
 
 func runtimeCandidateMatches(
@@ -150,6 +252,17 @@ func runtimeCandidateMatches(
 		candidateValue.runtime.ProviderBindingJSON == targetBinding &&
 		candidateValue.effectiveModel == targetModel &&
 		candidateValue.outcome == string(outcome)
+}
+
+func modelCandidateIdentityMatches(incumbent, candidate *RuntimeSlot) bool {
+	if incumbent == nil || candidate == nil {
+		return false
+	}
+	incumbentValue, candidateValue := incumbent.value, candidate.value
+	return sameIdentityObject(candidateValue.runtime.SessionSvc, incumbentValue.runtime.SessionSvc) &&
+		sameIdentityObject(candidateValue.session, incumbentValue.session) &&
+		candidateValue.appName == incumbentValue.appName && candidateValue.userID == incumbentValue.userID &&
+		candidateValue.sessionID == incumbentValue.sessionID
 }
 
 func samePublicationIntent(got, want baldastate.RuntimeOperationRecord) bool {
@@ -228,6 +341,20 @@ func (s *TopicSession) matchesCommittedRuntime(
 	s.runtimeMu.RLock()
 	defer s.runtimeMu.RUnlock()
 	return !s.recoveryRequired && runtimeCandidateMatches(incumbent, s.runtime, intent, outcome)
+}
+
+func (s *TopicSession) matchesCommittedModelRuntime(
+	incumbent *RuntimeSlot,
+	intent baldastate.RuntimeOperationRecord,
+	outcome baldastate.RuntimeOperationOutcome,
+) bool {
+	if s == nil {
+		return false
+	}
+	s.runtimeMu.RLock()
+	defer s.runtimeMu.RUnlock()
+	return !s.recoveryRequired && runtimeCandidateMatches(incumbent, s.runtime, intent, outcome) &&
+		modelCandidateIdentityMatches(incumbent, s.runtime)
 }
 
 func (s *TopicSession) swapRuntime(expected, successor *RuntimeSlot, archiveID string, generation uint64) bool {

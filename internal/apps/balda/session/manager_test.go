@@ -1603,7 +1603,7 @@ func TestSessionRecordPreservesRuntimeSlotMetadata(t *testing.T) {
 		t.Fatalf("upserted records = %d, want 1", len(store.upsertedRecords))
 	}
 	record := store.upsertedRecords[0]
-	if record.ArchiveID != "archive" || record.RuntimeGeneration != 11 || record.EffectiveModel != "model-persisted" || record.RuntimeOutcome != "context_preserved" ||
+	if record.ArchiveID != runtimeSlotTestArchiveID || record.RuntimeGeneration != 11 || record.EffectiveModel != "model-persisted" || record.RuntimeOutcome != "context_preserved" ||
 		record.RuntimeSnapshotID != "snapshot" || record.ProviderBindingJSON != `{"root_provider_id":"provider"}` {
 		t.Fatalf("runtime metadata lost: %+v", record)
 	}

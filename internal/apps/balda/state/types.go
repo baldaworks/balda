@@ -343,6 +343,12 @@ const (
 	RuntimeOperationReasonGuardConflict     RuntimeOperationReason = "guard_conflict"
 	RuntimeOperationReasonRecoveryAborted   RuntimeOperationReason = "recovery_aborted"
 	RuntimeOperationReasonCleanupIncomplete RuntimeOperationReason = "cleanup_incomplete"
+	RuntimeOperationReasonIncompatible      RuntimeOperationReason = "incompatible"
+	RuntimeOperationReasonRejected          RuntimeOperationReason = "rejected"
+	RuntimeOperationReasonBusy              RuntimeOperationReason = "busy"
+	RuntimeOperationReasonClosed            RuntimeOperationReason = "closed"
+	RuntimeOperationReasonUnavailable       RuntimeOperationReason = "unavailable"
+	RuntimeOperationReasonPreDispatch       RuntimeOperationReason = "pre_dispatch"
 )
 
 // RuntimeOperationRecord is the bounded public evidence for one runtime operation.

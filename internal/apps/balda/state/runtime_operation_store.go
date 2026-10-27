@@ -50,7 +50,10 @@ func validRuntimeOperationReason(reason RuntimeOperationReason) bool {
 	case "", RuntimeOperationReasonUnsupported, RuntimeOperationReasonInvalid,
 		RuntimeOperationReasonFailed, RuntimeOperationReasonCanceled,
 		RuntimeOperationReasonDeadlineExceeded, RuntimeOperationReasonGuardConflict,
-		RuntimeOperationReasonRecoveryAborted, RuntimeOperationReasonCleanupIncomplete:
+		RuntimeOperationReasonRecoveryAborted, RuntimeOperationReasonCleanupIncomplete,
+		RuntimeOperationReasonIncompatible, RuntimeOperationReasonRejected,
+		RuntimeOperationReasonBusy, RuntimeOperationReasonClosed,
+		RuntimeOperationReasonUnavailable, RuntimeOperationReasonPreDispatch:
 		return true
 	default:
 		return false
