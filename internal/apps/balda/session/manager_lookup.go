@@ -123,6 +123,14 @@ func (m *Manager) prepareSession(ctx context.Context, sessionCtx SessionContext,
 			unlock()
 			return nil, err
 		}
+		// Model recovery may atomically advance the canonical generation. Reload
+		// metadata before opening the runtime so the restored slot uses that exact
+		// committed generation and model.
+		record, found, err = m.sessionStore.GetByAddress(ctx, sessionCtx.Locator.ChannelType, sessionCtx.Locator.AddressKey)
+		if err != nil {
+			unlock()
+			return nil, fmt.Errorf("read session metadata after recovery: %w", err)
+		}
 		sess, err := m.prepareSessionLocked(ctx, sessionCtx, label, createIfMissing, record, found)
 		unlock()
 		return sess, err
@@ -145,7 +153,7 @@ func (m *Manager) prepareSessionLocked(ctx context.Context, sessionCtx SessionCo
 		}
 		label = strings.TrimSpace(record.AgentName)
 		if label == "" {
-			label = "auto"
+			label = defaultSessionLabel
 		}
 		persisted = &record
 	}
@@ -216,6 +224,9 @@ func (m *Manager) recoverRuntimeOperation(ctx context.Context, sessionID string)
 	}
 	if !found {
 		return nil
+	}
+	if operation.State == baldastate.RuntimeOperationApplying && operation.Kind == string(baldastate.RuntimeOperationKindModel) {
+		return m.recoverApplyingModelOperation(ctx, operation)
 	}
 	if operation.State != baldastate.RuntimeOperationPrepared {
 		m.fenceRuntimeRecovery(sessionID)

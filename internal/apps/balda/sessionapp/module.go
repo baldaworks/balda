@@ -176,6 +176,12 @@ func sessionRuntime(runtime *baldaagent.BuiltRuntime) *baldasession.BuiltRuntime
 
 type modelControllerAdapter struct{ runtime *baldaagent.BuiltRuntime }
 
+func (a modelControllerAdapter) InspectSessionControl(ctx context.Context, identity baldasession.RuntimeSessionIdentity) agentproduct.SessionControlSnapshot {
+	return a.runtime.InspectSessionControl(ctx, baldaagent.SessionIdentity{
+		SessionService: identity.SessionService, AppName: identity.AppName, UserID: identity.UserID, SessionID: identity.SessionID,
+	})
+}
+
 func (a modelControllerAdapter) ValidateModel(ctx context.Context, identity baldasession.RuntimeSessionIdentity, model string) agentproduct.ModelValidation {
 	return a.runtime.ValidateModel(ctx, baldaagent.SessionIdentity{
 		SessionService: identity.SessionService, AppName: identity.AppName, UserID: identity.UserID, SessionID: identity.SessionID,

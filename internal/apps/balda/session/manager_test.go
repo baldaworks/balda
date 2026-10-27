@@ -871,7 +871,7 @@ func TestRestoreSessionReusesActivePersistedSessionWhenLocatorIDChanged(t *testi
 		ChannelType: address.ChannelType,
 		AddressKey:  address.AddressKey,
 		AddressJSON: address.AddressJSON,
-		AgentName:   "auto",
+		AgentName:   defaultSessionLabel,
 		Status:      baldastate.SessionStatusActive,
 	}
 	store := &fakeSessionStore{recordsByAddress: map[string]baldastate.SessionRecord{
@@ -1584,10 +1584,11 @@ func TestRestoreLegacySessionKeepsBlankBindingWithoutWrite(t *testing.T) {
 }
 
 func TestSessionRecordPreservesRuntimeSlotMetadata(t *testing.T) {
+	const snapshotID = "snapshot"
 	store := &fakeSessionStore{}
 	ts := &TopicSession{sessionID: "session", userID: ensureTestAuthor, locator: testTelegramLocator(10, 0)}
 	ts.runtime = newRuntimeSlot(runtimeSlotConfig{
-		runtime:        &BuiltRuntime{RuntimeSnapshotID: "snapshot", ProviderBindingJSON: `{"root_provider_id":"provider"}`},
+		runtime:        &BuiltRuntime{RuntimeSnapshotID: snapshotID, ProviderBindingJSON: `{"root_provider_id":"provider"}`},
 		userID:         ensureTestAuthor,
 		sessionID:      "runtime-session",
 		archiveID:      "archive",
@@ -1604,7 +1605,7 @@ func TestSessionRecordPreservesRuntimeSlotMetadata(t *testing.T) {
 	}
 	record := store.upsertedRecords[0]
 	if record.ArchiveID != runtimeSlotTestArchiveID || record.RuntimeGeneration != 11 || record.EffectiveModel != "model-persisted" || record.RuntimeOutcome != "context_preserved" ||
-		record.RuntimeSnapshotID != "snapshot" || record.ProviderBindingJSON != `{"root_provider_id":"provider"}` {
+		record.RuntimeSnapshotID != snapshotID || record.ProviderBindingJSON != `{"root_provider_id":"provider"}` {
 		t.Fatalf("runtime metadata lost: %+v", record)
 	}
 }
@@ -2285,7 +2286,7 @@ func TestRestoreSession_UsesAutoLabelWhenPersistedLabelMissing(t *testing.T) {
 	}
 
 	ts := m.sessions[locator.SessionID]
-	if ts.agentName != "auto" {
+	if ts.agentName != defaultSessionLabel {
 		t.Fatalf("session label = %q, want auto", ts.agentName)
 	}
 }

@@ -83,7 +83,7 @@ func TestSessionEndHooksRespectRemainingCleanupBudget(t *testing.T) {
 
 func hookTestManager(t *testing.T, hooks *lifecycleHooks) *Manager {
 	t.Helper()
-	return &Manager{baldaProviderName: "provider", runtimeManager: &fakeScopedRuntimeManager{fakeBaldaRuntimeManager: fakeBaldaRuntimeManager{providerID: "provider"}, sessionRuntime: &BuiltRuntime{RuntimeSnapshotID: currentSnapshotID}}, agentBuilder: &fakeAgentBuilder{}, workingDir: t.TempDir(), logger: zerolog.Nop(), sessions: make(map[string]*TopicSession), sessionStore: &fakeSessionStore{}, hooks: hooks}
+	return &Manager{baldaProviderName: recoveryProviderID, runtimeManager: &fakeScopedRuntimeManager{fakeBaldaRuntimeManager: fakeBaldaRuntimeManager{providerID: recoveryProviderID}, sessionRuntime: &BuiltRuntime{RuntimeSnapshotID: currentSnapshotID}}, agentBuilder: &fakeAgentBuilder{}, workingDir: t.TempDir(), logger: zerolog.Nop(), sessions: make(map[string]*TopicSession), sessionStore: &fakeSessionStore{}, hooks: hooks}
 }
 
 func TestSessionLifecycleHooksObserveCreateAndCloseOnce(t *testing.T) {
@@ -99,7 +99,7 @@ func TestSessionLifecycleHooksObserveCreateAndCloseOnce(t *testing.T) {
 	if err := manager.Stop(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if len(hooks.events) != 2 || hooks.events[0].Name != hookcmd.SessionStart || hooks.events[1].Name != hookcmd.SessionEnd || hooks.events[0].SessionID != locator.SessionID || hooks.events[0].Provider != "provider" || hooks.events[0].CWD != manager.workingDir {
+	if len(hooks.events) != 2 || hooks.events[0].Name != hookcmd.SessionStart || hooks.events[1].Name != hookcmd.SessionEnd || hooks.events[0].SessionID != locator.SessionID || hooks.events[0].Provider != recoveryProviderID || hooks.events[0].CWD != manager.workingDir {
 		t.Fatalf("lifecycle events = %+v", hooks.events)
 	}
 }
