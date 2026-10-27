@@ -12,6 +12,7 @@ import (
 	commandgoalkeeper "github.com/baldaworks/balda/internal/apps/balda/actors/command/goalkeeper"
 	commandhelp "github.com/baldaworks/balda/internal/apps/balda/actors/command/help"
 	commandlocator "github.com/baldaworks/balda/internal/apps/balda/actors/command/locator"
+	commandmodel "github.com/baldaworks/balda/internal/apps/balda/actors/command/model"
 	commandplugin "github.com/baldaworks/balda/internal/apps/balda/actors/command/plugin"
 	commandreset "github.com/baldaworks/balda/internal/apps/balda/actors/command/reset"
 	commandskill "github.com/baldaworks/balda/internal/apps/balda/actors/command/skill"
@@ -28,6 +29,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/jobs"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpruntime"
+	"github.com/baldaworks/balda/internal/apps/balda/modelapp"
 	"github.com/baldaworks/balda/internal/apps/balda/pluginapp"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalog"
 	"github.com/baldaworks/balda/internal/apps/balda/session"
@@ -67,6 +69,17 @@ type statusParams struct {
 	Registry   deliveryfmt.StructuredMessageRegistry
 	Dispatcher actortransport.Dispatcher
 	Logger     zerolog.Logger
+}
+
+type modelParams struct {
+	fx.In
+	Sessions   *session.Manager
+	Models     *modelapp.Service
+	Dispatcher actortransport.Dispatcher
+}
+
+func newModelHandler(p modelParams) *commandmodel.Handler {
+	return commandmodel.New(p.Sessions, p.Models, p.Dispatcher)
 }
 
 type autoParams struct {
@@ -212,6 +225,10 @@ var Module = fx.Module("balda_command",
 			func(p statusParams) *commandstatus.Handler {
 				return commandstatus.New(p.Sessions, p.Turns, p.Status, p.Registry, p.Dispatcher, p.Logger)
 			},
+			fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`),
+		),
+		fx.Annotate(
+			newModelHandler,
 			fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`),
 		),
 		fx.Annotate(
