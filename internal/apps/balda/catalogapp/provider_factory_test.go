@@ -1,20 +1,42 @@
 package catalogapp
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
 	"github.com/baldaworks/runtime/v2/agentconfig"
 	"github.com/baldaworks/runtime/v2/agentfactory"
+	"github.com/baldaworks/runtime/v2/agentproduct"
 	"github.com/baldaworks/runtime/v2/mcpregistry"
 	adkagent "google.golang.org/adk/v2/agent"
+	adksession "google.golang.org/adk/v2/session"
 )
+
+type catalogTestControl struct{}
+
+func (*catalogTestControl) Inspect(context.Context, adksession.Session) agentproduct.SessionControlSnapshot {
+	return agentproduct.SessionControlSnapshot{}
+}
+
+func (*catalogTestControl) ValidateModel(context.Context, adksession.Session, string) agentproduct.ModelValidation {
+	return agentproduct.ModelValidation{}
+}
+
+func (*catalogTestControl) ChangeModel(context.Context, adksession.Session, string) agentproduct.ModelChange {
+	return agentproduct.ModelChange{}
+}
+
+func (*catalogTestControl) FastForward(context.Context, adksession.Session, agentproduct.ContextPackage) agentproduct.ContextChange {
+	return agentproduct.ContextChange{}
+}
 
 func TestProviderFactoryConstructsCompleteUnavailableMCPShells(t *testing.T) {
 	var requests atomic.Int32
@@ -141,5 +163,73 @@ func TestCatalogProductCloseReturnsStableBoundedClassifications(t *testing.T) {
 		if strings.Contains(closeErr.Error(), productDetail.Error()) || strings.Contains(closeErr.Error(), hookDetail.Error()) {
 			t.Fatalf("Close() leaked cleanup details: %v", closeErr)
 		}
+	}
+}
+
+func TestCatalogProductPreservesControlAndClosesConcurrentlyOnce(t *testing.T) {
+	productDetail := errors.New("private product cleanup detail")
+	hookDetail := errors.New("private native hook detail")
+	control := &catalogTestControl{}
+	ag, err := adkagent.New(adkagent.Config{Name: "concurrent-cleanup"})
+	if err != nil {
+		t.Fatalf("agent.New() error = %v", err)
+	}
+	var productCalls, hookCalls atomic.Int32
+	var orderMu sync.Mutex
+	var order []string
+	product, err := baldaagent.NewRuntimeProduct(ag, control, func() error {
+		productCalls.Add(1)
+		orderMu.Lock()
+		order = append(order, "product")
+		orderMu.Unlock()
+		return productDetail
+	})
+	if err != nil {
+		t.Fatalf("NewRuntimeProduct() error = %v", err)
+	}
+	adapted, err := runtimeProductWithRelease(product, func() error {
+		hookCalls.Add(1)
+		orderMu.Lock()
+		order = append(order, "native-hook")
+		orderMu.Unlock()
+		return hookDetail
+	})
+	if err != nil {
+		t.Fatalf("runtimeProductWithRelease() error = %v", err)
+	}
+	if adapted.Agent != ag || adapted.Control != control {
+		t.Fatal("catalog adaptation lost the agent or optional SessionControl")
+	}
+
+	const callers = 32
+	start := make(chan struct{})
+	errs := make(chan error, callers)
+	var wg sync.WaitGroup
+	for range callers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			errs <- adapted.Close()
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	for closeErr := range errs {
+		if !errors.Is(closeErr, baldaagent.ErrRuntimeProductClose) || !errors.Is(closeErr, ErrNativeHookRelease) {
+			t.Errorf("Close() error = %v, want bounded product and hook classifications", closeErr)
+		}
+		if strings.Contains(closeErr.Error(), productDetail.Error()) || strings.Contains(closeErr.Error(), hookDetail.Error()) {
+			t.Errorf("Close() leaked cleanup details: %v", closeErr)
+		}
+	}
+	if productCalls.Load() != 1 || hookCalls.Load() != 1 {
+		t.Fatalf("cleanup calls product/hook = %d/%d, want 1/1", productCalls.Load(), hookCalls.Load())
+	}
+	orderMu.Lock()
+	defer orderMu.Unlock()
+	if got := strings.Join(order, ","); got != "product,native-hook" {
+		t.Fatalf("close order = %q, want product,native-hook", got)
 	}
 }
