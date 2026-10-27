@@ -4,6 +4,8 @@ import (
 	"context"
 	"iter"
 	"path/filepath"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -23,6 +25,8 @@ import (
 	"google.golang.org/genai"
 )
 
+const integrationRuntimeSnapshotID = "snapshot"
+
 type integrationSessionService struct {
 	adksession.Service
 	createCalls atomic.Int32
@@ -41,12 +45,15 @@ func (s *integrationSessionService) Delete(ctx context.Context, request *adksess
 
 type integrationModelControl struct {
 	replacement   *agentproduct.Product
+	currentModel  string
+	inspectCalls  atomic.Int32
 	validateCalls atomic.Int32
 	changeCalls   atomic.Int32
 }
 
-func (*integrationModelControl) Inspect(context.Context, adksession.Session) agentproduct.SessionControlSnapshot {
-	return agentproduct.SessionControlSnapshot{Status: agentproduct.ControlReady}
+func (c *integrationModelControl) Inspect(context.Context, adksession.Session) agentproduct.SessionControlSnapshot {
+	c.inspectCalls.Add(1)
+	return agentproduct.SessionControlSnapshot{Status: agentproduct.ControlReady, CurrentModel: c.currentModel}
 }
 
 func (c *integrationModelControl) ValidateModel(_ context.Context, _ adksession.Session, model string) agentproduct.ModelValidation {
@@ -86,6 +93,37 @@ func (m integrationRuntimeManager) Runtime(context.Context) (*baldasession.Built
 }
 
 func (integrationRuntimeManager) ProviderID() string { return "provider" }
+
+type integrationScopedRuntimeManager struct {
+	runtime    *baldaagent.BuiltRuntime
+	closeCalls atomic.Int32
+	mu         sync.Mutex
+	requests   []baldasession.SessionRuntimeRequest
+}
+
+func (m *integrationScopedRuntimeManager) Runtime(context.Context) (*baldasession.BuiltRuntime, error) {
+	return sessionRuntime(m.runtime), nil
+}
+
+func (*integrationScopedRuntimeManager) ProviderID() string { return "provider" }
+
+func (m *integrationScopedRuntimeManager) RuntimeForSession(_ context.Context, request baldasession.SessionRuntimeRequest) (*baldasession.BuiltRuntime, error) {
+	m.mu.Lock()
+	m.requests = append(m.requests, request)
+	m.mu.Unlock()
+	runtime := sessionRuntime(m.runtime)
+	runtime.Close = func() error {
+		m.closeCalls.Add(1)
+		return nil
+	}
+	return runtime, nil
+}
+
+func (m *integrationScopedRuntimeManager) sessionRequests() []baldasession.SessionRuntimeRequest {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]baldasession.SessionRuntimeRequest(nil), m.requests...)
+}
 
 type integrationHostFactory struct{ calls atomic.Int32 }
 
@@ -147,7 +185,7 @@ func TestQueuedHostedModelChangeUsesProductionBoundaries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	agentRuntime.RuntimeSnapshotID = "snapshot"
+	agentRuntime.RuntimeSnapshotID = integrationRuntimeSnapshotID
 	agentRuntime.ProviderBindingJSON = `{"RootProviderID":"provider","Entries":[{"ProviderID":"provider","Source":"managed","RevisionID":"revision"}],"Reproducible":true,"Warnings":null}`
 	t.Cleanup(func() { _ = agentRuntime.Close() })
 
@@ -253,5 +291,137 @@ func TestQueuedHostedModelChangeUsesProductionBoundaries(t *testing.T) {
 	}
 	if !sawPriorEvent.Load() || !sawPriorState.Load() {
 		t.Fatalf("replacement saw prior event/state = %t/%t", sawPriorEvent.Load(), sawPriorState.Load())
+	}
+}
+
+func TestApplyingModelRecoveryUsesProductionInspectAdapter(t *testing.T) {
+	service := &integrationSessionService{Service: adksession.InMemoryService()}
+	incumbentAgent, err := adkagent.New(adkagent.Config{Name: "incumbent-agent"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	control := &integrationModelControl{currentModel: "model-next"}
+	product, err := baldaagent.NewRuntimeProduct(incumbentAgent, control, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	builder := baldaagent.NewBuilder(baldaagent.BuilderParams{
+		ScopedFactory: &integrationProductFactory{product: product},
+		WorkingDir:    t.TempDir(), SessionService: service,
+		RunnerFactory: baldaagent.NewRunnerFactory(baldaagent.RunnerFactoryParams{Host: &integrationHostFactory{}}),
+	})
+	agentRuntime, err := builder.BuildRuntimeWithCapabilities(
+		t.Context(), "provider", t.TempDir(), nil, nil,
+		baldaagent.SkillMetadataProjection{}, baldaagent.SessionInstructionContext{SessionID: "session"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	agentRuntime.RuntimeSnapshotID = integrationRuntimeSnapshotID
+	agentRuntime.ProviderBindingJSON = `{"RootProviderID":"provider","Entries":[{"ProviderID":"provider","Source":"managed","RevisionID":"revision"}],"Reproducible":true,"Warnings":null}`
+	t.Cleanup(func() { _ = agentRuntime.Close() })
+	runtimeManager := &integrationScopedRuntimeManager{runtime: agentRuntime}
+	provider, err := baldastate.NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = provider.Close() })
+	workspaceDir := t.TempDir()
+	newManager := func() *baldasession.Manager {
+		manager, managerErr := baldasession.NewManager(baldasession.ManagerParams{
+			AgentBuilder: SessionAgentBuilderAdapter{Builder: builder}, RuntimeManager: runtimeManager,
+			WorkingDir: workspaceDir, SessionsPersistent: true, SessionStore: provider.Sessions(),
+			RuntimeOperations: provider.RuntimeOperations(), Logger: zerolog.Nop(),
+		})
+		if managerErr != nil {
+			t.Fatal(managerErr)
+		}
+		return manager
+	}
+	locator, err := baldasession.NewSessionLocator("telegram", "chat:topic", `{}`, "session")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantSession, err := builder.CreateFreshRuntimeSession(
+		t.Context(), agentRuntime, "provider", "user", "session", workspaceDir,
+		baldaagent.RuntimeSessionContext{BaldaSessionID: "session"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prior := adksession.NewEvent(t.Context(), "prior-invocation")
+	prior.Author = "incumbent-agent"
+	prior.Content = genai.NewContentFromText("prior recovery event", genai.RoleModel)
+	prior.Actions.StateDelta = map[string]any{"retained": "state"}
+	if err := service.AppendEvent(t.Context(), wantSession, prior); err != nil {
+		t.Fatal(err)
+	}
+	if err := provider.Sessions().Upsert(t.Context(), baldastate.SessionRecord{
+		SessionID: "session", UserID: "user", ChannelType: locator.ChannelType, AddressKey: locator.AddressKey,
+		AddressJSON: locator.AddressJSON, AgentName: "provider", WorkspaceDir: workspaceDir,
+		RuntimeSnapshotID: integrationRuntimeSnapshotID, Status: baldastate.SessionStatusActive,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	operationAt := time.Now().UTC().Add(-time.Minute)
+	intent := baldastate.RuntimeOperationRecord{
+		OperationID: "operation", SessionID: "session", InputHash: strings.Repeat("a", 64),
+		Kind: string(baldastate.RuntimeOperationKindModel), State: baldastate.RuntimeOperationPrepared,
+		TargetSnapshotID: integrationRuntimeSnapshotID, TargetProviderBindingJSON: agentRuntime.ProviderBindingJSON, TargetModel: "model-next",
+		CreatedAt: operationAt, UpdatedAt: operationAt,
+	}
+	if _, err := provider.RuntimeOperations().Begin(t.Context(), intent); err != nil {
+		t.Fatal(err)
+	}
+	if err := provider.RuntimeOperations().MarkApplying(t.Context(), intent.OperationID, intent.InputHash); err != nil {
+		t.Fatal(err)
+	}
+	service.createCalls.Store(0)
+	service.deleteCalls.Store(0)
+	runtimeManager.closeCalls.Store(0)
+
+	restarted := newManager()
+	t.Cleanup(func() { _ = restarted.Stop(context.Background()) })
+	restored, err := restarted.RestoreSession(t.Context(), baldasession.SessionContext{Locator: locator, UserID: "user"})
+	if err != nil || restored == nil {
+		t.Fatalf("RestoreSession() = %p, %v", restored, err)
+	}
+	restoredLease, err := restored.AcquireRuntime()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restoredLease.Release()
+	if restoredLease.SessionService() != service || restoredLease.AppName() != agentRuntime.AppName ||
+		restoredLease.UserID() != "user" || restoredLease.SessionID() != "session" ||
+		restoredLease.Generation() != 1 || restoredLease.EffectiveModel() != "model-next" ||
+		restoredLease.RuntimeSnapshotID() != integrationRuntimeSnapshotID || restoredLease.ProviderBindingJSON() != agentRuntime.ProviderBindingJSON {
+		t.Fatalf("restored runtime identity/generation/model = %q/%q/%q/%d/%q", restoredLease.AppName(), restoredLease.UserID(), restoredLease.SessionID(), restoredLease.Generation(), restoredLease.EffectiveModel())
+	}
+	stateValue, stateErr := restoredLease.Session().State().Get("retained")
+	if stateErr != nil || stateValue != "state" {
+		t.Fatalf("restored state = %v, %v", stateValue, stateErr)
+	}
+	foundPrior := false
+	for event := range restoredLease.Session().Events().All() {
+		if event.Content != nil && len(event.Content.Parts) > 0 && event.Content.Parts[0].Text == "prior recovery event" {
+			foundPrior = true
+		}
+	}
+	if !foundPrior {
+		t.Fatal("restored session lost prior event")
+	}
+	if control.inspectCalls.Load() != 1 || control.validateCalls.Load() != 0 || control.changeCalls.Load() != 0 {
+		t.Fatalf("control calls inspect/validate/change = %d/%d/%d", control.inspectCalls.Load(), control.validateCalls.Load(), control.changeCalls.Load())
+	}
+	if service.createCalls.Load() != 0 || service.deleteCalls.Load() != 0 {
+		t.Fatalf("recovery session mutations: Create=%d Delete=%d", service.createCalls.Load(), service.deleteCalls.Load())
+	}
+	if runtimeManager.closeCalls.Load() != 1 {
+		t.Fatalf("private recovery runtime closes = %d, want 1", runtimeManager.closeCalls.Load())
+	}
+	for _, request := range runtimeManager.sessionRequests() {
+		if request.RuntimeSnapshotID != integrationRuntimeSnapshotID || request.ProviderBindingJSON != agentRuntime.ProviderBindingJSON {
+			t.Fatalf("legacy RuntimeForSession() request = snapshot %q binding %q", request.RuntimeSnapshotID, request.ProviderBindingJSON)
+		}
 	}
 }

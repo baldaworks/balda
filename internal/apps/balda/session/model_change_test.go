@@ -44,6 +44,10 @@ type modelTestController struct {
 	changeHook func()
 }
 
+func (c *modelTestController) InspectSessionControl(context.Context, RuntimeSessionIdentity) agentproduct.SessionControlSnapshot {
+	return agentproduct.SessionControlSnapshot{Status: agentproduct.ControlReady, CurrentModel: publicationOriginalModel}
+}
+
 func (c *modelTestController) ValidateModel(_ context.Context, _ RuntimeSessionIdentity, _ string) agentproduct.ModelValidation {
 	c.mu.Lock()
 	defer c.mu.Unlock()

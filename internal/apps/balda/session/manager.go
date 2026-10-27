@@ -35,6 +35,8 @@ const (
 
 const baldaRuntimeAppName = "norma-balda"
 
+const defaultSessionLabel = "auto"
+
 const workspaceSyncSkippedNotice = "Workspace restore hit a sync conflict, so Balda reset the workspace to the last saved session-branch state without applying the latest base changes. Ask Balda to retry the sync later."
 
 var ErrNoPersistedSession = errors.New("no persisted session")
@@ -740,6 +742,10 @@ func (m *Manager) bindSessionRuntime(
 	if err != nil {
 		return nil, err
 	}
+	return validateSessionRuntimeBinding(sessionRuntime, snapshotID, providerBindingJSON)
+}
+
+func validateSessionRuntimeBinding(sessionRuntime *BuiltRuntime, snapshotID, providerBindingJSON string) (*BuiltRuntime, error) {
 	if sessionRuntime == nil {
 		return nil, fmt.Errorf("session runtime is required")
 	}

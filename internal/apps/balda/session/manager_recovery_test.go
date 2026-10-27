@@ -9,7 +9,11 @@ import (
 	adksession "google.golang.org/adk/v2/session"
 )
 
-const recoveryUserID = "user"
+const (
+	recoveryProviderID = "provider"
+	recoverySessionID  = "session"
+	recoveryUserID     = "user"
+)
 
 func TestRestoreSessionAbortsPreparedRuntimeOperation(t *testing.T) {
 	manager, topic, store, locator := recoveryManager(t, baldastate.RuntimeOperationPrepared, 1)
@@ -65,7 +69,7 @@ func TestGetSessionInfoReadsOnlyDurableRuntimeState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetSessionInfo() error = %v", err)
 	}
-	if info.UserID != recoveryUserID || info.ProviderID != "provider" || info.Model != publicationOriginalModel ||
+	if info.UserID != recoveryUserID || info.ProviderID != recoveryProviderID || info.Model != publicationOriginalModel ||
 		info.Generation != 1 || info.ArchiveID != publicationArchiveID || info.Outcome != publicationOutcome {
 		t.Fatalf("GetSessionInfo() = %+v", info)
 	}
@@ -116,9 +120,9 @@ func TestCreateSessionCannotBypassApplyingOperationWithoutMetadataRow(t *testing
 func recoveryManager(t *testing.T, operationState baldastate.RuntimeOperationState, recordGeneration uint64) (*Manager, *TopicSession, *publicationStore, SessionLocator) {
 	t.Helper()
 	locator := testTelegramLocator(61, 0)
-	locator.SessionID = "session"
+	locator.SessionID = recoverySessionID
 	record := baldastate.SessionRecord{
-		SessionID: "session", UserID: recoveryUserID, ChannelType: locator.ChannelType,
+		SessionID: recoverySessionID, UserID: recoveryUserID, ChannelType: locator.ChannelType,
 		AddressKey: locator.AddressKey, AddressJSON: locator.AddressJSON, AgentName: "agent",
 		ArchiveID: publicationArchiveID, RuntimeSnapshotID: "snapshot", ProviderBindingJSON: publicationBinding,
 		RuntimeGeneration: recordGeneration, EffectiveModel: "model-1", RuntimeOutcome: publicationOutcome,
@@ -126,7 +130,7 @@ func recoveryManager(t *testing.T, operationState baldastate.RuntimeOperationSta
 	}
 	sessionStore := &fakeSessionStore{
 		recordsByAddress: map[string]baldastate.SessionRecord{sessionAddressKey(locator.ChannelType, locator.AddressKey): record},
-		recordsByID:      map[string]baldastate.SessionRecord{"session": record},
+		recordsByID:      map[string]baldastate.SessionRecord{recoverySessionID: record},
 	}
 	operationStore := &publicationStore{}
 	if operationState != "" {
@@ -134,14 +138,14 @@ func recoveryManager(t *testing.T, operationState baldastate.RuntimeOperationSta
 		operationStore.operation.State = operationState
 	}
 	topic := &TopicSession{
-		sessionID: "session", userID: recoveryUserID, locator: locator, kind: KindChat,
+		sessionID: recoverySessionID, userID: recoveryUserID, locator: locator, kind: KindChat,
 		runtime: newPublishedRuntimeSlot(runtimeSlotConfig{
 			runtime: publicationRuntime(nil), archiveID: publicationArchiveID,
 			generation: 1, effectiveModel: "model-1", outcome: publicationOutcome,
 		}),
 	}
 	manager := &Manager{
-		logger: zerolog.Nop(), sessions: map[string]*TopicSession{"session": topic},
+		logger: zerolog.Nop(), sessions: map[string]*TopicSession{recoverySessionID: topic},
 		sessionStore: sessionStore, runtimeOperations: operationStore,
 	}
 	return manager, topic, operationStore, locator
@@ -150,11 +154,11 @@ func recoveryManager(t *testing.T, operationState baldastate.RuntimeOperationSta
 func missingRowRecoveryManager(t *testing.T, operationState baldastate.RuntimeOperationState) (*Manager, *sqliteAgentBuilder, *publicationStore, SessionLocator) {
 	t.Helper()
 	locator := testTelegramLocator(62, 0)
-	locator.SessionID = "session"
+	locator.SessionID = recoverySessionID
 	service := adksession.InMemoryService()
 	runtime := &BuiltRuntime{AppName: baldaRuntimeAppName, SessionSvc: service, RuntimeSnapshotID: "snapshot"}
 	runtimeManager := &fakeScopedRuntimeManager{
-		fakeBaldaRuntimeManager: fakeBaldaRuntimeManager{providerID: "provider", runtime: runtime},
+		fakeBaldaRuntimeManager: fakeBaldaRuntimeManager{providerID: recoveryProviderID, runtime: runtime},
 		sessionRuntime:          runtime,
 	}
 	builder := &sqliteAgentBuilder{}

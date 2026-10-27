@@ -29,6 +29,7 @@ type RuntimeModelChange struct {
 
 // RuntimeModelController keeps provider control adjacent to an immutable runtime.
 type RuntimeModelController interface {
+	InspectSessionControl(ctx context.Context, identity RuntimeSessionIdentity) agentproduct.SessionControlSnapshot
 	ValidateModel(ctx context.Context, identity RuntimeSessionIdentity, model string) agentproduct.ModelValidation
 	ChangeModel(ctx context.Context, identity RuntimeSessionIdentity, model string) RuntimeModelChange
 }
