@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -167,6 +168,22 @@ func TestApplyingModelRecoveryRestoresAuthoritativeObservation(t *testing.T) {
 			if fixture.builder.openCalls.Load() != 1+boolInt(!test.wantErr) {
 				t.Fatalf("open calls = %d", fixture.builder.openCalls.Load())
 			}
+			if fixture.builder.createCalls.Load() != 0 || fixture.builder.freshCalls.Load() != 0 {
+				t.Fatalf("recovery created session: create=%d fresh=%d", fixture.builder.createCalls.Load(), fixture.builder.freshCalls.Load())
+			}
+			committed, found, getErr := fixture.sessions.GetBySessionID(t.Context(), recoverySessionID)
+			if getErr != nil || !found {
+				t.Fatalf("GetBySessionID() = %+v, %t, %v", committed, found, getErr)
+			}
+			wantGeneration, wantModel, wantOutcome := uint64(1), publicationOriginalModel, publicationOutcome
+			if !test.wantErr {
+				wantGeneration, wantModel = test.wantGeneration, test.wantModel
+			}
+			if committed.ArchiveID != publicationArchiveID || committed.RuntimeSnapshotID != publicationIntent().TargetSnapshotID ||
+				committed.ProviderBindingJSON != publicationBinding || committed.RuntimeGeneration != wantGeneration ||
+				committed.EffectiveModel != wantModel || committed.RuntimeOutcome != wantOutcome {
+				t.Fatalf("committed runtime = %+v, want archive/binding/snapshot/generation/model/outcome unchanged or authoritative", committed)
+			}
 		})
 	}
 }
@@ -234,6 +251,20 @@ func TestApplyingLegacyModelRecoveryUsesOperationBinding(t *testing.T) {
 			}
 			if fixture.control.validateCalls.Load() != 0 || fixture.control.changeCalls.Load() != 0 {
 				t.Fatalf("legacy recovery mutated provider: validate=%d change=%d", fixture.control.validateCalls.Load(), fixture.control.changeCalls.Load())
+			}
+			committed, found, getErr := fixture.sessions.GetBySessionID(t.Context(), recoverySessionID)
+			if getErr != nil || !found {
+				t.Fatalf("GetBySessionID() = %+v, %t, %v", committed, found, getErr)
+			}
+			if test.wantReady {
+				if committed.RuntimeGeneration != 1 || committed.EffectiveModel != modelChangeTargetModel ||
+					committed.ProviderBindingJSON != publicationBinding || committed.RuntimeSnapshotID != publicationIntent().TargetSnapshotID ||
+					committed.ArchiveID != publicationArchiveID || committed.RuntimeOutcome != publicationOutcome {
+					t.Fatalf("committed legacy recovery = %+v", committed)
+				}
+			} else if committed.RuntimeGeneration != 0 || committed.EffectiveModel != "" || committed.ProviderBindingJSON != "" ||
+				committed.RuntimeSnapshotID != publicationIntent().TargetSnapshotID || committed.ArchiveID != publicationArchiveID {
+				t.Fatalf("unresolved legacy record changed = %+v", committed)
 			}
 		})
 	}
@@ -431,12 +462,15 @@ func TestApplyingModelRecoveryClassifiesFinalizeUncertaintyFromStoreTruth(t *tes
 
 			topic, err := fixture.manager.RestoreSession(t.Context(), SessionContext{Locator: fixture.locator, UserID: recoveryUserID})
 			if test.wantErr {
-				if !errors.Is(err, ErrRuntimeRecoveryRequired) || topic != nil {
+				if !errors.Is(err, ErrRuntimeRecoveryRequired) || err.Error() != ErrRuntimeRecoveryRequired.Error() || topic != nil {
 					t.Fatalf("RestoreSession() = %p, %v; want recovery required", topic, err)
 				}
 				operation, found, getErr := fixture.operations.Get(t.Context(), "operation")
 				if getErr != nil || !found || operation.State != baldastate.RuntimeOperationApplying {
 					t.Fatalf("operation = %+v, %t, %v; want applying", operation, found, getErr)
+				}
+				if strings.Contains(err.Error(), "private-") {
+					t.Fatalf("RestoreSession() exposed store detail: %v", err)
 				}
 				return
 			}
