@@ -571,6 +571,75 @@ func TestPublishRuntimeConcurrentRedeliveryPublishesOnce(t *testing.T) {
 	}
 }
 
+func TestPublishRuntimeKeepsConcurrentIncumbentLeasesAlive(t *testing.T) {
+	var closes atomic.Int32
+	incumbent, candidate := publicationSlots(t, &closes)
+	topic := &TopicSession{sessionID: "session", runtime: incumbent}
+	store := &publicationStore{}
+	manager := publicationManager(topic, store)
+
+	const callers = 32
+	start := make(chan struct{})
+	acquired := make(chan *RuntimeLease, callers)
+	for range callers {
+		go func() {
+			<-start
+			lease, err := topic.AcquireRuntime()
+			if err != nil {
+				acquired <- nil
+				return
+			}
+			acquired <- lease
+		}()
+	}
+	close(start)
+	leases := make([]*RuntimeLease, 0, callers)
+	for range callers {
+		lease := <-acquired
+		if lease == nil || lease.Generation() != 1 {
+			t.Fatalf("incumbent lease = %#v, want generation 1", lease)
+		}
+		leases = append(leases, lease)
+	}
+
+	terminal, published, err := manager.publishRuntime(
+		t.Context(), incumbent, candidate, publicationIntent(), baldastate.RuntimeOperationOutcomeContextPreserved,
+	)
+	if err != nil || !published || terminal.State != baldastate.RuntimeOperationTerminal {
+		t.Fatalf("publishRuntime() = %+v, %v, %v", terminal, published, err)
+	}
+	if closes.Load() != 0 {
+		t.Fatal("shared runtime closed under incumbent leases")
+	}
+	current, err := topic.AcquireRuntime()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Generation() != 2 {
+		t.Fatalf("current generation = %d, want 2", current.Generation())
+	}
+	current.Release()
+
+	var releases sync.WaitGroup
+	for _, lease := range leases {
+		releases.Add(1)
+		go func() {
+			defer releases.Done()
+			lease.Release()
+		}()
+	}
+	releases.Wait()
+	if closes.Load() != 0 {
+		t.Fatal("shared owner closed while successor remained published")
+	}
+	if err := topic.DrainRuntime(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if closes.Load() != 1 {
+		t.Fatalf("aggregate close count = %d, want 1", closes.Load())
+	}
+}
+
 func publicationManager(topic *TopicSession, store baldastate.RuntimeOperationStore) *Manager {
 	if topic.runtime != nil {
 		topic.runtime.markPublished()

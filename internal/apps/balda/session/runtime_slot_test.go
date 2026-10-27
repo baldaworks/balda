@@ -14,7 +14,10 @@ import (
 	adksession "google.golang.org/adk/v2/session"
 )
 
-const runtimeSlotTestArchiveID = "archive"
+const (
+	runtimeSlotTestArchiveID = "archive"
+	runtimeSlotMismatchValue = "other"
+)
 
 type testSessionControl struct{}
 
@@ -114,9 +117,28 @@ func TestIndependentModelSuccessorRequiresExactIdentity(t *testing.T) {
 		t.Fatalf("wrong service error = %v", err)
 	}
 	wrongSnapshot := *replacement
-	wrongSnapshot.RuntimeSnapshotID = "other"
+	wrongSnapshot.RuntimeSnapshotID = runtimeSlotMismatchValue
 	if _, err := incumbent.independentModelSuccessor(&wrongSnapshot, created.Session, "new", publicationOutcome); !errors.Is(err, ErrRuntimePublicationInvalid) {
 		t.Fatalf("wrong snapshot error = %v", err)
+	}
+	wrongBinding := *replacement
+	wrongBinding.ProviderBindingJSON = runtimeSlotMismatchValue
+	if _, err := incumbent.independentModelSuccessor(&wrongBinding, created.Session, "new", publicationOutcome); !errors.Is(err, ErrRuntimePublicationInvalid) {
+		t.Fatalf("wrong binding error = %v", err)
+	}
+	wrongApp := *replacement
+	wrongApp.AppName = runtimeSlotMismatchValue
+	if _, err := incumbent.independentModelSuccessor(&wrongApp, created.Session, "new", publicationOutcome); !errors.Is(err, ErrRuntimePublicationInvalid) {
+		t.Fatalf("wrong app error = %v", err)
+	}
+	otherSession, err := service.Create(t.Context(), &adksession.CreateRequest{
+		AppName: "app", UserID: "user", SessionID: "other-session",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := incumbent.independentModelSuccessor(replacement, otherSession.Session, "new", publicationOutcome); !errors.Is(err, ErrRuntimePublicationInvalid) {
+		t.Fatalf("wrong session error = %v", err)
 	}
 }
 
@@ -280,5 +302,107 @@ func TestRuntimeSlotConcurrentDrainIsStable(t *testing.T) {
 	}
 	if closes.Load() != 1 {
 		t.Fatalf("close count = %d, want 1", closes.Load())
+	}
+}
+
+func TestRuntimeSlotConcurrentAbortReturnsOneBoundedCloseResult(t *testing.T) {
+	privateDetail := errors.New("provider secret: abort detail")
+	closeStarted := make(chan struct{})
+	releaseClose := make(chan struct{})
+	var closes atomic.Int32
+	slot := newRuntimeSlot(runtimeSlotConfig{runtime: &BuiltRuntime{Close: func() error {
+		closes.Add(1)
+		close(closeStarted)
+		<-releaseClose
+		return privateDetail
+	}}})
+
+	const callers = 32
+	start := make(chan struct{})
+	errs := make(chan error, callers)
+	var wg sync.WaitGroup
+	for range callers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			errs <- slot.abortUnpublished(t.Context())
+		}()
+	}
+	close(start)
+	<-closeStarted
+	if closes.Load() != 1 {
+		t.Fatalf("close calls while blocked = %d, want 1", closes.Load())
+	}
+	close(releaseClose)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if !errors.Is(err, ErrRuntimeCloseFailed) || err.Error() != ErrRuntimeCloseFailed.Error() {
+			t.Errorf("abortUnpublished() error = %v, want bounded close failure", err)
+		}
+	}
+	if closes.Load() != 1 {
+		t.Fatalf("close calls = %d, want 1", closes.Load())
+	}
+}
+
+func TestRuntimeSlotSharedOwnerWaitsForEverySlotAndLease(t *testing.T) {
+	closeStarted := make(chan struct{})
+	releaseClose := make(chan struct{})
+	var closes atomic.Int32
+	root := newRuntimeSlot(runtimeSlotConfig{
+		runtime: &BuiltRuntime{Close: func() error {
+			closes.Add(1)
+			close(closeStarted)
+			<-releaseClose
+			return nil
+		}},
+		archiveID:  runtimeSlotTestArchiveID,
+		generation: 1,
+	})
+	first, err := root.sharedSuccessor(2, "model-2", publicationOutcome)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := first.sharedSuccessor(3, "model-3", publicationOutcome)
+	if err != nil {
+		t.Fatal(err)
+	}
+	slots := []*RuntimeSlot{root, first, second}
+	leases := make([]*RuntimeLease, 0, len(slots))
+	for _, slot := range slots {
+		lease, err := slot.acquire()
+		if err != nil {
+			t.Fatal(err)
+		}
+		leases = append(leases, lease)
+		slot.beginDrain()
+	}
+	if closes.Load() != 0 {
+		t.Fatal("shared owner closed while leases remained")
+	}
+
+	var releases sync.WaitGroup
+	for _, lease := range leases {
+		releases.Add(1)
+		go func() {
+			defer releases.Done()
+			lease.Release()
+		}()
+	}
+	releases.Wait()
+	<-closeStarted
+	if closes.Load() != 1 {
+		t.Fatalf("close calls while blocked = %d, want 1", closes.Load())
+	}
+	close(releaseClose)
+	for _, slot := range slots {
+		if err := slot.waitDrain(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if closes.Load() != 1 {
+		t.Fatalf("close calls = %d, want 1", closes.Load())
 	}
 }
