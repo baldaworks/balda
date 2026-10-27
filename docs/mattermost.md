@@ -171,8 +171,14 @@ HTTP, which needs a Request URL per command:
    method `POST`.
 4. Copy the **token** Mattermost shows and set it as `commands_token`.
 5. Register one root command (`/balda`) and select the action with its first
-   word, for example `/balda locator`. This keeps the receiver bound to the
-   single integration token configured as `commands_token`.
+   word, for example `/balda locator` or `/balda model <model-id>`. This keeps
+   the receiver bound to the single integration token configured as
+   `commands_token`.
+
+`/model` reports the committed model, and `/model <model-id>` queues a
+same-provider change while preserving the current session context. An
+unsupported change leaves the incumbent model and context intact and never
+resets the session.
 
 A slash command is answered immediately and its result is delivered as a post.
 Mattermost shows the author a timeout when a command does not respond within a

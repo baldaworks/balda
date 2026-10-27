@@ -9,8 +9,9 @@ command.
 Telegram and Zulip use one slash command per action, such as `/locator`.
 Slack registers one workspace slash command, `/balda`, and the first word of
 its text selects the Balda command. The current Slack command surface contains
-`/balda locator`, `/balda status`, `/balda reset`, and `/balda skill`; `/balda` with no command
-or any other subcommand returns the enabled-command usage.
+`/balda locator`, `/balda status`, `/balda model`, `/balda reset`, and
+`/balda skill`; `/balda` with no command or any other subcommand returns the
+enabled-command usage.
 
 `owner` means the account bootstrapped with the deployment owner token.
 `collaborator` means an account connected through an owner-created invite.
@@ -45,6 +46,8 @@ locator`) instead of one command per action (`/locator`); both shapes are accept
 | `/balda locator` | no | no | no | yes | workspace member | current conversation |
 | `/status` | yes | yes | yes | no | owner, collaborator | current session |
 | `/balda status` | no | no | no | yes | workspace member | current conversation |
+| `/model [model-id]` | yes | yes | yes | no | owner, collaborator | current session |
+| `/balda model [model-id]` | no | no | no | yes | workspace member | current conversation |
 | `/close` | yes | yes | yes | no | owner, collaborator | direct message |
 | `/cancel` | yes | yes | yes | no | owner, collaborator | current session |
 | `/user ...` | yes | yes | yes | no | owner | direct message recommended |
@@ -227,6 +230,23 @@ own Markdown rules; the v1 renderer registration remains available for
 compatibility. The command does not create or restore a runtime, start a turn,
 or modify question, permission, or auto-mode state. If the transport renderer
 is absent or fails, Balda fails closed and sends no plain-text status fallback.
+
+## Model
+
+### `/model [model-id]` and `/balda model [model-id]`
+
+With no argument, returns the committed effective model without restoring a
+runtime or starting a turn. With one model ID, queues a same-provider model
+change through the session's existing FIFO, behind work that was accepted
+earlier. Slack uses `/balda model`; Telegram, Zulip, and Mattermost use
+`/model` (Mattermost may also use the configured `/balda model` root form).
+
+A successful live change or same-session runtime replacement preserves the
+session identity and conversation history. Unsupported or incompatible models,
+provider rejection, and a busy session leave the incumbent model and context
+unchanged. The command never falls back to an implicit reset. A conflict,
+temporary unavailability, or recovery-required result is reported explicitly
+without exposing provider errors or internal runtime data.
 
 ## Command execution architecture
 

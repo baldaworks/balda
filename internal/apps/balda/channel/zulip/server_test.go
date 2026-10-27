@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -13,6 +14,12 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/rs/zerolog"
 )
+
+func TestSupportedCommandsAdvertiseModel(t *testing.T) {
+	if !slices.Contains(SupportedCommands(), "model") {
+		t.Fatalf("SupportedCommands() = %v, want model", SupportedCommands())
+	}
+}
 
 type mockInboundProcessor struct {
 	mu           sync.Mutex
@@ -571,6 +578,40 @@ func TestZulipServerForwardsSkillSelectorAndPromptToProcessor(t *testing.T) {
 	}
 	if !cmd.Direct {
 		t.Fatal("cmd.Direct = false, want true for private chat")
+	}
+}
+
+func TestZulipServerForwardsModelTargetToProcessor(t *testing.T) {
+	mockProc := &mockInboundProcessor{}
+	server := NewServer(ServerParams{
+		Processor:         mockProc,
+		ZulipWebhookToken: "token",
+		Logger:            zerolog.Nop(),
+	})
+
+	body := `{
+		"token":"token",
+		"message":{
+			"sender_id":101,
+			"sender_email":"user@example.com",
+			"type":"private",
+			"content":"/model vendor/model-v2"
+		}
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/zulip/webhook", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	server.handleWebhook(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if len(mockProc.commandCalls) != 1 {
+		t.Fatalf("command calls = %d, want 1", len(mockProc.commandCalls))
+	}
+	cmd := mockProc.commandCalls[0]
+	if cmd.Command != "model" || cmd.Args != "vendor/model-v2" {
+		t.Fatalf("command = %+v, want canonical model command and unchanged target", cmd)
 	}
 }
 

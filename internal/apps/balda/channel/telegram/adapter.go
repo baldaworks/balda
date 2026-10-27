@@ -123,7 +123,7 @@ type CommandContext struct {
 	IsDM            bool
 }
 
-var supportedCommands = []string{"start", "help", "topic", "goalkeeper", "reset", "new", "locator", "status", "close", "cancel", "usage", "auto", "user", "plugin", "skill"}
+var supportedCommands = []string{"start", "help", "topic", "goalkeeper", "reset", "new", "locator", "status", "model", "close", "cancel", "usage", "auto", "user", "plugin", "skill"}
 
 func SupportedCommands() []string { return append([]string(nil), supportedCommands...) }
 

@@ -54,6 +54,7 @@ func renderHelpMessage(canUseSessionCommands bool, isOwner bool) string {
 		lines = append(lines, "- `/cancel` — request cancel for the current turn")
 		lines = append(lines, "- `/locator` — show current session locator")
 		lines = append(lines, "- `/status` — show provider, session, and current turn status")
+		lines = append(lines, "- `/model [model-id]` — show or change the current model without resetting context")
 		lines = append(lines, "- `/usage` — show last provider usage for this session")
 		lines = append(lines, "- `/skill <skill> [prompt...]` — run a session skill")
 		lines = append(lines, "- `/skill <plugin>:<skill> [prompt...]` — run an exact plugin skill")

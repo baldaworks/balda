@@ -65,7 +65,7 @@ func TestMattermostHandlerPublishesCommands(t *testing.T) {
 	const ownerID = "owner-user-1"
 	ownerStore := newOwnerStoreWithMattermostSubject(t, ownerID)
 
-	for _, name := range []string{"start", "topic", "locator", "status", "cancel", "goalkeeper", "user", "usage", "auto", "reset", "close", "skill"} {
+	for _, name := range []string{"start", "topic", "locator", "status", "model", "cancel", "goalkeeper", "user", "usage", "auto", "reset", "close", "skill"} {
 		t.Run(name, func(t *testing.T) {
 			ingress := &recordingMattermostCommandIngress{}
 			h := &mattermostInboundHandler{
@@ -74,11 +74,16 @@ func TestMattermostHandlerPublishesCommands(t *testing.T) {
 				logger:         zerolog.Nop(),
 			}
 
+			args := ""
+			if name == "model" {
+				args = "vendor/model-v2"
+			}
 			err := h.HandleCommand(context.Background(), mattermost.InboundCommand{
 				Locator:  mattermost.NewDMLocator("dm-1", ownerID),
 				PostID:   "post-1",
 				SenderID: ownerID,
 				Command:  name,
+				Args:     args,
 				Direct:   true,
 			})
 			if err != nil {
@@ -93,6 +98,9 @@ func TestMattermostHandlerPublishesCommands(t *testing.T) {
 			}
 			if got.Payload.Name != name {
 				t.Fatalf("payload.Name = %q, want %q", got.Payload.Name, name)
+			}
+			if got.Payload.Args != args {
+				t.Fatalf("payload.Args = %q, want %q", got.Payload.Args, args)
 			}
 			if got.Payload.Transport != mattermost.ChannelType {
 				t.Fatalf("payload.Transport = %q, want %q", got.Payload.Transport, mattermost.ChannelType)

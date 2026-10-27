@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 
@@ -14,6 +15,12 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 )
+
+func TestSupportedCommandsAdvertiseModel(t *testing.T) {
+	if !slices.Contains(SupportedCommands(), "model") {
+		t.Fatalf("SupportedCommands() = %v, want model", SupportedCommands())
+	}
+}
 
 // commandRecorder captures the commands the server forwards.
 type commandRecorder struct {
@@ -42,7 +49,7 @@ func newTestCommandServer(recorder *commandRecorder) *CommandServer {
 		Commands: commandcmd.NewRegistryWithAdvertisements([]commandcmd.Advertisement{{
 			Transport: ChannelType,
 			Enabled:   true,
-			Names:     []string{"locator", "reset", "usage", "auto", "cancel", "goalkeeper", "topic", "close", "start", "user", "skill"},
+			Names:     SupportedCommands(),
 		}}),
 		Config: CommandServerConfig{Enabled: true, Path: "/mattermost/commands", Token: testCommandToken},
 	})
@@ -276,6 +283,43 @@ func TestCommandServerReadsRootCommandWithSubcommand(t *testing.T) {
 	}
 	if command.Args != "writer" {
 		t.Fatalf("args = %q, want writer", command.Args)
+	}
+}
+
+func TestCommandServerPublishesModelForms(t *testing.T) {
+	tests := []struct {
+		name    string
+		command string
+		text    string
+	}{
+		{name: "dedicated command", command: "/model", text: "vendor/model-v2"},
+		{name: "root command", command: "/balda", text: "model vendor/model-v2"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder := &commandRecorder{}
+			server := newTestCommandServer(recorder)
+			request, response := commandRequest(url.Values{
+				"token":      {testCommandToken},
+				"command":    {tt.command},
+				"text":       {tt.text},
+				"channel_id": {testChannelID},
+				"user_id":    {testUserID},
+			})
+
+			server.handleCommand(response, request)
+
+			if response.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+			}
+			if len(recorder.commands) != 1 {
+				t.Fatalf("commands = %d, want 1", len(recorder.commands))
+			}
+			got := recorder.commands[0]
+			if got.Command != "model" || got.Args != "vendor/model-v2" {
+				t.Fatalf("command = %+v, want canonical model command and unchanged target", got)
+			}
+		})
 	}
 }
 

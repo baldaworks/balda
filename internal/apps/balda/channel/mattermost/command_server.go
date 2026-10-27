@@ -109,6 +109,14 @@ type CommandServer struct {
 	ln     net.Listener
 }
 
+var supportedCommands = []string{
+	"locator", "status", "model", "reset", "usage", "auto", "cancel",
+	"goalkeeper", "topic", "close", "start", "user", "skill",
+}
+
+// SupportedCommands returns the built-in Mattermost command surface.
+func SupportedCommands() []string { return append([]string(nil), supportedCommands...) }
+
 // CommandServerParams are the dependencies of NewCommandServer.
 type CommandServerParams struct {
 	Processor InboundProcessor

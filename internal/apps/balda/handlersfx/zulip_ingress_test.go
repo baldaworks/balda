@@ -65,7 +65,7 @@ func TestZulipInboundHandlerPublishesActorOwnedCommands(t *testing.T) {
 	if _, err := ownerStore.RegisterOwnerSubject(auth.ZulipSubject(101)); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"locator", "status", "reset", "new", "usage", "auto", "cancel", "goalkeeper", "topic", "close", "start", "user", "skill"} {
+	for _, name := range []string{"locator", "status", "model", "reset", "new", "usage", "auto", "cancel", "goalkeeper", "topic", "close", "start", "user", "skill"} {
 		t.Run(name, func(t *testing.T) {
 			ingress := &recordingZulipCommandIngress{}
 			h := &zulipInboundHandler{ownerStore: ownerStore, commandIngress: ingress, logger: zerolog.Nop(), ownerID: 101}
@@ -73,6 +73,9 @@ func TestZulipInboundHandlerPublishesActorOwnedCommands(t *testing.T) {
 			args := ""
 			if name == commandSkill {
 				args = "prism:story implement this feature"
+			}
+			if name == "model" {
+				args = "vendor/model-v2"
 			}
 			if err := h.HandleCommand(context.Background(), zulip.InboundCommand{Locator: locator, MessageID: 88, SenderID: 101, Command: name, Args: args, Direct: true}); err != nil {
 				t.Fatal(err)
@@ -84,8 +87,8 @@ func TestZulipInboundHandlerPublishesActorOwnedCommands(t *testing.T) {
 			if got.InvocationID != "zulip:command:88" || got.Payload.Name != name || !got.Payload.Access.Owner {
 				t.Fatalf("published request = %+v", got)
 			}
-			if name == commandSkill && got.Payload.Args != args {
-				t.Fatalf("skill args = %q, want %q", got.Payload.Args, args)
+			if got.Payload.Args != args {
+				t.Fatalf("args = %q, want %q", got.Payload.Args, args)
 			}
 		})
 	}

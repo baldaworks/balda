@@ -2,10 +2,17 @@ package slackagent
 
 import (
 	"net/url"
+	"slices"
 	"testing"
 
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 )
+
+func TestSupportedCommandsAdvertiseModel(t *testing.T) {
+	if !slices.Contains(SupportedCommands(), "model") {
+		t.Fatalf("SupportedCommands() = %v, want model", SupportedCommands())
+	}
+}
 
 func TestDecodeCommandRequestAcceptsProjectedPluginAlias(t *testing.T) {
 	t.Parallel()

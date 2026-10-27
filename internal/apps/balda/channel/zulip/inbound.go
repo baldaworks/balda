@@ -49,7 +49,7 @@ type InboundProcessor interface {
 	HandleUnsupportedCommand(ctx context.Context, cmd InboundCommand) error
 }
 
-var supportedCommands = []string{"start", "topic", "locator", "status", "cancel", "goalkeeper", "user", "usage", "auto", "reset", "new", "close", "skill"}
+var supportedCommands = []string{"start", "topic", "locator", "status", "model", "cancel", "goalkeeper", "user", "usage", "auto", "reset", "new", "close", "skill"}
 
 func SupportedCommands() []string { return append([]string(nil), supportedCommands...) }
 func commandSupported(name string) bool {

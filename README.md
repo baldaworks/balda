@@ -65,6 +65,10 @@ with a teammate. For a focused topic or a longer goal:
 Use `/cancel` to stop the current turn and `/reset` to start a fresh session.
 Use `/status` to inspect the provider, model, reasoning effort, session state,
 and current turn without changing the runtime.
+Use `/model` to read the committed model, or `/model <model-id>` to queue a
+same-provider model change while preserving the current session context. An
+unsupported change leaves the current model and context intact; it never
+performs an implicit reset.
 Command availability varies by chat provider; see the
 [command guide](docs/commands.md).
 
