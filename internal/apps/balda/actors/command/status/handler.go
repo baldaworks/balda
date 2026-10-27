@@ -124,7 +124,10 @@ func (h *Handler) render(ctx context.Context, p commandcmd.Payload) (deliveryfmt
 
 	info, err := h.sessions.GetSessionInfo(ctx, p.Locator.SessionID)
 	if err != nil {
-		h.logger.Warn().Err(err).Str("session_id", p.Locator.SessionID).Msg("failed to read status session metadata")
+		h.logger.Warn().
+			Str("error_class", "session_metadata_unavailable").
+			Str("session_id", p.Locator.SessionID).
+			Msg("failed to read status session metadata")
 	} else {
 		response.SessionState = valueOrUnavailable(info.Status)
 		response.ProviderID = valueOrUnavailable(info.ProviderID)

@@ -248,6 +248,22 @@ unchanged. The command never falls back to an implicit reset. A conflict,
 temporary unavailability, or recovery-required result is reported explicitly
 without exposing provider errors or internal runtime data.
 
+After a model change crosses the provider boundary, an unresolved `applying`
+operation fences new runtime admission. Restart recovery inspects the existing
+session control state; it does not repeat model validation or mutation. Recovery
+finishes only when that inspection and the committed archive, provider binding,
+runtime snapshot, and generation prove one authoritative result. Otherwise the
+session remains `recovery_required`, and `/status` continues to report only the
+committed model and bounded session state.
+
+Operators should restore the unavailable store or provider control plane and
+forward-complete recovery with the same compatible binary. Do not delete the
+runtime-operation journal or reset the session to clear uncertainty. Before a
+rollback, stop admission and take a consistent backup; do not downgrade across
+an unresolved `applying` operation. Use a compatible forward version, or restore
+a validated pre-change backup while Balda is stopped. See
+[Runtime operation state](reference/database.md#runtime-operation-state).
+
 ## Command execution architecture
 
 Each transport owns its command syntax and explicit whitelist. All supported

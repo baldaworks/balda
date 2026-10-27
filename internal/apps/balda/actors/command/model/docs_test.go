@@ -21,7 +21,16 @@ func TestModelCommandUserDocs(t *testing.T) {
 		},
 		{
 			path: "docs/commands.md",
-			want: []string{"`/model [model-id]`", "`/balda model [model-id]`", "conversation history", "implicit reset"},
+			want: []string{
+				"`/model [model-id]`",
+				"`/balda model [model-id]`",
+				"conversation history",
+				"implicit reset",
+				"unresolved `applying`",
+				"does not repeat model validation or mutation",
+				"remains `recovery_required`",
+				"do not downgrade",
+			},
 		},
 		{
 			path: "docs/zulip-webhook.md",

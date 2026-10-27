@@ -184,6 +184,22 @@ func TestHandleRejectsMalformedTargetWithoutProtectedWork(t *testing.T) {
 	}
 }
 
+func TestHandleDeniedTargetPerformsNoProtectedWork(t *testing.T) {
+	sessions, models, dispatcher := &testSessionReader{}, &testSubmitter{}, &testDispatcher{}
+	payload := modelPayload("target-secret")
+	payload.Access = commandcmd.Access{}
+	if err := New(sessions, models, dispatcher).Handle(t.Context(), actorlayer.Envelope{ID: "op-denied"}, payload); err != nil {
+		t.Fatal(err)
+	}
+	if sessions.callCount() != 0 || len(models.snapshot()) != 0 {
+		t.Fatal("denied target reached protected work")
+	}
+	_, delivered := dispatcher.last(t)
+	if delivered.Text != msgDenied || strings.Contains(delivered.Text, "target-secret") {
+		t.Fatalf("denied delivery = %q", delivered.Text)
+	}
+}
+
 func TestHandleReadsOnlyCommittedModel(t *testing.T) {
 	for _, test := range []struct {
 		name string
@@ -229,7 +245,7 @@ func TestHandleMapsEveryModelResult(t *testing.T) {
 		{name: "replacement missing effective model", result: session.ModelChangeResult{Status: session.ModelChangeChangedReplacement}, text: msgUnavailable, suffix: "model-unavailable"},
 		{name: "unsupported", result: session.ModelChangeResult{Status: session.ModelChangeUnsupported}, text: msgUnsupported, suffix: "model-unsupported"},
 		{name: "incompatible", result: session.ModelChangeResult{Status: session.ModelChangeIncompatible}, text: msgIncompatible, suffix: "model-incompatible"},
-		{name: "rejected", result: session.ModelChangeResult{Status: session.ModelChangeRejected}, text: msgRejected, suffix: "model-rejected"},
+		{name: "rejected", result: session.ModelChangeResult{Status: session.ModelChangeRejected, Reason: "secret provider reason"}, text: msgRejected, suffix: "model-rejected"},
 		{name: "busy", result: session.ModelChangeResult{Status: session.ModelChangeBusy}, text: msgBusy, suffix: "model-busy"},
 		{name: "conflict", result: session.ModelChangeResult{Status: session.ModelChangeConflict}, text: msgConflict, suffix: "model-conflict"},
 		{name: "unavailable", result: session.ModelChangeResult{Status: session.ModelChangeUnavailable}, text: msgUnavailable, suffix: "model-unavailable"},
