@@ -11,6 +11,7 @@ import (
 	"time"
 
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
+	adksession "google.golang.org/adk/v2/session"
 )
 
 func TestPublishRuntimeCommitsBeforeSwapAndDrainsPredecessor(t *testing.T) {
@@ -81,7 +82,7 @@ func TestPublishRuntimeUsesGuardedSQLiteCommit(t *testing.T) {
 		SessionID: "session", UserID: "user", ChannelType: baldastate.ChannelTypeTelegram,
 		AddressKey: "session:0", AddressJSON: `{}`, AgentName: "agent",
 		RuntimeSnapshotID: "snapshot", ProviderBindingJSON: publicationBinding,
-		ArchiveID: publicationArchiveID, RuntimeGeneration: 1, EffectiveModel: "model-1",
+		ArchiveID: publicationArchiveID, RuntimeGeneration: 1, EffectiveModel: publicationOriginalModel,
 		RuntimeOutcome: publicationOutcome, Status: baldastate.SessionStatusActive,
 	}); err != nil {
 		t.Fatal(err)
@@ -104,10 +105,179 @@ func TestPublishRuntimeUsesGuardedSQLiteCommit(t *testing.T) {
 	}
 }
 
+func TestPublishApplyingModelRuntimeCommitsAndSwapsOnce(t *testing.T) {
+	incumbent, candidate := publicationSlots(t, nil)
+	topic := &TopicSession{sessionID: "session", runtime: incumbent}
+	intent := publicationIntent()
+	intent.State = baldastate.RuntimeOperationApplying
+	store := &publicationStore{operation: intent}
+	manager := publicationManager(topic, store)
+
+	terminal, published, err := manager.publishApplyingModelRuntime(
+		t.Context(), incumbent, candidate, intent, baldastate.RuntimeOperationOutcomeContextPreserved,
+	)
+	if err != nil || !published || terminal.State != baldastate.RuntimeOperationTerminal {
+		t.Fatalf("publishApplyingModelRuntime() = %+v, %v, %v", terminal, published, err)
+	}
+	if got := topic.currentRuntime(); got != candidate {
+		t.Fatal("successor is not current")
+	}
+	if got := store.callOrder(); strings.Join(got, ",") != "finalize:context_preserved" {
+		t.Fatalf("store order = %v", got)
+	}
+	terminal, published, err = manager.publishApplyingModelRuntime(
+		t.Context(), incumbent, candidate, intent, baldastate.RuntimeOperationOutcomeContextPreserved,
+	)
+	if err != nil || published || terminal.State != baldastate.RuntimeOperationTerminal {
+		t.Fatalf("replay = %+v, %v, %v", terminal, published, err)
+	}
+}
+
+func TestPublishApplyingModelRuntimeFailuresRemainUnresolvedAndFenced(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(*TopicSession, *RuntimeSlot, *RuntimeSlot, *publicationStore, *baldastate.RuntimeOperationRecord)
+	}{
+		{name: "candidate mismatch", setup: func(_ *TopicSession, _ *RuntimeSlot, candidate *RuntimeSlot, _ *publicationStore, _ *baldastate.RuntimeOperationRecord) {
+			candidate.value.runtime.RuntimeSnapshotID = "mismatch"
+		}},
+		{name: "stale guard", setup: func(topic *TopicSession, _ *RuntimeSlot, _ *RuntimeSlot, _ *publicationStore, _ *baldastate.RuntimeOperationRecord) {
+			topic.runtime = newPublishedRuntimeSlot(runtimeSlotConfig{runtime: publicationRuntime(nil), archiveID: publicationArchiveID, generation: 1, effectiveModel: publicationOriginalModel})
+		}},
+		{name: "archive guard", setup: func(_ *TopicSession, _ *RuntimeSlot, candidate *RuntimeSlot, store *publicationStore, intent *baldastate.RuntimeOperationRecord) {
+			intent.ExpectedArchiveID = "stale-archive"
+			store.operation.ExpectedArchiveID = intent.ExpectedArchiveID
+			candidate.value.archiveID = publicationArchiveID
+		}},
+		{name: "generation guard", setup: func(_ *TopicSession, _ *RuntimeSlot, candidate *RuntimeSlot, store *publicationStore, intent *baldastate.RuntimeOperationRecord) {
+			intent.ExpectedGeneration = 7
+			store.operation.ExpectedGeneration = intent.ExpectedGeneration
+			candidate.value.generation = 8
+		}},
+		{name: "claim failure", setup: func(_ *TopicSession, _ *RuntimeSlot, candidate *RuntimeSlot, _ *publicationStore, _ *baldastate.RuntimeOperationRecord) {
+			candidate.markPublished()
+		}},
+		{name: "finalize conflict", setup: func(_ *TopicSession, _ *RuntimeSlot, _ *RuntimeSlot, store *publicationStore, _ *baldastate.RuntimeOperationRecord) {
+			store.publishErr = baldastate.ErrRuntimeOperationConflict
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var closes atomic.Int32
+			incumbent := newRuntimeSlot(runtimeSlotConfig{runtime: publicationRuntime(nil), archiveID: publicationArchiveID, generation: 1, effectiveModel: publicationOriginalModel})
+			candidate := newRuntimeSlot(runtimeSlotConfig{
+				runtime: publicationRuntime(func() error { closes.Add(1); return nil }), archiveID: publicationArchiveID,
+				generation: 2, effectiveModel: "model-2", outcome: publicationOutcome,
+			})
+			intent := publicationIntent()
+			intent.State = baldastate.RuntimeOperationApplying
+			store := &publicationStore{operation: intent}
+			topic := &TopicSession{sessionID: "session", runtime: incumbent}
+			topic.runtime.markPublished()
+			test.setup(topic, incumbent, candidate, store, &intent)
+			manager := publicationManager(topic, store)
+
+			got, published, err := manager.publishApplyingModelRuntime(t.Context(), incumbent, candidate, intent, baldastate.RuntimeOperationOutcomeContextPreserved)
+			if !errors.Is(err, ErrRuntimeRecoveryRequired) || published {
+				t.Fatalf("publishApplyingModelRuntime() = %+v, %v, %v", got, published, err)
+			}
+			if store.operation.State != baldastate.RuntimeOperationApplying || store.operation.TerminalAt != nil {
+				t.Fatalf("operation terminalized = %+v", store.operation)
+			}
+			if strings.Contains(strings.Join(store.callOrder(), ","), "finalize:conflict") {
+				t.Fatalf("local conflict was terminalized: %v", store.callOrder())
+			}
+			if _, acquireErr := topic.AcquireRuntime(); !errors.Is(acquireErr, ErrRuntimeRecoveryRequired) {
+				t.Fatalf("AcquireRuntime() = %v", acquireErr)
+			}
+			if test.name != "claim failure" && closes.Load() != 1 {
+				t.Fatalf("candidate close count = %d, want 1", closes.Load())
+			}
+		})
+	}
+}
+
+func TestPublishApplyingModelRuntimeCandidateCoherenceFailureFences(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		candidate func(*RuntimeSlot) *RuntimeSlot
+	}{
+		{name: "missing", candidate: func(*RuntimeSlot) *RuntimeSlot { return nil }},
+		{name: "incumbent reused", candidate: func(incumbent *RuntimeSlot) *RuntimeSlot { return incumbent }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			incumbent := newPublishedRuntimeSlot(runtimeSlotConfig{
+				runtime: publicationRuntime(nil), archiveID: publicationArchiveID, generation: 1, effectiveModel: publicationOriginalModel,
+			})
+			intent := publicationIntent()
+			intent.State = baldastate.RuntimeOperationApplying
+			store := &publicationStore{operation: intent}
+			topic := &TopicSession{sessionID: "session", runtime: incumbent}
+			manager := publicationManager(topic, store)
+
+			_, published, err := manager.publishApplyingModelRuntime(
+				t.Context(), incumbent, test.candidate(incumbent), intent, baldastate.RuntimeOperationOutcomeContextPreserved,
+			)
+			if !errors.Is(err, ErrRuntimeRecoveryRequired) || published || store.operation.State != baldastate.RuntimeOperationApplying {
+				t.Fatalf("publication = %v, %v; operation = %+v", published, err, store.operation)
+			}
+			if _, acquireErr := topic.AcquireRuntime(); !errors.Is(acquireErr, ErrRuntimeRecoveryRequired) {
+				t.Fatalf("AcquireRuntime() = %v", acquireErr)
+			}
+		})
+	}
+}
+
+func TestRuntimePublicationIdentityGuardIsModelOnly(t *testing.T) {
+	incumbentService := adksession.InMemoryService()
+	candidateService := adksession.InMemoryService()
+	incumbentSession, err := incumbentService.Create(t.Context(), &adksession.CreateRequest{AppName: "old-app", UserID: "old-user", SessionID: "old-session"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidateSession, err := candidateService.Create(t.Context(), &adksession.CreateRequest{AppName: "new-app", UserID: "new-user", SessionID: "new-session"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	incumbent := newRuntimeSlot(runtimeSlotConfig{
+		runtime: &BuiltRuntime{SessionSvc: incumbentService, AppName: "old-app", RuntimeSnapshotID: "snapshot", ProviderBindingJSON: publicationBinding},
+		session: incumbentSession.Session, archiveID: publicationArchiveID, generation: 1, effectiveModel: publicationOriginalModel,
+	})
+	candidate := newRuntimeSlot(runtimeSlotConfig{
+		runtime: &BuiltRuntime{SessionSvc: candidateService, AppName: "new-app", RuntimeSnapshotID: "snapshot", ProviderBindingJSON: publicationBinding},
+		session: candidateSession.Session, archiveID: publicationArchiveID, generation: 2, effectiveModel: publicationOriginalModel,
+		outcome: string(baldastate.RuntimeOperationOutcomeContextReset),
+	})
+	intent := publicationIntent()
+	intent.Kind = string(baldastate.RuntimeOperationKindLifetime)
+	intent.TargetModel = publicationOriginalModel
+	topic := &TopicSession{sessionID: "session", runtime: incumbent}
+	manager := publicationManager(topic, &publicationStore{})
+	if _, published, err := manager.publishRuntime(t.Context(), incumbent, candidate, intent, baldastate.RuntimeOperationOutcomeContextReset); err != nil || !published {
+		t.Fatalf("generic lifetime publication = %v, %v", published, err)
+	}
+
+	modelIntent := publicationIntent()
+	modelIntent.State = baldastate.RuntimeOperationApplying
+	modelStore := &publicationStore{operation: modelIntent}
+	modelTopic := &TopicSession{sessionID: "session", runtime: incumbent}
+	modelManager := publicationManager(modelTopic, modelStore)
+	modelCandidate := newRuntimeSlot(runtimeSlotConfig{
+		runtime: &BuiltRuntime{SessionSvc: candidateService, AppName: "new-app", RuntimeSnapshotID: "snapshot", ProviderBindingJSON: publicationBinding},
+		session: candidateSession.Session, archiveID: publicationArchiveID, generation: 2, effectiveModel: "model-2", outcome: publicationOutcome,
+	})
+	if _, published, err := modelManager.publishApplyingModelRuntime(t.Context(), incumbent, modelCandidate, modelIntent, baldastate.RuntimeOperationOutcomeContextPreserved); !errors.Is(err, ErrRuntimeRecoveryRequired) || published {
+		t.Fatalf("model identity mismatch = %v, %v", published, err)
+	}
+	if modelStore.operation.State != baldastate.RuntimeOperationApplying {
+		t.Fatalf("model operation = %+v", modelStore.operation)
+	}
+}
+
 func TestPublishRuntimeGuardConflictLeavesCandidateCallerOwned(t *testing.T) {
 	var candidateCloses atomic.Int32
-	stale := newRuntimeSlot(runtimeSlotConfig{runtime: publicationRuntime(nil), archiveID: publicationArchiveID, generation: 1, effectiveModel: "model-1"})
-	actual := newRuntimeSlot(runtimeSlotConfig{runtime: publicationRuntime(nil), archiveID: publicationArchiveID, generation: 1, effectiveModel: "model-1"})
+	stale := newRuntimeSlot(runtimeSlotConfig{runtime: publicationRuntime(nil), archiveID: publicationArchiveID, generation: 1, effectiveModel: publicationOriginalModel})
+	actual := newRuntimeSlot(runtimeSlotConfig{runtime: publicationRuntime(nil), archiveID: publicationArchiveID, generation: 1, effectiveModel: publicationOriginalModel})
 	candidate := newRuntimeSlot(runtimeSlotConfig{
 		runtime:   publicationRuntime(func() error { candidateCloses.Add(1); return nil }),
 		archiveID: publicationArchiveID, generation: 2, effectiveModel: "model-2", outcome: publicationOutcome,
@@ -151,7 +321,7 @@ func TestPublishRuntimeArchiveAndGenerationGuardsFailClosed(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			incumbent := newRuntimeSlot(runtimeSlotConfig{
-				runtime: publicationRuntime(nil), archiveID: publicationArchiveID, generation: 1, effectiveModel: "model-1",
+				runtime: publicationRuntime(nil), archiveID: publicationArchiveID, generation: 1, effectiveModel: publicationOriginalModel,
 			})
 			candidate := newRuntimeSlot(runtimeSlotConfig{
 				runtime: publicationRuntime(nil), archiveID: test.expectedArchiveID,
@@ -198,7 +368,7 @@ func TestPublishRuntimeRejectsCandidateAlreadyInUse(t *testing.T) {
 
 func TestPublishRuntimeUncertainFinalizeFencesAdmission(t *testing.T) {
 	var candidateCloses atomic.Int32
-	incumbent := newRuntimeSlot(runtimeSlotConfig{runtime: publicationRuntime(nil), archiveID: publicationArchiveID, generation: 1, effectiveModel: "model-1"})
+	incumbent := newRuntimeSlot(runtimeSlotConfig{runtime: publicationRuntime(nil), archiveID: publicationArchiveID, generation: 1, effectiveModel: publicationOriginalModel})
 	candidate := newRuntimeSlot(runtimeSlotConfig{
 		runtime:   publicationRuntime(func() error { candidateCloses.Add(1); return errors.New("provider-secret-canary") }),
 		archiveID: publicationArchiveID, generation: 2, effectiveModel: "model-2", outcome: publicationOutcome,
@@ -228,7 +398,7 @@ func TestPublishRuntimeUncertainFinalizeFencesAdmission(t *testing.T) {
 func TestPublishRuntimePreloadedApplyingOnlyFencesAdmission(t *testing.T) {
 	var candidateCloses atomic.Int32
 	incumbent := newRuntimeSlot(runtimeSlotConfig{
-		runtime: publicationRuntime(nil), archiveID: publicationArchiveID, generation: 1, effectiveModel: "model-1",
+		runtime: publicationRuntime(nil), archiveID: publicationArchiveID, generation: 1, effectiveModel: publicationOriginalModel,
 	})
 	candidate := newRuntimeSlot(runtimeSlotConfig{
 		runtime:   publicationRuntime(func() error { candidateCloses.Add(1); return nil }),
@@ -333,7 +503,7 @@ func TestPublishRuntimeTerminalConflictReplaysConflictSemantic(t *testing.T) {
 
 func TestPublishRuntimePostCommitMismatchFencesAdmission(t *testing.T) {
 	incumbent, candidate := publicationSlots(t, nil)
-	alternate := newRuntimeSlot(runtimeSlotConfig{runtime: publicationRuntime(nil), archiveID: publicationArchiveID, generation: 1, effectiveModel: "model-1"})
+	alternate := newRuntimeSlot(runtimeSlotConfig{runtime: publicationRuntime(nil), archiveID: publicationArchiveID, generation: 1, effectiveModel: publicationOriginalModel})
 	topic := &TopicSession{sessionID: "session", runtime: incumbent}
 	store := &publicationStore{}
 	store.beforeFinalize = func(outcome baldastate.RuntimeOperationOutcome) {
@@ -419,7 +589,7 @@ func publicationSlots(t *testing.T, closes *atomic.Int32) (*RuntimeSlot, *Runtim
 		closeFn = func() error { closes.Add(1); return nil }
 	}
 	incumbent := newRuntimeSlot(runtimeSlotConfig{
-		runtime: publicationRuntime(closeFn), archiveID: publicationArchiveID, generation: 1, effectiveModel: "model-1",
+		runtime: publicationRuntime(closeFn), archiveID: publicationArchiveID, generation: 1, effectiveModel: publicationOriginalModel,
 	})
 	candidate, err := incumbent.sharedSuccessor(2, "model-2", publicationOutcome)
 	if err != nil {
@@ -462,10 +632,11 @@ func terminalPublicationOperation(
 }
 
 const (
-	publicationArchiveID = "runtime-publication-archive"
-	publicationBeginCall = "begin"
-	publicationBinding   = `{"RootProviderID":"provider","Entries":[{"ProviderID":"provider","Source":"managed","RevisionID":"revision"}],"Reproducible":true,"Warnings":null}`
-	publicationOutcome   = string(baldastate.RuntimeOperationOutcomeContextPreserved)
+	publicationArchiveID     = "runtime-publication-archive"
+	publicationBeginCall     = "begin"
+	publicationBinding       = `{"RootProviderID":"provider","Entries":[{"ProviderID":"provider","Source":"managed","RevisionID":"revision"}],"Reproducible":true,"Warnings":null}`
+	publicationOutcome       = string(baldastate.RuntimeOperationOutcomeContextPreserved)
+	publicationOriginalModel = "model-1"
 )
 
 type publicationStore struct {

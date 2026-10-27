@@ -65,7 +65,7 @@ func TestGetSessionInfoReadsOnlyDurableRuntimeState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetSessionInfo() error = %v", err)
 	}
-	if info.UserID != recoveryUserID || info.ProviderID != "provider" || info.Model != "model-1" ||
+	if info.UserID != recoveryUserID || info.ProviderID != "provider" || info.Model != publicationOriginalModel ||
 		info.Generation != 1 || info.ArchiveID != publicationArchiveID || info.Outcome != publicationOutcome {
 		t.Fatalf("GetSessionInfo() = %+v", info)
 	}

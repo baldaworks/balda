@@ -231,6 +231,38 @@ func checkRuntimeOperationStore(t *testing.T, provider Provider) {
 		t.Fatalf("GetUnresolvedBySession(terminal) = %+v, %t, %v", unresolved, found, err)
 	}
 
+	t.Run("model no-op reasons round trip", func(t *testing.T) {
+		reasons := []RuntimeOperationReason{
+			RuntimeOperationReasonUnsupported, RuntimeOperationReasonInvalid,
+			RuntimeOperationReasonIncompatible, RuntimeOperationReasonRejected,
+			RuntimeOperationReasonBusy, RuntimeOperationReasonClosed,
+			RuntimeOperationReasonUnavailable, RuntimeOperationReasonPreDispatch,
+			RuntimeOperationReasonCanceled, RuntimeOperationReasonDeadlineExceeded,
+		}
+		for index, reason := range reasons {
+			operationID := "operation-model-noop-" + string(reason)
+			sessionID := "session-model-noop-" + string(reason)
+			hexDigit := "0123456789abcdef"[index : index+1]
+			candidate := testRuntimeIntent(operationID, sessionID, hexDigit, baseTime.Add(time.Duration(index+1)*time.Minute))
+			if _, err := store.Begin(t.Context(), candidate); err != nil {
+				t.Fatalf("Begin(%s): %v", reason, err)
+			}
+			final := RuntimeOperationFinalization{
+				OperationID: candidate.OperationID, InputHash: candidate.InputHash,
+				Outcome: RuntimeOperationOutcomeAborted, ReasonCode: reason,
+				At: candidate.UpdatedAt.Add(time.Second),
+			}
+			terminal, err := store.Finalize(t.Context(), final)
+			if err != nil || terminal.ReasonCode != string(reason) {
+				t.Fatalf("Finalize(%s) = %+v, %v", reason, terminal, err)
+			}
+			replayed, err := store.Finalize(t.Context(), final)
+			if err != nil || !reflect.DeepEqual(replayed, terminal) {
+				t.Fatalf("Finalize replay(%s) = %+v, %v", reason, replayed, err)
+			}
+		}
+	})
+
 	t.Run("guard conflict rolls back", func(t *testing.T) {
 		putRuntimeSession(t, provider, "session-conflict", "archive-current", 2)
 		candidate := testRuntimeIntent("operation-conflict", "session-conflict", "e", baseTime)

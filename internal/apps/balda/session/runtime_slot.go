@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"reflect"
 	"strings"
 	"sync"
 
@@ -220,6 +222,42 @@ func (s *RuntimeSlot) sharedSuccessor(generation uint64, effectiveModel, outcome
 	value.effectiveModel = effectiveModel
 	value.outcome = outcome
 	return newRuntimeSlotWithOwner(value, s.owner), nil
+}
+
+func (s *RuntimeSlot) sharedModelSuccessor(effectiveModel, outcome string) (*RuntimeSlot, error) {
+	if s == nil || s.value.generation == math.MaxUint64 {
+		return nil, ErrRuntimePublicationInvalid
+	}
+	return s.sharedSuccessor(s.value.generation+1, effectiveModel, outcome)
+}
+
+// independentModelSuccessor wraps a replacement runtime that was built over
+// the incumbent's exact ADK identity. Ownership remains with the returned
+// unpublished slot (or with the caller when validation fails).
+func (s *RuntimeSlot) independentModelSuccessor(runtime *BuiltRuntime, session adksession.Session, effectiveModel, outcome string) (*RuntimeSlot, error) {
+	if s == nil || runtime == nil || s.value.generation == math.MaxUint64 || !sameRuntimeSessionIdentity(s.value, runtime, session) ||
+		runtime.RuntimeSnapshotID != s.value.runtime.RuntimeSnapshotID ||
+		runtime.ProviderBindingJSON != s.value.runtime.ProviderBindingJSON {
+		return nil, ErrRuntimePublicationInvalid
+	}
+	return newRuntimeSlot(runtimeSlotConfig{
+		runtime: runtime, session: session, archiveID: s.value.archiveID,
+		generation: s.value.generation + 1, effectiveModel: effectiveModel, outcome: outcome,
+	}), nil
+}
+
+func sameRuntimeSessionIdentity(current runtimeSlotValue, runtime *BuiltRuntime, session adksession.Session) bool {
+	return sameIdentityObject(runtime.SessionSvc, current.runtime.SessionSvc) && sameIdentityObject(session, current.session) &&
+		runtime.AppName == current.appName && session != nil &&
+		session.AppName() == current.appName && session.UserID() == current.userID && session.ID() == current.sessionID
+}
+
+func sameIdentityObject(left, right any) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	leftValue, rightValue := reflect.ValueOf(left), reflect.ValueOf(right)
+	return leftValue.Type() == rightValue.Type() && leftValue.Type().Comparable() && leftValue.Interface() == rightValue.Interface()
 }
 
 func (s *RuntimeSlot) acquire() (*RuntimeLease, error) {
