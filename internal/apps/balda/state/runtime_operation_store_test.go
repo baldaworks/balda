@@ -13,7 +13,16 @@ import (
 
 const testRuntimeBinding = `{"RootProviderID":"provider-next","Entries":[{"ProviderID":"provider-next","Source":"managed","RevisionID":"revision-next"}],"Reproducible":true,"Warnings":null}`
 
+const testRuntimeBindingNoncanonical = ` {
+	"Warnings": null,
+	"Reproducible": true,
+	"Entries": [{"RevisionID":"revision-next", "Source":"managed", "ProviderID":"provider-next"}],
+	"RootProviderID": "provider-next"
+}`
+
 const genericRuntimeMustNotWin = "generic-must-not-win"
+
+const runtimeOperationTestStep = time.Second
 
 func TestSQLiteRuntimeOperationStore(t *testing.T) {
 	provider, err := NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "runtime-operations.db"))
@@ -53,9 +62,7 @@ func checkRuntimeOperationFinalizeRollback(t *testing.T, provider Provider) {
 	if _, err := provider.RuntimeOperations().Begin(t.Context(), intent); err != nil {
 		t.Fatal(err)
 	}
-	if err := provider.RuntimeOperations().MarkApplying(t.Context(), intent.OperationID, intent.InputHash); err != nil {
-		t.Fatal(err)
-	}
+	applying := markRuntimeOperationApplying(t, provider.RuntimeOperations(), intent)
 	db, _, postgres := runtimeOperationTestSQL(provider)
 	trigger := `CREATE TRIGGER runtime_operation_rollback_probe
 		BEFORE UPDATE OF state ON balda_runtime_operations
@@ -73,7 +80,7 @@ func checkRuntimeOperationFinalizeRollback(t *testing.T, provider Provider) {
 	}
 	_, err := provider.RuntimeOperations().Finalize(t.Context(), RuntimeOperationFinalization{
 		OperationID: intent.OperationID, InputHash: intent.InputHash,
-		Outcome: RuntimeOperationOutcomeContextPreserved, At: time.Now().UTC().Add(time.Second),
+		Outcome: RuntimeOperationOutcomeContextPreserved, At: applying.UpdatedAt.Add(runtimeOperationTestStep),
 	})
 	if !errors.Is(err, ErrRuntimeOperationUnavailable) || strings.Contains(err.Error(), "protected-trigger-canary") {
 		t.Fatalf("Finalize() error = %v, want redacted unavailable", err)
@@ -96,9 +103,7 @@ func checkRuntimeOperationFinalizeConcurrentGenericUpsert(t *testing.T, provider
 	if _, err := provider.RuntimeOperations().Begin(t.Context(), intent); err != nil {
 		t.Fatal(err)
 	}
-	if err := provider.RuntimeOperations().MarkApplying(t.Context(), intent.OperationID, intent.InputHash); err != nil {
-		t.Fatal(err)
-	}
+	applying := markRuntimeOperationApplying(t, provider.RuntimeOperations(), intent)
 	generic, found, err := provider.Sessions().GetBySessionID(t.Context(), intent.SessionID)
 	if err != nil || !found {
 		t.Fatalf("GetBySessionID() = %+v, %t, %v", generic, found, err)
@@ -120,7 +125,7 @@ func checkRuntimeOperationFinalizeConcurrentGenericUpsert(t *testing.T, provider
 		<-start
 		_, finalizeErr := provider.RuntimeOperations().Finalize(t.Context(), RuntimeOperationFinalization{
 			OperationID: intent.OperationID, InputHash: intent.InputHash,
-			Outcome: RuntimeOperationOutcomeContextPreserved, At: time.Now().UTC().Add(time.Second),
+			Outcome: RuntimeOperationOutcomeContextPreserved, At: applying.UpdatedAt.Add(runtimeOperationTestStep),
 		})
 		errs <- finalizeErr
 	}()
@@ -197,10 +202,14 @@ func checkRuntimeOperationStore(t *testing.T, provider Provider) {
 	if err := store.MarkApplying(t.Context(), intent.OperationID, intent.InputHash); err != nil {
 		t.Fatalf("MarkApplying(replay) error = %v", err)
 	}
+	applying := getRuntimeOperation(t, store, intent.OperationID)
+	if applying.State != RuntimeOperationApplying {
+		t.Fatalf("Get(applying) = %+v", applying)
+	}
 
 	final := RuntimeOperationFinalization{
 		OperationID: intent.OperationID, InputHash: intent.InputHash,
-		Outcome: RuntimeOperationOutcomeContextPreserved, At: baseTime.Add(24 * time.Hour),
+		Outcome: RuntimeOperationOutcomeContextPreserved, At: applying.UpdatedAt.Add(runtimeOperationTestStep),
 	}
 	terminal, err := store.Finalize(t.Context(), final)
 	if err != nil || terminal.State != RuntimeOperationTerminal || terminal.Outcome != string(final.Outcome) || terminal.TerminalAt == nil {
@@ -231,35 +240,166 @@ func checkRuntimeOperationStore(t *testing.T, provider Provider) {
 		t.Fatalf("GetUnresolvedBySession(terminal) = %+v, %t, %v", unresolved, found, err)
 	}
 
-	t.Run("model no-op reasons round trip", func(t *testing.T) {
-		reasons := []RuntimeOperationReason{
-			RuntimeOperationReasonUnsupported, RuntimeOperationReasonInvalid,
-			RuntimeOperationReasonIncompatible, RuntimeOperationReasonRejected,
-			RuntimeOperationReasonBusy, RuntimeOperationReasonClosed,
-			RuntimeOperationReasonUnavailable, RuntimeOperationReasonPreDispatch,
-			RuntimeOperationReasonCanceled, RuntimeOperationReasonDeadlineExceeded,
+	t.Run("concurrent finalization commits one generation", func(t *testing.T) {
+		const finalizers = 16
+		putRuntimeSession(t, provider, "session-finalize-cas", "archive-one", 4)
+		candidate := testRuntimeIntent("operation-finalize-cas", "session-finalize-cas", "6", baseTime)
+		if _, err := store.Begin(t.Context(), candidate); err != nil {
+			t.Fatal(err)
 		}
-		for index, reason := range reasons {
-			operationID := "operation-model-noop-" + string(reason)
-			sessionID := "session-model-noop-" + string(reason)
+		applying := markRuntimeOperationApplying(t, store, candidate)
+		finalization := RuntimeOperationFinalization{
+			OperationID: candidate.OperationID, InputHash: candidate.InputHash,
+			Outcome: RuntimeOperationOutcomeContextPreserved, ReasonCode: RuntimeOperationReasonChangedLive,
+			At: applying.UpdatedAt.Add(runtimeOperationTestStep),
+		}
+		start := make(chan struct{})
+		results := make(chan RuntimeOperationRecord, finalizers)
+		errs := make(chan error, finalizers)
+		var group sync.WaitGroup
+		for range finalizers {
+			group.Add(1)
+			go func() {
+				defer group.Done()
+				<-start
+				result, err := store.Finalize(t.Context(), finalization)
+				results <- result
+				errs <- err
+			}()
+		}
+		close(start)
+		group.Wait()
+		close(results)
+		close(errs)
+		for err := range errs {
+			if err != nil {
+				t.Errorf("concurrent Finalize() error = %v", err)
+			}
+		}
+		for result := range results {
+			if result.State != RuntimeOperationTerminal || result.Outcome != string(finalization.Outcome) ||
+				result.ReasonCode != string(finalization.ReasonCode) {
+				t.Errorf("concurrent Finalize() = %+v", result)
+			}
+		}
+		committed, found, err := provider.Sessions().GetBySessionID(t.Context(), candidate.SessionID)
+		if err != nil || !found || committed.RuntimeGeneration != candidate.ExpectedGeneration+1 {
+			t.Fatalf("session after concurrent Finalize() = %+v, %t, %v", committed, found, err)
+		}
+	})
+
+	t.Run("non-publishing outcomes and reasons round trip", func(t *testing.T) {
+		cases := []struct {
+			outcome RuntimeOperationOutcome
+			reason  RuntimeOperationReason
+		}{
+			{RuntimeOperationOutcomeAborted, RuntimeOperationReasonUnsupported},
+			{RuntimeOperationOutcomeAborted, RuntimeOperationReasonInvalid},
+			{RuntimeOperationOutcomeAborted, RuntimeOperationReasonIncompatible},
+			{RuntimeOperationOutcomeAborted, RuntimeOperationReasonRejected},
+			{RuntimeOperationOutcomeAborted, RuntimeOperationReasonBusy},
+			{RuntimeOperationOutcomeAborted, RuntimeOperationReasonClosed},
+			{RuntimeOperationOutcomeAborted, RuntimeOperationReasonUnavailable},
+			{RuntimeOperationOutcomeAborted, RuntimeOperationReasonPreDispatch},
+			{RuntimeOperationOutcomeAborted, RuntimeOperationReasonCanceled},
+			{RuntimeOperationOutcomeAborted, RuntimeOperationReasonDeadlineExceeded},
+			{RuntimeOperationOutcomeAborted, RuntimeOperationReasonRecoveryAborted},
+			{RuntimeOperationOutcomeConflict, RuntimeOperationReasonGuardConflict},
+			{RuntimeOperationOutcomeFailed, RuntimeOperationReasonFailed},
+			{RuntimeOperationOutcomeCleanupIncomplete, RuntimeOperationReasonCleanupIncomplete},
+		}
+		for index, test := range cases {
+			operationID := "operation-model-noop-" + string(test.reason)
+			sessionID := "session-model-noop-" + string(test.reason)
 			hexDigit := "0123456789abcdef"[index : index+1]
 			candidate := testRuntimeIntent(operationID, sessionID, hexDigit, baseTime.Add(time.Duration(index+1)*time.Minute))
 			if _, err := store.Begin(t.Context(), candidate); err != nil {
-				t.Fatalf("Begin(%s): %v", reason, err)
+				t.Fatalf("Begin(%s): %v", test.reason, err)
 			}
 			final := RuntimeOperationFinalization{
 				OperationID: candidate.OperationID, InputHash: candidate.InputHash,
-				Outcome: RuntimeOperationOutcomeAborted, ReasonCode: reason,
+				Outcome: test.outcome, ReasonCode: test.reason,
 				At: candidate.UpdatedAt.Add(time.Second),
 			}
 			terminal, err := store.Finalize(t.Context(), final)
-			if err != nil || terminal.ReasonCode != string(reason) {
-				t.Fatalf("Finalize(%s) = %+v, %v", reason, terminal, err)
+			if err != nil || terminal.Outcome != string(test.outcome) || terminal.ReasonCode != string(test.reason) {
+				t.Fatalf("Finalize(%s) = %+v, %v", test.reason, terminal, err)
 			}
 			replayed, err := store.Finalize(t.Context(), final)
 			if err != nil || !reflect.DeepEqual(replayed, terminal) {
-				t.Fatalf("Finalize replay(%s) = %+v, %v", reason, replayed, err)
+				t.Fatalf("Finalize replay(%s) = %+v, %v", test.reason, replayed, err)
 			}
+		}
+	})
+
+	t.Run("publishing outcomes and reasons round trip", func(t *testing.T) {
+		cases := []struct {
+			outcome RuntimeOperationOutcome
+			reason  RuntimeOperationReason
+			digit   string
+		}{
+			{RuntimeOperationOutcomeContextPreserved, RuntimeOperationReasonChangedLive, "1"},
+			{RuntimeOperationOutcomeContextReset, RuntimeOperationReasonChangedReplacement, "2"},
+		}
+		for index, test := range cases {
+			sessionID := "session-publishing-" + string(test.reason)
+			operationID := "operation-publishing-" + string(test.reason)
+			putRuntimeSession(t, provider, sessionID, "archive-one", 4)
+			candidate := testRuntimeIntent(operationID, sessionID, test.digit, baseTime.Add(time.Duration(index+1)*time.Hour))
+			if _, err := store.Begin(t.Context(), candidate); err != nil {
+				t.Fatalf("Begin(%s): %v", test.reason, err)
+			}
+			applying := markRuntimeOperationApplying(t, store, candidate)
+			final := RuntimeOperationFinalization{
+				OperationID: candidate.OperationID, InputHash: candidate.InputHash,
+				Outcome: test.outcome, ReasonCode: test.reason,
+				At: applying.UpdatedAt.Add(runtimeOperationTestStep),
+			}
+			terminal, err := store.Finalize(t.Context(), final)
+			if err != nil || terminal.Outcome != string(test.outcome) || terminal.ReasonCode != string(test.reason) {
+				t.Fatalf("Finalize(%s) = %+v, %v", test.reason, terminal, err)
+			}
+			committed, found, err := provider.Sessions().GetBySessionID(t.Context(), sessionID)
+			if err != nil || !found || committed.RuntimeGeneration != 5 || committed.RuntimeOutcome != string(test.outcome) {
+				t.Fatalf("published session(%s) = %+v, %t, %v", test.reason, committed, found, err)
+			}
+		}
+	})
+
+	t.Run("public binding canonicalization is replay safe", func(t *testing.T) {
+		const sessionID = "session-canonical-binding"
+		putRuntimeSession(t, provider, sessionID, "archive-one", 4)
+		candidate := testRuntimeIntent("operation-canonical-binding", sessionID, "0", baseTime)
+		candidate.TargetProviderBindingJSON = testRuntimeBindingNoncanonical
+		prepared, err := store.Begin(t.Context(), candidate)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if prepared.TargetProviderBindingJSON != testRuntimeBinding {
+			t.Fatalf("Begin() binding = %q, want canonical %q", prepared.TargetProviderBindingJSON, testRuntimeBinding)
+		}
+		replay := candidate
+		replay.TargetProviderBindingJSON = "\n\t" + testRuntimeBinding + "\n"
+		replayed, err := store.Begin(t.Context(), replay)
+		if err != nil || !reflect.DeepEqual(replayed, prepared) {
+			t.Fatalf("Begin(semantic replay) = %+v, %v, want %+v", replayed, err, prepared)
+		}
+		persisted := getRuntimeOperation(t, store, candidate.OperationID)
+		if !reflect.DeepEqual(persisted, prepared) {
+			t.Fatalf("Get() = %+v, want %+v", persisted, prepared)
+		}
+		applying := markRuntimeOperationApplying(t, store, candidate)
+		terminal, err := store.Finalize(t.Context(), RuntimeOperationFinalization{
+			OperationID: candidate.OperationID, InputHash: candidate.InputHash,
+			Outcome: RuntimeOperationOutcomeContextPreserved, ReasonCode: RuntimeOperationReasonChangedReplacement,
+			At: applying.UpdatedAt.Add(runtimeOperationTestStep),
+		})
+		if err != nil || terminal.TargetProviderBindingJSON != testRuntimeBinding {
+			t.Fatalf("Finalize() = %+v, %v", terminal, err)
+		}
+		committed, found, err := provider.Sessions().GetBySessionID(t.Context(), sessionID)
+		if err != nil || !found || committed.ProviderBindingJSON != testRuntimeBinding {
+			t.Fatalf("published session binding = %q, found=%t, error=%v", committed.ProviderBindingJSON, found, err)
 		}
 	})
 
@@ -271,12 +411,10 @@ func checkRuntimeOperationStore(t *testing.T, provider Provider) {
 		if _, err := store.Begin(t.Context(), candidate); err != nil {
 			t.Fatal(err)
 		}
-		if err := store.MarkApplying(t.Context(), candidate.OperationID, candidate.InputHash); err != nil {
-			t.Fatal(err)
-		}
+		applying := markRuntimeOperationApplying(t, store, candidate)
 		_, err := store.Finalize(t.Context(), RuntimeOperationFinalization{
 			OperationID: candidate.OperationID, InputHash: candidate.InputHash,
-			Outcome: RuntimeOperationOutcomeContextReset, At: baseTime.Add(24 * time.Hour),
+			Outcome: RuntimeOperationOutcomeContextReset, At: applying.UpdatedAt.Add(runtimeOperationTestStep),
 		})
 		if !errors.Is(err, ErrRuntimeOperationConflict) {
 			t.Fatalf("Finalize(stale guard) error = %v, want conflict", err)
@@ -292,7 +430,7 @@ func checkRuntimeOperationStore(t *testing.T, provider Provider) {
 		terminal, err := store.Finalize(t.Context(), RuntimeOperationFinalization{
 			OperationID: candidate.OperationID, InputHash: candidate.InputHash,
 			Outcome: RuntimeOperationOutcomeConflict, ReasonCode: RuntimeOperationReasonGuardConflict,
-			At: baseTime.Add(25 * time.Hour),
+			At: persisted.UpdatedAt.Add(runtimeOperationTestStep),
 		})
 		if err != nil || terminal.State != RuntimeOperationTerminal || terminal.Outcome != string(RuntimeOperationOutcomeConflict) {
 			t.Fatalf("Finalize(authoritative stale conflict) = %+v, %v", terminal, err)
@@ -533,4 +671,25 @@ func testRuntimeIntent(operationID, sessionID, hashDigit string, at time.Time) R
 		TargetProviderBindingJSON: testRuntimeBinding, TargetModel: "model-next",
 		CreatedAt: at, UpdatedAt: at,
 	}
+}
+
+func markRuntimeOperationApplying(t *testing.T, store RuntimeOperationStore, intent RuntimeOperationRecord) RuntimeOperationRecord {
+	t.Helper()
+	if err := store.MarkApplying(t.Context(), intent.OperationID, intent.InputHash); err != nil {
+		t.Fatalf("MarkApplying(%q): %v", intent.OperationID, err)
+	}
+	operation := getRuntimeOperation(t, store, intent.OperationID)
+	if operation.State != RuntimeOperationApplying {
+		t.Fatalf("Get(%q) state = %q, want applying", intent.OperationID, operation.State)
+	}
+	return operation
+}
+
+func getRuntimeOperation(t *testing.T, store RuntimeOperationStore, operationID string) RuntimeOperationRecord {
+	t.Helper()
+	operation, found, err := store.Get(t.Context(), operationID)
+	if err != nil || !found {
+		t.Fatalf("Get(%q) = %+v, %t, %v", operationID, operation, found, err)
+	}
+	return operation
 }
