@@ -125,11 +125,12 @@ type RuntimeSessionContext struct {
 }
 
 type BuiltRuntime struct {
-	Agent          agent.Agent
-	SessionControl agentproduct.SessionControl
-	Runner         *runner.Runner
-	SessionSvc     adksession.Service
-	AppName        string
+	Agent           agent.Agent
+	SessionControl  agentproduct.SessionControl
+	ModelController RuntimeModelController
+	Runner          *runner.Runner
+	SessionSvc      adksession.Service
+	AppName         string
 	// RuntimeSnapshotID identifies the capabilities bound to this runtime.
 	RuntimeSnapshotID   string
 	ProviderBindingJSON string

@@ -355,6 +355,7 @@ components:
       - internal/apps/balda/jobs
       - internal/apps/balda/jobexec
       - internal/apps/balda/ingressapp
+      - internal/apps/balda/modelapp
       - internal/apps/balda/questions
       - internal/apps/balda/permissions
       - internal/apps/balda/session

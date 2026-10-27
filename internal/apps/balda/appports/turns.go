@@ -2,12 +2,17 @@ package appports
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/turnstatuscmd"
 )
+
+// ErrTurnQueueFull is the bounded admission classification shared by the
+// dispatcher and command-neutral queued use cases.
+var ErrTurnQueueFull = errors.New("turn queue is full")
 
 type TurnTask struct {
 	SessionID   string

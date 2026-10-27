@@ -59,6 +59,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
 	"github.com/baldaworks/balda/internal/apps/balda/memory"
 	"github.com/baldaworks/balda/internal/apps/balda/memorybackofficeapp"
+	"github.com/baldaworks/balda/internal/apps/balda/modelapp"
 	"github.com/baldaworks/balda/internal/apps/balda/paths"
 	"github.com/baldaworks/balda/internal/apps/balda/permissions"
 	"github.com/baldaworks/balda/internal/apps/balda/pluginapp"
@@ -960,6 +961,7 @@ func Module(
 		skillfx.Module,
 		chatarchivefx.Module,
 		sessionapp.Module,
+		modelapp.Module,
 		sessionturnapp.Module,
 		hookfx.Module,
 		controlapp.Module,
