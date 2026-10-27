@@ -640,18 +640,39 @@ const (
 )
 
 type publicationStore struct {
-	mu             sync.Mutex
-	operation      baldastate.RuntimeOperationRecord
-	calls          []string
-	publishErr     error
-	beforeFinalize func(baldastate.RuntimeOperationOutcome)
-	finalizations  int
+	mu               sync.Mutex
+	operation        baldastate.RuntimeOperationRecord
+	calls            []string
+	publishErr       error
+	getErr           error
+	beginErr         error
+	markApplyingErr  error
+	beginCommitErr   bool
+	markCommitErr    bool
+	getErrAfterBegin error
+	getErrAfterMark  error
+	beginAttempted   bool
+	markAttempted    bool
+	beginErrorRecord func(baldastate.RuntimeOperationRecord) baldastate.RuntimeOperationRecord
+	markErrorRecord  func(baldastate.RuntimeOperationRecord) baldastate.RuntimeOperationRecord
+	beforeFinalize   func(baldastate.RuntimeOperationOutcome)
+	finalizations    int
 }
 
 func (s *publicationStore) Begin(_ context.Context, intent baldastate.RuntimeOperationRecord) (baldastate.RuntimeOperationRecord, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.calls = append(s.calls, "begin")
+	s.beginAttempted = true
+	if s.beginErr != nil {
+		if s.beginCommitErr {
+			s.operation = intent
+		}
+		if s.beginErrorRecord != nil {
+			s.operation = s.beginErrorRecord(intent)
+		}
+		return baldastate.RuntimeOperationRecord{}, s.beginErr
+	}
 	if s.operation.OperationID == "" {
 		s.operation = intent
 		return intent, nil
@@ -666,6 +687,16 @@ func (s *publicationStore) MarkApplying(_ context.Context, operationID, inputHas
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.calls = append(s.calls, "applying")
+	s.markAttempted = true
+	if s.markApplyingErr != nil {
+		if s.markCommitErr {
+			s.operation.State = baldastate.RuntimeOperationApplying
+		}
+		if s.markErrorRecord != nil {
+			s.operation = s.markErrorRecord(s.operation)
+		}
+		return s.markApplyingErr
+	}
 	if s.operation.OperationID != operationID || s.operation.InputHash != inputHash || s.operation.State == baldastate.RuntimeOperationTerminal {
 		return baldastate.ErrRuntimeOperationConflict
 	}
@@ -705,6 +736,15 @@ func (s *publicationStore) Finalize(_ context.Context, final baldastate.RuntimeO
 func (s *publicationStore) Get(_ context.Context, operationID string) (baldastate.RuntimeOperationRecord, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.markAttempted && s.getErrAfterMark != nil {
+		return baldastate.RuntimeOperationRecord{}, false, s.getErrAfterMark
+	}
+	if s.beginAttempted && s.getErrAfterBegin != nil {
+		return baldastate.RuntimeOperationRecord{}, false, s.getErrAfterBegin
+	}
+	if s.getErr != nil {
+		return baldastate.RuntimeOperationRecord{}, false, s.getErr
+	}
 	return s.operation, s.operation.OperationID == operationID, nil
 }
 

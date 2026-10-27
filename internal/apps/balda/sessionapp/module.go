@@ -13,6 +13,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/sessionmemory"
 	"github.com/baldaworks/runtime/v2/agentconfig"
+	"github.com/baldaworks/runtime/v2/agentproduct"
 	"go.uber.org/fx"
 	adksession "google.golang.org/adk/v2/session"
 )
@@ -159,7 +160,7 @@ func sessionRuntime(runtime *baldaagent.BuiltRuntime) *baldasession.BuiltRuntime
 	if runtime == nil {
 		return nil
 	}
-	return &baldasession.BuiltRuntime{
+	adapted := &baldasession.BuiltRuntime{
 		Agent:               runtime.Agent,
 		SessionControl:      runtime.SessionControl,
 		Runner:              runtime.Runner,
@@ -168,6 +169,30 @@ func sessionRuntime(runtime *baldaagent.BuiltRuntime) *baldasession.BuiltRuntime
 		RuntimeSnapshotID:   runtime.RuntimeSnapshotID,
 		ProviderBindingJSON: runtime.ProviderBindingJSON,
 		Close:               runtime.Close,
+	}
+	adapted.ModelController = modelControllerAdapter{runtime: runtime}
+	return adapted
+}
+
+type modelControllerAdapter struct{ runtime *baldaagent.BuiltRuntime }
+
+func (a modelControllerAdapter) ValidateModel(ctx context.Context, identity baldasession.RuntimeSessionIdentity, model string) agentproduct.ModelValidation {
+	return a.runtime.ValidateModel(ctx, baldaagent.SessionIdentity{
+		SessionService: identity.SessionService, AppName: identity.AppName, UserID: identity.UserID, SessionID: identity.SessionID,
+	}, model)
+}
+
+func (a modelControllerAdapter) ChangeModel(ctx context.Context, identity baldasession.RuntimeSessionIdentity, model string) baldasession.RuntimeModelChange {
+	change := a.runtime.ChangeModel(ctx, baldaagent.SessionIdentity{
+		SessionService: identity.SessionService, AppName: identity.AppName, UserID: identity.UserID, SessionID: identity.SessionID,
+	}, model)
+	return baldasession.RuntimeModelChange{
+		Status: change.Status, EffectiveModel: change.EffectiveModel, Reason: change.Reason,
+		Candidate: sessionRuntime(change.Candidate),
+		Identity: baldasession.VerifiedRuntimeSessionIdentity{
+			SessionService: change.Identity.SessionService, AppName: change.Identity.AppName,
+			UserID: change.Identity.UserID, SessionID: change.Identity.SessionID,
+		},
 	}
 }
 

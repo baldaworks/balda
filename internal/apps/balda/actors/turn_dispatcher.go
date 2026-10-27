@@ -22,7 +22,7 @@ const (
 	sessionWorkerIdleTTL = 5 * time.Minute
 )
 
-var ErrTurnQueueFull = errors.New("turn queue is full")
+var ErrTurnQueueFull = appports.ErrTurnQueueFull
 
 type TurnTask = appports.TurnTask
 type TurnQueue = appports.TurnQueue

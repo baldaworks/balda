@@ -53,7 +53,8 @@ func validRuntimeOperationReason(reason RuntimeOperationReason) bool {
 		RuntimeOperationReasonRecoveryAborted, RuntimeOperationReasonCleanupIncomplete,
 		RuntimeOperationReasonIncompatible, RuntimeOperationReasonRejected,
 		RuntimeOperationReasonBusy, RuntimeOperationReasonClosed,
-		RuntimeOperationReasonUnavailable, RuntimeOperationReasonPreDispatch:
+		RuntimeOperationReasonUnavailable, RuntimeOperationReasonPreDispatch,
+		RuntimeOperationReasonChangedLive, RuntimeOperationReasonChangedReplacement:
 		return true
 	default:
 		return false

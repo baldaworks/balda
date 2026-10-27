@@ -25,7 +25,7 @@ func (m *Manager) publishRuntime(
 		return baldastate.RuntimeOperationRecord{}, false, ErrRuntimePublicationInvalid
 	}
 
-	return m.publishRuntimeState(ctx, incumbent, candidate, intent, outcome, false)
+	return m.publishRuntimeState(ctx, incumbent, candidate, intent, outcome, false, "")
 }
 
 // publishApplyingModelRuntime completes a model operation whose external work
@@ -42,7 +42,7 @@ func (m *Manager) publishApplyingModelRuntime(
 		intent.SessionID == "" || outcome != baldastate.RuntimeOperationOutcomeContextPreserved {
 		return baldastate.RuntimeOperationRecord{}, false, ErrRuntimePublicationInvalid
 	}
-	return m.publishRuntimeState(ctx, incumbent, candidate, intent, outcome, true)
+	return m.publishRuntimeState(ctx, incumbent, candidate, intent, outcome, true, "")
 }
 
 func (m *Manager) publishRuntimeState(
@@ -51,9 +51,21 @@ func (m *Manager) publishRuntimeState(
 	intent baldastate.RuntimeOperationRecord,
 	outcome baldastate.RuntimeOperationOutcome,
 	alreadyApplying bool,
+	terminalReason baldastate.RuntimeOperationReason,
 ) (baldastate.RuntimeOperationRecord, bool, error) {
 	unlock := m.lockSessionOperation(intent.SessionID)
 	defer unlock()
+	return m.publishRuntimeStateLocked(ctx, incumbent, candidate, intent, outcome, alreadyApplying, terminalReason)
+}
+
+func (m *Manager) publishRuntimeStateLocked(
+	ctx context.Context,
+	incumbent, candidate *RuntimeSlot,
+	intent baldastate.RuntimeOperationRecord,
+	outcome baldastate.RuntimeOperationOutcome,
+	alreadyApplying bool,
+	terminalReason baldastate.RuntimeOperationReason,
+) (baldastate.RuntimeOperationRecord, bool, error) {
 	topic := m.activeTopicSession(intent.SessionID)
 	if topic == nil {
 		if alreadyApplying {
@@ -84,7 +96,7 @@ func (m *Manager) publishRuntimeState(
 		if alreadyApplying {
 			committed = topic.matchesCommittedModelRuntime(incumbent, intent, outcome)
 		}
-		if !isPublicationTerminal(operation, intent, outcome, "") || !committed {
+		if !isPublicationTerminal(operation, intent, outcome, terminalReason) || !committed {
 			return m.failPublication(ctx, topic, candidate, operation, alreadyApplying, false)
 		}
 		return operation, false, nil
@@ -139,6 +151,7 @@ func (m *Manager) publishRuntimeState(
 		OperationID: intent.OperationID,
 		InputHash:   intent.InputHash,
 		Outcome:     outcome,
+		ReasonCode:  terminalReason,
 		At:          time.Now().UTC(),
 	})
 	if errors.Is(err, baldastate.ErrRuntimeOperationConflict) {
@@ -163,7 +176,7 @@ func (m *Manager) publishRuntimeState(
 		candidate.releasePublicationClaim(false)
 		return baldastate.RuntimeOperationRecord{}, false, m.publicationStoreError(ctx, topic, intent, err, false)
 	}
-	if !isPublicationTerminal(terminal, intent, outcome, "") {
+	if !isPublicationTerminal(terminal, intent, outcome, terminalReason) {
 		return m.failPublication(ctx, topic, candidate, terminal, alreadyApplying, true)
 	}
 	if !topic.swapRuntime(incumbent, candidate, intent.ExpectedArchiveID, intent.ExpectedGeneration) {
