@@ -1,7 +1,9 @@
 package status
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -23,9 +25,11 @@ import (
 type statusSessions struct {
 	info    session.TopicSessionInfo
 	infoErr error
+	calls   int
 }
 
 func (s *statusSessions) GetSessionInfo(context.Context, string) (session.TopicSessionInfo, error) {
+	s.calls++
 	return s.info, s.infoErr
 }
 
@@ -128,6 +132,81 @@ func TestHandlerReportsNoActiveTurn(t *testing.T) {
 	}
 }
 
+func TestHandlerProjectsOnlyBoundedCommittedRecoveryStatus(t *testing.T) {
+	const secret = "binding-secret-do-not-expose"
+	registry := &statusRegistry{}
+	handler := New(
+		&statusSessions{info: session.TopicSessionInfo{
+			Status:       "recovery_required",
+			ProviderID:   "provider-a",
+			Model:        "model-incumbent",
+			Recovery:     "ambiguous",
+			ArchiveID:    secret,
+			Outcome:      secret,
+			WorkspaceDir: secret,
+			BranchName:   secret,
+			UserID:       secret,
+		}},
+		statusTurns{},
+		nil,
+		registry,
+		&statusDispatcher{},
+		zerolog.Nop(),
+	)
+
+	if err := handler.Handle(context.Background(), actorlayer.Envelope{ID: "op-recovery"}, statusPayload()); err != nil {
+		t.Fatal(err)
+	}
+	got := registry.response
+	if got.SessionState != "recovery_required" || got.ProviderID != "provider-a" || got.Model != "model-incumbent" {
+		t.Fatalf("bounded recovery response = %+v", got)
+	}
+	encoded, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), secret) || strings.Contains(string(encoded), "ambiguous") {
+		t.Fatalf("protected recovery evidence leaked: %s", encoded)
+	}
+}
+
+func TestHandlerBoundsSessionMetadataFailureLog(t *testing.T) {
+	const secret = "store-password=do-not-log"
+	var logs bytes.Buffer
+	registry := &statusRegistry{}
+	handler := New(
+		&statusSessions{infoErr: errors.New(secret)},
+		statusTurns{},
+		nil,
+		registry,
+		&statusDispatcher{},
+		zerolog.New(&logs),
+	)
+
+	if err := handler.Handle(context.Background(), actorlayer.Envelope{ID: "op-secret"}, statusPayload()); err != nil {
+		t.Fatal(err)
+	}
+	if registry.response.SessionState != unavailableValue || registry.response.Model != unavailableValue {
+		t.Fatalf("response = %+v", registry.response)
+	}
+
+	var event map[string]any
+	if err := json.Unmarshal(bytes.TrimSpace(logs.Bytes()), &event); err != nil {
+		t.Fatalf("decode log: %v; output=%q", err, logs.String())
+	}
+	if _, ok := event["error"]; ok {
+		t.Fatalf("raw error field leaked: %v", event)
+	}
+	if strings.Contains(logs.String(), secret) {
+		t.Fatalf("secret leaked in log: %q", logs.String())
+	}
+	if event["component"] != "balda.actors.command.status" ||
+		event["error_class"] != "session_metadata_unavailable" ||
+		event["message"] != "failed to read status session metadata" {
+		t.Fatalf("bounded log = %v", event)
+	}
+}
+
 func TestHandlerRejectsUnauthorizedAndInvalidRequestsBeforeRendering(t *testing.T) {
 	for _, test := range []struct {
 		name    string
@@ -138,12 +217,13 @@ func TestHandlerRejectsUnauthorizedAndInvalidRequestsBeforeRendering(t *testing.
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			registry, dispatcher := &statusRegistry{}, &statusDispatcher{}
-			handler := New(&statusSessions{}, statusTurns{}, nil, registry, dispatcher, zerolog.Nop())
+			sessions := &statusSessions{}
+			handler := New(sessions, statusTurns{}, nil, registry, dispatcher, zerolog.Nop())
 			if err := handler.Handle(context.Background(), actorlayer.Envelope{ID: "op-4"}, test.payload); err != nil {
 				t.Fatal(err)
 			}
-			if registry.transport != "" || len(dispatcher.envelopes) != 1 {
-				t.Fatalf("renderer transport=%q deliveries=%d", registry.transport, len(dispatcher.envelopes))
+			if sessions.calls != 0 || registry.transport != "" || len(dispatcher.envelopes) != 1 {
+				t.Fatalf("session calls=%d renderer transport=%q deliveries=%d", sessions.calls, registry.transport, len(dispatcher.envelopes))
 			}
 		})
 	}
