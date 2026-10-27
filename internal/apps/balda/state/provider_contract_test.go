@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -100,6 +101,9 @@ func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) 
 		provider := newContractProvider(t, factory(t))
 		defer closeContractProvider(t, provider)
 		checkRuntimeOperationFinalizeConcurrentGenericUpsert(t, provider)
+	})
+	t.Run("Provider_RuntimeOperationRestart", func(t *testing.T) {
+		checkRuntimeOperationRestart(t, factory(t))
 	})
 	t.Run("Provider_TurnStatus", func(t *testing.T) { checkProvider_TurnStatus(t, factory(t)) })
 	t.Run("Provider_ManagedProviderState", func(t *testing.T) { checkProviderManagedProviderState(t, factory(t)) })
@@ -768,6 +772,70 @@ func checkProviderSessionStoreUpsertPreservesGuardedRuntime(t *testing.T, open c
 	if got.ArchiveID != original.ArchiveID || got.RuntimeSnapshotID != original.RuntimeSnapshotID || got.ProviderBindingJSON != original.ProviderBindingJSON ||
 		got.RuntimeGeneration != original.RuntimeGeneration || got.EffectiveModel != original.EffectiveModel || got.RuntimeOutcome != original.RuntimeOutcome {
 		t.Fatalf("generic upsert changed guarded runtime metadata: %+v", got)
+	}
+}
+
+func checkRuntimeOperationRestart(t *testing.T, open contractOpener) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "runtime-operation-restart.db")
+	provider, err := open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	putRuntimeSession(t, provider, "runtime-operation-restart", "archive-one", 4)
+	intent := testRuntimeIntent("operation-restart", "runtime-operation-restart", "a", time.Now().UTC())
+	if _, err := provider.RuntimeOperations().Begin(t.Context(), intent); err != nil {
+		t.Fatal(err)
+	}
+	applying := markRuntimeOperationApplying(t, provider.RuntimeOperations(), intent)
+	finalization := RuntimeOperationFinalization{
+		OperationID: intent.OperationID, InputHash: intent.InputHash,
+		Outcome: RuntimeOperationOutcomeContextReset, ReasonCode: RuntimeOperationReasonChangedReplacement,
+		At: applying.UpdatedAt.Add(runtimeOperationTestStep),
+	}
+	terminal, err := provider.RuntimeOperations().Finalize(t.Context(), finalization)
+	if err != nil {
+		t.Fatal(err)
+	}
+	preparedIntent := testRuntimeIntent("operation-restart-prepared", "runtime-operation-restart-prepared", "b", time.Now().UTC())
+	prepared, err := provider.RuntimeOperations().Begin(t.Context(), preparedIntent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	applyingIntent := testRuntimeIntent("operation-restart-applying", "runtime-operation-restart-applying", "c", time.Now().UTC())
+	if _, err := provider.RuntimeOperations().Begin(t.Context(), applyingIntent); err != nil {
+		t.Fatal(err)
+	}
+	pendingApplying := markRuntimeOperationApplying(t, provider.RuntimeOperations(), applyingIntent)
+	closeContractProvider(t, provider)
+
+	provider, err = open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeContractProvider(t, provider)
+	restoredOperation := getRuntimeOperation(t, provider.RuntimeOperations(), intent.OperationID)
+	if !reflect.DeepEqual(restoredOperation, terminal) {
+		t.Fatalf("operation after restart = %+v, want %+v", restoredOperation, terminal)
+	}
+	for _, expected := range []RuntimeOperationRecord{prepared, pendingApplying} {
+		restored := getRuntimeOperation(t, provider.RuntimeOperations(), expected.OperationID)
+		if !reflect.DeepEqual(restored, expected) {
+			t.Errorf("unresolved operation after restart = %+v, want %+v", restored, expected)
+		}
+		unresolved, found, err := provider.RuntimeOperations().GetUnresolvedBySession(t.Context(), expected.SessionID)
+		if err != nil || !found || !reflect.DeepEqual(unresolved, expected) {
+			t.Errorf("GetUnresolvedBySession(%q) = %+v, %t, %v, want %+v", expected.SessionID, unresolved, found, err, expected)
+		}
+	}
+	restoredSession, found, err := provider.Sessions().GetBySessionID(t.Context(), intent.SessionID)
+	if err != nil || !found {
+		t.Fatalf("session after restart = %+v, %t, %v", restoredSession, found, err)
+	}
+	if restoredSession.ArchiveID != intent.TargetArchiveID || restoredSession.RuntimeSnapshotID != intent.TargetSnapshotID ||
+		restoredSession.ProviderBindingJSON != intent.TargetProviderBindingJSON || restoredSession.EffectiveModel != intent.TargetModel ||
+		restoredSession.RuntimeGeneration != intent.ExpectedGeneration+1 || restoredSession.RuntimeOutcome != string(finalization.Outcome) {
+		t.Fatalf("runtime metadata after restart = %+v", restoredSession)
 	}
 }
 
