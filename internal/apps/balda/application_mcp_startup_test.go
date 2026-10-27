@@ -3,6 +3,7 @@ package balda
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net"
@@ -35,6 +36,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/webhookfx"
 	"github.com/baldaworks/runtime/v2/agentconfig"
 	"github.com/baldaworks/runtime/v2/agentfactory"
+	"github.com/baldaworks/runtime/v2/agentproduct"
 	runtimeconfig "github.com/baldaworks/runtime/v2/appconfig"
 	"github.com/baldaworks/runtime/v2/mcpregistry"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -130,27 +132,51 @@ func verifyUnavailableInvocationKeepsRuntime(t *testing.T, builder *baldaagent.B
 
 // The fixture deliberately selects one missing native stdio executable. If
 // discovery reaches its execution shim, SDK Close waits/reaps and returns that
-// child's exit status. Preserve every other shutdown error, including timeouts.
+// child's exit status. Product-aware factories redact that provider detail to
+// ErrCloseFailed. Preserve every other shutdown error, including timeouts.
 func verifyUnavailableStartupShutdown(t *testing.T, err error, hosted bool) {
 	t.Helper()
+	for _, unexpected := range unexpectedUnavailableStartupShutdownErrors(err, hosted) {
+		t.Error(unexpected)
+	}
+}
+
+func unexpectedUnavailableStartupShutdownErrors(err error, hosted bool) []error {
 	if err == nil {
-		return
+		return nil
 	}
 	switch failure := err.(type) {
 	case interface{ Unwrap() []error }:
+		var unexpected []error
 		for _, child := range failure.Unwrap() {
-			verifyUnavailableStartupShutdown(t, child, hosted)
+			unexpected = append(unexpected, unexpectedUnavailableStartupShutdownErrors(child, hosted)...)
 		}
+		return unexpected
 	case interface{ Unwrap() error }:
-		verifyUnavailableStartupShutdown(t, failure.Unwrap(), hosted)
+		return unexpectedUnavailableStartupShutdownErrors(failure.Unwrap(), hosted)
 	case *exec.ExitError:
 		if hosted && failure.ProcessState != nil && failure.Exited() && failure.ExitCode() == 1 {
-			t.Log("selected missing stdio execution shim exited and was reaped")
-			return
+			return nil
 		}
-		t.Error(err)
-	default:
-		t.Error(err)
+	case error:
+		if hosted && failure == agentproduct.ErrCloseFailed {
+			return nil
+		}
+	}
+	return []error{err}
+}
+
+func TestUnavailableStartupShutdownPreservesUnexpectedProductErrors(t *testing.T) {
+	unexpected := errors.New("unexpected cleanup failure")
+	err := errors.Join(agentproduct.ErrCloseFailed, unexpected)
+
+	got := unexpectedUnavailableStartupShutdownErrors(err, true)
+	if len(got) != 1 || !errors.Is(got[0], unexpected) {
+		t.Fatalf("unexpected shutdown errors = %v, want only unexpected cleanup failure", got)
+	}
+	got = unexpectedUnavailableStartupShutdownErrors(agentproduct.ErrCloseFailed, false)
+	if len(got) != 1 || got[0] != agentproduct.ErrCloseFailed {
+		t.Fatalf("ACP shutdown errors = %v, want bounded product close failure", got)
 	}
 }
 
