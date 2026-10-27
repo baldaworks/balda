@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"testing"
 	"time"
 
@@ -21,6 +22,12 @@ const (
 	testMessageCaption = " listen to this "
 	testMediaGroupID   = "album-42"
 )
+
+func TestSupportedCommandsAdvertiseModel(t *testing.T) {
+	if !slices.Contains(SupportedCommands(), "model") {
+		t.Fatalf("SupportedCommands() = %v, want model", SupportedCommands())
+	}
+}
 
 func TestTelegramContextsPreserveVerifiedProfile(t *testing.T) {
 	username := "owner_handle"
@@ -1084,6 +1091,24 @@ func TestCommandContextFromEvent_SkillPreservesSelectorAndPrompt(t *testing.T) {
 	}
 	if got.Command != "skill" || got.Args != "prism:story implement this feature" {
 		t.Fatalf("command context = %+v, want skill selector and prompt", got)
+	}
+}
+
+func TestCommandContextFromEvent_ModelPreservesTarget(t *testing.T) {
+	got, ok := (&Adapter{}).CommandContextFromEvent(&events.CommandEvent{
+		Command: "model",
+		Args:    "vendor/model-v2",
+		Message: &client.Message{
+			MessageId: 100,
+			Chat:      client.Chat{Id: 10001, Type: "private"},
+			From:      &client.User{Id: 10001},
+		},
+	})
+	if !ok {
+		t.Fatal("CommandContextFromEvent() ok = false, want true")
+	}
+	if got.Command != "model" || got.Args != "vendor/model-v2" {
+		t.Fatalf("command context = %+v, want canonical model command and unchanged target", got)
 	}
 }
 

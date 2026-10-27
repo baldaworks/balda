@@ -31,11 +31,7 @@ var Module = fx.Module(
 				return commandcmd.Advertisement{
 					Transport: mattermost.ChannelType,
 					Enabled:   enabled,
-					Names: []string{
-						"locator", "status", "reset", "usage", "auto", "cancel",
-						"goalkeeper", "topic", "close", "start",
-						"user", "skill",
-					},
+					Names:     mattermost.SupportedCommands(),
 				}
 			},
 			fx.ParamTags(`name:"balda_mattermost_enabled"`),
