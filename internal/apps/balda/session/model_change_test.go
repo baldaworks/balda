@@ -636,6 +636,92 @@ func TestChangeModelMarkApplyingFailureUsesAuthoritativeReread(t *testing.T) {
 	}
 }
 
+func TestChangeModelCommitUncertaintyDoesNotExposeStoreDetails(t *testing.T) {
+	const secret = "store-token=private-model-secret"
+	tests := []struct {
+		name       string
+		configure  func(*publicationStore)
+		wantStatus ModelChangeResultStatus
+		wantState  baldastate.RuntimeOperationState
+		wantFound  bool
+		wantFence  bool
+	}{
+		{
+			name: "begin not committed", wantStatus: ModelChangeUnavailable,
+			configure: func(store *publicationStore) { store.beginErr = errors.New(secret) },
+		},
+		{
+			name: "begin committed prepared", wantStatus: ModelChangeUnavailable,
+			wantState: baldastate.RuntimeOperationPrepared, wantFound: true,
+			configure: func(store *publicationStore) {
+				store.beginErr = errors.New(secret)
+				store.beginCommitErr = true
+			},
+		},
+		{
+			name: "begin reread unavailable", wantStatus: ModelChangeRecoveryRequired,
+			wantFence: true,
+			configure: func(store *publicationStore) {
+				store.beginErr = errors.New(secret)
+				store.getErrAfterBegin = errors.New(secret)
+			},
+		},
+		{
+			name: "mark not committed", wantStatus: ModelChangeUnavailable,
+			wantState: baldastate.RuntimeOperationPrepared, wantFound: true,
+			configure: func(store *publicationStore) { store.markApplyingErr = errors.New(secret) },
+		},
+		{
+			name: "mark committed applying", wantStatus: ModelChangeRecoveryRequired,
+			wantState: baldastate.RuntimeOperationApplying, wantFound: true, wantFence: true,
+			configure: func(store *publicationStore) {
+				store.markApplyingErr = errors.New(secret)
+				store.markCommitErr = true
+			},
+		},
+		{
+			name: "mark reread unavailable", wantStatus: ModelChangeRecoveryRequired,
+			wantState: baldastate.RuntimeOperationPrepared, wantFound: true, wantFence: true,
+			configure: func(store *publicationStore) {
+				store.markApplyingErr = errors.New(secret)
+				store.getErrAfterMark = errors.New(secret)
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			control := &modelTestController{
+				validation: agentproduct.ModelValidation{Status: agentproduct.ModelSupported},
+				change:     RuntimeModelChange{Status: agentproduct.ModelApplied, EffectiveModel: modelChangeTargetModel},
+			}
+			topic, manager, store, _, _ := modelChangeFixture(t, control, nil)
+			test.configure(store)
+
+			result, err := manager.ChangeModel(t.Context(), modelChangeRequest())
+			if result.Status != test.wantStatus {
+				t.Fatalf("ChangeModel() result = %+v, want status %s", result, test.wantStatus)
+			}
+			if test.wantFence {
+				if !errors.Is(err, ErrRuntimeRecoveryRequired) || err.Error() != ErrRuntimeRecoveryRequired.Error() {
+					t.Fatalf("ChangeModel() error = %v, want bounded recovery error", err)
+				}
+			} else if err != nil {
+				t.Fatalf("ChangeModel() error = %v", err)
+			}
+			if err != nil && strings.Contains(err.Error(), secret) {
+				t.Fatalf("ChangeModel() exposed store detail: %v", err)
+			}
+			if got := strings.Join(control.callOrder(), ","); got != modelValidationCallOrder {
+				t.Fatalf("provider calls = %q, want validation only", got)
+			}
+			if found := store.operation.OperationID != ""; found != test.wantFound || store.operation.State != test.wantState {
+				t.Fatalf("operation = %+v, want found=%t state=%s", store.operation, test.wantFound, test.wantState)
+			}
+			assertModelFence(t, topic, test.wantFence)
+		})
+	}
+}
+
 func assertModelFence(t *testing.T, topic *TopicSession, wantFence bool) {
 	t.Helper()
 	lease, err := topic.AcquireRuntime()
