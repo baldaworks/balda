@@ -18,14 +18,24 @@ import (
 )
 
 const (
-	perSessionQueueLimit = 20
-	sessionWorkerIdleTTL = 5 * time.Minute
+	perSessionQueueLimit     = 20
+	terminalReplacementLimit = 32
+	sessionWorkerIdleTTL     = 5 * time.Minute
 )
 
 var ErrTurnQueueFull = appports.ErrTurnQueueFull
 
+var (
+	ErrTurnReplacementPending  = appports.ErrTurnReplacementPending
+	ErrTurnReplacementConflict = appports.ErrTurnReplacementConflict
+	ErrTurnReplacementFailed   = appports.ErrTurnReplacementFailed
+)
+
 type TurnTask = appports.TurnTask
 type TurnQueue = appports.TurnQueue
+type ReplacementTask = appports.ReplacementTask
+
+var _ appports.ReplacementQueue = (*TurnDispatcher)(nil)
 
 type TurnDispatcher struct {
 	logger zerolog.Logger
@@ -39,12 +49,20 @@ type TurnDispatcher struct {
 }
 
 type sessionTurnQueue struct {
-	pending        []*queuedTurn
-	running        bool
-	runningTurn    *queuedTurn
-	startedAt      time.Time
-	inFlightCancel context.CancelFunc
-	wakeCh         chan struct{}
+	pending              []*queuedTurn
+	running              bool
+	runningTurn          *queuedTurn
+	startedAt            time.Time
+	inFlightCancel       context.CancelFunc
+	wakeCh               chan struct{}
+	replacement          *queuedTurn
+	terminalReplacements map[string]replacementResult
+	terminalOrder        []string
+}
+
+type replacementResult struct {
+	inputHash string
+	err       error
 }
 
 type queuedTurn struct {
@@ -52,6 +70,7 @@ type queuedTurn struct {
 	task         appports.TurnTask
 	result       chan error
 	constituents []*queuedTurn
+	replacement  *appports.ReplacementTask
 }
 
 func NewTurnDispatcher(logger zerolog.Logger) *TurnDispatcher {
@@ -95,12 +114,6 @@ func (d *TurnDispatcher) Enqueue(ctx context.Context, task appports.TurnTask) (<
 		d.wg.Add(1)
 		go d.sessionWorker(sessionID, queue)
 	}
-
-	pendingBefore := len(queue.pending)
-	if pendingBefore >= perSessionQueueLimit {
-		return nil, 0, ErrTurnQueueFull
-	}
-
 	queued := &queuedTurn{
 		ctx:    ctx,
 		task:   task,
@@ -124,6 +137,12 @@ func (d *TurnDispatcher) Enqueue(ctx context.Context, task appports.TurnTask) (<
 			}
 		}
 	}
+	if queue.replacement != nil {
+		return nil, 0, ErrTurnReplacementPending
+	}
+	if len(queue.pending) >= perSessionQueueLimit {
+		return nil, 0, ErrTurnQueueFull
+	}
 
 	if queue.running && tryMergeSteeringTurn(queue, queued) {
 		return queued.result, 1, nil
@@ -142,6 +161,134 @@ func (d *TurnDispatcher) Enqueue(ctx context.Context, task appports.TurnTask) (<
 	}
 
 	return queued.result, position, nil
+}
+
+// EnqueueReplacement appends one exclusive replacement boundary to the
+// session's existing FIFO. Work accepted earlier completes first; ordinary
+// work admitted after the boundary is rejected until it completes.
+func (d *TurnDispatcher) EnqueueReplacement(ctx context.Context, task ReplacementTask) (<-chan error, int, error) {
+	task.SessionID = strings.TrimSpace(task.SessionID)
+	task.OperationID = strings.TrimSpace(task.OperationID)
+	task.InputHash = strings.TrimSpace(task.InputHash)
+	if task.SessionID == "" {
+		return nil, 0, fmt.Errorf("session id is required")
+	}
+	if task.OperationID == "" {
+		return nil, 0, fmt.Errorf("replacement operation id is required")
+	}
+	if task.InputHash == "" {
+		return nil, 0, fmt.Errorf("replacement input hash is required")
+	}
+	if task.Run == nil {
+		return nil, 0, fmt.Errorf("replacement runner is required")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.stopping {
+		return nil, 0, fmt.Errorf("turn dispatcher is stopping")
+	}
+
+	queue, ok := d.sessions[task.SessionID]
+	if !ok {
+		queue = &sessionTurnQueue{wakeCh: make(chan struct{}, 1)}
+		d.sessions[task.SessionID] = queue
+		d.wg.Add(1)
+		go d.sessionWorker(task.SessionID, queue)
+	}
+	if terminal, ok := queue.terminalReplacements[task.OperationID]; ok {
+		if terminal.inputHash != task.InputHash {
+			return nil, 0, ErrTurnReplacementConflict
+		}
+		return completedTurnResult(terminal.err), 0, nil
+	}
+	if queue.replacement != nil {
+		if queue.replacement.replacement.OperationID != task.OperationID {
+			return nil, 0, ErrTurnReplacementPending
+		}
+		if queue.replacement.replacement.InputHash != task.InputHash {
+			return nil, 0, ErrTurnReplacementConflict
+		}
+		duplicate := &queuedTurn{ctx: ctx, result: make(chan error, 1)}
+		queue.replacement.constituents = append(queue.replacement.constituents, duplicate)
+		return duplicate.result, queuePosition(queue, queue.replacement), nil
+	}
+	if len(queue.pending) >= perSessionQueueLimit {
+		return nil, 0, ErrTurnQueueFull
+	}
+
+	queued := &queuedTurn{
+		ctx:         ctx,
+		task:        appports.TurnTask{SessionID: task.SessionID, Run: replacementRunner(task.Run)},
+		result:      make(chan error, 1),
+		replacement: &task,
+	}
+	position := len(queue.pending)
+	if queue.running {
+		position++
+	}
+	queue.pending = append(queue.pending, queued)
+	queue.replacement = queued
+	select {
+	case queue.wakeCh <- struct{}{}:
+	default:
+	}
+	return queued.result, position, nil
+}
+
+func replacementRunner(run func(context.Context) error) func(context.Context) error {
+	return func(ctx context.Context) (err error) {
+		defer func() {
+			if recover() != nil {
+				err = ErrTurnReplacementFailed
+			}
+		}()
+		return boundedReplacementError(run(ctx))
+	}
+}
+
+func boundedReplacementError(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, context.Canceled):
+		return context.Canceled
+	case errors.Is(err, context.DeadlineExceeded):
+		return context.DeadlineExceeded
+	case errors.Is(err, ErrTurnReplacementPending):
+		return ErrTurnReplacementPending
+	case errors.Is(err, ErrTurnReplacementConflict):
+		return ErrTurnReplacementConflict
+	case errors.Is(err, ErrTurnReplacementFailed):
+		return ErrTurnReplacementFailed
+	default:
+		return ErrTurnReplacementFailed
+	}
+}
+
+func completedTurnResult(err error) <-chan error {
+	result := make(chan error, 1)
+	result <- err
+	close(result)
+	return result
+}
+
+func queuePosition(queue *sessionTurnQueue, target *queuedTurn) int {
+	if queue.runningTurn == target {
+		return 0
+	}
+	for i, pending := range queue.pending {
+		if pending == target {
+			if queue.running {
+				return i + 1
+			}
+			return i
+		}
+	}
+	return 0
 }
 
 // CurrentTurn returns the caller identity for the turn currently running in a session.
@@ -165,8 +312,18 @@ func (d *TurnDispatcher) CurrentTurn(sessionID string) (appports.CurrentTurn, bo
 		RequesterUserID: strings.TrimSpace(payload.RequesterUserID),
 		Text:            payload.Text,
 		StartedAt:       queue.startedAt,
-		PendingTurns:    len(queue.pending),
+		PendingTurns:    pendingUserTurns(queue.pending),
 	}, true
+}
+
+func pendingUserTurns(pending []*queuedTurn) int {
+	count := 0
+	for _, turn := range pending {
+		if turn != nil && turn.replacement == nil {
+			count++
+		}
+	}
+	return count
 }
 
 func (d *TurnDispatcher) CancelSession(locator session.SessionLocator, clearQueued bool) (bool, int, error) {
@@ -186,6 +343,9 @@ func (d *TurnDispatcher) CancelSession(locator session.SessionLocator, clearQueu
 	if clearQueued {
 		droppedTurns = queue.pending
 		queue.pending = nil
+		for _, turn := range droppedTurns {
+			d.finishReplacementLocked(queue, turn, context.Canceled)
+		}
 	}
 
 	cancel := queue.inFlightCancel
@@ -218,6 +378,9 @@ func (d *TurnDispatcher) Shutdown(ctx context.Context) error {
 			cancels = append(cancels, queue.inFlightCancel)
 		}
 		droppedTurns = append(droppedTurns, queue.pending...)
+		for _, turn := range queue.pending {
+			d.finishReplacementLocked(queue, turn, context.Canceled)
+		}
 		queue.pending = nil
 	}
 	d.mu.Unlock()
@@ -281,13 +444,69 @@ func (d *TurnDispatcher) sessionWorker(sessionID string, queue *sessionTurnQueue
 		queue.runningTurn = nil
 		queue.startedAt = time.Time{}
 		queue.inFlightCancel = nil
+		d.finishReplacementLocked(queue, turn, err)
 		d.mu.Unlock()
 		completeTurn(turn, err)
 
 		if err != nil && !errors.Is(err, context.Canceled) {
-			d.logger.Error().Err(err).Str("session_id", sessionID).Msg("turn task failed")
+			if turn.replacement != nil {
+				d.logger.Error().
+					Str("error_class", replacementErrorClass(err)).
+					Str("session_id", sessionID).
+					Msg("replacement task failed")
+			} else {
+				d.logger.Error().Err(err).Str("session_id", sessionID).Msg("turn task failed")
+			}
 		}
 	}
+}
+
+func replacementErrorClass(err error) string {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return "deadline_exceeded"
+	case errors.Is(err, ErrTurnReplacementConflict):
+		return "replacement_conflict"
+	case errors.Is(err, ErrTurnReplacementPending):
+		return "replacement_pending"
+	default:
+		return "replacement_failed"
+	}
+}
+
+func (d *TurnDispatcher) finishReplacementLocked(queue *sessionTurnQueue, turn *queuedTurn, err error) {
+	if queue == nil || turn == nil || turn.replacement == nil || queue.replacement != turn {
+		return
+	}
+	rememberReplacementResult(queue, turn.replacement.OperationID, replacementResult{
+		inputHash: turn.replacement.InputHash,
+		err:       boundedReplacementError(err),
+	})
+	queue.replacement = nil
+}
+
+// rememberReplacementResult bounds in-memory replay evidence to the most
+// recent operations in one live lane. Durable replay beyond this window belongs
+// to the runtime operation store.
+func rememberReplacementResult(queue *sessionTurnQueue, operationID string, result replacementResult) {
+	if queue == nil {
+		return
+	}
+	if queue.terminalReplacements == nil {
+		queue.terminalReplacements = make(map[string]replacementResult)
+	}
+	if _, exists := queue.terminalReplacements[operationID]; exists {
+		queue.terminalReplacements[operationID] = result
+		return
+	}
+	if len(queue.terminalOrder) == terminalReplacementLimit {
+		oldest := queue.terminalOrder[0]
+		delete(queue.terminalReplacements, oldest)
+		copy(queue.terminalOrder, queue.terminalOrder[1:])
+		queue.terminalOrder = queue.terminalOrder[:len(queue.terminalOrder)-1]
+	}
+	queue.terminalReplacements[operationID] = result
+	queue.terminalOrder = append(queue.terminalOrder, operationID)
 }
 
 func isConversationTurn(payload *turncmd.SessionTurnPayload) bool {
@@ -338,8 +557,7 @@ func (d *TurnDispatcher) nextTask(
 			continue
 		case <-idleTimer.C:
 			d.mu.Lock()
-			if d.sessions[sessionID] == queue && !queue.running && len(queue.pending) == 0 {
-				delete(d.sessions, sessionID)
+			if d.evictIdleSessionLocked(sessionID, queue) {
 				d.mu.Unlock()
 				return nil, nil, nil, false
 			}
@@ -347,6 +565,14 @@ func (d *TurnDispatcher) nextTask(
 			continue
 		}
 	}
+}
+
+func (d *TurnDispatcher) evictIdleSessionLocked(sessionID string, queue *sessionTurnQueue) bool {
+	if d.sessions[sessionID] != queue || queue.running || len(queue.pending) != 0 {
+		return false
+	}
+	delete(d.sessions, sessionID)
+	return true
 }
 
 func completeTurns(turns []*queuedTurn, err error) {
