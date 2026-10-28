@@ -41,17 +41,19 @@ type FreshLifetimeResult struct {
 	Reason     baldastate.RuntimeOperationReason
 }
 
-// PreparedFreshLifetime owns an unpublished local lifetime until it is
-// published or aborted. Its fields intentionally remain package-private.
+// PreparedFreshLifetime owns one unpublished candidate reference until it is
+// published or aborted. Only the plan that created the durable preparation may
+// destructively roll it back; exact replay plans merely release their own ref.
 type PreparedFreshLifetime struct {
-	request      FreshLifetimeRequest
-	operation    baldastate.RuntimeOperationRecord
-	archiveToken string
-	incumbent    *RuntimeSlot
-	candidate    *RuntimeSlot
-	settleOnce   sync.Once
-	settleResult FreshLifetimeResult
-	settleErr    error
+	request         FreshLifetimeRequest
+	operation       baldastate.RuntimeOperationRecord
+	archiveToken    string
+	ownsPreparation bool
+	incumbent       *RuntimeSlot
+	candidate       *RuntimeSlot
+	settleOnce      sync.Once
+	settleResult    FreshLifetimeResult
+	settleErr       error
 }
 
 // PrepareFreshLifetime creates and verifies the empty local ADK session before
@@ -113,8 +115,12 @@ func (m *Manager) PrepareFreshLifetime(ctx context.Context, request FreshLifetim
 		value.generation == math.MaxUint64 || value.runtime.RuntimeSnapshotID == "" {
 		return nil, freshLifetimeUnavailable(), nil
 	}
+	if result, blocked := m.checkFreshLifetimePending(ctx, topic, value, existing, found); blocked {
+		return nil, result, nil
+	}
 
 	operation := existing
+	ownsPreparation := !found
 	if !found {
 		operation = freshLifetimeIntent(request, value, m.currentTime())
 		operation, err = m.runtimeOperations.Begin(ctx, operation)
@@ -149,20 +155,53 @@ func (m *Manager) PrepareFreshLifetime(ctx context.Context, request FreshLifetim
 
 	archiveIntent, err := m.reserveFreshLifetimeArchive(ctx, topic, value, operation)
 	if err != nil {
+		if !ownsPreparation {
+			return nil, freshLifetimeUnavailable(), nil
+		}
 		return m.rollbackFreshLifetimePreparation(ctx, topic, value, operation)
 	}
 	sess, err := m.ensureFreshLifetimeSession(ctx, topic, value, operation.TargetArchiveID)
 	if err != nil {
+		if !ownsPreparation {
+			return nil, freshLifetimeUnavailable(), nil
+		}
 		return m.rollbackFreshLifetimePreparation(ctx, topic, value, operation)
 	}
 	candidate, err := incumbent.sharedLifetimeSuccessor(sess, operation.TargetArchiveID, string(baldastate.RuntimeOperationOutcomeContextReset))
 	if err != nil {
+		if !ownsPreparation {
+			return nil, freshLifetimeUnavailable(), nil
+		}
 		return m.rollbackFreshLifetimePreparation(ctx, topic, value, operation)
 	}
 	return &PreparedFreshLifetime{
 		request: request, operation: operation, archiveToken: archiveIntent.Token,
-		incumbent: incumbent, candidate: candidate,
+		ownsPreparation: ownsPreparation, incumbent: incumbent, candidate: candidate,
 	}, FreshLifetimeResult{}, nil
+}
+
+func (m *Manager) checkFreshLifetimePending(
+	ctx context.Context,
+	topic *TopicSession,
+	value runtimeSlotValue,
+	existing baldastate.RuntimeOperationRecord,
+	found bool,
+) (FreshLifetimeResult, bool) {
+	checkCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
+	defer cancel()
+	pending, err := m.archive.Pending(checkCtx, topic.locator.ChannelType, topic.locator.AddressKey)
+	switch {
+	case errors.Is(err, chatarchivecmd.ErrNotFound):
+		return FreshLifetimeResult{}, false
+	case err != nil:
+		return freshLifetimeUnavailable(), true
+	case found && existing.State == baldastate.RuntimeOperationPrepared &&
+		pending.Token == deterministicFreshLifetimeArchiveToken(existing.OperationID) &&
+		freshLifetimeArchiveIntentMatches(pending, existing, m.sessionRecordFromValue(topic, baldastate.SessionStatusActive, value)):
+		return FreshLifetimeResult{}, false
+	default:
+		return FreshLifetimeResult{Status: FreshLifetimeConflict, Reason: baldastate.RuntimeOperationReasonInvalid}, true
+	}
 }
 
 // PublishFreshLifetime commits one already prepared local lifetime. The caller
@@ -270,6 +309,16 @@ func (m *Manager) abortFreshLifetime(ctx context.Context, prepared *PreparedFres
 	defer unlockOperation()
 	unlockSession := m.lockSessionOperation(prepared.request.SessionID)
 	defer unlockSession()
+	if !prepared.ownsPreparation {
+		operation, found, err := m.readFreshLifetimeOperation(ctx, prepared.request.OperationID)
+		if err != nil || !found || !sameFreshLifetimeRequest(operation, prepared.request) {
+			return freshLifetimeUnavailable(), nil
+		}
+		if operation.State == baldastate.RuntimeOperationTerminal {
+			return m.replayFreshLifetime(context.WithoutCancel(ctx), m.activeTopicSession(prepared.request.SessionID), operation), nil
+		}
+		return freshLifetimeUnavailable(), nil
+	}
 	operation, found, err := m.readFreshLifetimeOperation(ctx, prepared.request.OperationID)
 	if err != nil || !found || !sameFreshLifetimeRequest(operation, prepared.request) {
 		m.fenceRuntimeRecovery(prepared.request.SessionID)

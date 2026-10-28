@@ -75,6 +75,7 @@ var Module = fx.Module("balda_actorsfx",
 			return actors.NewTurnDispatcherWithStatus(logger, recorder)
 		},
 		func(dispatcher *actors.TurnDispatcher) appports.TurnQueue { return dispatcher },
+		func(dispatcher *actors.TurnDispatcher) appports.ReplacementQueue { return dispatcher },
 		func(dispatcher *actors.TurnDispatcher) appports.CurrentTurnResolver { return dispatcher },
 		actors.NewJobRunRegistry,
 		fx.Annotate(

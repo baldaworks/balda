@@ -2,6 +2,7 @@ package sessionapp
 
 import (
 	"context"
+	"errors"
 	"iter"
 	"path/filepath"
 	"strings"
@@ -25,12 +26,23 @@ import (
 	"google.golang.org/genai"
 )
 
-const integrationRuntimeSnapshotID = "snapshot"
+const (
+	integrationRuntimeSnapshotID   = "snapshot"
+	integrationProviderBindingJSON = `{"RootProviderID":"provider","Entries":[{"ProviderID":"provider","Source":"managed","RevisionID":"revision"}],"Reproducible":true,"Warnings":null}`
+)
 
 type integrationSessionService struct {
 	adksession.Service
 	createCalls atomic.Int32
 	deleteCalls atomic.Int32
+	failGet     atomic.Bool
+}
+
+func (s *integrationSessionService) Get(ctx context.Context, request *adksession.GetRequest) (*adksession.GetResponse, error) {
+	if s.failGet.Load() {
+		return nil, errors.New("synthetic local session read failure")
+	}
+	return s.Service.Get(ctx, request)
 }
 
 func (s *integrationSessionService) Create(ctx context.Context, request *adksession.CreateRequest) (*adksession.CreateResponse, error) {
@@ -186,7 +198,7 @@ func TestQueuedHostedModelChangeUsesProductionBoundaries(t *testing.T) {
 		t.Fatal(err)
 	}
 	agentRuntime.RuntimeSnapshotID = integrationRuntimeSnapshotID
-	agentRuntime.ProviderBindingJSON = `{"RootProviderID":"provider","Entries":[{"ProviderID":"provider","Source":"managed","RevisionID":"revision"}],"Reproducible":true,"Warnings":null}`
+	agentRuntime.ProviderBindingJSON = integrationProviderBindingJSON
 	t.Cleanup(func() { _ = agentRuntime.Close() })
 
 	provider, err := baldastate.NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "state.db"))
@@ -318,7 +330,7 @@ func TestApplyingModelRecoveryUsesProductionInspectAdapter(t *testing.T) {
 		t.Fatal(err)
 	}
 	agentRuntime.RuntimeSnapshotID = integrationRuntimeSnapshotID
-	agentRuntime.ProviderBindingJSON = `{"RootProviderID":"provider","Entries":[{"ProviderID":"provider","Source":"managed","RevisionID":"revision"}],"Reproducible":true,"Warnings":null}`
+	agentRuntime.ProviderBindingJSON = integrationProviderBindingJSON
 	t.Cleanup(func() { _ = agentRuntime.Close() })
 	runtimeManager := &integrationScopedRuntimeManager{runtime: agentRuntime}
 	provider, err := baldastate.NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "state.db"))
