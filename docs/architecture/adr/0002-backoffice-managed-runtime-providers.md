@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-10-17
-- Last reviewed: 2026-10-19
+- Last reviewed: 2026-10-28
 - Owners: Balda maintainers
 - Decision scope: managed provider definitions, protected values, session binding, and restore
 - Depends on: ADR 0003, YAML-first provider driver registry
@@ -16,8 +16,8 @@ Balda reads providers from `runtime.providers` and selects the root with
 Operators currently edit YAML and restart Balda to change them.
 
 Backoffice should manage an additional set of definitions without breaking
-YAML. Changes apply to new sessions and `/reset`; active sessions keep their
-selected graph.
+YAML. Changes apply to new sessions; active sessions keep their selected graph.
+The local-lifetime `/reset` and `/new` operations preserve that exact graph.
 
 ADR 0003 defines the runtime driver registry and YAML normalization. This
 decision adds only the persistence, encryption, and session binding needed for
@@ -210,13 +210,13 @@ decrypts protected values only at build time, reconstructs typed configs, and
 passes one scoped graph to `agentfactory`. It never selects newer managed
 revisions by provider ID.
 
-All provider consumers use the same bound graph, including ordinary and reset
-sessions, scheduled and webhook sessions, pools, goal and session-memory
+All provider consumers use the same bound graph, including ordinary and locally
+reset sessions, scheduled and webhook sessions, pools, goal and session-memory
 runtimes when applicable, and native hook provider validation.
 `hooknative.Registry` remains only the native hook-adapter registry.
 
-New sessions and `/reset` resolve current committed state. Active sessions
-keep their runtime and binding.
+New sessions resolve current committed state. Active sessions keep their exact
+runtime binding across `/reset` and `/new`.
 
 Disable and delete affect only new bindings. Exact restore of an existing
 binding may load its retained managed revisions even when the corresponding
@@ -360,8 +360,8 @@ and key rotation remain future work.
 7. One atomic session-state write contains the root and exact ordered transitive
    provider entries together with its catalog snapshot ID.
 8. Runtime and native-hook provider resolution use the bound graph.
-9. New sessions and `/reset` adopt current committed state; active sessions
-   retain their binding.
+9. New sessions adopt current committed state; active sessions retain their
+   binding across `/reset` and `/new`.
 10. Managed generic and explicit ACP commands are rejected.
 11. Missing revisions, contracts, keys, or required artifacts fail exact
     restore without silently selecting newer managed revisions.

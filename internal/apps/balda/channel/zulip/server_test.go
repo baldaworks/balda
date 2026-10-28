@@ -15,9 +15,16 @@ import (
 	"github.com/rs/zerolog"
 )
 
-func TestSupportedCommandsAdvertiseModel(t *testing.T) {
-	if !slices.Contains(SupportedCommands(), "model") {
-		t.Fatalf("SupportedCommands() = %v, want model", SupportedCommands())
+func TestSupportedCommandsAdvertiseSessionControls(t *testing.T) {
+	commands := SupportedCommands()
+	for _, want := range []string{"model", "reset", "new"} {
+		if !slices.Contains(commands, want) {
+			t.Fatalf("SupportedCommands() = %v, want %s", commands, want)
+		}
+	}
+	commands[0] = "mutated"
+	if slices.Contains(SupportedCommands(), "mutated") {
+		t.Fatal("SupportedCommands returned mutable registry storage")
 	}
 }
 

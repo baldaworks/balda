@@ -1,106 +1,158 @@
-// Package reset owns reset command policy and lifecycle orchestration.
+// Package reset owns the transport-neutral fresh-lifetime command policy.
 package reset
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
+	"time"
 
 	commandactor "github.com/baldaworks/balda/internal/apps/balda/actors/command"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
-	"github.com/baldaworks/balda/internal/apps/balda/session"
-	"github.com/baldaworks/balda/internal/apps/balda/welcome"
+	"github.com/baldaworks/balda/internal/apps/balda/lifetimeapp"
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 )
 
-type SessionPort interface {
-	GetSessionInfo(ctx context.Context, sessionID string) (session.TopicSessionInfo, error)
-	ResetSession(ctx context.Context, locator session.SessionLocator) error
-	CreateSession(ctx context.Context, sessionCtx session.SessionContext, agentName string) error
-	BaldaProviderID() string
-	GetAgentMetadata(agentName string) session.AgentMetadata
-	TakeStartupNotice(sessionID string) string
+const (
+	commandName             = "reset"
+	operationIDPrefix       = "fresh-lifetime-command:v1:"
+	detachedDeliveryTimeout = 5 * time.Second
+	msgDenied               = "Only the bot owner or collaborators can use this command."
+	msgReset                = "A fresh conversation is ready. Your provider, model, and capabilities are unchanged."
+	msgConflict             = "A fresh conversation request conflicts with another session operation. No new reset was started."
+	msgUnavailable          = "A fresh conversation is currently unavailable. No new reset was started."
+	msgInterrupted          = "The fresh conversation outcome is unconfirmed because the request was interrupted. Check /status before retrying /reset or /new."
+	msgRecoveryRequired     = "This session requires recovery before another fresh conversation can be started."
+)
+
+// LifetimeSubmitter queues a fresh local lifetime through the session FIFO.
+type LifetimeSubmitter interface {
+	Submit(ctx context.Context, request lifetimeapp.Request) (<-chan lifetimeapp.Completion, int, error)
 }
 
-type WorkCanceller interface {
-	CancelWork(ctx context.Context, locator session.SessionLocator, actor string, reason string) error
-}
-
+// Handler handles the bare /reset command and its /new alias.
 type Handler struct {
-	sessions   SessionPort
-	canceller  WorkCanceller
-	dispatcher actortransport.Dispatcher
+	lifetimes       LifetimeSubmitter
+	dispatcher      actortransport.Dispatcher
+	deliveryTimeout time.Duration
 }
 
-func New(sessions SessionPort, canceller WorkCanceller, dispatcher actortransport.Dispatcher) *Handler {
-	return &Handler{sessions: sessions, canceller: canceller, dispatcher: dispatcher}
-}
-func (h *Handler) Name() string { return "reset" }
-func (h *Handler) Handle(ctx context.Context, env actorlayer.Envelope, p commandcmd.Payload) error {
-	if !p.Access.SessionCommands && !p.Access.Owner && !p.Access.Collaborator && !p.Access.WorkspaceMember {
-		return commandactor.SendPlain(ctx, h.dispatcher, env.ID, p.Locator, "Only the bot owner or collaborators can use this command.", "reset-denied")
-	}
-	if strings.TrimSpace(p.Args) != "" {
-		return commandactor.SendPlain(ctx, h.dispatcher, env.ID, p.Locator, "Usage: "+usage(p), "reset-usage")
-	}
-	if h.sessions == nil {
-		return actorlayer.TransientError(fmt.Errorf("session service is required"))
-	}
-	info, _ := h.sessions.GetSessionInfo(ctx, p.Locator.SessionID)
-	label := strings.TrimSpace(info.AgentName)
-	if label == "" {
-		if p.Conversation.Direct {
-			label = "balda"
-		} else {
-			label = "auto"
-		}
-	}
-	userID := strings.TrimSpace(info.UserID)
-	if userID == "" {
-		userID = strings.TrimSpace(p.Principal)
-	}
-	if h.canceller != nil {
-		if err := h.canceller.CancelWork(ctx, p.Locator, "command.reset", "session canceled by reset command"); err != nil {
-			return actorlayer.TransientError(fmt.Errorf("cancel session work: %w", err))
-		}
-	}
-	if err := h.sessions.ResetSession(ctx, p.Locator); err != nil {
-		return commandactor.SendPlain(ctx, h.dispatcher, env.ID, p.Locator, "Could not reset this session.", "reset-failed")
-	}
-	if err := h.sessions.CreateSession(ctx, session.SessionContext{
-		Locator: p.Locator,
-		UserID:  userID,
-		Kind:    session.KindForConversation(p.Conversation.Direct),
-	}, label); err != nil {
-		return commandactor.SendPlain(ctx, h.dispatcher, env.ID, p.Locator, "Could not reset this session.", "recreate-failed")
-	}
-	return h.deliverResult(ctx, env.ID, p, label)
+// New constructs the fresh-lifetime command handler.
+func New(lifetimes LifetimeSubmitter, dispatcher actortransport.Dispatcher) *Handler {
+	return &Handler{lifetimes: lifetimes, dispatcher: dispatcher, deliveryTimeout: detachedDeliveryTimeout}
 }
 
-func (h *Handler) deliverResult(ctx context.Context, operationID string, p commandcmd.Payload, label string) error {
-	metadata := h.sessions.GetAgentMetadata(strings.TrimSpace(h.sessions.BaldaProviderID()))
-	displayName := label
-	if !p.Conversation.Direct {
-		displayName = "balda"
+// Name returns the canonical command name.
+func (*Handler) Name() string { return commandName }
+
+// Handle authorizes and validates the command before submitting any session work.
+func (h *Handler) Handle(ctx context.Context, env actorlayer.Envelope, payload commandcmd.Payload) error {
+	if !hasSessionAccess(payload) {
+		return h.respond(ctx, env.ID, payload, msgDenied, "fresh-lifetime-denied")
 	}
-	message := welcome.BuildAgentWelcomeMessage(displayName, p.Locator.SessionID, metadata.Type, metadata.Model, metadata.ReasoningEffort, metadata.MCPServers)
-	if err := commandactor.SendMarkdown(ctx, h.dispatcher, operationID, p.Locator, message, "reset-welcome"); err != nil {
-		return err
+	if strings.TrimSpace(payload.Args) != "" {
+		return h.respond(ctx, env.ID, payload, "Usage: "+usage(payload), "fresh-lifetime-usage")
 	}
-	if notice := strings.TrimSpace(h.sessions.TakeStartupNotice(p.Locator.SessionID)); notice != "" {
-		return commandactor.SendPlain(ctx, h.dispatcher, operationID, p.Locator, notice, "reset-startup")
+	if h.lifetimes == nil || strings.TrimSpace(env.ID) == "" {
+		return h.respond(ctx, env.ID, payload, msgUnavailable, "fresh-lifetime-unavailable")
+	}
+
+	completion, _, err := h.lifetimes.Submit(ctx, lifetimeapp.Request{
+		OperationID: lifetimeOperationID(env.ID),
+		SessionID:   payload.Locator.SessionID,
+		Command:     commandAlias(payload.Name),
+	})
+	if err != nil || completion == nil {
+		return h.respond(ctx, env.ID, payload, msgUnavailable, "fresh-lifetime-unavailable")
+	}
+	completed, ok := awaitCompletion(ctx, completion)
+	if !ok {
+		return h.respond(ctx, env.ID, payload, msgInterrupted, "fresh-lifetime-interrupted")
+	}
+	message, suffix := resultMessage(completed.Result)
+	return h.respond(ctx, env.ID, payload, message, suffix)
+}
+
+func resultMessage(result lifetimeapp.Result) (string, string) {
+	switch result.Status {
+	case lifetimeapp.StatusReset:
+		return msgReset, "fresh-lifetime-reset"
+	case lifetimeapp.StatusConflict:
+		return msgConflict, "fresh-lifetime-conflict"
+	case lifetimeapp.StatusUnavailable:
+		return msgUnavailable, "fresh-lifetime-unavailable"
+	case lifetimeapp.StatusInterrupted:
+		return msgInterrupted, "fresh-lifetime-interrupted"
+	case lifetimeapp.StatusRecoveryRequired:
+		return msgRecoveryRequired, "fresh-lifetime-recovery-required"
+	default:
+		return msgUnavailable, "fresh-lifetime-unavailable"
+	}
+}
+
+func (h *Handler) respond(ctx context.Context, operationID string, payload commandcmd.Payload, text, suffix string) error {
+	deliveryCtx := ctx
+	cancel := func() {}
+	if ctx.Err() != nil {
+		timeout := h.deliveryTimeout
+		if timeout <= 0 {
+			timeout = detachedDeliveryTimeout
+		}
+		deliveryCtx, cancel = context.WithTimeout(context.WithoutCancel(ctx), timeout)
+	}
+	defer cancel()
+	if err := commandactor.SendPlain(deliveryCtx, h.dispatcher, operationID, payload.Locator, text, suffix); err != nil {
+		return actorlayer.TransientError(fmt.Errorf("send fresh lifetime command response: %w", err))
 	}
 	return nil
 }
 
-func usage(p commandcmd.Payload) string {
-	name := strings.ToLower(strings.TrimSpace(p.Name))
-	if name == "" {
-		name = "reset"
+func awaitCompletion(ctx context.Context, completion <-chan lifetimeapp.Completion) (lifetimeapp.Completion, bool) {
+	select {
+	case completed, ok := <-completion:
+		return completed, ok
+	default:
 	}
-	if root := strings.TrimSpace(p.Invocation.Root); root != "" {
-		return root + " " + name
+
+	select {
+	case completed, ok := <-completion:
+		return completed, ok
+	case <-ctx.Done():
+		// Prefer authoritative completion when cancellation and completion race.
+		select {
+		case completed, ok := <-completion:
+			return completed, ok
+		default:
+			return lifetimeapp.Completion{}, false
+		}
 	}
-	return "/" + name
+}
+
+func lifetimeOperationID(envelopeID string) string {
+	digest := sha256.Sum256([]byte(strings.TrimSpace(envelopeID)))
+	return operationIDPrefix + hex.EncodeToString(digest[:])
+}
+
+func commandAlias(name string) string {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "new" {
+		return "new"
+	}
+	return commandName
+}
+
+func hasSessionAccess(payload commandcmd.Payload) bool {
+	return payload.Access.SessionCommands || payload.Access.Owner || payload.Access.Collaborator || payload.Access.WorkspaceMember
+}
+
+func usage(payload commandcmd.Payload) string {
+	name := commandAlias(payload.Name)
+	root := strings.TrimSpace(payload.Invocation.Root)
+	if root == "" || root == "/" {
+		return "/" + name
+	}
+	return root + " " + name
 }

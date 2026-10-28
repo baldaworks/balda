@@ -9,8 +9,8 @@ command.
 Telegram and Zulip use one slash command per action, such as `/locator`.
 Slack registers one workspace slash command, `/balda`, and the first word of
 its text selects the Balda command. The current Slack command surface contains
-`/balda locator`, `/balda status`, `/balda model`, `/balda reset`, and
-`/balda skill`; `/balda` with no command or any other subcommand returns the
+`/balda locator`, `/balda status`, `/balda model`, `/balda reset`, `/balda new`,
+and `/balda skill`; `/balda` with no command or any other subcommand returns the
 enabled-command usage.
 
 `owner` means the account bootstrapped with the deployment owner token.
@@ -40,7 +40,7 @@ locator`) instead of one command per action (`/locator`); both shapes are accept
 | `/auto [on\|off]` | yes | yes | yes | no | owner, collaborator | current session |
 | `/usage` | yes | yes | yes | no | owner, collaborator | current session |
 | `/reset` | yes | yes | yes | `/balda reset` | owner, collaborator; signed Slack workspace member | current session |
-| `/new` | yes | yes | yes | no | owner, collaborator | current session |
+| `/new` | yes | yes | yes | `/balda new` | owner, collaborator; signed Slack workspace member | current session |
 | `/skill <skill> [prompt...]` | yes | yes | yes | `/balda skill <skill> [prompt...]` | owner, collaborator; signed Slack workspace member | current session |
 | `/locator` | yes | yes | yes | no | owner, collaborator | current session |
 | `/balda locator` | no | no | no | yes | workspace member | current conversation |
@@ -123,10 +123,20 @@ snapshot exists, Balda says so. It does not query a provider or start a turn.
 
 ### `/reset` and `/new`
 
-These commands cancel current session work, clear that session's
-history, and immediately create a fresh runtime session at the same locator.
-`/new` is an alias for `/reset`. Neither command closes the underlying chat or
-topic, and neither accepts arguments.
+These aliases queue one fresh-lifetime boundary behind active and already queued
+session work. On success Balda keeps the stable session and locator, preserves
+the exact provider binding, effective model, and capability snapshot, and
+publishes a new empty local conversation/archive identity. The prior local
+context is no longer addressable through that session.
+
+Both commands are bare: selectors and every other argument are rejected. A
+successful result proves durable local logical isolation; it does not promise
+that the provider is currently available and does not physically delete remote
+provider history. Provider-native state is created lazily if a later turn needs
+it. Conflict and definitive unavailability leave the existing lifetime
+unchanged. An interrupted response means the outcome is unconfirmed; check
+`/status` before retrying. Recovery-required results fail closed. None of these
+fixed responses expose internal identifiers.
 
 ### `/skill <skill> [prompt...]`
 
@@ -155,12 +165,9 @@ The selected skill revision is pinned before the turn is published, but its
 body and resources stay lazy until the session turn executes. Skill content is
 user-level context: it cannot override Balda system policy, permissions, or
 approval boundaries. Installing, upgrading, enabling, disabling, or removing a
-skill does not alter an existing session snapshot; use `/reset` to create a
-fresh runtime that adopts the current catalog. The reset handler closes the old
-runtime and recreates the session without requesting its old snapshot, after
-which the newly selected snapshot is persisted. The existing `$skill:`
-provider selection mechanism remains supported. Generic webhooks and scheduler
-jobs do not expose this chat command.
+skill does not alter an existing session snapshot. `/reset` deliberately
+preserves that snapshot; adopting a different snapshot requires a separate
+supported session-control flow.
 
 ### `/close`
 

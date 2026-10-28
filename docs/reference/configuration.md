@@ -114,8 +114,8 @@ agent provider; delivery, account binding, Backoffice, and provider repair do
 not require one.
 
 Managed provider changes are available under Backoffice Administration →
-Providers. They apply to new sessions and `/reset`; active sessions use their
-stored binding. The managed source excludes generic ACP definitions, explicit
+Providers. They apply to new sessions; `/reset` and `/new` preserve an active
+session's stored binding. The managed source excludes generic ACP definitions, explicit
 commands, and command overrides. Root selection remains in configuration.
 Protected API keys and ACP environment values use
 `balda.mcp_management.credential_key`; see
@@ -320,8 +320,8 @@ Missing roots are empty. Existing roots are subject to the catalog's bounded
 filesystem traversal and validation. The global root does not replace the
 state-directory root, and neither overrides workspace or enabled-plugin skills;
 duplicate unqualified names remain ambiguous. Restart Balda to compile changes
-to application roots, then use `/reset` in an existing conversation to adopt
-the current catalog snapshot.
+to application roots. Existing conversations keep their pinned catalog snapshot,
+including across `/reset` and `/new`.
 
 Balda auto-loads `/workspace/.env`. `env_file: .env` is optional after the file
 exists, but should not be required for the first `docker compose run --rm balda init`.
@@ -411,7 +411,7 @@ remain read-only there except for the explicit **Refresh state** diagnostic.
 Its last secret-free result remains visible for the exact revision until the
 Balda process restarts. Backoffice OAuth status and actions apply only to eligible managed
 HTTP/SSE definitions with OAuth enabled. Provider targets apply when a session
-is created or reset.
+is first created; local lifetime reset preserves the exact active target.
 When a provider pool is selected, its MCP selection also applies to that pool's
 members for that runtime. It does not change the shared member configuration or
 the selection for standalone members or other pools.

@@ -62,7 +62,9 @@ with a teammate. For a focused topic or a longer goal:
 /goalkeeper Prepare release notes for the changes since the last release
 ```
 
-Use `/cancel` to stop the current turn and `/reset` to start a fresh session.
+Use `/cancel` to stop the current turn. `/reset` and `/new` queue a fresh,
+empty local conversation while keeping the current provider, model, and
+capabilities.
 Use `/status` to inspect the provider, model, reasoning effort, session state,
 and current turn without changing the runtime.
 Use `/model` to read the committed model, or `/model <model-id>` to queue a

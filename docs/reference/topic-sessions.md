@@ -114,9 +114,9 @@ authentication boundary.
   pinned snapshot. MCP is supplied when the ADK session runtime is created or
   restored, not with each prompt. Commands and explicit skills also resolve
   from that pin.
-- Every turn reuses the session's existing runner. `/reset` remains a separate
-  explicit action: it closes the runner and creates a new runtime from the
-  current catalog snapshot.
+- Every turn reuses the session's existing runner. `/reset` and `/new` remain
+  separate explicit actions: they publish a new empty local conversation while
+  retaining the exact runner aggregate, provider, model, and capability snapshot.
 - Persisted session label is reused as-is for restore; if missing, balda falls back to label `auto`.
 - In workspace mode, restore first tries to sync the session branch with the configured base branch.
 - If that sync conflicts, balda recreates a clean worktree on the persisted session branch, restores the session anyway, and sends a short warning that the workspace was reset to the saved session-branch state and Balda can retry the sync later.
@@ -166,8 +166,8 @@ pending/uncertain evidence. Failed creation or hooks do not expose a successful
 active archive. A database failure before reservation prevents runtime creation;
 a failure after successful readiness retains the runtime for a later lazy retry.
 
-Reset, close, and failed-restore rotation journal their destructive intent before
-runtime deletion, independently of optional boundary observers. The archive
+Close and failed-restore rotation journal their destructive intent before runtime
+deletion, independently of optional boundary observers. The archive
 ends only after a successful delete or a subsequent runtime read proving
 absence. A failed delete with the old epoch still present retains its lifetime;
 contradictory or unavailable evidence remains uncertain and blocks preparation.
@@ -176,20 +176,18 @@ replacement until lazy reconciliation under the canonical operation lock proves
 the old runtime retained or destroyed. Reconciliation never repeats lifecycle
 hooks. Later hook/workspace cleanup failure cannot undo a proved destruction.
 
-Active reset uses separate finite budgets for deletion, outcome reconciliation
-and context-aware old-resource cleanup. A deletion timeout does not by itself prove that the runtime
-survived: a fresh bounded read and journal completion can establish destruction
-and let the same reset proceed. Caller cancellation and application shutdown
-still prevent fresh replacement; detached cleanup contexts do not authorize it.
-This reconciles deletion outcomes; it does not resolve the underlying cause of
-slow storage operations or extend the deletion timeout.
+Active `/reset` and `/new` instead prepare and verify an empty local ADK session
+under a new archive/runtime identity, then cross the existing per-session FIFO
+boundary and publish it at the next runtime generation. The stable Balda
+session, locator, exact provider binding, model, and capability snapshot do not
+change. Preparation and restart recovery use only those pinned identities and
+perform no provider RPC. A contradiction remains recovery-fenced.
 
 A fresh replacement uses a new archive UUID and retains the ended predecessor
-where available, even when its Balda and ADK routing IDs are reused. If deletion
-succeeds but replacement creation fails, the old transcript remains ended and no
-replacement is shown as active. `/close` and `/reset` preserve archived messages;
-this journal does not make optional observers authoritative or change their
-existing error policy.
+where available. `/reset` and `/new` make the predecessor unreachable through
+the active Balda session but do not promise physical provider-history deletion;
+the first later turn may create provider-native state lazily. `/close` preserves
+archived messages; this journal does not make optional observers authoritative.
 
 Persistent shutdown and suspension preserve the existing lifetime and binding.
 For memory runtime persistence, startup performs SQL-only reconciliation: open

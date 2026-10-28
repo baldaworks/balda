@@ -9,10 +9,8 @@ import (
 	"testing"
 	"time"
 
-	resetcommand "github.com/baldaworks/balda/internal/apps/balda/actors/command/reset"
 	"github.com/baldaworks/balda/internal/apps/balda/chatarchiveapp"
 	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
-	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionturn"
@@ -261,87 +259,6 @@ func TestChatArchiveSharedProviderLifecycleAndTurns(t *testing.T) {
 			}
 			if f2.calls.Load() != 0 {
 				t.Fatal("passive read/restoration invoked model")
-			}
-		})
-	}
-}
-
-type archiveCommittedDelete struct {
-	adksession.Service
-	afterDelete func()
-	deletes     int
-}
-
-func (s *archiveCommittedDelete) Delete(ctx context.Context, request *adksession.DeleteRequest) error {
-	s.deletes++
-	if err := s.Service.Delete(ctx, request); err != nil {
-		return err
-	}
-	s.afterDelete()
-	return context.DeadlineExceeded
-}
-
-func TestResetCommandReconcilesDeletionBeforeFreshCreation(t *testing.T) {
-	for _, canceled := range []bool{false, true} {
-		t.Run(map[bool]string{false: "active request", true: "canceled request"}[canceled], func(t *testing.T) {
-			p, err := state.NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "state.db"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer func() { _ = p.Close() }()
-			f := newArchiveIntegrationRuntime(t, p, true)
-			ctx, cancel := context.WithCancel(t.Context())
-			defer cancel()
-			svc := &archiveCommittedDelete{Service: f.runtime.SessionSvc, afterDelete: func() {
-				if canceled {
-					cancel()
-				}
-			}}
-			f.runtime.SessionSvc = svc
-			m := f.manager(t, p, true)
-			loc := archiveIntegrationLocator()
-			first, err := m.EnsureSession(ctx, session.SessionContext{Locator: loc, UserID: "human-one"}, "saved")
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := p.ChatArchive().Record(t.Context(), chatarchivecmd.Message{SessionID: first.GetArchiveID(), Source: "original", Role: "user", Text: "retained original", ObservedAt: time.Now().UTC()}); err != nil {
-				t.Fatal(err)
-			}
-			bus := &archiveIntegrationBus{}
-			handler := resetcommand.New(m, nil, bus)
-			payload := commandcmd.Payload{Version: commandcmd.SchemaVersion, Name: "reset", Locator: loc, Principal: "human-one", Access: commandcmd.Access{SessionCommands: true}}
-			if err := handler.Handle(ctx, actorlayer.Envelope{ID: "reset-reconcile"}, payload); err != nil {
-				t.Fatal(err)
-			}
-			old, err := p.ChatArchive().Get(t.Context(), first.GetArchiveID())
-			if err != nil || old.Status != chatarchivecmd.StatusEnded {
-				t.Fatalf("old archive=%#v, %v", old, err)
-			}
-			messages, err := p.ChatArchive().Messages(t.Context(), first.GetArchiveID(), 0, 100)
-			if err != nil || len(messages) != 1 || messages[0].Text != "retained original" {
-				t.Fatalf("messages=%#v, %v", messages, err)
-			}
-			rows, err := p.ChatArchive().List(t.Context(), chatarchivecmd.Filter{Limit: 50})
-			expected := 2
-			if canceled {
-				expected = 1
-			}
-			if err != nil || len(rows) != expected || svc.deletes != 1 || bus.sends != 1 || f.calls.Load() != 0 {
-				t.Fatalf("lifetimes=%d, error=%v, deletes=%d, deliveries=%d, model calls=%d", len(rows), err, svc.deletes, bus.sends, f.calls.Load())
-			}
-			if canceled {
-				return
-			}
-			next, err := m.GetSession(loc)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if next.GetArchiveID() == first.GetArchiveID() || next.GetAgentSessionID() != first.GetAgentSessionID() {
-				t.Fatal("command failed to publish a fresh lifetime at same locator")
-			}
-			current, err := p.ChatArchive().Get(t.Context(), next.GetArchiveID())
-			if err != nil || current.Status != chatarchivecmd.StatusActive || current.PredecessorID != first.GetArchiveID() {
-				t.Fatalf("fresh archive=%#v, %v", current, err)
 			}
 		})
 	}

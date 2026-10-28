@@ -110,7 +110,7 @@ type CommandServer struct {
 }
 
 var supportedCommands = []string{
-	"locator", "status", "model", "reset", "usage", "auto", "cancel",
+	"locator", "status", "model", "reset", "new", "usage", "auto", "cancel",
 	"goalkeeper", "topic", "close", "start", "user", "skill",
 }
 
