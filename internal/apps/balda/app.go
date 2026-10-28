@@ -53,6 +53,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/internalmcp"
 	"github.com/baldaworks/balda/internal/apps/balda/jobexec"
 	baldajobs "github.com/baldaworks/balda/internal/apps/balda/jobs"
+	"github.com/baldaworks/balda/internal/apps/balda/lifetimeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpbackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpbridge"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpfx"
@@ -961,6 +962,7 @@ func Module(
 		skillfx.Module,
 		chatarchivefx.Module,
 		sessionapp.Module,
+		lifetimeapp.Module,
 		modelapp.Module,
 		sessionturnapp.Module,
 		hookfx.Module,

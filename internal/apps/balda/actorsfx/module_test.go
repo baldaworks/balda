@@ -40,6 +40,7 @@ func (r dummyTurnRunner) RunSessionTurnPayload(ctx context.Context, payload turn
 func TestActorsfxModule_ProvidesAllProductActors(t *testing.T) {
 	var actorsList []dispatch.Actor
 	var queue appports.TurnQueue
+	var replacementQueue appports.ReplacementQueue
 	var currentTurns appports.CurrentTurnResolver
 	var turnDisp *actors.TurnDispatcher
 	var registry *actors.JobRunRegistry
@@ -49,6 +50,7 @@ func TestActorsfxModule_ProvidesAllProductActors(t *testing.T) {
 		fx.In
 		Actors       []dispatch.Actor `group:"balda_product_actors"`
 		Queue        appports.TurnQueue
+		Replacement  appports.ReplacementQueue
 		CurrentTurns appports.CurrentTurnResolver
 		TurnDisp     *actors.TurnDispatcher
 		Registry     *actors.JobRunRegistry
@@ -103,6 +105,7 @@ func TestActorsfxModule_ProvidesAllProductActors(t *testing.T) {
 		fx.Invoke(func(p params) {
 			actorsList = p.Actors
 			queue = p.Queue
+			replacementQueue = p.Replacement
 			currentTurns = p.CurrentTurns
 			turnDisp = p.TurnDisp
 			registry = p.Registry
@@ -112,6 +115,7 @@ func TestActorsfxModule_ProvidesAllProductActors(t *testing.T) {
 
 	require.NoError(t, app.Err())
 	require.NotNil(t, queue)
+	require.NotNil(t, replacementQueue)
 	require.NotNil(t, currentTurns)
 	require.NotNil(t, turnDisp)
 	require.Same(t, turnDisp, queue)
