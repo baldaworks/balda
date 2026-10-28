@@ -112,7 +112,7 @@ func newTestIngress(processor InboundProcessor, botUserID, botUsername string) *
 		Commands: commandcmd.NewRegistryWithAdvertisements([]commandcmd.Advertisement{{
 			Transport: ChannelType,
 			Enabled:   true,
-			Names:     []string{"locator", "reset", "usage", "auto", "cancel", "goalkeeper", "topic", "close", "start", "user", "skill"},
+			Names:     []string{"locator", "reset", "new", "usage", "auto", "cancel", "goalkeeper", "topic", "close", "start", "user", "skill"},
 		}}),
 		Enabled:     true,
 		BotUserID:   botUserID,

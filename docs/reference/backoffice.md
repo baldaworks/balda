@@ -345,8 +345,8 @@ Administration → Providers combines two sources in one provider-ID namespace:
 - `managed` rows live in the selected state database and support create, edit,
   enable, disable, and delete.
 
-Each managed edit creates an immutable revision. Changes affect new sessions
-and `/reset`; active sessions keep their exact provider binding. Disable and
+Each managed edit creates an immutable revision. Changes affect new sessions;
+`/reset` and `/new` preserve the active session's exact provider binding. Disable and
 delete stop new bindings while retained revisions remain available to existing
 exact bindings. A state-version conflict returns its original HTTP error and
 requires reopening the page before retrying.
@@ -686,8 +686,8 @@ selection while retaining revision archives and plugin data. Existing active
 sessions keep their exact command, skill and MCP snapshot. Restore first tries
 that snapshot; on failure, Balda may replace the saved ADK session with a fresh
 one using current eligible capabilities. No management action itself resets a
-session: new sessions select the current catalog, and ordinary `/reset`
-explicitly recreates an existing session with current capabilities.
+session: new sessions select the current catalog, while ordinary `/reset` and
+`/new` preserve the existing session's exact capabilities.
 
 Enabled describes selection policy, rather than readiness. Current catalog,
 runtime health and **Activation outcome** remain separate. If durable acceptance
@@ -1210,8 +1210,8 @@ account's existing `.agents/skills` or workspace directories.
 **Disable skill** and **Remove skill** use retained revisions without fetching
 the origin. Disable/remove require confirmation. Remove excludes the source
 from new selection while retaining archived instructions/resources and session
-pins. Existing sessions are neither reset nor repinned; new sessions and an
-explicit `/reset` select the current catalog.
+pins. Existing sessions are neither reset nor repinned; only new sessions select
+the current catalog. `/reset` and `/new` preserve the existing pin.
 
 GET pages read retained metadata only. **Refresh sources** explicitly rebuilds
 eligible global roots with current managed/plugin/configured sources. Normal

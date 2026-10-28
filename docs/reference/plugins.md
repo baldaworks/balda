@@ -46,9 +46,10 @@ catalog lock does not provide coordination across independently running Balda
 processes.
 
 Management does not reset existing sessions or change their pins. New sessions
-select the current catalog; a healthy active conversation explicitly adopts
-current capabilities with `/reset`. A failed restore can also replace the saved
-ADK session with current capabilities as described below.
+select the current catalog. `/reset` and `/new` start an empty local conversation
+but deliberately preserve the active session's exact capabilities. A failed
+restore can replace the saved ADK session with current capabilities as described
+below.
 
 MCP availability does not filter catalog selection: an exact restore attempt
 keeps every selected plugin server at its captured revision. HTTP/SSE attachment
@@ -138,10 +139,10 @@ is one-time. Starting Balda recovers already accepted pending publication; it is
 not a replacement for explicit registration.
 
 Publication affects new eligible sessions. Existing sessions retain their exact
-capability snapshot and history; use `/reset` in a conversation that should adopt
-the current catalog. Global CLI inventory and that saved session's capabilities
-are separate views. Installation does not copy skill instructions into unrelated
-knowledge or memory stores.
+capability snapshot; `/reset` and `/new` clear local conversational context but
+do not adopt the current catalog. Global CLI inventory and that saved session's
+capabilities are separate views. Installation does not copy skill instructions
+into unrelated knowledge or memory stores.
 
 ## Package boundaries
 
@@ -252,10 +253,9 @@ turn executes. The existing `$skill:` selection mechanism remains available.
 
 Selected skill content is user-level context. It cannot replace Balda's system
 policy or weaken permissions and approval controls. A healthy active session
-keeps its captured catalog; `/reset` is the explicit path for that session to
-adopt a newly installed or changed skill. If an exact persisted snapshot cannot
-restore, automatic fresh-session fallback may instead adopt current eligible
-capabilities.
+keeps its captured catalog, including across `/reset` and `/new`. If an exact
+persisted snapshot cannot restore, automatic fresh-session fallback may instead
+adopt current eligible capabilities.
 
 MCP is not supplied again with each prompt. A command does not receive an MCP
 list and cannot add tools; it merely executes inside the already-created
@@ -273,8 +273,8 @@ locator with a fresh one using the current effective snapshot. The replacement
 keeps the stable ADK session ID, clears prior ADK state and history, and persists
 the new snapshot before exposure; fallback failure remains an error. A legacy
 session without a pin adopts the current effective snapshot once and persists
-it. `/reset` remains the explicit user action that closes the old runtime and
-creates a fresh unpinned runtime with current commands, skills, and MCP servers.
+it. `/reset` and `/new` are separate local lifetime operations that preserve the
+pinned commands, skills, MCP servers, provider, and model.
 
 Immutable command instructions are retained in snapshot descriptors. Archived
 skill bytes remain readable by exact revision. MCP processes are the only

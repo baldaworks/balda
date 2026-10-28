@@ -111,8 +111,8 @@ Balda supports these commands in Zulip:
 | `/topic <name>` | Create a session in the current stream's native Zulip topic |
 | `/goalkeeper <objective>` | Start goal work from the current session context |
 | `/goalkeeper clear` | Stop active goal work for the current session |
-| `/reset` | Reset current session history |
-| `/new` | Alias for `/reset` |
+| `/reset` | Start an empty local conversation while preserving provider, model, and capabilities |
+| `/new` | Bare alias for `/reset` |
 | `/cancel` | Cancel current session turn; active goal runs continue |
 | `/locator` | Show current locator ref |
 | `/status` | Show provider, session, and current turn status |
@@ -123,10 +123,14 @@ Balda supports these commands in Zulip:
 | `/user remove <id>` | Remove a collaborator |
 
 Zulip owns parsing and the supported-command whitelist. `/locator`, `/status`,
-`/model`, and `/reset` are normalized and durably published to CommandActor;
+`/model`, `/reset`, and `/new` are normalized and durably published to CommandActor;
 their behavior is transport-neutral. `/model` preserves the current session
 context for supported same-provider changes. An unsupported change leaves the
 model and context unchanged and does not reset the session.
+
+`/reset` and `/new` accept no arguments. Their success is local logical
+isolation: provider use is lazy and remote provider history is not promised to
+be deleted.
 
 ## Network Access
 

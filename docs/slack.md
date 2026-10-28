@@ -199,6 +199,9 @@ prevent readiness delivery to other integrations.
   same-provider change for that conversation while preserving its session
   context. Unsupported changes leave the incumbent model and context intact;
   they do not reset the session.
+- `/balda reset` and `/balda new` are bare aliases. They queue a new empty local
+  conversation while preserving the exact provider, model, and capabilities.
+  Provider use remains lazy, and success does not promise remote-history deletion.
 - Slack Agent Session status is `processing` while a turn runs, `active` after
   completion or cancellation, `suspended` while Balda waits for user input, and
   `closed` when the Balda session closes.

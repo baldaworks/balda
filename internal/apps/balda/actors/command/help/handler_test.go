@@ -69,7 +69,7 @@ func TestHelpHandlerRendersForOwner(t *testing.T) {
 		t.Fatalf("UnmarshalPayload error = %v", err)
 	}
 	text := deliveryPayload.Text
-	if !strings.Contains(text, "/topic") || !strings.Contains(text, "/model [model-id]") || !strings.Contains(text, "without resetting context") || !strings.Contains(text, "/skill <skill> [prompt...]") || !strings.Contains(text, "/skill <plugin>:<skill> [prompt...]") || !strings.Contains(text, "/user add") || !strings.Contains(text, plugincmd.HelpMarkdown()) {
+	if !strings.Contains(text, "/topic") || !strings.Contains(text, "/reset` or `/new`") || !strings.Contains(text, "empty local conversation; keep provider, model, and capabilities") || !strings.Contains(text, "/model [model-id]") || !strings.Contains(text, "without resetting context") || !strings.Contains(text, "/skill <skill> [prompt...]") || !strings.Contains(text, "/skill <plugin>:<skill> [prompt...]") || !strings.Contains(text, "/user add") || !strings.Contains(text, plugincmd.HelpMarkdown()) {
 		t.Errorf("expected full owner help, got %q", text)
 	}
 }

@@ -8,9 +8,34 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 )
 
-func TestSupportedCommandsAdvertiseModel(t *testing.T) {
-	if !slices.Contains(SupportedCommands(), "model") {
-		t.Fatalf("SupportedCommands() = %v, want model", SupportedCommands())
+func TestSupportedCommandsAdvertiseSessionControls(t *testing.T) {
+	commands := SupportedCommands()
+	for _, want := range []string{"model", "reset", "new"} {
+		if !slices.Contains(commands, want) {
+			t.Fatalf("SupportedCommands() = %v, want %s", commands, want)
+		}
+	}
+	commands[0] = "mutated"
+	if slices.Contains(SupportedCommands(), "mutated") {
+		t.Fatal("SupportedCommands returned mutable registry storage")
+	}
+}
+
+func TestDecodeCommandRequestPublishesFreshLifetimeAliasesAndArguments(t *testing.T) {
+	for _, name := range []string{"reset", "new"} {
+		t.Run(name, func(t *testing.T) {
+			form := url.Values{
+				"command": {"/balda"}, "team_id": {"T1"}, "channel_id": {"C1"}, "user_id": {"U1"},
+				"text": {name + " forbidden-selector"},
+			}
+			request, err := decodeCommandRequestWithRegistry([]byte(form.Encode()), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if request.Payload.Name != name || request.Payload.Args != "forbidden-selector" {
+				t.Fatalf("payload = %#v", request.Payload)
+			}
+		})
 	}
 }
 

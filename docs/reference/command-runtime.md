@@ -136,7 +136,7 @@ transport switch:
 
 - onboarding and administration: `start`, `user`, and `plugin`;
 - session information: `help`, `usage`, and `locator`;
-- session lifecycle and control: `topic`, `reset`, `close`, and `cancel`;
+- session lifecycle and control: `topic`, `reset`, `new`, `close`, and `cancel`;
 - explicit skill execution: `skill`;
 - automation: `auto` and `goalkeeper`.
 
@@ -177,9 +177,9 @@ session capability and remain lazy-loaded only after explicit selection. MCP
 servers are also independent: their fixed list is supplied when the provider
 session is created or restored and remains attached until that session runtime
 closes. Commands do not acquire MCP or construct a per-turn provider runtime.
-A catalog refresh cannot change an active session; `/reset` is the explicit
-boundary that closes the old runtime, creates an unpinned replacement, and
-persists the current command, skill, and MCP snapshot selected for it.
+A catalog refresh cannot change an active session. `/reset` and `/new` publish
+a new empty local conversation while preserving the exact pinned command,
+skill, MCP, provider, and model metadata. They do not adopt a refreshed catalog.
 
 ## Transport parsing and support
 
@@ -188,10 +188,10 @@ for the user-visible built-in matrix. The runtime-specific differences are:
 
 | Ingress | Provider syntax | Static built-ins admitted | Authentication and context | Projected plugin aliases |
 |---|---|---|---|---|
-| Telegram polling or Telegram webhook | `/<name> [args]` | `start`, `help`, `topic`, `goalkeeper`, `reset`, `skill`, `locator`, `status`, `close`, `cancel`, `usage`, `auto`, `user`, `plugin` | Telegram user/chat/message identity; owner or collaborator capability is derived by ingress. `/start` has a separate direct-message admission path. | End-to-end through the shared registry. Alias syntax is `^[a-z][a-z0-9_]{0,31}$`. |
-| Slack Agent slash-command endpoint | `/balda <name> [args]` | `start`, `locator`, `status`, `reset`, `skill` | Slack HMAC signature, timestamp, team, conversation, and user are required. A valid request receives workspace-member/session-command capability; slash invocations are conversation-scoped because they contain no thread timestamp. `/balda start bind_<token>` is a separate direct-message account admission path before durable command publication. | End-to-end through the shared registry. Alias syntax is `^[a-z][a-z0-9_-]{0,63}$`; `/balda` itself remains the single provider slash command. |
-| Zulip outgoing webhook | `/<name> [args]` | `start`, `topic`, `locator`, `status`, `cancel`, `goalkeeper`, `user`, `usage`, `auto`, `reset`, `skill`, `close` | The channel verifies the configured webhook token and payload; application ingress then requires owner or collaborator access except for onboarding. Direct message versus stream is preserved. `/start bind_<token>` uses verified direct-message account admission before durable command publication. | End-to-end through the shared registry. Compatible projected aliases are published to CommandActor after the same access check as built-ins; unknown names still receive `Unknown command`. Alias syntax is `^[a-z][a-z0-9_-]{0,63}$`. |
-| Mattermost WebSocket posts / slash-command endpoint | Posted `/<name> [args]`; configured HTTP `/balda <name> [args]` or individual slash commands | `start`, `topic`, `locator`, `status`, `cancel`, `goalkeeper`, `user`, `usage`, `auto`, `reset`, `close`, `skill` | Configured REST token/bot identity and authenticated WebSocket, or slash token plus API-resolved conversation type. Canonical user access applies. `D` and `G` retain their existing Direct/locator semantics. Invitation start/DM admission precedes durable command/chat publication. | Through the shared registry. The Backoffice slash action is offered only when the command receiver is configured; DM binding remains available independently. |
+| Telegram polling or Telegram webhook | `/<name> [args]` | `start`, `help`, `topic`, `goalkeeper`, `reset`, `new`, `skill`, `locator`, `status`, `model`, `close`, `cancel`, `usage`, `auto`, `user`, `plugin` | Telegram user/chat/message identity; owner or collaborator capability is derived by ingress. `/start` has a separate direct-message admission path. | End-to-end through the shared registry. Alias syntax is `^[a-z][a-z0-9_]{0,31}$`. |
+| Slack Agent slash-command endpoint | `/balda <name> [args]` | `start`, `locator`, `status`, `model`, `reset`, `new`, `skill` | Slack HMAC signature, timestamp, team, conversation, and user are required. A valid request receives workspace-member/session-command capability; slash invocations are conversation-scoped because they contain no thread timestamp. `/balda start bind_<token>` is a separate direct-message account admission path before durable command publication. | End-to-end through the shared registry. Alias syntax is `^[a-z][a-z0-9_-]{0,63}$`; `/balda` itself remains the single provider slash command. |
+| Zulip outgoing webhook | `/<name> [args]` | `start`, `topic`, `locator`, `status`, `model`, `cancel`, `goalkeeper`, `user`, `usage`, `auto`, `reset`, `new`, `skill`, `close` | The channel verifies the configured webhook token and payload; application ingress then requires owner or collaborator access except for onboarding. Direct message versus stream is preserved. `/start bind_<token>` uses verified direct-message account admission before durable command publication. | End-to-end through the shared registry. Compatible projected aliases are published to CommandActor after the same access check as built-ins; unknown names still receive `Unknown command`. Alias syntax is `^[a-z][a-z0-9_-]{0,63}$`. |
+| Mattermost WebSocket posts / slash-command endpoint | Posted `/<name> [args]`; configured HTTP `/balda <name> [args]` or individual slash commands | `start`, `topic`, `locator`, `status`, `model`, `cancel`, `goalkeeper`, `user`, `usage`, `auto`, `reset`, `new`, `close`, `skill` | Configured REST token/bot identity and authenticated WebSocket, or slash token plus API-resolved conversation type. Canonical user access applies. `D` and `G` retain their existing Direct/locator semantics. Invitation start/DM admission precedes durable command/chat publication. | Through the shared registry. The Backoffice slash action is offered only when the command receiver is configured; DM binding remains available independently. |
 | Generic Balda webhook | Configured HTTP route, not slash syntax | None | Route/method/auth/template and optional report destination come from `balda.webhooks.routes` | Not applicable: it publishes private job work, never a chat command. |
 | Scheduler | Configured cron envelope, not slash syntax | None | Configuration selects content and optional report destination; each run freezes its selected locator | Not applicable: it publishes private scheduled job work, never a chat command. |
 

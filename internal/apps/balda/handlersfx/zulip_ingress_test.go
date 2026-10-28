@@ -77,6 +77,9 @@ func TestZulipInboundHandlerPublishesActorOwnedCommands(t *testing.T) {
 			if name == "model" {
 				args = "vendor/model-v2"
 			}
+			if name == "reset" || name == "new" {
+				args = "forbidden-selector"
+			}
 			if err := h.HandleCommand(context.Background(), zulip.InboundCommand{Locator: locator, MessageID: 88, SenderID: 101, Command: name, Args: args, Direct: true}); err != nil {
 				t.Fatal(err)
 			}

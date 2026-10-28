@@ -65,7 +65,7 @@ func TestMattermostHandlerPublishesCommands(t *testing.T) {
 	const ownerID = "owner-user-1"
 	ownerStore := newOwnerStoreWithMattermostSubject(t, ownerID)
 
-	for _, name := range []string{"start", "topic", "locator", "status", "model", "cancel", "goalkeeper", "user", "usage", "auto", "reset", "close", "skill"} {
+	for _, name := range []string{"start", "topic", "locator", "status", "model", "cancel", "goalkeeper", "user", "usage", "auto", "reset", "new", "close", "skill"} {
 		t.Run(name, func(t *testing.T) {
 			ingress := &recordingMattermostCommandIngress{}
 			h := &mattermostInboundHandler{
@@ -77,6 +77,9 @@ func TestMattermostHandlerPublishesCommands(t *testing.T) {
 			args := ""
 			if name == "model" {
 				args = "vendor/model-v2"
+			}
+			if name == "reset" || name == "new" {
+				args = "forbidden-selector"
 			}
 			err := h.HandleCommand(context.Background(), mattermost.InboundCommand{
 				Locator:  mattermost.NewDMLocator("dm-1", ownerID),

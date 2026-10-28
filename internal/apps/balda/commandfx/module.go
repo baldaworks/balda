@@ -28,6 +28,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/controlapp"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/jobs"
+	"github.com/baldaworks/balda/internal/apps/balda/lifetimeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpruntime"
 	"github.com/baldaworks/balda/internal/apps/balda/modelapp"
 	"github.com/baldaworks/balda/internal/apps/balda/pluginapp"
@@ -44,13 +45,12 @@ import (
 
 type resetParams struct {
 	fx.In
-	Sessions   *session.Manager
-	Canceller  appports.SessionWorkCanceller
+	Lifetimes  *lifetimeapp.Service
 	Dispatcher actortransport.Dispatcher
 }
 
 func newResetHandlers(p resetParams) []command.Handler {
-	handler := commandreset.New(p.Sessions, p.Canceller, p.Dispatcher)
+	handler := commandreset.New(p.Lifetimes, p.Dispatcher)
 	return []command.Handler{handler, command.Alias("new", handler)}
 }
 

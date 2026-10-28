@@ -454,7 +454,8 @@ model.
 Each session pins its skill metadata and resolvable revisions. Content remains
 lazy, but every selected body is read from the exact archived revision named by
 that session snapshot. Catalog or workspace refresh does not affect an active
-session; reset creates a fresh runtime and deliberately adopts current state.
+session. Reset creates a fresh empty local conversation while deliberately
+preserving that session's exact pinned state.
 
 ### Session capability binding
 

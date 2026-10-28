@@ -416,7 +416,8 @@ This uses the production shared Fx plugin owner, catalog and session
 create/restore/reset composition, real SQLite, isolated local/file-Git packages
 and a loopback MCP SDK server. It verifies exact retained commands, lazy skill
 bytes, MCP descriptors and actual tools after upgrade/disable/remove and
-database/process-owner reopen. Ordinary Reset selects the current catalog.
+database/process-owner reopen. Ordinary Reset preserves the session's exact
+catalog snapshot while rotating only its local conversation lifetime.
 Fault proofs distinguish preparation from durable acceptance and recovery;
 no live provider, transport account or deployment is involved.
 

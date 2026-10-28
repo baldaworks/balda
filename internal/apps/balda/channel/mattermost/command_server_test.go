@@ -16,9 +16,16 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 )
 
-func TestSupportedCommandsAdvertiseModel(t *testing.T) {
-	if !slices.Contains(SupportedCommands(), "model") {
-		t.Fatalf("SupportedCommands() = %v, want model", SupportedCommands())
+func TestSupportedCommandsAdvertiseSessionControls(t *testing.T) {
+	commands := SupportedCommands()
+	for _, want := range []string{"model", "reset", "new"} {
+		if !slices.Contains(commands, want) {
+			t.Fatalf("SupportedCommands() = %v, want %s", commands, want)
+		}
+	}
+	commands[0] = "mutated"
+	if slices.Contains(SupportedCommands(), "mutated") {
+		t.Fatal("SupportedCommands returned mutable registry storage")
 	}
 }
 
@@ -325,28 +332,24 @@ func TestCommandServerPublishesModelForms(t *testing.T) {
 
 // TestCommandServerReadsSlashPrefixedText covers the shape where the whole
 // invocation arrives in "text" with its own leading slash.
-func TestCommandServerReadsSlashPrefixedText(t *testing.T) {
-	recorder := &commandRecorder{}
-	server := newTestCommandServer(recorder)
-	request, response := commandRequest(url.Values{
-		"token":      {testCommandToken},
-		"command":    {"/balda"},
-		"text":       {"/reset now"},
-		"channel_id": {testChannelID},
-		"user_id":    {testUserID},
-	})
+func TestCommandServerReadsFreshLifetimeAliasesAndArguments(t *testing.T) {
+	for _, name := range []string{"reset", "new"} {
+		t.Run(name, func(t *testing.T) {
+			recorder := &commandRecorder{}
+			server := newTestCommandServer(recorder)
+			request, response := commandRequest(url.Values{
+				"token": {testCommandToken}, "command": {"/balda"}, "text": {"/" + name + " forbidden-selector"},
+				"channel_id": {testChannelID}, "user_id": {testUserID},
+			})
 
-	server.handleCommand(response, request)
-
-	if len(recorder.commands) != 1 {
-		t.Fatalf("commands = %d, want 1", len(recorder.commands))
-	}
-	command := recorder.commands[0]
-	if command.Command != "reset" {
-		t.Fatalf("command = %q, want reset", command.Command)
-	}
-	if command.Args != "now" {
-		t.Fatalf("args = %q, want now", command.Args)
+			server.handleCommand(response, request)
+			if len(recorder.commands) != 1 {
+				t.Fatalf("commands = %d, want 1", len(recorder.commands))
+			}
+			if got := recorder.commands[0]; got.Command != name || got.Args != "forbidden-selector" {
+				t.Fatalf("command = %+v", got)
+			}
+		})
 	}
 }
 
