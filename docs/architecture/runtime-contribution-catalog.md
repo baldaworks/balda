@@ -123,8 +123,8 @@ root:
 <workspace>/.agents/skills/<name>/SKILL.md
 ```
 
-When Balda creates an unpinned session runtime, it captures this directory and
-merges its valid skills into that workspace's effective snapshot as
+When Balda creates a genuinely new stable session runtime, it captures this
+directory and merges its valid skills into that workspace's effective snapshot as
 `workspace-skill` contributions. A missing `.agents/skills` directory is an
 empty overlay. Malformed or unsafe entries follow the catalog's existing
 validation and diagnostics rules and are not exposed as usable skills.
@@ -135,12 +135,13 @@ session's pinned snapshot and loads that exact retained revision for the turn.
 Project skills cannot contribute commands or MCP servers through this overlay.
 
 Session snapshots are immutable. An active or restored session continues to
-use its pinned snapshot even if files under `.agents/skills` change. Session
-reset closes that runtime and the command handler immediately creates an
-unpinned replacement, which captures the current project-skill revision and
-persists the new effective snapshot. Because each workspace receives a separate
-overlay, its project skills are unavailable to sessions bound to another
-workspace.
+use its pinned snapshot even if files under `.agents/skills` change. `/reset`
+and `/new` wait behind active and prior work in the existing per-session FIFO,
+then publish a new empty local ADK lifetime/archive at the same stable Balda
+session. They preserve the exact pinned capability snapshot, including its
+project-skill revisions. Only a genuinely new stable session selects the current
+project-skill revision. Because each workspace receives a separate overlay, its
+project skills are unavailable to sessions bound to another workspace.
 
 Conceptually:
 
@@ -473,12 +474,14 @@ MCP acquisitions live until the Balda session runtime closes. Individual
 prompts and commands neither receive a new MCP list nor construct, swap, or
 close a session runtime. Every turn uses the existing `TopicSession` runner.
 
-Publishing a new catalog snapshot never mutates an active session. `/reset`
-closes the old session runtime and creates a replacement without requesting the
-old snapshot. It remains the explicit user action for adopting current commands,
-skills, and MCP servers; failed automatic restore can also adopt the current
-snapshot through fresh-session fallback. Successful recreation persists the
-newly selected snapshot.
+Publishing a new catalog snapshot never mutates an active session. `/reset` and
+`/new` cross the existing per-session FIFO and publish a new empty local ADK
+lifetime/archive at the same stable Balda session. They preserve the exact
+pinned `SnapshotID`, including commands, project-skill revisions, and MCP
+servers; they do not select the current catalog revision. Provider use remains
+lazy, and reset success promises neither provider availability nor physical
+deletion of provider-native history. Only creation of a genuinely new stable
+session selects the current catalog revision.
 
 Metadata budgeting is deterministic. The effective catalog sorts by stable
 source and contribution identity, applies a host-defined total budget, and
