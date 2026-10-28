@@ -142,7 +142,7 @@ Use this checklist before merging any architecture-affecting change.
 - `/topic <name>`: owner/collaborator, direct message only; creates a topic session labeled `<name>` using the configured balda provider.
 - `/goalkeeper <objective>`: owner/collaborator; starts goal work from the current session context in an isolated GoalKeeper workspace/state with started/validation/final updates and terminal Result/Artifacts/Confidence/Next action outcome.
 - `/goalkeeper clear`: owner/collaborator; stops active goal work for the current session only.
-- `/reset` or `/new`: owner/collaborator; cancels current session work, clears current session history, and immediately starts a fresh runtime session without closing the chat/topic.
+- `/reset` or `/new`: owner/collaborator; queues behind active and prior session work in the existing FIFO, then publishes a new empty local ADK lifetime/archive at the same stable Balda session while preserving its exact provider, model, and capabilities. Provider use stays lazy; success does not promise provider availability or physical deletion of remote provider history, and the chat/topic remains open.
 - `/skill <skill> [prompt...]` or `/skill <plugin>:<skill> [prompt...]`: owner/collaborator; runs one skill from the current session snapshot as an ordinary turn. Slack uses `/balda skill ...`.
 - `/locator`: owner/collaborator; replies with the current transport type and locator ref in the public config form `<channel_type>:<address_key>` for scheduler/webhook `target: locator` config.
 - `/status`: owner/collaborator; returns a read-only structured snapshot of provider/model/reasoning, session state, and the active turn with bounded user text. Slack uses `/balda status`.
