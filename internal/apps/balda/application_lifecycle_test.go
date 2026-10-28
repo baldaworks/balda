@@ -34,6 +34,57 @@ func (lifecycleAuthorizationBinding) BindAuthorization(context.Context, mcpcmd.S
 	return mcpcmd.Item{}, nil
 }
 
+func TestCommandRecoveryWorkersFollowReadinessAndPrecedeStateClose(t *testing.T) {
+	t.Parallel()
+
+	readinessErr := errors.New("administrator missing")
+	var calls []string
+	workerStages := commandRecoveryStages(
+		func() { calls = append(calls, "start dispatcher") },
+		func(context.Context) error { calls = append(calls, "stop dispatcher"); return nil },
+		func() { calls = append(calls, "start answer recovery") },
+		func(context.Context) error { calls = append(calls, "stop answer recovery"); return nil },
+	)
+	stages := append([]lifecycleStage{
+		{name: "state provider", stop: func(context.Context) error {
+			calls = append(calls, "close state")
+			return nil
+		}},
+		{name: "user readiness", start: func(context.Context) error { return readinessErr }},
+	}, workerStages...)
+	coordinator := newApplicationLifecycle(zerolog.Nop(), stages)
+	if err := coordinator.Start(t.Context()); !errors.Is(err, readinessErr) {
+		t.Fatalf("Start() error = %v, want %v", err, readinessErr)
+	}
+	if want := []string{"close state"}; !reflect.DeepEqual(calls, want) {
+		t.Fatalf("calls after readiness failure = %v, want %v", calls, want)
+	}
+
+	calls = nil
+	stages[1].start = func(context.Context) error {
+		calls = append(calls, "ready")
+		return nil
+	}
+	coordinator = newApplicationLifecycle(zerolog.Nop(), stages)
+	if err := coordinator.Start(t.Context()); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if err := coordinator.Stop(t.Context()); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+	want := []string{
+		"ready",
+		"start dispatcher",
+		"start answer recovery",
+		"stop answer recovery",
+		"stop dispatcher",
+		"close state",
+	}
+	if !reflect.DeepEqual(calls, want) {
+		t.Fatalf("normal lifecycle calls = %v, want %v", calls, want)
+	}
+}
+
 func TestMCPAuthorizationsCloseWhenEarlyStartupFails(t *testing.T) {
 	credentials, err := mcpmanage.New(base64.StdEncoding.EncodeToString(make([]byte, 32)))
 	if err != nil {
@@ -129,6 +180,8 @@ func TestApplicationLifecycleStagesStartQuestionProjectorAfterTransport(t *testi
 	want := []string{
 		"MCP authorization attempts",
 		"user readiness",
+		"command ingress outbox",
+		"question answer recovery",
 		"bundled MCP",
 		"managed MCP credential readiness",
 		"MCP credential bridge",
