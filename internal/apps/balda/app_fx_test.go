@@ -71,7 +71,12 @@ func TestAppStartMigratesStateBeforeUserReadiness(t *testing.T) {
 	if _, statErr := os.Stat(filepath.Join(workingDir, ".config", "balda", "state.db")); statErr != nil {
 		t.Fatalf("selected database was not migrated before readiness: %v", statErr)
 	}
-	_ = app.Stop(t.Context())
+	if err := app.Stop(t.Context()); err != nil {
+		t.Fatalf("Stop() after readiness failure: %v", err)
+	}
+	if err := os.RemoveAll(workingDir); err != nil {
+		t.Fatalf("remove state directory after readiness rollback: %v", err)
+	}
 }
 
 func TestValidateApp_InvalidTelegramFormattingModeFails(t *testing.T) {

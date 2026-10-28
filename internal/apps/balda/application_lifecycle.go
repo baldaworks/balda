@@ -11,6 +11,7 @@ import (
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	"github.com/baldaworks/balda/internal/apps/balda/catalogapp"
+	"github.com/baldaworks/balda/internal/apps/balda/commandoutboxfx"
 	natsbus "github.com/baldaworks/balda/internal/apps/balda/eventbus/nats"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	"github.com/baldaworks/balda/internal/apps/balda/httpfx"
@@ -171,6 +172,7 @@ type applicationLifecycleParams struct {
 	GatewayCallbacks     []httpfx.GatewayCallbackProvider `group:"balda_http_gateway_callback_providers"`
 	TelegramSource       runtime.UpdateSource
 	Backoffice           *backoffice.Runtime
+	CommandWorkers       *commandoutboxfx.LifecycleWorkers
 	BackofficeMCP        *mcpbackofficeapp.Operations
 	MCP                  *internalmcp.InternalMCPManager
 	MCPManagement        *mcpmanage.Service
@@ -206,6 +208,9 @@ func registerApplicationLifecycle(p applicationLifecycleParams) {
 		logger:     p.Logger.With().Str("component", "balda.telegram_runtime").Logger(),
 	}
 	coordinator := newApplicationLifecycle(p.Logger, applicationLifecycleStages(p, telegram))
+	// The state provider registers its close hook during construction. This hook
+	// is appended later, so Fx reverse shutdown joins every ordered worker before
+	// closing their shared storage.
 	p.LC.Append(fx.Hook{OnStart: coordinator.Start, OnStop: coordinator.Stop})
 }
 
@@ -270,6 +275,12 @@ func applicationLifecycleStages(p applicationLifecycleParams, telegram *telegram
 			return sharedServer.Stop(ctx)
 		}},
 	}
+	stages = append(stages[:2], append(commandRecoveryStages(
+		p.CommandWorkers.StartDispatcher,
+		p.CommandWorkers.StopDispatcher,
+		p.CommandWorkers.StartAnswerRecovery,
+		p.CommandWorkers.StopAnswerRecovery,
+	), stages[2:]...)...)
 	for _, stage := range p.TransportStages {
 		stages = append(stages, lifecycleStage{
 			name:  stage.Name,
@@ -280,6 +291,28 @@ func applicationLifecycleStages(p applicationLifecycleParams, telegram *telegram
 	stages = append(stages, lifecycleStage{name: "telegram ingress", start: telegram.Start, stop: telegram.Stop})
 	stages = append(stages, lifecycleStage{name: "startup readiness notification", start: p.StartupNotifier.Notify})
 	return stages
+}
+
+func commandRecoveryStages(
+	dispatcherStart func(),
+	dispatcherStop func(context.Context) error,
+	recoveryStart func(),
+	recoveryStop func(context.Context) error,
+) []lifecycleStage {
+	workerStage := func(name string, start func(), stop func(context.Context) error) lifecycleStage {
+		return lifecycleStage{
+			name: name,
+			start: func(context.Context) error {
+				start()
+				return nil
+			},
+			stop: stop,
+		}
+	}
+	return []lifecycleStage{
+		workerStage("command ingress outbox", dispatcherStart, dispatcherStop),
+		workerStage("question answer recovery", recoveryStart, recoveryStop),
+	}
 }
 
 func startSharedHTTPIngress(ctx context.Context, p applicationLifecycleParams) (*httpfx.Server, error) {
