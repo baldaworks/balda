@@ -269,6 +269,90 @@ func checkChatArchiveRuntimeMetadata(t *testing.T, open contractOpener) {
 	}
 }
 
+func checkChatArchiveReplacementCompatibility(t *testing.T, open contractOpener) {
+	p := newContractProvider(t, open)
+	defer closeContractProvider(t, p)
+	store := p.ChatArchive()
+	now := time.Now().UTC()
+	location := chatarchivecmd.Location{Channel: "telegram", AddressKey: "replacement:0", Locator: "telegram:replacement:0"}
+	predecessor := chatarchivecmd.Session{
+		ID: "63d273ba-11c5-44ab-a39c-08a533f627a1", StableID: "replacement-stable",
+		RuntimeID: "replacement-old", Persistence: chatarchivecmd.PersistenceDurable,
+		BootID: "replacement-boot", StartedAt: now, ObservedAt: now, Location: location,
+	}
+	first := chatarchivecmd.Intent{Token: "replacement-first", Kind: chatarchivecmd.KindFresh, Session: predecessor, At: now}
+	if _, err := store.Begin(t.Context(), first); err != nil {
+		t.Fatal(err)
+	}
+	live := SessionRecord{
+		SessionID: predecessor.StableID, UserID: "replacement-user", ChannelType: location.Channel,
+		AddressKey: location.AddressKey, AddressJSON: "{}", RuntimeSnapshotID: "snapshot",
+		Status: SessionStatusActive,
+	}
+	if _, err := store.Activate(t.Context(), first.Token, &live); err != nil {
+		t.Fatal(err)
+	}
+
+	activeTarget := predecessor
+	activeTarget.ID = "9175fb69-88dc-419c-8901-d779f2d863bb"
+	activeTarget.RuntimeID = activeTarget.ID
+	activeTarget.PredecessorID = predecessor.ID
+	activeTarget.StartedAt = now.Add(time.Second)
+	activeTarget.ObservedAt = activeTarget.StartedAt
+	active := chatarchivecmd.Intent{
+		Token: "replacement-active", Kind: chatarchivecmd.KindFresh, Session: activeTarget,
+		OldID: predecessor.ID, Reason: "reset", At: activeTarget.StartedAt,
+	}
+	if _, err := store.Begin(t.Context(), active); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Activate(t.Context(), active.Token, &live); err != nil {
+		t.Fatal(err)
+	}
+	gotOld, err := store.Get(t.Context(), predecessor.ID)
+	if err != nil || gotOld.Status != chatarchivecmd.StatusEnded || gotOld.EndReason != active.Reason {
+		t.Fatalf("atomic predecessor = %#v, %v", gotOld, err)
+	}
+	gotActive, err := store.Get(t.Context(), activeTarget.ID)
+	if err != nil || gotActive.Status != chatarchivecmd.StatusActive {
+		t.Fatalf("atomic target = %#v, %v", gotActive, err)
+	}
+
+	ended := chatarchivecmd.Session{
+		ID: "31397d5e-88c5-477f-b06f-e689cbcc9a37", StableID: "ended-stable",
+		RuntimeID: "ended-old", Persistence: chatarchivecmd.PersistenceDurable,
+		BootID: "replacement-boot", StartedAt: now, ObservedAt: now,
+		Location: chatarchivecmd.Location{Channel: "telegram", AddressKey: "ended:0", Locator: "telegram:ended:0"},
+	}
+	endedIntent := chatarchivecmd.Intent{Token: "replacement-ended-first", Kind: chatarchivecmd.KindFresh, Session: ended, At: now}
+	if _, err := store.Begin(t.Context(), endedIntent); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Complete(t.Context(), endedIntent.Token, chatarchivecmd.OutcomeAborted); err != nil {
+		t.Fatal(err)
+	}
+	endedTarget := ended
+	endedTarget.ID = "5cb6aa42-1bd8-4ac9-bb7b-1132d0845a40"
+	endedTarget.RuntimeID = endedTarget.ID
+	endedTarget.PredecessorID = ended.ID
+	endedTarget.StartedAt = now.Add(time.Second)
+	endedTarget.ObservedAt = endedTarget.StartedAt
+	replacement := chatarchivecmd.Intent{
+		Token: "replacement-ended-next", Kind: chatarchivecmd.KindFresh,
+		Session: endedTarget, OldID: ended.ID, At: endedTarget.StartedAt,
+	}
+	if _, err := store.Begin(t.Context(), replacement); err != nil {
+		t.Fatalf("ended-predecessor Begin() = %v", err)
+	}
+	if _, err := store.Activate(t.Context(), replacement.Token, nil); err != nil {
+		t.Fatalf("ended-predecessor Activate() = %v", err)
+	}
+	gotEndedTarget, err := store.Get(t.Context(), endedTarget.ID)
+	if err != nil || gotEndedTarget.Status != chatarchivecmd.StatusActive || gotEndedTarget.PredecessorID != ended.ID {
+		t.Fatalf("ended-predecessor target = %#v, %v", gotEndedTarget, err)
+	}
+}
+
 func checkChatArchiveLifecycleFences(t *testing.T, open contractOpener) {
 	p := newContractProvider(t, open)
 	defer closeContractProvider(t, p)

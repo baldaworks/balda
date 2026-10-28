@@ -16,15 +16,26 @@ import (
 
 type archiveBuilder struct {
 	sqliteAgentBuilder
-	fail bool
+	fail           bool
+	service        adksession.Service
+	model          string
+	freshProviders []string
+	beforeFresh    func()
 }
 
-func (b *archiveBuilder) CreateFreshRuntimeSession(ctx context.Context, runtime *BuiltRuntime, _, userID, sessionID, _ string, sessionCtx RuntimeSessionContext) (adksession.Session, error) {
+func (b *archiveBuilder) CreateFreshRuntimeSession(ctx context.Context, runtime *BuiltRuntime, providerID, userID, sessionID, _ string, sessionCtx RuntimeSessionContext) (adksession.Session, error) {
 	b.freshCalls++
+	b.freshProviders = append(b.freshProviders, providerID)
+	if b.beforeFresh != nil {
+		b.beforeFresh()
+	}
 	if b.fail {
 		return nil, errors.New("build failed")
 	}
-	result, err := runtime.SessionSvc.Create(ctx, &adksession.CreateRequest{AppName: runtime.AppName, UserID: userID, SessionID: sessionID, State: map[string]any{chatarchivecmd.EpochStateKey: sessionCtx.ArchiveID}})
+	result, err := runtime.SessionSvc.Create(ctx, &adksession.CreateRequest{AppName: runtime.AppName, UserID: userID, SessionID: sessionID, State: map[string]any{
+		chatarchivecmd.EpochStateKey: sessionCtx.ArchiveID,
+		baldaSessionIDStateKey:       sessionCtx.BaldaSessionID,
+	}})
 	if err != nil {
 		return nil, err
 	}
@@ -41,6 +52,12 @@ func (b *archiveBuilder) OpenExistingRuntimeSession(ctx context.Context, runtime
 	return sess, nil
 }
 
+func (b *archiveBuilder) RuntimeSessionService() adksession.Service { return b.service }
+
+func (b *archiveBuilder) GetAgentMetadata(string) AgentMetadata {
+	return AgentMetadata{Model: b.model}
+}
+
 type archiveFixture struct {
 	provider baldastate.Provider
 	runtime  *BuiltRuntime
@@ -55,7 +72,13 @@ func newArchiveFixture(t *testing.T) *archiveFixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = p.Close() })
-	return &archiveFixture{provider: p, runtime: &BuiltRuntime{AppName: baldaRuntimeAppName, SessionSvc: p.RuntimeSessions(), RuntimeSnapshotID: currentSnapshotID}, builder: &archiveBuilder{}, dir: t.TempDir()}
+	service := p.RuntimeSessions()
+	return &archiveFixture{
+		provider: p,
+		runtime:  &BuiltRuntime{AppName: baldaRuntimeAppName, SessionSvc: service, RuntimeSnapshotID: currentSnapshotID},
+		builder:  &archiveBuilder{service: service},
+		dir:      t.TempDir(),
+	}
 }
 func (f *archiveFixture) manager() *Manager {
 	return &Manager{runtimeManager: &fakeScopedRuntimeManager{fakeBaldaRuntimeManager: fakeBaldaRuntimeManager{providerID: "balda-provider", runtime: f.runtime}, sessionRuntime: f.runtime}, agentBuilder: f.builder, workingDir: f.dir, logger: zerolog.Nop(), sessions: make(map[string]*TopicSession), sessionStore: f.provider.Sessions(), sessionsPersistent: true, archive: f.provider.ChatArchive(), bootID: "test-boot"}

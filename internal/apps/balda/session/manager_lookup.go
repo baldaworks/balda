@@ -228,6 +228,14 @@ func (m *Manager) recoverRuntimeOperation(ctx context.Context, sessionID string)
 	if operation.State == baldastate.RuntimeOperationApplying && operation.Kind == string(baldastate.RuntimeOperationKindModel) {
 		return m.recoverApplyingModelOperation(ctx, operation)
 	}
+	if operation.Kind == string(baldastate.RuntimeOperationKindLifetime) {
+		switch operation.State {
+		case baldastate.RuntimeOperationPrepared:
+			return m.recoverPreparedFreshLifetimeOperation(ctx, operation)
+		case baldastate.RuntimeOperationApplying:
+			return m.recoverApplyingFreshLifetimeOperation(ctx, operation)
+		}
+	}
 	if operation.State != baldastate.RuntimeOperationPrepared {
 		m.fenceRuntimeRecovery(sessionID)
 		return ErrRuntimeRecoveryRequired

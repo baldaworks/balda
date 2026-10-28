@@ -197,38 +197,64 @@ func (s *sqlRuntimeOperationStore) Finalize(ctx context.Context, final RuntimeOp
 	}
 
 	if publishesRuntime(final.Outcome) {
-		var archiveID string
+		var archiveID, snapshotID, bindingJSON, effectiveModel, runtimeOutcome string
 		var generation int64
-		err = tx.QueryRowContext(ctx, s.users.bind(`SELECT archive_id,runtime_generation
-			FROM balda_session_metadata WHERE session_id = ?`)+s.users.forUpdate, record.SessionID).Scan(&archiveID, &generation)
+		err = tx.QueryRowContext(ctx, s.users.bind(`SELECT archive_id,runtime_generation,runtime_snapshot_id,
+			COALESCE(provider_binding_json,''),effective_model,runtime_outcome
+			FROM balda_session_metadata WHERE session_id = ?`)+s.users.forUpdate, record.SessionID).Scan(
+			&archiveID, &generation, &snapshotID, &bindingJSON, &effectiveModel, &runtimeOutcome,
+		)
 		if errors.Is(err, sql.ErrNoRows) {
 			return RuntimeOperationRecord{}, ErrRuntimeOperationConflict
 		}
 		if err != nil {
 			return RuntimeOperationRecord{}, runtimeOperationError(ctx, err)
 		}
-		if archiveID != record.ExpectedArchiveID || generation < 0 || uint64(generation) != record.ExpectedGeneration {
+		if generation < 0 {
 			return RuntimeOperationRecord{}, ErrRuntimeOperationConflict
 		}
-
-		result, err := tx.ExecContext(ctx, s.users.bind(`UPDATE balda_session_metadata SET
-			archive_id=CASE WHEN ?='' THEN archive_id ELSE ? END,
-			runtime_snapshot_id=CASE WHEN ?='' THEN runtime_snapshot_id ELSE ? END,
-			provider_binding_json=CASE WHEN ?='' THEN provider_binding_json ELSE ? END,
-			effective_model=CASE WHEN ?='' THEN effective_model ELSE ? END,
-			runtime_generation=runtime_generation+1,runtime_outcome=?,updated_at=?
-			WHERE session_id=? AND archive_id=? AND runtime_generation=?`),
-			record.TargetArchiveID, record.TargetArchiveID,
-			record.TargetSnapshotID, record.TargetSnapshotID,
-			record.TargetProviderBindingJSON, record.TargetProviderBindingJSON,
-			record.TargetModel, record.TargetModel,
-			string(final.Outcome), runtimeOperationTime(final.At), record.SessionID,
-			record.ExpectedArchiveID, record.ExpectedGeneration)
-		if err != nil {
-			return RuntimeOperationRecord{}, runtimeOperationError(ctx, err)
-		}
-		if rows, err := result.RowsAffected(); err != nil || rows != 1 {
-			return RuntimeOperationRecord{}, ErrRuntimeOperationConflict
+		if archiveID == record.ExpectedArchiveID && uint64(generation) == record.ExpectedGeneration {
+			result, err := tx.ExecContext(ctx, s.users.bind(`UPDATE balda_session_metadata SET
+				archive_id=CASE WHEN ?='' THEN archive_id ELSE ? END,
+				runtime_snapshot_id=CASE WHEN ?='' THEN runtime_snapshot_id ELSE ? END,
+				provider_binding_json=CASE WHEN ?='' THEN provider_binding_json ELSE ? END,
+				effective_model=CASE WHEN ?='' THEN effective_model ELSE ? END,
+				runtime_generation=runtime_generation+1,runtime_outcome=?,updated_at=?
+				WHERE session_id=? AND archive_id=? AND runtime_generation=?`),
+				record.TargetArchiveID, record.TargetArchiveID,
+				record.TargetSnapshotID, record.TargetSnapshotID,
+				record.TargetProviderBindingJSON, record.TargetProviderBindingJSON,
+				record.TargetModel, record.TargetModel,
+				string(final.Outcome), runtimeOperationTime(final.At), record.SessionID,
+				record.ExpectedArchiveID, record.ExpectedGeneration)
+			if err != nil {
+				return RuntimeOperationRecord{}, runtimeOperationError(ctx, err)
+			}
+			if rows, err := result.RowsAffected(); err != nil || rows != 1 {
+				return RuntimeOperationRecord{}, ErrRuntimeOperationConflict
+			}
+		} else {
+			targetArchive := record.TargetArchiveID
+			if targetArchive == "" {
+				targetArchive = record.ExpectedArchiveID
+			}
+			targetSnapshot := record.TargetSnapshotID
+			if targetSnapshot == "" {
+				targetSnapshot = snapshotID
+			}
+			targetBinding := record.TargetProviderBindingJSON
+			if targetBinding == "" {
+				targetBinding = bindingJSON
+			}
+			targetModel := record.TargetModel
+			if targetModel == "" {
+				targetModel = effectiveModel
+			}
+			if archiveID != targetArchive || uint64(generation) != record.ExpectedGeneration+1 ||
+				snapshotID != targetSnapshot || bindingJSON != targetBinding || effectiveModel != targetModel ||
+				runtimeOutcome != string(final.Outcome) {
+				return RuntimeOperationRecord{}, ErrRuntimeOperationConflict
+			}
 		}
 	}
 	result, err := tx.ExecContext(ctx, s.users.bind(`UPDATE balda_runtime_operations SET
