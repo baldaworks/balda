@@ -263,6 +263,15 @@ type BuiltRuntime struct {
 	newRunner    func(runner.Config, ToolHookScope) (*runner.Runner, error)
 }
 
+// RuntimeSessionService returns the process-local ADK session store without
+// constructing or contacting a provider runtime.
+func (b *Builder) RuntimeSessionService() adksession.Service {
+	if b == nil {
+		return nil
+	}
+	return b.sessionSvc
+}
+
 type AgentMetadata struct {
 	Type            string
 	Model           string

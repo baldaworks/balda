@@ -165,6 +165,7 @@ func (m *Manager) recoverArchiveActivation(ctx context.Context, root *BuiltRunti
 	ts.runtime = newPublishedRuntimeSlot(runtimeSlotConfig{
 		runtime:        runtime,
 		session:        sess,
+		providerID:     provider,
 		userID:         userID,
 		sessionID:      intent.Session.RuntimeID,
 		archiveID:      live.ArchiveID,

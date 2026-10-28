@@ -463,6 +463,27 @@ func (m *Manager) createSessionLocked(ctx context.Context, sessionCtx SessionCon
 	if m.sessionsPersistent || transient || (persisted != nil && m.archive == nil) {
 		agentSessionID = sessionID
 	}
+	if !transient && persisted != nil && m.archive != nil && strings.TrimSpace(persisted.ArchiveID) != "" {
+		archived, archiveErr := m.archive.Get(ctx, persisted.ArchiveID)
+		if archiveErr != nil {
+			cleanupPreparedWorkspace()
+			return archiveErr
+		}
+		if archived.StableID != sessionID || strings.TrimSpace(archived.RuntimeID) == "" {
+			cleanupPreparedWorkspace()
+			return chatarchivecmd.ErrConflict
+		}
+		switch archived.Status {
+		case chatarchivecmd.StatusActive:
+			agentSessionID = archived.RuntimeID
+		case chatarchivecmd.StatusEnded:
+			// A normal reset has already ended the predecessor. The archive
+			// allocator below will choose the successor runtime identity.
+		default:
+			cleanupPreparedWorkspace()
+			return chatarchivecmd.ErrConflict
+		}
+	}
 	if !transient {
 		if err := m.reconcileArchiveDestruction(ctx, locator, userID); err != nil {
 			cleanupPreparedWorkspace()
@@ -526,7 +547,7 @@ func (m *Manager) createSessionLocked(ctx context.Context, sessionCtx SessionCon
 		}
 	} else {
 		sessionRuntime, sess, createdFresh, fallbackCommit, err = m.restoreRuntimeSession(
-			ctx, builder, rootRuntime, locator, userID, baldaProvider, workspaceDir, runtimeSessionCtx, *persisted, &activation,
+			ctx, builder, rootRuntime, locator, userID, agentSessionID, baldaProvider, workspaceDir, runtimeSessionCtx, *persisted, &activation,
 		)
 	}
 	if err != nil {
@@ -583,6 +604,7 @@ func (m *Manager) createSessionLocked(ctx context.Context, sessionCtx SessionCon
 	ts.runtime = newPublishedRuntimeSlot(runtimeSlotConfig{
 		runtime:        sessionRuntime,
 		session:        sess,
+		providerID:     baldaProvider,
 		userID:         userID,
 		sessionID:      agentSessionID,
 		archiveID:      archiveID,
@@ -770,20 +792,24 @@ func (m *Manager) restoreRuntimeSession(
 	builder AgentBuilder,
 	rootRuntime *BuiltRuntime,
 	locator SessionLocator,
-	userID, provider, workspaceDir string,
+	userID, agentSessionID, provider, workspaceDir string,
 	sessionCtx RuntimeSessionContext,
 	record baldastate.SessionRecord,
 	activation **chatarchivecmd.Intent,
 ) (*BuiltRuntime, adksession.Session, bool, *baldastate.RuntimeOperationRecord, error) {
 	sessionID := strings.TrimSpace(record.SessionID)
+	agentSessionID = strings.TrimSpace(agentSessionID)
+	if agentSessionID == "" {
+		agentSessionID = sessionID
+	}
 	exactRuntime, restoreErr := m.bindSessionRuntime(
-		ctx, rootRuntime, locator, userID, sessionID, workspaceDir, record.RuntimeSnapshotID,
+		ctx, rootRuntime, locator, userID, agentSessionID, workspaceDir, record.RuntimeSnapshotID,
 		record.ProviderBindingJSON,
 	)
 	if restoreErr == nil {
 		var sess adksession.Session
 		sess, restoreErr = builder.OpenExistingRuntimeSession(
-			ctx, exactRuntime, provider, userID, sessionID, workspaceDir, sessionCtx,
+			ctx, exactRuntime, provider, userID, agentSessionID, workspaceDir, sessionCtx,
 		)
 		if restoreErr == nil {
 			return exactRuntime, sess, false, nil, nil
@@ -792,6 +818,9 @@ func (m *Manager) restoreRuntimeSession(
 	}
 	if replay, _ := ctx.Value(archiveReplayRestoreKey{}).(bool); replay {
 		return nil, nil, false, nil, fmt.Errorf("restore committed-final lifetime: %w", restoreErr)
+	}
+	if agentSessionID != sessionID && record.RuntimeOutcome == string(baldastate.RuntimeOperationOutcomeContextReset) {
+		return nil, nil, false, nil, ErrRuntimeRecoveryRequired
 	}
 	if err := m.lifecycleInterruption(ctx); err != nil {
 		return nil, nil, false, nil, err

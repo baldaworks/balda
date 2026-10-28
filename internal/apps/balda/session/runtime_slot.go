@@ -125,6 +125,7 @@ func (l *RuntimeLease) Release() {
 type runtimeSlotValue struct {
 	runtime        BuiltRuntime
 	session        adksession.Session
+	providerID     string
 	appName        string
 	userID         string
 	sessionID      string
@@ -137,6 +138,7 @@ type runtimeSlotValue struct {
 type runtimeSlotConfig struct {
 	runtime        *BuiltRuntime
 	session        adksession.Session
+	providerID     string
 	userID         string
 	sessionID      string
 	archiveID      string
@@ -169,6 +171,7 @@ func newRuntimeSlot(config runtimeSlotConfig) *RuntimeSlot {
 	value := runtimeSlotValue{
 		runtime:        runtime,
 		session:        config.session,
+		providerID:     strings.TrimSpace(config.providerID),
 		userID:         config.userID,
 		sessionID:      config.sessionID,
 		archiveID:      config.archiveID,
@@ -231,6 +234,31 @@ func (s *RuntimeSlot) sharedModelSuccessor(effectiveModel, outcome string) (*Run
 	return s.sharedSuccessor(s.value.generation+1, effectiveModel, outcome)
 }
 
+// sharedLifetimeSuccessor creates a new local conversation lifetime over the
+// exact incumbent aggregate. The different ADK session identity is the reset
+// boundary; provider construction and control-plane mutation are deliberately
+// not part of this operation.
+func (s *RuntimeSlot) sharedLifetimeSuccessor(sess adksession.Session, archiveID, outcome string) (*RuntimeSlot, error) {
+	if s == nil || sess == nil || s.value.generation == math.MaxUint64 ||
+		strings.TrimSpace(archiveID) == "" || sess.ID() != archiveID ||
+		sess.ID() == s.value.sessionID || sess.AppName() != s.value.appName ||
+		sess.UserID() != s.value.userID || sess.Events() == nil || sess.Events().Len() != 0 {
+		return nil, ErrRuntimePublicationInvalid
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.retired || s.owner == nil || !s.owner.retain() {
+		return nil, ErrRuntimeUnavailable
+	}
+	value := s.value
+	value.session = sess
+	value.sessionID = sess.ID()
+	value.archiveID = archiveID
+	value.generation++
+	value.outcome = outcome
+	return newRuntimeSlotWithOwner(value, s.owner), nil
+}
+
 // independentModelSuccessor wraps a replacement runtime that was built over
 // the incumbent's exact ADK identity. Ownership remains with the returned
 // unpublished slot (or with the caller when validation fails).
@@ -242,6 +270,7 @@ func (s *RuntimeSlot) independentModelSuccessor(runtime *BuiltRuntime, session a
 	}
 	return newRuntimeSlot(runtimeSlotConfig{
 		runtime: runtime, session: session, archiveID: s.value.archiveID,
+		providerID: s.value.providerID,
 		generation: s.value.generation + 1, effectiveModel: effectiveModel, outcome: outcome,
 	}), nil
 }

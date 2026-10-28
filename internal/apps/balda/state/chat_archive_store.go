@@ -93,6 +93,17 @@ func (s *sqlChatArchiveStore) Begin(ctx context.Context, candidate chatarchivecm
 			return chatarchivecmd.Intent{}, chatarchivecmd.ErrConflict
 		}
 	}
+	if candidate.Kind == chatarchivecmd.KindFresh && candidate.OldID != "" {
+		predecessor, err := s.readSession(ctx, tx, candidate.OldID)
+		if err != nil {
+			return chatarchivecmd.Intent{}, err
+		}
+		if (predecessor.Status != chatarchivecmd.StatusActive && predecessor.Status != chatarchivecmd.StatusEnded) ||
+			predecessor.ID != candidate.Session.PredecessorID ||
+			predecessor.StableID != candidate.Session.StableID || !sameArchiveLocation(predecessor, candidate.Session) {
+			return chatarchivecmd.Intent{}, chatarchivecmd.ErrConflict
+		}
+	}
 	candidate.Outcome = chatarchivecmd.StatusPending
 	body, _ := json.Marshal(candidate)
 	_, err = tx.ExecContext(ctx, s.users.bind(`INSERT INTO balda_archive_lifecycle_intents(token,channel_type,address_key,outcome,record_json) VALUES(?,?,?,?,?)`), candidate.Token, candidate.Session.Location.Channel, candidate.Session.Location.AddressKey, candidate.Outcome, string(body))
@@ -200,6 +211,28 @@ func (s *sqlChatArchiveStore) Activate(ctx context.Context, token string, live *
 	if err := s.writeSession(ctx, tx, rec, false); err != nil {
 		return rec, err
 	}
+	if i.Kind == chatarchivecmd.KindFresh && i.OldID != "" {
+		predecessor, err := s.readSession(ctx, tx, i.OldID)
+		if err != nil {
+			return rec, err
+		}
+		if (predecessor.Status != chatarchivecmd.StatusActive && predecessor.Status != chatarchivecmd.StatusEnded) ||
+			predecessor.ID != rec.PredecessorID ||
+			predecessor.StableID != rec.StableID || !sameArchiveLocation(predecessor, rec) {
+			return rec, chatarchivecmd.ErrConflict
+		}
+		if predecessor.Status == chatarchivecmd.StatusActive {
+			predecessor.Status = chatarchivecmd.StatusEnded
+			predecessor.EndedAt = time.Now().UTC()
+			predecessor.EndReason = i.Reason
+			if predecessor.EndReason == "" {
+				predecessor.EndReason = "replaced"
+			}
+			if err := s.writeSession(ctx, tx, predecessor, false); err != nil {
+				return rec, err
+			}
+		}
+	}
 	if live != nil {
 		if live.SessionID != rec.StableID || live.ChannelType != rec.Location.Channel || live.AddressKey != rec.Location.AddressKey || live.AddressJSON == "" {
 			return rec, chatarchivecmd.ErrInvalid
@@ -220,6 +253,12 @@ func (s *sqlChatArchiveStore) Activate(ctx context.Context, token string, live *
 		return rec, archiveError(ctx, err)
 	}
 	return rec, nil
+}
+
+func sameArchiveLocation(left, right chatarchivecmd.Session) bool {
+	return left.Location.Channel == right.Location.Channel &&
+		left.Location.AddressKey == right.Location.AddressKey &&
+		left.Location.Locator == right.Location.Locator
 }
 
 func (s *sqlChatArchiveStore) upsertLive(ctx context.Context, tx *sql.Tx, r SessionRecord) error {
