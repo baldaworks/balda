@@ -11,6 +11,8 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/commandfx"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/handlersfx"
+	"github.com/baldaworks/balda/internal/apps/balda/jobs/commandoutbox"
+	"github.com/baldaworks/balda/internal/apps/balda/jobs/questionoutbox"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
@@ -111,7 +113,7 @@ func TestChatSettlementRemainsAcceptedWhilePublicationIsUnavailable(t *testing.T
 	}
 }
 
-func TestLifecycleRecoversAnsweredQuestionWithoutIngress(t *testing.T) {
+func TestExplicitLifecycleRecoversAnsweredQuestionWithoutIngress(t *testing.T) {
 	ctx := t.Context()
 	provider, err := state.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
@@ -131,11 +133,25 @@ func TestLifecycleRecoversAnsweredQuestionWithoutIngress(t *testing.T) {
 	if err != nil || !result.Settled {
 		t.Fatalf("answer settlement: %+v %v", result, err)
 	}
-	app := fx.New(fx.NopLogger, Module, fx.Provide(func() state.Provider { return provider }, func() actortransport.Dispatcher { return offlineBus{} }, func() *questions.Service { return q }, zerolog.Nop))
+	var dispatcher *commandoutbox.Dispatcher
+	var recovery *questionoutbox.Runner
+	app := fx.New(fx.NopLogger, Module,
+		fx.Provide(func() state.Provider { return provider }, func() actortransport.Dispatcher { return offlineBus{} }, func() *questions.Service { return q }, zerolog.Nop),
+		fx.Invoke(func(d *commandoutbox.Dispatcher, r *questionoutbox.Runner) {
+			dispatcher = d
+			recovery = r
+		}),
+	)
 	if err := app.Start(ctx); err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = app.Stop(context.Background()) }()
+	dispatcher.Start()
+	recovery.Start()
+	defer func() {
+		_ = recovery.Stop(context.Background())
+		_ = dispatcher.Stop(context.Background())
+	}()
 	deadline := time.NewTimer(10 * time.Second)
 	defer deadline.Stop()
 	tick := time.NewTicker(20 * time.Millisecond)

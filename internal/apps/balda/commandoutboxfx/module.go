@@ -20,28 +20,40 @@ import (
 var Module = fx.Module("balda_command_outbox", fx.Provide(
 	NewDispatcher,
 	NewAnswerRecovery,
+	NewLifecycleWorkers,
 	fx.Annotate(func(d *commandoutbox.Dispatcher) actortransport.Dispatcher { return d }, fx.ResultTags(`name:"command_ingress"`)),
 	fx.Annotate(func(d *commandoutbox.Dispatcher) chatapp.Dispatcher { return d }, fx.ResultTags(`name:"command_ingress"`)),
 	fx.Annotate(func(d *commandoutbox.Dispatcher) commandfx.CommandDispatcher { return d }, fx.ResultTags(`name:"command_ingress"`)),
 	fx.Annotate(func(d *commandoutbox.Dispatcher) handlersfx.QuestionContinuationDispatcher { return d }, fx.ResultTags(`name:"command_ingress"`)),
 ), fx.Invoke(func(*questionoutbox.Runner) {}))
 
-// NewAnswerRecovery binds persisted question handoffs to the shared outbox.
-func NewAnswerRecovery(lc fx.Lifecycle, source *questions.Service, d *commandoutbox.Dispatcher, logger zerolog.Logger) (*questionoutbox.Runner, error) {
-	r, err := questionoutbox.New(source, d, logger)
-	if err != nil {
-		return nil, err
-	}
-	lc.Append(fx.Hook{OnStart: func(context.Context) error { r.Start(); return nil }, OnStop: r.Stop})
-	return r, nil
+// LifecycleWorkers exposes command recovery workers to the central application
+// lifecycle without leaking their concrete job packages across the composition boundary.
+type LifecycleWorkers struct {
+	dispatcher *commandoutbox.Dispatcher
+	recovery   *questionoutbox.Runner
 }
 
-// NewDispatcher composes local storage, publication and the host lifecycle.
-func NewDispatcher(lc fx.Lifecycle, provider state.Provider, downstream actortransport.Dispatcher, logger zerolog.Logger) (*commandoutbox.Dispatcher, error) {
-	d, err := commandoutbox.NewDispatcher(provider.AppKV(), downstream, logger)
-	if err != nil {
-		return nil, err
-	}
-	lc.Append(fx.Hook{OnStart: func(context.Context) error { d.Start(); return nil }, OnStop: d.Stop})
-	return d, nil
+// NewLifecycleWorkers groups workers that share the application state provider.
+func NewLifecycleWorkers(dispatcher *commandoutbox.Dispatcher, recovery *questionoutbox.Runner) *LifecycleWorkers {
+	return &LifecycleWorkers{dispatcher: dispatcher, recovery: recovery}
+}
+
+func (w *LifecycleWorkers) StartDispatcher() { w.dispatcher.Start() }
+
+func (w *LifecycleWorkers) StopDispatcher(ctx context.Context) error { return w.dispatcher.Stop(ctx) }
+
+func (w *LifecycleWorkers) StartAnswerRecovery() { w.recovery.Start() }
+
+func (w *LifecycleWorkers) StopAnswerRecovery(ctx context.Context) error { return w.recovery.Stop(ctx) }
+
+// NewAnswerRecovery binds persisted question handoffs to the shared outbox.
+func NewAnswerRecovery(source *questions.Service, d *commandoutbox.Dispatcher, logger zerolog.Logger) (*questionoutbox.Runner, error) {
+	return questionoutbox.New(source, d, logger)
+}
+
+// NewDispatcher composes local storage and publication. The central application
+// lifecycle starts it only after user readiness succeeds.
+func NewDispatcher(provider state.Provider, downstream actortransport.Dispatcher, logger zerolog.Logger) (*commandoutbox.Dispatcher, error) {
+	return commandoutbox.NewDispatcher(provider.AppKV(), downstream, logger)
 }
