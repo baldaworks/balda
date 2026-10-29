@@ -74,6 +74,15 @@ func (m *Manager) ChangeModel(ctx context.Context, request ModelChangeRequest) (
 		}
 		return recoveryRequiredModelResult()
 	}
+	if found && existing.State == baldastate.RuntimeOperationTerminal &&
+		baldastate.RuntimeOperationReason(existing.ReasonCode) == baldastate.RuntimeOperationReasonChangedReplacement {
+		if !m.completeTerminalModelReplacement(ctx, topic, existing) {
+			if topic != nil {
+				topic.fenceRuntimeRecovery()
+			}
+			return recoveryRequiredModelResult()
+		}
+	}
 	incumbent, value, ok := modelRuntimeValue(topic)
 	if !ok {
 		return unavailableModelRuntimeResult(topic)

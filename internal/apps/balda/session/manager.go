@@ -91,6 +91,37 @@ type SessionRuntimeManager interface {
 	RuntimeForSession(ctx context.Context, request SessionRuntimeRequest) (*BuiltRuntime, error)
 }
 
+// UnpublishedSessionRuntimeManager constructs an independently owned runtime
+// which is not visible to child-runtime lookup until publication wins.
+type UnpublishedSessionRuntimeManager interface {
+	BuildUnpublishedSessionRuntime(ctx context.Context, request SessionRuntimeRequest) (UnpublishedSessionRuntimeCandidate, error)
+	FenceSessionRuntimeBase(sessionID string) error
+	CompleteSessionRuntimeRecovery(sessionID string, token uint64) error
+	AdoptPromotedSessionRuntime(sessionID string, incumbentToken uint64, request SessionRuntimeRequest) (UnpublishedSessionRuntimeCandidate, bool)
+}
+
+// PromotedModelReplacementManager adopts the exact hosted replacement whose
+// runtime base was transferred before RuntimeSlot publication completed.
+type PromotedModelReplacementManager interface {
+	AdoptPromotedModelReplacement(
+		sessionID string,
+		incumbentToken uint64,
+		runtimeSnapshotID string,
+		providerBindingJSON string,
+		targetModel string,
+	) (*BuiltRuntime, bool)
+}
+
+type UnpublishedSessionRuntimeCandidate interface {
+	Runtime() *BuiltRuntime
+	ExpectedBaseToken() uint64
+	ClaimForPublication() error
+	Promote() error
+	MarkPublished()
+	CompletePublication() error
+	Abort(ctx context.Context) error
+}
+
 type SessionRuntimeRequest struct {
 	Locator        SessionLocator
 	UserID         string
@@ -103,7 +134,9 @@ type SessionRuntimeRequest struct {
 	ProviderBindingJSON string
 	// ModelOverride is the optional durable requested preference used only for
 	// Product construction. Nil preserves the exact pinned recipe.
-	ModelOverride *string
+	ModelOverride       *string
+	ExpectedRecipeModel string
+	RecoveryFence       bool
 }
 
 type WorkspaceManager interface {
@@ -142,7 +175,14 @@ type BuiltRuntime struct {
 	// RecipeModel is the exact model selection receipt from bound runtime
 	// construction. It is not an active provider observation.
 	RecipeModel string
-	Close       func() error
+	// ConfirmedModel is the exact effective target confirmed for an independent
+	// hosted replacement. It does not replace the pinned recipe receipt.
+	ConfirmedModel   string
+	ProviderID       string
+	RuntimeBaseToken uint64
+	PromoteBase      func() error
+	CompleteBase     func() error
+	Close            func() error
 }
 
 type EnsureWorkspaceResult struct {
@@ -663,6 +703,12 @@ func (m *Manager) createSessionLocked(ctx context.Context, sessionCtx SessionCon
 	m.mu.Lock()
 	m.sessions[sessionID] = ts
 	m.mu.Unlock()
+	if scoped, ok := m.runtimeManager.(UnpublishedSessionRuntimeManager); ok {
+		if err := scoped.CompleteSessionRuntimeRecovery(sessionID, value.runtime.RuntimeBaseToken); err != nil {
+			ts.fenceRuntimeRecovery()
+			return ErrRuntimeRecoveryRequired
+		}
+	}
 
 	m.logger.Info().
 		Str("user_id", userID).

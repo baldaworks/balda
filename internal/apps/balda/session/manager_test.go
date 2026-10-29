@@ -1088,10 +1088,89 @@ func (f *fakeBaldaRuntimeManager) ProviderID() string {
 
 type fakeScopedRuntimeManager struct {
 	fakeBaldaRuntimeManager
-	sessionRuntime    *BuiltRuntime
-	sessionErr        error
-	runtimeForSession func(SessionRuntimeRequest) (*BuiltRuntime, error)
-	sessionRequests   []SessionRuntimeRequest
+	sessionRuntime      *BuiltRuntime
+	sessionErr          error
+	runtimeForSession   func(SessionRuntimeRequest) (*BuiltRuntime, error)
+	sessionRequests     []SessionRuntimeRequest
+	unpublishedRequests []SessionRuntimeRequest
+	adoptedCandidate    UnpublishedSessionRuntimeCandidate
+	fenceCalls          int
+	buildBeforeFence    bool
+}
+
+type fakeUnpublishedRuntimeCandidate struct {
+	runtime       *BuiltRuntime
+	expected      uint64
+	claimed       bool
+	promoted      bool
+	aborted       bool
+	markCalls     int
+	completeCalls int
+}
+
+func (c *fakeUnpublishedRuntimeCandidate) Runtime() *BuiltRuntime    { return c.runtime }
+func (c *fakeUnpublishedRuntimeCandidate) ExpectedBaseToken() uint64 { return c.expected }
+func (c *fakeUnpublishedRuntimeCandidate) ClaimForPublication() error {
+	if c.aborted {
+		return ErrRuntimeUnavailable
+	}
+	c.claimed = true
+	return nil
+}
+func (c *fakeUnpublishedRuntimeCandidate) Promote() error {
+	if !c.claimed || c.aborted {
+		return ErrRuntimeUnavailable
+	}
+	c.promoted = true
+	return nil
+}
+func (c *fakeUnpublishedRuntimeCandidate) MarkPublished()             { c.markCalls++ }
+func (c *fakeUnpublishedRuntimeCandidate) CompletePublication() error { c.completeCalls++; return nil }
+func (c *fakeUnpublishedRuntimeCandidate) Abort(context.Context) error {
+	if c.promoted {
+		return ErrRuntimeUnavailable
+	}
+	c.aborted = true
+	return nil
+}
+
+func (f *fakeScopedRuntimeManager) BuildUnpublishedSessionRuntime(_ context.Context, request SessionRuntimeRequest) (UnpublishedSessionRuntimeCandidate, error) {
+	f.unpublishedRequests = append(f.unpublishedRequests, request)
+	if request.RecoveryFence && f.fenceCalls == 0 {
+		f.buildBeforeFence = true
+	}
+	if f.sessionErr != nil {
+		return nil, f.sessionErr
+	}
+	runtime := f.sessionRuntime
+	if f.runtimeForSession != nil {
+		var err error
+		runtime, err = f.runtimeForSession(request)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if runtime == nil {
+		runtime = &BuiltRuntime{}
+	}
+	copyRuntime := *runtime
+	copyRuntime.Close = func() error { return nil }
+	if copyRuntime.RuntimeBaseToken == 0 {
+		copyRuntime.RuntimeBaseToken = 1
+	}
+	if copyRuntime.ProviderID == "" {
+		copyRuntime.ProviderID = f.providerID
+	}
+	if request.ModelOverride != nil {
+		copyRuntime.RecipeModel = *request.ModelOverride
+	}
+	return &fakeUnpublishedRuntimeCandidate{runtime: &copyRuntime}, nil
+}
+
+func (f *fakeScopedRuntimeManager) FenceSessionRuntimeBase(string) error              { f.fenceCalls++; return nil }
+func (*fakeScopedRuntimeManager) CompleteSessionRuntimeRecovery(string, uint64) error { return nil }
+func (f *fakeScopedRuntimeManager) AdoptPromotedSessionRuntime(string, uint64, SessionRuntimeRequest) (UnpublishedSessionRuntimeCandidate, bool) {
+	return f.adoptedCandidate, f.adoptedCandidate != nil
 }
 
 func (f *fakeScopedRuntimeManager) RuntimeForSession(_ context.Context, request SessionRuntimeRequest) (*BuiltRuntime, error) {

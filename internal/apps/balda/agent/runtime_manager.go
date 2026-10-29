@@ -46,6 +46,12 @@ type SessionRuntimeRequest struct {
 	// ModelOverride optionally replaces only the exact recipe model used to
 	// construct this Product.
 	ModelOverride *string
+	// ExpectedRecipeModel is used only to adopt an already-promoted recovery
+	// candidate without rebuilding or contacting a provider.
+	ExpectedRecipeModel string
+	// RecoveryFence allows this exact candidate to adopt a previously installed
+	// cold-recovery child-lookup fence.
+	RecoveryFence bool
 	// ProviderConfigs carries the already bound graph to capability projection.
 	ProviderConfigs map[string]agentconfig.Config
 }
@@ -104,13 +110,18 @@ type RuntimeManager struct {
 	mcpRegistry       *mcpregistry.MapRegistry
 	logger            zerolog.Logger
 
-	mu                  sync.RWMutex
-	runtime             *BuiltRuntime
-	runtimeBuilder      *Builder
-	runtimeMCPServerIDs []string
-	scopedRuntimes      map[string]*BuiltRuntime
-	sessionBases        map[string]childRuntimeBase
-	scopedSequence      uint64
+	mu                    sync.RWMutex
+	runtime               *BuiltRuntime
+	runtimeBuilder        *Builder
+	runtimeMCPServerIDs   []string
+	scopedRuntimes        map[string]*BuiltRuntime
+	sessionBases          map[string]childRuntimeBase
+	knownSessionBases     map[string]struct{}
+	baseTransitions       map[string]RuntimeBaseToken
+	baseCandidates        map[RuntimeBaseToken]*UnpublishedSessionRuntimeCandidate
+	replacementCandidates map[string]*BuiltRuntime
+	scopedSequence        uint64
+	baseSequence          uint64
 }
 
 // RuntimeManagerParams wires RuntimeManager dependencies.
@@ -172,6 +183,220 @@ type childRuntimeBase struct {
 	providerID        string
 	workingDir        string
 	extraMCPServerIDs []string
+	token             RuntimeBaseToken
+}
+
+type scopedRuntimeOwner struct {
+	mu         sync.Mutex
+	current    *BuiltRuntime
+	closed     bool
+	outerOnce  sync.Once
+	outerErr   error
+	outerClose func(*BuiltRuntime) error
+}
+
+func (o *scopedRuntimeOwner) closeOuter(runtime *BuiltRuntime) error {
+	if o == nil {
+		return nil
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.closed || o.current != runtime {
+		return nil
+	}
+	o.closed = true
+	o.outerOnce.Do(func() {
+		if o.outerClose != nil {
+			o.outerErr = o.outerClose(runtime)
+		}
+	})
+	return o.outerErr
+}
+
+// RuntimeBaseToken is an opaque process-local identity for one published
+// child-runtime base. It is intentionally not durable.
+type RuntimeBaseToken uint64
+
+const recoveryRuntimeBaseFence RuntimeBaseToken = ^RuntimeBaseToken(0)
+
+// UnpublishedSessionRuntimeCandidate owns a runtime which is invisible to
+// shared runtime indexes until it wins the exact base-token publication CAS.
+type UnpublishedSessionRuntimeCandidate struct {
+	manager         *RuntimeManager
+	sessionID       string
+	runtime         *BuiltRuntime
+	base            childRuntimeBase
+	expectedToken   RuntimeBaseToken
+	targetRuntimeID string
+	mu              sync.Mutex
+	state           uint8
+	promoted        bool
+	slotPublished   bool
+	recovery        bool
+}
+
+const (
+	candidateUnpublished uint8 = iota
+	candidatePublishing
+	candidatePublished
+	candidateAborted
+)
+
+func (c *UnpublishedSessionRuntimeCandidate) Runtime() *BuiltRuntime { return c.runtime }
+func (c *UnpublishedSessionRuntimeCandidate) ExpectedBaseToken() RuntimeBaseToken {
+	return c.expectedToken
+}
+
+// ClaimForPublication installs a short child-lookup barrier after verifying
+// the incumbent base token. Repeated claims by this candidate are idempotent.
+func (c *UnpublishedSessionRuntimeCandidate) ClaimForPublication() error {
+	if c == nil || c.manager == nil || c.runtime == nil || c.sessionID == "" {
+		return ErrProviderUnavailable
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.state == candidatePublishing || c.state == candidatePublished {
+		return nil
+	}
+	if c.state != candidateUnpublished {
+		return ErrProviderUnavailable
+	}
+	c.manager.mu.Lock()
+	defer c.manager.mu.Unlock()
+	if c.manager.baseTransitions == nil {
+		c.manager.baseTransitions = make(map[string]RuntimeBaseToken)
+	}
+	current := c.manager.sessionBases[c.sessionID].token
+	transition := c.manager.baseTransitions[c.sessionID]
+	transitionAllowed := transition == 0 || c.recovery && transition == recoveryRuntimeBaseFence
+	if current != c.expectedToken || !transitionAllowed {
+		return ErrProviderUnavailable
+	}
+	c.manager.baseTransitions[c.sessionID] = c.base.token
+	c.state = candidatePublishing
+	return nil
+}
+
+// Promote publishes only the base registration while the lookup barrier is
+// still held. The caller must immediately publish the matching RuntimeSlot.
+func (c *UnpublishedSessionRuntimeCandidate) Promote() error {
+	if c == nil || c.manager == nil {
+		return ErrProviderUnavailable
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.state == candidatePublished {
+		return nil
+	}
+	if c.state != candidatePublishing {
+		return ErrProviderUnavailable
+	}
+	c.manager.mu.Lock()
+	defer c.manager.mu.Unlock()
+	if c.manager.scopedRuntimes == nil {
+		c.manager.scopedRuntimes = make(map[string]*BuiltRuntime)
+	}
+	if c.manager.sessionBases == nil {
+		c.manager.sessionBases = make(map[string]childRuntimeBase)
+	}
+	if c.manager.knownSessionBases == nil {
+		c.manager.knownSessionBases = make(map[string]struct{})
+	}
+	if c.manager.baseCandidates == nil {
+		c.manager.baseCandidates = make(map[RuntimeBaseToken]*UnpublishedSessionRuntimeCandidate)
+	}
+	if c.manager.baseTransitions[c.sessionID] == c.base.token && c.manager.sessionBases[c.sessionID].token == c.base.token {
+		c.promoted = true
+		return nil
+	}
+	if c.manager.baseTransitions[c.sessionID] != c.base.token || c.manager.sessionBases[c.sessionID].token != c.expectedToken {
+		return ErrProviderUnavailable
+	}
+	c.manager.scopedRuntimes[c.runtime.scopedID] = c.runtime
+	c.manager.sessionBases[c.sessionID] = c.base
+	c.manager.knownSessionBases[c.sessionID] = struct{}{}
+	c.manager.baseCandidates[c.base.token] = c
+	c.promoted = true
+	return nil
+}
+
+// MarkPublished records that the matching RuntimeSlot pointer is visible. The
+// child-lookup barrier remains until CompletePublication proves the journal
+// terminal, so every intermediate crash state stays fail-closed.
+func (c *UnpublishedSessionRuntimeCandidate) MarkPublished() {
+	if c == nil || c.manager == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.state == candidatePublished || c.slotPublished {
+		return
+	}
+	if c.state != candidatePublishing || !c.promoted {
+		return
+	}
+	c.slotPublished = true
+}
+
+// CompletePublication releases the child-lookup barrier only after the caller
+// has proved exact base, slot, and terminal operation state.
+func (c *UnpublishedSessionRuntimeCandidate) CompletePublication() error {
+	if c == nil || c.manager == nil {
+		return ErrProviderUnavailable
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.state == candidatePublished {
+		return nil
+	}
+	if c.state != candidatePublishing || !c.promoted || !c.slotPublished {
+		return ErrProviderUnavailable
+	}
+	c.manager.mu.Lock()
+	defer c.manager.mu.Unlock()
+	if c.manager.baseTransitions[c.sessionID] != c.base.token || c.manager.sessionBases[c.sessionID].token != c.base.token {
+		return ErrProviderUnavailable
+	}
+	delete(c.manager.baseTransitions, c.sessionID)
+	delete(c.manager.baseCandidates, c.base.token)
+	c.state = candidatePublished
+	return nil
+}
+
+// Abort settles an unpublished candidate exactly once. A promoted candidate
+// is never removed by abort; forward recovery owns it from that point.
+func (c *UnpublishedSessionRuntimeCandidate) Abort(context.Context) error {
+	if c == nil {
+		return nil
+	}
+	c.mu.Lock()
+	if c.state == candidatePublished || c.state == candidateAborted {
+		c.mu.Unlock()
+		return nil
+	}
+	promoted := false
+	if c.manager != nil {
+		c.manager.mu.Lock()
+		promoted = c.manager.sessionBases[c.sessionID].token == c.base.token
+		if !promoted && c.manager.baseTransitions[c.sessionID] == c.base.token {
+			delete(c.manager.baseTransitions, c.sessionID)
+		}
+		if !promoted {
+			delete(c.manager.baseCandidates, c.base.token)
+		}
+		c.manager.mu.Unlock()
+	}
+	if promoted {
+		c.mu.Unlock()
+		return ErrProviderUnavailable
+	}
+	c.state = candidateAborted
+	runtime := c.runtime
+	c.mu.Unlock()
+	if runtime != nil && runtime.Close != nil {
+		return runtime.Close()
+	}
+	return nil
 }
 
 // Close releases child provider agents created for the workflow.
@@ -207,19 +432,23 @@ func (r *GoalRun) CleanupResources(ctx context.Context) error {
 // NewRuntimeManager creates the app-scoped balda runtime owner.
 func NewRuntimeManager(p RuntimeManagerParams) *RuntimeManager {
 	m := &RuntimeManager{
-		builder:           p.Builder,
-		providerID:        strings.TrimSpace(p.BaldaProviderID),
-		workingDir:        strings.TrimSpace(p.WorkingDir),
-		workspaceEnabled:  p.WorkspaceEnabled,
-		baldaMCPServerIDs: append([]string(nil), p.BaldaMCPServerIDs...),
-		sessionMCPBinder:  p.SessionMCPBinder,
-		capabilityBinder:  p.CapabilityBinder,
-		providerService:   p.ProviderService,
-		mcpRegistry:       p.MCPRegistry,
-		goalWorkspaces:    NewWorkspaceManagerWithSessionsDir(p.WorkingDir, p.StateDir, p.WorkspaceBaseRef, "goals"),
-		logger:            p.Logger.With().Str("component", "balda.runtime_manager").Logger(),
-		scopedRuntimes:    make(map[string]*BuiltRuntime),
-		sessionBases:      make(map[string]childRuntimeBase),
+		builder:               p.Builder,
+		providerID:            strings.TrimSpace(p.BaldaProviderID),
+		workingDir:            strings.TrimSpace(p.WorkingDir),
+		workspaceEnabled:      p.WorkspaceEnabled,
+		baldaMCPServerIDs:     append([]string(nil), p.BaldaMCPServerIDs...),
+		sessionMCPBinder:      p.SessionMCPBinder,
+		capabilityBinder:      p.CapabilityBinder,
+		providerService:       p.ProviderService,
+		mcpRegistry:           p.MCPRegistry,
+		goalWorkspaces:        NewWorkspaceManagerWithSessionsDir(p.WorkingDir, p.StateDir, p.WorkspaceBaseRef, "goals"),
+		logger:                p.Logger.With().Str("component", "balda.runtime_manager").Logger(),
+		scopedRuntimes:        make(map[string]*BuiltRuntime),
+		sessionBases:          make(map[string]childRuntimeBase),
+		knownSessionBases:     make(map[string]struct{}),
+		baseTransitions:       make(map[string]RuntimeBaseToken),
+		baseCandidates:        make(map[RuntimeBaseToken]*UnpublishedSessionRuntimeCandidate),
+		replacementCandidates: make(map[string]*BuiltRuntime),
 	}
 
 	return m
@@ -336,6 +565,7 @@ func (m *RuntimeManager) Runtime(ctx context.Context) (*BuiltRuntime, error) {
 	}
 	runtime.RuntimeSnapshotID = string(capabilities.SnapshotID)
 	runtime.ProviderBindingJSON = providerBindingJSON
+	runtime.ProviderID = providerID
 
 	m.mu.Lock()
 	if existing := m.runtime; existing != nil {
@@ -361,6 +591,101 @@ func (m *RuntimeManager) Runtime(ctx context.Context) (*BuiltRuntime, error) {
 // ACP process/runtime because the provider's MCP headers are static for the
 // lifetime of an ACP process and cannot be safely mutated between turns.
 func (m *RuntimeManager) RuntimeForSession(ctx context.Context, request SessionRuntimeRequest) (*BuiltRuntime, error) {
+	return m.buildSessionRuntime(ctx, request, true)
+}
+
+// BuildUnpublishedSessionRuntime constructs an independently owned runtime
+// without exposing it through scoped runtime or child-runtime indexes.
+func (m *RuntimeManager) BuildUnpublishedSessionRuntime(ctx context.Context, request SessionRuntimeRequest) (*UnpublishedSessionRuntimeCandidate, error) {
+	runtime, err := m.buildSessionRuntime(ctx, request, false)
+	if err != nil {
+		return nil, err
+	}
+	sessionID := strings.TrimSpace(request.Locator.SessionID)
+	if sessionID == "" {
+		_ = runtime.Close()
+		return nil, fmt.Errorf("session id is required")
+	}
+	m.mu.RLock()
+	expected := m.sessionBases[sessionID].token
+	m.mu.RUnlock()
+	base := childRuntimeBase{
+		runtime: runtime, builder: runtime.baseBuilder, providerID: runtime.baseProviderID,
+		workingDir: runtime.baseWorkingDir, extraMCPServerIDs: append([]string(nil), runtime.baseMCPServerIDs...),
+		token: RuntimeBaseToken(runtime.RuntimeBaseToken),
+	}
+	return &UnpublishedSessionRuntimeCandidate{
+		manager: m, sessionID: sessionID, runtime: runtime, base: base, expectedToken: expected,
+		targetRuntimeID: strings.TrimSpace(request.AgentSessionID), recovery: request.RecoveryFence,
+	}, nil
+}
+
+// FenceSessionRuntimeBase makes child lookup fail closed before cold recovery
+// performs any candidate verification. Repeating it is idempotent.
+func (m *RuntimeManager) FenceSessionRuntimeBase(sessionID string) error {
+	if m == nil || strings.TrimSpace(sessionID) == "" {
+		return ErrProviderUnavailable
+	}
+	sessionID = strings.TrimSpace(sessionID)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.baseTransitions == nil {
+		m.baseTransitions = make(map[string]RuntimeBaseToken)
+	}
+	if current := m.baseTransitions[sessionID]; current != 0 && current != recoveryRuntimeBaseFence {
+		return nil
+	}
+	m.baseTransitions[sessionID] = recoveryRuntimeBaseFence
+	if m.knownSessionBases == nil {
+		m.knownSessionBases = make(map[string]struct{})
+	}
+	m.knownSessionBases[sessionID] = struct{}{}
+	return nil
+}
+
+// CompleteSessionRuntimeRecovery clears only the cold-recovery sentinel after
+// the exact restored RuntimeSlot and its published base share one token.
+func (m *RuntimeManager) CompleteSessionRuntimeRecovery(sessionID string, token uint64) error {
+	if m == nil || strings.TrimSpace(sessionID) == "" || token == 0 {
+		return ErrProviderUnavailable
+	}
+	sessionID = strings.TrimSpace(sessionID)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.baseTransitions[sessionID] == 0 {
+		return nil
+	}
+	if m.baseTransitions[sessionID] != recoveryRuntimeBaseFence || m.sessionBases[sessionID].token != RuntimeBaseToken(token) {
+		return ErrProviderUnavailable
+	}
+	delete(m.baseTransitions, sessionID)
+	return nil
+}
+
+// AdoptPromotedSessionRuntime returns the exact same-process candidate for a
+// base already promoted under its still-held publication barrier.
+func (m *RuntimeManager) AdoptPromotedSessionRuntime(sessionID string, incumbentToken uint64, request SessionRuntimeRequest) (*UnpublishedSessionRuntimeCandidate, bool) {
+	if m == nil {
+		return nil, false
+	}
+	sessionID = strings.TrimSpace(sessionID)
+	m.mu.RLock()
+	transition := m.baseTransitions[sessionID]
+	base := m.sessionBases[sessionID]
+	candidate := m.baseCandidates[transition]
+	m.mu.RUnlock()
+	if sessionID == "" || transition == 0 || transition == recoveryRuntimeBaseFence || base.token != transition ||
+		candidate == nil || incumbentToken != 0 && candidate.expectedToken != RuntimeBaseToken(incumbentToken) || candidate.runtime != base.runtime ||
+		candidate.targetRuntimeID != strings.TrimSpace(request.AgentSessionID) ||
+		candidate.runtime.RuntimeSnapshotID != strings.TrimSpace(request.RuntimeSnapshotID) ||
+		candidate.runtime.ProviderBindingJSON != strings.TrimSpace(request.ProviderBindingJSON) ||
+		candidate.runtime.RecipeModel != strings.TrimSpace(request.ExpectedRecipeModel) {
+		return nil, false
+	}
+	return candidate, true
+}
+
+func (m *RuntimeManager) buildSessionRuntime(ctx context.Context, request SessionRuntimeRequest, publish bool) (*BuiltRuntime, error) {
 	if m == nil {
 		return nil, fmt.Errorf("balda runtime manager is required")
 	}
@@ -395,11 +720,11 @@ func (m *RuntimeManager) RuntimeForSession(ctx context.Context, request SessionR
 		)
 	}
 	request.RuntimeSnapshotID = snapshotID
-	return m.runtimeForSession(ctx, request, capabilities, builder, providerID, providerBindingJSON)
+	return m.runtimeForSession(ctx, request, capabilities, builder, providerID, providerBindingJSON, publish)
 }
 
 func (m *RuntimeManager) runtimeForSession(ctx context.Context, request SessionRuntimeRequest, capabilities SessionCapabilityBinding,
-	builder *Builder, providerID, providerBindingJSON string,
+	builder *Builder, providerID, providerBindingJSON string, publish bool,
 ) (*BuiltRuntime, error) {
 	if m == nil {
 		return nil, fmt.Errorf("balda runtime manager is required")
@@ -418,7 +743,7 @@ func (m *RuntimeManager) runtimeForSession(ctx context.Context, request SessionR
 		bindingEnabled = false
 	}
 	hasCapabilities := strings.TrimSpace(string(capabilities.SnapshotID)) != ""
-	if !bindingEnabled && !hasCapabilities && providerBindingJSON == "" {
+	if publish && !bindingEnabled && !hasCapabilities && providerBindingJSON == "" {
 		return m.Runtime(ctx)
 	}
 	if len(capabilities.MCPServerIDs) > 0 && registry == nil {
@@ -491,11 +816,30 @@ func (m *RuntimeManager) runtimeForSession(ctx context.Context, request SessionR
 	closeProduct := runtime.Close
 	m.mu.Lock()
 	m.scopedSequence++
+	m.baseSequence++
 	scopedID := binding.ID
 	if scopedID == "" {
 		scopedID = fmt.Sprintf("session-runtime-%d", m.scopedSequence)
 	}
+	baseToken := RuntimeBaseToken(m.baseSequence)
 	m.mu.Unlock()
+	owner := &scopedRuntimeOwner{current: runtime}
+	owner.outerClose = func(current *BuiltRuntime) error {
+		if binding.ID != "" {
+			registry.Delete(binding.ID)
+		}
+		outerErr := errors.Join(releaseSessionBinding(binding), closeSessionCapabilities(capabilities))
+		m.mu.Lock()
+		if registered, ok := m.scopedRuntimes[scopedID]; ok && registered == current {
+			delete(m.scopedRuntimes, scopedID)
+		}
+		sessionID := strings.TrimSpace(request.Locator.SessionID)
+		if registered, ok := m.sessionBases[sessionID]; ok && registered.runtime == current {
+			delete(m.sessionBases, sessionID)
+		}
+		m.mu.Unlock()
+		return outerErr
+	}
 	var once sync.Once
 	var closeErr error
 	closeScoped := func() error {
@@ -505,36 +849,155 @@ func (m *RuntimeManager) runtimeForSession(ctx context.Context, request SessionR
 			} else {
 				closeErr = closeRuntimeAgent(runtime.Agent)
 			}
-			if binding.ID != "" {
-				registry.Delete(binding.ID)
-			}
-			closeErr = errors.Join(closeErr, releaseSessionBinding(binding), closeSessionCapabilities(capabilities))
-			m.mu.Lock()
-			delete(m.scopedRuntimes, scopedID)
-			sessionID := strings.TrimSpace(request.Locator.SessionID)
-			if current, ok := m.sessionBases[sessionID]; ok && current.runtime == runtime {
-				delete(m.sessionBases, sessionID)
-			}
-			m.mu.Unlock()
+			closeErr = errors.Join(closeErr, owner.closeOuter(runtime))
 		})
 		return closeErr
 	}
 	runtime.Close = closeScoped
+	runtime.scopedID = scopedID
+	runtime.RuntimeBaseToken = uint64(baseToken)
+	runtime.baseBuilder = builder
+	runtime.baseProviderID = providerID
+	runtime.baseWorkingDir = workingDir
+	runtime.baseMCPServerIDs = append([]string(nil), extraMCPServerIDs...)
+	runtime.scopedOwner = owner
+	runtime.promoteReplacement = m.replacementBasePromoter(strings.TrimSpace(request.Locator.SessionID), scopedID, baseToken, runtime)
 	runtime.RuntimeSnapshotID = string(capabilities.SnapshotID)
 	runtime.ProviderBindingJSON = providerBindingJSON
+	runtime.ProviderID = providerID
+	if !publish {
+		return runtime, nil
+	}
 	m.mu.Lock()
 	if m.scopedRuntimes == nil {
 		m.scopedRuntimes = make(map[string]*BuiltRuntime)
+	}
+	if m.sessionBases == nil {
+		m.sessionBases = make(map[string]childRuntimeBase)
+	}
+	if m.knownSessionBases == nil {
+		m.knownSessionBases = make(map[string]struct{})
+	}
+	if m.baseTransitions == nil {
+		m.baseTransitions = make(map[string]RuntimeBaseToken)
 	}
 	m.scopedRuntimes[scopedID] = runtime
 	if sessionID := strings.TrimSpace(request.Locator.SessionID); sessionID != "" {
 		m.sessionBases[sessionID] = childRuntimeBase{
 			runtime: runtime, builder: builder, providerID: providerID, workingDir: workingDir,
 			extraMCPServerIDs: append([]string(nil), extraMCPServerIDs...),
+			token:             baseToken,
 		}
+		m.knownSessionBases[sessionID] = struct{}{}
 	}
 	m.mu.Unlock()
 	return runtime, nil
+}
+
+func (m *RuntimeManager) replacementBasePromoter(sessionID, scopedID string, token RuntimeBaseToken, expected *BuiltRuntime) func(*BuiltRuntime) error {
+	return func(candidate *BuiltRuntime) error {
+		if m == nil || candidate == nil || sessionID == "" || token == 0 {
+			return ErrProviderUnavailable
+		}
+		candidate.replacementMu.Lock()
+		defer candidate.replacementMu.Unlock()
+		if candidate.replacementClosed {
+			return ErrProviderUnavailable
+		}
+		if candidate.replacementPromoted {
+			return nil
+		}
+		owner := expected.scopedOwner
+		if owner == nil {
+			return ErrProviderUnavailable
+		}
+		owner.mu.Lock()
+		defer owner.mu.Unlock()
+		if owner.closed || owner.current != expected {
+			return ErrProviderUnavailable
+		}
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		base, ok := m.sessionBases[sessionID]
+		if !ok || base.token != token || base.runtime != expected || m.baseTransitions[sessionID] != 0 {
+			return ErrProviderUnavailable
+		}
+		if m.replacementCandidates == nil {
+			m.replacementCandidates = make(map[string]*BuiltRuntime)
+		}
+		m.baseTransitions[sessionID] = token
+		m.replacementCandidates[sessionID] = candidate
+		owner.current = candidate
+		candidate.scopedID = scopedID
+		candidate.scopedOwner = owner
+		candidate.RuntimeBaseToken = uint64(token)
+		candidate.baseBuilder = base.builder
+		candidate.baseProviderID = base.providerID
+		candidate.baseWorkingDir = base.workingDir
+		candidate.baseMCPServerIDs = append([]string(nil), base.extraMCPServerIDs...)
+		candidate.promoteReplacement = m.replacementBasePromoter(sessionID, scopedID, token, candidate)
+		candidate.completeReplacement = m.replacementBaseCompleter(sessionID, token)
+		base.runtime = candidate
+		m.sessionBases[sessionID] = base
+		m.scopedRuntimes[scopedID] = candidate
+		candidate.replacementPromoted = true
+		return nil
+	}
+}
+
+func (m *RuntimeManager) replacementBaseCompleter(sessionID string, token RuntimeBaseToken) func(*BuiltRuntime) error {
+	return func(candidate *BuiltRuntime) error {
+		if m == nil || candidate == nil || sessionID == "" || token == 0 {
+			return ErrProviderUnavailable
+		}
+		candidate.replacementMu.Lock()
+		defer candidate.replacementMu.Unlock()
+		if candidate.replacementCompleted {
+			return nil
+		}
+		if !candidate.replacementPromoted || candidate.replacementClosed {
+			return ErrProviderUnavailable
+		}
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		base, ok := m.sessionBases[sessionID]
+		if !ok || base.token != token || base.runtime != candidate ||
+			m.baseTransitions[sessionID] != token || m.replacementCandidates[sessionID] != candidate {
+			return ErrProviderUnavailable
+		}
+		delete(m.baseTransitions, sessionID)
+		delete(m.replacementCandidates, sessionID)
+		candidate.replacementCompleted = true
+		return nil
+	}
+}
+
+// AdoptPromotedModelReplacement returns an exact hosted candidate protected by
+// the child-lookup barrier after its base transfer but before publication proof.
+func (m *RuntimeManager) AdoptPromotedModelReplacement(
+	sessionID string,
+	incumbentToken uint64,
+	runtimeSnapshotID string,
+	providerBindingJSON string,
+	targetModel string,
+) (*BuiltRuntime, bool) {
+	if m == nil || incumbentToken == 0 {
+		return nil, false
+	}
+	sessionID = strings.TrimSpace(sessionID)
+	m.mu.RLock()
+	transition := m.baseTransitions[sessionID]
+	base := m.sessionBases[sessionID]
+	candidate := m.replacementCandidates[sessionID]
+	m.mu.RUnlock()
+	if sessionID == "" || transition != RuntimeBaseToken(incumbentToken) || base.token != transition ||
+		candidate == nil || base.runtime != candidate || candidate.RuntimeBaseToken != incumbentToken ||
+		candidate.RuntimeSnapshotID != strings.TrimSpace(runtimeSnapshotID) ||
+		candidate.ProviderBindingJSON != strings.TrimSpace(providerBindingJSON) ||
+		candidate.ConfirmedModel != strings.TrimSpace(targetModel) {
+		return nil, false
+	}
+	return candidate, true
 }
 
 func (m *RuntimeManager) resolveProviderGraph(ctx context.Context, builder *Builder, rootID, bindingJSON string) (*Builder, string, string, error) {
@@ -835,10 +1298,19 @@ func (m *RuntimeManager) PrepareGoalRun(
 
 func (m *RuntimeManager) childRuntimeBase(ctx context.Context, sourceSessionID string) (childRuntimeBase, error) {
 	m.mu.RLock()
-	bound, ok := m.sessionBases[strings.TrimSpace(sourceSessionID)]
+	sessionID := strings.TrimSpace(sourceSessionID)
+	bound, ok := m.sessionBases[sessionID]
+	_, known := m.knownSessionBases[sessionID]
+	transitioning := m.baseTransitions[sessionID] != 0
 	m.mu.RUnlock()
+	if transitioning {
+		return childRuntimeBase{}, ErrProviderUnavailable
+	}
 	if ok && bound.runtime != nil && bound.builder != nil {
 		return bound, nil
+	}
+	if known {
+		return childRuntimeBase{}, ErrProviderUnavailable
 	}
 	runtime, err := m.Runtime(ctx)
 	if err != nil {
@@ -967,16 +1439,35 @@ func goalWorkspaceBranchName(jobID string) string {
 func (m *RuntimeManager) close() error {
 	m.mu.Lock()
 	runtime := m.runtime
+	pendingReplacements := make([]*BuiltRuntime, 0, len(m.replacementCandidates))
+	for _, candidate := range m.replacementCandidates {
+		if candidate != nil {
+			pendingReplacements = append(pendingReplacements, candidate)
+		}
+	}
 	scoped := make([]*BuiltRuntime, 0, len(m.scopedRuntimes))
 	for _, item := range m.scopedRuntimes {
 		scoped = append(scoped, item)
 	}
 	m.scopedRuntimes = make(map[string]*BuiltRuntime)
 	m.sessionBases = make(map[string]childRuntimeBase)
+	m.knownSessionBases = make(map[string]struct{})
+	m.baseTransitions = make(map[string]RuntimeBaseToken)
+	m.baseCandidates = make(map[RuntimeBaseToken]*UnpublishedSessionRuntimeCandidate)
+	m.replacementCandidates = make(map[string]*BuiltRuntime)
+	m.replacementCandidates = make(map[string]*BuiltRuntime)
 	m.runtime = nil
 	m.runtimeBuilder = nil
 	m.runtimeMCPServerIDs = nil
 	m.mu.Unlock()
+	// Manager shutdown owns every unpublished/promoted candidate after the maps
+	// are detached. Allow their normal aggregate close path to settle exactly
+	// once even when publication proof never arrived.
+	for _, candidate := range pendingReplacements {
+		candidate.replacementMu.Lock()
+		candidate.replacementCompleted = true
+		candidate.replacementMu.Unlock()
+	}
 	var errs []error
 	for _, item := range scoped {
 		if item == nil {

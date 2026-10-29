@@ -34,16 +34,17 @@ func TestRuntimeAdaptersPreserveSessionControl(t *testing.T) {
 
 	control := &adapterSessionControl{}
 	agentSide := &baldaagent.BuiltRuntime{
-		SessionControl: control, ProviderBindingJSON: `{"root_provider_id":"provider"}`, RecipeModel: "model-bound",
+		SessionControl: control, ProviderBindingJSON: `{"root_provider_id":"provider"}`,
+		RecipeModel: "model-bound", ConfirmedModel: "model-live",
 	}
 	sessionSide := sessionRuntime(agentSide)
 	if sessionSide.SessionControl != control || sessionSide.ProviderBindingJSON != agentSide.ProviderBindingJSON ||
-		sessionSide.RecipeModel != agentSide.RecipeModel {
+		sessionSide.RecipeModel != agentSide.RecipeModel || sessionSide.ConfirmedModel != agentSide.ConfirmedModel {
 		t.Fatal("agent-to-session adapter lost runtime product metadata")
 	}
 	roundTrip := agentRuntime(sessionSide)
 	if roundTrip.SessionControl != control || roundTrip.ProviderBindingJSON != agentSide.ProviderBindingJSON ||
-		roundTrip.RecipeModel != agentSide.RecipeModel {
+		roundTrip.RecipeModel != agentSide.RecipeModel || roundTrip.ConfirmedModel != agentSide.ConfirmedModel {
 		t.Fatal("session-to-agent adapter lost runtime product metadata")
 	}
 }

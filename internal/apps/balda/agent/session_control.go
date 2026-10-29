@@ -112,6 +112,7 @@ func (r *BuiltRuntime) ChangeModel(ctx context.Context, identity SessionIdentity
 		_ = change.Replacement.Close()
 		return RuntimeModelChange{Status: agentproduct.ModelChangeFailed, Reason: agentproduct.ReasonPreDispatch}
 	}
+	candidate.ConfirmedModel = strings.TrimSpace(change.EffectiveModel)
 	result.Candidate = candidate
 	result.Identity = verified
 	return result
@@ -144,11 +145,18 @@ func (r *BuiltRuntime) replacementRuntime(product *agentproduct.Product) (*Built
 		RuntimeSnapshotID:   r.RuntimeSnapshotID,
 		ProviderBindingJSON: r.ProviderBindingJSON,
 		RecipeModel:         r.RecipeModel,
+		ProviderID:          r.ProviderID,
+		RuntimeBaseToken:    r.RuntimeBaseToken,
 		productClose:        product.Close,
 		runnerScope:         r.runnerScope,
 		newRunner:           newRunner,
+		baseBuilder:         r.baseBuilder,
+		baseProviderID:      r.baseProviderID,
+		baseWorkingDir:      r.baseWorkingDir,
+		baseMCPServerIDs:    append([]string(nil), r.baseMCPServerIDs...),
+		promoteReplacement:  r.promoteReplacement,
 	}
-	candidate.Close = candidate.closeProduct
+	candidate.Close = candidate.closeReplacement
 	return candidate, nil
 }
 

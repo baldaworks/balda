@@ -77,6 +77,7 @@ func agentRuntime(runtime *baldasession.BuiltRuntime) *baldaagent.BuiltRuntime {
 		RuntimeSnapshotID:   runtime.RuntimeSnapshotID,
 		ProviderBindingJSON: runtime.ProviderBindingJSON,
 		RecipeModel:         runtime.RecipeModel,
+		ConfirmedModel:      runtime.ConfirmedModel,
 	}
 }
 
@@ -158,6 +159,79 @@ func (a SessionRuntimeManagerAdapter) RuntimeForSession(ctx context.Context, req
 	return sessionRuntime(runtime), nil
 }
 
+func (a SessionRuntimeManagerAdapter) BuildUnpublishedSessionRuntime(ctx context.Context, request baldasession.SessionRuntimeRequest) (baldasession.UnpublishedSessionRuntimeCandidate, error) {
+	candidate, err := a.Manager.BuildUnpublishedSessionRuntime(ctx, baldaagent.SessionRuntimeRequest{
+		Locator: deliverycmd.Locator{ChannelType: request.Locator.ChannelType, AddressKey: request.Locator.AddressKey, AddressJSON: request.Locator.AddressJSON, SessionID: request.Locator.SessionID},
+		UserID:  request.UserID, AgentSessionID: request.AgentSessionID, LineageID: request.LineageID,
+		WorkspaceDir: request.WorkspaceDir, RuntimeSnapshotID: request.RuntimeSnapshotID,
+		ProviderBindingJSON: request.ProviderBindingJSON, ModelOverride: request.ModelOverride,
+		ExpectedRecipeModel: request.ExpectedRecipeModel, RecoveryFence: request.RecoveryFence,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &unpublishedRuntimeCandidateAdapter{candidate: candidate, runtime: sessionRuntime(candidate.Runtime())}, nil
+}
+
+type unpublishedRuntimeCandidateAdapter struct {
+	candidate *baldaagent.UnpublishedSessionRuntimeCandidate
+	runtime   *baldasession.BuiltRuntime
+}
+
+func (a *unpublishedRuntimeCandidateAdapter) Runtime() *baldasession.BuiltRuntime { return a.runtime }
+func (a *unpublishedRuntimeCandidateAdapter) ExpectedBaseToken() uint64 {
+	return uint64(a.candidate.ExpectedBaseToken())
+}
+func (a *unpublishedRuntimeCandidateAdapter) ClaimForPublication() error {
+	return a.candidate.ClaimForPublication()
+}
+func (a *unpublishedRuntimeCandidateAdapter) Promote() error { return a.candidate.Promote() }
+func (a *unpublishedRuntimeCandidateAdapter) MarkPublished() { a.candidate.MarkPublished() }
+func (a *unpublishedRuntimeCandidateAdapter) CompletePublication() error {
+	return a.candidate.CompletePublication()
+}
+func (a *unpublishedRuntimeCandidateAdapter) Abort(ctx context.Context) error {
+	return a.candidate.Abort(ctx)
+}
+
+func (a SessionRuntimeManagerAdapter) FenceSessionRuntimeBase(sessionID string) error {
+	return a.Manager.FenceSessionRuntimeBase(sessionID)
+}
+
+func (a SessionRuntimeManagerAdapter) CompleteSessionRuntimeRecovery(sessionID string, token uint64) error {
+	return a.Manager.CompleteSessionRuntimeRecovery(sessionID, token)
+}
+
+func (a SessionRuntimeManagerAdapter) AdoptPromotedSessionRuntime(sessionID string, incumbentToken uint64, request baldasession.SessionRuntimeRequest) (baldasession.UnpublishedSessionRuntimeCandidate, bool) {
+	candidate, ok := a.Manager.AdoptPromotedSessionRuntime(sessionID, incumbentToken, baldaagent.SessionRuntimeRequest{
+		Locator: deliverycmd.Locator{ChannelType: request.Locator.ChannelType, AddressKey: request.Locator.AddressKey, AddressJSON: request.Locator.AddressJSON, SessionID: request.Locator.SessionID},
+		UserID:  request.UserID, AgentSessionID: request.AgentSessionID, LineageID: request.LineageID,
+		WorkspaceDir: request.WorkspaceDir, RuntimeSnapshotID: request.RuntimeSnapshotID,
+		ProviderBindingJSON: request.ProviderBindingJSON, ModelOverride: request.ModelOverride,
+		ExpectedRecipeModel: request.ExpectedRecipeModel, RecoveryFence: request.RecoveryFence,
+	})
+	if !ok {
+		return nil, false
+	}
+	return &unpublishedRuntimeCandidateAdapter{candidate: candidate, runtime: sessionRuntime(candidate.Runtime())}, true
+}
+
+func (a SessionRuntimeManagerAdapter) AdoptPromotedModelReplacement(
+	sessionID string,
+	incumbentToken uint64,
+	runtimeSnapshotID string,
+	providerBindingJSON string,
+	targetModel string,
+) (*baldasession.BuiltRuntime, bool) {
+	runtime, ok := a.Manager.AdoptPromotedModelReplacement(
+		sessionID, incumbentToken, runtimeSnapshotID, providerBindingJSON, targetModel,
+	)
+	if !ok {
+		return nil, false
+	}
+	return sessionRuntime(runtime), true
+}
+
 func sessionRuntime(runtime *baldaagent.BuiltRuntime) *baldasession.BuiltRuntime {
 	if runtime == nil {
 		return nil
@@ -171,6 +245,11 @@ func sessionRuntime(runtime *baldaagent.BuiltRuntime) *baldasession.BuiltRuntime
 		RuntimeSnapshotID:   runtime.RuntimeSnapshotID,
 		ProviderBindingJSON: runtime.ProviderBindingJSON,
 		RecipeModel:         runtime.RecipeModel,
+		ConfirmedModel:      runtime.ConfirmedModel,
+		ProviderID:          runtime.ProviderID,
+		RuntimeBaseToken:    runtime.RuntimeBaseToken,
+		PromoteBase:         runtime.PromoteReplacementBase,
+		CompleteBase:        runtime.CompleteReplacementBase,
 		Close:               runtime.Close,
 	}
 	adapted.ModelController = modelControllerAdapter{runtime: runtime}

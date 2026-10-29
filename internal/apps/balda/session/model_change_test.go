@@ -15,6 +15,7 @@ import (
 
 const (
 	modelChangeTargetModel   = "model-2"
+	modelChangeOtherModel    = "other-model"
 	modelControlCallOrder    = "validate,change"
 	modelValidationCallOrder = "validate"
 )
@@ -216,7 +217,8 @@ func TestChangeModelReplacementPreservesExactSession(t *testing.T) {
 		Status: agentproduct.ModelReplacement, EffectiveModel: modelChangeTargetModel,
 		Candidate: &BuiltRuntime{
 			SessionSvc: service, AppName: sess.AppName(), RuntimeSnapshotID: "snapshot",
-			ProviderBindingJSON: publicationBinding, Close: func() error { candidateCloses.Add(1); return nil },
+			ProviderBindingJSON: publicationBinding, ConfirmedModel: modelChangeTargetModel,
+			Close: func() error { candidateCloses.Add(1); return nil },
 		},
 		Identity: RuntimeSessionIdentity{SessionService: service, AppName: sess.AppName(), UserID: sess.UserID(), SessionID: sess.ID()},
 	}
@@ -302,7 +304,7 @@ func TestChangeModelOperationIdentityConflictsDoNotFence(t *testing.T) {
 
 	collision := modelChangeRequest()
 	collision.InputHash = strings.Repeat("b", 64)
-	collision.TargetModel = "other-model"
+	collision.TargetModel = modelChangeOtherModel
 	result, err := manager.ChangeModel(t.Context(), collision)
 	if err != nil || result.Status != ModelChangeConflict || result.Reason != baldastate.RuntimeOperationReasonInvalid {
 		t.Fatalf("collision = %+v, %v", result, err)
@@ -601,7 +603,7 @@ func TestChangeModelMarkApplyingFailureUsesAuthoritativeReread(t *testing.T) {
 			configure: func(store *publicationStore) {
 				store.markApplyingErr = baldastate.ErrRuntimeOperationConflict
 				store.markErrorRecord = func(operation baldastate.RuntimeOperationRecord) baldastate.RuntimeOperationRecord {
-					operation.TargetModel = "other-model"
+					operation.TargetModel = modelChangeOtherModel
 					return operation
 				}
 			},

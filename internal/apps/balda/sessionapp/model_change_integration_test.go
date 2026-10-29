@@ -14,11 +14,14 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/actors"
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
 	"github.com/baldaworks/balda/internal/apps/balda/modelapp"
+	"github.com/baldaworks/balda/internal/apps/balda/providers"
+	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/runtime/v2/agentconfig"
 	"github.com/baldaworks/runtime/v2/agentfactory"
 	"github.com/baldaworks/runtime/v2/agentproduct"
+	"github.com/baldaworks/runtime/v2/mcpregistry"
 	"github.com/rs/zerolog"
 	adkagent "google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/plugin"
@@ -97,6 +100,10 @@ func (f *integrationProductFactory) BuildSessionProduct(context.Context, agentfa
 	return f.product, nil
 }
 
+func (f *integrationProductFactory) BuildScopedProduct(context.Context, agentfactory.BuildRequest, map[string][]string) (*baldaagent.RuntimeProduct, error) {
+	return f.product, nil
+}
+
 func (f *integrationProductFactory) WithProviders(map[string]agentconfig.Config) baldaagent.ScopedRuntimeFactory {
 	return f
 }
@@ -108,6 +115,25 @@ func (m integrationRuntimeManager) Runtime(context.Context) (*baldasession.Built
 }
 
 func (integrationRuntimeManager) ProviderID() string { return "provider" }
+
+type integrationCapabilityBinder struct {
+	closeCalls atomic.Int32
+}
+
+func (b *integrationCapabilityBinder) BindSessionCapabilities(
+	context.Context,
+	string,
+	baldaagent.SessionRuntimeRequest,
+) (baldaagent.SessionCapabilityBinding, error) {
+	return baldaagent.SessionCapabilityBinding{
+		SnapshotID: runtimecatalogcmd.SnapshotID(integrationRuntimeSnapshotID),
+		Skills:     baldaagent.SkillMetadataProjection{Snapshot: runtimecatalogcmd.SnapshotID(integrationRuntimeSnapshotID)},
+		Close: func() error {
+			b.closeCalls.Add(1)
+			return nil
+		},
+	}, nil
+}
 
 type integrationScopedRuntimeManager struct {
 	runtime    *baldaagent.BuiltRuntime
@@ -145,6 +171,22 @@ type integrationHostFactory struct{ calls atomic.Int32 }
 func (f *integrationHostFactory) NewToolPlugin(baldaagent.ToolHookScope) (*plugin.Plugin, error) {
 	f.calls.Add(1)
 	return plugin.New(plugin.Config{Name: "integration-host"})
+}
+
+type failBeforeCommitRuntimeOperations struct {
+	baldastate.RuntimeOperationStore
+	operationID string
+	errored     atomic.Bool
+}
+
+func (s *failBeforeCommitRuntimeOperations) Finalize(
+	ctx context.Context,
+	finalization baldastate.RuntimeOperationFinalization,
+) (baldastate.RuntimeOperationRecord, error) {
+	if finalization.OperationID == s.operationID && s.errored.CompareAndSwap(false, true) {
+		return baldastate.RuntimeOperationRecord{}, errors.New("synthetic pre-commit failure")
+	}
+	return s.RuntimeOperationStore.Finalize(ctx, finalization)
 }
 
 func TestQueuedHostedModelChangeUsesProductionBoundaries(t *testing.T) {
@@ -306,6 +348,325 @@ func TestQueuedHostedModelChangeUsesProductionBoundaries(t *testing.T) {
 	}
 	if !sawPriorEvent.Load() || !sawPriorState.Load() {
 		t.Fatalf("replacement saw prior event/state = %t/%t", sawPriorEvent.Load(), sawPriorState.Load())
+	}
+}
+
+func TestHostedReplacementTransfersRealRuntimeBaseAcrossDrainAndReset(t *testing.T) {
+	service := &integrationSessionService{Service: adksession.InMemoryService()}
+	replacementAgent, err := adkagent.New(adkagent.Config{Name: "replacement-agent"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacement, err := agentproduct.New(replacementAgent, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	incumbentAgent, err := adkagent.New(adkagent.Config{Name: "incumbent-agent"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	control := &integrationModelControl{replacement: replacement}
+	product, err := baldaagent.NewRuntimeProduct(incumbentAgent, control, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	builder := baldaagent.NewBuilder(baldaagent.BuilderParams{
+		ScopedFactory:  &integrationProductFactory{product: product},
+		WorkingDir:     t.TempDir(),
+		SessionService: service,
+	})
+	capabilities := &integrationCapabilityBinder{}
+	runtimeManager := baldaagent.NewRuntimeManager(baldaagent.RuntimeManagerParams{
+		Builder:          builder,
+		BaldaProviderID:  "provider",
+		WorkingDir:       t.TempDir(),
+		StateDir:         t.TempDir(),
+		CapabilityBinder: capabilities,
+		MCPRegistry:      mcpregistry.New(nil),
+		Logger:           zerolog.Nop(),
+	})
+	provider, err := baldastate.NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = provider.Close() })
+	manager, err := baldasession.NewManager(baldasession.ManagerParams{
+		Archive:            provider.ChatArchive(),
+		AgentBuilder:       SessionAgentBuilderAdapter{Builder: builder},
+		RuntimeManager:     SessionRuntimeManagerAdapter{Manager: runtimeManager},
+		BaldaProviderID:    "provider",
+		WorkingDir:         t.TempDir(),
+		SessionsPersistent: true,
+		SessionStore:       provider.Sessions(),
+		RuntimeOperations:  provider.RuntimeOperations(),
+		Logger:             zerolog.Nop(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = manager.Stop(context.Background()) })
+	locator, err := baldasession.NewSessionLocator("telegram", "chat:topic", `{}`, "session")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.CreateSession(t.Context(), baldasession.SessionContext{
+		Locator: locator,
+		UserID:  "user",
+		Kind:    baldasession.KindChat,
+	}, "display-label"); err != nil {
+		t.Fatal(err)
+	}
+	topic, err := manager.GetSession(locator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	heldPredecessor, err := topic.AcquireRuntime()
+	if err != nil {
+		t.Fatal(err)
+	}
+	predecessorReleased := false
+	defer func() {
+		if !predecessorReleased {
+			heldPredecessor.Release()
+		}
+	}()
+	dispatcher := actors.NewTurnDispatcher(zerolog.Nop())
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = dispatcher.Shutdown(ctx)
+	})
+	application := modelapp.New(dispatcher, manager)
+	completion, _, err := application.Submit(t.Context(), modelapp.Request{
+		OperationID: "hosted-model-change",
+		SessionID:   locator.SessionID,
+		Model:       "model-next",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	completed := <-completion
+	if completed.Err != nil || completed.Result.Status != baldasession.ModelChangeChangedReplacement {
+		t.Fatalf("hosted model change = %+v", completed)
+	}
+	if capabilities.closeCalls.Load() != 0 {
+		t.Fatalf("published base closed before predecessor release: %d", capabilities.closeCalls.Load())
+	}
+	heldPredecessor.Release()
+	predecessorReleased = true
+	if capabilities.closeCalls.Load() != 0 {
+		t.Fatalf("predecessor drain closed transferred base: %d", capabilities.closeCalls.Load())
+	}
+	prepared, result, err := manager.PrepareFreshLifetime(t.Context(), baldasession.FreshLifetimeRequest{
+		OperationID: "reset-after-hosted-model",
+		SessionID:   locator.SessionID,
+		InputHash:   strings.Repeat("d", 64),
+	})
+	if err != nil || prepared == nil || result.Status != "" {
+		t.Fatalf("reset preparation after hosted drain = %#v, %+v, %v", prepared, result, err)
+	}
+	if _, err := manager.AbortFreshLifetime(t.Context(), prepared); err != nil {
+		t.Fatal(err)
+	}
+	if capabilities.closeCalls.Load() != 1 {
+		t.Fatalf("aborted reset candidate close count = %d, want 1", capabilities.closeCalls.Load())
+	}
+	if err := manager.Stop(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtimeManager.Stop(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if capabilities.closeCalls.Load() != 3 {
+		t.Fatalf("active replacement aggregate close count = %d, want 3 including root and reset abort", capabilities.closeCalls.Load())
+	}
+	if err := manager.Stop(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtimeManager.Stop(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if capabilities.closeCalls.Load() != 3 {
+		t.Fatalf("repeated cleanup close count = %d, want 3", capabilities.closeCalls.Load())
+	}
+}
+
+func TestApplyingHostedReplacementRecoveryAdoptsPromotedBaseAfterPreCommitFailure(t *testing.T) {
+	service := &integrationSessionService{Service: adksession.InMemoryService()}
+	replacementAgent, err := adkagent.New(adkagent.Config{Name: "recovery-replacement"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacement, err := agentproduct.New(replacementAgent, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	incumbentAgent, err := adkagent.New(adkagent.Config{Name: "recovery-incumbent"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	control := &integrationModelControl{replacement: replacement}
+	product, err := baldaagent.NewRuntimeProduct(incumbentAgent, control, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	builder := baldaagent.NewBuilder(baldaagent.BuilderParams{
+		ScopedFactory:  &integrationProductFactory{product: product},
+		WorkingDir:     t.TempDir(),
+		SessionService: service,
+	})
+	provider, err := baldastate.NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = provider.Close() })
+	providerService := providers.New(map[string]agentconfig.Config{
+		"provider": {Type: agentconfig.AgentTypeOpenAI, OpenAI: &agentconfig.LocalAPIConfig{Model: "recipe-model"}},
+	}, provider.ProviderManagement(), nil)
+	capabilities := &integrationCapabilityBinder{}
+	runtimeManager := baldaagent.NewRuntimeManager(baldaagent.RuntimeManagerParams{
+		Builder: builder, BaldaProviderID: "provider", WorkingDir: t.TempDir(), StateDir: t.TempDir(),
+		CapabilityBinder: capabilities, ProviderService: providerService,
+		MCPRegistry: mcpregistry.New(nil), Logger: zerolog.Nop(),
+	})
+	operations := &failBeforeCommitRuntimeOperations{
+		RuntimeOperationStore: provider.RuntimeOperations(), operationID: "hosted-recovery",
+	}
+	manager, err := baldasession.NewManager(baldasession.ManagerParams{
+		Archive: provider.ChatArchive(), AgentBuilder: SessionAgentBuilderAdapter{Builder: builder},
+		RuntimeManager: SessionRuntimeManagerAdapter{Manager: runtimeManager}, BaldaProviderID: "provider",
+		WorkingDir: t.TempDir(), SessionsPersistent: true, SessionStore: provider.Sessions(),
+		RuntimeOperations: operations, Logger: zerolog.Nop(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = manager.Stop(context.Background()) })
+	locator, err := baldasession.NewSessionLocator("telegram", "chat:recovery", `{}`, "session-recovery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.CreateSession(t.Context(), baldasession.SessionContext{
+		Locator: locator, UserID: "user", Kind: baldasession.KindChat,
+	}, "display-not-provider"); err != nil {
+		t.Fatal(err)
+	}
+	topic, err := manager.GetSession(locator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	heldPredecessor, err := topic.AcquireRuntime()
+	if err != nil {
+		t.Fatal(err)
+	}
+	recoveryPredecessorReleased := false
+	defer func() {
+		if !recoveryPredecessorReleased {
+			heldPredecessor.Release()
+		}
+	}()
+	record, found, err := provider.Sessions().GetBySessionID(t.Context(), locator.SessionID)
+	if err != nil || !found {
+		t.Fatalf("session record = %+v, %t, %v", record, found, err)
+	}
+	target := "model-recovered"
+	at := time.Now().UTC().Add(-time.Minute)
+	intent := baldastate.RuntimeOperationRecord{
+		OperationID: "hosted-recovery", SessionID: locator.SessionID, InputHash: strings.Repeat("e", 64),
+		Kind: string(baldastate.RuntimeOperationKindModel), State: baldastate.RuntimeOperationPrepared,
+		ExpectedArchiveID: record.ArchiveID, ExpectedGeneration: record.RuntimeGeneration,
+		TargetSnapshotID: record.RuntimeSnapshotID, TargetProviderBindingJSON: record.ProviderBindingJSON,
+		TargetModel: target, TargetRequestedModel: &target, CreatedAt: at, UpdatedAt: at,
+	}
+	if _, err := operations.Begin(t.Context(), intent); err != nil {
+		t.Fatal(err)
+	}
+	if err := operations.MarkApplying(t.Context(), intent.OperationID, intent.InputHash); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := manager.RestoreSession(t.Context(), baldasession.SessionContext{
+		Locator: locator, UserID: "user", Kind: baldasession.KindChat,
+	})
+	if !errors.Is(err, baldasession.ErrRuntimeRecoveryRequired) || restored != nil {
+		t.Fatalf("first RestoreSession() = %p, %v; want fenced pre-commit failure", restored, err)
+	}
+	if control.changeCalls.Load() != 1 {
+		t.Fatalf("ChangeModel calls = %d, want 1", control.changeCalls.Load())
+	}
+	if _, err := topic.AcquireRuntime(); !errors.Is(err, baldasession.ErrRuntimeRecoveryRequired) {
+		t.Fatalf("AcquireRuntime after pre-commit failure = %v", err)
+	}
+	if _, ok := runtimeManager.AdoptPromotedModelReplacement(
+		locator.SessionID, 1, record.RuntimeSnapshotID, record.ProviderBindingJSON, "wrong-target",
+	); ok {
+		t.Fatal("mismatched target adopted promoted replacement")
+	}
+	adopted, ok := runtimeManager.AdoptPromotedModelReplacement(
+		locator.SessionID, 1, record.RuntimeSnapshotID, record.ProviderBindingJSON, target,
+	)
+	if !ok || adopted == nil || adopted.RecipeModel != "recipe-model" || adopted.ConfirmedModel != target {
+		t.Fatalf("promoted receipt = %#v, %t; want recipe %q confirmed %q", adopted, ok, "recipe-model", target)
+	}
+	restored, err = manager.RestoreSession(t.Context(), baldasession.SessionContext{
+		Locator: locator, UserID: "user", Kind: baldasession.KindChat,
+	})
+	if err != nil || restored != topic {
+		t.Fatalf("second RestoreSession() = %p, %v; want active topic %p", restored, err, topic)
+	}
+	if control.changeCalls.Load() != 1 {
+		t.Fatalf("adoption repeated ChangeModel: %d calls", control.changeCalls.Load())
+	}
+	if capabilities.closeCalls.Load() != 0 {
+		t.Fatalf("replacement base closed before predecessor release: %d", capabilities.closeCalls.Load())
+	}
+	lease, err := topic.AcquireRuntime()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lease.Generation() != record.RuntimeGeneration+1 || lease.EffectiveModel() != target {
+		t.Fatalf("recovered runtime = generation %d model %q", lease.Generation(), lease.EffectiveModel())
+	}
+	lease.Release()
+	heldPredecessor.Release()
+	recoveryPredecessorReleased = true
+	if capabilities.closeCalls.Load() != 0 {
+		t.Fatalf("predecessor drain closed promoted base: %d", capabilities.closeCalls.Load())
+	}
+	result, err := manager.ChangeModel(t.Context(), baldasession.ModelChangeRequest{
+		OperationID: intent.OperationID, SessionID: intent.SessionID, InputHash: intent.InputHash, TargetModel: target,
+	})
+	if err != nil || result.Status != baldasession.ModelChangeChangedReplacement || control.changeCalls.Load() != 1 {
+		t.Fatalf("terminal replay = %+v, %v; change calls %d", result, err, control.changeCalls.Load())
+	}
+	prepared, resetResult, err := manager.PrepareFreshLifetime(t.Context(), baldasession.FreshLifetimeRequest{
+		OperationID: "reset-after-recovered-hosted-model", SessionID: locator.SessionID, InputHash: strings.Repeat("f", 64),
+	})
+	if err != nil || prepared == nil || resetResult.Status != "" {
+		t.Fatalf("reset preparation = %#v, %+v, %v", prepared, resetResult, err)
+	}
+	if _, err := manager.AbortFreshLifetime(t.Context(), prepared); err != nil {
+		t.Fatal(err)
+	}
+	if capabilities.closeCalls.Load() != 1 {
+		t.Fatalf("aborted reset candidate close count = %d, want 1", capabilities.closeCalls.Load())
+	}
+	if err := manager.Stop(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtimeManager.Stop(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if capabilities.closeCalls.Load() != 3 {
+		t.Fatalf("recovered replacement aggregate close count = %d, want 3 including root and reset abort", capabilities.closeCalls.Load())
+	}
+	if err := manager.Stop(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtimeManager.Stop(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if capabilities.closeCalls.Load() != 3 {
+		t.Fatalf("repeated recovered cleanup close count = %d, want 3", capabilities.closeCalls.Load())
 	}
 }
 

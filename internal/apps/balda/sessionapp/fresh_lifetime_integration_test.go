@@ -26,6 +26,47 @@ type freshLifetimeRuntimeManager struct {
 	calls   atomic.Int32
 }
 
+type freshLifetimeCandidate struct {
+	runtime  *baldasession.BuiltRuntime
+	claimed  bool
+	promoted bool
+}
+
+func (c *freshLifetimeCandidate) Runtime() *baldasession.BuiltRuntime { return c.runtime }
+func (*freshLifetimeCandidate) ExpectedBaseToken() uint64             { return 0 }
+func (c *freshLifetimeCandidate) ClaimForPublication() error          { c.claimed = true; return nil }
+func (c *freshLifetimeCandidate) Promote() error {
+	if !c.claimed {
+		return errors.New("not claimed")
+	}
+	c.promoted = true
+	return nil
+}
+func (*freshLifetimeCandidate) MarkPublished()             {}
+func (*freshLifetimeCandidate) CompletePublication() error { return nil }
+func (c *freshLifetimeCandidate) Abort(context.Context) error {
+	if c.promoted {
+		return errors.New("published")
+	}
+	return nil
+}
+
+func (m *freshLifetimeRuntimeManager) BuildUnpublishedSessionRuntime(_ context.Context, request baldasession.SessionRuntimeRequest) (baldasession.UnpublishedSessionRuntimeCandidate, error) {
+	runtime := *m.runtime
+	runtime.RuntimeBaseToken = 1
+	runtime.ProviderID = freshLifetimeIntegrationProviderID
+	if request.ModelOverride != nil {
+		runtime.RecipeModel = *request.ModelOverride
+	}
+	return &freshLifetimeCandidate{runtime: &runtime}, nil
+}
+
+func (*freshLifetimeRuntimeManager) FenceSessionRuntimeBase(string) error                { return nil }
+func (*freshLifetimeRuntimeManager) CompleteSessionRuntimeRecovery(string, uint64) error { return nil }
+func (*freshLifetimeRuntimeManager) AdoptPromotedSessionRuntime(string, uint64, baldasession.SessionRuntimeRequest) (baldasession.UnpublishedSessionRuntimeCandidate, bool) {
+	return nil, false
+}
+
 func (m *freshLifetimeRuntimeManager) Runtime(context.Context) (*baldasession.BuiltRuntime, error) {
 	m.calls.Add(1)
 	return m.runtime, nil

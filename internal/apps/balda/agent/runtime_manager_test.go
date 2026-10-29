@@ -19,6 +19,7 @@ import (
 	"github.com/baldaworks/runtime/v2/mcpregistry"
 	"github.com/rs/zerolog"
 	adkagent "google.golang.org/adk/v2/agent"
+	adksession "google.golang.org/adk/v2/session"
 )
 
 func TestPinnedRuntimeMCPServerIDsPreservesHostConfiguration(t *testing.T) {
@@ -213,6 +214,242 @@ func TestRuntimeForSessionProjectsSkillMetadataAndExtensionInstructionsToProvide
 	}
 	if contributorInput.SnapshotID != "snapshot-prism" || contributorInput.SessionID != "session-1" || contributorInput.ChannelType != "telegram" {
 		t.Fatalf("contributor input = %+v, want pinned session context", contributorInput)
+	}
+}
+
+func TestUnpublishedSessionRuntimeCandidatePromotesExactBaseAtomically(t *testing.T) {
+	factory := &recordingRuntimeFactory{}
+	builder := &Builder{factory: factory}
+	binder := &recordingCapabilityBinder{binding: SessionCapabilityBinding{
+		SnapshotID: "snapshot-candidate",
+		Skills:     SkillMetadataProjection{Snapshot: "snapshot-candidate"},
+	}}
+	manager := NewRuntimeManager(RuntimeManagerParams{
+		Builder: builder, BaldaProviderID: "alpha", WorkingDir: t.TempDir(), StateDir: t.TempDir(),
+		CapabilityBinder: binder, MCPRegistry: mcpregistry.New(nil), Logger: zerolog.Nop(),
+	})
+	request := SessionRuntimeRequest{
+		Locator:           deliverycmd.Locator{SessionID: "session-candidate", ChannelType: "telegram"},
+		AgentSessionID:    "runtime-target",
+		RuntimeSnapshotID: "snapshot-candidate",
+	}
+	incumbent, err := manager.RuntimeForSession(t.Context(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate, err := manager.BuildUnpublishedSessionRuntime(t.Context(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if candidate.Runtime() == incumbent || candidate.Runtime().RuntimeBaseToken == incumbent.RuntimeBaseToken ||
+		candidate.ExpectedBaseToken() != RuntimeBaseToken(incumbent.RuntimeBaseToken) || candidate.Runtime().ProviderID != "alpha" {
+		t.Fatalf("candidate identity/token = %p/%d expected=%d, incumbent %p/%d", candidate.Runtime(), candidate.Runtime().RuntimeBaseToken, candidate.ExpectedBaseToken(), incumbent, incumbent.RuntimeBaseToken)
+	}
+	manager.mu.RLock()
+	if got := manager.sessionBases[request.Locator.SessionID].runtime; got != incumbent {
+		manager.mu.RUnlock()
+		t.Fatalf("base visible during prepare = %p, want incumbent %p", got, incumbent)
+	}
+	if _, ok := manager.scopedRuntimes[candidate.Runtime().scopedID]; ok {
+		manager.mu.RUnlock()
+		t.Fatal("unpublished candidate visible in scoped runtimes")
+	}
+	manager.mu.RUnlock()
+	aborted, err := manager.BuildUnpublishedSessionRuntime(t.Context(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := aborted.Abort(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	manager.mu.RLock()
+	if manager.sessionBases[request.Locator.SessionID].runtime != incumbent {
+		manager.mu.RUnlock()
+		t.Fatal("aborting unpublished candidate replaced incumbent base")
+	}
+	if _, ok := manager.scopedRuntimes[aborted.Runtime().scopedID]; ok {
+		manager.mu.RUnlock()
+		t.Fatal("aborted candidate leaked into scoped runtimes")
+	}
+	manager.mu.RUnlock()
+	stale, err := manager.BuildUnpublishedSessionRuntime(t.Context(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := candidate.ClaimForPublication(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.childRuntimeBase(t.Context(), request.Locator.SessionID); !errors.Is(err, ErrProviderUnavailable) {
+		t.Fatalf("child lookup during promotion error = %v", err)
+	}
+	candidate.MarkPublished()
+	if _, err := manager.childRuntimeBase(t.Context(), request.Locator.SessionID); !errors.Is(err, ErrProviderUnavailable) {
+		t.Fatalf("premature mark released barrier: %v", err)
+	}
+	if err := candidate.Promote(); err != nil {
+		t.Fatal(err)
+	}
+	wrongTarget := request
+	wrongTarget.AgentSessionID = "another-runtime-target"
+	if _, ok := manager.AdoptPromotedSessionRuntime(request.Locator.SessionID, incumbent.RuntimeBaseToken, wrongTarget); ok {
+		t.Fatal("promoted candidate adopted for a different runtime target")
+	}
+	if adopted, ok := manager.AdoptPromotedSessionRuntime(request.Locator.SessionID, incumbent.RuntimeBaseToken, request); !ok || adopted != candidate {
+		t.Fatalf("exact promoted candidate adoption = %p, %t", adopted, ok)
+	}
+	if _, err := manager.childRuntimeBase(t.Context(), request.Locator.SessionID); !errors.Is(err, ErrProviderUnavailable) {
+		t.Fatalf("child lookup before slot publication error = %v", err)
+	}
+	candidate.MarkPublished()
+	if _, err := manager.childRuntimeBase(t.Context(), request.Locator.SessionID); !errors.Is(err, ErrProviderUnavailable) {
+		t.Fatalf("mark published released journal fence: %v", err)
+	}
+	if err := candidate.CompletePublication(); err != nil {
+		t.Fatal(err)
+	}
+	if err := stale.ClaimForPublication(); !errors.Is(err, ErrProviderUnavailable) {
+		t.Fatalf("stale base claim error = %v", err)
+	}
+	if err := stale.Abort(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	base, err := manager.childRuntimeBase(t.Context(), request.Locator.SessionID)
+	if err != nil || base.runtime != candidate.Runtime() {
+		t.Fatalf("promoted base = %p, %v", base.runtime, err)
+	}
+	if err := incumbent.Close(); err != nil {
+		t.Fatal(err)
+	}
+	base, err = manager.childRuntimeBase(t.Context(), request.Locator.SessionID)
+	if err != nil || base.runtime != candidate.Runtime() {
+		t.Fatalf("predecessor close removed candidate = %p, %v", base.runtime, err)
+	}
+	if err := candidate.Abort(t.Context()); err != nil {
+		t.Fatalf("published Abort() = %v", err)
+	}
+	if err := candidate.Runtime().Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.childRuntimeBase(t.Context(), request.Locator.SessionID); !errors.Is(err, ErrProviderUnavailable) {
+		t.Fatalf("missing known session base error = %v", err)
+	}
+	if err := manager.FenceSessionRuntimeBase(request.Locator.SessionID); err != nil {
+		t.Fatal(err)
+	}
+	recoveryRequest := request
+	recoveryRequest.RecoveryFence = true
+	recoveryCandidate, err := manager.BuildUnpublishedSessionRuntime(t.Context(), recoveryRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := recoveryCandidate.Abort(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := manager.RuntimeForSession(t.Context(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.childRuntimeBase(t.Context(), request.Locator.SessionID); !errors.Is(err, ErrProviderUnavailable) {
+		t.Fatalf("cold recovery fence cleared before slot proof: %v", err)
+	}
+	if err := manager.CompleteSessionRuntimeRecovery(request.Locator.SessionID, restored.RuntimeBaseToken); err != nil {
+		t.Fatal(err)
+	}
+	if base, err := manager.childRuntimeBase(t.Context(), request.Locator.SessionID); err != nil || base.runtime != restored {
+		t.Fatalf("cold recovery completed base = %p, %v", base.runtime, err)
+	}
+	if err := restored.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestHostedReplacementTransfersPublishedBaseBeforePredecessorClose(t *testing.T) {
+	service := adksession.InMemoryService()
+	replacementAgent := mustProductTestAgent(t, "hosted-replacement")
+	replacement, err := agentproduct.New(replacementAgent, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	control := &productTestControl{replacement: replacement}
+	incumbentAgent := mustProductTestAgent(t, "hosted-incumbent")
+	product, err := agentproduct.New(incumbentAgent, control)
+	if err != nil {
+		t.Fatal(err)
+	}
+	builder := &Builder{factory: &productAwareFactory{product: product}, sessionSvc: service}
+	var capabilityCloses int
+	binder := &recordingCapabilityBinder{binding: SessionCapabilityBinding{
+		SnapshotID: "snapshot-hosted", Skills: SkillMetadataProjection{Snapshot: "snapshot-hosted"},
+		Close: func() error { capabilityCloses++; return nil },
+	}}
+	manager := NewRuntimeManager(RuntimeManagerParams{
+		Builder: builder, BaldaProviderID: "provider-hosted", WorkingDir: t.TempDir(), StateDir: t.TempDir(),
+		CapabilityBinder: binder, MCPRegistry: mcpregistry.New(nil), Logger: zerolog.Nop(),
+	})
+	request := SessionRuntimeRequest{Locator: deliverycmd.Locator{SessionID: "session-hosted", ChannelType: "telegram"}}
+	incumbent, err := manager.RuntimeForSession(t.Context(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := service.Create(t.Context(), &adksession.CreateRequest{AppName: incumbent.AppName, UserID: "user", SessionID: "runtime"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	change := incumbent.ChangeModel(t.Context(), SessionIdentity{
+		SessionService: service, AppName: incumbent.AppName, UserID: "user", SessionID: created.Session.ID(),
+	}, "model-hosted")
+	if change.Candidate == nil {
+		t.Fatalf("ChangeModel() = %+v", change)
+	}
+	if change.Candidate.RuntimeBaseToken != incumbent.RuntimeBaseToken || change.Candidate.ProviderID != incumbent.ProviderID {
+		t.Fatalf("replacement base/provider = %d/%q, incumbent %d/%q", change.Candidate.RuntimeBaseToken, change.Candidate.ProviderID, incumbent.RuntimeBaseToken, incumbent.ProviderID)
+	}
+	if change.Candidate.ConfirmedModel != "model-hosted" {
+		t.Fatalf("replacement confirmed model = %q, want model-hosted", change.Candidate.ConfirmedModel)
+	}
+	if err := change.Candidate.PromoteReplacementBase(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.childRuntimeBase(t.Context(), request.Locator.SessionID); !errors.Is(err, ErrProviderUnavailable) {
+		t.Fatalf("child lookup before publication proof = %v, want unavailable", err)
+	}
+	if err := incumbent.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if capabilityCloses != 0 {
+		t.Fatalf("predecessor released transferred capabilities %d times", capabilityCloses)
+	}
+	if err := change.Candidate.Close(); !errors.Is(err, ErrProviderUnavailable) {
+		t.Fatalf("candidate close before publication proof = %v, want unavailable", err)
+	}
+	if capabilityCloses != 0 {
+		t.Fatalf("candidate close before proof released capabilities %d times", capabilityCloses)
+	}
+	if err := change.Candidate.CompleteReplacementBase(); err != nil {
+		t.Fatal(err)
+	}
+	base, err := manager.childRuntimeBase(t.Context(), request.Locator.SessionID)
+	if err != nil || base.runtime != change.Candidate || base.token != RuntimeBaseToken(change.Candidate.RuntimeBaseToken) {
+		t.Fatalf("hosted child base = %p/%d, %v", base.runtime, base.token, err)
+	}
+	fresh, err := manager.BuildUnpublishedSessionRuntime(t.Context(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fresh.ExpectedBaseToken() != RuntimeBaseToken(change.Candidate.RuntimeBaseToken) {
+		t.Fatalf("reset expected base = %d", fresh.ExpectedBaseToken())
+	}
+	if err := fresh.Abort(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if capabilityCloses != 1 {
+		t.Fatalf("aborted reset capability closes = %d, want 1", capabilityCloses)
+	}
+	if err := change.Candidate.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if capabilityCloses != 2 {
+		t.Fatalf("replacement capability closes = %d, want 2 total", capabilityCloses)
 	}
 }
 
