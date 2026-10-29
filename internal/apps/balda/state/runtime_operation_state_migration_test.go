@@ -7,22 +7,25 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/pressly/goose/v3"
 )
 
 func checkRuntimeOperationStateMigration(t *testing.T, db *sql.DB, bind func(string) string) {
 	t.Helper()
 
 	var binding, model, outcome string
+	var requested sql.NullString
 	var generation int64
 	if err := db.QueryRowContext(t.Context(), bind(`
-		SELECT provider_binding_json, runtime_generation, effective_model, runtime_outcome
+		SELECT provider_binding_json, runtime_generation, requested_model, effective_model, runtime_outcome
 		FROM balda_session_metadata WHERE session_id = ?`), "legacy-runtime").Scan(
-		&binding, &generation, &model, &outcome,
+		&binding, &generation, &requested, &model, &outcome,
 	); err != nil {
 		t.Fatal(err)
 	}
 	legacyBinding := `{"RootProviderID":"legacy-exact","Entries":[{"ProviderID":"legacy-exact","Source":"managed","RevisionID":"revision-legacy"}],"Reproducible":true,"Warnings":null}`
-	if binding != legacyBinding || generation != 0 || model != "" || outcome != "" {
+	if binding != legacyBinding || generation != 0 || requested.Valid || model != "" || outcome != "" {
 		t.Fatalf("legacy runtime metadata = %q/%d/%q/%q", binding, generation, model, outcome)
 	}
 	now := time.Date(2026, 10, 26, 0, 0, 0, 0, time.UTC)
@@ -113,6 +116,30 @@ func checkRuntimeOperationStateMigration(t *testing.T, db *sql.DB, bind func(str
 	}
 	if retained != 1 {
 		t.Fatalf("retained operation count = %d, want 1", retained)
+	}
+}
+
+func checkRequestedModelDowngradeProhibited(t *testing.T, db *sql.DB, bind func(string) string, provider *goose.Provider) {
+	t.Helper()
+	const preference = "model-pinned"
+	if _, err := db.ExecContext(t.Context(), bind(`UPDATE balda_runtime_operations
+		SET kind='lifetime_preference',target_model=?,target_requested_model=? WHERE operation_id=?`),
+		preference, preference, "operation-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.Down(t.Context()); err == nil {
+		t.Fatal("requested-model migration downgrade succeeded with unresolved lifetime_preference evidence")
+	}
+	var kind, targetModel, targetPreference, state string
+	if err := db.QueryRowContext(t.Context(), bind(`SELECT kind,target_model,target_requested_model,state
+		FROM balda_runtime_operations WHERE operation_id=?`), "operation-1").Scan(
+		&kind, &targetModel, &targetPreference, &state,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if kind != string(RuntimeOperationKindLifetimePreference) || targetModel != preference ||
+		targetPreference != preference || state != string(RuntimeOperationApplying) {
+		t.Fatalf("unresolved preference evidence after prohibited downgrade = %q/%q/%q/%q", kind, targetModel, targetPreference, state)
 	}
 }
 

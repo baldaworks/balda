@@ -43,6 +43,9 @@ type SessionRuntimeRequest struct {
 	// ProviderBindingJSON requests the exact persisted provider graph.
 	// An empty value resolves the current committed graph.
 	ProviderBindingJSON string
+	// ModelOverride optionally replaces only the exact recipe model used to
+	// construct this Product.
+	ModelOverride *string
 	// ProviderConfigs carries the already bound graph to capability projection.
 	ProviderConfigs map[string]agentconfig.Config
 }
@@ -461,7 +464,7 @@ func (m *RuntimeManager) runtimeForSession(ctx context.Context, request SessionR
 		registry.Set(binding.ID, binding.Config)
 		extraMCPServerIDs = append(extraMCPServerIDs, binding.ID)
 	}
-	runtime, err := builder.BuildRuntimeWithCapabilities(
+	runtime, err := builder.BuildRuntimeWithCapabilitiesAndModelOverride(
 		runtimeLifecycleContext(ctx),
 		providerID,
 		workingDir,
@@ -473,6 +476,7 @@ func (m *RuntimeManager) runtimeForSession(ctx context.Context, request SessionR
 			SessionID:   strings.TrimSpace(request.Locator.SessionID),
 			ChannelType: strings.TrimSpace(request.Locator.ChannelType),
 		},
+		request.ModelOverride,
 	)
 	if err != nil {
 		if binding.ID != "" {

@@ -33,9 +33,22 @@ func (c *recoveryModelController) ValidateModel(context.Context, RuntimeSessionI
 	return agentproduct.ModelValidation{Status: agentproduct.ModelSupported}
 }
 
-func (c *recoveryModelController) ChangeModel(context.Context, RuntimeSessionIdentity, string) RuntimeModelChange {
+func (c *recoveryModelController) ChangeModel(_ context.Context, _ RuntimeSessionIdentity, model string) RuntimeModelChange {
 	c.changeCalls.Add(1)
-	return RuntimeModelChange{Status: agentproduct.ModelApplied}
+	if c.snapshot.Status == agentproduct.ControlReady && strings.TrimSpace(c.snapshot.CurrentModel) != "" {
+		c.snapshot.CurrentModel = model
+		return RuntimeModelChange{Status: agentproduct.ModelApplied, EffectiveModel: model}
+	}
+	switch c.snapshot.Status {
+	case agentproduct.ControlBusy:
+		return RuntimeModelChange{Status: agentproduct.ModelChangeBusy}
+	case agentproduct.ControlUnsupported:
+		return RuntimeModelChange{Status: agentproduct.ModelChangeUnsupported}
+	case agentproduct.ControlClosed:
+		return RuntimeModelChange{Status: agentproduct.ModelChangeClosed}
+	default:
+		return RuntimeModelChange{Status: agentproduct.ModelAmbiguous}
+	}
 }
 
 type recoveryRuntimeManager struct {
@@ -115,11 +128,15 @@ func TestApplyingModelRecoveryRestoresAuthoritativeObservation(t *testing.T) {
 			wantOutcome: baldastate.RuntimeOperationOutcomeContextPreserved, wantReason: baldastate.RuntimeOperationReasonChangedLive,
 		},
 		{
-			name: "incumbent model unchanged", snapshot: agentproduct.SessionControlSnapshot{Status: agentproduct.ControlReady, CurrentModel: publicationOriginalModel},
-			wantGeneration: 1, wantModel: publicationOriginalModel,
-			wantOutcome: baldastate.RuntimeOperationOutcomeAborted, wantReason: baldastate.RuntimeOperationReasonRecoveryAborted,
+			name: "incumbent model reconciled", snapshot: agentproduct.SessionControlSnapshot{Status: agentproduct.ControlReady, CurrentModel: publicationOriginalModel},
+			wantGeneration: 2, wantModel: modelChangeTargetModel,
+			wantOutcome: baldastate.RuntimeOperationOutcomeContextPreserved, wantReason: baldastate.RuntimeOperationReasonChangedLive,
 		},
-		{name: "third model is ambiguous", snapshot: agentproduct.SessionControlSnapshot{Status: agentproduct.ControlReady, CurrentModel: "model-third"}, wantErr: true},
+		{
+			name: "third model reconciled", snapshot: agentproduct.SessionControlSnapshot{Status: agentproduct.ControlReady, CurrentModel: "model-third"},
+			wantGeneration: 2, wantModel: modelChangeTargetModel,
+			wantOutcome: baldastate.RuntimeOperationOutcomeContextPreserved, wantReason: baldastate.RuntimeOperationReasonChangedLive,
+		},
 		{name: "empty model is ambiguous", snapshot: agentproduct.SessionControlSnapshot{Status: agentproduct.ControlReady}, wantErr: true},
 		{name: "busy is ambiguous", snapshot: agentproduct.SessionControlSnapshot{Status: agentproduct.ControlBusy, Reason: agentproduct.ReasonActiveWork}, wantErr: true},
 		{name: "unsupported is ambiguous", snapshot: agentproduct.SessionControlSnapshot{Status: agentproduct.ControlUnsupported, Reason: agentproduct.ReasonUnavailable}, wantErr: true},
@@ -162,7 +179,7 @@ func TestApplyingModelRecoveryRestoresAuthoritativeObservation(t *testing.T) {
 					t.Fatalf("private recovery runtime closes = %d, want 1", fixture.runtime.closeCalls.Load())
 				}
 			}
-			if fixture.control.inspectCalls.Load() != 1 || fixture.control.validateCalls.Load() != 0 || fixture.control.changeCalls.Load() != 0 {
+			if fixture.control.inspectCalls.Load() != 0 || fixture.control.validateCalls.Load() != 0 || fixture.control.changeCalls.Load() != 1 {
 				t.Fatalf("control calls inspect/validate/change = %d/%d/%d", fixture.control.inspectCalls.Load(), fixture.control.validateCalls.Load(), fixture.control.changeCalls.Load())
 			}
 			if fixture.builder.openCalls.Load() != 1+boolInt(!test.wantErr) {
@@ -184,6 +201,9 @@ func TestApplyingModelRecoveryRestoresAuthoritativeObservation(t *testing.T) {
 				committed.EffectiveModel != wantModel || committed.RuntimeOutcome != wantOutcome {
 				t.Fatalf("committed runtime = %+v, want archive/binding/snapshot/generation/model/outcome unchanged or authoritative", committed)
 			}
+			if !test.wantErr && (committed.RequestedModel == nil || *committed.RequestedModel != modelChangeTargetModel) {
+				t.Fatalf("committed requested model = %v", committed.RequestedModel)
+			}
 		})
 	}
 }
@@ -197,7 +217,7 @@ func TestApplyingLegacyModelRecoveryUsesOperationBinding(t *testing.T) {
 	}{
 		{name: "cold target", snapshot: agentproduct.SessionControlSnapshot{Status: agentproduct.ControlReady, CurrentModel: modelChangeTargetModel}, wantReady: true},
 		{name: "active target", active: true, snapshot: agentproduct.SessionControlSnapshot{Status: agentproduct.ControlReady, CurrentModel: modelChangeTargetModel}, wantReady: true},
-		{name: "cold third", snapshot: agentproduct.SessionControlSnapshot{Status: agentproduct.ControlReady, CurrentModel: "model-third"}},
+		{name: "cold third", snapshot: agentproduct.SessionControlSnapshot{Status: agentproduct.ControlReady, CurrentModel: "model-third"}, wantReady: true},
 		{name: "cold unavailable", snapshot: agentproduct.SessionControlSnapshot{Status: agentproduct.ControlFailed, Reason: agentproduct.ReasonUnavailable}},
 	}
 	for _, test := range tests {
@@ -249,8 +269,8 @@ func TestApplyingLegacyModelRecoveryUsesOperationBinding(t *testing.T) {
 			if fixture.builder.createCalls.Load() != 0 || fixture.builder.freshCalls.Load() != 0 {
 				t.Fatalf("legacy recovery created session: create=%d fresh=%d", fixture.builder.createCalls.Load(), fixture.builder.freshCalls.Load())
 			}
-			if fixture.control.validateCalls.Load() != 0 || fixture.control.changeCalls.Load() != 0 {
-				t.Fatalf("legacy recovery mutated provider: validate=%d change=%d", fixture.control.validateCalls.Load(), fixture.control.changeCalls.Load())
+			if fixture.control.validateCalls.Load() != 0 || fixture.control.changeCalls.Load() != 1 {
+				t.Fatalf("legacy recovery reconcile calls: validate=%d change=%d", fixture.control.validateCalls.Load(), fixture.control.changeCalls.Load())
 			}
 			committed, found, getErr := fixture.sessions.GetBySessionID(t.Context(), recoverySessionID)
 			if getErr != nil || !found {
@@ -295,10 +315,7 @@ func TestApplyingModelRecoveryRepairsActiveFence(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			wantGeneration, wantModel := uint64(1), publicationOriginalModel
-			if currentModel == modelChangeTargetModel {
-				wantGeneration, wantModel = 2, modelChangeTargetModel
-			}
+			wantGeneration, wantModel := uint64(2), modelChangeTargetModel
 			if lease.Generation() != wantGeneration || lease.EffectiveModel() != wantModel {
 				t.Fatalf("runtime = generation %d model %q", lease.Generation(), lease.EffectiveModel())
 			}

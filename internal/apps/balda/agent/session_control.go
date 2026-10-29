@@ -143,6 +143,7 @@ func (r *BuiltRuntime) replacementRuntime(product *agentproduct.Product) (*Built
 		AppName:             r.AppName,
 		RuntimeSnapshotID:   r.RuntimeSnapshotID,
 		ProviderBindingJSON: r.ProviderBindingJSON,
+		RecipeModel:         r.RecipeModel,
 		productClose:        product.Close,
 		runnerScope:         r.runnerScope,
 		newRunner:           newRunner,

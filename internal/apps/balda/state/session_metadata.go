@@ -29,10 +29,25 @@ func prepareSessionRuntimeMetadata(record *SessionRecord) (int64, error) {
 	if record.EffectiveModel != "" && !structuralPublicValue(record.EffectiveModel, maxEffectiveModelBytes) {
 		return 0, fmt.Errorf("effective_model is invalid")
 	}
+	if err := prepareOptionalRequestedModel(&record.RequestedModel); err != nil {
+		return 0, err
+	}
 	if record.RuntimeOutcome != "" && !structuralPublicValue(record.RuntimeOutcome, maxRuntimeOutcomeBytes) {
 		return 0, fmt.Errorf("runtime_outcome is invalid")
 	}
 	return int64(record.RuntimeGeneration), nil
+}
+
+func prepareOptionalRequestedModel(model **string) error {
+	if *model == nil {
+		return nil
+	}
+	normalized := strings.TrimSpace(**model)
+	if !structuralPublicValue(normalized, maxEffectiveModelBytes) {
+		return fmt.Errorf("requested_model is invalid")
+	}
+	*model = &normalized
+	return nil
 }
 
 func prepareRuntimeOperationRecord(record *RuntimeOperationRecord) error {
@@ -66,6 +81,25 @@ func prepareRuntimeOperationRecord(record *RuntimeOperationRecord) error {
 		!optionalStructuralPublicValue(record.Outcome, maxRuntimeOutcomeBytes) ||
 		!optionalStructuralPublicValue(record.ReasonCode, maxRuntimeOutcomeBytes) {
 		return fmt.Errorf("runtime operation metadata is invalid")
+	}
+	if err := prepareOptionalRequestedModel(&record.TargetRequestedModel); err != nil {
+		return err
+	}
+	switch RuntimeOperationKind(record.Kind) {
+	case RuntimeOperationKindModel:
+		// Nil is retained for model operations written before requested_model
+		// existed. New writers always pin the target explicitly.
+		if record.TargetRequestedModel != nil && *record.TargetRequestedModel != record.TargetModel {
+			return fmt.Errorf("target_requested_model is invalid")
+		}
+	case RuntimeOperationKindLifetimePreference:
+		if record.TargetRequestedModel != nil && *record.TargetRequestedModel != record.TargetModel {
+			return fmt.Errorf("target_requested_model projection is invalid")
+		}
+	default:
+		if record.TargetRequestedModel != nil {
+			return fmt.Errorf("target_requested_model is not supported")
+		}
 	}
 	if err := prepareTargetProviderBinding(&record.TargetProviderBindingJSON); err != nil {
 		return err

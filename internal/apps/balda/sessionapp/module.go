@@ -76,6 +76,7 @@ func agentRuntime(runtime *baldasession.BuiltRuntime) *baldaagent.BuiltRuntime {
 		AppName:             runtime.AppName,
 		RuntimeSnapshotID:   runtime.RuntimeSnapshotID,
 		ProviderBindingJSON: runtime.ProviderBindingJSON,
+		RecipeModel:         runtime.RecipeModel,
 	}
 }
 
@@ -149,6 +150,7 @@ func (a SessionRuntimeManagerAdapter) RuntimeForSession(ctx context.Context, req
 		WorkspaceDir:        request.WorkspaceDir,
 		RuntimeSnapshotID:   request.RuntimeSnapshotID,
 		ProviderBindingJSON: request.ProviderBindingJSON,
+		ModelOverride:       request.ModelOverride,
 	})
 	if err != nil {
 		return nil, err
@@ -168,6 +170,7 @@ func sessionRuntime(runtime *baldaagent.BuiltRuntime) *baldasession.BuiltRuntime
 		AppName:             runtime.AppName,
 		RuntimeSnapshotID:   runtime.RuntimeSnapshotID,
 		ProviderBindingJSON: runtime.ProviderBindingJSON,
+		RecipeModel:         runtime.RecipeModel,
 		Close:               runtime.Close,
 	}
 	adapted.ModelController = modelControllerAdapter{runtime: runtime}

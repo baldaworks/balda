@@ -228,6 +228,9 @@ func (m *Manager) recoverRuntimeOperation(ctx context.Context, sessionID string)
 	if operation.State == baldastate.RuntimeOperationApplying && operation.Kind == string(baldastate.RuntimeOperationKindModel) {
 		return m.recoverApplyingModelOperation(ctx, operation)
 	}
+	if operation.State == baldastate.RuntimeOperationApplying && operation.Kind == string(baldastate.RuntimeOperationKindLifetimePreference) {
+		return m.recoverApplyingLifetimePreferenceOperation(ctx, operation)
+	}
 	if operation.Kind == string(baldastate.RuntimeOperationKindLifetime) {
 		switch operation.State {
 		case baldastate.RuntimeOperationPrepared:
@@ -285,11 +288,12 @@ func runtimeMatchesSessionRecord(topic *TopicSession, record baldastate.SessionR
 	if record.RuntimeGeneration == 0 && strings.TrimSpace(record.ProviderBindingJSON) == "" {
 		bindingMatches = true
 	}
+	projectedModel, _ := restoreFallbackModelProjection(record.RequestedModel, value.runtime.RecipeModel)
 	return value.archiveID == strings.TrimSpace(record.ArchiveID) &&
 		value.generation == record.RuntimeGeneration &&
 		strings.TrimSpace(value.runtime.RuntimeSnapshotID) == strings.TrimSpace(record.RuntimeSnapshotID) &&
 		bindingMatches &&
-		value.effectiveModel == strings.TrimSpace(record.EffectiveModel) &&
+		value.effectiveModel == projectedModel &&
 		value.outcome == strings.TrimSpace(record.RuntimeOutcome)
 }
 
@@ -318,22 +322,25 @@ func (m *Manager) sessionForRuntimeState(ctx context.Context, locator SessionLoc
 }
 
 type TopicSessionInfo struct {
-	SessionID    string
-	UserID       string
-	Locator      SessionLocator
-	Kind         Kind
-	OwnerJobID   string
-	ChannelType  string
-	AgentName    string
-	WorkspaceDir string
-	BranchName   string
-	Status       string
-	ArchiveID    string
-	Generation   uint64
-	Model        string
-	Outcome      string
-	ProviderID   string
-	Recovery     string
+	SessionID       string
+	UserID          string
+	Locator         SessionLocator
+	Kind            Kind
+	OwnerJobID      string
+	ChannelType     string
+	AgentName       string
+	WorkspaceDir    string
+	BranchName      string
+	Status          string
+	ArchiveID       string
+	Generation      uint64
+	RequestedModel  *string
+	ActiveModel     string
+	ActiveModelKind ModelObservationKind
+	Model           string
+	Outcome         string
+	ProviderID      string
+	Recovery        string
 }
 
 func (m *Manager) GetSessionInfo(ctx context.Context, sessionID string) (TopicSessionInfo, error) {
@@ -364,9 +371,26 @@ func (m *Manager) GetSessionInfo(ctx context.Context, sessionID string) (TopicSe
 		BranchName:   record.BranchName,
 		ArchiveID:    record.ArchiveID,
 		Generation:   record.RuntimeGeneration,
-		Model:        record.EffectiveModel,
 		Outcome:      record.RuntimeOutcome,
 		Recovery:     runtimeRecoveryReady,
+	}
+	if record.RequestedModel != nil {
+		requested := *record.RequestedModel
+		info.RequestedModel = &requested
+	}
+	if topic := m.activeTopicSession(trimmedID); topic != nil {
+		topic.runtimeMu.RLock()
+		slot := topic.runtime
+		topic.runtimeMu.RUnlock()
+		if slot != nil && slot.value.generation == record.RuntimeGeneration {
+			if observation, valid := slot.modelObservation(); valid {
+				info.ActiveModel = observation.Model
+				info.ActiveModelKind = observation.Kind
+				// Model is retained as a compatibility view for current handlers,
+				// but now represents only valid active evidence.
+				info.Model = observation.Model
+			}
+		}
 	}
 	if bindingJSON := strings.TrimSpace(record.ProviderBindingJSON); bindingJSON != "" {
 		canonical, canonicalErr := providers.CanonicalBindingJSON(bindingJSON)

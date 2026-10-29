@@ -298,6 +298,9 @@ type SessionRecord struct {
 	ProviderBindingJSON string
 	// RuntimeGeneration is the monotonic generation of the committed runtime binding.
 	RuntimeGeneration uint64
+	// RequestedModel is the sole durable explicit model preference. Nil means
+	// that provider/recipe selection remains authoritative.
+	RequestedModel *string
 	// EffectiveModel is the public model selected for the committed runtime.
 	EffectiveModel string
 	// RuntimeOutcome is the bounded semantic outcome of the committed publication.
@@ -327,6 +330,9 @@ const (
 	RuntimeOperationKindModel    RuntimeOperationKind = "model"
 	RuntimeOperationKindProvider RuntimeOperationKind = "provider"
 	RuntimeOperationKindLifetime RuntimeOperationKind = "lifetime"
+	// RuntimeOperationKindLifetimePreference is the preference-aware lifetime
+	// contract. Legacy lifetime records retain their original semantics.
+	RuntimeOperationKindLifetimePreference RuntimeOperationKind = "lifetime_preference"
 
 	RuntimeOperationOutcomeContextPreserved  RuntimeOperationOutcome = "context_preserved"
 	RuntimeOperationOutcomeContextReset      RuntimeOperationOutcome = "context_reset"
@@ -367,11 +373,15 @@ type RuntimeOperationRecord struct {
 	TargetSnapshotID          string
 	TargetProviderBindingJSON string
 	TargetModel               string
-	Outcome                   string
-	ReasonCode                string
-	CreatedAt                 time.Time
-	UpdatedAt                 time.Time
-	TerminalAt                *time.Time
+	// TargetRequestedModel pins preference presence and value for model and
+	// preference-aware lifetime operations. Nil is meaningful only for the
+	// latter and records the absence of an explicit preference.
+	TargetRequestedModel *string
+	Outcome              string
+	ReasonCode           string
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+	TerminalAt           *time.Time
 }
 
 // RuntimeOperationFinalization describes one terminal semantic result. The

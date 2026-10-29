@@ -182,6 +182,7 @@ func checkRuntimeOperationStore(t *testing.T, provider Provider) {
 	}
 	changedTarget := intent
 	changedTarget.TargetModel = "different-model"
+	changedTarget.TargetRequestedModel = stringPointer("different-model")
 	if _, err := store.Begin(t.Context(), changedTarget); !errors.Is(err, ErrRuntimeOperationConflict) {
 		t.Fatalf("Begin(changed target) error = %v, want conflict", err)
 	}
@@ -663,12 +664,13 @@ func putRuntimeSession(t *testing.T, provider Provider, sessionID, archiveID str
 }
 
 func testRuntimeIntent(operationID, sessionID, hashDigit string, at time.Time) RuntimeOperationRecord {
+	targetModel := "model-next"
 	return RuntimeOperationRecord{
 		OperationID: operationID, SessionID: sessionID, InputHash: strings.Repeat(hashDigit, 64),
 		Kind: string(RuntimeOperationKindModel), State: RuntimeOperationPrepared,
 		ExpectedArchiveID: "archive-one", ExpectedGeneration: 4,
 		TargetArchiveID: "archive-two", TargetSnapshotID: "snapshot-next",
-		TargetProviderBindingJSON: testRuntimeBinding, TargetModel: "model-next",
+		TargetProviderBindingJSON: testRuntimeBinding, TargetModel: targetModel, TargetRequestedModel: &targetModel,
 		CreatedAt: at, UpdatedAt: at,
 	}
 }

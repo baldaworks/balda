@@ -282,7 +282,12 @@ func samePublicationIntent(got, want baldastate.RuntimeOperationRecord) bool {
 	return got.OperationID == want.OperationID && got.SessionID == want.SessionID && got.InputHash == want.InputHash &&
 		got.Kind == want.Kind && got.ExpectedArchiveID == want.ExpectedArchiveID && got.ExpectedGeneration == want.ExpectedGeneration &&
 		got.TargetArchiveID == want.TargetArchiveID && got.TargetSnapshotID == want.TargetSnapshotID &&
-		got.TargetProviderBindingJSON == want.TargetProviderBindingJSON && got.TargetModel == want.TargetModel
+		got.TargetProviderBindingJSON == want.TargetProviderBindingJSON && got.TargetModel == want.TargetModel &&
+		sameOptionalModel(got.TargetRequestedModel, want.TargetRequestedModel)
+}
+
+func sameOptionalModel(got, want *string) bool {
+	return got == nil && want == nil || got != nil && want != nil && *got == *want
 }
 
 func isPublicationTerminal(

@@ -183,8 +183,10 @@ func TestRuntimeForSessionProjectsSkillMetadataAndExtensionInstructionsToProvide
 		Logger:           zerolog.Nop(),
 	})
 
+	requestedModel := "model-requested"
 	runtime, err := manager.RuntimeForSession(context.Background(), SessionRuntimeRequest{
-		Locator: deliverycmd.Locator{SessionID: "session-1", ChannelType: "telegram"},
+		Locator:       deliverycmd.Locator{SessionID: "session-1", ChannelType: "telegram"},
+		ModelOverride: &requestedModel,
 	})
 	if err != nil {
 		t.Fatalf("RuntimeForSession() error = %v", err)
@@ -192,6 +194,12 @@ func TestRuntimeForSessionProjectsSkillMetadataAndExtensionInstructionsToProvide
 	t.Cleanup(func() { _ = runtime.Close() })
 	if len(factory.requests) != 1 {
 		t.Fatalf("provider build requests = %d, want 1", len(factory.requests))
+	}
+	if factory.requests[0].ModelOverride == nil || *factory.requests[0].ModelOverride != requestedModel {
+		t.Fatalf("provider model override = %v", factory.requests[0].ModelOverride)
+	}
+	if runtime.RecipeModel != requestedModel {
+		t.Fatalf("runtime recipe receipt = %q, want requested override", runtime.RecipeModel)
 	}
 	instruction := factory.requests[0].Instruction
 	for _, want := range []string{

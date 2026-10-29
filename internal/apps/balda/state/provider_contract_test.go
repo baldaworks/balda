@@ -89,6 +89,7 @@ func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) 
 	t.Run("Provider_KVConsumeJSONConcurrentConsumeOnce", func(t *testing.T) { checkProvider_KVConsumeJSONConcurrentConsumeOnce(t, factory(t)) })
 	t.Run("Provider_SessionStoreRoundTrip", func(t *testing.T) { checkProvider_SessionStoreRoundTrip(t, factory(t)) })
 	t.Run("Provider_SessionStoreUpsertPreservesGuardedRuntime", func(t *testing.T) { checkProviderSessionStoreUpsertPreservesGuardedRuntime(t, factory(t)) })
+	t.Run("Provider_RequestedModelPreference", func(t *testing.T) { checkProviderRequestedModelPreference(t, factory(t)) })
 	t.Run("Provider_SessionStoreRejectsInvalidRuntimeMetadata", func(t *testing.T) { checkProviderSessionStoreRejectsInvalidRuntimeMetadata(t, factory(t)) })
 	t.Run("Provider_RuntimeOperationStore", func(t *testing.T) {
 		provider := newContractProvider(t, factory(t))
@@ -739,12 +740,13 @@ func checkProviderSessionStoreUpsertPreservesGuardedRuntime(t *testing.T, open c
 	defer closeContractProvider(t, provider)
 
 	store := provider.Sessions()
+	requested := "model-requested"
 	original := SessionRecord{
 		ArchiveID: "archive-exact", SessionID: "runtime-guarded", UserID: "user-1",
 		ChannelType: ChannelTypeTelegram, AddressKey: "91:0", AddressJSON: `{}`,
 		AgentName: "agent", WorkspaceDir: "/workspace/one", BranchName: "branch-one",
 		RuntimeSnapshotID: "snapshot-exact", ProviderBindingJSON: `{"RootProviderID":"provider-exact","Entries":[{"ProviderID":"provider-exact","Source":"managed","RevisionID":"revision-exact"}],"Reproducible":true,"Warnings":null}`,
-		RuntimeGeneration: 9, EffectiveModel: "model-exact", RuntimeOutcome: "context_preserved",
+		RuntimeGeneration: 9, RequestedModel: &requested, EffectiveModel: "model-exact", RuntimeOutcome: "context_preserved",
 		Status: SessionStatusActive,
 	}
 	if err := store.Upsert(t.Context(), original); err != nil {
@@ -759,6 +761,8 @@ func checkProviderSessionStoreUpsertPreservesGuardedRuntime(t *testing.T, open c
 	update.RuntimeSnapshotID = "snapshot-overwrite"
 	update.ProviderBindingJSON = `{"RootProviderID":"provider-overwrite","Entries":[{"ProviderID":"provider-overwrite","Source":"managed","RevisionID":"revision-overwrite"}],"Reproducible":true,"Warnings":null}`
 	update.RuntimeGeneration = 10
+	overwriteRequested := "model-overwrite"
+	update.RequestedModel = &overwriteRequested
 	update.EffectiveModel = "model-overwrite"
 	update.RuntimeOutcome = "context_reset"
 	if err := store.Upsert(t.Context(), update); err != nil {
@@ -773,8 +777,111 @@ func checkProviderSessionStoreUpsertPreservesGuardedRuntime(t *testing.T, open c
 		t.Fatalf("ordinary metadata not updated: %+v", got)
 	}
 	if got.ArchiveID != original.ArchiveID || got.RuntimeSnapshotID != original.RuntimeSnapshotID || got.ProviderBindingJSON != original.ProviderBindingJSON ||
-		got.RuntimeGeneration != original.RuntimeGeneration || got.EffectiveModel != original.EffectiveModel || got.RuntimeOutcome != original.RuntimeOutcome {
+		got.RuntimeGeneration != original.RuntimeGeneration || !sameOptionalString(got.RequestedModel, original.RequestedModel) ||
+		got.EffectiveModel != original.EffectiveModel || got.RuntimeOutcome != original.RuntimeOutcome {
 		t.Fatalf("generic upsert changed guarded runtime metadata: %+v", got)
+	}
+}
+
+func checkProviderRequestedModelPreference(t *testing.T, open contractOpener) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "requested-model-preference.db")
+	provider, err := open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	legacy := SessionRecord{
+		SessionID: "preference-legacy", UserID: "user", ChannelType: ChannelTypeTelegram,
+		AddressKey: "93:0", AddressJSON: `{}`, ArchiveID: "archive-legacy",
+		RuntimeSnapshotID: "snapshot", EffectiveModel: "legacy-display", Status: SessionStatusActive,
+	}
+	if err := provider.Sessions().Upsert(t.Context(), legacy); err != nil {
+		t.Fatal(err)
+	}
+	got, found, err := provider.Sessions().GetBySessionID(t.Context(), legacy.SessionID)
+	if err != nil || !found || got.RequestedModel != nil || got.EffectiveModel != legacy.EffectiveModel {
+		t.Fatalf("legacy preference = %+v, %t, %v", got, found, err)
+	}
+	db, bind, _ := runtimeOperationTestSQL(provider)
+	if _, err := db.ExecContext(t.Context(), bind(`UPDATE balda_session_metadata SET effective_model=? WHERE session_id=?`),
+		"old-binary-display-write", legacy.SessionID); err != nil {
+		t.Fatal(err)
+	}
+	closeContractProvider(t, provider)
+	provider, err = open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, found, err = provider.Sessions().GetBySessionID(t.Context(), legacy.SessionID)
+	if err != nil || !found || got.RequestedModel != nil || got.EffectiveModel != "old-binary-display-write" {
+		t.Fatalf("re-upgraded legacy preference = %+v, %t, %v", got, found, err)
+	}
+
+	requested := "model-old"
+	record := legacy
+	record.SessionID = "preference-rotation"
+	record.AddressKey = "94:0"
+	record.ArchiveID = "archive-old"
+	record.RequestedModel = &requested
+	record.EffectiveModel = requested
+	if err := provider.Sessions().Upsert(t.Context(), record); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Now().UTC()
+	intent := RuntimeOperationRecord{
+		OperationID: "preference-rotation", SessionID: record.SessionID, InputHash: strings.Repeat("d", 64),
+		Kind: string(RuntimeOperationKindLifetimePreference), State: RuntimeOperationPrepared,
+		ExpectedArchiveID: record.ArchiveID, TargetArchiveID: "archive-new",
+		TargetSnapshotID: record.RuntimeSnapshotID, TargetRequestedModel: nil, TargetModel: "",
+		CreatedAt: at, UpdatedAt: at,
+	}
+	stored, err := provider.RuntimeOperations().Begin(t.Context(), intent)
+	if err != nil || stored.TargetRequestedModel != nil {
+		t.Fatalf("Begin() = %+v, %v", stored, err)
+	}
+	applying := markRuntimeOperationApplying(t, provider.RuntimeOperations(), intent)
+	if _, err := provider.RuntimeOperations().Finalize(t.Context(), RuntimeOperationFinalization{
+		OperationID: intent.OperationID, InputHash: intent.InputHash,
+		Outcome: RuntimeOperationOutcomeContextReset, At: applying.UpdatedAt.Add(runtimeOperationTestStep),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, found, err = provider.Sessions().GetBySessionID(t.Context(), record.SessionID)
+	if err != nil || !found || got.RequestedModel != nil || got.EffectiveModel != "" ||
+		got.ArchiveID != intent.TargetArchiveID || got.RuntimeGeneration != 1 {
+		t.Fatalf("cleared preference projection = %+v, %t, %v", got, found, err)
+	}
+
+	unresolvedPreference := "model-pinned"
+	unresolvedRecord := legacy
+	unresolvedRecord.SessionID = "preference-unresolved"
+	unresolvedRecord.AddressKey = "95:0"
+	unresolvedRecord.ArchiveID = "archive-unresolved"
+	if err := provider.Sessions().Upsert(t.Context(), unresolvedRecord); err != nil {
+		t.Fatal(err)
+	}
+	unresolved := RuntimeOperationRecord{
+		OperationID: "preference-unresolved", SessionID: unresolvedRecord.SessionID, InputHash: strings.Repeat("e", 64),
+		Kind: string(RuntimeOperationKindLifetimePreference), State: RuntimeOperationPrepared,
+		ExpectedArchiveID: unresolvedRecord.ArchiveID, TargetArchiveID: unresolvedRecord.ArchiveID,
+		TargetSnapshotID: unresolvedRecord.RuntimeSnapshotID, TargetModel: unresolvedPreference,
+		TargetRequestedModel: &unresolvedPreference, CreatedAt: at, UpdatedAt: at,
+	}
+	if _, err := provider.RuntimeOperations().Begin(t.Context(), unresolved); err != nil {
+		t.Fatal(err)
+	}
+	closeContractProvider(t, provider)
+	provider, err = open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeContractProvider(t, provider)
+	restored, found, err := provider.RuntimeOperations().Get(t.Context(), unresolved.OperationID)
+	if err != nil || !found || restored.State != RuntimeOperationPrepared ||
+		restored.Kind != string(RuntimeOperationKindLifetimePreference) ||
+		restored.TargetRequestedModel == nil || *restored.TargetRequestedModel != unresolvedPreference {
+		t.Fatalf("re-upgraded unresolved preference = %+v, %t, %v", restored, found, err)
 	}
 }
 

@@ -1005,6 +1005,7 @@ func (f *fakeAgentBuilder) GetAgentMetadata(agentName string) AgentMetadata {
 type sqliteAgentBuilder struct {
 	legacyCalls int
 	freshCalls  int
+	metadata    AgentMetadata
 }
 
 func (b *sqliteAgentBuilder) CreateRuntimeSession(
@@ -1051,7 +1052,7 @@ func (b *sqliteAgentBuilder) CreateFreshRuntimeSession(
 	return createSQLiteTestSession(ctx, runtime, userID, sessionID)
 }
 
-func (*sqliteAgentBuilder) GetAgentMetadata(string) AgentMetadata { return AgentMetadata{} }
+func (b *sqliteAgentBuilder) GetAgentMetadata(string) AgentMetadata { return b.metadata }
 
 func createSQLiteTestSession(ctx context.Context, runtime *BuiltRuntime, userID, sessionID string) (adksession.Session, error) {
 	response, err := runtime.SessionSvc.Create(ctx, &adksession.CreateRequest{
@@ -1422,7 +1423,7 @@ func TestCreateSessionPublishesCurrentEffectiveModel(t *testing.T) {
 		baldaProviderName: "balda-provider",
 		runtimeManager: &fakeScopedRuntimeManager{
 			fakeBaldaRuntimeManager: fakeBaldaRuntimeManager{providerID: "balda-provider"},
-			sessionRuntime:          &BuiltRuntime{RuntimeSnapshotID: currentSnapshotID},
+			sessionRuntime:          &BuiltRuntime{RuntimeSnapshotID: currentSnapshotID, RecipeModel: "current-model"},
 		},
 		agentBuilder: builder,
 		workingDir:   t.TempDir(),
@@ -1445,8 +1446,8 @@ func TestCreateSessionPublishesCurrentEffectiveModel(t *testing.T) {
 	if lease.EffectiveModel() != "current-model" {
 		t.Fatalf("fresh effective model = %q, want current-model", lease.EffectiveModel())
 	}
-	if len(builder.metadataAgentNames) != 1 || builder.metadataAgentNames[0] != "balda-provider" {
-		t.Fatalf("model metadata lookup keys = %v, want [balda-provider] for named topic", builder.metadataAgentNames)
+	if len(builder.metadataAgentNames) != 0 {
+		t.Fatalf("post-construction model metadata lookups = %v, want none", builder.metadataAgentNames)
 	}
 }
 
@@ -1722,6 +1723,220 @@ func TestRestoreSessionSnapshotMismatchStartsFreshWithCurrentRuntime(t *testing.
 	}
 	if restartedBuilder.openRuntimeSessionCalls != 1 || restartedBuilder.freshRuntimeSessionCalls != 0 {
 		t.Fatalf("restart builder calls = open %d, fresh %d; want open 1, fresh 0", restartedBuilder.openRuntimeSessionCalls, restartedBuilder.freshRuntimeSessionCalls)
+	}
+}
+
+func TestRestoreFallbackPreservesRequestedModelPreference(t *testing.T) {
+	const (
+		providerID     = "provider-id"
+		displayLabel   = "display-label"
+		recipeModel    = "recipe-a"
+		requestedModel = "requested-b"
+	)
+	locator := testTelegramLocator(31, 73)
+	dbPath := filepath.Join(t.TempDir(), "requested-model-fallback.db")
+	provider, err := baldastate.NewSQLiteProvider(t.Context(), dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = provider.Close() })
+	requestedPreference := requestedModel
+	record := baldastate.SessionRecord{
+		SessionID: locator.SessionID, UserID: ensureTestUserID,
+		ChannelType: locator.ChannelType, AddressKey: locator.AddressKey, AddressJSON: locator.AddressJSON,
+		AgentName: displayLabel, RuntimeSnapshotID: "snapshot-persisted", ProviderBindingJSON: publicationBinding,
+		RuntimeGeneration: 4, RequestedModel: &requestedPreference, EffectiveModel: recipeModel,
+		Status: baldastate.SessionStatusActive,
+	}
+	if err := provider.Sessions().Upsert(t.Context(), record); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.RuntimeSessions().Create(t.Context(), &adksession.CreateRequest{
+		AppName: baldaRuntimeAppName, UserID: record.UserID, SessionID: record.SessionID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	currentRuntime := &BuiltRuntime{
+		AppName: baldaRuntimeAppName, SessionSvc: provider.RuntimeSessions(), RuntimeSnapshotID: currentSnapshotID,
+		ProviderBindingJSON: publicationBinding, RecipeModel: requestedModel,
+	}
+	runtimeManager := &fakeScopedRuntimeManager{
+		fakeBaldaRuntimeManager: fakeBaldaRuntimeManager{providerID: providerID},
+		runtimeForSession: func(request SessionRuntimeRequest) (*BuiltRuntime, error) {
+			if request.ModelOverride == nil || *request.ModelOverride != requestedModel {
+				t.Fatalf("runtime model override = %v, want %q", request.ModelOverride, requestedModel)
+			}
+			if request.RuntimeSnapshotID != "" {
+				return &BuiltRuntime{RuntimeSnapshotID: "snapshot-mismatch", ProviderBindingJSON: publicationBinding}, nil
+			}
+			return currentRuntime, nil
+		},
+	}
+	builder := &sqliteAgentBuilder{metadata: AgentMetadata{Model: recipeModel}}
+	manager := &Manager{
+		baldaProviderName: providerID, runtimeManager: runtimeManager, agentBuilder: builder,
+		workingDir: t.TempDir(), logger: zerolog.Nop(), sessions: make(map[string]*TopicSession),
+		sessionStore: provider.Sessions(), runtimeOperations: provider.RuntimeOperations(),
+	}
+
+	restored, err := manager.RestoreSession(t.Context(), SessionContext{Locator: locator})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runtimeManager.sessionRequests) != 2 {
+		t.Fatalf("runtime requests = %+v, want exact then fallback", runtimeManager.sessionRequests)
+	}
+	lease, err := restored.AcquireRuntime()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lease.EffectiveModel() != requestedModel || lease.Generation() != record.RuntimeGeneration+1 {
+		t.Fatalf("fallback slot model/generation = %q/%d", lease.EffectiveModel(), lease.Generation())
+	}
+	lease.Release()
+	info, err := manager.GetSessionInfo(t.Context(), record.SessionID)
+	if err != nil || info.RequestedModel == nil || *info.RequestedModel != requestedModel || info.ActiveModel != "" || info.Model != "" {
+		t.Fatalf("fallback model truth = %+v, %v", info, err)
+	}
+	committed, found, err := provider.Sessions().GetBySessionID(t.Context(), record.SessionID)
+	if err != nil || !found || committed.RequestedModel == nil || *committed.RequestedModel != requestedModel ||
+		committed.EffectiveModel != requestedModel || committed.RuntimeGeneration != record.RuntimeGeneration+1 {
+		t.Fatalf("committed fallback metadata = %+v, %t, %v", committed, found, err)
+	}
+
+	probe, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = probe.Close() })
+	var count int
+	if err := probe.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM balda_runtime_operations`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("fallback operation count = %d, %v", count, err)
+	}
+	var kind, targetPreference, targetModel, operationState string
+	if err := probe.QueryRowContext(t.Context(), `SELECT kind,target_requested_model,target_model,state FROM balda_runtime_operations LIMIT 1`).
+		Scan(&kind, &targetPreference, &targetModel, &operationState); err != nil {
+		t.Fatal(err)
+	}
+	if kind != string(baldastate.RuntimeOperationKindLifetimePreference) || targetPreference != requestedModel ||
+		targetModel != requestedModel || operationState != string(baldastate.RuntimeOperationTerminal) {
+		t.Fatalf("fallback operation = kind %q preference %q model %q state %q", kind, targetPreference, targetModel, operationState)
+	}
+	replayed, err := manager.RestoreSession(t.Context(), SessionContext{Locator: locator})
+	if err != nil || replayed != restored || len(runtimeManager.sessionRequests) != 2 {
+		t.Fatalf("fallback replay = %p, %v; runtime requests=%d", replayed, err, len(runtimeManager.sessionRequests))
+	}
+	if err := probe.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM balda_runtime_operations`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("fallback replay operation count = %d, %v", count, err)
+	}
+}
+
+func TestRestoreFallbackUsesBoundRuntimeRecipeReceipt(t *testing.T) {
+	const (
+		providerID   = "managed-only"
+		displayModel = "root-display-a"
+		boundModel   = "managed-binding-b"
+	)
+	locator := testTelegramLocator(32, 74)
+	dbPath := filepath.Join(t.TempDir(), "bound-recipe-fallback.db")
+	provider, err := baldastate.NewSQLiteProvider(t.Context(), dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = provider.Close() })
+	record := baldastate.SessionRecord{
+		SessionID: locator.SessionID, UserID: ensureTestUserID,
+		ChannelType: locator.ChannelType, AddressKey: locator.AddressKey, AddressJSON: locator.AddressJSON,
+		AgentName: displayModel, RuntimeSnapshotID: "snapshot-persisted", ProviderBindingJSON: publicationBinding,
+		RuntimeGeneration: 2, EffectiveModel: displayModel, Status: baldastate.SessionStatusActive,
+	}
+	if err := provider.Sessions().Upsert(t.Context(), record); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.RuntimeSessions().Create(t.Context(), &adksession.CreateRequest{
+		AppName: baldaRuntimeAppName, UserID: record.UserID, SessionID: record.SessionID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	currentRuntime := &BuiltRuntime{
+		AppName: baldaRuntimeAppName, SessionSvc: provider.RuntimeSessions(), RuntimeSnapshotID: currentSnapshotID,
+		ProviderBindingJSON: publicationBinding, RecipeModel: boundModel,
+	}
+	runtimeManager := &fakeScopedRuntimeManager{
+		fakeBaldaRuntimeManager: fakeBaldaRuntimeManager{providerID: providerID},
+		runtimeForSession: func(request SessionRuntimeRequest) (*BuiltRuntime, error) {
+			if request.ModelOverride != nil {
+				t.Fatalf("runtime model override = %v, want nil recipe selection", request.ModelOverride)
+			}
+			if request.RuntimeSnapshotID != "" {
+				return &BuiltRuntime{
+					RuntimeSnapshotID: "snapshot-mismatch", ProviderBindingJSON: publicationBinding, RecipeModel: displayModel,
+				}, nil
+			}
+			return currentRuntime, nil
+		},
+	}
+	manager := &Manager{
+		baldaProviderName: providerID, runtimeManager: runtimeManager,
+		agentBuilder: &sqliteAgentBuilder{metadata: AgentMetadata{Model: displayModel}},
+		workingDir:   t.TempDir(), logger: zerolog.Nop(), sessions: make(map[string]*TopicSession),
+		sessionStore: provider.Sessions(), runtimeOperations: provider.RuntimeOperations(),
+	}
+
+	restored, err := manager.RestoreSession(t.Context(), SessionContext{Locator: locator})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := restored.AcquireRuntime()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lease.EffectiveModel() != boundModel || lease.Generation() != record.RuntimeGeneration+1 {
+		t.Fatalf("bound fallback slot = model %q generation %d", lease.EffectiveModel(), lease.Generation())
+	}
+	lease.Release()
+	committed, found, err := provider.Sessions().GetBySessionID(t.Context(), record.SessionID)
+	if err != nil || !found || committed.RequestedModel != nil || committed.EffectiveModel != boundModel {
+		t.Fatalf("bound fallback metadata = %+v, %t, %v", committed, found, err)
+	}
+	probe, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = probe.Close() })
+	var kind, targetModel string
+	var targetRequested sql.NullString
+	if err := probe.QueryRowContext(t.Context(), `SELECT kind,target_requested_model,target_model FROM balda_runtime_operations LIMIT 1`).
+		Scan(&kind, &targetRequested, &targetModel); err != nil {
+		t.Fatal(err)
+	}
+	if kind != string(baldastate.RuntimeOperationKindLifetimePreference) || targetRequested.Valid || targetModel != boundModel {
+		t.Fatalf("bound fallback operation = kind %q requested %v model %q", kind, targetRequested, targetModel)
+	}
+}
+
+func TestRestoreFallbackModelProjection(t *testing.T) {
+	requested := "requested-b"
+	for _, test := range []struct {
+		name          string
+		requested     *string
+		recipe        string
+		wantModel     string
+		wantRequested *string
+	}{
+		{name: "requested wins", requested: &requested, recipe: "recipe-a", wantModel: requested, wantRequested: &requested},
+		{name: "exact recipe fallback", recipe: "recipe-a", wantModel: "recipe-a"},
+		{name: "unknown remains empty", recipe: "", wantModel: ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			model, projected := restoreFallbackModelProjection(test.requested, test.recipe)
+			if model != test.wantModel || !sameOptionalModel(projected, test.wantRequested) {
+				t.Fatalf("projection = %q/%v, want %q/%v", model, projected, test.wantModel, test.wantRequested)
+			}
+			if projected != nil && test.requested != nil && projected == test.requested {
+				t.Fatal("projection retained caller-owned preference pointer")
+			}
+		})
 	}
 }
 
