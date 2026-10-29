@@ -148,7 +148,7 @@ func (m *Manager) recoverArchiveActivation(ctx context.Context, root *BuiltRunti
 	if err != nil {
 		return nil, err
 	}
-	runtime, err := m.bindSessionRuntime(ctx, root, loc, userID, intent.Session.RuntimeID, live.WorkspaceDir, live.RuntimeSnapshotID, live.ProviderBindingJSON)
+	runtime, err := m.bindSessionRuntime(ctx, root, loc, userID, intent.Session.RuntimeID, live.WorkspaceDir, live.RuntimeSnapshotID, live.ProviderBindingJSON, live.RequestedModel)
 	if err != nil {
 		return nil, err
 	}

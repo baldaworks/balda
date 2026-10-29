@@ -34,6 +34,65 @@ func (*testSessionControl) FastForward(context.Context, adksession.Session, agen
 	return agentproduct.ContextChange{}
 }
 
+type observationController struct {
+	snapshot agentproduct.SessionControlSnapshot
+}
+
+func (c *observationController) InspectSessionControl(context.Context, RuntimeSessionIdentity) agentproduct.SessionControlSnapshot {
+	return c.snapshot
+}
+func (*observationController) ValidateModel(context.Context, RuntimeSessionIdentity, string) agentproduct.ModelValidation {
+	return agentproduct.ModelValidation{}
+}
+func (*observationController) ChangeModel(context.Context, RuntimeSessionIdentity, string) RuntimeModelChange {
+	return RuntimeModelChange{}
+}
+
+func TestRuntimeSlotModelObservationIsGenerationScoped(t *testing.T) {
+	service := adksession.InMemoryService()
+	created, err := service.Create(t.Context(), &adksession.CreateRequest{AppName: "app", UserID: "user", SessionID: "session"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	controller := &observationController{snapshot: agentproduct.SessionControlSnapshot{
+		Status: agentproduct.ControlReady, CurrentModel: "model-active", ControlRevision: "opaque-revision",
+	}}
+	slot := newRuntimeSlot(runtimeSlotConfig{
+		runtime: &BuiltRuntime{SessionSvc: service, AppName: "app", ModelController: controller},
+		session: created.Session, archiveID: "archive", generation: 4,
+	})
+	lease, err := slot.acquire()
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease.RefreshModelObservation(t.Context())
+	observation, ok := lease.ModelObservation()
+	if !ok || observation.Model != "model-active" || observation.ControlRevision != "opaque-revision" ||
+		observation.Generation != 4 || observation.Kind != ModelObservationProviderObserved {
+		t.Fatalf("observation = %+v, %t", observation, ok)
+	}
+	lease.Release()
+
+	successor, err := slot.sharedModelSuccessor("model-next", publicationOutcome)
+	if err != nil {
+		t.Fatal(err)
+	}
+	successorLease, err := successor.acquire()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer successorLease.Release()
+	if got, ok := successorLease.ModelObservation(); ok {
+		t.Fatalf("successor inherited stale observation: %+v", got)
+	}
+	controller.snapshot.ControlRevision = ""
+	controller.snapshot.CurrentModel = "hosted-local"
+	successorLease.RefreshModelObservation(t.Context())
+	if got, ok := successorLease.ModelObservation(); !ok || got.Kind != ModelObservationLocallyExecuted || got.Model != "hosted-local" {
+		t.Fatalf("hosted observation = %+v, %t", got, ok)
+	}
+}
+
 func TestRuntimeSlotLeaseCarriesOneImmutableRuntime(t *testing.T) {
 	service := adksession.InMemoryService()
 	created, err := service.Create(t.Context(), &adksession.CreateRequest{

@@ -35,6 +35,7 @@ func TestSQLiteRuntimeOperationStateMigration(t *testing.T) {
 	}
 	assertSQLiteRuntimeOperationSchema(t, db)
 	checkRuntimeOperationStateMigration(t, db, func(query string) string { return query })
+	checkRequestedModelDowngradeProhibited(t, db, func(query string) string { return query }, provider)
 }
 
 func assertSQLiteRuntimeOperationSchema(t *testing.T, db *sql.DB) {
@@ -54,7 +55,7 @@ func assertSQLiteRuntimeOperationSchema(t *testing.T, db *sql.DB) {
 		}
 		columns = append(columns, name)
 	}
-	want := []string{"operation_id", "session_id", "input_hash", "kind", "state", "expected_archive_id", "expected_generation", "target_archive_id", "target_snapshot_id", "target_provider_binding_json", "target_model", "outcome", "reason_code", "created_at", "updated_at", "terminal_at"}
+	want := []string{"operation_id", "session_id", "input_hash", "kind", "state", "expected_archive_id", "expected_generation", "target_archive_id", "target_snapshot_id", "target_provider_binding_json", "target_model", "outcome", "reason_code", "created_at", "updated_at", "terminal_at", "target_requested_model"}
 	if !slices.Equal(columns, want) {
 		t.Fatalf("operation columns = %v, want %v", columns, want)
 	}

@@ -40,6 +40,23 @@ type RuntimeLease struct {
 	once sync.Once
 }
 
+// ModelObservationKind identifies process-local active-model evidence.
+type ModelObservationKind string
+
+const (
+	ModelObservationProviderObserved ModelObservationKind = "provider_observed"
+	ModelObservationLocallyExecuted  ModelObservationKind = "locally_executed"
+)
+
+// ModelObservation is valid only for one exact RuntimeSlot generation and
+// Product. It is deliberately not persisted or used as requested intent.
+type ModelObservation struct {
+	Generation      uint64
+	ControlRevision string
+	Model           string
+	Kind            ModelObservationKind
+}
+
 // Agent returns the agent bound to the leased runtime.
 func (l *RuntimeLease) Agent() agent.Agent { return l.slot.value.runtime.Agent }
 
@@ -79,6 +96,24 @@ func (l *RuntimeLease) EffectiveModel() string { return l.slot.value.effectiveMo
 
 // Outcome returns the bounded publication outcome carried by the lease.
 func (l *RuntimeLease) Outcome() string { return l.slot.value.outcome }
+
+// ModelObservation returns already-recorded evidence without provider work.
+func (l *RuntimeLease) ModelObservation() (ModelObservation, bool) {
+	if l == nil || l.slot == nil {
+		return ModelObservation{}, false
+	}
+	return l.slot.modelObservation()
+}
+
+// RefreshModelObservation records authoritative evidence already exposed by
+// the exact Product after successful provider work. Failure clears stale
+// evidence and never affects the completed turn.
+func (l *RuntimeLease) RefreshModelObservation(ctx context.Context) {
+	if l == nil || l.slot == nil {
+		return
+	}
+	l.slot.refreshModelObservation(ctx)
+}
 
 // RuntimeSnapshotID returns the immutable capability snapshot bound to the runtime.
 func (l *RuntimeLease) RuntimeSnapshotID() string {
@@ -160,6 +195,8 @@ type RuntimeSlot struct {
 	publicationClaimed bool
 	published          bool
 	drainErr           error
+	observation        ModelObservation
+	hasObservation     bool
 	drained            chan struct{}
 }
 
@@ -224,6 +261,8 @@ func (s *RuntimeSlot) sharedSuccessor(generation uint64, effectiveModel, outcome
 	value.generation = generation
 	value.effectiveModel = effectiveModel
 	value.outcome = outcome
+	// A generation change invalidates every prior Product/generation-scoped
+	// observation even when aggregate ownership is shared.
 	return newRuntimeSlotWithOwner(value, s.owner), nil
 }
 
@@ -287,6 +326,57 @@ func sameIdentityObject(left, right any) bool {
 	}
 	leftValue, rightValue := reflect.ValueOf(left), reflect.ValueOf(right)
 	return leftValue.Type() == rightValue.Type() && leftValue.Type().Comparable() && leftValue.Interface() == rightValue.Interface()
+}
+
+func (s *RuntimeSlot) modelObservation() (ModelObservation, bool) {
+	if s == nil {
+		return ModelObservation{}, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.hasObservation || s.observation.Generation != s.value.generation || s.retired {
+		return ModelObservation{}, false
+	}
+	return s.observation, true
+}
+
+func (s *RuntimeSlot) refreshModelObservation(ctx context.Context) {
+	if s == nil || s.value.runtime.ModelController == nil || ctx == nil {
+		if s != nil {
+			s.clearModelObservation()
+		}
+		return
+	}
+	snapshot := s.value.runtime.ModelController.InspectSessionControl(ctx, runtimeIdentity(s.value))
+	model := strings.TrimSpace(snapshot.CurrentModel)
+	revision := strings.TrimSpace(snapshot.ControlRevision)
+	if snapshot.Status != agentproduct.ControlReady || model == "" {
+		s.clearModelObservation()
+		return
+	}
+	kind := ModelObservationLocallyExecuted
+	if revision != "" {
+		kind = ModelObservationProviderObserved
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.retired {
+		return
+	}
+	s.observation = ModelObservation{
+		Generation: s.value.generation, ControlRevision: revision, Model: model, Kind: kind,
+	}
+	s.hasObservation = true
+}
+
+func (s *RuntimeSlot) clearModelObservation() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.observation = ModelObservation{}
+	s.hasObservation = false
+	s.mu.Unlock()
 }
 
 func (s *RuntimeSlot) acquire() (*RuntimeLease, error) {

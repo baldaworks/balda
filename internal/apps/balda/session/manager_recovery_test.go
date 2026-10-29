@@ -69,12 +69,50 @@ func TestGetSessionInfoReadsOnlyDurableRuntimeState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetSessionInfo() error = %v", err)
 	}
-	if info.UserID != recoveryUserID || info.ProviderID != recoveryProviderID || info.Model != publicationOriginalModel ||
+	if info.UserID != recoveryUserID || info.ProviderID != recoveryProviderID || info.Model != "" || info.ActiveModel != "" ||
 		info.Generation != 1 || info.ArchiveID != publicationArchiveID || info.Outcome != publicationOutcome {
 		t.Fatalf("GetSessionInfo() = %+v", info)
 	}
 	if info.Status != sessionStatusRecoveryRequired || info.Recovery != "ambiguous" {
 		t.Fatalf("recovery status = %q/%q", info.Status, info.Recovery)
+	}
+}
+
+func TestGetSessionInfoReturnsDurablePreferenceAndCurrentObservationOnly(t *testing.T) {
+	const activeModel = "model-active"
+
+	manager, topic, store, locator := recoveryManager(t, "", 1)
+	store.operation = baldastate.RuntimeOperationRecord{}
+	requested := "model-requested"
+	sessionStore := manager.sessionStore.(*fakeSessionStore)
+	record := sessionStore.recordsByID[locator.SessionID]
+	record.RequestedModel = &requested
+	record.EffectiveModel = "legacy-display-must-not-surface"
+	sessionStore.recordsByID[locator.SessionID] = record
+	topic.runtime.mu.Lock()
+	topic.runtime.observation = ModelObservation{
+		Generation: 1, Model: activeModel, ControlRevision: "revision", Kind: ModelObservationProviderObserved,
+	}
+	topic.runtime.hasObservation = true
+	topic.runtime.mu.Unlock()
+
+	info, err := manager.GetSessionInfo(t.Context(), locator.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.RequestedModel == nil || *info.RequestedModel != requested || info.ActiveModel != activeModel ||
+		info.ActiveModelKind != ModelObservationProviderObserved || info.Model != activeModel {
+		t.Fatalf("GetSessionInfo() = %+v", info)
+	}
+
+	record.RuntimeGeneration = 2
+	sessionStore.recordsByID[locator.SessionID] = record
+	info, err = manager.GetSessionInfo(t.Context(), locator.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.ActiveModel != "" || info.Model != "" || info.RequestedModel == nil || *info.RequestedModel != requested {
+		t.Fatalf("stale observation surfaced: %+v", info)
 	}
 }
 

@@ -128,6 +128,7 @@ func (m *Manager) ChangeModel(ctx context.Context, request ModelChangeRequest) (
 			topic.fenceRuntimeRecovery()
 			return recoveryRequiredModelResult()
 		}
+		candidate.refreshModelObservation(ctx)
 		return m.publishModelChange(ctx, incumbent, candidate, intent, ModelChangeChangedLive, baldastate.RuntimeOperationReasonChangedLive)
 	case agentproduct.ModelReplacement:
 		if change.Candidate == nil || !verifiedModelIdentityMatches(change.Identity, identity) {
@@ -143,6 +144,7 @@ func (m *Manager) ChangeModel(ctx context.Context, request ModelChangeRequest) (
 			topic.fenceRuntimeRecovery()
 			return recoveryRequiredModelResult()
 		}
+		candidate.refreshModelObservation(ctx)
 		return m.publishModelChange(ctx, incumbent, candidate, intent, ModelChangeChangedReplacement, baldastate.RuntimeOperationReasonChangedReplacement)
 	case agentproduct.ModelAmbiguous:
 		topic.fenceRuntimeRecovery()
@@ -204,12 +206,13 @@ func sameModelRequest(operation baldastate.RuntimeOperationRecord, request Model
 
 func modelOperationIntent(request ModelChangeRequest, value runtimeSlotValue, at time.Time) baldastate.RuntimeOperationRecord {
 	at = at.UTC()
+	targetModel := request.TargetModel
 	return baldastate.RuntimeOperationRecord{
 		OperationID: request.OperationID, SessionID: request.SessionID, InputHash: request.InputHash,
 		Kind: string(baldastate.RuntimeOperationKindModel), State: baldastate.RuntimeOperationPrepared,
 		ExpectedArchiveID: value.archiveID, ExpectedGeneration: value.generation,
 		TargetSnapshotID: value.runtime.RuntimeSnapshotID, TargetProviderBindingJSON: value.runtime.ProviderBindingJSON,
-		TargetModel: request.TargetModel, CreatedAt: at, UpdatedAt: at,
+		TargetModel: request.TargetModel, TargetRequestedModel: &targetModel, CreatedAt: at, UpdatedAt: at,
 	}
 }
 

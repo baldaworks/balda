@@ -254,6 +254,9 @@ type BuiltRuntime struct {
 	RuntimeSnapshotID string
 	// ProviderBindingJSON identifies the exact provider graph bound to this runtime.
 	ProviderBindingJSON string
+	// RecipeModel is the bounded model selection used by this exact bound
+	// construction. It is metadata-only and does not imply provider attachment.
+	RecipeModel string
 	// Close releases all resources owned by this adapted runtime product.
 	// RuntimeManager composes it with resources acquired by outer layers.
 	Close func() error
@@ -285,7 +288,7 @@ func (b *Builder) BuildRuntimeWithMCPServerIDs(
 	bundledMCPServerIDs []string,
 	extraMCPServerIDs []string,
 ) (*BuiltRuntime, error) {
-	return b.buildRuntimeWithCapabilities(ctx, agentName, workspaceDir, bundledMCPServerIDs, extraMCPServerIDs, SkillMetadataProjection{}, SessionInstructionContext{})
+	return b.buildRuntimeWithCapabilities(ctx, agentName, workspaceDir, bundledMCPServerIDs, extraMCPServerIDs, SkillMetadataProjection{}, SessionInstructionContext{}, nil)
 }
 
 // BuildRuntimeWithCapabilities builds a runtime from one immutable session capability binding.
@@ -297,7 +300,23 @@ func (b *Builder) BuildRuntimeWithCapabilities(
 	skills SkillMetadataProjection,
 	instructionContext SessionInstructionContext,
 ) (*BuiltRuntime, error) {
-	return b.buildRuntimeWithCapabilities(ctx, agentName, workspaceDir, bundledMCPServerIDs, extraMCPServerIDs, skills, instructionContext)
+	return b.buildRuntimeWithCapabilities(ctx, agentName, workspaceDir, bundledMCPServerIDs, extraMCPServerIDs, skills, instructionContext, nil)
+}
+
+// BuildRuntimeWithCapabilitiesAndModelOverride constructs a runtime from the
+// same pinned binding while optionally replacing only recipe model selection.
+func (b *Builder) BuildRuntimeWithCapabilitiesAndModelOverride(
+	ctx context.Context,
+	agentName, workspaceDir string,
+	bundledMCPServerIDs []string,
+	extraMCPServerIDs []string,
+	skills SkillMetadataProjection,
+	instructionContext SessionInstructionContext,
+	modelOverride *string,
+) (*BuiltRuntime, error) {
+	return b.buildRuntimeWithCapabilities(
+		ctx, agentName, workspaceDir, bundledMCPServerIDs, extraMCPServerIDs, skills, instructionContext, modelOverride,
+	)
 }
 
 func (b *Builder) buildRuntimeWithCapabilities(
@@ -307,6 +326,7 @@ func (b *Builder) buildRuntimeWithCapabilities(
 	extraMCPServerIDs []string,
 	skills SkillMetadataProjection,
 	instructionContext SessionInstructionContext,
+	modelOverride *string,
 ) (*BuiltRuntime, error) {
 	const appName = defaultRuntimeAppName
 
@@ -327,6 +347,11 @@ func (b *Builder) buildRuntimeWithCapabilities(
 		WorkingDirectory: workspaceDir,
 		Instruction:      instruction,
 		MCPServerIDs:     b.buildAgentMCPServerIDs(agentName, bundledMCPServerIDs, extraMCPServerIDs),
+		ModelOverride:    modelOverride,
+	}
+	constructionModel := b.GetAgentMetadata(agentName).Model
+	if modelOverride != nil {
+		constructionModel = strings.TrimSpace(*modelOverride)
 	}
 
 	product, err := b.buildRuntimeProduct(ctx, req, instructionContext.SessionID)
@@ -358,6 +383,7 @@ func (b *Builder) buildRuntimeWithCapabilities(
 		Runner:         r,
 		SessionSvc:     sessionSvc,
 		AppName:        appName,
+		RecipeModel:    constructionModel,
 		productClose:   product.Close,
 		runnerScope:    scope,
 		newRunner:      b.newRunner,

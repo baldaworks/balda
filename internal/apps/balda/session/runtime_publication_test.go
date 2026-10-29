@@ -671,6 +671,7 @@ func publicationRuntime(closeFn func() error) *BuiltRuntime {
 	return &BuiltRuntime{
 		RuntimeSnapshotID:   "snapshot",
 		ProviderBindingJSON: publicationBinding,
+		RecipeModel:         publicationOriginalModel,
 		Close:               closeFn,
 	}
 }

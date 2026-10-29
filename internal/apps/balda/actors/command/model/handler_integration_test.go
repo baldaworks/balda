@@ -126,6 +126,8 @@ func (s *observingSubmitter) snapshot() []modelapp.Request {
 }
 
 func TestHandlerUsesProductionModelFIFOAndIdempotentManager(t *testing.T) {
+	const targetModel = "model-next"
+
 	manager, builder, control := integrationManager(t)
 	dispatcher := actors.NewTurnDispatcher(zerolog.Nop())
 	t.Cleanup(func() {
@@ -155,7 +157,7 @@ func TestHandlerUsesProductionModelFIFOAndIdempotentManager(t *testing.T) {
 	models := &observingSubmitter{service: modelapp.New(dispatcher, manager), submitted: make(chan struct{})}
 	delivery := &testDispatcher{}
 	handler := New(manager, models, delivery)
-	payload := modelPayload("model-next")
+	payload := modelPayload(targetModel)
 	done := make(chan error, 1)
 	go func() {
 		done <- handler.Handle(context.Background(), actorEnvelope("model-command"), payload)
@@ -207,12 +209,12 @@ func TestHandlerUsesProductionModelFIFOAndIdempotentManager(t *testing.T) {
 		t.Fatalf("replay repeated work: validate=%d change=%d create=%d", control.validateCalls.Load(), control.changeCalls.Load(), builder.creates.Load())
 	}
 	for _, request := range models.snapshot() {
-		if request.SessionID != testSessionID || request.Model != "model-next" || request.OperationID != modelOperationID("model-command") {
+		if request.SessionID != testSessionID || request.Model != targetModel || request.OperationID != modelOperationID("model-command") {
 			t.Fatalf("cross-session or unstable request = %+v", request)
 		}
 	}
 	info, err := manager.GetSessionInfo(t.Context(), testSessionID)
-	if err != nil || info.Model != "model-next" || info.Generation != 1 {
+	if err != nil || info.Model != targetModel || info.RequestedModel == nil || *info.RequestedModel != targetModel || info.Generation != 1 {
 		t.Fatalf("committed model info = %+v, %v", info, err)
 	}
 }

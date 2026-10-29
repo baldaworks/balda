@@ -132,7 +132,7 @@ func (e *ProviderTurnExecutor) ExecuteSessionTurn(ctx context.Context, request s
 	if workspace, ok := request.Session.(interface{ GetWorkspaceDir() string }); ok {
 		workspaceDir = workspace.GetWorkspaceDir()
 	}
-	return execution.Execute(ctx, ExecutionRequest{
+	err := execution.Execute(ctx, ExecutionRequest{
 		ArchiveID:        request.Runtime.ArchiveID(),
 		SteeringMessages: payload.SteeringMessages,
 		WorkspaceDir:     workspaceDir,
@@ -168,6 +168,12 @@ func (e *ProviderTurnExecutor) ExecuteSessionTurn(ctx context.Context, request s
 		DedupeKey:       payload.DedupeKey,
 		RuntimeState:    runtimeState,
 	})
+	if err == nil {
+		if observer, ok := request.Runtime.(interface{ RefreshModelObservation(ctx context.Context) }); ok {
+			observer.RefreshModelObservation(ctx)
+		}
+	}
+	return err
 }
 
 var _ sessionturn.Executor = (*ProviderTurnExecutor)(nil)

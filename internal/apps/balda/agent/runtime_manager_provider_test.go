@@ -101,7 +101,9 @@ func TestRuntimeManagerPinsAndRestoresProviderGraph(t *testing.T) {
 	builder := &Builder{
 		factory:       &recordingRuntimeFactory{},
 		scopedFactory: scoped,
-		normaCfg:      runtimeconfig.RuntimeConfig{},
+		normaCfg: runtimeconfig.RuntimeConfig{Providers: map[string]agentconfig.Config{
+			"managed": {Type: agentconfig.AgentTypeCodexACP, CodexACP: &agentconfig.ACPConfig{Model: "root-display-model"}},
+		}},
 	}
 	binder := &recordingCapabilityBinder{binding: SessionCapabilityBinding{SnapshotID: "snapshot", Skills: SkillMetadataProjection{Snapshot: "snapshot"}}}
 	manager := NewRuntimeManager(RuntimeManagerParams{
@@ -121,6 +123,9 @@ func TestRuntimeManagerPinsAndRestoresProviderGraph(t *testing.T) {
 	if fresh.ProviderBindingJSON == "" || json.Unmarshal([]byte(fresh.ProviderBindingJSON), &binding) != nil || binding.Entries[0].RevisionID != "old" {
 		t.Fatalf("fresh binding = %q", fresh.ProviderBindingJSON)
 	}
+	if fresh.RecipeModel != "old-model" {
+		t.Fatalf("fresh recipe receipt = %q, want managed old-model", fresh.RecipeModel)
+	}
 
 	store.state.Records[0].CurrentRevisionID = newRevision.ID
 	current, err := manager.RuntimeForSession(t.Context(), SessionRuntimeRequest{})
@@ -128,12 +133,18 @@ func TestRuntimeManagerPinsAndRestoresProviderGraph(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = current.Close() }()
+	if current.RecipeModel != "new-model" {
+		t.Fatalf("current recipe receipt = %q, want managed new-model", current.RecipeModel)
+	}
 	store.state.Records[0].Enabled = false
 	restored, err := manager.RuntimeForSession(t.Context(), SessionRuntimeRequest{ProviderBindingJSON: fresh.ProviderBindingJSON})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = restored.Close() }()
+	if restored.RecipeModel != "old-model" {
+		t.Fatalf("restored recipe receipt = %q, want pinned old-model", restored.RecipeModel)
+	}
 	if _, err := manager.RuntimeForSession(t.Context(), SessionRuntimeRequest{}); !errors.Is(err, providers.ErrUnavailable) {
 		t.Fatalf("disabled current graph error = %v", err)
 	}

@@ -39,8 +39,8 @@ func (m *Manager) recoverActiveModelOperation(
 		topic.fenceRuntimeRecovery()
 		return ErrRuntimeRecoveryRequired
 	}
-	snapshot := value.runtime.ModelController.InspectSessionControl(ctx, runtimeIdentity(value))
-	return m.applyModelRecoveryObservation(ctx, topic, incumbent, value, operation, snapshot)
+	change := value.runtime.ModelController.ChangeModel(ctx, runtimeIdentity(value), operation.TargetModel)
+	return m.applyModelRecoveryChange(ctx, topic, incumbent, value, operation, change)
 }
 
 func (m *Manager) recoverPersistedModelOperation(
@@ -83,8 +83,8 @@ func (m *Manager) recoverPersistedModelOperation(
 	if !modelRecoveryValueMatches(value, record, operation) {
 		return ErrRuntimeRecoveryRequired
 	}
-	snapshot := runtime.ModelController.InspectSessionControl(ctx, runtimeIdentity(value))
-	return m.applyModelRecoveryObservation(ctx, nil, nil, value, operation, snapshot)
+	change := runtime.ModelController.ChangeModel(ctx, runtimeIdentity(value), operation.TargetModel)
+	return m.applyModelRecoveryChange(ctx, nil, nil, value, operation, change)
 }
 
 func (m *Manager) bindModelRecoveryRuntime(
@@ -95,10 +95,12 @@ func (m *Manager) bindModelRecoveryRuntime(
 	workspaceDir string,
 ) (*BuiltRuntime, error) {
 	if scopedManager, ok := m.runtimeManager.(SessionRuntimeManager); ok {
+		targetModel := operation.TargetModel
 		runtime, err := scopedManager.RuntimeForSession(ctx, SessionRuntimeRequest{
 			Locator: locator, UserID: record.UserID, AgentSessionID: record.SessionID,
 			WorkspaceDir: workspaceDir, RuntimeSnapshotID: operation.TargetSnapshotID,
 			ProviderBindingJSON: operation.TargetProviderBindingJSON,
+			ModelOverride:       &targetModel,
 		})
 		if err != nil {
 			return nil, err
@@ -111,27 +113,20 @@ func (m *Manager) bindModelRecoveryRuntime(
 	}
 	return m.bindSessionRuntime(
 		ctx, rootRuntime, locator, record.UserID, record.SessionID, workspaceDir,
-		operation.TargetSnapshotID, operation.TargetProviderBindingJSON,
+		operation.TargetSnapshotID, operation.TargetProviderBindingJSON, &operation.TargetModel,
 	)
 }
 
-func (m *Manager) applyModelRecoveryObservation(
+func (m *Manager) applyModelRecoveryChange(
 	ctx context.Context,
 	topic *TopicSession,
 	incumbent *RuntimeSlot,
 	value runtimeSlotValue,
 	operation baldastate.RuntimeOperationRecord,
-	snapshot agentproduct.SessionControlSnapshot,
+	change RuntimeModelChange,
 ) error {
-	currentModel := strings.TrimSpace(snapshot.CurrentModel)
-	if snapshot.Status != agentproduct.ControlReady || currentModel == "" {
-		if topic != nil {
-			topic.fenceRuntimeRecovery()
-		}
-		return ErrRuntimeRecoveryRequired
-	}
-	switch currentModel {
-	case operation.TargetModel:
+	switch change.Status {
+	case agentproduct.ModelApplied:
 		if topic == nil {
 			if _, ok := m.finalizeModelRecovery(ctx, operation, value, baldastate.RuntimeOperationOutcomeContextPreserved, baldastate.RuntimeOperationReasonChangedLive); !ok {
 				return ErrRuntimeRecoveryRequired
@@ -146,6 +141,7 @@ func (m *Manager) applyModelRecoveryObservation(
 			topic.fenceRuntimeRecovery()
 			return ErrRuntimeRecoveryRequired
 		}
+		candidate.refreshModelObservation(ctx)
 		if _, ok := m.finalizeModelRecovery(ctx, operation, value, baldastate.RuntimeOperationOutcomeContextPreserved, baldastate.RuntimeOperationReasonChangedLive); !ok ||
 			!topic.swapRecoveredRuntime(incumbent, candidate, operation.ExpectedArchiveID, operation.ExpectedGeneration) {
 			candidate.releasePublicationClaim(false)
@@ -156,19 +152,48 @@ func (m *Manager) applyModelRecoveryObservation(
 		candidate.releasePublicationClaim(true)
 		incumbent.beginDrain()
 		return nil
-	case value.effectiveModel:
-		if _, ok := m.finalizeModelRecovery(ctx, operation, value, baldastate.RuntimeOperationOutcomeAborted, baldastate.RuntimeOperationReasonRecoveryAborted); !ok {
+	case agentproduct.ModelReplacement:
+		if change.Candidate == nil || !verifiedModelIdentityMatches(change.Identity, runtimeIdentity(value)) {
+			closeModelCandidate(change.Candidate)
 			if topic != nil {
 				topic.fenceRuntimeRecovery()
 			}
 			return ErrRuntimeRecoveryRequired
 		}
-		if topic != nil && !topic.clearRuntimeRecovery(incumbent, operation.ExpectedArchiveID, operation.ExpectedGeneration) {
+		if topic == nil {
+			closeModelCandidate(change.Candidate)
+			if _, ok := m.finalizeModelRecovery(ctx, operation, value, baldastate.RuntimeOperationOutcomeContextPreserved, baldastate.RuntimeOperationReasonChangedReplacement); !ok {
+				return ErrRuntimeRecoveryRequired
+			}
+			return nil
+		}
+		candidate, err := incumbent.independentModelSuccessor(
+			change.Candidate, value.session, operation.TargetModel, string(baldastate.RuntimeOperationOutcomeContextPreserved),
+		)
+		if err != nil || !candidate.claimPublication() {
+			closeModelCandidate(change.Candidate)
 			topic.fenceRuntimeRecovery()
 			return ErrRuntimeRecoveryRequired
 		}
+		candidate.refreshModelObservation(ctx)
+		if _, ok := m.finalizeModelRecovery(ctx, operation, value, baldastate.RuntimeOperationOutcomeContextPreserved, baldastate.RuntimeOperationReasonChangedReplacement); !ok ||
+			!topic.swapRecoveredRuntime(incumbent, candidate, operation.ExpectedArchiveID, operation.ExpectedGeneration) {
+			candidate.releasePublicationClaim(false)
+			_ = candidate.abortUnpublished(ctx)
+			topic.fenceRuntimeRecovery()
+			return ErrRuntimeRecoveryRequired
+		}
+		candidate.releasePublicationClaim(true)
+		incumbent.beginDrain()
 		return nil
+	case agentproduct.ModelAmbiguous:
+		if topic != nil {
+			topic.fenceRuntimeRecovery()
+		}
+		return ErrRuntimeRecoveryRequired
 	default:
+		// Applying evidence proves the external boundary may already have been
+		// crossed. Only authoritative target confirmation can terminalize it.
 		if topic != nil {
 			topic.fenceRuntimeRecovery()
 		}
@@ -230,13 +255,13 @@ func (m *Manager) modelRecoveryCommitMatches(
 	return record.ArchiveID == targetArchive && record.RuntimeGeneration == operation.ExpectedGeneration+1 &&
 		record.RuntimeSnapshotID == operation.TargetSnapshotID &&
 		record.ProviderBindingJSON == operation.TargetProviderBindingJSON &&
+		record.RequestedModel != nil && *record.RequestedModel == operation.TargetModel &&
 		record.EffectiveModel == operation.TargetModel && record.RuntimeOutcome == string(outcome)
 }
 
 func modelRecoveryRecordMatches(record baldastate.SessionRecord, operation baldastate.RuntimeOperationRecord) bool {
 	targetArchive := strings.TrimSpace(operation.TargetArchiveID)
 	recordBinding := strings.TrimSpace(record.ProviderBindingJSON)
-	recordModel := strings.TrimSpace(record.EffectiveModel)
 	legacyUnknown := record.RuntimeGeneration == 0
 	return strings.TrimSpace(record.SessionID) == operation.SessionID &&
 		operation.ExpectedGeneration != math.MaxUint64 &&
@@ -248,9 +273,7 @@ func modelRecoveryRecordMatches(record baldastate.SessionRecord, operation balda
 		strings.TrimSpace(record.RuntimeSnapshotID) == operation.TargetSnapshotID &&
 		(recordBinding == operation.TargetProviderBindingJSON || legacyUnknown && recordBinding == "") &&
 		(targetArchive == "" || targetArchive == operation.ExpectedArchiveID) &&
-		validModelChangeText(operation.TargetModel, agentproduct.MaxModelIDBytes) &&
-		((legacyUnknown && recordModel == "") || validModelChangeText(recordModel, agentproduct.MaxModelIDBytes)) &&
-		operation.TargetModel != recordModel
+		validModelChangeText(operation.TargetModel, agentproduct.MaxModelIDBytes)
 }
 
 func modelRecoveryValueMatches(value runtimeSlotValue, record baldastate.SessionRecord, operation baldastate.RuntimeOperationRecord) bool {
@@ -301,20 +324,6 @@ func (s *TopicSession) swapRecoveredRuntime(expected, successor *RuntimeSlot, ar
 		return false
 	}
 	s.runtime = successor
-	s.recoveryRequired = false
-	return true
-}
-
-func (s *TopicSession) clearRuntimeRecovery(expected *RuntimeSlot, archiveID string, generation uint64) bool {
-	if s == nil {
-		return false
-	}
-	s.runtimeMu.Lock()
-	defer s.runtimeMu.Unlock()
-	if !s.recoveryRequired || s.runtime != expected || expected == nil ||
-		expected.value.archiveID != archiveID || expected.value.generation != generation {
-		return false
-	}
 	s.recoveryRequired = false
 	return true
 }

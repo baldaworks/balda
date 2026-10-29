@@ -101,6 +101,9 @@ type SessionRuntimeRequest struct {
 	// An empty value lets the runtime select the current effective snapshot.
 	RuntimeSnapshotID   string
 	ProviderBindingJSON string
+	// ModelOverride is the optional durable requested preference used only for
+	// Product construction. Nil preserves the exact pinned recipe.
+	ModelOverride *string
 }
 
 type WorkspaceManager interface {
@@ -136,7 +139,10 @@ type BuiltRuntime struct {
 	// RuntimeSnapshotID identifies the capabilities bound to this runtime.
 	RuntimeSnapshotID   string
 	ProviderBindingJSON string
-	Close               func() error
+	// RecipeModel is the exact model selection receipt from bound runtime
+	// construction. It is not an active provider observation.
+	RecipeModel string
+	Close       func() error
 }
 
 type EnsureWorkspaceResult struct {
@@ -532,7 +538,7 @@ func (m *Manager) createSessionLocked(ctx context.Context, sessionCtx SessionCon
 	createdFresh := false
 	var fallbackCommit *baldastate.RuntimeOperationRecord
 	if persisted == nil {
-		sessionRuntime, err = m.bindSessionRuntime(ctx, rootRuntime, locator, userID, agentSessionID, workspaceDir, "", "")
+		sessionRuntime, err = m.bindSessionRuntime(ctx, rootRuntime, locator, userID, agentSessionID, workspaceDir, "", "", nil)
 		if err == nil {
 			if transient {
 				sess, err = builder.CreateRuntimeSession(
@@ -596,10 +602,10 @@ func (m *Manager) createSessionLocked(ctx context.Context, sessionCtx SessionCon
 		archiveID = fallbackCommit.TargetArchiveID
 	case persisted != nil && !createdFresh:
 		generation = persisted.RuntimeGeneration
-		effectiveModel = persisted.EffectiveModel
+		effectiveModel, _ = restoreFallbackModelProjection(persisted.RequestedModel, sessionRuntime.RecipeModel)
 		runtimeOutcome = persisted.RuntimeOutcome
 	default:
-		effectiveModel = builder.GetAgentMetadata(baldaProvider).Model
+		effectiveModel = sessionRuntime.RecipeModel
 	}
 	ts.runtime = newPublishedRuntimeSlot(runtimeSlotConfig{
 		runtime:        sessionRuntime,
@@ -738,6 +744,7 @@ func (m *Manager) bindSessionRuntime(
 	rootRuntime *BuiltRuntime,
 	locator SessionLocator,
 	userID, agentSessionID, workspaceDir, snapshotID, providerBindingJSON string,
+	modelOverride *string,
 ) (*BuiltRuntime, error) {
 	if rootRuntime == nil {
 		return nil, fmt.Errorf("runtime is required")
@@ -745,7 +752,7 @@ func (m *Manager) bindSessionRuntime(
 	runtimeManager := m.runtimeManager
 	scopedManager, ok := runtimeManager.(SessionRuntimeManager)
 	if !ok {
-		if strings.TrimSpace(providerBindingJSON) != "" {
+		if strings.TrimSpace(providerBindingJSON) != "" || modelOverride != nil {
 			return nil, fmt.Errorf("persisted provider binding requires a scoped runtime manager")
 		}
 		nonOwningRuntime := *rootRuntime
@@ -760,11 +767,20 @@ func (m *Manager) bindSessionRuntime(
 		WorkspaceDir:        workspaceDir,
 		RuntimeSnapshotID:   strings.TrimSpace(snapshotID),
 		ProviderBindingJSON: strings.TrimSpace(providerBindingJSON),
+		ModelOverride:       cloneOptionalModel(modelOverride),
 	})
 	if err != nil {
 		return nil, err
 	}
 	return validateSessionRuntimeBinding(sessionRuntime, snapshotID, providerBindingJSON)
+}
+
+func cloneOptionalModel(model *string) *string {
+	if model == nil {
+		return nil
+	}
+	cloned := *model
+	return &cloned
 }
 
 func validateSessionRuntimeBinding(sessionRuntime *BuiltRuntime, snapshotID, providerBindingJSON string) (*BuiltRuntime, error) {
@@ -804,7 +820,7 @@ func (m *Manager) restoreRuntimeSession(
 	}
 	exactRuntime, restoreErr := m.bindSessionRuntime(
 		ctx, rootRuntime, locator, userID, agentSessionID, workspaceDir, record.RuntimeSnapshotID,
-		record.ProviderBindingJSON,
+		record.ProviderBindingJSON, record.RequestedModel,
 	)
 	if restoreErr == nil {
 		var sess adksession.Session
@@ -833,7 +849,9 @@ func (m *Manager) restoreRuntimeSession(
 		Bool("provider_binding_present", strings.TrimSpace(record.ProviderBindingJSON) != "").
 		Msg("saved session restore failed; starting fresh with current capabilities")
 
-	currentRuntime, err := m.bindSessionRuntime(ctx, rootRuntime, locator, userID, sessionID, workspaceDir, "", "")
+	currentRuntime, err := m.bindSessionRuntime(
+		ctx, rootRuntime, locator, userID, sessionID, workspaceDir, "", "", record.RequestedModel,
+	)
 	if err != nil {
 		return nil, nil, false, nil, fmt.Errorf("bind current runtime after restore failure: %w", err)
 	}
@@ -844,20 +862,31 @@ func (m *Manager) restoreRuntimeSession(
 	var fallbackOperation *baldastate.RuntimeOperationRecord
 	if *activation == nil && m.runtimeOperations != nil {
 		now := time.Now().UTC()
-		targetModel := strings.TrimSpace(builder.GetAgentMetadata(provider).Model)
+		targetModel, targetRequestedModel := restoreFallbackModelProjection(
+			record.RequestedModel, currentRuntime.RecipeModel,
+		)
+		preferencePresence := "absent"
+		preferenceValue := ""
+		if targetRequestedModel != nil {
+			preferencePresence = "present"
+			preferenceValue = *targetRequestedModel
+		}
 		input := strings.Join([]string{
+			string(baldastate.RuntimeOperationKindLifetimePreference),
 			sessionID,
 			strings.TrimSpace(record.ArchiveID),
 			fmt.Sprint(record.RuntimeGeneration),
 			strings.TrimSpace(currentRuntime.RuntimeSnapshotID),
 			strings.TrimSpace(currentRuntime.ProviderBindingJSON),
 			targetModel,
+			preferencePresence,
+			preferenceValue,
 		}, "\x00")
 		intent := baldastate.RuntimeOperationRecord{
 			OperationID:               uuid.NewString(),
 			SessionID:                 sessionID,
 			InputHash:                 fmt.Sprintf("%x", sha256.Sum256([]byte(input))),
-			Kind:                      string(baldastate.RuntimeOperationKindLifetime),
+			Kind:                      string(baldastate.RuntimeOperationKindLifetimePreference),
 			State:                     baldastate.RuntimeOperationPrepared,
 			ExpectedArchiveID:         strings.TrimSpace(record.ArchiveID),
 			ExpectedGeneration:        record.RuntimeGeneration,
@@ -865,6 +894,7 @@ func (m *Manager) restoreRuntimeSession(
 			TargetSnapshotID:          strings.TrimSpace(currentRuntime.RuntimeSnapshotID),
 			TargetProviderBindingJSON: strings.TrimSpace(currentRuntime.ProviderBindingJSON),
 			TargetModel:               targetModel,
+			TargetRequestedModel:      targetRequestedModel,
 			CreatedAt:                 now,
 			UpdatedAt:                 now,
 		}
@@ -879,12 +909,17 @@ func (m *Manager) restoreRuntimeSession(
 		}
 		fallbackOperation = &prepared
 	}
-	if err := m.notifyBoundary(ctx, SessionBoundary{
+	boundary := SessionBoundary{
 		Locator:        locator,
 		SessionID:      sessionID,
 		AgentSessionID: sessionID,
 		Reason:         BoundaryReasonRotation,
-	}); err != nil {
+	}
+	if fallbackOperation != nil {
+		boundary.TransitionID = fallbackOperation.OperationID
+		boundary.OccurredAt = fallbackOperation.CreatedAt
+	}
+	if err := m.notifyBoundary(ctx, boundary); err != nil {
 		closeBuiltRuntime(currentRuntime)
 		return nil, nil, false, nil, err
 	}
@@ -971,6 +1006,14 @@ func (m *Manager) restoreRuntimeSession(
 		fallbackOperation = &terminal
 	}
 	return currentRuntime, sess, true, fallbackOperation, nil
+}
+
+func restoreFallbackModelProjection(requestedModel *string, selectedRecipeModel string) (string, *string) {
+	if requestedModel != nil {
+		requested := *requestedModel
+		return requested, &requested
+	}
+	return selectedRecipeModel, nil
 }
 
 func (m *Manager) beginLifecycleOperation(ctx context.Context) (func(), error) {

@@ -75,6 +75,9 @@ func (c *integrationModelControl) ValidateModel(_ context.Context, _ adksession.
 
 func (c *integrationModelControl) ChangeModel(_ context.Context, _ adksession.Session, model string) agentproduct.ModelChange {
 	c.changeCalls.Add(1)
+	if c.currentModel == model {
+		return agentproduct.ModelChange{Status: agentproduct.ModelApplied, EffectiveModel: model}
+	}
 	return agentproduct.ModelChange{Status: agentproduct.ModelReplacement, EffectiveModel: model, Replacement: c.replacement}
 }
 
@@ -306,7 +309,7 @@ func TestQueuedHostedModelChangeUsesProductionBoundaries(t *testing.T) {
 	}
 }
 
-func TestApplyingModelRecoveryUsesProductionInspectAdapter(t *testing.T) {
+func TestApplyingModelRecoveryUsesProductionTargetAwareAdapter(t *testing.T) {
 	service := &integrationSessionService{Service: adksession.InMemoryService()}
 	incumbentAgent, err := adkagent.New(adkagent.Config{Name: "incumbent-agent"})
 	if err != nil {
@@ -422,7 +425,7 @@ func TestApplyingModelRecoveryUsesProductionInspectAdapter(t *testing.T) {
 	if !foundPrior {
 		t.Fatal("restored session lost prior event")
 	}
-	if control.inspectCalls.Load() != 1 || control.validateCalls.Load() != 0 || control.changeCalls.Load() != 0 {
+	if control.inspectCalls.Load() != 0 || control.validateCalls.Load() != 0 || control.changeCalls.Load() != 1 {
 		t.Fatalf("control calls inspect/validate/change = %d/%d/%d", control.inspectCalls.Load(), control.validateCalls.Load(), control.changeCalls.Load())
 	}
 	if service.createCalls.Load() != 0 || service.deleteCalls.Load() != 0 {
