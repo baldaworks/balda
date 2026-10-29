@@ -116,7 +116,9 @@ authentication boundary.
   from that pin.
 - Every turn reuses the session's existing runner. `/reset` and `/new` remain
   separate explicit actions: they publish a new empty local conversation while
-  retaining the exact runner aggregate, provider, model, and capability snapshot.
+  retaining the exact provider binding, optional requested model preference,
+  and capability snapshot. Active model observation is unknown until later
+  provider attachment or execution.
 - Persisted session label is reused as-is for restore; if missing, balda falls back to label `auto`.
 - In workspace mode, restore first tries to sync the session branch with the configured base branch.
 - If that sync conflicts, balda recreates a clean worktree on the persisted session branch, restores the session anyway, and sends a short warning that the workspace was reset to the saved session-branch state and Balda can retry the sync later.
@@ -179,8 +181,10 @@ hooks. Later hook/workspace cleanup failure cannot undo a proved destruction.
 Active `/reset` and `/new` instead prepare and verify an empty local ADK session
 under a new archive/runtime identity, then cross the existing per-session FIFO
 boundary and publish it at the next runtime generation. The stable Balda
-session, locator, exact provider binding, model, and capability snapshot do not
-change. Preparation and restart recovery use only those pinned identities and
+session, locator, exact provider binding, optional requested model preference,
+and capability snapshot do not change. Active model observation is cleared and
+remains unknown until later provider attachment or execution. Preparation and
+restart recovery use only those pinned identities and
 perform no provider RPC. A contradiction remains recovery-fenced.
 
 A fresh replacement uses a new archive UUID and retains the ended predecessor

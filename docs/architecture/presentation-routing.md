@@ -149,10 +149,12 @@ The transport packages own markup renderers and registration. `locatorref` and
 behavior; the removed `locatorapp` service is no longer part of the path.
 
 `/status` follows the same structured path with the
-`balda.status.response.v2` contract. Its handler combines epoch-fenced turn
+`balda.status.response.v3` contract. Its handler combines epoch-fenced turn
 snapshots with conversational waiting evidence and read-only active-runtime
-auto state. Telegram, Slack Agent, Zulip, and Mattermost own the final markup
-and escaping. A v1 renderer registration remains for compatibility.
+auto state. Model diagnostics keep the durable requested preference separate
+from a generation-valid active observation; absent attachment evidence remains
+unknown. Telegram, Slack Agent, Zulip, and Mattermost own the final markup and
+escaping. v1 and v2 renderer registrations remain for compatibility.
 
 ## Summary
 

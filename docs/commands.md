@@ -125,9 +125,10 @@ snapshot exists, Balda says so. It does not query a provider or start a turn.
 
 These aliases queue one fresh-lifetime boundary behind active and already queued
 session work. On success Balda keeps the stable session and locator, preserves
-the exact provider binding, effective model, and capability snapshot, and
+the exact provider binding, optional requested model preference, and capability snapshot, and
 publishes a new empty local conversation/archive identity. The prior local
-context is no longer addressable through that session.
+context is no longer addressable through that session. The active model is
+unknown until a later provider attachment or execution supplies valid evidence.
 
 Both commands are bare: selectors and every other argument are rejected. A
 successful result proves durable local logical isolation; it does not promise
@@ -232,8 +233,14 @@ queued-turn count, and up to 240 Unicode characters of the in-memory request.
 Completed turns include their outcome and duration. Request text is never
 persisted and is therefore absent after a restart.
 
-Each transport renders the same `balda.status.response.v2` contract with its
-own Markdown rules; the v1 renderer registration remains available for
+Provider diagnostics distinguish the durable requested preference from an
+already-valid active observation. No preference is shown as
+`none (no explicit preference)`; absent attachment evidence is shown as
+`unknown (not attached)`. A hosted active value means the model Balda locally executed,
+not a provider-reported actual model.
+
+Each transport renders the same `balda.status.response.v3` contract with its
+own Markdown rules; the v1 and v2 renderer registrations remain available for
 compatibility. The command does not create or restore a runtime, start a turn,
 or modify question, permission, or auto-mode state. If the transport renderer
 is absent or fails, Balda fails closed and sends no plain-text status fallback.
@@ -242,8 +249,12 @@ is absent or fails, Balda fails closed and sends no plain-text status fallback.
 
 ### `/model [model-id]` and `/balda model [model-id]`
 
-With no argument, returns the committed effective model without restoring a
-runtime or starting a turn. With one model ID, queues a same-provider model
+With no argument, returns the durable requested preference and any valid active
+observation without restoring a runtime or starting a turn. A requested model
+is shown as `pending` until matching active evidence exists. No preference is
+shown as `none (no explicit preference)`, and no attachment evidence is shown
+as unknown.
+With one model ID, queues a same-provider model
 change through the session's existing FIFO, behind work that was accepted
 earlier. Slack uses `/balda model`; Telegram, Zulip, and Mattermost use
 `/model` (Mattermost may also use the configured `/balda model` root form).
@@ -261,7 +272,7 @@ session control state; it does not repeat model validation or mutation. Recovery
 finishes only when that inspection and the committed archive, provider binding,
 runtime snapshot, and generation prove one authoritative result. Otherwise the
 session remains `recovery_required`, and `/status` continues to report only the
-committed model and bounded session state.
+durable requested preference, valid active observation, and bounded session state.
 
 Operators should restore the unavailable store or provider control plane and
 forward-complete recovery with the same compatible binary. Do not delete the
@@ -270,6 +281,10 @@ rollback, stop admission and take a consistent backup; do not downgrade across
 an unresolved `applying` operation. Use a compatible forward version, or restore
 a validated pre-change backup while Balda is stopped. See
 [Runtime operation state](reference/database.md#runtime-operation-state).
+Once preference-aware or unresolved model-operation evidence exists, an
+operational downgrade is prohibited. Recovery is roll-forward; a later upgrade
+must not infer requested preference from the compatibility-only
+`effective_model` value.
 
 ## Command execution architecture
 

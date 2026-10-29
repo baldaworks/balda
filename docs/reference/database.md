@@ -213,6 +213,14 @@ also add one minimal runtime-operation table with `prepared`, `applying` and
 rows or reserialize `provider_binding_json`, so legacy sessions continue to read
 their exact binding at generation zero.
 
+SQLite migration 72 and PostgreSQL migration 37 add nullable
+`requested_model`, nullable operation `target_requested_model`, and the
+allowlisted `lifetime_preference` kind. Existing rows stay NULL: migration and
+later reads never infer requested preference from `effective_model`, recipe
+metadata, or defaults. `effective_model` remains a compatibility projection of
+requested preference, otherwise the exact pinned recipe model, otherwise empty;
+it is not requested-intent or active-observation authority.
+
 `Provider.RuntimeOperations` exposes only begin, applying-marker, guarded
 finalize, lookup and bounded terminal-prune operations. Begin is idempotent for
 the same normalized intent and conflicts on identity reuse or another unresolved
@@ -248,3 +256,7 @@ belong in runtime-operation rows.
 
 The added evidence is forward-only once populated. Roll back with a compatible
 binary or a validated pre-upgrade backup rather than dropping operation state.
+Once `lifetime_preference` or unresolved model-operation evidence may exist,
+operational downgrade is prohibited. Recovery is roll-forward with a compatible
+binary; re-upgrade must preserve NULL requested preference and must not infer it
+from compatibility-only `effective_model` values written by an older binary.

@@ -200,15 +200,20 @@ func TestHandleDeniedTargetPerformsNoProtectedWork(t *testing.T) {
 	}
 }
 
-func TestHandleReadsOnlyCommittedModel(t *testing.T) {
+func TestHandleReadsOnlyCommittedModelState(t *testing.T) {
+	requested := "model-requested"
 	for _, test := range []struct {
 		name string
 		info session.TopicSessionInfo
 		err  error
 		text string
 	}{
-		{name: "current", info: session.TopicSessionInfo{Model: "model-current", Recovery: sessionRecoveryReady}, text: "Current model: model-current."},
-		{name: "missing model", info: session.TopicSessionInfo{Recovery: sessionRecoveryReady}, text: msgUnavailable},
+		{name: "requested active provider observed", info: session.TopicSessionInfo{RequestedModel: &requested, ActiveModel: requested, ActiveModelKind: session.ModelObservationProviderObserved, Recovery: sessionRecoveryReady}, text: "Requested: model-requested (active).\nActive: model-requested (provider observed)."},
+		{name: "requested pending before attach", info: session.TopicSessionInfo{RequestedModel: &requested, Recovery: sessionRecoveryReady}, text: "Requested: model-requested (pending).\nActive: unknown (not attached)."},
+		{name: "no explicit preference", info: session.TopicSessionInfo{Recovery: sessionRecoveryReady}, text: "Requested: none (no explicit preference).\nActive: unknown (not attached)."},
+		{name: "locally executed without explicit preference", info: session.TopicSessionInfo{ActiveModel: "model-current", ActiveModelKind: session.ModelObservationLocallyExecuted, Recovery: sessionRecoveryReady}, text: "Requested: none (no explicit preference).\nActive: model-current (locally executed)."},
+		{name: "unknown observation kind fails closed", info: session.TopicSessionInfo{ActiveModel: "secret-model", ActiveModelKind: "future", Recovery: sessionRecoveryReady}, text: "Requested: none (no explicit preference).\nActive: unknown (not attached)."},
+		{name: "matching unknown observation stays pending", info: session.TopicSessionInfo{RequestedModel: &requested, ActiveModel: requested, ActiveModelKind: "future", Recovery: sessionRecoveryReady}, text: "Requested: model-requested (pending).\nActive: unknown (not attached)."},
 		{name: "lookup failed", err: errors.New("secret database failure"), text: msgUnavailable},
 		{name: "recovery error", err: session.ErrRuntimeRecoveryRequired, text: msgRecoveryRequired},
 		{name: "recovery status", info: session.TopicSessionInfo{Status: sessionRecoveryRequired, Model: "secret-model"}, text: msgRecoveryRequired},

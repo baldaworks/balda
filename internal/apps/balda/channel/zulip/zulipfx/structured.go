@@ -14,6 +14,7 @@ import (
 type zulipLocatorRenderer struct{}
 
 type zulipStatusRenderer struct{}
+type zulipLegacyStatusRenderer struct{}
 
 func (zulipLocatorRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[locatorfmt.Response]) (deliveryfmt.StructuredPresentation, error) {
 	return deliveryfmt.StructuredPresentation{
@@ -24,6 +25,10 @@ func (zulipLocatorRenderer) RenderStructured(_ context.Context, env deliveryfmt.
 
 func (zulipStatusRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[statusfmt.Response]) (deliveryfmt.StructuredPresentation, error) {
 	return deliveryfmt.StructuredPresentation{Text: presentation.RenderStatus(env.Body), DeliveryFormat: deliveryfmt.DeliveryFormatMarkdown}, nil
+}
+
+func (zulipLegacyStatusRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[statusfmt.Response]) (deliveryfmt.StructuredPresentation, error) {
+	return deliveryfmt.StructuredPresentation{Text: presentation.RenderLegacyStatus(env.Body), DeliveryFormat: deliveryfmt.DeliveryFormatMarkdown}, nil
 }
 
 // NewLocatorStructuredRegistrar registers Zulip locator response presentation.
@@ -37,7 +42,10 @@ func NewStatusStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
 		if err := deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportZulip, statusfmt.ResponseDescriptor, zulipStatusRenderer{}); err != nil {
 			return err
 		}
-		return deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportZulip, statusfmt.LegacyResponseDescriptor, zulipStatusRenderer{})
+		if err := deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportZulip, statusfmt.LegacyV2ResponseDescriptor, zulipLegacyStatusRenderer{}); err != nil {
+			return err
+		}
+		return deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportZulip, statusfmt.LegacyResponseDescriptor, zulipLegacyStatusRenderer{})
 	}
 }
 

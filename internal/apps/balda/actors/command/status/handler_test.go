@@ -22,6 +22,8 @@ import (
 	"github.com/rs/zerolog"
 )
 
+const statusTestModel = "gpt-6"
+
 type statusSessions struct {
 	info    session.TopicSessionInfo
 	infoErr error
@@ -77,8 +79,9 @@ func (d *statusDispatcher) Dispatch(_ context.Context, env actorlayer.Envelope) 
 
 func TestHandlerUsesStructuredStatusRenderer(t *testing.T) {
 	startedAt := time.Date(2026, time.October, 21, 12, 30, 0, 0, time.UTC)
+	requestedModel := statusTestModel
 	sessions := &statusSessions{
-		info: session.TopicSessionInfo{Status: "active", ProviderID: "codex", Model: "gpt-6"},
+		info: session.TopicSessionInfo{Status: "active", ProviderID: "codex", RequestedModel: &requestedModel, ActiveModel: statusTestModel, ActiveModelKind: session.ModelObservationProviderObserved},
 	}
 	turns := statusTurns{ok: true, turn: appports.CurrentTurn{StartedAt: startedAt, PendingTurns: 2, Text: strings.Repeat("я", 1001)}}
 	registry, dispatcher := &statusRegistry{}, &statusDispatcher{}
@@ -93,7 +96,7 @@ func TestHandlerUsesStructuredStatusRenderer(t *testing.T) {
 		t.Fatalf("transport=%q deliveries=%d", registry.transport, len(dispatcher.envelopes))
 	}
 	got := registry.response
-	if got.ProviderID != "codex" || got.ProviderType != unavailableValue || got.Model != "gpt-6" || got.ReasoningEffort != unavailableValue {
+	if got.ProviderID != "codex" || got.ProviderType != unavailableValue || got.RequestedModel != statusTestModel || !got.HasRequestedModel || got.ActiveModel != statusTestModel || got.ActiveModelKind != string(session.ModelObservationProviderObserved) || got.Model != "" || got.ReasoningEffort != unavailableValue {
 		t.Errorf("provider status = %+v", got)
 	}
 	if got.SessionState != "active" || !got.TurnActive || got.TurnStartedAt != startedAt || got.PendingTurns != 2 {
@@ -127,25 +130,28 @@ func TestHandlerReportsNoActiveTurn(t *testing.T) {
 	if err := handler.Handle(context.Background(), actorlayer.Envelope{ID: "op-3"}, statusPayload()); err != nil {
 		t.Fatal(err)
 	}
-	if registry.response.SessionState != unavailableValue || registry.response.ProviderType != unavailableValue || registry.response.Model != unavailableValue || registry.response.ReasoningEffort != unavailableValue || registry.response.TurnActive || registry.response.RequestExcerpt != "" {
+	if registry.response.SessionState != unavailableValue || registry.response.ProviderType != unavailableValue || registry.response.HasRequestedModel || registry.response.ActiveModel != "" || registry.response.Model != "" || registry.response.ReasoningEffort != unavailableValue || registry.response.TurnActive || registry.response.RequestExcerpt != "" {
 		t.Fatalf("response = %+v", registry.response)
 	}
 }
 
 func TestHandlerProjectsOnlyBoundedCommittedRecoveryStatus(t *testing.T) {
 	const secret = "binding-secret-do-not-expose"
+	requested := "model-requested"
 	registry := &statusRegistry{}
 	handler := New(
 		&statusSessions{info: session.TopicSessionInfo{
-			Status:       "recovery_required",
-			ProviderID:   "provider-a",
-			Model:        "model-incumbent",
-			Recovery:     "ambiguous",
-			ArchiveID:    secret,
-			Outcome:      secret,
-			WorkspaceDir: secret,
-			BranchName:   secret,
-			UserID:       secret,
+			Status:          "recovery_required",
+			ProviderID:      "provider-a",
+			RequestedModel:  &requested,
+			ActiveModel:     "model-incumbent",
+			ActiveModelKind: session.ModelObservationLocallyExecuted,
+			Recovery:        "ambiguous",
+			ArchiveID:       secret,
+			Outcome:         secret,
+			WorkspaceDir:    secret,
+			BranchName:      secret,
+			UserID:          secret,
 		}},
 		statusTurns{},
 		nil,
@@ -158,7 +164,7 @@ func TestHandlerProjectsOnlyBoundedCommittedRecoveryStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := registry.response
-	if got.SessionState != "recovery_required" || got.ProviderID != "provider-a" || got.Model != "model-incumbent" {
+	if got.SessionState != "recovery_required" || got.ProviderID != "provider-a" || got.RequestedModel != requested || !got.HasRequestedModel || got.ActiveModel != "model-incumbent" || got.ActiveModelKind != string(session.ModelObservationLocallyExecuted) || got.Model != "" {
 		t.Fatalf("bounded recovery response = %+v", got)
 	}
 	encoded, err := json.Marshal(got)
@@ -186,7 +192,7 @@ func TestHandlerBoundsSessionMetadataFailureLog(t *testing.T) {
 	if err := handler.Handle(context.Background(), actorlayer.Envelope{ID: "op-secret"}, statusPayload()); err != nil {
 		t.Fatal(err)
 	}
-	if registry.response.SessionState != unavailableValue || registry.response.Model != unavailableValue {
+	if registry.response.SessionState != unavailableValue || registry.response.ActiveModel != "" || registry.response.HasRequestedModel {
 		t.Fatalf("response = %+v", registry.response)
 	}
 

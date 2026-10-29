@@ -36,8 +36,12 @@ snapshot and exact revision; callers do not provide a revision or filesystem
 path.
 
 An active session keeps its pinned commands, skills, and MCP definitions when
-the application catalog changes. `/reset` and `/new` create a fresh runtime at
-the same locator, clear conversation history, and adopt the current catalog.
+the application catalog changes. `/reset` and `/new` wait behind active and
+prior work, create a fresh empty local lifetime at the same stable locator, and
+preserve the exact pinned catalog, provider binding, and optional requested
+model preference. Active model observation is unknown until later provider
+attachment or execution. Only a genuinely new stable session selects the
+current catalog.
 
 ## Load the relevant runtime reference
 

@@ -63,11 +63,12 @@ with a teammate. For a focused topic or a longer goal:
 ```
 
 Use `/cancel` to stop the current turn. `/reset` and `/new` queue a fresh,
-empty local conversation while keeping the current provider, model, and
-capabilities.
-Use `/status` to inspect the provider, model, reasoning effort, session state,
+empty local conversation while keeping the current provider binding, optional
+requested model preference, and capabilities. The active model remains unknown
+until later provider attachment or execution.
+Use `/status` to inspect the provider, requested and observed model state, session state,
 and current turn without changing the runtime.
-Use `/model` to read the committed model, or `/model <model-id>` to queue a
+Use `/model` to read the requested preference and current active observation, or `/model <model-id>` to queue a
 same-provider model change while preserving the current session context. An
 unsupported change leaves the current model and context intact; it never
 performs an implicit reset.

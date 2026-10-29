@@ -14,11 +14,12 @@ func TestFreshLifetimeUserDocs(t *testing.T) {
 		path string
 		want []string
 	}{
-		{path: "README.md", want: []string{"`/reset` and `/new`", "empty local conversation", "provider, model, and", "capabilities"}},
-		{path: "docs/commands.md", want: []string{"### `/reset` and `/new`", "Both commands are bare", "local logical isolation", "does not physically delete remote", "Provider-native state is created lazily", "outcome is unconfirmed", "`/status` before retrying"}},
+		{path: "README.md", want: []string{"`/reset` and `/new`", "empty local conversation", "provider binding", "requested model preference", "active model remains unknown", "capabilities"}},
+		{path: "docs/commands.md", want: []string{"### `/reset` and `/new`", "Both commands are bare", "local logical isolation", "optional requested model preference", "active model is", "unknown", "does not physically delete remote", "Provider-native state is created lazily", "outcome is unconfirmed", "`/status` before retrying"}},
 		{path: "docs/slack.md", want: []string{"`/balda reset` and `/balda new`", "remote-history deletion"}},
 		{path: "docs/zulip-webhook.md", want: []string{"`/reset` and `/new` accept no arguments", "local logical", "remote provider history"}},
 		{path: "docs/mattermost.md", want: []string{"Bare `/reset` and `/new`", "remote-history deletion"}},
+		{path: "internal/apps/balda/catalogapp/builtin/balda-system/references/sessions-and-tools.md", want: []string{"`/reset` and `/new` wait behind", "new empty local lifetime", "requested model preference", "Active model observation remains unknown", "provider use stays lazy"}},
 	}
 	for _, test := range tests {
 		t.Run(test.path, func(t *testing.T) {
@@ -35,6 +36,10 @@ func TestFreshLifetimeUserDocs(t *testing.T) {
 func TestFreshLifetimeCoreDocsContract(t *testing.T) {
 	t.Parallel()
 	catalog := readFreshLifetimeDoc(t, "docs/architecture/runtime-contribution-catalog.md")
+	builtinSessions := readFreshLifetimeDoc(t, "internal/apps/balda/catalogapp/builtin/balda-system/references/sessions-and-tools.md")
+	builtinSkill := readFreshLifetimeDoc(t, "internal/apps/balda/catalogapp/builtin/balda-system/SKILL.md")
+	operations := readFreshLifetimeDoc(t, "docs/reference/operations.md")
+	database := readFreshLifetimeDoc(t, "docs/reference/database.md")
 	contracts := []struct {
 		name string
 		text string
@@ -43,22 +48,42 @@ func TestFreshLifetimeCoreDocsContract(t *testing.T) {
 		{
 			name: "agent command",
 			text: lineContaining(t, readFreshLifetimeDoc(t, "AGENTS.md"), "- `/reset` or `/new`:"),
-			want: []string{"queues behind active and prior session work", "existing fifo", "new empty local adk lifetime/archive", "same stable balda session", "exact provider, model, and capabilities", "provider use stays lazy", "does not promise provider availability", "remote provider history"},
+			want: []string{"queues behind active and prior session work", "existing fifo", "new empty local adk lifetime/archive", "same stable balda session", "exact provider binding", "optional requested model preference", "active model is unknown", "capabilities", "provider use stays lazy", "does not promise provider availability", "remote provider history"},
 		},
 		{
 			name: "project skills",
 			text: paragraphContaining(t, catalog, "Session snapshots are immutable."),
-			want: []string{"existing per-session fifo", "new empty local adk lifetime/archive", "same stable balda session", "exact pinned capability snapshot", "project-skill revisions", "only a genuinely new stable session selects the current project-skill revision"},
+			want: []string{"existing per-session fifo", "new empty local adk lifetime/archive", "same stable balda session", "exact pinned capability snapshot", "provider binding", "optional requested model preference", "active model observation stays unknown", "project-skill revisions", "only a genuinely new stable session selects the current project-skill revision"},
 		},
 		{
 			name: "catalog publication",
 			text: paragraphContaining(t, catalog, "Publishing a new catalog snapshot never mutates an active session."),
-			want: []string{"existing per-session fifo", "new empty local adk lifetime/archive", "same stable balda session", "exact pinned `snapshotid`", "do not select the current catalog revision", "only creation of a genuinely new stable session selects the current catalog revision"},
+			want: []string{"existing per-session fifo", "new empty local adk lifetime/archive", "same stable balda session", "exact pinned `snapshotid`", "provider binding", "optional requested model preference", "active model observation remains unknown", "do not select the current catalog revision", "only creation of a genuinely new stable session selects the current catalog revision"},
 		},
 		{
 			name: "command",
 			text: markdownSection(t, readFreshLifetimeDoc(t, "docs/commands.md"), "### `/reset` and `/new`"),
-			want: []string{"behind active and already queued session work", "stable session and locator", "exact provider binding, effective model, and capability snapshot", "new empty local conversation/archive identity", "does not physically delete remote provider history", "provider-native state is created lazily"},
+			want: []string{"behind active and already queued session work", "stable session and locator", "exact provider binding", "optional requested model preference", "capability snapshot", "active model is unknown", "new empty local conversation/archive identity", "does not physically delete remote provider history", "provider-native state is created lazily"},
+		},
+		{
+			name: "builtin session reference",
+			text: paragraphContaining(t, builtinSessions, "`/reset` and `/new` wait behind"),
+			want: []string{"active and prior session work", "existing fifo", "new empty local lifetime", "same stable locator", "exact provider binding", "optional requested model preference", "pinned capability snapshot", "active model observation remains unknown", "provider use stays lazy"},
+		},
+		{
+			name: "builtin skill",
+			text: paragraphContaining(t, builtinSkill, "An active session keeps its pinned commands"),
+			want: []string{"wait behind active and prior work", "fresh empty local lifetime", "same stable locator", "exact pinned catalog", "provider binding", "optional requested model preference", "active model observation is unknown", "only a genuinely new stable session selects the current catalog"},
+		},
+		{
+			name: "operations",
+			text: lineContaining(t, operations, "11. `/reset`"),
+			want: []string{"queue behind current session work", "new empty local conversation/archive identity", "exact provider binding", "optional requested model preference", "capability snapshot", "active model is unknown", "provider-native state is used lazily", "remote provider history is not promised"},
+		},
+		{
+			name: "database rollback",
+			text: paragraphContaining(t, database, "Once `lifetime_preference`"),
+			want: []string{"operational downgrade is prohibited", "roll-forward", "must not infer", "compatibility-only `effective_model`"},
 		},
 	}
 	for _, contract := range contracts {
@@ -86,7 +111,10 @@ func TestStaleResetClaims(t *testing.T) {
 		{name: "wrapped latest selection", text: "`/reset` selects the latest catalog\nrevision.", stale: true},
 		{name: "current selection", text: "`/new` adopts the current project-skill revision.", stale: true},
 		{name: "active cancellation", text: "`/reset` cancels active work.", stale: true},
+		{name: "effective model preservation", text: "`/reset` preserves the effective model.", stale: true},
+		{name: "active model preservation", text: "`/new` keeps the active model.", stale: true},
 		{name: "negated cancellation", text: "`/reset` does not cancel active work."},
+		{name: "truthful preference", text: "`/reset` preserves the requested model preference while the active model remains unknown."},
 		{name: "negated selection", text: "`/reset` and `/new` do not select the current catalog revision."},
 	}
 	for _, test := range tests {
@@ -182,7 +210,8 @@ func staleResetClaims(text string) []string {
 		}
 		if claimsAction(clause, []string{"select", "selects", "adopt", "adopts", "capture", "captures"}, []string{"current revision", "latest revision", "current catalog revision", "latest catalog revision", "current project-skill revision", "latest project-skill revision"}) ||
 			claimsAction(clause, []string{"cancel", "cancels"}, []string{"active work", "current work", "session work"}) ||
-			claimsAction(clause, []string{"clear", "clears"}, []string{"history", "context"}) {
+			claimsAction(clause, []string{"clear", "clears"}, []string{"history", "context"}) ||
+			claimsAction(clause, []string{"preserve", "preserves", "keep", "keeps"}, []string{"effective model", "active model", "current model"}) {
 			stale = append(stale, clause)
 		}
 	}
@@ -190,30 +219,33 @@ func staleResetClaims(text string) []string {
 }
 
 func claimsAction(clause string, verbs, objects []string) bool {
-	verb := ""
 	for _, candidate := range verbs {
-		if strings.Contains(clause, candidate) {
-			verb = candidate
-			break
+		index := strings.Index(clause, candidate)
+		if index < 0 {
+			continue
+		}
+		prefix := clause[:index]
+		negated := false
+		for _, negation := range []string{"do not ", "does not ", "never "} {
+			if strings.HasSuffix(prefix, negation) {
+				negated = true
+				break
+			}
+		}
+		if negated {
+			continue
+		}
+		tail := clause[index+len(candidate):]
+		for _, boundary := range []string{" while ", " but ", ";"} {
+			if boundaryIndex := strings.Index(tail, boundary); boundaryIndex >= 0 {
+				tail = tail[:boundaryIndex]
+			}
+		}
+		for _, object := range objects {
+			if strings.Contains(tail, object) {
+				return true
+			}
 		}
 	}
-	if verb == "" {
-		return false
-	}
-	objectFound := false
-	for _, object := range objects {
-		if strings.Contains(clause, object) {
-			objectFound = true
-			break
-		}
-	}
-	if !objectFound {
-		return false
-	}
-	for _, negation := range []string{"do not ", "does not ", "never "} {
-		if strings.Contains(clause, negation+verb) {
-			return false
-		}
-	}
-	return true
+	return false
 }

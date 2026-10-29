@@ -97,7 +97,6 @@ func (h *Handler) render(ctx context.Context, p commandcmd.Payload) (deliveryfmt
 		ObservedAt:      h.now().UTC(),
 		ProviderID:      unavailableValue,
 		ProviderType:    unavailableValue,
-		Model:           unavailableValue,
 		ReasoningEffort: unavailableValue,
 		ChannelType:     valueOrUnavailable(p.Locator.ChannelType),
 		SessionID:       valueOrUnavailable(p.Locator.SessionID),
@@ -131,7 +130,12 @@ func (h *Handler) render(ctx context.Context, p commandcmd.Payload) (deliveryfmt
 	} else {
 		response.SessionState = valueOrUnavailable(info.Status)
 		response.ProviderID = valueOrUnavailable(info.ProviderID)
-		response.Model = valueOrUnavailable(info.Model)
+		if info.RequestedModel != nil {
+			response.RequestedModel = strings.TrimSpace(*info.RequestedModel)
+			response.HasRequestedModel = response.RequestedModel != ""
+		}
+		response.ActiveModel = strings.TrimSpace(info.ActiveModel)
+		response.ActiveModelKind = string(info.ActiveModelKind)
 	}
 
 	if h.turns != nil {

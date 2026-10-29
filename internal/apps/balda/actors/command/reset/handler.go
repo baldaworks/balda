@@ -21,7 +21,7 @@ const (
 	operationIDPrefix       = "fresh-lifetime-command:v1:"
 	detachedDeliveryTimeout = 5 * time.Second
 	msgDenied               = "Only the bot owner or collaborators can use this command."
-	msgReset                = "A fresh conversation is ready. Your provider, model, and capabilities are unchanged."
+	msgReset                = "A fresh local conversation is ready. Your provider, capabilities, and any requested model preference were preserved for later use."
 	msgConflict             = "A fresh conversation request conflicts with another session operation. No new reset was started."
 	msgUnavailable          = "A fresh conversation is currently unavailable. No new reset was started."
 	msgInterrupted          = "The fresh conversation outcome is unconfirmed because the request was interrupted. Check /status before retrying /reset or /new."

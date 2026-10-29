@@ -139,7 +139,9 @@ use its pinned snapshot even if files under `.agents/skills` change. `/reset`
 and `/new` wait behind active and prior work in the existing per-session FIFO,
 then publish a new empty local ADK lifetime/archive at the same stable Balda
 session. They preserve the exact pinned capability snapshot, including its
-project-skill revisions. Only a genuinely new stable session selects the current
+project-skill revisions, provider binding, and optional requested model
+preference. Active model observation stays unknown until later provider
+attachment or execution. Only a genuinely new stable session selects the current
 project-skill revision. Because each workspace receives a separate overlay, its
 project skills are unavailable to sessions bound to another workspace.
 
@@ -478,7 +480,9 @@ Publishing a new catalog snapshot never mutates an active session. `/reset` and
 `/new` cross the existing per-session FIFO and publish a new empty local ADK
 lifetime/archive at the same stable Balda session. They preserve the exact
 pinned `SnapshotID`, including commands, project-skill revisions, and MCP
-servers; they do not select the current catalog revision. Provider use remains
+servers, together with the exact provider binding and optional requested model
+preference; they do not select the current catalog revision. Active model
+observation remains unknown until later provider attachment or execution. Provider use remains
 lazy, and reset success promises neither provider availability nor physical
 deletion of provider-native history. Only creation of a genuinely new stable
 session selects the current catalog revision.

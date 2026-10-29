@@ -53,6 +53,7 @@ func (markdownFormatter) Format(text string) (deliveryfmt.Message, error) {
 type mattermostLocatorRenderer struct{}
 
 type mattermostStatusRenderer struct{}
+type mattermostLegacyStatusRenderer struct{}
 
 type mattermostQuestionRenderer struct{}
 
@@ -67,6 +68,10 @@ func (mattermostQuestionRenderer) RenderStructured(_ context.Context, env delive
 
 func (mattermostStatusRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[statusfmt.Response]) (deliveryfmt.StructuredPresentation, error) {
 	return deliveryfmt.StructuredPresentation{Text: presentation.RenderStatus(env.Body), DeliveryFormat: deliveryfmt.DeliveryFormatMarkdown}, nil
+}
+
+func (mattermostLegacyStatusRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[statusfmt.Response]) (deliveryfmt.StructuredPresentation, error) {
+	return deliveryfmt.StructuredPresentation{Text: presentation.RenderLegacyStatus(env.Body), DeliveryFormat: deliveryfmt.DeliveryFormatMarkdown}, nil
 }
 
 // NewQuestionStructuredRegistrar registers Mattermost question presentation.
@@ -116,7 +121,10 @@ func NewStatusStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
 		if err := deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportMattermost, statusfmt.ResponseDescriptor, mattermostStatusRenderer{}); err != nil {
 			return err
 		}
-		return deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportMattermost, statusfmt.LegacyResponseDescriptor, mattermostStatusRenderer{})
+		if err := deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportMattermost, statusfmt.LegacyV2ResponseDescriptor, mattermostLegacyStatusRenderer{}); err != nil {
+			return err
+		}
+		return deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportMattermost, statusfmt.LegacyResponseDescriptor, mattermostLegacyStatusRenderer{})
 	}
 }
 

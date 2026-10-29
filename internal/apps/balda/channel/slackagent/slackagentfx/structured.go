@@ -45,6 +45,7 @@ func (slackAgentProgressRenderer) RenderStructured(_ context.Context, env delive
 type slackAgentLocatorRenderer struct{}
 
 type slackAgentStatusRenderer struct{}
+type slackAgentLegacyStatusRenderer struct{}
 
 func (slackAgentLocatorRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[locatorfmt.Response]) (deliveryfmt.StructuredPresentation, error) {
 	return deliveryfmt.StructuredPresentation{
@@ -55,6 +56,10 @@ func (slackAgentLocatorRenderer) RenderStructured(_ context.Context, env deliver
 
 func (slackAgentStatusRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[statusfmt.Response]) (deliveryfmt.StructuredPresentation, error) {
 	return deliveryfmt.StructuredPresentation{Text: presentation.RenderStatus(env.Body), DeliveryFormat: deliveryfmt.DeliveryFormatMrkdwn}, nil
+}
+
+func (slackAgentLegacyStatusRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[statusfmt.Response]) (deliveryfmt.StructuredPresentation, error) {
+	return deliveryfmt.StructuredPresentation{Text: presentation.RenderLegacyStatus(env.Body), DeliveryFormat: deliveryfmt.DeliveryFormatMrkdwn}, nil
 }
 
 func NewQuestionStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
@@ -88,7 +93,10 @@ func NewStatusStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
 		if err := deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportSlackAgent, statusfmt.ResponseDescriptor, slackAgentStatusRenderer{}); err != nil {
 			return err
 		}
-		return deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportSlackAgent, statusfmt.LegacyResponseDescriptor, slackAgentStatusRenderer{})
+		if err := deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportSlackAgent, statusfmt.LegacyV2ResponseDescriptor, slackAgentLegacyStatusRenderer{}); err != nil {
+			return err
+		}
+		return deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportSlackAgent, statusfmt.LegacyResponseDescriptor, slackAgentLegacyStatusRenderer{})
 	}
 }
 

@@ -23,6 +23,31 @@ type Model struct {
 
 // ModelFor produces the shared English semantics used by every transport.
 func ModelFor(body Response) Model {
+	model := baseModelFor(body)
+	model.Diagnostics = []Field{
+		{"Provider", joinNonEmpty(body.ProviderID, body.ProviderType, body.ReasoningEffort)},
+		{"Requested model", requestedModelValue(body)},
+		{"Active model", activeModelValue(body)},
+		{"Session", joinNonEmpty(body.SessionID, body.SessionState)},
+		{"Channel", body.ChannelType},
+	}
+	return model
+}
+
+// LegacyModelFor preserves the bounded v1/v2 status presentation. Model in
+// those payloads is a historical compatibility projection, not active-model
+// evidence, so legacy rendering keeps it only in the combined Provider field.
+func LegacyModelFor(body Response) Model {
+	model := baseModelFor(body)
+	model.Diagnostics = []Field{
+		{"Provider", joinNonEmpty(body.ProviderID, body.ProviderType, body.Model, body.ReasoningEffort)},
+		{"Session", joinNonEmpty(body.SessionID, body.SessionState)},
+		{"Channel", body.ChannelType},
+	}
+	return model
+}
+
+func baseModelFor(body Response) Model {
 	now := body.ObservedAt.UTC()
 	if now.IsZero() {
 		now = time.Now().UTC()
@@ -83,12 +108,44 @@ func ModelFor(body Response) Model {
 	if len(body.DegradedSources) > 0 && state != unavailable {
 		model.Operational = append(model.Operational, Field{"Status data", "partial"})
 	}
-	model.Diagnostics = []Field{
-		{"Provider", joinNonEmpty(body.ProviderID, body.ProviderType, body.Model, body.ReasoningEffort)},
-		{"Session", joinNonEmpty(body.SessionID, body.SessionState)},
-		{"Channel", body.ChannelType},
-	}
 	return model
+}
+
+func requestedModelValue(body Response) string {
+	requested := strings.TrimSpace(body.RequestedModel)
+	if !body.HasRequestedModel || requested == "" {
+		return "none (no explicit preference)"
+	}
+	active, authoritative := authoritativeActiveModel(body)
+	if authoritative && active == requested {
+		return requested + " (active)"
+	}
+	return requested + " (pending)"
+}
+
+func authoritativeActiveModel(body Response) (string, bool) {
+	active := strings.TrimSpace(body.ActiveModel)
+	switch strings.TrimSpace(body.ActiveModelKind) {
+	case "provider_observed", "locally_executed":
+		return active, active != ""
+	}
+	return "", false
+}
+
+func activeModelValue(body Response) string {
+	active := strings.TrimSpace(body.ActiveModel)
+	kind := strings.TrimSpace(body.ActiveModelKind)
+	if active == "" {
+		return "unknown (not attached)"
+	}
+	switch kind {
+	case "provider_observed":
+		return active + " (provider observed)"
+	case "locally_executed":
+		return active + " (locally executed)"
+	default:
+		return "unknown (not attached)"
+	}
 }
 
 func waitingSince(body Response) time.Time {
