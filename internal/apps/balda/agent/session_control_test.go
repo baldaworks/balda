@@ -99,6 +99,7 @@ func TestBuiltRuntimeVerifiesIdentityAndBuildsIndependentReplacement(t *testing.
 		AppName:             "norma-balda",
 		RuntimeSnapshotID:   "snapshot-retained",
 		ProviderBindingJSON: `{"provider":"retained"}`,
+		RecipeModel:         "recipe-a",
 		runnerScope:         ToolHookScope{Enabled: true, Provider: "hosted", CWD: t.TempDir()},
 		newRunner:           runnerFactory.New,
 	}
@@ -122,7 +123,8 @@ func TestBuiltRuntimeVerifiesIdentityAndBuildsIndependentReplacement(t *testing.
 		t.Fatalf("candidate binding = %p/%q, want %p/%q", change.Candidate.SessionSvc, change.Candidate.AppName, service, identity.AppName)
 	}
 	if change.Candidate.RuntimeSnapshotID != incumbent.RuntimeSnapshotID ||
-		change.Candidate.ProviderBindingJSON != incumbent.ProviderBindingJSON {
+		change.Candidate.ProviderBindingJSON != incumbent.ProviderBindingJSON ||
+		change.Candidate.RecipeModel != "recipe-a" || change.Candidate.ConfirmedModel != "model-next" {
 		t.Fatalf("candidate metadata = %q/%q, want %q/%q", change.Candidate.RuntimeSnapshotID,
 			change.Candidate.ProviderBindingJSON, incumbent.RuntimeSnapshotID, incumbent.ProviderBindingJSON)
 	}

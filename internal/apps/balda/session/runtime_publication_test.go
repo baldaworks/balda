@@ -11,6 +11,7 @@ import (
 	"time"
 
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
+	adkagent "google.golang.org/adk/v2/agent"
 	adksession "google.golang.org/adk/v2/session"
 )
 
@@ -130,6 +131,49 @@ func TestPublishApplyingModelRuntimeCommitsAndSwapsOnce(t *testing.T) {
 	)
 	if err != nil || published || terminal.State != baldastate.RuntimeOperationTerminal {
 		t.Fatalf("replay = %+v, %v, %v", terminal, published, err)
+	}
+}
+
+func TestPublishApplyingReplacementRecoversFinalizeCommitErrorAndCompletesBase(t *testing.T) {
+	incumbent, candidate := publicationSlots(t, nil)
+	replacementAgent, err := adkagent.New(adkagent.Config{Name: "replacement"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate.value.runtime.Agent = replacementAgent
+	var promotes, completes atomic.Int32
+	candidate.value.runtime.PromoteBase = func() error {
+		promotes.Add(1)
+		return nil
+	}
+	candidate.value.runtime.CompleteBase = func() error {
+		completes.Add(1)
+		return nil
+	}
+	topic := &TopicSession{sessionID: "session", runtime: incumbent}
+	intent := publicationIntent()
+	intent.State = baldastate.RuntimeOperationApplying
+	store := &publicationStore{operation: intent, publishCommitErr: true}
+	manager := publicationManager(topic, store)
+
+	terminal, published, err := manager.publishRuntimeState(
+		t.Context(), incumbent, candidate, intent,
+		baldastate.RuntimeOperationOutcomeContextPreserved, true,
+		baldastate.RuntimeOperationReasonChangedReplacement,
+	)
+	if err != nil || !published || terminal.State != baldastate.RuntimeOperationTerminal {
+		t.Fatalf("publication = %+v, %t, %v", terminal, published, err)
+	}
+	if promotes.Load() != 1 || completes.Load() != 1 || topic.currentRuntime() != candidate {
+		t.Fatalf("promotion/completion/current = %d/%d/%p", promotes.Load(), completes.Load(), topic.currentRuntime())
+	}
+	terminal, published, err = manager.publishRuntimeState(
+		t.Context(), incumbent, candidate, intent,
+		baldastate.RuntimeOperationOutcomeContextPreserved, true,
+		baldastate.RuntimeOperationReasonChangedReplacement,
+	)
+	if err != nil || published || terminal.State != baldastate.RuntimeOperationTerminal || promotes.Load() != 1 || completes.Load() != 1 {
+		t.Fatalf("terminal replay = %+v, %t, %v; promotion/completion %d/%d", terminal, published, err, promotes.Load(), completes.Load())
 	}
 }
 
@@ -714,6 +758,7 @@ type publicationStore struct {
 	operation        baldastate.RuntimeOperationRecord
 	calls            []string
 	publishErr       error
+	publishCommitErr bool
 	getErr           error
 	beginErr         error
 	markApplyingErr  error
@@ -799,6 +844,10 @@ func (s *publicationStore) Finalize(_ context.Context, final baldastate.RuntimeO
 	s.operation.TerminalAt = &final.At
 	if final.Outcome == baldastate.RuntimeOperationOutcomeContextPreserved || final.Outcome == baldastate.RuntimeOperationOutcomeContextReset {
 		s.finalizations++
+	}
+	if final.Outcome == baldastate.RuntimeOperationOutcomeContextPreserved && s.publishCommitErr {
+		s.publishCommitErr = false
+		return baldastate.RuntimeOperationRecord{}, errors.New("synthetic commit acknowledgement loss")
 	}
 	return s.operation, nil
 }

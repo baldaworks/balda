@@ -298,13 +298,32 @@ func (s *RuntimeSlot) sharedLifetimeSuccessor(sess adksession.Session, archiveID
 	return newRuntimeSlotWithOwner(value, s.owner), nil
 }
 
+// independentLifetimeSuccessor wraps a separately owned lazy runtime over a
+// new empty local ADK lifetime. No incumbent aggregate ownership is shared.
+func (s *RuntimeSlot) independentLifetimeSuccessor(runtime *BuiltRuntime, sess adksession.Session, archiveID, effectiveModel, outcome string) (*RuntimeSlot, error) {
+	if s == nil || runtime == nil || sess == nil || s.value.generation == math.MaxUint64 ||
+		strings.TrimSpace(archiveID) == "" || sess.ID() != archiveID || sess.ID() == s.value.sessionID ||
+		runtime.AppName != s.value.appName || sess.AppName() != s.value.appName || sess.UserID() != s.value.userID ||
+		runtime.RuntimeSnapshotID != s.value.runtime.RuntimeSnapshotID ||
+		runtime.ProviderBindingJSON != s.value.runtime.ProviderBindingJSON ||
+		sess.Events() == nil || sess.Events().Len() != 0 {
+		return nil, ErrRuntimePublicationInvalid
+	}
+	return newRuntimeSlot(runtimeSlotConfig{
+		runtime: runtime, session: sess, providerID: s.value.providerID,
+		archiveID: archiveID, generation: s.value.generation + 1,
+		effectiveModel: effectiveModel, outcome: outcome,
+	}), nil
+}
+
 // independentModelSuccessor wraps a replacement runtime that was built over
 // the incumbent's exact ADK identity. Ownership remains with the returned
 // unpublished slot (or with the caller when validation fails).
 func (s *RuntimeSlot) independentModelSuccessor(runtime *BuiltRuntime, session adksession.Session, effectiveModel, outcome string) (*RuntimeSlot, error) {
 	if s == nil || runtime == nil || s.value.generation == math.MaxUint64 || !sameRuntimeSessionIdentity(s.value, runtime, session) ||
 		runtime.RuntimeSnapshotID != s.value.runtime.RuntimeSnapshotID ||
-		runtime.ProviderBindingJSON != s.value.runtime.ProviderBindingJSON {
+		runtime.ProviderBindingJSON != s.value.runtime.ProviderBindingJSON ||
+		strings.TrimSpace(runtime.ConfirmedModel) != strings.TrimSpace(effectiveModel) {
 		return nil, ErrRuntimePublicationInvalid
 	}
 	return newRuntimeSlot(runtimeSlotConfig{

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"text/template"
 
 	"github.com/baldaworks/balda/internal/apps/balda/paths"
@@ -257,13 +258,76 @@ type BuiltRuntime struct {
 	// RecipeModel is the bounded model selection used by this exact bound
 	// construction. It is metadata-only and does not imply provider attachment.
 	RecipeModel string
+	// ConfirmedModel is populated only for a hosted replacement after the
+	// control plane confirms the exact effective target. It is distinct from
+	// the immutable pinned construction recipe.
+	ConfirmedModel string
+	// ProviderID is the exact bound root provider identity used for this build.
+	ProviderID string
+	// RuntimeBaseToken is an opaque process-local token for the exact runtime
+	// base registered for child-runtime lookup. Zero means unregistered.
+	RuntimeBaseToken uint64
 	// Close releases all resources owned by this adapted runtime product.
 	// RuntimeManager composes it with resources acquired by outer layers.
 	Close func() error
 
-	productClose func() error
-	runnerScope  ToolHookScope
-	newRunner    func(runner.Config, ToolHookScope) (*runner.Runner, error)
+	productClose         func() error
+	runnerScope          ToolHookScope
+	newRunner            func(runner.Config, ToolHookScope) (*runner.Runner, error)
+	scopedID             string
+	baseBuilder          *Builder
+	baseProviderID       string
+	baseWorkingDir       string
+	baseMCPServerIDs     []string
+	promoteReplacement   func(*BuiltRuntime) error
+	completeReplacement  func(*BuiltRuntime) error
+	replacementMu        sync.Mutex
+	replacementPromoted  bool
+	replacementCompleted bool
+	replacementClosed    bool
+	replacementCloseOnce sync.Once
+	replacementCloseErr  error
+	scopedOwner          *scopedRuntimeOwner
+}
+
+// PromoteReplacementBase transfers the exact published child-runtime base to
+// this hosted replacement without changing its process-local base token.
+func (b *BuiltRuntime) PromoteReplacementBase() error {
+	if b == nil || b.promoteReplacement == nil {
+		return nil
+	}
+	return b.promoteReplacement(b)
+}
+
+// CompleteReplacementBase releases the child-lookup barrier only after the
+// matching RuntimeSlot and terminal model journal are both authoritative.
+func (b *BuiltRuntime) CompleteReplacementBase() error {
+	if b == nil || b.completeReplacement == nil {
+		return nil
+	}
+	return b.completeReplacement(b)
+}
+
+func (b *BuiltRuntime) closeReplacement() error {
+	if b == nil {
+		return nil
+	}
+	b.replacementMu.Lock()
+	if b.replacementPromoted && !b.replacementCompleted {
+		b.replacementMu.Unlock()
+		return ErrProviderUnavailable
+	}
+	b.replacementClosed = true
+	b.replacementMu.Unlock()
+	b.replacementCloseOnce.Do(func() {
+		if b.productClose != nil {
+			b.replacementCloseErr = b.productClose()
+		}
+		if b.scopedOwner != nil {
+			b.replacementCloseErr = errors.Join(b.replacementCloseErr, b.scopedOwner.closeOuter(b))
+		}
+	})
+	return b.replacementCloseErr
 }
 
 // RuntimeSessionService returns the process-local ADK session store without

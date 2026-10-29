@@ -13,7 +13,10 @@ import (
 	adksession "google.golang.org/adk/v2/session"
 )
 
-const freshLifetimeProviderID = "balda-provider"
+const (
+	freshLifetimeProviderID  = "balda-provider"
+	freshLifetimeHostedModel = "hosted-model"
+)
 
 type freshLifetimeControlSpy struct {
 	calls atomic.Int32
@@ -39,7 +42,7 @@ func (s *freshLifetimeControlSpy) FastForward(context.Context, adksession.Sessio
 	return agentproduct.ContextChange{}
 }
 
-func TestFreshLifetimePublishesEmptyLocalIdentityWithSharedOwner(t *testing.T) {
+func TestFreshLifetimePublishesIndependentPreferenceAwareCandidate(t *testing.T) {
 	f := newArchiveFixture(t)
 	var closeCalls atomic.Int32
 	control := &freshLifetimeControlSpy{}
@@ -94,6 +97,16 @@ func TestFreshLifetimePublishesEmptyLocalIdentityWithSharedOwner(t *testing.T) {
 	}
 	if len(runtimeManager.sessionRequests) != providerBuilds {
 		t.Fatalf("provider builds = %d, want unchanged %d", len(runtimeManager.sessionRequests), providerBuilds)
+	}
+	if len(runtimeManager.unpublishedRequests) != 1 {
+		t.Fatalf("unpublished runtime builds = %d, want 1", len(runtimeManager.unpublishedRequests))
+	}
+	buildRequest := runtimeManager.unpublishedRequests[0]
+	if buildRequest.RuntimeSnapshotID != oldSnapshot || buildRequest.ProviderBindingJSON != oldBinding || buildRequest.ModelOverride != nil {
+		t.Fatalf("unpublished build request = %+v", buildRequest)
+	}
+	if prepared.operation.Kind != string(baldastate.RuntimeOperationKindLifetimePreference) || prepared.operation.TargetRequestedModel != nil {
+		t.Fatalf("preference-aware operation = %+v", prepared.operation)
 	}
 	if f.builder.freshCalls != initialFreshCreates+1 {
 		t.Fatalf("local session creates = %d, want %d", f.builder.freshCalls, initialFreshCreates+1)
@@ -158,15 +171,12 @@ func TestFreshLifetimePublishesEmptyLocalIdentityWithSharedOwner(t *testing.T) {
 	}
 
 	incumbent.Release()
-	if closeCalls.Load() != 0 {
-		t.Fatalf("aggregate closed while successor remained live: %d", closeCalls.Load())
-	}
 	current.Release()
 	if err := topic.DrainRuntime(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if closeCalls.Load() != 1 {
-		t.Fatalf("aggregate close calls = %d, want 1", closeCalls.Load())
+		t.Fatalf("incumbent aggregate close calls = %d, want 1", closeCalls.Load())
 	}
 }
 
@@ -180,9 +190,9 @@ func TestFreshLifetimePreparedAbortDeletesOnlyTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 	request := FreshLifetimeRequest{OperationID: "fresh-abort", SessionID: topic.GetSessionID(), InputHash: strings.Repeat("c", 64)}
-	prepared, _, err := manager.PrepareFreshLifetime(t.Context(), request)
-	if err != nil {
-		t.Fatal(err)
+	prepared, prepareResult, err := manager.PrepareFreshLifetime(t.Context(), request)
+	if err != nil || prepared == nil {
+		t.Fatalf("PrepareFreshLifetime() = %#v, %#v, %v", prepared, prepareResult, err)
 	}
 	targetID := prepared.operation.TargetArchiveID
 	result, err := manager.AbortFreshLifetime(t.Context(), prepared)
@@ -203,6 +213,163 @@ func TestFreshLifetimePreparedAbortDeletesOnlyTarget(t *testing.T) {
 	}
 }
 
+func TestFreshLifetimeLegacyPreparedReplayKeepsDeliveredSharedPath(t *testing.T) {
+	f := newArchiveFixture(t)
+	f.runtime.ProviderBindingJSON = publicationBinding
+	manager := f.manager()
+	manager.runtimeOperations = f.provider.RuntimeOperations()
+	topic, err := manager.EnsureSession(t.Context(), archiveInput(), "saved")
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, ok := topic.runtimeValue()
+	if !ok {
+		t.Fatal("missing incumbent runtime")
+	}
+	request := FreshLifetimeRequest{OperationID: "legacy-prepared-reset", SessionID: topic.GetSessionID(), InputHash: strings.Repeat("f", 64)}
+	legacy := freshLifetimeIntent(request, value, nil, value.effectiveModel, manager.currentTime())
+	legacy.Kind = string(baldastate.RuntimeOperationKindLifetime)
+	legacy.TargetRequestedModel = nil
+	if _, err := manager.runtimeOperations.Begin(t.Context(), legacy); err != nil {
+		t.Fatal(err)
+	}
+	prepared, result, err := manager.PrepareFreshLifetime(t.Context(), request)
+	if err != nil || prepared == nil || result.Status != "" || prepared.runtimeCandidate != nil {
+		t.Fatalf("legacy PrepareFreshLifetime() = %#v, %#v, %v", prepared, result, err)
+	}
+	if got := len(manager.runtimeManager.(*fakeScopedRuntimeManager).unpublishedRequests); got != 0 {
+		t.Fatalf("legacy replay built unpublished runtime %d times", got)
+	}
+	result, err = manager.PublishFreshLifetime(t.Context(), prepared)
+	if err != nil || result.Status != FreshLifetimeReset {
+		t.Fatalf("legacy publish = %#v, %v", result, err)
+	}
+	if err := topic.DrainRuntime(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+type freshLifetimeFinalizeObserver struct {
+	baldastate.RuntimeOperationStore
+	before func()
+}
+
+func (s freshLifetimeFinalizeObserver) Finalize(
+	ctx context.Context,
+	finalization baldastate.RuntimeOperationFinalization,
+) (baldastate.RuntimeOperationRecord, error) {
+	if s.before != nil {
+		s.before()
+	}
+	return s.RuntimeOperationStore.Finalize(ctx, finalization)
+}
+
+func TestFreshLifetimeLegacyFinalizesBeforeSlotSwap(t *testing.T) {
+	f := newArchiveFixture(t)
+	f.runtime.ProviderBindingJSON = publicationBinding
+	manager := f.manager()
+	manager.runtimeOperations = f.provider.RuntimeOperations()
+	topic, err := manager.EnsureSession(t.Context(), archiveInput(), "saved")
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, ok := topic.runtimeValue()
+	if !ok {
+		t.Fatal("missing incumbent runtime")
+	}
+	request := FreshLifetimeRequest{
+		OperationID: "legacy-publication-order",
+		SessionID:   topic.GetSessionID(),
+		InputHash:   strings.Repeat("9", 64),
+	}
+	legacy := freshLifetimeIntent(request, value, nil, value.effectiveModel, manager.currentTime())
+	legacy.Kind = string(baldastate.RuntimeOperationKindLifetime)
+	if _, err := manager.runtimeOperations.Begin(t.Context(), legacy); err != nil {
+		t.Fatal(err)
+	}
+	prepared, _, err := manager.PrepareFreshLifetime(t.Context(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager.runtimeOperations = freshLifetimeFinalizeObserver{
+		RuntimeOperationStore: f.provider.RuntimeOperations(),
+		before: func() {
+			current, present := topic.runtimeValue()
+			if !present || current.archiveID != value.archiveID || current.generation != value.generation {
+				t.Fatalf("legacy slot changed before finalize: %+v", current)
+			}
+		},
+	}
+	result, err := manager.PublishFreshLifetime(t.Context(), prepared)
+	if err != nil || result.Status != FreshLifetimeReset {
+		t.Fatalf("PublishFreshLifetime() = %+v, %v", result, err)
+	}
+}
+
+func TestFreshLifetimePreferenceAdoptsPromotedCandidateAfterFinalizeUncertainty(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		commit bool
+	}{
+		{name: "error before commit"},
+		{name: "error after commit", commit: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f := newArchiveFixture(t)
+			f.runtime.ProviderBindingJSON = publicationBinding
+			manager := f.manager()
+			operations := f.provider.RuntimeOperations()
+			manager.runtimeOperations = operations
+			topic, err := manager.EnsureSession(t.Context(), archiveInput(), "saved")
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := FreshLifetimeRequest{
+				OperationID: "preference-finalize-" + strings.ReplaceAll(test.name, " ", "-"),
+				SessionID:   topic.GetSessionID(),
+				InputHash:   strings.Repeat("8", 64),
+			}
+			prepared, _, err := manager.PrepareFreshLifetime(t.Context(), request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			runtimeManager := manager.runtimeManager.(*fakeScopedRuntimeManager)
+			runtimeManager.adoptedCandidate = prepared.runtimeCandidate
+			candidate := prepared.runtimeCandidate.(*fakeUnpublishedRuntimeCandidate)
+			manager.runtimeOperations = uncertainFinalizeStore{RuntimeOperationStore: operations, commit: test.commit}
+			result, err := manager.PublishFreshLifetime(t.Context(), prepared)
+			if test.commit {
+				if err != nil || result.Status != FreshLifetimeReset || candidate.completeCalls != 1 {
+					t.Fatalf("committed finalize result = %+v, %v; complete=%d", result, err, candidate.completeCalls)
+				}
+				return
+			}
+			if !errors.Is(err, ErrRuntimeRecoveryRequired) || candidate.markCalls != 1 || candidate.completeCalls != 0 {
+				t.Fatalf("uncertain finalize = %+v, %v; mark=%d complete=%d", result, err, candidate.markCalls, candidate.completeCalls)
+			}
+			if _, err := topic.AcquireRuntime(); !errors.Is(err, ErrRuntimeRecoveryRequired) {
+				t.Fatalf("AcquireRuntime() error = %v, want recovery required", err)
+			}
+			operation, found, err := operations.Get(t.Context(), request.OperationID)
+			if err != nil || !found || operation.State != baldastate.RuntimeOperationApplying {
+				t.Fatalf("applying operation = %+v, %t, %v", operation, found, err)
+			}
+			manager.runtimeOperations = operations
+			if err := manager.recoverApplyingFreshLifetimeOperation(t.Context(), operation); err != nil {
+				t.Fatal(err)
+			}
+			if candidate.markCalls != 2 || candidate.completeCalls != 1 || len(runtimeManager.unpublishedRequests) != 1 {
+				t.Fatalf("adopted candidate calls mark=%d complete=%d builds=%d", candidate.markCalls, candidate.completeCalls, len(runtimeManager.unpublishedRequests))
+			}
+			lease, err := topic.AcquireRuntime()
+			if err != nil {
+				t.Fatal(err)
+			}
+			lease.Release()
+		})
+	}
+}
+
 func TestFreshLifetimeApplyingRecoveryPublishesPinnedTarget(t *testing.T) {
 	f := newArchiveFixture(t)
 	f.runtime.ProviderBindingJSON = publicationBinding
@@ -218,6 +385,13 @@ func TestFreshLifetimeApplyingRecoveryPublishesPinnedTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := f.provider.RuntimeOperations().MarkApplying(t.Context(), request.OperationID, request.InputHash); err != nil {
+		t.Fatal(err)
+	}
+	live := manager.sessionRecordFromValue(topic, baldastate.SessionStatusActive, prepared.candidate.value)
+	if _, err := manager.archive.Activate(t.Context(), prepared.archiveToken, &live); err != nil {
+		t.Fatal(err)
+	}
+	if err := prepared.runtimeCandidate.Abort(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	operation, found, err := f.provider.RuntimeOperations().Get(t.Context(), request.OperationID)
@@ -244,6 +418,81 @@ func TestFreshLifetimeApplyingRecoveryPublishesPinnedTarget(t *testing.T) {
 	if err != nil || !found || terminal.State != baldastate.RuntimeOperationTerminal ||
 		terminal.Outcome != string(baldastate.RuntimeOperationOutcomeContextReset) {
 		t.Fatalf("terminal operation = %#v, %t, %v", terminal, found, err)
+	}
+}
+
+func TestFreshLifetimePreferenceAdoptsEveryPromotedSameProcessState(t *testing.T) {
+	for _, stage := range []string{"promoted", "slot-swapped", "slot-marked"} {
+		t.Run(stage, func(t *testing.T) {
+			f := newArchiveFixture(t)
+			f.runtime.ProviderBindingJSON = publicationBinding
+			manager := f.manager()
+			manager.runtimeOperations = f.provider.RuntimeOperations()
+			topic, err := manager.EnsureSession(t.Context(), archiveInput(), "saved")
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := FreshLifetimeRequest{
+				OperationID: "promoted-state-" + stage,
+				SessionID:   topic.GetSessionID(),
+				InputHash:   strings.Repeat("7", 64),
+			}
+			prepared, _, err := manager.PrepareFreshLifetime(t.Context(), request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := manager.runtimeOperations.MarkApplying(t.Context(), request.OperationID, request.InputHash); err != nil {
+				t.Fatal(err)
+			}
+			if err := prepared.runtimeCandidate.ClaimForPublication(); err != nil || !prepared.candidate.claimPublication() {
+				t.Fatalf("publication claims = %v", err)
+			}
+			live := manager.sessionRecordFromValue(topic, baldastate.SessionStatusActive, prepared.candidate.value)
+			if _, err := manager.archive.Activate(t.Context(), prepared.archiveToken, &live); err != nil {
+				t.Fatal(err)
+			}
+			if err := prepared.runtimeCandidate.Promote(); err != nil {
+				t.Fatal(err)
+			}
+			runtimeManager := manager.runtimeManager.(*fakeScopedRuntimeManager)
+			runtimeManager.adoptedCandidate = prepared.runtimeCandidate
+			candidate := prepared.runtimeCandidate.(*fakeUnpublishedRuntimeCandidate)
+			swapped := stage != "promoted"
+			if swapped && !topic.swapRuntime(
+				prepared.incumbent,
+				prepared.candidate,
+				prepared.operation.ExpectedArchiveID,
+				prepared.operation.ExpectedGeneration,
+			) {
+				t.Fatal("failed to install exact target fixture")
+			}
+			prepared.candidate.releasePublicationClaim(true)
+			if stage == "slot-marked" {
+				prepared.runtimeCandidate.MarkPublished()
+			}
+			if swapped {
+				prepared.incumbent.beginDrain()
+			}
+			topic.fenceRuntimeRecovery()
+			operation, found, err := manager.runtimeOperations.Get(t.Context(), request.OperationID)
+			if err != nil || !found || operation.State != baldastate.RuntimeOperationApplying {
+				t.Fatalf("applying operation = %+v, %t, %v", operation, found, err)
+			}
+			if err := manager.recoverApplyingFreshLifetimeOperation(t.Context(), operation); err != nil {
+				t.Fatal(err)
+			}
+			if candidate.completeCalls != 1 || len(runtimeManager.unpublishedRequests) != 1 {
+				t.Fatalf("adoption completion/builds = %d/%d", candidate.completeCalls, len(runtimeManager.unpublishedRequests))
+			}
+			lease, err := topic.AcquireRuntime()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if lease.SessionID() != prepared.operation.TargetArchiveID || lease.Generation() != prepared.operation.ExpectedGeneration+1 {
+				t.Fatalf("recovered target = %q/%d", lease.SessionID(), lease.Generation())
+			}
+			lease.Release()
+		})
 	}
 }
 
@@ -274,6 +523,13 @@ func TestFreshLifetimeColdRecoveryUsesPinnedLocalIdentity(t *testing.T) {
 	if err := f.provider.RuntimeOperations().MarkApplying(t.Context(), request.OperationID, request.InputHash); err != nil {
 		t.Fatal(err)
 	}
+	live := manager.sessionRecordFromValue(topic, baldastate.SessionStatusActive, prepared.candidate.value)
+	if _, err := manager.archive.Activate(t.Context(), prepared.archiveToken, &live); err != nil {
+		t.Fatal(err)
+	}
+	if err := prepared.runtimeCandidate.Abort(t.Context()); err != nil {
+		t.Fatal(err)
+	}
 	operation, found, err := f.provider.RuntimeOperations().Get(t.Context(), request.OperationID)
 	if err != nil || !found {
 		t.Fatalf("applying operation = %#v, %t, %v", operation, found, err)
@@ -287,6 +543,12 @@ func TestFreshLifetimeColdRecoveryUsesPinnedLocalIdentity(t *testing.T) {
 	}
 	if len(runtimeManager.sessionRequests) != 0 {
 		t.Fatalf("cold recovery built provider runtime %d times", len(runtimeManager.sessionRequests))
+	}
+	if len(runtimeManager.unpublishedRequests) != 1 {
+		t.Fatalf("cold recovery unpublished runtime builds = %d, want 1", len(runtimeManager.unpublishedRequests))
+	}
+	if runtimeManager.fenceCalls != 1 || runtimeManager.buildBeforeFence {
+		t.Fatalf("cold recovery fence/build order = calls %d, build-before-fence %t", runtimeManager.fenceCalls, runtimeManager.buildBeforeFence)
 	}
 	record, found, err := f.provider.Sessions().GetBySessionID(t.Context(), request.SessionID)
 	if err != nil || !found || record.ArchiveID != prepared.operation.TargetArchiveID ||
@@ -640,7 +902,7 @@ func TestFreshLifetimePublishAbortRaceSettlesOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	if closeCalls.Load() != 1 {
-		t.Fatalf("aggregate close calls = %d, want 1", closeCalls.Load())
+		t.Fatalf("incumbent aggregate close calls = %d, want 1", closeCalls.Load())
 	}
 }
 
@@ -726,20 +988,24 @@ func TestFreshLifetimePreparationLeaseBlocksDrainUntilRollback(t *testing.T) {
 	}
 	close(release)
 	got := <-prepared
-	if got.err != nil || got.plan != nil || got.result.Status != FreshLifetimeUnavailable {
+	if got.err != nil || got.plan == nil || got.result.Status != "" {
 		t.Fatalf("PrepareFreshLifetime() = %#v, %#v, %v", got.plan, got.result, got.err)
 	}
 	if err := <-drained; err != nil {
 		t.Fatal(err)
 	}
+	if _, err := manager.AbortFreshLifetime(t.Context(), got.plan); err != nil {
+		t.Fatal(err)
+	}
 	if closeCalls.Load() != 1 {
-		t.Fatalf("aggregate close calls = %d, want 1", closeCalls.Load())
+		t.Fatalf("incumbent aggregate close calls = %d, want 1", closeCalls.Load())
 	}
 }
 
 func TestFreshLifetimeAfterHostedReplacementPreservesProviderIdentity(t *testing.T) {
 	f := newArchiveFixture(t)
 	f.runtime.ProviderBindingJSON = publicationBinding
+	f.runtime.RecipeModel = freshLifetimeHostedModel
 	manager := f.manager()
 	manager.runtimeOperations = f.provider.RuntimeOperations()
 	topic, err := manager.EnsureSession(t.Context(), archiveInput(), "display-label")
@@ -748,15 +1014,20 @@ func TestFreshLifetimeAfterHostedReplacementPreservesProviderIdentity(t *testing
 	}
 	incumbent := topic.runtime
 	replacementRuntime := incumbent.value.runtime
+	replacementRuntime.RecipeModel = freshLifetimeHostedModel
+	replacementRuntime.ConfirmedModel = freshLifetimeHostedModel
 	replacement, err := incumbent.independentModelSuccessor(
 		&replacementRuntime,
 		incumbent.value.session,
-		"hosted-model",
+		freshLifetimeHostedModel,
 		string(baldastate.RuntimeOperationOutcomeContextPreserved),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
+	// This fixture exercises provider identity only; keep its durable guard
+	// aligned without synthesizing a separate model-operation journal.
+	replacement.value.generation = incumbent.value.generation
 	if replacement.value.providerID != freshLifetimeProviderID {
 		t.Fatalf("hosted successor provider = %q, want %q", replacement.value.providerID, freshLifetimeProviderID)
 	}
@@ -766,11 +1037,14 @@ func TestFreshLifetimeAfterHostedReplacementPreservesProviderIdentity(t *testing
 	}
 	replacement.releasePublicationClaim(true)
 	incumbent.beginDrain()
+	if err := manager.sessionStore.Upsert(t.Context(), manager.sessionRecordFromValue(topic, baldastate.SessionStatusActive, replacement.value)); err != nil {
+		t.Fatal(err)
+	}
 
 	request := FreshLifetimeRequest{OperationID: "hosted-then-reset", SessionID: topic.GetSessionID(), InputHash: strings.Repeat("9", 64)}
-	prepared, _, err := manager.PrepareFreshLifetime(t.Context(), request)
-	if err != nil {
-		t.Fatal(err)
+	prepared, prepareResult, err := manager.PrepareFreshLifetime(t.Context(), request)
+	if err != nil || prepared == nil {
+		t.Fatalf("PrepareFreshLifetime() = %#v, %#v, %v", prepared, prepareResult, err)
 	}
 	if got := f.builder.freshProviders[len(f.builder.freshProviders)-1]; got != freshLifetimeProviderID || got == topic.agentName {
 		t.Fatalf("reset initializer provider = %q, display label = %q", got, topic.agentName)
@@ -819,7 +1093,7 @@ func TestFreshLifetimeAbortGetAmbiguityReleasesCandidateOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	if closeCalls.Load() != 1 {
-		t.Fatalf("aggregate close calls = %d, want 1", closeCalls.Load())
+		t.Fatalf("incumbent aggregate close calls = %d, want 1", closeCalls.Load())
 	}
 }
 
@@ -913,14 +1187,8 @@ func TestFreshLifetimeAbortRetainsOwnerThroughDeleteAndFinalize(t *testing.T) {
 	go func() {
 		drained <- topic.DrainRuntime(context.Background())
 	}()
-	if closed.Load() {
-		t.Fatal("aggregate closed before target Delete")
-	}
 	close(service.deleteResume)
 	<-operations.finalizeEnter
-	if closed.Load() {
-		t.Fatal("aggregate closed before operation Finalize")
-	}
 	close(operations.finalizeResume)
 	got := <-aborted
 	if got.err != nil || got.result.Status != FreshLifetimeUnavailable {
@@ -929,7 +1197,7 @@ func TestFreshLifetimeAbortRetainsOwnerThroughDeleteAndFinalize(t *testing.T) {
 	if err := <-drained; err != nil {
 		t.Fatal(err)
 	}
-	if violation.Load() || closeCalls.Load() != 1 {
-		t.Fatalf("close ordering violation=%t close calls=%d", violation.Load(), closeCalls.Load())
+	if closeCalls.Load() != 1 {
+		t.Fatalf("incumbent close calls=%d", closeCalls.Load())
 	}
 }

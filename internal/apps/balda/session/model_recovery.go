@@ -39,6 +39,9 @@ func (m *Manager) recoverActiveModelOperation(
 		topic.fenceRuntimeRecovery()
 		return ErrRuntimeRecoveryRequired
 	}
+	if candidate, adopted := m.adoptPromotedModelReplacement(incumbent, value, operation); adopted {
+		return m.finishRecoveredModelReplacement(ctx, topic, incumbent, value, operation, candidate)
+	}
 	change := value.runtime.ModelController.ChangeModel(ctx, runtimeIdentity(value), operation.TargetModel)
 	return m.applyModelRecoveryChange(ctx, topic, incumbent, value, operation, change)
 }
@@ -170,22 +173,12 @@ func (m *Manager) applyModelRecoveryChange(
 		candidate, err := incumbent.independentModelSuccessor(
 			change.Candidate, value.session, operation.TargetModel, string(baldastate.RuntimeOperationOutcomeContextPreserved),
 		)
-		if err != nil || !candidate.claimPublication() {
+		if err != nil {
 			closeModelCandidate(change.Candidate)
 			topic.fenceRuntimeRecovery()
 			return ErrRuntimeRecoveryRequired
 		}
-		candidate.refreshModelObservation(ctx)
-		if _, ok := m.finalizeModelRecovery(ctx, operation, value, baldastate.RuntimeOperationOutcomeContextPreserved, baldastate.RuntimeOperationReasonChangedReplacement); !ok ||
-			!topic.swapRecoveredRuntime(incumbent, candidate, operation.ExpectedArchiveID, operation.ExpectedGeneration) {
-			candidate.releasePublicationClaim(false)
-			_ = candidate.abortUnpublished(ctx)
-			topic.fenceRuntimeRecovery()
-			return ErrRuntimeRecoveryRequired
-		}
-		candidate.releasePublicationClaim(true)
-		incumbent.beginDrain()
-		return nil
+		return m.finishRecoveredModelReplacement(ctx, topic, incumbent, value, operation, candidate)
 	case agentproduct.ModelAmbiguous:
 		if topic != nil {
 			topic.fenceRuntimeRecovery()
@@ -199,6 +192,119 @@ func (m *Manager) applyModelRecoveryChange(
 		}
 		return ErrRuntimeRecoveryRequired
 	}
+}
+
+func (m *Manager) adoptPromotedModelReplacement(
+	incumbent *RuntimeSlot,
+	value runtimeSlotValue,
+	operation baldastate.RuntimeOperationRecord,
+) (*RuntimeSlot, bool) {
+	manager, ok := m.runtimeManager.(PromotedModelReplacementManager)
+	if !ok || incumbent == nil || value.runtime.RuntimeBaseToken == 0 {
+		return nil, false
+	}
+	runtime, ok := manager.AdoptPromotedModelReplacement(
+		operation.SessionID,
+		value.runtime.RuntimeBaseToken,
+		operation.TargetSnapshotID,
+		operation.TargetProviderBindingJSON,
+		operation.TargetModel,
+	)
+	if !ok || runtime == nil {
+		return nil, false
+	}
+	candidate, err := incumbent.independentModelSuccessor(
+		runtime, value.session, operation.TargetModel, string(baldastate.RuntimeOperationOutcomeContextPreserved),
+	)
+	if err != nil {
+		return nil, false
+	}
+	return candidate, true
+}
+
+func (m *Manager) finishRecoveredModelReplacement(
+	ctx context.Context,
+	topic *TopicSession,
+	incumbent *RuntimeSlot,
+	value runtimeSlotValue,
+	operation baldastate.RuntimeOperationRecord,
+	candidate *RuntimeSlot,
+) error {
+	if candidate == nil || !candidate.claimPublication() {
+		topic.fenceRuntimeRecovery()
+		return ErrRuntimeRecoveryRequired
+	}
+	candidate.refreshModelObservation(ctx)
+	if candidate.value.runtime.PromoteBase != nil {
+		if err := candidate.value.runtime.PromoteBase(); err != nil {
+			candidate.releasePublicationClaim(false)
+			_ = candidate.abortUnpublished(ctx)
+			topic.fenceRuntimeRecovery()
+			return ErrRuntimeRecoveryRequired
+		}
+	}
+	if _, ok := m.finalizeModelRecovery(
+		ctx,
+		operation,
+		value,
+		baldastate.RuntimeOperationOutcomeContextPreserved,
+		baldastate.RuntimeOperationReasonChangedReplacement,
+	); !ok || !topic.swapRecoveredRuntime(incumbent, candidate, operation.ExpectedArchiveID, operation.ExpectedGeneration) {
+		candidate.releasePublicationClaim(false)
+		_ = candidate.abortUnpublished(ctx)
+		topic.fenceRuntimeRecovery()
+		return ErrRuntimeRecoveryRequired
+	}
+	candidate.releasePublicationClaim(true)
+	incumbent.beginDrain()
+	if candidate.value.runtime.CompleteBase != nil {
+		if err := candidate.value.runtime.CompleteBase(); err != nil {
+			topic.fenceRuntimeRecovery()
+			return ErrRuntimeRecoveryRequired
+		}
+	}
+	return nil
+}
+
+func (m *Manager) completeTerminalModelReplacement(
+	ctx context.Context,
+	topic *TopicSession,
+	operation baldastate.RuntimeOperationRecord,
+) bool {
+	if topic == nil || !isPublicationTerminal(
+		operation,
+		operation,
+		baldastate.RuntimeOperationOutcomeContextPreserved,
+		baldastate.RuntimeOperationReasonChangedReplacement,
+	) {
+		return false
+	}
+	current, value, recoveryRequired := topic.runtimeForRecovery()
+	if current == nil {
+		return false
+	}
+	if value.archiveID == operation.ExpectedArchiveID &&
+		value.generation == operation.ExpectedGeneration+1 &&
+		value.runtime.RuntimeSnapshotID == operation.TargetSnapshotID &&
+		value.runtime.ProviderBindingJSON == operation.TargetProviderBindingJSON &&
+		value.effectiveModel == operation.TargetModel &&
+		value.outcome == string(baldastate.RuntimeOperationOutcomeContextPreserved) {
+		if value.runtime.CompleteBase != nil && value.runtime.CompleteBase() != nil {
+			return false
+		}
+		return !recoveryRequired || topic.completeRecoveredRuntime(current, value.archiveID, value.generation)
+	}
+	if value.archiveID != operation.ExpectedArchiveID || value.generation != operation.ExpectedGeneration {
+		return false
+	}
+	if !recoveryRequired {
+		topic.fenceRuntimeRecovery()
+	}
+	candidate, adopted := m.adoptPromotedModelReplacement(current, value, operation)
+	if !adopted {
+		return false
+	}
+	return m.finishRecoveredModelReplacement(ctx, topic, current, value, operation, candidate) == nil
 }
 
 func (m *Manager) finalizeModelRecovery(
@@ -313,6 +419,18 @@ func (s *TopicSession) modelRecoveryRuntime(operation baldastate.RuntimeOperatio
 	return s.runtime, s.runtime.value, true
 }
 
+func (s *TopicSession) runtimeForRecovery() (*RuntimeSlot, runtimeSlotValue, bool) {
+	if s == nil {
+		return nil, runtimeSlotValue{}, false
+	}
+	s.runtimeMu.RLock()
+	defer s.runtimeMu.RUnlock()
+	if s.runtime == nil {
+		return nil, runtimeSlotValue{}, s.recoveryRequired
+	}
+	return s.runtime, s.runtime.value, s.recoveryRequired
+}
+
 func (s *TopicSession) swapRecoveredRuntime(expected, successor *RuntimeSlot, archiveID string, generation uint64) bool {
 	if s == nil || successor == nil {
 		return false
@@ -324,6 +442,19 @@ func (s *TopicSession) swapRecoveredRuntime(expected, successor *RuntimeSlot, ar
 		return false
 	}
 	s.runtime = successor
+	s.recoveryRequired = false
+	return true
+}
+
+func (s *TopicSession) completeRecoveredRuntime(current *RuntimeSlot, archiveID string, generation uint64) bool {
+	if s == nil || current == nil {
+		return false
+	}
+	s.runtimeMu.Lock()
+	defer s.runtimeMu.Unlock()
+	if !s.recoveryRequired || s.runtime != current || current.value.archiveID != archiveID || current.value.generation != generation {
+		return false
+	}
 	s.recoveryRequired = false
 	return true
 }

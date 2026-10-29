@@ -161,7 +161,10 @@ func TestIndependentModelSuccessorRequiresExactIdentity(t *testing.T) {
 		runtime: &BuiltRuntime{SessionSvc: service, AppName: "app", RuntimeSnapshotID: "snapshot", ProviderBindingJSON: "binding"},
 		session: created.Session, archiveID: runtimeSlotTestArchiveID, generation: 4, effectiveModel: "old",
 	})
-	replacement := &BuiltRuntime{SessionSvc: service, AppName: "app", RuntimeSnapshotID: "snapshot", ProviderBindingJSON: "binding"}
+	replacement := &BuiltRuntime{
+		SessionSvc: service, AppName: "app", RuntimeSnapshotID: "snapshot",
+		ProviderBindingJSON: "binding", ConfirmedModel: "new",
+	}
 	candidate, err := incumbent.independentModelSuccessor(replacement, created.Session, "new", publicationOutcome)
 	if err != nil {
 		t.Fatal(err)
@@ -184,6 +187,11 @@ func TestIndependentModelSuccessorRequiresExactIdentity(t *testing.T) {
 	wrongBinding.ProviderBindingJSON = runtimeSlotMismatchValue
 	if _, err := incumbent.independentModelSuccessor(&wrongBinding, created.Session, "new", publicationOutcome); !errors.Is(err, ErrRuntimePublicationInvalid) {
 		t.Fatalf("wrong binding error = %v", err)
+	}
+	wrongModel := *replacement
+	wrongModel.ConfirmedModel = modelChangeOtherModel
+	if _, err := incumbent.independentModelSuccessor(&wrongModel, created.Session, "new", publicationOutcome); !errors.Is(err, ErrRuntimePublicationInvalid) {
+		t.Fatalf("wrong confirmed model error = %v", err)
 	}
 	wrongApp := *replacement
 	wrongApp.AppName = runtimeSlotMismatchValue

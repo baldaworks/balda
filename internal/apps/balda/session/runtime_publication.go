@@ -171,19 +171,36 @@ func (m *Manager) publishRuntimeStateLocked(
 	}
 	if err != nil {
 		if alreadyApplying {
-			return m.failApplyingPublication(ctx, topic, candidate, operation, true)
+			observed, found, getErr := m.runtimeOperations.Get(ctx, intent.OperationID)
+			if getErr != nil || !found || !isPublicationTerminal(observed, intent, outcome, terminalReason) {
+				return m.failApplyingPublication(ctx, topic, candidate, operation, true)
+			}
+			terminal = observed
+		} else {
+			candidate.releasePublicationClaim(false)
+			return baldastate.RuntimeOperationRecord{}, false, m.publicationStoreError(ctx, topic, intent, err, false)
 		}
-		candidate.releasePublicationClaim(false)
-		return baldastate.RuntimeOperationRecord{}, false, m.publicationStoreError(ctx, topic, intent, err, false)
 	}
 	if !isPublicationTerminal(terminal, intent, outcome, terminalReason) {
 		return m.failPublication(ctx, topic, candidate, terminal, alreadyApplying, true)
+	}
+	if candidate.value.runtime.PromoteBase != nil &&
+		!sameIdentityObject(incumbent.value.runtime.Agent, candidate.value.runtime.Agent) {
+		if err := candidate.value.runtime.PromoteBase(); err != nil {
+			return m.failPublication(ctx, topic, candidate, terminal, alreadyApplying, true)
+		}
 	}
 	if !topic.swapRuntime(incumbent, candidate, intent.ExpectedArchiveID, intent.ExpectedGeneration) {
 		return m.failPublication(ctx, topic, candidate, terminal, alreadyApplying, true)
 	}
 	candidate.releasePublicationClaim(true)
 	incumbent.beginDrain()
+	if candidate.value.runtime.CompleteBase != nil {
+		if err := candidate.value.runtime.CompleteBase(); err != nil {
+			topic.fenceRuntimeRecovery()
+			return terminal, true, ErrRuntimeRecoveryRequired
+		}
+	}
 	return terminal, true, nil
 }
 
