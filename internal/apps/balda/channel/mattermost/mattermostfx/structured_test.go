@@ -46,16 +46,22 @@ func TestStatusStructuredRegistrar(t *testing.T) {
 	}
 	got, err := deliveryfmt.RenderStructured(context.Background(), registry, deliveryfmt.TransportMattermost, deliveryfmt.StructuredEnvelope[statusfmt.Response]{
 		Descriptor: statusfmt.ResponseDescriptor,
-		Body:       statusfmt.Response{ProviderID: "codex", TurnActive: true, UserText: "**unsafe**"},
+		Body:       statusfmt.Response{ProviderID: "codex", HasRequestedModel: true, RequestedModel: "model-b", Model: "model-b", TurnActive: true, UserText: "**unsafe**"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.DeliveryFormat != deliveryfmt.DeliveryFormatMarkdown || !strings.Contains(got.Text, "\\*\\*unsafe\\*\\*") {
+	if got.DeliveryFormat != deliveryfmt.DeliveryFormatMarkdown || !strings.Contains(got.Text, "\\*\\*unsafe\\*\\*") || !strings.Contains(got.Text, "Requested model") || !strings.Contains(got.Text, "Active model") || !strings.Contains(got.Text, "pending") || !strings.Contains(got.Text, "unknown") {
 		t.Fatalf("presentation = %+v", got)
 	}
+	for _, descriptor := range []deliveryfmt.Descriptor[statusfmt.Response]{statusfmt.LegacyResponseDescriptor, statusfmt.LegacyV2ResponseDescriptor} {
+		legacy, renderErr := deliveryfmt.RenderStructured(context.Background(), registry, deliveryfmt.TransportMattermost, deliveryfmt.StructuredEnvelope[statusfmt.Response]{Descriptor: descriptor, Body: statusfmt.Response{ProviderID: "codex", Model: "legacy-projection"}})
+		if renderErr != nil || !strings.Contains(legacy.Text, "legacy\\-projection") || strings.Contains(legacy.Text, "Active model") || strings.Contains(legacy.Text, "Requested model") {
+			t.Fatalf("legacy status presentation = %+v, error = %v", legacy, renderErr)
+		}
+	}
 	idle, err := deliveryfmt.RenderStructured(context.Background(), registry, deliveryfmt.TransportMattermost, deliveryfmt.StructuredEnvelope[statusfmt.Response]{Descriptor: statusfmt.ResponseDescriptor})
-	if err != nil || !strings.Contains(idle.Text, "No conversation turn is active") || strings.Contains(strings.ToLower(idle.Text), "idle") || strings.Contains(idle.Text, "Request") {
+	if err != nil || !strings.Contains(idle.Text, "No conversation turn is active") || strings.Contains(strings.ToLower(idle.Text), "idle") || strings.Contains(idle.Text, "Request:") {
 		t.Fatalf("idle presentation = %+v, error = %v", idle, err)
 	}
 }

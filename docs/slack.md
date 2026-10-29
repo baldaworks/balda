@@ -195,12 +195,15 @@ prevent readiness delivery to other integrations.
   through the normal Slack delivery path. It returns the conversation-level
   reference `slackagent:c:<team_id>:<conversation_id>` because Slack slash
   payloads do not identify a thread. The command does not start an agent turn.
-- `/balda model` reports the committed model. `/balda model <model-id>` queues a
+- `/balda model` reports the requested preference and valid active observation.
+  `/balda model <model-id>` queues a
   same-provider change for that conversation while preserving its session
   context. Unsupported changes leave the incumbent model and context intact;
   they do not reset the session.
 - `/balda reset` and `/balda new` are bare aliases. They queue a new empty local
-  conversation while preserving the exact provider, model, and capabilities.
+  conversation while preserving the exact provider binding, optional requested
+  model preference, and capabilities. Active model state is unknown until later
+  provider attachment or execution.
   Provider use remains lazy, and success does not promise remote-history deletion.
 - Slack Agent Session status is `processing` while a turn runs, `active` after
   completion or cancellation, `suspended` while Balda waits for user input, and

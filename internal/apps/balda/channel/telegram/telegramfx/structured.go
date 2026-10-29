@@ -45,6 +45,7 @@ func (telegramProgressRenderer) RenderStructured(_ context.Context, env delivery
 type telegramLocatorRenderer struct{}
 
 type telegramStatusRenderer struct{}
+type telegramLegacyStatusRenderer struct{}
 
 func (telegramLocatorRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[locatorfmt.Response]) (deliveryfmt.StructuredPresentation, error) {
 	return deliveryfmt.StructuredPresentation{
@@ -55,6 +56,10 @@ func (telegramLocatorRenderer) RenderStructured(_ context.Context, env deliveryf
 
 func (telegramStatusRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[statusfmt.Response]) (deliveryfmt.StructuredPresentation, error) {
 	return deliveryfmt.StructuredPresentation{Text: presentation.RenderStatus(env.Body), DeliveryFormat: deliveryfmt.DeliveryFormatRichMarkdown}, nil
+}
+
+func (telegramLegacyStatusRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[statusfmt.Response]) (deliveryfmt.StructuredPresentation, error) {
+	return deliveryfmt.StructuredPresentation{Text: presentation.RenderLegacyStatus(env.Body), DeliveryFormat: deliveryfmt.DeliveryFormatRichMarkdown}, nil
 }
 
 func NewQuestionStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
@@ -80,7 +85,10 @@ func NewStatusStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
 		if err := deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportTelegram, statusfmt.ResponseDescriptor, telegramStatusRenderer{}); err != nil {
 			return err
 		}
-		return deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportTelegram, statusfmt.LegacyResponseDescriptor, telegramStatusRenderer{})
+		if err := deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportTelegram, statusfmt.LegacyV2ResponseDescriptor, telegramLegacyStatusRenderer{}); err != nil {
+			return err
+		}
+		return deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportTelegram, statusfmt.LegacyResponseDescriptor, telegramLegacyStatusRenderer{})
 	}
 }
 

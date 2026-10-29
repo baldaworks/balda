@@ -17,7 +17,7 @@ func TestModelCommandUserDocs(t *testing.T) {
 	}{
 		{
 			path: "README.md",
-			want: []string{"`/model <model-id>`", "same-provider", "never", "reset"},
+			want: []string{"`/model <model-id>`", "requested preference", "active observation", "same-provider", "never", "reset"},
 		},
 		{
 			path: "docs/commands.md",
@@ -25,11 +25,19 @@ func TestModelCommandUserDocs(t *testing.T) {
 				"`/model [model-id]`",
 				"`/balda model [model-id]`",
 				"conversation history",
+				"durable requested preference",
+				"valid active observation",
+				"`pending`",
+				"none (no explicit preference)",
+				"unknown",
+				"locally executed",
 				"implicit reset",
 				"unresolved `applying`",
 				"does not repeat model validation or mutation",
 				"remains `recovery_required`",
 				"do not downgrade",
+				"operational downgrade is prohibited",
+				"must not infer requested preference",
 			},
 		},
 		{

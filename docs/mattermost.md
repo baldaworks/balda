@@ -175,13 +175,15 @@ HTTP, which needs a Request URL per command:
    the receiver bound to the single integration token configured as
    `commands_token`.
 
-`/model` reports the committed model, and `/model <model-id>` queues a
+`/model` reports the requested preference and valid active observation, and `/model <model-id>` queues a
 same-provider change while preserving the current session context. An
 unsupported change leaves the incumbent model and context intact and never
 resets the session.
 
 Bare `/reset` and `/new` (or `/balda reset` and `/balda new`) queue a new empty
-local conversation while preserving the exact provider, model, and capabilities.
+local conversation while preserving the exact provider binding, optional
+requested model preference, and capabilities. Active model state is unknown
+until later provider attachment or execution.
 Provider use remains lazy, and success does not promise remote-history deletion.
 
 A slash command is answered immediately and its result is delivered as a post.

@@ -63,7 +63,8 @@ func New(sessions SessionReader, models ModelSubmitter, dispatcher actortranspor
 // Name returns the canonical command name.
 func (*Handler) Name() string { return commandName }
 
-// Handle reads the committed model or queues one same-provider model change.
+// Handle reads committed requested/active model state or queues one
+// same-provider model change.
 func (h *Handler) Handle(ctx context.Context, env actorlayer.Envelope, payload commandcmd.Payload) error {
 	if !hasSessionAccess(payload) {
 		return h.respond(ctx, env.ID, payload, msgDenied, "model-denied")
@@ -94,11 +95,35 @@ func (h *Handler) read(ctx context.Context, envelopeID string, payload commandcm
 		info.Recovery != "" && !strings.EqualFold(strings.TrimSpace(info.Recovery), sessionRecoveryReady) {
 		return h.respond(ctx, envelopeID, payload, msgRecoveryRequired, "model-recovery-required")
 	}
-	model := strings.TrimSpace(info.Model)
-	if model == "" {
-		return h.respond(ctx, envelopeID, payload, msgUnavailable, "model-unavailable")
+	return h.respond(ctx, envelopeID, payload, modelStateMessage(info), "model-current")
+}
+
+func modelStateMessage(info session.TopicSessionInfo) string {
+	requested := "none (no explicit preference)"
+	if info.RequestedModel != nil {
+		if value := strings.TrimSpace(*info.RequestedModel); value != "" {
+			state := "pending"
+			if value == strings.TrimSpace(info.ActiveModel) && isAuthoritativeObservation(info.ActiveModelKind) {
+				state = "active"
+			}
+			requested = value + " (" + state + ")"
+		}
 	}
-	return h.respond(ctx, envelopeID, payload, "Current model: "+model+".", "model-current")
+
+	active := "unknown (not attached)"
+	if value := strings.TrimSpace(info.ActiveModel); value != "" {
+		switch info.ActiveModelKind {
+		case session.ModelObservationProviderObserved:
+			active = value + " (provider observed)"
+		case session.ModelObservationLocallyExecuted:
+			active = value + " (locally executed)"
+		}
+	}
+	return "Requested: " + requested + ".\nActive: " + active + "."
+}
+
+func isAuthoritativeObservation(kind session.ModelObservationKind) bool {
+	return kind == session.ModelObservationProviderObserved || kind == session.ModelObservationLocallyExecuted
 }
 
 func (h *Handler) change(ctx context.Context, envelopeID string, payload commandcmd.Payload, target string) error {

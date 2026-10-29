@@ -8,7 +8,15 @@ import (
 
 // RenderStatus renders a status response as Slack mrkdwn.
 func RenderStatus(body statusfmt.Response) string {
-	model := statusfmt.ModelFor(body)
+	return renderStatusModel(statusfmt.ModelFor(body))
+}
+
+// RenderLegacyStatus renders the bounded v1/v2 status contract.
+func RenderLegacyStatus(body statusfmt.Response) string {
+	return renderStatusModel(statusfmt.LegacyModelFor(body))
+}
+
+func renderStatusModel(model statusfmt.Model) string {
 	lines := []string{"*" + escapeStatusInline(model.Headline) + "*", ""}
 	for _, field := range model.Operational {
 		lines = append(lines, "• *"+escapeStatusInline(field.Label)+":* "+statusCode(field.Value))

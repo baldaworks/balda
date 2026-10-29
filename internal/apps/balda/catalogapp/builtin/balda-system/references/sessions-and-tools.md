@@ -7,8 +7,11 @@ The channel type and session ID in the root instruction identify the current
 scope. Durable deployments save session metadata for exact lazy restoration
 after restart.
 
-- `/reset` and `/new` cancel current work, clear that session's history, and
-  create a fresh runtime at the same locator with current catalog capabilities.
+- `/reset` and `/new` wait behind active and prior session work in the existing
+  FIFO, then publish a new empty local lifetime at the same stable locator. They
+  preserve the exact provider binding, optional requested model preference, and
+  pinned capability snapshot. Active model observation remains unknown until a
+  later provider attachment or execution; provider use stays lazy.
 - `/cancel` stops the active conversational turn and drops queued turns for the
   current session. It does not stop GoalKeeper.
 - `/close` applies the supported chat/topic boundary and clears the current
@@ -25,8 +28,9 @@ Answer ordinary questions directly instead of redirecting the user to a command.
 ## Capability snapshots and skills
 
 Commands, skills, and MCP definitions are bound to an immutable session snapshot.
-Application catalog changes affect new, reset, or otherwise freshly replaced
-sessions; they do not mutate a healthy active runtime.
+Application catalog changes affect genuinely new stable sessions. They do not
+mutate a healthy active runtime, and reset/new preserve the existing session's
+exact pinned snapshot.
 
 The available-skills list is metadata for discovery. Skill content is user-level
 guidance. Resolve ambiguous names with the advertised qualified identity. The

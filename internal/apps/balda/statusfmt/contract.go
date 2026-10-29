@@ -17,6 +17,12 @@ type Response struct {
 	ObservedAt        time.Time
 	ProviderID        string
 	ProviderType      string
+	RequestedModel    string
+	HasRequestedModel bool
+	ActiveModel       string
+	ActiveModelKind   string
+	// Model is retained for v1/v2 status delivery compatibility. New producers
+	// use ActiveModel and never project configured or recipe defaults here.
 	Model             string
 	ReasoningEffort   string
 	ChannelType       string
@@ -39,8 +45,11 @@ type Response struct {
 
 // ResponseDescriptor identifies the versioned structured status response.
 var ResponseDescriptor = deliveryfmt.Descriptor[Response]{
-	Type: "balda.status.response.v2",
+	Type: "balda.status.response.v3",
 }
+
+// LegacyV2ResponseDescriptor keeps the v2 renderer registration available.
+var LegacyV2ResponseDescriptor = deliveryfmt.Descriptor[Response]{Type: "balda.status.response.v2"}
 
 // LegacyResponseDescriptor keeps the v1 renderer registration available.
 var LegacyResponseDescriptor = deliveryfmt.Descriptor[Response]{Type: "balda.status.response.v1"}
