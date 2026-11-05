@@ -9,6 +9,7 @@ import (
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/sessioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorymcp"
 	"github.com/baldaworks/runtime/v2/agentproduct"
 	adksession "google.golang.org/adk/v2/session"
@@ -32,19 +33,27 @@ func (*adapterSessionControl) FastForward(context.Context, adksession.Session, a
 func TestRuntimeAdaptersPreserveSessionControl(t *testing.T) {
 	t.Parallel()
 
+	const providerID = "provider"
 	control := &adapterSessionControl{}
 	agentSide := &baldaagent.BuiltRuntime{
 		SessionControl: control, ProviderBindingJSON: `{"root_provider_id":"provider"}`,
 		RecipeModel: "model-bound", ConfirmedModel: "model-live",
+		PublicRuntimeMetadata: sessioncmd.PublicRuntimeMetadata{ProviderID: providerID, MCPServers: []string{"balda"}},
 	}
 	sessionSide := sessionRuntime(agentSide)
 	if sessionSide.SessionControl != control || sessionSide.ProviderBindingJSON != agentSide.ProviderBindingJSON ||
-		sessionSide.RecipeModel != agentSide.RecipeModel || sessionSide.ConfirmedModel != agentSide.ConfirmedModel {
+		sessionSide.RecipeModel != agentSide.RecipeModel || sessionSide.ConfirmedModel != agentSide.ConfirmedModel ||
+		sessionSide.PublicRuntimeMetadata.ProviderID != providerID || len(sessionSide.PublicRuntimeMetadata.MCPServers) != 1 {
 		t.Fatal("agent-to-session adapter lost runtime product metadata")
+	}
+	agentSide.PublicRuntimeMetadata.MCPServers[0] = "mutated"
+	if sessionSide.PublicRuntimeMetadata.MCPServers[0] != "balda" {
+		t.Fatal("agent-to-session adapter retained mutable metadata slice")
 	}
 	roundTrip := agentRuntime(sessionSide)
 	if roundTrip.SessionControl != control || roundTrip.ProviderBindingJSON != agentSide.ProviderBindingJSON ||
-		roundTrip.RecipeModel != agentSide.RecipeModel || roundTrip.ConfirmedModel != agentSide.ConfirmedModel {
+		roundTrip.RecipeModel != agentSide.RecipeModel || roundTrip.ConfirmedModel != agentSide.ConfirmedModel ||
+		roundTrip.PublicRuntimeMetadata.MCPServers[0] != "balda" {
 		t.Fatal("session-to-agent adapter lost runtime product metadata")
 	}
 }

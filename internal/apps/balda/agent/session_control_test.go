@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baldaworks/balda/internal/apps/balda/sessioncmd"
 	"github.com/baldaworks/runtime/v2/agentfactory"
 	"github.com/baldaworks/runtime/v2/agentproduct"
 	adkagent "google.golang.org/adk/v2/agent"
@@ -100,8 +101,11 @@ func TestBuiltRuntimeVerifiesIdentityAndBuildsIndependentReplacement(t *testing.
 		RuntimeSnapshotID:   "snapshot-retained",
 		ProviderBindingJSON: `{"provider":"retained"}`,
 		RecipeModel:         "recipe-a",
-		runnerScope:         ToolHookScope{Enabled: true, Provider: "hosted", CWD: t.TempDir()},
-		newRunner:           runnerFactory.New,
+		PublicRuntimeMetadata: sessioncmd.PublicRuntimeMetadata{
+			ProviderID: "provider", MCPServers: []string{"balda", "tools"},
+		},
+		runnerScope: ToolHookScope{Enabled: true, Provider: "hosted", CWD: t.TempDir()},
+		newRunner:   runnerFactory.New,
 	}
 	identity := SessionIdentity{
 		SessionService: service, AppName: "norma-balda", UserID: "user-1", SessionID: "session-1",
@@ -124,9 +128,19 @@ func TestBuiltRuntimeVerifiesIdentityAndBuildsIndependentReplacement(t *testing.
 	}
 	if change.Candidate.RuntimeSnapshotID != incumbent.RuntimeSnapshotID ||
 		change.Candidate.ProviderBindingJSON != incumbent.ProviderBindingJSON ||
-		change.Candidate.RecipeModel != "recipe-a" || change.Candidate.ConfirmedModel != "model-next" {
+		change.Candidate.RecipeModel != "recipe-a" || change.Candidate.ConfirmedModel != "model-next" ||
+		change.Candidate.PublicRuntimeMetadata.ProviderID != incumbent.PublicRuntimeMetadata.ProviderID ||
+		!slicesEqualStrings(change.Candidate.PublicRuntimeMetadata.MCPServers, incumbent.PublicRuntimeMetadata.MCPServers) {
 		t.Fatalf("candidate metadata = %q/%q, want %q/%q", change.Candidate.RuntimeSnapshotID,
 			change.Candidate.ProviderBindingJSON, incumbent.RuntimeSnapshotID, incumbent.ProviderBindingJSON)
+	}
+	incumbent.PublicRuntimeMetadata.MCPServers[0] = "incumbent-mutated"
+	if change.Candidate.PublicRuntimeMetadata.MCPServers[0] != "balda" {
+		t.Fatalf("candidate metadata aliases incumbent: %+v", change.Candidate.PublicRuntimeMetadata)
+	}
+	change.Candidate.PublicRuntimeMetadata.MCPServers[1] = "candidate-mutated"
+	if incumbent.PublicRuntimeMetadata.MCPServers[1] != "tools" {
+		t.Fatalf("incumbent metadata aliases candidate: %+v", incumbent.PublicRuntimeMetadata)
 	}
 	if len(host.scopes) != 1 || host.scopes[0] != incumbent.runnerScope {
 		t.Fatalf("RunnerFactory scopes = %+v, want incumbent scope %+v", host.scopes, incumbent.runnerScope)

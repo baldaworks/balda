@@ -218,6 +218,8 @@ type fakeAgentBuilder struct {
 	freshCalls int
 }
 
+func (f *fakeAgentBuilder) GetAgentMetadata(string) baldasession.AgentMetadata { return f.metadata }
+
 func (f *fakeAgentBuilder) CreateRuntimeSession(
 	ctx context.Context,
 	runtime *baldasession.BuiltRuntime,
@@ -253,8 +255,6 @@ func (f *fakeAgentBuilder) CreateFreshRuntimeSession(
 	return nil, f.freshErr
 }
 
-func (f *fakeAgentBuilder) GetAgentMetadata(string) baldasession.AgentMetadata { return f.metadata }
-
 type fakeRuntimeManager struct {
 	providerID string
 	runtime    *baldasession.BuiltRuntime
@@ -268,6 +268,20 @@ func (f *fakeRuntimeManager) Runtime(context.Context) (*baldasession.BuiltRuntim
 }
 
 func (f *fakeRuntimeManager) ProviderID() string { return f.providerID }
+
+type fakeBootstrapWorkspace struct{ dir string }
+
+func (f fakeBootstrapWorkspace) CanonicalWorkspaceDir(string) string { return f.dir }
+func (f fakeBootstrapWorkspace) ForceRemountCanonicalWorkspace(context.Context, string, string) (baldasession.EnsureWorkspaceResult, error) {
+	return baldasession.EnsureWorkspaceResult{Dir: f.dir, SyncSkipped: true}, nil
+}
+func (f fakeBootstrapWorkspace) EnsureWorkspace(context.Context, string, string, string) (baldasession.EnsureWorkspaceResult, error) {
+	return baldasession.EnsureWorkspaceResult{Dir: f.dir, SyncSkipped: true}, nil
+}
+func (fakeBootstrapWorkspace) Import(context.Context, string) error                 { return nil }
+func (fakeBootstrapWorkspace) Export(context.Context, string, string, string) error { return nil }
+func (fakeBootstrapWorkspace) CleanupWorkspace(context.Context, string) error       { return nil }
+func (fakeBootstrapWorkspace) DeleteBranch(context.Context, string) error           { return nil }
 
 type fakeOwnerKVStore struct {
 	mu    sync.Mutex
@@ -385,13 +399,7 @@ func newTestOwnerStore(t *testing.T) *auth.OwnerStore {
 
 func newTestSessionManager(t *testing.T, store *fakeSessionStore) (*baldasession.Manager, *fakeAgentBuilder) {
 	t.Helper()
-	builder := &fakeAgentBuilder{
-		metadata: baldasession.AgentMetadata{
-			Type:       "opencode_acp",
-			Model:      "gpt-5",
-			MCPServers: []string{"provider_mcp"},
-		},
-	}
+	builder := &fakeAgentBuilder{metadata: baldasession.AgentMetadata{Type: "opencode_acp", Model: "gpt-5", MCPServers: []string{"provider_mcp"}}}
 	m, err := baldasession.NewManager(baldasession.ManagerParams{
 		AgentBuilder:    builder,
 		RuntimeManager:  &fakeRuntimeManager{providerID: "alpha"},
@@ -478,14 +486,10 @@ func TestTelegramInboundHandler_HandleMessage_PublishesTurn(t *testing.T) {
 
 	h.dispatcher.commandsMu.Lock()
 	defer h.dispatcher.commandsMu.Unlock()
-	if len(h.dispatcher.commands) != 2 {
-		t.Fatalf("dispatched commands = %d, want 2 (welcome + turn)", len(h.dispatcher.commands))
+	if len(h.dispatcher.commands) != 1 {
+		t.Fatalf("dispatched commands = %d, want 1 turn", len(h.dispatcher.commands))
 	}
-	welcomeCmd := h.dispatcher.commands[0]
-	if welcomeCmd.To.Target != "delivery" || welcomeCmd.To.Key != "telegram:9001:0" {
-		t.Fatalf("welcomeCmd To = %+v, want delivery:telegram:9001:0", welcomeCmd.To)
-	}
-	cmd := h.dispatcher.commands[1]
+	cmd := h.dispatcher.commands[0]
 	if cmd.Namespace != baldaexecution.NamespaceHumanInbound {
 		t.Fatalf("Namespace = %q, want %q", cmd.Namespace, baldaexecution.NamespaceHumanInbound)
 	}
@@ -673,6 +677,79 @@ func TestTelegramInboundHandler_ActivateOwner(t *testing.T) {
 	if ownerID != 101 || chatID != 9001 {
 		t.Fatalf("owner binding = (%d, %d), want (101, 9001)", ownerID, chatID)
 	}
+	payloads := telegramDispatchedPayloads(t, h.dispatcher)
+	if len(payloads) != 1 || payloads[0].Settlement != deliverycmd.SettlementBypass ||
+		payloads[0].Mode != deliverycmd.ModeMarkdown || !strings.Contains(payloads[0].Text, "Session Started") ||
+		!strings.Contains(payloads[0].Text, "Name:** `balda`") || !strings.Contains(payloads[0].Text, "Model:** `gpt-5`") {
+		t.Fatalf("owner bootstrap payloads = %+v", payloads)
+	}
+	prepared, err := h.handler.sessionPreparer.Prepare(t.Context(), ingressapp.InboundContext{
+		SessionID: "tg-9001-0", ChannelType: "telegram", AddressKey: "9001:0",
+		AddressJSON: `{"chat_id":9001,"topic_id":0}`, UserID: "tg-101", Direct: true,
+	})
+	if err != nil || prepared.Activation != nil {
+		t.Fatalf("ordinary preparation after bootstrap = %+v, %v; want no stale activation", prepared, err)
+	}
+}
+
+func TestTelegramInboundHandler_ActivateOwnerActiveReuseDoesNotRepeatWelcome(t *testing.T) {
+	h := newTestHarness(t)
+	if err := h.handler.ActivateOwner(t.Context(), 101, 9001); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.handler.ActivateOwner(t.Context(), 101, 9001); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(telegramDispatchedPayloads(t, h.dispatcher)); got != 1 {
+		t.Fatalf("owner bootstrap dispatches = %d, want one for the first activation", got)
+	}
+}
+
+func TestTelegramInboundHandler_ActivateOwnerRestoredSendsWelcome(t *testing.T) {
+	h := newTestHarness(t)
+	locator := baldatelegram.NewLocator(9001, 0)
+	h.sessionStore.record = baldastate.SessionRecord{
+		SessionID: locator.SessionID, UserID: baldatelegram.UserID(101),
+		ChannelType: locator.ChannelType, AddressKey: locator.AddressKey, AddressJSON: locator.AddressJSON,
+		AgentName: ownerSessionLabel, Status: baldastate.SessionStatusActive,
+	}
+	h.sessionStore.foundByAddress = true
+	if err := h.handler.ActivateOwner(t.Context(), 101, 9001); err != nil {
+		t.Fatal(err)
+	}
+	payloads := telegramDispatchedPayloads(t, h.dispatcher)
+	if len(payloads) != 1 || !strings.Contains(payloads[0].Text, "Session Started") {
+		t.Fatalf("restored owner bootstrap payloads = %+v", payloads)
+	}
+}
+
+func TestTelegramOwnerBootstrapSendsWorkspaceWarningAfterWelcome(t *testing.T) {
+	h := newTestHarness(t)
+	workspaceDir := t.TempDir()
+	sessions, err := baldasession.NewManager(baldasession.ManagerParams{
+		AgentBuilder:     h.agentBuilder,
+		RuntimeManager:   &fakeRuntimeManager{providerID: "alpha"},
+		BaldaProviderID:  "alpha",
+		WorkingDir:       workspaceDir,
+		WorkspaceEnabled: true,
+		Workspaces:       fakeBootstrapWorkspace{dir: workspaceDir},
+		SessionStore:     h.sessionStore,
+		Logger:           zerolog.Nop(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.sessions = sessions
+	h.handler.sessionManager = sessions
+	h.handler.sessionPreparer = chatfx.NewIngressSessionAdapter(sessions)
+	if err := h.handler.ActivateOwner(t.Context(), 101, 9001); err != nil {
+		t.Fatal(err)
+	}
+	payloads := telegramDispatchedPayloads(t, h.dispatcher)
+	if len(payloads) != 2 || payloads[0].Mode != deliverycmd.ModeMarkdown ||
+		payloads[1].Mode != deliverycmd.ModePlain || !strings.Contains(payloads[1].Text, "Workspace restore hit a sync conflict") {
+		t.Fatalf("workspace warning payloads = %+v", payloads)
+	}
 }
 
 func TestTelegramInboundHandler_ActivateOwnerContinuesAfterRestoreFallback(t *testing.T) {
@@ -698,6 +775,21 @@ func TestTelegramInboundHandler_ActivateOwnerContinuesAfterRestoreFallback(t *te
 	if _, err := h.sessions.GetSession(locator); err != nil {
 		t.Fatalf("owner session was not activated after fallback: %v", err)
 	}
+}
+
+func telegramDispatchedPayloads(t *testing.T, dispatcher *fakeTurnDispatcher) []deliverycmd.Payload {
+	t.Helper()
+	dispatcher.commandsMu.Lock()
+	defer dispatcher.commandsMu.Unlock()
+	payloads := make([]deliverycmd.Payload, 0, len(dispatcher.commands))
+	for _, envelope := range dispatcher.commands {
+		var payload deliverycmd.Payload
+		if err := actorlayer.UnmarshalPayload(envelope.Payload, &payload); err != nil {
+			t.Fatal(err)
+		}
+		payloads = append(payloads, payload)
+	}
+	return payloads
 }
 
 func TestInboundTurnExecutor_SubmitSessionTurn(t *testing.T) {

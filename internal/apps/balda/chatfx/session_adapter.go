@@ -7,10 +7,16 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/chatapp"
 	"github.com/baldaworks/balda/internal/apps/balda/ingressapp"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/sessioncmd"
 	"github.com/baldaworks/go-actorlayer"
 )
 
 const autoSessionLabel = "auto"
+
+var (
+	_ chatapp.ActivationAcknowledger    = (*SessionAdapter)(nil)
+	_ ingressapp.ActivationAcknowledger = (*IngressSessionAdapter)(nil)
+)
 
 // SessionAdapter adapts baldasession.Manager to chatapp.SessionPreparer.
 type SessionAdapter struct {
@@ -34,12 +40,11 @@ func (a *SessionAdapter) Prepare(ctx context.Context, inbound chatapp.InboundCon
 		AddressJSON: inbound.AddressJSON,
 		SessionID:   inbound.SessionID,
 	}
-	existing, _ := a.sessions.GetSession(locator)
 	label := autoSessionLabel
 	if inbound.Direct && inbound.TopicID == 0 && a.directLabel != "" {
 		label = a.directLabel
 	}
-	topicSession, err := a.sessions.EnsureSession(ctx, baldasession.SessionContext{
+	ensureResult, err := a.sessions.EnsureSessionForTurn(ctx, baldasession.SessionContext{
 		Locator: locator,
 		UserID:  inbound.UserID,
 		Kind:    baldasession.KindForConversation(inbound.Direct),
@@ -47,15 +52,12 @@ func (a *SessionAdapter) Prepare(ctx context.Context, inbound chatapp.InboundCon
 	if err != nil {
 		return chatapp.SessionPreparation{}, err
 	}
-	metadata := a.sessions.GetAgentMetadata(a.sessions.BaldaProviderID())
+	topicSession := ensureResult.TopicSession
+	activation := ensureResult.Activation.Clone()
 	return chatapp.SessionPreparation{
-		ArchiveID:     topicSession.GetArchiveID(),
-		Activated:     existing == nil,
-		SessionID:     topicSession.GetSessionID(),
-		SessionLabel:  topicSession.GetAgentName(),
-		StartupNotice: a.sessions.TakeStartupNotice(topicSession.GetSessionID()),
-		AgentType:     metadata.Type, Model: metadata.Model, ReasoningEffort: metadata.ReasoningEffort,
-		MCPServers:        metadata.MCPServers,
+		ArchiveID:         topicSession.GetArchiveID(),
+		Activation:        activation,
+		SessionID:         topicSession.GetSessionID(),
 		Ready:             true,
 		UserID:            topicSession.GetUserID(),
 		RequesterUserID:   inbound.UserID,
@@ -64,6 +66,11 @@ func (a *SessionAdapter) Prepare(ctx context.Context, inbound chatapp.InboundCon
 		WorkspaceDir:      topicSession.GetWorkspaceDir(),
 		RuntimeSnapshotID: topicSession.GetRuntimeSnapshotID(),
 	}, nil
+}
+
+// AcknowledgeActivation clears an outcome only after durable admission.
+func (a *SessionAdapter) AcknowledgeActivation(sessionID string, activation sessioncmd.Activation) bool {
+	return a != nil && a.sessions != nil && a.sessions.AcknowledgeActivation(sessionID, activation)
 }
 
 // IngressSessionAdapter projects the shared preparation into the ingressapp port.
@@ -83,12 +90,17 @@ func (a *IngressSessionAdapter) Prepare(ctx context.Context, inbound ingressapp.
 		TopicID: inbound.TopicID, Direct: inbound.Direct, Source: inbound.Source,
 	})
 	return ingressapp.SessionPreparation{
-		ArchiveID: prep.ArchiveID,
-		Activated: prep.Activated, SessionID: prep.SessionID, SessionLabel: prep.SessionLabel,
-		StartupNotice: prep.StartupNotice, AgentType: prep.AgentType, Model: prep.Model,
-		ReasoningEffort: prep.ReasoningEffort, MCPServers: prep.MCPServers,
-		Ready: prep.Ready, Reason: prep.Reason, UserID: prep.UserID, RequesterUserID: prep.RequesterUserID,
+		ArchiveID:  prep.ArchiveID,
+		Activation: prep.Activation.Clone(),
+		SessionID:  prep.SessionID,
+		Ready:      prep.Ready, Reason: prep.Reason, UserID: prep.UserID, RequesterUserID: prep.RequesterUserID,
 		AgentSessionID: prep.AgentSessionID, TopicID: prep.TopicID, WorkspaceDir: prep.WorkspaceDir,
 		RuntimeSnapshotID: prep.RuntimeSnapshotID,
 	}, err
+}
+
+// AcknowledgeActivation delegates durable-admission acknowledgment to the
+// shared session manager adapter.
+func (a *IngressSessionAdapter) AcknowledgeActivation(sessionID string, activation sessioncmd.Activation) bool {
+	return a != nil && a.shared != nil && a.shared.AcknowledgeActivation(sessionID, activation)
 }

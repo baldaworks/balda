@@ -13,6 +13,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/locatorref"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/sessioncmd"
 	"github.com/baldaworks/go-actorlayer"
 	"github.com/google/uuid"
 )
@@ -36,6 +37,7 @@ var ErrWebhookReportQueued = errors.New("webhook report queued")
 type SessionTurnPayload struct {
 	// ArchiveID freezes the runtime lifetime at human admission.
 	ArchiveID        string                            `json:"archive_id,omitempty"`
+	Activation       *sessioncmd.Activation            `json:"activation,omitempty"`
 	JobID            string                            `json:"job_id,omitempty"`
 	Text             string                            `json:"text"`
 	Attachments      []attachment.Descriptor           `json:"attachments,omitempty"`
@@ -176,8 +178,19 @@ const (
 )
 
 func SessionTurnEnvelope(payload SessionTurnPayload) (actorlayer.Envelope, error) {
-	if strings.TrimSpace(payload.Locator.SessionID) == "" {
+	sessionID := strings.TrimSpace(payload.Locator.SessionID)
+	if sessionID == "" {
 		return actorlayer.Envelope{}, fmt.Errorf("session id is required")
+	}
+	if payload.Activation != nil {
+		activation := payload.Activation.Clone()
+		if err := activation.Validate(); err != nil {
+			return actorlayer.Envelope{}, fmt.Errorf("invalid session activation: %w", err)
+		}
+		if activation.SessionID != sessionID {
+			return actorlayer.Envelope{}, fmt.Errorf("session activation does not match locator")
+		}
+		payload.Activation = activation
 	}
 	id := uuid.NewString()
 	dedupeKey := strings.TrimSpace(payload.DedupeKey)

@@ -23,6 +23,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/telegramref"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
+	"github.com/baldaworks/balda/internal/apps/balda/welcome"
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
@@ -43,6 +44,12 @@ const (
 )
 
 var serverActorAddress = actorlayer.ActorAddress{Target: "channel", Key: "telegram"}
+
+type telegramOwnerBootstrap struct {
+	topic         *baldasession.TopicSession
+	activated     bool
+	startupNotice string
+}
 
 // QuestionContinuationDispatcher durably admits a settled question's continuation.
 type QuestionContinuationDispatcher interface {
@@ -397,7 +404,7 @@ func (h *telegramInboundHandler) telegramIngressService() (*ingressapp.Service, 
 	}
 	service, err := ingressapp.NewWithLogger(
 		ingressapp.AuthorizerFunc(h.authorizeTelegramInbound),
-		ingressapp.SessionPreparerFunc(h.prepareTelegramSession),
+		h.sessionPreparer,
 		ingressapp.DispatcherFunc(h.dispatchTelegramInbound),
 		h.logger,
 	)
@@ -434,17 +441,57 @@ func (h *telegramInboundHandler) dispatchTelegramInbound(ctx context.Context, en
 	return receipt, err
 }
 
-func (h *telegramInboundHandler) bootstrapOwnerSession(ctx context.Context, ownerID, chatID int64) (ingressapp.SessionPreparation, error) {
+func (h *telegramInboundHandler) bootstrapOwnerSession(ctx context.Context, ownerID, chatID int64) (telegramOwnerBootstrap, error) {
 	if ownerID == 0 || chatID == 0 {
-		return ingressapp.SessionPreparation{}, fmt.Errorf("telegram owner binding is required")
+		return telegramOwnerBootstrap{}, fmt.Errorf("telegram owner binding is required")
 	}
 	h.bootstrapMu.Lock()
 	defer h.bootstrapMu.Unlock()
 	locator := baldatelegram.NewLocator(chatID, 0)
-	return h.prepareTelegramSession(ctx, ingressapp.InboundContext{
-		SessionID: locator.SessionID, ChannelType: locator.ChannelType, AddressKey: locator.AddressKey,
-		AddressJSON: locator.AddressJSON, UserID: baldatelegram.UserID(ownerID), Direct: true,
-	})
+	if h.sessionManager == nil {
+		return telegramOwnerBootstrap{}, actorlayer.TransientError(fmt.Errorf("session manager is unavailable"))
+	}
+	existing, _ := h.sessionManager.GetSession(locator)
+	topic, err := h.sessionManager.EnsureSession(ctx, baldasession.SessionContext{
+		Locator: locator, UserID: baldatelegram.UserID(ownerID), Kind: baldasession.KindDM,
+	}, ownerSessionLabel)
+	if err != nil {
+		return telegramOwnerBootstrap{}, err
+	}
+	result := telegramOwnerBootstrap{
+		topic:         topic,
+		activated:     existing == nil,
+		startupNotice: h.sessionManager.TakeStartupNotice(topic.GetSessionID()),
+	}
+	h.notifyTelegramOwnerBootstrap(ctx, locator, result)
+	return result, nil
+}
+
+func (h *telegramInboundHandler) notifyTelegramOwnerBootstrap(ctx context.Context, locator deliverycmd.Locator, result telegramOwnerBootstrap) {
+	if !result.activated || result.topic == nil {
+		return
+	}
+	metadata := h.sessionManager.GetAgentMetadata(h.sessionManager.BaldaProviderID())
+	text := welcome.BuildAgentWelcomeMessage(
+		result.topic.GetAgentName(), result.topic.GetSessionID(), metadata.Type,
+		metadata.Model, metadata.ReasoningEffort, metadata.MCPServers,
+	)
+	_ = sendTelegramOwnerBootstrapMarkdown(ctx, h.actorDispatcher, locator, text)
+	if result.startupNotice != "" {
+		_ = sendPlain(ctx, h.actorDispatcher, serverActorAddress, locator, result.startupNotice)
+	}
+}
+
+func sendTelegramOwnerBootstrapMarkdown(ctx context.Context, dispatcher actortransport.Dispatcher, locator deliverycmd.Locator, text string) error {
+	envelope, err := deliverycmd.MarkdownEnvelopeWithSettlement("", serverActorAddress, locator, deliverycmd.SettlementBypass, text, "")
+	if err != nil {
+		return err
+	}
+	if dispatcher == nil {
+		return fmt.Errorf("runtime is unavailable")
+	}
+	_, err = dispatcher.Dispatch(ctx, envelope)
+	return err
 }
 
 func (h *telegramInboundHandler) restorePersistedOwner() {
@@ -523,18 +570,6 @@ func dispatchQuestionContinuation(ctx context.Context, dispatcher QuestionContin
 
 func sendPlain(ctx context.Context, dispatcher actortransport.Dispatcher, from actorlayer.ActorAddress, locator deliverycmd.Locator, text string) error {
 	env, err := deliverycmd.PlainEnvelopeWithSettlement("", from, locator, deliverycmd.SettlementBypass, text, "")
-	if err != nil {
-		return err
-	}
-	if dispatcher == nil {
-		return fmt.Errorf("runtime is unavailable")
-	}
-	_, err = dispatcher.Dispatch(ctx, env)
-	return err
-}
-
-func sendMarkdown(ctx context.Context, dispatcher actortransport.Dispatcher, from actorlayer.ActorAddress, locator deliverycmd.Locator, text string) error {
-	env, err := deliverycmd.MarkdownEnvelopeWithSettlement("", from, locator, deliverycmd.SettlementBypass, text, "")
 	if err != nil {
 		return err
 	}

@@ -141,6 +141,24 @@ func (r *StructuredRegistry) RenderStructured(ctx context.Context, transport str
 	return renderer.renderStructuredAny(ctx, env)
 }
 
+// RequireStructuredRenderer validates that composition registered one renderer
+// for a transport and stable message type.
+func RequireStructuredRenderer(r *StructuredRegistry, transport string, typ MessageType) error {
+	if r == nil {
+		return fmt.Errorf("require structured renderer: registry is required")
+	}
+	if err := validateIdentifier("transport", transport); err != nil {
+		return fmt.Errorf("require structured renderer: %w", err)
+	}
+	if err := validateMessageType(typ); err != nil {
+		return fmt.Errorf("require structured renderer for transport %q: %w", transport, err)
+	}
+	if _, ok := r.renderers[structuredKey{transport: transport, typ: typ}]; !ok {
+		return fmt.Errorf("%w: transport %q message type %q", ErrStructuredRendererNotFound, transport, typ)
+	}
+	return nil
+}
+
 func validateMessageType(value MessageType) error {
 	raw := string(value)
 	if raw == "" {

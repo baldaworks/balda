@@ -6,7 +6,6 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
-	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"io"
 	"os"
 	"path/filepath"
@@ -15,7 +14,9 @@ import (
 	"sync"
 	"text/template"
 
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/paths"
+	"github.com/baldaworks/balda/internal/apps/balda/sessioncmd"
 	"github.com/baldaworks/balda/internal/git"
 	"github.com/baldaworks/runtime/v2/agentconfig"
 	"github.com/baldaworks/runtime/v2/agentfactory"
@@ -264,6 +265,9 @@ type BuiltRuntime struct {
 	ConfirmedModel string
 	// ProviderID is the exact bound root provider identity used for this build.
 	ProviderID string
+	// PublicRuntimeMetadata is the allowlisted receipt captured from the exact
+	// provider graph and capability snapshot used for this build.
+	PublicRuntimeMetadata sessioncmd.PublicRuntimeMetadata
 	// RuntimeBaseToken is an opaque process-local token for the exact runtime
 	// base registered for child-runtime lookup. Zero means unregistered.
 	RuntimeBaseToken uint64

@@ -8,6 +8,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfx"
 	"github.com/baldaworks/balda/internal/apps/balda/goalkeepercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/locatorfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/statusfmt"
 )
 
@@ -46,6 +47,37 @@ func NewStatusStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
 			return err
 		}
 		return deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportZulip, statusfmt.LegacyResponseDescriptor, zulipLegacyStatusRenderer{})
+	}
+}
+
+type zulipSessionNoticeRenderer struct{}
+type zulipSessionWarningRenderer struct{}
+
+func (zulipSessionNoticeRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[sessionfmt.Notice]) (deliveryfmt.StructuredPresentation, error) {
+	text, err := presentation.RenderSessionNotice(env.Body)
+	return deliveryfmt.StructuredPresentation{Text: text, DeliveryFormat: deliveryfmt.DeliveryFormatMarkdown}, err
+}
+
+func (zulipSessionWarningRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[sessionfmt.Warning]) (deliveryfmt.StructuredPresentation, error) {
+	text, err := presentation.RenderSessionWarning(env.Body)
+	return deliveryfmt.StructuredPresentation{Text: text, DeliveryFormat: deliveryfmt.DeliveryFormatMarkdown}, err
+}
+
+// NewSessionStructuredRegistrar registers Zulip session lifecycle presentation.
+func NewSessionStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
+	return func(registry *deliveryfmt.StructuredRegistry) error {
+		if err := deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportZulip, sessionfmt.NoticeDescriptor, zulipSessionNoticeRenderer{}); err != nil {
+			return err
+		}
+		return deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportZulip, sessionfmt.WarningDescriptor, zulipSessionWarningRenderer{})
+	}
+}
+
+// NewSessionStructuredRequirements requires both lifecycle renderers at composition.
+func NewSessionStructuredRequirements() []deliveryfx.StructuredRegistryRequirement {
+	return []deliveryfx.StructuredRegistryRequirement{
+		{Transport: deliveryfmt.TransportZulip, MessageType: sessionfmt.NoticeDescriptor.Type},
+		{Transport: deliveryfmt.TransportZulip, MessageType: sessionfmt.WarningDescriptor.Type},
 	}
 }
 

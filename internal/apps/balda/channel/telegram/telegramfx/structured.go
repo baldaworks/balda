@@ -12,6 +12,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/permissionfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/progressfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/questionfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/statusfmt"
 )
 
@@ -72,6 +73,37 @@ func NewPermissionStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
 
 func NewProgressStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
 	return deliveryfx.NewStructuredRegistrar(deliveryfmt.TransportTelegram, progressfmt.RequestDescriptor, telegramProgressRenderer{})
+}
+
+type telegramSessionNoticeRenderer struct{}
+type telegramSessionWarningRenderer struct{}
+
+func (telegramSessionNoticeRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[sessionfmt.Notice]) (deliveryfmt.StructuredPresentation, error) {
+	text, err := presentation.RenderSessionNotice(env.Body)
+	return deliveryfmt.StructuredPresentation{Text: text, DeliveryFormat: deliveryfmt.DeliveryFormatRichMarkdown}, err
+}
+
+func (telegramSessionWarningRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[sessionfmt.Warning]) (deliveryfmt.StructuredPresentation, error) {
+	text, err := presentation.RenderSessionWarning(env.Body)
+	return deliveryfmt.StructuredPresentation{Text: text, DeliveryFormat: deliveryfmt.DeliveryFormatRichMarkdown}, err
+}
+
+// NewSessionStructuredRegistrar registers Telegram session lifecycle presentation.
+func NewSessionStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
+	return func(registry *deliveryfmt.StructuredRegistry) error {
+		if err := deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportTelegram, sessionfmt.NoticeDescriptor, telegramSessionNoticeRenderer{}); err != nil {
+			return err
+		}
+		return deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportTelegram, sessionfmt.WarningDescriptor, telegramSessionWarningRenderer{})
+	}
+}
+
+// NewSessionStructuredRequirements requires both lifecycle renderers at composition.
+func NewSessionStructuredRequirements() []deliveryfx.StructuredRegistryRequirement {
+	return []deliveryfx.StructuredRegistryRequirement{
+		{Transport: deliveryfmt.TransportTelegram, MessageType: sessionfmt.NoticeDescriptor.Type},
+		{Transport: deliveryfmt.TransportTelegram, MessageType: sessionfmt.WarningDescriptor.Type},
+	}
 }
 
 // NewLocatorStructuredRegistrar registers Telegram locator response presentation.

@@ -121,7 +121,7 @@ func TestEnsureSessionAbortsPreparedOperationWithoutMetadataRow(t *testing.T) {
 
 	topic, err := manager.EnsureSession(t.Context(), SessionContext{Locator: locator, UserID: recoveryUserID}, "agent")
 	if err != nil || topic == nil {
-		t.Fatalf("EnsureSession() = %p, %v", topic, err)
+		t.Fatalf("EnsureSession() = %+v, %v", topic, err)
 	}
 	operation, found, err := store.Get(t.Context(), "operation")
 	if err != nil || !found || operation.State != baldastate.RuntimeOperationTerminal ||

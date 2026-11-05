@@ -49,4 +49,9 @@ var Module = fx.Module("balda_deliveryfx",
 			fx.As(new(questions.ControlPublisher)),
 		),
 	),
+	fx.Invoke(requireStructuredMessageRegistry),
 )
+
+// requireStructuredMessageRegistry forces registration and requirement
+// validation during composition, before transport lifecycle stages can start.
+func requireStructuredMessageRegistry(*deliveryfmt.StructuredRegistry) {}

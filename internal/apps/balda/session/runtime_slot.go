@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/baldaworks/balda/internal/apps/balda/sessioncmd"
 	"github.com/baldaworks/runtime/v2/agentproduct"
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/runner"
@@ -125,6 +126,15 @@ func (l *RuntimeLease) ProviderBindingJSON() string {
 	return l.slot.value.runtime.ProviderBindingJSON
 }
 
+// PublicRuntimeMetadata returns the allowlisted receipt captured from the
+// exact provider graph and capability snapshot bound to this lease.
+func (l *RuntimeLease) PublicRuntimeMetadata() sessioncmd.PublicRuntimeMetadata {
+	if l == nil || l.slot == nil {
+		return sessioncmd.PublicRuntimeMetadata{}
+	}
+	return l.slot.value.runtime.PublicRuntimeMetadata.Clone()
+}
+
 // RuntimeStateValue reads one state value through the exact ADK identity held
 // by this lease. It never consults the session's current runtime.
 func (l *RuntimeLease) RuntimeStateValue(ctx context.Context, key string) (any, bool, error) {
@@ -204,6 +214,7 @@ func newRuntimeSlot(config runtimeSlotConfig) *RuntimeSlot {
 	var runtime BuiltRuntime
 	if config.runtime != nil {
 		runtime = *config.runtime
+		runtime.PublicRuntimeMetadata = config.runtime.PublicRuntimeMetadata.Clone()
 	}
 	value := runtimeSlotValue{
 		runtime:        runtime,

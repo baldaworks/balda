@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"maps"
+	"strings"
 	"testing"
 	"time"
 
@@ -85,12 +86,17 @@ func (f *graphFactory) BuildScoped(_ context.Context, request agentfactory.Build
 
 func TestRuntimeManagerPinsAndRestoresProviderGraph(t *testing.T) {
 	now := time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)
-	revision := func(id, model string) providers.Revision {
+	oldReasoning := "high"
+	revision := func(id, model, reasoning, mcp string) providers.Revision {
 		return providers.Revision{ID: id, ProviderID: "managed", DriverType: agentconfig.AgentTypeCodexACP,
 			ContractVersion: 1, FormatVersion: providers.StorageFormatVersion, CreatedAt: now,
-			Definition: providers.Definition{Config: agentconfig.Config{Type: agentconfig.AgentTypeCodexACP, CodexACP: &agentconfig.ACPConfig{Model: model}}, Reproducible: false}}
+			Definition: providers.Definition{Config: agentconfig.Config{
+				Type: agentconfig.AgentTypeCodexACP, MCPServers: []string{mcp},
+				CodexACP: &agentconfig.ACPConfig{Model: model, ReasoningEffort: reasoning},
+			}, Reproducible: false}}
 	}
-	oldRevision, newRevision := revision("old", "old-model"), revision("new", "new-model")
+	oldRevision := revision("old", "old-model", oldReasoning, "old-tools")
+	newRevision := revision("new", "new-model", "low", "new-tools")
 	store := &providerStateFixture{state: providers.State{
 		Records:   []providers.Record{{ID: "managed", CurrentRevisionID: oldRevision.ID, Enabled: true}},
 		Revisions: []providers.Revision{oldRevision, newRevision},
@@ -126,6 +132,10 @@ func TestRuntimeManagerPinsAndRestoresProviderGraph(t *testing.T) {
 	if fresh.RecipeModel != "old-model" {
 		t.Fatalf("fresh recipe receipt = %q, want managed old-model", fresh.RecipeModel)
 	}
+	if metadata := fresh.PublicRuntimeMetadata; metadata.ProviderID != "managed" || metadata.ProviderType != agentconfig.AgentTypeCodexACP ||
+		metadata.ReasoningEffort != oldReasoning || !slicesEqualStrings(metadata.MCPServers, []string{"balda", "old-tools"}) {
+		t.Fatalf("fresh public runtime metadata = %+v", metadata)
+	}
 
 	store.state.Records[0].CurrentRevisionID = newRevision.ID
 	current, err := manager.RuntimeForSession(t.Context(), SessionRuntimeRequest{})
@@ -136,6 +146,10 @@ func TestRuntimeManagerPinsAndRestoresProviderGraph(t *testing.T) {
 	if current.RecipeModel != "new-model" {
 		t.Fatalf("current recipe receipt = %q, want managed new-model", current.RecipeModel)
 	}
+	if metadata := current.PublicRuntimeMetadata; metadata.ReasoningEffort != "low" ||
+		!slicesEqualStrings(metadata.MCPServers, []string{"balda", "new-tools"}) {
+		t.Fatalf("current public runtime metadata = %+v", metadata)
+	}
 	store.state.Records[0].Enabled = false
 	restored, err := manager.RuntimeForSession(t.Context(), SessionRuntimeRequest{ProviderBindingJSON: fresh.ProviderBindingJSON})
 	if err != nil {
@@ -145,11 +159,94 @@ func TestRuntimeManagerPinsAndRestoresProviderGraph(t *testing.T) {
 	if restored.RecipeModel != "old-model" {
 		t.Fatalf("restored recipe receipt = %q, want pinned old-model", restored.RecipeModel)
 	}
+	if metadata := restored.PublicRuntimeMetadata; metadata.ReasoningEffort != oldReasoning ||
+		!slicesEqualStrings(metadata.MCPServers, []string{"balda", "old-tools"}) {
+		t.Fatalf("restored public runtime metadata = %+v, want exact old binding receipt", metadata)
+	}
 	if _, err := manager.RuntimeForSession(t.Context(), SessionRuntimeRequest{}); !errors.Is(err, providers.ErrUnavailable) {
 		t.Fatalf("disabled current graph error = %v", err)
 	}
 	if got, want := capture.models, []string{"old-model", "new-model", "old-model"}; !slicesEqualStrings(got, want) {
 		t.Fatalf("built models = %v, want %v", got, want)
+	}
+}
+
+func TestRuntimeManagerPublicMetadataExcludesPrivateBoundRuntimeData(t *testing.T) {
+	const (
+		providerID        = "configured"
+		bindingCanary     = "binding-private-canary"
+		configCanary      = "config-private-canary"
+		credentialCanary  = "credential-private-canary"
+		urlCanary         = "https://url-private-canary.invalid/mcp"
+		headerCanary      = "header-private-canary"
+		snapshotCanary    = "snapshot-private-canary"
+		publicMCPServerID = "public-tools"
+	)
+	reasoningEffort := "minimal"
+	configured := map[string]agentconfig.Config{providerID: {
+		Type: agentconfig.AgentTypeCodexACP, MCPServers: []string{publicMCPServerID}, SystemInstructions: configCanary,
+		CodexACP: &agentconfig.ACPConfig{
+			Model: "bound-model", ReasoningEffort: reasoningEffort, Env: map[string]string{"PRIVATE_TOKEN": credentialCanary},
+		},
+	}}
+	store := &providerStateFixture{}
+	service := providers.New(configured, store, nil)
+	compiled, err := service.CompileCurrent(t.Context(), providerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bindingJSON, err := json.Marshal(compiled.Binding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	boundInput := strings.TrimSuffix(string(bindingJSON), "}") + `,"private_canary":"` + bindingCanary + `"}`
+
+	capture := &providerGraphCapture{}
+	builder := &Builder{
+		factory:       &recordingRuntimeFactory{},
+		scopedFactory: &graphFactory{capture: capture},
+		normaCfg:      runtimeconfig.RuntimeConfig{Providers: configured},
+	}
+	binder := &recordingCapabilityBinder{binding: SessionCapabilityBinding{
+		SnapshotID: snapshotCanary,
+		Skills:     SkillMetadataProjection{Snapshot: snapshotCanary},
+		ProviderMCPServerIDs: map[string][]string{
+			providerID: {publicMCPServerID},
+		},
+	}}
+	registry := mcpregistry.New(map[string]agentconfig.MCPServerConfig{
+		publicMCPServerID: {
+			Type: agentconfig.MCPServerTypeHTTP, URL: urlCanary,
+			Headers: map[string]string{"Authorization": headerCanary},
+		},
+	})
+	manager := NewRuntimeManager(RuntimeManagerParams{
+		Builder: builder, BaldaProviderID: providerID, WorkingDir: t.TempDir(), StateDir: t.TempDir(),
+		CapabilityBinder: binder, ProviderService: service, MCPRegistry: registry, Logger: zerolog.Nop(),
+	})
+	runtime, err := manager.RuntimeForSession(t.Context(), SessionRuntimeRequest{
+		RuntimeSnapshotID: snapshotCanary, ProviderBindingJSON: boundInput,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = runtime.Close() })
+	if runtime.RuntimeSnapshotID != snapshotCanary || !strings.Contains(boundInput, bindingCanary) {
+		t.Fatalf("private fixture was not bound: snapshot=%q binding=%q", runtime.RuntimeSnapshotID, boundInput)
+	}
+	encoded, err := json.Marshal(runtime.PublicRuntimeMetadata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, canary := range []string{bindingCanary, configCanary, credentialCanary, urlCanary, headerCanary, snapshotCanary} {
+		if strings.Contains(string(encoded), canary) {
+			t.Fatalf("public runtime metadata %q contains private canary %q", encoded, canary)
+		}
+	}
+	if metadata := runtime.PublicRuntimeMetadata; metadata.ProviderID != providerID ||
+		metadata.ProviderType != agentconfig.AgentTypeCodexACP || metadata.ReasoningEffort != reasoningEffort ||
+		!slicesEqualStrings(metadata.MCPServers, []string{"balda", publicMCPServerID}) {
+		t.Fatalf("public runtime metadata = %+v", metadata)
 	}
 }
 

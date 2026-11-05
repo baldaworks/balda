@@ -10,6 +10,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/providers"
+	"github.com/baldaworks/balda/internal/apps/balda/sessioncmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 )
 
@@ -49,9 +50,17 @@ func (m *Manager) GetSession(locator SessionLocator) (*TopicSession, error) {
 }
 
 // EnsureSession returns an active session, restores saved metadata, or creates a
-// new session when no metadata exists. agentName is the label for new sessions.
+// new session when no metadata exists. It does not capture conversational
+// activation state. agentName is the label for new sessions.
 func (m *Manager) EnsureSession(ctx context.Context, sessionCtx SessionContext, agentName string) (*TopicSession, error) {
-	return m.prepareSession(ctx, sessionCtx, agentName, true)
+	result, err := m.prepareSession(ctx, sessionCtx, agentName, true, false)
+	return result.TopicSession, err
+}
+
+// EnsureSessionForTurn prepares an ordinary conversational session and
+// captures its lifecycle outcome until durable turn admission is acknowledged.
+func (m *Manager) EnsureSessionForTurn(ctx context.Context, sessionCtx SessionContext, agentName string) (EnsureResult, error) {
+	return m.prepareSession(ctx, sessionCtx, agentName, true, true)
 }
 
 // EnsureTransientSession creates a private run session without address-indexed metadata.
@@ -79,25 +88,26 @@ func (m *Manager) EnsureTransientSession(ctx context.Context, sessionCtx Session
 
 // RestoreSession restores a saved session without creating one when metadata is absent.
 func (m *Manager) RestoreSession(ctx context.Context, sessionCtx SessionContext) (*TopicSession, error) {
-	return m.prepareSession(ctx, sessionCtx, "", false)
+	result, err := m.prepareSession(ctx, sessionCtx, "", false, false)
+	return result.TopicSession, err
 }
 
-func (m *Manager) prepareSession(ctx context.Context, sessionCtx SessionContext, label string, createIfMissing bool) (*TopicSession, error) {
+func (m *Manager) prepareSession(ctx context.Context, sessionCtx SessionContext, label string, createIfMissing, captureActivation bool) (EnsureResult, error) {
 	endLifecycle, err := m.beginLifecycleOperation(ctx)
 	if err != nil {
-		return nil, err
+		return EnsureResult{}, err
 	}
 	defer endLifecycle()
 	if m.sessionStore == nil {
-		return nil, fmt.Errorf("session metadata store is required")
+		return EnsureResult{}, fmt.Errorf("session metadata store is required")
 	}
 	for {
 		if err := m.lifecycleInterruption(ctx); err != nil {
-			return nil, err
+			return EnsureResult{}, err
 		}
 		record, found, err := m.sessionStore.GetByAddress(ctx, sessionCtx.Locator.ChannelType, sessionCtx.Locator.AddressKey)
 		if err != nil {
-			return nil, fmt.Errorf("read session metadata: %w", err)
+			return EnsureResult{}, fmt.Errorf("read session metadata: %w", err)
 		}
 		lookupID := strings.TrimSpace(sessionCtx.Locator.SessionID)
 		if found {
@@ -109,7 +119,7 @@ func (m *Manager) prepareSession(ctx context.Context, sessionCtx SessionContext,
 		record, found, err = m.sessionStore.GetByAddress(ctx, sessionCtx.Locator.ChannelType, sessionCtx.Locator.AddressKey)
 		if err != nil {
 			unlock()
-			return nil, fmt.Errorf("read session metadata: %w", err)
+			return EnsureResult{}, fmt.Errorf("read session metadata: %w", err)
 		}
 		currentID := strings.TrimSpace(sessionCtx.Locator.SessionID)
 		if found {
@@ -121,7 +131,7 @@ func (m *Manager) prepareSession(ctx context.Context, sessionCtx SessionContext,
 		}
 		if err := m.recoverRuntimeOperation(ctx, currentID); err != nil {
 			unlock()
-			return nil, err
+			return EnsureResult{}, err
 		}
 		// Model recovery may atomically advance the canonical generation. Reload
 		// metadata before opening the runtime so the restored slot uses that exact
@@ -129,11 +139,37 @@ func (m *Manager) prepareSession(ctx context.Context, sessionCtx SessionContext,
 		record, found, err = m.sessionStore.GetByAddress(ctx, sessionCtx.Locator.ChannelType, sessionCtx.Locator.AddressKey)
 		if err != nil {
 			unlock()
-			return nil, fmt.Errorf("read session metadata after recovery: %w", err)
+			return EnsureResult{}, fmt.Errorf("read session metadata after recovery: %w", err)
 		}
+		m.mu.RLock()
+		previous := m.sessions[currentID]
+		m.mu.RUnlock()
 		sess, err := m.prepareSessionLocked(ctx, sessionCtx, label, createIfMissing, record, found)
+		if err == nil && captureActivation && sess != nil && sess != previous {
+			kind := sessioncmd.ActivationCreated
+			if found {
+				kind = sessioncmd.ActivationReplaced
+				if runtimeMatchesSessionRecord(sess, record) {
+					kind = sessioncmd.ActivationRestored
+				}
+			}
+			var warnings []sessioncmd.WarningCode
+			if strings.TrimSpace(sess.startupNotice) != "" {
+				warnings = append(warnings, sessioncmd.WarningWorkspaceSyncSkipped)
+			}
+			activation, activationErr := m.buildActivation(sess, kind, warnings)
+			if activationErr != nil {
+				unlock()
+				return EnsureResult{}, activationErr
+			}
+			sess.setPendingActivation(activation)
+		}
+		result := EnsureResult{TopicSession: sess}
+		if err == nil && captureActivation && sess != nil {
+			result.Activation = sess.pendingActivationSnapshot()
+		}
 		unlock()
-		return sess, err
+		return result, err
 	}
 }
 

@@ -497,6 +497,9 @@ func TestRuntimeForSessionBindsSkillLoaderToResolvedSnapshot(t *testing.T) {
 	if len(factory.requests) != 1 || !slices.Contains(factory.requests[0].MCPServerIDs, "session-skill-mcp") {
 		t.Fatalf("provider MCP servers = %+v, want session-skill-mcp", factory.requests)
 	}
+	if slices.Contains(runtime.PublicRuntimeMetadata.MCPServers, "session-skill-mcp") {
+		t.Fatalf("public runtime metadata leaked scoped MCP identity: %+v", runtime.PublicRuntimeMetadata)
+	}
 	if err := runtime.Close(); err != nil {
 		t.Fatalf("Close() error = %v", err)
 	}

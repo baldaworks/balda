@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
+	"github.com/baldaworks/balda/internal/apps/balda/sessioncmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/git"
 	"github.com/baldaworks/runtime/v2/agentproduct"
@@ -177,12 +178,15 @@ type BuiltRuntime struct {
 	RecipeModel string
 	// ConfirmedModel is the exact effective target confirmed for an independent
 	// hosted replacement. It does not replace the pinned recipe receipt.
-	ConfirmedModel   string
-	ProviderID       string
-	RuntimeBaseToken uint64
-	PromoteBase      func() error
-	CompleteBase     func() error
-	Close            func() error
+	ConfirmedModel string
+	ProviderID     string
+	// PublicRuntimeMetadata is the allowlisted receipt captured from the exact
+	// provider graph and capability snapshot used for this build.
+	PublicRuntimeMetadata sessioncmd.PublicRuntimeMetadata
+	RuntimeBaseToken      uint64
+	PromoteBase           func() error
+	CompleteBase          func() error
+	Close                 func() error
 }
 
 type EnsureWorkspaceResult struct {

@@ -12,6 +12,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/sessioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
@@ -30,14 +31,20 @@ func (s *stubAuthorizer) Authorize(context.Context, InboundContext) (Authorizati
 }
 
 type stubSessionPreparer struct {
-	result SessionPreparation
-	err    error
-	calls  int
+	result       SessionPreparation
+	err          error
+	calls        int
+	acknowledged []sessioncmd.Activation
 }
 
 func (s *stubSessionPreparer) Prepare(context.Context, InboundContext) (SessionPreparation, error) {
 	s.calls++
 	return s.result, s.err
+}
+
+func (s *stubSessionPreparer) AcknowledgeActivation(_ string, activation sessioncmd.Activation) bool {
+	s.acknowledged = append(s.acknowledged, activation)
+	return true
 }
 
 type recordingDispatcher struct {
@@ -245,6 +252,75 @@ func TestProcessPublishesOneSessionActorEnvelopeWithStableIdentity(t *testing.T)
 	}
 	if len(payload.Attachments) != 2 || payload.Attachments[0].FileID != "first" || payload.Attachments[1].FileID != "second" {
 		t.Fatalf("attachments = %+v, want stable order", payload.Attachments)
+	}
+}
+
+func TestProcessCarriesStableActivationUntilDurableAdmission(t *testing.T) {
+	t.Parallel()
+
+	activation := testActivation("tg-9001-77")
+	sessions := &stubSessionPreparer{result: SessionPreparation{Ready: true, SessionID: "tg-9001-77", Activation: activation}}
+	dispatcher := &recordingDispatcher{err: actorlayer.TransientError(errors.New("queue unavailable"))}
+	service, err := New(&stubAuthorizer{result: Authorization{Allowed: true}}, sessions, dispatcher)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result, err := service.Process(t.Context(), validInbound("activation-retry")); err == nil || result.Settlement.Outcome != turncmd.InboundRetry {
+		t.Fatalf("first admission = %+v, %v", result, err)
+	}
+	if len(sessions.acknowledged) != 0 {
+		t.Fatalf("failed dispatch acknowledged activation: %+v", sessions.acknowledged)
+	}
+	dispatcher.err = nil
+	if result, err := service.Process(t.Context(), validInbound("activation-retry")); err == nil || result.Settlement.Outcome != turncmd.InboundRetry {
+		t.Fatalf("missing-receipt admission = %+v, %v", result, err)
+	}
+	if len(sessions.acknowledged) != 0 {
+		t.Fatalf("missing receipt acknowledged activation: %+v", sessions.acknowledged)
+	}
+	dispatcher.receipt = &actortransport.DispatchReceipt{MsgID: "accepted"}
+	if result, err := service.Process(t.Context(), validInbound("activation-retry")); err != nil || result.Settlement.Outcome != turncmd.InboundAccepted {
+		t.Fatalf("retry admission = %+v, %v", result, err)
+	}
+	if len(sessions.acknowledged) != 1 || sessions.acknowledged[0].SessionID != "tg-9001-77" {
+		t.Fatalf("acknowledgments = %+v", sessions.acknowledged)
+	}
+	if len(dispatcher.envelopes) != 3 {
+		t.Fatalf("dispatch attempts = %d, want 3", len(dispatcher.envelopes))
+	}
+	for _, envelope := range dispatcher.envelopes {
+		var payload turncmd.SessionTurnPayload
+		if err := actorlayer.UnmarshalPayload(envelope.Payload, &payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload.Activation == nil || payload.Activation.SessionID != "tg-9001-77" {
+			t.Fatalf("durable activation = %+v", payload.Activation)
+		}
+	}
+}
+
+func TestProcessRejectsActivationLocatorMismatchBeforeDispatch(t *testing.T) {
+	t.Parallel()
+
+	sessions := &stubSessionPreparer{result: SessionPreparation{Ready: true, SessionID: "tg-9001-77", Activation: testActivation("other")}}
+	dispatcher := &recordingDispatcher{receipt: &actortransport.DispatchReceipt{MsgID: "unexpected"}}
+	service, err := New(&stubAuthorizer{result: Authorization{Allowed: true}}, sessions, dispatcher)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := service.Process(t.Context(), validInbound("activation-mismatch"))
+	if err == nil || result.Settlement.Outcome != turncmd.InboundTerminal {
+		t.Fatalf("result = %+v, error = %v", result, err)
+	}
+	if len(dispatcher.envelopes) != 0 || len(sessions.acknowledged) != 0 {
+		t.Fatalf("dispatches/acks = %d/%d, want zero", len(dispatcher.envelopes), len(sessions.acknowledged))
+	}
+}
+
+func testActivation(sessionID string) *sessioncmd.Activation {
+	return &sessioncmd.Activation{
+		Kind: sessioncmd.ActivationCreated, SessionID: sessionID,
+		Runtime: sessioncmd.RuntimeSummary{PublicRuntimeMetadata: sessioncmd.PublicRuntimeMetadata{MCPServers: []string{"balda"}}},
 	}
 }
 

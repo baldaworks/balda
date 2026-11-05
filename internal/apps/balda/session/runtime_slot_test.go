@@ -2,12 +2,15 @@ package session
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/sessioncmd"
 	"github.com/baldaworks/runtime/v2/agentproduct"
 	adkagent "google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/runner"
@@ -116,6 +119,9 @@ func TestRuntimeSlotLeaseCarriesOneImmutableRuntime(t *testing.T) {
 		AppName:             "app",
 		RuntimeSnapshotID:   "snapshot-1",
 		ProviderBindingJSON: `{"root_provider_id":"provider-1"}`,
+		PublicRuntimeMetadata: sessioncmd.PublicRuntimeMetadata{
+			ProviderID: "provider-1", MCPServers: []string{"balda", "tools"},
+		},
 	}
 	slot := newRuntimeSlot(runtimeSlotConfig{
 		runtime: runtime, session: created.Session, userID: "ignored", sessionID: "ignored",
@@ -126,6 +132,7 @@ func TestRuntimeSlotLeaseCarriesOneImmutableRuntime(t *testing.T) {
 	runtime.SessionControl = nil
 	runtime.RuntimeSnapshotID = "mutated"
 	runtime.ProviderBindingJSON = "{}"
+	runtime.PublicRuntimeMetadata.MCPServers[0] = "mutated"
 
 	lease, err := slot.acquire()
 	if err != nil {
@@ -144,8 +151,47 @@ func TestRuntimeSlotLeaseCarriesOneImmutableRuntime(t *testing.T) {
 	if lease.RuntimeSnapshotID() != "snapshot-1" || lease.ProviderBindingJSON() != `{"root_provider_id":"provider-1"}` {
 		t.Fatalf("binding = %q/%q", lease.RuntimeSnapshotID(), lease.ProviderBindingJSON())
 	}
+	metadata := lease.PublicRuntimeMetadata()
+	if metadata.ProviderID != "provider-1" || len(metadata.MCPServers) != 2 || metadata.MCPServers[0] != "balda" {
+		t.Fatalf("public runtime metadata = %+v", metadata)
+	}
+	metadata.MCPServers[0] = "caller-mutated"
+	if got := lease.PublicRuntimeMetadata().MCPServers[0]; got != "balda" {
+		t.Fatalf("lease metadata mutated through accessor: %q", got)
+	}
 	if value, found, err := lease.RuntimeStateValue(t.Context(), "lease-key"); err != nil || !found || value != "lease-value" {
 		t.Fatalf("RuntimeStateValue() = %v, %t, %v", value, found, err)
+	}
+}
+
+func TestRuntimeLeasePublicMetadataExcludesPrivateRuntimeFields(t *testing.T) {
+	const (
+		bindingCanary    = "binding-private-canary"
+		credentialCanary = "credential-private-canary"
+		headerCanary     = "header-private-canary"
+		snapshotCanary   = "snapshot-private-canary"
+		urlCanary        = "url-private-canary"
+	)
+	privateBinding := strings.Join([]string{bindingCanary, credentialCanary, headerCanary, urlCanary}, ":")
+	slot := newRuntimeSlot(runtimeSlotConfig{runtime: &BuiltRuntime{
+		RuntimeSnapshotID: snapshotCanary, ProviderBindingJSON: privateBinding,
+		PublicRuntimeMetadata: sessioncmd.PublicRuntimeMetadata{
+			ProviderID: "provider", ProviderType: "codex_acp", MCPServers: []string{"balda", "public-tools"},
+		},
+	}})
+	lease, err := slot.acquire()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lease.Release()
+	encoded, err := json.Marshal(lease.PublicRuntimeMetadata())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, canary := range []string{bindingCanary, credentialCanary, headerCanary, snapshotCanary, urlCanary} {
+		if strings.Contains(string(encoded), canary) {
+			t.Fatalf("runtime lease metadata %q contains private canary %q", encoded, canary)
+		}
 	}
 }
 

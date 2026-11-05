@@ -33,13 +33,14 @@ type InputRecorder interface {
 }
 
 type Service struct {
-	archive    InputRecorder
-	sessions   SessionPreparer
-	dispatcher Dispatcher
-	questions  QuestionResolver
-	authorizer Authorizer
-	skills     SkillPinner
-	logger     zerolog.Logger
+	archive     InputRecorder
+	sessions    SessionPreparer
+	activations ActivationAcknowledger
+	dispatcher  Dispatcher
+	questions   QuestionResolver
+	authorizer  Authorizer
+	skills      SkillPinner
+	logger      zerolog.Logger
 }
 
 // NewService constructs a provider-neutral conversational ingress service.
@@ -56,7 +57,7 @@ func NewService(params ServiceParams) (*Service, error) {
 			return Authorization{Allowed: true}, nil
 		})
 	}
-	return &Service{
+	service := &Service{
 		archive:    params.Archive,
 		sessions:   params.Sessions,
 		dispatcher: params.Dispatcher,
@@ -64,7 +65,9 @@ func NewService(params ServiceParams) (*Service, error) {
 		authorizer: authorizer,
 		skills:     params.Skills,
 		logger:     params.Logger.With().Str("component", "balda.chatapp").Logger(),
-	}, nil
+	}
+	service.activations, _ = params.Sessions.(ActivationAcknowledger)
+	return service, nil
 }
 
 // HandleChat handles a conversational ingress request, attempting question resolution first
@@ -119,6 +122,21 @@ func (s *Service) HandleChat(ctx context.Context, request Request) (Result, erro
 	if prep.SessionID != "" {
 		payload.Locator.SessionID = prep.SessionID
 	}
+	payload.Activation = prep.Activation.Clone()
+	if payload.Activation != nil {
+		preparedSessionID := strings.TrimSpace(prep.SessionID)
+		if validationErr := payload.Activation.Validate(); validationErr != nil || preparedSessionID == "" ||
+			payload.Activation.SessionID != preparedSessionID || payload.Activation.SessionID != strings.TrimSpace(payload.Locator.SessionID) {
+			err = actorlayer.PolicyError(fmt.Errorf("prepared session activation does not match session locator"))
+			settled, resultErr := errorResult(ReasonSessionRejected, err)
+			return s.finish(logContext, settled, ReasonSessionRejected, resultErr)
+		}
+	}
+	if payload.Activation != nil && s.activations == nil {
+		err = actorlayer.TransientError(fmt.Errorf("session activation acknowledger is unavailable"))
+		settled, resultErr := errorResult(ReasonSessionRejected, err)
+		return s.finish(logContext, settled, ReasonSessionRejected, resultErr)
+	}
 	payload.UserID = firstNonEmpty(prep.UserID, payload.UserID)
 	payload.RequesterUserID = firstNonEmpty(prep.RequesterUserID, inbound.UserID)
 	payload.AgentSessionID = strings.TrimSpace(prep.AgentSessionID)
@@ -168,6 +186,11 @@ func (s *Service) HandleChat(ctx context.Context, request Request) (Result, erro
 	if receipt == nil {
 		err = actorlayer.TransientError(fmt.Errorf("session dispatch returned no receipt"))
 		return s.finish(logContext, retryResult(ReasonDispatchFailed), ReasonDispatchFailed, err)
+	}
+	if payload.Activation != nil && !s.activations.AcknowledgeActivation(payload.Activation.SessionID, *payload.Activation) {
+		s.logger.Warn().
+			Str("session_id", payload.Activation.SessionID).
+			Msg("session activation acknowledgment no longer matched pending outcome")
 	}
 
 	res := Result{

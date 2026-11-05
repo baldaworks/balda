@@ -102,7 +102,9 @@ flowchart TB
 | `runtime` | `internal/apps/balda/execution` | Actor runtime host, lane policy, retry/dead-letter policy, and delivery wrapping | actorcmd, `github.com/baldaworks/go-actorlayer` |
 | `jobs` | `internal/apps/balda/jobs` | Durable job service, transactional event outbox, and read-model projection | actorcmd, state, `github.com/baldaworks/go-actorlayer` |
 | `tgbotkit` | `internal/apps/balda/tgbotkit` | Telegram bot runtime | `tgbotkit/*` |
-| `welcome` | `internal/apps/balda/welcome` | Welcome message builder | (standalone) |
+| `welcome` | `internal/apps/balda/welcome` | Welcome message builder for explicit command flows | (standalone) |
+| `sessioncmd` | `internal/apps/balda/sessioncmd` | Closed ordinary-session lifecycle outcomes, warnings, and public runtime receipts | (standalone) |
+| `sessionfmt` | `internal/apps/balda/sessionfmt` | Transport-neutral activation notice and warning presentation contracts | sessioncmd, deliveryfmt |
 
 ## Actorlayer Boundary
 
@@ -118,6 +120,10 @@ Balda treats `actorlayer` as the reusable actor library boundary and never as pr
 - `internal/apps/balda/secrets`: application-scoped authenticated encryption used through domain-specific AAD; it owns no provider or MCP policy.
 - `internal/apps/balda/jobs`: durable job orchestration state and event projection. It owns job records, job events, and read-model updates, but it does not own transport execution.
 - `internal/apps/balda/actors`: product actors. It owns session, job, goalkeeper, delivery, control, and memory behavior.
+- `internal/apps/balda/sessioncmd`: lifecycle authority for ordinary activation
+  kinds, warning codes, and immutable public runtime receipts.
+- `internal/apps/balda/sessionfmt`: presentation-only activation contracts;
+  concrete rendering remains under `channel/*/presentation`.
 - `internal/apps/balda/sessionturn`: queued-turn restoration behind a narrow executor port.
 - `internal/apps/balda/sessionturnapp`: queued turn execution wiring, provider execution, progress dispatch, and turn-specific adapters.
 - `internal/apps/balda/internalmcp`: bundled MCP construction and lifecycle.

@@ -7,6 +7,7 @@ import (
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	"github.com/baldaworks/balda/internal/apps/balda/controlapp"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryworkflow"
 	"github.com/baldaworks/balda/internal/apps/balda/jobexec"
 	baldajobs "github.com/baldaworks/balda/internal/apps/balda/jobs"
@@ -43,6 +44,7 @@ type sessionActorParams struct {
 	fx.In
 
 	Dispatcher actortransport.Dispatcher
+	Registry   deliveryfmt.StructuredMessageRegistry
 	Turns      appports.TurnQueue
 	Runner     appports.SessionTurnRunner
 	Tasks      *baldajobs.JobLifecycleService `optional:"true"`
@@ -50,6 +52,7 @@ type sessionActorParams struct {
 	Questions  *questions.Service             `optional:"true"`
 	Sessions   *baldasession.Manager          `optional:"true"`
 	Modes      appports.ScheduleModeResolver  `optional:"true"`
+	Logger     zerolog.Logger
 }
 
 type goalkeeperActorParams struct {
@@ -116,9 +119,11 @@ var Module = fx.Module("balda_actorsfx",
 					Tasks:      tasks,
 					Scheduler:  p.Scheduler,
 					Dispatcher: p.Dispatcher,
+					Registry:   p.Registry,
 					Questions:  p.Questions,
 					Sessions:   sessions,
 					Modes:      p.Modes,
+					Logger:     p.Logger,
 				})
 			},
 			fx.As(new(dispatch.Actor)),

@@ -10,6 +10,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/agentcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
+	"github.com/baldaworks/balda/internal/apps/balda/sessioncmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/rs/zerolog"
 	adksession "google.golang.org/adk/v2/session"
@@ -90,7 +91,10 @@ func (m *fakeAvailabilityRuntimeManager) EnsureProviderAvailable(context.Context
 	return m.availabilityErr
 }
 
-type mutationRecordingWorkspace struct{ mutations int }
+type mutationRecordingWorkspace struct {
+	mutations int
+	result    EnsureWorkspaceResult
+}
 
 func (m *mutationRecordingWorkspace) CanonicalWorkspaceDir(string) string { return "workspace" }
 func (m *mutationRecordingWorkspace) ForceRemountCanonicalWorkspace(context.Context, string, string) (EnsureWorkspaceResult, error) {
@@ -99,8 +103,48 @@ func (m *mutationRecordingWorkspace) ForceRemountCanonicalWorkspace(context.Cont
 }
 func (m *mutationRecordingWorkspace) EnsureWorkspace(context.Context, string, string, string) (EnsureWorkspaceResult, error) {
 	m.mutations++
-	return EnsureWorkspaceResult{}, nil
+	return m.result, nil
 }
+
+func TestEnsureSessionAttachesTypedWorkspaceWarning(t *testing.T) {
+	provider, err := baldastate.NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = provider.Close() })
+	workingDir := t.TempDir()
+	runtime := &BuiltRuntime{
+		AppName:           baldaRuntimeAppName,
+		SessionSvc:        provider.RuntimeSessions(),
+		RuntimeSnapshotID: currentSnapshotID,
+	}
+	workspaces := &mutationRecordingWorkspace{result: EnsureWorkspaceResult{Dir: workingDir, SyncSkipped: true}}
+	manager := &Manager{
+		runtimeManager: &fakeScopedRuntimeManager{
+			fakeBaldaRuntimeManager: fakeBaldaRuntimeManager{providerID: "balda-provider", runtime: runtime},
+			sessionRuntime:          runtime,
+		},
+		agentBuilder:     &sqliteAgentBuilder{},
+		workingDir:       workingDir,
+		workspaces:       workspaces,
+		workspaceEnabled: true,
+		sessionStore:     provider.Sessions(),
+		logger:           zerolog.Nop(),
+		sessions:         make(map[string]*TopicSession),
+	}
+
+	result, err := manager.EnsureSessionForTurn(t.Context(), SessionContext{
+		Locator: testTelegramLocator(31, 0),
+		UserID:  ensureTestUserID,
+	}, "saved")
+	if err != nil || result.Activation == nil {
+		t.Fatalf("EnsureSession() = %+v, %v", result, err)
+	}
+	if got := result.Activation.Warnings; len(got) != 1 || got[0] != sessioncmd.WarningWorkspaceSyncSkipped {
+		t.Fatalf("activation warnings = %v", got)
+	}
+}
+
 func (m *mutationRecordingWorkspace) Import(context.Context, string) error { m.mutations++; return nil }
 func (m *mutationRecordingWorkspace) Export(context.Context, string, string, string) error {
 	m.mutations++
@@ -153,9 +197,12 @@ func TestEnsureSessionRestoresSQLiteHistoryAfterRestart(t *testing.T) {
 		return &Manager{runtimeManager: runtimeManager, agentBuilder: builder, workingDir: workingDir, logger: zerolog.Nop(), sessions: make(map[string]*TopicSession), sessionStore: provider.Sessions(), sessionsPersistent: true}
 	}
 	locator := testTelegramLocator(10, 0)
-	first, err := newManager().EnsureSession(t.Context(), SessionContext{Locator: locator, UserID: ensureTestUserID}, "saved-label")
+	first, err := newManager().EnsureSessionForTurn(t.Context(), SessionContext{Locator: locator, UserID: ensureTestUserID}, "saved-label")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if first.Activation == nil || first.Activation.Kind != sessioncmd.ActivationCreated {
+		t.Fatalf("created activation = %+v", first.Activation)
 	}
 	event := adksession.NewEvent(t.Context(), "saved-turn")
 	event.Author = ensureTestAuthor
@@ -164,9 +211,12 @@ func TestEnsureSessionRestoresSQLiteHistoryAfterRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	inbound := locator
-	restored, err := newManager().EnsureSession(t.Context(), SessionContext{Locator: inbound, UserID: "tg-requester"}, "new-label")
+	restored, err := newManager().EnsureSessionForTurn(t.Context(), SessionContext{Locator: inbound, UserID: "tg-requester"}, "new-label")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if restored.Activation == nil || restored.Activation.Kind != sessioncmd.ActivationRestored {
+		t.Fatalf("restored activation = %+v, created = %+v", restored.Activation, first.Activation)
 	}
 	if restored.GetSessionID() != locator.SessionID || restored.GetUserID() != ensureTestUserID || restored.GetAgentName() != "saved-label" {
 		t.Fatalf("restored identity = %q/%q/%q", restored.GetSessionID(), restored.GetUserID(), restored.GetAgentName())
@@ -285,9 +335,12 @@ func TestEnsureSessionRecoversFailedSQLiteRestore(t *testing.T) {
 		}
 		return runtime, nil
 	}}, agentBuilder: builder, workingDir: t.TempDir(), logger: zerolog.Nop(), sessions: make(map[string]*TopicSession), sessionStore: provider.Sessions(), runtimeOperations: provider.RuntimeOperations(), sessionsPersistent: true, boundaryObserver: observer}
-	prepared, err := manager.EnsureSession(t.Context(), SessionContext{Locator: locator, UserID: ensureTestUserID}, "new")
+	prepared, err := manager.EnsureSessionForTurn(t.Context(), SessionContext{Locator: locator, UserID: ensureTestUserID}, "new")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if prepared.Activation == nil || prepared.Activation.Kind != sessioncmd.ActivationReplaced {
+		t.Fatalf("fallback activation = %+v", prepared.Activation)
 	}
 	if testRuntimeSession(prepared).Events().Len() != 0 || prepared.GetRuntimeSnapshotID() != currentSnapshotID {
 		t.Fatal("fallback did not create fresh current runtime")

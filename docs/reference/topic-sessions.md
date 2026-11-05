@@ -123,10 +123,25 @@ authentication boundary.
 - In workspace mode, restore first tries to sync the session branch with the configured base branch.
 - If that sync conflicts, balda recreates a clean worktree on the persisted session branch, restores the session anyway, and sends a short warning that the workspace was reset to the saved session-branch state and Balda can retry the sync later.
 - If no persisted session metadata exists, balda creates a new regular session using label `auto`.
-- Public-channel welcome banners always display `Name: balda` to keep app identity stable, even when the internal persisted session label differs.
-- Welcome messages use the current transport formatting route:
-  - Example:
-    🚀 **Session Started** • **Name:** `balda` • **ID:** `tg-1-0` • **Model:** `opencode/big-pickle` • **Reasoning:** `none` • **Type:** `opencode_acp` • **MCP:** `balda`
+
+## Session activation notifications
+
+Ordinary conversational admission has three typed outcomes. `created`
+identifies the first durable lifetime at a locator. `restored` identifies an
+exact reopen of saved state and is silent unless it carries a typed warning.
+`replaced` identifies a restore fallback. Runtime fields in a notice come from
+the immutable published runtime receipt, never from a later read of mutable
+provider configuration.
+
+`sessioncmd` owns these lifecycle values and `sessionfmt` owns the neutral
+notice/warning bodies. The SessionActor validates the activation against its
+authenticated session and locator, chooses which typed messages are visible,
+and renders them through the channel-owned Telegram, Zulip, Slack, or
+Mattermost renderer. Ingress does not format or directly send ordinary
+activation messages. The SessionActor dispatches them with bypass settlement,
+so a crash or replay can lose or duplicate an advisory message. Commands,
+startup bootstrap, reset, and topic creation retain their existing behavior.
+Process startup readiness remains a separate `startupnotifyapp` message.
 
 ## Workspace allocation contract
 
