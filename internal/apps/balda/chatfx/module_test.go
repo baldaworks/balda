@@ -53,8 +53,10 @@ func (f *fakeSessionStore) List(context.Context) ([]baldastate.SessionRecord, er
 	return []baldastate.SessionRecord{f.record}, nil
 }
 
-type fakeAgentBuilder struct {
-	metadata baldasession.AgentMetadata
+type fakeAgentBuilder struct{}
+
+func (*fakeAgentBuilder) GetAgentMetadata(string) baldasession.AgentMetadata {
+	return baldasession.AgentMetadata{}
 }
 
 func (f *fakeAgentBuilder) CreateRuntimeSession(
@@ -87,8 +89,6 @@ func (f *fakeAgentBuilder) CreateFreshRuntimeSession(
 	return nil, nil
 }
 
-func (f *fakeAgentBuilder) GetAgentMetadata(string) baldasession.AgentMetadata { return f.metadata }
-
 type fakeRuntimeManager struct{}
 
 func (*fakeRuntimeManager) Runtime(context.Context) (*baldasession.BuiltRuntime, error) {
@@ -100,12 +100,7 @@ func (f *fakeRuntimeManager) ProviderID() string { return "test-provider" }
 func newTestSessionManager(t *testing.T) *baldasession.Manager {
 	t.Helper()
 	mgr, err := baldasession.NewManager(baldasession.ManagerParams{
-		AgentBuilder: &fakeAgentBuilder{
-			metadata: baldasession.AgentMetadata{
-				Type:  "test",
-				Model: "test",
-			},
-		},
+		AgentBuilder:    &fakeAgentBuilder{},
 		RuntimeManager:  &fakeRuntimeManager{},
 		BaldaProviderID: "test-provider",
 		SessionStore:    &fakeSessionStore{},

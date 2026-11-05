@@ -255,7 +255,7 @@ func TestConfiguredSessionUpgradeFreshensIncompleteADKState(t *testing.T) {
 			afterRecord, found, err := p.Sessions().GetBySessionID(t.Context(), record.SessionID)
 			wantRecord := record
 			wantRecord.RuntimeSnapshotID = restored.GetRuntimeSnapshotID()
-			wantRecord.EffectiveModel = manager.GetAgentMetadata("alpha").Model
+			wantRecord.EffectiveModel = builder.GetAgentMetadata("alpha").Model
 			wantRecord.RuntimeGeneration++
 			wantRecord.RuntimeOutcome = string(state.RuntimeOperationOutcomeContextReset)
 			if err != nil || !found || afterRecord != wantRecord {

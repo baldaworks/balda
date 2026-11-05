@@ -157,6 +157,19 @@ components:
       - internal/apps/balda/usageview
       - internal/apps/balda/webhookcmd
 
+  # Transport-neutral lifecycle truth. This package owns activation kinds,
+  # warning codes and public runtime receipts;
+  # it contains no presentation or provider-specific policy.
+  session_lifecycle_contracts:
+    in:
+      - internal/apps/balda/sessioncmd
+
+  # Presentation-only activation message contracts. Concrete renderers stay in
+  # channel-owned presentation packages and lifecycle authority stays above.
+  session_presentation_contracts:
+    in:
+      - internal/apps/balda/sessionfmt
+
   # Canonical user, credential, binding, session, and audit contracts. These
   # values stay independent of storage, HTTP, and concrete transports.
   user_contracts:
@@ -677,6 +690,20 @@ deps:
       - contracts
       - storage
     anyVendorDeps: true
+
+  session_lifecycle_contracts:
+    mayDependOn:
+      - contracts
+      - session_lifecycle_contracts
+    anyVendorDeps: true
+
+  session_presentation_contracts:
+    mayDependOn:
+      - contracts
+      - neutral_registry
+      - session_lifecycle_contracts
+      - session_presentation_contracts
+    anyVendorDeps: false
     deepScan: false
 
   session_memory_core:
@@ -745,6 +772,7 @@ deps:
       - foundation
       - contracts
       - neutral_registry
+      - session_lifecycle_contracts
     # Neutral contracts expose error and context helpers taking standard
     # interfaces (such as error or OutcomeSink); deep-scan would invert callers'
     # argument injection into an upward dependency on callers. Direct import
@@ -1107,6 +1135,7 @@ deps:
       - auth_payload
       - foundation
       - contracts
+      - session_lifecycle_contracts
       - user_contracts
       - user_application
       - neutral_registry
@@ -1263,6 +1292,8 @@ deps:
       - memory_policy
       - foundation
       - contracts
+      - session_lifecycle_contracts
+      - session_presentation_contracts
       - user_contracts
       - neutral_registry
       - application
@@ -1285,6 +1316,7 @@ deps:
       - memory_policy
       - auth_payload
       - contracts
+      - session_lifecycle_contracts
       - user_contracts
       - user_application
       - neutral_registry
@@ -1357,6 +1389,8 @@ deps:
       - auth_payload
       - foundation
       - contracts
+      - session_lifecycle_contracts
+      - session_presentation_contracts
       - neutral_registry
       - infrastructure
       - telegram_transport
@@ -1367,6 +1401,7 @@ deps:
       - http_composition
       - foundation
       - contracts
+      - session_presentation_contracts
       - neutral_registry
       - application
       - delivery
@@ -1381,6 +1416,8 @@ deps:
       - chat_archive_contracts
       - foundation
       - contracts
+      - session_lifecycle_contracts
+      - session_presentation_contracts
       - neutral_registry
       - zulip_transport
     anyVendorDeps: true
@@ -1391,6 +1428,7 @@ deps:
       - user_contracts
       - foundation
       - contracts
+      - session_presentation_contracts
       - neutral_registry
       - application
       - delivery
@@ -1406,6 +1444,8 @@ deps:
       - user_contracts
       - foundation
       - contracts
+      - session_lifecycle_contracts
+      - session_presentation_contracts
       - neutral_registry
       - slackagent_transport
     anyVendorDeps: true
@@ -1415,6 +1455,7 @@ deps:
       - http_composition
       - user_contracts
       - contracts
+      - session_presentation_contracts
       - neutral_registry
       - application
       - delivery
@@ -1429,6 +1470,8 @@ deps:
       - auth_payload
       - foundation
       - contracts
+      - session_lifecycle_contracts
+      - session_presentation_contracts
       - neutral_registry
       - mattermost_transport
     anyVendorDeps: true
@@ -1439,6 +1482,7 @@ deps:
       - user_contracts
       - foundation
       - contracts
+      - session_presentation_contracts
       - neutral_registry
       - application
       - delivery

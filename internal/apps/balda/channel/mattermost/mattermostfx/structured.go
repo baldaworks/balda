@@ -12,6 +12,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/permissioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/permissionfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/questionfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/statusfmt"
 )
 
@@ -125,6 +126,37 @@ func NewStatusStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
 			return err
 		}
 		return deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportMattermost, statusfmt.LegacyResponseDescriptor, mattermostLegacyStatusRenderer{})
+	}
+}
+
+type mattermostSessionNoticeRenderer struct{}
+type mattermostSessionWarningRenderer struct{}
+
+func (mattermostSessionNoticeRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[sessionfmt.Notice]) (deliveryfmt.StructuredPresentation, error) {
+	text, err := presentation.RenderSessionNotice(env.Body)
+	return deliveryfmt.StructuredPresentation{Text: text, DeliveryFormat: deliveryfmt.DeliveryFormatMarkdown}, err
+}
+
+func (mattermostSessionWarningRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[sessionfmt.Warning]) (deliveryfmt.StructuredPresentation, error) {
+	text, err := presentation.RenderSessionWarning(env.Body)
+	return deliveryfmt.StructuredPresentation{Text: text, DeliveryFormat: deliveryfmt.DeliveryFormatMarkdown}, err
+}
+
+// NewSessionStructuredRegistrar registers Mattermost session lifecycle presentation.
+func NewSessionStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
+	return func(registry *deliveryfmt.StructuredRegistry) error {
+		if err := deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportMattermost, sessionfmt.NoticeDescriptor, mattermostSessionNoticeRenderer{}); err != nil {
+			return err
+		}
+		return deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportMattermost, sessionfmt.WarningDescriptor, mattermostSessionWarningRenderer{})
+	}
+}
+
+// NewSessionStructuredRequirements requires both lifecycle renderers at composition.
+func NewSessionStructuredRequirements() []deliveryfx.StructuredRegistryRequirement {
+	return []deliveryfx.StructuredRegistryRequirement{
+		{Transport: deliveryfmt.TransportMattermost, MessageType: sessionfmt.NoticeDescriptor.Type},
+		{Transport: deliveryfmt.TransportMattermost, MessageType: sessionfmt.WarningDescriptor.Type},
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/agentcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/sessioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
@@ -66,15 +67,10 @@ func (f AuthorizerFunc) Authorize(ctx context.Context, inbound InboundContext) (
 // durable acceptance. Locator ownership remains with the normalized inbound.
 type SessionPreparation struct {
 	ArchiveID string
-	// Activated indicates that preparation found no active in-memory session.
-	Activated       bool
-	SessionID       string
-	SessionLabel    string
-	StartupNotice   string
-	AgentType       string
-	Model           string
-	ReasoningEffort string
-	MCPServers      []string
+	// Activation is the authoritative immutable lifecycle outcome for this
+	// admission. Nil means the active lifetime was reused.
+	Activation *sessioncmd.Activation
+	SessionID  string
 
 	Ready             bool
 	Reason            string
@@ -95,6 +91,12 @@ type SkillPinner interface {
 // exposing a concrete session implementation to conversational ingress.
 type SessionPreparer interface {
 	Prepare(ctx context.Context, inbound InboundContext) (SessionPreparation, error)
+}
+
+// ActivationAcknowledger clears one pending lifecycle outcome only after its
+// turn has been durably admitted.
+type ActivationAcknowledger interface {
+	AcknowledgeActivation(sessionID string, activation sessioncmd.Activation) bool
 }
 
 // SessionPreparerFunc adapts a consumer-owned session preparation function to SessionPreparer.
@@ -139,12 +141,13 @@ type InputRecorder interface {
 }
 
 type Service struct {
-	archive    InputRecorder
-	authorizer Authorizer
-	sessions   SessionPreparer
-	dispatcher Dispatcher
-	logger     zerolog.Logger
-	skills     SkillPinner
+	archive     InputRecorder
+	authorizer  Authorizer
+	sessions    SessionPreparer
+	activations ActivationAcknowledger
+	dispatcher  Dispatcher
+	logger      zerolog.Logger
+	skills      SkillPinner
 }
 
 // New constructs a provider-neutral conversational ingress service.
@@ -174,7 +177,9 @@ func NewWithLoggerAndSkillPinner(
 	if dispatcher == nil {
 		return nil, fmt.Errorf("conversational ingress dispatcher is required")
 	}
-	return &Service{authorizer: authorizer, sessions: sessions, dispatcher: dispatcher, logger: logger, skills: skills}, nil
+	service := &Service{authorizer: authorizer, sessions: sessions, dispatcher: dispatcher, logger: logger, skills: skills}
+	service.activations, _ = sessions.(ActivationAcknowledger)
+	return service, nil
 }
 
 // Process performs at most one durable SessionActor publish attempt.
@@ -219,6 +224,21 @@ func (s *Service) Process(ctx context.Context, inbound turncmd.NormalizedInbound
 	if preparation.SessionID != "" {
 		payload.Locator.SessionID = preparation.SessionID
 	}
+	payload.Activation = preparation.Activation.Clone()
+	if payload.Activation != nil {
+		preparedSessionID := strings.TrimSpace(preparation.SessionID)
+		if validationErr := payload.Activation.Validate(); validationErr != nil || preparedSessionID == "" ||
+			payload.Activation.SessionID != preparedSessionID || payload.Activation.SessionID != strings.TrimSpace(payload.Locator.SessionID) {
+			err = actorlayer.PolicyError(fmt.Errorf("prepared session activation does not match session locator"))
+			settled, resultErr := errorResult(result, ReasonSessionRejected, err)
+			return s.finish(logContext, settled, ReasonSessionRejected, resultErr)
+		}
+	}
+	if payload.Activation != nil && s.activations == nil {
+		err = actorlayer.TransientError(fmt.Errorf("session activation acknowledger is unavailable"))
+		settled, resultErr := errorResult(result, ReasonSessionRejected, err)
+		return s.finish(logContext, settled, ReasonSessionRejected, resultErr)
+	}
 	payload.UserID = firstNonEmpty(preparation.UserID, payload.UserID)
 	payload.RequesterUserID = firstNonEmpty(preparation.RequesterUserID, inbound.UserID)
 	payload.AgentSessionID = strings.TrimSpace(preparation.AgentSessionID)
@@ -260,6 +280,11 @@ func (s *Service) Process(ctx context.Context, inbound turncmd.NormalizedInbound
 	if receipt == nil {
 		err = actorlayer.TransientError(fmt.Errorf("session dispatch returned no receipt"))
 		return s.finish(logContext, retryResult(result, ReasonDispatchFailed), ReasonDispatchFailed, err)
+	}
+	if payload.Activation != nil && !s.activations.AcknowledgeActivation(payload.Activation.SessionID, *payload.Activation) {
+		s.logger.Warn().
+			Str("session_id", payload.Activation.SessionID).
+			Msg("session activation acknowledgment no longer matched pending outcome")
 	}
 
 	result.Receipt = receipt

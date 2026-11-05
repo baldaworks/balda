@@ -15,12 +15,16 @@ func withTestRuntime(ts *TopicSession, service adksession.Service, sess adksessi
 	return ts
 }
 
-func testRuntimeService(ts *TopicSession) adksession.Service {
+type testRuntimeValueProvider interface {
+	runtimeValue() (runtimeSlotValue, bool)
+}
+
+func testRuntimeService(ts testRuntimeValueProvider) adksession.Service {
 	value, _ := ts.runtimeValue()
 	return value.runtime.SessionSvc
 }
 
-func testRuntimeSession(ts *TopicSession) adksession.Session {
+func testRuntimeSession(ts testRuntimeValueProvider) adksession.Session {
 	value, _ := ts.runtimeValue()
 	return value.session
 }

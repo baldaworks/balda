@@ -88,6 +88,14 @@ var Module = fx.Module(
 			fx.ResultTags(`group:"balda_delivery_structured_registrar"`),
 		),
 		fx.Annotate(
+			NewSessionStructuredRegistrar,
+			fx.ResultTags(`group:"balda_delivery_structured_registrar"`),
+		),
+		fx.Annotate(
+			NewSessionStructuredRequirements,
+			fx.ResultTags(`group:"balda_delivery_structured_requirement,flatten"`),
+		),
+		fx.Annotate(
 			NewGoalProgressStructuredRegistrar,
 			fx.ResultTags(`group:"balda_delivery_structured_registrar"`),
 		),

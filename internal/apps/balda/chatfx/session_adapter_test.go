@@ -2,6 +2,7 @@ package chatfx
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/baldaworks/balda/internal/apps/balda/chatapp"
@@ -41,20 +42,44 @@ func TestConversationalPreparationPortsUseSavedSessionIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !first.Activated || first.SessionLabel != "auto" || first.SessionID != "saved-id" {
+	if first.Activation == nil || first.SessionID != "saved-id" {
 		t.Fatalf("initial preparation = %+v", first)
 	}
-	prepared, err := NewIngressSessionAdapter(manager).Prepare(t.Context(), ingressapp.InboundContext{
+	if first.Activation == nil || first.Activation.Kind != "created" || first.Activation.SessionID != first.SessionID {
+		t.Fatalf("initial activation = %+v", first.Activation)
+	}
+	ingressAdapter := NewIngressSessionAdapter(manager)
+	prepared, err := ingressAdapter.Prepare(t.Context(), ingressapp.InboundContext{
 		ChannelType: "telegram", AddressKey: "9001:0", AddressJSON: `{"chat_id":9001,"topic_id":0}`, SessionID: "changed-inbound-id", UserID: "requester", Direct: true,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !prepared.Ready || prepared.SessionID != first.SessionID || prepared.UserID != "saved-user" || prepared.RequesterUserID != "requester" || prepared.SessionLabel != "auto" {
+	if !prepared.Ready || prepared.SessionID != first.SessionID || prepared.UserID != "saved-user" || prepared.RequesterUserID != "requester" {
 		t.Fatalf("saved preparation = %+v", prepared)
 	}
-	if prepared.AgentSessionID != first.AgentSessionID || prepared.RuntimeSnapshotID != first.RuntimeSnapshotID || prepared.Model != first.Model {
+	if prepared.AgentSessionID != first.AgentSessionID || prepared.RuntimeSnapshotID != first.RuntimeSnapshotID {
 		t.Fatalf("shared preparation identity changed: first=%+v, second=%+v", first, prepared)
+	}
+	if prepared.Activation == nil || !reflect.DeepEqual(prepared.Activation, first.Activation) || prepared.Activation == first.Activation {
+		t.Fatalf("retry activation = %+v, first = %+v", prepared.Activation, first.Activation)
+	}
+	prepared.Activation.Runtime.MCPServers = append(prepared.Activation.Runtime.MCPServers, "mutated")
+	if len(first.Activation.Runtime.MCPServers) == len(prepared.Activation.Runtime.MCPServers) {
+		t.Fatalf("activation snapshots alias MCP slices: first=%+v second=%+v", first.Activation, prepared.Activation)
+	}
+	acknowledger, ok := ingressAdapter.(ingressapp.ActivationAcknowledger)
+	if !ok || !acknowledger.AcknowledgeActivation(first.SessionID, *first.Activation) {
+		t.Fatal("expected ingress adapter to acknowledge pending activation")
+	}
+	reused, err := ingressAdapter.Prepare(t.Context(), ingressapp.InboundContext{
+		ChannelType: "telegram", AddressKey: "9001:0", AddressJSON: `{"chat_id":9001,"topic_id":0}`, SessionID: "saved-id", UserID: "requester", Direct: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reused.Activation != nil {
+		t.Fatalf("active reuse carried lifecycle outcome: %+v", reused)
 	}
 }
 
@@ -66,15 +91,15 @@ func TestIngressPreparationMainDMLabelIsCompositionDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if prepared.SessionLabel != "balda" {
-		t.Fatalf("main DM label = %q", prepared.SessionLabel)
-	}
 	topic, err := manager.GetSession(baldasession.SessionLocator{SessionID: prepared.SessionID})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := topic.GetKind(); got != baldasession.KindDM {
 		t.Fatalf("session kind = %q, want %q", got, baldasession.KindDM)
+	}
+	if got := topic.GetAgentName(); got != "balda" {
+		t.Fatalf("main DM label = %q, want balda", got)
 	}
 }
 

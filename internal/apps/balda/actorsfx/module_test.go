@@ -9,6 +9,7 @@ import (
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	"github.com/baldaworks/balda/internal/apps/balda/controlapp"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryworkflow"
 	"github.com/baldaworks/balda/internal/apps/balda/jobexec"
 	baldajobs "github.com/baldaworks/balda/internal/apps/balda/jobs"
@@ -60,6 +61,10 @@ func TestActorsfxModule_ProvidesAllProductActors(t *testing.T) {
 	app := fx.New(
 		fx.Provide(
 			zerolog.Nop,
+			fx.Annotate(
+				deliveryfmt.NewStructuredRegistry,
+				fx.As(new(deliveryfmt.StructuredMessageRegistry)),
+			),
 			func() *controlapp.Service {
 				return controlapp.New(nil, nil, nil, nil, nil, zerolog.Nop())
 			},

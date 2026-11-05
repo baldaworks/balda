@@ -9,6 +9,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/sessioncmd"
 	"github.com/baldaworks/go-actorlayer"
 )
 
@@ -37,6 +38,58 @@ func TestSessionTurnEnvelopeCarriesGeneratedDedupeKeyInPayload(t *testing.T) {
 	}
 	if payload.DedupeKey != env.DedupeKey {
 		t.Fatalf("payload dedupe key = %q, want %q", payload.DedupeKey, env.DedupeKey)
+	}
+}
+
+func TestSessionTurnEnvelopeCarriesImmutableActivation(t *testing.T) {
+	t.Parallel()
+
+	activation := &sessioncmd.Activation{
+		Kind: sessioncmd.ActivationCreated, SessionID: "tg-1-0",
+		Runtime:  sessioncmd.RuntimeSummary{PublicRuntimeMetadata: sessioncmd.PublicRuntimeMetadata{MCPServers: []string{"balda"}}},
+		Warnings: []sessioncmd.WarningCode{sessioncmd.WarningWorkspaceSyncSkipped},
+	}
+	env, err := SessionTurnEnvelope(SessionTurnPayload{
+		Locator: deliverycmd.Locator{SessionID: "tg-1-0"}, Activation: activation,
+	})
+	if err != nil {
+		t.Fatalf("SessionTurnEnvelope() error = %v", err)
+	}
+	activation.Runtime.MCPServers[0] = "mutated"
+	activation.Warnings[0] = sessioncmd.WarningCode("mutated")
+	var payload SessionTurnPayload
+	if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Activation == nil || payload.Activation.SessionID != "tg-1-0" || payload.Activation.Runtime.MCPServers[0] != "balda" || payload.Activation.Warnings[0] != sessioncmd.WarningWorkspaceSyncSkipped {
+		t.Fatalf("durable activation = %+v", payload.Activation)
+	}
+}
+
+func TestSessionTurnActivationValidationAndBackwardCompatibility(t *testing.T) {
+	t.Parallel()
+
+	legacy, err := json.Marshal(SessionTurnPayload{Locator: deliverycmd.Locator{SessionID: "tg-1-0"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(legacy, []byte(`"activation"`)) {
+		t.Fatalf("nil activation must be omitted: %s", legacy)
+	}
+	var decoded SessionTurnPayload
+	if err := json.Unmarshal([]byte(`{"text":"legacy","locator":{"session_id":"tg-1-0"}}`), &decoded); err != nil || decoded.Activation != nil {
+		t.Fatalf("legacy payload decode = %+v, %v", decoded, err)
+	}
+
+	valid := &sessioncmd.Activation{Kind: sessioncmd.ActivationCreated, SessionID: "other"}
+	if _, err := SessionTurnEnvelope(SessionTurnPayload{Locator: deliverycmd.Locator{SessionID: "tg-1-0"}, Activation: valid}); err == nil {
+		t.Fatal("expected activation/session mismatch rejection")
+	}
+	invalid := valid.Clone()
+	invalid.SessionID = "tg-1-0"
+	invalid.Kind = "unknown"
+	if _, err := SessionTurnEnvelope(SessionTurnPayload{Locator: deliverycmd.Locator{SessionID: "tg-1-0"}, Activation: invalid}); err == nil {
+		t.Fatal("expected invalid activation rejection")
 	}
 }
 

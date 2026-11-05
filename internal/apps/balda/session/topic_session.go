@@ -3,9 +3,11 @@ package session
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"sync"
 
+	"github.com/baldaworks/balda/internal/apps/balda/sessioncmd"
 	"google.golang.org/adk/v2/runner"
 	"google.golang.org/adk/v2/session"
 )
@@ -24,11 +26,43 @@ type TopicSession struct {
 	workspaceDir      string
 	branchName        string
 	startupNotice     string
+	pendingActivation *sessioncmd.Activation
 	pendingBoundaries map[BoundaryReason]boundaryAttempt
 	runtimeDeleted    bool
 	runtimeClosed     bool
 	hooksStarted      bool
 	hooksEnded        bool
+}
+
+func (s *TopicSession) pendingActivationSnapshot() *sessioncmd.Activation {
+	if s == nil {
+		return nil
+	}
+	s.runtimeMu.RLock()
+	defer s.runtimeMu.RUnlock()
+	return s.pendingActivation.Clone()
+}
+
+func (s *TopicSession) setPendingActivation(activation *sessioncmd.Activation) {
+	if s == nil {
+		return
+	}
+	s.runtimeMu.Lock()
+	s.pendingActivation = activation.Clone()
+	s.runtimeMu.Unlock()
+}
+
+func (s *TopicSession) acknowledgeActivation(admitted sessioncmd.Activation) bool {
+	if s == nil {
+		return false
+	}
+	s.runtimeMu.Lock()
+	defer s.runtimeMu.Unlock()
+	if s.pendingActivation == nil || !reflect.DeepEqual(*s.pendingActivation, admitted) {
+		return false
+	}
+	s.pendingActivation = nil
+	return true
 }
 
 type boundaryAttempt struct {

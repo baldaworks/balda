@@ -69,15 +69,16 @@ func (a SessionAgentBuilderAdapter) CreateFreshRuntimeSession(
 
 func agentRuntime(runtime *baldasession.BuiltRuntime) *baldaagent.BuiltRuntime {
 	return &baldaagent.BuiltRuntime{
-		Agent:               runtime.Agent,
-		SessionControl:      runtime.SessionControl,
-		Runner:              runtime.Runner,
-		SessionSvc:          runtime.SessionSvc,
-		AppName:             runtime.AppName,
-		RuntimeSnapshotID:   runtime.RuntimeSnapshotID,
-		ProviderBindingJSON: runtime.ProviderBindingJSON,
-		RecipeModel:         runtime.RecipeModel,
-		ConfirmedModel:      runtime.ConfirmedModel,
+		Agent:                 runtime.Agent,
+		SessionControl:        runtime.SessionControl,
+		Runner:                runtime.Runner,
+		SessionSvc:            runtime.SessionSvc,
+		AppName:               runtime.AppName,
+		RuntimeSnapshotID:     runtime.RuntimeSnapshotID,
+		ProviderBindingJSON:   runtime.ProviderBindingJSON,
+		RecipeModel:           runtime.RecipeModel,
+		ConfirmedModel:        runtime.ConfirmedModel,
+		PublicRuntimeMetadata: runtime.PublicRuntimeMetadata.Clone(),
 	}
 }
 
@@ -237,20 +238,21 @@ func sessionRuntime(runtime *baldaagent.BuiltRuntime) *baldasession.BuiltRuntime
 		return nil
 	}
 	adapted := &baldasession.BuiltRuntime{
-		Agent:               runtime.Agent,
-		SessionControl:      runtime.SessionControl,
-		Runner:              runtime.Runner,
-		SessionSvc:          runtime.SessionSvc,
-		AppName:             runtime.AppName,
-		RuntimeSnapshotID:   runtime.RuntimeSnapshotID,
-		ProviderBindingJSON: runtime.ProviderBindingJSON,
-		RecipeModel:         runtime.RecipeModel,
-		ConfirmedModel:      runtime.ConfirmedModel,
-		ProviderID:          runtime.ProviderID,
-		RuntimeBaseToken:    runtime.RuntimeBaseToken,
-		PromoteBase:         runtime.PromoteReplacementBase,
-		CompleteBase:        runtime.CompleteReplacementBase,
-		Close:               runtime.Close,
+		Agent:                 runtime.Agent,
+		SessionControl:        runtime.SessionControl,
+		Runner:                runtime.Runner,
+		SessionSvc:            runtime.SessionSvc,
+		AppName:               runtime.AppName,
+		RuntimeSnapshotID:     runtime.RuntimeSnapshotID,
+		ProviderBindingJSON:   runtime.ProviderBindingJSON,
+		RecipeModel:           runtime.RecipeModel,
+		ConfirmedModel:        runtime.ConfirmedModel,
+		ProviderID:            runtime.ProviderID,
+		PublicRuntimeMetadata: runtime.PublicRuntimeMetadata.Clone(),
+		RuntimeBaseToken:      runtime.RuntimeBaseToken,
+		PromoteBase:           runtime.PromoteReplacementBase,
+		CompleteBase:          runtime.CompleteReplacementBase,
+		Close:                 runtime.Close,
 	}
 	adapted.ModelController = modelControllerAdapter{runtime: runtime}
 	return adapted

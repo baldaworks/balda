@@ -6,6 +6,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/sessioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
@@ -61,15 +62,10 @@ func (f AuthorizerFunc) Authorize(ctx context.Context, inbound InboundContext) (
 // durable acceptance.
 type SessionPreparation struct {
 	ArchiveID string
-	// Activated indicates that preparation found no active in-memory session.
-	Activated       bool
-	SessionID       string
-	SessionLabel    string
-	StartupNotice   string
-	AgentType       string
-	Model           string
-	ReasoningEffort string
-	MCPServers      []string
+	// Activation is the authoritative immutable lifecycle outcome for this
+	// admission. Nil means the active lifetime was reused.
+	Activation *sessioncmd.Activation
+	SessionID  string
 
 	Ready             bool
 	Reason            string
@@ -90,6 +86,12 @@ type SkillPinner interface {
 // exposing a concrete session implementation to conversational ingress.
 type SessionPreparer interface {
 	Prepare(ctx context.Context, inbound InboundContext) (SessionPreparation, error)
+}
+
+// ActivationAcknowledger clears one pending lifecycle outcome only after its
+// turn has been durably admitted.
+type ActivationAcknowledger interface {
+	AcknowledgeActivation(sessionID string, activation sessioncmd.Activation) bool
 }
 
 // SessionPreparerFunc adapts a function to SessionPreparer.

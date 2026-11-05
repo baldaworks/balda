@@ -11,6 +11,7 @@ import (
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	"github.com/baldaworks/balda/internal/apps/balda/automodecmd"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
@@ -18,6 +19,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
+	"github.com/rs/zerolog"
 )
 
 const (
@@ -53,9 +55,11 @@ type SessionActorConfig struct {
 	Tasks      SessionJobLifecycle
 	Scheduler  appports.ScheduledJobRecorder
 	Dispatcher actortransport.Dispatcher
+	Registry   deliveryfmt.StructuredMessageRegistry
 	Questions  *questions.Service
 	Sessions   SessionRuntimeStateUpdater
 	Modes      appports.ScheduleModeResolver
+	Logger     zerolog.Logger
 }
 
 type SessionActorExecutor struct {
@@ -64,9 +68,11 @@ type SessionActorExecutor struct {
 	tasks      SessionJobLifecycle
 	scheduler  appports.ScheduledJobRecorder
 	dispatcher actortransport.Dispatcher
+	registry   deliveryfmt.StructuredMessageRegistry
 	questions  *questions.Service
 	sessions   SessionRuntimeStateUpdater
 	modes      appports.ScheduleModeResolver
+	logger     zerolog.Logger
 }
 
 type sessionActorExecutor = SessionActorExecutor
@@ -78,9 +84,11 @@ func NewSessionActor(cfg SessionActorConfig) *SessionActorExecutor {
 		tasks:      cfg.Tasks,
 		scheduler:  cfg.Scheduler,
 		dispatcher: cfg.Dispatcher,
+		registry:   cfg.Registry,
 		questions:  cfg.Questions,
 		sessions:   cfg.Sessions,
 		modes:      cfg.Modes,
+		logger:     cfg.Logger.With().Str("component", "balda.actors.session").Logger(),
 	}
 }
 
@@ -147,6 +155,9 @@ func (e *SessionActorExecutor) enqueueTurn(ctx context.Context, env actorlayer.E
 		return actorlayer.PolicyError(fmt.Errorf("session payload job id is required when envelope job scope is set"))
 	case envelopeJobID != "" && payloadJobID != envelopeJobID:
 		return actorlayer.PolicyError(fmt.Errorf("session job id mismatch: envelope=%q payload=%q", envelopeJobID, payloadJobID))
+	}
+	if err := e.emitActivationMessages(ctx, env, payload.Locator, payload.Activation); err != nil {
+		return err
 	}
 	settlement := newSessionSettlementCoordinator(e.tasks, e.scheduler)
 	if settlement.taskAlreadyDone(ctx, env, payload) {

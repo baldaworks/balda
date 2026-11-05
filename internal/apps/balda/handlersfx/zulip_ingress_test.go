@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/commandfx"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
+	"github.com/baldaworks/balda/internal/apps/balda/ingressapp"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/baldaworks/go-actorlayer"
@@ -359,10 +361,15 @@ func TestZulipInboundHandler_AutoCommand_TogglesState(t *testing.T) {
 
 func TestZulipInboundHandler_ProcessInbound_IgnoresUnauthorized(t *testing.T) {
 	dispatcher := &recordingZulipDispatcher{}
+	prepared := false
 	handler := &zulipInboundHandler{
 		actorDispatcher: dispatcher,
-		logger:          zerolog.Nop(),
-		ownerID:         999, // sender 101 is not owner
+		sessionPreparer: ingressapp.SessionPreparerFunc(func(context.Context, ingressapp.InboundContext) (ingressapp.SessionPreparation, error) {
+			prepared = true
+			return ingressapp.SessionPreparation{}, errors.New("unauthorized inbound reached session preparation")
+		}),
+		logger:  zerolog.Nop(),
+		ownerID: 999, // sender 101 is not owner
 	}
 
 	settlement, err := handler.ProcessInbound(context.Background(), zulip.InboundMessage{
@@ -381,5 +388,8 @@ func TestZulipInboundHandler_ProcessInbound_IgnoresUnauthorized(t *testing.T) {
 	}
 	if len(dispatcher.commands) != 0 {
 		t.Fatalf("commands dispatched = %d, want 0", len(dispatcher.commands))
+	}
+	if prepared {
+		t.Fatal("unauthorized inbound reached session preparation")
 	}
 }

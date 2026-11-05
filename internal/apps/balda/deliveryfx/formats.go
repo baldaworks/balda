@@ -8,6 +8,13 @@ import (
 
 type StructuredRegistryRegistrar func(*deliveryfmt.StructuredRegistry) error
 
+// StructuredRegistryRequirement declares one renderer that must exist before
+// the application can expose ingress readiness.
+type StructuredRegistryRequirement struct {
+	Transport   string
+	MessageType deliveryfmt.MessageType
+}
+
 type PromptRegistryContribution struct {
 	Formats    []deliveryfmt.Format
 	Formatters []deliveryfmt.FormatterRegistration
@@ -22,7 +29,8 @@ type ChannelAdapterBinding struct {
 type structuredRegistryParams struct {
 	fx.In
 
-	Registrars []StructuredRegistryRegistrar `group:"balda_delivery_structured_registrar"`
+	Registrars   []StructuredRegistryRegistrar   `group:"balda_delivery_structured_registrar"`
+	Requirements []StructuredRegistryRequirement `group:"balda_delivery_structured_requirement"`
 }
 
 type promptRegistryParams struct {
@@ -78,6 +86,11 @@ func newStructuredMessageRegistry(params structuredRegistryParams) (*deliveryfmt
 	reg := deliveryfmt.NewStructuredRegistry()
 	for _, register := range params.Registrars {
 		if err := register(reg); err != nil {
+			return nil, err
+		}
+	}
+	for _, requirement := range params.Requirements {
+		if err := deliveryfmt.RequireStructuredRenderer(reg, requirement.Transport, requirement.MessageType); err != nil {
 			return nil, err
 		}
 	}

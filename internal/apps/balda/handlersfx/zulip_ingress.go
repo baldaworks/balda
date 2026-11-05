@@ -284,7 +284,7 @@ func (h *zulipInboundHandler) ProcessInbound(ctx context.Context, msg zulip.Inbo
 	inbound := zulip.NormalizeInboundMessage(msg, reqAt)
 	service, err := ingressapp.NewWithLogger(
 		ingressapp.AuthorizerFunc(h.authorizeZulipInbound),
-		ingressapp.SessionPreparerFunc(h.prepareZulipSession),
+		h.sessionPreparer,
 		h.actorDispatcher,
 		h.logger,
 	)
@@ -398,7 +398,7 @@ func (h *zulipInboundHandler) handleStartOwnerCommand(ctx context.Context, locat
 	}
 	successMsg := "You are now registered as the bot owner."
 	if ts.Ready {
-		welcomeMsg := sessionPreparationWelcome(ts, true)
+		welcomeMsg := buildZulipTopicWelcome(h.sessionManager, h.sessionManager.BaldaProviderID(), "balda", ts.SessionID)
 		successMsg = fmt.Sprintf("%s\n\n%s", successMsg, welcomeMsg)
 	}
 	if bundle, ok := ownerBindTokenBundleMessage(ctx, h.channelAuth, fmt.Sprintf("%d", senderID)); ok {
@@ -680,14 +680,25 @@ func (h *zulipInboundHandler) bootstrapOwnerSession(ctx context.Context, ownerID
 }
 
 func (h *zulipInboundHandler) ensureSession(ctx context.Context, locator deliverycmd.Locator, transportUserID string, isDM bool) (ingressapp.SessionPreparation, bool, error) {
-	if h.sessionPreparer == nil {
-		return ingressapp.SessionPreparation{}, false, fmt.Errorf("session preparer is unavailable")
+	if h.sessionManager == nil {
+		return ingressapp.SessionPreparation{}, false, actorlayer.TransientError(fmt.Errorf("session manager is unavailable"))
 	}
-	prep, err := h.sessionPreparer.Prepare(ctx, ingressapp.InboundContext{
-		SessionID: locator.SessionID, ChannelType: locator.ChannelType, AddressKey: locator.AddressKey,
-		AddressJSON: locator.AddressJSON, UserID: transportUserID, Direct: isDM,
-	})
-	return prep, prep.Activated, err
+	existing, _ := h.sessionManager.GetSession(locator)
+	topic, err := h.sessionManager.EnsureSession(ctx, baldasession.SessionContext{
+		Locator: locator, UserID: transportUserID, Kind: baldasession.KindForConversation(isDM),
+	}, ownerSessionLabel)
+	if err != nil {
+		return ingressapp.SessionPreparation{}, false, err
+	}
+	return ingressapp.SessionPreparation{
+		ArchiveID:         topic.GetArchiveID(),
+		Ready:             true,
+		SessionID:         topic.GetSessionID(),
+		UserID:            topic.GetUserID(),
+		AgentSessionID:    topic.GetAgentSessionID(),
+		WorkspaceDir:      topic.GetWorkspaceDir(),
+		RuntimeSnapshotID: topic.GetRuntimeSnapshotID(),
+	}, existing == nil, nil
 }
 
 func (h *zulipInboundHandler) sendPlain(ctx context.Context, locator deliverycmd.Locator, text string) error {
@@ -886,18 +897,18 @@ func parseZulipStartArgs(args string) (zulipStartArgs, bool) {
 	}
 }
 
+func startWelcomeMessage() string {
+	return "Welcome to Balda Bot!\n\nTo authenticate:\n" +
+		"• /start owner=<your_owner_token>\n" +
+		"• /start invite=<your_invite_token>"
+}
+
 func buildZulipTopicWelcome(manager *baldasession.Manager, providerName string, topicName string, sessionID string) string {
 	if manager == nil {
 		return ""
 	}
 	metadata := manager.GetAgentMetadata(providerName)
 	return welcome.BuildAgentWelcomeMessage(topicName, sessionID, metadata.Type, metadata.Model, metadata.ReasoningEffort, metadata.MCPServers)
-}
-
-func startWelcomeMessage() string {
-	return "Welcome to Balda Bot!\n\nTo authenticate:\n" +
-		"• /start owner=<your_owner_token>\n" +
-		"• /start invite=<your_invite_token>"
 }
 
 func startInvalidFormatMessage() string {
@@ -981,15 +992,6 @@ func normalizeGoalMaxIterations(v int) int {
 	return v
 }
 
-func inboundLocator(inbound ingressapp.InboundContext) deliverycmd.Locator {
-	return deliverycmd.Locator{
-		ChannelType: inbound.ChannelType,
-		AddressKey:  inbound.AddressKey,
-		AddressJSON: inbound.AddressJSON,
-		SessionID:   inbound.SessionID,
-	}
-}
-
 func newZulipStreamLocator(streamID int, topic string) deliverycmd.Locator {
 	return zulip.NewStreamLocator(streamID, topic)
 }
@@ -1000,18 +1002,6 @@ func newZulipDMLocator(userID int) deliverycmd.Locator {
 
 func SendPlain(ctx context.Context, dispatcher actortransport.Dispatcher, from actorlayer.ActorAddress, locator deliverycmd.Locator, text string) error {
 	env, err := deliverycmd.PlainEnvelopeWithSettlement("", from, locator, deliverycmd.SettlementBypass, text, "")
-	if err != nil {
-		return err
-	}
-	if dispatcher == nil {
-		return fmt.Errorf("runtime is unavailable")
-	}
-	_, err = dispatcher.Dispatch(ctx, env)
-	return err
-}
-
-func SendMarkdown(ctx context.Context, dispatcher actortransport.Dispatcher, from actorlayer.ActorAddress, locator deliverycmd.Locator, text string) error {
-	env, err := deliverycmd.MarkdownEnvelopeWithSettlement("", from, locator, deliverycmd.SettlementBypass, text, "")
 	if err != nil {
 		return err
 	}

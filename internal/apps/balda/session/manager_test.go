@@ -732,14 +732,9 @@ func TestShutdownBoundaryIsPublishedOnceAcrossLifecycleAndManagerStop(t *testing
 
 func TestGetAgentMetadata_MergesUniqueMCPServers(t *testing.T) {
 	m := &Manager{
-		agentBuilder: &fakeAgentBuilder{
-			agentMetadata: AgentMetadata{
-				MCPServers: []string{"balda", "shared"},
-			},
-		},
+		agentBuilder:      &fakeAgentBuilder{agentMetadata: AgentMetadata{MCPServers: []string{"balda", "shared"}}},
 		baldaMCPServerIDs: []string{" custom.one ", "shared", "", "custom.two"},
 	}
-
 	got := m.GetAgentMetadata("ignored").MCPServers
 	want := []string{"balda", "shared", "custom.one", "custom.two"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
@@ -748,20 +743,9 @@ func TestGetAgentMetadata_MergesUniqueMCPServers(t *testing.T) {
 }
 
 func TestGetAgentMetadata_PreservesReasoningEffort(t *testing.T) {
-	m := &Manager{
-		agentBuilder: &fakeAgentBuilder{
-			agentMetadata: AgentMetadata{
-				Type:            "codex_acp",
-				Model:           "gpt-5",
-				ReasoningEffort: "high",
-				MCPServers:      []string{"balda"},
-			},
-		},
-	}
-
-	got := m.GetAgentMetadata("ignored")
-	if got.ReasoningEffort != "high" {
-		t.Fatalf("GetAgentMetadata().ReasoningEffort = %q, want high", got.ReasoningEffort)
+	m := &Manager{agentBuilder: &fakeAgentBuilder{agentMetadata: AgentMetadata{ReasoningEffort: "high"}}}
+	if got := m.GetAgentMetadata("ignored").ReasoningEffort; got != "high" {
+		t.Fatalf("GetAgentMetadata().ReasoningEffort = %q, want high", got)
 	}
 }
 
@@ -940,6 +924,11 @@ type fakeAgentBuilder struct {
 	beforeFreshRuntimeSession         func()
 }
 
+func (f *fakeAgentBuilder) GetAgentMetadata(agentName string) AgentMetadata {
+	f.metadataAgentNames = append(f.metadataAgentNames, agentName)
+	return f.agentMetadata
+}
+
 func (f *fakeAgentBuilder) CreateRuntimeSession(
 	ctx context.Context,
 	runtime *BuiltRuntime,
@@ -997,16 +986,13 @@ func (f *fakeAgentBuilder) recordRuntimeSession(
 	return f.runtimeSession, nil
 }
 
-func (f *fakeAgentBuilder) GetAgentMetadata(agentName string) AgentMetadata {
-	f.metadataAgentNames = append(f.metadataAgentNames, agentName)
-	return f.agentMetadata
-}
-
 type sqliteAgentBuilder struct {
 	legacyCalls int
 	freshCalls  int
 	metadata    AgentMetadata
 }
+
+func (b *sqliteAgentBuilder) GetAgentMetadata(string) AgentMetadata { return b.metadata }
 
 func (b *sqliteAgentBuilder) CreateRuntimeSession(
 	ctx context.Context,
@@ -1051,8 +1037,6 @@ func (b *sqliteAgentBuilder) CreateFreshRuntimeSession(
 	b.freshCalls++
 	return createSQLiteTestSession(ctx, runtime, userID, sessionID)
 }
-
-func (b *sqliteAgentBuilder) GetAgentMetadata(string) AgentMetadata { return b.metadata }
 
 func createSQLiteTestSession(ctx context.Context, runtime *BuiltRuntime, userID, sessionID string) (adksession.Session, error) {
 	response, err := runtime.SessionSvc.Create(ctx, &adksession.CreateRequest{
@@ -1497,14 +1481,13 @@ func TestCreateSessionRejectsRuntimeWithoutSnapshot(t *testing.T) {
 
 func TestCreateSessionPublishesCurrentEffectiveModel(t *testing.T) {
 	locator := testTelegramLocator(9, 81)
-	builder := &fakeAgentBuilder{agentMetadata: AgentMetadata{Model: "current-model"}}
 	m := &Manager{
 		baldaProviderName: "balda-provider",
 		runtimeManager: &fakeScopedRuntimeManager{
 			fakeBaldaRuntimeManager: fakeBaldaRuntimeManager{providerID: "balda-provider"},
 			sessionRuntime:          &BuiltRuntime{RuntimeSnapshotID: currentSnapshotID, RecipeModel: "current-model"},
 		},
-		agentBuilder: builder,
+		agentBuilder: &fakeAgentBuilder{},
 		workingDir:   t.TempDir(),
 		logger:       zerolog.Nop(),
 		sessions:     make(map[string]*TopicSession),
@@ -1524,9 +1507,6 @@ func TestCreateSessionPublishesCurrentEffectiveModel(t *testing.T) {
 	defer lease.Release()
 	if lease.EffectiveModel() != "current-model" {
 		t.Fatalf("fresh effective model = %q, want current-model", lease.EffectiveModel())
-	}
-	if len(builder.metadataAgentNames) != 0 {
-		t.Fatalf("post-construction model metadata lookups = %v, want none", builder.metadataAgentNames)
 	}
 }
 
@@ -1550,7 +1530,7 @@ func TestRestoreSessionRequestsPersistedRuntimeSnapshot(t *testing.T) {
 		fakeBaldaRuntimeManager: fakeBaldaRuntimeManager{providerID: "balda-provider"},
 		sessionRuntime:          &BuiltRuntime{RuntimeSnapshotID: "snapshot-persisted", ProviderBindingJSON: record.ProviderBindingJSON},
 	}
-	builder := &fakeAgentBuilder{agentMetadata: AgentMetadata{Model: "current-default-model"}}
+	builder := &fakeAgentBuilder{}
 	m := &Manager{
 		baldaProviderName: "balda-provider",
 		runtimeManager:    runtimeManager,
@@ -1573,9 +1553,6 @@ func TestRestoreSessionRequestsPersistedRuntimeSnapshot(t *testing.T) {
 		t.Fatalf("restored blank effective model = %q, want unknown", lease.EffectiveModel())
 	}
 	lease.Release()
-	if len(builder.metadataAgentNames) != 0 {
-		t.Fatalf("exact restore model metadata lookups = %v, want none", builder.metadataAgentNames)
-	}
 	if len(runtimeManager.sessionRequests) != 1 {
 		t.Fatalf("RuntimeForSession() calls = %d, want 1", len(runtimeManager.sessionRequests))
 	}
@@ -1851,7 +1828,7 @@ func TestRestoreFallbackPreservesRequestedModelPreference(t *testing.T) {
 			return currentRuntime, nil
 		},
 	}
-	builder := &sqliteAgentBuilder{metadata: AgentMetadata{Model: recipeModel}}
+	builder := &sqliteAgentBuilder{}
 	manager := &Manager{
 		baldaProviderName: providerID, runtimeManager: runtimeManager, agentBuilder: builder,
 		workingDir: t.TempDir(), logger: zerolog.Nop(), sessions: make(map[string]*TopicSession),
@@ -1957,7 +1934,7 @@ func TestRestoreFallbackUsesBoundRuntimeRecipeReceipt(t *testing.T) {
 	}
 	manager := &Manager{
 		baldaProviderName: providerID, runtimeManager: runtimeManager,
-		agentBuilder: &sqliteAgentBuilder{metadata: AgentMetadata{Model: displayModel}},
+		agentBuilder: &sqliteAgentBuilder{},
 		workingDir:   t.TempDir(), logger: zerolog.Nop(), sessions: make(map[string]*TopicSession),
 		sessionStore: provider.Sessions(), runtimeOperations: provider.RuntimeOperations(),
 	}
@@ -2703,20 +2680,12 @@ func TestRestoreSession_ForceRemountsCanonicalWorkspaceAfterCollision(t *testing
 }
 
 func TestTakeStartupNotice_ReturnsAndClears(t *testing.T) {
-	m := &Manager{
-		sessions: map[string]*TopicSession{
-			"tg-1-1": {
-				sessionID:     "tg-1-1",
-				startupNotice: "notice text",
-			},
-		},
-	}
-
+	m := &Manager{sessions: map[string]*TopicSession{"tg-1-1": {sessionID: "tg-1-1", startupNotice: "notice text"}}}
 	if got := m.TakeStartupNotice("tg-1-1"); got != "notice text" {
-		t.Fatalf("TakeStartupNotice(first) = %q, want %q", got, "notice text")
+		t.Fatalf("TakeStartupNotice(first) = %q, want notice text", got)
 	}
 	if got := m.TakeStartupNotice("tg-1-1"); got != "" {
-		t.Fatalf("TakeStartupNotice(second) = %q, want empty string", got)
+		t.Fatalf("TakeStartupNotice(second) = %q, want empty", got)
 	}
 }
 

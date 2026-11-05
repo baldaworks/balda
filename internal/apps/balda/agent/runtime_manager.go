@@ -14,6 +14,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/providers"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/sessioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/shutdown"
 	"github.com/baldaworks/runtime/v2/agentconfig"
 	"github.com/baldaworks/runtime/v2/mcpregistry"
@@ -535,6 +536,10 @@ func (m *RuntimeManager) Runtime(ctx context.Context) (*BuiltRuntime, error) {
 			extraMCPServerIDs = pinnedRuntimeMCPServerIDs(extraMCPServerIDs, capabilities.MCPServerIDs)
 		}
 	}
+	publicMetadata, err := exactPublicRuntimeMetadata(builder, providerID, extraMCPServerIDs)
+	if err != nil {
+		return nil, errors.Join(err, closeSessionCapabilities(capabilities))
+	}
 
 	runtime, err := builder.BuildRuntimeWithCapabilities(
 		runtimeLifecycleContext(ctx),
@@ -566,6 +571,7 @@ func (m *RuntimeManager) Runtime(ctx context.Context) (*BuiltRuntime, error) {
 	runtime.RuntimeSnapshotID = string(capabilities.SnapshotID)
 	runtime.ProviderBindingJSON = providerBindingJSON
 	runtime.ProviderID = providerID
+	runtime.PublicRuntimeMetadata = publicMetadata
 
 	m.mu.Lock()
 	if existing := m.runtime; existing != nil {
@@ -769,6 +775,10 @@ func (m *RuntimeManager) runtimeForSession(ctx context.Context, request SessionR
 	}
 	var binding ScopedMCPServer
 	extraMCPServerIDs := pinnedRuntimeMCPServerIDs(hostMCPServerIDs, capabilities.MCPServerIDs)
+	publicMetadata, err := exactPublicRuntimeMetadata(builder, providerID, extraMCPServerIDs)
+	if err != nil {
+		return nil, errors.Join(err, closeSessionCapabilities(capabilities))
+	}
 	if bindingEnabled {
 		var err error
 		binding, err = binder.BindSession(ctx, request)
@@ -865,6 +875,7 @@ func (m *RuntimeManager) runtimeForSession(ctx context.Context, request SessionR
 	runtime.RuntimeSnapshotID = string(capabilities.SnapshotID)
 	runtime.ProviderBindingJSON = providerBindingJSON
 	runtime.ProviderID = providerID
+	runtime.PublicRuntimeMetadata = publicMetadata
 	if !publish {
 		return runtime, nil
 	}
@@ -1094,6 +1105,23 @@ func closeSessionCapabilities(capabilities SessionCapabilityBinding) error {
 
 func pinnedRuntimeMCPServerIDs(hostConfigured, snapshotPinned []string) []string {
 	return mergeMCPServerIDsWithBase(hostConfigured, nil, snapshotPinned)
+}
+
+func exactPublicRuntimeMetadata(builder *Builder, providerID string, extraMCPServerIDs []string) (sessioncmd.PublicRuntimeMetadata, error) {
+	if builder == nil {
+		return sessioncmd.PublicRuntimeMetadata{}, fmt.Errorf("agent builder is required")
+	}
+	metadata := builder.GetAgentMetadata(providerID)
+	public := sessioncmd.NormalizePublicRuntimeMetadata(sessioncmd.PublicRuntimeMetadata{
+		ProviderID:      providerID,
+		ProviderType:    metadata.Type,
+		ReasoningEffort: metadata.ReasoningEffort,
+		MCPServers:      mergeMCPServerIDsWithBase(metadata.MCPServers, nil, extraMCPServerIDs),
+	})
+	if err := public.Validate(); err != nil {
+		return sessioncmd.PublicRuntimeMetadata{}, fmt.Errorf("public runtime metadata is invalid: %w", err)
+	}
+	return public, nil
 }
 
 // PrepareGoalRun creates an isolated GoalKeeper execution context using the

@@ -12,6 +12,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/permissionfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/progressfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/questionfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/statusfmt"
 )
 
@@ -77,6 +78,37 @@ func NewPermissionStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
 func NewProgressStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
 	return func(registry *deliveryfmt.StructuredRegistry) error {
 		return deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportSlackAgent, progressfmt.RequestDescriptor, slackAgentProgressRenderer{})
+	}
+}
+
+type slackAgentSessionNoticeRenderer struct{}
+type slackAgentSessionWarningRenderer struct{}
+
+func (slackAgentSessionNoticeRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[sessionfmt.Notice]) (deliveryfmt.StructuredPresentation, error) {
+	text, err := presentation.RenderSessionNotice(env.Body)
+	return deliveryfmt.StructuredPresentation{Text: text, DeliveryFormat: deliveryfmt.DeliveryFormatMrkdwn}, err
+}
+
+func (slackAgentSessionWarningRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[sessionfmt.Warning]) (deliveryfmt.StructuredPresentation, error) {
+	text, err := presentation.RenderSessionWarning(env.Body)
+	return deliveryfmt.StructuredPresentation{Text: text, DeliveryFormat: deliveryfmt.DeliveryFormatMrkdwn}, err
+}
+
+// NewSessionStructuredRegistrar registers Slack session lifecycle presentation.
+func NewSessionStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
+	return func(registry *deliveryfmt.StructuredRegistry) error {
+		if err := deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportSlackAgent, sessionfmt.NoticeDescriptor, slackAgentSessionNoticeRenderer{}); err != nil {
+			return err
+		}
+		return deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportSlackAgent, sessionfmt.WarningDescriptor, slackAgentSessionWarningRenderer{})
+	}
+}
+
+// NewSessionStructuredRequirements requires both lifecycle renderers at composition.
+func NewSessionStructuredRequirements() []deliveryfx.StructuredRegistryRequirement {
+	return []deliveryfx.StructuredRegistryRequirement{
+		{Transport: deliveryfmt.TransportSlackAgent, MessageType: sessionfmt.NoticeDescriptor.Type},
+		{Transport: deliveryfmt.TransportSlackAgent, MessageType: sessionfmt.WarningDescriptor.Type},
 	}
 }
 

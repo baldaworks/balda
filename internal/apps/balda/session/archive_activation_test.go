@@ -5,10 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"reflect"
+	"runtime"
 	"testing"
+	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/hookcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/sessioncmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/rs/zerolog"
 	adksession "google.golang.org/adk/v2/session"
@@ -54,15 +58,51 @@ func (b *archiveBuilder) OpenExistingRuntimeSession(ctx context.Context, runtime
 
 func (b *archiveBuilder) RuntimeSessionService() adksession.Service { return b.service }
 
-func (b *archiveBuilder) GetAgentMetadata(string) AgentMetadata {
-	return AgentMetadata{Model: b.model}
-}
-
 type archiveFixture struct {
 	provider baldastate.Provider
 	runtime  *BuiltRuntime
 	builder  *archiveBuilder
 	dir      string
+}
+
+type blockingAddressSessionStore struct {
+	baldastate.SessionStore
+	entered chan struct{}
+	release chan struct{}
+	calls   int
+}
+
+func waitSessionOperationRefs(t *testing.T, manager *Manager, sessionID string, want int) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for {
+		manager.operationMu.Lock()
+		refs := 0
+		if operation := manager.operations[sessionID]; operation != nil {
+			refs = operation.refs
+		}
+		manager.operationMu.Unlock()
+		if refs == want {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("session operation refs = %d, want %d", refs, want)
+		}
+		runtime.Gosched()
+	}
+}
+
+func (s *blockingAddressSessionStore) GetByAddress(ctx context.Context, channelType, addressKey string) (baldastate.SessionRecord, bool, error) {
+	s.calls++
+	if s.calls == 2 {
+		close(s.entered)
+		select {
+		case <-s.release:
+		case <-ctx.Done():
+			return baldastate.SessionRecord{}, false, ctx.Err()
+		}
+	}
+	return s.SessionStore.GetByAddress(ctx, channelType, addressKey)
 }
 
 func newArchiveFixture(t *testing.T) *archiveFixture {
@@ -105,6 +145,164 @@ func TestArchiveFreshAndExactRestore(t *testing.T) {
 	rows, err := f.provider.ChatArchive().List(t.Context(), chatarchivecmd.Filter{Limit: 50})
 	if err != nil || len(rows) != 1 || rows[0].Status != chatarchivecmd.StatusActive {
 		t.Fatalf("inventory = %#v, %v", rows, err)
+	}
+}
+
+func TestEnsureSessionRetainsActivationUntilAdmissionAcknowledged(t *testing.T) {
+	f := newArchiveFixture(t)
+	manager := f.manager()
+	first, err := manager.EnsureSessionForTurn(t.Context(), archiveInput(), "saved")
+	if err != nil || first.Activation == nil || first.Activation.Kind != sessioncmd.ActivationCreated {
+		t.Fatalf("first ensure = %+v, %v", first.Activation, err)
+	}
+
+	retry, err := manager.EnsureSessionForTurn(t.Context(), archiveInput(), "saved")
+	if err != nil || retry.Activation == nil || !reflect.DeepEqual(retry.Activation, first.Activation) {
+		t.Fatalf("pending replay = %+v, %v; want %+v", retry.Activation, err, first.Activation)
+	}
+	wrong := *first.Activation.Clone()
+	wrong.Kind = sessioncmd.ActivationRestored
+	if manager.AcknowledgeActivation(first.GetSessionID(), wrong) {
+		t.Fatal("mismatched activation acknowledgment succeeded")
+	}
+	if !manager.AcknowledgeActivation(first.GetSessionID(), *first.Activation) {
+		t.Fatal("activation acknowledgment failed")
+	}
+
+	reused, err := manager.EnsureSessionForTurn(t.Context(), archiveInput(), "saved")
+	if err != nil || reused.Activation != nil || reused.TopicSession != first.TopicSession {
+		t.Fatalf("active reuse = %+v, %v", reused, err)
+	}
+}
+
+func TestNonConversationalEnsureDoesNotCreateOrClearActivation(t *testing.T) {
+	for _, caller := range []string{"bootstrap", "skill"} {
+		t.Run(caller+" before ordinary input", func(t *testing.T) {
+			f := newArchiveFixture(t)
+			manager := f.manager()
+			topic, err := manager.EnsureSession(t.Context(), archiveInput(), "saved")
+			if err != nil || topic == nil {
+				t.Fatalf("non-conversational ensure = %p, %v", topic, err)
+			}
+			ordinary, err := manager.EnsureSessionForTurn(t.Context(), archiveInput(), "saved")
+			if err != nil || ordinary.TopicSession != topic || ordinary.Activation != nil {
+				t.Fatalf("ordinary reuse after %s = %+v, %v; want nil activation", caller, ordinary, err)
+			}
+		})
+	}
+
+	t.Run("non-conversational ensure preserves failed ordinary admission", func(t *testing.T) {
+		f := newArchiveFixture(t)
+		manager := f.manager()
+		first, err := manager.EnsureSessionForTurn(t.Context(), archiveInput(), "saved")
+		if err != nil || first.Activation == nil {
+			t.Fatalf("ordinary ensure = %+v, %v", first, err)
+		}
+		if topic, err := manager.EnsureSession(t.Context(), archiveInput(), "saved"); err != nil || topic != first.TopicSession {
+			t.Fatalf("intervening non-conversational ensure = %p, %v", topic, err)
+		}
+		retry, err := manager.EnsureSessionForTurn(t.Context(), archiveInput(), "saved")
+		if err != nil || !reflect.DeepEqual(retry.Activation, first.Activation) {
+			t.Fatalf("ordinary retry = %+v, %v; want %+v", retry.Activation, err, first.Activation)
+		}
+	})
+}
+
+func TestEnsureSessionSnapshotsActivationBeforeConcurrentAcknowledge(t *testing.T) {
+	f := newArchiveFixture(t)
+	manager := f.manager()
+	first, err := manager.EnsureSessionForTurn(t.Context(), archiveInput(), "saved")
+	if err != nil || first.Activation == nil {
+		t.Fatalf("first ensure = %+v, %v", first, err)
+	}
+	store := &blockingAddressSessionStore{
+		SessionStore: manager.sessionStore,
+		entered:      make(chan struct{}),
+		release:      make(chan struct{}),
+	}
+	manager.sessionStore = store
+	ensureDone := make(chan EnsureResult, 1)
+	ensureErr := make(chan error, 1)
+	go func() {
+		result, ensureError := manager.EnsureSessionForTurn(t.Context(), archiveInput(), "saved")
+		ensureDone <- result
+		ensureErr <- ensureError
+	}()
+	<-store.entered
+	ackDone := make(chan bool, 1)
+	go func() { ackDone <- manager.AcknowledgeActivation(first.GetSessionID(), *first.Activation) }()
+	waitSessionOperationRefs(t, manager, first.GetSessionID(), 2)
+	close(store.release)
+	result := <-ensureDone
+	if err := <-ensureErr; err != nil || !reflect.DeepEqual(result.Activation, first.Activation) {
+		t.Fatalf("concurrent ensure = %+v, %v", result, err)
+	}
+	if acknowledged := <-ackDone; !acknowledged {
+		t.Fatal("queued acknowledgment failed")
+	}
+}
+
+func TestEnsureSessionSnapshotsActivationBeforeConcurrentReset(t *testing.T) {
+	f := newArchiveFixture(t)
+	manager := f.manager()
+	first, err := manager.EnsureSessionForTurn(t.Context(), archiveInput(), "saved")
+	if err != nil || first.Activation == nil {
+		t.Fatalf("first ensure = %+v, %v", first, err)
+	}
+	store := &blockingAddressSessionStore{
+		SessionStore: manager.sessionStore,
+		entered:      make(chan struct{}),
+		release:      make(chan struct{}),
+	}
+	manager.sessionStore = store
+	ensureDone := make(chan EnsureResult, 1)
+	ensureErr := make(chan error, 1)
+	go func() {
+		result, ensureError := manager.EnsureSessionForTurn(t.Context(), archiveInput(), "saved")
+		ensureDone <- result
+		ensureErr <- ensureError
+	}()
+	<-store.entered
+	resetDone := make(chan error, 1)
+	go func() { resetDone <- manager.ResetSession(t.Context(), archiveInput().Locator) }()
+	waitSessionOperationRefs(t, manager, first.GetSessionID(), 2)
+	close(store.release)
+	result := <-ensureDone
+	if err := <-ensureErr; err != nil || !reflect.DeepEqual(result.Activation, first.Activation) {
+		t.Fatalf("concurrent ensure = %+v, %v", result, err)
+	}
+	if err := <-resetDone; err != nil {
+		t.Fatalf("queued reset failed: %v", err)
+	}
+}
+
+func TestEnsureSessionActivationUsesPublishedRuntimeReceipt(t *testing.T) {
+	f := newArchiveFixture(t)
+	f.runtime.RecipeModel = "model-exact"
+	f.runtime.PublicRuntimeMetadata = sessioncmd.PublicRuntimeMetadata{
+		ProviderID:      "provider-exact",
+		ProviderType:    "codex-acp",
+		ReasoningEffort: "high",
+		MCPServers:      []string{"alpha", "beta"},
+	}
+
+	result, err := f.manager().EnsureSessionForTurn(t.Context(), archiveInput(), "saved")
+	if err != nil || result.Activation == nil {
+		t.Fatalf("EnsureSession() = %+v, %v", result, err)
+	}
+	f.runtime.PublicRuntimeMetadata.ProviderID = "mutated-global-provider"
+	f.runtime.PublicRuntimeMetadata.MCPServers[0] = "mutated-global-mcp"
+	want := sessioncmd.RuntimeSummary{
+		PublicRuntimeMetadata: sessioncmd.PublicRuntimeMetadata{
+			ProviderID:      "provider-exact",
+			ProviderType:    "codex-acp",
+			ReasoningEffort: "high",
+			MCPServers:      []string{"alpha", "beta"},
+		},
+		EffectiveModel: "model-exact",
+	}
+	if !reflect.DeepEqual(result.Activation.Runtime, want) {
+		t.Fatalf("activation runtime = %+v, want %+v", result.Activation.Runtime, want)
 	}
 }
 func TestArchiveLazyAdoption(t *testing.T) {
@@ -195,6 +393,7 @@ func TestArchiveCommitRecoveryDoesNotRepeatHooks(t *testing.T) {
 		t.Fatalf("recovery identity/hooks/creates = %q/%d/%d", recovered.GetArchiveID(), hooks.calls, f.builder.freshCalls)
 	}
 }
+
 func TestArchiveFailureDoesNotActivate(t *testing.T) {
 	for _, kind := range []string{"reservation", "build", "hook"} {
 		t.Run(kind, func(t *testing.T) {
