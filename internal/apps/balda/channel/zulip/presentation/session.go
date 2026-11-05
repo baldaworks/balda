@@ -15,15 +15,15 @@ func RenderSessionNotice(body sessionfmt.Notice) (string, error) {
 	var headline string
 	switch body.Kind {
 	case sessioncmd.ActivationCreated:
-		headline = "Session created"
+		headline = "🚀 **Session Created**"
 	case sessioncmd.ActivationReplaced:
-		headline = "Session replaced after restore fallback"
+		headline = "♻️ **Session Replaced**"
 	default:
 		return "", sessionfmt.ErrInvalid
 	}
-	lines := []string{"**" + headline + "**", "", "- **Session:** " + escapeStatusMarkdown(body.SessionID)}
-	appendSessionFields(&lines, body)
-	return strings.Join(lines, "\n"), nil
+	parts := []string{headline}
+	appendSessionFields(&parts, body)
+	return strings.Join(parts, " • "), nil
 }
 
 // RenderSessionWarning renders one validated warning as Zulip Markdown.
@@ -37,23 +37,23 @@ func RenderSessionWarning(body sessionfmt.Warning) (string, error) {
 	return "**Workspace sync skipped**\n\nWorkspace synchronization was skipped for this session\\.\n\n- **Session:** " + escapeStatusMarkdown(body.SessionID), nil
 }
 
-func appendSessionFields(lines *[]string, body sessionfmt.Notice) {
-	appendSessionField(lines, "Name", body.Label)
-	appendSessionField(lines, "Provider", body.Runtime.ProviderID)
-	appendSessionField(lines, "Provider type", body.Runtime.ProviderType)
-	appendSessionField(lines, "Model", body.Runtime.EffectiveModel)
-	appendSessionField(lines, "Reasoning", body.Runtime.ReasoningEffort)
+func appendSessionFields(parts *[]string, body sessionfmt.Notice) {
+	appendSessionField(parts, "Name", body.Label)
+	appendSessionField(parts, "ID", body.SessionID)
+	appendSessionField(parts, "Model", body.Runtime.EffectiveModel)
+	appendSessionField(parts, "Reasoning", body.Runtime.ReasoningEffort)
+	appendSessionField(parts, "Type", body.Runtime.ProviderType)
 	if len(body.Runtime.MCPServers) > 0 {
-		servers := make([]string, len(body.Runtime.MCPServers))
-		for i, server := range body.Runtime.MCPServers {
-			servers[i] = escapeStatusMarkdown(server)
-		}
-		*lines = append(*lines, "- **MCP:** "+strings.Join(servers, ", "))
+		appendSessionField(parts, "MCP", strings.Join(body.Runtime.MCPServers, ", "))
 	}
 }
 
-func appendSessionField(lines *[]string, label, value string) {
+func appendSessionField(parts *[]string, label, value string) {
 	if value = strings.TrimSpace(value); value != "" {
-		*lines = append(*lines, "- **"+label+":** "+escapeStatusMarkdown(value))
+		*parts = append(*parts, "**"+label+":** "+sessionCode(value))
 	}
+}
+
+func sessionCode(value string) string {
+	return "`" + strings.ReplaceAll(strings.TrimSpace(value), "`", "ˋ") + "`"
 }
