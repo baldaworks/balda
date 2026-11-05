@@ -21,12 +21,13 @@ import (
 func TestSessionActivationRenderersResolveAcrossTransports(t *testing.T) {
 	registry := sessionRegistry(t)
 	fixtures := []struct {
-		name string
-		body sessionfmt.Notice
-		want string
+		name     string
+		body     sessionfmt.Notice
+		icon     string
+		headline string
 	}{
-		{name: "created", body: noticeFixture(t, sessioncmd.ActivationCreated), want: "Session created"},
-		{name: "restore fallback", body: noticeFixture(t, sessioncmd.ActivationReplaced), want: "Session replaced after restore fallback"},
+		{name: "created", body: noticeFixture(t, sessioncmd.ActivationCreated), icon: "🚀", headline: "Session Created"},
+		{name: "restore fallback", body: noticeFixture(t, sessioncmd.ActivationReplaced), icon: "♻️", headline: "Session Replaced"},
 	}
 	transports := []struct {
 		name           string
@@ -35,10 +36,10 @@ func TestSessionActivationRenderersResolveAcrossTransports(t *testing.T) {
 		escapedLabel   string
 		headlinePrefix string
 	}{
-		{name: "telegram", value: deliveryfmt.TransportTelegram, format: deliveryfmt.DeliveryFormatRichMarkdown, escapedLabel: `name\_\*\[\]<\>&`, headlinePrefix: "**"},
-		{name: "zulip", value: deliveryfmt.TransportZulip, format: deliveryfmt.DeliveryFormatMarkdown, escapedLabel: `name\_\*\[\]<\>&`, headlinePrefix: "**"},
-		{name: "slack", value: deliveryfmt.TransportSlackAgent, format: deliveryfmt.DeliveryFormatMrkdwn, escapedLabel: `name_[]&lt;&gt;&amp;`, headlinePrefix: "*"},
-		{name: "mattermost", value: deliveryfmt.TransportMattermost, format: deliveryfmt.DeliveryFormatMarkdown, escapedLabel: `name\_\*\[\]<\>&`, headlinePrefix: "**"},
+		{name: "telegram", value: deliveryfmt.TransportTelegram, format: deliveryfmt.DeliveryFormatRichMarkdown, escapedLabel: `name_*[]<>&`, headlinePrefix: "**"},
+		{name: "zulip", value: deliveryfmt.TransportZulip, format: deliveryfmt.DeliveryFormatMarkdown, escapedLabel: `name_*[]<>&`, headlinePrefix: "**"},
+		{name: "slack", value: deliveryfmt.TransportSlackAgent, format: deliveryfmt.DeliveryFormatMrkdwn, escapedLabel: `name_*[]&lt;&gt;&amp;`, headlinePrefix: "*"},
+		{name: "mattermost", value: deliveryfmt.TransportMattermost, format: deliveryfmt.DeliveryFormatMarkdown, escapedLabel: `name_*[]<>&`, headlinePrefix: "**"},
 	}
 	for _, transport := range transports {
 		for _, fixture := range fixtures {
@@ -51,11 +52,24 @@ func TestSessionActivationRenderersResolveAcrossTransports(t *testing.T) {
 				if err != nil {
 					t.Fatalf("RenderStructured() error = %v", err)
 				}
-				if presentation.DeliveryFormat != transport.format || !strings.HasPrefix(presentation.Text, transport.headlinePrefix+fixture.want) || !strings.Contains(presentation.Text, transport.escapedLabel) {
+				wantPrefix := fixture.icon + " " + transport.headlinePrefix + fixture.headline + transport.headlinePrefix
+				if presentation.DeliveryFormat != transport.format || !strings.HasPrefix(presentation.Text, wantPrefix) || !strings.Contains(presentation.Text, transport.escapedLabel) {
 					t.Fatalf("presentation = %+v", presentation)
 				}
-				if strings.Contains(presentation.Text, "name_*[]<>&") || strings.Contains(presentation.Text, "activation-private") {
-					t.Fatalf("presentation contains unescaped/private data: %q", presentation.Text)
+				for _, want := range []string{"Name:", "ID:", "Model:", "Reasoning:", "Type:", "MCP:"} {
+					if !strings.Contains(presentation.Text, want) {
+						t.Fatalf("presentation missing %q: %q", want, presentation.Text)
+					}
+				}
+				for _, absent := range []string{"Provider:", "Provider type:", "\n"} {
+					if strings.Contains(presentation.Text, absent) {
+						t.Fatalf("presentation contains %q: %q", absent, presentation.Text)
+					}
+				}
+				for _, absent := range []string{"provider_*", "activation-private"} {
+					if strings.Contains(presentation.Text, absent) {
+						t.Fatalf("presentation contains private data %q: %q", absent, presentation.Text)
+					}
 				}
 			})
 		}
@@ -72,7 +86,7 @@ func TestSessionActivationRenderersResolveAcrossTransports(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, absent := range []string{"Name:", "Provider:", "Provider type:", "Model:", "Reasoning:", "MCP:"} {
+			for _, absent := range []string{"Name:", "Provider:", "Provider type:", "Model:", "Reasoning:", "Type:", "MCP:"} {
 				if strings.Contains(presentation.Text, absent) {
 					t.Fatalf("unknown field %q rendered: %q", absent, presentation.Text)
 				}
