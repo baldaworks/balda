@@ -40,9 +40,9 @@ func RenderSessionWarning(body sessionfmt.Warning) (string, error) {
 func appendSessionFields(parts *[]string, body sessionfmt.Notice) {
 	appendSessionField(parts, "Name", body.Label)
 	appendSessionField(parts, "ID", body.SessionID)
+	appendSessionField(parts, "Provider", body.Runtime.ProviderID)
 	appendSessionField(parts, "Model", body.Runtime.EffectiveModel)
 	appendSessionField(parts, "Reasoning", body.Runtime.ReasoningEffort)
-	appendSessionField(parts, "Type", body.Runtime.ProviderType)
 	if len(body.Runtime.MCPServers) > 0 {
 		appendSessionField(parts, "MCP", strings.Join(body.Runtime.MCPServers, ", "))
 	}

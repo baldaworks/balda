@@ -56,17 +56,17 @@ func TestSessionActivationRenderersResolveAcrossTransports(t *testing.T) {
 				if presentation.DeliveryFormat != transport.format || !strings.HasPrefix(presentation.Text, wantPrefix) || !strings.Contains(presentation.Text, transport.escapedLabel) {
 					t.Fatalf("presentation = %+v", presentation)
 				}
-				for _, want := range []string{"Name:", "ID:", "Model:", "Reasoning:", "Type:", "MCP:"} {
+				for _, want := range []string{"Name:", "ID:", "Provider:", "Model:", "Reasoning:", "MCP:"} {
 					if !strings.Contains(presentation.Text, want) {
 						t.Fatalf("presentation missing %q: %q", want, presentation.Text)
 					}
 				}
-				for _, absent := range []string{"Provider:", "Provider type:", "\n"} {
+				for _, absent := range []string{"Provider type:", "Type:", "\n"} {
 					if strings.Contains(presentation.Text, absent) {
 						t.Fatalf("presentation contains %q: %q", absent, presentation.Text)
 					}
 				}
-				for _, absent := range []string{"provider_*", "activation-private"} {
+				for _, absent := range []string{"activation-private"} {
 					if strings.Contains(presentation.Text, absent) {
 						t.Fatalf("presentation contains private data %q: %q", absent, presentation.Text)
 					}
