@@ -3,11 +3,13 @@ package session
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
 
 	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
+	"github.com/baldaworks/balda/internal/apps/balda/sessioncmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/runtime/v2/agentproduct"
 	adksession "google.golang.org/adk/v2/session"
@@ -47,6 +49,9 @@ func TestFreshLifetimePublishesIndependentPreferenceAwareCandidate(t *testing.T)
 	var closeCalls atomic.Int32
 	control := &freshLifetimeControlSpy{}
 	f.runtime.ProviderBindingJSON = publicationBinding
+	f.runtime.PublicRuntimeMetadata = sessioncmd.PublicRuntimeMetadata{
+		ProviderID: freshLifetimeProviderID, ProviderType: "codex_acp", MCPServers: []string{"balda"},
+	}
 	f.runtime.SessionControl = control
 	f.builder.model = publicationOriginalModel
 	f.runtime.Close = func() error {
@@ -118,6 +123,11 @@ func TestFreshLifetimePublishesIndependentPreferenceAwareCandidate(t *testing.T)
 	result, err = manager.PublishFreshLifetime(t.Context(), prepared)
 	if err != nil || result.Status != FreshLifetimeReset || result.Generation != oldGeneration+1 {
 		t.Fatalf("PublishFreshLifetime() = %#v, %v", result, err)
+	}
+	if result.Activation == nil || result.Activation.Kind != sessioncmd.ActivationCreated ||
+		result.Activation.SessionID != topic.GetSessionID() || result.Activation.Label != "saved" ||
+		result.Activation.Runtime.ProviderID != freshLifetimeProviderID || result.Activation.Runtime.EffectiveModel != oldModel {
+		t.Fatalf("fresh lifetime activation = %#v", result.Activation)
 	}
 	current, err := topic.AcquireRuntime()
 	if err != nil {
@@ -887,7 +897,7 @@ func TestFreshLifetimePublishAbortRaceSettlesOnce(t *testing.T) {
 	}()
 	close(start)
 	first, second := <-results, <-results
-	if first.err != nil || second.err != nil || first.result != second.result {
+	if first.err != nil || second.err != nil || !reflect.DeepEqual(first.result, second.result) {
 		t.Fatalf("settlements = %#v/%v and %#v/%v", first.result, first.err, second.result, second.err)
 	}
 	if first.result.Status != FreshLifetimeReset && first.result.Status != FreshLifetimeUnavailable {
@@ -929,7 +939,7 @@ func TestFreshLifetimeRedeliveredAbortReplaysPublishedTerminal(t *testing.T) {
 		t.Fatalf("PublishFreshLifetime() = %#v, %v", published, err)
 	}
 	replayed, err := manager.AbortFreshLifetime(t.Context(), redelivered)
-	if err != nil || replayed != published {
+	if err != nil || !reflect.DeepEqual(replayed, published) {
 		t.Fatalf("AbortFreshLifetime() replay = %#v, %v; want %#v", replayed, err, published)
 	}
 	lease, err := topic.AcquireRuntime()

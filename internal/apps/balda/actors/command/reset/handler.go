@@ -11,7 +11,9 @@ import (
 
 	commandactor "github.com/baldaworks/balda/internal/apps/balda/actors/command"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/lifetimeapp"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionfmt"
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 )
@@ -21,7 +23,6 @@ const (
 	operationIDPrefix       = "fresh-lifetime-command:v1:"
 	detachedDeliveryTimeout = 5 * time.Second
 	msgDenied               = "Only the bot owner or collaborators can use this command."
-	msgReset                = "A fresh local conversation is ready. Your provider, capabilities, and any requested model preference were preserved for later use."
 	msgConflict             = "A fresh conversation request conflicts with another session operation. No new reset was started."
 	msgUnavailable          = "A fresh conversation is currently unavailable. No new reset was started."
 	msgInterrupted          = "The fresh conversation outcome is unconfirmed because the request was interrupted. Check /status before retrying /reset or /new."
@@ -36,13 +37,14 @@ type LifetimeSubmitter interface {
 // Handler handles the bare /reset command and its /new alias.
 type Handler struct {
 	lifetimes       LifetimeSubmitter
+	registry        deliveryfmt.StructuredMessageRegistry
 	dispatcher      actortransport.Dispatcher
 	deliveryTimeout time.Duration
 }
 
 // New constructs the fresh-lifetime command handler.
-func New(lifetimes LifetimeSubmitter, dispatcher actortransport.Dispatcher) *Handler {
-	return &Handler{lifetimes: lifetimes, dispatcher: dispatcher, deliveryTimeout: detachedDeliveryTimeout}
+func New(lifetimes LifetimeSubmitter, registry deliveryfmt.StructuredMessageRegistry, dispatcher actortransport.Dispatcher) *Handler {
+	return &Handler{lifetimes: lifetimes, registry: registry, dispatcher: dispatcher, deliveryTimeout: detachedDeliveryTimeout}
 }
 
 // Name returns the canonical command name.
@@ -51,13 +53,13 @@ func (*Handler) Name() string { return commandName }
 // Handle authorizes and validates the command before submitting any session work.
 func (h *Handler) Handle(ctx context.Context, env actorlayer.Envelope, payload commandcmd.Payload) error {
 	if !hasSessionAccess(payload) {
-		return h.respond(ctx, env.ID, payload, msgDenied, "fresh-lifetime-denied")
+		return h.respondPlain(ctx, env.ID, payload, msgDenied, "fresh-lifetime-denied")
 	}
 	if strings.TrimSpace(payload.Args) != "" {
-		return h.respond(ctx, env.ID, payload, "Usage: "+usage(payload), "fresh-lifetime-usage")
+		return h.respondPlain(ctx, env.ID, payload, "Usage: "+usage(payload), "fresh-lifetime-usage")
 	}
 	if h.lifetimes == nil || strings.TrimSpace(env.ID) == "" {
-		return h.respond(ctx, env.ID, payload, msgUnavailable, "fresh-lifetime-unavailable")
+		return h.respondPlain(ctx, env.ID, payload, msgUnavailable, "fresh-lifetime-unavailable")
 	}
 
 	completion, _, err := h.lifetimes.Submit(ctx, lifetimeapp.Request{
@@ -66,20 +68,21 @@ func (h *Handler) Handle(ctx context.Context, env actorlayer.Envelope, payload c
 		Command:     commandAlias(payload.Name),
 	})
 	if err != nil || completion == nil {
-		return h.respond(ctx, env.ID, payload, msgUnavailable, "fresh-lifetime-unavailable")
+		return h.respondPlain(ctx, env.ID, payload, msgUnavailable, "fresh-lifetime-unavailable")
 	}
 	completed, ok := awaitCompletion(ctx, completion)
 	if !ok {
-		return h.respond(ctx, env.ID, payload, msgInterrupted, "fresh-lifetime-interrupted")
+		return h.respondPlain(ctx, env.ID, payload, msgInterrupted, "fresh-lifetime-interrupted")
+	}
+	if completed.Result.Status == lifetimeapp.StatusReset {
+		return h.respondReset(ctx, env.ID, payload, completed.Result)
 	}
 	message, suffix := resultMessage(completed.Result)
-	return h.respond(ctx, env.ID, payload, message, suffix)
+	return h.respondPlain(ctx, env.ID, payload, message, suffix)
 }
 
 func resultMessage(result lifetimeapp.Result) (string, string) {
 	switch result.Status {
-	case lifetimeapp.StatusReset:
-		return msgReset, "fresh-lifetime-reset"
 	case lifetimeapp.StatusConflict:
 		return msgConflict, "fresh-lifetime-conflict"
 	case lifetimeapp.StatusUnavailable:
@@ -93,7 +96,48 @@ func resultMessage(result lifetimeapp.Result) (string, string) {
 	}
 }
 
-func (h *Handler) respond(ctx context.Context, operationID string, payload commandcmd.Payload, text, suffix string) error {
+func (h *Handler) respondReset(ctx context.Context, operationID string, payload commandcmd.Payload, result lifetimeapp.Result) error {
+	deliveryCtx, cancel := h.deliveryContext(ctx)
+	defer cancel()
+	presentation, err := h.renderReset(deliveryCtx, payload, result)
+	if err != nil {
+		return actorlayer.TransientError(fmt.Errorf("render fresh lifetime command response: %w", err))
+	}
+	if err := commandactor.SendStructured(deliveryCtx, h.dispatcher, operationID, payload.Locator, presentation, "fresh-lifetime-reset"); err != nil {
+		return actorlayer.TransientError(fmt.Errorf("send fresh lifetime command response: %w", err))
+	}
+	return nil
+}
+
+func (h *Handler) renderReset(ctx context.Context, payload commandcmd.Payload, result lifetimeapp.Result) (deliveryfmt.StructuredPresentation, error) {
+	if h.registry == nil {
+		return deliveryfmt.StructuredPresentation{}, fmt.Errorf("structured message registry is required")
+	}
+	if result.Activation == nil || result.Activation.SessionID != strings.TrimSpace(payload.Locator.SessionID) {
+		return deliveryfmt.StructuredPresentation{}, fmt.Errorf("fresh lifetime activation receipt is invalid")
+	}
+	notice, err := sessionfmt.NewNotice(*result.Activation)
+	if err != nil {
+		return deliveryfmt.StructuredPresentation{}, fmt.Errorf("project fresh lifetime activation notice: %w", err)
+	}
+	typed, err := notice.Envelope()
+	if err != nil {
+		return deliveryfmt.StructuredPresentation{}, fmt.Errorf("encode fresh lifetime activation notice: %w", err)
+	}
+	transport := strings.ToLower(strings.TrimSpace(payload.Locator.ChannelType))
+	return h.registry.RenderStructured(ctx, transport, sessionfmt.NoticeDescriptor.Type, typed)
+}
+
+func (h *Handler) respondPlain(ctx context.Context, operationID string, payload commandcmd.Payload, text, suffix string) error {
+	deliveryCtx, cancel := h.deliveryContext(ctx)
+	defer cancel()
+	if err := commandactor.SendPlain(deliveryCtx, h.dispatcher, operationID, payload.Locator, text, suffix); err != nil {
+		return actorlayer.TransientError(fmt.Errorf("send fresh lifetime command response: %w", err))
+	}
+	return nil
+}
+
+func (h *Handler) deliveryContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	deliveryCtx := ctx
 	cancel := func() {}
 	if ctx.Err() != nil {
@@ -103,11 +147,7 @@ func (h *Handler) respond(ctx context.Context, operationID string, payload comma
 		}
 		deliveryCtx, cancel = context.WithTimeout(context.WithoutCancel(ctx), timeout)
 	}
-	defer cancel()
-	if err := commandactor.SendPlain(deliveryCtx, h.dispatcher, operationID, payload.Locator, text, suffix); err != nil {
-		return actorlayer.TransientError(fmt.Errorf("send fresh lifetime command response: %w", err))
-	}
-	return nil
+	return deliveryCtx, cancel
 }
 
 func awaitCompletion(ctx context.Context, completion <-chan lifetimeapp.Completion) (lifetimeapp.Completion, bool) {

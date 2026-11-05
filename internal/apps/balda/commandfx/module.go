@@ -46,11 +46,12 @@ import (
 type resetParams struct {
 	fx.In
 	Lifetimes  *lifetimeapp.Service
+	Registry   deliveryfmt.StructuredMessageRegistry
 	Dispatcher actortransport.Dispatcher
 }
 
 func newResetHandlers(p resetParams) []command.Handler {
-	handler := commandreset.New(p.Lifetimes, p.Dispatcher)
+	handler := commandreset.New(p.Lifetimes, p.Registry, p.Dispatcher)
 	return []command.Handler{handler, command.Alias("new", handler)}
 }
 

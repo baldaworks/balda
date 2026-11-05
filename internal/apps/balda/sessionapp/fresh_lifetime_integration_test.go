@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -311,7 +312,7 @@ func TestQueuedFreshLifetimeUsesProductionBoundariesWithoutProviderControl(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := <-replay; got.Result != completed.Result {
+	if got := <-replay; !reflect.DeepEqual(got.Result, completed.Result) {
 		t.Fatalf("terminal replay = %+v, want %+v", got, completed)
 	}
 	if sessionService.createCalls.Load() != 1 || runtimeManager.calls.Load() != runtimeCalls ||

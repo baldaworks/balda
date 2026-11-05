@@ -13,6 +13,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/sessioncmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 )
 
@@ -42,10 +43,12 @@ type Request struct {
 	Command     string
 }
 
-// Result contains no provider, archive, or runtime identity details.
+// Result contains the bounded outcome and exact public activation receipt. It
+// never exposes archive or provider-runtime identity details.
 type Result struct {
 	Status     Status
 	Generation uint64
+	Activation *sessioncmd.Activation
 }
 
 // Completion reports the bounded terminal result of one queued request.
@@ -166,7 +169,7 @@ func lifetimeInputHash(request Request) string {
 func mapManagerResult(result baldasession.FreshLifetimeResult, err error) Result {
 	switch result.Status {
 	case baldasession.FreshLifetimeReset:
-		return Result{Status: StatusReset, Generation: result.Generation}
+		return Result{Status: StatusReset, Generation: result.Generation, Activation: result.Activation.Clone()}
 	case baldasession.FreshLifetimeConflict:
 		return Result{Status: StatusConflict}
 	case baldasession.FreshLifetimeRecoveryRequired:

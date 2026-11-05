@@ -131,13 +131,16 @@ context is no longer addressable through that session. The active model is
 unknown until a later provider attachment or execution supplies valid evidence.
 
 Both commands are bare: selectors and every other argument are rejected. A
-successful result proves durable local logical isolation; it does not promise
+successful result uses the transport-owned structured session notice for the
+newly published lifetime, including its exact public runtime receipt. Conflict,
+unavailable, interrupted, and recovery-required results remain bounded plain
+responses. A successful result proves durable local logical isolation; it does not promise
 that the provider is currently available and does not physically delete remote
 provider history. Provider-native state is created lazily if a later turn needs
 it. Conflict and definitive unavailability leave the existing lifetime
 unchanged. An interrupted response means the outcome is unconfirmed; check
 `/status` before retrying. Recovery-required results fail closed. None of these
-fixed responses expose internal identifiers.
+responses expose internal runtime identifiers.
 
 ### `/skill <skill> [prompt...]`
 

@@ -11,13 +11,43 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/lifetimeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/sessioncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionfmt"
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 )
 
 const resetTestSessionID = "tg-1-0"
+
+const resetNoticeText = "🚀 **Session Created** • **Provider:** `provider-primary`"
+
+type resetNoticeRenderer struct{}
+
+func (resetNoticeRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[sessionfmt.Notice]) (deliveryfmt.StructuredPresentation, error) {
+	if env.Body.Kind != sessioncmd.ActivationCreated || env.Body.SessionID != resetTestSessionID || env.Body.Runtime.ProviderID != "provider-primary" {
+		return deliveryfmt.StructuredPresentation{}, errors.New("unexpected reset activation notice")
+	}
+	return deliveryfmt.StructuredPresentation{Text: resetNoticeText, DeliveryFormat: deliveryfmt.DeliveryFormatRichMarkdown}, nil
+}
+
+func resetActivation() *sessioncmd.Activation {
+	return &sessioncmd.Activation{
+		Kind: sessioncmd.ActivationCreated, SessionID: resetTestSessionID, Label: "auto",
+		Runtime: sessioncmd.RuntimeSummary{PublicRuntimeMetadata: sessioncmd.PublicRuntimeMetadata{ProviderID: "provider-primary"}},
+	}
+}
+
+func newTestHandler(t *testing.T, lifetimes LifetimeSubmitter, dispatcher actortransport.Dispatcher) *Handler {
+	t.Helper()
+	registry := deliveryfmt.NewStructuredRegistry()
+	if err := deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportTelegram, sessionfmt.NoticeDescriptor, resetNoticeRenderer{}); err != nil {
+		t.Fatal(err)
+	}
+	return New(lifetimes, registry, dispatcher)
+}
 
 type lifetimeSubmitter struct {
 	mu       sync.Mutex
@@ -46,6 +76,9 @@ func (s *lifetimeSubmitter) Submit(_ context.Context, request lifetimeapp.Reques
 	}
 	if resultCh != nil {
 		return resultCh, 1, nil
+	}
+	if result.Result.Status == lifetimeapp.StatusReset && result.Result.Activation == nil {
+		result.Result.Activation = resetActivation()
 	}
 	completion := make(chan lifetimeapp.Completion, 1)
 	completion <- result
@@ -125,7 +158,7 @@ func TestHandleAuthorizesBeforeLifetimeWork(t *testing.T) {
 				payload.Args = "secret-selector"
 			}
 			payload.Access = test.access
-			if err := New(lifetimes, dispatcher).Handle(t.Context(), actorlayer.Envelope{ID: "envelope-1"}, payload); err != nil {
+			if err := newTestHandler(t, lifetimes, dispatcher).Handle(t.Context(), actorlayer.Envelope{ID: "envelope-1"}, payload); err != nil {
 				t.Fatal(err)
 			}
 			if got := len(lifetimes.snapshot()); (got == 1) != test.want {
@@ -145,7 +178,7 @@ func TestHandleRejectsEveryArgumentBeforeLifetimeWork(t *testing.T) {
 			lifetimes, dispatcher := &lifetimeSubmitter{}, &responseDispatcher{}
 			payload := resetPayload("new", args)
 			payload.Invocation.Root = "/balda"
-			if err := New(lifetimes, dispatcher).Handle(t.Context(), actorlayer.Envelope{ID: "envelope-1"}, payload); err != nil {
+			if err := newTestHandler(t, lifetimes, dispatcher).Handle(t.Context(), actorlayer.Envelope{ID: "envelope-1"}, payload); err != nil {
 				t.Fatal(err)
 			}
 			if got := len(lifetimes.snapshot()); got != 0 {
@@ -167,7 +200,7 @@ func TestHandleSubmitsCanonicalAliasAndStableOperation(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			lifetimes := &lifetimeSubmitter{result: lifetimeapp.Completion{Result: lifetimeapp.Result{Status: lifetimeapp.StatusReset}}}
 			dispatcher := &responseDispatcher{}
-			if err := New(lifetimes, dispatcher).Handle(t.Context(), actorlayer.Envelope{ID: "immutable-envelope"}, resetPayload(name, "  ")); err != nil {
+			if err := newTestHandler(t, lifetimes, dispatcher).Handle(t.Context(), actorlayer.Envelope{ID: "immutable-envelope"}, resetPayload(name, "  ")); err != nil {
 				t.Fatal(err)
 			}
 			requests := lifetimes.snapshot()
@@ -179,7 +212,7 @@ func TestHandleSubmitsCanonicalAliasAndStableOperation(t *testing.T) {
 				t.Fatalf("request = %+v, want %+v", requests[0], want)
 			}
 			env, delivered := dispatcher.last(t)
-			if delivered.Text != msgReset || env.DedupeKey != "immutable-envelope:delivery:fresh-lifetime-reset" {
+			if delivered.Text != resetNoticeText || delivered.Mode != deliverycmd.ModeMarkdown || delivered.DeliveryFormat != deliveryfmt.DeliveryFormatRichMarkdown || env.DedupeKey != "immutable-envelope:delivery:fresh-lifetime-reset" {
 				t.Fatalf("success response = (%q, %q)", delivered.Text, env.DedupeKey)
 			}
 		})
@@ -192,11 +225,22 @@ func TestHandleSubmitsCanonicalAliasAndStableOperation(t *testing.T) {
 	}
 }
 
+func TestHandleSuccessfulResetRequiresScopedActivationReceipt(t *testing.T) {
+	lifetimes := &lifetimeSubmitter{
+		resultCh: completedResult(lifetimeapp.Result{Status: lifetimeapp.StatusReset}),
+	}
+	dispatcher := &responseDispatcher{}
+	err := newTestHandler(t, lifetimes, dispatcher).Handle(t.Context(), actorlayer.Envelope{ID: "envelope-1"}, resetPayload("new", ""))
+	if err == nil || actorlayer.ClassifyError(err) != actorlayer.ErrorKindTransient {
+		t.Fatalf("Handle() error = %v, want transient invalid receipt", err)
+	}
+}
+
 func TestHandleConcurrentReplayKeepsOneOperationIdentity(t *testing.T) {
 	const calls = 16
 	lifetimes := &lifetimeSubmitter{result: lifetimeapp.Completion{Result: lifetimeapp.Result{Status: lifetimeapp.StatusReset}}}
 	dispatcher := &responseDispatcher{}
-	handler := New(lifetimes, dispatcher)
+	handler := newTestHandler(t, lifetimes, dispatcher)
 	var wait sync.WaitGroup
 	errs := make(chan error, calls)
 	for range calls {
@@ -231,7 +275,6 @@ func TestHandleMapsBoundedSecretSafeResults(t *testing.T) {
 		text   string
 		suffix string
 	}{
-		{name: "reset", status: lifetimeapp.StatusReset, text: msgReset, suffix: "fresh-lifetime-reset"},
 		{name: "conflict", status: lifetimeapp.StatusConflict, text: msgConflict, suffix: "fresh-lifetime-conflict"},
 		{name: "unavailable", status: lifetimeapp.StatusUnavailable, text: msgUnavailable, suffix: "fresh-lifetime-unavailable"},
 		{name: "interrupted", status: lifetimeapp.StatusInterrupted, text: msgInterrupted, suffix: "fresh-lifetime-interrupted"},
@@ -241,7 +284,7 @@ func TestHandleMapsBoundedSecretSafeResults(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			lifetimes := &lifetimeSubmitter{result: lifetimeapp.Completion{Result: lifetimeapp.Result{Status: test.status, Generation: 42}}}
 			dispatcher := &responseDispatcher{}
-			if err := New(lifetimes, dispatcher).Handle(t.Context(), actorlayer.Envelope{ID: "envelope-secret"}, resetPayload("reset", "")); err != nil {
+			if err := newTestHandler(t, lifetimes, dispatcher).Handle(t.Context(), actorlayer.Envelope{ID: "envelope-secret"}, resetPayload("reset", "")); err != nil {
 				t.Fatal(err)
 			}
 			env, delivered := dispatcher.last(t)
@@ -263,7 +306,7 @@ func TestHandleBoundsSubmitFailures(t *testing.T) {
 		{nilCh: true},
 	} {
 		dispatcher := &responseDispatcher{}
-		if err := New(lifetimes, dispatcher).Handle(t.Context(), actorlayer.Envelope{ID: "envelope-1"}, resetPayload("reset", "")); err != nil {
+		if err := newTestHandler(t, lifetimes, dispatcher).Handle(t.Context(), actorlayer.Envelope{ID: "envelope-1"}, resetPayload("reset", "")); err != nil {
 			t.Fatal(err)
 		}
 		_, delivered := dispatcher.last(t)
@@ -281,7 +324,7 @@ func TestHandleCancellationUsesBoundedDetachedDelivery(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
 	go func() {
-		done <- New(lifetimes, dispatcher).Handle(ctx, actorlayer.Envelope{ID: "envelope-1"}, resetPayload("reset", ""))
+		done <- newTestHandler(t, lifetimes, dispatcher).Handle(ctx, actorlayer.Envelope{ID: "envelope-1"}, resetPayload("reset", ""))
 	}()
 	<-called
 	cancel()
@@ -304,7 +347,7 @@ func TestHandleCancellationReportsLateOutcomeAsUnconfirmed(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			done := make(chan error, 1)
 			go func() {
-				done <- New(lifetimes, dispatcher).Handle(ctx, actorlayer.Envelope{ID: "envelope-late"}, resetPayload("reset", ""))
+				done <- newTestHandler(t, lifetimes, dispatcher).Handle(ctx, actorlayer.Envelope{ID: "envelope-late"}, resetPayload("reset", ""))
 			}()
 			<-called
 			cancel()
@@ -337,7 +380,7 @@ func TestHandleAuthoritativeRecoveryBeatsCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	dispatcher := &responseDispatcher{}
-	if err := New(&lifetimeSubmitter{resultCh: completion}, dispatcher).Handle(ctx, actorlayer.Envelope{ID: "envelope-1"}, resetPayload("reset", "")); err != nil {
+	if err := newTestHandler(t, &lifetimeSubmitter{resultCh: completion}, dispatcher).Handle(ctx, actorlayer.Envelope{ID: "envelope-1"}, resetPayload("reset", "")); err != nil {
 		t.Fatal(err)
 	}
 	_, delivered := dispatcher.last(t)
@@ -350,7 +393,7 @@ func TestHandleDeliveryFailureRemainsRetryableAndBounded(t *testing.T) {
 	secret := errors.New("delivery failed with secret-token")
 	dispatcher := &responseDispatcher{err: secret}
 	lifetimes := &lifetimeSubmitter{result: lifetimeapp.Completion{Result: lifetimeapp.Result{Status: lifetimeapp.StatusReset}}}
-	err := New(lifetimes, dispatcher).Handle(t.Context(), actorlayer.Envelope{ID: "envelope-1"}, resetPayload("reset", ""))
+	err := newTestHandler(t, lifetimes, dispatcher).Handle(t.Context(), actorlayer.Envelope{ID: "envelope-1"}, resetPayload("reset", ""))
 	if err == nil || actorlayer.ClassifyError(err) != actorlayer.ErrorKindTransient || !errors.Is(err, secret) {
 		t.Fatalf("error = %v, want transient", err)
 	}
@@ -359,7 +402,7 @@ func TestHandleDeliveryFailureRemainsRetryableAndBounded(t *testing.T) {
 func TestHandleDetachedDeliveryTimeoutRemainsRetryable(t *testing.T) {
 	blocked := make(chan struct{})
 	dispatcher := &responseDispatcher{block: blocked}
-	handler := New(&lifetimeSubmitter{result: lifetimeapp.Completion{Result: lifetimeapp.Result{Status: lifetimeapp.StatusReset}}}, dispatcher)
+	handler := newTestHandler(t, &lifetimeSubmitter{result: lifetimeapp.Completion{Result: lifetimeapp.Result{Status: lifetimeapp.StatusReset}}}, dispatcher)
 	handler.deliveryTimeout = 10 * time.Millisecond
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
@@ -376,4 +419,11 @@ func resetPayload(name, args string) commandcmd.Payload {
 		Transport: "telegram", Principal: "tg-1", Access: commandcmd.Access{SessionCommands: true},
 		Conversation: commandcmd.Conversation{Direct: true}, Invocation: commandcmd.Invocation{Root: "/"},
 	}
+}
+
+func completedResult(result lifetimeapp.Result) <-chan lifetimeapp.Completion {
+	completion := make(chan lifetimeapp.Completion, 1)
+	completion <- lifetimeapp.Completion{Result: result}
+	close(completion)
+	return completion
 }
