@@ -85,6 +85,7 @@ func (b *sessionCapabilityBinder) BindSessionCapabilities(ctx context.Context, p
 		Skills:               projection,
 		MCPServerIDs:         ids,
 		ProviderMCPServerIDs: selections,
+		MCPServerPublicNames: mcpServerPublicNames(snapshot),
 		Close: func() error {
 			once.Do(func() {
 				if release != nil {
@@ -94,6 +95,20 @@ func (b *sessionCapabilityBinder) BindSessionCapabilities(ctx context.Context, p
 			return nil
 		},
 	}, nil
+}
+
+func mcpServerPublicNames(snapshot runtimecatalogcmd.Snapshot) map[string]string {
+	names := make(map[string]string, len(snapshot.MCPServers))
+	for _, descriptor := range snapshot.MCPServers {
+		switch descriptor.ID.Source.Kind {
+		case runtimecatalogcmd.SourceKindConfiguredMCP, runtimecatalogcmd.SourceKindManagedMCP, runtimecatalogcmd.SourceKindPlugin:
+			names[descriptorRegistryID(descriptor)] = descriptor.Name
+		}
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	return names
 }
 
 type runtimeParams struct {

@@ -63,6 +63,7 @@ type SessionCapabilityBinding struct {
 	Skills               SkillMetadataProjection
 	MCPServerIDs         []string
 	ProviderMCPServerIDs map[string][]string
+	MCPServerPublicNames map[string]string
 	Close                func() error
 }
 
@@ -536,7 +537,7 @@ func (m *RuntimeManager) Runtime(ctx context.Context) (*BuiltRuntime, error) {
 			extraMCPServerIDs = pinnedRuntimeMCPServerIDs(extraMCPServerIDs, capabilities.MCPServerIDs)
 		}
 	}
-	publicMetadata, err := exactPublicRuntimeMetadata(builder, providerID, extraMCPServerIDs)
+	publicMetadata, err := exactPublicRuntimeMetadata(builder, providerID, extraMCPServerIDs, capabilities.MCPServerPublicNames)
 	if err != nil {
 		return nil, errors.Join(err, closeSessionCapabilities(capabilities))
 	}
@@ -775,7 +776,7 @@ func (m *RuntimeManager) runtimeForSession(ctx context.Context, request SessionR
 	}
 	var binding ScopedMCPServer
 	extraMCPServerIDs := pinnedRuntimeMCPServerIDs(hostMCPServerIDs, capabilities.MCPServerIDs)
-	publicMetadata, err := exactPublicRuntimeMetadata(builder, providerID, extraMCPServerIDs)
+	publicMetadata, err := exactPublicRuntimeMetadata(builder, providerID, extraMCPServerIDs, capabilities.MCPServerPublicNames)
 	if err != nil {
 		return nil, errors.Join(err, closeSessionCapabilities(capabilities))
 	}
@@ -1107,16 +1108,22 @@ func pinnedRuntimeMCPServerIDs(hostConfigured, snapshotPinned []string) []string
 	return mergeMCPServerIDsWithBase(hostConfigured, nil, snapshotPinned)
 }
 
-func exactPublicRuntimeMetadata(builder *Builder, providerID string, extraMCPServerIDs []string) (sessioncmd.PublicRuntimeMetadata, error) {
+func exactPublicRuntimeMetadata(builder *Builder, providerID string, extraMCPServerIDs []string, publicNames map[string]string) (sessioncmd.PublicRuntimeMetadata, error) {
 	if builder == nil {
 		return sessioncmd.PublicRuntimeMetadata{}, fmt.Errorf("agent builder is required")
 	}
 	metadata := builder.GetAgentMetadata(providerID)
+	mcpServers := mergeMCPServerIDsWithBase(metadata.MCPServers, nil, extraMCPServerIDs)
+	for i, id := range mcpServers {
+		if name := strings.TrimSpace(publicNames[id]); name != "" {
+			mcpServers[i] = name
+		}
+	}
 	public := sessioncmd.NormalizePublicRuntimeMetadata(sessioncmd.PublicRuntimeMetadata{
 		ProviderID:      providerID,
 		ProviderType:    metadata.Type,
 		ReasoningEffort: metadata.ReasoningEffort,
-		MCPServers:      mergeMCPServerIDsWithBase(metadata.MCPServers, nil, extraMCPServerIDs),
+		MCPServers:      mcpServers,
 	})
 	if err := public.Validate(); err != nil {
 		return sessioncmd.PublicRuntimeMetadata{}, fmt.Errorf("public runtime metadata is invalid: %w", err)

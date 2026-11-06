@@ -28,14 +28,29 @@ func (m *Manager) buildActivation(
 		return nil, err
 	}
 	defer lease.Release()
+	return buildActivationFromReceipt(
+		topic,
+		kind,
+		lease.PublicRuntimeMetadata(),
+		lease.EffectiveModel(),
+		warnings,
+	)
+}
 
+func buildActivationFromReceipt(
+	topic *TopicSession,
+	kind sessioncmd.ActivationKind,
+	metadata sessioncmd.PublicRuntimeMetadata,
+	effectiveModel string,
+	warnings []sessioncmd.WarningCode,
+) (*sessioncmd.Activation, error) {
 	activation := &sessioncmd.Activation{
 		Kind:      kind,
 		SessionID: topic.GetSessionID(),
 		Label:     strings.TrimSpace(topic.GetAgentName()),
 		Runtime: sessioncmd.RuntimeSummary{
-			PublicRuntimeMetadata: lease.PublicRuntimeMetadata(),
-			EffectiveModel:        strings.TrimSpace(lease.EffectiveModel()),
+			PublicRuntimeMetadata: metadata.Clone(),
+			EffectiveModel:        strings.TrimSpace(effectiveModel),
 		},
 		Warnings: append([]sessioncmd.WarningCode(nil), warnings...),
 	}

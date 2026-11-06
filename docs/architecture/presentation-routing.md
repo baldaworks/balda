@@ -156,6 +156,11 @@ from a generation-valid active observation; absent attachment evidence remains
 unknown. Telegram, Slack Agent, Zulip, and Mattermost own the final markup and
 escaping. v1 and v2 renderer registrations remain for compatibility.
 
+Successful `/reset` and `/new` responses also use the session activation
+contract. Fresh-lifetime publication returns the immutable public runtime
+receipt, and the command handler resolves the channel renderer without reading
+later mutable session or provider state. Bounded failure responses stay plain.
+
 ## Summary
 
 Balda will keep prompt injection for channel-specific model text formatting, and use typed structured rendering for system-authored service messages. Structured service messages will be identified by stable contract types, with AsyncAPI as the schema source of truth where applicable. Presentation routing will be resolved by `(integration, message type)`.

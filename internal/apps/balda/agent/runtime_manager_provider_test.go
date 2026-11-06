@@ -213,6 +213,7 @@ func TestRuntimeManagerPublicMetadataExcludesPrivateBoundRuntimeData(t *testing.
 		ProviderMCPServerIDs: map[string][]string{
 			providerID: {publicMCPServerID},
 		},
+		MCPServerPublicNames: map[string]string{publicMCPServerID: "knowl"},
 	}}
 	registry := mcpregistry.New(map[string]agentconfig.MCPServerConfig{
 		publicMCPServerID: {
@@ -238,14 +239,14 @@ func TestRuntimeManagerPublicMetadataExcludesPrivateBoundRuntimeData(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, canary := range []string{bindingCanary, configCanary, credentialCanary, urlCanary, headerCanary, snapshotCanary} {
+	for _, canary := range []string{bindingCanary, configCanary, credentialCanary, urlCanary, headerCanary, snapshotCanary, publicMCPServerID} {
 		if strings.Contains(string(encoded), canary) {
 			t.Fatalf("public runtime metadata %q contains private canary %q", encoded, canary)
 		}
 	}
 	if metadata := runtime.PublicRuntimeMetadata; metadata.ProviderID != providerID ||
 		metadata.ProviderType != agentconfig.AgentTypeCodexACP || metadata.ReasoningEffort != reasoningEffort ||
-		!slicesEqualStrings(metadata.MCPServers, []string{"balda", publicMCPServerID}) {
+		!slicesEqualStrings(metadata.MCPServers, []string{"balda", "knowl"}) {
 		t.Fatalf("public runtime metadata = %+v", metadata)
 	}
 }

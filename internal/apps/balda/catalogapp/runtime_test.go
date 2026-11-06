@@ -510,6 +510,26 @@ func TestSessionCapabilityBinderUsesExactRetainedSnapshot(t *testing.T) {
 	}
 }
 
+func TestMCPServerPublicNamesHideRegistryIdentity(t *testing.T) {
+	t.Parallel()
+	descriptor := runtimecatalogcmd.MCPServerDescriptor{
+		ID: runtimecatalogcmd.ContributionID{
+			Source: runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindConfiguredMCP, Name: "knowl-source"},
+			Kind:   runtimecatalogcmd.ContributionKindMCPServer,
+			Name:   "knowl",
+		},
+		Revision: "revision",
+		Name:     "knowl",
+	}
+	names := mcpServerPublicNames(runtimecatalogcmd.Snapshot{
+		MCPServers: map[runtimecatalogcmd.ContributionID]runtimecatalogcmd.MCPServerDescriptor{descriptor.ID: descriptor},
+	})
+	registryID := descriptorRegistryID(descriptor)
+	if got := names[registryID]; got != "knowl" {
+		t.Fatalf("public name for %q = %q, want knowl", registryID, got)
+	}
+}
+
 const originUnknownForTest = "origin-unknown"
 
 func writeFile(t *testing.T, path, content string) {

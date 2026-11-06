@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
+	"github.com/baldaworks/balda/internal/apps/balda/sessioncmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/google/uuid"
 	adksession "google.golang.org/adk/v2/session"
@@ -34,11 +35,13 @@ type FreshLifetimeRequest struct {
 	InputHash   string
 }
 
-// FreshLifetimeResult contains no provider or target-session details.
+// FreshLifetimeResult contains the bounded outcome and exact public receipt of
+// a successfully published lifetime. It never exposes target-runtime identity.
 type FreshLifetimeResult struct {
 	Status     FreshLifetimeStatus
 	Generation uint64
 	Reason     baldastate.RuntimeOperationReason
+	Activation *sessioncmd.Activation
 }
 
 // PreparedFreshLifetime owns one unpublished candidate reference until it is
@@ -52,6 +55,7 @@ type PreparedFreshLifetime struct {
 	incumbent        *RuntimeSlot
 	candidate        *RuntimeSlot
 	runtimeCandidate UnpublishedSessionRuntimeCandidate
+	activation       *sessioncmd.Activation
 	settleOnce       sync.Once
 	settleResult     FreshLifetimeResult
 	settleErr        error
@@ -240,6 +244,25 @@ func (m *Manager) PrepareFreshLifetime(ctx context.Context, request FreshLifetim
 		}
 		return plan, result, rollbackErr
 	}
+	activation, err := buildActivationFromReceipt(
+		topic,
+		sessioncmd.ActivationCreated,
+		runtimeCandidate.Runtime().PublicRuntimeMetadata,
+		operation.TargetModel,
+		nil,
+	)
+	if err != nil {
+		if !ownsPreparation {
+			_ = runtimeCandidate.Abort(ctx)
+			return nil, freshLifetimeUnavailable(), nil
+		}
+		plan, result, rollbackErr := m.rollbackFreshLifetimePreparation(ctx, topic, value, operation, runtimeCandidate.Runtime().SessionSvc)
+		if abortErr := runtimeCandidate.Abort(context.WithoutCancel(ctx)); abortErr != nil {
+			result, resultErr := freshLifetimeRecoveryRequired()
+			return nil, result, resultErr
+		}
+		return plan, result, rollbackErr
+	}
 	candidate, err := incumbent.independentLifetimeSuccessor(runtimeCandidate.Runtime(), sess, operation.TargetArchiveID, operation.TargetModel, string(baldastate.RuntimeOperationOutcomeContextReset))
 	if err != nil {
 		if !ownsPreparation {
@@ -256,6 +279,7 @@ func (m *Manager) PrepareFreshLifetime(ctx context.Context, request FreshLifetim
 	return &PreparedFreshLifetime{
 		request: request, operation: operation, archiveToken: archiveIntent.Token,
 		ownsPreparation: ownsPreparation, incumbent: incumbent, candidate: candidate, runtimeCandidate: runtimeCandidate,
+		activation: activation,
 	}, FreshLifetimeResult{}, nil
 }
 
@@ -331,7 +355,7 @@ func (m *Manager) PublishFreshLifetime(ctx context.Context, prepared *PreparedFr
 	prepared.settleOnce.Do(func() {
 		prepared.settleResult, prepared.settleErr = m.publishFreshLifetime(ctx, prepared)
 	})
-	return prepared.settleResult, prepared.settleErr
+	return cloneFreshLifetimeResult(prepared.settleResult), prepared.settleErr
 }
 
 func (m *Manager) publishFreshLifetime(ctx context.Context, prepared *PreparedFreshLifetime) (result FreshLifetimeResult, resultErr error) {
@@ -411,7 +435,10 @@ func (m *Manager) publishFreshLifetime(ctx context.Context, prepared *PreparedFr
 		prepared.candidate.releasePublicationClaim(true)
 		published = true
 		prepared.incumbent.beginDrain()
-		return FreshLifetimeResult{Status: FreshLifetimeReset, Generation: operation.ExpectedGeneration + 1}, nil
+		return FreshLifetimeResult{
+			Status: FreshLifetimeReset, Generation: operation.ExpectedGeneration + 1,
+			Activation: prepared.activation.Clone(),
+		}, nil
 	}
 	if !legacy && prepared.runtimeCandidate.Promote() != nil {
 		prepared.candidate.releasePublicationClaim(false)
@@ -441,7 +468,10 @@ func (m *Manager) publishFreshLifetime(ctx context.Context, prepared *PreparedFr
 		topic.fenceRuntimeRecovery()
 		return freshLifetimeRecoveryRequired()
 	}
-	return FreshLifetimeResult{Status: FreshLifetimeReset, Generation: operation.ExpectedGeneration + 1}, nil
+	return FreshLifetimeResult{
+		Status: FreshLifetimeReset, Generation: operation.ExpectedGeneration + 1,
+		Activation: prepared.activation.Clone(),
+	}, nil
 }
 
 // AbortFreshLifetime safely abandons a prepared candidate before the
@@ -453,7 +483,12 @@ func (m *Manager) AbortFreshLifetime(ctx context.Context, prepared *PreparedFres
 	prepared.settleOnce.Do(func() {
 		prepared.settleResult, prepared.settleErr = m.abortFreshLifetime(ctx, prepared)
 	})
-	return prepared.settleResult, prepared.settleErr
+	return cloneFreshLifetimeResult(prepared.settleResult), prepared.settleErr
+}
+
+func cloneFreshLifetimeResult(result FreshLifetimeResult) FreshLifetimeResult {
+	result.Activation = result.Activation.Clone()
+	return result
 }
 
 func (m *Manager) abortFreshLifetime(ctx context.Context, prepared *PreparedFreshLifetime) (result FreshLifetimeResult, resultErr error) {
@@ -733,7 +768,13 @@ func (m *Manager) freshLifetimeDurableTargetMatches(ctx context.Context, operati
 
 func (m *Manager) replayFreshLifetime(ctx context.Context, topic *TopicSession, operation baldastate.RuntimeOperationRecord) FreshLifetimeResult {
 	if operation.Outcome == string(baldastate.RuntimeOperationOutcomeContextReset) && m.freshLifetimeDurableTargetMatches(ctx, operation) {
-		return FreshLifetimeResult{Status: FreshLifetimeReset, Generation: operation.ExpectedGeneration + 1}
+		activation, err := m.buildActivation(topic, sessioncmd.ActivationCreated, nil)
+		if err == nil {
+			return FreshLifetimeResult{
+				Status: FreshLifetimeReset, Generation: operation.ExpectedGeneration + 1,
+				Activation: activation,
+			}
+		}
 	}
 	if operation.Outcome == string(baldastate.RuntimeOperationOutcomeAborted) {
 		return freshLifetimeUnavailable()

@@ -139,9 +139,12 @@ authenticated session and locator, chooses which typed messages are visible,
 and renders them through the channel-owned Telegram, Zulip, Slack, or
 Mattermost renderer. Ingress does not format or directly send ordinary
 activation messages. The SessionActor dispatches them with bypass settlement,
-so a crash or replay can lose or duplicate an advisory message. Commands,
-startup bootstrap, reset, and topic creation retain their existing behavior.
-Process startup readiness remains a separate `startupnotifyapp` message.
+so a crash or replay can lose or duplicate an advisory message. Successful
+`/reset` and `/new` responses reuse the same typed notice and transport-owned
+renderer with the immutable receipt returned by fresh-lifetime publication;
+their failure responses remain plain. Other commands, startup bootstrap, and
+topic creation retain their existing behavior. Process startup readiness
+remains a separate `startupnotifyapp` message.
 
 ## Workspace allocation contract
 
