@@ -14,9 +14,10 @@ import (
 )
 
 type conversionTestDatabase struct {
-	db      *sql.DB
-	bind    func(string) string
-	upgrade func() (usercmd.Store, error)
+	db                      *sql.DB
+	bind                    func(string) string
+	webAuthActorMigrationID int64
+	upgrade                 func() (usercmd.Store, error)
 }
 
 func TestSQLiteUserConversion(t *testing.T) {
@@ -44,7 +45,7 @@ func newSQLiteConversionTestDatabase(t *testing.T) conversionTestDatabase {
 		t.Fatal(err)
 	}
 	return conversionTestDatabase{
-		db: db, bind: func(query string) string { return query },
+		db: db, bind: func(query string) string { return query }, webAuthActorMigrationID: 73,
 		upgrade: func() (usercmd.Store, error) {
 			provider, err := NewSQLiteProvider(t.Context(), path)
 			if err != nil {
@@ -261,7 +262,19 @@ func (f conversionTestDatabase) snapshot(t *testing.T) map[string][]string {
 	for _, table := range []string{"balda_users", "balda_user_bindings", "balda_security_audit_events", "balda_user_migrations",
 		"balda_backoffice_sessions", "balda_backoffice_refresh_tokens", "goose_db_version"} {
 		projection := "*"
-		if table == "balda_backoffice_sessions" {
+		switch table {
+		case "balda_security_audit_events":
+			var migrationVersion int64
+			if err := f.db.QueryRowContext(t.Context(),
+				"SELECT COALESCE(MAX(version_id), 0) FROM goose_db_version WHERE is_applied").Scan(&migrationVersion); err != nil {
+				t.Fatal(err)
+			}
+			actorColumn := "actor_session_id"
+			if migrationVersion >= f.webAuthActorMigrationID {
+				actorColumn = "actor_web_auth_session_id"
+			}
+			projection = "event_id, actor_user_id, " + actorColumn + ", action, target_type, target_id, outcome, reason, metadata_json, request_id, source, correlation_id, occurred_at"
+		case "balda_backoffice_sessions":
 			// Compare the session contract present before this additive schema upgrade.
 			projection = "session_id, user_id, assurance, credential_version, access_selector, access_verifier_digest, csrf_verifier_digest, created_at, last_seen_at, access_expires_at, refresh_expires_at, revoked_at, revocation_reason, version, device_label, connection_peer"
 		}
