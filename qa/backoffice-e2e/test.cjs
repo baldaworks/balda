@@ -121,8 +121,11 @@ async function checkWebhooks(browser, baseURL, viewport) {
   }
   async function checkLayout(state) {
     await page.locator('main#main-content:not(.htmx-swapping):not(.htmx-settling)').waitFor();
-    await page.evaluate(() => { document.scrollingElement.scrollTop = 0; });
-    await page.waitForFunction(() => document.scrollingElement.scrollTop === 0);
+    const scrollTop = await page.evaluate(() => {
+      window.scrollTo({ top: 0, behavior: 'instant' });
+      return document.scrollingElement.scrollTop;
+    });
+    assert.equal(scrollTop, 0, `${state} resets document scroll position`);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     assert.ok(overflow <= 1, `${state} document overflow at ${viewport.width}px: ${overflow}px`);
     await checkTopBar(page, `${state} at ${viewport.width}px`);
