@@ -53,6 +53,12 @@ vendors:
       - google.golang.org/adk/v2/platform
 
 components:
+  # Generated OpenAPI DTOs and transport scaffolding are a wire boundary.
+  # Feature policy and persistence must not depend on this package directly.
+  management_api_wire:
+    in:
+      - internal/managementapi/v1
+
   chat_archive_app:
     in:
       - internal/apps/balda/chatarchiveapp
@@ -630,6 +636,12 @@ components:
       - cmd/balda
 
 deps:
+  management_api_wire:
+    mayDependOn:
+      - management_api_wire
+    deepScan: false
+    anyVendorDeps: true
+
   chat_archive_app:
     mayDependOn:
       - chat_archive_contracts

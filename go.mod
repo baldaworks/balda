@@ -8,6 +8,7 @@ require (
 	github.com/coder/acp-go-sdk v0.13.5
 	github.com/dgraph-io/badger/v4 v4.9.6
 	github.com/fxamacker/cbor/v2 v2.9.3
+	github.com/getkin/kin-openapi v0.148.0
 	github.com/go-webauthn/webauthn v0.18.1
 	github.com/google/uuid v1.6.0
 	github.com/ipfans/fxlogger v0.2.0
@@ -20,7 +21,7 @@ require (
 	github.com/pressly/goose/v3 v3.24.3
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/rs/zerolog v1.35.1
-	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.12.1
@@ -43,6 +44,7 @@ require (
 	github.com/RoaringBitmap/roaring v1.2.3 // indirect
 	github.com/andybalholm/brotli v1.1.1 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
+	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
 	github.com/bits-and-blooms/bitset v1.24.4 // indirect
 	github.com/blevesearch/bleve_index_api v1.1.6 // indirect
 	github.com/blevesearch/geo v0.1.20 // indirect
@@ -63,10 +65,13 @@ require (
 	github.com/blevesearch/zapx/v16 v16.0.12 // indirect
 	github.com/coder/websocket v1.8.13 // indirect
 	github.com/dgraph-io/ristretto/v2 v2.2.0 // indirect
+	github.com/dprotaso/go-yit v0.0.0-20220510233725-9ba8df137936 // indirect
 	github.com/elastic/go-sysinfo v1.15.3 // indirect
 	github.com/elastic/go-windows v1.0.2 // indirect
 	github.com/go-faster/city v1.0.1 // indirect
 	github.com/go-faster/errors v0.7.1 // indirect
+	github.com/go-openapi/jsonpointer v0.23.1 // indirect
+	github.com/go-openapi/swag/jsonname v0.26.0 // indirect
 	github.com/go-sql-driver/mysql v1.9.2 // indirect
 	github.com/go-webauthn/x v0.3.1 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.2 // indirect
@@ -88,13 +93,19 @@ require (
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/mschoch/smat v0.2.0 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
+	github.com/oapi-codegen/oapi-codegen/v2 v2.8.1 // indirect
+	github.com/oasdiff/yaml v0.1.1 // indirect
+	github.com/oasdiff/yaml3 v0.0.14 // indirect
 	github.com/paulmach/orb v0.11.1 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
+	github.com/speakeasy-api/jsonpath v0.6.3 // indirect
+	github.com/speakeasy-api/openapi v1.24.0 // indirect
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/tursodatabase/libsql-client-go v0.0.0-20240902231107-85af5b9d094d // indirect
 	github.com/vertica/vertica-sql-go v1.3.3 // indirect
+	github.com/vmware-labs/yaml-jsonpath v0.3.2 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/ydb-platform/ydb-go-genproto v0.0.0-20241112172322-ea1f63298f77 // indirect
 	github.com/ydb-platform/ydb-go-sdk/v3 v3.108.1 // indirect
@@ -280,7 +291,7 @@ require (
 	github.com/nishanths/predeclared v0.2.2 // indirect
 	github.com/normahq/go-adk-acpagent/v2 v2.8.0
 	github.com/nunnatsa/ginkgolinter v0.23.0 // indirect
-	github.com/oapi-codegen/runtime v1.1.2
+	github.com/oapi-codegen/runtime v1.8.0
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/prometheus/client_golang v1.12.1 // indirect
 	github.com/prometheus/client_model v0.2.0 // indirect
@@ -391,6 +402,7 @@ tool (
 	github.com/golangci/golangci-lint/v2/cmd/golangci-lint
 	github.com/kazhuravlev/options-gen/cmd/options-gen
 	github.com/metalagman/omnidist/cmd/omnidist
+	github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen
 	github.com/pressly/goose/v3/cmd/goose
 	golang.org/x/vuln/cmd/govulncheck
 )
