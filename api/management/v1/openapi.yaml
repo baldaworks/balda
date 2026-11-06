@@ -1,0 +1,446 @@
+openapi: 3.0.3
+info:
+  title: Balda Management API
+  version: 1.0.0
+  description: >-
+    Contract for the loopback Balda management API. The API distinguishes
+    browser WebAuth authority from AI conversation sessions.
+paths:
+  /api/management/v1/compatibility:
+    get:
+      operationId: getManagementCompatibility
+      summary: Read management contract compatibility metadata
+      security:
+        - operatorServiceAuth: []
+      responses:
+        "200":
+          description: Management contract metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ManagementCompatibility"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/management/v1/auth/login:
+    post:
+      operationId: loginWebAuth
+      summary: Start local WebAuth login
+      security:
+        - operatorServiceAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LocalLoginRequest"
+      responses:
+        "200":
+          description: Login completed or requires an MFA continuation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebAuthLoginResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/management/v1/auth/refresh:
+    post:
+      operationId: refreshWebAuth
+      summary: Rotate WebAuth credentials
+      security:
+        - operatorServiceAuth: []
+          webAuthRefresh: []
+          csrf: []
+      responses:
+        "200":
+          description: Rotated WebAuth credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebAuthCredentials"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/management/v1/auth/me:
+    get:
+      operationId: getWebAuthPrincipal
+      summary: Read the current WebAuth principal
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+      responses:
+        "200":
+          description: Current WebAuth principal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebAuthPrincipal"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/management/v1/auth/logout:
+    post:
+      operationId: logoutWebAuth
+      summary: Revoke the current WebAuth session
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+          csrf: []
+      responses:
+        "204":
+          description: Current WebAuth session revoked
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+components:
+  securitySchemes:
+    operatorServiceAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: OperatorToken
+      description: Local service credential held by the Backoffice process.
+    webAuthAccess:
+      type: apiKey
+      in: header
+      name: X-Balda-WebAuth-Access
+      description: Opaque WebAuth access credential forwarded by Backoffice.
+    webAuthRefresh:
+      type: apiKey
+      in: header
+      name: X-Balda-WebAuth-Refresh
+      description: Opaque WebAuth refresh credential forwarded by Backoffice.
+    csrf:
+      type: apiKey
+      in: header
+      name: X-Balda-CSRF
+      description: WebAuth-session-bound CSRF proof forwarded by Backoffice.
+  responses:
+    BadRequest:
+      description: Invalid management request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ManagementError"
+    Unauthorized:
+      description: Missing or invalid service or WebAuth credential
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ManagementError"
+    Forbidden:
+      description: Authenticated request lacks authority or valid CSRF proof
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ManagementError"
+    Conflict:
+      description: Management request conflicts with current state
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ManagementError"
+    RateLimited:
+      description: Login attempt is temporarily rate limited
+      headers:
+        Retry-After:
+          description: Delay in seconds before another attempt.
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ManagementError"
+    InternalError:
+      description: Safe bounded internal failure
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ManagementError"
+  schemas:
+    ManagementCompatibility:
+      type: object
+      additionalProperties: false
+      required:
+        - contract_id
+        - contract_version
+        - api_major
+      properties:
+        contract_id:
+          type: string
+          enum:
+            - balda.management.v1
+        contract_version:
+          type: string
+          maxLength: 32
+          example: 1.0.0
+        api_major:
+          type: integer
+          format: int32
+          enum:
+            - 1
+    LocalLoginRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+          minLength: 1
+          maxLength: 256
+        password:
+          type: string
+          format: password
+          minLength: 1
+          maxLength: 4096
+          writeOnly: true
+    WebAuthLoginResult:
+      type: object
+      additionalProperties: false
+      required:
+        - outcome
+      properties:
+        outcome:
+          type: string
+          enum:
+            - authenticated
+            - mfa_required
+        credentials:
+          $ref: "#/components/schemas/WebAuthCredentials"
+        mfa_transaction_id:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: Opaque transaction identifier for the pending MFA continuation.
+    WebAuthCredentials:
+      type: object
+      additionalProperties: false
+      required:
+        - access_token
+        - refresh_token
+        - csrf_token
+        - access_expires_at
+        - refresh_expires_at
+        - assurance
+      properties:
+        access_token:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          description: Sensitive opaque access credential returned only to the trusted BFF.
+        refresh_token:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          description: Sensitive opaque refresh credential returned only to the trusted BFF.
+        csrf_token:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          description: Sensitive CSRF proof returned only to the trusted BFF.
+        access_expires_at:
+          type: string
+          format: date-time
+        refresh_expires_at:
+          type: string
+          format: date-time
+        assurance:
+          $ref: "#/components/schemas/WebAuthAssurance"
+    WebAuthPrincipal:
+      type: object
+      additionalProperties: false
+      required:
+        - user_id
+        - role
+        - assurance
+        - user_version
+        - credential_version
+        - mfa_version
+        - web_auth_session_id
+        - web_auth_session_version
+      properties:
+        user_id:
+          type: string
+          minLength: 1
+          maxLength: 256
+        role:
+          $ref: "#/components/schemas/WebAuthRole"
+        assurance:
+          $ref: "#/components/schemas/WebAuthAssurance"
+        user_version:
+          type: integer
+          format: uint64
+          minimum: 1
+        credential_version:
+          type: integer
+          format: uint64
+          minimum: 1
+        mfa_version:
+          type: integer
+          format: uint64
+          minimum: 0
+        web_auth_session_id:
+          type: string
+          minLength: 1
+          maxLength: 256
+        web_auth_session_version:
+          type: integer
+          format: uint64
+          minimum: 1
+    WebAuthSessionSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - web_auth_session_id
+        - assurance
+        - created_at
+        - last_seen_at
+        - refresh_expires_at
+        - version
+      properties:
+        web_auth_session_id:
+          type: string
+          minLength: 1
+          maxLength: 256
+        assurance:
+          $ref: "#/components/schemas/WebAuthAssurance"
+        created_at:
+          type: string
+          format: date-time
+        last_seen_at:
+          type: string
+          format: date-time
+        refresh_expires_at:
+          type: string
+          format: date-time
+        revoked_at:
+          type: string
+          format: date-time
+        device_label:
+          type: string
+          maxLength: 256
+        connection_peer:
+          type: string
+          maxLength: 256
+        version:
+          type: integer
+          format: uint64
+          minimum: 1
+    WebAuthRole:
+      type: string
+      enum:
+        - administrator
+        - operator
+    WebAuthAssurance:
+      type: string
+      enum:
+        - restricted
+        - normal
+    AISessionSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - ai_session_id
+        - status
+        - observed_at
+      properties:
+        ai_session_id:
+          type: string
+          minLength: 1
+          maxLength: 256
+        label:
+          type: string
+          maxLength: 256
+        status:
+          type: string
+          minLength: 1
+          maxLength: 64
+        channel_type:
+          type: string
+          maxLength: 64
+        observed_at:
+          type: string
+          format: date-time
+    ManagementResourceSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - resource_id
+        - resource_version
+        - updated_at
+      properties:
+        resource_id:
+          type: string
+          minLength: 1
+          maxLength: 256
+        resource_version:
+          type: integer
+          format: uint64
+          minimum: 1
+        updated_at:
+          type: string
+          format: date-time
+    ManagementError:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: "^[a-z][a-z0-9_.-]*$"
+        message:
+          type: string
+          minLength: 1
+          maxLength: 512
+        request_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        fields:
+          type: array
+          maxItems: 16
+          items:
+            $ref: "#/components/schemas/ManagementErrorField"
+    ManagementErrorField:
+      type: object
+      additionalProperties: false
+      required:
+        - field
+        - code
+      properties:
+        field:
+          type: string
+          minLength: 1
+          maxLength: 128
+        code:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: "^[a-z][a-z0-9_.-]*$"

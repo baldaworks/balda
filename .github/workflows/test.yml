@@ -145,6 +145,8 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: 'go.mod'
+      - name: Verify management OpenAPI generation
+        run: ./scripts/ci/check-management-openapi.sh
       - uses: actions/download-artifact@v8
         with:
           name: test-shard-0
