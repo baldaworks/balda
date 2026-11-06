@@ -152,7 +152,7 @@ func TestPluginLifecycleHTTPRoutesActionsAndRecovery(t *testing.T) {
 					t.Fatalf("valid name disable %s=%d", name, got.Code)
 				}
 				request := fixture.mutations[len(fixture.mutations)-1]
-				if request.PluginName != name || request.Operation != plugincmd.Disable || !request.Confirm || request.ExpectedState != pluginLifecycleExpected || request.Authority.SessionID == "" {
+				if request.PluginName != name || request.Operation != plugincmd.Disable || !request.Confirm || request.ExpectedState != pluginLifecycleExpected || request.Authority.WebAuthSessionID == "" {
 					t.Fatalf("route selector=%+v", request)
 				}
 			}
@@ -185,7 +185,7 @@ func TestPluginLifecycleHTTPRoutesActionsAndRecovery(t *testing.T) {
 					t.Fatalf("%s=%d", operation, got.Code)
 				}
 				request := fixture.mutations[len(fixture.mutations)-1]
-				if request.Operation != operation || request.MarketplaceName != "" || request.ExpectedState != pluginLifecycleExpected || request.Authority.SessionID == "" {
+				if request.Operation != operation || request.MarketplaceName != "" || request.ExpectedState != pluginLifecycleExpected || request.Authority.WebAuthSessionID == "" {
 					t.Fatalf("operation binding=%+v", request)
 				}
 				if operation == plugincmd.Upgrade && request.CandidateToken != pluginLifecycleCandidateToken {

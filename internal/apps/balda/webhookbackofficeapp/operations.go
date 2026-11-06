@@ -57,9 +57,9 @@ func (o *Operations) TestPost(ctx context.Context, request webhookroutecmd.TestP
 	result, err := o.ingress.Admit(ctx, route, webhookcmd.Inbound{
 		RequestID: request.RequestKey, Path: route.Path, Method: http.MethodPost,
 		RawBody: request.Body, Test: true, TestAuthority: &webhookcmd.TestAuthority{
-			UserID: request.Authority.UserID, SessionID: request.Authority.SessionID,
+			UserID: request.Authority.UserID, WebAuthSessionID: request.Authority.WebAuthSessionID,
 			UserVersion: request.Authority.UserVersion, CredentialVersion: request.Authority.CredentialVersion,
-			MFAVersion: request.Authority.MFAVersion, SessionVersion: request.Authority.SessionVersion,
+			MFAVersion: request.Authority.MFAVersion, WebAuthSessionVersion: request.Authority.WebAuthSessionVersion,
 			RouteVersion: request.ExpectedVersion, ConfirmDisabled: request.ConfirmDisabled,
 			At: request.Authority.At,
 		},

@@ -58,13 +58,13 @@ type Editor struct {
 
 // Authority binds a request to existing administrator browser authority.
 type Authority struct {
-	UserID            string
-	UserVersion       uint64
-	CredentialVersion uint64
-	MFAVersion        uint64
-	SessionID         string
-	SessionVersion    uint64
-	At                time.Time
+	UserID                string
+	UserVersion           uint64
+	CredentialVersion     uint64
+	MFAVersion            uint64
+	WebAuthSessionID      string
+	WebAuthSessionVersion uint64
+	At                    time.Time
 }
 
 // Create appends an explicitly submitted fact.

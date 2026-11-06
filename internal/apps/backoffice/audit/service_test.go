@@ -14,13 +14,13 @@ func TestServiceFiltersBoundedTypedSecurityEvents(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
 	store := &fakeStore{events: []usercmd.AuditEvent{
-		{ID: "event-1", Action: usercmd.AuditActionRefreshSucceeded, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetSession, TargetID: "family-1", Source: "security", OccurredAt: now},
-		{ID: "event-2", Action: usercmd.AuditActionRefreshReplay, Outcome: usercmd.AuditOutcomeDenied, ActorUserID: "admin", TargetType: usercmd.AuditTargetSession, TargetID: "family-2", Source: "security", OccurredAt: now.Add(time.Minute)},
-		{ID: "event-3", Action: usercmd.AuditActionSessionRevoked, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetSession, TargetID: "family-3", Source: "security", OccurredAt: now.Add(2 * time.Minute)},
+		{ID: "event-1", Action: usercmd.AuditActionWebAuthRefreshSucceeded, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetWebAuthSession, TargetID: "family-1", Source: "security", OccurredAt: now},
+		{ID: "event-2", Action: usercmd.AuditActionWebAuthRefreshReplay, Outcome: usercmd.AuditOutcomeDenied, ActorUserID: "admin", TargetType: usercmd.AuditTargetWebAuthSession, TargetID: "family-2", Source: "security", OccurredAt: now.Add(time.Minute)},
+		{ID: "event-3", Action: usercmd.AuditActionWebAuthRevoked, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetWebAuthSession, TargetID: "family-3", Source: "security", OccurredAt: now.Add(2 * time.Minute)},
 	}}
 	service := NewService(store)
 	admin := usercmd.User{Status: usercmd.StatusActive, Role: usercmd.RoleAdministrator}
-	page, err := service.List(t.Context(), admin, Request{Limit: 10, Action: usercmd.AuditActionRefreshReplay})
+	page, err := service.List(t.Context(), admin, Request{Limit: 10, Action: usercmd.AuditActionWebAuthRefreshReplay})
 	if err != nil {
 		t.Fatal(err)
 	}

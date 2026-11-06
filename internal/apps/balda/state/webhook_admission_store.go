@@ -112,9 +112,9 @@ func (s *sqlWebhookAdmissionStore) createAuthorizedTest(ctx context.Context, can
 		return nil, ErrWebhookRouteInvalid
 	}
 	a := candidate.TestAuthority
-	authority := WebhookRouteAuthority{UserID: a.UserID, SessionID: a.SessionID,
+	authority := WebhookRouteAuthority{UserID: a.UserID, WebAuthSessionID: a.WebAuthSessionID,
 		UserVersion: a.UserVersion, CredentialVersion: a.CredentialVersion,
-		MFAVersion: a.MFAVersion, SessionVersion: a.SessionVersion, At: a.At}
+		MFAVersion: a.MFAVersion, WebAuthSessionVersion: a.WebAuthSessionVersion, At: a.At}
 	if !validWebhookRouteAuthority(authority) || a.RouteVersion == 0 {
 		return nil, ErrWebhookRouteInvalid
 	}
@@ -155,7 +155,7 @@ func (s *sqlWebhookAdmissionStore) createAuthorizedTest(ctx context.Context, can
 	}
 	if count == 1 {
 		audit := usercmd.AuditEvent{ID: candidate.JobID, Action: usercmd.AuditActionWebhookTestRequested,
-			Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: a.UserID, ActorSessionID: a.SessionID,
+			Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: a.UserID, ActorWebAuthSessionID: a.WebAuthSessionID,
 			TargetType: usercmd.AuditTargetWebhookRoute, TargetID: candidate.RouteName,
 			Source: "backoffice", OccurredAt: candidate.CreatedAt}
 		if err := usercmd.ValidateAuditEvent(audit); err != nil {

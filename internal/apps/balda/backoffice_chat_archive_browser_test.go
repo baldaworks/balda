@@ -207,7 +207,7 @@ func runArchiveBrowser(t *testing.T, base string, width int) {
 				err = closeErr
 			}
 		case "revoke":
-			err = p.Users().RevokeUserSessions(r.Context(), "reader", time.Now().UTC(), "synthetic-test", audit(usercmd.AuditActionSessionRevoked, "reader"))
+			err = p.Users().RevokeUserWebAuthSessions(r.Context(), "reader", time.Now().UTC(), "synthetic-test", audit(usercmd.AuditActionWebAuthRevoked, "reader"))
 		default:
 			w.WriteHeader(http.StatusBadRequest)
 			return

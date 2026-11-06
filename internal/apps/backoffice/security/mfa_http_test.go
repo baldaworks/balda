@@ -54,13 +54,13 @@ func TestMFABrowserPendingLoginAndAdministratorGuardsAfterRefresh(t *testing.T) 
 				case AccessCookieName:
 					credentials.AccessToken = cookie.Value
 				case RefreshCookieName:
-					credentials.RefreshToken = cookie.Value
+					credentials.WebAuthRefreshToken = cookie.Value
 				case CSRFCookieName:
 					credentials.CSRFToken = cookie.Value
 				}
 			}
 			s.now = func() time.Time { return now.Add(16 * time.Minute) }
-			rotated, err := s.Refresh(t.Context(), credentials.RefreshToken, credentials.CSRFToken)
+			rotated, err := s.Refresh(t.Context(), credentials.WebAuthRefreshToken, credentials.CSRFToken)
 			require.NoError(t, err)
 			called := false
 			guard := b.Authenticate(b.RequireAdministrator(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { called = true })))

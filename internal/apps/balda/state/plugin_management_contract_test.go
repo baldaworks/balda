@@ -16,7 +16,7 @@ func pluginContractAuthority(t *testing.T, p Provider) plugincmd.Authority {
 	t.Helper()
 	b := contractMCPMutation(t, p).Authority
 	return plugincmd.Authority{UserID: b.UserID, UserVersion: b.UserVersion, CredentialVersion: b.CredentialVersion,
-		MFAVersion: b.MFAVersion, SessionID: b.SessionID, SessionVersion: b.SessionVersion, At: b.At}
+		MFAVersion: b.MFAVersion, WebAuthSessionID: b.WebAuthSessionID, WebAuthSessionVersion: b.WebAuthSessionVersion, At: b.At}
 }
 
 func checkPluginManagement(t *testing.T, open contractOpener) {

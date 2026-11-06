@@ -197,8 +197,8 @@ func runPluginsBrowserWorkflow(t *testing.T, base string, width int) {
 					t.Fatal("browser did not enter catalog gate before deadline")
 				}
 				at := time.Now().UTC()
-				event := usercmd.AuditEvent{ID: "browser-revoke", Action: usercmd.AuditActionSessionRevoked, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetUser, TargetID: "administrator", Source: "plugins-browser-fixture", OccurredAt: at}
-				if err := f.provider.Users().RevokeUserSessions(ctx, "administrator", at, "synthetic-test", event); err != nil {
+				event := usercmd.AuditEvent{ID: "browser-revoke", Action: usercmd.AuditActionWebAuthRevoked, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetUser, TargetID: "administrator", Source: "plugins-browser-fixture", OccurredAt: at}
+				if err := f.provider.Users().RevokeUserWebAuthSessions(ctx, "administrator", at, "synthetic-test", event); err != nil {
 					t.Fatal(err)
 				}
 				f.activation.entered = nil

@@ -12,7 +12,7 @@ import (
 )
 
 func (s *sqlChatArchiveStore) CheckAuthority(ctx context.Context, a chatarchivecmd.Authority) error {
-	if a.UserID == "" || a.SessionID == "" || a.UserVersion == 0 || a.CredentialVersion == 0 || a.SessionVersion == 0 || a.At.IsZero() {
+	if a.UserID == "" || a.WebAuthSessionID == "" || a.UserVersion == 0 || a.CredentialVersion == 0 || a.WebAuthSessionVersion == 0 || a.At.IsZero() {
 		return chatarchivecmd.ErrForbidden
 	}
 	tx, err := s.users.begin(ctx)
@@ -20,9 +20,9 @@ func (s *sqlChatArchiveStore) CheckAuthority(ctx context.Context, a chatarchivec
 		return chatarchivecmd.ErrUnavailable
 	}
 	defer func() { _ = tx.Rollback() }()
-	authority := browserAuthority{userID: a.UserID, sessionID: a.SessionID, userVersion: a.UserVersion, credentialVersion: a.CredentialVersion, mfaVersion: a.MFAVersion, sessionVersion: a.SessionVersion, at: time.Now().UTC()}
+	authority := browserAuthority{userID: a.UserID, sessionID: a.WebAuthSessionID, userVersion: a.UserVersion, credentialVersion: a.CredentialVersion, mfaVersion: a.MFAVersion, sessionVersion: a.WebAuthSessionVersion, at: time.Now().UTC()}
 	if _, err := s.users.checkBrowserAuthority(ctx, tx, authority); err != nil {
-		if errors.Is(err, usercmd.ErrForbidden) || errors.Is(err, usercmd.ErrConflict) || errors.Is(err, usercmd.ErrNotFound) || errors.Is(err, usercmd.ErrSessionUnavailable) {
+		if errors.Is(err, usercmd.ErrForbidden) || errors.Is(err, usercmd.ErrConflict) || errors.Is(err, usercmd.ErrNotFound) || errors.Is(err, usercmd.ErrWebAuthSessionUnavailable) {
 			return chatarchivecmd.ErrForbidden
 		}
 		return chatarchivecmd.ErrUnavailable

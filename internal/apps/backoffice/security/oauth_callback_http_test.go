@@ -162,7 +162,7 @@ func TestOAuthCallbackCredentialAllowsNormalAdministrator(t *testing.T) {
 			if access != "initiating-access" {
 				t.Fatalf("callback access token = %q", access)
 			}
-			return Principal{User: usercmd.User{Role: usercmd.RoleAdministrator}, Assurance: usercmd.SessionAssuranceNormal}, nil
+			return Principal{User: usercmd.User{Role: usercmd.RoleAdministrator}, Assurance: usercmd.WebAuthAssuranceNormal}, nil
 		},
 	}
 	b := newHTTPTestBrowser(t, service, false, 0)

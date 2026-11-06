@@ -43,7 +43,7 @@ func (a *httpApp) factMemoryBasePage(r *http.Request, p security.Principal) webu
 func factMemoryAuthority(p security.Principal) memorycmd.Authority {
 	return memorycmd.Authority{UserID: p.User.ID, UserVersion: p.User.Version,
 		CredentialVersion: p.User.Credential.Version, MFAVersion: p.MFAVersion,
-		SessionID: p.FamilyID, SessionVersion: p.Version, At: time.Now().UTC()}
+		WebAuthSessionID: p.WebAuthSessionID, WebAuthSessionVersion: p.WebAuthSessionVersion, At: time.Now().UTC()}
 }
 
 func (a *httpApp) factMemoryPage(w http.ResponseWriter, r *http.Request) {

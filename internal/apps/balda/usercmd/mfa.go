@@ -57,7 +57,7 @@ type MFACeremony struct {
 	CSRFDigest        []byte
 	UserID            string
 	Purpose           MFAPurpose
-	SessionID         string
+	WebAuthSessionID  string
 	UserVersion       uint64
 	CredentialVersion uint64
 	MFAVersion        uint64
@@ -68,17 +68,17 @@ type MFACeremony struct {
 
 // MFAChange atomically changes factor authority, revokes families and records audit.
 type MFAChange struct {
-	UserID                    string
-	ExpectedUserVersion       uint64
-	ExpectedCredentialVersion uint64
-	ExpectedMFAVersion        uint64
-	Purpose                   MFAPurpose
-	BoundSessionID            string
-	ExpectedSessionVersion    uint64
-	Credential                MFACredential
-	Session                   *SessionFamily
-	ChangedAt                 time.Time
-	Audit                     AuditEvent
+	UserID                        string
+	ExpectedUserVersion           uint64
+	ExpectedCredentialVersion     uint64
+	ExpectedMFAVersion            uint64
+	Purpose                       MFAPurpose
+	BoundWebAuthSessionID         string
+	ExpectedWebAuthSessionVersion uint64
+	Credential                    MFACredential
+	WebAuthSession                *WebAuthSession
+	ChangedAt                     time.Time
+	Audit                         AuditEvent
 }
 
 // MFAVerification commits a verified counter update and optional login session.
@@ -89,7 +89,7 @@ type MFAVerification struct {
 	ExpectedMFAVersion        uint64
 	ExpectedSignCount         uint32
 	Credential                MFACredential
-	Session                   *SessionFamily
+	WebAuthSession            *WebAuthSession
 	VerifiedAt                time.Time
 	Audit                     AuditEvent
 }

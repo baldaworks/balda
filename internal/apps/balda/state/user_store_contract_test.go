@@ -219,100 +219,100 @@ func checkUserStoreRefreshRotationAndReplay(t *testing.T, open contractOpener) {
 	}
 
 	family := contractSessionFamily(user.ID, now)
-	if err := store.CreateSession(t.Context(), family, contractAudit("audit-login", usercmd.AuditActionCredentialChanged, family.ID, now)); err != nil {
-		t.Fatalf("CreateSession() error = %v", err)
+	if err := store.CreateWebAuthSession(t.Context(), family, contractAudit("audit-login", usercmd.AuditActionCredentialChanged, family.ID, now)); err != nil {
+		t.Fatalf("CreateWebAuthSession() error = %v", err)
 	}
-	access, found, err := store.GetSessionByAccessSelector(t.Context(), family.Access.Selector)
-	if err != nil || !found || access.Family.ID != family.ID || access.User.ID != user.ID {
-		t.Fatalf("GetSessionByAccessSelector() = %+v, %t, %v", access, found, err)
+	access, found, err := store.GetWebAuthSessionByAccessSelector(t.Context(), family.Access.Selector)
+	if err != nil || !found || access.WebAuthSession.ID != family.ID || access.User.ID != user.ID {
+		t.Fatalf("GetWebAuthSessionByAccessSelector() = %+v, %t, %v", access, found, err)
 	}
 
-	rotation := usercmd.RefreshRotation{
+	rotation := usercmd.WebAuthRefreshRotation{
 		Selector: family.RefreshTokens[0].Selector, PresentedVerifierDigest: family.RefreshTokens[0].VerifierDigest,
-		Access: usercmd.AccessCredential{Selector: "access-2", VerifierDigest: []byte("access-digest-2"), ExpiresAt: now.Add(30 * time.Minute)},
-		Refresh: usercmd.RefreshToken{
+		Access: usercmd.WebAuthAccessCredential{Selector: "access-2", VerifierDigest: []byte("access-digest-2"), ExpiresAt: now.Add(30 * time.Minute)},
+		Refresh: usercmd.WebAuthRefreshToken{
 			Selector: "refresh-2", VerifierDigest: []byte("refresh-digest-2"), Generation: 2,
-			State: usercmd.RefreshTokenStateActive, IssuedAt: now.Add(15 * time.Minute), ExpiresAt: family.RefreshExpiresAt.Add(15 * time.Minute),
+			State: usercmd.WebAuthRefreshTokenStateActive, IssuedAt: now.Add(15 * time.Minute), ExpiresAt: family.RefreshExpiresAt.Add(15 * time.Minute),
 		},
 		RotatedAt:    now.Add(15 * time.Minute),
-		SuccessAudit: contractAudit("audit-refresh", usercmd.AuditActionSessionRevoked, family.ID, now.Add(15*time.Minute)),
-		ReplayAudit:  contractAudit("audit-replay", usercmd.AuditActionSessionRevoked, family.ID, now.Add(16*time.Minute)),
+		SuccessAudit: contractAudit("audit-refresh", usercmd.AuditActionWebAuthRevoked, family.ID, now.Add(15*time.Minute)),
+		ReplayAudit:  contractAudit("audit-replay", usercmd.AuditActionWebAuthRevoked, family.ID, now.Add(16*time.Minute)),
 	}
 	// Failure after consuming/updating must roll back the entire renewal.
 	failed := rotation
 	failed.SuccessAudit.ID = "audit-login"
-	if _, err := store.RotateRefresh(t.Context(), failed); err == nil {
+	if _, err := store.RotateWebAuthRefresh(t.Context(), failed); err == nil {
 		t.Fatal("duplicate audit unexpectedly committed renewal")
 	}
-	unchanged, found, err := store.GetSession(t.Context(), family.ID)
+	unchanged, found, err := store.GetWebAuthSession(t.Context(), family.ID)
 	if err != nil || !found || !reflect.DeepEqual(unchanged, family) {
 		t.Fatalf("failed renewal changed family: %+v, %v", unchanged, err)
 	}
 	stale := rotation
 	stale.RotatedAt = now.Add(-time.Second)
-	if _, err := store.RotateRefresh(t.Context(), stale); !errors.Is(err, usercmd.ErrConflict) {
+	if _, err := store.RotateWebAuthRefresh(t.Context(), stale); !errors.Is(err, usercmd.ErrConflict) {
 		t.Fatalf("stale rotation: %v", err)
 	}
-	unchanged, found, err = store.GetSession(t.Context(), family.ID)
+	unchanged, found, err = store.GetWebAuthSession(t.Context(), family.ID)
 	if err != nil || !found || !reflect.DeepEqual(unchanged, family) {
 		t.Fatalf("stale renewal changed family: %+v, %v", unchanged, err)
 	}
-	result, err := store.RotateRefresh(t.Context(), rotation)
-	if err != nil || result != usercmd.RefreshRotationSucceeded {
-		t.Fatalf("RotateRefresh() = %q, %v", result, err)
+	result, err := store.RotateWebAuthRefresh(t.Context(), rotation)
+	if err != nil || result != usercmd.WebAuthRefreshRotationSucceeded {
+		t.Fatalf("RotateWebAuthRefresh() = %q, %v", result, err)
 	}
-	refreshed, found, err := store.GetSessionByRefreshSelector(t.Context(), rotation.Refresh.Selector)
-	if err != nil || !found || refreshed.Token.Generation != 2 || refreshed.Token.State != usercmd.RefreshTokenStateActive {
-		t.Fatalf("GetSessionByRefreshSelector(new) = %+v, %t, %v", refreshed, found, err)
+	refreshed, found, err := store.GetWebAuthSessionByRefreshSelector(t.Context(), rotation.Refresh.Selector)
+	if err != nil || !found || refreshed.Token.Generation != 2 || refreshed.Token.State != usercmd.WebAuthRefreshTokenStateActive {
+		t.Fatalf("GetWebAuthSessionByRefreshSelector(new) = %+v, %t, %v", refreshed, found, err)
 	}
-	if !refreshed.Family.RefreshExpiresAt.Equal(rotation.Refresh.ExpiresAt) || len(refreshed.Family.RefreshTokens) != 2 {
-		t.Fatalf("rotated family = %+v", refreshed.Family)
+	if !refreshed.WebAuthSession.RefreshExpiresAt.Equal(rotation.Refresh.ExpiresAt) || len(refreshed.WebAuthSession.RefreshTokens) != 2 {
+		t.Fatalf("rotated family = %+v", refreshed.WebAuthSession)
 	}
-	if !refreshed.Family.RefreshTokens[0].ExpiresAt.Equal(family.RefreshExpiresAt) {
+	if !refreshed.WebAuthSession.RefreshTokens[0].ExpiresAt.Equal(family.RefreshExpiresAt) {
 		t.Fatal("historical expiry changed")
 	}
-	if err := usercmd.ValidateSessionFamily(refreshed.Family); err != nil {
+	if err := usercmd.ValidateWebAuthSession(refreshed.WebAuthSession); err != nil {
 		t.Fatal(err)
 	}
-	if refreshed.Family.RefreshTokens[0].State != usercmd.RefreshTokenStateUsed {
-		t.Fatalf("old refresh state = %q, want used", refreshed.Family.RefreshTokens[0].State)
+	if refreshed.WebAuthSession.RefreshTokens[0].State != usercmd.WebAuthRefreshTokenStateUsed {
+		t.Fatalf("old refresh state = %q, want used", refreshed.WebAuthSession.RefreshTokens[0].State)
 	}
 
-	result, err = store.RotateRefresh(t.Context(), rotation)
-	if err != nil || result != usercmd.RefreshRotationConcurrent {
-		t.Fatalf("RotateRefresh(duplicate) = %q, %v", result, err)
+	result, err = store.RotateWebAuthRefresh(t.Context(), rotation)
+	if err != nil || result != usercmd.WebAuthRefreshRotationConcurrent {
+		t.Fatalf("RotateWebAuthRefresh(duplicate) = %q, %v", result, err)
 	}
 	rotation.RotatedAt = now.Add(14 * time.Minute)
-	result, err = store.RotateRefresh(t.Context(), rotation)
-	if err != nil || result != usercmd.RefreshRotationConcurrent {
+	result, err = store.RotateWebAuthRefresh(t.Context(), rotation)
+	if err != nil || result != usercmd.WebAuthRefreshRotationConcurrent {
 		t.Fatalf("out-of-order duplicate: %q, %v", result, err)
 	}
-	unchanged, found, err = store.GetSession(t.Context(), family.ID)
-	if err != nil || !found || !reflect.DeepEqual(unchanged, refreshed.Family) {
+	unchanged, found, err = store.GetWebAuthSession(t.Context(), family.ID)
+	if err != nil || !found || !reflect.DeepEqual(unchanged, refreshed.WebAuthSession) {
 		t.Fatalf("duplicate changed family: %+v, %v", unchanged, err)
 	}
 	rotation.RotatedAt = now.Add(16 * time.Minute)
-	result, err = store.RotateRefresh(t.Context(), rotation)
-	if err != nil || result != usercmd.RefreshRotationReplayRevoked {
-		t.Fatalf("RotateRefresh(replay) = %q, %v", result, err)
+	result, err = store.RotateWebAuthRefresh(t.Context(), rotation)
+	if err != nil || result != usercmd.WebAuthRefreshRotationReplayRevoked {
+		t.Fatalf("RotateWebAuthRefresh(replay) = %q, %v", result, err)
 	}
-	revoked, found, err := store.GetSessionByRefreshSelector(t.Context(), rotation.Refresh.Selector)
-	if err != nil || !found || revoked.Family.RevokedAt.IsZero() || revoked.Token.State != usercmd.RefreshTokenStateRevoked {
+	revoked, found, err := store.GetWebAuthSessionByRefreshSelector(t.Context(), rotation.Refresh.Selector)
+	if err != nil || !found || revoked.WebAuthSession.RevokedAt.IsZero() || revoked.Token.State != usercmd.WebAuthRefreshTokenStateRevoked {
 		t.Fatalf("replayed family = %+v, %t, %v", revoked, found, err)
 	}
 
-	result, err = store.RotateRefresh(t.Context(), usercmd.RefreshRotation{
+	result, err = store.RotateWebAuthRefresh(t.Context(), usercmd.WebAuthRefreshRotation{
 		Selector: rotation.Refresh.Selector, PresentedVerifierDigest: []byte("wrong"), RotatedAt: now.Add(17 * time.Minute),
 	})
-	if err != nil || result != usercmd.RefreshRotationUnavailable {
-		t.Fatalf("RotateRefresh(wrong verifier) = %q, %v", result, err)
+	if err != nil || result != usercmd.WebAuthRefreshRotationUnavailable {
+		t.Fatalf("RotateWebAuthRefresh(wrong verifier) = %q, %v", result, err)
 	}
 
-	deleted, err := store.DeleteExpiredSessions(t.Context(), family.RefreshExpiresAt.Add(time.Hour), 1)
+	deleted, err := store.DeleteExpiredWebAuthSessions(t.Context(), family.RefreshExpiresAt.Add(time.Hour), 1)
 	if err != nil || deleted != 1 {
-		t.Fatalf("DeleteExpiredSessions() = %d, %v", deleted, err)
+		t.Fatalf("DeleteExpiredWebAuthSessions() = %d, %v", deleted, err)
 	}
-	_, found, err = store.GetSessionByAccessSelector(t.Context(), rotation.Access.Selector)
+	_, found, err = store.GetWebAuthSessionByAccessSelector(t.Context(), rotation.Access.Selector)
 	if err != nil || found {
 		t.Fatalf("deleted session found = %t, error = %v", found, err)
 	}
@@ -331,13 +331,13 @@ func checkUserStoreCredentialAndSessionRevocation(t *testing.T, open contractOpe
 	staleFamily := contractSessionFamily(user.ID, now)
 	staleFamily.ID = "stale-session"
 	staleFamily.CredentialVersion = 2
-	if err := store.CreateSession(t.Context(), staleFamily, contractAudit("audit-stale-session", usercmd.AuditActionCredentialChanged, staleFamily.ID, now)); !errors.Is(err, usercmd.ErrSessionUnavailable) {
-		t.Fatalf("CreateSession(stale credential) error = %v, want ErrSessionUnavailable", err)
+	if err := store.CreateWebAuthSession(t.Context(), staleFamily, contractAudit("audit-stale-session", usercmd.AuditActionCredentialChanged, staleFamily.ID, now)); !errors.Is(err, usercmd.ErrWebAuthSessionUnavailable) {
+		t.Fatalf("CreateWebAuthSession(stale credential) error = %v, want ErrWebAuthSessionUnavailable", err)
 	}
 
 	family := contractSessionFamily(user.ID, now)
-	if err := store.CreateSession(t.Context(), family, contractAudit("audit-login", usercmd.AuditActionCredentialChanged, family.ID, now)); err != nil {
-		t.Fatalf("CreateSession() error = %v", err)
+	if err := store.CreateWebAuthSession(t.Context(), family, contractAudit("audit-login", usercmd.AuditActionCredentialChanged, family.ID, now)); err != nil {
+		t.Fatalf("CreateWebAuthSession() error = %v", err)
 	}
 	nextCredential := usercmd.Credential{State: usercmd.CredentialStateActive, Version: 2}
 	nextSecret := usercmd.CredentialSecret{UserID: user.ID, PasswordHash: "replacement-hash"}
@@ -347,22 +347,22 @@ func checkUserStoreCredentialAndSessionRevocation(t *testing.T, open contractOpe
 	conflictingSession.CredentialVersion = 2
 	conflictingSession.Access.Selector = family.Access.Selector
 	conflictingSession.RefreshTokens[0].Selector = "replacement-refresh"
-	err := store.ChangeCredentialAndCreateSession(t.Context(), usercmd.CredentialSessionChange{
+	err := store.ChangeCredentialAndCreateWebAuthSession(t.Context(), usercmd.CredentialWebAuthSessionChange{
 		UserID: user.ID, ExpectedUserVersion: 1, ExpectedCredentialVersion: 1,
 		Credential: nextCredential, Secret: nextSecret, RevokedAt: changedAt,
-		Session:         conflictingSession,
+		WebAuthSession:  conflictingSession,
 		CredentialAudit: contractAudit("audit-password-rollback", usercmd.AuditActionCredentialChanged, user.ID, changedAt),
-		SessionAudit:    contractAudit("audit-session-rollback", usercmd.AuditActionLoginSucceeded, conflictingSession.ID, changedAt),
+		SessionAudit:    contractAudit("audit-session-rollback", usercmd.AuditActionWebAuthLoginSucceeded, conflictingSession.ID, changedAt),
 	})
 	if !errors.Is(err, usercmd.ErrConflict) {
-		t.Fatalf("ChangeCredentialAndCreateSession(conflict) error = %v, want ErrConflict", err)
+		t.Fatalf("ChangeCredentialAndCreateWebAuthSession(conflict) error = %v, want ErrConflict", err)
 	}
 	unchanged, found, err := store.GetUser(t.Context(), user.ID)
 	if err != nil || !found || unchanged.Version != 1 || unchanged.Credential.Version != 1 {
 		t.Fatalf("GetUser(after rollback) = %+v, %t, %v", unchanged, found, err)
 	}
-	stillActive, found, err := store.GetSessionByAccessSelector(t.Context(), family.Access.Selector)
-	if err != nil || !found || !stillActive.Family.RevokedAt.IsZero() {
+	stillActive, found, err := store.GetWebAuthSessionByAccessSelector(t.Context(), family.Access.Selector)
+	if err != nil || !found || !stillActive.WebAuthSession.RevokedAt.IsZero() {
 		t.Fatalf("session after rollback = %+v, %t, %v", stillActive, found, err)
 	}
 	if err := store.ChangeCredential(
@@ -379,9 +379,9 @@ func checkUserStoreCredentialAndSessionRevocation(t *testing.T, open contractOpe
 	if err != nil || !found || secret.PasswordHash != nextSecret.PasswordHash {
 		t.Fatalf("GetCredentialSecret(changed) = %+v, %t, %v", secret, found, err)
 	}
-	revoked, found, err := store.GetSessionByAccessSelector(t.Context(), family.Access.Selector)
-	if err != nil || !found || !revoked.Family.RevokedAt.Equal(changedAt) ||
-		revoked.Family.RefreshTokens[0].State != usercmd.RefreshTokenStateRevoked {
+	revoked, found, err := store.GetWebAuthSessionByAccessSelector(t.Context(), family.Access.Selector)
+	if err != nil || !found || !revoked.WebAuthSession.RevokedAt.Equal(changedAt) ||
+		revoked.WebAuthSession.RefreshTokens[0].State != usercmd.WebAuthRefreshTokenStateRevoked {
 		t.Fatalf("credential-revoked family = %+v, %t, %v", revoked, found, err)
 	}
 
@@ -390,24 +390,24 @@ func checkUserStoreCredentialAndSessionRevocation(t *testing.T, open contractOpe
 	second.CredentialVersion = 2
 	second.Access.Selector = "access-session-2"
 	second.RefreshTokens[0].Selector = "refresh-session-2"
-	if err := store.CreateSession(t.Context(), second, contractAudit("audit-login-2", usercmd.AuditActionCredentialChanged, second.ID, second.CreatedAt)); err != nil {
-		t.Fatalf("CreateSession(second) error = %v", err)
+	if err := store.CreateWebAuthSession(t.Context(), second, contractAudit("audit-login-2", usercmd.AuditActionCredentialChanged, second.ID, second.CreatedAt)); err != nil {
+		t.Fatalf("CreateWebAuthSession(second) error = %v", err)
 	}
-	if err := store.RevokeSession(
+	if err := store.RevokeWebAuthSession(
 		t.Context(), second.ID, 99, changedAt.Add(2*time.Minute), "administrative revocation",
-		contractAudit("audit-revoke-stale", usercmd.AuditActionSessionRevoked, second.ID, changedAt),
+		contractAudit("audit-revoke-stale", usercmd.AuditActionWebAuthRevoked, second.ID, changedAt),
 	); !errors.Is(err, usercmd.ErrConflict) {
-		t.Fatalf("RevokeSession(stale) error = %v, want ErrConflict", err)
+		t.Fatalf("RevokeWebAuthSession(stale) error = %v, want ErrConflict", err)
 	}
-	if err := store.RevokeSession(
+	if err := store.RevokeWebAuthSession(
 		t.Context(), second.ID, 1, changedAt.Add(2*time.Minute), "administrative revocation",
-		contractAudit("audit-revoke", usercmd.AuditActionSessionRevoked, second.ID, changedAt.Add(2*time.Minute)),
+		contractAudit("audit-revoke", usercmd.AuditActionWebAuthRevoked, second.ID, changedAt.Add(2*time.Minute)),
 	); err != nil {
-		t.Fatalf("RevokeSession() error = %v", err)
+		t.Fatalf("RevokeWebAuthSession() error = %v", err)
 	}
-	sessions, err := store.ListSessions(t.Context(), user.ID, usercmd.PageRequest{Limit: usercmd.MaxPageSize})
+	sessions, err := store.ListWebAuthSessions(t.Context(), user.ID, usercmd.PageRequest{Limit: usercmd.MaxPageSize})
 	if err != nil || len(sessions.Sessions) != 2 {
-		t.Fatalf("ListSessions() = %+v, %v", sessions, err)
+		t.Fatalf("ListWebAuthSessions() = %+v, %v", sessions, err)
 	}
 	if sessions.Sessions[1].Version != 2 {
 		t.Fatalf("revoked session version = %d, want 2", sessions.Sessions[1].Version)
@@ -424,22 +424,22 @@ func checkUserStoreConcurrentRefreshReplay(t *testing.T, open contractOpener) {
 		t.Fatalf("CreateUser() error = %v", err)
 	}
 	family := contractSessionFamily(user.ID, now)
-	if err := store.CreateSession(t.Context(), family, contractAudit("audit-login", usercmd.AuditActionCredentialChanged, family.ID, now)); err != nil {
-		t.Fatalf("CreateSession() error = %v", err)
+	if err := store.CreateWebAuthSession(t.Context(), family, contractAudit("audit-login", usercmd.AuditActionCredentialChanged, family.ID, now)); err != nil {
+		t.Fatalf("CreateWebAuthSession() error = %v", err)
 	}
-	base := usercmd.RefreshRotation{
+	base := usercmd.WebAuthRefreshRotation{
 		Selector: family.RefreshTokens[0].Selector, PresentedVerifierDigest: family.RefreshTokens[0].VerifierDigest,
-		Access: usercmd.AccessCredential{Selector: "access-2", VerifierDigest: []byte("access-digest-2"), ExpiresAt: now.Add(30 * time.Minute)},
-		Refresh: usercmd.RefreshToken{
+		Access: usercmd.WebAuthAccessCredential{Selector: "access-2", VerifierDigest: []byte("access-digest-2"), ExpiresAt: now.Add(30 * time.Minute)},
+		Refresh: usercmd.WebAuthRefreshToken{
 			Selector: "refresh-2", VerifierDigest: []byte("refresh-digest-2"), Generation: 2,
-			State: usercmd.RefreshTokenStateActive, IssuedAt: now.Add(15 * time.Minute), ExpiresAt: family.RefreshExpiresAt.Add(15 * time.Minute),
+			State: usercmd.WebAuthRefreshTokenStateActive, IssuedAt: now.Add(15 * time.Minute), ExpiresAt: family.RefreshExpiresAt.Add(15 * time.Minute),
 		},
 		RotatedAt:    now.Add(15 * time.Minute),
-		SuccessAudit: contractAudit("audit-refresh", usercmd.AuditActionSessionRevoked, family.ID, now.Add(15*time.Minute)),
+		SuccessAudit: contractAudit("audit-refresh", usercmd.AuditActionWebAuthRevoked, family.ID, now.Add(15*time.Minute)),
 	}
 
 	type outcome struct {
-		result usercmd.RefreshRotationResult
+		result usercmd.WebAuthRefreshRotationResult
 		err    error
 	}
 	outcomes := make(chan outcome, 2)
@@ -450,9 +450,9 @@ func checkUserStoreConcurrentRefreshReplay(t *testing.T, open contractOpener) {
 			defer wg.Done()
 			rotation := base
 			rotation.ReplayAudit = contractAudit(
-				fmt.Sprintf("audit-replay-%d", i), usercmd.AuditActionSessionRevoked, family.ID, now.Add(16*time.Minute),
+				fmt.Sprintf("audit-replay-%d", i), usercmd.AuditActionWebAuthRevoked, family.ID, now.Add(16*time.Minute),
 			)
-			result, err := store.RotateRefresh(t.Context(), rotation)
+			result, err := store.RotateWebAuthRefresh(t.Context(), rotation)
 			outcomes <- outcome{result: result, err: err}
 		}()
 	}
@@ -461,17 +461,17 @@ func checkUserStoreConcurrentRefreshReplay(t *testing.T, open contractOpener) {
 	var results []string
 	for got := range outcomes {
 		if got.err != nil {
-			t.Fatalf("RotateRefresh(concurrent) error = %v", got.err)
+			t.Fatalf("RotateWebAuthRefresh(concurrent) error = %v", got.err)
 		}
 		results = append(results, string(got.result))
 	}
 	sort.Strings(results)
-	want := []string{string(usercmd.RefreshRotationConcurrent), string(usercmd.RefreshRotationSucceeded)}
+	want := []string{string(usercmd.WebAuthRefreshRotationConcurrent), string(usercmd.WebAuthRefreshRotationSucceeded)}
 	if !slices.Equal(results, want) {
 		t.Fatalf("concurrent refresh results = %v, want %v", results, want)
 	}
-	refreshed, found, err := store.GetSessionByRefreshSelector(t.Context(), base.Refresh.Selector)
-	if err != nil || !found || !refreshed.Family.RevokedAt.IsZero() || refreshed.Token.State != usercmd.RefreshTokenStateActive {
+	refreshed, found, err := store.GetWebAuthSessionByRefreshSelector(t.Context(), base.Refresh.Selector)
+	if err != nil || !found || !refreshed.WebAuthSession.RevokedAt.IsZero() || refreshed.Token.State != usercmd.WebAuthRefreshTokenStateActive {
 		t.Fatalf("concurrent refresh family = %+v, %t, %v", refreshed, found, err)
 	}
 }
@@ -496,16 +496,16 @@ func contractAudit(id string, action usercmd.AuditAction, targetID string, now t
 	}
 }
 
-func contractSessionFamily(userID string, now time.Time) usercmd.SessionFamily {
+func contractSessionFamily(userID string, now time.Time) usercmd.WebAuthSession {
 	expiresAt := now.Add(24 * time.Hour)
-	return usercmd.SessionFamily{
-		ID: "session-1", UserID: userID, Assurance: usercmd.SessionAssuranceNormal, CredentialVersion: 1,
-		Access:             usercmd.AccessCredential{Selector: "access-1", VerifierDigest: []byte("access-digest-1"), ExpiresAt: now.Add(15 * time.Minute)},
+	return usercmd.WebAuthSession{
+		ID: "session-1", UserID: userID, Assurance: usercmd.WebAuthAssuranceNormal, CredentialVersion: 1,
+		Access:             usercmd.WebAuthAccessCredential{Selector: "access-1", VerifierDigest: []byte("access-digest-1"), ExpiresAt: now.Add(15 * time.Minute)},
 		CSRFVerifierDigest: []byte("csrf-digest"), CreatedAt: now, LastSeenAt: now,
 		RefreshExpiresAt: expiresAt, Version: 1,
-		RefreshTokens: []usercmd.RefreshToken{{
+		RefreshTokens: []usercmd.WebAuthRefreshToken{{
 			Selector: "refresh-1", VerifierDigest: []byte("refresh-digest-1"), Generation: 1,
-			State: usercmd.RefreshTokenStateActive, IssuedAt: now, ExpiresAt: expiresAt,
+			State: usercmd.WebAuthRefreshTokenStateActive, IssuedAt: now, ExpiresAt: expiresAt,
 		}},
 	}
 }

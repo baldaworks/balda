@@ -127,6 +127,11 @@ func checkRequestedModelDowngradeProhibited(t *testing.T, db *sql.DB, bind func(
 		preference, preference, "operation-1"); err != nil {
 		t.Fatal(err)
 	}
+	// The WebAuth audit actor rename is deliberately reversible. Step over it
+	// before asserting that the requested-model migration remains the rollback floor.
+	if _, err := provider.Down(t.Context()); err != nil {
+		t.Fatalf("downgrade reversible WebAuth audit migration: %v", err)
+	}
 	if _, err := provider.Down(t.Context()); err == nil {
 		t.Fatal("requested-model migration downgrade succeeded with unresolved lifetime_preference evidence")
 	}

@@ -29,18 +29,18 @@ type BindingChannels interface {
 }
 
 func (a *httpApp) bindingDetailPage(r *http.Request, principal security.Principal, userID string) (webui.Page, error) {
-	actor := access.Actor{User: principal.User, SessionID: principal.FamilyID}
+	actor := access.Actor{User: principal.User, WebAuthSessionID: principal.WebAuthSessionID}
 	user, err := a.access.GetUser(r.Context(), actor, userID)
 	if err != nil {
 		return webui.Page{}, err
 	}
-	sessionPage, err := a.access.ListSessions(r.Context(), actor, user.ID, usercmd.PageRequest{Limit: sessionPageSize, AfterID: r.URL.Query().Get("after_session")})
+	sessionPage, err := a.access.ListWebAuthSessions(r.Context(), actor, user.ID, usercmd.PageRequest{Limit: sessionPageSize, AfterID: r.URL.Query().Get("after_session")})
 	if err != nil {
 		return webui.Page{}, err
 	}
 	sessions := make([]webui.SessionView, 0, len(sessionPage.Sessions))
 	for _, session := range sessionPage.Sessions {
-		sessions = append(sessions, webui.ProjectSession(session, principal.FamilyID, time.Now().UTC()))
+		sessions = append(sessions, webui.ProjectSession(session, principal.WebAuthSessionID, time.Now().UTC()))
 	}
 	nextURL := ""
 	if sessionPage.NextAfterID != "" {
@@ -122,7 +122,7 @@ func (a *httpApp) issueBindingInvitation(w http.ResponseWriter, r *http.Request,
 			a.bindingFormError(w, r, page, channel, usercmd.ErrBindingInvitationUnavailable)
 			return
 		}
-		issued, err := a.invitations.Issue(r.Context(), usercmd.InvitationActor{UserID: principal.User.ID, SessionID: principal.FamilyID}, page.User.ID, version, form.Integration, values.Get("replace") == checkedFormValue)
+		issued, err := a.invitations.Issue(r.Context(), usercmd.InvitationActor{UserID: principal.User.ID, WebAuthSessionID: principal.WebAuthSessionID}, page.User.ID, version, form.Integration, values.Get("replace") == checkedFormValue)
 		if err != nil {
 			a.bindingFormError(w, r, page, channel, err)
 			return
@@ -179,7 +179,7 @@ func (a *httpApp) cancelBindingInvitation(w http.ResponseWriter, r *http.Request
 		a.bindingFormError(w, r, page, channel, usercmd.ErrNotFound)
 		return
 	}
-	err = a.invitations.Cancel(r.Context(), usercmd.InvitationActor{UserID: principal.User.ID, SessionID: principal.FamilyID}, page.User.ID, values.Get("invitation_id"), version)
+	err = a.invitations.Cancel(r.Context(), usercmd.InvitationActor{UserID: principal.User.ID, WebAuthSessionID: principal.WebAuthSessionID}, page.User.ID, values.Get("invitation_id"), version)
 	if err != nil {
 		a.bindingFormError(w, r, page, channel, err)
 		return

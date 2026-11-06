@@ -124,7 +124,7 @@ func TestOperationsPersistProtectedEditsAndProbeExactCandidate(t *testing.T) {
 	if err != nil || !found || !bytes.Equal(retained.ProtectedValues, original.ProtectedValues) {
 		t.Fatal("selection change lost exact old protected revision")
 	}
-	if err := p.Users().RevokeSession(t.Context(), authority.SessionID, authority.SessionVersion, time.Now(), "revoked", fixtureAudit("revoke", usercmd.AuditActionSessionRevoked, usercmd.AuditTargetSession, authority.SessionID)); err != nil {
+	if err := p.Users().RevokeWebAuthSession(t.Context(), authority.WebAuthSessionID, authority.WebAuthSessionVersion, time.Now(), "revoked", fixtureAudit("revoke", usercmd.AuditActionWebAuthRevoked, usercmd.AuditTargetWebAuthSession, authority.WebAuthSessionID)); err != nil {
 		t.Fatal(err)
 	}
 	before = requests.Load()
@@ -153,8 +153,8 @@ func operationsFixture(t *testing.T, configured map[string]agentconfig.MCPServer
 	if err := p.Users().CreateUser(t.Context(), user, usercmd.CredentialSecret{UserID: user.ID, PasswordHash: "fixture-hash"}, fixtureAudit("admin", usercmd.AuditActionUserCreated, usercmd.AuditTargetUser, user.ID)); err != nil {
 		t.Fatal(err)
 	}
-	family := usercmd.SessionFamily{ID: "browser", UserID: user.ID, Version: 1, CredentialVersion: 1, Assurance: usercmd.SessionAssuranceNormal, Access: usercmd.AccessCredential{Selector: "access", VerifierDigest: []byte("access-digest"), ExpiresAt: now.Add(15 * time.Minute)}, CSRFVerifierDigest: []byte("csrf-digest"), CreatedAt: now, LastSeenAt: now, RefreshExpiresAt: now.Add(time.Hour), RefreshTokens: []usercmd.RefreshToken{{Selector: "refresh", VerifierDigest: []byte("refresh-digest"), Generation: 1, State: usercmd.RefreshTokenStateActive, IssuedAt: now, ExpiresAt: now.Add(time.Hour)}}}
-	if err := p.Users().CreateSession(t.Context(), family, fixtureAudit("browser", usercmd.AuditActionLoginSucceeded, usercmd.AuditTargetSession, family.ID)); err != nil {
+	family := usercmd.WebAuthSession{ID: "browser", UserID: user.ID, Version: 1, CredentialVersion: 1, Assurance: usercmd.WebAuthAssuranceNormal, Access: usercmd.WebAuthAccessCredential{Selector: "access", VerifierDigest: []byte("access-digest"), ExpiresAt: now.Add(15 * time.Minute)}, CSRFVerifierDigest: []byte("csrf-digest"), CreatedAt: now, LastSeenAt: now, RefreshExpiresAt: now.Add(time.Hour), RefreshTokens: []usercmd.WebAuthRefreshToken{{Selector: "refresh", VerifierDigest: []byte("refresh-digest"), Generation: 1, State: usercmd.WebAuthRefreshTokenStateActive, IssuedAt: now, ExpiresAt: now.Add(time.Hour)}}}
+	if err := p.Users().CreateWebAuthSession(t.Context(), family, fixtureAudit("browser", usercmd.AuditActionWebAuthLoginSucceeded, usercmd.AuditTargetWebAuthSession, family.ID)); err != nil {
 		t.Fatal(err)
 	}
 	credentials, err := mcpmanage.New(base64.StdEncoding.EncodeToString(make([]byte, 32)))
@@ -179,7 +179,7 @@ func operationsFixture(t *testing.T, configured map[string]agentconfig.MCPServer
 	if err != nil {
 		t.Fatal(err)
 	}
-	return New(definitions, catalog), p, catalog, credentials, mcpcmd.Authority{UserID: user.ID, UserVersion: 1, CredentialVersion: 1, SessionID: family.ID, SessionVersion: 1, At: now}
+	return New(definitions, catalog), p, catalog, credentials, mcpcmd.Authority{UserID: user.ID, UserVersion: 1, CredentialVersion: 1, WebAuthSessionID: family.ID, WebAuthSessionVersion: 1, At: now}
 }
 
 func TestOperationsInventoryRecoveryReadsNeverLaunch(t *testing.T) {

@@ -17,9 +17,9 @@ func TestBrowserLoginSetsStrictScopedCookiesAndSafeRedirect(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
 	want := Credentials{
-		AccessToken: "access.raw", RefreshToken: "refresh.raw", CSRFToken: "session-csrf",
+		AccessToken: "access.raw", WebAuthRefreshToken: "refresh.raw", CSRFToken: "session-csrf",
 		AccessExpiresAt: now.Add(15 * time.Minute), RefreshExpiresAt: now.Add(12 * time.Hour),
-		Assurance: usercmd.SessionAssuranceNormal,
+		Assurance: usercmd.WebAuthAssuranceNormal,
 	}
 	service := &fakeBrowserService{
 		login: func(_ context.Context, username string, password []byte) (Credentials, error) {
@@ -51,9 +51,9 @@ func TestBrowserBasePathScopesCookiesAndReturnPaths(t *testing.T) {
 	now := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
 	service := &fakeBrowserService{login: func(context.Context, string, []byte) (Credentials, error) {
 		return Credentials{
-			AccessToken: "access", RefreshToken: "refresh", CSRFToken: "csrf",
+			AccessToken: "access", WebAuthRefreshToken: "refresh", CSRFToken: "csrf",
 			AccessExpiresAt: now.Add(15 * time.Minute), RefreshExpiresAt: now.Add(time.Hour),
-			Assurance: usercmd.SessionAssuranceNormal,
+			Assurance: usercmd.WebAuthAssuranceNormal,
 		}, nil
 	}}
 	browser, err := NewBrowser(service, HTTPConfig{TrustedOrigin: "https://backoffice.example", SecureCookies: true, BasePath: "/balda"})
@@ -91,7 +91,7 @@ func TestBrowserRefreshRotatesCookiesAndNeverReplaysUnsafeRequest(t *testing.T) 
 				t.Fatalf("Refresh() input = %q, %q", refreshToken, csrfToken)
 			}
 			return Credentials{
-				AccessToken: "new.access", RefreshToken: "new.refresh", CSRFToken: csrfToken,
+				AccessToken: "new.access", WebAuthRefreshToken: "new.refresh", CSRFToken: csrfToken,
 				AccessExpiresAt: now.Add(15 * time.Minute), RefreshExpiresAt: now.Add(12 * time.Hour),
 			}, nil
 		},
@@ -113,9 +113,9 @@ func TestBrowserRestrictedSessionAlwaysContinuesToPasswordReplacement(t *testing
 	t.Parallel()
 	service := &fakeBrowserService{login: func(context.Context, string, []byte) (Credentials, error) {
 		return Credentials{
-			AccessToken: "restricted.access", RefreshToken: "restricted.refresh", CSRFToken: "session-csrf",
+			AccessToken: "restricted.access", WebAuthRefreshToken: "restricted.refresh", CSRFToken: "session-csrf",
 			AccessExpiresAt: time.Now().Add(time.Minute), RefreshExpiresAt: time.Now().Add(time.Hour),
-			Assurance: usercmd.SessionAssuranceRestricted,
+			Assurance: usercmd.WebAuthAssuranceRestricted,
 		}, nil
 	}}
 	browser := newHTTPTestBrowser(t, service, false, 0)
@@ -253,15 +253,15 @@ func TestBrowserMiddlewareUsesCurrentPrincipalRoleAndAssurance(t *testing.T) {
 	}{
 		{
 			name: "administrator", status: http.StatusNoContent,
-			principal: Principal{User: usercmd.User{Role: usercmd.RoleAdministrator}, Assurance: usercmd.SessionAssuranceNormal},
+			principal: Principal{User: usercmd.User{Role: usercmd.RoleAdministrator}, Assurance: usercmd.WebAuthAssuranceNormal},
 		},
 		{
 			name: "operator", status: http.StatusForbidden,
-			principal: Principal{User: usercmd.User{Role: usercmd.RoleOperator}, Assurance: usercmd.SessionAssuranceNormal},
+			principal: Principal{User: usercmd.User{Role: usercmd.RoleOperator}, Assurance: usercmd.WebAuthAssuranceNormal},
 		},
 		{
 			name: "restricted", status: http.StatusForbidden,
-			principal: Principal{User: usercmd.User{Role: usercmd.RoleAdministrator}, Assurance: usercmd.SessionAssuranceRestricted},
+			principal: Principal{User: usercmd.User{Role: usercmd.RoleAdministrator}, Assurance: usercmd.WebAuthAssuranceRestricted},
 		},
 	}
 	for _, tt := range tests {
@@ -387,9 +387,9 @@ func (f *fakeBrowserService) ReplacePassword(ctx context.Context, token string, 
 	return f.replace(ctx, token, current, next)
 }
 
-func (f *fakeBrowserService) RevokeSession(ctx context.Context, token, sessionID string, confirmCurrent bool) error {
+func (f *fakeBrowserService) RevokeWebAuthSession(ctx context.Context, token, sessionID string, confirmCurrent bool) error {
 	if f.revoke == nil {
-		return errors.New("unexpected RevokeSession call")
+		return errors.New("unexpected RevokeWebAuthSession call")
 	}
 	return f.revoke(ctx, token, sessionID, confirmCurrent)
 }
@@ -463,7 +463,7 @@ func TestBrowserMonthlyRefreshUsesCommittedCookieDeadline(t *testing.T) {
 			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			request.Header.Set("Origin", "https://backoffice.example")
 			request.Header.Set("Sec-Fetch-Site", "same-origin")
-			request.AddCookie(&http.Cookie{Name: RefreshCookieName, Value: initial.RefreshToken})
+			request.AddCookie(&http.Cookie{Name: RefreshCookieName, Value: initial.WebAuthRefreshToken})
 			request.AddCookie(&http.Cookie{Name: CSRFCookieName, Value: initial.CSRFToken})
 			response := httptest.NewRecorder()
 			browser.Refresh(response, request)
@@ -483,8 +483,8 @@ func TestBrowserMonthlyRefreshUsesCommittedCookieDeadline(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					stored, found, err := p.Users().GetSessionByRefreshSelector(t.Context(), selector)
-					if err != nil || !found || !stored.Family.RefreshExpiresAt.Equal(wantExpiry) {
+					stored, found, err := p.Users().GetWebAuthSessionByRefreshSelector(t.Context(), selector)
+					if err != nil || !found || !stored.WebAuthSession.RefreshExpiresAt.Equal(wantExpiry) {
 						t.Fatalf("cookie and store deadline mismatch: %t, %v", found, err)
 					}
 				}

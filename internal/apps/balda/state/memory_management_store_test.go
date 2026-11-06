@@ -13,8 +13,8 @@ import (
 func TestMemoryManagementValidation(t *testing.T) {
 	t.Parallel()
 	now := time.Now().UTC()
-	a := memorycmd.Authority{UserID: "admin", UserVersion: 1, CredentialVersion: 1, SessionID: "session", SessionVersion: 1, At: now}
-	m := memorycmd.Mutation{Authority: a, Record: memorycmd.Record{Version: 1, UpdatedAt: now.Format(time.RFC3339Nano), Entries: []memorycmd.Entry{{Version: 1, CreatedAt: now.Format(time.RFC3339Nano), Fact: "one\nmultiline fact"}}}, Audit: usercmd.AuditEvent{ID: "audit", Action: usercmd.AuditActionMemoryFactCreated, ActorUserID: a.UserID, ActorSessionID: a.SessionID, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetMemoryFact, TargetID: "1", Source: "backoffice", OccurredAt: now}}
+	a := memorycmd.Authority{UserID: "admin", UserVersion: 1, CredentialVersion: 1, WebAuthSessionID: "session", WebAuthSessionVersion: 1, At: now}
+	m := memorycmd.Mutation{Authority: a, Record: memorycmd.Record{Version: 1, UpdatedAt: now.Format(time.RFC3339Nano), Entries: []memorycmd.Entry{{Version: 1, CreatedAt: now.Format(time.RFC3339Nano), Fact: "one\nmultiline fact"}}}, Audit: usercmd.AuditEvent{ID: "audit", Action: usercmd.AuditActionMemoryFactCreated, ActorUserID: a.UserID, ActorWebAuthSessionID: a.WebAuthSessionID, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetMemoryFact, TargetID: "1", Source: "backoffice", OccurredAt: now}}
 	if err := validateMemoryMutation(m); err != nil {
 		t.Fatal(err)
 	}
@@ -23,10 +23,10 @@ func TestMemoryManagementValidation(t *testing.T) {
 		change func(*memorycmd.Mutation)
 	}{
 		{"absent identity", func(m *memorycmd.Mutation) { m.Authority.UserID = "" }},
-		{"absent session", func(m *memorycmd.Mutation) { m.Authority.SessionID = "" }},
+		{"absent session", func(m *memorycmd.Mutation) { m.Authority.WebAuthSessionID = "" }},
 		{"absent user version", func(m *memorycmd.Mutation) { m.Authority.UserVersion = 0 }},
 		{"absent credential version", func(m *memorycmd.Mutation) { m.Authority.CredentialVersion = 0 }},
-		{"absent session version", func(m *memorycmd.Mutation) { m.Authority.SessionVersion = 0 }},
+		{"absent session version", func(m *memorycmd.Mutation) { m.Authority.WebAuthSessionVersion = 0 }},
 		{"absent time", func(m *memorycmd.Mutation) { m.Authority.At = time.Time{} }},
 		{"overflow", func(m *memorycmd.Mutation) { m.ExpectedVersion = math.MaxInt64; m.Record.Version = math.MinInt64 }},
 		{"negative expected version", func(m *memorycmd.Mutation) { m.ExpectedVersion = -1; m.Record.Version = 0 }},

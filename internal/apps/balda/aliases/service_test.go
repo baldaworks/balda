@@ -13,7 +13,7 @@ func TestManagedAliasValidationAndResolution(t *testing.T) {
 	store := &memoryStore{records: map[string]aliascmd.Record{}}
 	service := New(store)
 	a := aliascmd.Authority{UserID: "admin", UserVersion: 1, CredentialVersion: 1,
-		SessionID: "browser", SessionVersion: 1, At: time.Now().UTC()}
+		WebAuthSessionID: "browser", WebAuthSessionVersion: 1, At: time.Now().UTC()}
 	for _, name := range []string{"owner", "collaborator", "owner@telegram", "Upper", "-bad"} {
 		_, err := service.Create(t.Context(), aliascmd.Create{Name: name, LocatorRef: "telegram:1:0", Authority: a})
 		if !errors.Is(err, aliascmd.ErrInvalid) {

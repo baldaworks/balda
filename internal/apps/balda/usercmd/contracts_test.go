@@ -10,39 +10,39 @@ func TestValidateSessionFamily(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 9, 23, 2, 0, 0, 0, time.UTC)
-	family := SessionFamily{
-		ID: "session-1", UserID: "user-1", Assurance: SessionAssuranceNormal, CredentialVersion: 3,
-		Access:             AccessCredential{Selector: "access-selector", VerifierDigest: []byte("access-digest"), ExpiresAt: now.Add(time.Minute)},
+	family := WebAuthSession{
+		ID: "session-1", UserID: "user-1", Assurance: WebAuthAssuranceNormal, CredentialVersion: 3,
+		Access:             WebAuthAccessCredential{Selector: "access-selector", VerifierDigest: []byte("access-digest"), ExpiresAt: now.Add(time.Minute)},
 		CSRFVerifierDigest: []byte("csrf-digest"), CreatedAt: now, LastSeenAt: now, RefreshExpiresAt: now.Add(time.Hour), Version: 1,
-		RefreshTokens: []RefreshToken{
-			{Selector: "old-refresh", VerifierDigest: []byte("old-digest"), Generation: 1, State: RefreshTokenStateUsed, IssuedAt: now, UsedAt: now.Add(time.Minute), ExpiresAt: now.Add(30 * time.Minute)},
-			{Selector: "active-refresh", VerifierDigest: []byte("active-digest"), Generation: 2, State: RefreshTokenStateActive, IssuedAt: now.Add(time.Minute), ExpiresAt: now.Add(time.Hour)},
+		RefreshTokens: []WebAuthRefreshToken{
+			{Selector: "old-refresh", VerifierDigest: []byte("old-digest"), Generation: 1, State: WebAuthRefreshTokenStateUsed, IssuedAt: now, UsedAt: now.Add(time.Minute), ExpiresAt: now.Add(30 * time.Minute)},
+			{Selector: "active-refresh", VerifierDigest: []byte("active-digest"), Generation: 2, State: WebAuthRefreshTokenStateActive, IssuedAt: now.Add(time.Minute), ExpiresAt: now.Add(time.Hour)},
 		},
 	}
 
-	if err := ValidateSessionFamily(family); err != nil {
-		t.Fatalf("ValidateSessionFamily() error = %v, want nil", err)
+	if err := ValidateWebAuthSession(family); err != nil {
+		t.Fatalf("ValidateWebAuthSession() error = %v, want nil", err)
 	}
 
 	missingActive := family
 	missingActive.RefreshTokens = missingActive.RefreshTokens[:1]
-	if err := ValidateSessionFamily(missingActive); !errors.Is(err, ErrInvalid) {
+	if err := ValidateWebAuthSession(missingActive); !errors.Is(err, ErrInvalid) {
 		t.Errorf("missing active refresh error = %v, want %v", err, ErrInvalid)
 	}
 
 	twoActive := family
-	twoActive.RefreshTokens = append([]RefreshToken(nil), family.RefreshTokens...)
-	twoActive.RefreshTokens[0].State = RefreshTokenStateActive
+	twoActive.RefreshTokens = append([]WebAuthRefreshToken(nil), family.RefreshTokens...)
+	twoActive.RefreshTokens[0].State = WebAuthRefreshTokenStateActive
 	twoActive.RefreshTokens[0].UsedAt = time.Time{}
 	twoActive.RefreshTokens[0].ExpiresAt = family.RefreshExpiresAt
-	if err := ValidateSessionFamily(twoActive); !errors.Is(err, ErrInvalid) {
+	if err := ValidateWebAuthSession(twoActive); !errors.Is(err, ErrInvalid) {
 		t.Errorf("two active refresh tokens error = %v, want %v", err, ErrInvalid)
 	}
 
 	shortenedLifetime := family
-	shortenedLifetime.RefreshTokens = append([]RefreshToken(nil), family.RefreshTokens...)
+	shortenedLifetime.RefreshTokens = append([]WebAuthRefreshToken(nil), family.RefreshTokens...)
 	shortenedLifetime.RefreshTokens[1].ExpiresAt = now.Add(30 * time.Minute)
-	if err := ValidateSessionFamily(shortenedLifetime); !errors.Is(err, ErrInvalid) {
+	if err := ValidateWebAuthSession(shortenedLifetime); !errors.Is(err, ErrInvalid) {
 		t.Errorf("shortened refresh lifetime error = %v, want %v", err, ErrInvalid)
 	}
 }

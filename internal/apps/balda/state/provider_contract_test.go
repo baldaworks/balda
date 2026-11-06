@@ -283,9 +283,9 @@ func checkProvider_ManagedAliasAuthorityAndVersion(t *testing.T, open contractOp
 	base := contractMCPMutation(t, p)
 	a := aliascmd.Authority{UserID: base.Authority.UserID, UserVersion: base.Authority.UserVersion,
 		CredentialVersion: base.Authority.CredentialVersion, MFAVersion: base.Authority.MFAVersion,
-		SessionID: base.Authority.SessionID, SessionVersion: base.Authority.SessionVersion, At: base.Authority.At}
+		WebAuthSessionID: base.Authority.WebAuthSessionID, WebAuthSessionVersion: base.Authority.WebAuthSessionVersion, At: base.Authority.At}
 	audit := usercmd.AuditEvent{ID: "alias-create", Action: usercmd.AuditActionAliasCreated,
-		Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: a.UserID, ActorSessionID: a.SessionID,
+		Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: a.UserID, ActorWebAuthSessionID: a.WebAuthSessionID,
 		TargetType: usercmd.AuditTargetAlias, TargetID: "main_chat", Source: "provider-contract", OccurredAt: a.At}
 	m := aliascmd.Mutation{Kind: aliascmd.MutationCreate, Record: aliascmd.Record{Name: "main_chat", LocatorRef: "telegram:-1003953132277:0", Version: 1}, Authority: a, Audit: audit}
 	if err := p.Aliases().Save(t.Context(), m); err != nil {
@@ -371,14 +371,14 @@ func checkProvider_ScheduleManagementAuthorityAndVersion(t *testing.T, open cont
 	base := contractMCPMutation(t, p)
 	a := schedulecmd.Authority{UserID: base.Authority.UserID, UserVersion: base.Authority.UserVersion,
 		CredentialVersion: base.Authority.CredentialVersion, MFAVersion: base.Authority.MFAVersion,
-		SessionID: base.Authority.SessionID, SessionVersion: base.Authority.SessionVersion, At: base.Authority.At}
+		WebAuthSessionID: base.Authority.WebAuthSessionID, WebAuthSessionVersion: base.Authority.WebAuthSessionVersion, At: base.Authority.At}
 	next := a.At.Add(time.Hour)
 	r := ScheduledJobRecord{JobID: "managed-daily", Source: ScheduledJobSourceManaged,
 		Enabled: true, DefinitionVersion: 1, SessionID: "tg-1-0", ChannelType: ChannelTypeTelegram,
 		AddressKey: "1:0", AddressJSON: `{}`, Content: "review", ScheduleSpec: "0 9 * * *",
 		Status: ScheduledJobStatusActive, TargetKind: "locator", TargetKey: "telegram:1:0", NextRunAt: next}
 	audit := usercmd.AuditEvent{ID: "schedule-create", Action: usercmd.AuditActionScheduleDefinitionChanged,
-		Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: a.UserID, ActorSessionID: a.SessionID,
+		Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: a.UserID, ActorWebAuthSessionID: a.WebAuthSessionID,
 		TargetType: usercmd.AuditTargetSchedule, TargetID: r.JobID, Source: "provider-contract", OccurredAt: a.At}
 	m := ScheduleMutation{Kind: ScheduleCreate, Record: r, Authority: a, Audit: audit}
 	if err := p.ScheduleManagement().Save(t.Context(), m); err != nil {
@@ -454,7 +454,7 @@ func checkProvider_ScheduleRunAdmissions(t *testing.T, open contractOpener) {
 	base := contractMCPMutation(t, p)
 	a := schedulecmd.Authority{UserID: base.Authority.UserID, UserVersion: base.Authority.UserVersion,
 		CredentialVersion: base.Authority.CredentialVersion, MFAVersion: base.Authority.MFAVersion,
-		SessionID: base.Authority.SessionID, SessionVersion: base.Authority.SessionVersion, At: base.Authority.At}
+		WebAuthSessionID: base.Authority.WebAuthSessionID, WebAuthSessionVersion: base.Authority.WebAuthSessionVersion, At: base.Authority.At}
 	now := a.At
 	job := ScheduledJobRecord{JobID: "configured-daily", Source: ScheduledJobSourceConfig, Enabled: true,
 		DefinitionVersion: 1, SessionID: "tg-1-0", ChannelType: ChannelTypeTelegram,
@@ -522,7 +522,7 @@ func checkProvider_ScheduleRunAdmissions(t *testing.T, open contractOpener) {
 		TriggerKey: "manual:nonce-1", DefinitionVersion: 1, RequestedAt: now,
 		DispatchState: ScheduleRunPending, PayloadJSON: `{}`}
 	audit := usercmd.AuditEvent{ID: "manual-audit", Action: usercmd.AuditActionScheduleRunRequested,
-		Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: a.UserID, ActorSessionID: a.SessionID,
+		Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: a.UserID, ActorWebAuthSessionID: a.WebAuthSessionID,
 		TargetType: usercmd.AuditTargetSchedule, TargetID: job.JobID, Source: "provider-contract", OccurredAt: a.At}
 	admission := ScheduleManualAdmission{Run: manual, ExpectedVersion: 1, Authority: a, Audit: audit}
 	created, err = p.ScheduleManagement().AdmitManualRun(t.Context(), admission)

@@ -248,7 +248,7 @@ func TestHTTPAppQAWorkspaceFixturesPrecedeRuntimeBinding(t *testing.T) {
 	}{
 		{name: "access", want: []string{"Credential", "Telegram", "42", "Active browser sessions"}},
 		{name: "account", want: []string{"Change password", "telegram:42", "End session"}},
-		{name: "audit", want: []string{"session.refresh.succeeded", "session.refresh.replay", "11111111-1111-4111-8111-111111111111"}},
+		{name: "audit", want: []string{"web_auth.refresh.succeeded", "web_auth.refresh.replay", "11111111-1111-4111-8111-111111111111"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -677,12 +677,12 @@ func TestHTTPAppAccountRotationAndCurrentFamilyRevocation(t *testing.T) {
 	}
 
 	unconfirmedForm := url.Values{"csrf_token": {next.csrf}}
-	unconfirmed := performAccessMutation(t, handler, config, "/account/sessions/"+principal.FamilyID+"/revoke", unconfirmedForm, next.access, next.csrf, true)
+	unconfirmed := performAccessMutation(t, handler, config, "/account/sessions/"+principal.WebAuthSessionID+"/revoke", unconfirmedForm, next.access, next.csrf, true)
 	if unconfirmed.Code != http.StatusBadRequest || strings.Contains(unconfirmed.Body.String(), "<!doctype") {
 		t.Fatalf("unconfirmed current family revocation = %d %q", unconfirmed.Code, unconfirmed.Body.String())
 	}
 	revokeForm := url.Values{"csrf_token": {next.csrf}, "confirm_current": {"yes"}}
-	revoked := performAccessMutation(t, handler, config, "/account/sessions/"+principal.FamilyID+"/revoke", revokeForm, next.access, next.csrf, false)
+	revoked := performAccessMutation(t, handler, config, "/account/sessions/"+principal.WebAuthSessionID+"/revoke", revokeForm, next.access, next.csrf, false)
 	if revoked.Code != http.StatusSeeOther || revoked.Header().Get("Location") != "/login" {
 		t.Fatalf("current family revocation = %d %v %q", revoked.Code, revoked.Header(), revoked.Body.String())
 	}
@@ -766,7 +766,7 @@ func TestHTTPAppAccountActiveSessionPagination(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	revoked := performAccessMutation(t, handler, config, "/access/users/admin/sessions/"+other.FamilyID+"/revoke",
+	revoked := performAccessMutation(t, handler, config, "/access/users/admin/sessions/"+other.WebAuthSessionID+"/revoke",
 		url.Values{"csrf_token": {oldest.csrf}}, oldest.access, oldest.csrf, false)
 	if revoked.Code != http.StatusSeeOther || revoked.Header().Get("Location") != "/access/users/admin" {
 		t.Fatalf("access session revocation = %d %q", revoked.Code, revoked.Header().Get("Location"))
@@ -778,7 +778,7 @@ func TestHTTPAppAccountActiveSessionPagination(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	endedCurrent := performAccessMutation(t, handler, config, "/access/users/admin/sessions/"+self.FamilyID+"/revoke",
+	endedCurrent := performAccessMutation(t, handler, config, "/access/users/admin/sessions/"+self.WebAuthSessionID+"/revoke",
 		url.Values{"csrf_token": {oldest.csrf}, "confirm_current": {"yes"}}, oldest.access, oldest.csrf, false)
 	if endedCurrent.Code != http.StatusSeeOther || endedCurrent.Header().Get("Location") != "/login" {
 		t.Fatalf("current access session revocation = %d %q", endedCurrent.Code, endedCurrent.Header().Get("Location"))
@@ -812,7 +812,7 @@ func TestHTTPAppAuditFilteringPaginationRedactionAndRoleBoundary(t *testing.T) {
 	admin := loginHTTPAppSession(t, handler, config, "admin")
 	operator := loginHTTPAppSession(t, handler, config, "operator")
 
-	auditRequest := httptest.NewRequest(http.MethodGet, "/audit?action=session.login.succeeded&outcome=succeeded&target=session&limit=1", nil)
+	auditRequest := httptest.NewRequest(http.MethodGet, "/audit?action=web_auth.login.succeeded&outcome=succeeded&target=web_auth_session&limit=1", nil)
 	auditRequest.Header.Set("HX-Request", "true")
 	auditRequest.Header.Set("HX-Target", "main-content")
 	auditRequest.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: admin.access})
@@ -820,7 +820,7 @@ func TestHTTPAppAuditFilteringPaginationRedactionAndRoleBoundary(t *testing.T) {
 	handler.ServeHTTP(auditResponse, auditRequest)
 	body := auditResponse.Body.String()
 	if auditResponse.Code != http.StatusOK || strings.Contains(body, "<!doctype") || strings.Count(body, `id="main-content"`) != 1 ||
-		!strings.Contains(body, "session.login.succeeded") || !strings.Contains(body, "Older events") {
+		!strings.Contains(body, "web_auth.login.succeeded") || !strings.Contains(body, "Older events") {
 		t.Fatalf("filtered audit = %d %q", auditResponse.Code, body)
 	}
 	for _, forbidden := range []string{validPassword, admin.access, admin.refresh, admin.csrf} {
@@ -832,7 +832,7 @@ func TestHTTPAppAuditFilteringPaginationRedactionAndRoleBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 	day := time.Now().UTC().Format("2006-01-02")
-	actorPath := "/audit?action=session.login.succeeded&actor=operator&from=" + day + "&to=" + day + "&limit=1"
+	actorPath := "/audit?action=web_auth.login.succeeded&actor=operator&from=" + day + "&to=" + day + "&limit=1"
 	actorRequest := httptest.NewRequest(http.MethodGet, actorPath, nil)
 	actorRequest.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: admin.access})
 	actorResponse := httptest.NewRecorder()

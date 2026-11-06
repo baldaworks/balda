@@ -56,8 +56,8 @@ func TestGuardedLifecycleLateAuthorityAndAuditFailure(t *testing.T) {
 					return
 				}
 				now := time.Now().UTC()
-				event := usercmd.AuditEvent{ID: "revoke-install", Action: usercmd.AuditActionSessionRevoked, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetSession, TargetID: a.SessionID, Source: "test", OccurredAt: now}
-				if err := p.Users().RevokeSession(t.Context(), a.SessionID, a.SessionVersion, now, "test", event); err != nil {
+				event := usercmd.AuditEvent{ID: "revoke-install", Action: usercmd.AuditActionWebAuthRevoked, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetWebAuthSession, TargetID: a.WebAuthSessionID, Source: "test", OccurredAt: now}
+				if err := p.Users().RevokeWebAuthSession(t.Context(), a.WebAuthSessionID, a.WebAuthSessionVersion, now, "test", event); err != nil {
 					t.Fatal(err)
 				}
 			}}
@@ -138,8 +138,8 @@ func TestGuardedLifecycleAcceptedRecoveryPending(t *testing.T) {
 				t.Fatal(err)
 			}
 			now := time.Now().UTC()
-			revoke := usercmd.AuditEvent{ID: "revoke-pending", Action: usercmd.AuditActionSessionRevoked, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetSession, TargetID: a.SessionID, Source: "test", OccurredAt: now}
-			if err := p.Users().RevokeSession(t.Context(), a.SessionID, a.SessionVersion, now, "test", revoke); err != nil {
+			revoke := usercmd.AuditEvent{ID: "revoke-pending", Action: usercmd.AuditActionWebAuthRevoked, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetWebAuthSession, TargetID: a.WebAuthSessionID, Source: "test", OccurredAt: now}
+			if err := p.Users().RevokeWebAuthSession(t.Context(), a.WebAuthSessionID, a.WebAuthSessionVersion, now, "test", revoke); err != nil {
 				t.Fatal(err)
 			}
 			_, err = s.ManagementMutatePlugin(t.Context(), plugincmd.PluginMutation{Operation: plugincmd.Disable, PluginName: "demo", ExpectedState: freshState, Confirm: true, Authority: a})
@@ -213,8 +213,8 @@ func TestGuardedLifecycleRevokedWhileWaitingForCatalog(t *testing.T) {
 		t.Fatal("mutation did not reach catalog wait")
 	}
 	now := time.Now().UTC()
-	event := usercmd.AuditEvent{ID: "revoke-waiting-install", Action: usercmd.AuditActionSessionRevoked, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetSession, TargetID: a.SessionID, Source: "test", OccurredAt: now}
-	if err := p.Users().RevokeSession(t.Context(), a.SessionID, a.SessionVersion, now, "test", event); err != nil {
+	event := usercmd.AuditEvent{ID: "revoke-waiting-install", Action: usercmd.AuditActionWebAuthRevoked, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetWebAuthSession, TargetID: a.WebAuthSessionID, Source: "test", OccurredAt: now}
+	if err := p.Users().RevokeWebAuthSession(t.Context(), a.WebAuthSessionID, a.WebAuthSessionVersion, now, "test", event); err != nil {
 		t.Fatal(err)
 	}
 	activator.mu.Unlock()
@@ -301,8 +301,8 @@ func TestGuardedLifecycleRevokedDuringObservationCannotRecover(t *testing.T) {
 	activator.publishErr = nil
 	hook := &pluginObservationHook{PluginManagementStore: p.PluginManagement(), beforeSecond: func() {
 		now := time.Now().UTC()
-		event := usercmd.AuditEvent{ID: "revoke-during-observation", Action: usercmd.AuditActionSessionRevoked, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetSession, TargetID: a.SessionID, Source: "test", OccurredAt: now}
-		if err := p.Users().RevokeSession(t.Context(), a.SessionID, a.SessionVersion, now, "test", event); err != nil {
+		event := usercmd.AuditEvent{ID: "revoke-during-observation", Action: usercmd.AuditActionWebAuthRevoked, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetWebAuthSession, TargetID: a.WebAuthSessionID, Source: "test", OccurredAt: now}
+		if err := p.Users().RevokeWebAuthSession(t.Context(), a.WebAuthSessionID, a.WebAuthSessionVersion, now, "test", event); err != nil {
 			t.Fatal(err)
 		}
 	}}
@@ -453,7 +453,7 @@ func TestGuardedLifecycleBrowserOperationsPreserveSelection(t *testing.T) {
 	for _, event := range page.Events {
 		if event.TargetType == usercmd.AuditTargetPlugin {
 			counts[event.Action]++
-			if event.Source != "backoffice" || event.ActorSessionID != a.SessionID {
+			if event.Source != "backoffice" || event.ActorWebAuthSessionID != a.WebAuthSessionID {
 				t.Fatalf("browser audit=%+v", event)
 			}
 		}

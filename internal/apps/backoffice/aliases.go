@@ -87,7 +87,7 @@ func (a *httpApp) aliasesView(r *http.Request, p security.Principal) (webui.Page
 func (a *httpApp) aliasAuthority(p security.Principal) aliascmd.Authority {
 	return aliascmd.Authority{UserID: p.User.ID, UserVersion: p.User.Version,
 		CredentialVersion: p.User.Credential.Version, MFAVersion: p.MFAVersion,
-		SessionID: p.FamilyID, SessionVersion: p.Version, At: time.Now().UTC()}
+		WebAuthSessionID: p.WebAuthSessionID, WebAuthSessionVersion: p.WebAuthSessionVersion, At: time.Now().UTC()}
 }
 
 func (a *httpApp) aliasMutation(w http.ResponseWriter, r *http.Request) (url.Values, webui.Page, aliascmd.Authority, bool) {

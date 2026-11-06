@@ -122,7 +122,7 @@ func (s *sqlSkillManagementStore) Commit(ctx context.Context, m skillcmd.Commit)
 	if m.Operation == skillcmd.OperationRefresh {
 		targetID = "skills"
 	}
-	audit := usercmd.AuditEvent{ID: m.AuditID, Action: usercmd.AuditActionSkillChanged, Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: authority.actorUserID, ActorSessionID: authority.actorSessionID, TargetType: usercmd.AuditTargetSkill, TargetID: targetID, Source: authority.source, Reason: skillAuditReason(m), OccurredAt: m.Authority.At}
+	audit := usercmd.AuditEvent{ID: m.AuditID, Action: usercmd.AuditActionSkillChanged, Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: authority.actorUserID, ActorWebAuthSessionID: authority.actorSessionID, TargetType: usercmd.AuditTargetSkill, TargetID: targetID, Source: authority.source, Reason: skillAuditReason(m), OccurredAt: m.Authority.At}
 	if err := s.users.insertAudit(ctx, tx, audit); err != nil {
 		return skillcmd.ErrUnavailable
 	}
@@ -215,7 +215,7 @@ func (s *sqlSkillManagementStore) MarkPublished(ctx context.Context, evidence ru
 }
 
 func skillBrowserAuthority(a skillcmd.Authority) browserAuthority {
-	return browserAuthority{userID: a.UserID, sessionID: a.SessionID, userVersion: a.UserVersion, credentialVersion: a.CredentialVersion, mfaVersion: a.MFAVersion, sessionVersion: a.SessionVersion, at: a.At}
+	return browserAuthority{userID: a.UserID, sessionID: a.WebAuthSessionID, userVersion: a.UserVersion, credentialVersion: a.CredentialVersion, mfaVersion: a.MFAVersion, sessionVersion: a.WebAuthSessionVersion, at: a.At}
 }
 
 type checkedSkillAuthority struct {
@@ -239,7 +239,7 @@ func (s *sqlSkillManagementStore) checkSkillAuthority(ctx context.Context, tx *s
 	if err != nil {
 		return checkedSkillAuthority{}, skillAuthorityError(err)
 	}
-	return checkedSkillAuthority{browser: &locked, actorUserID: a.UserID, actorSessionID: a.SessionID, source: "backoffice"}, nil
+	return checkedSkillAuthority{browser: &locked, actorUserID: a.UserID, actorSessionID: a.WebAuthSessionID, source: "backoffice"}, nil
 }
 
 func (a checkedSkillAuthority) checkTime(request skillcmd.Authority) error {
@@ -256,7 +256,7 @@ func skillAuthorityError(err error) error {
 	switch {
 	case errors.Is(err, usercmd.ErrConflict):
 		return skillcmd.ErrConflict
-	case errors.Is(err, usercmd.ErrForbidden), errors.Is(err, usercmd.ErrNotFound), errors.Is(err, usercmd.ErrSessionUnavailable):
+	case errors.Is(err, usercmd.ErrForbidden), errors.Is(err, usercmd.ErrNotFound), errors.Is(err, usercmd.ErrWebAuthSessionUnavailable):
 		return skillcmd.ErrForbidden
 	default:
 		return skillcmd.ErrUnavailable

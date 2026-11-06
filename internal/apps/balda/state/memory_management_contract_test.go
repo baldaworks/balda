@@ -20,12 +20,12 @@ func checkMemoryManagement(t *testing.T, open contractOpener) {
 	defer closeContractProvider(t, p)
 	base := contractMCPMutation(t, p)
 	a := memorycmd.Authority{UserID: base.Authority.UserID, UserVersion: base.Authority.UserVersion,
-		CredentialVersion: base.Authority.CredentialVersion, SessionID: base.Authority.SessionID,
-		SessionVersion: base.Authority.SessionVersion, At: base.Authority.At}
+		CredentialVersion: base.Authority.CredentialVersion, WebAuthSessionID: base.Authority.WebAuthSessionID,
+		WebAuthSessionVersion: base.Authority.WebAuthSessionVersion, At: base.Authority.At}
 	m := memorycmd.Mutation{Record: memorycmd.Record{Version: 1, UpdatedAt: a.At.Format(time.RFC3339Nano),
 		Entries: []memorycmd.Entry{{Version: 1, CreatedAt: a.At.Format(time.RFC3339Nano), Fact: "private-fact-canary"}}},
 		Authority: a, Audit: usercmd.AuditEvent{ID: "memory-create", Action: usercmd.AuditActionMemoryFactCreated,
-			Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: a.UserID, ActorSessionID: a.SessionID,
+			Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: a.UserID, ActorWebAuthSessionID: a.WebAuthSessionID,
 			TargetType: usercmd.AuditTargetMemoryFact, TargetID: "1", Source: "provider-contract", OccurredAt: a.At}}
 	if err := p.MemoryManagement().CheckAuthority(t.Context(), a); err != nil {
 		t.Fatal(err)
@@ -130,7 +130,7 @@ func checkMemoryAuthorityFences(t *testing.T, factory func(*testing.T) contractO
 				now = now.Add(-48 * time.Hour)
 			}
 			base := contractMCPMutationAt(t, p, now)
-			a := memorycmd.Authority{UserID: base.Authority.UserID, UserVersion: base.Authority.UserVersion, CredentialVersion: base.Authority.CredentialVersion, SessionID: base.Authority.SessionID, SessionVersion: base.Authority.SessionVersion, At: base.Authority.At}
+			a := memorycmd.Authority{UserID: base.Authority.UserID, UserVersion: base.Authority.UserVersion, CredentialVersion: base.Authority.CredentialVersion, WebAuthSessionID: base.Authority.WebAuthSessionID, WebAuthSessionVersion: base.Authority.WebAuthSessionVersion, At: base.Authority.At}
 			store := p.MemoryManagement().(*sqlMemoryManagementStore)
 			want := memorycmd.ErrConflict
 			var query string
@@ -142,9 +142,9 @@ func checkMemoryAuthorityFences(t *testing.T, factory func(*testing.T) contractO
 			case "stale mfa":
 				a.MFAVersion++
 			case "stale session":
-				a.SessionVersion++
+				a.WebAuthSessionVersion++
 			case "unknown session":
-				a.SessionID = "missing"
+				a.WebAuthSessionID = "missing"
 				want = memorycmd.ErrForbidden
 			case "request expired":
 				a.At = a.At.Add(time.Hour)
@@ -168,7 +168,7 @@ func checkMemoryAuthorityFences(t *testing.T, factory func(*testing.T) contractO
 				want = memorycmd.ErrForbidden
 			case "mfa mismatch":
 				enrolled := contractMCPEnrolledAuthority(t, p, base.Authority)
-				a.UserVersion, a.CredentialVersion, a.MFAVersion, a.SessionID = enrolled.UserVersion, enrolled.CredentialVersion, enrolled.MFAVersion, enrolled.SessionID
+				a.UserVersion, a.CredentialVersion, a.MFAVersion, a.WebAuthSessionID = enrolled.UserVersion, enrolled.CredentialVersion, enrolled.MFAVersion, enrolled.WebAuthSessionID
 				query = "UPDATE balda_backoffice_sessions SET mfa_factor_id = '', webauthn_verified_at = ''"
 				want = memorycmd.ErrForbidden
 			default:
@@ -179,7 +179,7 @@ func checkMemoryAuthorityFences(t *testing.T, factory func(*testing.T) contractO
 					t.Fatal(err)
 				}
 			}
-			m := memorycmd.Mutation{Authority: a, Record: memorycmd.Record{Version: 1, UpdatedAt: a.At.Format(time.RFC3339Nano), Entries: []memorycmd.Entry{{Version: 1, CreatedAt: a.At.Format(time.RFC3339Nano), Fact: "private-fact-canary"}}}, Audit: usercmd.AuditEvent{ID: "memory-fence", Action: usercmd.AuditActionMemoryFactCreated, Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: a.UserID, ActorSessionID: a.SessionID, TargetType: usercmd.AuditTargetMemoryFact, TargetID: "1", Source: "provider-contract", OccurredAt: a.At}}
+			m := memorycmd.Mutation{Authority: a, Record: memorycmd.Record{Version: 1, UpdatedAt: a.At.Format(time.RFC3339Nano), Entries: []memorycmd.Entry{{Version: 1, CreatedAt: a.At.Format(time.RFC3339Nano), Fact: "private-fact-canary"}}}, Audit: usercmd.AuditEvent{ID: "memory-fence", Action: usercmd.AuditActionMemoryFactCreated, Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: a.UserID, ActorWebAuthSessionID: a.WebAuthSessionID, TargetType: usercmd.AuditTargetMemoryFact, TargetID: "1", Source: "provider-contract", OccurredAt: a.At}}
 			switch name {
 			case "audit actor":
 				m.Audit.ActorUserID = "other"

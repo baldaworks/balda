@@ -148,7 +148,7 @@ func TestChatArchiveHTTPTranscript(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			authority := chatarchivecmd.Authority{UserID: principal.User.ID, UserVersion: principal.User.Version, CredentialVersion: principal.User.Credential.Version, MFAVersion: principal.MFAVersion, SessionID: principal.FamilyID, SessionVersion: principal.Version, At: now}
+			authority := chatarchivecmd.Authority{UserID: principal.User.ID, UserVersion: principal.User.Version, CredentialVersion: principal.User.Credential.Version, MFAVersion: principal.MFAVersion, WebAuthSessionID: principal.WebAuthSessionID, WebAuthSessionVersion: principal.WebAuthSessionVersion, At: now}
 			transcript, err := reader.Transcript(t.Context(), id, "", authority)
 			if err != nil {
 				t.Fatal(err)
@@ -226,7 +226,7 @@ func TestChatArchiveHTTPTranscript(t *testing.T) {
 			if got := get("/chat-sessions?status=pending&q=Tied", true); got.Code != 200 || !strings.Contains(got.Body.String(), "Activation pending") || strings.Count(got.Body.String(), `id="main-content"`) != 1 {
 				t.Fatalf("pending fragment=%d", got.Code)
 			}
-			revoke := performAccessMutation(t, handler, config, base+"/account/sessions/"+principal.FamilyID+"/revoke", url.Values{"csrf_token": {admin.csrf}, "confirm_current": {"yes"}}, admin.access, admin.csrf, false)
+			revoke := performAccessMutation(t, handler, config, base+"/account/sessions/"+principal.WebAuthSessionID+"/revoke", url.Values{"csrf_token": {admin.csrf}, "confirm_current": {"yes"}}, admin.access, admin.csrf, false)
 			if revoke.Code != 303 {
 				t.Fatalf("revoke=%d", revoke.Code)
 			}

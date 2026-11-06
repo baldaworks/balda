@@ -81,7 +81,7 @@ func contractMCPMutationAt(t *testing.T, p Provider, now time.Time) MCPMutation 
 		t.Fatal(err)
 	}
 	f := contractSessionFamily(u.ID, now)
-	if err := p.Users().CreateSession(t.Context(), f, contractAudit("mcp-admin-login", usercmd.AuditActionLoginSucceeded, f.ID, now)); err != nil {
+	if err := p.Users().CreateWebAuthSession(t.Context(), f, contractAudit("mcp-admin-login", usercmd.AuditActionWebAuthLoginSucceeded, f.ID, now)); err != nil {
 		t.Fatal(err)
 	}
 	return MCPMutation{
@@ -92,8 +92,8 @@ func contractMCPMutationAt(t *testing.T, p Provider, now time.Time) MCPMutation 
 				Headers: map[string]mcpcmd.ValueBinding{"Authorization": {Kind: mcpcmd.ValueProtected}}},
 			ProtectedValues: []byte("opaque-protected-revision-1")},
 		Authority: mcpcmd.Authority{UserID: u.ID, UserVersion: u.Version, CredentialVersion: u.Credential.Version,
-			SessionID: f.ID, SessionVersion: f.Version, At: now},
-		Audit: usercmd.AuditEvent{ID: "mcp-create", ActorUserID: u.ID, ActorSessionID: f.ID, Action: "mcp.definition.changed",
+			WebAuthSessionID: f.ID, WebAuthSessionVersion: f.Version, At: now},
+		Audit: usercmd.AuditEvent{ID: "mcp-create", ActorUserID: u.ID, ActorWebAuthSessionID: f.ID, Action: "mcp.definition.changed",
 			TargetType: "mcp", TargetID: "connection-1", Outcome: usercmd.AuditOutcomeSucceeded, Source: "provider-contract", OccurredAt: now},
 	}
 }
@@ -168,7 +168,7 @@ func checkMCPAuthorityFences(t *testing.T, open contractOpener) {
 		t.Fatalf("valid MCP preflight rejected: %v", err)
 	}
 	for _, change := range []func(*mcpcmd.Authority){
-		func(a *mcpcmd.Authority) { a.At = time.Time{} }, func(a *mcpcmd.Authority) { a.UserID = "" }, func(a *mcpcmd.Authority) { a.SessionID = "" }, func(a *mcpcmd.Authority) { a.UserVersion = 0 }, func(a *mcpcmd.Authority) { a.CredentialVersion = 0 }, func(a *mcpcmd.Authority) { a.SessionVersion = 0 },
+		func(a *mcpcmd.Authority) { a.At = time.Time{} }, func(a *mcpcmd.Authority) { a.UserID = "" }, func(a *mcpcmd.Authority) { a.WebAuthSessionID = "" }, func(a *mcpcmd.Authority) { a.UserVersion = 0 }, func(a *mcpcmd.Authority) { a.CredentialVersion = 0 }, func(a *mcpcmd.Authority) { a.WebAuthSessionVersion = 0 },
 	} {
 		a := m.Authority
 		change(&a)
@@ -184,8 +184,11 @@ func checkMCPAuthorityFences(t *testing.T, open contractOpener) {
 		{"stale user", func(m *MCPMutation) { m.Authority.UserVersion++ }, mcpcmd.ErrConflict},
 		{"stale credential", func(m *MCPMutation) { m.Authority.CredentialVersion++ }, mcpcmd.ErrConflict},
 		{"stale factor", func(m *MCPMutation) { m.Authority.MFAVersion++ }, mcpcmd.ErrConflict},
-		{"stale family", func(m *MCPMutation) { m.Authority.SessionVersion++ }, mcpcmd.ErrConflict},
-		{"unknown family", func(m *MCPMutation) { m.Authority.SessionID = "missing"; m.Audit.ActorSessionID = "missing" }, mcpcmd.ErrForbidden},
+		{"stale family", func(m *MCPMutation) { m.Authority.WebAuthSessionVersion++ }, mcpcmd.ErrConflict},
+		{"unknown family", func(m *MCPMutation) {
+			m.Authority.WebAuthSessionID = "missing"
+			m.Audit.ActorWebAuthSessionID = "missing"
+		}, mcpcmd.ErrForbidden},
 		{"expired access", func(m *MCPMutation) {
 			m.Authority.At = m.Authority.At.Add(15 * time.Minute)
 			m.Audit.OccurredAt = m.Authority.At
@@ -341,7 +344,7 @@ func checkMCPEnrolledFactorAndRevocation(t *testing.T, open contractOpener) {
 	key := usercmd.MFACredential{ID: "mcp-factor", UserID: uid, RPID: "localhost", CredentialID: []byte("public-credential"),
 		PublicKey: []byte("public-key"), Data: []byte(`{"credential":"public"}`), CreatedAt: now}
 	change := usercmd.MFAChange{UserID: uid, ExpectedUserVersion: 1, ExpectedCredentialVersion: 1,
-		Purpose: usercmd.MFAEnable, BoundSessionID: m.Authority.SessionID, ExpectedSessionVersion: 1,
+		Purpose: usercmd.MFAEnable, BoundWebAuthSessionID: m.Authority.WebAuthSessionID, ExpectedWebAuthSessionVersion: 1,
 		Credential: key, ChangedAt: now, Audit: contractAudit("mcp-factor-enable", usercmd.AuditActionMFAEnabled, uid, now)}
 	if err := p.Users().ApplyMFAChange(t.Context(), change); err != nil {
 		t.Fatal(err)
@@ -354,19 +357,19 @@ func checkMCPEnrolledFactorAndRevocation(t *testing.T, open contractOpener) {
 	f.ID, f.Access.Selector, f.RefreshTokens[0].Selector = "factor-session", "factor-access", "factor-refresh"
 	f.CredentialVersion, f.MFAFactorID, f.WebAuthnVerifiedAt = 2, key.ID, now
 	v := usercmd.MFAVerification{UserID: uid, ExpectedUserVersion: 2, ExpectedCredentialVersion: 2,
-		ExpectedMFAVersion: 1, Credential: key, Session: &f, VerifiedAt: now,
-		Audit: contractAudit("mcp-factor-login", usercmd.AuditActionMFAVerified, f.ID, now)}
+		ExpectedMFAVersion: 1, Credential: key, WebAuthSession: &f, VerifiedAt: now,
+		Audit: contractAudit("mcp-factor-login", usercmd.AuditActionWebAuthMFAVerified, f.ID, now)}
 	if err := p.Users().VerifyMFACredential(t.Context(), v); err != nil {
 		t.Fatal(err)
 	}
-	m.Authority.SessionID, m.Audit.ActorSessionID = f.ID, f.ID
+	m.Authority.WebAuthSessionID, m.Audit.ActorWebAuthSessionID = f.ID, f.ID
 	if err := p.MCP().CheckMCPAuthority(t.Context(), m.Authority); err != nil {
 		t.Fatalf("enrolled session preflight rejected after proof aged: %v", err)
 	}
 	if err := p.MCP().SaveMCPConnection(t.Context(), m); err != nil {
 		t.Fatalf("enrolled session commit rejected after proof aged: %v", err)
 	}
-	if err := p.Users().RevokeSession(t.Context(), f.ID, f.Version, now, "test revocation", contractAudit("mcp-factor-revoke", usercmd.AuditActionSessionRevoked, f.ID, now)); err != nil {
+	if err := p.Users().RevokeWebAuthSession(t.Context(), f.ID, f.Version, now, "test revocation", contractAudit("mcp-factor-revoke", usercmd.AuditActionWebAuthRevoked, f.ID, now)); err != nil {
 		t.Fatal(err)
 	}
 	m.ExpectedVersion, m.Revision, m.Connection.Enabled, m.Audit.ID = 1, nil, false, "revoked-mutation"

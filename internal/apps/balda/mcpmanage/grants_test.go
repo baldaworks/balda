@@ -21,7 +21,7 @@ type grantMemoryStore struct {
 }
 
 func (s *grantMemoryStore) CheckMCPAuthority(_ context.Context, a mcpcmd.Authority) error {
-	if a.UserID == "" || a.SessionID == "" {
+	if a.UserID == "" || a.WebAuthSessionID == "" {
 		return mcpcmd.ErrForbidden
 	}
 	return nil

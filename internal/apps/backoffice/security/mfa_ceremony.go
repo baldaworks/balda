@@ -17,9 +17,9 @@ type CeremonyStart struct {
 }
 
 type ceremonyState struct {
-	Library        libwebauthn.SessionData
-	SessionVersion uint64
-	Registration   bool
+	Library               libwebauthn.SessionData
+	WebAuthSessionVersion uint64
+	Registration          bool
 }
 
 func (s *Service) startMFA(ctx context.Context, user usercmd.User, profile usercmd.MFAProfile, purpose usercmd.MFAPurpose,
@@ -50,12 +50,12 @@ func (s *Service) startMFA(ctx context.Context, user usercmd.User, profile userc
 	}
 	now := s.now().UTC()
 	state.Expires = now.Add(s.config.CeremonyTTL)
-	data, err := json.Marshal(ceremonyState{Library: *state, SessionVersion: sessionVersion, Registration: registration})
+	data, err := json.Marshal(ceremonyState{Library: *state, WebAuthSessionVersion: sessionVersion, Registration: registration})
 	if err != nil {
 		return CeremonyStart{}, err
 	}
 	c := usercmd.MFACeremony{TokenDigest: digest(token), BrowserDigest: digest(browser), CSRFDigest: digest(csrf),
-		UserID: user.ID, Purpose: purpose, SessionID: sessionID, UserVersion: user.Version, CredentialVersion: user.Credential.Version,
+		UserID: user.ID, Purpose: purpose, WebAuthSessionID: sessionID, UserVersion: user.Version, CredentialVersion: user.Credential.Version,
 		MFAVersion: profile.Version, Data: data, CreatedAt: now, ExpiresAt: state.Expires}
 	if err := s.store.CreateMFACeremony(ctx, c); err != nil {
 		return CeremonyStart{}, err

@@ -242,7 +242,7 @@ func TestWebhooksTestPostAndHistory(t *testing.T) {
 	}
 	if got := post("/webhooks/configured/test", form, admin.csrf); got.Code != http.StatusSeeOther ||
 		len(fixture.tests) != 1 || fixture.tests[0].Body != "test body" || fixture.tests[0].RequestKey != key ||
-		fixture.tests[0].Authority.SessionID == "" {
+		fixture.tests[0].Authority.WebAuthSessionID == "" {
 		t.Fatalf("configured Test POST = %d", got.Code)
 	}
 	fixture.testErr = webhookroutecmd.ErrUnavailable
@@ -465,7 +465,7 @@ func TestWebhooksBrowserManagement(t *testing.T) {
 			if created.Code != http.StatusOK || created.Header().Get("Cache-Control") != "no-store" ||
 				!strings.Contains(created.Body.String(), "created-secret-example") ||
 				!strings.Contains(created.Body.String(), `data-webhook-once="`+base+`/webhooks/new_route"`) ||
-				len(fixture.creates) != 1 || fixture.creates[0].Authority.SessionID == "" {
+				len(fixture.creates) != 1 || fixture.creates[0].Authority.WebAuthSessionID == "" {
 				t.Fatalf("create did not return one-time secret safely: %d", created.Code)
 			}
 			if got := get("/webhooks/new_route", admin.access); got.Code != http.StatusOK || strings.Contains(got.Body.String(), "created-secret-example") {

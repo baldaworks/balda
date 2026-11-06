@@ -178,7 +178,7 @@ func (f *skillsRuntimeFixture) reopen(t *testing.T) {
 }
 func (f *skillsRuntimeFixture) authority() skillcmd.Authority {
 	a := f.pluginsRuntimeFixture.authority
-	return skillcmd.NewBrowserAuthority(a.UserID, a.UserVersion, a.CredentialVersion, a.MFAVersion, a.SessionID, a.SessionVersion, a.At)
+	return skillcmd.NewBrowserAuthority(a.UserID, a.UserVersion, a.CredentialVersion, a.MFAVersion, a.WebAuthSessionID, a.WebAuthSessionVersion, a.At)
 }
 func (f *skillsRuntimeFixture) inventory(t *testing.T) skillcmd.Inventory {
 	t.Helper()

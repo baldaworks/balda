@@ -155,6 +155,6 @@ func validLocatorRef(raw string) (string, error) {
 func aliasAudit(name string, action usercmd.AuditAction, a aliascmd.Authority) usercmd.AuditEvent {
 	return usercmd.AuditEvent{ID: uuid.NewString(), Action: action,
 		Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: a.UserID,
-		ActorSessionID: a.SessionID, TargetType: usercmd.AuditTargetAlias,
+		ActorWebAuthSessionID: a.WebAuthSessionID, TargetType: usercmd.AuditTargetAlias,
 		TargetID: name, Source: "backoffice", OccurredAt: a.At}
 }

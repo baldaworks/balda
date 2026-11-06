@@ -24,8 +24,8 @@ type BindingChannel struct {
 
 // InvitationActor carries the authenticated administrator's audit identity.
 type InvitationActor struct {
-	UserID    string
-	SessionID string
+	UserID           string
+	WebAuthSessionID string
 }
 
 // BindingInvitation is a digest-only, single-use account onboarding record.

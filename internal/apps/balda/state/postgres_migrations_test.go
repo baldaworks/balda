@@ -51,7 +51,7 @@ func TestPostgresUserConversion(t *testing.T) {
 			t.Fatal(err)
 		}
 		return conversionTestDatabase{
-			db: db, bind: postgresBind,
+			db: db, bind: postgresBind, webAuthActorMigrationID: 38,
 			upgrade: func() (usercmd.Store, error) {
 				if err := migratePostgres(t.Context(), db); err != nil {
 					return nil, err

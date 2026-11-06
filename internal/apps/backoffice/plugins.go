@@ -24,7 +24,7 @@ func (a *httpApp) pluginBasePage(r *http.Request, p security.Principal) webui.Pa
 }
 
 func pluginAuthority(p security.Principal) plugincmd.Authority {
-	return plugincmd.Authority{UserID: p.User.ID, UserVersion: p.User.Version, CredentialVersion: p.User.Credential.Version, MFAVersion: p.MFAVersion, SessionID: p.FamilyID, SessionVersion: p.Version, At: time.Now().UTC()}
+	return plugincmd.Authority{UserID: p.User.ID, UserVersion: p.User.Version, CredentialVersion: p.User.Credential.Version, MFAVersion: p.MFAVersion, WebAuthSessionID: p.WebAuthSessionID, WebAuthSessionVersion: p.WebAuthSessionVersion, At: time.Now().UTC()}
 }
 
 func (a *httpApp) pluginsPage(w http.ResponseWriter, r *http.Request) {

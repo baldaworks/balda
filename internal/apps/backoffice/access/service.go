@@ -20,16 +20,16 @@ type store interface {
 	ChangeCredential(ctx context.Context, userID string, expectedUserVersion, expectedCredentialVersion uint64, credential usercmd.Credential, secret usercmd.CredentialSecret, revokedAt time.Time, audit usercmd.AuditEvent) error
 	GetUser(ctx context.Context, userID string) (usercmd.User, bool, error)
 	ListUsers(ctx context.Context, page usercmd.PageRequest) (usercmd.UserPage, error)
-	GetSession(ctx context.Context, sessionID string) (usercmd.SessionFamily, bool, error)
-	ListActiveSessions(ctx context.Context, userID string, page usercmd.PageRequest, now time.Time) (usercmd.SessionPage, error)
-	RevokeSession(ctx context.Context, sessionID string, expectedVersion uint64, revokedAt time.Time, reason string, audit usercmd.AuditEvent) error
+	GetWebAuthSession(ctx context.Context, sessionID string) (usercmd.WebAuthSession, bool, error)
+	ListActiveWebAuthSessions(ctx context.Context, userID string, page usercmd.PageRequest, now time.Time) (usercmd.WebAuthSessionPage, error)
+	RevokeWebAuthSession(ctx context.Context, sessionID string, expectedVersion uint64, revokedAt time.Time, reason string, audit usercmd.AuditEvent) error
 	DeleteBinding(ctx context.Context, userID, bindingID string, expectedUserVersion uint64, audit usercmd.AuditEvent) error
 }
 
 // Actor is the authenticated administrator performing an Access mutation.
 type Actor struct {
-	User      usercmd.User
-	SessionID string
+	User             usercmd.User
+	WebAuthSessionID string
 }
 
 // CreateInput contains the validated form values for canonical user creation.
@@ -228,7 +228,7 @@ func (s *Service) ResetCredential(ctx context.Context, actor Actor, input Creden
 		return err
 	}
 	if actor.User.ID == before.ID {
-		if err := users.ValidateSessionRevocation(actor.SessionID, actor.SessionID, input.ConfirmCurrent); err != nil {
+		if err := users.ValidateWebAuthSessionRevocation(actor.WebAuthSessionID, actor.WebAuthSessionID, input.ConfirmCurrent); err != nil {
 			return err
 		}
 	}
@@ -252,37 +252,37 @@ func (s *Service) ResetCredential(ctx context.Context, actor Actor, input Creden
 	return nil
 }
 
-func (s *Service) ListSessions(ctx context.Context, actor Actor, userID string, page usercmd.PageRequest) (usercmd.SessionPage, error) {
+func (s *Service) ListWebAuthSessions(ctx context.Context, actor Actor, userID string, page usercmd.PageRequest) (usercmd.WebAuthSessionPage, error) {
 	if _, err := s.GetUser(ctx, actor, userID); err != nil {
-		return usercmd.SessionPage{}, err
+		return usercmd.WebAuthSessionPage{}, err
 	}
 	if actor.User.ID == strings.TrimSpace(userID) {
-		page.CurrentID = actor.SessionID
+		page.CurrentWebAuthSessionID = actor.WebAuthSessionID
 	}
-	result, err := s.store.ListActiveSessions(ctx, strings.TrimSpace(userID), page, s.now().UTC())
+	result, err := s.store.ListActiveWebAuthSessions(ctx, strings.TrimSpace(userID), page, s.now().UTC())
 	if err != nil {
-		return usercmd.SessionPage{}, fmt.Errorf("list access sessions: %w", err)
+		return usercmd.WebAuthSessionPage{}, fmt.Errorf("list access sessions: %w", err)
 	}
 	return result, nil
 }
 
-func (s *Service) RevokeSession(ctx context.Context, actor Actor, userID, sessionID string, confirmCurrent bool) error {
+func (s *Service) RevokeWebAuthSession(ctx context.Context, actor Actor, userID, sessionID string, confirmCurrent bool) error {
 	if _, err := s.GetUser(ctx, actor, userID); err != nil {
 		return err
 	}
-	target, found, err := s.store.GetSession(ctx, strings.TrimSpace(sessionID))
+	target, found, err := s.store.GetWebAuthSession(ctx, strings.TrimSpace(sessionID))
 	if err != nil {
 		return fmt.Errorf("load access session: %w", err)
 	}
 	if !found || target.UserID != strings.TrimSpace(userID) {
 		return usercmd.ErrNotFound
 	}
-	if err := users.ValidateSessionRevocation(actor.SessionID, target.ID, confirmCurrent); err != nil {
+	if err := users.ValidateWebAuthSessionRevocation(actor.WebAuthSessionID, target.ID, confirmCurrent); err != nil {
 		return err
 	}
 	now := s.now().UTC()
-	audit := s.audit(actor, usercmd.AuditActionSessionRevoked, usercmd.AuditTargetSession, target.ID, "administrator revoked browser session", now)
-	if err := s.store.RevokeSession(ctx, target.ID, target.Version, now, "administrative revocation", audit); err != nil {
+	audit := s.audit(actor, usercmd.AuditActionWebAuthRevoked, usercmd.AuditTargetWebAuthSession, target.ID, "administrator revoked browser session", now)
+	if err := s.store.RevokeWebAuthSession(ctx, target.ID, target.Version, now, "administrative revocation", audit); err != nil {
 		return fmt.Errorf("revoke access session: %w", err)
 	}
 	return nil
@@ -307,7 +307,7 @@ func (s *Service) listAllUsers(ctx context.Context) ([]usercmd.User, error) {
 func (s *Service) audit(actor Actor, action usercmd.AuditAction, targetType usercmd.AuditTargetType, targetID, reason string, now time.Time) usercmd.AuditEvent {
 	return usercmd.AuditEvent{
 		ID: s.newID(), Action: action, Outcome: usercmd.AuditOutcomeSucceeded,
-		ActorUserID: actor.User.ID, ActorSessionID: actor.SessionID,
+		ActorUserID: actor.User.ID, ActorWebAuthSessionID: actor.WebAuthSessionID,
 		TargetType: targetType, TargetID: targetID, Reason: reason,
 		Source: "backoffice-access", OccurredAt: now,
 	}
@@ -315,7 +315,7 @@ func (s *Service) audit(actor Actor, action usercmd.AuditAction, targetType user
 
 func requireAccessAdministrator(actor Actor) error {
 	capabilities := users.BackofficeCapabilities(actor.User)
-	if !capabilities.ManageUsers || strings.TrimSpace(actor.SessionID) == "" {
+	if !capabilities.ManageUsers || strings.TrimSpace(actor.WebAuthSessionID) == "" {
 		return usercmd.ErrForbidden
 	}
 	return nil
