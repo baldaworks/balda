@@ -33,7 +33,7 @@ func (r *Runtime) ConfigureChatArchiveOperations(operations ChatArchiveOperation
 func (a *httpApp) chatArchivePage(w http.ResponseWriter, r *http.Request) {
 	p, _ := security.PrincipalFromContext(r.Context())
 	page := webui.Page{Title: "Chat sessions · Balda", ViewerUsername: p.User.Username, CSRFToken: a.browser.CSRFToken(r), Current: webui.LocationChatArchive, Navigation: webui.Navigation(users.BackofficeCapabilities(p.User), webui.LocationChatArchive)}
-	authority := chatarchivecmd.Authority{UserID: p.User.ID, UserVersion: p.User.Version, CredentialVersion: p.User.Credential.Version, MFAVersion: p.MFAVersion, SessionID: p.FamilyID, SessionVersion: p.Version, At: time.Now().UTC()}
+	authority := chatarchivecmd.Authority{UserID: p.User.ID, UserVersion: p.User.Version, CredentialVersion: p.User.Credential.Version, MFAVersion: p.MFAVersion, WebAuthSessionID: p.WebAuthSessionID, WebAuthSessionVersion: p.WebAuthSessionVersion, At: time.Now().UTC()}
 	query := chatarchivecmd.BrowseQuery{Query: r.URL.Query().Get("q"), Channel: r.URL.Query().Get("channel"), Status: r.URL.Query().Get("status"), Cursor: r.URL.Query().Get("cursor"), ListCursor: r.URL.Query().Get("list_cursor")}
 	var err error
 	switch {

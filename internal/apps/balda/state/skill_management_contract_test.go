@@ -49,7 +49,7 @@ func checkSkillCLIAuthority(t *testing.T, open contractOpener) {
 			continue
 		}
 		found = true
-		if event.Source != "cli" || event.ActorUserID != "" || event.ActorSessionID != "" || strings.Contains(event.Reason, "credential") {
+		if event.Source != "cli" || event.ActorUserID != "" || event.ActorWebAuthSessionID != "" || strings.Contains(event.Reason, "credential") {
 			t.Fatalf("unsafe CLI audit: %+v", event)
 		}
 	}
@@ -76,7 +76,7 @@ func checkSkillManagement(t *testing.T, open contractOpener) {
 	}
 	defer func() { closeContractProvider(t, p) }()
 	base := contractMCPMutation(t, p).Authority
-	a := skillcmd.NewBrowserAuthority(base.UserID, base.UserVersion, base.CredentialVersion, base.MFAVersion, base.SessionID, base.SessionVersion, base.At)
+	a := skillcmd.NewBrowserAuthority(base.UserID, base.UserVersion, base.CredentialVersion, base.MFAVersion, base.WebAuthSessionID, base.WebAuthSessionVersion, base.At)
 	store := p.SkillManagement()
 	initial, err := store.Observe(t.Context())
 	if err != nil || initial.Record.Generation != 0 {
@@ -227,7 +227,7 @@ func checkSkillManagement(t *testing.T, open contractOpener) {
 		{"user", func(a *skillcmd.Authority) { a.UserVersion++ }},
 		{"credential", func(a *skillcmd.Authority) { a.CredentialVersion++ }},
 		{"mfa", func(a *skillcmd.Authority) { a.MFAVersion++ }},
-		{"session", func(a *skillcmd.Authority) { a.SessionVersion++ }},
+		{"session", func(a *skillcmd.Authority) { a.WebAuthSessionVersion++ }},
 	} {
 		t.Run("authority/"+tc.name, func(t *testing.T) {
 			stale := a
@@ -251,7 +251,7 @@ func checkSkillManagement(t *testing.T, open contractOpener) {
 	if err := store.Commit(t.Context(), bad); !errors.Is(err, skillcmd.ErrInvalid) {
 		t.Fatalf("identity reuse=%v", err)
 	}
-	if err := p.Users().RevokeSession(t.Context(), a.SessionID, a.SessionVersion, a.At, "contract revocation", contractAudit("skill-revoke-session", usercmd.AuditActionSessionRevoked, a.SessionID, a.At)); err != nil {
+	if err := p.Users().RevokeWebAuthSession(t.Context(), a.WebAuthSessionID, a.WebAuthSessionVersion, a.At, "contract revocation", contractAudit("skill-revoke-session", usercmd.AuditActionWebAuthRevoked, a.WebAuthSessionID, a.At)); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.CheckAuthority(t.Context(), a); !errors.Is(err, skillcmd.ErrForbidden) {

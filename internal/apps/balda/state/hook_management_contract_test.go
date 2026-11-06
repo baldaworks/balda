@@ -17,10 +17,10 @@ func checkHookManagement(t *testing.T, open contractOpener) {
 	p := newContractProvider(t, open)
 	defer closeContractProvider(t, p)
 	base := contractMCPMutation(t, p)
-	a := hookcmd.Authority{UserID: base.Authority.UserID, UserVersion: base.Authority.UserVersion, CredentialVersion: base.Authority.CredentialVersion, SessionID: base.Authority.SessionID, SessionVersion: base.Authority.SessionVersion, At: base.Authority.At}
+	a := hookcmd.Authority{UserID: base.Authority.UserID, UserVersion: base.Authority.UserVersion, CredentialVersion: base.Authority.CredentialVersion, WebAuthSessionID: base.Authority.WebAuthSessionID, WebAuthSessionVersion: base.Authority.WebAuthSessionVersion, At: base.Authority.At}
 	store := p.HookManagement()
 	definition := hookcmd.Definition{Name: "guard", Event: hookcmd.UserPromptSubmit, Command: "/bin/true", Args: []string{"private-command-canary"}, TimeoutSeconds: 10}
-	m := hookcmd.Mutation{Record: hookcmd.Record{Version: 1, UpdatedAt: a.At.Format(time.RFC3339Nano), Definitions: []hookcmd.Definition{definition}}, Authority: a, Audit: usercmd.AuditEvent{ID: "hook-change", Action: usercmd.AuditActionHookChanged, Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: a.UserID, ActorSessionID: a.SessionID, TargetType: usercmd.AuditTargetHook, TargetID: "guard", Source: "contract", OccurredAt: a.At}}
+	m := hookcmd.Mutation{Record: hookcmd.Record{Version: 1, UpdatedAt: a.At.Format(time.RFC3339Nano), Definitions: []hookcmd.Definition{definition}}, Authority: a, Audit: usercmd.AuditEvent{ID: "hook-change", Action: usercmd.AuditActionHookChanged, Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: a.UserID, ActorWebAuthSessionID: a.WebAuthSessionID, TargetType: usercmd.AuditTargetHook, TargetID: "guard", Source: "contract", OccurredAt: a.At}}
 	if err := store.CheckAuthority(t.Context(), a); err != nil {
 		t.Fatal(err)
 	}

@@ -134,11 +134,11 @@ func validateMCPGrantMutation(m MCPGrantMutation) error {
 		return mcpcmd.ErrInvalid
 	}
 	if m.Operation == mcpcmd.GrantRenew {
-		if m.Authority != nil || m.Audit.ActorUserID != "" || m.Audit.ActorSessionID != "" || m.Audit.Action != usercmd.AuditActionMCPCredentialsRenewed {
+		if m.Authority != nil || m.Audit.ActorUserID != "" || m.Audit.ActorWebAuthSessionID != "" || m.Audit.Action != usercmd.AuditActionMCPCredentialsRenewed {
 			return mcpcmd.ErrInvalid
 		}
 	} else {
-		if m.Authority == nil || validateMCPAuthority(*m.Authority) != nil || m.Audit.Action != usercmd.AuditActionMCPAuthorizationChanged || m.Audit.ActorUserID != m.Authority.UserID || m.Audit.ActorSessionID != m.Authority.SessionID || !m.Authority.At.Equal(m.Audit.OccurredAt) {
+		if m.Authority == nil || validateMCPAuthority(*m.Authority) != nil || m.Audit.Action != usercmd.AuditActionMCPAuthorizationChanged || m.Audit.ActorUserID != m.Authority.UserID || m.Audit.ActorWebAuthSessionID != m.Authority.WebAuthSessionID || !m.Authority.At.Equal(m.Audit.OccurredAt) {
 			return mcpcmd.ErrInvalid
 		}
 	}

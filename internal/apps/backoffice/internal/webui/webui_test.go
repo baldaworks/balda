@@ -245,8 +245,8 @@ func TestSafeViewProjectionUsesOneBindingAndFamilyLevelSessions(t *testing.T) {
 	if view.ID != user.ID || view.Role != "administrator" || view.Binding == nil || view.Binding.ChannelType != "telegram" || !view.MustChange {
 		t.Fatalf("ProjectUser() = %+v", view)
 	}
-	session := ProjectSession(usercmd.SessionSummary{
-		ID: "family-1", Assurance: usercmd.SessionAssuranceRestricted, CreatedAt: now,
+	session := ProjectSession(usercmd.WebAuthSessionSummary{
+		ID: "family-1", Assurance: usercmd.WebAuthAssuranceRestricted, CreatedAt: now,
 		LastSeenAt: now.Add(time.Minute), ExpiresAt: now.Add(time.Hour), Version: 3,
 	}, "family-1", now)
 	if session.ID != "family-1" || !session.Current || session.Assurance != "restricted" || session.Version != 3 {
@@ -261,8 +261,8 @@ func TestAuditProjectionDoesNotRenderFreeFormReason(t *testing.T) {
 		t.Fatal(err)
 	}
 	event := usercmd.AuditEvent{
-		ID: "event-selector-secret", Action: usercmd.AuditActionRefreshReplay, Outcome: usercmd.AuditOutcomeDenied,
-		ActorSessionID: "refresh-selector-secret", TargetType: usercmd.AuditTargetSession,
+		ID: "event-selector-secret", Action: usercmd.AuditActionWebAuthRefreshReplay, Outcome: usercmd.AuditOutcomeDenied,
+		ActorWebAuthSessionID: "refresh-selector-secret", TargetType: usercmd.AuditTargetWebAuthSession,
 		TargetID:   "11111111-1111-4111-8111-111111111111",
 		Reason:     "password=hunter2 refresh_selector=secret csrf=secret cookie=secret",
 		OccurredAt: time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC),

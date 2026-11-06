@@ -34,13 +34,13 @@ const (
 
 // Authority binds an operation to the current administrator browser session.
 type Authority struct {
-	UserID            string
-	UserVersion       uint64
-	CredentialVersion uint64
-	MFAVersion        uint64
-	SessionID         string
-	SessionVersion    uint64
-	At                time.Time
+	UserID                string
+	UserVersion           uint64
+	CredentialVersion     uint64
+	MFAVersion            uint64
+	WebAuthSessionID      string
+	WebAuthSessionVersion uint64
+	At                    time.Time
 }
 
 // Definition contains the editable fields of a managed webhook route.

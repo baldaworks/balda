@@ -122,7 +122,7 @@ func (f *workerGrantFixture) save(t *testing.T, grant mcpcmd.Grant, secrets mcpm
 	grant.ProtectedValues = payload
 	audit := usercmd.AuditEvent{ID: rand.Text(), Action: usercmd.AuditActionMCPAuthorizationChanged, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetMCP, TargetID: grant.Binding.ConnectionID, Source: "worker-fixture", OccurredAt: grant.UpdatedAt}
 	if authority != nil {
-		audit.ActorUserID, audit.ActorSessionID = authority.UserID, authority.SessionID
+		audit.ActorUserID, audit.ActorWebAuthSessionID = authority.UserID, authority.WebAuthSessionID
 	} else {
 		audit.Action = usercmd.AuditActionMCPCredentialsRenewed
 	}

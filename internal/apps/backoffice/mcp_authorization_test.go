@@ -49,7 +49,7 @@ func TestMCPBrowserAuthorizationReturnsWithCallbackCredential(t *testing.T) {
 	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/mcp/oauth/return" {
 		t.Fatalf("external callback = %d %q, want native return landing", response.Code, response.Header().Get("Location"))
 	}
-	if flows.callback.Authority.SessionID != principal.FamilyID || flows.callback.Authority.SessionVersion != principal.Version || flows.callback.Authority.UserID != principal.User.ID || flows.callback.Authority.UserVersion != principal.User.Version || flows.callback.Authority.CredentialVersion != principal.User.Credential.Version || flows.callback.Authority.MFAVersion != principal.MFAVersion {
+	if flows.callback.Authority.WebAuthSessionID != principal.WebAuthSessionID || flows.callback.Authority.WebAuthSessionVersion != principal.WebAuthSessionVersion || flows.callback.Authority.UserID != principal.User.ID || flows.callback.Authority.UserVersion != principal.User.Version || flows.callback.Authority.CredentialVersion != principal.User.Credential.Version || flows.callback.Authority.MFAVersion != principal.MFAVersion {
 		t.Fatal("callback did not supply the initiating canonical administrator family and current authority fences")
 	}
 	cleared := false

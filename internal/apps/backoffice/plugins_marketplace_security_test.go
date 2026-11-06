@@ -129,7 +129,7 @@ func TestPluginMarketplaceHTTPAuthorityAndCollisions(t *testing.T) {
 				return performAccessMutation(t, handler, config, base+path, form, access, csrf, fragment)
 			}
 			got := mutation("/plugins/marketplaces/definitions/new/refresh", url.Values{"expected_state": {"current-state"}}, admin.access, admin.csrf, false)
-			if got.Code != http.StatusSeeOther || len(fixture.refreshes) != 1 || fixture.refreshes[0].Name != marketplaceSecurityIdentity || fixture.refreshes[0].Authority.SessionID == "" {
+			if got.Code != http.StatusSeeOther || len(fixture.refreshes) != 1 || fixture.refreshes[0].Name != marketplaceSecurityIdentity || fixture.refreshes[0].Authority.WebAuthSessionID == "" {
 				t.Fatalf("valid definition refresh=%d calls=%+v", got.Code, fixture.refreshes)
 			}
 

@@ -98,7 +98,7 @@ func (s *sqlMemoryManagementStore) Commit(ctx context.Context, m memorycmd.Mutat
 	}
 	// Rebuild the envelope: request metadata and free-form reasons may contain facts.
 	audit := usercmd.AuditEvent{ID: m.Audit.ID, Action: m.Audit.Action, Outcome: usercmd.AuditOutcomeSucceeded,
-		ActorUserID: m.Authority.UserID, ActorSessionID: m.Authority.SessionID,
+		ActorUserID: m.Authority.UserID, ActorWebAuthSessionID: m.Authority.WebAuthSessionID,
 		TargetType: usercmd.AuditTargetMemoryFact, TargetID: m.Audit.TargetID, Source: "backoffice", OccurredAt: m.Authority.At}
 	switch audit.Action {
 	case usercmd.AuditActionMemoryFactCreated:
@@ -121,7 +121,7 @@ func (s *sqlMemoryManagementStore) Commit(ctx context.Context, m memorycmd.Mutat
 }
 
 func validateMemoryAuthority(a memorycmd.Authority) error {
-	if strings.TrimSpace(a.UserID) == "" || a.UserVersion == 0 || a.CredentialVersion == 0 || strings.TrimSpace(a.SessionID) == "" || a.SessionVersion == 0 || a.At.IsZero() {
+	if strings.TrimSpace(a.UserID) == "" || a.UserVersion == 0 || a.CredentialVersion == 0 || strings.TrimSpace(a.WebAuthSessionID) == "" || a.WebAuthSessionVersion == 0 || a.At.IsZero() {
 		return memorycmd.ErrInvalid
 	}
 	return nil
@@ -144,7 +144,7 @@ func validateMemoryMutation(m memorycmd.Mutation) error {
 		return memorycmd.ErrInvalid
 	}
 	if usercmd.ValidateAuditEvent(m.Audit) != nil || m.Audit.TargetType != usercmd.AuditTargetMemoryFact ||
-		m.Audit.ActorUserID != m.Authority.UserID || m.Audit.ActorSessionID != m.Authority.SessionID ||
+		m.Audit.ActorUserID != m.Authority.UserID || m.Audit.ActorWebAuthSessionID != m.Authority.WebAuthSessionID ||
 		m.Audit.Outcome != usercmd.AuditOutcomeSucceeded || !m.Audit.OccurredAt.Equal(m.Authority.At) {
 		return memorycmd.ErrInvalid
 	}
@@ -182,15 +182,15 @@ func decodeMemoryRecord(data []byte) (memorycmd.Record, error) {
 }
 
 func memoryBrowserAuthority(a memorycmd.Authority) browserAuthority {
-	return browserAuthority{userID: a.UserID, sessionID: a.SessionID, userVersion: a.UserVersion,
-		credentialVersion: a.CredentialVersion, mfaVersion: a.MFAVersion, sessionVersion: a.SessionVersion, at: a.At}
+	return browserAuthority{userID: a.UserID, sessionID: a.WebAuthSessionID, userVersion: a.UserVersion,
+		credentialVersion: a.CredentialVersion, mfaVersion: a.MFAVersion, sessionVersion: a.WebAuthSessionVersion, at: a.At}
 }
 
 func memoryAuthorityError(err error) error {
 	switch {
 	case errors.Is(err, usercmd.ErrConflict):
 		return memorycmd.ErrConflict
-	case errors.Is(err, usercmd.ErrForbidden), errors.Is(err, usercmd.ErrNotFound), errors.Is(err, usercmd.ErrSessionUnavailable):
+	case errors.Is(err, usercmd.ErrForbidden), errors.Is(err, usercmd.ErrNotFound), errors.Is(err, usercmd.ErrWebAuthSessionUnavailable):
 		return memorycmd.ErrForbidden
 	default:
 		return memorycmd.ErrUnavailable

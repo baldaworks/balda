@@ -21,13 +21,13 @@ var (
 
 // Authority is populated by the host from its authenticated browser session.
 type Authority struct {
-	UserID            string
-	UserVersion       uint64
-	CredentialVersion uint64
-	MFAVersion        uint64
-	SessionID         string
-	SessionVersion    uint64
-	At                time.Time
+	UserID                string
+	UserVersion           uint64
+	CredentialVersion     uint64
+	MFAVersion            uint64
+	WebAuthSessionID      string
+	WebAuthSessionVersion uint64
+	At                    time.Time
 }
 
 // Operation identifies an explicit supported browser lifecycle action.

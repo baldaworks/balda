@@ -281,7 +281,7 @@ func TestMCPDiagnosticUsesProtectedServerAuthorityAndRetainsLastResult(t *testin
 		t.Fatalf("diagnostic = status %d, IDs %v", w.Code, fixture.diagnosticIDs)
 	}
 	authority := fixture.diagnosticAuthorities[0]
-	if authority.UserID != string(usercmd.RoleAdministrator) || authority.SessionID == "" || authority.SessionVersion == 0 {
+	if authority.UserID != string(usercmd.RoleAdministrator) || authority.WebAuthSessionID == "" || authority.WebAuthSessionVersion == 0 {
 		t.Fatalf("diagnostic authority = %+v", authority)
 	}
 	for _, visible := range []string{"Check succeeded", "3 tools", "Last manual check", "15 Oct 2026, 08:30 UTC"} {
@@ -402,7 +402,7 @@ func TestMCPFormsFenceAuthorityAndNeverReflectValues(t *testing.T) {
 	if !request.Enabled {
 		t.Error("new connection was not enabled for its selected providers")
 	}
-	if request.Values.Headers["X-Secret"].Value != "write-only-canary" || request.Authority.UserID != "admin" || request.Authority.SessionID == "" || request.Authority.SessionVersion == 0 {
+	if request.Values.Headers["X-Secret"].Value != "write-only-canary" || request.Authority.UserID != "admin" || request.Authority.WebAuthSessionID == "" || request.Authority.WebAuthSessionVersion == 0 {
 		t.Fatal("write or current authority lost")
 	}
 	for _, tc := range []struct {

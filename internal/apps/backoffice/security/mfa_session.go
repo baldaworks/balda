@@ -17,7 +17,7 @@ func withMFABrowser(ctx context.Context, browser, csrf string) context.Context {
 // MFAAvailable reports whether this configured public origin supports WebAuthn.
 func (s *Service) MFAAvailable() bool { return s.webauthn != nil }
 
-func (s *Service) checkMFAFamily(ctx context.Context, user usercmd.User, family usercmd.SessionFamily) (usercmd.MFAProfile, error) {
+func (s *Service) checkMFAFamily(ctx context.Context, user usercmd.User, family usercmd.WebAuthSession) (usercmd.MFAProfile, error) {
 	if user.Role != usercmd.RoleAdministrator {
 		return usercmd.MFAProfile{}, nil
 	}
@@ -52,10 +52,10 @@ func (s *Service) FinishLogin(ctx context.Context, transaction, browser, csrf st
 		return Credentials{}, err
 	}
 	family.MFAFactorID, family.WebAuthnVerifiedAt = v.key.ID, v.now
-	audit := s.audit(usercmd.AuditActionLoginSucceeded, usercmd.AuditTargetSession, family.ID, "password and WebAuthn login", v.now)
-	audit.ActorUserID, audit.ActorSessionID = v.user.ID, family.ID
+	audit := s.audit(usercmd.AuditActionWebAuthLoginSucceeded, usercmd.AuditTargetWebAuthSession, family.ID, "password and WebAuthn login", v.now)
+	audit.ActorUserID, audit.ActorWebAuthSessionID = v.user.ID, family.ID
 	verification := v.verification(audit)
-	verification.Session = &family
+	verification.WebAuthSession = &family
 	if err := s.store.VerifyMFACredential(ctx, verification); err != nil {
 		return Credentials{}, ErrUnauthenticated
 	}

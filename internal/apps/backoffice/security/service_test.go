@@ -15,10 +15,10 @@ func TestLoginCreatesOpaqueNormalAndRestrictedFamilies(t *testing.T) {
 	tests := []struct {
 		name      string
 		state     usercmd.CredentialState
-		assurance usercmd.SessionAssurance
+		assurance usercmd.WebAuthAssurance
 	}{
-		{name: "normal", state: usercmd.CredentialStateActive, assurance: usercmd.SessionAssuranceNormal},
-		{name: "temporary", state: usercmd.CredentialStateTemporary, assurance: usercmd.SessionAssuranceRestricted},
+		{name: "normal", state: usercmd.CredentialStateActive, assurance: usercmd.WebAuthAssuranceNormal},
+		{name: "temporary", state: usercmd.CredentialStateTemporary, assurance: usercmd.WebAuthAssuranceRestricted},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -29,11 +29,11 @@ func TestLoginCreatesOpaqueNormalAndRestrictedFamilies(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Login() error = %v", err)
 			}
-			if credentials.Assurance != tt.assurance || credentials.AccessToken == "" || credentials.RefreshToken == "" || credentials.CSRFToken == "" {
+			if credentials.Assurance != tt.assurance || credentials.AccessToken == "" || credentials.WebAuthRefreshToken == "" || credentials.CSRFToken == "" {
 				t.Fatalf("Login() = %+v", credentials)
 			}
 			principal, err := service.ValidateAccess(t.Context(), credentials.AccessToken)
-			if err != nil || principal.User.ID != user.ID || principal.FamilyID == "" || principal.Assurance != tt.assurance {
+			if err != nil || principal.User.ID != user.ID || principal.WebAuthSessionID == "" || principal.Assurance != tt.assurance {
 				t.Fatalf("ValidateAccess() = %+v, %v", principal, err)
 			}
 			if err := service.ValidateCSRF(t.Context(), credentials.AccessToken, credentials.CSRFToken); err != nil {
@@ -46,25 +46,25 @@ func TestLoginCreatesOpaqueNormalAndRestrictedFamilies(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			stored, found, err := provider.Users().GetSessionByAccessSelector(t.Context(), selector)
+			stored, found, err := provider.Users().GetWebAuthSessionByAccessSelector(t.Context(), selector)
 			if err != nil || !found {
-				t.Fatalf("GetSessionByAccessSelector() found=%t error=%v", found, err)
+				t.Fatalf("GetWebAuthSessionByAccessSelector() found=%t error=%v", found, err)
 			}
-			if string(stored.Family.Access.VerifierDigest) == verifier || string(stored.Family.CSRFVerifierDigest) == credentials.CSRFToken {
+			if string(stored.WebAuthSession.Access.VerifierDigest) == verifier || string(stored.WebAuthSession.CSRFVerifierDigest) == credentials.CSRFToken {
 				t.Fatal("plaintext browser credential reached persistence")
 			}
-			refreshSelector, refreshVerifier, err := parseOpaqueToken(credentials.RefreshToken)
+			refreshSelector, refreshVerifier, err := parseOpaqueToken(credentials.WebAuthRefreshToken)
 			if err != nil {
 				t.Fatal(err)
 			}
-			refreshStored, found, err := provider.Users().GetSessionByRefreshSelector(t.Context(), refreshSelector)
+			refreshStored, found, err := provider.Users().GetWebAuthSessionByRefreshSelector(t.Context(), refreshSelector)
 			if err != nil || !found || string(refreshStored.Token.VerifierDigest) == refreshVerifier {
 				t.Fatalf("persisted refresh credential = %+v, found=%t, error=%v", refreshStored.Token, found, err)
 			}
-			if tt.assurance == usercmd.SessionAssuranceRestricted {
+			if tt.assurance == usercmd.WebAuthAssuranceRestricted {
 				service.now = func() time.Time { return now.Add(time.Minute) }
-				rotated, err := service.Refresh(t.Context(), credentials.RefreshToken, credentials.CSRFToken)
-				if err != nil || rotated.Assurance != usercmd.SessionAssuranceRestricted {
+				rotated, err := service.Refresh(t.Context(), credentials.WebAuthRefreshToken, credentials.CSRFToken)
+				if err != nil || rotated.Assurance != usercmd.WebAuthAssuranceRestricted {
 					t.Fatalf("Refresh(restricted) = %+v, %v", rotated, err)
 				}
 			}
@@ -99,21 +99,21 @@ func TestRefreshRenewsPairAndReplayRevokesFamily(t *testing.T) {
 		t.Fatal(err)
 	}
 	service.now = func() time.Time { return now.Add(10 * time.Minute) }
-	rotated, err := service.Refresh(t.Context(), initial.RefreshToken, initial.CSRFToken)
+	rotated, err := service.Refresh(t.Context(), initial.WebAuthRefreshToken, initial.CSRFToken)
 	if err != nil {
 		t.Fatalf("Refresh() error = %v", err)
 	}
-	if rotated.AccessToken == initial.AccessToken || rotated.RefreshToken == initial.RefreshToken || !rotated.RefreshExpiresAt.Equal(initial.RefreshExpiresAt.Add(10*time.Minute)) {
+	if rotated.AccessToken == initial.AccessToken || rotated.WebAuthRefreshToken == initial.WebAuthRefreshToken || !rotated.RefreshExpiresAt.Equal(initial.RefreshExpiresAt.Add(10*time.Minute)) {
 		t.Fatalf("rotated credentials = %+v, initial=%+v", rotated, initial)
 	}
-	if _, err := service.Refresh(t.Context(), initial.RefreshToken, initial.CSRFToken); !errors.Is(err, ErrRefreshConcurrent) {
+	if _, err := service.Refresh(t.Context(), initial.WebAuthRefreshToken, initial.CSRFToken); !errors.Is(err, ErrRefreshConcurrent) {
 		t.Fatalf("Refresh(concurrent) error = %v, want ErrRefreshConcurrent", err)
 	}
 	if _, err := service.ValidateAccess(t.Context(), rotated.AccessToken); err != nil {
 		t.Fatalf("ValidateAccess(after concurrent refresh) error = %v", err)
 	}
 	service.now = func() time.Time { return now.Add(11 * time.Minute) }
-	if _, err := service.Refresh(t.Context(), initial.RefreshToken, initial.CSRFToken); !errors.Is(err, ErrUnauthenticated) {
+	if _, err := service.Refresh(t.Context(), initial.WebAuthRefreshToken, initial.CSRFToken); !errors.Is(err, ErrUnauthenticated) {
 		t.Fatalf("Refresh(stale replay) error = %v, want ErrUnauthenticated", err)
 	}
 	if _, err := service.ValidateAccess(t.Context(), rotated.AccessToken); !errors.Is(err, ErrUnauthenticated) {
@@ -139,7 +139,7 @@ func TestRoleChangeRevokesPriorSessionAndNewAccessUsesCurrentRole(t *testing.T) 
 	if _, err := service.ValidateAccess(t.Context(), credentials.AccessToken); !errors.Is(err, ErrUnauthenticated) {
 		t.Fatalf("ValidateAccess(prior role session) error = %v, want ErrUnauthenticated", err)
 	}
-	if _, err := service.Refresh(t.Context(), credentials.RefreshToken, credentials.CSRFToken); !errors.Is(err, ErrUnauthenticated) {
+	if _, err := service.Refresh(t.Context(), credentials.WebAuthRefreshToken, credentials.CSRFToken); !errors.Is(err, ErrUnauthenticated) {
 		t.Fatalf("Refresh(prior role session) error = %v, want ErrUnauthenticated", err)
 	}
 	credentials, err = service.Login(t.Context(), operator.Username, []byte(validPassword))
@@ -189,14 +189,14 @@ func TestRefreshAfterClockRollbackPreservesLastRenewal(t *testing.T) {
 	for _, rollbackFrom := range []time.Time{issuedAt, issuedAt.Add(time.Minute)} {
 		if rollbackFrom.After(issuedAt) {
 			service.now = func() time.Time { return rollbackFrom }
-			credentials, err = service.Refresh(t.Context(), credentials.RefreshToken, credentials.CSRFToken)
+			credentials, err = service.Refresh(t.Context(), credentials.WebAuthRefreshToken, credentials.CSRFToken)
 			if err != nil {
 				t.Fatal(err)
 			}
 		}
 		service.now = func() time.Time { return rollbackFrom.Add(-586 * time.Millisecond) }
 		previous := credentials
-		credentials, err = service.Refresh(t.Context(), previous.RefreshToken, previous.CSRFToken)
+		credentials, err = service.Refresh(t.Context(), previous.WebAuthRefreshToken, previous.CSRFToken)
 		if err != nil {
 			t.Fatalf("Refresh after clock rollback: %v", err)
 		}
@@ -209,12 +209,12 @@ func TestRefreshAfterClockRollbackPreservesLastRenewal(t *testing.T) {
 		if _, err := service.ValidateAccess(t.Context(), credentials.AccessToken); err != nil {
 			t.Fatalf("rotated access credential: %v", err)
 		}
-		if _, err := service.Refresh(t.Context(), previous.RefreshToken, previous.CSRFToken); !errors.Is(err, ErrRefreshConcurrent) {
+		if _, err := service.Refresh(t.Context(), previous.WebAuthRefreshToken, previous.CSRFToken); !errors.Is(err, ErrRefreshConcurrent) {
 			t.Fatalf("recent consumed refresh credential: %v", err)
 		}
 	}
 	service.now = func() time.Time { return credentials.RefreshExpiresAt }
-	if _, err := service.Refresh(t.Context(), credentials.RefreshToken, credentials.CSRFToken); !errors.Is(err, ErrUnauthenticated) {
+	if _, err := service.Refresh(t.Context(), credentials.WebAuthRefreshToken, credentials.CSRFToken); !errors.Is(err, ErrUnauthenticated) {
 		t.Fatalf("expired refresh credential: %v", err)
 	}
 }
@@ -227,11 +227,11 @@ func TestRefreshRejectsExpiredFamilyAndWrongCSRF(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Refresh(t.Context(), credentials.RefreshToken, "wrong-csrf"); !errors.Is(err, ErrForbidden) {
+	if _, err := service.Refresh(t.Context(), credentials.WebAuthRefreshToken, "wrong-csrf"); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("Refresh(wrong CSRF) error = %v", err)
 	}
 	service.now = func() time.Time { return now.Add(12 * time.Hour) }
-	if _, err := service.Refresh(t.Context(), credentials.RefreshToken, credentials.CSRFToken); !errors.Is(err, ErrUnauthenticated) {
+	if _, err := service.Refresh(t.Context(), credentials.WebAuthRefreshToken, credentials.CSRFToken); !errors.Is(err, ErrUnauthenticated) {
 		t.Fatalf("Refresh(expired) error = %v", err)
 	}
 }
@@ -252,18 +252,18 @@ func TestTemporaryPasswordReplacementRevokesOldRefreshAndIssuesNormalFamily(t *t
 	if err != nil {
 		t.Fatalf("ReplacePassword() error = %v", err)
 	}
-	if normal.Assurance != usercmd.SessionAssuranceNormal {
+	if normal.Assurance != usercmd.WebAuthAssuranceNormal {
 		t.Fatalf("replacement assurance = %q", normal.Assurance)
 	}
 	if _, err := service.ValidateAccess(t.Context(), restricted.AccessToken); !errors.Is(err, ErrUnauthenticated) {
 		t.Fatalf("old restricted access error = %v", err)
 	}
-	refreshSelector, _, err := parseOpaqueToken(restricted.RefreshToken)
+	refreshSelector, _, err := parseOpaqueToken(restricted.WebAuthRefreshToken)
 	if err != nil {
 		t.Fatal(err)
 	}
-	revoked, found, err := provider.Users().GetSessionByRefreshSelector(t.Context(), refreshSelector)
-	if err != nil || !found || revoked.Token.State != usercmd.RefreshTokenStateRevoked {
+	revoked, found, err := provider.Users().GetWebAuthSessionByRefreshSelector(t.Context(), refreshSelector)
+	if err != nil || !found || revoked.Token.State != usercmd.WebAuthRefreshTokenStateRevoked {
 		t.Fatalf("old refresh = %+v, found=%t, error=%v", revoked, found, err)
 	}
 	if _, err := service.Login(t.Context(), user.Username, []byte(validPassword)); !errors.Is(err, ErrUnauthenticated) {
@@ -295,13 +295,13 @@ func TestNormalPasswordRotationRequiresCurrentPasswordAndRevokesOldFamily(t *tes
 	if err != nil {
 		t.Fatalf("ReplacePassword() error = %v", err)
 	}
-	if rotated.Assurance != usercmd.SessionAssuranceNormal {
+	if rotated.Assurance != usercmd.WebAuthAssuranceNormal {
 		t.Fatalf("rotated assurance = %q", rotated.Assurance)
 	}
 	if _, err := service.ValidateAccess(t.Context(), initial.AccessToken); !errors.Is(err, ErrUnauthenticated) {
 		t.Fatalf("old access after password rotation = %v", err)
 	}
-	if _, err := service.Refresh(t.Context(), initial.RefreshToken, initial.CSRFToken); !errors.Is(err, ErrUnauthenticated) {
+	if _, err := service.Refresh(t.Context(), initial.WebAuthRefreshToken, initial.CSRFToken); !errors.Is(err, ErrUnauthenticated) {
 		t.Fatalf("old refresh after password rotation = %v", err)
 	}
 	if _, err := service.ValidateAccess(t.Context(), rotated.AccessToken); err != nil {
@@ -342,18 +342,18 @@ func TestSessionAdministrationHonorsOwnershipAndCurrentConfirmation(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := service.RevokeSession(t.Context(), operator.AccessToken, operatorPrincipal.FamilyID, false); !errors.Is(err, usercmd.ErrCurrentSessionConfirmationRequired) {
-		t.Fatalf("RevokeSession(current) error = %v", err)
+	if err := service.RevokeWebAuthSession(t.Context(), operator.AccessToken, operatorPrincipal.WebAuthSessionID, false); !errors.Is(err, usercmd.ErrCurrentSessionConfirmationRequired) {
+		t.Fatalf("RevokeWebAuthSession(current) error = %v", err)
 	}
 	adminPrincipal, err := service.ValidateAccess(t.Context(), admin.AccessToken)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := service.RevokeSession(t.Context(), operator.AccessToken, adminPrincipal.FamilyID, false); !errors.Is(err, ErrForbidden) {
-		t.Fatalf("RevokeSession(other by operator) error = %v", err)
+	if err := service.RevokeWebAuthSession(t.Context(), operator.AccessToken, adminPrincipal.WebAuthSessionID, false); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("RevokeWebAuthSession(other by operator) error = %v", err)
 	}
-	if err := service.RevokeSession(t.Context(), admin.AccessToken, operatorPrincipal.FamilyID, false); err != nil {
-		t.Fatalf("RevokeSession(other by admin) error = %v", err)
+	if err := service.RevokeWebAuthSession(t.Context(), admin.AccessToken, operatorPrincipal.WebAuthSessionID, false); err != nil {
+		t.Fatalf("RevokeWebAuthSession(other by admin) error = %v", err)
 	}
 	if _, err := service.ValidateAccess(t.Context(), operator.AccessToken); !errors.Is(err, ErrUnauthenticated) {
 		t.Fatalf("ValidateAccess(revoked operator) error = %v", err)
@@ -426,30 +426,30 @@ func TestRefreshRenewsMonthlyAndNearDeadline(t *testing.T) {
 	for _, elapsed := range []time.Duration{29 * 24 * time.Hour, 58 * 24 * time.Hour, 88*24*time.Hour - time.Second} {
 		at := now.Add(elapsed)
 		s.now = func() time.Time { return at }
-		c, err = s.Refresh(t.Context(), c.RefreshToken, c.CSRFToken)
+		c, err = s.Refresh(t.Context(), c.WebAuthRefreshToken, c.CSRFToken)
 		if err != nil {
 			t.Fatalf("refresh at %s: %v", elapsed, err)
 		}
 		if !c.RefreshExpiresAt.Equal(at.Add(30 * 24 * time.Hour)) {
 			t.Fatalf("renewed expiry = %s", c.RefreshExpiresAt)
 		}
-		selector, _, err := parseOpaqueToken(c.RefreshToken)
+		selector, _, err := parseOpaqueToken(c.WebAuthRefreshToken)
 		if err != nil {
 			t.Fatal(err)
 		}
-		stored, found, err := p.Users().GetSessionByRefreshSelector(t.Context(), selector)
+		stored, found, err := p.Users().GetWebAuthSessionByRefreshSelector(t.Context(), selector)
 		if err != nil || !found {
 			t.Fatalf("load renewed family: %t, %v", found, err)
 		}
-		if !stored.Family.RefreshExpiresAt.Equal(c.RefreshExpiresAt) || !stored.Token.ExpiresAt.Equal(c.RefreshExpiresAt) {
+		if !stored.WebAuthSession.RefreshExpiresAt.Equal(c.RefreshExpiresAt) || !stored.Token.ExpiresAt.Equal(c.RefreshExpiresAt) {
 			t.Fatal("stored and returned deadlines differ")
 		}
-		if err := usercmd.ValidateSessionFamily(stored.Family); err != nil {
+		if err := usercmd.ValidateWebAuthSession(stored.WebAuthSession); err != nil {
 			t.Fatalf("renewed lineage: %v", err)
 		}
 	}
 	s.now = func() time.Time { return c.RefreshExpiresAt }
-	if _, err := s.Refresh(t.Context(), c.RefreshToken, c.CSRFToken); !errors.Is(err, ErrUnauthenticated) {
+	if _, err := s.Refresh(t.Context(), c.WebAuthRefreshToken, c.CSRFToken); !errors.Is(err, ErrUnauthenticated) {
 		t.Fatalf("expired refresh: %v", err)
 	}
 }
@@ -469,7 +469,7 @@ func TestRefreshAdoptsConfiguredLifetimeOnlyWhileValid(t *testing.T) {
 	s.config.RefreshTTL = 30 * 24 * time.Hour
 	at := now.Add(11 * time.Hour)
 	s.now = func() time.Time { return at }
-	renewed, err := s.Refresh(t.Context(), live.RefreshToken, live.CSRFToken)
+	renewed, err := s.Refresh(t.Context(), live.WebAuthRefreshToken, live.CSRFToken)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -477,7 +477,7 @@ func TestRefreshAdoptsConfiguredLifetimeOnlyWhileValid(t *testing.T) {
 		t.Fatalf("changed configured lifetime = %s", renewed.RefreshExpiresAt)
 	}
 	s.now = func() time.Time { return expired.RefreshExpiresAt }
-	if _, err := s.Refresh(t.Context(), expired.RefreshToken, expired.CSRFToken); !errors.Is(err, ErrUnauthenticated) {
+	if _, err := s.Refresh(t.Context(), expired.WebAuthRefreshToken, expired.CSRFToken); !errors.Is(err, ErrUnauthenticated) {
 		t.Fatalf("expired family with new config = %v", err)
 	}
 }

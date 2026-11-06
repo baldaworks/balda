@@ -31,7 +31,7 @@ func (projectionHealth) Status(name, revision string) plugincmd.RuntimeStatus {
 }
 func TestReadProjectionKeepsDisabledContributionsWithoutHealth(t *testing.T) {
 	owner := &projectionOwner{items: []plugincmd.InstalledView{{PluginStatus: plugincmd.PluginStatus{Name: "demo", Revision: "r1"}}}}
-	authority := plugincmd.Authority{SessionID: "browser"}
+	authority := plugincmd.Authority{WebAuthSessionID: "browser"}
 	detail, err := New(owner, nil).Detail(t.Context(), "demo", authority)
 	if err != nil || detail.Enabled || len(detail.Commands) != 1 || owner.authority != authority {
 		t.Fatalf("detail %+v %v", detail, err)

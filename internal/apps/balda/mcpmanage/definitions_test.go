@@ -222,7 +222,7 @@ func (s *definitionMemoryStore) CheckMCPAuthority(_ context.Context, a mcpcmd.Au
 	if s.writeError != nil {
 		return s.writeError
 	}
-	if a.UserID == "" || a.SessionID == "" {
+	if a.UserID == "" || a.WebAuthSessionID == "" {
 		return mcpcmd.ErrForbidden
 	}
 	return nil
@@ -396,7 +396,7 @@ func definitionHarness(t *testing.T) (*Definitions, *definitionMemoryStore, *def
 	return s, store, configured
 }
 func definitionCreate() mcpcmd.CreateDefinition {
-	return mcpcmd.CreateDefinition{PublicID: "worker-tools", Enabled: true, Definition: mcpcmd.Definition{Transport: mcpcmd.TransportStdio, Command: "worker-mcp", Targets: mcpcmd.Targets{All: true}}, Authority: mcpcmd.Authority{UserID: "admin", UserVersion: 1, CredentialVersion: 1, SessionID: "browser", SessionVersion: 1, At: time.Now().UTC()}}
+	return mcpcmd.CreateDefinition{PublicID: "worker-tools", Enabled: true, Definition: mcpcmd.Definition{Transport: mcpcmd.TransportStdio, Command: "worker-mcp", Targets: mcpcmd.Targets{All: true}}, Authority: mcpcmd.Authority{UserID: "admin", UserVersion: 1, CredentialVersion: 1, WebAuthSessionID: "browser", WebAuthSessionVersion: 1, At: time.Now().UTC()}}
 }
 
 func TestHybridInventoryConflictsAndConfiguredReadOnly(t *testing.T) {

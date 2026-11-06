@@ -42,7 +42,7 @@ type browserService interface {
 	Refresh(ctx context.Context, rawToken, csrfToken string) (Credentials, error)
 	Logout(ctx context.Context, rawAccessToken string) error
 	ReplacePassword(ctx context.Context, rawAccessToken string, currentPassword, nextPassword []byte) (Credentials, error)
-	RevokeSession(ctx context.Context, rawAccessToken, targetSessionID string, confirmCurrent bool) error
+	RevokeWebAuthSession(ctx context.Context, rawAccessToken, targetSessionID string, confirmCurrent bool) error
 }
 
 // HTTPConfig controls the browser-only trust boundary.
@@ -164,7 +164,7 @@ func (b *Browser) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	b.setCredentials(w, credentials)
-	if credentials.Assurance == usercmd.SessionAssuranceRestricted {
+	if credentials.Assurance == usercmd.WebAuthAssuranceRestricted {
 		b.redirect(w, r, "", b.path("/account/password"))
 		return
 	}
@@ -192,7 +192,7 @@ func (b *Browser) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	b.setCredentials(w, credentials)
-	if credentials.Assurance == usercmd.SessionAssuranceRestricted {
+	if credentials.Assurance == usercmd.WebAuthAssuranceRestricted {
 		b.redirect(w, r, "", b.path("/account/password"))
 		return
 	}
@@ -251,9 +251,9 @@ func (b *Browser) ReplacePassword(w http.ResponseWriter, r *http.Request) {
 	b.respondMutation(w, r, b.path("/account"))
 }
 
-// RevokeSession revokes one owned browser session family and all of its
+// RevokeWebAuthSession revokes one owned browser session family and all of its
 // access and refresh credentials.
-func (b *Browser) RevokeSession(w http.ResponseWriter, r *http.Request) {
+func (b *Browser) RevokeWebAuthSession(w http.ResponseWriter, r *http.Request) {
 	form, ok := b.mutationForm(w, r)
 	if !ok {
 		return
@@ -273,11 +273,11 @@ func (b *Browser) RevokeSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	targetSessionID := strings.TrimSpace(r.PathValue("session_id"))
-	if err := b.service.RevokeSession(r.Context(), access.Value, targetSessionID, form.Get("confirm_current") == "yes"); err != nil {
+	if err := b.service.RevokeWebAuthSession(r.Context(), access.Value, targetSessionID, form.Get("confirm_current") == "yes"); err != nil {
 		b.writeServiceError(w, r, err)
 		return
 	}
-	if targetSessionID == principal.FamilyID {
+	if targetSessionID == principal.WebAuthSessionID {
 		b.clearCredentials(w)
 		b.respondMutation(w, r, b.path("/login"))
 		return
@@ -358,7 +358,7 @@ func (b *Browser) RequireNormal(next http.Handler) http.Handler {
 			b.writeServiceError(w, r, ErrUnauthenticated)
 			return
 		}
-		if principal.Assurance != usercmd.SessionAssuranceNormal {
+		if principal.Assurance != usercmd.WebAuthAssuranceNormal {
 			b.writeServiceError(w, r, ErrForbidden)
 			return
 		}
@@ -374,7 +374,7 @@ func (b *Browser) RequireAdministrator(next http.Handler) http.Handler {
 			b.writeServiceError(w, r, ErrUnauthenticated)
 			return
 		}
-		if principal.Assurance != usercmd.SessionAssuranceNormal || principal.User.Role != usercmd.RoleAdministrator {
+		if principal.Assurance != usercmd.WebAuthAssuranceNormal || principal.User.Role != usercmd.RoleAdministrator {
 			b.writeServiceError(w, r, ErrForbidden)
 			return
 		}
@@ -413,7 +413,7 @@ func (b *Browser) AdministratorMutationLimit(w http.ResponseWriter, r *http.Requ
 		b.writeServiceError(w, r, err)
 		return nil, Principal{}, false
 	}
-	if principal.Assurance != usercmd.SessionAssuranceNormal || principal.User.Role != usercmd.RoleAdministrator {
+	if principal.Assurance != usercmd.WebAuthAssuranceNormal || principal.User.Role != usercmd.RoleAdministrator {
 		b.writeServiceError(w, r, ErrForbidden)
 		return nil, Principal{}, false
 	}
@@ -484,7 +484,7 @@ func (b *Browser) mutationFormLimit(w http.ResponseWriter, r *http.Request, limi
 
 func (b *Browser) setCredentials(w http.ResponseWriter, credentials Credentials) {
 	b.setCookie(w, AccessCookieName, credentials.AccessToken, b.path("/"), credentials.AccessExpiresAt, true)
-	b.setCookie(w, RefreshCookieName, credentials.RefreshToken, b.path(RefreshPath), credentials.RefreshExpiresAt, true)
+	b.setCookie(w, RefreshCookieName, credentials.WebAuthRefreshToken, b.path(RefreshPath), credentials.RefreshExpiresAt, true)
 	b.setCookie(w, CSRFCookieName, credentials.CSRFToken, b.path("/"), credentials.RefreshExpiresAt, true)
 }
 

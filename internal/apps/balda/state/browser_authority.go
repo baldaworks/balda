@@ -17,7 +17,7 @@ type browserAuthority struct {
 }
 
 type lockedBrowserAuthority struct {
-	family     usercmd.SessionFamily
+	family     usercmd.WebAuthSession
 	mfaEnabled bool
 }
 
@@ -31,7 +31,7 @@ func (s *sqlUserStore) checkBrowserAuthority(ctx context.Context, tx *sql.Tx, a 
 	if err != nil {
 		return lockedBrowserAuthority{}, err
 	}
-	if family.Assurance != usercmd.SessionAssuranceNormal {
+	if family.Assurance != usercmd.WebAuthAssuranceNormal {
 		return lockedBrowserAuthority{}, usercmd.ErrForbidden
 	}
 	if family.Version != a.sessionVersion {

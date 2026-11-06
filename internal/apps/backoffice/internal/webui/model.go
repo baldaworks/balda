@@ -135,17 +135,17 @@ type SessionView struct {
 
 // AuditView is a safe immutable security-event projection.
 type AuditView struct {
-	ID             string
-	Action         string
-	ActionLabel    string
-	Outcome        string
-	ActorUserID    string
-	ActorName      string
-	ActorSessionID string
-	TargetType     string
-	TargetID       string
-	TargetName     string
-	OccurredAt     time.Time
+	ID                    string
+	Action                string
+	ActionLabel           string
+	Outcome               string
+	ActorUserID           string
+	ActorName             string
+	ActorWebAuthSessionID string
+	TargetType            string
+	TargetID              string
+	TargetName            string
+	OccurredAt            time.Time
 }
 
 // ErrorView is a user-facing error without provider internals.
@@ -321,7 +321,7 @@ func ProjectUser(user usercmd.User) UserView {
 }
 
 // ProjectSession constructs one family-level session row.
-func ProjectSession(summary usercmd.SessionSummary, currentFamilyID string, now time.Time) SessionView {
+func ProjectSession(summary usercmd.WebAuthSessionSummary, currentFamilyID string, now time.Time) SessionView {
 	return SessionView{
 		ID: summary.ID, Assurance: string(summary.Assurance), CreatedAt: summary.CreatedAt,
 		LastSeenAt: summary.LastSeenAt, ExpiresAt: summary.ExpiresAt, RevokedAt: summary.RevokedAt,
@@ -341,8 +341,8 @@ func ProjectAudit(event usercmd.AuditEvent) AuditView {
 		ID: safeAuditID(event.ID), Action: string(event.Action), Outcome: string(event.Outcome),
 		ActionLabel: auditActionLabel(event.Action),
 		ActorUserID: safeAuditID(event.ActorUserID), ActorName: actorName,
-		ActorSessionID: safeAuditID(event.ActorSessionID),
-		TargetType:     string(event.TargetType), TargetID: safeAuditTargetID(event.TargetType, event.TargetID),
+		ActorWebAuthSessionID: safeAuditID(event.ActorWebAuthSessionID),
+		TargetType:            string(event.TargetType), TargetID: safeAuditTargetID(event.TargetType, event.TargetID),
 		TargetName: auditTargetLabel(event.TargetType), OccurredAt: event.OccurredAt,
 	}
 }
@@ -367,15 +367,15 @@ func auditActionLabel(action usercmd.AuditAction) string {
 		return "Cancelled binding invitation"
 	case usercmd.AuditActionUserMigrated:
 		return "Migrated user"
-	case usercmd.AuditActionLoginSucceeded:
+	case usercmd.AuditActionWebAuthLoginSucceeded:
 		return "Signed in"
-	case usercmd.AuditActionRefreshSucceeded:
+	case usercmd.AuditActionWebAuthRefreshSucceeded:
 		return "Restored browser session"
-	case usercmd.AuditActionRefreshReplay:
+	case usercmd.AuditActionWebAuthRefreshReplay:
 		return "Detected session token replay"
-	case usercmd.AuditActionSessionRevoked:
+	case usercmd.AuditActionWebAuthRevoked:
 		return "Ended browser session"
-	case usercmd.AuditActionMFAVerified:
+	case usercmd.AuditActionWebAuthMFAVerified:
 		return "Verified passkey"
 	case usercmd.AuditActionMFAEnabled:
 		return "Enabled two-factor authentication"
@@ -385,7 +385,7 @@ func auditActionLabel(action usercmd.AuditAction) string {
 		return "Disabled two-factor authentication"
 	case usercmd.AuditActionMFARecovered:
 		return "Recovered two-factor access offline"
-	case usercmd.AuditActionLogout:
+	case usercmd.AuditActionWebAuthLogout:
 		return "Signed out"
 	case usercmd.AuditActionHookChanged:
 		return "Agent hook changed"
@@ -410,7 +410,7 @@ func auditTargetLabel(target usercmd.AuditTargetType) string {
 	switch target {
 	case usercmd.AuditTargetUser:
 		return "User"
-	case usercmd.AuditTargetSession:
+	case usercmd.AuditTargetWebAuthSession:
 		return "Browser session"
 	case usercmd.AuditTargetBinding:
 		return "Chat binding"

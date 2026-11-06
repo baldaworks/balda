@@ -173,7 +173,7 @@ func validateAliasMutation(m aliascmd.Mutation) error {
 	}[m.Kind]
 	if err := usercmd.ValidateAuditEvent(m.Audit); err != nil ||
 		m.Audit.Action != action || m.Audit.TargetType != usercmd.AuditTargetAlias ||
-		m.Audit.TargetID != r.Name || m.Audit.ActorUserID != a.UserID || m.Audit.ActorSessionID != a.SessionID ||
+		m.Audit.TargetID != r.Name || m.Audit.ActorUserID != a.UserID || m.Audit.ActorWebAuthSessionID != a.WebAuthSessionID ||
 		m.Audit.Outcome != usercmd.AuditOutcomeSucceeded || !m.Audit.OccurredAt.Equal(a.At) {
 		return aliascmd.ErrInvalid
 	}
@@ -182,7 +182,7 @@ func validateAliasMutation(m aliascmd.Mutation) error {
 
 func validateAliasAuthority(a aliascmd.Authority) error {
 	if a.UserID == "" || a.UserVersion == 0 || a.CredentialVersion == 0 ||
-		a.SessionID == "" || a.SessionVersion == 0 || a.At.IsZero() {
+		a.WebAuthSessionID == "" || a.WebAuthSessionVersion == 0 || a.At.IsZero() {
 		return aliascmd.ErrInvalid
 	}
 	return nil
@@ -197,16 +197,16 @@ func (s *sqlAliasStore) checkAuthority(ctx context.Context, tx *sql.Tx, a aliasc
 }
 
 func aliasBrowserAuthority(a aliascmd.Authority) browserAuthority {
-	return browserAuthority{userID: a.UserID, sessionID: a.SessionID,
+	return browserAuthority{userID: a.UserID, sessionID: a.WebAuthSessionID,
 		userVersion: a.UserVersion, credentialVersion: a.CredentialVersion,
-		mfaVersion: a.MFAVersion, sessionVersion: a.SessionVersion, at: a.At}
+		mfaVersion: a.MFAVersion, sessionVersion: a.WebAuthSessionVersion, at: a.At}
 }
 
 func aliasAuthorityError(err error) error {
 	switch {
 	case errors.Is(err, usercmd.ErrConflict):
 		return aliascmd.ErrConflict
-	case errors.Is(err, usercmd.ErrForbidden), errors.Is(err, usercmd.ErrNotFound), errors.Is(err, usercmd.ErrSessionUnavailable):
+	case errors.Is(err, usercmd.ErrForbidden), errors.Is(err, usercmd.ErrNotFound), errors.Is(err, usercmd.ErrWebAuthSessionUnavailable):
 		return aliascmd.ErrForbidden
 	default:
 		return aliascmd.ErrUnavailable

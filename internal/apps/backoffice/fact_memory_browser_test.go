@@ -114,7 +114,7 @@ func runFactMemoryApplicationBrowser(t *testing.T, base string, width int) {
 			modes.mode.Store(0)
 		case "revoke":
 			at := time.Now().UTC()
-			operationErr = provider.Users().RevokeUserSessions(r.Context(), "administrator", at, "synthetic-test", usercmd.AuditEvent{ID: "browser-revoke", Action: usercmd.AuditActionSessionRevoked, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetUser, TargetID: "administrator", Source: "test", OccurredAt: at})
+			operationErr = provider.Users().RevokeUserWebAuthSessions(r.Context(), "administrator", at, "synthetic-test", usercmd.AuditEvent{ID: "browser-revoke", Action: usercmd.AuditActionWebAuthRevoked, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetUser, TargetID: "administrator", Source: "test", OccurredAt: at})
 		default:
 			http.NotFound(w, r)
 			return

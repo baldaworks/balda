@@ -197,7 +197,7 @@ func (s *Authorizations) bindAuthorization(ctx context.Context, a authorizationA
 }
 
 func sameBrowserAuthority(a, b mcpcmd.Authority) bool {
-	return a.UserID == b.UserID && a.SessionID == b.SessionID && a.UserVersion == b.UserVersion && a.CredentialVersion == b.CredentialVersion && a.MFAVersion == b.MFAVersion && a.SessionVersion == b.SessionVersion
+	return a.UserID == b.UserID && a.WebAuthSessionID == b.WebAuthSessionID && a.UserVersion == b.UserVersion && a.CredentialVersion == b.CredentialVersion && a.MFAVersion == b.MFAVersion && a.WebAuthSessionVersion == b.WebAuthSessionVersion
 }
 
 func bindAttemptContext(ctx, attemptCtx context.Context) (context.Context, func()) {

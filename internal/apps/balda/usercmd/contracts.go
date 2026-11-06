@@ -139,65 +139,65 @@ type BindingClaim struct {
 	ConsumedAt  time.Time
 }
 
-// SessionAssurance distinguishes restricted password-replacement sessions from normal sessions.
-type SessionAssurance string
+// WebAuthAssurance distinguishes restricted password-replacement sessions from normal sessions.
+type WebAuthAssurance string
 
 const (
-	// SessionAssuranceRestricted permits password replacement, refresh, and logout only.
-	SessionAssuranceRestricted SessionAssurance = "restricted"
-	// SessionAssuranceNormal permits capabilities derived from the current user.
-	SessionAssuranceNormal SessionAssurance = "normal"
+	// WebAuthAssuranceRestricted permits password replacement, refresh, and logout only.
+	WebAuthAssuranceRestricted WebAuthAssurance = "restricted"
+	// WebAuthAssuranceNormal permits capabilities derived from the current user.
+	WebAuthAssuranceNormal WebAuthAssurance = "normal"
 )
 
 // Valid reports whether the session assurance is supported.
-func (a SessionAssurance) Valid() bool {
-	return a == SessionAssuranceRestricted || a == SessionAssuranceNormal
+func (a WebAuthAssurance) Valid() bool {
+	return a == WebAuthAssuranceRestricted || a == WebAuthAssuranceNormal
 }
 
-// AccessCredential contains only persisted lookup material for the current access token.
-type AccessCredential struct {
+// WebAuthAccessCredential contains only persisted lookup material for the current access token.
+type WebAuthAccessCredential struct {
 	Selector       string
 	VerifierDigest []byte
 	ExpiresAt      time.Time
 }
 
-// RefreshTokenState records whether a refresh generation can still be consumed.
-type RefreshTokenState string
+// WebAuthRefreshTokenState records whether a refresh generation can still be consumed.
+type WebAuthRefreshTokenState string
 
 const (
-	// RefreshTokenStateActive identifies the single consumable generation.
-	RefreshTokenStateActive RefreshTokenState = "active"
-	// RefreshTokenStateUsed retains a consumed generation for replay detection.
-	RefreshTokenStateUsed RefreshTokenState = "used"
-	// RefreshTokenStateRevoked identifies a generation revoked with its family.
-	RefreshTokenStateRevoked RefreshTokenState = "revoked"
+	// WebAuthRefreshTokenStateActive identifies the single consumable generation.
+	WebAuthRefreshTokenStateActive WebAuthRefreshTokenState = "active"
+	// WebAuthRefreshTokenStateUsed retains a consumed generation for replay detection.
+	WebAuthRefreshTokenStateUsed WebAuthRefreshTokenState = "used"
+	// WebAuthRefreshTokenStateRevoked identifies a generation revoked with its family.
+	WebAuthRefreshTokenStateRevoked WebAuthRefreshTokenState = "revoked"
 )
 
 // Valid reports whether the refresh-token state is supported.
-func (s RefreshTokenState) Valid() bool {
-	return s == RefreshTokenStateActive || s == RefreshTokenStateUsed || s == RefreshTokenStateRevoked
+func (s WebAuthRefreshTokenState) Valid() bool {
+	return s == WebAuthRefreshTokenStateActive || s == WebAuthRefreshTokenStateUsed || s == WebAuthRefreshTokenStateRevoked
 }
 
-// RefreshToken contains only persisted lookup material for one token generation.
-type RefreshToken struct {
+// WebAuthRefreshToken contains only persisted lookup material for one token generation.
+type WebAuthRefreshToken struct {
 	Selector       string
 	VerifierDigest []byte
 	Generation     uint64
-	State          RefreshTokenState
+	State          WebAuthRefreshTokenState
 	IssuedAt       time.Time
 	UsedAt         time.Time
 	ExpiresAt      time.Time
 }
 
-// SessionFamily is the durable server-side browser session aggregate.
-type SessionFamily struct {
+// WebAuthSession is the durable server-side browser session aggregate.
+type WebAuthSession struct {
 	WebAuthnVerifiedAt time.Time
 	MFAFactorID        string
 	ID                 string
 	UserID             string
-	Assurance          SessionAssurance
+	Assurance          WebAuthAssurance
 	CredentialVersion  uint64
-	Access             AccessCredential
+	Access             WebAuthAccessCredential
 	CSRFVerifierDigest []byte
 	CreatedAt          time.Time
 	LastSeenAt         time.Time
@@ -207,13 +207,13 @@ type SessionFamily struct {
 	DeviceLabel        string
 	ConnectionPeer     string
 	Version            uint64
-	RefreshTokens      []RefreshToken
+	RefreshTokens      []WebAuthRefreshToken
 }
 
-// SessionSummary is the secret-free session-family projection shown to users.
-type SessionSummary struct {
+// WebAuthSessionSummary is the secret-free session-family projection shown to users.
+type WebAuthSessionSummary struct {
 	ID             string
-	Assurance      SessionAssurance
+	Assurance      WebAuthAssurance
 	CreatedAt      time.Time
 	LastSeenAt     time.Time
 	ExpiresAt      time.Time
@@ -239,8 +239,8 @@ const (
 	AuditActionUserStatusChanged AuditAction = "user.status.changed"
 	// AuditActionCredentialChanged records credential setup, reset, or rotation.
 	AuditActionCredentialChanged AuditAction = "user.credential.changed"
-	// AuditActionSessionRevoked records browser session-family revocation.
-	AuditActionSessionRevoked AuditAction = "session.revoked"
+	// AuditActionWebAuthRevoked records WebAuth session revocation.
+	AuditActionWebAuthRevoked AuditAction = "web_auth.revoked"
 	// AuditActionBindingAttached records verified transport-binding attachment.
 	AuditActionBindingAttached AuditAction = "user.binding.attached"
 	// AuditActionBindingDetached records transport-binding removal.
@@ -253,12 +253,12 @@ const (
 	AuditActionInvitationRevoked AuditAction = "user.binding.invitation.revoked"
 	// AuditActionUserMigrated records canonical creation from legacy authorization state.
 	AuditActionUserMigrated AuditAction = "user.migrated"
-	// AuditActionLoginSucceeded records creation of a browser session family.
-	AuditActionLoginSucceeded AuditAction = "session.login.succeeded"
-	// AuditActionRefreshSucceeded records access/refresh pair rotation.
-	AuditActionRefreshSucceeded AuditAction = "session.refresh.succeeded"
-	// AuditActionRefreshReplay records verified refresh-token reuse and family revocation.
-	AuditActionRefreshReplay AuditAction = "session.refresh.replay"
+	// AuditActionWebAuthLoginSucceeded records creation of a WebAuth session.
+	AuditActionWebAuthLoginSucceeded AuditAction = "web_auth.login.succeeded"
+	// AuditActionWebAuthRefreshSucceeded records access/refresh pair rotation.
+	AuditActionWebAuthRefreshSucceeded AuditAction = "web_auth.refresh.succeeded"
+	// AuditActionWebAuthRefreshReplay records verified refresh-token reuse and family revocation.
+	AuditActionWebAuthRefreshReplay AuditAction = "web_auth.refresh.replay"
 	// AuditActionMFAEnabled records opt-in after verified registration.
 	AuditActionMFAEnabled AuditAction = "user.mfa.enabled"
 	// AuditActionMFAReplaced records verified factor replacement.
@@ -267,10 +267,10 @@ const (
 	AuditActionMFADisabled AuditAction = "user.mfa.disabled"
 	// AuditActionMFARecovered records confirmed offline factor removal.
 	AuditActionMFARecovered AuditAction = "user.mfa.recovered"
-	// AuditActionMFAVerified records a fresh verified browser factor.
-	AuditActionMFAVerified AuditAction = "session.mfa.verified"
-	// AuditActionLogout records explicit browser-session logout.
-	AuditActionLogout AuditAction = "session.logout"
+	// AuditActionWebAuthMFAVerified records a fresh verified browser factor.
+	AuditActionWebAuthMFAVerified AuditAction = "web_auth.mfa.verified"
+	// AuditActionWebAuthLogout records explicit browser-session logout.
+	AuditActionWebAuthLogout AuditAction = "web_auth.logout"
 	// AuditActionMCPDefinitionChanged records a managed connection revision or selection change.
 	AuditActionMCPDefinitionChanged AuditAction = "mcp.definition.changed"
 	// AuditActionMCPAuthorizationChanged records explicit worker authorization transitions.
@@ -334,9 +334,9 @@ func (a AuditAction) Valid() bool {
 	switch a {
 	case AuditActionSkillChanged, AuditActionHookChanged, AuditActionPluginRevisionPurged, AuditActionPluginMarketplaceRefreshFailed, AuditActionPluginOriginAdopted, AuditActionPluginInstalled, AuditActionPluginUpgraded, AuditActionPluginEnabled, AuditActionPluginDisabled, AuditActionPluginRolledBack, AuditActionPluginRemoved, AuditActionPluginMarketplaceAdded, AuditActionPluginMarketplaceRefreshed, AuditActionPluginMarketplaceRemoved, AuditActionUserCreated, AuditActionUserUpdated, AuditActionUserAccessChanged,
 		AuditActionUserRoleChanged, AuditActionUserStatusChanged, AuditActionCredentialChanged,
-		AuditActionSessionRevoked, AuditActionBindingAttached, AuditActionBindingDetached, AuditActionBindingClaimCreated,
-		AuditActionUserMigrated, AuditActionLoginSucceeded, AuditActionRefreshSucceeded, AuditActionProviderChanged,
-		AuditActionRefreshReplay, AuditActionMFAEnabled, AuditActionMFAReplaced, AuditActionMFADisabled, AuditActionMFARecovered, AuditActionMFAVerified, AuditActionLogout, AuditActionInvitationIssued, AuditActionInvitationRevoked, AuditActionMCPDefinitionChanged, AuditActionMCPAuthorizationChanged, AuditActionMCPCredentialsRenewed, AuditActionScheduleDefinitionChanged, AuditActionScheduleRunRequested, AuditActionMemoryFactCreated, AuditActionMemoryFactEdited, AuditActionMemoryFactDeleted, AuditActionAliasCreated, AuditActionAliasRetargeted, AuditActionAliasDeleted, AuditActionWebhookRouteChanged, AuditActionWebhookTestRequested:
+		AuditActionWebAuthRevoked, AuditActionBindingAttached, AuditActionBindingDetached, AuditActionBindingClaimCreated,
+		AuditActionUserMigrated, AuditActionWebAuthLoginSucceeded, AuditActionWebAuthRefreshSucceeded, AuditActionProviderChanged,
+		AuditActionWebAuthRefreshReplay, AuditActionMFAEnabled, AuditActionMFAReplaced, AuditActionMFADisabled, AuditActionMFARecovered, AuditActionWebAuthMFAVerified, AuditActionWebAuthLogout, AuditActionInvitationIssued, AuditActionInvitationRevoked, AuditActionMCPDefinitionChanged, AuditActionMCPAuthorizationChanged, AuditActionMCPCredentialsRenewed, AuditActionScheduleDefinitionChanged, AuditActionScheduleRunRequested, AuditActionMemoryFactCreated, AuditActionMemoryFactEdited, AuditActionMemoryFactDeleted, AuditActionAliasCreated, AuditActionAliasRetargeted, AuditActionAliasDeleted, AuditActionWebhookRouteChanged, AuditActionWebhookTestRequested:
 		return true
 	default:
 		return false
@@ -368,8 +368,8 @@ const (
 	AuditTargetPluginMarketplace AuditTargetType = "plugin_marketplace"
 	// AuditTargetUser identifies a canonical user.
 	AuditTargetUser AuditTargetType = "user"
-	// AuditTargetSession identifies a browser session family.
-	AuditTargetSession AuditTargetType = "session"
+	// AuditTargetWebAuthSession identifies a WebAuth session.
+	AuditTargetWebAuthSession AuditTargetType = "web_auth_session"
 	// AuditTargetBinding identifies a transport binding.
 	AuditTargetBinding AuditTargetType = "binding"
 	// AuditTargetSystem identifies a system-scoped security operation.
@@ -397,7 +397,7 @@ const (
 // Valid reports whether the audit target type is supported.
 func (t AuditTargetType) Valid() bool {
 	switch t {
-	case AuditTargetSkill, AuditTargetHook, AuditTargetPlugin, AuditTargetPluginMarketplace, AuditTargetUser, AuditTargetSession, AuditTargetBinding, AuditTargetSystem, AuditTargetMigration, AuditTargetMCP, AuditTargetSchedule, AuditTargetMemoryFact, AuditTargetAlias, AuditTargetWebhookRoute, AuditTargetProvider:
+	case AuditTargetSkill, AuditTargetHook, AuditTargetPlugin, AuditTargetPluginMarketplace, AuditTargetUser, AuditTargetWebAuthSession, AuditTargetBinding, AuditTargetSystem, AuditTargetMigration, AuditTargetMCP, AuditTargetSchedule, AuditTargetMemoryFact, AuditTargetAlias, AuditTargetWebhookRoute, AuditTargetProvider:
 		return true
 	default:
 		return false
@@ -406,22 +406,32 @@ func (t AuditTargetType) Valid() bool {
 
 // AuditEvent is a secret-free immutable security event contract.
 type AuditEvent struct {
-	ID             string
-	Action         AuditAction
-	Outcome        AuditOutcome
-	ActorUserID    string
-	ActorSessionID string
-	TargetType     AuditTargetType
-	TargetID       string
-	Reason         string
-	RequestID      string
-	Source         string
-	CorrelationID  string
-	OccurredAt     time.Time
+	ID                    string
+	Action                AuditAction
+	Outcome               AuditOutcome
+	ActorUserID           string
+	ActorWebAuthSessionID string
+	TargetType            AuditTargetType
+	TargetID              string
+	Reason                string
+	RequestID             string
+	Source                string
+	CorrelationID         string
+	OccurredAt            time.Time
+	Encoding              AuditEncoding
 }
 
-// ValidateSessionFamily checks storage-neutral browser-session invariants.
-func ValidateSessionFamily(f SessionFamily) error {
+// AuditEncoding identifies the persisted representation decoded into an event.
+// It is projection metadata and never contributes to authorization decisions.
+type AuditEncoding string
+
+const (
+	AuditEncodingCanonical     AuditEncoding = "canonical"
+	AuditEncodingLegacyWebAuth AuditEncoding = "legacy_web_auth"
+)
+
+// ValidateWebAuthSession checks storage-neutral browser-session invariants.
+func ValidateWebAuthSession(f WebAuthSession) error {
 	if f.WebAuthnVerifiedAt.IsZero() != (f.MFAFactorID == "") || (!f.WebAuthnVerifiedAt.IsZero() && f.WebAuthnVerifiedAt.After(f.LastSeenAt)) {
 		return fmt.Errorf("%w: WebAuthn proof and factor must be paired and precede last activity", ErrInvalid)
 	}
@@ -460,12 +470,12 @@ func ValidateSessionFamily(f SessionFamily) error {
 		}
 		selectors[token.Selector] = struct{}{}
 		switch token.State {
-		case RefreshTokenStateActive:
+		case WebAuthRefreshTokenStateActive:
 			if !token.UsedAt.IsZero() || !token.ExpiresAt.Equal(f.RefreshExpiresAt) {
 				return fmt.Errorf("%w: active refresh generation must be unused and match family expiry", ErrInvalid)
 			}
 			active++
-		case RefreshTokenStateUsed:
+		case WebAuthRefreshTokenStateUsed:
 			if token.UsedAt.IsZero() {
 				return fmt.Errorf("%w: used refresh generation requires used time", ErrInvalid)
 			}
@@ -488,7 +498,7 @@ func ValidateAuditEvent(event AuditEvent) error {
 	if !event.TargetType.Valid() || strings.TrimSpace(event.TargetID) == "" || strings.TrimSpace(event.Source) == "" {
 		return fmt.Errorf("%w: audit target and source are required", ErrInvalid)
 	}
-	if len(event.ID) > 256 || len(event.Action) > 128 || len(event.ActorUserID) > 256 || len(event.ActorSessionID) > 256 ||
+	if len(event.ID) > 256 || len(event.Action) > 128 || len(event.ActorUserID) > 256 || len(event.ActorWebAuthSessionID) > 256 ||
 		len(event.TargetID) > 256 || len(event.Reason) > 1024 || len(event.RequestID) > 256 ||
 		len(event.Source) > 128 || len(event.CorrelationID) > 256 {
 		return fmt.Errorf("%w: audit field exceeds its safe bound", ErrInvalid)

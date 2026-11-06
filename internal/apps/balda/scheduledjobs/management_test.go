@@ -51,7 +51,7 @@ func TestManagementManualRunIsIdempotentAndHistoryIsSafe(t *testing.T) {
 	store := &recordingScheduleManagementStore{jobs: provider.ScheduledJobs(), runs: provider.ScheduleRuns()}
 	m := NewManagement(provider.ScheduledJobs(), store, provider.ScheduleRuns(), provider.Jobs(), provider.Jobs())
 	m.now = func() time.Time { return now }
-	authority := schedulecmd.Authority{UserID: "admin", SessionID: "session", At: now}
+	authority := schedulecmd.Authority{UserID: "admin", WebAuthSessionID: "session", At: now}
 	request := schedulecmd.RunNow{ID: job.JobID, RequestKey: "nonce-123", Authority: authority}
 	if _, err := m.RunNow(t.Context(), request); !errors.Is(err, schedulecmd.ErrConflict) {
 		t.Fatalf("unconfirmed disabled run = %v", err)
@@ -206,7 +206,7 @@ func TestManagementLifecyclePreservesDisabledSelectionAndArchive(t *testing.T) {
 	now := time.Date(2026, 10, 8, 8, 0, 0, 0, time.UTC)
 	m := NewManagement(jobs, &recordingScheduleManagementStore{jobs: jobs}, nil, nil, nil)
 	m.now = func() time.Time { return now }
-	authority := schedulecmd.Authority{UserID: "admin", SessionID: "session", At: now}
+	authority := schedulecmd.Authority{UserID: "admin", WebAuthSessionID: "session", At: now}
 	definition := schedulecmd.Definition{ID: "daily-review", Cron: "0 9 * * *", Content: "review",
 		Locator: testTelegramReportLocator}
 	created, err := m.Create(ctx, schedulecmd.Create{Definition: definition, Authority: authority})

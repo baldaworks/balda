@@ -141,7 +141,7 @@ func TestMFACeremonyBrowserBindingAndReplay(t *testing.T) {
 	require.NoError(t, err)
 	profile, err := s.store.GetMFAProfile(t.Context(), u.ID)
 	require.NoError(t, err)
-	start, err := s.startMFA(t.Context(), u, profile, usercmd.MFAEnable, principal.FamilyID, principal.Version, "browser", "csrf", true)
+	start, err := s.startMFA(t.Context(), u, profile, usercmd.MFAEnable, principal.WebAuthSessionID, principal.WebAuthSessionVersion, "browser", "csrf", true)
 	require.NoError(t, err)
 	// A mismatched browser cannot consume the legitimate registration.
 	_, err = s.finishMFA(t.Context(), start.Transaction, "different", "csrf", usercmd.MFAEnable, []byte(`{}`))
@@ -152,7 +152,7 @@ func TestMFACeremonyBrowserBindingAndReplay(t *testing.T) {
 	_, err = s.store.ConsumeMFACeremony(t.Context(), digest(start.Transaction), digest("browser"), digest("csrf"), usercmd.MFAEnable, now)
 	require.Error(t, err)
 
-	start, err = s.startMFA(t.Context(), u, profile, usercmd.MFAEnable, principal.FamilyID, principal.Version, "browser", "csrf", true)
+	start, err = s.startMFA(t.Context(), u, profile, usercmd.MFAEnable, principal.WebAuthSessionID, principal.WebAuthSessionVersion, "browser", "csrf", true)
 	require.NoError(t, err)
 	body := registrationResponseForStart(t, start)
 	for _, binding := range []struct {
@@ -169,13 +169,13 @@ func TestMFACeremonyBrowserBindingAndReplay(t *testing.T) {
 	_, err = s.finishMFA(t.Context(), start.Transaction, "browser", "csrf", usercmd.MFAEnable, body)
 	require.ErrorIs(t, err, ErrUnauthenticated)
 
-	start, err = s.startMFA(t.Context(), u, profile, usercmd.MFAEnable, principal.FamilyID, principal.Version, "browser", "csrf", true)
+	start, err = s.startMFA(t.Context(), u, profile, usercmd.MFAEnable, principal.WebAuthSessionID, principal.WebAuthSessionVersion, "browser", "csrf", true)
 	require.NoError(t, err)
 	now = now.Add(6 * time.Minute)
 	_, err = s.finishMFA(t.Context(), start.Transaction, "browser", "csrf", usercmd.MFAEnable, registrationResponseForStart(t, start))
 	require.ErrorIs(t, err, ErrUnauthenticated)
 	now = now.Add(-6 * time.Minute)
-	start, err = s.startMFA(t.Context(), u, profile, usercmd.MFAEnable, principal.FamilyID, principal.Version, "browser", "csrf", true)
+	start, err = s.startMFA(t.Context(), u, profile, usercmd.MFAEnable, principal.WebAuthSessionID, principal.WebAuthSessionVersion, "browser", "csrf", true)
 	require.NoError(t, err)
 	u.Version++
 	u.DisplayName = "Changed"

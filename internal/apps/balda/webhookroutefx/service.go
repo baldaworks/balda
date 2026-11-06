@@ -77,7 +77,7 @@ func toStateRecord(r webhookroutecmd.Record) state.WebhookRouteRecord {
 func stateAuthority(a webhookroutecmd.Authority) state.WebhookRouteAuthority {
 	return state.WebhookRouteAuthority{UserID: a.UserID, UserVersion: a.UserVersion,
 		CredentialVersion: a.CredentialVersion, MFAVersion: a.MFAVersion,
-		SessionID: a.SessionID, SessionVersion: a.SessionVersion, At: a.At}
+		WebAuthSessionID: a.WebAuthSessionID, WebAuthSessionVersion: a.WebAuthSessionVersion, At: a.At}
 }
 
 func storeError(err error) error {

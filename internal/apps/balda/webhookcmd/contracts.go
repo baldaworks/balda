@@ -45,11 +45,11 @@ type Inbound struct {
 
 // TestAuthority fences an administrator test at durable admission.
 type TestAuthority struct {
-	UserID, SessionID                                          string
-	UserVersion, CredentialVersion, MFAVersion, SessionVersion uint64
-	RouteVersion                                               uint64
-	ConfirmDisabled                                            bool
-	At                                                         time.Time
+	UserID, WebAuthSessionID                                          string
+	UserVersion, CredentialVersion, MFAVersion, WebAuthSessionVersion uint64
+	RouteVersion                                                      uint64
+	ConfirmDisabled                                                   bool
+	At                                                                time.Time
 }
 
 // PreparedRoute freezes an authorized route before the body is read.

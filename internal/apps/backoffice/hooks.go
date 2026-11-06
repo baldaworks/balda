@@ -35,7 +35,7 @@ func (r *Runtime) ConfigureHookOperations(operations HookOperations) error {
 }
 
 func hookAuthority(p security.Principal) hookcmd.Authority {
-	return hookcmd.Authority{UserID: p.User.ID, UserVersion: p.User.Version, CredentialVersion: p.User.Credential.Version, MFAVersion: p.MFAVersion, SessionID: p.FamilyID, SessionVersion: p.Version, At: time.Now().UTC()}
+	return hookcmd.Authority{UserID: p.User.ID, UserVersion: p.User.Version, CredentialVersion: p.User.Credential.Version, MFAVersion: p.MFAVersion, WebAuthSessionID: p.WebAuthSessionID, WebAuthSessionVersion: p.WebAuthSessionVersion, At: time.Now().UTC()}
 }
 
 func (a *httpApp) hookBasePage(r *http.Request, p security.Principal) webui.Page {

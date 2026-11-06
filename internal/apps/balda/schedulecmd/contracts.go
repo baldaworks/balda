@@ -16,13 +16,13 @@ var (
 
 // Authority binds a management request to the current administrator and browser family.
 type Authority struct {
-	UserID            string
-	UserVersion       uint64
-	CredentialVersion uint64
-	MFAVersion        uint64
-	SessionID         string
-	SessionVersion    uint64
-	At                time.Time
+	UserID                string
+	UserVersion           uint64
+	CredentialVersion     uint64
+	MFAVersion            uint64
+	WebAuthSessionID      string
+	WebAuthSessionVersion uint64
+	At                    time.Time
 }
 
 // Definition is the editable portion of a recurring schedule.

@@ -162,8 +162,8 @@ func runSkillsBrowserWorkflow(t *testing.T, base string, width int) {
 					t.Fatal("no real catalog gate entry")
 				}
 				at := time.Now().UTC()
-				event := usercmd.AuditEvent{ID: "skills-browser-revoke", Action: usercmd.AuditActionSessionRevoked, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetUser, TargetID: "administrator", Source: "skills-browser-fixture", OccurredAt: at}
-				if e = f.provider.Users().RevokeUserSessions(ctx, "administrator", at, "synthetic-test", event); e != nil {
+				event := usercmd.AuditEvent{ID: "skills-browser-revoke", Action: usercmd.AuditActionWebAuthRevoked, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetUser, TargetID: "administrator", Source: "skills-browser-fixture", OccurredAt: at}
+				if e = f.provider.Users().RevokeUserWebAuthSessions(ctx, "administrator", at, "synthetic-test", event); e != nil {
 					t.Fatal(e)
 				}
 				releaseCatalog()

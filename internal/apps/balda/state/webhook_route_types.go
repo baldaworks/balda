@@ -37,9 +37,9 @@ type WebhookRouteRecord struct {
 
 // WebhookRouteAuthority fences an administrator browser family at commit time.
 type WebhookRouteAuthority struct {
-	UserID, SessionID                                          string
-	UserVersion, CredentialVersion, MFAVersion, SessionVersion uint64
-	At                                                         time.Time
+	UserID, WebAuthSessionID                                          string
+	UserVersion, CredentialVersion, MFAVersion, WebAuthSessionVersion uint64
+	At                                                                time.Time
 }
 
 // WebhookRouteMutationKind selects a managed route write.

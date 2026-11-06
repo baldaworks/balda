@@ -66,7 +66,7 @@ func (s *Service) BeginEnable(ctx context.Context, token string, password []byte
 	if profile.Enabled {
 		return CeremonyStart{}, ErrForbidden
 	}
-	return s.startMFA(ctx, p.User, profile, usercmd.MFAEnable, p.FamilyID, p.Version, browser, csrf, true)
+	return s.startMFA(ctx, p.User, profile, usercmd.MFAEnable, p.WebAuthSessionID, p.WebAuthSessionVersion, browser, csrf, true)
 }
 
 // FinishEnable installs only a verified registration and one new verified family.
@@ -75,7 +75,7 @@ func (s *Service) FinishEnable(ctx context.Context, token, transaction, browser,
 	if err != nil {
 		return Credentials{}, err
 	}
-	return s.changeFactor(ctx, v.user, v.ceremony.MFAVersion, v.ceremony.SessionID, v.state.SessionVersion, v.key, usercmd.MFAEnable, v.now)
+	return s.changeFactor(ctx, v.user, v.ceremony.MFAVersion, v.ceremony.WebAuthSessionID, v.state.WebAuthSessionVersion, v.key, usercmd.MFAEnable, v.now)
 }
 
 // BeginReplace confirms the password and starts new-key registration.
@@ -97,7 +97,7 @@ func (s *Service) BeginReplace(ctx context.Context, token string, password []byt
 	if !profile.Enabled {
 		return CeremonyStart{}, ErrForbidden
 	}
-	return s.startMFA(ctx, p.User, profile, usercmd.MFAReplace, p.FamilyID, p.Version, browser, csrf, true)
+	return s.startMFA(ctx, p.User, profile, usercmd.MFAReplace, p.WebAuthSessionID, p.WebAuthSessionVersion, browser, csrf, true)
 }
 
 // FinishReplace commits only a verified new-key registration.
@@ -106,7 +106,7 @@ func (s *Service) FinishReplace(ctx context.Context, token, transaction, browser
 	if err != nil {
 		return Credentials{}, err
 	}
-	return s.changeFactor(ctx, v.user, v.ceremony.MFAVersion, v.ceremony.SessionID, v.state.SessionVersion, v.key, usercmd.MFAReplace, v.now)
+	return s.changeFactor(ctx, v.user, v.ceremony.MFAVersion, v.ceremony.WebAuthSessionID, v.state.WebAuthSessionVersion, v.key, usercmd.MFAReplace, v.now)
 }
 
 // Disable removes the factor after password and explicit opt-out confirmation.
@@ -128,7 +128,7 @@ func (s *Service) Disable(ctx context.Context, token string, password []byte, co
 	if !profile.Enabled {
 		return Credentials{}, ErrForbidden
 	}
-	return s.changeFactor(ctx, p.User, profile.Version, p.FamilyID, p.Version, usercmd.MFACredential{}, usercmd.MFADisable, s.now().UTC())
+	return s.changeFactor(ctx, p.User, profile.Version, p.WebAuthSessionID, p.WebAuthSessionVersion, usercmd.MFACredential{}, usercmd.MFADisable, s.now().UTC())
 }
 
 func (s *Service) accountCeremony(ctx context.Context, token, transaction, browser, csrf string, purpose usercmd.MFAPurpose, response []byte) (verifiedMFA, error) {
@@ -137,7 +137,7 @@ func (s *Service) accountCeremony(ctx context.Context, token, transaction, brows
 		return verifiedMFA{}, err
 	}
 	v, err := s.finishMFA(ctx, transaction, browser, csrf, purpose, response)
-	if err != nil || v.ceremony.UserID != p.User.ID || v.ceremony.SessionID != p.FamilyID || v.state.SessionVersion != p.Version {
+	if err != nil || v.ceremony.UserID != p.User.ID || v.ceremony.WebAuthSessionID != p.WebAuthSessionID || v.state.WebAuthSessionVersion != p.WebAuthSessionVersion {
 		return verifiedMFA{}, ErrUnauthenticated
 	}
 	return v, nil
@@ -148,7 +148,7 @@ func (s *Service) changeFactor(ctx context.Context, u usercmd.User, mfaVersion u
 	userVersion, credentialVersion := u.Version, u.Credential.Version
 	u.Version++
 	u.Credential.Version++
-	credentials, family, err := s.newSession(ctx, u, usercmd.SessionAssuranceNormal, now)
+	credentials, family, err := s.newSession(ctx, u, usercmd.WebAuthAssuranceNormal, now)
 	if err != nil {
 		return Credentials{}, err
 	}
@@ -162,10 +162,10 @@ func (s *Service) changeFactor(ctx context.Context, u usercmd.User, mfaVersion u
 		}
 	}
 	audit := s.audit(action, usercmd.AuditTargetUser, u.ID, "optional factor changed", now)
-	audit.ActorUserID, audit.ActorSessionID = u.ID, sessionID
+	audit.ActorUserID, audit.ActorWebAuthSessionID = u.ID, sessionID
 	change := usercmd.MFAChange{UserID: u.ID, ExpectedUserVersion: userVersion, ExpectedCredentialVersion: credentialVersion,
-		ExpectedMFAVersion: mfaVersion, Purpose: purpose, BoundSessionID: sessionID,
-		ExpectedSessionVersion: sessionVersion, Credential: key, Session: &family, ChangedAt: now, Audit: audit}
+		ExpectedMFAVersion: mfaVersion, Purpose: purpose, BoundWebAuthSessionID: sessionID,
+		ExpectedWebAuthSessionVersion: sessionVersion, Credential: key, WebAuthSession: &family, ChangedAt: now, Audit: audit}
 	if err := s.store.ApplyMFAChange(ctx, change); err != nil {
 		return Credentials{}, err
 	}

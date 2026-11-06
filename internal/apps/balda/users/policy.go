@@ -88,7 +88,7 @@ func BackofficeCapabilities(user usercmd.User) usercmd.BackofficeCapabilities {
 }
 
 // AuthenticationAssurance maps valid local credential state to session assurance.
-func AuthenticationAssurance(user usercmd.User) (usercmd.SessionAssurance, error) {
+func AuthenticationAssurance(user usercmd.User) (usercmd.WebAuthAssurance, error) {
 	if err := ValidateUser(user); err != nil {
 		return "", err
 	}
@@ -96,9 +96,9 @@ func AuthenticationAssurance(user usercmd.User) (usercmd.SessionAssurance, error
 		return "", usercmd.ErrAuthenticationDisabled
 	}
 	if user.Credential.State == usercmd.CredentialStateTemporary {
-		return usercmd.SessionAssuranceRestricted, nil
+		return usercmd.WebAuthAssuranceRestricted, nil
 	}
-	return usercmd.SessionAssuranceNormal, nil
+	return usercmd.WebAuthAssuranceNormal, nil
 }
 
 // ValidateUser checks the canonical identity and credential-state invariants.
@@ -302,8 +302,8 @@ func ValidateBindingClaim(claim usercmd.BindingClaim, userID, channelType string
 	return nil
 }
 
-// ValidateSessionRevocation prevents accidental revocation of the current browser session.
-func ValidateSessionRevocation(currentSessionID, targetSessionID string, confirmCurrent bool) error {
+// ValidateWebAuthSessionRevocation prevents accidental revocation of the current browser session.
+func ValidateWebAuthSessionRevocation(currentSessionID, targetSessionID string, confirmCurrent bool) error {
 	current := strings.TrimSpace(currentSessionID)
 	target := strings.TrimSpace(targetSessionID)
 	if current == "" || target == "" {

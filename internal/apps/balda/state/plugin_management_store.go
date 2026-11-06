@@ -284,18 +284,18 @@ func (s *sqlPluginManagementStore) advanceGeneration(ctx context.Context, tx *sq
 }
 
 func validPluginAuthority(a plugincmd.Authority) bool {
-	return strings.TrimSpace(a.UserID) != "" && a.UserVersion != 0 && a.CredentialVersion != 0 && strings.TrimSpace(a.SessionID) != "" && a.SessionVersion != 0 && !a.At.IsZero()
+	return strings.TrimSpace(a.UserID) != "" && a.UserVersion != 0 && a.CredentialVersion != 0 && strings.TrimSpace(a.WebAuthSessionID) != "" && a.WebAuthSessionVersion != 0 && !a.At.IsZero()
 }
 
 func pluginBrowserAuthority(a plugincmd.Authority) browserAuthority {
-	return browserAuthority{userID: a.UserID, sessionID: a.SessionID, userVersion: a.UserVersion, credentialVersion: a.CredentialVersion, mfaVersion: a.MFAVersion, sessionVersion: a.SessionVersion, at: a.At}
+	return browserAuthority{userID: a.UserID, sessionID: a.WebAuthSessionID, userVersion: a.UserVersion, credentialVersion: a.CredentialVersion, mfaVersion: a.MFAVersion, sessionVersion: a.WebAuthSessionVersion, at: a.At}
 }
 
 func pluginAuthorityError(err error) error {
 	switch {
 	case errors.Is(err, usercmd.ErrConflict):
 		return plugincmd.ErrConflict
-	case errors.Is(err, usercmd.ErrForbidden), errors.Is(err, usercmd.ErrNotFound), errors.Is(err, usercmd.ErrSessionUnavailable):
+	case errors.Is(err, usercmd.ErrForbidden), errors.Is(err, usercmd.ErrNotFound), errors.Is(err, usercmd.ErrWebAuthSessionUnavailable):
 		return plugincmd.ErrForbidden
 	default:
 		return plugincmd.ErrUnavailable
@@ -306,7 +306,7 @@ func pluginAudit(a *plugincmd.Authority, id string, action usercmd.AuditAction, 
 	event := usercmd.AuditEvent{ID: id, Action: action, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: target, TargetID: name, Source: "chat", OccurredAt: at}
 	if a != nil {
 		event.ActorUserID = a.UserID
-		event.ActorSessionID = a.SessionID
+		event.ActorWebAuthSessionID = a.WebAuthSessionID
 		event.Source = "backoffice"
 	}
 	return event

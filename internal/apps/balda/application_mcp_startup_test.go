@@ -61,11 +61,11 @@ func installPendingStartupOAuth(t *testing.T, provider state.Provider, credentia
 		t.Fatal("bootstrap administrator unavailable")
 	}
 	now := time.Now().UTC()
-	family := usercmd.SessionFamily{ID: "startup-browser", UserID: userID, Version: 1, CredentialVersion: user.Credential.Version, Assurance: usercmd.SessionAssuranceNormal,
-		Access: usercmd.AccessCredential{Selector: "startup-access", VerifierDigest: []byte("fixture-digest"), ExpiresAt: now.Add(15 * time.Minute)}, CSRFVerifierDigest: []byte("fixture-csrf"), CreatedAt: now, LastSeenAt: now, RefreshExpiresAt: now.Add(time.Hour),
-		RefreshTokens: []usercmd.RefreshToken{{Selector: "startup-refresh", VerifierDigest: []byte("fixture-refresh"), Generation: 1, State: usercmd.RefreshTokenStateActive, IssuedAt: now, ExpiresAt: now.Add(time.Hour)}}}
-	audit := usercmd.AuditEvent{ID: "startup-session", Action: usercmd.AuditActionLoginSucceeded, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetSession, TargetID: family.ID, Source: "startup-fixture", OccurredAt: now}
-	if err := provider.Users().CreateSession(t.Context(), family, audit); err != nil {
+	family := usercmd.WebAuthSession{ID: "startup-browser", UserID: userID, Version: 1, CredentialVersion: user.Credential.Version, Assurance: usercmd.WebAuthAssuranceNormal,
+		Access: usercmd.WebAuthAccessCredential{Selector: "startup-access", VerifierDigest: []byte("fixture-digest"), ExpiresAt: now.Add(15 * time.Minute)}, CSRFVerifierDigest: []byte("fixture-csrf"), CreatedAt: now, LastSeenAt: now, RefreshExpiresAt: now.Add(time.Hour),
+		RefreshTokens: []usercmd.WebAuthRefreshToken{{Selector: "startup-refresh", VerifierDigest: []byte("fixture-refresh"), Generation: 1, State: usercmd.WebAuthRefreshTokenStateActive, IssuedAt: now, ExpiresAt: now.Add(time.Hour)}}}
+	audit := usercmd.AuditEvent{ID: "startup-session", Action: usercmd.AuditActionWebAuthLoginSucceeded, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetWebAuthSession, TargetID: family.ID, Source: "startup-fixture", OccurredAt: now}
+	if err := provider.Users().CreateWebAuthSession(t.Context(), family, audit); err != nil {
 		t.Fatal(err)
 	}
 	revision, err := credentials.PrepareRevision(nil, mcpcmd.Revision{ConnectionID: "pending-oauth", ID: "exact-unbound", CreatedAt: now, Definition: mcpcmd.Definition{Transport: mcpcmd.TransportHTTP, URL: resource, OAuth: true, Targets: mcpcmd.Targets{All: true}}}, mcpcmd.ValueEdits{})
@@ -73,9 +73,9 @@ func installPendingStartupOAuth(t *testing.T, provider state.Provider, credentia
 		t.Fatal(err)
 	}
 	audit.ID, audit.Action, audit.TargetType, audit.TargetID = "startup-mcp", usercmd.AuditActionMCPDefinitionChanged, usercmd.AuditTargetMCP, revision.ConnectionID
-	audit.ActorUserID, audit.ActorSessionID = userID, family.ID
+	audit.ActorUserID, audit.ActorWebAuthSessionID = userID, family.ID
 	mutation := state.MCPMutation{Connection: mcpcmd.Connection{ID: revision.ConnectionID, PublicID: revision.ConnectionID, Source: mcpcmd.SourceManaged, CurrentRevisionID: revision.ID, Enabled: true, CreatedAt: now, UpdatedAt: now}, Revision: &revision, Audit: audit,
-		Authority: mcpcmd.Authority{UserID: userID, UserVersion: user.Version, CredentialVersion: user.Credential.Version, SessionID: family.ID, SessionVersion: family.Version, At: now}}
+		Authority: mcpcmd.Authority{UserID: userID, UserVersion: user.Version, CredentialVersion: user.Credential.Version, WebAuthSessionID: family.ID, WebAuthSessionVersion: family.Version, At: now}}
 	if err := provider.MCP().SaveMCPConnection(t.Context(), mutation); err != nil {
 		t.Fatal(err)
 	}

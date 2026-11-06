@@ -52,7 +52,7 @@ func (s *BindingInvitations) Issue(ctx context.Context, actor usercmd.Invitation
 		IssuedBy: actor.UserID, CreatedAt: now, ExpiresAt: now.Add(24 * time.Hour), Version: 1,
 	}
 	audit := invitationAudit(usercmd.AuditActionInvitationIssued, userID, actor.UserID, now)
-	audit.ActorSessionID = actor.SessionID
+	audit.ActorWebAuthSessionID = actor.WebAuthSessionID
 	if err := s.store.IssueBindingInvitation(ctx, usercmd.InvitationIssue{Invitation: invitation, ExpectedUserVersion: version, Replace: replace, Audit: audit}); err != nil {
 		return usercmd.IssuedBindingInvitation{}, err
 	}
@@ -76,7 +76,7 @@ func (s *BindingInvitations) Pending(ctx context.Context, userID string) ([]user
 func (s *BindingInvitations) Cancel(ctx context.Context, actor usercmd.InvitationActor, userID, id string, version uint64) error {
 	now := s.now().UTC()
 	audit := invitationAudit(usercmd.AuditActionInvitationRevoked, userID, actor.UserID, now)
-	audit.ActorSessionID = actor.SessionID
+	audit.ActorWebAuthSessionID = actor.WebAuthSessionID
 	return s.store.CancelBindingInvitation(ctx, usercmd.InvitationCancel{
 		ID: id, UserID: userID, ActorUserID: actor.UserID, ExpectedVersion: version, CancelledAt: now,
 		Audit: audit,

@@ -68,7 +68,7 @@ func checkMCPAuthorityWhileWaiting(t *testing.T, open contractOpener, wait, oper
 	deadline := time.Now().UTC().Add(time.Second)
 	switch condition {
 	case "access":
-		if _, err := db.ExecContext(t.Context(), store.users.bind(`UPDATE balda_backoffice_sessions SET access_expires_at = ? WHERE session_id = ?`), formatUserTime(deadline), a.SessionID); err != nil {
+		if _, err := db.ExecContext(t.Context(), store.users.bind(`UPDATE balda_backoffice_sessions SET access_expires_at = ? WHERE session_id = ?`), formatUserTime(deadline), a.WebAuthSessionID); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -76,7 +76,7 @@ func checkMCPAuthorityWhileWaiting(t *testing.T, open contractOpener, wait, oper
 	if err := p.MCP().CheckMCPAuthority(t.Context(), a); err != nil {
 		t.Fatalf("authority was not live before queue: %v", err)
 	}
-	family, found, err := p.Users().GetSession(t.Context(), a.SessionID)
+	family, found, err := p.Users().GetWebAuthSession(t.Context(), a.WebAuthSessionID)
 	if err != nil || !found {
 		t.Fatal("missing queued authority family")
 	}
@@ -102,7 +102,7 @@ func checkMCPAuthorityWhileWaiting(t *testing.T, open contractOpener, wait, oper
 	// A future metadata floor must not stand in for current security time.
 	c.UpdatedAt, r.CreatedAt = deadline.Add(time.Hour), deadline.Add(time.Hour)
 	grant.Authority, grant.Audit.OccurredAt = &a, a.At
-	grant.Audit.ActorSessionID = a.SessionID
+	grant.Audit.ActorWebAuthSessionID = a.WebAuthSessionID
 	grant.Grant.UpdatedAt = deadline.Add(time.Hour)
 	audit := grant.Audit
 	audit.ID, audit.Action = "queued-definition", usercmd.AuditActionMCPDefinitionChanged
@@ -172,11 +172,11 @@ func checkMCPAuthorityWhileWaiting(t *testing.T, open contractOpener, wait, oper
 	}
 	switch condition {
 	case "revocation":
-		if _, err := tx.ExecContext(ctx, store.users.bind(`UPDATE balda_backoffice_sessions SET revoked_at = ? WHERE session_id = ?`), formatUserTime(releasedAt), a.SessionID); err != nil {
+		if _, err := tx.ExecContext(ctx, store.users.bind(`UPDATE balda_backoffice_sessions SET revoked_at = ? WHERE session_id = ?`), formatUserTime(releasedAt), a.WebAuthSessionID); err != nil {
 			t.Fatal(err)
 		}
 	case "version":
-		if _, err := tx.ExecContext(ctx, store.users.bind(`UPDATE balda_backoffice_sessions SET version = version + 1 WHERE session_id = ?`), a.SessionID); err != nil {
+		if _, err := tx.ExecContext(ctx, store.users.bind(`UPDATE balda_backoffice_sessions SET version = version + 1 WHERE session_id = ?`), a.WebAuthSessionID); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -217,18 +217,18 @@ func contractMCPEnrolledAuthority(t *testing.T, p Provider, a mcpcmd.Authority) 
 	t.Helper()
 	now := a.At
 	key := usercmd.MFACredential{ID: "queue-factor", UserID: a.UserID, RPID: "localhost", CredentialID: []byte("public-credential"), PublicKey: []byte("public-key"), Data: []byte(`{"credential":"public"}`), CreatedAt: now}
-	change := usercmd.MFAChange{UserID: a.UserID, ExpectedUserVersion: 1, ExpectedCredentialVersion: 1, Purpose: usercmd.MFAEnable, BoundSessionID: a.SessionID, ExpectedSessionVersion: 1, Credential: key, ChangedAt: now, Audit: contractAudit("queue-factor-enable", usercmd.AuditActionMFAEnabled, a.UserID, now)}
+	change := usercmd.MFAChange{UserID: a.UserID, ExpectedUserVersion: 1, ExpectedCredentialVersion: 1, Purpose: usercmd.MFAEnable, BoundWebAuthSessionID: a.WebAuthSessionID, ExpectedWebAuthSessionVersion: 1, Credential: key, ChangedAt: now, Audit: contractAudit("queue-factor-enable", usercmd.AuditActionMFAEnabled, a.UserID, now)}
 	if err := p.Users().ApplyMFAChange(t.Context(), change); err != nil {
 		t.Fatal(err)
 	}
 	f := contractSessionFamily(a.UserID, now)
 	f.ID, f.Access.Selector, f.RefreshTokens[0].Selector = "queue-family", "queue-access", "queue-refresh"
 	f.CredentialVersion, f.MFAFactorID, f.WebAuthnVerifiedAt = 2, key.ID, now
-	v := usercmd.MFAVerification{UserID: a.UserID, ExpectedUserVersion: 2, ExpectedCredentialVersion: 2, ExpectedMFAVersion: 1, Credential: key, Session: &f, VerifiedAt: now, Audit: contractAudit("queue-factor-login", usercmd.AuditActionMFAVerified, f.ID, now)}
+	v := usercmd.MFAVerification{UserID: a.UserID, ExpectedUserVersion: 2, ExpectedCredentialVersion: 2, ExpectedMFAVersion: 1, Credential: key, WebAuthSession: &f, VerifiedAt: now, Audit: contractAudit("queue-factor-login", usercmd.AuditActionWebAuthMFAVerified, f.ID, now)}
 	if err := p.Users().VerifyMFACredential(t.Context(), v); err != nil {
 		t.Fatal(err)
 	}
-	a.UserVersion, a.CredentialVersion, a.MFAVersion, a.SessionID = 2, 2, 1, f.ID
+	a.UserVersion, a.CredentialVersion, a.MFAVersion, a.WebAuthSessionID = 2, 2, 1, f.ID
 	return a
 }
 
@@ -239,7 +239,7 @@ func lockMCPAuthorityWaitRow(t *testing.T, ctx context.Context, s *sqlMCPStore, 
 	case "canonical-user":
 		query, id = "SELECT user_id FROM balda_users WHERE user_id = ?", a.UserID
 	case "family":
-		query, id = "SELECT session_id FROM balda_backoffice_sessions WHERE session_id = ?", a.SessionID
+		query, id = "SELECT session_id FROM balda_backoffice_sessions WHERE session_id = ?", a.WebAuthSessionID
 	case "connection":
 		query, id = "SELECT connection_id FROM balda_mcp_connections WHERE connection_id = ?", connectionID
 	case "grant":

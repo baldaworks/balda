@@ -601,9 +601,9 @@ func qaAudit() webui.Page {
 		Title: "Audit · QA", Current: webui.LocationAudit,
 		Navigation: qaAdminNavigation(webui.LocationAudit),
 		Audit: []webui.AuditView{
-			{ID: "33333333-3333-4333-8333-333333333333", Action: "session.revoked", ActionLabel: "Ended browser session", Outcome: "succeeded", ActorUserID: adminID, ActorName: "QA Administrator", TargetType: "session", TargetID: familyID, TargetName: "Browser session", OccurredAt: qaNow.Add(2 * time.Minute)},
-			{ID: "33333333-3333-4333-8333-333333333332", Action: "session.refresh.replay", ActionLabel: "Detected session token replay", Outcome: "denied", ActorUserID: adminID, ActorName: "QA Administrator", ActorSessionID: familyID, TargetType: "session", TargetID: familyID, TargetName: "Browser session", OccurredAt: qaNow.Add(time.Minute)},
-			{ID: "33333333-3333-4333-8333-333333333331", Action: "session.refresh.succeeded", ActionLabel: "Restored browser session", Outcome: "succeeded", ActorUserID: adminID, ActorName: "QA Administrator", ActorSessionID: familyID, TargetType: "session", TargetID: familyID, TargetName: "Browser session", OccurredAt: qaNow},
+			{ID: "33333333-3333-4333-8333-333333333333", Action: "web_auth.revoked", ActionLabel: "Ended browser session", Outcome: "succeeded", ActorUserID: adminID, ActorName: "QA Administrator", TargetType: "web_auth_session", TargetID: familyID, TargetName: "Browser session", OccurredAt: qaNow.Add(2 * time.Minute)},
+			{ID: "33333333-3333-4333-8333-333333333332", Action: "web_auth.refresh.replay", ActionLabel: "Detected session token replay", Outcome: "denied", ActorUserID: adminID, ActorName: "QA Administrator", ActorWebAuthSessionID: familyID, TargetType: "web_auth_session", TargetID: familyID, TargetName: "Browser session", OccurredAt: qaNow.Add(time.Minute)},
+			{ID: "33333333-3333-4333-8333-333333333331", Action: "web_auth.refresh.succeeded", ActionLabel: "Restored browser session", Outcome: "succeeded", ActorUserID: adminID, ActorName: "QA Administrator", ActorWebAuthSessionID: familyID, TargetType: "web_auth_session", TargetID: familyID, TargetName: "Browser session", OccurredAt: qaNow},
 		},
 	}
 }

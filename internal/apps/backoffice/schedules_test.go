@@ -285,7 +285,7 @@ func TestSchedulesBrowserManagement(t *testing.T) {
 				t.Fatalf("foreign origin reached schedule owner: %d", wrongOriginResponse.Code)
 			}
 			created := mutation("/schedules", createForm)
-			if created.Code != http.StatusSeeOther || created.Header().Get("Location") != base+"/schedules/new-daily" || len(fixture.creates) != 1 || fixture.creates[0].Authority.SessionID == "" {
+			if created.Code != http.StatusSeeOther || created.Header().Get("Location") != base+"/schedules/new-daily" || len(fixture.creates) != 1 || fixture.creates[0].Authority.WebAuthSessionID == "" {
 				t.Fatalf("schedule create = %d, location %q", created.Code, created.Header().Get("Location"))
 			}
 			withoutReport := mutation("/schedules", url.Values{"id": {"local-review"},
@@ -323,7 +323,7 @@ func TestSchedulesBrowserManagement(t *testing.T) {
 				}
 				last := fixture.runRequests[len(fixture.runRequests)-1]
 				previous := fixture.runRequests[len(fixture.runRequests)-2]
-				if last.RequestKey != key || previous.RequestKey != key || last.ID != id || previous.ID != id || last.Authority.SessionID == "" {
+				if last.RequestKey != key || previous.RequestKey != key || last.ID != id || previous.ID != id || last.Authority.WebAuthSessionID == "" {
 					t.Fatalf("manual run idempotency input %s: %+v, %+v", id, previous, last)
 				}
 			}

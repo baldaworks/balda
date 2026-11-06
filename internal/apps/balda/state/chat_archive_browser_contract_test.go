@@ -17,7 +17,7 @@ func checkChatArchiveBrowser(t *testing.T, factory func(*testing.T) contractOpen
 			p := newContractProvider(t, factory(t))
 			defer closeContractProvider(t, p)
 			base := contractMCPMutation(t, p)
-			a := chatarchivecmd.Authority{UserID: base.Authority.UserID, UserVersion: base.Authority.UserVersion, CredentialVersion: base.Authority.CredentialVersion, MFAVersion: base.Authority.MFAVersion, SessionID: base.Authority.SessionID, SessionVersion: base.Authority.SessionVersion, At: base.Authority.At}
+			a := chatarchivecmd.Authority{UserID: base.Authority.UserID, UserVersion: base.Authority.UserVersion, CredentialVersion: base.Authority.CredentialVersion, MFAVersion: base.Authority.MFAVersion, WebAuthSessionID: base.Authority.WebAuthSessionID, WebAuthSessionVersion: base.Authority.WebAuthSessionVersion, At: base.Authority.At}
 			if err := p.ChatArchive().CheckAuthority(t.Context(), a); err != nil {
 				t.Fatalf("initial authority=%v", err)
 			}
@@ -49,21 +49,21 @@ func checkChatArchiveBrowser(t *testing.T, factory func(*testing.T) contractOpen
 					t.Fatal(err)
 				}
 			case "expired-access":
-				if _, err := store.db.ExecContext(t.Context(), store.bind("UPDATE balda_backoffice_sessions SET access_expires_at = ? WHERE session_id = ?"), formatMFATime(time.Now().Add(-time.Minute)), a.SessionID); err != nil {
+				if _, err := store.db.ExecContext(t.Context(), store.bind("UPDATE balda_backoffice_sessions SET access_expires_at = ? WHERE session_id = ?"), formatMFATime(time.Now().Add(-time.Minute)), a.WebAuthSessionID); err != nil {
 					t.Fatal(err)
 				}
 			case "expired-family":
-				if _, err := store.db.ExecContext(t.Context(), store.bind("UPDATE balda_backoffice_sessions SET created_at = ?, last_seen_at = ?, access_expires_at = ?, refresh_expires_at = ? WHERE session_id = ?"), formatMFATime(time.Now().Add(-3*time.Minute)), formatMFATime(time.Now().Add(-3*time.Minute)), formatMFATime(time.Now().Add(-2*time.Minute)), formatMFATime(time.Now().Add(-time.Minute)), a.SessionID); err != nil {
+				if _, err := store.db.ExecContext(t.Context(), store.bind("UPDATE balda_backoffice_sessions SET created_at = ?, last_seen_at = ?, access_expires_at = ?, refresh_expires_at = ? WHERE session_id = ?"), formatMFATime(time.Now().Add(-3*time.Minute)), formatMFATime(time.Now().Add(-3*time.Minute)), formatMFATime(time.Now().Add(-2*time.Minute)), formatMFATime(time.Now().Add(-time.Minute)), a.WebAuthSessionID); err != nil {
 					t.Fatal(err)
 				}
 			case "revoked":
-				if err := p.Users().RevokeSession(t.Context(), a.SessionID, a.SessionVersion, time.Now().UTC(), "test", contractAudit("archive-revoke", usercmd.AuditActionSessionRevoked, a.SessionID, a.At)); err != nil {
+				if err := p.Users().RevokeWebAuthSession(t.Context(), a.WebAuthSessionID, a.WebAuthSessionVersion, time.Now().UTC(), "test", contractAudit("archive-revoke", usercmd.AuditActionWebAuthRevoked, a.WebAuthSessionID, a.At)); err != nil {
 					t.Fatal(err)
 				}
 			case "stale-user":
 				a.UserVersion++
 			case "stale-session":
-				a.SessionVersion++
+				a.WebAuthSessionVersion++
 			case "stale-mfa":
 				a.MFAVersion++
 			}

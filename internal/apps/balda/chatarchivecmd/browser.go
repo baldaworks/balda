@@ -10,9 +10,9 @@ var ErrForbidden = errors.New("chat archive access forbidden")
 
 // Authority identifies the current authenticated browser family and user versions.
 type Authority struct {
-	UserID, SessionID                                          string
-	UserVersion, CredentialVersion, MFAVersion, SessionVersion uint64
-	At                                                         time.Time
+	UserID, WebAuthSessionID                                          string
+	UserVersion, CredentialVersion, MFAVersion, WebAuthSessionVersion uint64
+	At                                                                time.Time
 }
 
 // Summary adds SQL-derived counts and a personal-chat speaker to a lifetime.

@@ -28,7 +28,7 @@ func TestAccessServiceUserLifecycleAndBotImpact(t *testing.T) {
 		Primary:    true, Version: 1, CreatedAt: now, UpdatedAt: now,
 	})
 	service := access.NewService(provider.Users())
-	actor := access.Actor{User: admin, SessionID: "admin-family"}
+	actor := access.Actor{User: admin, WebAuthSessionID: "admin-family"}
 
 	created, err := service.CreateUser(t.Context(), actor, access.CreateInput{
 		DisplayName: "Operator", Username: "operator", TemporaryPassword: []byte("temporary password"),
@@ -102,7 +102,7 @@ func TestAccessServiceCredentialResetRevokesAccessAndRefreshFamily(t *testing.T)
 	}
 
 	service := access.NewService(provider.Users())
-	err = service.ResetCredential(t.Context(), access.Actor{User: admin, SessionID: principal.FamilyID}, access.CredentialInput{
+	err = service.ResetCredential(t.Context(), access.Actor{User: admin, WebAuthSessionID: principal.WebAuthSessionID}, access.CredentialInput{
 		UserID: admin.ID, ExpectedUserVersion: admin.Version, ExpectedCredentialVersion: admin.Credential.Version,
 		TemporaryPassword: []byte("replacement temporary"), ConfirmCurrent: true,
 	})
@@ -112,7 +112,7 @@ func TestAccessServiceCredentialResetRevokesAccessAndRefreshFamily(t *testing.T)
 	if _, err := securityService.ValidateAccess(t.Context(), credentials.AccessToken); !errors.Is(err, security.ErrUnauthenticated) {
 		t.Fatalf("old access validation error = %v", err)
 	}
-	if _, err := securityService.Refresh(t.Context(), credentials.RefreshToken, credentials.CSRFToken); !errors.Is(err, security.ErrUnauthenticated) {
+	if _, err := securityService.Refresh(t.Context(), credentials.WebAuthRefreshToken, credentials.CSRFToken); !errors.Is(err, security.ErrUnauthenticated) {
 		t.Fatalf("old refresh validation error = %v", err)
 	}
 	updated, found, err := provider.Users().GetUser(t.Context(), admin.ID)
@@ -153,14 +153,14 @@ func TestAccessServiceDisablementPermanentlyRevokesAccessAndRefreshFamily(t *tes
 		t.Fatal(err)
 	}
 	service := access.NewService(provider.Users())
-	disabled, err := service.UpdateUser(t.Context(), access.Actor{User: admin, SessionID: "admin-family"}, access.UpdateInput{
+	disabled, err := service.UpdateUser(t.Context(), access.Actor{User: admin, WebAuthSessionID: "admin-family"}, access.UpdateInput{
 		UserID: operator.ID, DisplayName: operator.DisplayName, Username: operator.Username,
 		Role: operator.Role, Status: usercmd.StatusDisabled, ExpectedVersion: operator.Version,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.UpdateUser(t.Context(), access.Actor{User: admin, SessionID: "admin-family"}, access.UpdateInput{
+	if _, err := service.UpdateUser(t.Context(), access.Actor{User: admin, WebAuthSessionID: "admin-family"}, access.UpdateInput{
 		UserID: disabled.ID, DisplayName: disabled.DisplayName, Username: disabled.Username,
 		Role: disabled.Role, Status: usercmd.StatusActive, ExpectedVersion: disabled.Version,
 	}); err != nil {
@@ -169,7 +169,7 @@ func TestAccessServiceDisablementPermanentlyRevokesAccessAndRefreshFamily(t *tes
 	if _, err := securityService.ValidateAccess(t.Context(), credentials.AccessToken); !errors.Is(err, security.ErrUnauthenticated) {
 		t.Fatalf("re-enabled old access validation error = %v", err)
 	}
-	if _, err := securityService.Refresh(t.Context(), credentials.RefreshToken, credentials.CSRFToken); !errors.Is(err, security.ErrUnauthenticated) {
+	if _, err := securityService.Refresh(t.Context(), credentials.WebAuthRefreshToken, credentials.CSRFToken); !errors.Is(err, security.ErrUnauthenticated) {
 		t.Fatalf("re-enabled old refresh validation error = %v", err)
 	}
 }

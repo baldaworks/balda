@@ -36,7 +36,7 @@ func TestSQLiteBackofficeAndBotOperationsRemainAtomicAcrossProviders(t *testing.
 		t.Fatal(err)
 	}
 	family := contractSessionFamily(user.ID, now)
-	if err := firstStore.CreateSession(t.Context(), family, contractAudit("audit-login", usercmd.AuditActionLoginSucceeded, family.ID, now)); err != nil {
+	if err := firstStore.CreateWebAuthSession(t.Context(), family, contractAudit("audit-login", usercmd.AuditActionWebAuthLoginSucceeded, family.ID, now)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -48,23 +48,23 @@ func TestSQLiteBackofficeAndBotOperationsRemainAtomicAcrossProviders(t *testing.
 	updated.DisplayName = "Updated Administrator"
 	updated.Version = 2
 	updated.UpdatedAt = now.Add(time.Minute)
-	rotation := usercmd.RefreshRotation{
+	rotation := usercmd.WebAuthRefreshRotation{
 		Selector: family.RefreshTokens[0].Selector, PresentedVerifierDigest: family.RefreshTokens[0].VerifierDigest,
-		Access: usercmd.AccessCredential{Selector: "access-2", VerifierDigest: []byte("access-digest-2"), ExpiresAt: now.Add(30 * time.Minute)},
-		Refresh: usercmd.RefreshToken{
+		Access: usercmd.WebAuthAccessCredential{Selector: "access-2", VerifierDigest: []byte("access-digest-2"), ExpiresAt: now.Add(30 * time.Minute)},
+		Refresh: usercmd.WebAuthRefreshToken{
 			Selector: "refresh-2", VerifierDigest: []byte("refresh-digest-2"), Generation: 2,
-			State: usercmd.RefreshTokenStateActive, IssuedAt: now.Add(15 * time.Minute), ExpiresAt: family.RefreshExpiresAt,
+			State: usercmd.WebAuthRefreshTokenStateActive, IssuedAt: now.Add(15 * time.Minute), ExpiresAt: family.RefreshExpiresAt,
 		},
 		RotatedAt:    now.Add(15 * time.Minute),
-		SuccessAudit: contractAudit("audit-refresh", usercmd.AuditActionRefreshSucceeded, family.ID, now.Add(15*time.Minute)),
-		ReplayAudit:  contractAudit("audit-replay", usercmd.AuditActionRefreshReplay, family.ID, now.Add(15*time.Minute)),
+		SuccessAudit: contractAudit("audit-refresh", usercmd.AuditActionWebAuthRefreshSucceeded, family.ID, now.Add(15*time.Minute)),
+		ReplayAudit:  contractAudit("audit-replay", usercmd.AuditActionWebAuthRefreshReplay, family.ID, now.Add(15*time.Minute)),
 	}
 
 	start := make(chan struct{})
 	var wait sync.WaitGroup
 	var attachErr, updateErr, revokeErr error
 	var lookupErr error
-	var rotationResult usercmd.RefreshRotationResult
+	var rotationResult usercmd.WebAuthRefreshRotationResult
 	var rotationErr error
 	wait.Add(5)
 	go func() {
@@ -85,14 +85,14 @@ func TestSQLiteBackofficeAndBotOperationsRemainAtomicAcrossProviders(t *testing.
 	go func() {
 		defer wait.Done()
 		<-start
-		rotationResult, rotationErr = secondStore.RotateRefresh(t.Context(), rotation)
+		rotationResult, rotationErr = secondStore.RotateWebAuthRefresh(t.Context(), rotation)
 	}()
 	go func() {
 		defer wait.Done()
 		<-start
-		revokeErr = firstStore.RevokeSession(
+		revokeErr = firstStore.RevokeWebAuthSession(
 			t.Context(), family.ID, 1, now.Add(20*time.Minute), "administrative revocation",
-			contractAudit("audit-revoke", usercmd.AuditActionSessionRevoked, family.ID, now.Add(20*time.Minute)),
+			contractAudit("audit-revoke", usercmd.AuditActionWebAuthRevoked, family.ID, now.Add(20*time.Minute)),
 		)
 	}()
 	close(start)
@@ -101,20 +101,20 @@ func TestSQLiteBackofficeAndBotOperationsRemainAtomicAcrossProviders(t *testing.
 	if lookupErr != nil || attachErr != nil || updateErr != nil || rotationErr != nil {
 		t.Fatalf("concurrent lookup/attach/update/rotation errors = %v / %v / %v / %v", lookupErr, attachErr, updateErr, rotationErr)
 	}
-	if rotationResult != usercmd.RefreshRotationSucceeded && rotationResult != usercmd.RefreshRotationUnavailable {
+	if rotationResult != usercmd.WebAuthRefreshRotationSucceeded && rotationResult != usercmd.WebAuthRefreshRotationUnavailable {
 		t.Fatalf("rotation result = %q", rotationResult)
 	}
 	if revokeErr != nil && !errors.Is(revokeErr, usercmd.ErrConflict) {
 		t.Fatalf("concurrent revocation error = %v", revokeErr)
 	}
 	if errors.Is(revokeErr, usercmd.ErrConflict) {
-		current, found, err := secondStore.GetSession(t.Context(), family.ID)
+		current, found, err := secondStore.GetWebAuthSession(t.Context(), family.ID)
 		if err != nil || !found {
 			t.Fatalf("load session for retry = %+v, %t, %v", current, found, err)
 		}
-		if err := firstStore.RevokeSession(
+		if err := firstStore.RevokeWebAuthSession(
 			t.Context(), current.ID, current.Version, now.Add(21*time.Minute), "administrative revocation retry",
-			contractAudit("audit-revoke-retry", usercmd.AuditActionSessionRevoked, family.ID, now.Add(21*time.Minute)),
+			contractAudit("audit-revoke-retry", usercmd.AuditActionWebAuthRevoked, family.ID, now.Add(21*time.Minute)),
 		); err != nil {
 			t.Fatalf("retry revocation: %v", err)
 		}
@@ -124,12 +124,12 @@ func TestSQLiteBackofficeAndBotOperationsRemainAtomicAcrossProviders(t *testing.
 	if err != nil || !found || bound.ID != user.ID || bound.DisplayName != updated.DisplayName || bound.Binding == nil {
 		t.Fatalf("canonical binding lookup = %+v, %t, %v", bound, found, err)
 	}
-	storedFamily, found, err := secondStore.GetSession(t.Context(), family.ID)
+	storedFamily, found, err := secondStore.GetWebAuthSession(t.Context(), family.ID)
 	if err != nil || !found || storedFamily.RevokedAt.IsZero() {
 		t.Fatalf("revoked family = %+v, %t, %v", storedFamily, found, err)
 	}
 	for _, token := range storedFamily.RefreshTokens {
-		if token.State == usercmd.RefreshTokenStateActive {
+		if token.State == usercmd.WebAuthRefreshTokenStateActive {
 			t.Fatalf("refresh generation %d state = %q", token.Generation, token.State)
 		}
 		if !token.ExpiresAt.Equal(family.RefreshExpiresAt) {

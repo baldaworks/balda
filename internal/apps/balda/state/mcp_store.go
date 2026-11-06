@@ -139,7 +139,7 @@ func validateMCPMutation(m MCPMutation) error {
 	}
 	if err := usercmd.ValidateAuditEvent(m.Audit); err != nil ||
 		m.Audit.Action != usercmd.AuditActionMCPDefinitionChanged || m.Audit.TargetType != usercmd.AuditTargetMCP ||
-		m.Audit.TargetID != c.ID || m.Audit.ActorUserID != a.UserID || m.Audit.ActorSessionID != a.SessionID ||
+		m.Audit.TargetID != c.ID || m.Audit.ActorUserID != a.UserID || m.Audit.ActorWebAuthSessionID != a.WebAuthSessionID ||
 		m.Audit.Outcome != usercmd.AuditOutcomeSucceeded || !m.Audit.OccurredAt.Equal(a.At) {
 		return mcpcmd.ErrInvalid
 	}
@@ -159,7 +159,7 @@ func validateMCPMutation(m MCPMutation) error {
 }
 
 func validateMCPAuthority(a mcpcmd.Authority) error {
-	if a.UserID == "" || a.UserVersion == 0 || a.CredentialVersion == 0 || a.SessionID == "" || a.SessionVersion == 0 || a.At.IsZero() {
+	if a.UserID == "" || a.UserVersion == 0 || a.CredentialVersion == 0 || a.WebAuthSessionID == "" || a.WebAuthSessionVersion == 0 || a.At.IsZero() {
 		return mcpcmd.ErrInvalid
 	}
 	return nil
@@ -185,9 +185,9 @@ func (f lockedMCPAuthority) checkTime(a mcpcmd.Authority) error {
 }
 
 func mcpBrowserAuthority(a mcpcmd.Authority) browserAuthority {
-	return browserAuthority{userID: a.UserID, sessionID: a.SessionID,
+	return browserAuthority{userID: a.UserID, sessionID: a.WebAuthSessionID,
 		userVersion: a.UserVersion, credentialVersion: a.CredentialVersion,
-		mfaVersion: a.MFAVersion, sessionVersion: a.SessionVersion, at: a.At}
+		mfaVersion: a.MFAVersion, sessionVersion: a.WebAuthSessionVersion, at: a.At}
 }
 
 func (s *sqlMCPStore) GetMCPConnection(ctx context.Context, id string) (mcpcmd.Connection, bool, error) {
@@ -317,7 +317,7 @@ func mcpMutationError(err error) error {
 	switch {
 	case errors.Is(err, usercmd.ErrConflict):
 		return mcpcmd.ErrConflict
-	case errors.Is(err, usercmd.ErrForbidden), errors.Is(err, usercmd.ErrNotFound), errors.Is(err, usercmd.ErrSessionUnavailable):
+	case errors.Is(err, usercmd.ErrForbidden), errors.Is(err, usercmd.ErrNotFound), errors.Is(err, usercmd.ErrWebAuthSessionUnavailable):
 		return mcpcmd.ErrForbidden
 	case errors.Is(err, usercmd.ErrInvalid):
 		return mcpcmd.ErrInvalid

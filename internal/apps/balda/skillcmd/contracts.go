@@ -27,19 +27,19 @@ const (
 // or to the fixed host-local CLI authority. Its kind is intentionally closed:
 // callers cannot manufacture another privileged authority variant.
 type Authority struct {
-	kind              authorityKind
-	UserID            string
-	UserVersion       uint64
-	CredentialVersion uint64
-	MFAVersion        uint64
-	SessionID         string
-	SessionVersion    uint64
-	At                time.Time
+	kind                  authorityKind
+	UserID                string
+	UserVersion           uint64
+	CredentialVersion     uint64
+	MFAVersion            uint64
+	WebAuthSessionID      string
+	WebAuthSessionVersion uint64
+	At                    time.Time
 }
 
 // NewBrowserAuthority constructs administrator browser authority.
 func NewBrowserAuthority(userID string, userVersion, credentialVersion, mfaVersion uint64, sessionID string, sessionVersion uint64, at time.Time) Authority {
-	return Authority{kind: authorityBrowser, UserID: userID, UserVersion: userVersion, CredentialVersion: credentialVersion, MFAVersion: mfaVersion, SessionID: sessionID, SessionVersion: sessionVersion, At: at}
+	return Authority{kind: authorityBrowser, UserID: userID, UserVersion: userVersion, CredentialVersion: credentialVersion, MFAVersion: mfaVersion, WebAuthSessionID: sessionID, WebAuthSessionVersion: sessionVersion, At: at}
 }
 
 // NewCLIAuthority constructs the fixed authority used by host-local maintenance
@@ -52,9 +52,9 @@ func NewCLIAuthority(at time.Time) Authority {
 func (a Authority) Valid() bool {
 	switch a.kind {
 	case authorityBrowser:
-		return a.UserID != "" && a.UserVersion != 0 && a.CredentialVersion != 0 && a.SessionID != "" && a.SessionVersion != 0 && !a.At.IsZero()
+		return a.UserID != "" && a.UserVersion != 0 && a.CredentialVersion != 0 && a.WebAuthSessionID != "" && a.WebAuthSessionVersion != 0 && !a.At.IsZero()
 	case authorityCLI:
-		return a.UserID == "" && a.UserVersion == 0 && a.CredentialVersion == 0 && a.MFAVersion == 0 && a.SessionID == "" && a.SessionVersion == 0 && !a.At.IsZero()
+		return a.UserID == "" && a.UserVersion == 0 && a.CredentialVersion == 0 && a.MFAVersion == 0 && a.WebAuthSessionID == "" && a.WebAuthSessionVersion == 0 && !a.At.IsZero()
 	default:
 		return false
 	}

@@ -106,7 +106,7 @@ func TestCurrentAttemptIsSafeAndBoundToInitiatingBrowser(t *testing.T) {
 		t.Fatalf("pending attempt = %+v/%v/%v", attempt, found, err)
 	}
 	other := a
-	other.SessionID = "other-browser"
+	other.WebAuthSessionID = "other-browser"
 	if hidden, found, err := s.CurrentAttempt(t.Context(), r.ConnectionID, other); err != nil || found || hidden.ID != "" {
 		t.Fatal("another current browser could not read management without private attempt metadata")
 	}
@@ -275,7 +275,7 @@ func TestBrowserCallbackRejectsWrongIssuerBrowserAndAuthorityVersions(t *testing
 	for _, change := range []func(*mcpcmd.BrowserCallback){
 		func(c *mcpcmd.BrowserCallback) { c.Issuer = "https://wrong-issuer.example.org" },
 		func(c *mcpcmd.BrowserCallback) { c.Issuer = "" },
-		func(c *mcpcmd.BrowserCallback) { c.Authority.SessionID = "different-browser" },
+		func(c *mcpcmd.BrowserCallback) { c.Authority.WebAuthSessionID = "different-browser" },
 		func(c *mcpcmd.BrowserCallback) { c.Authority.UserVersion++ },
 		func(c *mcpcmd.BrowserCallback) { c.Authority.CredentialVersion++ },
 		func(c *mcpcmd.BrowserCallback) { c.Authority.MFAVersion++ },

@@ -138,7 +138,7 @@ func scheduleHistoryCursor(query url.Values) (time.Time, string, error) {
 func (a *httpApp) scheduleAuthority(p security.Principal) schedulecmd.Authority {
 	return schedulecmd.Authority{UserID: p.User.ID, UserVersion: p.User.Version,
 		CredentialVersion: p.User.Credential.Version, MFAVersion: p.MFAVersion,
-		SessionID: p.FamilyID, SessionVersion: p.Version, At: time.Now().UTC()}
+		WebAuthSessionID: p.WebAuthSessionID, WebAuthSessionVersion: p.WebAuthSessionVersion, At: time.Now().UTC()}
 }
 
 func (a *httpApp) scheduleMutation(w http.ResponseWriter, r *http.Request) (url.Values, webui.Page, schedulecmd.Authority, bool) {

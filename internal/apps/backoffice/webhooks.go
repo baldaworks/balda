@@ -219,7 +219,7 @@ func (a *httpApp) webhookTestPost(w http.ResponseWriter, r *http.Request) {
 func (a *httpApp) webhookAuthority(p security.Principal) webhookroutecmd.Authority {
 	return webhookroutecmd.Authority{UserID: p.User.ID, UserVersion: p.User.Version,
 		CredentialVersion: p.User.Credential.Version, MFAVersion: p.MFAVersion,
-		SessionID: p.FamilyID, SessionVersion: p.Version, At: time.Now().UTC()}
+		WebAuthSessionID: p.WebAuthSessionID, WebAuthSessionVersion: p.WebAuthSessionVersion, At: time.Now().UTC()}
 }
 
 func (a *httpApp) webhookMutation(w http.ResponseWriter, r *http.Request) (url.Values, webui.Page, webhookroutecmd.Authority, bool) {

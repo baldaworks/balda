@@ -61,7 +61,7 @@ func (b *Browser) FinishLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	b.clearCookie(w, MFACookieName, b.path("/"))
 	b.setCredentials(w, credentials)
-	if credentials.Assurance == usercmd.SessionAssuranceRestricted {
+	if credentials.Assurance == usercmd.WebAuthAssuranceRestricted {
 		b.redirect(w, r, "", b.path("/account/password"))
 		return
 	}

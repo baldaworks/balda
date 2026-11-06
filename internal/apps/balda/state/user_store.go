@@ -233,15 +233,15 @@ func (s *sqlUserStore) ChangeCredential(
 	return nil
 }
 
-func (s *sqlUserStore) ChangeCredentialAndCreateSession(ctx context.Context, change usercmd.CredentialSessionChange) error {
+func (s *sqlUserStore) ChangeCredentialAndCreateWebAuthSession(ctx context.Context, change usercmd.CredentialWebAuthSessionChange) error {
 	if strings.TrimSpace(change.UserID) == "" || change.Secret.UserID != change.UserID || strings.TrimSpace(change.Secret.PasswordHash) == "" ||
 		change.Credential.Version != change.ExpectedCredentialVersion+1 || change.RevokedAt.IsZero() || !change.Credential.State.Valid() ||
 		(change.Credential.State == usercmd.CredentialStateTemporary) != change.Credential.MustChange ||
-		change.Session.UserID != change.UserID || change.Session.CredentialVersion != change.Credential.Version ||
-		change.Session.Assurance != usercmd.SessionAssuranceNormal {
+		change.WebAuthSession.UserID != change.UserID || change.WebAuthSession.CredentialVersion != change.Credential.Version ||
+		change.WebAuthSession.Assurance != usercmd.WebAuthAssuranceNormal {
 		return usercmd.ErrInvalid
 	}
-	if err := usercmd.ValidateSessionFamily(change.Session); err != nil {
+	if err := usercmd.ValidateWebAuthSession(change.WebAuthSession); err != nil {
 		return err
 	}
 	if err := usercmd.ValidateAuditEvent(change.CredentialAudit); err != nil {
@@ -280,7 +280,7 @@ func (s *sqlUserStore) ChangeCredentialAndCreateSession(ctx context.Context, cha
 	if err := s.revokeUserSessionsTx(ctx, tx, change.UserID, change.RevokedAt, "credential changed"); err != nil {
 		return err
 	}
-	if err := s.insertSessionTx(ctx, tx, change.Session); err != nil {
+	if err := s.insertSessionTx(ctx, tx, change.WebAuthSession); err != nil {
 		return err
 	}
 	if err := s.insertAudit(ctx, tx, change.CredentialAudit); err != nil {
@@ -579,8 +579,8 @@ func (s *sqlUserStore) UpdateTelegramBindingProfile(ctx context.Context, princip
 	return affected == 1, nil
 }
 
-func (s *sqlUserStore) CreateSession(ctx context.Context, family usercmd.SessionFamily, audit usercmd.AuditEvent) error {
-	if err := usercmd.ValidateSessionFamily(family); err != nil {
+func (s *sqlUserStore) CreateWebAuthSession(ctx context.Context, family usercmd.WebAuthSession, audit usercmd.AuditEvent) error {
+	if err := usercmd.ValidateWebAuthSession(family); err != nil {
 		return err
 	}
 	if err := usercmd.ValidateAuditEvent(audit); err != nil {
@@ -605,7 +605,7 @@ func (s *sqlUserStore) CreateSession(ctx context.Context, family usercmd.Session
 	}
 	if status != string(usercmd.StatusActive) || credentialState == string(usercmd.CredentialStateDisabled) ||
 		credentialVersion != family.CredentialVersion {
-		return usercmd.ErrSessionUnavailable
+		return usercmd.ErrWebAuthSessionUnavailable
 	}
 	if err := s.insertSessionTx(ctx, tx, family); err != nil {
 		return err
@@ -619,56 +619,56 @@ func (s *sqlUserStore) CreateSession(ctx context.Context, family usercmd.Session
 	return nil
 }
 
-func (s *sqlUserStore) GetSessionByAccessSelector(ctx context.Context, selector string) (usercmd.AccessSession, bool, error) {
+func (s *sqlUserStore) GetWebAuthSessionByAccessSelector(ctx context.Context, selector string) (usercmd.WebAuthAccessSession, bool, error) {
 	family, found, err := s.loadSessionFamily(ctx, s.db, `access_selector = ?`, selector)
 	if err != nil || !found {
-		return usercmd.AccessSession{}, found, err
+		return usercmd.WebAuthAccessSession{}, found, err
 	}
 	user, found, err := s.GetUser(ctx, family.UserID)
 	if err != nil || !found {
 		if err == nil {
 			err = usercmd.ErrNotFound
 		}
-		return usercmd.AccessSession{}, false, err
+		return usercmd.WebAuthAccessSession{}, false, err
 	}
-	return usercmd.AccessSession{User: user, Family: family}, true, nil
+	return usercmd.WebAuthAccessSession{User: user, WebAuthSession: family}, true, nil
 }
 
-func (s *sqlUserStore) GetSessionByRefreshSelector(ctx context.Context, selector string) (usercmd.RefreshSession, bool, error) {
+func (s *sqlUserStore) GetWebAuthSessionByRefreshSelector(ctx context.Context, selector string) (usercmd.WebAuthRefreshSession, bool, error) {
 	var sessionID string
-	var token usercmd.RefreshToken
+	var token usercmd.WebAuthRefreshToken
 	var state, issuedAt, usedAt, expiresAt string
 	err := s.db.QueryRowContext(ctx, s.bind(`
 		SELECT session_id, selector, verifier_digest, generation, state, issued_at, used_at, expires_at
 		FROM balda_backoffice_refresh_tokens WHERE selector = ?`), selector).
 		Scan(&sessionID, &token.Selector, &token.VerifierDigest, &token.Generation, &state, &issuedAt, &usedAt, &expiresAt)
 	if errors.Is(err, sql.ErrNoRows) {
-		return usercmd.RefreshSession{}, false, nil
+		return usercmd.WebAuthRefreshSession{}, false, nil
 	}
 	if err != nil {
-		return usercmd.RefreshSession{}, false, s.wrapError("get refresh generation", err)
+		return usercmd.WebAuthRefreshSession{}, false, s.wrapError("get refresh generation", err)
 	}
 	if err := scanRefreshTimes(&token, state, issuedAt, usedAt, expiresAt); err != nil {
-		return usercmd.RefreshSession{}, false, s.wrapError("parse refresh generation", err)
+		return usercmd.WebAuthRefreshSession{}, false, s.wrapError("parse refresh generation", err)
 	}
 	family, found, err := s.loadSessionFamily(ctx, s.db, `session_id = ?`, sessionID)
 	if err != nil || !found {
-		return usercmd.RefreshSession{}, false, err
+		return usercmd.WebAuthRefreshSession{}, false, err
 	}
 	user, found, err := s.GetUser(ctx, family.UserID)
 	if err != nil || !found {
 		if err == nil {
 			err = usercmd.ErrNotFound
 		}
-		return usercmd.RefreshSession{}, false, err
+		return usercmd.WebAuthRefreshSession{}, false, err
 	}
-	return usercmd.RefreshSession{User: user, Family: family, Token: token}, true, nil
+	return usercmd.WebAuthRefreshSession{User: user, WebAuthSession: family, Token: token}, true, nil
 }
 
-func (s *sqlUserStore) ListSessions(ctx context.Context, userID string, page usercmd.PageRequest) (usercmd.SessionPage, error) {
+func (s *sqlUserStore) ListWebAuthSessions(ctx context.Context, userID string, page usercmd.PageRequest) (usercmd.WebAuthSessionPage, error) {
 	limit, err := pageLimit(page.Limit)
 	if err != nil {
-		return usercmd.SessionPage{}, err
+		return usercmd.WebAuthSessionPage{}, err
 	}
 	rows, err := s.db.QueryContext(ctx, s.bind(`
 		SELECT session_id, assurance, created_at, last_seen_at, refresh_expires_at, revoked_at, version,
@@ -676,21 +676,21 @@ func (s *sqlUserStore) ListSessions(ctx context.Context, userID string, page use
 		FROM balda_backoffice_sessions
 		WHERE user_id = ? AND session_id > ? ORDER BY session_id LIMIT ?`), userID, page.AfterID, limit+1)
 	if err != nil {
-		return usercmd.SessionPage{}, s.wrapError("list user sessions", err)
+		return usercmd.WebAuthSessionPage{}, s.wrapError("list user sessions", err)
 	}
 	defer func() { _ = rows.Close() }()
-	summaries := make([]usercmd.SessionSummary, 0, limit+1)
+	summaries := make([]usercmd.WebAuthSessionSummary, 0, limit+1)
 	for rows.Next() {
 		summary, scanErr := s.scanSessionSummary(rows)
 		if scanErr != nil {
-			return usercmd.SessionPage{}, scanErr
+			return usercmd.WebAuthSessionPage{}, scanErr
 		}
 		summaries = append(summaries, summary)
 	}
 	if err := rows.Err(); err != nil {
-		return usercmd.SessionPage{}, s.wrapError("iterate user sessions", err)
+		return usercmd.WebAuthSessionPage{}, s.wrapError("iterate user sessions", err)
 	}
-	result := usercmd.SessionPage{Sessions: summaries}
+	result := usercmd.WebAuthSessionPage{Sessions: summaries}
 	if len(summaries) > limit {
 		result.Sessions = summaries[:limit]
 		result.NextAfterID = result.Sessions[len(result.Sessions)-1].ID
@@ -698,26 +698,26 @@ func (s *sqlUserStore) ListSessions(ctx context.Context, userID string, page use
 	return result, nil
 }
 
-// ListActiveSessions returns current browser families ordered by recorded
+// ListActiveWebAuthSessions returns current browser families ordered by recorded
 // sign-in or refresh time. The cursor remains valid when its family is revoked.
-func (s *sqlUserStore) ListActiveSessions(ctx context.Context, userID string, page usercmd.PageRequest, now time.Time) (usercmd.SessionPage, error) {
+func (s *sqlUserStore) ListActiveWebAuthSessions(ctx context.Context, userID string, page usercmd.PageRequest, now time.Time) (usercmd.WebAuthSessionPage, error) {
 	limit, err := pageLimit(page.Limit)
 	if err != nil || now.IsZero() {
-		return usercmd.SessionPage{}, usercmd.ErrInvalid
+		return usercmd.WebAuthSessionPage{}, usercmd.ErrInvalid
 	}
 	var cursorTime time.Time
 	if page.AfterID != "" {
 		var raw string
 		err := s.db.QueryRowContext(ctx, s.bind(`SELECT last_seen_at FROM balda_backoffice_sessions WHERE user_id = ? AND session_id = ?`), userID, page.AfterID).Scan(&raw)
 		if errors.Is(err, sql.ErrNoRows) {
-			return usercmd.SessionPage{}, usercmd.ErrInvalid
+			return usercmd.WebAuthSessionPage{}, usercmd.ErrInvalid
 		}
 		if err != nil {
-			return usercmd.SessionPage{}, s.wrapError("load active session cursor", err)
+			return usercmd.WebAuthSessionPage{}, s.wrapError("load active session cursor", err)
 		}
 		cursorTime, err = parseUserTime(raw)
 		if err != nil {
-			return usercmd.SessionPage{}, s.wrapError("parse active session cursor", err)
+			return usercmd.WebAuthSessionPage{}, s.wrapError("parse active session cursor", err)
 		}
 	}
 	// A one-second SQL prefilter excludes old history without relying on
@@ -729,39 +729,39 @@ func (s *sqlUserStore) ListActiveSessions(ctx context.Context, userID string, pa
 		FROM balda_backoffice_sessions
 		WHERE user_id = ? AND revoked_at = '' AND refresh_expires_at > ?`), userID, cutoff)
 	if err != nil {
-		return usercmd.SessionPage{}, s.wrapError("list active sessions", err)
+		return usercmd.WebAuthSessionPage{}, s.wrapError("list active sessions", err)
 	}
 	defer func() { _ = rows.Close() }()
-	var sessions []usercmd.SessionSummary
+	var sessions []usercmd.WebAuthSessionSummary
 	for rows.Next() {
 		summary, scanErr := s.scanSessionSummary(rows)
 		if scanErr != nil {
-			return usercmd.SessionPage{}, scanErr
+			return usercmd.WebAuthSessionPage{}, scanErr
 		}
 		if !now.Before(summary.ExpiresAt) ||
-			(page.AfterID != "" && ((page.AfterID != page.CurrentID && summary.ID == page.CurrentID) ||
-				(page.AfterID != page.CurrentID && (summary.LastSeenAt.After(cursorTime) ||
+			(page.AfterID != "" && ((page.AfterID != page.CurrentWebAuthSessionID && summary.ID == page.CurrentWebAuthSessionID) ||
+				(page.AfterID != page.CurrentWebAuthSessionID && (summary.LastSeenAt.After(cursorTime) ||
 					(summary.LastSeenAt.Equal(cursorTime) && summary.ID >= page.AfterID))))) {
 			continue
 		}
-		if page.AfterID == page.CurrentID && summary.ID == page.CurrentID {
+		if page.AfterID == page.CurrentWebAuthSessionID && summary.ID == page.CurrentWebAuthSessionID {
 			continue
 		}
 		sessions = append(sessions, summary)
 	}
 	if err := rows.Err(); err != nil {
-		return usercmd.SessionPage{}, s.wrapError("iterate active sessions", err)
+		return usercmd.WebAuthSessionPage{}, s.wrapError("iterate active sessions", err)
 	}
 	sort.Slice(sessions, func(i, j int) bool {
-		if sessions[i].ID == page.CurrentID || sessions[j].ID == page.CurrentID {
-			return sessions[i].ID == page.CurrentID
+		if sessions[i].ID == page.CurrentWebAuthSessionID || sessions[j].ID == page.CurrentWebAuthSessionID {
+			return sessions[i].ID == page.CurrentWebAuthSessionID
 		}
 		if sessions[i].LastSeenAt.Equal(sessions[j].LastSeenAt) {
 			return sessions[i].ID > sessions[j].ID
 		}
 		return sessions[i].LastSeenAt.After(sessions[j].LastSeenAt)
 	})
-	result := usercmd.SessionPage{Sessions: sessions}
+	result := usercmd.WebAuthSessionPage{Sessions: sessions}
 	if len(sessions) > limit {
 		result.Sessions = sessions[:limit]
 		result.NextAfterID = result.Sessions[len(result.Sessions)-1].ID
@@ -769,40 +769,40 @@ func (s *sqlUserStore) ListActiveSessions(ctx context.Context, userID string, pa
 	return result, nil
 }
 
-func (s *sqlUserStore) scanSessionSummary(rows *sql.Rows) (usercmd.SessionSummary, error) {
-	var summary usercmd.SessionSummary
+func (s *sqlUserStore) scanSessionSummary(rows *sql.Rows) (usercmd.WebAuthSessionSummary, error) {
+	var summary usercmd.WebAuthSessionSummary
 	var assurance, createdAt, lastSeenAt, expiresAt, revokedAt string
 	var deviceLabel, connectionPeer sql.NullString
 	if err := rows.Scan(&summary.ID, &assurance, &createdAt, &lastSeenAt, &expiresAt, &revokedAt, &summary.Version, &deviceLabel, &connectionPeer); err != nil {
-		return usercmd.SessionSummary{}, s.wrapError("scan user session", err)
+		return usercmd.WebAuthSessionSummary{}, s.wrapError("scan user session", err)
 	}
-	summary.Assurance = usercmd.SessionAssurance(assurance)
+	summary.Assurance = usercmd.WebAuthAssurance(assurance)
 	summary.DeviceLabel, summary.ConnectionPeer = deviceLabel.String, connectionPeer.String
 	var err error
 	if summary.CreatedAt, err = parseUserTime(createdAt); err != nil {
-		return usercmd.SessionSummary{}, s.wrapError("parse session created time", err)
+		return usercmd.WebAuthSessionSummary{}, s.wrapError("parse session created time", err)
 	}
 	if summary.LastSeenAt, err = parseUserTime(lastSeenAt); err != nil {
-		return usercmd.SessionSummary{}, s.wrapError("parse session last seen time", err)
+		return usercmd.WebAuthSessionSummary{}, s.wrapError("parse session last seen time", err)
 	}
 	if summary.ExpiresAt, err = parseUserTime(expiresAt); err != nil {
-		return usercmd.SessionSummary{}, s.wrapError("parse session expiry", err)
+		return usercmd.WebAuthSessionSummary{}, s.wrapError("parse session expiry", err)
 	}
 	if summary.RevokedAt, err = parseOptionalUserTime(revokedAt); err != nil {
-		return usercmd.SessionSummary{}, s.wrapError("parse session revocation", err)
+		return usercmd.WebAuthSessionSummary{}, s.wrapError("parse session revocation", err)
 	}
 	return summary, nil
 }
 
-// GetSession loads one browser session family by its stable identifier.
-func (s *sqlUserStore) GetSession(ctx context.Context, sessionID string) (usercmd.SessionFamily, bool, error) {
+// GetWebAuthSession loads one browser session family by its stable identifier.
+func (s *sqlUserStore) GetWebAuthSession(ctx context.Context, sessionID string) (usercmd.WebAuthSession, bool, error) {
 	if strings.TrimSpace(sessionID) == "" {
-		return usercmd.SessionFamily{}, false, usercmd.ErrInvalid
+		return usercmd.WebAuthSession{}, false, usercmd.ErrInvalid
 	}
 	return s.loadSessionFamily(ctx, s.db, `session_id = ?`, sessionID)
 }
 
-func (s *sqlUserStore) RotateRefresh(ctx context.Context, rotation usercmd.RefreshRotation) (usercmd.RefreshRotationResult, error) {
+func (s *sqlUserStore) RotateWebAuthRefresh(ctx context.Context, rotation usercmd.WebAuthRefreshRotation) (usercmd.WebAuthRefreshRotationResult, error) {
 	if strings.TrimSpace(rotation.Selector) == "" || len(rotation.PresentedVerifierDigest) == 0 || rotation.RotatedAt.IsZero() {
 		return "", usercmd.ErrInvalid
 	}
@@ -820,9 +820,9 @@ func (s *sqlUserStore) RotateRefresh(ctx context.Context, rotation usercmd.Refre
 		if err := tx.Commit(); err != nil {
 			return "", s.wrapError("commit unavailable refresh lookup", err)
 		}
-		return usercmd.RefreshRotationUnavailable, nil
+		return usercmd.WebAuthRefreshRotationUnavailable, nil
 	}
-	if loaded.token.State == usercmd.RefreshTokenStateUsed && loaded.family.RevokedAt.IsZero() {
+	if loaded.token.State == usercmd.WebAuthRefreshTokenStateUsed && loaded.family.RevokedAt.IsZero() {
 		// Concurrent requests can carry a timestamp older than the winning
 		// rotation. Compare against canonical activity without revoking on rollback.
 		comparedAt := rotation.RotatedAt
@@ -836,7 +836,7 @@ func (s *sqlUserStore) RotateRefresh(ctx context.Context, rotation usercmd.Refre
 			if err := tx.Commit(); err != nil {
 				return "", s.wrapError("commit concurrent refresh lookup", err)
 			}
-			return usercmd.RefreshRotationConcurrent, nil
+			return usercmd.WebAuthRefreshRotationConcurrent, nil
 		}
 		if err := usercmd.ValidateAuditEvent(rotation.ReplayAudit); err != nil {
 			return "", err
@@ -850,15 +850,15 @@ func (s *sqlUserStore) RotateRefresh(ctx context.Context, rotation usercmd.Refre
 		if err := tx.Commit(); err != nil {
 			return "", s.wrapError("commit refresh replay revocation", err)
 		}
-		return usercmd.RefreshRotationReplayRevoked, nil
+		return usercmd.WebAuthRefreshRotationReplayRevoked, nil
 	}
-	if loaded.token.State != usercmd.RefreshTokenStateActive || !loaded.family.RevokedAt.IsZero() ||
+	if loaded.token.State != usercmd.WebAuthRefreshTokenStateActive || !loaded.family.RevokedAt.IsZero() ||
 		!rotation.RotatedAt.Before(loaded.family.RefreshExpiresAt) || loaded.userStatus != usercmd.StatusActive ||
 		loaded.credentialState == usercmd.CredentialStateDisabled || loaded.userCredentialVersion != loaded.family.CredentialVersion {
 		if err := tx.Commit(); err != nil {
 			return "", s.wrapError("commit unavailable refresh state", err)
 		}
-		return usercmd.RefreshRotationUnavailable, nil
+		return usercmd.WebAuthRefreshRotationUnavailable, nil
 	}
 	if rotation.RotatedAt.Before(loaded.family.LastSeenAt) || rotation.RotatedAt.Before(loaded.token.IssuedAt) {
 		return "", usercmd.ErrConflict
@@ -902,10 +902,10 @@ func (s *sqlUserStore) RotateRefresh(ctx context.Context, rotation usercmd.Refre
 	if err := tx.Commit(); err != nil {
 		return "", s.wrapError("commit refresh rotation", err)
 	}
-	return usercmd.RefreshRotationSucceeded, nil
+	return usercmd.WebAuthRefreshRotationSucceeded, nil
 }
 
-func (s *sqlUserStore) RevokeSession(ctx context.Context, sessionID string, expectedVersion uint64, revokedAt time.Time, reason string, audit usercmd.AuditEvent) error {
+func (s *sqlUserStore) RevokeWebAuthSession(ctx context.Context, sessionID string, expectedVersion uint64, revokedAt time.Time, reason string, audit usercmd.AuditEvent) error {
 	if strings.TrimSpace(sessionID) == "" || expectedVersion == 0 || revokedAt.IsZero() || strings.TrimSpace(reason) == "" {
 		return usercmd.ErrInvalid
 	}
@@ -941,7 +941,7 @@ func (s *sqlUserStore) RevokeSession(ctx context.Context, sessionID string, expe
 	return nil
 }
 
-func (s *sqlUserStore) RevokeUserSessions(ctx context.Context, userID string, revokedAt time.Time, reason string, audit usercmd.AuditEvent) error {
+func (s *sqlUserStore) RevokeUserWebAuthSessions(ctx context.Context, userID string, revokedAt time.Time, reason string, audit usercmd.AuditEvent) error {
 	if strings.TrimSpace(userID) == "" || revokedAt.IsZero() || strings.TrimSpace(reason) == "" {
 		return usercmd.ErrInvalid
 	}
@@ -972,7 +972,7 @@ func (s *sqlUserStore) RevokeUserSessions(ctx context.Context, userID string, re
 	return nil
 }
 
-func (s *sqlUserStore) DeleteExpiredSessions(ctx context.Context, before time.Time, limit int) (int, error) {
+func (s *sqlUserStore) DeleteExpiredWebAuthSessions(ctx context.Context, before time.Time, limit int) (int, error) {
 	if before.IsZero() || limit <= 0 || limit > usercmd.MaxPageSize {
 		return 0, usercmd.ErrInvalid
 	}
@@ -1014,7 +1014,7 @@ func (s *sqlUserStore) ListAuditEvents(ctx context.Context, page usercmd.PageReq
 	}
 	args = append(args, limit+1)
 	rows, err := s.db.QueryContext(ctx, s.bind(`
-		SELECT event_id, action, outcome, actor_user_id, actor_session_id,
+		SELECT event_id, action, outcome, actor_user_id, actor_web_auth_session_id,
 			target_type, target_id, reason, request_id, source, correlation_id, occurred_at
 		FROM balda_security_audit_events
 		`+predicate+` ORDER BY (`+s.auditTimeKey+`) DESC, event_id DESC LIMIT ?`), args...)
@@ -1027,7 +1027,7 @@ func (s *sqlUserStore) ListAuditEvents(ctx context.Context, page usercmd.PageReq
 		var event usercmd.AuditEvent
 		var action, outcome, targetType, occurredAt string
 		if err := rows.Scan(
-			&event.ID, &action, &outcome, &event.ActorUserID, &event.ActorSessionID,
+			&event.ID, &action, &outcome, &event.ActorUserID, &event.ActorWebAuthSessionID,
 			&targetType, &event.TargetID, &event.Reason, &event.RequestID, &event.Source,
 			&event.CorrelationID, &occurredAt,
 		); err != nil {
@@ -1038,6 +1038,10 @@ func (s *sqlUserStore) ListAuditEvents(ctx context.Context, page usercmd.PageReq
 		event.TargetType = usercmd.AuditTargetType(targetType)
 		if event.OccurredAt, err = parseUserTime(occurredAt); err != nil {
 			return usercmd.AuditPage{}, s.wrapError("parse audit occurrence", err)
+		}
+		event, err = decodeStoredAudit(event)
+		if err != nil {
+			return usercmd.AuditPage{}, s.wrapError("decode audit event", err)
 		}
 		events = append(events, event)
 	}
@@ -1156,14 +1160,18 @@ func (s *sqlUserStore) loadBindings(ctx context.Context, user *usercmd.User) err
 }
 
 func (s *sqlUserStore) insertAudit(ctx context.Context, tx *sql.Tx, audit usercmd.AuditEvent) error {
-	_, err := tx.ExecContext(ctx, s.bind(`
+	stored, err := encodeStoredAuditLegacy(audit)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, s.bind(`
 		INSERT INTO balda_security_audit_events (
-			event_id, actor_user_id, actor_session_id, action, target_type, target_id,
+			event_id, actor_user_id, actor_web_auth_session_id, action, target_type, target_id,
 			outcome, reason, metadata_json, request_id, source, correlation_id, occurred_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
-		audit.ID, audit.ActorUserID, audit.ActorSessionID, audit.Action, audit.TargetType, audit.TargetID,
-		audit.Outcome, audit.Reason, "{}", audit.RequestID, audit.Source, audit.CorrelationID,
-		formatUserTime(audit.OccurredAt),
+		stored.ID, stored.ActorUserID, stored.ActorWebAuthSessionID, stored.Action, stored.TargetType, stored.TargetID,
+		stored.Outcome, stored.Reason, "{}", stored.RequestID, stored.Source, stored.CorrelationID,
+		formatUserTime(stored.OccurredAt),
 	)
 	if err != nil {
 		return s.mutationError("insert security audit", err)
@@ -1171,7 +1179,7 @@ func (s *sqlUserStore) insertAudit(ctx context.Context, tx *sql.Tx, audit usercm
 	return nil
 }
 
-func (s *sqlUserStore) insertRefreshToken(ctx context.Context, tx *sql.Tx, sessionID string, token usercmd.RefreshToken) error {
+func (s *sqlUserStore) insertRefreshToken(ctx context.Context, tx *sql.Tx, sessionID string, token usercmd.WebAuthRefreshToken) error {
 	_, err := tx.ExecContext(ctx, s.bind(`
 		INSERT INTO balda_backoffice_refresh_tokens (
 			session_id, selector, verifier_digest, generation, state, issued_at, used_at, expires_at
@@ -1185,7 +1193,7 @@ func (s *sqlUserStore) insertRefreshToken(ctx context.Context, tx *sql.Tx, sessi
 	return nil
 }
 
-func (s *sqlUserStore) insertSessionTx(ctx context.Context, tx *sql.Tx, family usercmd.SessionFamily) error {
+func (s *sqlUserStore) insertSessionTx(ctx context.Context, tx *sql.Tx, family usercmd.WebAuthSession) error {
 	if err := s.checkSessionMFA(ctx, tx, family); err != nil {
 		return err
 	}
@@ -1212,8 +1220,8 @@ func (s *sqlUserStore) insertSessionTx(ctx context.Context, tx *sql.Tx, family u
 	return nil
 }
 
-func (s *sqlUserStore) loadSessionFamily(ctx context.Context, q userQueryer, predicate string, args ...any) (usercmd.SessionFamily, bool, error) {
-	var family usercmd.SessionFamily
+func (s *sqlUserStore) loadSessionFamily(ctx context.Context, q userQueryer, predicate string, args ...any) (usercmd.WebAuthSession, bool, error) {
+	var family usercmd.WebAuthSession
 	var assurance, createdAt, lastSeenAt, accessExpiresAt, refreshExpiresAt, revokedAt, verifiedAt string
 	var deviceLabel, connectionPeer sql.NullString
 	err := q.QueryRowContext(ctx, s.bind(`
@@ -1228,59 +1236,59 @@ func (s *sqlUserStore) loadSessionFamily(ctx context.Context, q userQueryer, pre
 		&revokedAt, &family.RevocationReason, &family.Version, &deviceLabel, &connectionPeer, &verifiedAt, &family.MFAFactorID,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
-		return usercmd.SessionFamily{}, false, nil
+		return usercmd.WebAuthSession{}, false, nil
 	}
 	if err != nil {
-		return usercmd.SessionFamily{}, false, s.wrapError("load session family", err)
+		return usercmd.WebAuthSession{}, false, s.wrapError("load session family", err)
 	}
-	family.Assurance = usercmd.SessionAssurance(assurance)
+	family.Assurance = usercmd.WebAuthAssurance(assurance)
 	if family.WebAuthnVerifiedAt, err = parseOptionalUserTime(verifiedAt); err != nil {
-		return usercmd.SessionFamily{}, false, err
+		return usercmd.WebAuthSession{}, false, err
 	}
 	family.DeviceLabel, family.ConnectionPeer = deviceLabel.String, connectionPeer.String
 	if family.CreatedAt, err = parseUserTime(createdAt); err != nil {
-		return usercmd.SessionFamily{}, false, s.wrapError("parse session creation", err)
+		return usercmd.WebAuthSession{}, false, s.wrapError("parse session creation", err)
 	}
 	if family.LastSeenAt, err = parseUserTime(lastSeenAt); err != nil {
-		return usercmd.SessionFamily{}, false, s.wrapError("parse session last seen", err)
+		return usercmd.WebAuthSession{}, false, s.wrapError("parse session last seen", err)
 	}
 	if family.Access.ExpiresAt, err = parseUserTime(accessExpiresAt); err != nil {
-		return usercmd.SessionFamily{}, false, s.wrapError("parse access expiry", err)
+		return usercmd.WebAuthSession{}, false, s.wrapError("parse access expiry", err)
 	}
 	if family.RefreshExpiresAt, err = parseUserTime(refreshExpiresAt); err != nil {
-		return usercmd.SessionFamily{}, false, s.wrapError("parse refresh expiry", err)
+		return usercmd.WebAuthSession{}, false, s.wrapError("parse refresh expiry", err)
 	}
 	if family.RevokedAt, err = parseOptionalUserTime(revokedAt); err != nil {
-		return usercmd.SessionFamily{}, false, s.wrapError("parse session revocation", err)
+		return usercmd.WebAuthSession{}, false, s.wrapError("parse session revocation", err)
 	}
 	rows, err := q.QueryContext(ctx, s.bind(`
 		SELECT selector, verifier_digest, generation, state, issued_at, used_at, expires_at
 		FROM balda_backoffice_refresh_tokens
 		WHERE session_id = ? ORDER BY generation`), family.ID)
 	if err != nil {
-		return usercmd.SessionFamily{}, false, s.wrapError("load refresh lineage", err)
+		return usercmd.WebAuthSession{}, false, s.wrapError("load refresh lineage", err)
 	}
 	defer func() { _ = rows.Close() }()
 	for rows.Next() {
-		var token usercmd.RefreshToken
+		var token usercmd.WebAuthRefreshToken
 		var state, issuedAt, usedAt, expiresAt string
 		if err := rows.Scan(&token.Selector, &token.VerifierDigest, &token.Generation, &state, &issuedAt, &usedAt, &expiresAt); err != nil {
-			return usercmd.SessionFamily{}, false, s.wrapError("scan refresh lineage", err)
+			return usercmd.WebAuthSession{}, false, s.wrapError("scan refresh lineage", err)
 		}
 		if err := scanRefreshTimes(&token, state, issuedAt, usedAt, expiresAt); err != nil {
-			return usercmd.SessionFamily{}, false, s.wrapError("parse refresh lineage", err)
+			return usercmd.WebAuthSession{}, false, s.wrapError("parse refresh lineage", err)
 		}
 		family.RefreshTokens = append(family.RefreshTokens, token)
 	}
 	if err := rows.Err(); err != nil {
-		return usercmd.SessionFamily{}, false, s.wrapError("iterate refresh lineage", err)
+		return usercmd.WebAuthSession{}, false, s.wrapError("iterate refresh lineage", err)
 	}
 	return family, true, nil
 }
 
 type refreshRotationState struct {
-	token                 usercmd.RefreshToken
-	family                usercmd.SessionFamily
+	token                 usercmd.WebAuthRefreshToken
+	family                usercmd.WebAuthSession
 	userStatus            usercmd.UserStatus
 	credentialState       usercmd.CredentialState
 	userCredentialVersion uint64
@@ -1317,7 +1325,7 @@ func (s *sqlUserStore) loadRefreshForRotation(ctx context.Context, tx *sql.Tx, s
 	if err != nil {
 		return refreshRotationState{}, false, s.wrapError("load refresh rotation state", err)
 	}
-	loaded.family.Assurance = usercmd.SessionAssurance(assurance)
+	loaded.family.Assurance = usercmd.WebAuthAssurance(assurance)
 	if loaded.family.WebAuthnVerifiedAt, err = parseOptionalUserTime(verifiedAt); err != nil {
 		return refreshRotationState{}, false, err
 	}
@@ -1347,11 +1355,11 @@ func (s *sqlUserStore) loadRefreshForRotation(ctx context.Context, tx *sql.Tx, s
 	return loaded, true, nil
 }
 
-func validateRotation(rotation usercmd.RefreshRotation, loaded refreshRotationState) error {
+func validateRotation(rotation usercmd.WebAuthRefreshRotation, loaded refreshRotationState) error {
 	if strings.TrimSpace(rotation.Access.Selector) == "" || len(rotation.Access.VerifierDigest) == 0 ||
 		!rotation.Access.ExpiresAt.After(rotation.RotatedAt) || !rotation.Access.ExpiresAt.Before(rotation.Refresh.ExpiresAt) ||
 		strings.TrimSpace(rotation.Refresh.Selector) == "" || len(rotation.Refresh.VerifierDigest) == 0 ||
-		rotation.Refresh.Generation != loaded.token.Generation+1 || rotation.Refresh.State != usercmd.RefreshTokenStateActive ||
+		rotation.Refresh.Generation != loaded.token.Generation+1 || rotation.Refresh.State != usercmd.WebAuthRefreshTokenStateActive ||
 		!rotation.Refresh.UsedAt.IsZero() || !rotation.Refresh.IssuedAt.Equal(rotation.RotatedAt) ||
 		!rotation.Refresh.ExpiresAt.After(rotation.RotatedAt) {
 		return usercmd.ErrInvalid
@@ -1395,9 +1403,9 @@ func (s *sqlUserStore) revokeUserSessionsTx(ctx context.Context, tx *sql.Tx, use
 	return nil
 }
 
-func scanRefreshTimes(token *usercmd.RefreshToken, state, issuedAt, usedAt, expiresAt string) error {
+func scanRefreshTimes(token *usercmd.WebAuthRefreshToken, state, issuedAt, usedAt, expiresAt string) error {
 	var err error
-	token.State = usercmd.RefreshTokenState(state)
+	token.State = usercmd.WebAuthRefreshTokenState(state)
 	if token.IssuedAt, err = parseUserTime(issuedAt); err != nil {
 		return err
 	}

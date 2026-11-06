@@ -306,7 +306,7 @@ func providerList(raw string) []string {
 }
 
 func providerAudit(p security.Principal) usercmd.AuditEvent {
-	return usercmd.AuditEvent{ID: uuid.NewString(), ActorUserID: p.User.ID, ActorSessionID: p.FamilyID,
+	return usercmd.AuditEvent{ID: uuid.NewString(), ActorUserID: p.User.ID, ActorWebAuthSessionID: p.WebAuthSessionID,
 		Source: "backoffice", OccurredAt: time.Now().UTC()}
 }
 
