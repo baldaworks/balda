@@ -199,6 +199,7 @@ func TestApplicationLifecycleStagesStartQuestionProjectorAfterTransport(t *testi
 		"actor host",
 		"webhook run finalizer",
 		"scheduled jobs",
+		managementHTTPIngressStage,
 		sharedHTTPIngressStage,
 		"zulip ingress",
 		"slack agent ingress",

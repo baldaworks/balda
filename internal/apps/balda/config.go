@@ -7,6 +7,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/backoffice"
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	baldaeventbus "github.com/baldaworks/balda/internal/apps/balda/eventbus"
+	"github.com/baldaworks/balda/internal/apps/balda/managementhttp"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 )
 
@@ -26,6 +27,7 @@ type BaldaConfig struct {
 	Provider            string                    `mapstructure:"provider"`
 	ACPStartupTimeout   string                    `mapstructure:"acp_startup_timeout"`
 	HTTP                HTTPConfig                `mapstructure:"http"`
+	Management          managementhttp.Config     `mapstructure:"management"`
 	Telegram            TelegramConfig            `mapstructure:"telegram"`
 	Zulip               ZulipConfig               `mapstructure:"zulip"`
 	Mattermost          MattermostConfig          `mapstructure:"mattermost"`

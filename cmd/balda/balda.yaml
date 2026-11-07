@@ -218,6 +218,13 @@ balda:
     base_url: ""
     base_path: null
 
+  # Local management API used by the standalone Backoffice. The operator
+  # token may also be supplied through BALDA_MANAGEMENT_OPERATOR_TOKEN.
+  management:
+    enabled: false
+    listen_addr: ""
+    operator_token: ""
+
   # Backoffice starts inside `balda start` after schema/data migrations and user
   # readiness, using the same database and canonical users as the bot.
   backoffice:
