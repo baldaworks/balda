@@ -15,6 +15,7 @@ const (
 	readTimeout       = 15 * time.Second
 	writeTimeout      = 30 * time.Second
 	idleTimeout       = 60 * time.Second
+	maxHeaderBytes    = 1 << 20
 )
 
 // Server owns one inbound HTTP socket. The caller starts it after its runtime
@@ -22,6 +23,7 @@ const (
 type Server struct {
 	listenAddr string
 	handler    http.Handler
+	component  string
 
 	mu       sync.Mutex
 	server   *http.Server
@@ -32,7 +34,12 @@ type Server struct {
 
 // NewServer constructs an inert HTTP server; Start performs the single bind.
 func NewServer(listenAddr string, handler http.Handler) *Server {
-	return &Server{listenAddr: listenAddr, handler: handler}
+	return NewNamedServer("shared HTTP", listenAddr, handler)
+}
+
+// NewNamedServer constructs an inert HTTP server with component-specific errors.
+func NewNamedServer(component, listenAddr string, handler http.Handler) *Server {
+	return &Server{component: component, listenAddr: listenAddr, handler: handler}
 }
 
 // Start binds the configured TCP address and launches the serving loop.
@@ -45,20 +52,20 @@ func (s *Server) Start() error {
 		}
 		select {
 		case <-s.done:
-			return errors.New("shared HTTP server has stopped")
+			return fmt.Errorf("%s server has stopped", s.component)
 		default:
 		}
 		return nil
 	}
 	if s.handler == nil {
-		return fmt.Errorf("shared HTTP handler is required")
+		return fmt.Errorf("%s handler is required", s.component)
 	}
 	if s.listenAddr == "" {
-		return fmt.Errorf("shared HTTP listen address is required")
+		return fmt.Errorf("%s listen address is required", s.component)
 	}
 	listener, err := net.Listen("tcp", s.listenAddr)
 	if err != nil {
-		return fmt.Errorf("listen for shared HTTP on %s: %w", s.listenAddr, err)
+		return fmt.Errorf("listen for %s on %s: %w", s.component, s.listenAddr, err)
 	}
 	server := &http.Server{
 		Handler:           s.handler,
@@ -66,13 +73,14 @@ func (s *Server) Start() error {
 		ReadTimeout:       readTimeout,
 		WriteTimeout:      writeTimeout,
 		IdleTimeout:       idleTimeout,
+		MaxHeaderBytes:    maxHeaderBytes,
 	}
 	s.server, s.listener, s.done, s.serveErr = server, listener, make(chan struct{}), nil
 	go func() {
 		err := server.Serve(listener)
 		s.mu.Lock()
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			s.serveErr = fmt.Errorf("serve shared HTTP: %w", err)
+			s.serveErr = fmt.Errorf("serve %s: %w", s.component, err)
 		}
 		close(s.done)
 		s.mu.Unlock()
@@ -117,7 +125,7 @@ func (s *Server) Stop(ctx context.Context) error {
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		_ = server.Close()
 		<-done
-		return fmt.Errorf("shutdown shared HTTP: %w", err)
+		return fmt.Errorf("shutdown %s: %w", s.component, err)
 	}
 	<-done
 	return s.Err()

@@ -28,6 +28,31 @@ Balda. Forward requests to the shared listener with the original path and raw
 request body. The handlers keep their existing browser, webhook-secret, and
 transport-signature checks.
 
+### Management API
+
+The optional Core management API uses a separate loopback-only listener. It is
+disabled by default and currently exposes only authenticated contract
+compatibility metadata; it has no health or readiness endpoint.
+
+```yaml
+balda:
+  management:
+    enabled: true
+    listen_addr: "127.0.0.1:8096"
+    operator_token: "${BALDA_MANAGEMENT_OPERATOR_TOKEN}"
+```
+
+`BALDA_MANAGEMENT_OPERATOR_TOKEN` follows the normal configuration precedence:
+a non-empty environment value overrides profile and file values, while an empty
+environment value leaves the underlying value unchanged. The decoded process
+configuration retains the plaintext token like other configured secrets; JSON
+and YAML projections omit it, and the request authenticator retains only its
+digest. Rotate the token by updating configuration and restarting Core and its
+client. To roll back the listener, set `balda.management.enabled: false` and
+restart. The future standalone Backoffice will use the generated client and
+the compatibility operation to verify Core reachability, credentials, and API
+version; deployment health for that process is separate.
+
 Config shape:
 
 ```yaml

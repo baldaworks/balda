@@ -59,6 +59,11 @@ components:
     in:
       - internal/managementapi/v1
 
+  # Core-side HTTP adapter for the generated management wire contract.
+  management_api_adapter:
+    in:
+      - internal/apps/balda/managementhttp
+
   chat_archive_app:
     in:
       - internal/apps/balda/chatarchiveapp
@@ -641,6 +646,13 @@ deps:
       - management_api_wire
     deepScan: false
     anyVendorDeps: true
+
+  management_api_adapter:
+    mayDependOn:
+      - management_api_wire
+      - http_composition
+    deepScan: false
+    anyVendorDeps: false
 
   chat_archive_app:
     mayDependOn:
@@ -1570,6 +1582,7 @@ deps:
 
   composition_root:
     mayDependOn:
+      - management_api_adapter
       - plugin_policy
       - chat_archive_wiring
       - chat_archive_backoffice_wiring

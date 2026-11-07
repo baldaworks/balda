@@ -216,6 +216,10 @@ func Module(
 	if err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
+	managementHTTP, err := cfg.Balda.ResolveManagement()
+	if err != nil {
+		return fx.Module("balda", fx.Error(err))
+	}
 	tgbotkitCfg, err = resolveTelegramWebhookConfig(tgbotkitCfg, sharedHTTP)
 	if err != nil {
 		return fx.Module("balda", fx.Error(err))
@@ -330,6 +334,7 @@ func Module(
 		fx.Supply(
 			cfg.Balda,
 			sharedHTTP,
+			managementHTTP,
 			tgbotkitCfg,
 			logger,
 			normaCfg,

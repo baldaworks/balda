@@ -18,6 +18,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/internalmcp"
 	"github.com/baldaworks/balda/internal/apps/balda/jobexec"
 	baldajobs "github.com/baldaworks/balda/internal/apps/balda/jobs"
+	"github.com/baldaworks/balda/internal/apps/balda/managementhttp"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpbackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpbridge"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
@@ -42,7 +43,10 @@ type lifecycleStage struct {
 	stop  func(context.Context) error
 }
 
-const sharedHTTPIngressStage = "shared HTTP ingress"
+const (
+	managementHTTPIngressStage = "management HTTP ingress"
+	sharedHTTPIngressStage     = "shared HTTP ingress"
+)
 
 type applicationLifecycle struct {
 	logger zerolog.Logger
@@ -167,6 +171,7 @@ type applicationLifecycleParams struct {
 	Logger               zerolog.Logger
 	Config               BaldaConfig
 	HTTPConfig           ResolvedHTTPConfig
+	ManagementHTTPConfig managementhttp.ResolvedConfig
 	HTTPRegistry         *httpfx.Registry
 	WebhookHTTP          webhookfx.HTTPContribution
 	GatewayCallbacks     []httpfx.GatewayCallbackProvider `group:"balda_http_gateway_callback_providers"`
@@ -216,6 +221,7 @@ func registerApplicationLifecycle(p applicationLifecycleParams) {
 
 func applicationLifecycleStages(p applicationLifecycleParams, telegram *telegramLifecycle) []lifecycleStage {
 	var sharedServer *httpfx.Server
+	var managementServer *httpfx.Server
 	stages := []lifecycleStage{
 		// FX constructs this before Start. Register cleanup first so every failed
 		// startup stage also closes pending browser authorization attempts.
@@ -252,6 +258,35 @@ func applicationLifecycleStages(p applicationLifecycleParams, telegram *telegram
 		{name: "actor host", start: p.ActorHost.Start, stop: p.ActorHost.Stop},
 		{name: "webhook run finalizer", start: p.WebhookRunFinalizer.Start, stop: p.WebhookRunFinalizer.Stop},
 		{name: "scheduled jobs", start: p.Scheduler.Start, stop: p.Scheduler.Stop},
+		{name: managementHTTPIngressStage, start: func(context.Context) error {
+			if !p.ManagementHTTPConfig.Enabled {
+				return nil
+			}
+			managementServer = httpfx.NewNamedServer(
+				"management HTTP",
+				p.ManagementHTTPConfig.ListenAddr,
+				p.ManagementHTTPConfig.Handler(),
+			)
+			if err := managementServer.Start(); err != nil {
+				managementServer = nil
+				return err
+			}
+			go func(server *httpfx.Server) {
+				<-server.Done()
+				if err := server.Err(); err != nil {
+					p.Logger.Error().Err(err).Msg("management HTTP ingress stopped unexpectedly")
+					if shutdownErr := p.Shutdowner.Shutdown(fx.ExitCode(1)); shutdownErr != nil {
+						p.Logger.Error().Err(shutdownErr).Msg("request Balda shutdown after management HTTP failure")
+					}
+				}
+			}(managementServer)
+			return nil
+		}, stop: func(ctx context.Context) error {
+			if managementServer == nil {
+				return nil
+			}
+			return managementServer.Stop(ctx)
+		}},
 		{name: sharedHTTPIngressStage, start: func(ctx context.Context) error {
 			server, err := startSharedHTTPIngress(ctx, p)
 			if err != nil {

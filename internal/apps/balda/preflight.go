@@ -101,6 +101,13 @@ func PreflightRuntime(
 	if err != nil {
 		return err
 	}
+	managementHTTP, err := cfg.Balda.ResolveManagement()
+	if err != nil {
+		return err
+	}
+	if managementHTTP.Enabled {
+		_ = managementHTTP.Handler()
+	}
 	if err := validateExecutionConfigLint(executionConfig, sharedHTTP.ListenAddr, inboundWebhookConfig); err != nil {
 		return err
 	}
