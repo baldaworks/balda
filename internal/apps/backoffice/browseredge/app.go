@@ -1,0 +1,490 @@
+// Package browseredge owns the stateless standalone browser HTTP boundary.
+package browseredge
+
+import (
+	"context"
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"html/template"
+	"io"
+	"net"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/baldaworks/balda/internal/apps/backoffice/loginlimit"
+	"github.com/baldaworks/balda/internal/apps/backoffice/managementclient"
+	managementv1 "github.com/baldaworks/balda/internal/managementapi/v1"
+)
+
+const (
+	accessCookie  = "balda_access"
+	refreshCookie = "balda_refresh"
+	csrfCookie    = "balda_csrf"
+	mfaCookie     = "balda_webauthn"
+	maxFormBytes  = 128 << 10
+)
+
+// Service is the generated-client surface consumed by the browser edge.
+type Service interface {
+	Login(ctx context.Context, request managementv1.LocalLoginRequest) (managementv1.WebAuthLoginResult, error)
+	FinishLogin(ctx context.Context, request managementv1.WebAuthLoginMFAFinishRequest) (managementv1.WebAuthCredentials, error)
+	Principal(ctx context.Context, auth managementclient.Auth) (managementv1.WebAuthPrincipal, error)
+	Refresh(ctx context.Context, auth managementclient.Auth) (managementv1.WebAuthCredentials, error)
+	Logout(ctx context.Context, auth managementclient.Auth) error
+	ReplacePassword(ctx context.Context, auth managementclient.Auth, request managementv1.WebAuthPasswordReplaceRequest) (managementv1.WebAuthCredentials, error)
+	MFAStatus(ctx context.Context, auth managementclient.Auth) (managementv1.WebAuthMFAStatus, error)
+	BeginMFA(ctx context.Context, auth managementclient.Auth, replace bool, password, binding *string) (managementv1.WebAuthMFAContinuation, error)
+	FinishMFA(ctx context.Context, auth managementclient.Auth, replace bool, request managementv1.WebAuthMFAFinishRequest) (managementv1.WebAuthCredentials, error)
+	DisableMFA(ctx context.Context, auth managementclient.Auth, password *string) (managementv1.WebAuthCredentials, error)
+	Sessions(ctx context.Context, auth managementclient.Auth) (managementv1.WebAuthSessionPage, error)
+	RevokeSession(ctx context.Context, auth managementclient.Auth, sessionID string, confirmCurrent bool) error
+}
+
+// Config fixes the browser trust boundary.
+type Config struct {
+	PublicOrigin string
+	MountPath    string
+}
+
+// App is a stateless browser BFF.
+type App struct {
+	service Service
+	limiter *loginlimit.Limiter
+	origin  string
+	mount   string
+	secure  bool
+	now     func() time.Time
+}
+
+// New validates and constructs the browser edge.
+func New(service Service, config Config) (*App, error) {
+	if service == nil {
+		return nil, fmt.Errorf("management service is required")
+	}
+	origin, err := url.Parse(config.PublicOrigin)
+	if err != nil || origin.Host == "" || origin.User != nil || origin.RawQuery != "" || origin.Fragment != "" ||
+		(origin.Scheme != "http" && origin.Scheme != "https") || (origin.Path != "" && origin.Path != "/") {
+		return nil, fmt.Errorf("public origin is invalid")
+	}
+	if config.MountPath == "" || config.MountPath[0] != '/' || strings.HasSuffix(config.MountPath, "/") {
+		return nil, fmt.Errorf("mount path is invalid")
+	}
+	return &App{service: service, limiter: loginlimit.New(), origin: strings.TrimSuffix(config.PublicOrigin, "/"),
+		mount: config.MountPath, secure: origin.Scheme == "https", now: time.Now}, nil
+}
+
+// Handler returns the complete authentication/account route set.
+func (a *App) Handler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET "+a.path("/"), a.root)
+	mux.HandleFunc("GET "+a.path("/login"), a.loginPage)
+	mux.HandleFunc("POST "+a.path("/login"), a.login)
+	mux.HandleFunc("POST "+a.path("/auth/webauthn/finish"), a.finishLogin)
+	mux.HandleFunc("POST "+a.path("/auth/session/refresh"), a.refresh)
+	mux.HandleFunc("POST "+a.path("/logout"), a.logout)
+	mux.HandleFunc("GET "+a.path("/overview"), a.overview)
+	mux.HandleFunc("GET "+a.path("/account"), a.account)
+	mux.HandleFunc("POST "+a.path("/account/password"), a.replacePassword)
+	mux.HandleFunc("POST "+a.path("/account/2fa/enable/start"), a.beginMFA(false))
+	mux.HandleFunc("POST "+a.path("/account/2fa/replace/start"), a.beginMFA(true))
+	mux.HandleFunc("POST "+a.path("/account/2fa/enable/finish"), a.finishMFA(false))
+	mux.HandleFunc("POST "+a.path("/account/2fa/replace/finish"), a.finishMFA(true))
+	mux.HandleFunc("POST "+a.path("/account/2fa/disable"), a.disableMFA)
+	mux.HandleFunc("POST "+a.path("/account/sessions/{session_id}/revoke"), a.revokeSession)
+	return noStore(mux)
+}
+
+func (a *App) root(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != a.path("/") {
+		http.NotFound(w, r)
+		return
+	}
+	a.redirect(w, "/overview")
+}
+
+func (a *App) loginPage(w http.ResponseWriter, r *http.Request) {
+	csrf, err := a.ensureCSRF(w, r)
+	if err != nil {
+		a.failure(w, http.StatusInternalServerError)
+		return
+	}
+	a.page(w, http.StatusOK, "Sign in", `<form method="post" action="`+template.HTMLEscapeString(a.path("/login"))+`"><input type="hidden" name="csrf_token" value="`+template.HTMLEscapeString(csrf)+`"><label>Username <input name="username" autocomplete="username" required></label><label>Password <input name="password" type="password" autocomplete="current-password" required></label><button>Sign in</button></form>`)
+}
+
+func (a *App) login(w http.ResponseWriter, r *http.Request) {
+	form, ok := a.mutationForm(w, r)
+	if !ok {
+		return
+	}
+	username, peer := form.Get("username"), directPeer(r.RemoteAddr)
+	allowed, retry := a.limiter.Allow(username, r.RemoteAddr)
+	if !allowed {
+		w.Header().Set("Retry-After", strconv.Itoa(max(1, int(retry.Round(time.Second)/time.Second))))
+		a.authFailure(w, http.StatusTooManyRequests)
+		return
+	}
+	binding, err := randomToken(32)
+	if err != nil {
+		a.failure(w, http.StatusInternalServerError)
+		return
+	}
+	password := form.Get("password")
+	result, err := a.service.Login(r.Context(), managementv1.LocalLoginRequest{Username: username, Password: &password,
+		BrowserContext: managementv1.WebAuthBrowserContext{BrowserBinding: &binding, ConnectionPeer: &peer, CSRFToken: stringPointer(form.Get("csrf_token"))}})
+	password = ""
+	if err != nil {
+		a.serviceFailure(w, err, true)
+		return
+	}
+	a.limiter.Success(username, r.RemoteAddr)
+	if result.Outcome == managementv1.MFARequired && result.MFA != nil {
+		a.setCookie(w, mfaCookie, binding, a.path("/"), result.MFA.ExpiresAt, true)
+		a.ceremony(w, *result.MFA, a.path("/auth/webauthn/finish"), form.Get("csrf_token"))
+		return
+	}
+	if result.Outcome != managementv1.Authenticated || result.Credentials == nil {
+		a.failure(w, http.StatusBadGateway)
+		return
+	}
+	a.setCredentials(w, *result.Credentials)
+	a.redirect(w, "/overview")
+}
+
+func (a *App) finishLogin(w http.ResponseWriter, r *http.Request) {
+	form, ok := a.mutationForm(w, r)
+	if !ok {
+		return
+	}
+	binding := cookieValue(r, mfaCookie)
+	credential, peer := form.Get("credential"), directPeer(r.RemoteAddr)
+	credentials, err := a.service.FinishLogin(r.Context(), managementv1.WebAuthLoginMFAFinishRequest{
+		TransactionID: form.Get("transaction"), BrowserBinding: &binding, CSRFToken: stringPointer(form.Get("csrf_token")),
+		CredentialResponse: &credential, ConnectionPeer: &peer,
+	})
+	if err != nil {
+		a.serviceFailure(w, err, true)
+		return
+	}
+	a.clearCookie(w, mfaCookie, a.path("/"))
+	a.setCredentials(w, credentials)
+	a.redirect(w, "/overview")
+}
+
+func (a *App) overview(w http.ResponseWriter, r *http.Request) {
+	principal, ok := a.principal(w, r)
+	if !ok {
+		return
+	}
+	a.page(w, http.StatusOK, "Backoffice", `<p>Signed in as <strong>`+template.HTMLEscapeString(principal.DisplayName)+`</strong>.</p><p><a href="`+a.path("/account")+`">Account</a></p>`+a.logoutForm(r))
+}
+
+func (a *App) account(w http.ResponseWriter, r *http.Request) {
+	principal, ok := a.principal(w, r)
+	if !ok {
+		return
+	}
+	auth := a.auth(r)
+	status, err := a.service.MFAStatus(r.Context(), auth)
+	if err != nil {
+		a.serviceFailure(w, err, false)
+		return
+	}
+	sessions, err := a.service.Sessions(r.Context(), auth)
+	if err != nil {
+		a.serviceFailure(w, err, false)
+		return
+	}
+	body := `<p>` + template.HTMLEscapeString(principal.Username) + ` · ` + template.HTMLEscapeString(string(principal.Role)) + `</p><p>MFA: ` + strconv.FormatBool(status.Enabled) + `</p>`
+	body += `<form method="post" action="` + a.path("/account/password") + `"><input type="hidden" name="csrf_token" value="` + template.HTMLEscapeString(cookieValue(r, csrfCookie)) + `"><input type="password" name="current_password" required><input type="password" name="new_password" minlength="12" maxlength="72" required><button>Change password</button></form>`
+	if status.Available {
+		action, label := "/account/2fa/enable/start", "Enable passkey"
+		if status.Enabled {
+			action, label = "/account/2fa/replace/start", "Replace passkey"
+		}
+		body += `<h2>Two-factor authentication</h2><form method="post" action="` + a.path(action) + `"><input type="hidden" name="csrf_token" value="` + template.HTMLEscapeString(cookieValue(r, csrfCookie)) + `"><input type="password" name="password" required><button>` + label + `</button></form>`
+		if status.Enabled {
+			body += `<form method="post" action="` + a.path("/account/2fa/disable") + `"><input type="hidden" name="csrf_token" value="` + template.HTMLEscapeString(cookieValue(r, csrfCookie)) + `"><input type="password" name="password" required><button>Disable passkey</button></form>`
+		}
+	}
+	body += `<h2>Sessions</h2><ul>`
+	for _, session := range sessions.Sessions {
+		body += `<li>` + template.HTMLEscapeString(session.WebAuthSessionID) + ` <form method="post" action="` + a.path("/account/sessions/") + url.PathEscape(session.WebAuthSessionID) + `/revoke"><input type="hidden" name="csrf_token" value="` + template.HTMLEscapeString(cookieValue(r, csrfCookie)) + `"><button>Revoke</button></form></li>`
+	}
+	a.page(w, http.StatusOK, "Account", body+`</ul>`)
+}
+
+func (a *App) refresh(w http.ResponseWriter, r *http.Request) {
+	_, ok := a.mutationForm(w, r)
+	if !ok {
+		return
+	}
+	credentials, err := a.service.Refresh(r.Context(), a.auth(r))
+	if err != nil {
+		if errors.Is(err, managementclient.ErrUnavailable) || errors.Is(err, managementclient.ErrUnauthorized) {
+			a.clearCredentials(w)
+		}
+		a.serviceFailure(w, err, false)
+		return
+	}
+	a.setCredentials(w, credentials)
+	a.redirect(w, "/overview")
+}
+
+func (a *App) logout(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.mutationForm(w, r); !ok {
+		return
+	}
+	if err := a.service.Logout(r.Context(), a.auth(r)); err != nil && !errors.Is(err, managementclient.ErrUnauthorized) {
+		a.serviceFailure(w, err, false)
+		return
+	}
+	a.clearCredentials(w)
+	a.redirect(w, "/login")
+}
+
+func (a *App) replacePassword(w http.ResponseWriter, r *http.Request) {
+	form, ok := a.mutationForm(w, r)
+	if !ok {
+		return
+	}
+	current, next := form.Get("current_password"), form.Get("new_password")
+	credentials, err := a.service.ReplacePassword(r.Context(), a.auth(r), managementv1.WebAuthPasswordReplaceRequest{CurrentPassword: &current, NewPassword: &next})
+	current, next = "", ""
+	if err != nil {
+		a.serviceFailure(w, err, false)
+		return
+	}
+	a.setCredentials(w, credentials)
+	a.redirect(w, "/account")
+}
+
+func (a *App) beginMFA(replace bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		form, ok := a.mutationForm(w, r)
+		if !ok {
+			return
+		}
+		binding, err := randomToken(32)
+		if err != nil {
+			a.failure(w, 500)
+			return
+		}
+		password := form.Get("password")
+		continuation, err := a.service.BeginMFA(r.Context(), a.auth(r), replace, &password, &binding)
+		password = ""
+		if err != nil {
+			a.serviceFailure(w, err, false)
+			return
+		}
+		a.setCookie(w, mfaCookie, binding, a.path("/"), continuation.ExpiresAt, true)
+		target := "/account/2fa/enable/finish"
+		if replace {
+			target = "/account/2fa/replace/finish"
+		}
+		a.ceremony(w, continuation, a.path(target), form.Get("csrf_token"))
+	}
+}
+
+func (a *App) finishMFA(replace bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		form, ok := a.mutationForm(w, r)
+		if !ok {
+			return
+		}
+		binding, credential := cookieValue(r, mfaCookie), form.Get("credential")
+		credentials, err := a.service.FinishMFA(r.Context(), a.auth(r), replace, managementv1.WebAuthMFAFinishRequest{TransactionID: form.Get("transaction"), BrowserBinding: &binding, CredentialResponse: &credential})
+		if err != nil {
+			a.serviceFailure(w, err, false)
+			return
+		}
+		a.clearCookie(w, mfaCookie, a.path("/"))
+		a.setCredentials(w, credentials)
+		a.redirect(w, "/account")
+	}
+}
+
+func (a *App) disableMFA(w http.ResponseWriter, r *http.Request) {
+	form, ok := a.mutationForm(w, r)
+	if !ok {
+		return
+	}
+	password := form.Get("password")
+	credentials, err := a.service.DisableMFA(r.Context(), a.auth(r), &password)
+	password = ""
+	if err != nil {
+		a.serviceFailure(w, err, false)
+		return
+	}
+	a.setCredentials(w, credentials)
+	a.redirect(w, "/account")
+}
+
+func (a *App) revokeSession(w http.ResponseWriter, r *http.Request) {
+	form, ok := a.mutationForm(w, r)
+	if !ok {
+		return
+	}
+	if err := a.service.RevokeSession(r.Context(), a.auth(r), r.PathValue("session_id"), form.Get("confirm_current") == "yes"); err != nil {
+		a.serviceFailure(w, err, false)
+		return
+	}
+	a.redirect(w, "/account")
+}
+
+func (a *App) principal(w http.ResponseWriter, r *http.Request) (managementv1.WebAuthPrincipal, bool) {
+	principal, err := a.service.Principal(r.Context(), a.auth(r))
+	if err != nil {
+		if errors.Is(err, managementclient.ErrUnauthorized) {
+			a.clearCredentials(w)
+			a.redirect(w, "/login")
+		} else {
+			a.serviceFailure(w, err, false)
+		}
+		return managementv1.WebAuthPrincipal{}, false
+	}
+	return principal, true
+}
+
+func (a *App) mutationForm(w http.ResponseWriter, r *http.Request) (url.Values, bool) {
+	if r.Header.Get("Origin") != a.origin {
+		a.failure(w, http.StatusForbidden)
+		return nil, false
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxFormBytes)
+	if err := r.ParseForm(); err != nil {
+		a.failure(w, http.StatusBadRequest)
+		return nil, false
+	}
+	provided, expected := r.Form.Get("csrf_token"), cookieValue(r, csrfCookie)
+	if provided == "" || expected == "" || subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) != 1 {
+		a.failure(w, http.StatusForbidden)
+		return nil, false
+	}
+	return r.Form, true
+}
+
+func (a *App) auth(r *http.Request) managementclient.Auth {
+	return managementclient.Auth{Access: cookieValue(r, accessCookie), Refresh: cookieValue(r, refreshCookie), CSRF: cookieValue(r, csrfCookie)}
+}
+
+func (a *App) ensureCSRF(w http.ResponseWriter, r *http.Request) (string, error) {
+	if value := cookieValue(r, csrfCookie); value != "" {
+		return value, nil
+	}
+	value, err := randomToken(32)
+	if err == nil {
+		a.setCookie(w, csrfCookie, value, a.path("/"), time.Time{}, false)
+	}
+	return value, err
+}
+
+func (a *App) setCredentials(w http.ResponseWriter, credentials managementv1.WebAuthCredentials) {
+	a.setCookie(w, accessCookie, credentials.AccessToken, a.path("/"), credentials.AccessExpiresAt, true)
+	a.setCookie(w, refreshCookie, credentials.RefreshToken, a.path("/auth/session/refresh"), credentials.RefreshExpiresAt, true)
+	a.setCookie(w, csrfCookie, credentials.CSRFToken, a.path("/"), credentials.RefreshExpiresAt, false)
+}
+
+func (a *App) clearCredentials(w http.ResponseWriter) {
+	a.clearCookie(w, accessCookie, a.path("/"))
+	a.clearCookie(w, refreshCookie, a.path("/auth/session/refresh"))
+	a.clearCookie(w, csrfCookie, a.path("/"))
+	a.clearCookie(w, mfaCookie, a.path("/"))
+}
+func (a *App) setCookie(w http.ResponseWriter, name, value, path string, expires time.Time, httpOnly bool) {
+	http.SetCookie(w, &http.Cookie{Name: name, Value: value, Path: path, Expires: expires, MaxAge: 0, HttpOnly: httpOnly, Secure: a.secure, SameSite: http.SameSiteStrictMode})
+}
+func (a *App) clearCookie(w http.ResponseWriter, name, path string) {
+	http.SetCookie(w, &http.Cookie{Name: name, Path: path, Expires: time.Unix(1, 0), MaxAge: -1, HttpOnly: name != csrfCookie, Secure: a.secure, SameSite: http.SameSiteStrictMode})
+}
+func (a *App) path(suffix string) string { return a.mount + suffix }
+func (a *App) redirect(w http.ResponseWriter, suffix string) {
+	w.Header().Set("Location", a.path(suffix))
+	w.WriteHeader(http.StatusSeeOther)
+}
+func (a *App) logoutForm(r *http.Request) string {
+	return `<form method="post" action="` + a.path("/logout") + `"><input type="hidden" name="csrf_token" value="` + template.HTMLEscapeString(cookieValue(r, csrfCookie)) + `"><button>Sign out</button></form>`
+}
+func (a *App) page(w http.ResponseWriter, status int, title, body string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
+	_, _ = io.WriteString(w, `<!doctype html><html><head><meta charset="utf-8"><title>`+template.HTMLEscapeString(title)+` · Balda</title></head><body><main><h1>`+template.HTMLEscapeString(title)+`</h1>`+body+`</main></body></html>`)
+}
+func (a *App) failure(w http.ResponseWriter, status int) {
+	a.page(w, status, "Request failed", `<p>The request could not be completed.</p>`)
+}
+func (a *App) authFailure(w http.ResponseWriter, status int) {
+	a.page(w, status, "Sign in", `<p>Sign-in failed. Check your credentials and try again.</p>`)
+}
+func (a *App) serviceFailure(w http.ResponseWriter, err error, login bool) {
+	if login && (errors.Is(err, managementclient.ErrUnauthorized) || errors.Is(err, managementclient.ErrInvalid)) {
+		a.authFailure(w, http.StatusUnauthorized)
+		return
+	}
+	switch {
+	case errors.Is(err, managementclient.ErrUnauthorized):
+		a.failure(w, http.StatusUnauthorized)
+	case errors.Is(err, managementclient.ErrForbidden):
+		a.failure(w, http.StatusForbidden)
+	case errors.Is(err, managementclient.ErrConflict):
+		a.failure(w, http.StatusConflict)
+	case errors.Is(err, managementclient.ErrUnavailable):
+		a.failure(w, http.StatusServiceUnavailable)
+	default:
+		a.failure(w, http.StatusInternalServerError)
+	}
+}
+
+func (a *App) ceremony(w http.ResponseWriter, continuation managementv1.WebAuthMFAContinuation, action, csrf string) {
+	options, err := json.Marshal(continuation.PublicKeyOptions)
+	if err != nil {
+		a.failure(w, 500)
+		return
+	}
+	registration := strings.Contains(action, "/account/2fa/")
+	body := `<form method="post" action="` + template.HTMLEscapeString(action) + `" data-webauthn data-registration="` + strconv.FormatBool(registration) + `" data-options="` + template.HTMLEscapeString(string(options)) + `"><input type="hidden" name="csrf_token" value="` + template.HTMLEscapeString(csrf) + `"><input type="hidden" name="transaction" value="` + template.HTMLEscapeString(continuation.TransactionID) + `"><input type="hidden" name="credential"><p data-webauthn-status>Continue with your passkey.</p><button data-webauthn-button disabled>Continue</button></form><script>` + webAuthnScript + `</script>`
+	a.page(w, 200, "Passkey verification", body)
+}
+
+const webAuthnScript = `(()=>{const d=v=>Uint8Array.from(atob(v.replace(/-/g,"+").replace(/_/g,"/")),c=>c.charCodeAt(0)),e=v=>v==null?null:btoa(String.fromCharCode(...new Uint8Array(v))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,""),f=document.querySelector("[data-webauthn]"),b=f.querySelector("button"),s=f.querySelector("[data-webauthn-status]");if(!window.PublicKeyCredential||!navigator.credentials||!window.isSecureContext){s.textContent="Passkeys require a secure supported browser.";return}b.disabled=false;f.addEventListener("submit",async n=>{n.preventDefault();b.disabled=true;try{const r=f.dataset.registration==="true",o=JSON.parse(f.dataset.options).publicKey;o.challenge=d(o.challenge);if(o.user)o.user.id=d(o.user.id);for(const k of ["allowCredentials","excludeCredentials"])if(o[k])o[k]=o[k].map(i=>({...i,id:d(i.id)}));const c=await navigator.credentials[r?"create":"get"]({publicKey:o}),p=c.response,x={id:c.id,rawId:e(c.rawId),type:c.type,clientExtensionResults:c.getClientExtensionResults(),response:{clientDataJSON:e(p.clientDataJSON)}};if(r){x.response.attestationObject=e(p.attestationObject);x.response.transports=p.getTransports?p.getTransports():[]}else{x.response.authenticatorData=e(p.authenticatorData);x.response.signature=e(p.signature);x.response.userHandle=e(p.userHandle)}f.elements.credential.value=JSON.stringify(x);HTMLFormElement.prototype.submit.call(f)}catch(_){s.textContent="Verification was cancelled or failed.";b.disabled=false}})})();`
+
+func noStore(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		next.ServeHTTP(w, r)
+	})
+}
+func cookieValue(r *http.Request, name string) string {
+	cookie, err := r.Cookie(name)
+	if err != nil {
+		return ""
+	}
+	return cookie.Value
+}
+func directPeer(remote string) string {
+	host, _, err := net.SplitHostPort(remote)
+	if err != nil {
+		return ""
+	}
+	return strings.Trim(host, "[]")
+}
+func stringPointer(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+func randomToken(size int) (string, error) {
+	value := make([]byte, size)
+	if _, err := rand.Read(value); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(value), nil
+}
