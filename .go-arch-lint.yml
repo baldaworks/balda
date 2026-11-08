@@ -336,6 +336,11 @@ components:
     in:
       - internal/apps/balda/userpassword
 
+  # Core-owned password, MFA, and WebAuth session policy without HTTP concerns.
+  browser_auth:
+    in:
+      - internal/apps/balda/browserauth
+
   # Separate Backoffice application behavior and composition-facing use cases.
   backoffice_application:
     in:
@@ -351,7 +356,7 @@ components:
     in:
       - internal/apps/backoffice/audit
 
-  # Browser-only Backoffice authentication, opaque token rotation, and HTTP guards.
+  # Browser-only Backoffice cookie, origin, form, and HTTP guards.
   backoffice_security:
     in:
       - internal/apps/backoffice/security
@@ -651,6 +656,8 @@ deps:
     mayDependOn:
       - management_api_wire
       - http_composition
+      - browser_auth
+      - user_contracts
     deepScan: false
     anyVendorDeps: false
 
@@ -1066,6 +1073,14 @@ deps:
       - user_security
     anyVendorDeps: true
 
+  browser_auth:
+    mayDependOn:
+      - user_contracts
+      - user_application
+      - user_security
+      - browser_auth
+    anyVendorDeps: true
+
   backoffice_application:
     mayDependOn:
       - chat_archive_contracts
@@ -1079,6 +1094,7 @@ deps:
       - user_contracts
       - user_application
       - user_security
+      - browser_auth
       - storage
       - infrastructure
       - providers
@@ -1094,10 +1110,9 @@ deps:
   backoffice_security:
     mayDependOn:
       - user_contracts
-      - user_application
-      - user_security
+      - browser_auth
       - backoffice_security
-    # The storage and HTTP services are injected through security-owned narrow ports.
+    # Core authentication is injected through adapter-owned narrow ports.
     deepScan: false
     anyVendorDeps: true
 
@@ -1583,6 +1598,7 @@ deps:
   composition_root:
     mayDependOn:
       - management_api_adapter
+      - browser_auth
       - plugin_policy
       - chat_archive_wiring
       - chat_archive_backoffice_wiring

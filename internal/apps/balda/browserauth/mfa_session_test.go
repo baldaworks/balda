@@ -1,4 +1,4 @@
-package security
+package browserauth
 
 import (
 	"crypto/ecdsa"
@@ -21,7 +21,7 @@ import (
 
 func TestEnrolledLoginRequiresAssertion(t *testing.T) {
 	_, s, u, private, key, _ := enrolledTestService(t)
-	ctx := withMFABrowser(t.Context(), "browser", "csrf")
+	ctx := WithMFABrowser(t.Context(), "browser", "csrf")
 	pending, err := s.Login(ctx, u.Username, []byte(validPassword))
 	require.NoError(t, err)
 	require.Empty(t, pending.AccessToken)
@@ -40,7 +40,7 @@ func TestEnrolledLoginRequiresAssertion(t *testing.T) {
 func TestMFARefreshPreservesFactorBindingAndReplayProtection(t *testing.T) {
 	p, s, u, private, key, now := enrolledTestService(t)
 	s.config.RefreshTTL = 30 * 24 * time.Hour
-	ctx := withMFABrowser(t.Context(), "browser", "csrf")
+	ctx := WithMFABrowser(t.Context(), "browser", "csrf")
 	pending, err := s.Login(ctx, u.Username, []byte(validPassword))
 	require.NoError(t, err)
 	credentials, err := s.FinishLogin(ctx, pending.Pending.Transaction, "browser", "csrf", assertionResponseForStart(t, *pending.Pending, key, private, 0x05, 1))
@@ -72,7 +72,7 @@ func TestMFARefreshPreservesFactorBindingAndReplayProtection(t *testing.T) {
 func TestEnrolledAdministratorCanManageSessionsAndPasswordAfterRefresh(t *testing.T) {
 	p, s, u, private, key, now := enrolledTestService(t)
 	other := createSecurityTestUser(t, p.Users(), "other-user", "other-user", usercmd.CredentialStateActive, usercmd.RoleOperator, false, now)
-	ctx := withMFABrowser(t.Context(), "browser", "csrf")
+	ctx := WithMFABrowser(t.Context(), "browser", "csrf")
 	pending, err := s.Login(ctx, u.Username, []byte(validPassword))
 	require.NoError(t, err)
 	credentials, err := s.FinishLogin(ctx, pending.Pending.Transaction, "browser", "csrf", assertionResponseForStart(t, *pending.Pending, key, private, 0x05, 1))
@@ -101,7 +101,7 @@ func TestMFAPasswordResetAndReplacementPreserveFactor(t *testing.T) {
 		usercmd.Credential{State: usercmd.CredentialStateTemporary, MustChange: true, Version: u.Credential.Version + 1}, secret, now,
 		s.audit(usercmd.AuditActionCredentialChanged, usercmd.AuditTargetUser, u.ID, "temporary reset", now))
 	require.NoError(t, err)
-	ctx := withMFABrowser(t.Context(), "browser", "csrf")
+	ctx := WithMFABrowser(t.Context(), "browser", "csrf")
 	pending, err := s.Login(ctx, u.Username, []byte(validPassword))
 	require.NoError(t, err)
 	require.Empty(t, pending.AccessToken)
@@ -121,7 +121,7 @@ func TestMFAPasswordResetAndReplacementPreserveFactor(t *testing.T) {
 
 func TestMFARoleTransitionsRetainOptInAndRejectStaleSessions(t *testing.T) {
 	p, s, u, private, key, now := enrolledTestService(t)
-	ctx := withMFABrowser(t.Context(), "browser", "csrf")
+	ctx := WithMFABrowser(t.Context(), "browser", "csrf")
 	login, err := s.Login(ctx, u.Username, []byte(validPassword))
 	require.NoError(t, err)
 	verified, err := s.FinishLogin(ctx, login.Pending.Transaction, "browser", "csrf", assertionResponseForStart(t, *login.Pending, key, private, 0x05, 1))

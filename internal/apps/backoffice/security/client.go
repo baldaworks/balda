@@ -6,31 +6,25 @@ import (
 	"net/http"
 	"net/netip"
 	"strings"
+
+	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
 )
-
-type sessionClientKey struct{}
-
-type sessionClient struct {
-	deviceLabel    string
-	connectionPeer string
-}
 
 // withSessionClient records only the direct connection peer. Forwarded headers
 // are intentionally ignored because no trusted proxy chain is configured.
 func withSessionClient(r *http.Request) context.Context {
-	client := sessionClient{deviceLabel: deviceLabel(r.UserAgent())}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err == nil {
-		if address, parseErr := netip.ParseAddr(host); parseErr == nil && address.Zone() == "" {
-			client.connectionPeer = address.Unmap().String()
-		}
-	}
-	return context.WithValue(r.Context(), sessionClientKey{}, client)
+	device := deviceLabel(r.UserAgent())
+	return browserauth.WithSessionClient(r.Context(), device, directConnectionPeer(r.RemoteAddr))
 }
 
-func sessionClientFromContext(ctx context.Context) (string, string) {
-	client, _ := ctx.Value(sessionClientKey{}).(sessionClient)
-	return client.deviceLabel, client.connectionPeer
+func directConnectionPeer(remoteAddr string) string {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err == nil {
+		if address, parseErr := netip.ParseAddr(host); parseErr == nil && address.Zone() == "" {
+			return address.Unmap().String()
+		}
+	}
+	return ""
 }
 
 func deviceLabel(userAgent string) string {

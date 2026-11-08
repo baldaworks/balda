@@ -10,6 +10,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/actors"
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
+	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
 	"github.com/baldaworks/balda/internal/apps/balda/catalogapp"
 	"github.com/baldaworks/balda/internal/apps/balda/commandoutboxfx"
 	natsbus "github.com/baldaworks/balda/internal/apps/balda/eventbus/nats"
@@ -172,6 +173,7 @@ type applicationLifecycleParams struct {
 	Config               BaldaConfig
 	HTTPConfig           ResolvedHTTPConfig
 	ManagementHTTPConfig managementhttp.ResolvedConfig
+	BrowserAuth          *browserauth.Service
 	HTTPRegistry         *httpfx.Registry
 	WebhookHTTP          webhookfx.HTTPContribution
 	GatewayCallbacks     []httpfx.GatewayCallbackProvider `group:"balda_http_gateway_callback_providers"`
@@ -265,7 +267,7 @@ func applicationLifecycleStages(p applicationLifecycleParams, telegram *telegram
 			managementServer = httpfx.NewNamedServer(
 				"management HTTP",
 				p.ManagementHTTPConfig.ListenAddr,
-				p.ManagementHTTPConfig.Handler(),
+				p.ManagementHTTPConfig.Handler(p.BrowserAuth),
 			)
 			if err := managementServer.Start(); err != nil {
 				managementServer = nil

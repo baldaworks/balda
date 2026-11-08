@@ -13,6 +13,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/backoffice/internal/webui"
 	"github.com/baldaworks/balda/internal/apps/backoffice/security"
 	"github.com/baldaworks/balda/internal/apps/balda/aliascmd"
+	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
 	"github.com/baldaworks/balda/internal/apps/balda/users"
 )
 
@@ -46,13 +47,13 @@ func (a *httpApp) aliasesPage(w http.ResponseWriter, r *http.Request) {
 	a.render(w, r, http.StatusOK, webui.TemplateAliases, page)
 }
 
-func (a *httpApp) aliasBasePage(r *http.Request, p security.Principal) webui.Page {
+func (a *httpApp) aliasBasePage(r *http.Request, p browserauth.Principal) webui.Page {
 	return webui.Page{Title: "Aliases · Balda", ViewerUsername: p.User.Username,
 		CSRFToken: a.browser.CSRFToken(r), Current: webui.LocationAliases,
 		Navigation: webui.Navigation(users.BackofficeCapabilities(p.User), webui.LocationAliases)}
 }
 
-func (a *httpApp) aliasesView(r *http.Request, p security.Principal) (webui.Page, error) {
+func (a *httpApp) aliasesView(r *http.Request, p browserauth.Principal) (webui.Page, error) {
 	page := a.aliasBasePage(r, p)
 	if a.aliases == nil {
 		return page, aliascmd.ErrUnavailable
@@ -84,7 +85,7 @@ func (a *httpApp) aliasesView(r *http.Request, p security.Principal) (webui.Page
 	return page, nil
 }
 
-func (a *httpApp) aliasAuthority(p security.Principal) aliascmd.Authority {
+func (a *httpApp) aliasAuthority(p browserauth.Principal) aliascmd.Authority {
 	return aliascmd.Authority{UserID: p.User.ID, UserVersion: p.User.Version,
 		CredentialVersion: p.User.Credential.Version, MFAVersion: p.MFAVersion,
 		WebAuthSessionID: p.WebAuthSessionID, WebAuthSessionVersion: p.WebAuthSessionVersion, At: time.Now().UTC()}

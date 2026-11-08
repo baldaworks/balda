@@ -14,6 +14,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/backoffice/security"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
+	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
@@ -650,10 +651,10 @@ func TestHTTPAppAccountRotationAndCurrentFamilyRevocation(t *testing.T) {
 	if next.access == "" || next.refresh == "" || next.csrf == "" {
 		t.Fatalf("rotation cookies = %+v", rotated.Result().Cookies())
 	}
-	if _, err := app.security.ValidateAccess(t.Context(), initial.access); !errors.Is(err, security.ErrUnauthenticated) {
+	if _, err := app.security.ValidateAccess(t.Context(), initial.access); !errors.Is(err, browserauth.ErrUnauthenticated) {
 		t.Fatalf("old access validation error = %v", err)
 	}
-	if _, err := app.security.Refresh(t.Context(), initial.refresh, initial.csrf); !errors.Is(err, security.ErrUnauthenticated) {
+	if _, err := app.security.Refresh(t.Context(), initial.refresh, initial.csrf); !errors.Is(err, browserauth.ErrUnauthenticated) {
 		t.Fatalf("old refresh validation error = %v", err)
 	}
 	nativeChange := performAccessMutation(t, handler, config, "/account/password", url.Values{
@@ -663,7 +664,7 @@ func TestHTTPAppAccountRotationAndCurrentFamilyRevocation(t *testing.T) {
 	if nativeChange.Code != http.StatusSeeOther || nativeChange.Header().Get("Location") != "/account" {
 		t.Fatalf("native password change = %d %v", nativeChange.Code, nativeChange.Header())
 	}
-	if _, err := app.security.ValidateAccess(t.Context(), next.access); !errors.Is(err, security.ErrUnauthenticated) {
+	if _, err := app.security.ValidateAccess(t.Context(), next.access); !errors.Is(err, browserauth.ErrUnauthenticated) {
 		t.Fatalf("previous access after native change = %v", err)
 	}
 	next = httpLoginCookies{
@@ -686,10 +687,10 @@ func TestHTTPAppAccountRotationAndCurrentFamilyRevocation(t *testing.T) {
 	if revoked.Code != http.StatusSeeOther || revoked.Header().Get("Location") != "/login" {
 		t.Fatalf("current family revocation = %d %v %q", revoked.Code, revoked.Header(), revoked.Body.String())
 	}
-	if _, err := app.security.ValidateAccess(t.Context(), next.access); !errors.Is(err, security.ErrUnauthenticated) {
+	if _, err := app.security.ValidateAccess(t.Context(), next.access); !errors.Is(err, browserauth.ErrUnauthenticated) {
 		t.Fatalf("revoked access validation error = %v", err)
 	}
-	if _, err := app.security.Refresh(t.Context(), next.refresh, next.csrf); !errors.Is(err, security.ErrUnauthenticated) {
+	if _, err := app.security.Refresh(t.Context(), next.refresh, next.csrf); !errors.Is(err, browserauth.ErrUnauthenticated) {
 		t.Fatalf("revoked refresh validation error = %v", err)
 	}
 	revokedPageRequest := httptest.NewRequest(http.MethodGet, "/overview", nil)
@@ -771,7 +772,7 @@ func TestHTTPAppAccountActiveSessionPagination(t *testing.T) {
 	if revoked.Code != http.StatusSeeOther || revoked.Header().Get("Location") != "/access/users/admin" {
 		t.Fatalf("access session revocation = %d %q", revoked.Code, revoked.Header().Get("Location"))
 	}
-	if _, err := app.security.ValidateAccess(t.Context(), otherAccess); !errors.Is(err, security.ErrUnauthenticated) {
+	if _, err := app.security.ValidateAccess(t.Context(), otherAccess); !errors.Is(err, browserauth.ErrUnauthenticated) {
 		t.Fatalf("revoked access validation = %v", err)
 	}
 	self, err := app.security.ValidateAccess(t.Context(), oldest.access)

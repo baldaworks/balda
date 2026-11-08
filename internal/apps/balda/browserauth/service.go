@@ -1,5 +1,5 @@
-// Package security owns Backoffice browser authentication and session policy.
-package security
+// Package browserauth owns transport-neutral browser authentication and WebAuth session policy.
+package browserauth
 
 import (
 	"context"

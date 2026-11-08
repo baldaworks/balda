@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 )
 
@@ -13,7 +14,7 @@ import (
 const MFACookieName = "balda_webauthn"
 
 type mfaBrowserService interface {
-	FinishLogin(ctx context.Context, transaction, browser, csrf string, response []byte) (Credentials, error)
+	FinishLogin(ctx context.Context, transaction, browser, csrf string, response []byte) (browserauth.Credentials, error)
 }
 
 func (b *Browser) newMFABrowser(w http.ResponseWriter) (string, error) {
@@ -33,7 +34,7 @@ func mfaCookie(r *http.Request) string {
 	return cookie.Value
 }
 
-func (b *Browser) respondCeremony(w http.ResponseWriter, r *http.Request, purpose usercmd.MFAPurpose, start CeremonyStart) {
+func (b *Browser) respondCeremony(w http.ResponseWriter, r *http.Request, purpose usercmd.MFAPurpose, start browserauth.CeremonyStart) {
 	w.Header().Set("Cache-Control", "no-store")
 	if b.ceremonyResponder != nil {
 		b.ceremonyResponder(w, r, purpose, start)
@@ -51,7 +52,7 @@ func (b *Browser) FinishLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	s, ok := b.service.(mfaBrowserService)
 	if !ok {
-		b.writeServiceError(w, r, ErrMFAUnavailable)
+		b.writeServiceError(w, r, browserauth.ErrMFAUnavailable)
 		return
 	}
 	credentials, err := s.FinishLogin(withSessionClient(r), form.Get("transaction"), mfaCookie(r), form.Get("csrf_token"), []byte(form.Get("credential")))

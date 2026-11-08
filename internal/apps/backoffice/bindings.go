@@ -10,7 +10,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/backoffice/access"
 	"github.com/baldaworks/balda/internal/apps/backoffice/internal/webui"
-	"github.com/baldaworks/balda/internal/apps/backoffice/security"
+	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/users"
 )
@@ -28,7 +28,7 @@ type BindingChannels interface {
 	Refresh(ctx context.Context, channel string) (usercmd.BindingChannel, error)
 }
 
-func (a *httpApp) bindingDetailPage(r *http.Request, principal security.Principal, userID string) (webui.Page, error) {
+func (a *httpApp) bindingDetailPage(r *http.Request, principal browserauth.Principal, userID string) (webui.Page, error) {
 	actor := access.Actor{User: principal.User, WebAuthSessionID: principal.WebAuthSessionID}
 	user, err := a.access.GetUser(r.Context(), actor, userID)
 	if err != nil {

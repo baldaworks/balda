@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -89,6 +90,36 @@ func (e WebAuthLoginResultOutcome) Valid() bool {
 	}
 }
 
+// Defines values for WebAuthMFADisableRequestConfirm.
+const (
+	WebAuthMFADisableRequestConfirmTrue WebAuthMFADisableRequestConfirm = true
+)
+
+// Valid indicates whether the value is a known member of the WebAuthMFADisableRequestConfirm enum.
+func (e WebAuthMFADisableRequestConfirm) Valid() bool {
+	switch e {
+	case WebAuthMFADisableRequestConfirmTrue:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WebAuthMFAReplaceBeginRequestConfirm.
+const (
+	WebAuthMFAReplaceBeginRequestConfirmTrue WebAuthMFAReplaceBeginRequestConfirm = true
+)
+
+// Valid indicates whether the value is a known member of the WebAuthMFAReplaceBeginRequestConfirm enum.
+func (e WebAuthMFAReplaceBeginRequestConfirm) Valid() bool {
+	switch e {
+	case WebAuthMFAReplaceBeginRequestConfirmTrue:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for WebAuthRole.
 const (
 	Administrator WebAuthRole = "administrator"
@@ -118,8 +149,9 @@ type AISessionSummary struct {
 
 // LocalLoginRequest defines model for LocalLoginRequest.
 type LocalLoginRequest struct {
-	Password *string `json:"password,omitempty"`
-	Username string  `json:"username"`
+	BrowserContext WebAuthBrowserContext `json:"browser_context"`
+	Password       *string               `json:"password,omitempty"`
+	Username       string                `json:"username"`
 }
 
 // ManagementCompatibility defines model for ManagementCompatibility.
@@ -161,6 +193,14 @@ type ManagementResourceSummary struct {
 // WebAuthAssurance defines model for WebAuthAssurance.
 type WebAuthAssurance string
 
+// WebAuthBrowserContext defines model for WebAuthBrowserContext.
+type WebAuthBrowserContext struct {
+	BrowserBinding *string `json:"browser_binding,omitempty"`
+	ConnectionPeer *string `json:"connection_peer,omitempty"`
+	CSRFToken      *string `json:"csrf_token,omitempty"`
+	DeviceLabel    *string `json:"device_label,omitempty"`
+}
+
 // WebAuthCredentials defines model for WebAuthCredentials.
 type WebAuthCredentials struct {
 	AccessExpiresAt time.Time `json:"access_expires_at"`
@@ -177,32 +217,114 @@ type WebAuthCredentials struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
+// WebAuthLoginMFAFinishRequest defines model for WebAuthLoginMFAFinishRequest.
+type WebAuthLoginMFAFinishRequest struct {
+	BrowserBinding *string `json:"browser_binding,omitempty"`
+	ConnectionPeer *string `json:"connection_peer,omitempty"`
+
+	// CredentialResponse Bounded serialized WebAuthn assertion response.
+	CredentialResponse *string `json:"credential_response,omitempty"`
+	CSRFToken          *string `json:"csrf_token,omitempty"`
+	DeviceLabel        *string `json:"device_label,omitempty"`
+	TransactionID      string  `json:"transaction_id"`
+}
+
 // WebAuthLoginResult defines model for WebAuthLoginResult.
 type WebAuthLoginResult struct {
-	Credentials *WebAuthCredentials `json:"credentials,omitempty"`
-
-	// MFATransactionID Opaque transaction identifier for the pending MFA continuation.
-	MFATransactionID *string                   `json:"mfa_transaction_id,omitempty"`
-	Outcome          WebAuthLoginResultOutcome `json:"outcome"`
+	Credentials *WebAuthCredentials       `json:"credentials,omitempty"`
+	MFA         *WebAuthMFAContinuation   `json:"mfa,omitempty"`
+	Outcome     WebAuthLoginResultOutcome `json:"outcome"`
 }
 
 // WebAuthLoginResultOutcome defines model for WebAuthLoginResult.Outcome.
 type WebAuthLoginResultOutcome string
 
+// WebAuthMFABeginRequest defines model for WebAuthMFABeginRequest.
+type WebAuthMFABeginRequest struct {
+	BrowserBinding *string `json:"browser_binding,omitempty"`
+	Password       *string `json:"password,omitempty"`
+}
+
+// WebAuthMFAContinuation defines model for WebAuthMFAContinuation.
+type WebAuthMFAContinuation struct {
+	ExpiresAt time.Time `json:"expires_at"`
+
+	// PublicKeyOptions Standards-shaped public WebAuthn options; never verifier material.
+	PublicKeyOptions map[string]interface{} `json:"public_key_options"`
+	TransactionID    string                 `json:"transaction_id"`
+}
+
+// WebAuthMFADisableRequest defines model for WebAuthMFADisableRequest.
+type WebAuthMFADisableRequest struct {
+	Confirm  WebAuthMFADisableRequestConfirm `json:"confirm"`
+	Password *string                         `json:"password,omitempty"`
+}
+
+// WebAuthMFADisableRequestConfirm defines model for WebAuthMFADisableRequest.Confirm.
+type WebAuthMFADisableRequestConfirm bool
+
+// WebAuthMFAFinishRequest defines model for WebAuthMFAFinishRequest.
+type WebAuthMFAFinishRequest struct {
+	BrowserBinding *string `json:"browser_binding,omitempty"`
+
+	// CredentialResponse Bounded serialized WebAuthn registration response.
+	CredentialResponse *string `json:"credential_response,omitempty"`
+	TransactionID      string  `json:"transaction_id"`
+}
+
+// WebAuthMFAReplaceBeginRequest defines model for WebAuthMFAReplaceBeginRequest.
+type WebAuthMFAReplaceBeginRequest struct {
+	BrowserBinding *string                              `json:"browser_binding,omitempty"`
+	Confirm        WebAuthMFAReplaceBeginRequestConfirm `json:"confirm"`
+	Password       *string                              `json:"password,omitempty"`
+}
+
+// WebAuthMFAReplaceBeginRequestConfirm defines model for WebAuthMFAReplaceBeginRequest.Confirm.
+type WebAuthMFAReplaceBeginRequestConfirm bool
+
+// WebAuthMFAStatus defines model for WebAuthMFAStatus.
+type WebAuthMFAStatus struct {
+	Available  bool       `json:"available"`
+	CreatedAt  *time.Time `json:"created_at,omitempty"`
+	Enabled    bool       `json:"enabled"`
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+}
+
+// WebAuthPasswordReplaceRequest defines model for WebAuthPasswordReplaceRequest.
+type WebAuthPasswordReplaceRequest struct {
+	CurrentPassword *string `json:"current_password,omitempty"`
+	NewPassword     *string `json:"new_password,omitempty"`
+}
+
 // WebAuthPrincipal defines model for WebAuthPrincipal.
 type WebAuthPrincipal struct {
+	AccessExpiresAt       time.Time        `json:"access_expires_at"`
 	Assurance             WebAuthAssurance `json:"assurance"`
 	CredentialVersion     uint64           `json:"credential_version"`
+	DisplayName           string           `json:"display_name"`
+	MFAEnabled            bool             `json:"mfa_enabled"`
 	MFAVersion            uint64           `json:"mfa_version"`
 	Role                  WebAuthRole      `json:"role"`
 	UserID                string           `json:"user_id"`
 	UserVersion           uint64           `json:"user_version"`
+	Username              string           `json:"username"`
 	WebAuthSessionID      string           `json:"web_auth_session_id"`
 	WebAuthSessionVersion uint64           `json:"web_auth_session_version"`
 }
 
 // WebAuthRole defines model for WebAuthRole.
 type WebAuthRole string
+
+// WebAuthSessionPage defines model for WebAuthSessionPage.
+type WebAuthSessionPage struct {
+	NextAfterID *string                 `json:"next_after_id,omitempty"`
+	Sessions    []WebAuthSessionSummary `json:"sessions"`
+}
+
+// WebAuthSessionRevokeRequest defines model for WebAuthSessionRevokeRequest.
+type WebAuthSessionRevokeRequest struct {
+	ConfirmCurrent bool `json:"confirm_current"`
+}
 
 // WebAuthSessionSummary defines model for WebAuthSessionSummary.
 type WebAuthSessionSummary struct {
@@ -229,14 +351,45 @@ type Forbidden = ManagementError
 // InternalError defines model for InternalError.
 type InternalError = ManagementError
 
-// RateLimited defines model for RateLimited.
-type RateLimited = ManagementError
+// NotFound defines model for NotFound.
+type NotFound = ManagementError
 
 // Unauthorized defines model for Unauthorized.
 type Unauthorized = ManagementError
 
+// ListWebAuthSessionsParams defines parameters for ListWebAuthSessions.
+type ListWebAuthSessionsParams struct {
+	UserID  *string `form:"user_id,omitempty" json:"user_id,omitempty"`
+	AfterID *string `form:"after_id,omitempty" json:"after_id,omitempty"`
+	Limit   *int32  `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
 // LoginWebAuthJSONRequestBody defines body for LoginWebAuth for application/json ContentType.
 type LoginWebAuthJSONRequestBody = LocalLoginRequest
+
+// FinishWebAuthLoginJSONRequestBody defines body for FinishWebAuthLogin for application/json ContentType.
+type FinishWebAuthLoginJSONRequestBody = WebAuthLoginMFAFinishRequest
+
+// DisableWebAuthMFAJSONRequestBody defines body for DisableWebAuthMFA for application/json ContentType.
+type DisableWebAuthMFAJSONRequestBody = WebAuthMFADisableRequest
+
+// BeginWebAuthMFAEnableJSONRequestBody defines body for BeginWebAuthMFAEnable for application/json ContentType.
+type BeginWebAuthMFAEnableJSONRequestBody = WebAuthMFABeginRequest
+
+// FinishWebAuthMFAEnableJSONRequestBody defines body for FinishWebAuthMFAEnable for application/json ContentType.
+type FinishWebAuthMFAEnableJSONRequestBody = WebAuthMFAFinishRequest
+
+// BeginWebAuthMFAReplaceJSONRequestBody defines body for BeginWebAuthMFAReplace for application/json ContentType.
+type BeginWebAuthMFAReplaceJSONRequestBody = WebAuthMFAReplaceBeginRequest
+
+// FinishWebAuthMFAReplaceJSONRequestBody defines body for FinishWebAuthMFAReplace for application/json ContentType.
+type FinishWebAuthMFAReplaceJSONRequestBody = WebAuthMFAFinishRequest
+
+// ReplaceWebAuthPasswordJSONRequestBody defines body for ReplaceWebAuthPassword for application/json ContentType.
+type ReplaceWebAuthPasswordJSONRequestBody = WebAuthPasswordReplaceRequest
+
+// RevokeWebAuthSessionJSONRequestBody defines body for RevokeWebAuthSession for application/json ContentType.
+type RevokeWebAuthSessionJSONRequestBody = WebAuthSessionRevokeRequest
 
 // RequestEditorFn is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -326,6 +479,20 @@ type ClientInterface interface {
 	// Corresponds with POST /api/management/v1/auth/login (the `LoginWebAuth` operationId).
 	LoginWebAuth(ctx context.Context, body LoginWebAuthJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// FinishWebAuthLoginWithBody Finish local WebAuth login with MFA
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/management/v1/auth/login/mfa (the `FinishWebAuthLogin` operationId).
+	FinishWebAuthLoginWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// FinishWebAuthLogin Finish local WebAuth login with MFA
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/management/v1/auth/login/mfa (the `FinishWebAuthLogin` operationId).
+	FinishWebAuthLogin(ctx context.Context, body FinishWebAuthLoginJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// LogoutWebAuth Revoke the current WebAuth session
 	//
 	// Corresponds with POST /api/management/v1/auth/logout (the `LogoutWebAuth` operationId).
@@ -336,10 +503,118 @@ type ClientInterface interface {
 	// Corresponds with GET /api/management/v1/auth/me (the `GetWebAuthPrincipal` operationId).
 	GetWebAuthPrincipal(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// DisableWebAuthMFAWithBody Disable the current user's MFA factor
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with DELETE /api/management/v1/auth/mfa (the `DisableWebAuthMFA` operationId).
+	DisableWebAuthMFAWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DisableWebAuthMFA Disable the current user's MFA factor
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with DELETE /api/management/v1/auth/mfa (the `DisableWebAuthMFA` operationId).
+	DisableWebAuthMFA(ctx context.Context, body DisableWebAuthMFAJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetWebAuthMFAStatus Read the current user's MFA status
+	//
+	// Corresponds with GET /api/management/v1/auth/mfa (the `GetWebAuthMFAStatus` operationId).
+	GetWebAuthMFAStatus(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// BeginWebAuthMFAEnableWithBody Begin MFA enrollment
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/management/v1/auth/mfa/enable (the `BeginWebAuthMFAEnable` operationId).
+	BeginWebAuthMFAEnableWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// BeginWebAuthMFAEnable Begin MFA enrollment
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/management/v1/auth/mfa/enable (the `BeginWebAuthMFAEnable` operationId).
+	BeginWebAuthMFAEnable(ctx context.Context, body BeginWebAuthMFAEnableJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// FinishWebAuthMFAEnableWithBody Finish MFA enrollment
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/management/v1/auth/mfa/enable/finish (the `FinishWebAuthMFAEnable` operationId).
+	FinishWebAuthMFAEnableWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// FinishWebAuthMFAEnable Finish MFA enrollment
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/management/v1/auth/mfa/enable/finish (the `FinishWebAuthMFAEnable` operationId).
+	FinishWebAuthMFAEnable(ctx context.Context, body FinishWebAuthMFAEnableJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// BeginWebAuthMFAReplaceWithBody Begin MFA factor replacement
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/management/v1/auth/mfa/replace (the `BeginWebAuthMFAReplace` operationId).
+	BeginWebAuthMFAReplaceWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// BeginWebAuthMFAReplace Begin MFA factor replacement
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/management/v1/auth/mfa/replace (the `BeginWebAuthMFAReplace` operationId).
+	BeginWebAuthMFAReplace(ctx context.Context, body BeginWebAuthMFAReplaceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// FinishWebAuthMFAReplaceWithBody Finish MFA factor replacement
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/management/v1/auth/mfa/replace/finish (the `FinishWebAuthMFAReplace` operationId).
+	FinishWebAuthMFAReplaceWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// FinishWebAuthMFAReplace Finish MFA factor replacement
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/management/v1/auth/mfa/replace/finish (the `FinishWebAuthMFAReplace` operationId).
+	FinishWebAuthMFAReplace(ctx context.Context, body FinishWebAuthMFAReplaceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ReplaceWebAuthPasswordWithBody Replace the current user's local password
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/management/v1/auth/password (the `ReplaceWebAuthPassword` operationId).
+	ReplaceWebAuthPasswordWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ReplaceWebAuthPassword Replace the current user's local password
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/management/v1/auth/password (the `ReplaceWebAuthPassword` operationId).
+	ReplaceWebAuthPassword(ctx context.Context, body ReplaceWebAuthPasswordJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// RefreshWebAuth Rotate WebAuth credentials
 	//
 	// Corresponds with POST /api/management/v1/auth/refresh (the `RefreshWebAuth` operationId).
 	RefreshWebAuth(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListWebAuthSessions List active WebAuth sessions
+	//
+	// Corresponds with GET /api/management/v1/auth/sessions (the `ListWebAuthSessions` operationId).
+	ListWebAuthSessions(ctx context.Context, params *ListWebAuthSessionsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RevokeWebAuthSessionWithBody Revoke one WebAuth session
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/management/v1/auth/sessions/{web_auth_session_id}/revoke (the `RevokeWebAuthSession` operationId).
+	RevokeWebAuthSessionWithBody(ctx context.Context, webAuthSessionID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RevokeWebAuthSession Revoke one WebAuth session
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/management/v1/auth/sessions/{web_auth_session_id}/revoke (the `RevokeWebAuthSession` operationId).
+	RevokeWebAuthSession(ctx context.Context, webAuthSessionID string, body RevokeWebAuthSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetManagementCompatibility Read management contract compatibility metadata
 	//
@@ -381,6 +656,40 @@ func (c *Client) LoginWebAuth(ctx context.Context, body LoginWebAuthJSONRequestB
 	return c.Client.Do(req)
 }
 
+// FinishWebAuthLoginWithBody Finish local WebAuth login with MFA
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/management/v1/auth/login/mfa (the `FinishWebAuthLogin` operationId).
+func (c *Client) FinishWebAuthLoginWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewFinishWebAuthLoginRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// FinishWebAuthLogin Finish local WebAuth login with MFA
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/management/v1/auth/login/mfa (the `FinishWebAuthLogin` operationId).
+func (c *Client) FinishWebAuthLogin(ctx context.Context, body FinishWebAuthLoginJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewFinishWebAuthLoginRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // LogoutWebAuth Revoke the current WebAuth session
 //
 // Corresponds with POST /api/management/v1/auth/logout (the `LogoutWebAuth` operationId).
@@ -411,11 +720,279 @@ func (c *Client) GetWebAuthPrincipal(ctx context.Context, reqEditors ...RequestE
 	return c.Client.Do(req)
 }
 
+// DisableWebAuthMFAWithBody Disable the current user's MFA factor
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with DELETE /api/management/v1/auth/mfa (the `DisableWebAuthMFA` operationId).
+func (c *Client) DisableWebAuthMFAWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDisableWebAuthMFARequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DisableWebAuthMFA Disable the current user's MFA factor
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with DELETE /api/management/v1/auth/mfa (the `DisableWebAuthMFA` operationId).
+func (c *Client) DisableWebAuthMFA(ctx context.Context, body DisableWebAuthMFAJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDisableWebAuthMFARequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetWebAuthMFAStatus Read the current user's MFA status
+//
+// Corresponds with GET /api/management/v1/auth/mfa (the `GetWebAuthMFAStatus` operationId).
+func (c *Client) GetWebAuthMFAStatus(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWebAuthMFAStatusRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// BeginWebAuthMFAEnableWithBody Begin MFA enrollment
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/management/v1/auth/mfa/enable (the `BeginWebAuthMFAEnable` operationId).
+func (c *Client) BeginWebAuthMFAEnableWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewBeginWebAuthMFAEnableRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// BeginWebAuthMFAEnable Begin MFA enrollment
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/management/v1/auth/mfa/enable (the `BeginWebAuthMFAEnable` operationId).
+func (c *Client) BeginWebAuthMFAEnable(ctx context.Context, body BeginWebAuthMFAEnableJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewBeginWebAuthMFAEnableRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// FinishWebAuthMFAEnableWithBody Finish MFA enrollment
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/management/v1/auth/mfa/enable/finish (the `FinishWebAuthMFAEnable` operationId).
+func (c *Client) FinishWebAuthMFAEnableWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewFinishWebAuthMFAEnableRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// FinishWebAuthMFAEnable Finish MFA enrollment
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/management/v1/auth/mfa/enable/finish (the `FinishWebAuthMFAEnable` operationId).
+func (c *Client) FinishWebAuthMFAEnable(ctx context.Context, body FinishWebAuthMFAEnableJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewFinishWebAuthMFAEnableRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// BeginWebAuthMFAReplaceWithBody Begin MFA factor replacement
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/management/v1/auth/mfa/replace (the `BeginWebAuthMFAReplace` operationId).
+func (c *Client) BeginWebAuthMFAReplaceWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewBeginWebAuthMFAReplaceRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// BeginWebAuthMFAReplace Begin MFA factor replacement
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/management/v1/auth/mfa/replace (the `BeginWebAuthMFAReplace` operationId).
+func (c *Client) BeginWebAuthMFAReplace(ctx context.Context, body BeginWebAuthMFAReplaceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewBeginWebAuthMFAReplaceRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// FinishWebAuthMFAReplaceWithBody Finish MFA factor replacement
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/management/v1/auth/mfa/replace/finish (the `FinishWebAuthMFAReplace` operationId).
+func (c *Client) FinishWebAuthMFAReplaceWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewFinishWebAuthMFAReplaceRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// FinishWebAuthMFAReplace Finish MFA factor replacement
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/management/v1/auth/mfa/replace/finish (the `FinishWebAuthMFAReplace` operationId).
+func (c *Client) FinishWebAuthMFAReplace(ctx context.Context, body FinishWebAuthMFAReplaceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewFinishWebAuthMFAReplaceRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ReplaceWebAuthPasswordWithBody Replace the current user's local password
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/management/v1/auth/password (the `ReplaceWebAuthPassword` operationId).
+func (c *Client) ReplaceWebAuthPasswordWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReplaceWebAuthPasswordRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ReplaceWebAuthPassword Replace the current user's local password
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/management/v1/auth/password (the `ReplaceWebAuthPassword` operationId).
+func (c *Client) ReplaceWebAuthPassword(ctx context.Context, body ReplaceWebAuthPasswordJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReplaceWebAuthPasswordRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // RefreshWebAuth Rotate WebAuth credentials
 //
 // Corresponds with POST /api/management/v1/auth/refresh (the `RefreshWebAuth` operationId).
 func (c *Client) RefreshWebAuth(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewRefreshWebAuthRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListWebAuthSessions List active WebAuth sessions
+//
+// Corresponds with GET /api/management/v1/auth/sessions (the `ListWebAuthSessions` operationId).
+func (c *Client) ListWebAuthSessions(ctx context.Context, params *ListWebAuthSessionsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListWebAuthSessionsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RevokeWebAuthSessionWithBody Revoke one WebAuth session
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/management/v1/auth/sessions/{web_auth_session_id}/revoke (the `RevokeWebAuthSession` operationId).
+func (c *Client) RevokeWebAuthSessionWithBody(ctx context.Context, webAuthSessionID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRevokeWebAuthSessionRequestWithBody(c.Server, webAuthSessionID, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RevokeWebAuthSession Revoke one WebAuth session
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/management/v1/auth/sessions/{web_auth_session_id}/revoke (the `RevokeWebAuthSession` operationId).
+func (c *Client) RevokeWebAuthSession(ctx context.Context, webAuthSessionID string, body RevokeWebAuthSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRevokeWebAuthSessionRequest(c.Server, webAuthSessionID, body)
 	if err != nil {
 		return nil, err
 	}
@@ -462,6 +1039,46 @@ func NewLoginWebAuthRequestWithBody(server string, contentType string, body io.R
 	}
 
 	operationPath := fmt.Sprintf("/api/management/v1/auth/login")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewFinishWebAuthLoginRequest calls the generic FinishWebAuthLogin builder with application/json body
+func NewFinishWebAuthLoginRequest(server string, body FinishWebAuthLoginJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewFinishWebAuthLoginRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewFinishWebAuthLoginRequestWithBody constructs an http.Request for the FinishWebAuthLogin method, with any body, and a specified content type
+func NewFinishWebAuthLoginRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/auth/login/mfa")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -535,6 +1152,273 @@ func NewGetWebAuthPrincipalRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewDisableWebAuthMFARequest calls the generic DisableWebAuthMFA builder with application/json body
+func NewDisableWebAuthMFARequest(server string, body DisableWebAuthMFAJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewDisableWebAuthMFARequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewDisableWebAuthMFARequestWithBody constructs an http.Request for the DisableWebAuthMFA method, with any body, and a specified content type
+func NewDisableWebAuthMFARequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/auth/mfa")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetWebAuthMFAStatusRequest constructs an http.Request for the GetWebAuthMFAStatus method
+func NewGetWebAuthMFAStatusRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/auth/mfa")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewBeginWebAuthMFAEnableRequest calls the generic BeginWebAuthMFAEnable builder with application/json body
+func NewBeginWebAuthMFAEnableRequest(server string, body BeginWebAuthMFAEnableJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewBeginWebAuthMFAEnableRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewBeginWebAuthMFAEnableRequestWithBody constructs an http.Request for the BeginWebAuthMFAEnable method, with any body, and a specified content type
+func NewBeginWebAuthMFAEnableRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/auth/mfa/enable")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewFinishWebAuthMFAEnableRequest calls the generic FinishWebAuthMFAEnable builder with application/json body
+func NewFinishWebAuthMFAEnableRequest(server string, body FinishWebAuthMFAEnableJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewFinishWebAuthMFAEnableRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewFinishWebAuthMFAEnableRequestWithBody constructs an http.Request for the FinishWebAuthMFAEnable method, with any body, and a specified content type
+func NewFinishWebAuthMFAEnableRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/auth/mfa/enable/finish")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewBeginWebAuthMFAReplaceRequest calls the generic BeginWebAuthMFAReplace builder with application/json body
+func NewBeginWebAuthMFAReplaceRequest(server string, body BeginWebAuthMFAReplaceJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewBeginWebAuthMFAReplaceRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewBeginWebAuthMFAReplaceRequestWithBody constructs an http.Request for the BeginWebAuthMFAReplace method, with any body, and a specified content type
+func NewBeginWebAuthMFAReplaceRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/auth/mfa/replace")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewFinishWebAuthMFAReplaceRequest calls the generic FinishWebAuthMFAReplace builder with application/json body
+func NewFinishWebAuthMFAReplaceRequest(server string, body FinishWebAuthMFAReplaceJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewFinishWebAuthMFAReplaceRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewFinishWebAuthMFAReplaceRequestWithBody constructs an http.Request for the FinishWebAuthMFAReplace method, with any body, and a specified content type
+func NewFinishWebAuthMFAReplaceRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/auth/mfa/replace/finish")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewReplaceWebAuthPasswordRequest calls the generic ReplaceWebAuthPassword builder with application/json body
+func NewReplaceWebAuthPasswordRequest(server string, body ReplaceWebAuthPasswordJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewReplaceWebAuthPasswordRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewReplaceWebAuthPasswordRequestWithBody constructs an http.Request for the ReplaceWebAuthPassword method, with any body, and a specified content type
+func NewReplaceWebAuthPasswordRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/auth/password")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewRefreshWebAuthRequest constructs an http.Request for the RefreshWebAuth method
 func NewRefreshWebAuthRequest(server string) (*http.Request, error) {
 	var err error
@@ -558,6 +1442,131 @@ func NewRefreshWebAuthRequest(server string) (*http.Request, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewListWebAuthSessionsRequest constructs an http.Request for the ListWebAuthSessions method
+func NewListWebAuthSessionsRequest(server string, params *ListWebAuthSessionsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/auth/sessions")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.UserID != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "user_id", *params.UserID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.AfterID != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "after_id", *params.AfterID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRevokeWebAuthSessionRequest calls the generic RevokeWebAuthSession builder with application/json body
+func NewRevokeWebAuthSessionRequest(server string, webAuthSessionID string, body RevokeWebAuthSessionJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRevokeWebAuthSessionRequestWithBody(server, webAuthSessionID, "application/json", bodyReader)
+}
+
+// NewRevokeWebAuthSessionRequestWithBody constructs an http.Request for the RevokeWebAuthSession method, with any body, and a specified content type
+func NewRevokeWebAuthSessionRequestWithBody(server string, webAuthSessionID string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "web_auth_session_id", webAuthSessionID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/auth/sessions/%s/revoke", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -647,6 +1656,20 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /api/management/v1/auth/login (the `LoginWebAuth` operationId).
 	LoginWebAuthWithResponse(ctx context.Context, body LoginWebAuthJSONRequestBody, reqEditors ...RequestEditorFn) (*LoginWebAuthResponse, error)
 
+	// FinishWebAuthLoginWithBodyWithResponse Finish local WebAuth login with MFA
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/auth/login/mfa (the `FinishWebAuthLogin` operationId).
+	FinishWebAuthLoginWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*FinishWebAuthLoginResponse, error)
+
+	// FinishWebAuthLoginWithResponse Finish local WebAuth login with MFA
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/auth/login/mfa (the `FinishWebAuthLogin` operationId).
+	FinishWebAuthLoginWithResponse(ctx context.Context, body FinishWebAuthLoginJSONRequestBody, reqEditors ...RequestEditorFn) (*FinishWebAuthLoginResponse, error)
+
 	// LogoutWebAuthWithResponse Revoke the current WebAuth session
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -661,6 +1684,97 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /api/management/v1/auth/me (the `GetWebAuthPrincipal` operationId).
 	GetWebAuthPrincipalWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetWebAuthPrincipalResponse, error)
 
+	// DisableWebAuthMFAWithBodyWithResponse Disable the current user's MFA factor
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /api/management/v1/auth/mfa (the `DisableWebAuthMFA` operationId).
+	DisableWebAuthMFAWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DisableWebAuthMFAResponse, error)
+
+	// DisableWebAuthMFAWithResponse Disable the current user's MFA factor
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /api/management/v1/auth/mfa (the `DisableWebAuthMFA` operationId).
+	DisableWebAuthMFAWithResponse(ctx context.Context, body DisableWebAuthMFAJSONRequestBody, reqEditors ...RequestEditorFn) (*DisableWebAuthMFAResponse, error)
+
+	// GetWebAuthMFAStatusWithResponse Read the current user's MFA status
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/management/v1/auth/mfa (the `GetWebAuthMFAStatus` operationId).
+	GetWebAuthMFAStatusWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetWebAuthMFAStatusResponse, error)
+
+	// BeginWebAuthMFAEnableWithBodyWithResponse Begin MFA enrollment
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/auth/mfa/enable (the `BeginWebAuthMFAEnable` operationId).
+	BeginWebAuthMFAEnableWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*BeginWebAuthMFAEnableResponse, error)
+
+	// BeginWebAuthMFAEnableWithResponse Begin MFA enrollment
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/auth/mfa/enable (the `BeginWebAuthMFAEnable` operationId).
+	BeginWebAuthMFAEnableWithResponse(ctx context.Context, body BeginWebAuthMFAEnableJSONRequestBody, reqEditors ...RequestEditorFn) (*BeginWebAuthMFAEnableResponse, error)
+
+	// FinishWebAuthMFAEnableWithBodyWithResponse Finish MFA enrollment
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/auth/mfa/enable/finish (the `FinishWebAuthMFAEnable` operationId).
+	FinishWebAuthMFAEnableWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*FinishWebAuthMFAEnableResponse, error)
+
+	// FinishWebAuthMFAEnableWithResponse Finish MFA enrollment
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/auth/mfa/enable/finish (the `FinishWebAuthMFAEnable` operationId).
+	FinishWebAuthMFAEnableWithResponse(ctx context.Context, body FinishWebAuthMFAEnableJSONRequestBody, reqEditors ...RequestEditorFn) (*FinishWebAuthMFAEnableResponse, error)
+
+	// BeginWebAuthMFAReplaceWithBodyWithResponse Begin MFA factor replacement
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/auth/mfa/replace (the `BeginWebAuthMFAReplace` operationId).
+	BeginWebAuthMFAReplaceWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*BeginWebAuthMFAReplaceResponse, error)
+
+	// BeginWebAuthMFAReplaceWithResponse Begin MFA factor replacement
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/auth/mfa/replace (the `BeginWebAuthMFAReplace` operationId).
+	BeginWebAuthMFAReplaceWithResponse(ctx context.Context, body BeginWebAuthMFAReplaceJSONRequestBody, reqEditors ...RequestEditorFn) (*BeginWebAuthMFAReplaceResponse, error)
+
+	// FinishWebAuthMFAReplaceWithBodyWithResponse Finish MFA factor replacement
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/auth/mfa/replace/finish (the `FinishWebAuthMFAReplace` operationId).
+	FinishWebAuthMFAReplaceWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*FinishWebAuthMFAReplaceResponse, error)
+
+	// FinishWebAuthMFAReplaceWithResponse Finish MFA factor replacement
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/auth/mfa/replace/finish (the `FinishWebAuthMFAReplace` operationId).
+	FinishWebAuthMFAReplaceWithResponse(ctx context.Context, body FinishWebAuthMFAReplaceJSONRequestBody, reqEditors ...RequestEditorFn) (*FinishWebAuthMFAReplaceResponse, error)
+
+	// ReplaceWebAuthPasswordWithBodyWithResponse Replace the current user's local password
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/auth/password (the `ReplaceWebAuthPassword` operationId).
+	ReplaceWebAuthPasswordWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReplaceWebAuthPasswordResponse, error)
+
+	// ReplaceWebAuthPasswordWithResponse Replace the current user's local password
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/auth/password (the `ReplaceWebAuthPassword` operationId).
+	ReplaceWebAuthPasswordWithResponse(ctx context.Context, body ReplaceWebAuthPasswordJSONRequestBody, reqEditors ...RequestEditorFn) (*ReplaceWebAuthPasswordResponse, error)
+
 	// RefreshWebAuthWithResponse Rotate WebAuth credentials
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -668,17 +1782,33 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /api/management/v1/auth/refresh (the `RefreshWebAuth` operationId).
 	RefreshWebAuthWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*RefreshWebAuthResponse, error)
 
+	// ListWebAuthSessionsWithResponse List active WebAuth sessions
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/management/v1/auth/sessions (the `ListWebAuthSessions` operationId).
+	ListWebAuthSessionsWithResponse(ctx context.Context, params *ListWebAuthSessionsParams, reqEditors ...RequestEditorFn) (*ListWebAuthSessionsResponse, error)
+
+	// RevokeWebAuthSessionWithBodyWithResponse Revoke one WebAuth session
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/auth/sessions/{web_auth_session_id}/revoke (the `RevokeWebAuthSession` operationId).
+	RevokeWebAuthSessionWithBodyWithResponse(ctx context.Context, webAuthSessionID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RevokeWebAuthSessionResponse, error)
+
+	// RevokeWebAuthSessionWithResponse Revoke one WebAuth session
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/auth/sessions/{web_auth_session_id}/revoke (the `RevokeWebAuthSession` operationId).
+	RevokeWebAuthSessionWithResponse(ctx context.Context, webAuthSessionID string, body RevokeWebAuthSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*RevokeWebAuthSessionResponse, error)
+
 	// GetManagementCompatibilityWithResponse Read management contract compatibility metadata
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with GET /api/management/v1/compatibility (the `GetManagementCompatibility` operationId).
 	GetManagementCompatibilityWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetManagementCompatibilityResponse, error)
-}
-
-// LoginWebAuthResponse429Headers the declared response headers of an HTTP 429 response for LoginWebAuth
-type LoginWebAuthResponse429Headers struct {
-	RetryAfter *int32
 }
 
 type LoginWebAuthResponse struct {
@@ -690,12 +1820,8 @@ type LoginWebAuthResponse struct {
 	JSON400 *BadRequest
 	// JSON401 the response for an HTTP 401 `application/json` response
 	JSON401 *Unauthorized
-	// JSON429 the response for an HTTP 429 `application/json` response
-	JSON429 *RateLimited
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
-	// Headers429 the parsed response headers for an HTTP 429 response
-	Headers429 *LoginWebAuthResponse429Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -711,11 +1837,6 @@ func (r LoginWebAuthResponse) GetJSON400() *BadRequest {
 // GetJSON401 returns the response for an HTTP 401 `application/json` response
 func (r LoginWebAuthResponse) GetJSON401() *Unauthorized {
 	return r.JSON401
-}
-
-// GetJSON429 returns the response for an HTTP 429 `application/json` response
-func (r LoginWebAuthResponse) GetJSON429() *RateLimited {
-	return r.JSON429
 }
 
 // GetJSON500 returns the response for an HTTP 500 `application/json` response
@@ -746,6 +1867,68 @@ func (r LoginWebAuthResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r LoginWebAuthResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type FinishWebAuthLoginResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WebAuthCredentials
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r FinishWebAuthLoginResponse) GetJSON200() *WebAuthCredentials {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r FinishWebAuthLoginResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r FinishWebAuthLoginResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r FinishWebAuthLoginResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r FinishWebAuthLoginResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r FinishWebAuthLoginResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r FinishWebAuthLoginResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r FinishWebAuthLoginResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -876,6 +2059,510 @@ func (r GetWebAuthPrincipalResponse) ContentType() string {
 	return ""
 }
 
+type DisableWebAuthMFAResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WebAuthCredentials
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r DisableWebAuthMFAResponse) GetJSON200() *WebAuthCredentials {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r DisableWebAuthMFAResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r DisableWebAuthMFAResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r DisableWebAuthMFAResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r DisableWebAuthMFAResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r DisableWebAuthMFAResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r DisableWebAuthMFAResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DisableWebAuthMFAResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DisableWebAuthMFAResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DisableWebAuthMFAResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetWebAuthMFAStatusResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WebAuthMFAStatus
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetWebAuthMFAStatusResponse) GetJSON200() *WebAuthMFAStatus {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetWebAuthMFAStatusResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetWebAuthMFAStatusResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r GetWebAuthMFAStatusResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r GetWebAuthMFAStatusResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWebAuthMFAStatusResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWebAuthMFAStatusResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetWebAuthMFAStatusResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type BeginWebAuthMFAEnableResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WebAuthMFAContinuation
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r BeginWebAuthMFAEnableResponse) GetJSON200() *WebAuthMFAContinuation {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r BeginWebAuthMFAEnableResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r BeginWebAuthMFAEnableResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r BeginWebAuthMFAEnableResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r BeginWebAuthMFAEnableResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r BeginWebAuthMFAEnableResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r BeginWebAuthMFAEnableResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r BeginWebAuthMFAEnableResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r BeginWebAuthMFAEnableResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type FinishWebAuthMFAEnableResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WebAuthCredentials
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r FinishWebAuthMFAEnableResponse) GetJSON200() *WebAuthCredentials {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r FinishWebAuthMFAEnableResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r FinishWebAuthMFAEnableResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r FinishWebAuthMFAEnableResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r FinishWebAuthMFAEnableResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r FinishWebAuthMFAEnableResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r FinishWebAuthMFAEnableResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r FinishWebAuthMFAEnableResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r FinishWebAuthMFAEnableResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r FinishWebAuthMFAEnableResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type BeginWebAuthMFAReplaceResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WebAuthMFAContinuation
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r BeginWebAuthMFAReplaceResponse) GetJSON200() *WebAuthMFAContinuation {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r BeginWebAuthMFAReplaceResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r BeginWebAuthMFAReplaceResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r BeginWebAuthMFAReplaceResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r BeginWebAuthMFAReplaceResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r BeginWebAuthMFAReplaceResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r BeginWebAuthMFAReplaceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r BeginWebAuthMFAReplaceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r BeginWebAuthMFAReplaceResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type FinishWebAuthMFAReplaceResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WebAuthCredentials
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r FinishWebAuthMFAReplaceResponse) GetJSON200() *WebAuthCredentials {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r FinishWebAuthMFAReplaceResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r FinishWebAuthMFAReplaceResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r FinishWebAuthMFAReplaceResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r FinishWebAuthMFAReplaceResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r FinishWebAuthMFAReplaceResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r FinishWebAuthMFAReplaceResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r FinishWebAuthMFAReplaceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r FinishWebAuthMFAReplaceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r FinishWebAuthMFAReplaceResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ReplaceWebAuthPasswordResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WebAuthCredentials
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ReplaceWebAuthPasswordResponse) GetJSON200() *WebAuthCredentials {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ReplaceWebAuthPasswordResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ReplaceWebAuthPasswordResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ReplaceWebAuthPasswordResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r ReplaceWebAuthPasswordResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r ReplaceWebAuthPasswordResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r ReplaceWebAuthPasswordResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ReplaceWebAuthPasswordResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ReplaceWebAuthPasswordResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ReplaceWebAuthPasswordResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type RefreshWebAuthResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -939,6 +2626,151 @@ func (r RefreshWebAuthResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r RefreshWebAuthResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListWebAuthSessionsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WebAuthSessionPage
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListWebAuthSessionsResponse) GetJSON200() *WebAuthSessionPage {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ListWebAuthSessionsResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListWebAuthSessionsResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListWebAuthSessionsResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r ListWebAuthSessionsResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r ListWebAuthSessionsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListWebAuthSessionsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListWebAuthSessionsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListWebAuthSessionsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RevokeWebAuthSessionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r RevokeWebAuthSessionResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r RevokeWebAuthSessionResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r RevokeWebAuthSessionResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r RevokeWebAuthSessionResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r RevokeWebAuthSessionResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r RevokeWebAuthSessionResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r RevokeWebAuthSessionResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RevokeWebAuthSessionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RevokeWebAuthSessionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RevokeWebAuthSessionResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -1026,6 +2858,32 @@ func (c *ClientWithResponses) LoginWebAuthWithResponse(ctx context.Context, body
 	return ParseLoginWebAuthResponse(rsp)
 }
 
+// FinishWebAuthLoginWithBodyWithResponse Finish local WebAuth login with MFA
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/auth/login/mfa (the `FinishWebAuthLogin` operationId).
+func (c *ClientWithResponses) FinishWebAuthLoginWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*FinishWebAuthLoginResponse, error) {
+	rsp, err := c.FinishWebAuthLoginWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFinishWebAuthLoginResponse(rsp)
+}
+
+// FinishWebAuthLoginWithResponse Finish local WebAuth login with MFA
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/auth/login/mfa (the `FinishWebAuthLogin` operationId).
+func (c *ClientWithResponses) FinishWebAuthLoginWithResponse(ctx context.Context, body FinishWebAuthLoginJSONRequestBody, reqEditors ...RequestEditorFn) (*FinishWebAuthLoginResponse, error) {
+	rsp, err := c.FinishWebAuthLogin(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFinishWebAuthLoginResponse(rsp)
+}
+
 // LogoutWebAuthWithResponse Revoke the current WebAuth session
 //
 // Returns a wrapper object for the known response body format(s).
@@ -1052,6 +2910,175 @@ func (c *ClientWithResponses) GetWebAuthPrincipalWithResponse(ctx context.Contex
 	return ParseGetWebAuthPrincipalResponse(rsp)
 }
 
+// DisableWebAuthMFAWithBodyWithResponse Disable the current user's MFA factor
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /api/management/v1/auth/mfa (the `DisableWebAuthMFA` operationId).
+func (c *ClientWithResponses) DisableWebAuthMFAWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DisableWebAuthMFAResponse, error) {
+	rsp, err := c.DisableWebAuthMFAWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDisableWebAuthMFAResponse(rsp)
+}
+
+// DisableWebAuthMFAWithResponse Disable the current user's MFA factor
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /api/management/v1/auth/mfa (the `DisableWebAuthMFA` operationId).
+func (c *ClientWithResponses) DisableWebAuthMFAWithResponse(ctx context.Context, body DisableWebAuthMFAJSONRequestBody, reqEditors ...RequestEditorFn) (*DisableWebAuthMFAResponse, error) {
+	rsp, err := c.DisableWebAuthMFA(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDisableWebAuthMFAResponse(rsp)
+}
+
+// GetWebAuthMFAStatusWithResponse Read the current user's MFA status
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/management/v1/auth/mfa (the `GetWebAuthMFAStatus` operationId).
+func (c *ClientWithResponses) GetWebAuthMFAStatusWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetWebAuthMFAStatusResponse, error) {
+	rsp, err := c.GetWebAuthMFAStatus(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWebAuthMFAStatusResponse(rsp)
+}
+
+// BeginWebAuthMFAEnableWithBodyWithResponse Begin MFA enrollment
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/auth/mfa/enable (the `BeginWebAuthMFAEnable` operationId).
+func (c *ClientWithResponses) BeginWebAuthMFAEnableWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*BeginWebAuthMFAEnableResponse, error) {
+	rsp, err := c.BeginWebAuthMFAEnableWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseBeginWebAuthMFAEnableResponse(rsp)
+}
+
+// BeginWebAuthMFAEnableWithResponse Begin MFA enrollment
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/auth/mfa/enable (the `BeginWebAuthMFAEnable` operationId).
+func (c *ClientWithResponses) BeginWebAuthMFAEnableWithResponse(ctx context.Context, body BeginWebAuthMFAEnableJSONRequestBody, reqEditors ...RequestEditorFn) (*BeginWebAuthMFAEnableResponse, error) {
+	rsp, err := c.BeginWebAuthMFAEnable(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseBeginWebAuthMFAEnableResponse(rsp)
+}
+
+// FinishWebAuthMFAEnableWithBodyWithResponse Finish MFA enrollment
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/auth/mfa/enable/finish (the `FinishWebAuthMFAEnable` operationId).
+func (c *ClientWithResponses) FinishWebAuthMFAEnableWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*FinishWebAuthMFAEnableResponse, error) {
+	rsp, err := c.FinishWebAuthMFAEnableWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFinishWebAuthMFAEnableResponse(rsp)
+}
+
+// FinishWebAuthMFAEnableWithResponse Finish MFA enrollment
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/auth/mfa/enable/finish (the `FinishWebAuthMFAEnable` operationId).
+func (c *ClientWithResponses) FinishWebAuthMFAEnableWithResponse(ctx context.Context, body FinishWebAuthMFAEnableJSONRequestBody, reqEditors ...RequestEditorFn) (*FinishWebAuthMFAEnableResponse, error) {
+	rsp, err := c.FinishWebAuthMFAEnable(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFinishWebAuthMFAEnableResponse(rsp)
+}
+
+// BeginWebAuthMFAReplaceWithBodyWithResponse Begin MFA factor replacement
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/auth/mfa/replace (the `BeginWebAuthMFAReplace` operationId).
+func (c *ClientWithResponses) BeginWebAuthMFAReplaceWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*BeginWebAuthMFAReplaceResponse, error) {
+	rsp, err := c.BeginWebAuthMFAReplaceWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseBeginWebAuthMFAReplaceResponse(rsp)
+}
+
+// BeginWebAuthMFAReplaceWithResponse Begin MFA factor replacement
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/auth/mfa/replace (the `BeginWebAuthMFAReplace` operationId).
+func (c *ClientWithResponses) BeginWebAuthMFAReplaceWithResponse(ctx context.Context, body BeginWebAuthMFAReplaceJSONRequestBody, reqEditors ...RequestEditorFn) (*BeginWebAuthMFAReplaceResponse, error) {
+	rsp, err := c.BeginWebAuthMFAReplace(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseBeginWebAuthMFAReplaceResponse(rsp)
+}
+
+// FinishWebAuthMFAReplaceWithBodyWithResponse Finish MFA factor replacement
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/auth/mfa/replace/finish (the `FinishWebAuthMFAReplace` operationId).
+func (c *ClientWithResponses) FinishWebAuthMFAReplaceWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*FinishWebAuthMFAReplaceResponse, error) {
+	rsp, err := c.FinishWebAuthMFAReplaceWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFinishWebAuthMFAReplaceResponse(rsp)
+}
+
+// FinishWebAuthMFAReplaceWithResponse Finish MFA factor replacement
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/auth/mfa/replace/finish (the `FinishWebAuthMFAReplace` operationId).
+func (c *ClientWithResponses) FinishWebAuthMFAReplaceWithResponse(ctx context.Context, body FinishWebAuthMFAReplaceJSONRequestBody, reqEditors ...RequestEditorFn) (*FinishWebAuthMFAReplaceResponse, error) {
+	rsp, err := c.FinishWebAuthMFAReplace(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFinishWebAuthMFAReplaceResponse(rsp)
+}
+
+// ReplaceWebAuthPasswordWithBodyWithResponse Replace the current user's local password
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/auth/password (the `ReplaceWebAuthPassword` operationId).
+func (c *ClientWithResponses) ReplaceWebAuthPasswordWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReplaceWebAuthPasswordResponse, error) {
+	rsp, err := c.ReplaceWebAuthPasswordWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseReplaceWebAuthPasswordResponse(rsp)
+}
+
+// ReplaceWebAuthPasswordWithResponse Replace the current user's local password
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/auth/password (the `ReplaceWebAuthPassword` operationId).
+func (c *ClientWithResponses) ReplaceWebAuthPasswordWithResponse(ctx context.Context, body ReplaceWebAuthPasswordJSONRequestBody, reqEditors ...RequestEditorFn) (*ReplaceWebAuthPasswordResponse, error) {
+	rsp, err := c.ReplaceWebAuthPassword(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseReplaceWebAuthPasswordResponse(rsp)
+}
+
 // RefreshWebAuthWithResponse Rotate WebAuth credentials
 //
 // Returns a wrapper object for the known response body format(s).
@@ -1063,6 +3090,45 @@ func (c *ClientWithResponses) RefreshWebAuthWithResponse(ctx context.Context, re
 		return nil, err
 	}
 	return ParseRefreshWebAuthResponse(rsp)
+}
+
+// ListWebAuthSessionsWithResponse List active WebAuth sessions
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/management/v1/auth/sessions (the `ListWebAuthSessions` operationId).
+func (c *ClientWithResponses) ListWebAuthSessionsWithResponse(ctx context.Context, params *ListWebAuthSessionsParams, reqEditors ...RequestEditorFn) (*ListWebAuthSessionsResponse, error) {
+	rsp, err := c.ListWebAuthSessions(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListWebAuthSessionsResponse(rsp)
+}
+
+// RevokeWebAuthSessionWithBodyWithResponse Revoke one WebAuth session
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/auth/sessions/{web_auth_session_id}/revoke (the `RevokeWebAuthSession` operationId).
+func (c *ClientWithResponses) RevokeWebAuthSessionWithBodyWithResponse(ctx context.Context, webAuthSessionID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RevokeWebAuthSessionResponse, error) {
+	rsp, err := c.RevokeWebAuthSessionWithBody(ctx, webAuthSessionID, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRevokeWebAuthSessionResponse(rsp)
+}
+
+// RevokeWebAuthSessionWithResponse Revoke one WebAuth session
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/auth/sessions/{web_auth_session_id}/revoke (the `RevokeWebAuthSession` operationId).
+func (c *ClientWithResponses) RevokeWebAuthSessionWithResponse(ctx context.Context, webAuthSessionID string, body RevokeWebAuthSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*RevokeWebAuthSessionResponse, error) {
+	rsp, err := c.RevokeWebAuthSession(ctx, webAuthSessionID, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRevokeWebAuthSessionResponse(rsp)
 }
 
 // GetManagementCompatibilityWithResponse Read management contract compatibility metadata
@@ -1113,13 +3179,6 @@ func ParseLoginWebAuthResponse(rsp *http.Response) (*LoginWebAuthResponse, error
 		}
 		response.JSON401 = &dest
 
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
-		var dest RateLimited
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON429 = &dest
-
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
 		var dest InternalError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -1129,17 +3188,51 @@ func ParseLoginWebAuthResponse(rsp *http.Response) (*LoginWebAuthResponse, error
 
 	}
 
+	return response, nil
+}
+
+// ParseFinishWebAuthLoginResponse parses an HTTP response from a FinishWebAuthLoginWithResponse call
+func ParseFinishWebAuthLoginResponse(rsp *http.Response) (*FinishWebAuthLoginResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &FinishWebAuthLoginResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
 	switch {
-	case rsp.StatusCode == 429:
-		var headers LoginWebAuthResponse429Headers
-		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
-			var value int32
-			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: "int32"}); err != nil {
-				return nil, err
-			}
-			headers.RetryAfter = &value
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WebAuthCredentials
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
 		}
-		response.Headers429 = &headers
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
 	}
 
 	return response, nil
@@ -1242,6 +3335,405 @@ func ParseGetWebAuthPrincipalResponse(rsp *http.Response) (*GetWebAuthPrincipalR
 	return response, nil
 }
 
+// ParseDisableWebAuthMFAResponse parses an HTTP response from a DisableWebAuthMFAWithResponse call
+func ParseDisableWebAuthMFAResponse(rsp *http.Response) (*DisableWebAuthMFAResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DisableWebAuthMFAResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WebAuthCredentials
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetWebAuthMFAStatusResponse parses an HTTP response from a GetWebAuthMFAStatusWithResponse call
+func ParseGetWebAuthMFAStatusResponse(rsp *http.Response) (*GetWebAuthMFAStatusResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWebAuthMFAStatusResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WebAuthMFAStatus
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseBeginWebAuthMFAEnableResponse parses an HTTP response from a BeginWebAuthMFAEnableWithResponse call
+func ParseBeginWebAuthMFAEnableResponse(rsp *http.Response) (*BeginWebAuthMFAEnableResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &BeginWebAuthMFAEnableResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WebAuthMFAContinuation
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseFinishWebAuthMFAEnableResponse parses an HTTP response from a FinishWebAuthMFAEnableWithResponse call
+func ParseFinishWebAuthMFAEnableResponse(rsp *http.Response) (*FinishWebAuthMFAEnableResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &FinishWebAuthMFAEnableResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WebAuthCredentials
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseBeginWebAuthMFAReplaceResponse parses an HTTP response from a BeginWebAuthMFAReplaceWithResponse call
+func ParseBeginWebAuthMFAReplaceResponse(rsp *http.Response) (*BeginWebAuthMFAReplaceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &BeginWebAuthMFAReplaceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WebAuthMFAContinuation
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseFinishWebAuthMFAReplaceResponse parses an HTTP response from a FinishWebAuthMFAReplaceWithResponse call
+func ParseFinishWebAuthMFAReplaceResponse(rsp *http.Response) (*FinishWebAuthMFAReplaceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &FinishWebAuthMFAReplaceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WebAuthCredentials
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseReplaceWebAuthPasswordResponse parses an HTTP response from a ReplaceWebAuthPasswordWithResponse call
+func ParseReplaceWebAuthPasswordResponse(rsp *http.Response) (*ReplaceWebAuthPasswordResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ReplaceWebAuthPasswordResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WebAuthCredentials
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseRefreshWebAuthResponse parses an HTTP response from a RefreshWebAuthWithResponse call
 func ParseRefreshWebAuthResponse(rsp *http.Response) (*RefreshWebAuthResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -1276,6 +3768,124 @@ func ParseRefreshWebAuthResponse(rsp *http.Response) (*RefreshWebAuthResponse, e
 			return nil, err
 		}
 		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListWebAuthSessionsResponse parses an HTTP response from a ListWebAuthSessionsWithResponse call
+func ParseListWebAuthSessionsResponse(rsp *http.Response) (*ListWebAuthSessionsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListWebAuthSessionsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WebAuthSessionPage
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRevokeWebAuthSessionResponse parses an HTTP response from a RevokeWebAuthSessionWithResponse call
+func ParseRevokeWebAuthSessionResponse(rsp *http.Response) (*RevokeWebAuthSessionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RevokeWebAuthSessionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
 		var dest Conflict
@@ -1341,15 +3951,45 @@ type ServerInterface interface {
 	// LoginWebAuth Start local WebAuth login
 	// (POST /api/management/v1/auth/login)
 	LoginWebAuth(w http.ResponseWriter, r *http.Request)
+	// FinishWebAuthLogin Finish local WebAuth login with MFA
+	// (POST /api/management/v1/auth/login/mfa)
+	FinishWebAuthLogin(w http.ResponseWriter, r *http.Request)
 	// LogoutWebAuth Revoke the current WebAuth session
 	// (POST /api/management/v1/auth/logout)
 	LogoutWebAuth(w http.ResponseWriter, r *http.Request)
 	// GetWebAuthPrincipal Read the current WebAuth principal
 	// (GET /api/management/v1/auth/me)
 	GetWebAuthPrincipal(w http.ResponseWriter, r *http.Request)
+	// DisableWebAuthMFA Disable the current user's MFA factor
+	// (DELETE /api/management/v1/auth/mfa)
+	DisableWebAuthMFA(w http.ResponseWriter, r *http.Request)
+	// GetWebAuthMFAStatus Read the current user's MFA status
+	// (GET /api/management/v1/auth/mfa)
+	GetWebAuthMFAStatus(w http.ResponseWriter, r *http.Request)
+	// BeginWebAuthMFAEnable Begin MFA enrollment
+	// (POST /api/management/v1/auth/mfa/enable)
+	BeginWebAuthMFAEnable(w http.ResponseWriter, r *http.Request)
+	// FinishWebAuthMFAEnable Finish MFA enrollment
+	// (POST /api/management/v1/auth/mfa/enable/finish)
+	FinishWebAuthMFAEnable(w http.ResponseWriter, r *http.Request)
+	// BeginWebAuthMFAReplace Begin MFA factor replacement
+	// (POST /api/management/v1/auth/mfa/replace)
+	BeginWebAuthMFAReplace(w http.ResponseWriter, r *http.Request)
+	// FinishWebAuthMFAReplace Finish MFA factor replacement
+	// (POST /api/management/v1/auth/mfa/replace/finish)
+	FinishWebAuthMFAReplace(w http.ResponseWriter, r *http.Request)
+	// ReplaceWebAuthPassword Replace the current user's local password
+	// (POST /api/management/v1/auth/password)
+	ReplaceWebAuthPassword(w http.ResponseWriter, r *http.Request)
 	// RefreshWebAuth Rotate WebAuth credentials
 	// (POST /api/management/v1/auth/refresh)
 	RefreshWebAuth(w http.ResponseWriter, r *http.Request)
+	// ListWebAuthSessions List active WebAuth sessions
+	// (GET /api/management/v1/auth/sessions)
+	ListWebAuthSessions(w http.ResponseWriter, r *http.Request, params ListWebAuthSessionsParams)
+	// RevokeWebAuthSession Revoke one WebAuth session
+	// (POST /api/management/v1/auth/sessions/{web_auth_session_id}/revoke)
+	RevokeWebAuthSession(w http.ResponseWriter, r *http.Request, webAuthSessionID string)
 	// GetManagementCompatibility Read management contract compatibility metadata
 	// (GET /api/management/v1/compatibility)
 	GetManagementCompatibility(w http.ResponseWriter, r *http.Request)
@@ -1369,6 +4009,20 @@ func (siw *ServerInterfaceWrapper) LoginWebAuth(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.LoginWebAuth(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// FinishWebAuthLogin operation middleware
+func (siw *ServerInterfaceWrapper) FinishWebAuthLogin(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.FinishWebAuthLogin(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1406,11 +4060,194 @@ func (siw *ServerInterfaceWrapper) GetWebAuthPrincipal(w http.ResponseWriter, r 
 	handler.ServeHTTP(w, r)
 }
 
+// DisableWebAuthMFA operation middleware
+func (siw *ServerInterfaceWrapper) DisableWebAuthMFA(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DisableWebAuthMFA(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetWebAuthMFAStatus operation middleware
+func (siw *ServerInterfaceWrapper) GetWebAuthMFAStatus(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetWebAuthMFAStatus(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// BeginWebAuthMFAEnable operation middleware
+func (siw *ServerInterfaceWrapper) BeginWebAuthMFAEnable(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.BeginWebAuthMFAEnable(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// FinishWebAuthMFAEnable operation middleware
+func (siw *ServerInterfaceWrapper) FinishWebAuthMFAEnable(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.FinishWebAuthMFAEnable(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// BeginWebAuthMFAReplace operation middleware
+func (siw *ServerInterfaceWrapper) BeginWebAuthMFAReplace(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.BeginWebAuthMFAReplace(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// FinishWebAuthMFAReplace operation middleware
+func (siw *ServerInterfaceWrapper) FinishWebAuthMFAReplace(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.FinishWebAuthMFAReplace(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReplaceWebAuthPassword operation middleware
+func (siw *ServerInterfaceWrapper) ReplaceWebAuthPassword(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReplaceWebAuthPassword(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // RefreshWebAuth operation middleware
 func (siw *ServerInterfaceWrapper) RefreshWebAuth(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RefreshWebAuth(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListWebAuthSessions operation middleware
+func (siw *ServerInterfaceWrapper) ListWebAuthSessions(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListWebAuthSessionsParams
+
+	// ------------- Optional query parameter "user_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "user_id", r.URL.Query(), &params.UserID, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "user_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "user_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "after_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "after_id", r.URL.Query(), &params.AfterID, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "after_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "after_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: "int32"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListWebAuthSessions(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RevokeWebAuthSession operation middleware
+func (siw *ServerInterfaceWrapper) RevokeWebAuthSession(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "web_auth_session_id" -------------
+	var webAuthSessionID string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "web_auth_session_id", r.PathValue("web_auth_session_id"), &webAuthSessionID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "web_auth_session_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RevokeWebAuthSession(w, r, webAuthSessionID)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1556,9 +4393,19 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/compatibility", wrapper.GetManagementCompatibility)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/auth/login", wrapper.LoginWebAuth)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/auth/login/mfa", wrapper.FinishWebAuthLogin)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/auth/refresh", wrapper.RefreshWebAuth)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/auth/me", wrapper.GetWebAuthPrincipal)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/auth/logout", wrapper.LogoutWebAuth)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/auth/password", wrapper.ReplaceWebAuthPassword)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/management/v1/auth/mfa", wrapper.DisableWebAuthMFA)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/auth/mfa", wrapper.GetWebAuthMFAStatus)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/auth/mfa/enable", wrapper.BeginWebAuthMFAEnable)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/auth/mfa/enable/finish", wrapper.FinishWebAuthMFAEnable)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/auth/mfa/replace", wrapper.BeginWebAuthMFAReplace)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/auth/mfa/replace/finish", wrapper.FinishWebAuthMFAReplace)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/auth/sessions", wrapper.ListWebAuthSessions)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/auth/sessions/{web_auth_session_id}/revoke", wrapper.RevokeWebAuthSession)
 
 	return m
 }
@@ -1571,14 +4418,7 @@ type ForbiddenJSONResponse ManagementError
 
 type InternalErrorJSONResponse ManagementError
 
-type RateLimitedResponseHeaders struct {
-	RetryAfter *int32
-}
-type RateLimitedJSONResponse struct {
-	Body ManagementError
-
-	Headers RateLimitedResponseHeaders
-}
+type NotFoundJSONResponse ManagementError
 
 type UnauthorizedJSONResponse ManagementError
 
@@ -1632,26 +4472,73 @@ func (response LoginWebAuth401JSONResponse) VisitLoginWebAuthResponse(w http.Res
 	return err
 }
 
-type LoginWebAuth429JSONResponse struct{ RateLimitedJSONResponse }
+type LoginWebAuth500JSONResponse struct{ InternalErrorJSONResponse }
 
-func (response LoginWebAuth429JSONResponse) VisitLoginWebAuthResponse(w http.ResponseWriter) error {
+func (response LoginWebAuth500JSONResponse) VisitLoginWebAuthResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	if response.Headers.RetryAfter != nil {
-		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
-	}
-	w.WriteHeader(429)
+	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
 }
 
-type LoginWebAuth500JSONResponse struct{ InternalErrorJSONResponse }
+type FinishWebAuthLoginRequestObject struct {
+	Body *FinishWebAuthLoginJSONRequestBody
+}
 
-func (response LoginWebAuth500JSONResponse) VisitLoginWebAuthResponse(w http.ResponseWriter) error {
+type FinishWebAuthLoginResponseObject interface {
+	VisitFinishWebAuthLoginResponse(w http.ResponseWriter) error
+}
+
+type FinishWebAuthLogin200JSONResponse WebAuthCredentials
+
+func (response FinishWebAuthLogin200JSONResponse) VisitFinishWebAuthLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type FinishWebAuthLogin400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response FinishWebAuthLogin400JSONResponse) VisitFinishWebAuthLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type FinishWebAuthLogin401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response FinishWebAuthLogin401JSONResponse) VisitFinishWebAuthLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type FinishWebAuthLogin500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response FinishWebAuthLogin500JSONResponse) VisitFinishWebAuthLoginResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -1797,6 +4684,593 @@ func (response GetWebAuthPrincipal500JSONResponse) VisitGetWebAuthPrincipalRespo
 	return err
 }
 
+type DisableWebAuthMFARequestObject struct {
+	Body *DisableWebAuthMFAJSONRequestBody
+}
+
+type DisableWebAuthMFAResponseObject interface {
+	VisitDisableWebAuthMFAResponse(w http.ResponseWriter) error
+}
+
+type DisableWebAuthMFA200JSONResponse WebAuthCredentials
+
+func (response DisableWebAuthMFA200JSONResponse) VisitDisableWebAuthMFAResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DisableWebAuthMFA400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response DisableWebAuthMFA400JSONResponse) VisitDisableWebAuthMFAResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DisableWebAuthMFA401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response DisableWebAuthMFA401JSONResponse) VisitDisableWebAuthMFAResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DisableWebAuthMFA403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DisableWebAuthMFA403JSONResponse) VisitDisableWebAuthMFAResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DisableWebAuthMFA409JSONResponse struct{ ConflictJSONResponse }
+
+func (response DisableWebAuthMFA409JSONResponse) VisitDisableWebAuthMFAResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DisableWebAuthMFA500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response DisableWebAuthMFA500JSONResponse) VisitDisableWebAuthMFAResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetWebAuthMFAStatusRequestObject struct {
+}
+
+type GetWebAuthMFAStatusResponseObject interface {
+	VisitGetWebAuthMFAStatusResponse(w http.ResponseWriter) error
+}
+
+type GetWebAuthMFAStatus200JSONResponse WebAuthMFAStatus
+
+func (response GetWebAuthMFAStatus200JSONResponse) VisitGetWebAuthMFAStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetWebAuthMFAStatus401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetWebAuthMFAStatus401JSONResponse) VisitGetWebAuthMFAStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetWebAuthMFAStatus403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetWebAuthMFAStatus403JSONResponse) VisitGetWebAuthMFAStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetWebAuthMFAStatus500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response GetWebAuthMFAStatus500JSONResponse) VisitGetWebAuthMFAStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BeginWebAuthMFAEnableRequestObject struct {
+	Body *BeginWebAuthMFAEnableJSONRequestBody
+}
+
+type BeginWebAuthMFAEnableResponseObject interface {
+	VisitBeginWebAuthMFAEnableResponse(w http.ResponseWriter) error
+}
+
+type BeginWebAuthMFAEnable200JSONResponse WebAuthMFAContinuation
+
+func (response BeginWebAuthMFAEnable200JSONResponse) VisitBeginWebAuthMFAEnableResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BeginWebAuthMFAEnable400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response BeginWebAuthMFAEnable400JSONResponse) VisitBeginWebAuthMFAEnableResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BeginWebAuthMFAEnable401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response BeginWebAuthMFAEnable401JSONResponse) VisitBeginWebAuthMFAEnableResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BeginWebAuthMFAEnable403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response BeginWebAuthMFAEnable403JSONResponse) VisitBeginWebAuthMFAEnableResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BeginWebAuthMFAEnable500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response BeginWebAuthMFAEnable500JSONResponse) VisitBeginWebAuthMFAEnableResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type FinishWebAuthMFAEnableRequestObject struct {
+	Body *FinishWebAuthMFAEnableJSONRequestBody
+}
+
+type FinishWebAuthMFAEnableResponseObject interface {
+	VisitFinishWebAuthMFAEnableResponse(w http.ResponseWriter) error
+}
+
+type FinishWebAuthMFAEnable200JSONResponse WebAuthCredentials
+
+func (response FinishWebAuthMFAEnable200JSONResponse) VisitFinishWebAuthMFAEnableResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type FinishWebAuthMFAEnable400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response FinishWebAuthMFAEnable400JSONResponse) VisitFinishWebAuthMFAEnableResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type FinishWebAuthMFAEnable401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response FinishWebAuthMFAEnable401JSONResponse) VisitFinishWebAuthMFAEnableResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type FinishWebAuthMFAEnable403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response FinishWebAuthMFAEnable403JSONResponse) VisitFinishWebAuthMFAEnableResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type FinishWebAuthMFAEnable409JSONResponse struct{ ConflictJSONResponse }
+
+func (response FinishWebAuthMFAEnable409JSONResponse) VisitFinishWebAuthMFAEnableResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type FinishWebAuthMFAEnable500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response FinishWebAuthMFAEnable500JSONResponse) VisitFinishWebAuthMFAEnableResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BeginWebAuthMFAReplaceRequestObject struct {
+	Body *BeginWebAuthMFAReplaceJSONRequestBody
+}
+
+type BeginWebAuthMFAReplaceResponseObject interface {
+	VisitBeginWebAuthMFAReplaceResponse(w http.ResponseWriter) error
+}
+
+type BeginWebAuthMFAReplace200JSONResponse WebAuthMFAContinuation
+
+func (response BeginWebAuthMFAReplace200JSONResponse) VisitBeginWebAuthMFAReplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BeginWebAuthMFAReplace400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response BeginWebAuthMFAReplace400JSONResponse) VisitBeginWebAuthMFAReplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BeginWebAuthMFAReplace401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response BeginWebAuthMFAReplace401JSONResponse) VisitBeginWebAuthMFAReplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BeginWebAuthMFAReplace403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response BeginWebAuthMFAReplace403JSONResponse) VisitBeginWebAuthMFAReplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BeginWebAuthMFAReplace500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response BeginWebAuthMFAReplace500JSONResponse) VisitBeginWebAuthMFAReplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type FinishWebAuthMFAReplaceRequestObject struct {
+	Body *FinishWebAuthMFAReplaceJSONRequestBody
+}
+
+type FinishWebAuthMFAReplaceResponseObject interface {
+	VisitFinishWebAuthMFAReplaceResponse(w http.ResponseWriter) error
+}
+
+type FinishWebAuthMFAReplace200JSONResponse WebAuthCredentials
+
+func (response FinishWebAuthMFAReplace200JSONResponse) VisitFinishWebAuthMFAReplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type FinishWebAuthMFAReplace400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response FinishWebAuthMFAReplace400JSONResponse) VisitFinishWebAuthMFAReplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type FinishWebAuthMFAReplace401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response FinishWebAuthMFAReplace401JSONResponse) VisitFinishWebAuthMFAReplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type FinishWebAuthMFAReplace403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response FinishWebAuthMFAReplace403JSONResponse) VisitFinishWebAuthMFAReplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type FinishWebAuthMFAReplace409JSONResponse struct{ ConflictJSONResponse }
+
+func (response FinishWebAuthMFAReplace409JSONResponse) VisitFinishWebAuthMFAReplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type FinishWebAuthMFAReplace500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response FinishWebAuthMFAReplace500JSONResponse) VisitFinishWebAuthMFAReplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReplaceWebAuthPasswordRequestObject struct {
+	Body *ReplaceWebAuthPasswordJSONRequestBody
+}
+
+type ReplaceWebAuthPasswordResponseObject interface {
+	VisitReplaceWebAuthPasswordResponse(w http.ResponseWriter) error
+}
+
+type ReplaceWebAuthPassword200JSONResponse WebAuthCredentials
+
+func (response ReplaceWebAuthPassword200JSONResponse) VisitReplaceWebAuthPasswordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReplaceWebAuthPassword400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response ReplaceWebAuthPassword400JSONResponse) VisitReplaceWebAuthPasswordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReplaceWebAuthPassword401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ReplaceWebAuthPassword401JSONResponse) VisitReplaceWebAuthPasswordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReplaceWebAuthPassword403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ReplaceWebAuthPassword403JSONResponse) VisitReplaceWebAuthPasswordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReplaceWebAuthPassword409JSONResponse struct{ ConflictJSONResponse }
+
+func (response ReplaceWebAuthPassword409JSONResponse) VisitReplaceWebAuthPasswordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReplaceWebAuthPassword500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ReplaceWebAuthPassword500JSONResponse) VisitReplaceWebAuthPasswordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type RefreshWebAuthRequestObject struct {
 }
 
@@ -1874,6 +5348,185 @@ func (response RefreshWebAuth500JSONResponse) VisitRefreshWebAuthResponse(w http
 	return err
 }
 
+type ListWebAuthSessionsRequestObject struct {
+	Params ListWebAuthSessionsParams
+}
+
+type ListWebAuthSessionsResponseObject interface {
+	VisitListWebAuthSessionsResponse(w http.ResponseWriter) error
+}
+
+type ListWebAuthSessions200JSONResponse WebAuthSessionPage
+
+func (response ListWebAuthSessions200JSONResponse) VisitListWebAuthSessionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListWebAuthSessions400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response ListWebAuthSessions400JSONResponse) VisitListWebAuthSessionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListWebAuthSessions401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListWebAuthSessions401JSONResponse) VisitListWebAuthSessionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListWebAuthSessions403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListWebAuthSessions403JSONResponse) VisitListWebAuthSessionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListWebAuthSessions500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ListWebAuthSessions500JSONResponse) VisitListWebAuthSessionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeWebAuthSessionRequestObject struct {
+	WebAuthSessionID string `json:"web_auth_session_id"`
+	Body             *RevokeWebAuthSessionJSONRequestBody
+}
+
+type RevokeWebAuthSessionResponseObject interface {
+	VisitRevokeWebAuthSessionResponse(w http.ResponseWriter) error
+}
+
+type RevokeWebAuthSession204Response struct {
+}
+
+func (response RevokeWebAuthSession204Response) VisitRevokeWebAuthSessionResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type RevokeWebAuthSession400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response RevokeWebAuthSession400JSONResponse) VisitRevokeWebAuthSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeWebAuthSession401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response RevokeWebAuthSession401JSONResponse) VisitRevokeWebAuthSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeWebAuthSession403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response RevokeWebAuthSession403JSONResponse) VisitRevokeWebAuthSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeWebAuthSession404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response RevokeWebAuthSession404JSONResponse) VisitRevokeWebAuthSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeWebAuthSession409JSONResponse struct{ ConflictJSONResponse }
+
+func (response RevokeWebAuthSession409JSONResponse) VisitRevokeWebAuthSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeWebAuthSession500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response RevokeWebAuthSession500JSONResponse) VisitRevokeWebAuthSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetManagementCompatibilityRequestObject struct {
 }
 
@@ -1928,15 +5581,45 @@ type StrictServerInterface interface {
 	// LoginWebAuth Start local WebAuth login
 	// (POST /api/management/v1/auth/login)
 	LoginWebAuth(ctx context.Context, request LoginWebAuthRequestObject) (LoginWebAuthResponseObject, error)
+	// FinishWebAuthLogin Finish local WebAuth login with MFA
+	// (POST /api/management/v1/auth/login/mfa)
+	FinishWebAuthLogin(ctx context.Context, request FinishWebAuthLoginRequestObject) (FinishWebAuthLoginResponseObject, error)
 	// LogoutWebAuth Revoke the current WebAuth session
 	// (POST /api/management/v1/auth/logout)
 	LogoutWebAuth(ctx context.Context, request LogoutWebAuthRequestObject) (LogoutWebAuthResponseObject, error)
 	// GetWebAuthPrincipal Read the current WebAuth principal
 	// (GET /api/management/v1/auth/me)
 	GetWebAuthPrincipal(ctx context.Context, request GetWebAuthPrincipalRequestObject) (GetWebAuthPrincipalResponseObject, error)
+	// DisableWebAuthMFA Disable the current user's MFA factor
+	// (DELETE /api/management/v1/auth/mfa)
+	DisableWebAuthMFA(ctx context.Context, request DisableWebAuthMFARequestObject) (DisableWebAuthMFAResponseObject, error)
+	// GetWebAuthMFAStatus Read the current user's MFA status
+	// (GET /api/management/v1/auth/mfa)
+	GetWebAuthMFAStatus(ctx context.Context, request GetWebAuthMFAStatusRequestObject) (GetWebAuthMFAStatusResponseObject, error)
+	// BeginWebAuthMFAEnable Begin MFA enrollment
+	// (POST /api/management/v1/auth/mfa/enable)
+	BeginWebAuthMFAEnable(ctx context.Context, request BeginWebAuthMFAEnableRequestObject) (BeginWebAuthMFAEnableResponseObject, error)
+	// FinishWebAuthMFAEnable Finish MFA enrollment
+	// (POST /api/management/v1/auth/mfa/enable/finish)
+	FinishWebAuthMFAEnable(ctx context.Context, request FinishWebAuthMFAEnableRequestObject) (FinishWebAuthMFAEnableResponseObject, error)
+	// BeginWebAuthMFAReplace Begin MFA factor replacement
+	// (POST /api/management/v1/auth/mfa/replace)
+	BeginWebAuthMFAReplace(ctx context.Context, request BeginWebAuthMFAReplaceRequestObject) (BeginWebAuthMFAReplaceResponseObject, error)
+	// FinishWebAuthMFAReplace Finish MFA factor replacement
+	// (POST /api/management/v1/auth/mfa/replace/finish)
+	FinishWebAuthMFAReplace(ctx context.Context, request FinishWebAuthMFAReplaceRequestObject) (FinishWebAuthMFAReplaceResponseObject, error)
+	// ReplaceWebAuthPassword Replace the current user's local password
+	// (POST /api/management/v1/auth/password)
+	ReplaceWebAuthPassword(ctx context.Context, request ReplaceWebAuthPasswordRequestObject) (ReplaceWebAuthPasswordResponseObject, error)
 	// RefreshWebAuth Rotate WebAuth credentials
 	// (POST /api/management/v1/auth/refresh)
 	RefreshWebAuth(ctx context.Context, request RefreshWebAuthRequestObject) (RefreshWebAuthResponseObject, error)
+	// ListWebAuthSessions List active WebAuth sessions
+	// (GET /api/management/v1/auth/sessions)
+	ListWebAuthSessions(ctx context.Context, request ListWebAuthSessionsRequestObject) (ListWebAuthSessionsResponseObject, error)
+	// RevokeWebAuthSession Revoke one WebAuth session
+	// (POST /api/management/v1/auth/sessions/{web_auth_session_id}/revoke)
+	RevokeWebAuthSession(ctx context.Context, request RevokeWebAuthSessionRequestObject) (RevokeWebAuthSessionResponseObject, error)
 	// GetManagementCompatibility Read management contract compatibility metadata
 	// (GET /api/management/v1/compatibility)
 	GetManagementCompatibility(ctx context.Context, request GetManagementCompatibilityRequestObject) (GetManagementCompatibilityResponseObject, error)
@@ -2012,6 +5695,37 @@ func (sh *strictHandler) LoginWebAuth(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// FinishWebAuthLogin operation middleware
+func (sh *strictHandler) FinishWebAuthLogin(w http.ResponseWriter, r *http.Request) {
+	var request FinishWebAuthLoginRequestObject
+
+	var body FinishWebAuthLoginJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.FinishWebAuthLogin(ctx, request.(FinishWebAuthLoginRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "FinishWebAuthLogin")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(FinishWebAuthLoginResponseObject); ok {
+		if err := validResponse.VisitFinishWebAuthLoginResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // LogoutWebAuth operation middleware
 func (sh *strictHandler) LogoutWebAuth(w http.ResponseWriter, r *http.Request) {
 	var request LogoutWebAuthRequestObject
@@ -2060,6 +5774,216 @@ func (sh *strictHandler) GetWebAuthPrincipal(w http.ResponseWriter, r *http.Requ
 	}
 }
 
+// DisableWebAuthMFA operation middleware
+func (sh *strictHandler) DisableWebAuthMFA(w http.ResponseWriter, r *http.Request) {
+	var request DisableWebAuthMFARequestObject
+
+	var body DisableWebAuthMFAJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DisableWebAuthMFA(ctx, request.(DisableWebAuthMFARequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DisableWebAuthMFA")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DisableWebAuthMFAResponseObject); ok {
+		if err := validResponse.VisitDisableWebAuthMFAResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetWebAuthMFAStatus operation middleware
+func (sh *strictHandler) GetWebAuthMFAStatus(w http.ResponseWriter, r *http.Request) {
+	var request GetWebAuthMFAStatusRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetWebAuthMFAStatus(ctx, request.(GetWebAuthMFAStatusRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetWebAuthMFAStatus")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetWebAuthMFAStatusResponseObject); ok {
+		if err := validResponse.VisitGetWebAuthMFAStatusResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// BeginWebAuthMFAEnable operation middleware
+func (sh *strictHandler) BeginWebAuthMFAEnable(w http.ResponseWriter, r *http.Request) {
+	var request BeginWebAuthMFAEnableRequestObject
+
+	var body BeginWebAuthMFAEnableJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.BeginWebAuthMFAEnable(ctx, request.(BeginWebAuthMFAEnableRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "BeginWebAuthMFAEnable")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(BeginWebAuthMFAEnableResponseObject); ok {
+		if err := validResponse.VisitBeginWebAuthMFAEnableResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// FinishWebAuthMFAEnable operation middleware
+func (sh *strictHandler) FinishWebAuthMFAEnable(w http.ResponseWriter, r *http.Request) {
+	var request FinishWebAuthMFAEnableRequestObject
+
+	var body FinishWebAuthMFAEnableJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.FinishWebAuthMFAEnable(ctx, request.(FinishWebAuthMFAEnableRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "FinishWebAuthMFAEnable")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(FinishWebAuthMFAEnableResponseObject); ok {
+		if err := validResponse.VisitFinishWebAuthMFAEnableResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// BeginWebAuthMFAReplace operation middleware
+func (sh *strictHandler) BeginWebAuthMFAReplace(w http.ResponseWriter, r *http.Request) {
+	var request BeginWebAuthMFAReplaceRequestObject
+
+	var body BeginWebAuthMFAReplaceJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.BeginWebAuthMFAReplace(ctx, request.(BeginWebAuthMFAReplaceRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "BeginWebAuthMFAReplace")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(BeginWebAuthMFAReplaceResponseObject); ok {
+		if err := validResponse.VisitBeginWebAuthMFAReplaceResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// FinishWebAuthMFAReplace operation middleware
+func (sh *strictHandler) FinishWebAuthMFAReplace(w http.ResponseWriter, r *http.Request) {
+	var request FinishWebAuthMFAReplaceRequestObject
+
+	var body FinishWebAuthMFAReplaceJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.FinishWebAuthMFAReplace(ctx, request.(FinishWebAuthMFAReplaceRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "FinishWebAuthMFAReplace")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(FinishWebAuthMFAReplaceResponseObject); ok {
+		if err := validResponse.VisitFinishWebAuthMFAReplaceResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ReplaceWebAuthPassword operation middleware
+func (sh *strictHandler) ReplaceWebAuthPassword(w http.ResponseWriter, r *http.Request) {
+	var request ReplaceWebAuthPasswordRequestObject
+
+	var body ReplaceWebAuthPasswordJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ReplaceWebAuthPassword(ctx, request.(ReplaceWebAuthPasswordRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ReplaceWebAuthPassword")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ReplaceWebAuthPasswordResponseObject); ok {
+		if err := validResponse.VisitReplaceWebAuthPasswordResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // RefreshWebAuth operation middleware
 func (sh *strictHandler) RefreshWebAuth(w http.ResponseWriter, r *http.Request) {
 	var request RefreshWebAuthRequestObject
@@ -2077,6 +6001,65 @@ func (sh *strictHandler) RefreshWebAuth(w http.ResponseWriter, r *http.Request) 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(RefreshWebAuthResponseObject); ok {
 		if err := validResponse.VisitRefreshWebAuthResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListWebAuthSessions operation middleware
+func (sh *strictHandler) ListWebAuthSessions(w http.ResponseWriter, r *http.Request, params ListWebAuthSessionsParams) {
+	var request ListWebAuthSessionsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListWebAuthSessions(ctx, request.(ListWebAuthSessionsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListWebAuthSessions")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListWebAuthSessionsResponseObject); ok {
+		if err := validResponse.VisitListWebAuthSessionsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RevokeWebAuthSession operation middleware
+func (sh *strictHandler) RevokeWebAuthSession(w http.ResponseWriter, r *http.Request, webAuthSessionID string) {
+	var request RevokeWebAuthSessionRequestObject
+
+	request.WebAuthSessionID = webAuthSessionID
+
+	var body RevokeWebAuthSessionJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RevokeWebAuthSession(ctx, request.(RevokeWebAuthSessionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RevokeWebAuthSession")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RevokeWebAuthSessionResponseObject); ok {
+		if err := validResponse.VisitRevokeWebAuthSessionResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -2113,38 +6096,52 @@ func (sh *strictHandler) GetManagementCompatibility(w http.ResponseWriter, r *ht
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"7Fpbbxu7Ef4rBHueitXNdoJGb7ZbA0ZjJJBP0QKGK1C7sxLjXXLPkGtHCfTfi+FSe9Guro7dPvQlkCVy",
-	"+M18c+MwP3mo00wrUNbw8U+OYDKtDLg/rkQ0gT9yMJb+CrWyoNxHkWWJDIWVWg2+Ga3oOxMuIBX06TeE",
-	"mI/5nwaV6EHxqxncCSXmkIKyf0PUyFerVcAjMCHKjMTxMb9VzyKREUvLpQw9ilXAr7WKExm+K6K7FhIW",
-	"ehiGvUi7YGGOSD8bKywQzBuNMxlFoN4T52VuF6AsyYeohJqI8MkwkduFRmmXTCMrDHx9P7lhGWodE+Jb",
-	"ZQGVSArp74j6XsTAZjpXEURMehQsFjLJ0dlyIix8lqm0EL0nrs96LhUT1kKaWSYNow8aBcpkyVBYYIkH",
-	"FfAFiAjQBc0ELC57l7EFZ8WmzL9CIpZMKmYg1CoybAaxRmBCabsAXJ/W50FNj1hjKiwfc6ns+RkPeCqV",
-	"TPOUj0cBt8sMip9gDk6PVcD/oTzdP97XZHfSGKnm5GLSR7EBfJYh0Ff/hBl5KAsRInJTkXAS4eXT8Ze3",
-	"92CM1Oo+T1OBSwc4iiSJF8lX1BmglZScYpEYCHhW++onF3Jqiv1T6fROxffPoOZ2wcdnHz46w63/rkxn",
-	"LEo1J0cLF0IpSKbFD43tHy861idiBknXOa2VekZ2gGgqbIPRSFjoWZkC79hEySQ3HUB2qrEKOEW+RKL+",
-	"YcMmpdAmpMdSip59g9Al2s86FImLgVoNOIKMTBjzojFq6Ft+GdR1uhh+2kNOwF9QWviikiUfW8xhFfDc",
-	"UKZI4WiiNyxUygkqeF0Gqfz/WqeZsHImE2mP9tFMTlPxrUixoCiKH0aPQTvINwM7cFGMIrTeuf1mPhNJ",
-	"JPpVtew/j2r4a9693v4MaGQR+fBdpFlC60b9YX/YpOX8bJ/p6og6Dghq2u62aFl0jrBkqCPYGxwZZVSk",
-	"3PTvB9H78Uj/DHufpv3e459/6wq6WEISOfnSQmqOTIo3tJvEpOL7bbF/VOUDgSiW7lcwRsw30X8Yne1N",
-	"Ub6ot/Pb6Owvx7m9M18F5QB+CuX+Z0h6rQEKIUEBcbf6EzA6xxBOK0vod59WlMrdtbAtk0Uulf14sacl",
-	"CHieUaE5pvps2KquQgekxgldpvSl/9KYHIUKoZ6/EOjQsGikFGFLOvOXl3Fddg/m2NQbhmDMFL5nEsEc",
-	"VYr9Vqufio5+o4MFZaSVz8B0Jv7IgRXLa40OQ7A5KoiYVsmSWc3sApjF3FCnfnVz0z+2IhKoujV3JamW",
-	"9akaGIz361NdEd5EA4QYwSxOomS991BO/Pq3JWWz+aq7zSbkBgdBh3d22qdO+45I842byZNj+7awGV8H",
-	"+FU9Iqm4xWJqUSgjQlu14k12vhSc1JYx6WTEEpDFGh0VGaiIrhN3N5d04bZS5e7issHLIVlU5zbUaSPv",
-	"iPptmRe4S/Ie91G7FriDg68oVSgzkRybp14V1yUZrykYZIvDtg+7tqNODgU/oaW+mz+tQLqdr9D1BWZT",
-	"8oXX3R1bUk5G1HE98WWXTFWP/w3dO8lvctmt7Q70O9x74kku4ykirYxFYTXSBTOD4uOOYv666/6r4kQr",
-	"BUWCyqAY1ey9xYcIR7ZRAY/gWYYwPXxUkAhjpwZAnVQNT6ukz/rpSLX+y/G2ESPdTl0PlBp1GybeUmW3",
-	"B8Aq4AbCHKVd3pOD+bJpMG7XOe95PY+r58ac9a4q1vgiMIKIzZbsSoRPOo5lCFThJAkoBovUGLtJB/9X",
-	"74qu+z0SUfEiMvl3cDfLddDdF2M3OpxQzUAg4M2aqS9+1e++99gcfIYiKQd3tX5pAYnDSbW5wkqaUOtS",
-	"Di0JUXFghXBhbebJd6Homp2tfcF6Utjuo0+115oIf3CH5TyySeEMe6F1tJOvxbY+ugWOXE6qWLdBXfuR",
-	"S9kyJVpnMxE+MSe6/oZy+fW2z35fAH1gkTRWqnkuzQIMm6F+MVANaKu3ghh1yi5vqfuigHDdF/PO7Ai3",
-	"0rrxUXHcXeO4WhSt50uFhyqRST7m5/1h/9xN3ezC+cJAZHJQQR48jwYEZZBQM+tmiroYQxZeLrW6jfiY",
-	"u589dl6OSK50tPxls+/2MHTVzEF+Jtl4PjsbDn8ZgI62fuuTBW1PgO4wGpmHaJhQrT6a6LgoQHadXSoz",
-	"qD0Eui2j/VsaTxC06ezT/k31l55VwD8cgq35blXPznz88LM7IT48rh4DbtZdB7+3Ai1LXN5bB0HhdCRv",
-	"h1vq3O70S53bumM2nOOiI5z9M+Iag4805iv06cYfnu/fVD1Zuh0H0FW+xf4irooa+vAYbGOtVT82iZw4",
-	"Q7lMGHbbciejxQVxDh1kzsG2rnVvH+/VWR3RvuktWbX43fzkDUP0ALJF1El1zRA7yMaq0nfHr1+wNYB/",
-	"OduNQUqb74m27mG//Y5q/p8ZWv1by1uc9bqN1+0l4eYz37bEsO1l8A09ZtuRu//3yvqFjqVgRSSsONlv",
-	"3q00uyBPO1RosFNTaLVa/ScAAP//",
+	"7Fxtb+O4Ef4rBHtAgUKJ7SS37aWfnPQMBN10F8kVLRCkBi2NbW4kUktSSXwL//eCFPVqWpbs2Mnu5Uvg",
+	"RCI5nHn4zHBm4m/Y51HMGTAl8fk3LEDGnEkwv1yQ4Aa+JiCV/s3nTAEzH0kch9QninLW+yI503+T/hwi",
+	"oj/9JGCKz/GfesXUvfSp7F0TRmYQAVO/CsEFXi6XHg5A+oLGejp8jq/YIwlpgKL8VSSsFEsPX3I2Dal/",
+	"UImuVyRBvhVDoieq5shPhNCPpSIKtJgjLiY0CIAdUs5houbAlJ4fglzUkPgPEpFEzbmgaoG4QKmCL29v",
+	"RigWnE+1xFdMgWAkTGc/oNS3ZApowhMWQIColQJNCQ0TYXT5L65G+vEhhbK4hxoMJU+EDyjgIBHjCsEz",
+	"TWH5b2YV/DscVM5rKiVlM21Uas+NBPFIfdB/+g9MNCaQLyDQwCAh1lPY+fXyw6tbkJJydptEERELI3AQ",
+	"UD09CT8LHoNQVNPBlIQSPByX/vQNEzqW6fgxNfuOyPNHYDM1x+cnP3/wcERZ9vvAw2oRAz7HUgnKZlpt",
+	"/pwwBuE4fVAZ/uHM8X5IJhC61ll5k0+0HiAYE2OEKReR/oQDouBI0QiwY5A+vol0CNK4jaWH9VmjQpv+",
+	"rqaTfNKqSPf5LHzyBXyDoY/cJ+FHPqOsxLodjDER/EmCGBvsPatN6LLguEhHXdpBSw/HRMonLoKK3vI/",
+	"emXdnPV/2WBkDz8JquATCxf4XIkElh5OpD7jEXQGTE3T+TxeWby6GlyqLk7WJY9iouiEhlR1Rn9MxxH5",
+	"ktIlsCTC53eDe69QGmXq9KQAmia3GQgDfM6UIL6yx8YOxhMSBuS4oJzjx0FJ/tK5yYY/gpA05RR4JlEc",
+	"6vcGx/3jftVQpyeblFmWyLGAV9pts0ZzB9JBkz4PYOOxi4nSzgGf4//dkaPf7/WP/tEv4+Oj+7/85DrO",
+	"UwphYOanCiLZkW5HerSeJiLPV+n4QcE0RAiyME9BSjKrS//z4GQj+VkHvcqcg5O/dTsIRn2FKC3sk27u",
+	"zRhpVwWkk3ipiM3bv7FOfDuHl4UA27m7fHTp2OZkkVCmPpxhMwmNNB8MXMyRxNqFdfFrNV2Vt+AQqbKC",
+	"S5XWbwylTARhPpT5S4Be1Fegp2ZattDJX27fs527m1AW6Gk3mONDG8/kc8bA1wKMYwDRKtLwpZiOFX9I",
+	"Y/1G59hKhgB0+DZuG+rUrFvXSkW+BnNe5iGi7OoFfR+kHMNzTAXITvGWHZorr3YxACapoo+AeEy+JoDS",
+	"10vRLBKgEsEgQJyFC6Q4UnNASiQmcr8YjY67hyvPRzJbNzcJKWO9RUxVnI0VfKzbYnEZO9SmBEwFyPlW",
+	"hsvGtrWcff/gpquH5mW81XdRsZTngLVTZWVwNBwvE9Zfj4Yjyqic7xbfvzrh5UYcZ+miVQhc2Au9BEFJ",
+	"qK/F2W2UISKl3hVnKBtfM/bgdND/azWAOmm1m9elYg8rQZgkqT63iBBqcK3N5jWTu9swmzB5AzIJuyLR",
+	"rzqLFoxYdi86aJ6SlgOvR0MdHlCWmAyKudonyudRJe4g5cwXNvOPc03eb9JzNmGDrq5HwwvY+Wb+kid3",
+	"z7f0mooc9+tsM81aqxivm9a2cUxxMgmpP36AxZgbKmqIZvQ+V5KRirCAiEAeyTmJIUDphAV32Vn/jhg8",
+	"gkCPIOiUgkARUYbpjrFDHXumhYo7cmig2UL/oJJMQtgO2T5nUyqi0lnUWi0WnHAeAmH4NQGbydishjfn",
+	"mXf1sgJmVCpB9uFoD+/nurm269HwBuKQ+PDGWPt7OC8O7bc6Qbd59rzL7fGR0FDzj/5lVQm+gI7ZDg8D",
+	"0/MF7glDItU4kbskULL5vZLwDZr5bDVrAbklz6YFxvHec/MMnsaHRd7K1mpCNKlWUObTmIQHTFnslAoo",
+	"WGyHDGBAZRySxXirEkoaGzceEf1CO/H6LvEED9sq50a/agtC22VUzchdsqnblqI8/ASTsb537FYBXZll",
+	"6804imOpNy2VySrQsaYqY9qd9igjpqZyJ6arEHJrqmHnDQf+xmIrv/cFWiMmyuECe1gfcvOxIelsC96f",
+	"bdGmA20weFZjMlXbgtVutH1FqipxVrGolqT6/XpNqgaEfNUGvdoVbuCRP+x2ExhbOndRy2rFsTJis3xb",
+	"NinsRNnbJcg6By2dU00mkJEAbKvE7XZJX42ObtvagZpfgl9riHMTUZn+SqarqXhN9nc9aZkD7yeCqsWt",
+	"Bpg9JlJMV+9xFnlHVq4j0w5VrglMuXgiQl/1Jgt0QfwHPp1S31znqJ5gDiQAzYCpM8P/PbogYUCO9BSF",
+	"XUhM/wmGQDKivE2bhfTi5soDRIAYZZb6ZN/6zSYYq0KbfpW83aiU2p9DaORUcyjJqneifYuW2Zw4ww1m",
+	"wULCuVKxNb45isYbrerrU1pWyPqbVgtD2+orM4Rd2KE5K9lNCoaNojkqH7vKli29IpyGHGVTvirUpW3n",
+	"0Gsbs4ScxxPiPyAzdbnJbfj56hj9Ngf9AQVUKspmCZVzkMheDAu15z2FU8EjNLxCPmf6QKQ5h8zxmJQY",
+	"VaY1JV3uurJc6RRlvSspQhmJKT7Hp8f941PT46PmBgs9EtNeIXLvcdDTovRCPqOGamKeuq8U5ZSzqwCf",
+	"Y/PYyo7z9osLHixerGNvtYVrWeWgvPZWarM96fdfTABHat/RNWgeIz08BAUB4gJZESUiDF2PhtqSlaT7",
+	"WSqka+18M71Sw7AZMtg8pNI4ufTwz23WqfaqlpkWn999c5Pb3f3y3sMyiyDwrSJCodBwWAboFEB6vkaI",
+	"9Wz5wg2zqUkklg2xJ7A1lhZfB3eVMs+mBuXV7lT5QyItNYwLamnz+PVouAlzPFGNvMYTVSa2ipHPHO7A",
+	"tqtnwlimRjbC21qlZ/3TzYOK1ngz4pfNI/Ke/xeyWhqD3d176+y3En/UTZpelIwn9d26bLRomm+YgcOY",
+	"M1Arya39n9tiLcepraMlLl4+GE72eFhbGJsETlOXFNFk7NRZBKB97arBg7T8VqTR9+stVgt+b9JT2GR5",
+	"VFb3K/mJPwypWVxUoJ5IEH+WJiKcEl9xczPfQFxFKWj/MCrWaiAuLb39L4w/KGOVzJgpopmxemm+d33Q",
+	"MYHiMnU9Gv6avr5v6qpUc1+HuFYakhz/lDUaVqvvr3WZeh3U7s5ExswGrcAED0ONzpaI7aXXr5bXs8Mh",
+	"9zu4nb373MMj3d4NO0JdpJZqzc7WsnsHuavn5p2lf3yWTkNDJAoCaQvhznR9KCi/8/U7XzfzdUfQl5uq",
+	"3FC3M9XaxvaL9DXNae94f8e7vUkanbsuk2k+O4d1E/ZFUSxdB33zwtoc9sGhxlVzieIdM6US+ApojPbc",
+	"ymtASbk9ypliCqlU1YYgacrCgkSgQEgjvymhf01ALIoKetELV4CkYx+Je+K8GezFZw5pRFVl2gCmxPyr",
+	"1knf8RUTEXm2vTT9/oY+wfv9H69yj52rDuibfw6tl59i8/qPHnhvS8UfqVSIODXX7lz1vjn6n5a9tOjX",
+	"xM36edWwa45dTAx5Wwi7u62qUcX25+Z+r3GRsyGyVVR0tra7y11mfbsBy9nmEflXc333pVzOoG0J169/",
+	"ZdC6esi6bxnaI/+uW7L5W+2yb/tBESgSEEXeflOFKXFEji1UrFPa0HK5/H8AAAD//w==",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

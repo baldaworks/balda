@@ -13,6 +13,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/backoffice/audit"
 	"github.com/baldaworks/balda/internal/apps/backoffice/internal/webui"
 	"github.com/baldaworks/balda/internal/apps/backoffice/security"
+	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/users"
@@ -25,7 +26,7 @@ const sessionPageSize = 20
 type httpApp struct {
 	renderer          *webui.Renderer
 	browser           *security.Browser
-	security          *security.Service
+	security          *browserauth.Service
 	access            *access.Service
 	auditLog          *audit.Service
 	cards             []webui.CapabilityCard
@@ -51,14 +52,25 @@ type httpApp struct {
 }
 
 func newHTTPApp(store usercmd.Store, config ResolvedConfig) (*httpApp, error) {
-	renderer, err := webui.NewRenderer(config.Server.BasePath)
+	service, err := newBrowserAuthService(store, config.Server)
 	if err != nil {
 		return nil, err
 	}
-	service, err := security.NewService(store, security.Config{
-		AccessTTL: config.Server.AccessTokenTTL, RefreshTTL: config.Server.RefreshTokenTTL,
-		Origin: config.Server.PublicURL, CeremonyTTL: config.Server.CeremonyTTL,
+	return newHTTPAppWithBrowserAuth(store, config, service)
+}
+
+func newBrowserAuthService(store usercmd.Store, config ResolvedServerConfig) (*browserauth.Service, error) {
+	return browserauth.NewService(store, browserauth.Config{
+		AccessTTL: config.AccessTokenTTL, RefreshTTL: config.RefreshTokenTTL,
+		Origin: config.PublicURL, CeremonyTTL: config.CeremonyTTL,
 	})
+}
+
+func newHTTPAppWithBrowserAuth(store usercmd.Store, config ResolvedConfig, service *browserauth.Service) (*httpApp, error) {
+	if service == nil {
+		return nil, fmt.Errorf("browser auth service is required")
+	}
+	renderer, err := webui.NewRenderer(config.Server.BasePath)
 	if err != nil {
 		return nil, err
 	}
@@ -279,12 +291,12 @@ func (a *httpApp) agentPage(w http.ResponseWriter, r *http.Request) {
 func (a *httpApp) account(w http.ResponseWriter, r *http.Request) {
 	principal, ok := security.PrincipalFromContext(r.Context())
 	if !ok {
-		a.browser.WriteError(w, r, security.ErrUnauthenticated)
+		a.browser.WriteError(w, r, browserauth.ErrUnauthenticated)
 		return
 	}
 	accessCookie, err := r.Cookie(security.AccessCookieName)
 	if err != nil || accessCookie.Value == "" {
-		a.browser.WriteError(w, r, security.ErrUnauthenticated)
+		a.browser.WriteError(w, r, browserauth.ErrUnauthenticated)
 		return
 	}
 	sessionPage, err := a.security.ListWebAuthSessions(r.Context(), accessCookie.Value, "", usercmd.PageRequest{
@@ -324,7 +336,7 @@ func (a *httpApp) account(w http.ResponseWriter, r *http.Request) {
 func (a *httpApp) audit(w http.ResponseWriter, r *http.Request) {
 	principal, ok := security.PrincipalFromContext(r.Context())
 	if !ok {
-		a.browser.WriteError(w, r, security.ErrUnauthenticated)
+		a.browser.WriteError(w, r, browserauth.ErrUnauthenticated)
 		return
 	}
 	limit := 0
@@ -447,7 +459,7 @@ func (a *httpApp) audit(w http.ResponseWriter, r *http.Request) {
 func (a *httpApp) accessList(w http.ResponseWriter, r *http.Request) {
 	principal, ok := security.PrincipalFromContext(r.Context())
 	if !ok {
-		a.browser.WriteError(w, r, security.ErrUnauthenticated)
+		a.browser.WriteError(w, r, browserauth.ErrUnauthenticated)
 		return
 	}
 	userList, err := a.access.ListUsers(r.Context(), access.Actor{User: principal.User, WebAuthSessionID: principal.WebAuthSessionID})
@@ -482,7 +494,7 @@ func (a *httpApp) accessList(w http.ResponseWriter, r *http.Request) {
 func (a *httpApp) accessCreatePage(w http.ResponseWriter, r *http.Request) {
 	principal, ok := security.PrincipalFromContext(r.Context())
 	if !ok {
-		a.browser.WriteError(w, r, security.ErrUnauthenticated)
+		a.browser.WriteError(w, r, browserauth.ErrUnauthenticated)
 		return
 	}
 	capabilities := users.BackofficeCapabilities(principal.User)
@@ -496,7 +508,7 @@ func (a *httpApp) accessCreatePage(w http.ResponseWriter, r *http.Request) {
 func (a *httpApp) accessDetail(w http.ResponseWriter, r *http.Request) {
 	principal, ok := security.PrincipalFromContext(r.Context())
 	if !ok {
-		a.browser.WriteError(w, r, security.ErrUnauthenticated)
+		a.browser.WriteError(w, r, browserauth.ErrUnauthenticated)
 		return
 	}
 	page, err := a.bindingDetailPage(r, principal, r.PathValue("user_id"))

@@ -8,6 +8,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/backoffice/internal/webui"
 	"github.com/baldaworks/balda/internal/apps/backoffice/security"
+	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/skillcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/users"
@@ -28,15 +29,15 @@ func (a *httpApp) registerSkills(mux *http.ServeMux) {
 	}
 }
 
-func skillAuthority(p security.Principal) skillcmd.Authority {
+func skillAuthority(p browserauth.Principal) skillcmd.Authority {
 	return skillcmd.NewBrowserAuthority(p.User.ID, p.User.Version, p.User.Credential.Version, p.MFAVersion, p.WebAuthSessionID, p.WebAuthSessionVersion, time.Now().UTC())
 }
 
-func (a *httpApp) skillBasePage(r *http.Request, p security.Principal) webui.Page {
+func (a *httpApp) skillBasePage(r *http.Request, p browserauth.Principal) webui.Page {
 	return webui.Page{Title: "Skills · Balda", ViewerUsername: p.User.Username, CSRFToken: a.browser.CSRFToken(r), Current: webui.LocationSkills, Navigation: webui.Navigation(users.BackofficeCapabilities(p.User), webui.LocationSkills), Skills: &webui.SkillsView{}, RestartURL: a.path("/skills"), RestartLabel: "Reopen Skills"}
 }
 
-func (a *httpApp) readSkills(r *http.Request, p security.Principal, page *webui.Page) error {
+func (a *httpApp) readSkills(r *http.Request, p browserauth.Principal, page *webui.Page) error {
 	if a.skills == nil {
 		return skillcmd.ErrUnavailable
 	}
@@ -101,7 +102,7 @@ func selectManagedSkill(page *webui.Page, id string) error {
 	return skillcmd.ErrNotFound
 }
 
-func skillMutation(r *http.Request, state string, p security.Principal) skillcmd.Mutation {
+func skillMutation(r *http.Request, state string, p browserauth.Principal) skillcmd.Mutation {
 	return skillcmd.Mutation{ID: runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindUserSkill, Name: r.PathValue("skill_id")}, ExpectedState: strings.TrimSpace(state), Authority: skillAuthority(p)}
 }
 
@@ -224,7 +225,7 @@ func (a *httpApp) skillRetry(w http.ResponseWriter, r *http.Request) {
 	a.skillOutcome(w, r, p, page, outcome, err)
 }
 
-func (a *httpApp) skillOutcome(w http.ResponseWriter, r *http.Request, p security.Principal, page webui.Page, outcome skillcmd.Outcome, err error) {
+func (a *httpApp) skillOutcome(w http.ResponseWriter, r *http.Request, p browserauth.Principal, page webui.Page, outcome skillcmd.Outcome, err error) {
 	if outcome.Accepted && outcome.Pending {
 		page.RestartURL, page.RestartLabel = a.path("/skills"), "Reopen Skills"
 		if outcome.Entry != nil {

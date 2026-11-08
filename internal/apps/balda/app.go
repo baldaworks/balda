@@ -19,6 +19,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/attachmentstore"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
+	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
 	"github.com/baldaworks/balda/internal/apps/balda/catalogapp"
 	baldachannel "github.com/baldaworks/balda/internal/apps/balda/channel"
 	baldamattermost "github.com/baldaworks/balda/internal/apps/balda/channel/mattermost"
@@ -455,8 +456,14 @@ func Module(
 			func(provider baldastate.Provider, protector *secrets.Protector) *providers.Service {
 				return providers.New(normaCfg.Providers, provider.ProviderManagement(), protector)
 			},
-			func(provider baldastate.Provider, invitations *auth.BindingInvitations, channels *auth.BindingChannels, mcp *mcpbackofficeapp.Operations, providerOperations *providers.Service, schedules *schedulebackofficeapp.Operations, aliases *aliasbackofficeapp.Operations, webhooks *webhookbackofficeapp.Operations, facts *memorybackofficeapp.Operations, plugins *pluginbackofficeapp.Operations, hooks *hookbackofficeapp.Operations, skills *skillbackofficeapp.Operations, archive *chatarchivebackofficeapp.Operations) (*backoffice.Runtime, error) {
-				runtime, err := backoffice.NewRuntime(backofficeConfig, provider)
+			func(provider baldastate.Provider) (*browserauth.Service, error) {
+				return browserauth.NewService(provider.Users(), browserauth.Config{
+					AccessTTL: backofficeConfig.Server.AccessTokenTTL, RefreshTTL: backofficeConfig.Server.RefreshTokenTTL,
+					Origin: backofficeConfig.Server.PublicURL, CeremonyTTL: backofficeConfig.Server.CeremonyTTL,
+				})
+			},
+			func(provider baldastate.Provider, browserAuth *browserauth.Service, invitations *auth.BindingInvitations, channels *auth.BindingChannels, mcp *mcpbackofficeapp.Operations, providerOperations *providers.Service, schedules *schedulebackofficeapp.Operations, aliases *aliasbackofficeapp.Operations, webhooks *webhookbackofficeapp.Operations, facts *memorybackofficeapp.Operations, plugins *pluginbackofficeapp.Operations, hooks *hookbackofficeapp.Operations, skills *skillbackofficeapp.Operations, archive *chatarchivebackofficeapp.Operations) (*backoffice.Runtime, error) {
+				runtime, err := backoffice.NewRuntimeWithBrowserAuth(backofficeConfig, provider, browserAuth)
 				if err != nil {
 					return nil, err
 				}

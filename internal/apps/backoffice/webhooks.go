@@ -12,6 +12,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/backoffice/internal/webui"
 	"github.com/baldaworks/balda/internal/apps/backoffice/security"
+	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
 	"github.com/baldaworks/balda/internal/apps/balda/users"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookroutecmd"
@@ -60,13 +61,13 @@ func (a *httpApp) webhooksPage(w http.ResponseWriter, r *http.Request) {
 	a.render(w, r, http.StatusOK, webui.TemplateWebhooks, page)
 }
 
-func (a *httpApp) webhookBasePage(r *http.Request, p security.Principal) webui.Page {
+func (a *httpApp) webhookBasePage(r *http.Request, p browserauth.Principal) webui.Page {
 	return webui.Page{Title: "Webhooks · Balda", ViewerUsername: p.User.Username,
 		CSRFToken: a.browser.CSRFToken(r), Current: webui.LocationWebhooks,
 		Navigation: webui.Navigation(users.BackofficeCapabilities(p.User), webui.LocationWebhooks)}
 }
 
-func (a *httpApp) webhooksView(r *http.Request, p security.Principal) (webui.Page, error) {
+func (a *httpApp) webhooksView(r *http.Request, p browserauth.Principal) (webui.Page, error) {
 	page := a.webhookBasePage(r, p)
 	if a.webhooks == nil {
 		return page, webhookroutecmd.ErrUnavailable
@@ -216,7 +217,7 @@ func (a *httpApp) webhookTestPost(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (a *httpApp) webhookAuthority(p security.Principal) webhookroutecmd.Authority {
+func (a *httpApp) webhookAuthority(p browserauth.Principal) webhookroutecmd.Authority {
 	return webhookroutecmd.Authority{UserID: p.User.ID, UserVersion: p.User.Version,
 		CredentialVersion: p.User.Credential.Version, MFAVersion: p.MFAVersion,
 		WebAuthSessionID: p.WebAuthSessionID, WebAuthSessionVersion: p.WebAuthSessionVersion, At: time.Now().UTC()}

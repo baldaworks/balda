@@ -9,6 +9,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/backoffice/internal/webui"
 	"github.com/baldaworks/balda/internal/apps/backoffice/security"
+	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
 	"github.com/baldaworks/balda/internal/apps/balda/plugincmd"
 	"github.com/baldaworks/balda/internal/apps/balda/users"
 )
@@ -19,11 +20,11 @@ const pluginMarketplacesPath = "/plugins/marketplaces"
 const pluginMarketplaceNewPath = pluginMarketplacesPath + "/new"
 const pluginMarketplaceDefinitionsPath = pluginMarketplacesPath + "/definitions/"
 
-func (a *httpApp) pluginBasePage(r *http.Request, p security.Principal) webui.Page {
+func (a *httpApp) pluginBasePage(r *http.Request, p browserauth.Principal) webui.Page {
 	return webui.Page{Title: "Plugins · Balda", ViewerUsername: p.User.Username, CSRFToken: a.browser.CSRFToken(r), Current: webui.LocationPlugins, Navigation: webui.Navigation(users.BackofficeCapabilities(p.User), webui.LocationPlugins), Plugins: &webui.PluginsView{}}
 }
 
-func pluginAuthority(p security.Principal) plugincmd.Authority {
+func pluginAuthority(p browserauth.Principal) plugincmd.Authority {
 	return plugincmd.Authority{UserID: p.User.ID, UserVersion: p.User.Version, CredentialVersion: p.User.Credential.Version, MFAVersion: p.MFAVersion, WebAuthSessionID: p.WebAuthSessionID, WebAuthSessionVersion: p.WebAuthSessionVersion, At: time.Now().UTC()}
 }
 

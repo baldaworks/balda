@@ -118,5 +118,5 @@ func testHandler(t *testing.T) http.Handler {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return config.Handler()
+	return config.Handler(nil)
 }

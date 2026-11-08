@@ -11,6 +11,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/backoffice/internal/webui"
 	"github.com/baldaworks/balda/internal/apps/backoffice/security"
+	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/users"
 )
@@ -104,11 +105,11 @@ func (a *httpApp) mcpDiagnostic(w http.ResponseWriter, r *http.Request) {
 	a.render(w, r, http.StatusOK, webui.TemplateMCP, page)
 }
 
-func (a *httpApp) mcpBasePage(r *http.Request, p security.Principal) webui.Page {
+func (a *httpApp) mcpBasePage(r *http.Request, p browserauth.Principal) webui.Page {
 	return webui.Page{Title: "MCP servers · Balda", ViewerUsername: p.User.Username, CSRFToken: a.browser.CSRFToken(r), Current: webui.LocationMCP, Navigation: webui.Navigation(users.BackofficeCapabilities(p.User), webui.LocationMCP)}
 }
 
-func (a *httpApp) mcpView(r *http.Request, p security.Principal) (webui.Page, error) {
+func (a *httpApp) mcpView(r *http.Request, p browserauth.Principal) (webui.Page, error) {
 	page := a.mcpBasePage(r, p)
 	create := r.URL.Path == a.path("/mcp/new") || (r.Method == http.MethodPost && r.PathValue("connection_id") == "")
 	id := r.PathValue("connection_id")

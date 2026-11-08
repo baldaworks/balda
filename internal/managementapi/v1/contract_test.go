@@ -64,6 +64,20 @@ func TestManagementContractGuardRejectsInvalidFixtures(t *testing.T) {
 			},
 			want: "ManagementError.message maxLength",
 		},
+		{
+			name: "unbounded credential response",
+			mutate: func(spec *openapi3.T) {
+				spec.Components.Schemas["WebAuthMFAFinishRequest"].Value.Properties["credential_response"].Value.MaxLength = nil
+			},
+			want: "WebAuthMFAFinishRequest.credential_response maxLength",
+		},
+		{
+			name: "credential loses sensitivity marker",
+			mutate: func(spec *openapi3.T) {
+				delete(spec.Components.Schemas["WebAuthCredentials"].Value.Properties["access_token"].Value.Extensions, "x-sensitive")
+			},
+			want: "WebAuthCredentials.access_token x-sensitive",
+		},
 	}
 
 	for _, test := range tests {
@@ -94,7 +108,8 @@ func TestGeneratedManagementRoundTrips(t *testing.T) {
 		{
 			name: "WebAuth principal",
 			value: WebAuthPrincipal{
-				UserID: "user-synthetic", Role: Administrator, Assurance: Normal,
+				UserID: "user-synthetic", Username: "synthetic", DisplayName: "Synthetic User",
+				Role: Administrator, Assurance: Normal, AccessExpiresAt: accessExpiry, MFAEnabled: true,
 				UserVersion: 2, CredentialVersion: 3, MFAVersion: 1,
 				WebAuthSessionID: "web-auth-synthetic", WebAuthSessionVersion: 4,
 			},
@@ -215,6 +230,9 @@ func inspectManagementContract(spec *openapi3.T) []string {
 		if !strings.HasPrefix(path, managementPrefix+"/") {
 			findings = append(findings, fmt.Sprintf("path %q is outside management v1", path))
 		}
+		if strings.Contains(path, "/health") || strings.Contains(path, "/ready") {
+			findings = append(findings, fmt.Sprintf("operational probe path %q is not part of management v1", path))
+		}
 		for method, operation := range spec.Paths.Value(path).Operations() {
 			if operation == nil {
 				continue
@@ -236,9 +254,19 @@ func inspectManagementContract(spec *openapi3.T) []string {
 	expectedSecurity := map[string][]string{
 		"getManagementCompatibility": {"operatorServiceAuth"},
 		"loginWebAuth":               {"operatorServiceAuth"},
+		"finishWebAuthLogin":         {"operatorServiceAuth"},
 		"refreshWebAuth":             {"csrf", "operatorServiceAuth", "webAuthRefresh"},
 		"getWebAuthPrincipal":        {"operatorServiceAuth", "webAuthAccess"},
 		"logoutWebAuth":              {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"replaceWebAuthPassword":     {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"getWebAuthMFAStatus":        {"operatorServiceAuth", "webAuthAccess"},
+		"beginWebAuthMFAEnable":      {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"finishWebAuthMFAEnable":     {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"beginWebAuthMFAReplace":     {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"finishWebAuthMFAReplace":    {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"disableWebAuthMFA":          {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"listWebAuthSessions":        {"operatorServiceAuth", "webAuthAccess"},
+		"revokeWebAuthSession":       {"csrf", "operatorServiceAuth", "webAuthAccess"},
 	}
 	for _, path := range spec.Paths.Keys() {
 		for _, operation := range spec.Paths.Value(path).Operations() {
@@ -259,6 +287,7 @@ func inspectManagementContract(spec *openapi3.T) []string {
 	}
 
 	findings = append(findings, inspectIdentitySchemas(spec)...)
+	findings = append(findings, inspectWebAuthSchemas(spec)...)
 	findings = append(findings, inspectErrorSchema(spec)...)
 	slices.Sort(findings)
 	return findings
@@ -328,6 +357,63 @@ func inspectIdentitySchemas(spec *openapi3.T) []string {
 			if property == "session_id" {
 				findings = append(findings, fmt.Sprintf("schema %s has ambiguous property session_id", name))
 			}
+		}
+	}
+	return findings
+}
+
+func inspectWebAuthSchemas(spec *openapi3.T) []string {
+	type boundedProperty struct {
+		schema, property string
+		max              uint64
+		writeOnly        bool
+	}
+	properties := []boundedProperty{
+		{schema: "LocalLoginRequest", property: "username", max: 256},
+		{schema: "LocalLoginRequest", property: "password", max: 4096, writeOnly: true},
+		{schema: "WebAuthBrowserContext", property: "browser_binding", max: 256, writeOnly: true},
+		{schema: "WebAuthBrowserContext", property: "csrf_token", max: 4096, writeOnly: true},
+		{schema: "WebAuthLoginMFAFinishRequest", property: "credential_response", max: 131072, writeOnly: true},
+		{schema: "WebAuthPasswordReplaceRequest", property: "current_password", max: 4096, writeOnly: true},
+		{schema: "WebAuthPasswordReplaceRequest", property: "new_password", max: 4096, writeOnly: true},
+		{schema: "WebAuthMFABeginRequest", property: "password", max: 4096, writeOnly: true},
+		{schema: "WebAuthMFAReplaceBeginRequest", property: "password", max: 4096, writeOnly: true},
+		{schema: "WebAuthMFADisableRequest", property: "password", max: 4096, writeOnly: true},
+		{schema: "WebAuthMFAFinishRequest", property: "credential_response", max: 131072, writeOnly: true},
+	}
+	var findings []string
+	for _, check := range properties {
+		schema := spec.Components.Schemas[check.schema]
+		if schema == nil || schema.Value == nil {
+			findings = append(findings, fmt.Sprintf("missing schema %s", check.schema))
+			continue
+		}
+		property := schema.Value.Properties[check.property]
+		if property == nil || property.Value == nil || property.Value.MaxLength == nil || *property.Value.MaxLength != check.max {
+			findings = append(findings, fmt.Sprintf("%s.%s maxLength must be %d", check.schema, check.property, check.max))
+			continue
+		}
+		if check.writeOnly && !property.Value.WriteOnly {
+			findings = append(findings, fmt.Sprintf("%s.%s must be writeOnly", check.schema, check.property))
+		}
+	}
+	credentials := spec.Components.Schemas["WebAuthCredentials"]
+	if credentials == nil || credentials.Value == nil {
+		return append(findings, "missing WebAuthCredentials schema")
+	}
+	for _, name := range []string{"access_token", "refresh_token", "csrf_token"} {
+		property := credentials.Value.Properties[name]
+		if property == nil || property.Value == nil || property.Value.MaxLength == nil || *property.Value.MaxLength != 4096 {
+			findings = append(findings, fmt.Sprintf("WebAuthCredentials.%s maxLength must be 4096", name))
+			continue
+		}
+		if sensitive, ok := property.Value.Extensions["x-sensitive"].(bool); !ok || !sensitive {
+			findings = append(findings, fmt.Sprintf("WebAuthCredentials.%s x-sensitive must be true", name))
+		}
+	}
+	for _, forbidden := range []string{"Provider", "IdentityProvider", "AuthAction", "CeremonyAction"} {
+		if _, exists := spec.Components.Schemas[forbidden]; exists {
+			findings = append(findings, fmt.Sprintf("generic auth schema %s is forbidden", forbidden))
 		}
 	}
 	return findings

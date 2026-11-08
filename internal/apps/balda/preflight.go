@@ -106,7 +106,7 @@ func PreflightRuntime(
 		return err
 	}
 	if managementHTTP.Enabled {
-		_ = managementHTTP.Handler()
+		_ = managementHTTP.Handler(nil)
 	}
 	if err := validateExecutionConfigLint(executionConfig, sharedHTTP.ListenAddr, inboundWebhookConfig); err != nil {
 		return err

@@ -11,6 +11,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/backoffice/internal/webui"
 	"github.com/baldaworks/balda/internal/apps/backoffice/security"
+	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
 )
 
@@ -70,7 +71,7 @@ func (a *httpApp) mcpAuthorizationRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST "+a.path("/mcp/connections/{connection_id}/oauth/retry"), a.mcpRetryAuthorization)
 }
 
-func (a *httpApp) mcpAuthority(p security.Principal) mcpcmd.Authority {
+func (a *httpApp) mcpAuthority(p browserauth.Principal) mcpcmd.Authority {
 	return mcpcmd.Authority{UserID: p.User.ID, UserVersion: p.User.Version, CredentialVersion: p.User.Credential.Version, MFAVersion: p.MFAVersion, WebAuthSessionID: p.WebAuthSessionID, WebAuthSessionVersion: p.WebAuthSessionVersion, At: time.Now().UTC()}
 }
 
@@ -82,7 +83,7 @@ func (a *httpApp) mcpNativeMutation(w http.ResponseWriter, r *http.Request) (url
 
 func (a *httpApp) mcpNativeMutationLimit(w http.ResponseWriter, r *http.Request, limit int64) (url.Values, webui.Page, mcpcmd.Authority, bool) {
 	var form url.Values
-	var p security.Principal
+	var p browserauth.Principal
 	var ok bool
 	if limit > 0 {
 		form, p, ok = a.browser.AdministratorMutationLimit(w, r, limit)

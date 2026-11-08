@@ -13,14 +13,14 @@ func TestSessionClientUsesConnectionPeerWithoutForwardedHeaders(t *testing.T) {
 	request.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) Gecko/20100101 Firefox/130.0")
 	request.Header.Set("X-Forwarded-For", "198.51.100.99")
 	request.Header.Set("Forwarded", "for=203.0.113.5")
-	device, peer := sessionClientFromContext(withSessionClient(request))
+	device, peer := deviceLabel(request.UserAgent()), directConnectionPeer(request.RemoteAddr)
 	if device != "Firefox on Linux" || peer != "192.0.2.42" {
 		t.Fatalf("session client = %q, %q", device, peer)
 	}
 
 	request.RemoteAddr = "invalid"
 	request.Header.Set("User-Agent", "secret@example.com")
-	device, peer = sessionClientFromContext(withSessionClient(request))
+	device, peer = deviceLabel(request.UserAgent()), directConnectionPeer(request.RemoteAddr)
 	if device != "" || peer != "" {
 		t.Fatalf("unknown session client = %q, %q", device, peer)
 	}

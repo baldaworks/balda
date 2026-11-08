@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/baldaworks/balda/internal/apps/backoffice/security"
+	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 )
 
@@ -22,7 +22,7 @@ func TestMFACeremonyUsesNativeSecretFreeScopedDocument(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "http://backoffice.example/balda/login", strings.NewReader("csrf_token=test-csrf&password=never-reflect"))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	response := httptest.NewRecorder()
-	app.renderMFACeremony(response, request, usercmd.MFALogin, security.CeremonyStart{Transaction: "opaque-transaction", Options: map[string]any{"publicKey": map[string]any{"challenge": "cHVibGlj"}}})
+	app.renderMFACeremony(response, request, usercmd.MFALogin, browserauth.CeremonyStart{Transaction: "opaque-transaction", Options: map[string]any{"publicKey": map[string]any{"challenge": "cHVibGlj"}}})
 	body := response.Body.String()
 	for _, want := range []string{`<!doctype html>`, `/balda/auth/webauthn/finish`, `hx-boost="false"`, `hx-history="false"`, `name="csrf_token" value="test-csrf"`, `/assets/webauthn.`, `data-webauthn`} {
 		if !strings.Contains(body, want) {

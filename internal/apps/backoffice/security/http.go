@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 )
 
@@ -31,23 +33,25 @@ const (
 	OAuthCallbackPath = "/mcp/oauth/callback"
 
 	defaultMaxBodyBytes = 8 << 10
+	csrfBytes           = 32
+	httpsScheme         = "https"
 )
 
 var defaultReturnPrefixes = []string{"/", "/overview", "/agent", "/access", "/account", "/audit", "/mcp", "/schedules", "/aliases", "/plugins", "/skills", "/chat-sessions"}
 
 type browserService interface {
-	Login(ctx context.Context, username string, password []byte) (Credentials, error)
-	ValidateAccess(ctx context.Context, rawToken string) (Principal, error)
+	Login(ctx context.Context, username string, password []byte) (browserauth.Credentials, error)
+	ValidateAccess(ctx context.Context, rawToken string) (browserauth.Principal, error)
 	ValidateCSRF(ctx context.Context, rawAccessToken, csrfToken string) error
-	Refresh(ctx context.Context, rawToken, csrfToken string) (Credentials, error)
+	Refresh(ctx context.Context, rawToken, csrfToken string) (browserauth.Credentials, error)
 	Logout(ctx context.Context, rawAccessToken string) error
-	ReplacePassword(ctx context.Context, rawAccessToken string, currentPassword, nextPassword []byte) (Credentials, error)
+	ReplacePassword(ctx context.Context, rawAccessToken string, currentPassword, nextPassword []byte) (browserauth.Credentials, error)
 	RevokeWebAuthSession(ctx context.Context, rawAccessToken, targetSessionID string, confirmCurrent bool) error
 }
 
 // HTTPConfig controls the browser-only trust boundary.
 type HTTPConfig struct {
-	CeremonyResponder     func(http.ResponseWriter, *http.Request, usercmd.MFAPurpose, CeremonyStart)
+	CeremonyResponder     func(http.ResponseWriter, *http.Request, usercmd.MFAPurpose, browserauth.CeremonyStart)
 	TrustedOrigin         string
 	BasePath              string
 	SecureCookies         bool
@@ -60,7 +64,7 @@ type HTTPConfig struct {
 // Browser implements the HTTP security boundary without owning page rendering.
 type Browser struct {
 	service           browserService
-	ceremonyResponder func(http.ResponseWriter, *http.Request, usercmd.MFAPurpose, CeremonyStart)
+	ceremonyResponder func(http.ResponseWriter, *http.Request, usercmd.MFAPurpose, browserauth.CeremonyStart)
 	trustedOrigin     string
 	basePath          string
 	secureCookies     bool
@@ -150,7 +154,7 @@ func (b *Browser) Login(w http.ResponseWriter, r *http.Request) {
 		b.writeServiceError(w, r, err)
 		return
 	}
-	ctx := withMFABrowser(withSessionClient(r), binding, form.Get("csrf_token"))
+	ctx := browserauth.WithMFABrowser(withSessionClient(r), binding, form.Get("csrf_token"))
 	credentials, err := b.service.Login(ctx, form.Get("username"), password)
 	if err != nil {
 		b.writeServiceError(w, r, err)
@@ -180,12 +184,12 @@ func (b *Browser) Refresh(w http.ResponseWriter, r *http.Request) {
 	refresh, err := r.Cookie(RefreshCookieName)
 	if err != nil || refresh.Value == "" {
 		b.clearCredentials(w)
-		b.writeServiceError(w, r, ErrUnauthenticated)
+		b.writeServiceError(w, r, browserauth.ErrUnauthenticated)
 		return
 	}
 	credentials, err := b.service.Refresh(r.Context(), refresh.Value, form.Get("csrf_token"))
 	if err != nil {
-		if errors.Is(err, ErrUnauthenticated) {
+		if errors.Is(err, browserauth.ErrUnauthenticated) {
 			b.clearCredentials(w)
 		}
 		b.writeServiceError(w, r, err)
@@ -208,14 +212,14 @@ func (b *Browser) Logout(w http.ResponseWriter, r *http.Request) {
 	access, err := r.Cookie(AccessCookieName)
 	if err != nil || access.Value == "" {
 		b.clearCredentials(w)
-		b.writeServiceError(w, r, ErrUnauthenticated)
+		b.writeServiceError(w, r, browserauth.ErrUnauthenticated)
 		return
 	}
 	if err := b.service.ValidateCSRF(r.Context(), access.Value, b.CSRFToken(r)); err != nil {
 		b.writeServiceError(w, r, err)
 		return
 	}
-	if err := b.service.Logout(r.Context(), access.Value); err != nil && !errors.Is(err, ErrUnauthenticated) {
+	if err := b.service.Logout(r.Context(), access.Value); err != nil && !errors.Is(err, browserauth.ErrUnauthenticated) {
 		b.writeServiceError(w, r, err)
 		return
 	}
@@ -231,7 +235,7 @@ func (b *Browser) ReplacePassword(w http.ResponseWriter, r *http.Request) {
 	}
 	access, err := r.Cookie(AccessCookieName)
 	if err != nil || access.Value == "" {
-		b.writeServiceError(w, r, ErrUnauthenticated)
+		b.writeServiceError(w, r, browserauth.ErrUnauthenticated)
 		return
 	}
 	if err := b.service.ValidateCSRF(r.Context(), access.Value, b.CSRFToken(r)); err != nil {
@@ -260,7 +264,7 @@ func (b *Browser) RevokeWebAuthSession(w http.ResponseWriter, r *http.Request) {
 	}
 	access, err := r.Cookie(AccessCookieName)
 	if err != nil || access.Value == "" {
-		b.writeServiceError(w, r, ErrUnauthenticated)
+		b.writeServiceError(w, r, browserauth.ErrUnauthenticated)
 		return
 	}
 	if err := b.service.ValidateCSRF(r.Context(), access.Value, form.Get("csrf_token")); err != nil {
@@ -290,7 +294,7 @@ func (b *Browser) Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie(AccessCookieName)
 		if err != nil || cookie.Value == "" {
-			b.writeServiceError(w, r, ErrUnauthenticated)
+			b.writeServiceError(w, r, browserauth.ErrUnauthenticated)
 			return
 		}
 		principal, err := b.service.ValidateAccess(r.Context(), cookie.Value)
@@ -307,7 +311,7 @@ func (b *Browser) Authenticate(next http.Handler) http.Handler {
 func (b *Browser) PreserveOAuthCallbackCredential(w http.ResponseWriter, r *http.Request, attemptExpires time.Time) error {
 	cookie, err := r.Cookie(AccessCookieName)
 	if err != nil || cookie.Value == "" {
-		return ErrUnauthenticated
+		return browserauth.ErrUnauthenticated
 	}
 	p, err := b.service.ValidateAccess(r.Context(), cookie.Value)
 	if err != nil {
@@ -318,7 +322,7 @@ func (b *Browser) PreserveOAuthCallbackCredential(w http.ResponseWriter, r *http
 		expires = attemptExpires
 	}
 	if expires.IsZero() {
-		return ErrUnauthenticated
+		return browserauth.ErrUnauthenticated
 	}
 	http.SetCookie(w, &http.Cookie{Name: OAuthCallbackCookieName, Value: cookie.Value,
 		Path: b.path(OAuthCallbackPath), Expires: expires,
@@ -355,11 +359,11 @@ func (b *Browser) RequireNormal(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := PrincipalFromContext(r.Context())
 		if !ok {
-			b.writeServiceError(w, r, ErrUnauthenticated)
+			b.writeServiceError(w, r, browserauth.ErrUnauthenticated)
 			return
 		}
 		if principal.Assurance != usercmd.WebAuthAssuranceNormal {
-			b.writeServiceError(w, r, ErrForbidden)
+			b.writeServiceError(w, r, browserauth.ErrForbidden)
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -371,11 +375,11 @@ func (b *Browser) RequireAdministrator(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := PrincipalFromContext(r.Context())
 		if !ok {
-			b.writeServiceError(w, r, ErrUnauthenticated)
+			b.writeServiceError(w, r, browserauth.ErrUnauthenticated)
 			return
 		}
 		if principal.Assurance != usercmd.WebAuthAssuranceNormal || principal.User.Role != usercmd.RoleAdministrator {
-			b.writeServiceError(w, r, ErrForbidden)
+			b.writeServiceError(w, r, browserauth.ErrForbidden)
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -384,38 +388,38 @@ func (b *Browser) RequireAdministrator(next http.Handler) http.Handler {
 
 // AdministratorMutation applies the browser mutation guard in trust-boundary
 // order and returns a current normal administrator principal.
-func (b *Browser) AdministratorMutation(w http.ResponseWriter, r *http.Request) (url.Values, Principal, bool) {
+func (b *Browser) AdministratorMutation(w http.ResponseWriter, r *http.Request) (url.Values, browserauth.Principal, bool) {
 	return b.AdministratorMutationLimit(w, r, b.maxBodyBytes)
 }
 
 // AdministratorMutationLimit keeps the same authority guard with a server-chosen
 // bounded intake size for larger editors. Other forms retain their usual limit.
-func (b *Browser) AdministratorMutationLimit(w http.ResponseWriter, r *http.Request, limit int64) (url.Values, Principal, bool) {
+func (b *Browser) AdministratorMutationLimit(w http.ResponseWriter, r *http.Request, limit int64) (url.Values, browserauth.Principal, bool) {
 	if limit < 256 || limit > 4<<20 {
 		b.writeHTTPError(w, r, http.StatusBadRequest, "invalid request")
-		return nil, Principal{}, false
+		return nil, browserauth.Principal{}, false
 	}
 	form, ok := b.mutationFormLimit(w, r, limit)
 	if !ok {
-		return nil, Principal{}, false
+		return nil, browserauth.Principal{}, false
 	}
 	access, err := r.Cookie(AccessCookieName)
 	if err != nil || access.Value == "" {
-		b.writeServiceError(w, r, ErrUnauthenticated)
-		return nil, Principal{}, false
+		b.writeServiceError(w, r, browserauth.ErrUnauthenticated)
+		return nil, browserauth.Principal{}, false
 	}
 	if err := b.service.ValidateCSRF(r.Context(), access.Value, form.Get("csrf_token")); err != nil {
 		b.writeServiceError(w, r, err)
-		return nil, Principal{}, false
+		return nil, browserauth.Principal{}, false
 	}
 	principal, err := b.service.ValidateAccess(r.Context(), access.Value)
 	if err != nil {
 		b.writeServiceError(w, r, err)
-		return nil, Principal{}, false
+		return nil, browserauth.Principal{}, false
 	}
 	if principal.Assurance != usercmd.WebAuthAssuranceNormal || principal.User.Role != usercmd.RoleAdministrator {
-		b.writeServiceError(w, r, ErrForbidden)
-		return nil, Principal{}, false
+		b.writeServiceError(w, r, browserauth.ErrForbidden)
+		return nil, browserauth.Principal{}, false
 	}
 	return form, principal, true
 }
@@ -426,8 +430,8 @@ func (b *Browser) WriteError(w http.ResponseWriter, r *http.Request, err error) 
 }
 
 // PrincipalFromContext returns a principal installed by Authenticate.
-func PrincipalFromContext(ctx context.Context) (Principal, bool) {
-	principal, ok := ctx.Value(principalContextKey{}).(Principal)
+func PrincipalFromContext(ctx context.Context) (browserauth.Principal, bool) {
+	principal, ok := ctx.Value(principalContextKey{}).(browserauth.Principal)
 	return principal, ok
 }
 
@@ -482,10 +486,24 @@ func (b *Browser) mutationFormLimit(w http.ResponseWriter, r *http.Request, limi
 	return r.PostForm, true
 }
 
-func (b *Browser) setCredentials(w http.ResponseWriter, credentials Credentials) {
+func (b *Browser) setCredentials(w http.ResponseWriter, credentials browserauth.Credentials) {
 	b.setCookie(w, AccessCookieName, credentials.AccessToken, b.path("/"), credentials.AccessExpiresAt, true)
 	b.setCookie(w, RefreshCookieName, credentials.WebAuthRefreshToken, b.path(RefreshPath), credentials.RefreshExpiresAt, true)
 	b.setCookie(w, CSRFCookieName, credentials.CSRFToken, b.path("/"), credentials.RefreshExpiresAt, true)
+}
+
+func randomValue(random io.Reader, size int) (string, error) {
+	value := make([]byte, size)
+	if _, err := io.ReadFull(random, value); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(value), nil
+}
+
+func zero(value []byte) {
+	for i := range value {
+		value[i] = 0
+	}
 }
 
 func (b *Browser) clearCredentials(w http.ResponseWriter) {
@@ -528,13 +546,13 @@ func (b *Browser) respondMutation(w http.ResponseWriter, r *http.Request, locati
 func (b *Browser) writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 	w.Header().Set("Cache-Control", "no-store")
 	switch {
-	case errors.Is(err, ErrMFAUnavailable):
-		b.writeHTTPError(w, r, http.StatusServiceUnavailable, ErrMFAUnavailable.Error())
-	case errors.Is(err, ErrRefreshConcurrent):
+	case errors.Is(err, browserauth.ErrMFAUnavailable):
+		b.writeHTTPError(w, r, http.StatusServiceUnavailable, browserauth.ErrMFAUnavailable.Error())
+	case errors.Is(err, browserauth.ErrRefreshConcurrent):
 		b.writeHTTPError(w, r, http.StatusConflict, "session was refreshed in another request; reopen the page")
-	case errors.Is(err, ErrUnauthenticated):
+	case errors.Is(err, browserauth.ErrUnauthenticated):
 		b.writeHTTPError(w, r, http.StatusUnauthorized, "authentication failed")
-	case errors.Is(err, ErrForbidden), errors.Is(err, usercmd.ErrForbidden):
+	case errors.Is(err, browserauth.ErrForbidden), errors.Is(err, usercmd.ErrForbidden):
 		b.writeHTTPError(w, r, http.StatusForbidden, "request forbidden")
 	case errors.Is(err, usercmd.ErrInvalid):
 		b.writeHTTPError(w, r, http.StatusBadRequest, "invalid request")

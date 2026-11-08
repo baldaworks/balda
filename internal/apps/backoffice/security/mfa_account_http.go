@@ -4,15 +4,16 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 )
 
 type accountMFAService interface {
-	BeginEnable(ctx context.Context, token string, password []byte, browser, csrf string) (CeremonyStart, error)
-	FinishEnable(ctx context.Context, token, transaction, browser, csrf string, response []byte) (Credentials, error)
-	BeginReplace(ctx context.Context, token string, password []byte, confirmed bool, browser, csrf string) (CeremonyStart, error)
-	FinishReplace(ctx context.Context, token, transaction, browser, csrf string, response []byte) (Credentials, error)
-	Disable(ctx context.Context, token string, password []byte, confirmed bool) (Credentials, error)
+	BeginEnable(ctx context.Context, token string, password []byte, browser, csrf string) (browserauth.CeremonyStart, error)
+	FinishEnable(ctx context.Context, token, transaction, browser, csrf string, response []byte) (browserauth.Credentials, error)
+	BeginReplace(ctx context.Context, token string, password []byte, confirmed bool, browser, csrf string) (browserauth.CeremonyStart, error)
+	FinishReplace(ctx context.Context, token, transaction, browser, csrf string, response []byte) (browserauth.Credentials, error)
+	Disable(ctx context.Context, token string, password []byte, confirmed bool) (browserauth.Credentials, error)
 }
 
 // BeginEnable starts password-confirmed opt-in registration.
@@ -43,7 +44,7 @@ func (b *Browser) Disable(w http.ResponseWriter, r *http.Request) {
 	}
 	access, err := r.Cookie(AccessCookieName)
 	if err != nil {
-		b.writeServiceError(w, r, ErrUnauthenticated)
+		b.writeServiceError(w, r, browserauth.ErrUnauthenticated)
 		return
 	}
 	if err := b.service.ValidateCSRF(r.Context(), access.Value, form.Get("csrf_token")); err != nil {
@@ -52,7 +53,7 @@ func (b *Browser) Disable(w http.ResponseWriter, r *http.Request) {
 	}
 	s, ok := b.service.(accountMFAService)
 	if !ok {
-		b.writeServiceError(w, r, ErrMFAUnavailable)
+		b.writeServiceError(w, r, browserauth.ErrMFAUnavailable)
 		return
 	}
 	password := []byte(form.Get("password"))
@@ -73,7 +74,7 @@ func (b *Browser) accountMFAStart(w http.ResponseWriter, r *http.Request, purpos
 	}
 	access, err := r.Cookie(AccessCookieName)
 	if err != nil {
-		b.writeServiceError(w, r, ErrUnauthenticated)
+		b.writeServiceError(w, r, browserauth.ErrUnauthenticated)
 		return
 	}
 	if err := b.service.ValidateCSRF(r.Context(), access.Value, form.Get("csrf_token")); err != nil {
@@ -82,7 +83,7 @@ func (b *Browser) accountMFAStart(w http.ResponseWriter, r *http.Request, purpos
 	}
 	s, ok := b.service.(accountMFAService)
 	if !ok {
-		b.writeServiceError(w, r, ErrMFAUnavailable)
+		b.writeServiceError(w, r, browserauth.ErrMFAUnavailable)
 		return
 	}
 	browser, err := b.newMFABrowser(w)
@@ -92,7 +93,7 @@ func (b *Browser) accountMFAStart(w http.ResponseWriter, r *http.Request, purpos
 	}
 	password := []byte(form.Get("password"))
 	defer zero(password)
-	var start CeremonyStart
+	var start browserauth.CeremonyStart
 	switch purpose {
 	case usercmd.MFAEnable:
 		start, err = s.BeginEnable(r.Context(), access.Value, password, browser, form.Get("csrf_token"))
@@ -113,7 +114,7 @@ func (b *Browser) accountMFAFinish(w http.ResponseWriter, r *http.Request, purpo
 	}
 	access, err := r.Cookie(AccessCookieName)
 	if err != nil {
-		b.writeServiceError(w, r, ErrUnauthenticated)
+		b.writeServiceError(w, r, browserauth.ErrUnauthenticated)
 		return
 	}
 	if err := b.service.ValidateCSRF(r.Context(), access.Value, form.Get("csrf_token")); err != nil {
@@ -122,10 +123,10 @@ func (b *Browser) accountMFAFinish(w http.ResponseWriter, r *http.Request, purpo
 	}
 	s, ok := b.service.(accountMFAService)
 	if !ok {
-		b.writeServiceError(w, r, ErrMFAUnavailable)
+		b.writeServiceError(w, r, browserauth.ErrMFAUnavailable)
 		return
 	}
-	var credentials Credentials
+	var credentials browserauth.Credentials
 	response := []byte(form.Get("credential"))
 	switch purpose {
 	case usercmd.MFAEnable:
