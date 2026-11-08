@@ -1,12 +1,47 @@
 name: test
 on:
   workflow_dispatch:
+    inputs:
+      force-full:
+        description: Run the full regression suite
+        type: boolean
+        default: false
   push:
     branches: [ master, main ]
   pull_request:
     branches: [ master, main ]
+  schedule:
+    - cron: '17 3 * * *'
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      backoffice: ${{ steps.classify.outputs.backoffice }}
+      core: ${{ steps.classify.outputs.core }}
+      full: ${{ steps.classify.outputs.full }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - id: classify
+        name: Classify changed paths
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          FORCE_FULL: ${{ inputs.force-full || false }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$EVENT_NAME" == workflow_dispatch || "$FORCE_FULL" == true || -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]]; then
+            printf 'M\tgo.mod\n' | ./scripts/ci/classify-changes.sh
+          else
+            git diff --name-status "$BASE_SHA" "$HEAD_SHA" | ./scripts/ci/classify-changes.sh
+          fi
+
   backoffice-e2e:
+    needs: changes
+    if: needs.changes.outputs.backoffice == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -32,7 +67,23 @@ jobs:
           path: ${{ runner.temp }}/balda-backoffice-e2e
           if-no-files-found: warn
 
+  backoffice-unit:
+    needs: changes
+    if: needs.changes.outputs.backoffice == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+      - name: Backoffice build and unit tests
+        run: go test -race ./cmd/backoffice ./internal/apps/backoffice/...
+
   sqlite-integration:
+    needs: changes
+    if: needs.changes.outputs.core == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -56,6 +107,8 @@ jobs:
           if-no-files-found: warn
 
   postgres-integration:
+    needs: changes
+    if: needs.changes.outputs.core == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -84,6 +137,8 @@ jobs:
         run: go test -race -tags=integration,postgres ./internal/apps/balda/state
 
   test-shards:
+    needs: changes
+    if: needs.changes.outputs.core == 'true'
     name: test-shard-${{ matrix.shard }}
     runs-on: ubuntu-latest
     permissions:
@@ -100,7 +155,9 @@ jobs:
       - name: Prepare test artifact workspace
         run: mkdir -p .tmp
       - name: Generate complete test shards
-        run: ./scripts/ci/make-go-test-shards.sh .tmp/test-shards
+        env:
+          TEST_MODE: ${{ needs.changes.outputs.full == 'true' && 'full' || 'core' }}
+        run: ./scripts/ci/make-go-test-shards.sh .tmp/test-shards "$TEST_MODE"
       - name: Test shard ${{ matrix.shard }}
         env:
           TMPDIR: ${{ github.workspace }}/.tmp
@@ -131,39 +188,69 @@ jobs:
 
   test:
     if: always()
-    needs: test-shards
+    needs: [changes, backoffice-unit, backoffice-e2e, test-shards, sqlite-integration, postgres-integration, projection-replay, architecture-lint, jetstream-integration, ingress-e2e]
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
     steps:
-      - name: Require every test shard
+      - name: Require selected test groups
         env:
+          BACKOFFICE_SELECTED: ${{ needs.changes.outputs.backoffice }}
+          BACKOFFICE_RESULT: ${{ needs.backoffice-unit.result }}
+          CORE_SELECTED: ${{ needs.changes.outputs.core }}
           SHARD_RESULT: ${{ needs.test-shards.result }}
-        run: test "$SHARD_RESULT" = success
+          BACKOFFICE_E2E_RESULT: ${{ needs.backoffice-e2e.result }}
+          SQLITE_RESULT: ${{ needs.sqlite-integration.result }}
+          POSTGRES_RESULT: ${{ needs.postgres-integration.result }}
+          PROJECTION_RESULT: ${{ needs.projection-replay.result }}
+          ARCHITECTURE_RESULT: ${{ needs.architecture-lint.result }}
+          JETSTREAM_RESULT: ${{ needs.jetstream-integration.result }}
+          INGRESS_RESULT: ${{ needs.ingress-e2e.result }}
+        run: |
+          [[ "$BACKOFFICE_SELECTED" != true || "$BACKOFFICE_RESULT" == success ]]
+          [[ "$BACKOFFICE_SELECTED" != true || "$BACKOFFICE_E2E_RESULT" == success ]]
+          [[ "$CORE_SELECTED" != true || "$SHARD_RESULT" == success ]]
+          [[ "$CORE_SELECTED" != true || "$SQLITE_RESULT" == success ]]
+          [[ "$CORE_SELECTED" != true || "$POSTGRES_RESULT" == success ]]
+          [[ "$CORE_SELECTED" != true || "$PROJECTION_RESULT" == success ]]
+          [[ "$CORE_SELECTED" != true && "$BACKOFFICE_SELECTED" != true || "$ARCHITECTURE_RESULT" == success ]]
+          [[ "$CORE_SELECTED" != true || "$JETSTREAM_RESULT" == success ]]
+          [[ "$CORE_SELECTED" != true || "$INGRESS_RESULT" == success ]]
       - uses: actions/checkout@v5
+        if: needs.changes.outputs.core == 'true'
       - uses: actions/setup-go@v6
+        if: needs.changes.outputs.core == 'true'
         with:
           go-version-file: 'go.mod'
       - name: Verify management OpenAPI generation
+        if: needs.changes.outputs.core == 'true'
         run: ./scripts/ci/check-management-openapi.sh
       - uses: actions/download-artifact@v8
+        if: needs.changes.outputs.core == 'true'
         with:
           name: test-shard-0
           path: .tmp/test-shards/0
       - uses: actions/download-artifact@v8
+        if: needs.changes.outputs.core == 'true'
         with:
           name: test-shard-1
           path: .tmp/test-shards/1
       - name: Verify inventory and merge atomic coverage
+        if: needs.changes.outputs.core == 'true'
         run: |
           cat .tmp/test-shards/0/packages.txt .tmp/test-shards/1/packages.txt | LC_ALL=C sort > .tmp/test-shards/actual.txt
-          go list ./... | LC_ALL=C sort > .tmp/test-shards/expected.txt
+          if [[ "${{ needs.changes.outputs.full }}" == true ]]; then
+            go list ./... | LC_ALL=C sort > .tmp/test-shards/expected.txt
+          else
+            go list ./... | grep -Ev '^github\.com/baldaworks/balda/(cmd/backoffice|internal/apps/backoffice)(/|$)' | LC_ALL=C sort > .tmp/test-shards/expected.txt
+          fi
           cmp .tmp/test-shards/expected.txt .tmp/test-shards/actual.txt
           test "$(sort .tmp/test-shards/actual.txt | uniq -d | wc -l)" -eq 0
           ./scripts/ci/merge-go-coverprofiles.sh coverage.out .tmp/test-shards/0/coverage.out .tmp/test-shards/1/coverage.out
           cat .tmp/test-shards/0/timing.md .tmp/test-shards/1/timing.md >> "$GITHUB_STEP_SUMMARY"
       - name: Vulnerability check
+        if: needs.changes.outputs.full == 'true'
         run: |
           set -o pipefail
           go tool govulncheck ./... 2>&1 | tee test.log
@@ -177,13 +264,14 @@ jobs:
             .tmp/test-shards
           if-no-files-found: warn
       - name: Upload coverage artifact
+        if: needs.changes.outputs.core == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: coverage.out
           path: coverage.out
           if-no-files-found: error
       - name: Upload coverage to Codecov
-        if: github.event_name != 'pull_request'
+        if: needs.changes.outputs.core == 'true' && github.event_name != 'pull_request'
         uses: codecov/codecov-action@v6
         with:
           files: coverage.out
@@ -191,6 +279,8 @@ jobs:
           use_oidc: true
 
   projection-replay:
+    needs: changes
+    if: needs.changes.outputs.core == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -203,6 +293,8 @@ jobs:
         run: go test -race -count=15 ./internal/apps/balda/jobs -run '^TestEventProjectorReplayAfterRestartRemainsIdempotent$'
 
   architecture-lint:
+    needs: changes
+    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.backoffice == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -215,6 +307,8 @@ jobs:
         run: go tool go-arch-lint check --project-path .
 
   jetstream-integration:
+    needs: changes
+    if: needs.changes.outputs.core == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -227,6 +321,8 @@ jobs:
         run: go test -race ./internal/apps/balda/eventbus/nats
 
   ingress-e2e:
+    needs: changes
+    if: needs.changes.outputs.core == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
