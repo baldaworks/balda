@@ -346,6 +346,26 @@ components:
     in:
       - internal/apps/backoffice
 
+  standalone_backoffice_config:
+    in:
+      - internal/apps/backoffice/standalone
+
+  standalone_backoffice_client:
+    in:
+      - internal/apps/backoffice/managementclient
+
+  standalone_backoffice_limiter:
+    in:
+      - internal/apps/backoffice/loginlimit
+
+  standalone_backoffice_edge:
+    in:
+      - internal/apps/backoffice/browseredge
+
+  standalone_backoffice_entrypoint:
+    in:
+      - cmd/backoffice
+
   # Backoffice-only canonical user and browser-session administration use cases.
   backoffice_access:
     in:
@@ -1105,6 +1125,38 @@ deps:
       - backoffice_security
     # Backoffice receives its canonical persistence port from the host.
     deepScan: false
+    anyVendorDeps: true
+
+  standalone_backoffice_config:
+    mayDependOn:
+      - standalone_backoffice_config
+    anyVendorDeps: true
+
+  standalone_backoffice_client:
+    mayDependOn:
+      - management_api_wire
+      - standalone_backoffice_client
+    anyVendorDeps: false
+
+  standalone_backoffice_limiter:
+    mayDependOn:
+      - standalone_backoffice_limiter
+    anyVendorDeps: false
+
+  standalone_backoffice_edge:
+    mayDependOn:
+      - management_api_wire
+      - standalone_backoffice_client
+      - standalone_backoffice_limiter
+      - standalone_backoffice_edge
+    anyVendorDeps: false
+
+  standalone_backoffice_entrypoint:
+    mayDependOn:
+      - standalone_backoffice_config
+      - standalone_backoffice_client
+      - standalone_backoffice_edge
+      - standalone_backoffice_entrypoint
     anyVendorDeps: true
 
   backoffice_security:
