@@ -5,12 +5,12 @@ import (
 	"net/http"
 
 	"github.com/baldaworks/balda/internal/apps/backoffice/internal/webui"
-	"github.com/baldaworks/balda/internal/apps/backoffice/security"
+	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/go-webauthn/webauthn/protocol"
 )
 
-func (a *httpApp) renderMFACeremony(w http.ResponseWriter, r *http.Request, purpose usercmd.MFAPurpose, start security.CeremonyStart) {
+func (a *httpApp) renderMFACeremony(w http.ResponseWriter, r *http.Request, purpose usercmd.MFAPurpose, start browserauth.CeremonyStart) {
 	options, err := json.Marshal(start.Options)
 	if err != nil {
 		a.renderSecurityError(w, r, http.StatusInternalServerError)

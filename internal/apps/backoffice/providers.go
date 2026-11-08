@@ -12,6 +12,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/backoffice/internal/webui"
 	"github.com/baldaworks/balda/internal/apps/backoffice/security"
+	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
 	"github.com/baldaworks/balda/internal/apps/balda/providers"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/users"
@@ -50,13 +51,13 @@ func (a *httpApp) providersPage(w http.ResponseWriter, r *http.Request) {
 	a.render(w, r, http.StatusOK, webui.TemplateProviders, page)
 }
 
-func (a *httpApp) providerBasePage(r *http.Request, p security.Principal) webui.Page {
+func (a *httpApp) providerBasePage(r *http.Request, p browserauth.Principal) webui.Page {
 	return webui.Page{Title: "Providers · Balda", ViewerUsername: p.User.Username,
 		CSRFToken: a.browser.CSRFToken(r), Current: webui.LocationProviders,
 		Navigation: webui.Navigation(users.BackofficeCapabilities(p.User), webui.LocationProviders)}
 }
 
-func (a *httpApp) providersView(r *http.Request, p security.Principal) (webui.Page, error) {
+func (a *httpApp) providersView(r *http.Request, p browserauth.Principal) (webui.Page, error) {
 	page := a.providerBasePage(r, p)
 	if a.providers == nil {
 		return page, providers.ErrUnavailable
@@ -97,15 +98,15 @@ func providerInventoryItem(inventory providers.Inventory, id string) (providers.
 	return providers.Item{}, false
 }
 
-func (a *httpApp) providerMutation(w http.ResponseWriter, r *http.Request) (url.Values, webui.Page, security.Principal, bool) {
+func (a *httpApp) providerMutation(w http.ResponseWriter, r *http.Request) (url.Values, webui.Page, browserauth.Principal, bool) {
 	form, p, ok := a.browser.AdministratorMutationLimit(w, r, 1<<20)
 	if !ok {
-		return nil, webui.Page{}, security.Principal{}, false
+		return nil, webui.Page{}, browserauth.Principal{}, false
 	}
 	page, err := a.providersView(r, p)
 	if err != nil {
 		a.providerError(w, r, page, err)
-		return nil, page, security.Principal{}, false
+		return nil, page, browserauth.Principal{}, false
 	}
 	return form, page, p, true
 }
@@ -305,7 +306,7 @@ func providerList(raw string) []string {
 	return strings.FieldsFunc(raw, func(r rune) bool { return r == '\n' || r == '\r' || r == ',' })
 }
 
-func providerAudit(p security.Principal) usercmd.AuditEvent {
+func providerAudit(p browserauth.Principal) usercmd.AuditEvent {
 	return usercmd.AuditEvent{ID: uuid.NewString(), ActorUserID: p.User.ID, ActorWebAuthSessionID: p.WebAuthSessionID,
 		Source: "backoffice", OccurredAt: time.Now().UTC()}
 }

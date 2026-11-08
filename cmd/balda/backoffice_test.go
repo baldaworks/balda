@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/baldaworks/balda/internal/apps/backoffice/security"
+	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/userpassword"
@@ -476,7 +476,7 @@ balda:
 	if err := p.Users().CreateUser(t.Context(), u, usercmd.CredentialSecret{UserID: u.ID, PasswordHash: hash}, audit); err != nil {
 		t.Fatal(err)
 	}
-	service, err := security.NewService(p.Users(), security.Config{AccessTTL: time.Minute, RefreshTTL: time.Hour})
+	service, err := browserauth.NewService(p.Users(), browserauth.Config{AccessTTL: time.Minute, RefreshTTL: time.Hour})
 	if err != nil {
 		t.Fatal(err)
 	}

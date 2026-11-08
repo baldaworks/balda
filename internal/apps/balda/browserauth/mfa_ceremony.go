@@ -1,4 +1,4 @@
-package security
+package browserauth
 
 import (
 	"context"
@@ -12,8 +12,9 @@ import (
 
 // CeremonyStart exposes public browser options and an opaque single-use handle.
 type CeremonyStart struct {
-	Transaction string `json:"transaction"`
-	Options     any    `json:"options"`
+	Transaction string    `json:"transaction"`
+	Options     any       `json:"options"`
+	ExpiresAt   time.Time `json:"expires_at"`
 }
 
 type ceremonyState struct {
@@ -62,7 +63,7 @@ func (s *Service) startMFA(ctx context.Context, user usercmd.User, profile userc
 	}
 	// Cleanup is bounded; failure to clean old proofs cannot grant authorization.
 	_, _ = s.store.DeleteExpiredMFACeremonies(ctx, now, 100)
-	return CeremonyStart{Transaction: token, Options: options}, nil
+	return CeremonyStart{Transaction: token, Options: options, ExpiresAt: state.Expires}, nil
 }
 
 type verifiedMFA struct {

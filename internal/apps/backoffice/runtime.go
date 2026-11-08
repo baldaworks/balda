@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/backoffice/internal/webui"
+	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 )
 
@@ -27,6 +28,7 @@ type Runtime struct {
 	provider          state.Provider
 	state             *StateService
 	bootstrap         *BootstrapService
+	browserAuth       *browserauth.Service
 	owned             bool
 	mu                sync.Mutex
 	server            *http.Server
@@ -55,11 +57,26 @@ type HandlerServices struct {
 
 // NewRuntime constructs Backoffice over a provider owned by its host.
 func NewRuntime(config ResolvedConfig, provider state.Provider) (*Runtime, error) {
+	if provider == nil {
+		return nil, fmt.Errorf("backoffice state provider is required")
+	}
+	service, err := newBrowserAuthService(provider.Users(), config.Server)
+	if err != nil {
+		return nil, err
+	}
+	return NewRuntimeWithBrowserAuth(config, provider, service)
+}
+
+// NewRuntimeWithBrowserAuth constructs Backoffice with the Core-owned BrowserAuth service.
+func NewRuntimeWithBrowserAuth(config ResolvedConfig, provider state.Provider, service *browserauth.Service) (*Runtime, error) {
 	if err := webui.VerifyAssets(); err != nil {
 		return nil, fmt.Errorf("verify Backoffice frontend: %w", err)
 	}
 	if provider == nil {
 		return nil, fmt.Errorf("backoffice state provider is required")
+	}
+	if service == nil {
+		return nil, fmt.Errorf("browser auth service is required")
 	}
 	stateService, err := NewStateService(provider.Users())
 	if err != nil {
@@ -69,7 +86,7 @@ func NewRuntime(config ResolvedConfig, provider state.Provider) (*Runtime, error
 	if err != nil {
 		return nil, err
 	}
-	return &Runtime{config: config, provider: provider, state: stateService, bootstrap: bootstrap}, nil
+	return &Runtime{config: config, provider: provider, state: stateService, bootstrap: bootstrap, browserAuth: service}, nil
 }
 
 // OpenRuntime opens the selected backend for standalone maintenance operations.
@@ -171,7 +188,7 @@ func (r *Runtime) Handler(ctx context.Context, browserConfig ResolvedServerConfi
 func (r *Runtime) handler(browserConfig ResolvedServerConfig, services HandlerServices) (http.Handler, error) {
 	config := r.config
 	config.Server = browserConfig
-	httpApplication, err := newHTTPApp(r.provider.Users(), config)
+	httpApplication, err := newHTTPAppWithBrowserAuth(r.provider.Users(), config, r.browserAuth)
 	if err != nil {
 		return nil, fmt.Errorf("construct Backoffice HTTP application: %w", err)
 	}

@@ -46,8 +46,31 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
-        "429":
-          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/management/v1/auth/login/mfa:
+    post:
+      operationId: finishWebAuthLogin
+      summary: Finish local WebAuth login with MFA
+      security:
+        - operatorServiceAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebAuthLoginMFAFinishRequest"
+      responses:
+        "200":
+          description: Authenticated WebAuth credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebAuthCredentials"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalError"
   /api/management/v1/auth/refresh:
@@ -112,6 +135,287 @@ paths:
           $ref: "#/components/responses/Conflict"
         "500":
           $ref: "#/components/responses/InternalError"
+  /api/management/v1/auth/password:
+    post:
+      operationId: replaceWebAuthPassword
+      summary: Replace the current user's local password
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebAuthPasswordReplaceRequest"
+      responses:
+        "200":
+          description: Replacement WebAuth credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebAuthCredentials"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/management/v1/auth/mfa:
+    get:
+      operationId: getWebAuthMFAStatus
+      summary: Read the current user's MFA status
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+      responses:
+        "200":
+          description: Current MFA status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebAuthMFAStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      operationId: disableWebAuthMFA
+      summary: Disable the current user's MFA factor
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebAuthMFADisableRequest"
+      responses:
+        "200":
+          description: Replacement WebAuth credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebAuthCredentials"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/management/v1/auth/mfa/enable:
+    post:
+      operationId: beginWebAuthMFAEnable
+      summary: Begin MFA enrollment
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebAuthMFABeginRequest"
+      responses:
+        "200":
+          description: MFA registration continuation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebAuthMFAContinuation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/management/v1/auth/mfa/enable/finish:
+    post:
+      operationId: finishWebAuthMFAEnable
+      summary: Finish MFA enrollment
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebAuthMFAFinishRequest"
+      responses:
+        "200":
+          description: Replacement WebAuth credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebAuthCredentials"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/management/v1/auth/mfa/replace:
+    post:
+      operationId: beginWebAuthMFAReplace
+      summary: Begin MFA factor replacement
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebAuthMFAReplaceBeginRequest"
+      responses:
+        "200":
+          description: MFA registration continuation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebAuthMFAContinuation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/management/v1/auth/mfa/replace/finish:
+    post:
+      operationId: finishWebAuthMFAReplace
+      summary: Finish MFA factor replacement
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebAuthMFAFinishRequest"
+      responses:
+        "200":
+          description: Replacement WebAuth credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebAuthCredentials"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/management/v1/auth/sessions:
+    get:
+      operationId: listWebAuthSessions
+      summary: List active WebAuth sessions
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+      parameters:
+        - name: user_id
+          in: query
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 256
+        - name: after_id
+          in: query
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 256
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: Active WebAuth session page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebAuthSessionPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/management/v1/auth/sessions/{web_auth_session_id}/revoke:
+    post:
+      operationId: revokeWebAuthSession
+      summary: Revoke one WebAuth session
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+          csrf: []
+      parameters:
+        - name: web_auth_session_id
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 256
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebAuthSessionRevokeRequest"
+      responses:
+        "204":
+          description: WebAuth session revoked
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
 components:
   securitySchemes:
     operatorServiceAuth:
@@ -159,15 +463,8 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ManagementError"
-    RateLimited:
-      description: Login attempt is temporarily rate limited
-      headers:
-        Retry-After:
-          description: Delay in seconds before another attempt.
-          schema:
-            type: integer
-            format: int32
-            minimum: 1
+    NotFound:
+      description: Requested management resource does not exist
       content:
         application/json:
           schema:
@@ -206,6 +503,7 @@ components:
       required:
         - username
         - password
+        - browser_context
       properties:
         username:
           type: string
@@ -217,6 +515,31 @@ components:
           minLength: 1
           maxLength: 4096
           writeOnly: true
+        browser_context:
+          $ref: "#/components/schemas/WebAuthBrowserContext"
+    WebAuthBrowserContext:
+      type: object
+      additionalProperties: false
+      required:
+        - browser_binding
+        - csrf_token
+      properties:
+        browser_binding:
+          type: string
+          minLength: 16
+          maxLength: 256
+          writeOnly: true
+        csrf_token:
+          type: string
+          minLength: 16
+          maxLength: 4096
+          writeOnly: true
+        device_label:
+          type: string
+          maxLength: 256
+        connection_peer:
+          type: string
+          maxLength: 256
     WebAuthLoginResult:
       type: object
       additionalProperties: false
@@ -230,11 +553,43 @@ components:
             - mfa_required
         credentials:
           $ref: "#/components/schemas/WebAuthCredentials"
-        mfa_transaction_id:
+        mfa:
+          $ref: "#/components/schemas/WebAuthMFAContinuation"
+    WebAuthLoginMFAFinishRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - transaction_id
+        - browser_binding
+        - csrf_token
+        - credential_response
+      properties:
+        transaction_id:
           type: string
           minLength: 1
           maxLength: 256
-          description: Opaque transaction identifier for the pending MFA continuation.
+        browser_binding:
+          type: string
+          minLength: 16
+          maxLength: 256
+          writeOnly: true
+        csrf_token:
+          type: string
+          minLength: 16
+          maxLength: 4096
+          writeOnly: true
+        credential_response:
+          type: string
+          minLength: 2
+          maxLength: 131072
+          writeOnly: true
+          description: Bounded serialized WebAuthn assertion response.
+        device_label:
+          type: string
+          maxLength: 256
+        connection_peer:
+          type: string
+          maxLength: 256
     WebAuthCredentials:
       type: object
       additionalProperties: false
@@ -251,16 +606,19 @@ components:
           minLength: 1
           maxLength: 4096
           description: Sensitive opaque access credential returned only to the trusted BFF.
+          x-sensitive: true
         refresh_token:
           type: string
           minLength: 1
           maxLength: 4096
           description: Sensitive opaque refresh credential returned only to the trusted BFF.
+          x-sensitive: true
         csrf_token:
           type: string
           minLength: 1
           maxLength: 4096
           description: Sensitive CSRF proof returned only to the trusted BFF.
+          x-sensitive: true
         access_expires_at:
           type: string
           format: date-time
@@ -274,8 +632,12 @@ components:
       additionalProperties: false
       required:
         - user_id
+        - username
+        - display_name
         - role
         - assurance
+        - access_expires_at
+        - mfa_enabled
         - user_version
         - credential_version
         - mfa_version
@@ -286,10 +648,23 @@ components:
           type: string
           minLength: 1
           maxLength: 256
+        username:
+          type: string
+          minLength: 1
+          maxLength: 256
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 256
         role:
           $ref: "#/components/schemas/WebAuthRole"
         assurance:
           $ref: "#/components/schemas/WebAuthAssurance"
+        access_expires_at:
+          type: string
+          format: date-time
+        mfa_enabled:
+          type: boolean
         user_version:
           type: integer
           format: uint64
@@ -310,6 +685,142 @@ components:
           type: integer
           format: uint64
           minimum: 1
+    WebAuthPasswordReplaceRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - current_password
+        - new_password
+      properties:
+        current_password:
+          type: string
+          format: password
+          minLength: 1
+          maxLength: 4096
+          writeOnly: true
+        new_password:
+          type: string
+          format: password
+          minLength: 1
+          maxLength: 4096
+          writeOnly: true
+    WebAuthMFAStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - enabled
+        - available
+      properties:
+        enabled:
+          type: boolean
+        available:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        last_used_at:
+          type: string
+          format: date-time
+    WebAuthMFABeginRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - password
+        - browser_binding
+      properties:
+        password:
+          type: string
+          format: password
+          minLength: 1
+          maxLength: 4096
+          writeOnly: true
+        browser_binding:
+          type: string
+          minLength: 16
+          maxLength: 256
+          writeOnly: true
+    WebAuthMFAReplaceBeginRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - password
+        - browser_binding
+        - confirm
+      properties:
+        password:
+          type: string
+          format: password
+          minLength: 1
+          maxLength: 4096
+          writeOnly: true
+        browser_binding:
+          type: string
+          minLength: 16
+          maxLength: 256
+          writeOnly: true
+        confirm:
+          type: boolean
+          enum:
+            - true
+    WebAuthMFAFinishRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - transaction_id
+        - browser_binding
+        - credential_response
+      properties:
+        transaction_id:
+          type: string
+          minLength: 1
+          maxLength: 256
+        browser_binding:
+          type: string
+          minLength: 16
+          maxLength: 256
+          writeOnly: true
+        credential_response:
+          type: string
+          minLength: 2
+          maxLength: 131072
+          writeOnly: true
+          description: Bounded serialized WebAuthn registration response.
+    WebAuthMFADisableRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - password
+        - confirm
+      properties:
+        password:
+          type: string
+          format: password
+          minLength: 1
+          maxLength: 4096
+          writeOnly: true
+        confirm:
+          type: boolean
+          enum:
+            - true
+    WebAuthMFAContinuation:
+      type: object
+      additionalProperties: false
+      required:
+        - transaction_id
+        - expires_at
+        - public_key_options
+      properties:
+        transaction_id:
+          type: string
+          minLength: 1
+          maxLength: 256
+        expires_at:
+          type: string
+          format: date-time
+        public_key_options:
+          type: object
+          additionalProperties: true
+          description: Standards-shaped public WebAuthn options; never verifier material.
     WebAuthSessionSummary:
       type: object
       additionalProperties: false
@@ -349,6 +860,29 @@ components:
           type: integer
           format: uint64
           minimum: 1
+    WebAuthSessionPage:
+      type: object
+      additionalProperties: false
+      required:
+        - sessions
+      properties:
+        sessions:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/WebAuthSessionSummary"
+        next_after_id:
+          type: string
+          minLength: 1
+          maxLength: 256
+    WebAuthSessionRevokeRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - confirm_current
+      properties:
+        confirm_current:
+          type: boolean
     WebAuthRole:
       type: string
       enum:

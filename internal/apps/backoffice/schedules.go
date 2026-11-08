@@ -12,6 +12,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/backoffice/internal/webui"
 	"github.com/baldaworks/balda/internal/apps/backoffice/security"
+	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
 	"github.com/baldaworks/balda/internal/apps/balda/schedulecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/users"
 	"github.com/google/uuid"
@@ -53,13 +54,13 @@ func (a *httpApp) schedulesPage(w http.ResponseWriter, r *http.Request) {
 	a.render(w, r, http.StatusOK, webui.TemplateSchedules, page)
 }
 
-func (a *httpApp) scheduleBasePage(r *http.Request, p security.Principal) webui.Page {
+func (a *httpApp) scheduleBasePage(r *http.Request, p browserauth.Principal) webui.Page {
 	return webui.Page{Title: "Schedules · Balda", ViewerUsername: p.User.Username,
 		CSRFToken: a.browser.CSRFToken(r), Current: webui.LocationSchedules,
 		Navigation: webui.Navigation(users.BackofficeCapabilities(p.User), webui.LocationSchedules)}
 }
 
-func (a *httpApp) schedulesView(r *http.Request, p security.Principal) (webui.Page, error) {
+func (a *httpApp) schedulesView(r *http.Request, p browserauth.Principal) (webui.Page, error) {
 	page := a.scheduleBasePage(r, p)
 	if a.schedules == nil {
 		return page, schedulecmd.ErrUnavailable
@@ -135,7 +136,7 @@ func scheduleHistoryCursor(query url.Values) (time.Time, string, error) {
 	return beforeAt.UTC(), query.Get("before_id"), nil
 }
 
-func (a *httpApp) scheduleAuthority(p security.Principal) schedulecmd.Authority {
+func (a *httpApp) scheduleAuthority(p browserauth.Principal) schedulecmd.Authority {
 	return schedulecmd.Authority{UserID: p.User.ID, UserVersion: p.User.Version,
 		CredentialVersion: p.User.Credential.Version, MFAVersion: p.MFAVersion,
 		WebAuthSessionID: p.WebAuthSessionID, WebAuthSessionVersion: p.WebAuthSessionVersion, At: time.Now().UTC()}

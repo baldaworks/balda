@@ -1,4 +1,4 @@
-package security
+package browserauth
 
 import (
 	"bytes"
@@ -10,15 +10,16 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"strings"
+	"testing"
+	"time"
+
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/protocol/webauthncose"
 	libwebauthn "github.com/go-webauthn/webauthn/webauthn"
 	"github.com/stretchr/testify/require"
-	"strings"
-	"testing"
-	"time"
 )
 
 func TestWebAuthnCapabilityUsesExactSecureOrigin(t *testing.T) {

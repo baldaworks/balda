@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/backoffice/access"
-	"github.com/baldaworks/balda/internal/apps/backoffice/security"
+	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/users"
@@ -88,7 +88,7 @@ func TestAccessServiceCredentialResetRevokesAccessAndRefreshFamily(t *testing.T)
 		Credential: usercmd.Credential{State: usercmd.CredentialStateActive, Version: 1},
 		Primary:    true, Version: 1, CreatedAt: now, UpdatedAt: now,
 	})
-	securityService, err := security.NewService(provider.Users(), security.Config{AccessTTL: 15 * time.Minute, RefreshTTL: 12 * time.Hour})
+	securityService, err := browserauth.NewService(provider.Users(), browserauth.Config{AccessTTL: 15 * time.Minute, RefreshTTL: 12 * time.Hour})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,10 +109,10 @@ func TestAccessServiceCredentialResetRevokesAccessAndRefreshFamily(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := securityService.ValidateAccess(t.Context(), credentials.AccessToken); !errors.Is(err, security.ErrUnauthenticated) {
+	if _, err := securityService.ValidateAccess(t.Context(), credentials.AccessToken); !errors.Is(err, browserauth.ErrUnauthenticated) {
 		t.Fatalf("old access validation error = %v", err)
 	}
-	if _, err := securityService.Refresh(t.Context(), credentials.WebAuthRefreshToken, credentials.CSRFToken); !errors.Is(err, security.ErrUnauthenticated) {
+	if _, err := securityService.Refresh(t.Context(), credentials.WebAuthRefreshToken, credentials.CSRFToken); !errors.Is(err, browserauth.ErrUnauthenticated) {
 		t.Fatalf("old refresh validation error = %v", err)
 	}
 	updated, found, err := provider.Users().GetUser(t.Context(), admin.ID)
@@ -144,7 +144,7 @@ func TestAccessServiceDisablementPermanentlyRevokesAccessAndRefreshFamily(t *tes
 		Credential: usercmd.Credential{State: usercmd.CredentialStateActive, Version: 1},
 		Version:    1, CreatedAt: now, UpdatedAt: now,
 	})
-	securityService, err := security.NewService(provider.Users(), security.Config{AccessTTL: 15 * time.Minute, RefreshTTL: 12 * time.Hour})
+	securityService, err := browserauth.NewService(provider.Users(), browserauth.Config{AccessTTL: 15 * time.Minute, RefreshTTL: 12 * time.Hour})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,10 +166,10 @@ func TestAccessServiceDisablementPermanentlyRevokesAccessAndRefreshFamily(t *tes
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := securityService.ValidateAccess(t.Context(), credentials.AccessToken); !errors.Is(err, security.ErrUnauthenticated) {
+	if _, err := securityService.ValidateAccess(t.Context(), credentials.AccessToken); !errors.Is(err, browserauth.ErrUnauthenticated) {
 		t.Fatalf("re-enabled old access validation error = %v", err)
 	}
-	if _, err := securityService.Refresh(t.Context(), credentials.WebAuthRefreshToken, credentials.CSRFToken); !errors.Is(err, security.ErrUnauthenticated) {
+	if _, err := securityService.Refresh(t.Context(), credentials.WebAuthRefreshToken, credentials.CSRFToken); !errors.Is(err, browserauth.ErrUnauthenticated) {
 		t.Fatalf("re-enabled old refresh validation error = %v", err)
 	}
 }

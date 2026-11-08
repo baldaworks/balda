@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 )
 
@@ -103,46 +104,26 @@ func TestOAuthCallbackCredentialOnlyRestoresExactNativeCallback(t *testing.T) {
 
 func TestOAuthCallbackCredentialRequiresCurrentCanonicalAccess(t *testing.T) {
 	for _, tc := range []struct {
-		name                      string
-		invalid, expired, revoked bool
-		role                      usercmd.Role
-		credentialState           usercmd.CredentialState
-		want                      int
+		name      string
+		principal Principal
+		err       error
+		want      int
 	}{
-		{name: "current access", role: usercmd.RoleAdministrator, credentialState: usercmd.CredentialStateActive, want: http.StatusNoContent},
-		{name: "invalid access", invalid: true, role: usercmd.RoleAdministrator, credentialState: usercmd.CredentialStateActive, want: http.StatusUnauthorized},
-		{name: "expired access", expired: true, role: usercmd.RoleAdministrator, credentialState: usercmd.CredentialStateActive, want: http.StatusUnauthorized},
-		{name: "revoked family", revoked: true, role: usercmd.RoleAdministrator, credentialState: usercmd.CredentialStateActive, want: http.StatusUnauthorized},
-		{name: "operator access", role: usercmd.RoleOperator, credentialState: usercmd.CredentialStateActive, want: http.StatusForbidden},
-		{name: "restricted access", role: usercmd.RoleAdministrator, credentialState: usercmd.CredentialStateTemporary, want: http.StatusForbidden},
+		{name: "current access", principal: Principal{User: usercmd.User{ID: "admin", Role: usercmd.RoleAdministrator}, Assurance: usercmd.WebAuthAssuranceNormal}, want: http.StatusNoContent},
+		{name: "invalid access", err: browserauth.ErrUnauthenticated, want: http.StatusUnauthorized},
+		{name: "operator access", principal: Principal{User: usercmd.User{Role: usercmd.RoleOperator}, Assurance: usercmd.WebAuthAssuranceNormal}, want: http.StatusForbidden},
+		{name: "restricted access", principal: Principal{User: usercmd.User{Role: usercmd.RoleAdministrator}, Assurance: usercmd.WebAuthAssuranceRestricted}, want: http.StatusForbidden},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			provider, service, now := newSecurityTestService(t)
-			createSecurityTestUser(t, provider.Users(), "admin", "admin", tc.credentialState, tc.role, tc.role == usercmd.RoleAdministrator, now)
-			c, err := service.Login(t.Context(), "admin", []byte(validPassword))
-			if err != nil {
-				t.Fatal(err)
-			}
+			service := &fakeBrowserService{validate: func(context.Context, string) (Principal, error) { return tc.principal, tc.err }}
 			b := newHTTPTestBrowser(t, service, false, 0)
-			access := c.AccessToken
-			if tc.invalid {
-				access = "invalid-access"
-			}
-			if tc.expired {
-				service.now = func() time.Time { return c.AccessExpiresAt }
-			}
-			if tc.revoked {
-				if err := service.Logout(t.Context(), access); err != nil {
-					t.Fatal(err)
-				}
-			}
 			r := httptest.NewRequest(http.MethodGet, "/mcp/oauth/callback", nil)
-			r.AddCookie(&http.Cookie{Name: OAuthCallbackCookieName, Value: access})
+			r.AddCookie(&http.Cookie{Name: OAuthCallbackCookieName, Value: "opaque-access"})
 			w := httptest.NewRecorder()
 			r = b.RestoreOAuthCallbackCredential(w, r)
 			b.Authenticate(b.RequireAdministrator(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				p, ok := PrincipalFromContext(r.Context())
-				if !ok || p.User.ID != "admin" || !p.AccessExpiresAt.Equal(c.AccessExpiresAt) {
+				if !ok || p.User.ID != "admin" {
 					t.Fatal("callback did not receive the current canonical administrator")
 				}
 				w.WriteHeader(http.StatusNoContent)

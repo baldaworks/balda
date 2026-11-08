@@ -10,6 +10,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/backoffice/internal/webui"
 	"github.com/baldaworks/balda/internal/apps/backoffice/security"
+	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
 	"github.com/baldaworks/balda/internal/apps/balda/memorycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/users"
 )
@@ -34,13 +35,13 @@ func (r *Runtime) ConfigureFactMemoryOperations(operations FactMemoryOperations)
 	return nil
 }
 
-func (a *httpApp) factMemoryBasePage(r *http.Request, p security.Principal) webui.Page {
+func (a *httpApp) factMemoryBasePage(r *http.Request, p browserauth.Principal) webui.Page {
 	return webui.Page{Title: "Fact memory · Balda", ViewerUsername: p.User.Username,
 		CSRFToken: a.browser.CSRFToken(r), Current: webui.LocationFactMemory,
 		Navigation: webui.Navigation(users.BackofficeCapabilities(p.User), webui.LocationFactMemory)}
 }
 
-func factMemoryAuthority(p security.Principal) memorycmd.Authority {
+func factMemoryAuthority(p browserauth.Principal) memorycmd.Authority {
 	return memorycmd.Authority{UserID: p.User.ID, UserVersion: p.User.Version,
 		CredentialVersion: p.User.Credential.Version, MFAVersion: p.MFAVersion,
 		WebAuthSessionID: p.WebAuthSessionID, WebAuthSessionVersion: p.WebAuthSessionVersion, At: time.Now().UTC()}

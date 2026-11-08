@@ -12,6 +12,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/backoffice/internal/webui"
 	"github.com/baldaworks/balda/internal/apps/backoffice/security"
+	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
 	"github.com/baldaworks/balda/internal/apps/balda/hookcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/users"
 )
@@ -34,11 +35,11 @@ func (r *Runtime) ConfigureHookOperations(operations HookOperations) error {
 	return nil
 }
 
-func hookAuthority(p security.Principal) hookcmd.Authority {
+func hookAuthority(p browserauth.Principal) hookcmd.Authority {
 	return hookcmd.Authority{UserID: p.User.ID, UserVersion: p.User.Version, CredentialVersion: p.User.Credential.Version, MFAVersion: p.MFAVersion, WebAuthSessionID: p.WebAuthSessionID, WebAuthSessionVersion: p.WebAuthSessionVersion, At: time.Now().UTC()}
 }
 
-func (a *httpApp) hookBasePage(r *http.Request, p security.Principal) webui.Page {
+func (a *httpApp) hookBasePage(r *http.Request, p browserauth.Principal) webui.Page {
 	return webui.Page{Title: "Agent hooks · Balda", ViewerUsername: p.User.Username, CSRFToken: a.browser.CSRFToken(r), Current: webui.LocationHooks, Navigation: webui.Navigation(users.BackofficeCapabilities(p.User), webui.LocationHooks)}
 }
 

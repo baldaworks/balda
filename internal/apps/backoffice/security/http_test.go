@@ -445,26 +445,28 @@ func TestBrowserMonthlyRefreshUsesCommittedCookieDeadline(t *testing.T) {
 	for _, base := range []string{"", "/balda"} {
 		t.Run(base, func(t *testing.T) {
 			t.Parallel()
-			p, s, now := newSecurityTestService(t)
-			s.config.RefreshTTL = 30 * 24 * time.Hour
-			createSecurityTestUser(t, p.Users(), "admin", "admin", usercmd.CredentialStateActive, usercmd.RoleAdministrator, true, now)
-			initial, err := s.Login(t.Context(), "admin", []byte(validPassword))
+			at := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
+			rotated := Credentials{
+				AccessToken: "access.rotated", WebAuthRefreshToken: "refresh.rotated", CSRFToken: "csrf-rotated",
+				AccessExpiresAt: at.Add(15 * time.Minute), RefreshExpiresAt: at.Add(30 * 24 * time.Hour),
+			}
+			service := &fakeBrowserService{refresh: func(_ context.Context, refresh, csrf string) (Credentials, error) {
+				if refresh != "refresh.initial" || csrf != "csrf-initial" {
+					t.Fatalf("refresh credentials = %q/%q", refresh, csrf)
+				}
+				return rotated, nil
+			}}
+			browser, err := NewBrowser(service, HTTPConfig{TrustedOrigin: "https://backoffice.example", SecureCookies: true, BasePath: base})
 			if err != nil {
 				t.Fatal(err)
 			}
-			at := now.Add(29 * 24 * time.Hour)
-			s.now = func() time.Time { return at }
-			browser, err := NewBrowser(s, HTTPConfig{TrustedOrigin: "https://backoffice.example", SecureCookies: true, BasePath: base})
-			if err != nil {
-				t.Fatal(err)
-			}
-			form := url.Values{"csrf_token": {initial.CSRFToken}, "return_to": {base + "/overview"}}
+			form := url.Values{"csrf_token": {"csrf-initial"}, "return_to": {base + "/overview"}}
 			request := httptest.NewRequest(http.MethodPost, base+RefreshPath, strings.NewReader(form.Encode()))
 			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			request.Header.Set("Origin", "https://backoffice.example")
 			request.Header.Set("Sec-Fetch-Site", "same-origin")
-			request.AddCookie(&http.Cookie{Name: RefreshCookieName, Value: initial.WebAuthRefreshToken})
-			request.AddCookie(&http.Cookie{Name: CSRFCookieName, Value: initial.CSRFToken})
+			request.AddCookie(&http.Cookie{Name: RefreshCookieName, Value: "refresh.initial"})
+			request.AddCookie(&http.Cookie{Name: CSRFCookieName, Value: "csrf-initial"})
 			response := httptest.NewRecorder()
 			browser.Refresh(response, request)
 			if response.Code != http.StatusSeeOther || response.Header().Get("Location") != base+"/overview" {
@@ -479,14 +481,6 @@ func TestBrowserMonthlyRefreshUsesCommittedCookieDeadline(t *testing.T) {
 				}
 				if cookie.Name == RefreshCookieName {
 					wantPath = base + RefreshPath
-					selector, _, err := parseOpaqueToken(cookie.Value)
-					if err != nil {
-						t.Fatal(err)
-					}
-					stored, found, err := p.Users().GetWebAuthSessionByRefreshSelector(t.Context(), selector)
-					if err != nil || !found || !stored.WebAuthSession.RefreshExpiresAt.Equal(wantExpiry) {
-						t.Fatalf("cookie and store deadline mismatch: %t, %v", found, err)
-					}
 				}
 				assertSecurityCookie(t, cookies, cookie.Name, wantPath, cookie.Value, true)
 				if !cookie.Expires.Equal(wantExpiry) {

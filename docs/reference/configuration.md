@@ -31,8 +31,9 @@ transport-signature checks.
 ### Management API
 
 The optional Core management API uses a separate loopback-only listener. It is
-disabled by default and currently exposes only authenticated contract
-compatibility metadata; it has no health or readiness endpoint.
+disabled by default. It exposes authenticated contract compatibility metadata
+and the local BrowserAuth/WebAuth lifecycle used by Backoffice; it has no health
+or readiness endpoint.
 
 ```yaml
 balda:
@@ -52,6 +53,22 @@ client. To roll back the listener, set `balda.management.enabled: false` and
 restart. The future standalone Backoffice will use the generated client and
 the compatibility operation to verify Core reachability, credentials, and API
 version; deployment health for that process is separate.
+
+The operator bearer token authenticates the Backoffice application, never the
+human user. Login endpoints require only that application credential. Guarded
+reads additionally require `X-Balda-WebAuth-Access`; mutations also require
+`X-Balda-CSRF`. Refresh instead requires `X-Balda-WebAuth-Refresh` and
+`X-Balda-CSRF`. Core resolves the canonical user and current WebAuth authority
+on every guarded request. AI Session IDs are not credentials and are never
+accepted by these endpoints.
+
+Refresh credentials are single-use. One concurrent duplicate receives `409`
+without revoking the family, while later replay of an older consumed generation
+revokes it. A client that loses the result of a refresh must clear its browser
+credentials and require login; it must not automatically retry the same refresh
+token. Management errors contain only a bounded code, safe message, request ID,
+and optional field codes. Credentials, passwords, WebAuthn payloads, headers,
+configuration values, and internal errors are never returned.
 
 Config shape:
 

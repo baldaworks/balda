@@ -1,4 +1,4 @@
-package security
+package browserauth
 
 import (
 	"context"
@@ -10,7 +10,8 @@ import (
 type mfaBrowserKey struct{}
 type mfaBrowserBinding struct{ browser, csrf string }
 
-func withMFABrowser(ctx context.Context, browser, csrf string) context.Context {
+// WithMFABrowser binds an edge-generated browser proof and CSRF value to an MFA start.
+func WithMFABrowser(ctx context.Context, browser, csrf string) context.Context {
 	return context.WithValue(ctx, mfaBrowserKey{}, mfaBrowserBinding{browser: browser, csrf: csrf})
 }
 

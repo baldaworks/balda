@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/baldaworks/balda/internal/apps/backoffice/security"
+	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/stretchr/testify/require"
 )
@@ -31,7 +31,7 @@ func TestRecoveryRevokesFamiliesPreservesPasswordAndRollsBackFailedAudit(t *test
 	secret, found, err := store.GetCredentialSecret(t.Context(), u.ID)
 	require.NoError(t, err)
 	require.True(t, found)
-	login, err := security.NewService(store, security.Config{AccessTTL: time.Minute, RefreshTTL: time.Hour})
+	login, err := browserauth.NewService(store, browserauth.Config{AccessTTL: time.Minute, RefreshTTL: time.Hour})
 	require.NoError(t, err)
 	credentials, err := login.Login(t.Context(), u.Username, []byte(validPassword))
 	require.NoError(t, err)

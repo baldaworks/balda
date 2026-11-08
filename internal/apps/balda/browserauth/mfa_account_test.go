@@ -1,4 +1,4 @@
-package security
+package browserauth
 
 import (
 	"testing"
@@ -50,7 +50,7 @@ func TestEnableMFARequiresPasswordAndVerifiedRegistration(t *testing.T) {
 
 func TestDisableMFARequiresPasswordAndConfirmation(t *testing.T) {
 	p, s, u, private, key, _ := enrolledTestService(t)
-	ctx := withMFABrowser(t.Context(), "login-browser", "csrf")
+	ctx := WithMFABrowser(t.Context(), "login-browser", "csrf")
 	pending, err := s.Login(ctx, u.Username, []byte(validPassword))
 	require.NoError(t, err)
 	credentials, err := s.FinishLogin(ctx, pending.Pending.Transaction, "login-browser", "csrf", assertionResponseForStart(t, *pending.Pending, key, private, 0x05, 1))
@@ -77,7 +77,7 @@ func TestDisableMFARequiresPasswordAndConfirmation(t *testing.T) {
 
 func TestReplaceMFARequiresPasswordConfirmationAndNewRegistration(t *testing.T) {
 	p, s, u, private, key, _ := enrolledTestService(t)
-	ctx := withMFABrowser(t.Context(), "login-browser", "csrf")
+	ctx := WithMFABrowser(t.Context(), "login-browser", "csrf")
 	pending, err := s.Login(ctx, u.Username, []byte(validPassword))
 	require.NoError(t, err)
 	credentials, err := s.FinishLogin(ctx, pending.Pending.Transaction, "login-browser", "csrf", assertionResponseForStart(t, *pending.Pending, key, private, 0x05, 1))
