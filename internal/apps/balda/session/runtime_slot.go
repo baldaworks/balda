@@ -315,7 +315,7 @@ func (s *RuntimeSlot) independentLifetimeSuccessor(runtime *BuiltRuntime, sess a
 	if s == nil || runtime == nil || sess == nil || s.value.generation == math.MaxUint64 ||
 		strings.TrimSpace(archiveID) == "" || sess.ID() != archiveID || sess.ID() == s.value.sessionID ||
 		runtime.AppName != s.value.appName || sess.AppName() != s.value.appName || sess.UserID() != s.value.userID ||
-		runtime.RuntimeSnapshotID != s.value.runtime.RuntimeSnapshotID ||
+		strings.TrimSpace(runtime.RuntimeSnapshotID) == "" ||
 		runtime.ProviderBindingJSON != s.value.runtime.ProviderBindingJSON ||
 		sess.Events() == nil || sess.Events().Len() != 0 {
 		return nil, ErrRuntimePublicationInvalid

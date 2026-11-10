@@ -597,3 +597,54 @@ func workspaceScopeNameFromSnapshot(snapshot runtimecatalogcmd.Snapshot) string 
 	}
 	return ""
 }
+
+func TestCurrentSessionSnapshotRetainsWorkspaceCatalogWithoutMCPAcquisition(t *testing.T) {
+	ctx := t.Context()
+	stateDir := t.TempDir()
+	t.Cleanup(func() { makeWritable(stateDir) })
+	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(stateDir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = provider.Close() })
+	catalog, err := NewRuntime(stateDir, "", "", provider, []commandcmd.Advertisement{{Transport: "telegram", Enabled: true, Names: []string{"reset"}}}, nil, mcpregistry.New(nil), commandcmd.NewRegistry(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plugins, err := pluginapp.NewManaged(stateDir, provider.AppKV(), provider.Plugins(), catalog, provider.PluginManagement())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := plugins.Recover(ctx); err != nil {
+		t.Fatal(err)
+	}
+	workspace := t.TempDir()
+	writeFile(t, filepath.Join(workspace, ".agents", "skills", "review", "SKILL.md"), "---\nname: review\ndescription: Review changes.\n---\n# Private instructions\n")
+	// Full capability binding would fail after shutdown. Metadata selection must
+	// still retain a complete, workspace-scoped catalog without acquiring MCP.
+	if err := catalog.MCP().Shutdown(ctx); err != nil {
+		t.Fatal(err)
+	}
+	binder := &sessionCapabilityBinder{catalog: catalog}
+	id, err := binder.CurrentSessionSnapshot(ctx, workspace)
+	if err != nil || id == "" {
+		t.Fatalf("select=%q, %v", id, err)
+	}
+	snapshot, err := catalog.RetainedSkillSnapshot(ctx, runtimecatalogcmd.SnapshotID(id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertContribution(t, snapshot, runtimecatalogcmd.SourceKindBuiltin, runtimecatalogcmd.ContributionKindCommand, "reset")
+	assertContribution(t, snapshot, runtimecatalogcmd.SourceKindWorkspaceSkill, runtimecatalogcmd.ContributionKindSkill, "review")
+	other, err := binder.CurrentSessionSnapshot(ctx, t.TempDir())
+	if err != nil || other == id {
+		t.Fatalf("other workspace snapshot=%q, %v", other, err)
+	}
+	// Removing the live workspace source cannot change the already retained ID.
+	if err := os.RemoveAll(filepath.Join(workspace, ".agents")); err != nil {
+		t.Fatal(err)
+	}
+	if retained, err := catalog.RetainedSkillSnapshot(ctx, runtimecatalogcmd.SnapshotID(id)); err != nil || retained.ID != snapshot.ID {
+		t.Fatalf("retained=%q, %v", retained.ID, err)
+	}
+}

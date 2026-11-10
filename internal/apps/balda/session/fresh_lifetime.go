@@ -61,8 +61,8 @@ type PreparedFreshLifetime struct {
 	settleErr        error
 }
 
-// PrepareFreshLifetime creates and verifies the empty local ADK session before
-// the caller enters the TurnDispatcher replacement boundary.
+// PrepareFreshLifetime freezes and prepares an empty local ADK session inside
+// the delivered TurnDispatcher replacement boundary.
 func (m *Manager) PrepareFreshLifetime(ctx context.Context, request FreshLifetimeRequest) (*PreparedFreshLifetime, FreshLifetimeResult, error) {
 	request.OperationID = strings.TrimSpace(request.OperationID)
 	request.SessionID = strings.TrimSpace(request.SessionID)
@@ -169,7 +169,16 @@ func (m *Manager) PrepareFreshLifetime(ctx context.Context, request FreshLifetim
 	operation := existing
 	ownsPreparation := !found
 	if !found {
+		selector, ok := m.runtimeManager.(currentSessionSnapshotSelector)
+		if !ok {
+			return nil, freshLifetimeUnavailable(), nil
+		}
+		snapshotID, selectErr := selector.CurrentSessionSnapshot(ctx, topic.workspaceDir)
+		if selectErr != nil || strings.TrimSpace(snapshotID) == "" {
+			return nil, freshLifetimeUnavailable(), selectErr
+		}
 		operation = freshLifetimeIntent(request, value, record.RequestedModel, projection, m.currentTime())
+		operation.TargetSnapshotID = snapshotID
 		operation, err = m.runtimeOperations.Begin(ctx, operation)
 		if err != nil {
 			operation, found, err = m.readFreshLifetimeOperation(ctx, request.OperationID)
@@ -194,7 +203,9 @@ func (m *Manager) PrepareFreshLifetime(ctx context.Context, request FreshLifetim
 		result, resultErr := freshLifetimeRecoveryRequired()
 		return nil, result, resultErr
 	}
-	if operation.State != baldastate.RuntimeOperationPrepared || !samePublicationIntent(operation, freshLifetimeIntent(request, value, record.RequestedModel, projection, operation.CreatedAt)) {
+	expected := freshLifetimeIntent(request, value, record.RequestedModel, projection, operation.CreatedAt)
+	expected.TargetSnapshotID = operation.TargetSnapshotID
+	if operation.State != baldastate.RuntimeOperationPrepared || operation.TargetSnapshotID == "" || !samePublicationIntent(operation, expected) {
 		topic.fenceRuntimeRecovery()
 		result, resultErr := freshLifetimeRecoveryRequired()
 		return nil, result, resultErr
@@ -701,7 +712,7 @@ func freshLifetimeCandidateMatches(incumbent, candidate *RuntimeSlot, operation 
 	}
 	left, right := incumbent.value, candidate.value
 	return right.runtime.RuntimeBaseToken != 0 && right.runtime.RuntimeBaseToken != left.runtime.RuntimeBaseToken &&
-		right.runtime.RuntimeSnapshotID == left.runtime.RuntimeSnapshotID &&
+		right.runtime.RuntimeSnapshotID == operation.TargetSnapshotID &&
 		right.runtime.ProviderBindingJSON == left.runtime.ProviderBindingJSON &&
 		right.runtime.RecipeModel == operation.TargetModel && right.runtime.ProviderID == left.providerID &&
 		right.providerID == left.providerID &&
@@ -764,6 +775,36 @@ func (m *Manager) freshLifetimeDurableTargetMatches(ctx context.Context, operati
 		record.RuntimeSnapshotID == operation.TargetSnapshotID && record.ProviderBindingJSON == operation.TargetProviderBindingJSON &&
 		sameOptionalModel(record.RequestedModel, operation.TargetRequestedModel) &&
 		record.EffectiveModel == operation.TargetModel && record.RuntimeOutcome == string(baldastate.RuntimeOperationOutcomeContextReset)
+}
+
+// ResolveFreshLifetimeResult reads durable replay evidence without preparing a candidate.
+func (m *Manager) ResolveFreshLifetimeResult(ctx context.Context, request FreshLifetimeRequest) (FreshLifetimeResult, bool, error) {
+	request.OperationID = strings.TrimSpace(request.OperationID)
+	request.SessionID = strings.TrimSpace(request.SessionID)
+	if m == nil || m.runtimeOperations == nil || !validFreshLifetimeText(request.OperationID, 128) ||
+		!validFreshLifetimeText(request.SessionID, 256) || !validModelInputHash(request.InputHash) {
+		return FreshLifetimeResult{Status: FreshLifetimeConflict}, false, ErrRuntimePublicationInvalid
+	}
+	unlock := m.lockSessionOperation("\x00lifetime-operation:" + request.OperationID)
+	defer unlock()
+	unlockSession := m.lockSessionOperation(request.SessionID)
+	defer unlockSession()
+	operation, found, err := m.readFreshLifetimeOperation(ctx, request.OperationID)
+	if err != nil {
+		result, resultErr := freshLifetimeRecoveryRequired()
+		return result, true, resultErr
+	}
+	if !found {
+		return FreshLifetimeResult{}, false, nil
+	}
+	if !sameFreshLifetimeRequest(operation, request) {
+		return FreshLifetimeResult{Status: FreshLifetimeConflict}, true, nil
+	}
+	if operation.State != baldastate.RuntimeOperationTerminal {
+		result, resultErr := freshLifetimeRecoveryRequired()
+		return result, true, resultErr
+	}
+	return m.replayFreshLifetime(ctx, m.activeTopicSession(request.SessionID), operation), true, nil
 }
 
 func (m *Manager) replayFreshLifetime(ctx context.Context, topic *TopicSession, operation baldastate.RuntimeOperationRecord) FreshLifetimeResult {

@@ -887,3 +887,26 @@ func TestCloseRuntimeAgent_IgnoresWrappedContextCanceled(t *testing.T) {
 		t.Fatalf("closeRuntimeAgent() error = %v, want nil", err)
 	}
 }
+
+type metadataCapabilityBinder struct {
+	recordingCapabilityBinder
+	workspace string
+}
+
+func (b *metadataCapabilityBinder) CurrentSessionSnapshot(_ context.Context, workspace string) (string, error) {
+	b.workspace = workspace
+	return "catalog-metadata", nil
+}
+func TestCurrentSessionSnapshotDoesNotBuildOrBindRuntime(t *testing.T) {
+	const workspace = "preserved-workspace"
+	binder := &metadataCapabilityBinder{}
+	manager := &RuntimeManager{capabilityBinder: binder}
+	snapshot, err := manager.CurrentSessionSnapshot(t.Context(), workspace)
+	if err != nil || snapshot != "catalog-metadata" || binder.workspace != workspace || len(binder.requests) != 0 {
+		t.Fatalf("snapshot=%q err=%v workspace=%q binds=%d", snapshot, err, binder.workspace, len(binder.requests))
+	}
+	manager.capabilityBinder = &recordingCapabilityBinder{}
+	if _, err := manager.CurrentSessionSnapshot(t.Context(), workspace); !errors.Is(err, ErrProviderUnavailable) {
+		t.Fatalf("unsupported selector error=%v", err)
+	}
+}

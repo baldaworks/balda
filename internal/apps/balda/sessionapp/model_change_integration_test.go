@@ -120,6 +120,10 @@ type integrationCapabilityBinder struct {
 	closeCalls atomic.Int32
 }
 
+func (*integrationCapabilityBinder) CurrentSessionSnapshot(context.Context, string) (string, error) {
+	return integrationRuntimeSnapshotID, nil
+}
+
 func (b *integrationCapabilityBinder) BindSessionCapabilities(
 	context.Context,
 	string,

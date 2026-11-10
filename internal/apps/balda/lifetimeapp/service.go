@@ -60,10 +60,10 @@ type freshLifetimeManager interface {
 	PrepareFreshLifetime(ctx context.Context, request baldasession.FreshLifetimeRequest) (*baldasession.PreparedFreshLifetime, baldasession.FreshLifetimeResult, error)
 	PublishFreshLifetime(ctx context.Context, prepared *baldasession.PreparedFreshLifetime) (baldasession.FreshLifetimeResult, error)
 	AbortFreshLifetime(ctx context.Context, prepared *baldasession.PreparedFreshLifetime) (baldasession.FreshLifetimeResult, error)
+	ResolveFreshLifetimeResult(ctx context.Context, request baldasession.FreshLifetimeRequest) (baldasession.FreshLifetimeResult, bool, error)
 }
 
-// Service prepares local lifetime state before reserving the existing FIFO
-// replacement boundary.
+// Service admits local lifetime replacement through the existing session FIFO.
 type Service struct {
 	queue   appports.ReplacementQueue
 	manager freshLifetimeManager
@@ -78,44 +78,37 @@ func newService(queue appports.ReplacementQueue, manager freshLifetimeManager) *
 	return &Service{queue: queue, manager: manager}
 }
 
-// Submit prepares one exact empty local lifetime, then queues its publication
-// behind work already admitted to the session FIFO.
+// Submit queues preparation and publication behind already admitted session work.
 func (s *Service) Submit(ctx context.Context, request Request) (<-chan Completion, int, error) {
 	request = normalizeRequest(request)
 	if s == nil || s.queue == nil || s.manager == nil || !validRequest(request) {
 		return nil, 0, ErrInvalidRequest
 	}
-
 	inputHash := lifetimeInputHash(request)
-	prepared, preparedResult, prepareErr := s.manager.PrepareFreshLifetime(ctx, baldasession.FreshLifetimeRequest{
-		OperationID: request.OperationID,
-		SessionID:   request.SessionID,
-		InputHash:   inputHash,
-	})
-	if prepared == nil {
-		return completed(mapManagerResult(preparedResult, prepareErr)), 0, nil
-	}
-
+	managerRequest := baldasession.FreshLifetimeRequest{OperationID: request.OperationID, SessionID: request.SessionID, InputHash: inputHash}
 	runResult := make(chan Result, 1)
 	queued, position, err := s.queue.EnqueueReplacement(ctx, appports.ReplacementTask{
-		SessionID:   request.SessionID,
-		OperationID: request.OperationID,
-		InputHash:   inputHash,
+		SessionID: request.SessionID, OperationID: request.OperationID, InputHash: inputHash,
 		Run: func(runCtx context.Context) error {
-			result, publishErr := s.manager.PublishFreshLifetime(runCtx, prepared)
-			mapped := mapManagerResult(result, publishErr)
+			prepared, result, prepareErr := s.manager.PrepareFreshLifetime(runCtx, managerRequest)
+			mapped := mapManagerResult(result, prepareErr)
+			if prepared != nil {
+				if runCtx.Err() != nil {
+					settleCtx, cancel := context.WithTimeout(context.WithoutCancel(runCtx), settlementTimeout)
+					result, prepareErr = s.manager.AbortFreshLifetime(settleCtx, prepared)
+					cancel()
+				} else {
+					result, prepareErr = s.manager.PublishFreshLifetime(runCtx, prepared)
+				}
+				mapped = mapManagerResult(result, prepareErr)
+			}
 			runResult <- mapped
 			return replacementError(mapped)
 		},
 	})
 	if err != nil || queued == nil {
-		result := s.abortAfterAdmission(ctx, prepared)
-		if result.Status != StatusRecoveryRequired && result.Status != StatusReset {
-			result = mapAdmissionError(err)
-		}
-		return completed(result), 0, nil
+		return completed(mapAdmissionError(err)), 0, nil
 	}
-
 	completion := make(chan Completion, 1)
 	go func() {
 		defer close(completion)
@@ -124,21 +117,17 @@ func (s *Service) Submit(ctx context.Context, request Request) (<-chan Completio
 		case result := <-runResult:
 			completion <- Completion{Result: result}
 		default:
-			result := s.abortAfterAdmission(ctx, prepared)
-			if result.Status != StatusRecoveryRequired && result.Status != StatusReset {
-				result = mapAdmissionError(queueErr)
+			settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), settlementTimeout)
+			defer cancel()
+			result, found, resolveErr := s.manager.ResolveFreshLifetimeResult(settleCtx, managerRequest)
+			if found || resolveErr != nil {
+				completion <- Completion{Result: mapManagerResult(result, resolveErr)}
+			} else {
+				completion <- Completion{Result: mapAdmissionError(queueErr)}
 			}
-			completion <- Completion{Result: result}
 		}
 	}()
 	return completion, position, nil
-}
-
-func (s *Service) abortAfterAdmission(ctx context.Context, prepared *baldasession.PreparedFreshLifetime) Result {
-	settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), settlementTimeout)
-	defer cancel()
-	result, err := s.manager.AbortFreshLifetime(settleCtx, prepared)
-	return mapManagerResult(result, err)
 }
 
 func normalizeRequest(request Request) Request {
