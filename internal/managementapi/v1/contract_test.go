@@ -272,6 +272,30 @@ func inspectManagementContract(spec *openapi3.T) []string {
 		"updateProvider":                  {"csrf", "operatorServiceAuth", "webAuthAccess"},
 		"selectProvider":                  {"csrf", "operatorServiceAuth", "webAuthAccess"},
 		"deleteProvider":                  {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"listSchedules":                   {"operatorServiceAuth", "webAuthAccess"},
+		"getSchedule":                     {"operatorServiceAuth", "webAuthAccess"},
+		"createSchedule":                  {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"updateSchedule":                  {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"selectSchedule":                  {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"deleteSchedule":                  {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"listScheduleRuns":                {"operatorServiceAuth", "webAuthAccess"},
+		"runScheduleNow":                  {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"getScheduleRun":                  {"operatorServiceAuth", "webAuthAccess"},
+		"listAliases":                     {"operatorServiceAuth", "webAuthAccess"},
+		"getAlias":                        {"operatorServiceAuth", "webAuthAccess"},
+		"createAlias":                     {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"retargetAlias":                   {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"deleteAlias":                     {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"listWebhooks":                    {"operatorServiceAuth", "webAuthAccess"},
+		"getWebhook":                      {"operatorServiceAuth", "webAuthAccess"},
+		"createWebhook":                   {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"updateWebhook":                   {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"selectWebhook":                   {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"deleteWebhook":                   {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"rotateWebhookSecret":             {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"testWebhook":                     {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"listWebhookHistory":              {"operatorServiceAuth", "webAuthAccess"},
+		"getWebhookHistory":               {"operatorServiceAuth", "webAuthAccess"},
 		"listMCPConnections":              {"operatorServiceAuth", "webAuthAccess"},
 		"createMCPConnection":             {"csrf", "operatorServiceAuth", "webAuthAccess"},
 		"probeMCPConnection":              {"csrf", "operatorServiceAuth", "webAuthAccess"},
@@ -311,10 +335,49 @@ func inspectManagementContract(spec *openapi3.T) []string {
 	findings = append(findings, inspectIdentitySchemas(spec)...)
 	findings = append(findings, inspectWebAuthSchemas(spec)...)
 	findings = append(findings, inspectProviderSchemas(spec)...)
+	findings = append(findings, inspectScheduleSchemas(spec)...)
+	findings = append(findings, inspectWebhookSchemas(spec)...)
 	findings = append(findings, inspectMCPSchemas(spec)...)
 	findings = append(findings, inspectErrorSchema(spec)...)
 	slices.Sort(findings)
 	return findings
+}
+
+func inspectWebhookSchemas(spec *openapi3.T) []string {
+	var findings []string
+	secret := spec.Components.Schemas["WebhookSecretResult"]
+	if secret == nil || secret.Value == nil || secret.Value.Properties["secret"] == nil ||
+		secret.Value.Properties["secret"].Value == nil || secret.Value.Properties["secret"].Value.Extensions["x-sensitive"] != true {
+		findings = append(findings, "WebhookSecretResult.secret must be sensitive")
+	}
+	for _, schemaName := range []string{"WebhookItem", "WebhookInventory", "WebhookHistorySummary", "WebhookHistoryPage"} {
+		data, err := json.Marshal(spec.Components.Schemas[schemaName])
+		if err != nil {
+			findings = append(findings, fmt.Sprintf("marshal %s: %v", schemaName, err))
+			continue
+		}
+		if strings.Contains(string(data), "secret") {
+			findings = append(findings, schemaName+" exposes webhook secret")
+		}
+	}
+	return findings
+}
+
+func inspectScheduleSchemas(spec *openapi3.T) []string {
+	inventory := spec.Components.Schemas["ScheduleInventory"]
+	if inventory == nil || inventory.Value == nil || inventory.Value.Properties["items"] == nil ||
+		inventory.Value.Properties["items"].Value == nil || inventory.Value.Properties["items"].Value.Items == nil ||
+		inventory.Value.Properties["items"].Value.Items.Ref != "#/components/schemas/ScheduleSummaryItem" {
+		return []string{"ScheduleInventory must use content-free ScheduleSummaryItem"}
+	}
+	data, err := json.Marshal(spec.Components.Schemas["ScheduleSummaryItem"])
+	if err != nil {
+		return []string{fmt.Sprintf("marshal ScheduleInventory: %v", err)}
+	}
+	if strings.Contains(string(data), "content") {
+		return []string{"ScheduleInventory exposes schedule content"}
+	}
+	return nil
 }
 
 func inspectMCPSchemas(spec *openapi3.T) []string {

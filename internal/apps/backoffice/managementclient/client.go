@@ -18,7 +18,7 @@ import (
 
 const (
 	requestTimeout   = 5 * time.Second
-	maxResponseBytes = 1 << 20
+	maxResponseBytes = 4 << 20
 	maxTokenBytes    = 4096
 )
 

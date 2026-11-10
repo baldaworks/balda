@@ -52,11 +52,12 @@ type ManagementConfig struct {
 
 // ResolvedConfig contains validated process inputs.
 type ResolvedConfig struct {
-	ListenAddr    string
-	PublicOrigin  string
-	MountPath     string
-	CoreURL       string
-	OperatorToken string `json:"-" yaml:"-"`
+	ListenAddr       string
+	PublicOrigin     string
+	MountPath        string
+	CoreURL          string
+	OperatorToken    string `json:"-" yaml:"-"`
+	WebhookURLPrefix string
 }
 
 // LoadConfigDocument applies the standard Balda defaults/config/profile/env
@@ -106,6 +107,7 @@ func (c Config) Resolve() (ResolvedConfig, error) {
 	return ResolvedConfig{
 		ListenAddr: listenAddr, PublicOrigin: publicOrigin, MountPath: basePath + "/backoffice",
 		CoreURL: "http://" + managementAddr, OperatorToken: c.Management.OperatorToken,
+		WebhookURLPrefix: publicOrigin + basePath + "/webhooks/",
 	}, nil
 }
 

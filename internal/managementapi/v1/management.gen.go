@@ -22,23 +22,24 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/oapi-codegen/runtime"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 // Defines values for MCPAuthorizationInputClientAuthMethod.
 const (
-	ClientSecretBasic MCPAuthorizationInputClientAuthMethod = "client_secret_basic"
-	ClientSecretPost  MCPAuthorizationInputClientAuthMethod = "client_secret_post"
-	None              MCPAuthorizationInputClientAuthMethod = "none"
+	MCPAuthorizationInputClientAuthMethodClientSecretBasic MCPAuthorizationInputClientAuthMethod = "client_secret_basic"
+	MCPAuthorizationInputClientAuthMethodClientSecretPost  MCPAuthorizationInputClientAuthMethod = "client_secret_post"
+	MCPAuthorizationInputClientAuthMethodNone              MCPAuthorizationInputClientAuthMethod = "none"
 )
 
 // Valid indicates whether the value is a known member of the MCPAuthorizationInputClientAuthMethod enum.
 func (e MCPAuthorizationInputClientAuthMethod) Valid() bool {
 	switch e {
-	case ClientSecretBasic:
+	case MCPAuthorizationInputClientAuthMethodClientSecretBasic:
 		return true
-	case ClientSecretPost:
+	case MCPAuthorizationInputClientAuthMethodClientSecretPost:
 		return true
-	case None:
+	case MCPAuthorizationInputClientAuthMethodNone:
 		return true
 	default:
 		return false
@@ -489,6 +490,63 @@ func (e WebAuthRole) Valid() bool {
 	}
 }
 
+// Defines values for WebhookDefinitionDedupeSource.
+const (
+	WebhookDefinitionDedupeSourceBodySha256 WebhookDefinitionDedupeSource = "body_sha256"
+	WebhookDefinitionDedupeSourceHeader     WebhookDefinitionDedupeSource = "header"
+	WebhookDefinitionDedupeSourceRequestID  WebhookDefinitionDedupeSource = "request_id"
+)
+
+// Valid indicates whether the value is a known member of the WebhookDefinitionDedupeSource enum.
+func (e WebhookDefinitionDedupeSource) Valid() bool {
+	switch e {
+	case WebhookDefinitionDedupeSourceBodySha256:
+		return true
+	case WebhookDefinitionDedupeSourceHeader:
+		return true
+	case WebhookDefinitionDedupeSourceRequestID:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WebhookItemAuthType.
+const (
+	WebhookItemAuthTypeHeader WebhookItemAuthType = "header"
+	WebhookItemAuthTypeNone   WebhookItemAuthType = "none"
+)
+
+// Valid indicates whether the value is a known member of the WebhookItemAuthType enum.
+func (e WebhookItemAuthType) Valid() bool {
+	switch e {
+	case WebhookItemAuthTypeHeader:
+		return true
+	case WebhookItemAuthTypeNone:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WebhookItemSource.
+const (
+	WebhookItemSourceConfig  WebhookItemSource = "config"
+	WebhookItemSourceManaged WebhookItemSource = "managed"
+)
+
+// Valid indicates whether the value is a known member of the WebhookItemSource enum.
+func (e WebhookItemSource) Valid() bool {
+	switch e {
+	case WebhookItemSourceConfig:
+		return true
+	case WebhookItemSourceManaged:
+		return true
+	default:
+		return false
+	}
+}
+
 // AISessionSummary defines model for AISessionSummary.
 type AISessionSummary struct {
 	AISessionID string    `json:"ai_session_id"`
@@ -496,6 +554,37 @@ type AISessionSummary struct {
 	Label       *string   `json:"label,omitempty"`
 	ObservedAt  time.Time `json:"observed_at"`
 	Status      string    `json:"status"`
+}
+
+// AliasCreateRequest defines model for AliasCreateRequest.
+type AliasCreateRequest struct {
+	LocatorRef string `json:"locator_ref"`
+	Name       string `json:"name"`
+}
+
+// AliasDeleteRequest defines model for AliasDeleteRequest.
+type AliasDeleteRequest struct {
+	ExpectedVersion uint64 `json:"expected_version"`
+}
+
+// AliasInventory defines model for AliasInventory.
+type AliasInventory struct {
+	Items []AliasRecord `json:"items"`
+}
+
+// AliasRecord defines model for AliasRecord.
+type AliasRecord struct {
+	CreatedAt  time.Time `json:"created_at"`
+	LocatorRef string    `json:"locator_ref"`
+	Name       string    `json:"name"`
+	UpdatedAt  time.Time `json:"updated_at"`
+	Version    uint64    `json:"version"`
+}
+
+// AliasRetargetRequest defines model for AliasRetargetRequest.
+type AliasRetargetRequest struct {
+	ExpectedVersion uint64 `json:"expected_version"`
+	LocatorRef      string `json:"locator_ref"`
 }
 
 // LocalLoginRequest defines model for LocalLoginRequest.
@@ -718,7 +807,7 @@ type ManagementCompatibility struct {
 	APIMajor   ManagementCompatibilityAPIMajor   `json:"api_major"`
 	ContractID ManagementCompatibilityContractID `json:"contract_id"`
 
-	// ContractVersion Example: 1.1.0
+	// ContractVersion Example: 1.4.0
 	ContractVersion string `json:"contract_version"`
 }
 
@@ -838,6 +927,111 @@ type ProviderUpdateRequest struct {
 	Config          ProviderConfig        `json:"config"`
 	ExpectedVersion uint64                `json:"expected_version"`
 	Protected       ProviderProtectedEdit `json:"protected"`
+}
+
+// ScheduleCreateRequest defines model for ScheduleCreateRequest.
+type ScheduleCreateRequest struct {
+	Definition ScheduleDefinition `json:"definition"`
+}
+
+// ScheduleDefinition defines model for ScheduleDefinition.
+type ScheduleDefinition struct {
+	Alias   string `json:"alias"`
+	Content string `json:"content"`
+	Cron    string `json:"cron"`
+	ID      string `json:"id"`
+	Locator string `json:"locator"`
+}
+
+// ScheduleDeleteRequest defines model for ScheduleDeleteRequest.
+type ScheduleDeleteRequest struct {
+	ExpectedVersion uint64 `json:"expected_version"`
+}
+
+// ScheduleInventory defines model for ScheduleInventory.
+type ScheduleInventory struct {
+	Items []ScheduleSummaryItem `json:"items"`
+}
+
+// ScheduleItem defines model for ScheduleItem.
+type ScheduleItem struct {
+	Definition ScheduleDefinition `json:"definition"`
+	Deleted    bool               `json:"deleted"`
+	Enabled    bool               `json:"enabled"`
+	LastRunAt  *time.Time         `json:"last_run_at,omitempty"`
+	NextRunAt  *time.Time         `json:"next_run_at,omitempty"`
+	Source     string             `json:"source"`
+	Status     string             `json:"status"`
+	Version    uint64             `json:"version"`
+}
+
+// ScheduleRunCursor defines model for ScheduleRunCursor.
+type ScheduleRunCursor struct {
+	BeforeAt time.Time          `json:"before_at"`
+	BeforeID openapi_types.UUID `json:"before_id"`
+}
+
+// ScheduleRunDetail defines model for ScheduleRunDetail.
+type ScheduleRunDetail struct {
+	Input  string          `json:"input"`
+	Output string          `json:"output"`
+	Run    ScheduleRunItem `json:"run"`
+}
+
+// ScheduleRunItem defines model for ScheduleRunItem.
+type ScheduleRunItem struct {
+	CompletedAt      *time.Time         `json:"completed_at,omitempty"`
+	DueAt            *time.Time         `json:"due_at,omitempty"`
+	ID               openapi_types.UUID `json:"id"`
+	ReportLocatorRef string             `json:"report_locator_ref"`
+	RequestedAt      time.Time          `json:"requested_at"`
+	SafeFailureCode  string             `json:"safe_failure_code"`
+	State            string             `json:"state"`
+	Trigger          string             `json:"trigger"`
+}
+
+// ScheduleRunNowRequest defines model for ScheduleRunNowRequest.
+type ScheduleRunNowRequest struct {
+	ConfirmDisabled bool   `json:"confirm_disabled"`
+	RequestKey      string `json:"request_key"`
+}
+
+// ScheduleRunPage defines model for ScheduleRunPage.
+type ScheduleRunPage struct {
+	Items []ScheduleRunItem  `json:"items"`
+	Next  *ScheduleRunCursor `json:"next,omitempty"`
+}
+
+// ScheduleSelectionRequest defines model for ScheduleSelectionRequest.
+type ScheduleSelectionRequest struct {
+	Enabled         bool   `json:"enabled"`
+	ExpectedVersion uint64 `json:"expected_version"`
+}
+
+// ScheduleSummaryDefinition defines model for ScheduleSummaryDefinition.
+type ScheduleSummaryDefinition struct {
+	Alias   string `json:"alias"`
+	Cron    string `json:"cron"`
+	ID      string `json:"id"`
+	Locator string `json:"locator"`
+}
+
+// ScheduleSummaryItem defines model for ScheduleSummaryItem.
+type ScheduleSummaryItem struct {
+	Definition ScheduleSummaryDefinition `json:"definition"`
+	Deleted    bool                      `json:"deleted"`
+	Enabled    bool                      `json:"enabled"`
+	LastRunAt  *time.Time                `json:"last_run_at,omitempty"`
+	NextRunAt  *time.Time                `json:"next_run_at,omitempty"`
+	Source     string                    `json:"source"`
+	Status     string                    `json:"status"`
+	Version    uint64                    `json:"version"`
+}
+
+// ScheduleUpdateRequest defines model for ScheduleUpdateRequest.
+type ScheduleUpdateRequest struct {
+	Definition      ScheduleDefinition `json:"definition"`
+	ExpectedVersion uint64             `json:"expected_version"`
 }
 
 // WebAuthAssurance defines model for WebAuthAssurance.
@@ -989,6 +1183,122 @@ type WebAuthSessionSummary struct {
 	WebAuthSessionID string           `json:"web_auth_session_id"`
 }
 
+// WebhookCreateRequest defines model for WebhookCreateRequest.
+type WebhookCreateRequest struct {
+	Definition WebhookDefinition `json:"definition"`
+}
+
+// WebhookDefinition defines model for WebhookDefinition.
+type WebhookDefinition struct {
+	AckOnDelivery  bool                          `json:"ack_on_delivery"`
+	DedupeHeader   string                        `json:"dedupe_header"`
+	DedupeSource   WebhookDefinitionDedupeSource `json:"dedupe_source"`
+	Name           string                        `json:"name"`
+	PromptTemplate string                        `json:"prompt_template"`
+	ReportTo       string                        `json:"report_to"`
+}
+
+// WebhookDefinitionDedupeSource defines model for WebhookDefinition.DedupeSource.
+type WebhookDefinitionDedupeSource string
+
+// WebhookHistoryCursor defines model for WebhookHistoryCursor.
+type WebhookHistoryCursor struct {
+	BeforeAt    time.Time `json:"before_at"`
+	BeforeJobID string    `json:"before_job_id"`
+}
+
+// WebhookHistoryDetail defines model for WebhookHistoryDetail.
+type WebhookHistoryDetail struct {
+	DeliveryPayload string                `json:"delivery_payload"`
+	Input           string                `json:"input"`
+	InputAvailable  bool                  `json:"input_available"`
+	Output          string                `json:"output"`
+	Summary         WebhookHistorySummary `json:"summary"`
+}
+
+// WebhookHistoryPage defines model for WebhookHistoryPage.
+type WebhookHistoryPage struct {
+	Items []WebhookHistorySummary `json:"items"`
+	Next  *WebhookHistoryCursor   `json:"next,omitempty"`
+}
+
+// WebhookHistorySummary defines model for WebhookHistorySummary.
+type WebhookHistorySummary struct {
+	CreatedAt      time.Time `json:"created_at"`
+	DeliveryStatus string    `json:"delivery_status"`
+	HasReportTo    bool      `json:"has_report_to"`
+	JobID          string    `json:"job_id"`
+	JobStatus      string    `json:"job_status"`
+	ReportTo       string    `json:"report_to"`
+	Source         string    `json:"source"`
+}
+
+// WebhookInventory defines model for WebhookInventory.
+type WebhookInventory struct {
+	Items []WebhookItem `json:"items"`
+}
+
+// WebhookItem defines model for WebhookItem.
+type WebhookItem struct {
+	AuthHeader   string              `json:"auth_header"`
+	AuthType     WebhookItemAuthType `json:"auth_type"`
+	CreatedAt    time.Time           `json:"created_at"`
+	Definition   WebhookDefinition   `json:"definition"`
+	Deleted      bool                `json:"deleted"`
+	Enabled      bool                `json:"enabled"`
+	ReportToKey  string              `json:"report_to_key"`
+	ReportToKind string              `json:"report_to_kind"`
+	Source       WebhookItemSource   `json:"source"`
+	UpdatedAt    time.Time           `json:"updated_at"`
+	Version      uint64              `json:"version"`
+}
+
+// WebhookItemAuthType defines model for WebhookItem.AuthType.
+type WebhookItemAuthType string
+
+// WebhookItemSource defines model for WebhookItem.Source.
+type WebhookItemSource string
+
+// WebhookSecretResult defines model for WebhookSecretResult.
+type WebhookSecretResult struct {
+	Item   WebhookItem `json:"item"`
+	Secret string      `json:"secret"`
+}
+
+// WebhookSelectionRequest defines model for WebhookSelectionRequest.
+type WebhookSelectionRequest struct {
+	Enabled         bool   `json:"enabled"`
+	ExpectedVersion uint64 `json:"expected_version"`
+}
+
+// WebhookTestRequest defines model for WebhookTestRequest.
+type WebhookTestRequest struct {
+	Body            string             `json:"body"`
+	ConfirmDisabled bool               `json:"confirm_disabled"`
+	ExpectedVersion uint64             `json:"expected_version"`
+	RequestKey      openapi_types.UUID `json:"request_key"`
+}
+
+// WebhookTestResult defines model for WebhookTestResult.
+type WebhookTestResult struct {
+	Duplicate bool   `json:"duplicate"`
+	JobID     string `json:"job_id"`
+}
+
+// WebhookUpdateRequest defines model for WebhookUpdateRequest.
+type WebhookUpdateRequest struct {
+	Definition      WebhookDefinition `json:"definition"`
+	ExpectedVersion uint64            `json:"expected_version"`
+}
+
+// WebhookVersionRequest defines model for WebhookVersionRequest.
+type WebhookVersionRequest struct {
+	ExpectedVersion uint64 `json:"expected_version"`
+}
+
+// AliasName defines model for AliasName.
+type AliasName = string
+
 // MCPAttemptID defines model for MCPAttemptID.
 type MCPAttemptID = string
 
@@ -997,6 +1307,18 @@ type MCPConnectionID = string
 
 // ProviderID defines model for ProviderID.
 type ProviderID = string
+
+// ScheduleID defines model for ScheduleID.
+type ScheduleID = string
+
+// ScheduleRunID defines model for ScheduleRunID.
+type ScheduleRunID = openapi_types.UUID
+
+// WebhookJobID defines model for WebhookJobID.
+type WebhookJobID = string
+
+// WebhookName defines model for WebhookName.
+type WebhookName = string
 
 // BadRequest defines model for BadRequest.
 type BadRequest = ManagementError
@@ -1025,6 +1347,27 @@ type ListWebAuthSessionsParams struct {
 	AfterID *string `form:"after_id,omitempty" json:"after_id,omitempty"`
 	Limit   *int32  `form:"limit,omitempty" json:"limit,omitempty"`
 }
+
+// ListScheduleRunsParams defines parameters for ListScheduleRuns.
+type ListScheduleRunsParams struct {
+	BeforeAt *time.Time          `form:"before_at,omitempty" json:"before_at,omitempty"`
+	BeforeID *openapi_types.UUID `form:"before_id,omitempty" json:"before_id,omitempty"`
+}
+
+// ListWebhookHistoryParams defines parameters for ListWebhookHistory.
+type ListWebhookHistoryParams struct {
+	BeforeAt    *time.Time `form:"before_at,omitempty" json:"before_at,omitempty"`
+	BeforeJobID *string    `form:"before_job_id,omitempty" json:"before_job_id,omitempty"`
+}
+
+// CreateAliasJSONRequestBody defines body for CreateAlias for application/json ContentType.
+type CreateAliasJSONRequestBody = AliasCreateRequest
+
+// DeleteAliasJSONRequestBody defines body for DeleteAlias for application/json ContentType.
+type DeleteAliasJSONRequestBody = AliasDeleteRequest
+
+// RetargetAliasJSONRequestBody defines body for RetargetAlias for application/json ContentType.
+type RetargetAliasJSONRequestBody = AliasRetargetRequest
 
 // LoginWebAuthJSONRequestBody defines body for LoginWebAuth for application/json ContentType.
 type LoginWebAuthJSONRequestBody = LocalLoginRequest
@@ -1101,6 +1444,39 @@ type UpdateProviderJSONRequestBody = ProviderUpdateRequest
 // SelectProviderJSONRequestBody defines body for SelectProvider for application/json ContentType.
 type SelectProviderJSONRequestBody = ProviderSelectionRequest
 
+// CreateScheduleJSONRequestBody defines body for CreateSchedule for application/json ContentType.
+type CreateScheduleJSONRequestBody = ScheduleCreateRequest
+
+// DeleteScheduleJSONRequestBody defines body for DeleteSchedule for application/json ContentType.
+type DeleteScheduleJSONRequestBody = ScheduleDeleteRequest
+
+// UpdateScheduleJSONRequestBody defines body for UpdateSchedule for application/json ContentType.
+type UpdateScheduleJSONRequestBody = ScheduleUpdateRequest
+
+// RunScheduleNowJSONRequestBody defines body for RunScheduleNow for application/json ContentType.
+type RunScheduleNowJSONRequestBody = ScheduleRunNowRequest
+
+// SelectScheduleJSONRequestBody defines body for SelectSchedule for application/json ContentType.
+type SelectScheduleJSONRequestBody = ScheduleSelectionRequest
+
+// CreateWebhookJSONRequestBody defines body for CreateWebhook for application/json ContentType.
+type CreateWebhookJSONRequestBody = WebhookCreateRequest
+
+// DeleteWebhookJSONRequestBody defines body for DeleteWebhook for application/json ContentType.
+type DeleteWebhookJSONRequestBody = WebhookVersionRequest
+
+// UpdateWebhookJSONRequestBody defines body for UpdateWebhook for application/json ContentType.
+type UpdateWebhookJSONRequestBody = WebhookUpdateRequest
+
+// RotateWebhookSecretJSONRequestBody defines body for RotateWebhookSecret for application/json ContentType.
+type RotateWebhookSecretJSONRequestBody = WebhookVersionRequest
+
+// SelectWebhookJSONRequestBody defines body for SelectWebhook for application/json ContentType.
+type SelectWebhookJSONRequestBody = WebhookSelectionRequest
+
+// TestWebhookJSONRequestBody defines body for TestWebhook for application/json ContentType.
+type TestWebhookJSONRequestBody = WebhookTestRequest
+
 // RequestEditorFn is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
 
@@ -1174,6 +1550,36 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 
 // The interface specification for the client above.
 type ClientInterface interface {
+
+	// ListAliases performs a GET /api/management/v1/aliases (the `ListAliases` operationId) request.
+	ListAliases(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateAliasWithBody performs a POST /api/management/v1/aliases (the `CreateAlias` operationId) request,
+	// with any type of body and a specified content type.
+	CreateAliasWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateAlias performs a POST /api/management/v1/aliases (the `CreateAlias` operationId) request.
+	// Takes a body of the `application/json` content type.
+	CreateAlias(ctx context.Context, body CreateAliasJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteAliasWithBody performs a DELETE /api/management/v1/aliases/{alias_name} (the `DeleteAlias` operationId) request,
+	// with any type of body and a specified content type.
+	DeleteAliasWithBody(ctx context.Context, aliasName AliasName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteAlias performs a DELETE /api/management/v1/aliases/{alias_name} (the `DeleteAlias` operationId) request.
+	// Takes a body of the `application/json` content type.
+	DeleteAlias(ctx context.Context, aliasName AliasName, body DeleteAliasJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetAlias performs a GET /api/management/v1/aliases/{alias_name} (the `GetAlias` operationId) request.
+	GetAlias(ctx context.Context, aliasName AliasName, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RetargetAliasWithBody performs a PUT /api/management/v1/aliases/{alias_name} (the `RetargetAlias` operationId) request,
+	// with any type of body and a specified content type.
+	RetargetAliasWithBody(ctx context.Context, aliasName AliasName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RetargetAlias performs a PUT /api/management/v1/aliases/{alias_name} (the `RetargetAlias` operationId) request.
+	// Takes a body of the `application/json` content type.
+	RetargetAlias(ctx context.Context, aliasName AliasName, body RetargetAliasJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// LoginWebAuthWithBody Start local WebAuth login
 	//
@@ -1542,6 +1948,266 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /api/management/v1/providers/{provider_id}/selection (the `SelectProvider` operationId).
 	SelectProvider(ctx context.Context, providerID ProviderID, body SelectProviderJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListSchedules Read the content-free schedule inventory
+	//
+	// Corresponds with GET /api/management/v1/schedules (the `ListSchedules` operationId).
+	ListSchedules(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateScheduleWithBody Create a managed schedule
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/management/v1/schedules (the `CreateSchedule` operationId).
+	CreateScheduleWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateSchedule Create a managed schedule
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/management/v1/schedules (the `CreateSchedule` operationId).
+	CreateSchedule(ctx context.Context, body CreateScheduleJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteScheduleWithBody Tombstone a managed schedule
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with DELETE /api/management/v1/schedules/{schedule_id} (the `DeleteSchedule` operationId).
+	DeleteScheduleWithBody(ctx context.Context, scheduleID ScheduleID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteSchedule Tombstone a managed schedule
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with DELETE /api/management/v1/schedules/{schedule_id} (the `DeleteSchedule` operationId).
+	DeleteSchedule(ctx context.Context, scheduleID ScheduleID, body DeleteScheduleJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetSchedule Read one schedule including guarded content
+	//
+	// Corresponds with GET /api/management/v1/schedules/{schedule_id} (the `GetSchedule` operationId).
+	GetSchedule(ctx context.Context, scheduleID ScheduleID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateScheduleWithBody Replace a managed schedule definition
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /api/management/v1/schedules/{schedule_id} (the `UpdateSchedule` operationId).
+	UpdateScheduleWithBody(ctx context.Context, scheduleID ScheduleID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateSchedule Replace a managed schedule definition
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /api/management/v1/schedules/{schedule_id} (the `UpdateSchedule` operationId).
+	UpdateSchedule(ctx context.Context, scheduleID ScheduleID, body UpdateScheduleJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListScheduleRuns Read one bounded page of schedule run history
+	//
+	// Corresponds with GET /api/management/v1/schedules/{schedule_id}/runs (the `ListScheduleRuns` operationId).
+	ListScheduleRuns(ctx context.Context, scheduleID ScheduleID, params *ListScheduleRunsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RunScheduleNowWithBody Request one idempotent manual schedule run
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/management/v1/schedules/{schedule_id}/runs (the `RunScheduleNow` operationId).
+	RunScheduleNowWithBody(ctx context.Context, scheduleID ScheduleID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RunScheduleNow Request one idempotent manual schedule run
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/management/v1/schedules/{schedule_id}/runs (the `RunScheduleNow` operationId).
+	RunScheduleNow(ctx context.Context, scheduleID ScheduleID, body RunScheduleNowJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetScheduleRun Read one schedule run with frozen input and output
+	//
+	// Corresponds with GET /api/management/v1/schedules/{schedule_id}/runs/{run_id} (the `GetScheduleRun` operationId).
+	GetScheduleRun(ctx context.Context, scheduleID ScheduleID, runID ScheduleRunID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SelectScheduleWithBody Enable or disable a managed schedule
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/management/v1/schedules/{schedule_id}/selection (the `SelectSchedule` operationId).
+	SelectScheduleWithBody(ctx context.Context, scheduleID ScheduleID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SelectSchedule Enable or disable a managed schedule
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/management/v1/schedules/{schedule_id}/selection (the `SelectSchedule` operationId).
+	SelectSchedule(ctx context.Context, scheduleID ScheduleID, body SelectScheduleJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListWebhooks performs a GET /api/management/v1/webhooks (the `ListWebhooks` operationId) request.
+	ListWebhooks(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateWebhookWithBody performs a POST /api/management/v1/webhooks (the `CreateWebhook` operationId) request,
+	// with any type of body and a specified content type.
+	CreateWebhookWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateWebhook performs a POST /api/management/v1/webhooks (the `CreateWebhook` operationId) request.
+	// Takes a body of the `application/json` content type.
+	CreateWebhook(ctx context.Context, body CreateWebhookJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteWebhookWithBody performs a DELETE /api/management/v1/webhooks/{webhook_name} (the `DeleteWebhook` operationId) request,
+	// with any type of body and a specified content type.
+	DeleteWebhookWithBody(ctx context.Context, webhookName WebhookName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteWebhook performs a DELETE /api/management/v1/webhooks/{webhook_name} (the `DeleteWebhook` operationId) request.
+	// Takes a body of the `application/json` content type.
+	DeleteWebhook(ctx context.Context, webhookName WebhookName, body DeleteWebhookJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetWebhook performs a GET /api/management/v1/webhooks/{webhook_name} (the `GetWebhook` operationId) request.
+	GetWebhook(ctx context.Context, webhookName WebhookName, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateWebhookWithBody performs a PUT /api/management/v1/webhooks/{webhook_name} (the `UpdateWebhook` operationId) request,
+	// with any type of body and a specified content type.
+	UpdateWebhookWithBody(ctx context.Context, webhookName WebhookName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateWebhook performs a PUT /api/management/v1/webhooks/{webhook_name} (the `UpdateWebhook` operationId) request.
+	// Takes a body of the `application/json` content type.
+	UpdateWebhook(ctx context.Context, webhookName WebhookName, body UpdateWebhookJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListWebhookHistory performs a GET /api/management/v1/webhooks/{webhook_name}/history (the `ListWebhookHistory` operationId) request.
+	ListWebhookHistory(ctx context.Context, webhookName WebhookName, params *ListWebhookHistoryParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetWebhookHistory performs a GET /api/management/v1/webhooks/{webhook_name}/history/{job_id} (the `GetWebhookHistory` operationId) request.
+	GetWebhookHistory(ctx context.Context, webhookName WebhookName, jobID WebhookJobID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RotateWebhookSecretWithBody performs a POST /api/management/v1/webhooks/{webhook_name}/rotate (the `RotateWebhookSecret` operationId) request,
+	// with any type of body and a specified content type.
+	RotateWebhookSecretWithBody(ctx context.Context, webhookName WebhookName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RotateWebhookSecret performs a POST /api/management/v1/webhooks/{webhook_name}/rotate (the `RotateWebhookSecret` operationId) request.
+	// Takes a body of the `application/json` content type.
+	RotateWebhookSecret(ctx context.Context, webhookName WebhookName, body RotateWebhookSecretJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SelectWebhookWithBody performs a POST /api/management/v1/webhooks/{webhook_name}/selection (the `SelectWebhook` operationId) request,
+	// with any type of body and a specified content type.
+	SelectWebhookWithBody(ctx context.Context, webhookName WebhookName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SelectWebhook performs a POST /api/management/v1/webhooks/{webhook_name}/selection (the `SelectWebhook` operationId) request.
+	// Takes a body of the `application/json` content type.
+	SelectWebhook(ctx context.Context, webhookName WebhookName, body SelectWebhookJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// TestWebhookWithBody performs a POST /api/management/v1/webhooks/{webhook_name}/test (the `TestWebhook` operationId) request,
+	// with any type of body and a specified content type.
+	TestWebhookWithBody(ctx context.Context, webhookName WebhookName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// TestWebhook performs a POST /api/management/v1/webhooks/{webhook_name}/test (the `TestWebhook` operationId) request.
+	// Takes a body of the `application/json` content type.
+	TestWebhook(ctx context.Context, webhookName WebhookName, body TestWebhookJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+}
+
+// ListAliases performs a GET /api/management/v1/aliases (the `ListAliases` operationId) request.
+func (c *Client) ListAliases(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListAliasesRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateAliasWithBody performs a POST /api/management/v1/aliases (the `CreateAlias` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) CreateAliasWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateAliasRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateAlias performs a POST /api/management/v1/aliases (the `CreateAlias` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) CreateAlias(ctx context.Context, body CreateAliasJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateAliasRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteAliasWithBody performs a DELETE /api/management/v1/aliases/{alias_name} (the `DeleteAlias` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) DeleteAliasWithBody(ctx context.Context, aliasName AliasName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteAliasRequestWithBody(c.Server, aliasName, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteAlias performs a DELETE /api/management/v1/aliases/{alias_name} (the `DeleteAlias` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) DeleteAlias(ctx context.Context, aliasName AliasName, body DeleteAliasJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteAliasRequest(c.Server, aliasName, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetAlias performs a GET /api/management/v1/aliases/{alias_name} (the `GetAlias` operationId) request.
+func (c *Client) GetAlias(ctx context.Context, aliasName AliasName, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetAliasRequest(c.Server, aliasName)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RetargetAliasWithBody performs a PUT /api/management/v1/aliases/{alias_name} (the `RetargetAlias` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) RetargetAliasWithBody(ctx context.Context, aliasName AliasName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRetargetAliasRequestWithBody(c.Server, aliasName, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RetargetAlias performs a PUT /api/management/v1/aliases/{alias_name} (the `RetargetAlias` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) RetargetAlias(ctx context.Context, aliasName AliasName, body RetargetAliasJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRetargetAliasRequest(c.Server, aliasName, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
 }
 
 // LoginWebAuthWithBody Start local WebAuth login
@@ -2530,6 +3196,651 @@ func (c *Client) SelectProvider(ctx context.Context, providerID ProviderID, body
 		return nil, err
 	}
 	return c.Client.Do(req)
+}
+
+// ListSchedules Read the content-free schedule inventory
+//
+// Corresponds with GET /api/management/v1/schedules (the `ListSchedules` operationId).
+func (c *Client) ListSchedules(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListSchedulesRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateScheduleWithBody Create a managed schedule
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/management/v1/schedules (the `CreateSchedule` operationId).
+func (c *Client) CreateScheduleWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateScheduleRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateSchedule Create a managed schedule
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/management/v1/schedules (the `CreateSchedule` operationId).
+func (c *Client) CreateSchedule(ctx context.Context, body CreateScheduleJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateScheduleRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteScheduleWithBody Tombstone a managed schedule
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with DELETE /api/management/v1/schedules/{schedule_id} (the `DeleteSchedule` operationId).
+func (c *Client) DeleteScheduleWithBody(ctx context.Context, scheduleID ScheduleID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteScheduleRequestWithBody(c.Server, scheduleID, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteSchedule Tombstone a managed schedule
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with DELETE /api/management/v1/schedules/{schedule_id} (the `DeleteSchedule` operationId).
+func (c *Client) DeleteSchedule(ctx context.Context, scheduleID ScheduleID, body DeleteScheduleJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteScheduleRequest(c.Server, scheduleID, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetSchedule Read one schedule including guarded content
+//
+// Corresponds with GET /api/management/v1/schedules/{schedule_id} (the `GetSchedule` operationId).
+func (c *Client) GetSchedule(ctx context.Context, scheduleID ScheduleID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetScheduleRequest(c.Server, scheduleID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateScheduleWithBody Replace a managed schedule definition
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /api/management/v1/schedules/{schedule_id} (the `UpdateSchedule` operationId).
+func (c *Client) UpdateScheduleWithBody(ctx context.Context, scheduleID ScheduleID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateScheduleRequestWithBody(c.Server, scheduleID, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateSchedule Replace a managed schedule definition
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /api/management/v1/schedules/{schedule_id} (the `UpdateSchedule` operationId).
+func (c *Client) UpdateSchedule(ctx context.Context, scheduleID ScheduleID, body UpdateScheduleJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateScheduleRequest(c.Server, scheduleID, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListScheduleRuns Read one bounded page of schedule run history
+//
+// Corresponds with GET /api/management/v1/schedules/{schedule_id}/runs (the `ListScheduleRuns` operationId).
+func (c *Client) ListScheduleRuns(ctx context.Context, scheduleID ScheduleID, params *ListScheduleRunsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListScheduleRunsRequest(c.Server, scheduleID, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RunScheduleNowWithBody Request one idempotent manual schedule run
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/management/v1/schedules/{schedule_id}/runs (the `RunScheduleNow` operationId).
+func (c *Client) RunScheduleNowWithBody(ctx context.Context, scheduleID ScheduleID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRunScheduleNowRequestWithBody(c.Server, scheduleID, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RunScheduleNow Request one idempotent manual schedule run
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/management/v1/schedules/{schedule_id}/runs (the `RunScheduleNow` operationId).
+func (c *Client) RunScheduleNow(ctx context.Context, scheduleID ScheduleID, body RunScheduleNowJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRunScheduleNowRequest(c.Server, scheduleID, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetScheduleRun Read one schedule run with frozen input and output
+//
+// Corresponds with GET /api/management/v1/schedules/{schedule_id}/runs/{run_id} (the `GetScheduleRun` operationId).
+func (c *Client) GetScheduleRun(ctx context.Context, scheduleID ScheduleID, runID ScheduleRunID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetScheduleRunRequest(c.Server, scheduleID, runID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SelectScheduleWithBody Enable or disable a managed schedule
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/management/v1/schedules/{schedule_id}/selection (the `SelectSchedule` operationId).
+func (c *Client) SelectScheduleWithBody(ctx context.Context, scheduleID ScheduleID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSelectScheduleRequestWithBody(c.Server, scheduleID, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SelectSchedule Enable or disable a managed schedule
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/management/v1/schedules/{schedule_id}/selection (the `SelectSchedule` operationId).
+func (c *Client) SelectSchedule(ctx context.Context, scheduleID ScheduleID, body SelectScheduleJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSelectScheduleRequest(c.Server, scheduleID, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListWebhooks performs a GET /api/management/v1/webhooks (the `ListWebhooks` operationId) request.
+func (c *Client) ListWebhooks(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListWebhooksRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateWebhookWithBody performs a POST /api/management/v1/webhooks (the `CreateWebhook` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) CreateWebhookWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateWebhookRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateWebhook performs a POST /api/management/v1/webhooks (the `CreateWebhook` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) CreateWebhook(ctx context.Context, body CreateWebhookJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateWebhookRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteWebhookWithBody performs a DELETE /api/management/v1/webhooks/{webhook_name} (the `DeleteWebhook` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) DeleteWebhookWithBody(ctx context.Context, webhookName WebhookName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteWebhookRequestWithBody(c.Server, webhookName, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteWebhook performs a DELETE /api/management/v1/webhooks/{webhook_name} (the `DeleteWebhook` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) DeleteWebhook(ctx context.Context, webhookName WebhookName, body DeleteWebhookJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteWebhookRequest(c.Server, webhookName, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetWebhook performs a GET /api/management/v1/webhooks/{webhook_name} (the `GetWebhook` operationId) request.
+func (c *Client) GetWebhook(ctx context.Context, webhookName WebhookName, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWebhookRequest(c.Server, webhookName)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateWebhookWithBody performs a PUT /api/management/v1/webhooks/{webhook_name} (the `UpdateWebhook` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) UpdateWebhookWithBody(ctx context.Context, webhookName WebhookName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateWebhookRequestWithBody(c.Server, webhookName, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateWebhook performs a PUT /api/management/v1/webhooks/{webhook_name} (the `UpdateWebhook` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) UpdateWebhook(ctx context.Context, webhookName WebhookName, body UpdateWebhookJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateWebhookRequest(c.Server, webhookName, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListWebhookHistory performs a GET /api/management/v1/webhooks/{webhook_name}/history (the `ListWebhookHistory` operationId) request.
+func (c *Client) ListWebhookHistory(ctx context.Context, webhookName WebhookName, params *ListWebhookHistoryParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListWebhookHistoryRequest(c.Server, webhookName, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetWebhookHistory performs a GET /api/management/v1/webhooks/{webhook_name}/history/{job_id} (the `GetWebhookHistory` operationId) request.
+func (c *Client) GetWebhookHistory(ctx context.Context, webhookName WebhookName, jobID WebhookJobID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWebhookHistoryRequest(c.Server, webhookName, jobID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RotateWebhookSecretWithBody performs a POST /api/management/v1/webhooks/{webhook_name}/rotate (the `RotateWebhookSecret` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) RotateWebhookSecretWithBody(ctx context.Context, webhookName WebhookName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRotateWebhookSecretRequestWithBody(c.Server, webhookName, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RotateWebhookSecret performs a POST /api/management/v1/webhooks/{webhook_name}/rotate (the `RotateWebhookSecret` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) RotateWebhookSecret(ctx context.Context, webhookName WebhookName, body RotateWebhookSecretJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRotateWebhookSecretRequest(c.Server, webhookName, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SelectWebhookWithBody performs a POST /api/management/v1/webhooks/{webhook_name}/selection (the `SelectWebhook` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) SelectWebhookWithBody(ctx context.Context, webhookName WebhookName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSelectWebhookRequestWithBody(c.Server, webhookName, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SelectWebhook performs a POST /api/management/v1/webhooks/{webhook_name}/selection (the `SelectWebhook` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) SelectWebhook(ctx context.Context, webhookName WebhookName, body SelectWebhookJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSelectWebhookRequest(c.Server, webhookName, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// TestWebhookWithBody performs a POST /api/management/v1/webhooks/{webhook_name}/test (the `TestWebhook` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) TestWebhookWithBody(ctx context.Context, webhookName WebhookName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewTestWebhookRequestWithBody(c.Server, webhookName, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// TestWebhook performs a POST /api/management/v1/webhooks/{webhook_name}/test (the `TestWebhook` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) TestWebhook(ctx context.Context, webhookName WebhookName, body TestWebhookJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewTestWebhookRequest(c.Server, webhookName, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// NewListAliasesRequest constructs an http.Request for the ListAliases method
+func NewListAliasesRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/aliases")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateAliasRequest calls the generic CreateAlias builder with application/json body
+func NewCreateAliasRequest(server string, body CreateAliasJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateAliasRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateAliasRequestWithBody constructs an http.Request for the CreateAlias method, with any body, and a specified content type
+func NewCreateAliasRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/aliases")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteAliasRequest calls the generic DeleteAlias builder with application/json body
+func NewDeleteAliasRequest(server string, aliasName AliasName, body DeleteAliasJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewDeleteAliasRequestWithBody(server, aliasName, "application/json", bodyReader)
+}
+
+// NewDeleteAliasRequestWithBody constructs an http.Request for the DeleteAlias method, with any body, and a specified content type
+func NewDeleteAliasRequestWithBody(server string, aliasName AliasName, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "alias_name", aliasName, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/aliases/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetAliasRequest constructs an http.Request for the GetAlias method
+func NewGetAliasRequest(server string, aliasName AliasName) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "alias_name", aliasName, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/aliases/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRetargetAliasRequest calls the generic RetargetAlias builder with application/json body
+func NewRetargetAliasRequest(server string, aliasName AliasName, body RetargetAliasJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRetargetAliasRequestWithBody(server, aliasName, "application/json", bodyReader)
+}
+
+// NewRetargetAliasRequestWithBody constructs an http.Request for the RetargetAlias method, with any body, and a specified content type
+func NewRetargetAliasRequestWithBody(server string, aliasName AliasName, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "alias_name", aliasName, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/aliases/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
 }
 
 // NewLoginWebAuthRequest calls the generic LoginWebAuth builder with application/json body
@@ -4012,6 +5323,859 @@ func NewSelectProviderRequestWithBody(server string, providerID ProviderID, cont
 	return req, nil
 }
 
+// NewListSchedulesRequest constructs an http.Request for the ListSchedules method
+func NewListSchedulesRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/schedules")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateScheduleRequest calls the generic CreateSchedule builder with application/json body
+func NewCreateScheduleRequest(server string, body CreateScheduleJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateScheduleRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateScheduleRequestWithBody constructs an http.Request for the CreateSchedule method, with any body, and a specified content type
+func NewCreateScheduleRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/schedules")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteScheduleRequest calls the generic DeleteSchedule builder with application/json body
+func NewDeleteScheduleRequest(server string, scheduleID ScheduleID, body DeleteScheduleJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewDeleteScheduleRequestWithBody(server, scheduleID, "application/json", bodyReader)
+}
+
+// NewDeleteScheduleRequestWithBody constructs an http.Request for the DeleteSchedule method, with any body, and a specified content type
+func NewDeleteScheduleRequestWithBody(server string, scheduleID ScheduleID, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "schedule_id", scheduleID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/schedules/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetScheduleRequest constructs an http.Request for the GetSchedule method
+func NewGetScheduleRequest(server string, scheduleID ScheduleID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "schedule_id", scheduleID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/schedules/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateScheduleRequest calls the generic UpdateSchedule builder with application/json body
+func NewUpdateScheduleRequest(server string, scheduleID ScheduleID, body UpdateScheduleJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateScheduleRequestWithBody(server, scheduleID, "application/json", bodyReader)
+}
+
+// NewUpdateScheduleRequestWithBody constructs an http.Request for the UpdateSchedule method, with any body, and a specified content type
+func NewUpdateScheduleRequestWithBody(server string, scheduleID ScheduleID, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "schedule_id", scheduleID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/schedules/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListScheduleRunsRequest constructs an http.Request for the ListScheduleRuns method
+func NewListScheduleRunsRequest(server string, scheduleID ScheduleID, params *ListScheduleRunsParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "schedule_id", scheduleID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/schedules/%s/runs", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.BeforeAt != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "before_at", *params.BeforeAt, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "date-time"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.BeforeID != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "before_id", *params.BeforeID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "uuid"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRunScheduleNowRequest calls the generic RunScheduleNow builder with application/json body
+func NewRunScheduleNowRequest(server string, scheduleID ScheduleID, body RunScheduleNowJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRunScheduleNowRequestWithBody(server, scheduleID, "application/json", bodyReader)
+}
+
+// NewRunScheduleNowRequestWithBody constructs an http.Request for the RunScheduleNow method, with any body, and a specified content type
+func NewRunScheduleNowRequestWithBody(server string, scheduleID ScheduleID, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "schedule_id", scheduleID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/schedules/%s/runs", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetScheduleRunRequest constructs an http.Request for the GetScheduleRun method
+func NewGetScheduleRunRequest(server string, scheduleID ScheduleID, runID ScheduleRunID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "schedule_id", scheduleID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "run_id", runID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/schedules/%s/runs/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewSelectScheduleRequest calls the generic SelectSchedule builder with application/json body
+func NewSelectScheduleRequest(server string, scheduleID ScheduleID, body SelectScheduleJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSelectScheduleRequestWithBody(server, scheduleID, "application/json", bodyReader)
+}
+
+// NewSelectScheduleRequestWithBody constructs an http.Request for the SelectSchedule method, with any body, and a specified content type
+func NewSelectScheduleRequestWithBody(server string, scheduleID ScheduleID, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "schedule_id", scheduleID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/schedules/%s/selection", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListWebhooksRequest constructs an http.Request for the ListWebhooks method
+func NewListWebhooksRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/webhooks")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateWebhookRequest calls the generic CreateWebhook builder with application/json body
+func NewCreateWebhookRequest(server string, body CreateWebhookJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateWebhookRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateWebhookRequestWithBody constructs an http.Request for the CreateWebhook method, with any body, and a specified content type
+func NewCreateWebhookRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/webhooks")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteWebhookRequest calls the generic DeleteWebhook builder with application/json body
+func NewDeleteWebhookRequest(server string, webhookName WebhookName, body DeleteWebhookJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewDeleteWebhookRequestWithBody(server, webhookName, "application/json", bodyReader)
+}
+
+// NewDeleteWebhookRequestWithBody constructs an http.Request for the DeleteWebhook method, with any body, and a specified content type
+func NewDeleteWebhookRequestWithBody(server string, webhookName WebhookName, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "webhook_name", webhookName, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/webhooks/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetWebhookRequest constructs an http.Request for the GetWebhook method
+func NewGetWebhookRequest(server string, webhookName WebhookName) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "webhook_name", webhookName, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/webhooks/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateWebhookRequest calls the generic UpdateWebhook builder with application/json body
+func NewUpdateWebhookRequest(server string, webhookName WebhookName, body UpdateWebhookJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateWebhookRequestWithBody(server, webhookName, "application/json", bodyReader)
+}
+
+// NewUpdateWebhookRequestWithBody constructs an http.Request for the UpdateWebhook method, with any body, and a specified content type
+func NewUpdateWebhookRequestWithBody(server string, webhookName WebhookName, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "webhook_name", webhookName, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/webhooks/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListWebhookHistoryRequest constructs an http.Request for the ListWebhookHistory method
+func NewListWebhookHistoryRequest(server string, webhookName WebhookName, params *ListWebhookHistoryParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "webhook_name", webhookName, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/webhooks/%s/history", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.BeforeAt != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "before_at", *params.BeforeAt, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "date-time"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.BeforeJobID != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "before_job_id", *params.BeforeJobID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetWebhookHistoryRequest constructs an http.Request for the GetWebhookHistory method
+func NewGetWebhookHistoryRequest(server string, webhookName WebhookName, jobID WebhookJobID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "webhook_name", webhookName, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "job_id", jobID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/webhooks/%s/history/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRotateWebhookSecretRequest calls the generic RotateWebhookSecret builder with application/json body
+func NewRotateWebhookSecretRequest(server string, webhookName WebhookName, body RotateWebhookSecretJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRotateWebhookSecretRequestWithBody(server, webhookName, "application/json", bodyReader)
+}
+
+// NewRotateWebhookSecretRequestWithBody constructs an http.Request for the RotateWebhookSecret method, with any body, and a specified content type
+func NewRotateWebhookSecretRequestWithBody(server string, webhookName WebhookName, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "webhook_name", webhookName, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/webhooks/%s/rotate", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewSelectWebhookRequest calls the generic SelectWebhook builder with application/json body
+func NewSelectWebhookRequest(server string, webhookName WebhookName, body SelectWebhookJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSelectWebhookRequestWithBody(server, webhookName, "application/json", bodyReader)
+}
+
+// NewSelectWebhookRequestWithBody constructs an http.Request for the SelectWebhook method, with any body, and a specified content type
+func NewSelectWebhookRequestWithBody(server string, webhookName WebhookName, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "webhook_name", webhookName, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/webhooks/%s/selection", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewTestWebhookRequest calls the generic TestWebhook builder with application/json body
+func NewTestWebhookRequest(server string, webhookName WebhookName, body TestWebhookJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewTestWebhookRequestWithBody(server, webhookName, "application/json", bodyReader)
+}
+
+// NewTestWebhookRequestWithBody constructs an http.Request for the TestWebhook method, with any body, and a specified content type
+func NewTestWebhookRequestWithBody(server string, webhookName WebhookName, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "webhook_name", webhookName, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/webhooks/%s/test", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -4055,6 +6219,46 @@ func WithBaseURL(baseURL string) ClientOption {
 
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
+
+	// ListAliasesWithResponse performs a GET /api/management/v1/aliases (the `ListAliases` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ListAliasesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListAliasesResponse, error)
+
+	// CreateAliasWithBodyWithResponse performs a POST /api/management/v1/aliases (the `CreateAlias` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	CreateAliasWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateAliasResponse, error)
+
+	// CreateAliasWithResponse performs a POST /api/management/v1/aliases (the `CreateAlias` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	CreateAliasWithResponse(ctx context.Context, body CreateAliasJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateAliasResponse, error)
+
+	// DeleteAliasWithBodyWithResponse performs a DELETE /api/management/v1/aliases/{alias_name} (the `DeleteAlias` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	DeleteAliasWithBodyWithResponse(ctx context.Context, aliasName AliasName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeleteAliasResponse, error)
+
+	// DeleteAliasWithResponse performs a DELETE /api/management/v1/aliases/{alias_name} (the `DeleteAlias` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	DeleteAliasWithResponse(ctx context.Context, aliasName AliasName, body DeleteAliasJSONRequestBody, reqEditors ...RequestEditorFn) (*DeleteAliasResponse, error)
+
+	// GetAliasWithResponse performs a GET /api/management/v1/aliases/{alias_name} (the `GetAlias` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	GetAliasWithResponse(ctx context.Context, aliasName AliasName, reqEditors ...RequestEditorFn) (*GetAliasResponse, error)
+
+	// RetargetAliasWithBodyWithResponse performs a PUT /api/management/v1/aliases/{alias_name} (the `RetargetAlias` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	RetargetAliasWithBodyWithResponse(ctx context.Context, aliasName AliasName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RetargetAliasResponse, error)
+
+	// RetargetAliasWithResponse performs a PUT /api/management/v1/aliases/{alias_name} (the `RetargetAlias` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	RetargetAliasWithResponse(ctx context.Context, aliasName AliasName, body RetargetAliasJSONRequestBody, reqEditors ...RequestEditorFn) (*RetargetAliasResponse, error)
 
 	// LoginWebAuthWithBodyWithResponse Start local WebAuth login
 	//
@@ -4459,6 +6663,585 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with POST /api/management/v1/providers/{provider_id}/selection (the `SelectProvider` operationId).
 	SelectProviderWithResponse(ctx context.Context, providerID ProviderID, body SelectProviderJSONRequestBody, reqEditors ...RequestEditorFn) (*SelectProviderResponse, error)
+
+	// ListSchedulesWithResponse Read the content-free schedule inventory
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/management/v1/schedules (the `ListSchedules` operationId).
+	ListSchedulesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListSchedulesResponse, error)
+
+	// CreateScheduleWithBodyWithResponse Create a managed schedule
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/schedules (the `CreateSchedule` operationId).
+	CreateScheduleWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateScheduleResponse, error)
+
+	// CreateScheduleWithResponse Create a managed schedule
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/schedules (the `CreateSchedule` operationId).
+	CreateScheduleWithResponse(ctx context.Context, body CreateScheduleJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateScheduleResponse, error)
+
+	// DeleteScheduleWithBodyWithResponse Tombstone a managed schedule
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /api/management/v1/schedules/{schedule_id} (the `DeleteSchedule` operationId).
+	DeleteScheduleWithBodyWithResponse(ctx context.Context, scheduleID ScheduleID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeleteScheduleResponse, error)
+
+	// DeleteScheduleWithResponse Tombstone a managed schedule
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /api/management/v1/schedules/{schedule_id} (the `DeleteSchedule` operationId).
+	DeleteScheduleWithResponse(ctx context.Context, scheduleID ScheduleID, body DeleteScheduleJSONRequestBody, reqEditors ...RequestEditorFn) (*DeleteScheduleResponse, error)
+
+	// GetScheduleWithResponse Read one schedule including guarded content
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/management/v1/schedules/{schedule_id} (the `GetSchedule` operationId).
+	GetScheduleWithResponse(ctx context.Context, scheduleID ScheduleID, reqEditors ...RequestEditorFn) (*GetScheduleResponse, error)
+
+	// UpdateScheduleWithBodyWithResponse Replace a managed schedule definition
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/management/v1/schedules/{schedule_id} (the `UpdateSchedule` operationId).
+	UpdateScheduleWithBodyWithResponse(ctx context.Context, scheduleID ScheduleID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateScheduleResponse, error)
+
+	// UpdateScheduleWithResponse Replace a managed schedule definition
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/management/v1/schedules/{schedule_id} (the `UpdateSchedule` operationId).
+	UpdateScheduleWithResponse(ctx context.Context, scheduleID ScheduleID, body UpdateScheduleJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateScheduleResponse, error)
+
+	// ListScheduleRunsWithResponse Read one bounded page of schedule run history
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/management/v1/schedules/{schedule_id}/runs (the `ListScheduleRuns` operationId).
+	ListScheduleRunsWithResponse(ctx context.Context, scheduleID ScheduleID, params *ListScheduleRunsParams, reqEditors ...RequestEditorFn) (*ListScheduleRunsResponse, error)
+
+	// RunScheduleNowWithBodyWithResponse Request one idempotent manual schedule run
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/schedules/{schedule_id}/runs (the `RunScheduleNow` operationId).
+	RunScheduleNowWithBodyWithResponse(ctx context.Context, scheduleID ScheduleID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RunScheduleNowResponse, error)
+
+	// RunScheduleNowWithResponse Request one idempotent manual schedule run
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/schedules/{schedule_id}/runs (the `RunScheduleNow` operationId).
+	RunScheduleNowWithResponse(ctx context.Context, scheduleID ScheduleID, body RunScheduleNowJSONRequestBody, reqEditors ...RequestEditorFn) (*RunScheduleNowResponse, error)
+
+	// GetScheduleRunWithResponse Read one schedule run with frozen input and output
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/management/v1/schedules/{schedule_id}/runs/{run_id} (the `GetScheduleRun` operationId).
+	GetScheduleRunWithResponse(ctx context.Context, scheduleID ScheduleID, runID ScheduleRunID, reqEditors ...RequestEditorFn) (*GetScheduleRunResponse, error)
+
+	// SelectScheduleWithBodyWithResponse Enable or disable a managed schedule
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/schedules/{schedule_id}/selection (the `SelectSchedule` operationId).
+	SelectScheduleWithBodyWithResponse(ctx context.Context, scheduleID ScheduleID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SelectScheduleResponse, error)
+
+	// SelectScheduleWithResponse Enable or disable a managed schedule
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/schedules/{schedule_id}/selection (the `SelectSchedule` operationId).
+	SelectScheduleWithResponse(ctx context.Context, scheduleID ScheduleID, body SelectScheduleJSONRequestBody, reqEditors ...RequestEditorFn) (*SelectScheduleResponse, error)
+
+	// ListWebhooksWithResponse performs a GET /api/management/v1/webhooks (the `ListWebhooks` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ListWebhooksWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListWebhooksResponse, error)
+
+	// CreateWebhookWithBodyWithResponse performs a POST /api/management/v1/webhooks (the `CreateWebhook` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	CreateWebhookWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateWebhookResponse, error)
+
+	// CreateWebhookWithResponse performs a POST /api/management/v1/webhooks (the `CreateWebhook` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	CreateWebhookWithResponse(ctx context.Context, body CreateWebhookJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateWebhookResponse, error)
+
+	// DeleteWebhookWithBodyWithResponse performs a DELETE /api/management/v1/webhooks/{webhook_name} (the `DeleteWebhook` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	DeleteWebhookWithBodyWithResponse(ctx context.Context, webhookName WebhookName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeleteWebhookResponse, error)
+
+	// DeleteWebhookWithResponse performs a DELETE /api/management/v1/webhooks/{webhook_name} (the `DeleteWebhook` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	DeleteWebhookWithResponse(ctx context.Context, webhookName WebhookName, body DeleteWebhookJSONRequestBody, reqEditors ...RequestEditorFn) (*DeleteWebhookResponse, error)
+
+	// GetWebhookWithResponse performs a GET /api/management/v1/webhooks/{webhook_name} (the `GetWebhook` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	GetWebhookWithResponse(ctx context.Context, webhookName WebhookName, reqEditors ...RequestEditorFn) (*GetWebhookResponse, error)
+
+	// UpdateWebhookWithBodyWithResponse performs a PUT /api/management/v1/webhooks/{webhook_name} (the `UpdateWebhook` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	UpdateWebhookWithBodyWithResponse(ctx context.Context, webhookName WebhookName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateWebhookResponse, error)
+
+	// UpdateWebhookWithResponse performs a PUT /api/management/v1/webhooks/{webhook_name} (the `UpdateWebhook` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	UpdateWebhookWithResponse(ctx context.Context, webhookName WebhookName, body UpdateWebhookJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateWebhookResponse, error)
+
+	// ListWebhookHistoryWithResponse performs a GET /api/management/v1/webhooks/{webhook_name}/history (the `ListWebhookHistory` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ListWebhookHistoryWithResponse(ctx context.Context, webhookName WebhookName, params *ListWebhookHistoryParams, reqEditors ...RequestEditorFn) (*ListWebhookHistoryResponse, error)
+
+	// GetWebhookHistoryWithResponse performs a GET /api/management/v1/webhooks/{webhook_name}/history/{job_id} (the `GetWebhookHistory` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	GetWebhookHistoryWithResponse(ctx context.Context, webhookName WebhookName, jobID WebhookJobID, reqEditors ...RequestEditorFn) (*GetWebhookHistoryResponse, error)
+
+	// RotateWebhookSecretWithBodyWithResponse performs a POST /api/management/v1/webhooks/{webhook_name}/rotate (the `RotateWebhookSecret` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	RotateWebhookSecretWithBodyWithResponse(ctx context.Context, webhookName WebhookName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RotateWebhookSecretResponse, error)
+
+	// RotateWebhookSecretWithResponse performs a POST /api/management/v1/webhooks/{webhook_name}/rotate (the `RotateWebhookSecret` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	RotateWebhookSecretWithResponse(ctx context.Context, webhookName WebhookName, body RotateWebhookSecretJSONRequestBody, reqEditors ...RequestEditorFn) (*RotateWebhookSecretResponse, error)
+
+	// SelectWebhookWithBodyWithResponse performs a POST /api/management/v1/webhooks/{webhook_name}/selection (the `SelectWebhook` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	SelectWebhookWithBodyWithResponse(ctx context.Context, webhookName WebhookName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SelectWebhookResponse, error)
+
+	// SelectWebhookWithResponse performs a POST /api/management/v1/webhooks/{webhook_name}/selection (the `SelectWebhook` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	SelectWebhookWithResponse(ctx context.Context, webhookName WebhookName, body SelectWebhookJSONRequestBody, reqEditors ...RequestEditorFn) (*SelectWebhookResponse, error)
+
+	// TestWebhookWithBodyWithResponse performs a POST /api/management/v1/webhooks/{webhook_name}/test (the `TestWebhook` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	TestWebhookWithBodyWithResponse(ctx context.Context, webhookName WebhookName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*TestWebhookResponse, error)
+
+	// TestWebhookWithResponse performs a POST /api/management/v1/webhooks/{webhook_name}/test (the `TestWebhook` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	TestWebhookWithResponse(ctx context.Context, webhookName WebhookName, body TestWebhookJSONRequestBody, reqEditors ...RequestEditorFn) (*TestWebhookResponse, error)
+}
+
+type ListAliasesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *AliasInventory
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListAliasesResponse) GetJSON200() *AliasInventory {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListAliasesResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListAliasesResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r ListAliasesResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r ListAliasesResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r ListAliasesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListAliasesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListAliasesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListAliasesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateAliasResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *AliasRecord
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r CreateAliasResponse) GetJSON200() *AliasRecord {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r CreateAliasResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r CreateAliasResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r CreateAliasResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r CreateAliasResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r CreateAliasResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r CreateAliasResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateAliasResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateAliasResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateAliasResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateAliasResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteAliasResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r DeleteAliasResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r DeleteAliasResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r DeleteAliasResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r DeleteAliasResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r DeleteAliasResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r DeleteAliasResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r DeleteAliasResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r DeleteAliasResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteAliasResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteAliasResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteAliasResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetAliasResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *AliasRecord
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetAliasResponse) GetJSON200() *AliasRecord {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetAliasResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetAliasResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetAliasResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r GetAliasResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r GetAliasResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r GetAliasResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetAliasResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetAliasResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetAliasResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RetargetAliasResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *AliasRecord
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r RetargetAliasResponse) GetJSON200() *AliasRecord {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r RetargetAliasResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r RetargetAliasResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r RetargetAliasResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r RetargetAliasResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r RetargetAliasResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r RetargetAliasResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r RetargetAliasResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r RetargetAliasResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RetargetAliasResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RetargetAliasResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RetargetAliasResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
 }
 
 type LoginWebAuthResponse struct {
@@ -7266,6 +10049,1678 @@ func (r SelectProviderResponse) ContentType() string {
 	return ""
 }
 
+type ListSchedulesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ScheduleInventory
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListSchedulesResponse) GetJSON200() *ScheduleInventory {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListSchedulesResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListSchedulesResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r ListSchedulesResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r ListSchedulesResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r ListSchedulesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListSchedulesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListSchedulesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListSchedulesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateScheduleResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ScheduleItem
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r CreateScheduleResponse) GetJSON200() *ScheduleItem {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r CreateScheduleResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r CreateScheduleResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r CreateScheduleResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r CreateScheduleResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r CreateScheduleResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r CreateScheduleResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateScheduleResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateScheduleResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateScheduleResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateScheduleResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteScheduleResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ScheduleItem
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r DeleteScheduleResponse) GetJSON200() *ScheduleItem {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r DeleteScheduleResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r DeleteScheduleResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r DeleteScheduleResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r DeleteScheduleResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r DeleteScheduleResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r DeleteScheduleResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r DeleteScheduleResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r DeleteScheduleResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteScheduleResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteScheduleResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteScheduleResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetScheduleResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ScheduleItem
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetScheduleResponse) GetJSON200() *ScheduleItem {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetScheduleResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetScheduleResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetScheduleResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r GetScheduleResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r GetScheduleResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r GetScheduleResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetScheduleResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetScheduleResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetScheduleResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UpdateScheduleResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ScheduleItem
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r UpdateScheduleResponse) GetJSON200() *ScheduleItem {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r UpdateScheduleResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r UpdateScheduleResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r UpdateScheduleResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r UpdateScheduleResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r UpdateScheduleResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r UpdateScheduleResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r UpdateScheduleResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r UpdateScheduleResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateScheduleResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateScheduleResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UpdateScheduleResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListScheduleRunsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ScheduleRunPage
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListScheduleRunsResponse) GetJSON200() *ScheduleRunPage {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ListScheduleRunsResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListScheduleRunsResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListScheduleRunsResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r ListScheduleRunsResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r ListScheduleRunsResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r ListScheduleRunsResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r ListScheduleRunsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListScheduleRunsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListScheduleRunsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListScheduleRunsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RunScheduleNowResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ScheduleRunItem
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r RunScheduleNowResponse) GetJSON200() *ScheduleRunItem {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r RunScheduleNowResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r RunScheduleNowResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r RunScheduleNowResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r RunScheduleNowResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r RunScheduleNowResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r RunScheduleNowResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r RunScheduleNowResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r RunScheduleNowResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RunScheduleNowResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RunScheduleNowResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RunScheduleNowResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetScheduleRunResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ScheduleRunDetail
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetScheduleRunResponse) GetJSON200() *ScheduleRunDetail {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetScheduleRunResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetScheduleRunResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetScheduleRunResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r GetScheduleRunResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r GetScheduleRunResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r GetScheduleRunResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetScheduleRunResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetScheduleRunResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetScheduleRunResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type SelectScheduleResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ScheduleItem
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r SelectScheduleResponse) GetJSON200() *ScheduleItem {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r SelectScheduleResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r SelectScheduleResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r SelectScheduleResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r SelectScheduleResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r SelectScheduleResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r SelectScheduleResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r SelectScheduleResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r SelectScheduleResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r SelectScheduleResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SelectScheduleResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r SelectScheduleResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListWebhooksResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WebhookInventory
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListWebhooksResponse) GetJSON200() *WebhookInventory {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListWebhooksResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListWebhooksResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r ListWebhooksResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r ListWebhooksResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r ListWebhooksResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListWebhooksResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListWebhooksResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListWebhooksResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateWebhookResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WebhookSecretResult
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r CreateWebhookResponse) GetJSON200() *WebhookSecretResult {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r CreateWebhookResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r CreateWebhookResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r CreateWebhookResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r CreateWebhookResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r CreateWebhookResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r CreateWebhookResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateWebhookResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateWebhookResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateWebhookResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateWebhookResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteWebhookResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WebhookItem
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r DeleteWebhookResponse) GetJSON200() *WebhookItem {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r DeleteWebhookResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r DeleteWebhookResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r DeleteWebhookResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r DeleteWebhookResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r DeleteWebhookResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r DeleteWebhookResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r DeleteWebhookResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r DeleteWebhookResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteWebhookResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteWebhookResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteWebhookResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetWebhookResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WebhookItem
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetWebhookResponse) GetJSON200() *WebhookItem {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetWebhookResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetWebhookResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetWebhookResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r GetWebhookResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r GetWebhookResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r GetWebhookResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWebhookResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWebhookResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetWebhookResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UpdateWebhookResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WebhookItem
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r UpdateWebhookResponse) GetJSON200() *WebhookItem {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r UpdateWebhookResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r UpdateWebhookResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r UpdateWebhookResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r UpdateWebhookResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r UpdateWebhookResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r UpdateWebhookResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r UpdateWebhookResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r UpdateWebhookResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateWebhookResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateWebhookResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UpdateWebhookResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListWebhookHistoryResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WebhookHistoryPage
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListWebhookHistoryResponse) GetJSON200() *WebhookHistoryPage {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ListWebhookHistoryResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListWebhookHistoryResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListWebhookHistoryResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r ListWebhookHistoryResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r ListWebhookHistoryResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r ListWebhookHistoryResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r ListWebhookHistoryResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListWebhookHistoryResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListWebhookHistoryResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListWebhookHistoryResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetWebhookHistoryResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WebhookHistoryDetail
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetWebhookHistoryResponse) GetJSON200() *WebhookHistoryDetail {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetWebhookHistoryResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetWebhookHistoryResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetWebhookHistoryResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r GetWebhookHistoryResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r GetWebhookHistoryResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r GetWebhookHistoryResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWebhookHistoryResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWebhookHistoryResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetWebhookHistoryResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RotateWebhookSecretResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WebhookSecretResult
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r RotateWebhookSecretResponse) GetJSON200() *WebhookSecretResult {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r RotateWebhookSecretResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r RotateWebhookSecretResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r RotateWebhookSecretResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r RotateWebhookSecretResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r RotateWebhookSecretResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r RotateWebhookSecretResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r RotateWebhookSecretResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r RotateWebhookSecretResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RotateWebhookSecretResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RotateWebhookSecretResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RotateWebhookSecretResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type SelectWebhookResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WebhookItem
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r SelectWebhookResponse) GetJSON200() *WebhookItem {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r SelectWebhookResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r SelectWebhookResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r SelectWebhookResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r SelectWebhookResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r SelectWebhookResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r SelectWebhookResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r SelectWebhookResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r SelectWebhookResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r SelectWebhookResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SelectWebhookResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r SelectWebhookResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type TestWebhookResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WebhookTestResult
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r TestWebhookResponse) GetJSON200() *WebhookTestResult {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r TestWebhookResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r TestWebhookResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r TestWebhookResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r TestWebhookResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r TestWebhookResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r TestWebhookResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r TestWebhookResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r TestWebhookResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r TestWebhookResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r TestWebhookResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r TestWebhookResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// ListAliasesWithResponse performs a GET /api/management/v1/aliases (the `ListAliases` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ListAliasesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListAliasesResponse, error) {
+	rsp, err := c.ListAliases(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListAliasesResponse(rsp)
+}
+
+// CreateAliasWithBodyWithResponse performs a POST /api/management/v1/aliases (the `CreateAlias` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) CreateAliasWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateAliasResponse, error) {
+	rsp, err := c.CreateAliasWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateAliasResponse(rsp)
+}
+
+// CreateAliasWithResponse performs a POST /api/management/v1/aliases (the `CreateAlias` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) CreateAliasWithResponse(ctx context.Context, body CreateAliasJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateAliasResponse, error) {
+	rsp, err := c.CreateAlias(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateAliasResponse(rsp)
+}
+
+// DeleteAliasWithBodyWithResponse performs a DELETE /api/management/v1/aliases/{alias_name} (the `DeleteAlias` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) DeleteAliasWithBodyWithResponse(ctx context.Context, aliasName AliasName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeleteAliasResponse, error) {
+	rsp, err := c.DeleteAliasWithBody(ctx, aliasName, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteAliasResponse(rsp)
+}
+
+// DeleteAliasWithResponse performs a DELETE /api/management/v1/aliases/{alias_name} (the `DeleteAlias` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) DeleteAliasWithResponse(ctx context.Context, aliasName AliasName, body DeleteAliasJSONRequestBody, reqEditors ...RequestEditorFn) (*DeleteAliasResponse, error) {
+	rsp, err := c.DeleteAlias(ctx, aliasName, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteAliasResponse(rsp)
+}
+
+// GetAliasWithResponse performs a GET /api/management/v1/aliases/{alias_name} (the `GetAlias` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) GetAliasWithResponse(ctx context.Context, aliasName AliasName, reqEditors ...RequestEditorFn) (*GetAliasResponse, error) {
+	rsp, err := c.GetAlias(ctx, aliasName, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetAliasResponse(rsp)
+}
+
+// RetargetAliasWithBodyWithResponse performs a PUT /api/management/v1/aliases/{alias_name} (the `RetargetAlias` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) RetargetAliasWithBodyWithResponse(ctx context.Context, aliasName AliasName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RetargetAliasResponse, error) {
+	rsp, err := c.RetargetAliasWithBody(ctx, aliasName, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRetargetAliasResponse(rsp)
+}
+
+// RetargetAliasWithResponse performs a PUT /api/management/v1/aliases/{alias_name} (the `RetargetAlias` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) RetargetAliasWithResponse(ctx context.Context, aliasName AliasName, body RetargetAliasJSONRequestBody, reqEditors ...RequestEditorFn) (*RetargetAliasResponse, error) {
+	rsp, err := c.RetargetAlias(ctx, aliasName, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRetargetAliasResponse(rsp)
+}
+
 // LoginWebAuthWithBodyWithResponse Start local WebAuth login
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
@@ -8040,6 +12495,693 @@ func (c *ClientWithResponses) SelectProviderWithResponse(ctx context.Context, pr
 		return nil, err
 	}
 	return ParseSelectProviderResponse(rsp)
+}
+
+// ListSchedulesWithResponse Read the content-free schedule inventory
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/management/v1/schedules (the `ListSchedules` operationId).
+func (c *ClientWithResponses) ListSchedulesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListSchedulesResponse, error) {
+	rsp, err := c.ListSchedules(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListSchedulesResponse(rsp)
+}
+
+// CreateScheduleWithBodyWithResponse Create a managed schedule
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/schedules (the `CreateSchedule` operationId).
+func (c *ClientWithResponses) CreateScheduleWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateScheduleResponse, error) {
+	rsp, err := c.CreateScheduleWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateScheduleResponse(rsp)
+}
+
+// CreateScheduleWithResponse Create a managed schedule
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/schedules (the `CreateSchedule` operationId).
+func (c *ClientWithResponses) CreateScheduleWithResponse(ctx context.Context, body CreateScheduleJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateScheduleResponse, error) {
+	rsp, err := c.CreateSchedule(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateScheduleResponse(rsp)
+}
+
+// DeleteScheduleWithBodyWithResponse Tombstone a managed schedule
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /api/management/v1/schedules/{schedule_id} (the `DeleteSchedule` operationId).
+func (c *ClientWithResponses) DeleteScheduleWithBodyWithResponse(ctx context.Context, scheduleID ScheduleID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeleteScheduleResponse, error) {
+	rsp, err := c.DeleteScheduleWithBody(ctx, scheduleID, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteScheduleResponse(rsp)
+}
+
+// DeleteScheduleWithResponse Tombstone a managed schedule
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /api/management/v1/schedules/{schedule_id} (the `DeleteSchedule` operationId).
+func (c *ClientWithResponses) DeleteScheduleWithResponse(ctx context.Context, scheduleID ScheduleID, body DeleteScheduleJSONRequestBody, reqEditors ...RequestEditorFn) (*DeleteScheduleResponse, error) {
+	rsp, err := c.DeleteSchedule(ctx, scheduleID, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteScheduleResponse(rsp)
+}
+
+// GetScheduleWithResponse Read one schedule including guarded content
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/management/v1/schedules/{schedule_id} (the `GetSchedule` operationId).
+func (c *ClientWithResponses) GetScheduleWithResponse(ctx context.Context, scheduleID ScheduleID, reqEditors ...RequestEditorFn) (*GetScheduleResponse, error) {
+	rsp, err := c.GetSchedule(ctx, scheduleID, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetScheduleResponse(rsp)
+}
+
+// UpdateScheduleWithBodyWithResponse Replace a managed schedule definition
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/management/v1/schedules/{schedule_id} (the `UpdateSchedule` operationId).
+func (c *ClientWithResponses) UpdateScheduleWithBodyWithResponse(ctx context.Context, scheduleID ScheduleID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateScheduleResponse, error) {
+	rsp, err := c.UpdateScheduleWithBody(ctx, scheduleID, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateScheduleResponse(rsp)
+}
+
+// UpdateScheduleWithResponse Replace a managed schedule definition
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/management/v1/schedules/{schedule_id} (the `UpdateSchedule` operationId).
+func (c *ClientWithResponses) UpdateScheduleWithResponse(ctx context.Context, scheduleID ScheduleID, body UpdateScheduleJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateScheduleResponse, error) {
+	rsp, err := c.UpdateSchedule(ctx, scheduleID, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateScheduleResponse(rsp)
+}
+
+// ListScheduleRunsWithResponse Read one bounded page of schedule run history
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/management/v1/schedules/{schedule_id}/runs (the `ListScheduleRuns` operationId).
+func (c *ClientWithResponses) ListScheduleRunsWithResponse(ctx context.Context, scheduleID ScheduleID, params *ListScheduleRunsParams, reqEditors ...RequestEditorFn) (*ListScheduleRunsResponse, error) {
+	rsp, err := c.ListScheduleRuns(ctx, scheduleID, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListScheduleRunsResponse(rsp)
+}
+
+// RunScheduleNowWithBodyWithResponse Request one idempotent manual schedule run
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/schedules/{schedule_id}/runs (the `RunScheduleNow` operationId).
+func (c *ClientWithResponses) RunScheduleNowWithBodyWithResponse(ctx context.Context, scheduleID ScheduleID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RunScheduleNowResponse, error) {
+	rsp, err := c.RunScheduleNowWithBody(ctx, scheduleID, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRunScheduleNowResponse(rsp)
+}
+
+// RunScheduleNowWithResponse Request one idempotent manual schedule run
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/schedules/{schedule_id}/runs (the `RunScheduleNow` operationId).
+func (c *ClientWithResponses) RunScheduleNowWithResponse(ctx context.Context, scheduleID ScheduleID, body RunScheduleNowJSONRequestBody, reqEditors ...RequestEditorFn) (*RunScheduleNowResponse, error) {
+	rsp, err := c.RunScheduleNow(ctx, scheduleID, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRunScheduleNowResponse(rsp)
+}
+
+// GetScheduleRunWithResponse Read one schedule run with frozen input and output
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/management/v1/schedules/{schedule_id}/runs/{run_id} (the `GetScheduleRun` operationId).
+func (c *ClientWithResponses) GetScheduleRunWithResponse(ctx context.Context, scheduleID ScheduleID, runID ScheduleRunID, reqEditors ...RequestEditorFn) (*GetScheduleRunResponse, error) {
+	rsp, err := c.GetScheduleRun(ctx, scheduleID, runID, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetScheduleRunResponse(rsp)
+}
+
+// SelectScheduleWithBodyWithResponse Enable or disable a managed schedule
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/schedules/{schedule_id}/selection (the `SelectSchedule` operationId).
+func (c *ClientWithResponses) SelectScheduleWithBodyWithResponse(ctx context.Context, scheduleID ScheduleID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SelectScheduleResponse, error) {
+	rsp, err := c.SelectScheduleWithBody(ctx, scheduleID, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSelectScheduleResponse(rsp)
+}
+
+// SelectScheduleWithResponse Enable or disable a managed schedule
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/schedules/{schedule_id}/selection (the `SelectSchedule` operationId).
+func (c *ClientWithResponses) SelectScheduleWithResponse(ctx context.Context, scheduleID ScheduleID, body SelectScheduleJSONRequestBody, reqEditors ...RequestEditorFn) (*SelectScheduleResponse, error) {
+	rsp, err := c.SelectSchedule(ctx, scheduleID, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSelectScheduleResponse(rsp)
+}
+
+// ListWebhooksWithResponse performs a GET /api/management/v1/webhooks (the `ListWebhooks` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ListWebhooksWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListWebhooksResponse, error) {
+	rsp, err := c.ListWebhooks(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListWebhooksResponse(rsp)
+}
+
+// CreateWebhookWithBodyWithResponse performs a POST /api/management/v1/webhooks (the `CreateWebhook` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) CreateWebhookWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateWebhookResponse, error) {
+	rsp, err := c.CreateWebhookWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateWebhookResponse(rsp)
+}
+
+// CreateWebhookWithResponse performs a POST /api/management/v1/webhooks (the `CreateWebhook` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) CreateWebhookWithResponse(ctx context.Context, body CreateWebhookJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateWebhookResponse, error) {
+	rsp, err := c.CreateWebhook(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateWebhookResponse(rsp)
+}
+
+// DeleteWebhookWithBodyWithResponse performs a DELETE /api/management/v1/webhooks/{webhook_name} (the `DeleteWebhook` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) DeleteWebhookWithBodyWithResponse(ctx context.Context, webhookName WebhookName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeleteWebhookResponse, error) {
+	rsp, err := c.DeleteWebhookWithBody(ctx, webhookName, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteWebhookResponse(rsp)
+}
+
+// DeleteWebhookWithResponse performs a DELETE /api/management/v1/webhooks/{webhook_name} (the `DeleteWebhook` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) DeleteWebhookWithResponse(ctx context.Context, webhookName WebhookName, body DeleteWebhookJSONRequestBody, reqEditors ...RequestEditorFn) (*DeleteWebhookResponse, error) {
+	rsp, err := c.DeleteWebhook(ctx, webhookName, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteWebhookResponse(rsp)
+}
+
+// GetWebhookWithResponse performs a GET /api/management/v1/webhooks/{webhook_name} (the `GetWebhook` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) GetWebhookWithResponse(ctx context.Context, webhookName WebhookName, reqEditors ...RequestEditorFn) (*GetWebhookResponse, error) {
+	rsp, err := c.GetWebhook(ctx, webhookName, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWebhookResponse(rsp)
+}
+
+// UpdateWebhookWithBodyWithResponse performs a PUT /api/management/v1/webhooks/{webhook_name} (the `UpdateWebhook` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) UpdateWebhookWithBodyWithResponse(ctx context.Context, webhookName WebhookName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateWebhookResponse, error) {
+	rsp, err := c.UpdateWebhookWithBody(ctx, webhookName, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateWebhookResponse(rsp)
+}
+
+// UpdateWebhookWithResponse performs a PUT /api/management/v1/webhooks/{webhook_name} (the `UpdateWebhook` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) UpdateWebhookWithResponse(ctx context.Context, webhookName WebhookName, body UpdateWebhookJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateWebhookResponse, error) {
+	rsp, err := c.UpdateWebhook(ctx, webhookName, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateWebhookResponse(rsp)
+}
+
+// ListWebhookHistoryWithResponse performs a GET /api/management/v1/webhooks/{webhook_name}/history (the `ListWebhookHistory` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ListWebhookHistoryWithResponse(ctx context.Context, webhookName WebhookName, params *ListWebhookHistoryParams, reqEditors ...RequestEditorFn) (*ListWebhookHistoryResponse, error) {
+	rsp, err := c.ListWebhookHistory(ctx, webhookName, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListWebhookHistoryResponse(rsp)
+}
+
+// GetWebhookHistoryWithResponse performs a GET /api/management/v1/webhooks/{webhook_name}/history/{job_id} (the `GetWebhookHistory` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) GetWebhookHistoryWithResponse(ctx context.Context, webhookName WebhookName, jobID WebhookJobID, reqEditors ...RequestEditorFn) (*GetWebhookHistoryResponse, error) {
+	rsp, err := c.GetWebhookHistory(ctx, webhookName, jobID, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWebhookHistoryResponse(rsp)
+}
+
+// RotateWebhookSecretWithBodyWithResponse performs a POST /api/management/v1/webhooks/{webhook_name}/rotate (the `RotateWebhookSecret` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) RotateWebhookSecretWithBodyWithResponse(ctx context.Context, webhookName WebhookName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RotateWebhookSecretResponse, error) {
+	rsp, err := c.RotateWebhookSecretWithBody(ctx, webhookName, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRotateWebhookSecretResponse(rsp)
+}
+
+// RotateWebhookSecretWithResponse performs a POST /api/management/v1/webhooks/{webhook_name}/rotate (the `RotateWebhookSecret` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) RotateWebhookSecretWithResponse(ctx context.Context, webhookName WebhookName, body RotateWebhookSecretJSONRequestBody, reqEditors ...RequestEditorFn) (*RotateWebhookSecretResponse, error) {
+	rsp, err := c.RotateWebhookSecret(ctx, webhookName, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRotateWebhookSecretResponse(rsp)
+}
+
+// SelectWebhookWithBodyWithResponse performs a POST /api/management/v1/webhooks/{webhook_name}/selection (the `SelectWebhook` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) SelectWebhookWithBodyWithResponse(ctx context.Context, webhookName WebhookName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SelectWebhookResponse, error) {
+	rsp, err := c.SelectWebhookWithBody(ctx, webhookName, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSelectWebhookResponse(rsp)
+}
+
+// SelectWebhookWithResponse performs a POST /api/management/v1/webhooks/{webhook_name}/selection (the `SelectWebhook` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) SelectWebhookWithResponse(ctx context.Context, webhookName WebhookName, body SelectWebhookJSONRequestBody, reqEditors ...RequestEditorFn) (*SelectWebhookResponse, error) {
+	rsp, err := c.SelectWebhook(ctx, webhookName, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSelectWebhookResponse(rsp)
+}
+
+// TestWebhookWithBodyWithResponse performs a POST /api/management/v1/webhooks/{webhook_name}/test (the `TestWebhook` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) TestWebhookWithBodyWithResponse(ctx context.Context, webhookName WebhookName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*TestWebhookResponse, error) {
+	rsp, err := c.TestWebhookWithBody(ctx, webhookName, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseTestWebhookResponse(rsp)
+}
+
+// TestWebhookWithResponse performs a POST /api/management/v1/webhooks/{webhook_name}/test (the `TestWebhook` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) TestWebhookWithResponse(ctx context.Context, webhookName WebhookName, body TestWebhookJSONRequestBody, reqEditors ...RequestEditorFn) (*TestWebhookResponse, error) {
+	rsp, err := c.TestWebhook(ctx, webhookName, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseTestWebhookResponse(rsp)
+}
+
+// ParseListAliasesResponse parses an HTTP response from a ListAliasesWithResponse call
+func ParseListAliasesResponse(rsp *http.Response) (*ListAliasesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListAliasesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AliasInventory
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateAliasResponse parses an HTTP response from a CreateAliasWithResponse call
+func ParseCreateAliasResponse(rsp *http.Response) (*CreateAliasResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateAliasResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AliasRecord
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteAliasResponse parses an HTTP response from a DeleteAliasWithResponse call
+func ParseDeleteAliasResponse(rsp *http.Response) (*DeleteAliasResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteAliasResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetAliasResponse parses an HTTP response from a GetAliasWithResponse call
+func ParseGetAliasResponse(rsp *http.Response) (*GetAliasResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetAliasResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AliasRecord
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRetargetAliasResponse parses an HTTP response from a RetargetAliasWithResponse call
+func ParseRetargetAliasResponse(rsp *http.Response) (*RetargetAliasResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RetargetAliasResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AliasRecord
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
 }
 
 // ParseLoginWebAuthResponse parses an HTTP response from a LoginWebAuthWithResponse call
@@ -10316,8 +15458,1322 @@ func ParseSelectProviderResponse(rsp *http.Response) (*SelectProviderResponse, e
 	return response, nil
 }
 
+// ParseListSchedulesResponse parses an HTTP response from a ListSchedulesWithResponse call
+func ParseListSchedulesResponse(rsp *http.Response) (*ListSchedulesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListSchedulesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ScheduleInventory
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateScheduleResponse parses an HTTP response from a CreateScheduleWithResponse call
+func ParseCreateScheduleResponse(rsp *http.Response) (*CreateScheduleResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateScheduleResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ScheduleItem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteScheduleResponse parses an HTTP response from a DeleteScheduleWithResponse call
+func ParseDeleteScheduleResponse(rsp *http.Response) (*DeleteScheduleResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteScheduleResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ScheduleItem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetScheduleResponse parses an HTTP response from a GetScheduleWithResponse call
+func ParseGetScheduleResponse(rsp *http.Response) (*GetScheduleResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetScheduleResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ScheduleItem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateScheduleResponse parses an HTTP response from a UpdateScheduleWithResponse call
+func ParseUpdateScheduleResponse(rsp *http.Response) (*UpdateScheduleResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateScheduleResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ScheduleItem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListScheduleRunsResponse parses an HTTP response from a ListScheduleRunsWithResponse call
+func ParseListScheduleRunsResponse(rsp *http.Response) (*ListScheduleRunsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListScheduleRunsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ScheduleRunPage
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRunScheduleNowResponse parses an HTTP response from a RunScheduleNowWithResponse call
+func ParseRunScheduleNowResponse(rsp *http.Response) (*RunScheduleNowResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RunScheduleNowResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ScheduleRunItem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetScheduleRunResponse parses an HTTP response from a GetScheduleRunWithResponse call
+func ParseGetScheduleRunResponse(rsp *http.Response) (*GetScheduleRunResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetScheduleRunResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ScheduleRunDetail
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSelectScheduleResponse parses an HTTP response from a SelectScheduleWithResponse call
+func ParseSelectScheduleResponse(rsp *http.Response) (*SelectScheduleResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SelectScheduleResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ScheduleItem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListWebhooksResponse parses an HTTP response from a ListWebhooksWithResponse call
+func ParseListWebhooksResponse(rsp *http.Response) (*ListWebhooksResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListWebhooksResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WebhookInventory
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateWebhookResponse parses an HTTP response from a CreateWebhookWithResponse call
+func ParseCreateWebhookResponse(rsp *http.Response) (*CreateWebhookResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateWebhookResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WebhookSecretResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteWebhookResponse parses an HTTP response from a DeleteWebhookWithResponse call
+func ParseDeleteWebhookResponse(rsp *http.Response) (*DeleteWebhookResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteWebhookResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WebhookItem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetWebhookResponse parses an HTTP response from a GetWebhookWithResponse call
+func ParseGetWebhookResponse(rsp *http.Response) (*GetWebhookResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWebhookResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WebhookItem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateWebhookResponse parses an HTTP response from a UpdateWebhookWithResponse call
+func ParseUpdateWebhookResponse(rsp *http.Response) (*UpdateWebhookResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateWebhookResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WebhookItem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListWebhookHistoryResponse parses an HTTP response from a ListWebhookHistoryWithResponse call
+func ParseListWebhookHistoryResponse(rsp *http.Response) (*ListWebhookHistoryResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListWebhookHistoryResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WebhookHistoryPage
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetWebhookHistoryResponse parses an HTTP response from a GetWebhookHistoryWithResponse call
+func ParseGetWebhookHistoryResponse(rsp *http.Response) (*GetWebhookHistoryResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWebhookHistoryResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WebhookHistoryDetail
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRotateWebhookSecretResponse parses an HTTP response from a RotateWebhookSecretWithResponse call
+func ParseRotateWebhookSecretResponse(rsp *http.Response) (*RotateWebhookSecretResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RotateWebhookSecretResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WebhookSecretResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSelectWebhookResponse parses an HTTP response from a SelectWebhookWithResponse call
+func ParseSelectWebhookResponse(rsp *http.Response) (*SelectWebhookResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SelectWebhookResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WebhookItem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseTestWebhookResponse parses an HTTP response from a TestWebhookWithResponse call
+func ParseTestWebhookResponse(rsp *http.Response) (*TestWebhookResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &TestWebhookResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WebhookTestResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+
+	// (GET /api/management/v1/aliases)
+	ListAliases(w http.ResponseWriter, r *http.Request)
+
+	// (POST /api/management/v1/aliases)
+	CreateAlias(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /api/management/v1/aliases/{alias_name})
+	DeleteAlias(w http.ResponseWriter, r *http.Request, aliasName AliasName)
+
+	// (GET /api/management/v1/aliases/{alias_name})
+	GetAlias(w http.ResponseWriter, r *http.Request, aliasName AliasName)
+
+	// (PUT /api/management/v1/aliases/{alias_name})
+	RetargetAlias(w http.ResponseWriter, r *http.Request, aliasName AliasName)
 	// LoginWebAuth Start local WebAuth login
 	// (POST /api/management/v1/auth/login)
 	LoginWebAuth(w http.ResponseWriter, r *http.Request)
@@ -10429,6 +16885,63 @@ type ServerInterface interface {
 	// SelectProvider Enable or disable a managed provider
 	// (POST /api/management/v1/providers/{provider_id}/selection)
 	SelectProvider(w http.ResponseWriter, r *http.Request, providerID ProviderID)
+	// ListSchedules Read the content-free schedule inventory
+	// (GET /api/management/v1/schedules)
+	ListSchedules(w http.ResponseWriter, r *http.Request)
+	// CreateSchedule Create a managed schedule
+	// (POST /api/management/v1/schedules)
+	CreateSchedule(w http.ResponseWriter, r *http.Request)
+	// DeleteSchedule Tombstone a managed schedule
+	// (DELETE /api/management/v1/schedules/{schedule_id})
+	DeleteSchedule(w http.ResponseWriter, r *http.Request, scheduleID ScheduleID)
+	// GetSchedule Read one schedule including guarded content
+	// (GET /api/management/v1/schedules/{schedule_id})
+	GetSchedule(w http.ResponseWriter, r *http.Request, scheduleID ScheduleID)
+	// UpdateSchedule Replace a managed schedule definition
+	// (PUT /api/management/v1/schedules/{schedule_id})
+	UpdateSchedule(w http.ResponseWriter, r *http.Request, scheduleID ScheduleID)
+	// ListScheduleRuns Read one bounded page of schedule run history
+	// (GET /api/management/v1/schedules/{schedule_id}/runs)
+	ListScheduleRuns(w http.ResponseWriter, r *http.Request, scheduleID ScheduleID, params ListScheduleRunsParams)
+	// RunScheduleNow Request one idempotent manual schedule run
+	// (POST /api/management/v1/schedules/{schedule_id}/runs)
+	RunScheduleNow(w http.ResponseWriter, r *http.Request, scheduleID ScheduleID)
+	// GetScheduleRun Read one schedule run with frozen input and output
+	// (GET /api/management/v1/schedules/{schedule_id}/runs/{run_id})
+	GetScheduleRun(w http.ResponseWriter, r *http.Request, scheduleID ScheduleID, runID ScheduleRunID)
+	// SelectSchedule Enable or disable a managed schedule
+	// (POST /api/management/v1/schedules/{schedule_id}/selection)
+	SelectSchedule(w http.ResponseWriter, r *http.Request, scheduleID ScheduleID)
+
+	// (GET /api/management/v1/webhooks)
+	ListWebhooks(w http.ResponseWriter, r *http.Request)
+
+	// (POST /api/management/v1/webhooks)
+	CreateWebhook(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /api/management/v1/webhooks/{webhook_name})
+	DeleteWebhook(w http.ResponseWriter, r *http.Request, webhookName WebhookName)
+
+	// (GET /api/management/v1/webhooks/{webhook_name})
+	GetWebhook(w http.ResponseWriter, r *http.Request, webhookName WebhookName)
+
+	// (PUT /api/management/v1/webhooks/{webhook_name})
+	UpdateWebhook(w http.ResponseWriter, r *http.Request, webhookName WebhookName)
+
+	// (GET /api/management/v1/webhooks/{webhook_name}/history)
+	ListWebhookHistory(w http.ResponseWriter, r *http.Request, webhookName WebhookName, params ListWebhookHistoryParams)
+
+	// (GET /api/management/v1/webhooks/{webhook_name}/history/{job_id})
+	GetWebhookHistory(w http.ResponseWriter, r *http.Request, webhookName WebhookName, jobID WebhookJobID)
+
+	// (POST /api/management/v1/webhooks/{webhook_name}/rotate)
+	RotateWebhookSecret(w http.ResponseWriter, r *http.Request, webhookName WebhookName)
+
+	// (POST /api/management/v1/webhooks/{webhook_name}/selection)
+	SelectWebhook(w http.ResponseWriter, r *http.Request, webhookName WebhookName)
+
+	// (POST /api/management/v1/webhooks/{webhook_name}/test)
+	TestWebhook(w http.ResponseWriter, r *http.Request, webhookName WebhookName)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -10439,6 +16952,112 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// ListAliases operation middleware
+func (siw *ServerInterfaceWrapper) ListAliases(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAliases(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateAlias operation middleware
+func (siw *ServerInterfaceWrapper) CreateAlias(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateAlias(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteAlias operation middleware
+func (siw *ServerInterfaceWrapper) DeleteAlias(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "alias_name" -------------
+	var aliasName AliasName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "alias_name", r.PathValue("alias_name"), &aliasName, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "alias_name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteAlias(w, r, aliasName)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetAlias operation middleware
+func (siw *ServerInterfaceWrapper) GetAlias(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "alias_name" -------------
+	var aliasName AliasName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "alias_name", r.PathValue("alias_name"), &aliasName, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "alias_name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAlias(w, r, aliasName)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RetargetAlias operation middleware
+func (siw *ServerInterfaceWrapper) RetargetAlias(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "alias_name" -------------
+	var aliasName AliasName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "alias_name", r.PathValue("alias_name"), &aliasName, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "alias_name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RetargetAlias(w, r, aliasName)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // LoginWebAuth operation middleware
 func (siw *ServerInterfaceWrapper) LoginWebAuth(w http.ResponseWriter, r *http.Request) {
@@ -11183,6 +17802,528 @@ func (siw *ServerInterfaceWrapper) SelectProvider(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// ListSchedules operation middleware
+func (siw *ServerInterfaceWrapper) ListSchedules(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListSchedules(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateSchedule operation middleware
+func (siw *ServerInterfaceWrapper) CreateSchedule(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateSchedule(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteSchedule operation middleware
+func (siw *ServerInterfaceWrapper) DeleteSchedule(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "schedule_id" -------------
+	var scheduleID ScheduleID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "schedule_id", r.PathValue("schedule_id"), &scheduleID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "schedule_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteSchedule(w, r, scheduleID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSchedule operation middleware
+func (siw *ServerInterfaceWrapper) GetSchedule(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "schedule_id" -------------
+	var scheduleID ScheduleID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "schedule_id", r.PathValue("schedule_id"), &scheduleID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "schedule_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSchedule(w, r, scheduleID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateSchedule operation middleware
+func (siw *ServerInterfaceWrapper) UpdateSchedule(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "schedule_id" -------------
+	var scheduleID ScheduleID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "schedule_id", r.PathValue("schedule_id"), &scheduleID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "schedule_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateSchedule(w, r, scheduleID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListScheduleRuns operation middleware
+func (siw *ServerInterfaceWrapper) ListScheduleRuns(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "schedule_id" -------------
+	var scheduleID ScheduleID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "schedule_id", r.PathValue("schedule_id"), &scheduleID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "schedule_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListScheduleRunsParams
+
+	// ------------- Optional query parameter "before_at" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "before_at", r.URL.Query(), &params.BeforeAt, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "before_at"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "before_at", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "before_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "before_id", r.URL.Query(), &params.BeforeID, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "before_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "before_id", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListScheduleRuns(w, r, scheduleID, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RunScheduleNow operation middleware
+func (siw *ServerInterfaceWrapper) RunScheduleNow(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "schedule_id" -------------
+	var scheduleID ScheduleID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "schedule_id", r.PathValue("schedule_id"), &scheduleID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "schedule_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RunScheduleNow(w, r, scheduleID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetScheduleRun operation middleware
+func (siw *ServerInterfaceWrapper) GetScheduleRun(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "schedule_id" -------------
+	var scheduleID ScheduleID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "schedule_id", r.PathValue("schedule_id"), &scheduleID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "schedule_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "run_id" -------------
+	var runID ScheduleRunID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "run_id", r.PathValue("run_id"), &runID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "run_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetScheduleRun(w, r, scheduleID, runID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SelectSchedule operation middleware
+func (siw *ServerInterfaceWrapper) SelectSchedule(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "schedule_id" -------------
+	var scheduleID ScheduleID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "schedule_id", r.PathValue("schedule_id"), &scheduleID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "schedule_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SelectSchedule(w, r, scheduleID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListWebhooks operation middleware
+func (siw *ServerInterfaceWrapper) ListWebhooks(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListWebhooks(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateWebhook operation middleware
+func (siw *ServerInterfaceWrapper) CreateWebhook(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateWebhook(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteWebhook operation middleware
+func (siw *ServerInterfaceWrapper) DeleteWebhook(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "webhook_name" -------------
+	var webhookName WebhookName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "webhook_name", r.PathValue("webhook_name"), &webhookName, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "webhook_name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteWebhook(w, r, webhookName)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetWebhook operation middleware
+func (siw *ServerInterfaceWrapper) GetWebhook(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "webhook_name" -------------
+	var webhookName WebhookName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "webhook_name", r.PathValue("webhook_name"), &webhookName, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "webhook_name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetWebhook(w, r, webhookName)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateWebhook operation middleware
+func (siw *ServerInterfaceWrapper) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "webhook_name" -------------
+	var webhookName WebhookName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "webhook_name", r.PathValue("webhook_name"), &webhookName, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "webhook_name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateWebhook(w, r, webhookName)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListWebhookHistory operation middleware
+func (siw *ServerInterfaceWrapper) ListWebhookHistory(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "webhook_name" -------------
+	var webhookName WebhookName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "webhook_name", r.PathValue("webhook_name"), &webhookName, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "webhook_name", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListWebhookHistoryParams
+
+	// ------------- Optional query parameter "before_at" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "before_at", r.URL.Query(), &params.BeforeAt, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "before_at"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "before_at", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "before_job_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "before_job_id", r.URL.Query(), &params.BeforeJobID, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "before_job_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "before_job_id", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListWebhookHistory(w, r, webhookName, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetWebhookHistory operation middleware
+func (siw *ServerInterfaceWrapper) GetWebhookHistory(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "webhook_name" -------------
+	var webhookName WebhookName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "webhook_name", r.PathValue("webhook_name"), &webhookName, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "webhook_name", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "job_id" -------------
+	var jobID WebhookJobID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "job_id", r.PathValue("job_id"), &jobID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "job_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetWebhookHistory(w, r, webhookName, jobID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RotateWebhookSecret operation middleware
+func (siw *ServerInterfaceWrapper) RotateWebhookSecret(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "webhook_name" -------------
+	var webhookName WebhookName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "webhook_name", r.PathValue("webhook_name"), &webhookName, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "webhook_name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RotateWebhookSecret(w, r, webhookName)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SelectWebhook operation middleware
+func (siw *ServerInterfaceWrapper) SelectWebhook(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "webhook_name" -------------
+	var webhookName WebhookName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "webhook_name", r.PathValue("webhook_name"), &webhookName, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "webhook_name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SelectWebhook(w, r, webhookName)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// TestWebhook operation middleware
+func (siw *ServerInterfaceWrapper) TestWebhook(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "webhook_name" -------------
+	var webhookName WebhookName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "webhook_name", r.PathValue("webhook_name"), &webhookName, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "webhook_name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.TestWebhook(w, r, webhookName)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -11323,6 +18464,30 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/management/v1/providers/{provider_id}", wrapper.DeleteProvider)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/management/v1/providers/{provider_id}", wrapper.UpdateProvider)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/providers/{provider_id}/selection", wrapper.SelectProvider)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/schedules", wrapper.ListSchedules)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/schedules", wrapper.CreateSchedule)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/management/v1/schedules/{schedule_id}", wrapper.DeleteSchedule)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/schedules/{schedule_id}", wrapper.GetSchedule)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/management/v1/schedules/{schedule_id}", wrapper.UpdateSchedule)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/schedules/{schedule_id}/selection", wrapper.SelectSchedule)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/schedules/{schedule_id}/runs", wrapper.ListScheduleRuns)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/schedules/{schedule_id}/runs", wrapper.RunScheduleNow)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/schedules/{schedule_id}/runs/{run_id}", wrapper.GetScheduleRun)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/aliases", wrapper.ListAliases)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/aliases", wrapper.CreateAlias)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/management/v1/aliases/{alias_name}", wrapper.DeleteAlias)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/aliases/{alias_name}", wrapper.GetAlias)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/management/v1/aliases/{alias_name}", wrapper.RetargetAlias)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/webhooks", wrapper.ListWebhooks)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/webhooks", wrapper.CreateWebhook)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/management/v1/webhooks/{webhook_name}", wrapper.DeleteWebhook)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/webhooks/{webhook_name}", wrapper.GetWebhook)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/management/v1/webhooks/{webhook_name}", wrapper.UpdateWebhook)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/webhooks/{webhook_name}/selection", wrapper.SelectWebhook)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/webhooks/{webhook_name}/rotate", wrapper.RotateWebhookSecret)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/webhooks/{webhook_name}/test", wrapper.TestWebhook)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/webhooks/{webhook_name}/history", wrapper.ListWebhookHistory)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/webhooks/{webhook_name}/history/{job_id}", wrapper.GetWebhookHistory)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/mcp", wrapper.ListMCPConnections)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/mcp", wrapper.CreateMCPConnection)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/mcp/probe", wrapper.ProbeMCPConnection)
@@ -11357,6 +18522,517 @@ type NotFoundJSONResponse ManagementError
 type ServiceUnavailableJSONResponse ManagementError
 
 type UnauthorizedJSONResponse ManagementError
+
+type ListAliasesRequestObject struct {
+}
+
+type ListAliasesResponseObject interface {
+	VisitListAliasesResponse(w http.ResponseWriter) error
+}
+
+type ListAliases200JSONResponse AliasInventory
+
+func (response ListAliases200JSONResponse) VisitListAliasesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAliases401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListAliases401JSONResponse) VisitListAliasesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAliases403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListAliases403JSONResponse) VisitListAliasesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAliases500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ListAliases500JSONResponse) VisitListAliasesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAliases503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response ListAliases503JSONResponse) VisitListAliasesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAliasRequestObject struct {
+	Body *CreateAliasJSONRequestBody
+}
+
+type CreateAliasResponseObject interface {
+	VisitCreateAliasResponse(w http.ResponseWriter) error
+}
+
+type CreateAlias200JSONResponse AliasRecord
+
+func (response CreateAlias200JSONResponse) VisitCreateAliasResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAlias400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response CreateAlias400JSONResponse) VisitCreateAliasResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAlias401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response CreateAlias401JSONResponse) VisitCreateAliasResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAlias403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response CreateAlias403JSONResponse) VisitCreateAliasResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAlias409JSONResponse struct{ ConflictJSONResponse }
+
+func (response CreateAlias409JSONResponse) VisitCreateAliasResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAlias500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response CreateAlias500JSONResponse) VisitCreateAliasResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAlias503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response CreateAlias503JSONResponse) VisitCreateAliasResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteAliasRequestObject struct {
+	AliasName AliasName `json:"alias_name"`
+	Body      *DeleteAliasJSONRequestBody
+}
+
+type DeleteAliasResponseObject interface {
+	VisitDeleteAliasResponse(w http.ResponseWriter) error
+}
+
+type DeleteAlias204Response struct {
+}
+
+func (response DeleteAlias204Response) VisitDeleteAliasResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteAlias400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response DeleteAlias400JSONResponse) VisitDeleteAliasResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteAlias401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response DeleteAlias401JSONResponse) VisitDeleteAliasResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteAlias403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DeleteAlias403JSONResponse) VisitDeleteAliasResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteAlias404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response DeleteAlias404JSONResponse) VisitDeleteAliasResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteAlias409JSONResponse struct{ ConflictJSONResponse }
+
+func (response DeleteAlias409JSONResponse) VisitDeleteAliasResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteAlias500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response DeleteAlias500JSONResponse) VisitDeleteAliasResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteAlias503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response DeleteAlias503JSONResponse) VisitDeleteAliasResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAliasRequestObject struct {
+	AliasName AliasName `json:"alias_name"`
+}
+
+type GetAliasResponseObject interface {
+	VisitGetAliasResponse(w http.ResponseWriter) error
+}
+
+type GetAlias200JSONResponse AliasRecord
+
+func (response GetAlias200JSONResponse) VisitGetAliasResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAlias401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetAlias401JSONResponse) VisitGetAliasResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAlias403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetAlias403JSONResponse) VisitGetAliasResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAlias404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetAlias404JSONResponse) VisitGetAliasResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAlias500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response GetAlias500JSONResponse) VisitGetAliasResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAlias503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response GetAlias503JSONResponse) VisitGetAliasResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetargetAliasRequestObject struct {
+	AliasName AliasName `json:"alias_name"`
+	Body      *RetargetAliasJSONRequestBody
+}
+
+type RetargetAliasResponseObject interface {
+	VisitRetargetAliasResponse(w http.ResponseWriter) error
+}
+
+type RetargetAlias200JSONResponse AliasRecord
+
+func (response RetargetAlias200JSONResponse) VisitRetargetAliasResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetargetAlias400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response RetargetAlias400JSONResponse) VisitRetargetAliasResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetargetAlias401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response RetargetAlias401JSONResponse) VisitRetargetAliasResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetargetAlias403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response RetargetAlias403JSONResponse) VisitRetargetAliasResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetargetAlias404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response RetargetAlias404JSONResponse) VisitRetargetAliasResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetargetAlias409JSONResponse struct{ ConflictJSONResponse }
+
+func (response RetargetAlias409JSONResponse) VisitRetargetAliasResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetargetAlias500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response RetargetAlias500JSONResponse) VisitRetargetAliasResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetargetAlias503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response RetargetAlias503JSONResponse) VisitRetargetAliasResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
 
 type LoginWebAuthRequestObject struct {
 	Body *LoginWebAuthJSONRequestBody
@@ -14816,8 +22492,2062 @@ func (response SelectProvider503JSONResponse) VisitSelectProviderResponse(w http
 	return err
 }
 
+type ListSchedulesRequestObject struct {
+}
+
+type ListSchedulesResponseObject interface {
+	VisitListSchedulesResponse(w http.ResponseWriter) error
+}
+
+type ListSchedules200JSONResponse ScheduleInventory
+
+func (response ListSchedules200JSONResponse) VisitListSchedulesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSchedules401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListSchedules401JSONResponse) VisitListSchedulesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSchedules403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListSchedules403JSONResponse) VisitListSchedulesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSchedules500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ListSchedules500JSONResponse) VisitListSchedulesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSchedules503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response ListSchedules503JSONResponse) VisitListSchedulesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateScheduleRequestObject struct {
+	Body *CreateScheduleJSONRequestBody
+}
+
+type CreateScheduleResponseObject interface {
+	VisitCreateScheduleResponse(w http.ResponseWriter) error
+}
+
+type CreateSchedule200JSONResponse ScheduleItem
+
+func (response CreateSchedule200JSONResponse) VisitCreateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSchedule400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response CreateSchedule400JSONResponse) VisitCreateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSchedule401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response CreateSchedule401JSONResponse) VisitCreateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSchedule403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response CreateSchedule403JSONResponse) VisitCreateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSchedule409JSONResponse struct{ ConflictJSONResponse }
+
+func (response CreateSchedule409JSONResponse) VisitCreateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSchedule500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response CreateSchedule500JSONResponse) VisitCreateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSchedule503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response CreateSchedule503JSONResponse) VisitCreateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteScheduleRequestObject struct {
+	ScheduleID ScheduleID `json:"schedule_id"`
+	Body       *DeleteScheduleJSONRequestBody
+}
+
+type DeleteScheduleResponseObject interface {
+	VisitDeleteScheduleResponse(w http.ResponseWriter) error
+}
+
+type DeleteSchedule200JSONResponse ScheduleItem
+
+func (response DeleteSchedule200JSONResponse) VisitDeleteScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteSchedule400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response DeleteSchedule400JSONResponse) VisitDeleteScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteSchedule401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response DeleteSchedule401JSONResponse) VisitDeleteScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteSchedule403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DeleteSchedule403JSONResponse) VisitDeleteScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteSchedule404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response DeleteSchedule404JSONResponse) VisitDeleteScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteSchedule409JSONResponse struct{ ConflictJSONResponse }
+
+func (response DeleteSchedule409JSONResponse) VisitDeleteScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteSchedule500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response DeleteSchedule500JSONResponse) VisitDeleteScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteSchedule503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response DeleteSchedule503JSONResponse) VisitDeleteScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetScheduleRequestObject struct {
+	ScheduleID ScheduleID `json:"schedule_id"`
+}
+
+type GetScheduleResponseObject interface {
+	VisitGetScheduleResponse(w http.ResponseWriter) error
+}
+
+type GetSchedule200JSONResponse ScheduleItem
+
+func (response GetSchedule200JSONResponse) VisitGetScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSchedule401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetSchedule401JSONResponse) VisitGetScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSchedule403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetSchedule403JSONResponse) VisitGetScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSchedule404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetSchedule404JSONResponse) VisitGetScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSchedule500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response GetSchedule500JSONResponse) VisitGetScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSchedule503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response GetSchedule503JSONResponse) VisitGetScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateScheduleRequestObject struct {
+	ScheduleID ScheduleID `json:"schedule_id"`
+	Body       *UpdateScheduleJSONRequestBody
+}
+
+type UpdateScheduleResponseObject interface {
+	VisitUpdateScheduleResponse(w http.ResponseWriter) error
+}
+
+type UpdateSchedule200JSONResponse ScheduleItem
+
+func (response UpdateSchedule200JSONResponse) VisitUpdateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateSchedule400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response UpdateSchedule400JSONResponse) VisitUpdateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateSchedule401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response UpdateSchedule401JSONResponse) VisitUpdateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateSchedule403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response UpdateSchedule403JSONResponse) VisitUpdateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateSchedule404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response UpdateSchedule404JSONResponse) VisitUpdateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateSchedule409JSONResponse struct{ ConflictJSONResponse }
+
+func (response UpdateSchedule409JSONResponse) VisitUpdateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateSchedule500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response UpdateSchedule500JSONResponse) VisitUpdateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateSchedule503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response UpdateSchedule503JSONResponse) VisitUpdateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListScheduleRunsRequestObject struct {
+	ScheduleID ScheduleID `json:"schedule_id"`
+	Params     ListScheduleRunsParams
+}
+
+type ListScheduleRunsResponseObject interface {
+	VisitListScheduleRunsResponse(w http.ResponseWriter) error
+}
+
+type ListScheduleRuns200JSONResponse ScheduleRunPage
+
+func (response ListScheduleRuns200JSONResponse) VisitListScheduleRunsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListScheduleRuns400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response ListScheduleRuns400JSONResponse) VisitListScheduleRunsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListScheduleRuns401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListScheduleRuns401JSONResponse) VisitListScheduleRunsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListScheduleRuns403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListScheduleRuns403JSONResponse) VisitListScheduleRunsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListScheduleRuns404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ListScheduleRuns404JSONResponse) VisitListScheduleRunsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListScheduleRuns500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ListScheduleRuns500JSONResponse) VisitListScheduleRunsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListScheduleRuns503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response ListScheduleRuns503JSONResponse) VisitListScheduleRunsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RunScheduleNowRequestObject struct {
+	ScheduleID ScheduleID `json:"schedule_id"`
+	Body       *RunScheduleNowJSONRequestBody
+}
+
+type RunScheduleNowResponseObject interface {
+	VisitRunScheduleNowResponse(w http.ResponseWriter) error
+}
+
+type RunScheduleNow200JSONResponse ScheduleRunItem
+
+func (response RunScheduleNow200JSONResponse) VisitRunScheduleNowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RunScheduleNow400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response RunScheduleNow400JSONResponse) VisitRunScheduleNowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RunScheduleNow401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response RunScheduleNow401JSONResponse) VisitRunScheduleNowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RunScheduleNow403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response RunScheduleNow403JSONResponse) VisitRunScheduleNowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RunScheduleNow404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response RunScheduleNow404JSONResponse) VisitRunScheduleNowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RunScheduleNow409JSONResponse struct{ ConflictJSONResponse }
+
+func (response RunScheduleNow409JSONResponse) VisitRunScheduleNowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RunScheduleNow500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response RunScheduleNow500JSONResponse) VisitRunScheduleNowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RunScheduleNow503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response RunScheduleNow503JSONResponse) VisitRunScheduleNowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetScheduleRunRequestObject struct {
+	ScheduleID ScheduleID    `json:"schedule_id"`
+	RunID      ScheduleRunID `json:"run_id"`
+}
+
+type GetScheduleRunResponseObject interface {
+	VisitGetScheduleRunResponse(w http.ResponseWriter) error
+}
+
+type GetScheduleRun200JSONResponse ScheduleRunDetail
+
+func (response GetScheduleRun200JSONResponse) VisitGetScheduleRunResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetScheduleRun401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetScheduleRun401JSONResponse) VisitGetScheduleRunResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetScheduleRun403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetScheduleRun403JSONResponse) VisitGetScheduleRunResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetScheduleRun404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetScheduleRun404JSONResponse) VisitGetScheduleRunResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetScheduleRun500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response GetScheduleRun500JSONResponse) VisitGetScheduleRunResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetScheduleRun503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response GetScheduleRun503JSONResponse) VisitGetScheduleRunResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SelectScheduleRequestObject struct {
+	ScheduleID ScheduleID `json:"schedule_id"`
+	Body       *SelectScheduleJSONRequestBody
+}
+
+type SelectScheduleResponseObject interface {
+	VisitSelectScheduleResponse(w http.ResponseWriter) error
+}
+
+type SelectSchedule200JSONResponse ScheduleItem
+
+func (response SelectSchedule200JSONResponse) VisitSelectScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SelectSchedule400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response SelectSchedule400JSONResponse) VisitSelectScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SelectSchedule401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response SelectSchedule401JSONResponse) VisitSelectScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SelectSchedule403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response SelectSchedule403JSONResponse) VisitSelectScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SelectSchedule404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response SelectSchedule404JSONResponse) VisitSelectScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SelectSchedule409JSONResponse struct{ ConflictJSONResponse }
+
+func (response SelectSchedule409JSONResponse) VisitSelectScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SelectSchedule500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response SelectSchedule500JSONResponse) VisitSelectScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SelectSchedule503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response SelectSchedule503JSONResponse) VisitSelectScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListWebhooksRequestObject struct {
+}
+
+type ListWebhooksResponseObject interface {
+	VisitListWebhooksResponse(w http.ResponseWriter) error
+}
+
+type ListWebhooks200JSONResponse WebhookInventory
+
+func (response ListWebhooks200JSONResponse) VisitListWebhooksResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListWebhooks401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListWebhooks401JSONResponse) VisitListWebhooksResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListWebhooks403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListWebhooks403JSONResponse) VisitListWebhooksResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListWebhooks500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ListWebhooks500JSONResponse) VisitListWebhooksResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListWebhooks503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response ListWebhooks503JSONResponse) VisitListWebhooksResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateWebhookRequestObject struct {
+	Body *CreateWebhookJSONRequestBody
+}
+
+type CreateWebhookResponseObject interface {
+	VisitCreateWebhookResponse(w http.ResponseWriter) error
+}
+
+type CreateWebhook200JSONResponse WebhookSecretResult
+
+func (response CreateWebhook200JSONResponse) VisitCreateWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateWebhook400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response CreateWebhook400JSONResponse) VisitCreateWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateWebhook401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response CreateWebhook401JSONResponse) VisitCreateWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateWebhook403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response CreateWebhook403JSONResponse) VisitCreateWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateWebhook409JSONResponse struct{ ConflictJSONResponse }
+
+func (response CreateWebhook409JSONResponse) VisitCreateWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateWebhook500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response CreateWebhook500JSONResponse) VisitCreateWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateWebhook503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response CreateWebhook503JSONResponse) VisitCreateWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteWebhookRequestObject struct {
+	WebhookName WebhookName `json:"webhook_name"`
+	Body        *DeleteWebhookJSONRequestBody
+}
+
+type DeleteWebhookResponseObject interface {
+	VisitDeleteWebhookResponse(w http.ResponseWriter) error
+}
+
+type DeleteWebhook200JSONResponse WebhookItem
+
+func (response DeleteWebhook200JSONResponse) VisitDeleteWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteWebhook400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response DeleteWebhook400JSONResponse) VisitDeleteWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteWebhook401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response DeleteWebhook401JSONResponse) VisitDeleteWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteWebhook403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DeleteWebhook403JSONResponse) VisitDeleteWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteWebhook404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response DeleteWebhook404JSONResponse) VisitDeleteWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteWebhook409JSONResponse struct{ ConflictJSONResponse }
+
+func (response DeleteWebhook409JSONResponse) VisitDeleteWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteWebhook500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response DeleteWebhook500JSONResponse) VisitDeleteWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteWebhook503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response DeleteWebhook503JSONResponse) VisitDeleteWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetWebhookRequestObject struct {
+	WebhookName WebhookName `json:"webhook_name"`
+}
+
+type GetWebhookResponseObject interface {
+	VisitGetWebhookResponse(w http.ResponseWriter) error
+}
+
+type GetWebhook200JSONResponse WebhookItem
+
+func (response GetWebhook200JSONResponse) VisitGetWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetWebhook401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetWebhook401JSONResponse) VisitGetWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetWebhook403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetWebhook403JSONResponse) VisitGetWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetWebhook404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetWebhook404JSONResponse) VisitGetWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetWebhook500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response GetWebhook500JSONResponse) VisitGetWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetWebhook503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response GetWebhook503JSONResponse) VisitGetWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateWebhookRequestObject struct {
+	WebhookName WebhookName `json:"webhook_name"`
+	Body        *UpdateWebhookJSONRequestBody
+}
+
+type UpdateWebhookResponseObject interface {
+	VisitUpdateWebhookResponse(w http.ResponseWriter) error
+}
+
+type UpdateWebhook200JSONResponse WebhookItem
+
+func (response UpdateWebhook200JSONResponse) VisitUpdateWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateWebhook400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response UpdateWebhook400JSONResponse) VisitUpdateWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateWebhook401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response UpdateWebhook401JSONResponse) VisitUpdateWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateWebhook403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response UpdateWebhook403JSONResponse) VisitUpdateWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateWebhook404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response UpdateWebhook404JSONResponse) VisitUpdateWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateWebhook409JSONResponse struct{ ConflictJSONResponse }
+
+func (response UpdateWebhook409JSONResponse) VisitUpdateWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateWebhook500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response UpdateWebhook500JSONResponse) VisitUpdateWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateWebhook503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response UpdateWebhook503JSONResponse) VisitUpdateWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListWebhookHistoryRequestObject struct {
+	WebhookName WebhookName `json:"webhook_name"`
+	Params      ListWebhookHistoryParams
+}
+
+type ListWebhookHistoryResponseObject interface {
+	VisitListWebhookHistoryResponse(w http.ResponseWriter) error
+}
+
+type ListWebhookHistory200JSONResponse WebhookHistoryPage
+
+func (response ListWebhookHistory200JSONResponse) VisitListWebhookHistoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListWebhookHistory400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response ListWebhookHistory400JSONResponse) VisitListWebhookHistoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListWebhookHistory401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListWebhookHistory401JSONResponse) VisitListWebhookHistoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListWebhookHistory403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListWebhookHistory403JSONResponse) VisitListWebhookHistoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListWebhookHistory404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ListWebhookHistory404JSONResponse) VisitListWebhookHistoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListWebhookHistory500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ListWebhookHistory500JSONResponse) VisitListWebhookHistoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListWebhookHistory503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response ListWebhookHistory503JSONResponse) VisitListWebhookHistoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetWebhookHistoryRequestObject struct {
+	WebhookName WebhookName  `json:"webhook_name"`
+	JobID       WebhookJobID `json:"job_id"`
+}
+
+type GetWebhookHistoryResponseObject interface {
+	VisitGetWebhookHistoryResponse(w http.ResponseWriter) error
+}
+
+type GetWebhookHistory200JSONResponse WebhookHistoryDetail
+
+func (response GetWebhookHistory200JSONResponse) VisitGetWebhookHistoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetWebhookHistory401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetWebhookHistory401JSONResponse) VisitGetWebhookHistoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetWebhookHistory403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetWebhookHistory403JSONResponse) VisitGetWebhookHistoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetWebhookHistory404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetWebhookHistory404JSONResponse) VisitGetWebhookHistoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetWebhookHistory500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response GetWebhookHistory500JSONResponse) VisitGetWebhookHistoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetWebhookHistory503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response GetWebhookHistory503JSONResponse) VisitGetWebhookHistoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RotateWebhookSecretRequestObject struct {
+	WebhookName WebhookName `json:"webhook_name"`
+	Body        *RotateWebhookSecretJSONRequestBody
+}
+
+type RotateWebhookSecretResponseObject interface {
+	VisitRotateWebhookSecretResponse(w http.ResponseWriter) error
+}
+
+type RotateWebhookSecret200JSONResponse WebhookSecretResult
+
+func (response RotateWebhookSecret200JSONResponse) VisitRotateWebhookSecretResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RotateWebhookSecret400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response RotateWebhookSecret400JSONResponse) VisitRotateWebhookSecretResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RotateWebhookSecret401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response RotateWebhookSecret401JSONResponse) VisitRotateWebhookSecretResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RotateWebhookSecret403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response RotateWebhookSecret403JSONResponse) VisitRotateWebhookSecretResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RotateWebhookSecret404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response RotateWebhookSecret404JSONResponse) VisitRotateWebhookSecretResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RotateWebhookSecret409JSONResponse struct{ ConflictJSONResponse }
+
+func (response RotateWebhookSecret409JSONResponse) VisitRotateWebhookSecretResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RotateWebhookSecret500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response RotateWebhookSecret500JSONResponse) VisitRotateWebhookSecretResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RotateWebhookSecret503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response RotateWebhookSecret503JSONResponse) VisitRotateWebhookSecretResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SelectWebhookRequestObject struct {
+	WebhookName WebhookName `json:"webhook_name"`
+	Body        *SelectWebhookJSONRequestBody
+}
+
+type SelectWebhookResponseObject interface {
+	VisitSelectWebhookResponse(w http.ResponseWriter) error
+}
+
+type SelectWebhook200JSONResponse WebhookItem
+
+func (response SelectWebhook200JSONResponse) VisitSelectWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SelectWebhook400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response SelectWebhook400JSONResponse) VisitSelectWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SelectWebhook401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response SelectWebhook401JSONResponse) VisitSelectWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SelectWebhook403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response SelectWebhook403JSONResponse) VisitSelectWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SelectWebhook404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response SelectWebhook404JSONResponse) VisitSelectWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SelectWebhook409JSONResponse struct{ ConflictJSONResponse }
+
+func (response SelectWebhook409JSONResponse) VisitSelectWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SelectWebhook500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response SelectWebhook500JSONResponse) VisitSelectWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SelectWebhook503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response SelectWebhook503JSONResponse) VisitSelectWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TestWebhookRequestObject struct {
+	WebhookName WebhookName `json:"webhook_name"`
+	Body        *TestWebhookJSONRequestBody
+}
+
+type TestWebhookResponseObject interface {
+	VisitTestWebhookResponse(w http.ResponseWriter) error
+}
+
+type TestWebhook200JSONResponse WebhookTestResult
+
+func (response TestWebhook200JSONResponse) VisitTestWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TestWebhook400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response TestWebhook400JSONResponse) VisitTestWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TestWebhook401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response TestWebhook401JSONResponse) VisitTestWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TestWebhook403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response TestWebhook403JSONResponse) VisitTestWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TestWebhook404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response TestWebhook404JSONResponse) VisitTestWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TestWebhook409JSONResponse struct{ ConflictJSONResponse }
+
+func (response TestWebhook409JSONResponse) VisitTestWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TestWebhook500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response TestWebhook500JSONResponse) VisitTestWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TestWebhook503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response TestWebhook503JSONResponse) VisitTestWebhookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+
+	// (GET /api/management/v1/aliases)
+	ListAliases(ctx context.Context, request ListAliasesRequestObject) (ListAliasesResponseObject, error)
+
+	// (POST /api/management/v1/aliases)
+	CreateAlias(ctx context.Context, request CreateAliasRequestObject) (CreateAliasResponseObject, error)
+
+	// (DELETE /api/management/v1/aliases/{alias_name})
+	DeleteAlias(ctx context.Context, request DeleteAliasRequestObject) (DeleteAliasResponseObject, error)
+
+	// (GET /api/management/v1/aliases/{alias_name})
+	GetAlias(ctx context.Context, request GetAliasRequestObject) (GetAliasResponseObject, error)
+
+	// (PUT /api/management/v1/aliases/{alias_name})
+	RetargetAlias(ctx context.Context, request RetargetAliasRequestObject) (RetargetAliasResponseObject, error)
 	// LoginWebAuth Start local WebAuth login
 	// (POST /api/management/v1/auth/login)
 	LoginWebAuth(ctx context.Context, request LoginWebAuthRequestObject) (LoginWebAuthResponseObject, error)
@@ -14929,6 +24659,63 @@ type StrictServerInterface interface {
 	// SelectProvider Enable or disable a managed provider
 	// (POST /api/management/v1/providers/{provider_id}/selection)
 	SelectProvider(ctx context.Context, request SelectProviderRequestObject) (SelectProviderResponseObject, error)
+	// ListSchedules Read the content-free schedule inventory
+	// (GET /api/management/v1/schedules)
+	ListSchedules(ctx context.Context, request ListSchedulesRequestObject) (ListSchedulesResponseObject, error)
+	// CreateSchedule Create a managed schedule
+	// (POST /api/management/v1/schedules)
+	CreateSchedule(ctx context.Context, request CreateScheduleRequestObject) (CreateScheduleResponseObject, error)
+	// DeleteSchedule Tombstone a managed schedule
+	// (DELETE /api/management/v1/schedules/{schedule_id})
+	DeleteSchedule(ctx context.Context, request DeleteScheduleRequestObject) (DeleteScheduleResponseObject, error)
+	// GetSchedule Read one schedule including guarded content
+	// (GET /api/management/v1/schedules/{schedule_id})
+	GetSchedule(ctx context.Context, request GetScheduleRequestObject) (GetScheduleResponseObject, error)
+	// UpdateSchedule Replace a managed schedule definition
+	// (PUT /api/management/v1/schedules/{schedule_id})
+	UpdateSchedule(ctx context.Context, request UpdateScheduleRequestObject) (UpdateScheduleResponseObject, error)
+	// ListScheduleRuns Read one bounded page of schedule run history
+	// (GET /api/management/v1/schedules/{schedule_id}/runs)
+	ListScheduleRuns(ctx context.Context, request ListScheduleRunsRequestObject) (ListScheduleRunsResponseObject, error)
+	// RunScheduleNow Request one idempotent manual schedule run
+	// (POST /api/management/v1/schedules/{schedule_id}/runs)
+	RunScheduleNow(ctx context.Context, request RunScheduleNowRequestObject) (RunScheduleNowResponseObject, error)
+	// GetScheduleRun Read one schedule run with frozen input and output
+	// (GET /api/management/v1/schedules/{schedule_id}/runs/{run_id})
+	GetScheduleRun(ctx context.Context, request GetScheduleRunRequestObject) (GetScheduleRunResponseObject, error)
+	// SelectSchedule Enable or disable a managed schedule
+	// (POST /api/management/v1/schedules/{schedule_id}/selection)
+	SelectSchedule(ctx context.Context, request SelectScheduleRequestObject) (SelectScheduleResponseObject, error)
+
+	// (GET /api/management/v1/webhooks)
+	ListWebhooks(ctx context.Context, request ListWebhooksRequestObject) (ListWebhooksResponseObject, error)
+
+	// (POST /api/management/v1/webhooks)
+	CreateWebhook(ctx context.Context, request CreateWebhookRequestObject) (CreateWebhookResponseObject, error)
+
+	// (DELETE /api/management/v1/webhooks/{webhook_name})
+	DeleteWebhook(ctx context.Context, request DeleteWebhookRequestObject) (DeleteWebhookResponseObject, error)
+
+	// (GET /api/management/v1/webhooks/{webhook_name})
+	GetWebhook(ctx context.Context, request GetWebhookRequestObject) (GetWebhookResponseObject, error)
+
+	// (PUT /api/management/v1/webhooks/{webhook_name})
+	UpdateWebhook(ctx context.Context, request UpdateWebhookRequestObject) (UpdateWebhookResponseObject, error)
+
+	// (GET /api/management/v1/webhooks/{webhook_name}/history)
+	ListWebhookHistory(ctx context.Context, request ListWebhookHistoryRequestObject) (ListWebhookHistoryResponseObject, error)
+
+	// (GET /api/management/v1/webhooks/{webhook_name}/history/{job_id})
+	GetWebhookHistory(ctx context.Context, request GetWebhookHistoryRequestObject) (GetWebhookHistoryResponseObject, error)
+
+	// (POST /api/management/v1/webhooks/{webhook_name}/rotate)
+	RotateWebhookSecret(ctx context.Context, request RotateWebhookSecretRequestObject) (RotateWebhookSecretResponseObject, error)
+
+	// (POST /api/management/v1/webhooks/{webhook_name}/selection)
+	SelectWebhook(ctx context.Context, request SelectWebhookRequestObject) (SelectWebhookResponseObject, error)
+
+	// (POST /api/management/v1/webhooks/{webhook_name}/test)
+	TestWebhook(ctx context.Context, request TestWebhookRequestObject) (TestWebhookResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
@@ -14968,6 +24755,153 @@ type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
 	options     StrictHTTPServerOptions
+}
+
+// ListAliases operation middleware
+func (sh *strictHandler) ListAliases(w http.ResponseWriter, r *http.Request) {
+	var request ListAliasesRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListAliases(ctx, request.(ListAliasesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListAliases")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListAliasesResponseObject); ok {
+		if err := validResponse.VisitListAliasesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateAlias operation middleware
+func (sh *strictHandler) CreateAlias(w http.ResponseWriter, r *http.Request) {
+	var request CreateAliasRequestObject
+
+	var body CreateAliasJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateAlias(ctx, request.(CreateAliasRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateAlias")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateAliasResponseObject); ok {
+		if err := validResponse.VisitCreateAliasResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteAlias operation middleware
+func (sh *strictHandler) DeleteAlias(w http.ResponseWriter, r *http.Request, aliasName AliasName) {
+	var request DeleteAliasRequestObject
+
+	request.AliasName = aliasName
+
+	var body DeleteAliasJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteAlias(ctx, request.(DeleteAliasRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteAlias")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteAliasResponseObject); ok {
+		if err := validResponse.VisitDeleteAliasResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetAlias operation middleware
+func (sh *strictHandler) GetAlias(w http.ResponseWriter, r *http.Request, aliasName AliasName) {
+	var request GetAliasRequestObject
+
+	request.AliasName = aliasName
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetAlias(ctx, request.(GetAliasRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetAlias")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetAliasResponseObject); ok {
+		if err := validResponse.VisitGetAliasResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RetargetAlias operation middleware
+func (sh *strictHandler) RetargetAlias(w http.ResponseWriter, r *http.Request, aliasName AliasName) {
+	var request RetargetAliasRequestObject
+
+	request.AliasName = aliasName
+
+	var body RetargetAliasJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RetargetAlias(ctx, request.(RetargetAliasRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RetargetAlias")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RetargetAliasResponseObject); ok {
+		if err := validResponse.VisitRetargetAliasResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
 }
 
 // LoginWebAuth operation middleware
@@ -16065,100 +25999,700 @@ func (sh *strictHandler) SelectProvider(w http.ResponseWriter, r *http.Request, 
 	}
 }
 
+// ListSchedules operation middleware
+func (sh *strictHandler) ListSchedules(w http.ResponseWriter, r *http.Request) {
+	var request ListSchedulesRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListSchedules(ctx, request.(ListSchedulesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListSchedules")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListSchedulesResponseObject); ok {
+		if err := validResponse.VisitListSchedulesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateSchedule operation middleware
+func (sh *strictHandler) CreateSchedule(w http.ResponseWriter, r *http.Request) {
+	var request CreateScheduleRequestObject
+
+	var body CreateScheduleJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateSchedule(ctx, request.(CreateScheduleRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateSchedule")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateScheduleResponseObject); ok {
+		if err := validResponse.VisitCreateScheduleResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteSchedule operation middleware
+func (sh *strictHandler) DeleteSchedule(w http.ResponseWriter, r *http.Request, scheduleID ScheduleID) {
+	var request DeleteScheduleRequestObject
+
+	request.ScheduleID = scheduleID
+
+	var body DeleteScheduleJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteSchedule(ctx, request.(DeleteScheduleRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteSchedule")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteScheduleResponseObject); ok {
+		if err := validResponse.VisitDeleteScheduleResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetSchedule operation middleware
+func (sh *strictHandler) GetSchedule(w http.ResponseWriter, r *http.Request, scheduleID ScheduleID) {
+	var request GetScheduleRequestObject
+
+	request.ScheduleID = scheduleID
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetSchedule(ctx, request.(GetScheduleRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSchedule")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetScheduleResponseObject); ok {
+		if err := validResponse.VisitGetScheduleResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateSchedule operation middleware
+func (sh *strictHandler) UpdateSchedule(w http.ResponseWriter, r *http.Request, scheduleID ScheduleID) {
+	var request UpdateScheduleRequestObject
+
+	request.ScheduleID = scheduleID
+
+	var body UpdateScheduleJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateSchedule(ctx, request.(UpdateScheduleRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateSchedule")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateScheduleResponseObject); ok {
+		if err := validResponse.VisitUpdateScheduleResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListScheduleRuns operation middleware
+func (sh *strictHandler) ListScheduleRuns(w http.ResponseWriter, r *http.Request, scheduleID ScheduleID, params ListScheduleRunsParams) {
+	var request ListScheduleRunsRequestObject
+
+	request.ScheduleID = scheduleID
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListScheduleRuns(ctx, request.(ListScheduleRunsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListScheduleRuns")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListScheduleRunsResponseObject); ok {
+		if err := validResponse.VisitListScheduleRunsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RunScheduleNow operation middleware
+func (sh *strictHandler) RunScheduleNow(w http.ResponseWriter, r *http.Request, scheduleID ScheduleID) {
+	var request RunScheduleNowRequestObject
+
+	request.ScheduleID = scheduleID
+
+	var body RunScheduleNowJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RunScheduleNow(ctx, request.(RunScheduleNowRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RunScheduleNow")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RunScheduleNowResponseObject); ok {
+		if err := validResponse.VisitRunScheduleNowResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetScheduleRun operation middleware
+func (sh *strictHandler) GetScheduleRun(w http.ResponseWriter, r *http.Request, scheduleID ScheduleID, runID ScheduleRunID) {
+	var request GetScheduleRunRequestObject
+
+	request.ScheduleID = scheduleID
+	request.RunID = runID
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetScheduleRun(ctx, request.(GetScheduleRunRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetScheduleRun")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetScheduleRunResponseObject); ok {
+		if err := validResponse.VisitGetScheduleRunResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SelectSchedule operation middleware
+func (sh *strictHandler) SelectSchedule(w http.ResponseWriter, r *http.Request, scheduleID ScheduleID) {
+	var request SelectScheduleRequestObject
+
+	request.ScheduleID = scheduleID
+
+	var body SelectScheduleJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SelectSchedule(ctx, request.(SelectScheduleRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SelectSchedule")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SelectScheduleResponseObject); ok {
+		if err := validResponse.VisitSelectScheduleResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListWebhooks operation middleware
+func (sh *strictHandler) ListWebhooks(w http.ResponseWriter, r *http.Request) {
+	var request ListWebhooksRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListWebhooks(ctx, request.(ListWebhooksRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListWebhooks")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListWebhooksResponseObject); ok {
+		if err := validResponse.VisitListWebhooksResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateWebhook operation middleware
+func (sh *strictHandler) CreateWebhook(w http.ResponseWriter, r *http.Request) {
+	var request CreateWebhookRequestObject
+
+	var body CreateWebhookJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateWebhook(ctx, request.(CreateWebhookRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateWebhook")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateWebhookResponseObject); ok {
+		if err := validResponse.VisitCreateWebhookResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteWebhook operation middleware
+func (sh *strictHandler) DeleteWebhook(w http.ResponseWriter, r *http.Request, webhookName WebhookName) {
+	var request DeleteWebhookRequestObject
+
+	request.WebhookName = webhookName
+
+	var body DeleteWebhookJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteWebhook(ctx, request.(DeleteWebhookRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteWebhook")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteWebhookResponseObject); ok {
+		if err := validResponse.VisitDeleteWebhookResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetWebhook operation middleware
+func (sh *strictHandler) GetWebhook(w http.ResponseWriter, r *http.Request, webhookName WebhookName) {
+	var request GetWebhookRequestObject
+
+	request.WebhookName = webhookName
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetWebhook(ctx, request.(GetWebhookRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetWebhook")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetWebhookResponseObject); ok {
+		if err := validResponse.VisitGetWebhookResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateWebhook operation middleware
+func (sh *strictHandler) UpdateWebhook(w http.ResponseWriter, r *http.Request, webhookName WebhookName) {
+	var request UpdateWebhookRequestObject
+
+	request.WebhookName = webhookName
+
+	var body UpdateWebhookJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateWebhook(ctx, request.(UpdateWebhookRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateWebhook")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateWebhookResponseObject); ok {
+		if err := validResponse.VisitUpdateWebhookResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListWebhookHistory operation middleware
+func (sh *strictHandler) ListWebhookHistory(w http.ResponseWriter, r *http.Request, webhookName WebhookName, params ListWebhookHistoryParams) {
+	var request ListWebhookHistoryRequestObject
+
+	request.WebhookName = webhookName
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListWebhookHistory(ctx, request.(ListWebhookHistoryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListWebhookHistory")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListWebhookHistoryResponseObject); ok {
+		if err := validResponse.VisitListWebhookHistoryResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetWebhookHistory operation middleware
+func (sh *strictHandler) GetWebhookHistory(w http.ResponseWriter, r *http.Request, webhookName WebhookName, jobID WebhookJobID) {
+	var request GetWebhookHistoryRequestObject
+
+	request.WebhookName = webhookName
+	request.JobID = jobID
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetWebhookHistory(ctx, request.(GetWebhookHistoryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetWebhookHistory")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetWebhookHistoryResponseObject); ok {
+		if err := validResponse.VisitGetWebhookHistoryResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RotateWebhookSecret operation middleware
+func (sh *strictHandler) RotateWebhookSecret(w http.ResponseWriter, r *http.Request, webhookName WebhookName) {
+	var request RotateWebhookSecretRequestObject
+
+	request.WebhookName = webhookName
+
+	var body RotateWebhookSecretJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RotateWebhookSecret(ctx, request.(RotateWebhookSecretRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RotateWebhookSecret")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RotateWebhookSecretResponseObject); ok {
+		if err := validResponse.VisitRotateWebhookSecretResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SelectWebhook operation middleware
+func (sh *strictHandler) SelectWebhook(w http.ResponseWriter, r *http.Request, webhookName WebhookName) {
+	var request SelectWebhookRequestObject
+
+	request.WebhookName = webhookName
+
+	var body SelectWebhookJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SelectWebhook(ctx, request.(SelectWebhookRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SelectWebhook")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SelectWebhookResponseObject); ok {
+		if err := validResponse.VisitSelectWebhookResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// TestWebhook operation middleware
+func (sh *strictHandler) TestWebhook(w http.ResponseWriter, r *http.Request, webhookName WebhookName) {
+	var request TestWebhookRequestObject
+
+	request.WebhookName = webhookName
+
+	var body TestWebhookJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.TestWebhook(ctx, request.(TestWebhookRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "TestWebhook")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(TestWebhookResponseObject); ok {
+		if err := validResponse.VisitTestWebhookResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // Base64 encoded, compressed with deflate, json marshaled OpenAPI spec.
 // Stored as a slice of fixed-width chunks rather than one concatenated
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"kIvVnL020Tj4Z2/YP7Nk4uXlnwEAAP//",
+	"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",
+	"y/8HAAD//w==",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

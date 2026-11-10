@@ -114,7 +114,7 @@ func TestGeneratedClientMCPDefinitionLifecycleAndRedaction(t *testing.T) {
 		t.Fatalf("delete = %#v, %v", deleted, err)
 	}
 	secret := "client-secret-canary"
-	authInput := managementv1.MCPAuthorizationInput{Scopes: []string{"tools"}, ClientID: "client", ClientAuthMethod: managementv1.None, ClientSecret: &secret}
+	authInput := managementv1.MCPAuthorizationInput{Scopes: []string{"tools"}, ClientID: "client", ClientAuthMethod: managementv1.MCPAuthorizationInputClientAuthMethodNone, ClientSecret: &secret}
 	operatorCredentials := generatedProviderLogin(t, client, "operator")
 	operatorForbidden, err := client.BeginMCPBrowserAuthorizationWithResponse(t.Context(), "managed", authInput, credentialRequestEditor(operatorCredentials.AccessToken, operatorCredentials.CSRFToken))
 	if err != nil || operatorForbidden.StatusCode() != http.StatusForbidden {

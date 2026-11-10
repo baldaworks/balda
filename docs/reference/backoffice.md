@@ -39,10 +39,21 @@ outcomes, not byte-identical HTML:
 | Recovery | Saved-change links and passive recovery/readiness projections | Saved-item links and the same Core recovery projections | `TestMCPDiagnosticUsesProtectedServerAuthorityAndRetainsLastResult`, `TestCommittedMCPCreateHasRecoveryLink`, `TestMCPPagesAndMutationsUseGeneratedClientSurface`, and MCP generated-client integration |
 | Continuation | `/mcp/oauth/*` callback/device flows | `/mcp/authorization/*` callback/device flows | `TestMCPOnboardingNativeGuardsAndSavedFailure`, `TestBackofficeMCPOAuthBrowserWorkflow`, and `TestMCPAuthorizationBrowserAndDeviceBoundary` cover single-use callbacks, begin-only device instructions, and no automatic replay |
 | Exact AI Session pins | Existing session runtime | Unchanged Core runtime | `TestManagementMutationsPreserveExactAISessionPins` proves generated API edit, disable, and delete preserve old provider bindings and MCP snapshots; AI Session IDs are never management credentials |
+| Schedule lifecycle | `/schedules` and `/schedules/{id}` | `/schedules` and `/schedules/{id}` through Management API v1 | `TestGeneratedClientScheduleLifecycleAndRedaction` covers content-free inventory, guarded detail, versioned mutations, run dedupe and bounded history; `TestScheduleAmbiguousRunPreservesRequestKeyWithoutRetry` covers uncertain admission |
+| Webhook lifecycle | `/webhooks` and `/webhooks/{name}` | `/webhooks` and `/webhooks/{name}` through Management API v1 | `TestGeneratedClientWebhookLifecycleSecretsAndDedupe` covers one-response secrets, versioned mutations, Test POST dedupe and summary/detail history; browser tests prove no secret replay and same-key recovery |
+| Alias lifecycle | `/aliases` and `/aliases/{name}` | `/aliases` and `/aliases/{name}` through Management API v1 | `TestGeneratedClientAliasLifecycleUsesCoreAuthority`, `TestAliasBrowserCreateAndConflict`, and the alias owner suite cover Core authority, canonicalization, reserved names and stale versions |
+| Frozen destination | Admission resolves an alias to a concrete locator | Same Core admission path; standalone never resolves aliases locally | Schedule run and webhook admission tests prove retarget, delete, definition edits and retries cannot change an admitted destination |
 
 The generated contract and exact route gate are the standalone compatibility
 boundary. A contract mismatch fails `balda-backoffice preflight`; it does not
 serve a partially compatible UI.
+
+Standalone Schedules, Webhooks, and Aliases contain no product state or retry
+loop. They submit one generated-client request per browser mutation. Core owns
+validation, optimistic versions, audit attribution, admission deduplication,
+alias resolution, and the concrete destination snapshot. Webhook URLs shown by
+standalone Backoffice are derived from validated `balda.http.base_url` and
+`balda.http.base_path`, never from the incoming browser request host.
 
 ## Startup and configuration
 

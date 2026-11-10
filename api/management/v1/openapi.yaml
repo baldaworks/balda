@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Balda Management API
-  version: 1.1.0
+  version: 1.4.0
   description: >-
     Contract for the loopback Balda management API. The API distinguishes
     browser WebAuth authority from AI conversation sessions.
@@ -558,6 +558,335 @@ paths:
           $ref: "#/components/responses/ServiceUnavailable"
         "500":
           $ref: "#/components/responses/InternalError"
+  /api/management/v1/schedules:
+    get:
+      operationId: listSchedules
+      summary: Read the content-free schedule inventory
+      security: [{ operatorServiceAuth: [], webAuthAccess: [] }]
+      responses:
+        "200": { description: Schedule inventory, content: { application/json: { schema: { $ref: "#/components/schemas/ScheduleInventory" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    post:
+      operationId: createSchedule
+      summary: Create a managed schedule
+      security: [{ operatorServiceAuth: [], webAuthAccess: [], csrf: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ScheduleCreateRequest" } } } }
+      responses:
+        "200": { description: Created schedule, content: { application/json: { schema: { $ref: "#/components/schemas/ScheduleItem" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/schedules/{schedule_id}:
+    get:
+      operationId: getSchedule
+      summary: Read one schedule including guarded content
+      security: [{ operatorServiceAuth: [], webAuthAccess: [] }]
+      parameters: [{ $ref: "#/components/parameters/ScheduleID" }]
+      responses:
+        "200": { description: Schedule detail, content: { application/json: { schema: { $ref: "#/components/schemas/ScheduleItem" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    put:
+      operationId: updateSchedule
+      summary: Replace a managed schedule definition
+      security: [{ operatorServiceAuth: [], webAuthAccess: [], csrf: [] }]
+      parameters: [{ $ref: "#/components/parameters/ScheduleID" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ScheduleUpdateRequest" } } } }
+      responses:
+        "200": { description: Updated schedule, content: { application/json: { schema: { $ref: "#/components/schemas/ScheduleItem" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    delete:
+      operationId: deleteSchedule
+      summary: Tombstone a managed schedule
+      security: [{ operatorServiceAuth: [], webAuthAccess: [], csrf: [] }]
+      parameters: [{ $ref: "#/components/parameters/ScheduleID" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ScheduleDeleteRequest" } } } }
+      responses:
+        "200": { description: Deleted schedule, content: { application/json: { schema: { $ref: "#/components/schemas/ScheduleItem" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/schedules/{schedule_id}/selection:
+    post:
+      operationId: selectSchedule
+      summary: Enable or disable a managed schedule
+      security: [{ operatorServiceAuth: [], webAuthAccess: [], csrf: [] }]
+      parameters: [{ $ref: "#/components/parameters/ScheduleID" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ScheduleSelectionRequest" } } } }
+      responses:
+        "200": { description: Current schedule, content: { application/json: { schema: { $ref: "#/components/schemas/ScheduleItem" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/schedules/{schedule_id}/runs:
+    get:
+      operationId: listScheduleRuns
+      summary: Read one bounded page of schedule run history
+      security: [{ operatorServiceAuth: [], webAuthAccess: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/ScheduleID" }
+        - { name: before_at, in: query, schema: { type: string, format: date-time } }
+        - { name: before_id, in: query, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: Bounded schedule run page, content: { application/json: { schema: { $ref: "#/components/schemas/ScheduleRunPage" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    post:
+      operationId: runScheduleNow
+      summary: Request one idempotent manual schedule run
+      security: [{ operatorServiceAuth: [], webAuthAccess: [], csrf: [] }]
+      parameters: [{ $ref: "#/components/parameters/ScheduleID" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ScheduleRunNowRequest" } } } }
+      responses:
+        "200": { description: Current durable run, content: { application/json: { schema: { $ref: "#/components/schemas/ScheduleRunItem" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/schedules/{schedule_id}/runs/{run_id}:
+    get:
+      operationId: getScheduleRun
+      summary: Read one schedule run with frozen input and output
+      security: [{ operatorServiceAuth: [], webAuthAccess: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/ScheduleID" }
+        - { $ref: "#/components/parameters/ScheduleRunID" }
+      responses:
+        "200": { description: Schedule run detail, content: { application/json: { schema: { $ref: "#/components/schemas/ScheduleRunDetail" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/aliases:
+    get:
+      operationId: listAliases
+      security: [{ operatorServiceAuth: [], webAuthAccess: [] }]
+      responses:
+        "200": { description: Managed aliases, content: { application/json: { schema: { $ref: "#/components/schemas/AliasInventory" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    post:
+      operationId: createAlias
+      security: [{ operatorServiceAuth: [], webAuthAccess: [], csrf: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AliasCreateRequest" } } } }
+      responses:
+        "200": { description: Created alias, content: { application/json: { schema: { $ref: "#/components/schemas/AliasRecord" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/aliases/{alias_name}:
+    get:
+      operationId: getAlias
+      security: [{ operatorServiceAuth: [], webAuthAccess: [] }]
+      parameters: [{ $ref: "#/components/parameters/AliasName" }]
+      responses:
+        "200": { description: Alias detail, content: { application/json: { schema: { $ref: "#/components/schemas/AliasRecord" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    put:
+      operationId: retargetAlias
+      security: [{ operatorServiceAuth: [], webAuthAccess: [], csrf: [] }]
+      parameters: [{ $ref: "#/components/parameters/AliasName" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AliasRetargetRequest" } } } }
+      responses:
+        "200": { description: Retargeted alias, content: { application/json: { schema: { $ref: "#/components/schemas/AliasRecord" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    delete:
+      operationId: deleteAlias
+      security: [{ operatorServiceAuth: [], webAuthAccess: [], csrf: [] }]
+      parameters: [{ $ref: "#/components/parameters/AliasName" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AliasDeleteRequest" } } } }
+      responses:
+        "204": { description: Alias deleted }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/webhooks:
+    get:
+      operationId: listWebhooks
+      security: [{ operatorServiceAuth: [], webAuthAccess: [] }]
+      responses:
+        "200": { description: Secret-free webhook inventory, content: { application/json: { schema: { $ref: "#/components/schemas/WebhookInventory" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    post:
+      operationId: createWebhook
+      security: [{ operatorServiceAuth: [], webAuthAccess: [], csrf: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/WebhookCreateRequest" } } } }
+      responses:
+        "200": { description: Created route with one-response secret, content: { application/json: { schema: { $ref: "#/components/schemas/WebhookSecretResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/webhooks/{webhook_name}:
+    get:
+      operationId: getWebhook
+      security: [{ operatorServiceAuth: [], webAuthAccess: [] }]
+      parameters: [{ $ref: "#/components/parameters/WebhookName" }]
+      responses:
+        "200": { description: Secret-free webhook detail, content: { application/json: { schema: { $ref: "#/components/schemas/WebhookItem" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    put:
+      operationId: updateWebhook
+      security: [{ operatorServiceAuth: [], webAuthAccess: [], csrf: [] }]
+      parameters: [{ $ref: "#/components/parameters/WebhookName" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/WebhookUpdateRequest" } } } }
+      responses:
+        "200": { description: Updated route, content: { application/json: { schema: { $ref: "#/components/schemas/WebhookItem" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    delete:
+      operationId: deleteWebhook
+      security: [{ operatorServiceAuth: [], webAuthAccess: [], csrf: [] }]
+      parameters: [{ $ref: "#/components/parameters/WebhookName" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/WebhookVersionRequest" } } } }
+      responses:
+        "200": { description: Deleted route, content: { application/json: { schema: { $ref: "#/components/schemas/WebhookItem" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/webhooks/{webhook_name}/selection:
+    post:
+      operationId: selectWebhook
+      security: [{ operatorServiceAuth: [], webAuthAccess: [], csrf: [] }]
+      parameters: [{ $ref: "#/components/parameters/WebhookName" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/WebhookSelectionRequest" } } } }
+      responses:
+        "200": { description: Current route, content: { application/json: { schema: { $ref: "#/components/schemas/WebhookItem" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/webhooks/{webhook_name}/rotate:
+    post:
+      operationId: rotateWebhookSecret
+      security: [{ operatorServiceAuth: [], webAuthAccess: [], csrf: [] }]
+      parameters: [{ $ref: "#/components/parameters/WebhookName" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/WebhookVersionRequest" } } } }
+      responses:
+        "200": { description: Current route with one-response secret, content: { application/json: { schema: { $ref: "#/components/schemas/WebhookSecretResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/webhooks/{webhook_name}/test:
+    post:
+      operationId: testWebhook
+      security: [{ operatorServiceAuth: [], webAuthAccess: [], csrf: [] }]
+      parameters: [{ $ref: "#/components/parameters/WebhookName" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/WebhookTestRequest" } } } }
+      responses:
+        "200": { description: Durable admission result, content: { application/json: { schema: { $ref: "#/components/schemas/WebhookTestResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/webhooks/{webhook_name}/history:
+    get:
+      operationId: listWebhookHistory
+      security: [{ operatorServiceAuth: [], webAuthAccess: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/WebhookName" }
+        - { name: before_at, in: query, schema: { type: string, format: date-time } }
+        - { name: before_job_id, in: query, schema: { type: string, minLength: 1, maxLength: 256 } }
+      responses:
+        "200": { description: Bounded secret-free history, content: { application/json: { schema: { $ref: "#/components/schemas/WebhookHistoryPage" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/webhooks/{webhook_name}/history/{job_id}:
+    get:
+      operationId: getWebhookHistory
+      security: [{ operatorServiceAuth: [], webAuthAccess: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/WebhookName" }
+        - { $ref: "#/components/parameters/WebhookJobID" }
+      responses:
+        "200": { description: One route-owned history detail, content: { application/json: { schema: { $ref: "#/components/schemas/WebhookHistoryDetail" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
   /api/management/v1/mcp:
     get:
       operationId: listMCPConnections
@@ -917,6 +1246,31 @@ components:
       in: path
       required: true
       schema: { type: string, minLength: 1, maxLength: 128 }
+    ScheduleID:
+      name: schedule_id
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 128 }
+    ScheduleRunID:
+      name: run_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    WebhookName:
+      name: webhook_name
+      in: path
+      required: true
+      schema: { type: string, pattern: "^[a-z0-9][a-z0-9_-]{0,63}$" }
+    AliasName:
+      name: alias_name
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 64 }
+    WebhookJobID:
+      name: job_id
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 256 }
   responses:
     BadRequest:
       description: Invalid management request
@@ -976,7 +1330,7 @@ components:
         contract_version:
           type: string
           maxLength: 32
-          example: 1.1.0
+          example: 1.4.0
         api_major:
           type: integer
           format: int32
@@ -1231,6 +1585,272 @@ components:
             type: string
             maxLength: 4096
           writeOnly: true
+    ScheduleInventory:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, maxItems: 1024, items: { $ref: "#/components/schemas/ScheduleSummaryItem" } }
+    ScheduleSummaryDefinition:
+      type: object
+      additionalProperties: false
+      required: [id, cron, locator, alias]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 128 }
+        cron: { type: string, minLength: 1, maxLength: 256 }
+        locator: { type: string, maxLength: 1024 }
+        alias: { type: string, maxLength: 128 }
+    ScheduleSummaryItem:
+      type: object
+      additionalProperties: false
+      required: [definition, source, enabled, deleted, version, status]
+      properties:
+        definition: { $ref: "#/components/schemas/ScheduleSummaryDefinition" }
+        source: { type: string, maxLength: 64 }
+        enabled: { type: boolean }
+        deleted: { type: boolean }
+        version: { type: integer, format: uint64, minimum: 1 }
+        status: { type: string, maxLength: 64 }
+        next_run_at: { type: string, format: date-time }
+        last_run_at: { type: string, format: date-time }
+    ScheduleDefinition:
+      type: object
+      additionalProperties: false
+      required: [id, cron, locator, alias, content]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 128 }
+        cron: { type: string, minLength: 1, maxLength: 256 }
+        locator: { type: string, maxLength: 1024 }
+        alias: { type: string, maxLength: 128 }
+        content: { type: string, maxLength: 131072 }
+    ScheduleItem:
+      type: object
+      additionalProperties: false
+      required: [definition, source, enabled, deleted, version, status]
+      properties:
+        definition: { $ref: "#/components/schemas/ScheduleDefinition" }
+        source: { type: string, maxLength: 64 }
+        enabled: { type: boolean }
+        deleted: { type: boolean }
+        version: { type: integer, format: uint64, minimum: 1 }
+        status: { type: string, maxLength: 64 }
+        next_run_at: { type: string, format: date-time }
+        last_run_at: { type: string, format: date-time }
+    ScheduleCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [definition]
+      properties: { definition: { $ref: "#/components/schemas/ScheduleDefinition" } }
+    ScheduleUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, definition]
+      properties:
+        expected_version: { type: integer, format: uint64, minimum: 1 }
+        definition: { $ref: "#/components/schemas/ScheduleDefinition" }
+    ScheduleSelectionRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, enabled]
+      properties:
+        expected_version: { type: integer, format: uint64, minimum: 1 }
+        enabled: { type: boolean }
+    ScheduleDeleteRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version]
+      properties: { expected_version: { type: integer, format: uint64, minimum: 1 } }
+    ScheduleRunNowRequest:
+      type: object
+      additionalProperties: false
+      required: [request_key, confirm_disabled]
+      properties:
+        request_key: { type: string, pattern: "^[A-Za-z0-9_-]{8,128}$" }
+        confirm_disabled: { type: boolean }
+    ScheduleRunItem:
+      type: object
+      additionalProperties: false
+      required: [id, trigger, requested_at, state, safe_failure_code, report_locator_ref]
+      properties:
+        id: { type: string, format: uuid }
+        trigger: { type: string, maxLength: 64 }
+        requested_at: { type: string, format: date-time }
+        due_at: { type: string, format: date-time }
+        state: { type: string, maxLength: 64 }
+        completed_at: { type: string, format: date-time }
+        safe_failure_code: { type: string, maxLength: 128 }
+        report_locator_ref: { type: string, maxLength: 1024 }
+    ScheduleRunCursor:
+      type: object
+      additionalProperties: false
+      required: [before_at, before_id]
+      properties:
+        before_at: { type: string, format: date-time }
+        before_id: { type: string, format: uuid }
+    ScheduleRunPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, maxItems: 20, items: { $ref: "#/components/schemas/ScheduleRunItem" } }
+        next: { $ref: "#/components/schemas/ScheduleRunCursor" }
+    ScheduleRunDetail:
+      type: object
+      additionalProperties: false
+      required: [run, input, output]
+      properties:
+        run: { $ref: "#/components/schemas/ScheduleRunItem" }
+        input: { type: string, maxLength: 131072 }
+        output: { type: string, maxLength: 786432 }
+    AliasInventory:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties: { items: { type: array, maxItems: 1024, items: { $ref: "#/components/schemas/AliasRecord" } } }
+    AliasRecord:
+      type: object
+      additionalProperties: false
+      required: [name, locator_ref, version, created_at, updated_at]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 64 }
+        locator_ref: { type: string, minLength: 1, maxLength: 1024 }
+        version: { type: integer, format: uint64, minimum: 1 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    AliasCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [name, locator_ref]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 64 }
+        locator_ref: { type: string, minLength: 1, maxLength: 1024 }
+    AliasRetargetRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, locator_ref]
+      properties:
+        expected_version: { type: integer, format: uint64, minimum: 1 }
+        locator_ref: { type: string, minLength: 1, maxLength: 1024 }
+    AliasDeleteRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version]
+      properties: { expected_version: { type: integer, format: uint64, minimum: 1 } }
+    WebhookInventory:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties: { items: { type: array, maxItems: 1024, items: { $ref: "#/components/schemas/WebhookItem" } } }
+    WebhookDefinition:
+      type: object
+      additionalProperties: false
+      required: [name, prompt_template, report_to, ack_on_delivery, dedupe_source, dedupe_header]
+      properties:
+        name: { type: string, pattern: "^[a-z0-9][a-z0-9_-]{0,63}$" }
+        prompt_template: { type: string, minLength: 1, maxLength: 131072 }
+        report_to: { type: string, maxLength: 1024 }
+        ack_on_delivery: { type: boolean }
+        dedupe_source: { type: string, enum: [request_id, header, body_sha256] }
+        dedupe_header: { type: string, maxLength: 256 }
+    WebhookItem:
+      type: object
+      additionalProperties: false
+      required: [definition, source, enabled, deleted, version, report_to_kind, report_to_key, auth_type, auth_header, created_at, updated_at]
+      properties:
+        definition: { $ref: "#/components/schemas/WebhookDefinition" }
+        source: { type: string, enum: [config, managed] }
+        enabled: { type: boolean }
+        deleted: { type: boolean }
+        version: { type: integer, format: uint64, minimum: 1 }
+        report_to_kind: { type: string, maxLength: 64 }
+        report_to_key: { type: string, maxLength: 1024 }
+        auth_type: { type: string, enum: [none, header] }
+        auth_header: { type: string, maxLength: 256 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    WebhookCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [definition]
+      properties: { definition: { $ref: "#/components/schemas/WebhookDefinition" } }
+    WebhookUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, definition]
+      properties:
+        expected_version: { type: integer, format: uint64, minimum: 1 }
+        definition: { $ref: "#/components/schemas/WebhookDefinition" }
+    WebhookVersionRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version]
+      properties: { expected_version: { type: integer, format: uint64, minimum: 1 } }
+    WebhookSelectionRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, enabled]
+      properties:
+        expected_version: { type: integer, format: uint64, minimum: 1 }
+        enabled: { type: boolean }
+    WebhookSecretResult:
+      type: object
+      additionalProperties: false
+      required: [item, secret]
+      properties:
+        item: { $ref: "#/components/schemas/WebhookItem" }
+        secret: { type: string, minLength: 1, maxLength: 4096, x-sensitive: true }
+    WebhookTestRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, request_key, confirm_disabled, body]
+      properties:
+        expected_version: { type: integer, format: uint64, minimum: 1 }
+        request_key: { type: string, format: uuid }
+        confirm_disabled: { type: boolean }
+        body: { type: string, maxLength: 1048576 }
+    WebhookTestResult:
+      type: object
+      additionalProperties: false
+      required: [job_id, duplicate]
+      properties:
+        job_id: { type: string, minLength: 1, maxLength: 256 }
+        duplicate: { type: boolean }
+    WebhookHistorySummary:
+      type: object
+      additionalProperties: false
+      required: [job_id, source, created_at, job_status, delivery_status, has_report_to, report_to]
+      properties:
+        job_id: { type: string, minLength: 1, maxLength: 256 }
+        source: { type: string, maxLength: 64 }
+        created_at: { type: string, format: date-time }
+        job_status: { type: string, maxLength: 64 }
+        delivery_status: { type: string, maxLength: 64 }
+        has_report_to: { type: boolean }
+        report_to: { type: string, maxLength: 1024 }
+    WebhookHistoryCursor:
+      type: object
+      additionalProperties: false
+      required: [before_at, before_job_id]
+      properties:
+        before_at: { type: string, format: date-time }
+        before_job_id: { type: string, minLength: 1, maxLength: 256 }
+    WebhookHistoryPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, maxItems: 20, items: { $ref: "#/components/schemas/WebhookHistorySummary" } }
+        next: { $ref: "#/components/schemas/WebhookHistoryCursor" }
+    WebhookHistoryDetail:
+      type: object
+      additionalProperties: false
+      required: [summary, input_available, input, output, delivery_payload]
+      properties:
+        summary: { $ref: "#/components/schemas/WebhookHistorySummary" }
+        input_available: { type: boolean }
+        input: { type: string, maxLength: 1048576 }
+        output: { type: string, maxLength: 1048576 }
+        delivery_payload: { type: string, maxLength: 1048576 }
     MCPInventory:
       type: object
       additionalProperties: false

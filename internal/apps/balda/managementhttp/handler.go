@@ -3,10 +3,15 @@ package managementhttp
 import (
 	"context"
 	"net/http"
+	"strings"
+	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/aliascmd"
 	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/providers"
+	"github.com/baldaworks/balda/internal/apps/balda/schedulecmd"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookroutecmd"
 	managementv1 "github.com/baldaworks/balda/internal/managementapi/v1"
 )
 
@@ -17,6 +22,42 @@ type Services struct {
 	BrowserAuth *browserauth.Service
 	Providers   *providers.Service
 	MCP         mcpOperations
+	Schedules   scheduleOperations
+	Webhooks    webhookOperations
+	Aliases     aliasOperations
+}
+
+type aliasOperations interface {
+	List(ctx context.Context, authority aliascmd.Authority) ([]aliascmd.Record, error)
+	Get(ctx context.Context, name string, authority aliascmd.Authority) (aliascmd.Record, error)
+	Create(ctx context.Context, request aliascmd.Create) (aliascmd.Record, error)
+	Retarget(ctx context.Context, request aliascmd.Retarget) (aliascmd.Record, error)
+	Delete(ctx context.Context, request aliascmd.Delete) error
+}
+
+type webhookOperations interface {
+	Inventory(ctx context.Context, authority webhookroutecmd.Authority) ([]webhookroutecmd.Item, error)
+	Get(ctx context.Context, name string, authority webhookroutecmd.Authority) (webhookroutecmd.Item, error)
+	Create(ctx context.Context, request webhookroutecmd.Create) (webhookroutecmd.SecretResult, error)
+	Update(ctx context.Context, request webhookroutecmd.Update) (webhookroutecmd.Item, error)
+	SetEnabled(ctx context.Context, request webhookroutecmd.ChangeSelection) (webhookroutecmd.Item, error)
+	Delete(ctx context.Context, request webhookroutecmd.Delete) (webhookroutecmd.Item, error)
+	Rotate(ctx context.Context, request webhookroutecmd.Rotate) (webhookroutecmd.SecretResult, error)
+	TestPost(ctx context.Context, request webhookroutecmd.TestPost) (webhookroutecmd.TestResult, error)
+	History(ctx context.Context, name string, beforeAt time.Time, beforeJobID string, limit int, authority webhookroutecmd.Authority) ([]webhookroutecmd.HistoryItem, error)
+	HistoryDetail(ctx context.Context, name, jobID string, authority webhookroutecmd.Authority) (webhookroutecmd.HistoryItem, error)
+}
+
+type scheduleOperations interface {
+	Inventory(ctx context.Context, authority schedulecmd.Authority) ([]schedulecmd.Item, error)
+	Get(ctx context.Context, id string, authority schedulecmd.Authority) (schedulecmd.Item, error)
+	Create(ctx context.Context, request schedulecmd.Create) (schedulecmd.Item, error)
+	Update(ctx context.Context, request schedulecmd.Update) (schedulecmd.Item, error)
+	SetEnabled(ctx context.Context, request schedulecmd.ChangeSelection) (schedulecmd.Item, error)
+	Delete(ctx context.Context, request schedulecmd.Delete) (schedulecmd.Item, error)
+	RunNow(ctx context.Context, request schedulecmd.RunNow) (schedulecmd.RunItem, error)
+	History(ctx context.Context, id string, beforeAt time.Time, beforeID string, limit int, authority schedulecmd.Authority) ([]schedulecmd.RunItem, error)
+	RunDetail(ctx context.Context, scheduleID, runID string, authority schedulecmd.Authority) (schedulecmd.RunDetail, error)
 }
 
 type mcpOperations interface {
@@ -43,7 +84,7 @@ type mcpOperations interface {
 
 // Handler returns the authenticated management API handler.
 func (c ResolvedConfig) Handler(services Services) http.Handler {
-	server := strictServer{browserAuth: services.BrowserAuth, providers: services.Providers, mcp: services.MCP}
+	server := strictServer{browserAuth: services.BrowserAuth, providers: services.Providers, mcp: services.MCP, schedules: services.Schedules, webhooks: services.Webhooks, aliases: services.Aliases}
 	strict := managementv1.NewStrictHandlerWithOptions(server, nil, managementv1.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, _ error) {
 			writeError(w, r, http.StatusBadRequest, "request.invalid", "invalid request")
@@ -56,7 +97,10 @@ func (c ResolvedConfig) Handler(services Services) http.Handler {
 	generated := managementv1.HandlerFromMux(strict, mux)
 	gated := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rule, ok := managementRoute(r.Method, r.URL.Path)
-		if !ok || (services.BrowserAuth == nil && r.URL.Path != compatibilityPath) {
+		if !ok || (services.BrowserAuth == nil && r.URL.Path != compatibilityPath) ||
+			(services.Schedules == nil && strings.HasPrefix(r.URL.Path, "/api/management/v1/schedules")) ||
+			(services.Webhooks == nil && strings.HasPrefix(r.URL.Path, "/api/management/v1/webhooks")) ||
+			(services.Aliases == nil && strings.HasPrefix(r.URL.Path, "/api/management/v1/aliases")) {
 			writeError(w, r, http.StatusNotFound, "not_found", "not found")
 			return
 		}

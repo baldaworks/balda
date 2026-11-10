@@ -9,6 +9,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/backoffice"
 	"github.com/baldaworks/balda/internal/apps/balda/actors"
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
+	"github.com/baldaworks/balda/internal/apps/balda/aliasbackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
 	"github.com/baldaworks/balda/internal/apps/balda/catalogapp"
@@ -25,6 +26,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
 	"github.com/baldaworks/balda/internal/apps/balda/providers"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
+	"github.com/baldaworks/balda/internal/apps/balda/schedulebackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/scheduledjobs"
 	"github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
@@ -32,6 +34,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/startupnotifyapp"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookbackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookfx"
 	portableapp "github.com/baldaworks/balda/sessionmemory/app"
 	"github.com/rs/zerolog"
@@ -183,6 +186,9 @@ type applicationLifecycleParams struct {
 	Backoffice           *backoffice.Runtime
 	CommandWorkers       *commandoutboxfx.LifecycleWorkers
 	BackofficeMCP        *mcpbackofficeapp.Operations
+	BackofficeSchedules  *schedulebackofficeapp.Operations
+	BackofficeWebhooks   *webhookbackofficeapp.Operations
+	BackofficeAliases    *aliasbackofficeapp.Operations
 	MCP                  *internalmcp.InternalMCPManager
 	MCPManagement        *mcpmanage.Service
 	MCPBridge            *mcpbridge.Bridge
@@ -269,7 +275,7 @@ func applicationLifecycleStages(p applicationLifecycleParams, telegram *telegram
 			managementServer = httpfx.NewNamedServer(
 				"management HTTP",
 				p.ManagementHTTPConfig.ListenAddr,
-				p.ManagementHTTPConfig.Handler(managementhttp.Services{BrowserAuth: p.BrowserAuth, Providers: p.ProviderService, MCP: p.BackofficeMCP}),
+				p.ManagementHTTPConfig.Handler(managementhttp.Services{BrowserAuth: p.BrowserAuth, Providers: p.ProviderService, MCP: p.BackofficeMCP, Schedules: p.BackofficeSchedules, Webhooks: p.BackofficeWebhooks, Aliases: p.BackofficeAliases}),
 			)
 			if err := managementServer.Start(); err != nil {
 				managementServer = nil

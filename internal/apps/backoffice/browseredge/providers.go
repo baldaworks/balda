@@ -26,11 +26,11 @@ func (a *App) providersPage(w http.ResponseWriter, r *http.Request) {
 	}
 	body := `<p><a href="` + a.path("/overview") + `">Overview</a> · <a href="` + a.path("/providers/new") + `">Add provider</a></p><ul>`
 	for _, item := range inventory.Items {
-		state := "disabled"
+		state := statusDisabled
 		if item.Deleted {
-			state = "deleted"
+			state = statusDeleted
 		} else if item.Enabled {
-			state = "enabled"
+			state = statusEnabled
 		}
 		body += `<li><a href="` + a.path("/providers/") + url.PathEscape(item.ID) + `">` + template.HTMLEscapeString(item.ID) + `</a> · ` +
 			template.HTMLEscapeString(item.DriverType) + ` · ` + template.HTMLEscapeString(string(item.Source)) + ` · ` + state + `</li>`
@@ -190,7 +190,7 @@ func (a *App) providerForm(r *http.Request, inventory managementv1.ProviderInven
 	for _, providerType := range inventory.Types {
 		selected := ""
 		if providerType == config.Type {
-			selected = ` selected`
+			selected = selectedAttribute
 		}
 		body += `<option value="` + escape(providerType) + `"` + selected + `>` + escape(providerType) + `</option>`
 	}
