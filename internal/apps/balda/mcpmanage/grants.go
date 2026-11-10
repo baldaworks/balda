@@ -35,7 +35,11 @@ type GrantStore interface {
 type OAuthMetadata struct {
 	DeviceAuthorizationEndpoint                                                  string
 	Resource, Issuer, AuthorizationEndpoint, TokenEndpoint, RegistrationEndpoint string
-	Scopes, AuthMethods, GrantTypes, ResponseTypes, PKCEMethods                  []string
+	AuthMethods, GrantTypes, ResponseTypes, PKCEMethods                          []string
+	// ResourceScopes is the PRM access list; nil means omitted, empty means none.
+	ResourceScopes []string
+	// Scopes contains AS capabilities, never implicit resource defaults.
+	Scopes []string
 	// RequireIssuerParameter reflects advertised authorization-response iss support.
 	RequireIssuerParameter bool
 }
@@ -103,7 +107,7 @@ func (s *Grants) RequestCredentials(ctx context.Context, binding mcpcmd.AuthBind
 	if g.Status == mcpcmd.GrantDisconnected {
 		return GrantSecrets{}, mcpcmd.ErrDisconnected
 	}
-	if !containsScopes(g.Scopes, requiredScopes) {
+	if !containsResourceScopes(g.Scopes, requiredScopes) {
 		return GrantSecrets{}, mcpcmd.ErrAuthRequired
 	}
 	secrets, err := s.credentials.OpenGrant(g)
@@ -114,7 +118,7 @@ func (s *Grants) RequestCredentials(ctx context.Context, binding mcpcmd.AuthBind
 	if !validOAuthClient(OAuthClient{ID: g.Binding.ClientID, Secret: secrets.ClientSecret, AuthMethod: g.TokenEndpointAuthMethod, SecretExpiresAt: g.ClientSecretExpiresAt}, OAuthMetadata{}, now) {
 		return GrantSecrets{}, s.requireAuthorization(ctx, g, secrets)
 	}
-	if g.AccessExpiresAt.IsZero() || g.AccessExpiresAt.After(now.Add(30*time.Second)) {
+	if g.AccessExpiresAt.IsZero() || g.AccessExpiresAt.After(now.Add(30*time.Second)) || (secrets.RefreshToken == "" && g.AccessExpiresAt.After(now)) {
 		return secrets, nil
 	}
 	if secrets.RefreshToken == "" {
@@ -140,13 +144,14 @@ func (s *Grants) RequestCredentials(ctx context.Context, binding mcpcmd.AuthBind
 		token.Secrets.RefreshToken = secrets.RefreshToken
 	}
 	token.Secrets.ClientSecret = secrets.ClientSecret
-	if !validGrantSecrets(g, token.Secrets) || (!token.ExpiresAt.IsZero() && !token.ExpiresAt.After(time.Now())) || (token.Scopes != nil && !containsScopes(token.Scopes, g.Scopes)) {
+	scopes, validScopes := grantedTokenScopes(g.Scopes, token.Scopes)
+	if !validGrantSecrets(g, token.Secrets) || (!token.ExpiresAt.IsZero() && !token.ExpiresAt.After(time.Now())) || !validScopes {
 		return GrantSecrets{}, s.requireAuthorization(ctx, g, secrets)
 	}
 	updated := g
 	updated.Generation++
 	updated.UpdatedAt = time.Now().UTC()
-	updated.AccessExpiresAt = token.ExpiresAt
+	updated.AccessExpiresAt, updated.Scopes = token.ExpiresAt, scopes
 	if err := s.save(ctx, g, updated, token.Secrets, mcpcmd.GrantRenew, nil, ""); err != nil {
 		return GrantSecrets{}, err
 	}
@@ -172,7 +177,7 @@ func (s *Grants) DiagnosticAccessToken(ctx context.Context, binding mcpcmd.AuthB
 	if g.Status == mcpcmd.GrantDisconnected {
 		return "", mcpcmd.ErrDisconnected
 	}
-	if !containsScopes(g.Scopes, requiredScopes) {
+	if !containsResourceScopes(g.Scopes, requiredScopes) {
 		return "", mcpcmd.ErrAuthRequired
 	}
 	secrets, err := s.credentials.OpenGrant(g)
@@ -181,7 +186,11 @@ func (s *Grants) DiagnosticAccessToken(ctx context.Context, binding mcpcmd.AuthB
 	}
 	now := time.Now().UTC()
 	client := OAuthClient{ID: g.Binding.ClientID, Secret: secrets.ClientSecret, AuthMethod: g.TokenEndpointAuthMethod, SecretExpiresAt: g.ClientSecretExpiresAt}
-	if !validOAuthClient(client, OAuthMetadata{}, now) || (!g.AccessExpiresAt.IsZero() && !g.AccessExpiresAt.After(now.Add(30*time.Second))) {
+	deadline := now
+	if secrets.RefreshToken != "" {
+		deadline = deadline.Add(30 * time.Second)
+	}
+	if !validOAuthClient(client, OAuthMetadata{}, now) || (!g.AccessExpiresAt.IsZero() && !g.AccessExpiresAt.After(deadline)) {
 		return "", mcpcmd.ErrAuthRequired
 	}
 	return secrets.AccessToken, nil
@@ -302,8 +311,14 @@ func (s *Grants) prepareAuthorization(ctx context.Context, revision mcpcmd.Revis
 	if err != nil {
 		return mcpcmd.Grant{}, OAuthMetadata{}, safeOperationError(err)
 	}
-	if metadata.Resource != d.URL || !validRemoteURL(metadata.Issuer) || !validRemoteURL(metadata.TokenEndpoint) || !includesScopes(metadata.Scopes, d.Scopes) {
+	if metadata.Resource != d.URL || !validRemoteURL(metadata.Issuer) || !validRemoteURL(metadata.TokenEndpoint) {
 		return mcpcmd.Grant{}, OAuthMetadata{}, mcpcmd.ErrInvalid
+	}
+	metadata.Scopes = slices.Clone(metadata.Scopes)
+	metadata.ResourceScopes = slices.Clone(metadata.ResourceScopes)
+	scopes, err := authorizationScopes(metadata, d.Scopes)
+	if err != nil {
+		return mcpcmd.Grant{}, OAuthMetadata{}, err
 	}
 	if (flow == authorizationBrowser && !supportsBrowserAuthorization(metadata)) || (flow == authorizationDevice && (!supportsDeviceAuthorization(metadata) || client.ID == "")) {
 		return mcpcmd.Grant{}, OAuthMetadata{}, mcpcmd.ErrUnavailable
@@ -315,7 +330,7 @@ func (s *Grants) prepareAuthorization(ctx context.Context, revision mcpcmd.Revis
 		}
 	}
 	if client.ID == "" {
-		client, err = s.oauth.Register(discoveryCtx, metadata, redirectURI, d.Scopes)
+		client, err = s.oauth.Register(discoveryCtx, metadata, redirectURI, scopes)
 		if err != nil {
 			return mcpcmd.Grant{}, OAuthMetadata{}, safeOperationError(err)
 		}
@@ -334,7 +349,7 @@ func (s *Grants) prepareAuthorization(ctx context.Context, revision mcpcmd.Revis
 	}
 	g := previous
 	g.Generation++
-	g.Status, g.Scopes, g.TokenEndpointAuthMethod = mcpcmd.GrantAuthRequired, slices.Clone(d.Scopes), client.AuthMethod
+	g.Status, g.Scopes, g.TokenEndpointAuthMethod = mcpcmd.GrantAuthRequired, scopes, client.AuthMethod
 	g.ClientSecretExpiresAt, g.AccessExpiresAt, g.UpdatedAt = client.SecretExpiresAt, time.Time{}, authority.At
 	if err := s.save(ctx, previous, g, GrantSecrets{ClientSecret: client.Secret}, mcpcmd.GrantRegister, &authority, ""); err != nil {
 		return mcpcmd.Grant{}, OAuthMetadata{}, err
