@@ -12,6 +12,7 @@ const partialEntry = phase.startsWith('managed-partial-');
 let createdAndAuthorized = false;
 const staticEntry = phase.startsWith('managed-static-');
 const scopeChange = phase.startsWith('managed-scopes-');
+const renewalProfile = phase.startsWith('managed-renewal-');
 const missingScopes = phase.startsWith('managed-missing-');
 const identityOnly = missingScopes || phase.startsWith('managed-equal-');
 const existingEntry = phase === 'managed-revoke' || scopeChange || identityOnly || phase.startsWith('managed-restore-') || pendingRestart;
@@ -60,7 +61,7 @@ async function clientSettings(page, register = false) {
   await page.getByLabel('Client authentication', { exact: true }).selectOption(staticEntry ? 'client_secret_basic' : 'none');
   await page.getByLabel('Client secret', { exact: true }).fill(staticEntry ? clientSecret : '');
   const scopes = page.getByLabel('OAuth scopes · one per line', { exact: true });
-  await scopes.fill(scopeChange ? '' : 'tools:read');
+  await scopes.fill(scopeChange || renewalProfile ? '' : 'tools:read');
   if (missingScopes) await scopes.evaluate(field => { field.disabled = true; });
 }
 async function begin(page, expectedStatus) {

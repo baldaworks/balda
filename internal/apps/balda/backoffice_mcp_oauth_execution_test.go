@@ -183,6 +183,9 @@ func (p *oauthBrowserACP) NewSession(ctx context.Context, request acp.NewSession
 		}
 		private := make(map[string]string, len(headers))
 		for _, h := range headers {
+			if strings.EqualFold(h.Name, "Authorization") || strings.EqualFold(h.Name, "X-Worker-Secret") {
+				return acp.NewSessionResponse{}, fmt.Errorf("external ACP received upstream credential headers")
+			}
 			private[h.Name] = h.Value
 		}
 		client := mcp.NewClient(&mcp.Implementation{Name: "external-browser-ACP", Version: "1"}, nil)
@@ -234,6 +237,7 @@ func (p *oauthBrowserACP) Prompt(ctx context.Context, request acp.PromptRequest)
 			text = content.Text
 		}
 	}
+	text += fmt.Sprintf("\nNative session %d/%s", os.Getpid(), request.SessionId)
 	if err := p.connection.SessionUpdate(ctx, acp.SessionNotification{SessionId: request.SessionId, Update: acp.UpdateAgentMessageText(text)}); err != nil {
 		return acp.PromptResponse{}, err
 	}

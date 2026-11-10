@@ -576,6 +576,24 @@ every supplied `iss` must exactly match the trusted OAuth issuer, and the actual
 callback path must match the attempt. An upstream login identity provider is
 not the MCP code issuer.
 
+An empty Backoffice resource-scope choice uses the protected resource's
+advertised access scopes; omitted PRM scopes do not default to all AS identity
+permissions. Explicit resource choices remain narrow. Balda automatically adds
+`offline_access` only when that trusted authorization server explicitly lists it
+and advertises the `refresh_token` grant. No manual protocol scope setting is
+needed. A missing token-response scope retains requested authorization;
+explicitly granted resource access is enforced, while optional renewal refusal
+can leave a valid nonrenewable grant.
+
+Refresh tokens, when actually issued, remain encrypted behind the private bridge
+and are used lazily as access expires, including rotation. Without renewal
+credentials, access works until its actual expiry and then requires sign-in.
+Rejected or insufficient renewal also requires sign-in, rather than an unsigned
+upstream request or an attachment retry that invents authorization. Reauthorizing
+the same connection/resource/issuer/client binding can restore compatible
+retained sessions. Dynamic registration may create a different client; older
+pins stay on their exact prior binding, and `/reset` does not repin them.
+
 Automatic client registration receives the selected exact URI; pre-registered
 clients must have it added at the authorization server. See
 [OAuth authorization](backoffice.md#oauth-authorization) for a deterministic URI

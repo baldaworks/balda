@@ -19,6 +19,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -57,13 +58,18 @@ func TestBackofficeMCPOAuthBrowserWorkflow(t *testing.T) {
 		transport, flow, base string
 		width                 int
 		omitIssuer            bool
+		renewal               string
 	}{
-		{"http", "browser", "", 1440, false}, {"http", "device", "/balda", 390, false},
-		{"sse", "browser", "/balda", 1440, false}, {"sse", "device", "", 390, false},
-		{"http", "browser", "/balda", 1440, true},
+		{"http", "browser", "", 1440, false, ""}, {"http", "device", "/balda", 390, false, ""},
+		{"sse", "browser", "/balda", 1440, false, ""}, {"sse", "device", "", 390, false, ""},
+		{"http", "browser", "/balda", 1440, true, ""},
+		{"http", "browser", "/balda", 1440, true, "supported"},
+		{"http", "browser", "/balda", 1440, true, "declined"},
 	} {
 		name := scenario.transport + "/" + scenario.flow
-		if scenario.omitIssuer {
+		if scenario.renewal != "" {
+			name += "-renewal-" + scenario.renewal
+		} else if scenario.omitIssuer {
 			name += "-without-issuer"
 		}
 		t.Run(name, func(t *testing.T) {
@@ -87,11 +93,21 @@ func TestBackofficeMCPOAuthBrowserWorkflow(t *testing.T) {
 			t.Cleanup(func() { _ = p.Close() })
 			issuer := newBackofficeOAuthIssuer(t, scenario.transport)
 			issuer.omitIssuerResponse.Store(scenario.omitIssuer)
+			issuer.renewalProfile.Store(scenario.renewal != "")
+			issuer.declineRenewal.Store(scenario.renewal == "declined")
 			credentials, err := mcpmanage.New(base64.StdEncoding.EncodeToString(make([]byte, 32)))
 			if err != nil {
 				t.Fatal(err)
 			}
-			grants, err := mcpmanage.NewGrants(credentials, mcpfx.NewGrantStore(p.MCP()), mcpfx.NewOAuthProvider(issuer.server.Client()))
+			var grantStore mcpmanage.GrantStore = mcpfx.NewGrantStore(p.MCP())
+			leaseStore := &oauthControlledExpiryStore{GrantStore: grantStore, lease: 35 * time.Second}
+			if scenario.renewal != "" {
+				if scenario.renewal == "declined" {
+					leaseStore.lease = 10 * time.Second
+				}
+				grantStore = leaseStore
+			}
+			grants, err := mcpmanage.NewGrants(credentials, grantStore, mcpfx.NewOAuthProvider(issuer.server.Client()))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -184,6 +200,11 @@ func TestBackofficeMCPOAuthBrowserWorkflow(t *testing.T) {
 				return runtime, catalog, registry, binder, flows
 			}
 			runtime, catalog, registry, binder, flows := start("/mcp")
+			if scenario.renewal != "" {
+				runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "managed-renewal-"+scenario.transport, scenario.width)
+				verifyOAuthBrowserRenewal(t, catalog, registry, binder, providers, p, credentials, leaseStore, issuer, scenario.renewal == "declined")
+				return
+			}
 			captures, err := p.MCP().ListMCPConnections(t.Context())
 			if err != nil || len(captures) != 0 {
 				t.Fatal("startup must not create a configured capture")
@@ -248,8 +269,8 @@ func TestBackofficeMCPOAuthBrowserWorkflow(t *testing.T) {
 			if err != nil || !found || !sameOAuthBrowserRevision(retained, managedBefore) || managedAfter.ID == managedBefore.ID || len(managedAfter.Definition.Scopes) != 0 || managedAfter.Definition.AuthBinding == nil {
 				t.Fatal("native scope change lost the exact historical revision or current authorization")
 			}
-			if _, err := grants.RequestCredentials(t.Context(), *managedBefore.Definition.AuthBinding, managedBefore.Definition.Scopes); !errors.Is(err, mcpcmd.ErrAuthRequired) {
-				t.Fatal("narrowed shared authorization did not fail the scoped historical pin closed")
+			if _, err := grants.RequestCredentials(t.Context(), *managedBefore.Definition.AuthBinding, managedBefore.Definition.Scopes); err != nil {
+				t.Fatal("discovery-derived resource defaults did not preserve compatible historical scope access")
 			}
 			scopePin, err := catalog.Store().Application()
 			if err != nil {
@@ -450,8 +471,8 @@ func runOAuthBrowserRestart(t *testing.T, base, issuer, flow, phase string, widt
 	t.Log(string(output))
 }
 
-type backofficeOAuthRequest struct{ resource, challenge, redirect, state, clientID string }
-type backofficeOAuthDevice struct{ resource, clientID string }
+type backofficeOAuthRequest struct{ resource, challenge, redirect, state, clientID, scope string }
+type backofficeOAuthDevice struct{ resource, clientID, scope string }
 
 type oauthBrowserAuthorizations struct {
 	backoffice.MCPAuthorizations
@@ -491,6 +512,14 @@ type backofficeOAuthIssuer struct {
 	deviceUnsupported   atomic.Bool
 	metadataUnavailable atomic.Bool
 	omitIssuerResponse  atomic.Bool
+	renewalProfile      atomic.Bool
+	declineRenewal      atomic.Bool
+	rejectRefresh       atomic.Bool
+	refreshes           atomic.Int32
+	accessVersion       atomic.Int32
+	currentAccess       atomic.Value
+	currentRefresh      atomic.Value
+	upstreamRequests    atomic.Int32
 	registrations       atomic.Int32
 	deviceStarts        atomic.Int32
 	deviceBegins        atomic.Int32
@@ -502,6 +531,8 @@ type backofficeOAuthIssuer struct {
 func newBackofficeOAuthIssuer(t *testing.T, transport string) *backofficeOAuthIssuer {
 	t.Helper()
 	f := &backofficeOAuthIssuer{codes: make(map[string]backofficeOAuthRequest), devices: make(map[string]backofficeOAuthDevice), approved: make(map[string]bool)}
+	f.currentAccess.Store("synthetic-browser-access")
+	f.currentRefresh.Store("")
 	handlers := make(map[string]http.Handler)
 	for _, resource := range []string{"/mcp", "/changed", "/public"} {
 		sdk := mcp.NewServer(&mcp.Implementation{Name: "oauth-browser-tools", Version: "1"}, nil)
@@ -535,10 +566,17 @@ func newBackofficeOAuthIssuer(t *testing.T, transport string) *backofficeOAuthIs
 				resource = "/mcp"
 			}
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"resource": origin + resource, "authorization_servers": []string{origin}, "scopes_supported": []string{"tools:read"}})
+			scopes := []string{"tools:read"}
+			if f.renewalProfile.Load() {
+				scopes = []string{"openid"}
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"resource": origin + resource, "authorization_servers": []string{origin}, "scopes_supported": scopes})
 		case r.URL.Path == "/.well-known/oauth-authorization-server":
 			w.Header().Set("Content-Type", "application/json")
 			metadata := map[string]any{"issuer": origin, "authorization_endpoint": origin + "/authorize", "token_endpoint": origin + "/token", "registration_endpoint": origin + "/register", "code_challenge_methods_supported": []string{"S256"}, "token_endpoint_auth_methods_supported": []string{"none", "client_secret_basic"}, "response_types_supported": []string{"code"}, "grant_types_supported": []string{"authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code"}, "scopes_supported": []string{"tools:read"}, "authorization_response_iss_parameter_supported": true}
+			if f.renewalProfile.Load() {
+				metadata["scopes_supported"] = []string{"openid", "profile", "email", "offline_access"}
+			}
 			if f.omitIssuerResponse.Load() {
 				delete(metadata, "authorization_response_iss_parameter_supported")
 			}
@@ -582,7 +620,7 @@ func newBackofficeOAuthIssuer(t *testing.T, transport string) *backofficeOAuthIs
 				}
 				code := rand.Text()
 				f.mu.Lock()
-				f.codes[code] = backofficeOAuthRequest{resource: q.Get("resource"), challenge: q.Get("code_challenge"), redirect: q.Get("redirect_uri"), state: q.Get("state"), clientID: q.Get("client_id")}
+				f.codes[code] = backofficeOAuthRequest{resource: q.Get("resource"), challenge: q.Get("code_challenge"), redirect: q.Get("redirect_uri"), state: q.Get("state"), clientID: q.Get("client_id"), scope: q.Get("scope")}
 				f.mu.Unlock()
 				w.Header().Set("Cache-Control", "no-store")
 				w.Header().Set("Content-Type", "text/html")
@@ -624,7 +662,7 @@ func newBackofficeOAuthIssuer(t *testing.T, transport string) *backofficeOAuthIs
 			code := rand.Text()
 			f.deviceStarts.Add(1)
 			f.mu.Lock()
-			f.devices[code] = backofficeOAuthDevice{resource: r.Form.Get("resource"), clientID: oauthBrowserRequestClientID(r)}
+			f.devices[code] = backofficeOAuthDevice{resource: r.Form.Get("resource"), clientID: oauthBrowserRequestClientID(r), scope: r.Form.Get("scope")}
 			f.mu.Unlock()
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{"device_code": code, "user_code": "SYNTHETIC-CODE", "verification_uri": origin + "/verify", "verification_uri_complete": origin + "/verify?device=" + code, "expires_in": 120, "interval": 1})
@@ -650,21 +688,32 @@ func newBackofficeOAuthIssuer(t *testing.T, transport string) *backofficeOAuthIs
 			_ = r.ParseForm()
 			resource := r.Form.Get("resource")
 			valid := false
+			scope := ""
 			f.mu.Lock()
 			switch r.Form.Get("grant_type") {
 			case "authorization_code":
 				request, ok := f.codes[r.Form.Get("code")]
 				valid = ok && request.resource == resource && request.clientID == oauthBrowserRequestClientID(r) && request.redirect == r.Form.Get("redirect_uri") && request.challenge == oauth2.S256ChallengeFromVerifier(r.Form.Get("code_verifier"))
+				scope = request.scope
 				delete(f.codes, r.Form.Get("code"))
 			case "urn:ietf:params:oauth:grant-type:device_code":
 				code := r.Form.Get("device_code")
 				valid = f.devices[code].resource == resource && f.devices[code].clientID == oauthBrowserRequestClientID(r) && f.approved[code]
+				scope = f.devices[code].scope
+			case "refresh_token":
+				f.refreshes.Add(1)
+				valid = f.renewalProfile.Load() && !f.rejectRefresh.Load() && r.Form.Get("refresh_token") != "" && r.Form.Get("refresh_token") == f.currentRefresh.Load().(string) && resource == origin+"/mcp"
+				scope = r.Form.Get("scope")
 			}
 			f.mu.Unlock()
 			w.Header().Set("Content-Type", "application/json")
 			if !valid {
 				w.WriteHeader(http.StatusBadRequest)
-				_ = json.NewEncoder(w).Encode(map[string]string{"error": "authorization_pending"})
+				code := "authorization_pending"
+				if r.Form.Get("grant_type") == "refresh_token" {
+					code = "invalid_grant"
+				}
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": code})
 				return
 			}
 			if !validOAuthBrowserClient(r) {
@@ -672,8 +721,29 @@ func newBackofficeOAuthIssuer(t *testing.T, transport string) *backofficeOAuthIs
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
-			f.exchanges.Add(1)
-			_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "synthetic-browser-access", "refresh_token": "synthetic-browser-refresh", "token_type": "Bearer", "expires_in": 3600, "scope": "tools:read", "resource": resource})
+			if r.Form.Get("grant_type") != "refresh_token" {
+				f.exchanges.Add(1)
+			}
+			response := map[string]any{"access_token": "synthetic-browser-access", "refresh_token": "synthetic-browser-refresh", "token_type": "Bearer", "expires_in": 3600, "scope": scope, "resource": resource}
+			if f.renewalProfile.Load() {
+				if scope != "openid offline_access" {
+					t.Error("normal authorization did not select resource defaults plus supported renewal")
+				}
+				version := f.accessVersion.Add(1)
+				access := fmt.Sprintf("synthetic-browser-access-%d", version)
+				f.currentAccess.Store(access)
+				response["access_token"], response["expires_in"] = access, 35
+				delete(response, "refresh_token")
+				delete(response, "scope")
+				if slices.Contains(strings.Fields(scope), "offline_access") && !f.declineRenewal.Load() {
+					refresh := fmt.Sprintf("synthetic-browser-refresh-%d", version)
+					f.currentRefresh.Store(refresh)
+					response["refresh_token"] = refresh
+				} else {
+					response["scope"], response["expires_in"] = "openid", 10
+				}
+			}
+			_ = json.NewEncoder(w).Encode(response)
 		case r.URL.Path == "/fixture/unavailable":
 			f.unavailable.Store(r.URL.Query().Get("value") == "true")
 			w.WriteHeader(http.StatusNoContent)
@@ -686,6 +756,7 @@ func newBackofficeOAuthIssuer(t *testing.T, transport string) *backofficeOAuthIs
 		case r.URL.Path == "/fixture/counts":
 			_ = json.NewEncoder(w).Encode(map[string]int32{"exchanges": f.exchanges.Load(), "device_starts": f.deviceStarts.Load(), "device_begins": f.deviceBegins.Load()})
 		default:
+			f.upstreamRequests.Add(1)
 			resource := "/mcp"
 			if strings.HasPrefix(r.URL.Path, "/changed") {
 				resource = "/changed"
@@ -698,7 +769,7 @@ func newBackofficeOAuthIssuer(t *testing.T, transport string) *backofficeOAuthIs
 				w.WriteHeader(http.StatusForbidden)
 				return
 			}
-			if resource != "/public" && r.Header.Get("Authorization") != "Bearer synthetic-browser-access" {
+			if resource != "/public" && r.Header.Get("Authorization") != "Bearer "+f.currentAccess.Load().(string) {
 				w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer resource_metadata="%s/.well-known/oauth-protected-resource%s"`, origin, r.URL.Path))
 				w.WriteHeader(http.StatusUnauthorized)
 				return
