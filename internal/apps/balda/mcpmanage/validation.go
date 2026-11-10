@@ -104,13 +104,8 @@ func validateTransportRevision(r mcpcmd.Revision, values protectedValues) error 
 		return mcpcmd.ErrInvalid
 	}
 	for _, scope := range d.Scopes {
-		if scope == "" || len(scope) > 256 {
+		if !validOAuthScope(scope) {
 			return mcpcmd.ErrInvalid
-		}
-		for _, c := range scope {
-			if c < 0x21 || c > 0x7e || c == '"' || c == '\\' {
-				return mcpcmd.ErrInvalid
-			}
 		}
 	}
 	if binding := d.AuthBinding; binding != nil {

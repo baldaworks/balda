@@ -3,9 +3,11 @@ package mcpfx
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -17,13 +19,15 @@ import (
 
 const workerOAuthScope = "tools"
 const workerAuthorizationMetadataPath = "/.well-known/oauth-authorization-server"
+const workerResourceMetadataPath = "/.well-known/oauth-protected-resource/mcp"
+const workerTokenEndpointPath = "/token"
 
 func TestWorkerOAuthSDKDiscoveryRegistrationAndBoundRotation(t *testing.T) {
 	var base string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
-		case "/.well-known/oauth-protected-resource/mcp":
+		case workerResourceMetadataPath:
 			_ = json.NewEncoder(w).Encode(map[string]any{"resource": base + "/mcp", "authorization_servers": []string{base}, "scopes_supported": []string{workerOAuthScope}, "bearer_methods_supported": []string{"header"}})
 		case workerAuthorizationMetadataPath:
 			_ = json.NewEncoder(w).Encode(map[string]any{"issuer": base, "authorization_endpoint": base + "/authorize", "token_endpoint": base + "/token", "registration_endpoint": base + "/register", "code_challenge_methods_supported": []string{"S256"}, "token_endpoint_auth_methods_supported": []string{mcpcmd.ClientAuthSecretBasic}, "response_types_supported": []string{"code"}, "grant_types_supported": []string{"authorization_code", "refresh_token"}, "scopes_supported": []string{workerOAuthScope}})
@@ -34,7 +38,7 @@ func TestWorkerOAuthSDKDiscoveryRegistrationAndBoundRotation(t *testing.T) {
 			}
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(map[string]any{"client_id": "installation-client", "client_secret": "registration-secret", "client_secret_expires_at": 0, "token_endpoint_auth_method": mcpcmd.ClientAuthSecretBasic, "redirect_uris": []string{base + "/callback"}})
-		case "/token":
+		case workerTokenEndpointPath:
 			if err := r.ParseForm(); err != nil {
 				t.Error(err)
 			}
@@ -192,7 +196,7 @@ func TestWorkerRefreshUsesBoundIssuerAfterCustomResourceMetadata(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(map[string]any{"resource": base + "/mcp", "authorization_servers": []string{base}})
 		case workerAuthorizationMetadataPath:
 			_ = json.NewEncoder(w).Encode(map[string]any{"issuer": base, "authorization_endpoint": base + "/authorize", "token_endpoint": base + "/token", "code_challenge_methods_supported": []string{"S256"}, "token_endpoint_auth_methods_supported": []string{mcpcmd.ClientAuthNone}})
-		case "/token":
+		case workerTokenEndpointPath:
 			_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "custom-prm-access", "token_type": "Bearer", "expires_in": 3600})
 		default:
 			http.NotFound(w, r)
@@ -214,5 +218,42 @@ func TestWorkerRefreshUsesBoundIssuerAfterCustomResourceMetadata(t *testing.T) {
 	token, err := p.Refresh(t.Context(), fresh, grant, mcpmanage.GrantSecrets{RefreshToken: "custom-prm-refresh"})
 	if err != nil || token.Secrets.AccessToken != "custom-prm-access" {
 		t.Fatalf("registered custom PRM grant cannot refresh: %v", err)
+	}
+}
+
+func TestWorkerDiscoveryRetainsAuthorizationServerScopeCapabilities(t *testing.T) {
+	for _, resourceScopes := range [][]string{nil, {}, {"openid"}} {
+		t.Run(fmt.Sprintf("PRM=%v/omitted=%v", resourceScopes, resourceScopes == nil), func(t *testing.T) {
+			var origin string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case workerResourceMetadataPath:
+					prm := map[string]any{"resource": origin + "/mcp", "authorization_servers": []string{origin}}
+					if resourceScopes != nil {
+						prm["scopes_supported"] = resourceScopes
+					}
+					_ = json.NewEncoder(w).Encode(prm)
+				case workerAuthorizationMetadataPath:
+					_ = json.NewEncoder(w).Encode(map[string]any{"issuer": origin, "authorization_endpoint": origin + "/authorize", "token_endpoint": origin + "/token", "code_challenge_methods_supported": []string{workerPKCEMethod}, "scopes_supported": []string{"openid", "profile", "email", "offline_access"}, "grant_types_supported": []string{"authorization_code", "refresh_token"}})
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
+			origin = server.URL
+			provider := NewOAuthProvider(server.Client())
+			metadata, err := provider.Discover(t.Context(), origin+"/mcp", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Join(metadata.Scopes, " ") != "openid profile email offline_access" || !slices.Equal(metadata.ResourceScopes, resourceScopes) || (metadata.ResourceScopes == nil) != (resourceScopes == nil) {
+				t.Fatalf("discovery lost resource/AS scope provenance: resource=%v AS=%v", metadata.ResourceScopes, metadata.Scopes)
+			}
+			refreshed, err := provider.DiscoverIssuer(t.Context(), mcpcmd.AuthBinding{Resource: metadata.Resource, Issuer: metadata.Issuer})
+			if err != nil || refreshed.ResourceScopes != nil || !slices.Equal(refreshed.Scopes, metadata.Scopes) {
+				t.Fatalf("issuer-only refresh discovery reapplied resource defaults: %v", err)
+			}
+		})
 	}
 }

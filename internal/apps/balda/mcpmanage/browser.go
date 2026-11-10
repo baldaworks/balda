@@ -174,9 +174,11 @@ func (s *Authorizations) CompleteBrowser(ctx context.Context, callback mcpcmd.Br
 	updated.Generation++
 	updated.Status = mcpcmd.GrantAuthorized
 	updated.AccessExpiresAt = token.ExpiresAt
-	if !validGrantSecrets(updated, token.Secrets) || (!token.ExpiresAt.IsZero() && !token.ExpiresAt.After(time.Now())) || (token.Scopes != nil && !containsScopes(token.Scopes, g.Scopes)) {
+	scopes, validScopes := grantedTokenScopes(g.Scopes, token.Scopes)
+	if !validGrantSecrets(updated, token.Secrets) || (!token.ExpiresAt.IsZero() && !token.ExpiresAt.After(time.Now())) || !validScopes {
 		return mcpcmd.Grant{}, mcpcmd.ErrAuthRequired
 	}
+	updated.Scopes = scopes
 	// Cancellation and commit have one winner. Protocol I/O finishes before this
 	// lock; a successful cancel cannot race an already dispatched storage commit.
 	err = func() error {

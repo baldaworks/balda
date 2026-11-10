@@ -44,7 +44,7 @@ func (p *OAuthProvider) DiscoverIssuer(ctx context.Context, binding mcpcmd.AuthB
 	if len(methods) == 0 {
 		methods = []string{mcpcmd.ClientAuthSecretBasic}
 	}
-	return mcpmanage.OAuthMetadata{DeviceAuthorizationEndpoint: metadataTransport.deviceEndpoint, Resource: binding.Resource, Issuer: server.Issuer, AuthorizationEndpoint: server.AuthorizationEndpoint, TokenEndpoint: server.TokenEndpoint, RegistrationEndpoint: server.RegistrationEndpoint, Scopes: server.ScopesSupported, AuthMethods: methods, GrantTypes: server.GrantTypesSupported, ResponseTypes: server.ResponseTypesSupported, PKCEMethods: server.CodeChallengeMethodsSupported, RequireIssuerParameter: server.AuthorizationResponseIssParameterSupported}, nil
+	return mcpmanage.OAuthMetadata{DeviceAuthorizationEndpoint: metadataTransport.deviceEndpoint, Resource: binding.Resource, Issuer: server.Issuer, AuthorizationEndpoint: server.AuthorizationEndpoint, TokenEndpoint: server.TokenEndpoint, RegistrationEndpoint: server.RegistrationEndpoint, Scopes: slices.Clone(server.ScopesSupported), AuthMethods: methods, GrantTypes: server.GrantTypesSupported, ResponseTypes: server.ResponseTypesSupported, PKCEMethods: server.CodeChallengeMethodsSupported, RequireIssuerParameter: server.AuthorizationResponseIssParameterSupported}, nil
 }
 
 // NewOAuthProvider owns a bounded non-redirecting protocol client.
@@ -100,18 +100,7 @@ func (p *OAuthProvider) Discover(ctx context.Context, resource, metadataURL stri
 	if err != nil {
 		return mcpmanage.OAuthMetadata{}, err
 	}
-	scopes := resourceMetadata.ScopesSupported
-	if scopes == nil {
-		scopes = metadata.Scopes
-	} else if metadata.Scopes != nil {
-		scopes = make([]string, 0, len(scopes))
-		for _, scope := range resourceMetadata.ScopesSupported {
-			if slices.Contains(metadata.Scopes, scope) {
-				scopes = append(scopes, scope)
-			}
-		}
-	}
-	metadata.Scopes = scopes
+	metadata.ResourceScopes = slices.Clone(resourceMetadata.ScopesSupported)
 	return metadata, nil
 }
 

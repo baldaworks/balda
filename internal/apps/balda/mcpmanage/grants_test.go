@@ -3,6 +3,7 @@ package mcpmanage
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -107,6 +108,9 @@ type grantOAuth struct {
 	registrationRedirect  string
 	authorizationRedirect string
 	exchangeRedirect      string
+	registrationScopes    []string
+	authorizationScopes   []string
+	exchangeScopes        []string
 }
 
 func (o *grantOAuth) BeginDevice(ctx context.Context, _ OAuthMetadata, g mcpcmd.Grant, secrets GrantSecrets) (OAuthDevice, error) {
@@ -119,12 +123,14 @@ func (o *grantOAuth) PollDevice(ctx context.Context, _ OAuthMetadata, g mcpcmd.G
 	return o.poll(ctx, g, secrets, device)
 }
 
-func (o *grantOAuth) BeginCode(_ OAuthMetadata, _ mcpcmd.Grant, redirectURI string, state string) (string, string, error) {
+func (o *grantOAuth) BeginCode(_ OAuthMetadata, g mcpcmd.Grant, redirectURI string, state string) (string, string, error) {
 	o.authorizationRedirect = redirectURI
+	o.authorizationScopes = slices.Clone(g.Scopes)
 	return "https://issuer.example.org/authorize?state=" + state, "private-pkce-verifier", nil
 }
 func (o *grantOAuth) ExchangeCode(ctx context.Context, _ OAuthMetadata, g mcpcmd.Grant, _ GrantSecrets, redirectURI string, code, verifier string) (OAuthToken, error) {
 	o.exchangeRedirect = redirectURI
+	o.exchangeScopes = slices.Clone(g.Scopes)
 	return o.exchange(ctx, g, code, verifier)
 }
 
@@ -135,8 +141,9 @@ func (o *grantOAuth) DiscoverIssuer(context.Context, mcpcmd.AuthBinding) (OAuthM
 	o.discoveries.Add(1)
 	return o.metadata, nil
 }
-func (o *grantOAuth) Register(ctx context.Context, _ OAuthMetadata, redirectURI string, _ []string) (OAuthClient, error) {
+func (o *grantOAuth) Register(ctx context.Context, _ OAuthMetadata, redirectURI string, scopes []string) (OAuthClient, error) {
 	o.registrationRedirect = redirectURI
+	o.registrationScopes = slices.Clone(scopes)
 	if o.register != nil {
 		return o.register(ctx)
 	}
@@ -583,5 +590,33 @@ func TestWorkerRegistrationCannotCommitWithAuthorityExpiredDuringDiscovery(t *te
 	}
 	if len(store.writes) != 0 {
 		t.Fatal("registration survived expired browser authority")
+	}
+}
+
+func TestNonrenewableWorkerAccessRemainsUsableUntilActualExpiry(t *testing.T) {
+	for _, diagnostic := range []bool{false, true} {
+		t.Run(map[bool]string{false: "worker", true: "diagnostic"}[diagnostic], func(t *testing.T) {
+			grants, store, oauth := grantHarness(t)
+			store.grant.AccessExpiresAt = time.Now().Add(10 * time.Second)
+			var err error
+			store.grant.ProtectedValues, err = grants.credentials.ProtectGrant(store.grant, GrantSecrets{AccessToken: "valid-short-access", TokenType: "Bearer"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diagnostic {
+				token, err := grants.DiagnosticAccessToken(t.Context(), store.grant.Binding, []string{"tools"})
+				if err != nil || token != "valid-short-access" {
+					t.Fatalf("unexpired nonrenewable diagnostic access rejected: %v", err)
+				}
+			} else {
+				token, err := grants.RequestCredentials(t.Context(), store.grant.Binding, []string{"tools"})
+				if err != nil || token.AccessToken != "valid-short-access" {
+					t.Fatalf("unexpired nonrenewable worker access rejected: %v", err)
+				}
+			}
+			if len(store.writes) != 0 || oauth.discoveries.Load() != 0 || oauth.refreshes.Load() != 0 {
+				t.Fatal("valid nonrenewable access discovered, refreshed or mutated authorization")
+			}
+		})
 	}
 }

@@ -390,13 +390,13 @@ func mcpAuthorizationFailure(err error) (int, string) {
 	status, message := http.StatusServiceUnavailable, "Authorization could not complete. Open the connection and start again. Use browser authorization if the service does not support device authorization."
 	switch {
 	case errors.Is(err, mcpcmd.ErrInvalid):
-		status, message = 400, "Check the client settings and scopes, then start again. A static Authorization header cannot be combined with OAuth. Replacement client secrets are not retained."
+		status, message = 400, "Open the current connection, review its client settings and resource scopes, then sign in again."
 	case errors.Is(err, mcpcmd.ErrForbidden):
 		status, message = 403, "Your administrator authority changed. Confirm your current session and start again."
 	case errors.Is(err, mcpcmd.ErrNotFound), errors.Is(err, mcpcmd.ErrAuthAttempt):
 		status, message = 404, "This authorization attempt is no longer available. It may have ended or the host restarted. Reopen MCP and start again."
 	case errors.Is(err, mcpcmd.ErrConflict):
-		status, message = 409, "The connection or authorization changed. Open its current state before retrying. If it has a static Authorization header, remove that header from the definition before starting OAuth."
+		status, message = 409, "Authorization could not continue. Open the current connection before retrying. If it has a static Authorization header, remove that header from the definition before starting OAuth."
 	case errors.Is(err, mcpcmd.ErrAuthRequired):
 		status, message = 403, "Authorization was denied, expired or no longer valid. Open the connection and start a new attempt."
 	case errors.Is(err, mcpcmd.ErrCredentials):

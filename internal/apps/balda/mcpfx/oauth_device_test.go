@@ -20,7 +20,7 @@ func TestWorkerDeviceDiscoveryAndAuthorizationWithoutBrowserCapabilities(t *test
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
-		case "/.well-known/oauth-protected-resource/mcp":
+		case workerResourceMetadataPath:
 			_ = json.NewEncoder(w).Encode(map[string]any{"resource": base + "/mcp", "authorization_servers": []string{base}, "scopes_supported": []string{workerOAuthScope}})
 		case workerAuthorizationMetadataPath:
 			_ = json.NewEncoder(w).Encode(map[string]any{"issuer": base, "token_endpoint": base + "/token", "device_authorization_endpoint": base + "/device", "grant_types_supported": []string{deviceGrantType}, "token_endpoint_auth_methods_supported": []string{mcpcmd.ClientAuthSecretBasic}})

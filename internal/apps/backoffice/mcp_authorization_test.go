@@ -431,3 +431,50 @@ func TestMCPCallbackRejectsMalformedPathsAndAmbiguousProtocolWithoutReplay(t *te
 		})
 	}
 }
+
+func TestMCPOAuthFailuresGiveCurrentConnectionRecovery(t *testing.T) {
+	const conflictGuidance = "Authorization could not continue. Open the current connection before retrying. If it has a static Authorization header, remove that header from the definition before starting OAuth."
+	provider, config := newHTTPAppTestState(t)
+	now := time.Now().UTC()
+	createAccessTestUser(t, provider.Users(), usercmd.User{ID: "admin", Username: "admin", NormalizedUsername: "admin", DisplayName: "Admin", Role: usercmd.RoleAdministrator, Status: usercmd.StatusActive, Primary: true, Version: 1, Credential: usercmd.Credential{State: usercmd.CredentialStateActive, Version: 1}, CreatedAt: now, UpdatedAt: now})
+	app, err := newHTTPApp(provider.Users(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := mcpcmd.Item{Connection: mcpcmd.Connection{ID: "worker", Source: mcpcmd.SourceManaged}, Definition: mcpcmd.Definition{Transport: mcpcmd.TransportHTTP, OAuth: true}}
+	flows := &mcpAuthorizationFixture{item: item}
+	app.mcp, app.mcpAuthorizations = &mcpHTTPFixture{items: []mcpcmd.Item{item}}, flows
+	handler, err := app.handler()
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin := loginHTTPAppSession(t, handler, config, "admin")
+	for _, tc := range []struct {
+		name    string
+		err     error
+		header  bool
+		status  int
+		message string
+	}{
+		{"scope selection", mcpcmd.ErrInvalid, false, http.StatusBadRequest, "Open the current connection, review its client settings and resource scopes, then sign in again."},
+		{"renewal unavailable", mcpcmd.ErrAuthRequired, false, http.StatusForbidden, "Authorization was denied, expired or no longer valid. Open the connection and start a new attempt."},
+		{"changed authorization", mcpcmd.ErrConflict, false, http.StatusConflict, conflictGuidance},
+		{"static header conflict", mcpcmd.ErrConflict, true, http.StatusConflict, conflictGuidance},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flows.beginErr = tc.err
+			if tc.header {
+				item.Definition.Headers = map[string]mcpcmd.ValueBinding{"Authorization": {Kind: mcpcmd.ValueProtected}}
+			}
+			app.mcp = &mcpHTTPFixture{items: []mcpcmd.Item{item}}
+			response := performAccessMutation(t, handler, config, "/mcp/connections/worker/oauth/browser", url.Values{"csrf_token": {admin.csrf}, "client_secret": {"private-replacement-secret"}}, admin.access, admin.csrf, false)
+			status, message := mcpAuthorizationFailure(tc.err)
+			if status != tc.status || message != tc.message || response.Code != tc.status || !strings.Contains(response.Body.String(), tc.message) || !strings.Contains(response.Body.String(), `href="/mcp/connections/worker"`) {
+				t.Fatalf("authorization recovery status=%d, copy=%q", response.Code, message)
+			}
+			if strings.Contains(response.Body.String(), "private-replacement-secret") || response.Header().Get("Cache-Control") != noStoreCacheControl {
+				t.Fatal("authorization failure exposed replacement secret or lost private response policy")
+			}
+		})
+	}
+}

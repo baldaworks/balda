@@ -167,9 +167,11 @@ func (s *Authorizations) installDevice(ctx context.Context, a *authorizationAtte
 	updated := g
 	updated.Generation++
 	updated.Status, updated.AccessExpiresAt = mcpcmd.GrantAuthorized, token.ExpiresAt
-	if !validGrantSecrets(updated, token.Secrets) || (!token.ExpiresAt.IsZero() && !token.ExpiresAt.After(time.Now())) || (token.Scopes != nil && !containsScopes(token.Scopes, g.Scopes)) {
+	scopes, validScopes := grantedTokenScopes(g.Scopes, token.Scopes)
+	if !validGrantSecrets(updated, token.Secrets) || (!token.ExpiresAt.IsZero() && !token.ExpiresAt.After(time.Now())) || !validScopes {
 		return mcpcmd.ErrAuthRequired
 	}
+	updated.Scopes = scopes
 	authority := a.Authority
 	authority.At = time.Now().UTC()
 	updated.UpdatedAt = authority.At

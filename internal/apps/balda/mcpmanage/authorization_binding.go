@@ -41,7 +41,7 @@ func (s *Definitions) BindAuthorization(ctx context.Context, request mcpcmd.Sele
 	if err != nil {
 		return mcpcmd.Item{}, safeOperationError(err)
 	}
-	if !found || grant.Binding != binding || !containsScopes(grant.Scopes, definition.Scopes) {
+	if !found || grant.Binding != binding || !containsResourceScopes(grant.Scopes, definition.Scopes) {
 		return mcpcmd.Item{}, mcpcmd.ErrAuthRequired
 	}
 	if grant.Status == mcpcmd.GrantDisconnected {

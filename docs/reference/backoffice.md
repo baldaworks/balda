@@ -876,6 +876,21 @@ is shared by the installation. Client secrets are encrypted and write-only. Brow
 supported server client registration when the ID is blank; device authorization
 requires a pre-registered client and server support. Unsupported device flows
 show an error; use browser authorization when the service supports that flow.
+Leave **OAuth scopes · one per line** empty to use the access scopes advertised
+by the protected MCP resource. If that metadata omits scopes, Balda does not
+substitute every scope advertised by the authorization server. An explicit
+resource selection remains narrow: selecting `tools:read` does not add
+`tools:write`, `profile` or `email`.
+
+When the trusted authorization server explicitly supports both `refresh_token`
+and `offline_access`, Balda adds the renewal permission automatically, even if
+the resource does not list it. Administrators select resource access; no manual
+protocol scope setting is needed. Registration, authorization and renewal use
+the resulting scope identity. An omitted token-response scope retains the
+requested identity; an explicit response must grant the required resource
+access. Refusing optional renewal permission does not invalidate working
+resource access.
+
 Browser authorization requires S256 PKCE. If discovery advertises
 `authorization_response_iss_parameter_supported: true`, the callback must include
 `iss`. Every supplied `iss` must exactly match the trusted OAuth issuer that
@@ -938,10 +953,28 @@ exchange or device polling prevents installation. After installation, the same
 host policy binds the exact initiating revision outside protocol locks. A later
 edit can reject that binding without assigning the saved grant to another
 revision. Existing session pins and ready runners retain their exact identity.
-Service authorization is shared: reauthorization replaces the grant for that
-connection, resource, issuer and client. Reducing scopes can deny tools to
-existing sessions that require the previous scopes. Their revisions stay
-unchanged; restoring sufficient authorization permits access again.
+Service authorization is shared for the exact connection, resource, issuer and
+client identity. Reauthorization with that same binding and sufficient resource
+access can repair its retained sessions without rewriting their revisions.
+Reducing actual resource permissions can deny tools to historical sessions that
+require them. Clearing an explicit scope choice selects resource metadata
+defaults; it does not necessarily remove previously granted resource access.
+
+A blank client ID may create a different client through dynamic registration.
+That new identity does not replace an older pinned client's credentials. Retained
+sessions stay on their exact prior binding; `/reset` also preserves the pinned
+provider and capabilities and does not migrate that binding. Reauthorize the
+same client identity to repair it, or use a new session that selects the current
+configuration when changing identity.
+
+A saved grant is renewable only when the server actually issues a refresh token.
+The private MCP credential bridge renews it on demand near or after access-token
+expiry, retaining rotated credentials securely; native providers receive only
+the local bridge capability. Server capability advertisements alone do not
+promise renewal. Without a refresh token, valid access remains usable until its
+actual expiry, then requires a new sign-in. Revoked, refused or insufficient
+renewal also requires sign-in; **Retry tool attachment** alone cannot create
+missing authorization or renewal credentials.
 
 **Authorized** means service authorization was saved; **Available** reflects
 observed tool readiness. Inspect both states on the connection. **Retry tool attachment**
