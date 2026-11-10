@@ -45,7 +45,7 @@ func TestWorkerProtocolRequestsPreserveResourceAndRenewalScopes(t *testing.T) {
 					_ = json.NewEncoder(w).Encode(map[string]any{"device_code": "private-device", "user_code": "CODE", "verification_uri": origin + "/verify", "expires_in": 60, "interval": 1})
 					return
 				}
-				if r.URL.Path != "/token" {
+				if r.URL.Path != workerTokenEndpointPath {
 					http.NotFound(w, r)
 					return
 				}

@@ -46,6 +46,8 @@ import (
 const (
 	oauthBrowserClientID             = "browser-client"
 	oauthBrowserConfidentialClientID = "confidential-client"
+	oauthBrowserRenewalDeclined      = "declined"
+	oauthBrowserRefreshGrant         = "refresh_token"
 )
 
 // This gate starts ordinary Backoffice authentication and the production owners.
@@ -64,7 +66,7 @@ func TestBackofficeMCPOAuthBrowserWorkflow(t *testing.T) {
 		{"sse", "browser", "/balda", 1440, false, ""}, {"sse", "device", "", 390, false, ""},
 		{"http", "browser", "/balda", 1440, true, ""},
 		{"http", "browser", "/balda", 1440, true, "supported"},
-		{"http", "browser", "/balda", 1440, true, "declined"},
+		{"http", "browser", "/balda", 1440, true, oauthBrowserRenewalDeclined},
 	} {
 		name := scenario.transport + "/" + scenario.flow
 		if scenario.renewal != "" {
@@ -94,7 +96,7 @@ func TestBackofficeMCPOAuthBrowserWorkflow(t *testing.T) {
 			issuer := newBackofficeOAuthIssuer(t, scenario.transport)
 			issuer.omitIssuerResponse.Store(scenario.omitIssuer)
 			issuer.renewalProfile.Store(scenario.renewal != "")
-			issuer.declineRenewal.Store(scenario.renewal == "declined")
+			issuer.declineRenewal.Store(scenario.renewal == oauthBrowserRenewalDeclined)
 			credentials, err := mcpmanage.New(base64.StdEncoding.EncodeToString(make([]byte, 32)))
 			if err != nil {
 				t.Fatal(err)
@@ -102,7 +104,7 @@ func TestBackofficeMCPOAuthBrowserWorkflow(t *testing.T) {
 			var grantStore mcpmanage.GrantStore = mcpfx.NewGrantStore(p.MCP())
 			leaseStore := &oauthControlledExpiryStore{GrantStore: grantStore, lease: 35 * time.Second}
 			if scenario.renewal != "" {
-				if scenario.renewal == "declined" {
+				if scenario.renewal == oauthBrowserRenewalDeclined {
 					leaseStore.lease = 10 * time.Second
 				}
 				grantStore = leaseStore
@@ -202,7 +204,7 @@ func TestBackofficeMCPOAuthBrowserWorkflow(t *testing.T) {
 			runtime, catalog, registry, binder, flows := start("/mcp")
 			if scenario.renewal != "" {
 				runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "managed-renewal-"+scenario.transport, scenario.width)
-				verifyOAuthBrowserRenewal(t, catalog, registry, binder, providers, p, credentials, leaseStore, issuer, scenario.renewal == "declined")
+				verifyOAuthBrowserRenewal(t, catalog, registry, binder, providers, p, credentials, leaseStore, issuer, scenario.renewal == oauthBrowserRenewalDeclined)
 				return
 			}
 			captures, err := p.MCP().ListMCPConnections(t.Context())
@@ -700,7 +702,7 @@ func newBackofficeOAuthIssuer(t *testing.T, transport string) *backofficeOAuthIs
 				code := r.Form.Get("device_code")
 				valid = f.devices[code].resource == resource && f.devices[code].clientID == oauthBrowserRequestClientID(r) && f.approved[code]
 				scope = f.devices[code].scope
-			case "refresh_token":
+			case oauthBrowserRefreshGrant:
 				f.refreshes.Add(1)
 				valid = f.renewalProfile.Load() && !f.rejectRefresh.Load() && r.Form.Get("refresh_token") != "" && r.Form.Get("refresh_token") == f.currentRefresh.Load().(string) && resource == origin+"/mcp"
 				scope = r.Form.Get("scope")
@@ -710,7 +712,7 @@ func newBackofficeOAuthIssuer(t *testing.T, transport string) *backofficeOAuthIs
 			if !valid {
 				w.WriteHeader(http.StatusBadRequest)
 				code := "authorization_pending"
-				if r.Form.Get("grant_type") == "refresh_token" {
+				if r.Form.Get("grant_type") == oauthBrowserRefreshGrant {
 					code = "invalid_grant"
 				}
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": code})
@@ -721,7 +723,7 @@ func newBackofficeOAuthIssuer(t *testing.T, transport string) *backofficeOAuthIs
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
-			if r.Form.Get("grant_type") != "refresh_token" {
+			if r.Form.Get("grant_type") != oauthBrowserRefreshGrant {
 				f.exchanges.Add(1)
 			}
 			response := map[string]any{"access_token": "synthetic-browser-access", "refresh_token": "synthetic-browser-refresh", "token_type": "Bearer", "expires_in": 3600, "scope": scope, "resource": resource}

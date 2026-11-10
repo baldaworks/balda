@@ -19,13 +19,15 @@ import (
 
 const workerOAuthScope = "tools"
 const workerAuthorizationMetadataPath = "/.well-known/oauth-authorization-server"
+const workerResourceMetadataPath = "/.well-known/oauth-protected-resource/mcp"
+const workerTokenEndpointPath = "/token"
 
 func TestWorkerOAuthSDKDiscoveryRegistrationAndBoundRotation(t *testing.T) {
 	var base string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
-		case "/.well-known/oauth-protected-resource/mcp":
+		case workerResourceMetadataPath:
 			_ = json.NewEncoder(w).Encode(map[string]any{"resource": base + "/mcp", "authorization_servers": []string{base}, "scopes_supported": []string{workerOAuthScope}, "bearer_methods_supported": []string{"header"}})
 		case workerAuthorizationMetadataPath:
 			_ = json.NewEncoder(w).Encode(map[string]any{"issuer": base, "authorization_endpoint": base + "/authorize", "token_endpoint": base + "/token", "registration_endpoint": base + "/register", "code_challenge_methods_supported": []string{"S256"}, "token_endpoint_auth_methods_supported": []string{mcpcmd.ClientAuthSecretBasic}, "response_types_supported": []string{"code"}, "grant_types_supported": []string{"authorization_code", "refresh_token"}, "scopes_supported": []string{workerOAuthScope}})
@@ -36,7 +38,7 @@ func TestWorkerOAuthSDKDiscoveryRegistrationAndBoundRotation(t *testing.T) {
 			}
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(map[string]any{"client_id": "installation-client", "client_secret": "registration-secret", "client_secret_expires_at": 0, "token_endpoint_auth_method": mcpcmd.ClientAuthSecretBasic, "redirect_uris": []string{base + "/callback"}})
-		case "/token":
+		case workerTokenEndpointPath:
 			if err := r.ParseForm(); err != nil {
 				t.Error(err)
 			}
@@ -194,7 +196,7 @@ func TestWorkerRefreshUsesBoundIssuerAfterCustomResourceMetadata(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(map[string]any{"resource": base + "/mcp", "authorization_servers": []string{base}})
 		case workerAuthorizationMetadataPath:
 			_ = json.NewEncoder(w).Encode(map[string]any{"issuer": base, "authorization_endpoint": base + "/authorize", "token_endpoint": base + "/token", "code_challenge_methods_supported": []string{"S256"}, "token_endpoint_auth_methods_supported": []string{mcpcmd.ClientAuthNone}})
-		case "/token":
+		case workerTokenEndpointPath:
 			_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "custom-prm-access", "token_type": "Bearer", "expires_in": 3600})
 		default:
 			http.NotFound(w, r)
@@ -226,7 +228,7 @@ func TestWorkerDiscoveryRetainsAuthorizationServerScopeCapabilities(t *testing.T
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				switch r.URL.Path {
-				case "/.well-known/oauth-protected-resource/mcp":
+				case workerResourceMetadataPath:
 					prm := map[string]any{"resource": origin + "/mcp", "authorization_servers": []string{origin}}
 					if resourceScopes != nil {
 						prm["scopes_supported"] = resourceScopes
