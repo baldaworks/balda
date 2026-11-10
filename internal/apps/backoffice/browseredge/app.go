@@ -109,6 +109,38 @@ type AliasService interface {
 	DeleteAlias(ctx context.Context, auth managementclient.Auth, name string, request managementv1.AliasDeleteRequest) error
 }
 
+// HookService is the generated-client managed-hook surface.
+type HookService interface {
+	Hooks(ctx context.Context, auth managementclient.Auth) (managementv1.HookInventory, error)
+	CreateHook(ctx context.Context, auth managementclient.Auth, request managementv1.HookSaveRequest) error
+	UpdateHook(ctx context.Context, auth managementclient.Auth, name string, request managementv1.HookSaveRequest) error
+	DeleteHook(ctx context.Context, auth managementclient.Auth, name string, request managementv1.HookDeleteRequest) error
+}
+
+// PluginService is the generated-client plugin lifecycle surface.
+type PluginService interface {
+	Plugins(ctx context.Context, auth managementclient.Auth) (managementv1.PluginInventory, error)
+	Plugin(ctx context.Context, auth managementclient.Auth, name string) (managementv1.PluginDetail, error)
+	ReviewPlugin(ctx context.Context, auth managementclient.Auth, name, marketplace string) (managementv1.PluginCandidate, error)
+	MutatePlugin(ctx context.Context, auth managementclient.Auth, name string, request managementv1.PluginMutationRequest) (managementv1.PluginMutationOutcome, error)
+	PluginMarketplaces(ctx context.Context, auth managementclient.Auth) (managementv1.PluginMarketplaceInventory, error)
+	PluginMarketplace(ctx context.Context, auth managementclient.Auth, name string) (managementv1.PluginMarketplaceDetail, error)
+	AddPluginMarketplace(ctx context.Context, auth managementclient.Auth, request managementv1.PluginMarketplaceAddRequest) (managementv1.PluginMarketplaceDetail, error)
+	RefreshPluginMarketplace(ctx context.Context, auth managementclient.Auth, name string, request managementv1.PluginMarketplaceMutationRequest) (managementv1.PluginMarketplaceDetail, error)
+	RemovePluginMarketplace(ctx context.Context, auth managementclient.Auth, name string, request managementv1.PluginMarketplaceMutationRequest) error
+}
+
+// SkillService is the generated-client standalone skill lifecycle surface.
+type SkillService interface {
+	Skills(ctx context.Context, auth managementclient.Auth) (managementv1.SkillInventory, error)
+	ReviewSkillInstall(ctx context.Context, auth managementclient.Auth, request managementv1.SkillInstallReviewRequest) (managementv1.SkillCandidate, error)
+	ReviewSkillUpdate(ctx context.Context, auth managementclient.Auth, id string, request managementv1.SkillObservedStateRequest) (managementv1.SkillCandidate, error)
+	AcceptSkillReview(ctx context.Context, auth managementclient.Auth, request managementv1.SkillAcceptRequest) (managementv1.SkillMutationOutcome, error)
+	MutateSkill(ctx context.Context, auth managementclient.Auth, id string, request managementv1.SkillMutationRequest) (managementv1.SkillMutationOutcome, error)
+	RefreshSkills(ctx context.Context, auth managementclient.Auth, request managementv1.SkillObservedStateRequest) (managementv1.SkillMutationOutcome, error)
+	RetrySkillPublication(ctx context.Context, auth managementclient.Auth) (managementv1.SkillMutationOutcome, error)
+}
+
 // Config fixes the browser trust boundary.
 type Config struct {
 	PublicOrigin     string
@@ -129,6 +161,7 @@ type App struct {
 
 const formYesValue = "yes"
 const enabledHiddenInput = `<input type="hidden" name="enabled" value="yes">`
+const nameInputLabel = `<label>Name <input name="name" maxlength="64" required></label>`
 const (
 	statusDisabled = "disabled"
 	statusDeleted  = "deleted"
@@ -226,6 +259,33 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("GET "+a.path("/aliases/{alias_name}"), a.aliasPage)
 	mux.HandleFunc("POST "+a.path("/aliases/{alias_name}"), a.retargetAlias)
 	mux.HandleFunc("POST "+a.path("/aliases/{alias_name}/delete"), a.deleteAlias)
+	mux.HandleFunc("GET "+a.path("/hooks"), a.hooksPage)
+	mux.HandleFunc("GET "+a.path("/hooks/new"), a.newHookPage)
+	mux.HandleFunc("POST "+a.path("/hooks"), a.createHook)
+	mux.HandleFunc("GET "+a.path("/hooks/{hook_name}"), a.hookPage)
+	mux.HandleFunc("POST "+a.path("/hooks/{hook_name}"), a.updateHook)
+	mux.HandleFunc("POST "+a.path("/hooks/{hook_name}/delete"), a.deleteHook)
+	mux.HandleFunc("GET "+a.path("/plugins"), a.pluginsPage)
+	mux.HandleFunc("GET "+a.path("/plugins/install"), a.pluginInstallPage)
+	mux.HandleFunc("POST "+a.path("/plugins/install"), a.installPlugin)
+	mux.HandleFunc("GET "+a.path("/plugins/{plugin_name}"), a.pluginPage)
+	mux.HandleFunc("GET "+a.path("/plugins/{plugin_name}/review"), a.pluginReviewPage)
+	mux.HandleFunc("POST "+a.path("/plugins/{plugin_name}/lifecycle"), a.mutatePlugin)
+	mux.HandleFunc("GET "+a.path("/plugin-marketplaces"), a.pluginMarketplacesPage)
+	mux.HandleFunc("GET "+a.path("/plugin-marketplaces/new"), a.newPluginMarketplacePage)
+	mux.HandleFunc("POST "+a.path("/plugin-marketplaces"), a.addPluginMarketplace)
+	mux.HandleFunc("GET "+a.path("/plugin-marketplaces/{marketplace_name}"), a.pluginMarketplacePage)
+	mux.HandleFunc("POST "+a.path("/plugin-marketplaces/{marketplace_name}/refresh"), a.refreshPluginMarketplace)
+	mux.HandleFunc("POST "+a.path("/plugin-marketplaces/{marketplace_name}/remove"), a.removePluginMarketplace)
+	mux.HandleFunc("GET "+a.path("/skills"), a.skillsPage)
+	mux.HandleFunc("GET "+a.path("/skills/install"), a.skillInstallPage)
+	mux.HandleFunc("POST "+a.path("/skills/reviews/install"), a.reviewSkillInstall)
+	mux.HandleFunc("POST "+a.path("/skills/reviews/accept"), a.acceptSkillReview)
+	mux.HandleFunc("POST "+a.path("/skills/refresh"), a.refreshSkills)
+	mux.HandleFunc("POST "+a.path("/skills/publication/retry"), a.retrySkillPublication)
+	mux.HandleFunc("GET "+a.path("/skills/{skill_id}"), a.skillPage)
+	mux.HandleFunc("POST "+a.path("/skills/{skill_id}/reviews/update"), a.reviewSkillUpdate)
+	mux.HandleFunc("POST "+a.path("/skills/{skill_id}/lifecycle"), a.mutateSkill)
 	return noStore(mux)
 }
 
@@ -310,7 +370,7 @@ func (a *App) overview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	a.page(w, http.StatusOK, "Backoffice", `<p>Signed in as <strong>`+template.HTMLEscapeString(principal.DisplayName)+`</strong>.</p><p><a href="`+a.path("/account")+`">Account</a> · <a href="`+a.path("/providers")+`">Providers</a> · <a href="`+a.path("/mcp")+`">MCP</a></p>`+a.logoutForm(r))
+	a.page(w, http.StatusOK, "Backoffice", `<p>Signed in as <strong>`+template.HTMLEscapeString(principal.DisplayName)+`</strong>.</p><p><a href="`+a.path("/account")+`">Account</a> · <a href="`+a.path("/providers")+`">Providers</a> · <a href="`+a.path("/mcp")+`">MCP</a> · <a href="`+a.path("/hooks")+`">Hooks</a> · <a href="`+a.path("/plugins")+`">Plugins</a> · <a href="`+a.path("/skills")+`">Skills</a></p>`+a.logoutForm(r))
 }
 
 func (a *App) account(w http.ResponseWriter, r *http.Request) {

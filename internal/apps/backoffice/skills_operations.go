@@ -6,15 +6,8 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/skillcmd"
 )
 
-// SkillsInstall contains transient browser input for one standalone skill.
-// Source must never be reflected into a response or retained in history.
-type SkillsInstall struct {
-	Source        string
-	Ref           string
-	Path          string
-	ExpectedState string
-	Authority     skillcmd.Authority
-}
+// SkillsInstall is the transport-neutral reviewed-install input.
+type SkillsInstall = skillcmd.InstallReview
 
 // SkillsOperations is the consuming port for administrator skill management.
 type SkillsOperations interface {

@@ -286,6 +286,26 @@ func inspectManagementContract(spec *openapi3.T) []string {
 		"createAlias":                     {"csrf", "operatorServiceAuth", "webAuthAccess"},
 		"retargetAlias":                   {"csrf", "operatorServiceAuth", "webAuthAccess"},
 		"deleteAlias":                     {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"listHooks":                       {"operatorServiceAuth", "webAuthAccess"},
+		"createHook":                      {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"updateHook":                      {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"deleteHook":                      {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"listPlugins":                     {"operatorServiceAuth", "webAuthAccess"},
+		"getPlugin":                       {"operatorServiceAuth", "webAuthAccess"},
+		"reviewPluginCandidate":           {"operatorServiceAuth", "webAuthAccess"},
+		"mutatePlugin":                    {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"listPluginMarketplaces":          {"operatorServiceAuth", "webAuthAccess"},
+		"addPluginMarketplace":            {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"getPluginMarketplace":            {"operatorServiceAuth", "webAuthAccess"},
+		"removePluginMarketplace":         {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"refreshPluginMarketplace":        {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"listSkills":                      {"operatorServiceAuth", "webAuthAccess"},
+		"reviewSkillInstall":              {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"reviewSkillUpdate":               {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"acceptSkillReview":               {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"mutateSkill":                     {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"refreshSkills":                   {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"retrySkillPublication":           {"csrf", "operatorServiceAuth", "webAuthAccess"},
 		"listWebhooks":                    {"operatorServiceAuth", "webAuthAccess"},
 		"getWebhook":                      {"operatorServiceAuth", "webAuthAccess"},
 		"createWebhook":                   {"csrf", "operatorServiceAuth", "webAuthAccess"},
@@ -338,8 +358,33 @@ func inspectManagementContract(spec *openapi3.T) []string {
 	findings = append(findings, inspectScheduleSchemas(spec)...)
 	findings = append(findings, inspectWebhookSchemas(spec)...)
 	findings = append(findings, inspectMCPSchemas(spec)...)
+	findings = append(findings, inspectSkillSchemas(spec)...)
 	findings = append(findings, inspectErrorSchema(spec)...)
 	slices.Sort(findings)
+	return findings
+}
+
+func inspectSkillSchemas(spec *openapi3.T) []string {
+	var findings []string
+	for schemaName, propertyName := range map[string]string{
+		"SkillInstallReviewRequest": "source",
+		"SkillAcceptRequest":        "candidate_handle",
+		"SkillCandidate":            "candidate_handle",
+	} {
+		schema := spec.Components.Schemas[schemaName]
+		if schema == nil || schema.Value == nil || schema.Value.Properties[propertyName] == nil ||
+			schema.Value.Properties[propertyName].Value == nil || schema.Value.Properties[propertyName].Value.Extensions["x-sensitive"] != true {
+			findings = append(findings, fmt.Sprintf("%s.%s must be sensitive", schemaName, propertyName))
+		}
+	}
+	for _, schemaName := range []string{"SkillEntry", "SkillInventory", "SkillCandidate", "SkillMutationOutcome"} {
+		schema := spec.Components.Schemas[schemaName]
+		if schema != nil && schema.Value != nil {
+			if _, found := schema.Value.Properties["source"]; found {
+				findings = append(findings, schemaName+" exposes private skill source")
+			}
+		}
+	}
 	return findings
 }
 

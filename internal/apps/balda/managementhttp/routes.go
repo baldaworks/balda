@@ -8,9 +8,12 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/aliascmd"
 	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
+	"github.com/baldaworks/balda/internal/apps/balda/hookcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/plugincmd"
 	"github.com/baldaworks/balda/internal/apps/balda/providers"
 	"github.com/baldaworks/balda/internal/apps/balda/schedulecmd"
+	"github.com/baldaworks/balda/internal/apps/balda/skillcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookroutecmd"
 )
@@ -91,6 +94,15 @@ func managementRoute(method, path string) (routeRule, bool) {
 	if rule, ok := aliasManagementRoute(method, path); ok {
 		return rule, true
 	}
+	if rule, ok := hookManagementRoute(method, path); ok {
+		return rule, true
+	}
+	if rule, ok := pluginManagementRoute(method, path); ok {
+		return rule, true
+	}
+	if rule, ok := skillManagementRoute(method, path); ok {
+		return rule, true
+	}
 	const prefix = "/api/management/v1/auth/sessions/"
 	const suffix = "/revoke"
 	if method != http.MethodPost || !strings.HasPrefix(path, prefix) || !strings.HasSuffix(path, suffix) {
@@ -101,6 +113,92 @@ func managementRoute(method, path string) (routeRule, bool) {
 		return routeRule{}, false
 	}
 	return routeRule{authority: webAuthMutation, body: true}, true
+}
+
+func skillManagementRoute(method, path string) (routeRule, bool) {
+	const root = "/api/management/v1/skills"
+	if path == root && method == http.MethodGet {
+		return routeRule{authority: webAuthRead, admin: true}, true
+	}
+	for _, exact := range []string{root + "/reviews/install", root + "/reviews/accept", root + "/refresh", root + "/publication/retry"} {
+		if path == exact && method == http.MethodPost {
+			return routeRule{authority: webAuthMutation, body: exact != root+"/publication/retry", admin: true}, true
+		}
+	}
+	if !strings.HasPrefix(path, root+"/") || method != http.MethodPost {
+		return routeRule{}, false
+	}
+	parts := strings.Split(strings.TrimPrefix(path, root+"/"), "/")
+	if len(parts) == 3 && parts[0] != "" && parts[1] == "reviews" && parts[2] == "update" {
+		return routeRule{authority: webAuthMutation, body: true, admin: true}, true
+	}
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "lifecycle" {
+		return routeRule{authority: webAuthMutation, body: true, admin: true}, true
+	}
+	return routeRule{}, false
+}
+
+func pluginManagementRoute(method, path string) (routeRule, bool) {
+	const plugins = "/api/management/v1/plugins"
+	const marketplaces = "/api/management/v1/plugin-marketplaces"
+	if path == plugins || path == marketplaces {
+		if method == http.MethodGet {
+			return routeRule{authority: webAuthRead, admin: true}, true
+		}
+		if path == marketplaces && method == http.MethodPost {
+			return routeRule{authority: webAuthMutation, body: true, admin: true}, true
+		}
+		return routeRule{}, false
+	}
+	if strings.HasPrefix(path, plugins+"/") {
+		parts := strings.Split(strings.TrimPrefix(path, plugins+"/"), "/")
+		switch {
+		case len(parts) == 1 && parts[0] != "" && method == http.MethodGet:
+			return routeRule{authority: webAuthRead, admin: true}, true
+		case len(parts) == 2 && parts[0] != "" && parts[1] == "candidate" && method == http.MethodGet:
+			return routeRule{authority: webAuthRead, admin: true}, true
+		case len(parts) == 2 && parts[0] != "" && parts[1] == "lifecycle" && method == http.MethodPost:
+			return routeRule{authority: webAuthMutation, body: true, admin: true}, true
+		}
+		return routeRule{}, false
+	}
+	if strings.HasPrefix(path, marketplaces+"/") {
+		parts := strings.Split(strings.TrimPrefix(path, marketplaces+"/"), "/")
+		switch {
+		case len(parts) == 1 && parts[0] != "" && method == http.MethodGet:
+			return routeRule{authority: webAuthRead, admin: true}, true
+		case len(parts) == 1 && parts[0] != "" && method == http.MethodDelete:
+			return routeRule{authority: webAuthMutation, body: true, admin: true}, true
+		case len(parts) == 2 && parts[0] != "" && parts[1] == "refresh" && method == http.MethodPost:
+			return routeRule{authority: webAuthMutation, body: true, admin: true}, true
+		}
+	}
+	return routeRule{}, false
+}
+
+func hookManagementRoute(method, path string) (routeRule, bool) {
+	const root = "/api/management/v1/hooks"
+	if path == root {
+		switch method {
+		case http.MethodGet:
+			return routeRule{authority: webAuthRead, admin: true}, true
+		case http.MethodPost:
+			return routeRule{authority: webAuthMutation, body: true, admin: true}, true
+		default:
+			return routeRule{}, false
+		}
+	}
+	if !strings.HasPrefix(path, root+"/") {
+		return routeRule{}, false
+	}
+	name := strings.TrimPrefix(path, root+"/")
+	if name == "" || strings.Contains(name, "/") {
+		return routeRule{}, false
+	}
+	if method == http.MethodPut || method == http.MethodDelete {
+		return routeRule{authority: webAuthMutation, body: true, admin: true}, true
+	}
+	return routeRule{}, false
 }
 
 func aliasManagementRoute(method, path string) (routeRule, bool) {
@@ -372,6 +470,36 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, webhookroutecmd.ErrUnavailable):
 		writeError(w, r, http.StatusServiceUnavailable, "unavailable", "service unavailable")
 	case errors.Is(err, aliascmd.ErrUnavailable):
+		writeError(w, r, http.StatusServiceUnavailable, "unavailable", "service unavailable")
+	case errors.Is(err, hookcmd.ErrInvalid), errors.Is(err, hookcmd.ErrUnsupported):
+		writeError(w, r, http.StatusBadRequest, "request.invalid", "invalid request")
+	case errors.Is(err, hookcmd.ErrForbidden):
+		writeError(w, r, http.StatusForbidden, "forbidden", "forbidden")
+	case errors.Is(err, hookcmd.ErrNotFound):
+		writeError(w, r, http.StatusNotFound, "not_found", "not found")
+	case errors.Is(err, hookcmd.ErrConflict):
+		writeError(w, r, http.StatusConflict, "conflict", "request conflict")
+	case errors.Is(err, hookcmd.ErrUnavailable):
+		writeError(w, r, http.StatusServiceUnavailable, "unavailable", "service unavailable")
+	case errors.Is(err, plugincmd.ErrInvalid):
+		writeError(w, r, http.StatusBadRequest, "request.invalid", "invalid request")
+	case errors.Is(err, plugincmd.ErrForbidden):
+		writeError(w, r, http.StatusForbidden, "forbidden", "forbidden")
+	case errors.Is(err, plugincmd.ErrNotFound):
+		writeError(w, r, http.StatusNotFound, "not_found", "not found")
+	case errors.Is(err, plugincmd.ErrConflict):
+		writeError(w, r, http.StatusConflict, "conflict", "request conflict")
+	case errors.Is(err, plugincmd.ErrUnavailable), errors.Is(err, plugincmd.ErrRecoveryPending):
+		writeError(w, r, http.StatusServiceUnavailable, "unavailable", "service unavailable")
+	case errors.Is(err, skillcmd.ErrInvalid):
+		writeError(w, r, http.StatusBadRequest, "request.invalid", "invalid request")
+	case errors.Is(err, skillcmd.ErrForbidden):
+		writeError(w, r, http.StatusForbidden, "forbidden", "forbidden")
+	case errors.Is(err, skillcmd.ErrNotFound):
+		writeError(w, r, http.StatusNotFound, "not_found", "not found")
+	case errors.Is(err, skillcmd.ErrConflict):
+		writeError(w, r, http.StatusConflict, "conflict", "request conflict")
+	case errors.Is(err, skillcmd.ErrUnavailable):
 		writeError(w, r, http.StatusServiceUnavailable, "unavailable", "service unavailable")
 	default:
 		writeError(w, r, http.StatusInternalServerError, "internal", "internal error")

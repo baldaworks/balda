@@ -18,6 +18,9 @@ type strictServer struct {
 	schedules   scheduleOperations
 	webhooks    webhookOperations
 	aliases     aliasOperations
+	hooks       hookOperations
+	plugins     pluginOperations
+	skills      skillOperations
 }
 
 func (strictServer) GetManagementCompatibility(context.Context, managementv1.GetManagementCompatibilityRequestObject) (managementv1.GetManagementCompatibilityResponseObject, error) {

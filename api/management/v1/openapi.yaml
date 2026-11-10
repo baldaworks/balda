@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Balda Management API
-  version: 1.4.0
+  version: 1.7.0
   description: >-
     Contract for the loopback Balda management API. The API distinguishes
     browser WebAuth authority from AI conversation sessions.
@@ -1202,6 +1202,264 @@ paths:
         "409": { $ref: "#/components/responses/Conflict" }
         "503": { $ref: "#/components/responses/ServiceUnavailable" }
         "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/hooks:
+    get:
+      operationId: listHooks
+      security: [{ operatorServiceAuth: [], webAuthAccess: [] }]
+      responses:
+        "200": { description: Managed hook configuration, content: { application/json: { schema: { $ref: "#/components/schemas/HookInventory" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    post:
+      operationId: createHook
+      security: [{ operatorServiceAuth: [], webAuthAccess: [], csrf: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/HookSaveRequest" } } } }
+      responses:
+        "204": { description: Hook created }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/hooks/{hook_name}:
+    put:
+      operationId: updateHook
+      security: [{ operatorServiceAuth: [], webAuthAccess: [], csrf: [] }]
+      parameters: [{ $ref: "#/components/parameters/HookName" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/HookSaveRequest" } } } }
+      responses:
+        "204": { description: Hook updated }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    delete:
+      operationId: deleteHook
+      security: [{ operatorServiceAuth: [], webAuthAccess: [], csrf: [] }]
+      parameters: [{ $ref: "#/components/parameters/HookName" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/HookDeleteRequest" } } } }
+      responses:
+        "204": { description: Hook deleted }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/plugins:
+    get:
+      operationId: listPlugins
+      security: [{ operatorServiceAuth: [], webAuthAccess: [] }]
+      responses:
+        "200": { description: Installed plugin inventory, content: { application/json: { schema: { $ref: "#/components/schemas/PluginInventory" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/plugins/{plugin_name}:
+    get:
+      operationId: getPlugin
+      security: [{ operatorServiceAuth: [], webAuthAccess: [] }]
+      parameters: [{ $ref: "#/components/parameters/PluginName" }]
+      responses:
+        "200": { description: Installed plugin detail, content: { application/json: { schema: { $ref: "#/components/schemas/PluginDetail" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/plugins/{plugin_name}/candidate:
+    get:
+      operationId: reviewPluginCandidate
+      security: [{ operatorServiceAuth: [], webAuthAccess: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/PluginName" }
+        - { name: marketplace, in: query, schema: { type: string, maxLength: 128 } }
+      responses:
+        "200": { description: Exact reviewed plugin candidate, content: { application/json: { schema: { $ref: "#/components/schemas/PluginCandidate" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/plugins/{plugin_name}/lifecycle:
+    post:
+      operationId: mutatePlugin
+      security: [{ operatorServiceAuth: [], webAuthAccess: [], csrf: [] }]
+      parameters: [{ $ref: "#/components/parameters/PluginName" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/PluginMutationRequest" } } } }
+      responses:
+        "200": { description: Durable mutation outcome, content: { application/json: { schema: { $ref: "#/components/schemas/PluginMutationOutcome" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/plugin-marketplaces:
+    get:
+      operationId: listPluginMarketplaces
+      security: [{ operatorServiceAuth: [], webAuthAccess: [] }]
+      responses:
+        "200": { description: Plugin marketplace inventory, content: { application/json: { schema: { $ref: "#/components/schemas/PluginMarketplaceInventory" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    post:
+      operationId: addPluginMarketplace
+      security: [{ operatorServiceAuth: [], webAuthAccess: [], csrf: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/PluginMarketplaceAddRequest" } } } }
+      responses:
+        "200": { description: Added marketplace, content: { application/json: { schema: { $ref: "#/components/schemas/PluginMarketplaceDetail" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/plugin-marketplaces/{marketplace_name}:
+    get:
+      operationId: getPluginMarketplace
+      security: [{ operatorServiceAuth: [], webAuthAccess: [] }]
+      parameters: [{ $ref: "#/components/parameters/PluginMarketplaceName" }]
+      responses:
+        "200": { description: Marketplace detail, content: { application/json: { schema: { $ref: "#/components/schemas/PluginMarketplaceDetail" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    delete:
+      operationId: removePluginMarketplace
+      security: [{ operatorServiceAuth: [], webAuthAccess: [], csrf: [] }]
+      parameters: [{ $ref: "#/components/parameters/PluginMarketplaceName" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/PluginMarketplaceMutationRequest" } } } }
+      responses:
+        "204": { description: Marketplace removed }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/plugin-marketplaces/{marketplace_name}/refresh:
+    post:
+      operationId: refreshPluginMarketplace
+      security: [{ operatorServiceAuth: [], webAuthAccess: [], csrf: [] }]
+      parameters: [{ $ref: "#/components/parameters/PluginMarketplaceName" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/PluginMarketplaceMutationRequest" } } } }
+      responses:
+        "200": { description: Refreshed marketplace, content: { application/json: { schema: { $ref: "#/components/schemas/PluginMarketplaceDetail" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/skills:
+    get:
+      operationId: listSkills
+      security: [{ operatorServiceAuth: [], webAuthAccess: [] }]
+      responses:
+        "200": { description: Standalone and contributed skill inventory, content: { application/json: { schema: { $ref: "#/components/schemas/SkillInventory" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/skills/reviews/install:
+    post:
+      operationId: reviewSkillInstall
+      security: [{ operatorServiceAuth: [], webAuthAccess: [], csrf: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/SkillInstallReviewRequest" } } } }
+      responses:
+        "200": { description: Opaque reviewed skill candidate, content: { application/json: { schema: { $ref: "#/components/schemas/SkillCandidate" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/skills/{skill_id}/reviews/update:
+    post:
+      operationId: reviewSkillUpdate
+      security: [{ operatorServiceAuth: [], webAuthAccess: [], csrf: [] }]
+      parameters: [{ $ref: "#/components/parameters/SkillID" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/SkillObservedStateRequest" } } } }
+      responses:
+        "200": { description: Opaque reviewed skill update, content: { application/json: { schema: { $ref: "#/components/schemas/SkillCandidate" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/skills/reviews/accept:
+    post:
+      operationId: acceptSkillReview
+      security: [{ operatorServiceAuth: [], webAuthAccess: [], csrf: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/SkillAcceptRequest" } } } }
+      responses:
+        "200": { description: Durable skill mutation outcome, content: { application/json: { schema: { $ref: "#/components/schemas/SkillMutationOutcome" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/skills/{skill_id}/lifecycle:
+    post:
+      operationId: mutateSkill
+      security: [{ operatorServiceAuth: [], webAuthAccess: [], csrf: [] }]
+      parameters: [{ $ref: "#/components/parameters/SkillID" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/SkillMutationRequest" } } } }
+      responses:
+        "200": { description: Durable skill mutation outcome, content: { application/json: { schema: { $ref: "#/components/schemas/SkillMutationOutcome" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/skills/refresh:
+    post:
+      operationId: refreshSkills
+      security: [{ operatorServiceAuth: [], webAuthAccess: [], csrf: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/SkillObservedStateRequest" } } } }
+      responses:
+        "200": { description: Durable skill refresh outcome, content: { application/json: { schema: { $ref: "#/components/schemas/SkillMutationOutcome" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/skills/publication/retry:
+    post:
+      operationId: retrySkillPublication
+      security: [{ operatorServiceAuth: [], webAuthAccess: [], csrf: [] }]
+      responses:
+        "200": { description: Skill publication recovery outcome, content: { application/json: { schema: { $ref: "#/components/schemas/SkillMutationOutcome" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
 components:
   securitySchemes:
     operatorServiceAuth:
@@ -1266,6 +1524,26 @@ components:
       in: path
       required: true
       schema: { type: string, minLength: 1, maxLength: 64 }
+    HookName:
+      name: hook_name
+      in: path
+      required: true
+      schema: { type: string, pattern: "^[a-z][a-z0-9-]{0,63}$" }
+    PluginName:
+      name: plugin_name
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 128 }
+    PluginMarketplaceName:
+      name: marketplace_name
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 128 }
+    SkillID:
+      name: skill_id
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 256 }
     WebhookJobID:
       name: job_id
       in: path
@@ -1330,7 +1608,7 @@ components:
         contract_version:
           type: string
           maxLength: 32
-          example: 1.4.0
+          example: 1.7.0
         api_major:
           type: integer
           format: int32
@@ -1736,6 +2014,295 @@ components:
       additionalProperties: false
       required: [expected_version]
       properties: { expected_version: { type: integer, format: uint64, minimum: 1 } }
+    HookEvent:
+      type: string
+      enum: [SessionStart, UserPromptSubmit, Stop, SessionEnd, PreToolUse, PostToolUse]
+    HookDefinition:
+      type: object
+      additionalProperties: false
+      required: [name, event, enabled, command, args, provider, matcher, timeout_seconds]
+      properties:
+        name: { type: string, pattern: "^[a-z][a-z0-9-]{0,63}$" }
+        event: { $ref: "#/components/schemas/HookEvent" }
+        enabled: { type: boolean }
+        command: { type: string, minLength: 1, maxLength: 4096 }
+        args:
+          type: array
+          maxItems: 32
+          items: { type: string, maxLength: 8192 }
+        provider: { type: string, maxLength: 128 }
+        matcher: { type: string, maxLength: 256 }
+        timeout_seconds: { type: integer, format: int64, minimum: 0, maximum: 9223372036 }
+    HookInventory:
+      type: object
+      additionalProperties: false
+      required: [version, updated_at, definitions, capabilities]
+      properties:
+        version: { type: integer, format: int64, minimum: 0 }
+        updated_at: { type: string }
+        definitions:
+          type: array
+          maxItems: 64
+          items: { $ref: "#/components/schemas/HookDefinition" }
+        capabilities: { type: string, maxLength: 4096 }
+    HookSaveRequest:
+      type: object
+      additionalProperties: false
+      required: [definition, expected_version]
+      properties:
+        definition: { $ref: "#/components/schemas/HookDefinition" }
+        expected_version: { type: integer, format: int64, minimum: 0 }
+    HookDeleteRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, confirm]
+      properties:
+        expected_version: { type: integer, format: int64, minimum: 0 }
+        confirm: { type: boolean }
+    PluginCapabilitySummary:
+      type: object
+      additionalProperties: false
+      required: [commands, skills, mcp_servers, diagnostics]
+      properties:
+        commands: { type: integer, minimum: 0 }
+        skills: { type: integer, minimum: 0 }
+        mcp_servers: { type: integer, minimum: 0 }
+        diagnostics: { type: integer, minimum: 0 }
+    PluginRuntimeStatus:
+      type: object
+      additionalProperties: false
+      required: [revision_current, snapshot_id, snapshot_sequence, projection_lag, advertisements, skills, skill_ambiguities, desired_mcp_servers, ready_mcp_servers, degraded_mcp_servers, diagnostic_codes, projection_omissions]
+      properties:
+        revision_current: { type: boolean }
+        snapshot_id: { type: string, maxLength: 256 }
+        snapshot_sequence: { type: integer, format: uint64, minimum: 0 }
+        projection_lag: { type: integer, format: uint64, minimum: 0 }
+        advertisements: { type: integer, minimum: 0 }
+        skills: { type: integer, minimum: 0 }
+        skill_ambiguities: { type: integer, minimum: 0 }
+        desired_mcp_servers: { type: integer, minimum: 0 }
+        ready_mcp_servers: { type: integer, minimum: 0 }
+        degraded_mcp_servers: { type: integer, minimum: 0 }
+        diagnostic_codes: { type: array, maxItems: 128, items: { type: string, maxLength: 256 } }
+        projection_omissions: { type: array, maxItems: 128, items: { type: string, maxLength: 256 } }
+    PluginInstalled:
+      type: object
+      additionalProperties: false
+      required: [name, version, description, marketplace, origin, revision, enabled, drifted, removed, capabilities, runtime, expected_state, origin_available, recovery_pending, declares_balda_extension]
+      properties:
+        name: { type: string, maxLength: 128 }
+        version: { type: string, maxLength: 128 }
+        description: { type: string, maxLength: 4096 }
+        marketplace: { type: string, maxLength: 128 }
+        origin: { type: string, maxLength: 512 }
+        revision: { type: string, maxLength: 256 }
+        enabled: { type: boolean }
+        drifted: { type: boolean }
+        removed: { type: boolean }
+        capabilities: { $ref: "#/components/schemas/PluginCapabilitySummary" }
+        runtime: { $ref: "#/components/schemas/PluginRuntimeStatus" }
+        expected_state: { type: string, maxLength: 256 }
+        origin_available: { type: boolean }
+        recovery_pending: { type: boolean }
+        declares_balda_extension: { type: boolean }
+    PluginInventory:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties: { items: { type: array, maxItems: 1024, items: { $ref: "#/components/schemas/PluginInstalled" } } }
+    PluginContribution:
+      type: object
+      additionalProperties: false
+      required: [name, description, transport]
+      properties:
+        name: { type: string, maxLength: 256 }
+        description: { type: string, maxLength: 4096 }
+        transport: { type: string, maxLength: 128 }
+    PluginRetainedRevision:
+      type: object
+      additionalProperties: false
+      required: [version, revision, retained_at, available, current]
+      properties:
+        version: { type: string, maxLength: 128 }
+        revision: { type: string, maxLength: 256 }
+        retained_at: { type: string, format: date-time }
+        available: { type: boolean }
+        current: { type: boolean }
+    PluginDetail:
+      type: object
+      additionalProperties: false
+      required: [item, commands, skills, mcp_servers, revisions, diagnostic_codes]
+      properties:
+        item: { $ref: "#/components/schemas/PluginInstalled" }
+        commands: { type: array, maxItems: 1024, items: { $ref: "#/components/schemas/PluginContribution" } }
+        skills: { type: array, maxItems: 1024, items: { $ref: "#/components/schemas/PluginContribution" } }
+        mcp_servers: { type: array, maxItems: 1024, items: { $ref: "#/components/schemas/PluginContribution" } }
+        revisions: { type: array, maxItems: 1024, items: { $ref: "#/components/schemas/PluginRetainedRevision" } }
+        diagnostic_codes: { type: array, maxItems: 128, items: { type: string, maxLength: 256 } }
+    PluginCandidate:
+      type: object
+      additionalProperties: false
+      required: [name, version, description, marketplace, revision, candidate_token, expected_state, declares_balda_extension, capabilities, diagnostic_codes]
+      properties:
+        name: { type: string, maxLength: 128 }
+        version: { type: string, maxLength: 128 }
+        description: { type: string, maxLength: 4096 }
+        marketplace: { type: string, maxLength: 128 }
+        revision: { type: string, maxLength: 256 }
+        candidate_token: { type: string, maxLength: 256 }
+        expected_state: { type: string, maxLength: 256 }
+        declares_balda_extension: { type: boolean }
+        capabilities: { $ref: "#/components/schemas/PluginCapabilitySummary" }
+        diagnostic_codes: { type: array, maxItems: 128, items: { type: string, maxLength: 256 } }
+    PluginMarketplace:
+      type: object
+      additionalProperties: false
+      required: [name, source, kind, ref, sparse, expected_state, last_attempt_at, last_attempt_status, failure_code, last_successful_at, resolved_revision, available_plugins]
+      properties:
+        name: { type: string, maxLength: 128 }
+        source: { type: string, maxLength: 2048 }
+        kind: { type: string, maxLength: 128 }
+        ref: { type: string, maxLength: 512 }
+        sparse: { type: array, maxItems: 256, items: { type: string, maxLength: 1024 } }
+        expected_state: { type: string, maxLength: 256 }
+        last_attempt_at: { type: string }
+        last_attempt_status: { type: string, maxLength: 128 }
+        failure_code: { type: string, maxLength: 256 }
+        last_successful_at: { type: string }
+        resolved_revision: { type: string, maxLength: 256 }
+        available_plugins: { type: integer, minimum: 0 }
+    PluginMarketplaceInventory:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties: { items: { type: array, maxItems: 1024, items: { $ref: "#/components/schemas/PluginMarketplace" } } }
+    PluginMarketplaceDetail:
+      type: object
+      additionalProperties: false
+      required: [item, candidates, diagnostic_codes]
+      properties:
+        item: { $ref: "#/components/schemas/PluginMarketplace" }
+        candidates: { type: array, maxItems: 4096, items: { $ref: "#/components/schemas/PluginCandidate" } }
+        diagnostic_codes: { type: array, maxItems: 128, items: { type: string, maxLength: 256 } }
+    PluginMarketplaceAddRequest:
+      type: object
+      additionalProperties: false
+      required: [name, source, ref, sparse]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 128 }
+        source: { type: string, minLength: 1, maxLength: 2048 }
+        ref: { type: string, maxLength: 512 }
+        sparse: { type: array, maxItems: 256, items: { type: string, maxLength: 1024 } }
+    PluginMarketplaceMutationRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_state, confirm]
+      properties:
+        expected_state: { type: string, minLength: 1, maxLength: 256 }
+        confirm: { type: boolean }
+    PluginOperation:
+      type: string
+      enum: [install, upgrade, enable, disable, rollback, remove]
+    PluginMutationRequest:
+      type: object
+      additionalProperties: false
+      required: [operation, marketplace_name, candidate_token, revision, expected_state, confirm]
+      properties:
+        operation: { $ref: "#/components/schemas/PluginOperation" }
+        marketplace_name: { type: string, maxLength: 128 }
+        candidate_token: { type: string, maxLength: 256 }
+        revision: { type: string, maxLength: 256 }
+        expected_state: { type: string, minLength: 1, maxLength: 256 }
+        confirm: { type: boolean }
+    PluginMutationOutcome:
+      type: object
+      additionalProperties: false
+      required: [plugin_name, accepted, recovery_pending]
+      properties:
+        plugin_name: { type: string, maxLength: 128 }
+        accepted: { type: boolean }
+        recovery_pending: { type: boolean }
+    SkillOwnership:
+      type: string
+      enum: [managed, plugin, unmanaged]
+    SkillEntry:
+      type: object
+      additionalProperties: false
+      required: [source_kind, source_name, current_revision, revision, name, description, ownership, source_label, plugin_id, enabled, pending]
+      properties:
+        source_kind: { type: string, maxLength: 64 }
+        source_name: { type: string, maxLength: 256 }
+        current_revision: { type: string, maxLength: 256 }
+        revision: { type: string, maxLength: 256 }
+        name: { type: string, maxLength: 256 }
+        description: { type: string, maxLength: 4096 }
+        ownership: { $ref: "#/components/schemas/SkillOwnership" }
+        source_label: { type: string, maxLength: 512 }
+        plugin_id: { type: string, maxLength: 256 }
+        enabled: { type: boolean }
+        pending: { type: boolean }
+    SkillInventory:
+      type: object
+      additionalProperties: false
+      required: [diagnostics, items, expected_state, generation, publication_pending]
+      properties:
+        diagnostics: { type: array, maxItems: 256, items: { type: string, maxLength: 512 } }
+        items: { type: array, maxItems: 4096, items: { $ref: "#/components/schemas/SkillEntry" } }
+        expected_state: { type: string, maxLength: 256 }
+        generation: { type: integer, format: uint64, minimum: 0 }
+        publication_pending: { type: boolean }
+    SkillCandidate:
+      type: object
+      additionalProperties: false
+      required: [candidate_handle, item, skill_path, resolved_commit, expected_state, expires_at]
+      properties:
+        candidate_handle: { type: string, minLength: 1, maxLength: 4096, x-sensitive: true }
+        item: { $ref: "#/components/schemas/SkillEntry" }
+        skill_path: { type: string, maxLength: 1024 }
+        resolved_commit: { type: string, maxLength: 256 }
+        expected_state: { type: string, maxLength: 256 }
+        expires_at: { type: string, format: date-time }
+    SkillInstallReviewRequest:
+      type: object
+      additionalProperties: false
+      required: [source, ref, path, expected_state]
+      properties:
+        source: { type: string, minLength: 1, maxLength: 4096, x-sensitive: true }
+        ref: { type: string, maxLength: 512 }
+        path: { type: string, maxLength: 1024 }
+        expected_state: { type: string, maxLength: 256 }
+    SkillObservedStateRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_state]
+      properties:
+        expected_state: { type: string, maxLength: 256 }
+    SkillAcceptRequest:
+      type: object
+      additionalProperties: false
+      required: [candidate_handle]
+      properties:
+        candidate_handle: { type: string, minLength: 1, maxLength: 4096, x-sensitive: true }
+    SkillLifecycleOperation:
+      type: string
+      enum: [enable, disable, remove]
+    SkillMutationRequest:
+      type: object
+      additionalProperties: false
+      required: [operation, expected_state, confirm]
+      properties:
+        operation: { $ref: "#/components/schemas/SkillLifecycleOperation" }
+        expected_state: { type: string, minLength: 1, maxLength: 256 }
+        confirm: { type: boolean }
+    SkillMutationOutcome:
+      type: object
+      additionalProperties: false
+      required: [accepted, publication_pending, generation]
+      properties:
+        accepted: { type: boolean }
+        publication_pending: { type: boolean }
+        generation: { type: integer, format: uint64, minimum: 0 }
+        item: { $ref: "#/components/schemas/SkillEntry" }
     WebhookInventory:
       type: object
       additionalProperties: false

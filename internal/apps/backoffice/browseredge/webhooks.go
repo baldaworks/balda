@@ -252,7 +252,7 @@ func (a *App) webhookForm(r *http.Request, item managementv1.WebhookItem, create
 	}
 	body := `<p>URL prefix: <code>` + escape(a.webhookURLPrefix) + `</code></p><form method="post" action="` + action + `"><input type="hidden" name="csrf_token" value="` + escape(cookieValue(r, csrfCookie)) + `">`
 	if create {
-		body += `<label>Name <input name="name" maxlength="64" required></label>`
+		body += nameInputLabel
 	} else {
 		body += `<input type="hidden" name="expected_version" value="` + strconv.FormatUint(item.Version, 10) + `">`
 	}

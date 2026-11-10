@@ -130,6 +130,16 @@ type Candidate struct {
 	ExpiresAt      time.Time
 }
 
+// InstallReview contains transient source input for one standalone skill.
+// Source must never be reflected into a response or retained in history.
+type InstallReview struct {
+	Source        string
+	Ref           string
+	Path          string
+	ExpectedState string
+	Authority     Authority
+}
+
 // Mutation contains browser-selected identity and optimistic state evidence.
 type Mutation struct {
 	ID            runtimecatalogcmd.SourceID

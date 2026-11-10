@@ -124,7 +124,7 @@ func (a *App) aliasForm(r *http.Request, record managementv1.AliasRecord, create
 	}
 	body := `<form method="post" action="` + action + `"><input type="hidden" name="csrf_token" value="` + escape(cookieValue(r, csrfCookie)) + `">`
 	if create {
-		body += `<label>Name <input name="name" maxlength="64" required></label>`
+		body += nameInputLabel
 	} else {
 		body += `<input type="hidden" name="expected_version" value="` + strconv.FormatUint(record.Version, 10) + `">`
 	}

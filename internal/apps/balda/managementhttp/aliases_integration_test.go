@@ -12,7 +12,7 @@ import (
 
 func TestGeneratedClientAliasLifecycleUsesCoreAuthority(t *testing.T) {
 	fixture := &aliasFixture{}
-	server := httptest.NewServer(newManagementTestHandler(t, nil, nil, nil, fixture))
+	server := httptest.NewServer(newManagementTestHandler(t, nil, nil, nil, fixture, nil, nil, nil))
 	t.Cleanup(server.Close)
 	client, err := managementv1.NewClientWithResponses(server.URL, managementv1.WithRequestEditorFn(operatorRequestEditor))
 	if err != nil {

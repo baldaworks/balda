@@ -153,10 +153,10 @@ func newProviderTestHandlerWithMCP(t *testing.T, mcp mcpOperations, schedules ..
 	if len(schedules) > 0 {
 		scheduleService = schedules[0]
 	}
-	return newManagementTestHandler(t, mcp, scheduleService, nil)
+	return newManagementTestHandler(t, mcp, scheduleService, nil, nil, nil, nil, nil)
 }
 
-func newManagementTestHandler(t *testing.T, mcp mcpOperations, schedules scheduleOperations, webhooks webhookOperations, aliases ...aliasOperations) http.Handler {
+func newManagementTestHandler(t *testing.T, mcp mcpOperations, schedules scheduleOperations, webhooks webhookOperations, aliases aliasOperations, hooks hookOperations, plugins pluginOperations, skills skillOperations) http.Handler {
 	t.Helper()
 	provider, err := state.NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
@@ -196,11 +196,7 @@ func newManagementTestHandler(t *testing.T, mcp mcpOperations, schedules schedul
 	if err != nil {
 		t.Fatal(err)
 	}
-	var aliasService aliasOperations
-	if len(aliases) > 0 {
-		aliasService = aliases[0]
-	}
-	return config.Handler(Services{BrowserAuth: auth, Providers: providerService, MCP: mcp, Schedules: schedules, Webhooks: webhooks, Aliases: aliasService})
+	return config.Handler(Services{BrowserAuth: auth, Providers: providerService, MCP: mcp, Schedules: schedules, Webhooks: webhooks, Aliases: aliases, Hooks: hooks, Plugins: plugins, Skills: skills})
 }
 
 func keepProviderSecrets() managementv1.ProviderProtectedEdit {
