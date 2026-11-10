@@ -67,10 +67,16 @@ func TestBackofficeMCPOAuthBrowserWorkflow(t *testing.T) {
 		{"http", "browser", "/balda", 1440, true, ""},
 		{"http", "browser", "/balda", 1440, true, "supported"},
 		{"http", "browser", "/balda", 1440, true, oauthBrowserRenewalDeclined},
+		{"http", "browser", "/balda", 1440, true, "reset"},
+		{"http", "browser", "/balda", 1440, true, "new"},
 	} {
 		name := scenario.transport + "/" + scenario.flow
 		if scenario.renewal != "" {
-			name += "-renewal-" + scenario.renewal
+			if scenario.renewal == "reset" || scenario.renewal == "new" {
+				name += "-lifetime-" + scenario.renewal
+			} else {
+				name += "-renewal-" + scenario.renewal
+			}
 		} else if scenario.omitIssuer {
 			name += "-without-issuer"
 		}
@@ -202,6 +208,11 @@ func TestBackofficeMCPOAuthBrowserWorkflow(t *testing.T) {
 				return runtime, catalog, registry, binder, flows
 			}
 			runtime, catalog, registry, binder, flows := start("/mcp")
+			if scenario.renewal == "reset" || scenario.renewal == "new" {
+				runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "managed-lifetime-create", scenario.width)
+				verifyOAuthBrowserFreshLifetime(t, catalog, registry, binder, providers, p, credentials, leaseStore, issuer, dir, origin+scenario.base, scenario.renewal)
+				return
+			}
 			if scenario.renewal != "" {
 				runOAuthBrowser(t, origin+scenario.base, issuer.server.URL, scenario.flow, "managed-renewal-"+scenario.transport, scenario.width)
 				verifyOAuthBrowserRenewal(t, catalog, registry, binder, providers, p, credentials, leaseStore, issuer, scenario.renewal == oauthBrowserRenewalDeclined)

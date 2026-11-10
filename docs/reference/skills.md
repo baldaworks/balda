@@ -108,8 +108,10 @@ mutation audit.
 
 Maintenance mutations require the normal runtime to be stopped. A later normal
 `balda start` loads the published catalog. Existing restored sessions keep their
-pinned capability snapshot, including across `/reset` and `/new`. Those commands
-create empty local conversations; they do not adopt the current catalog.
+pinned capability snapshot for ordinary work and successful exact restoration.
+Explicit `/reset` and `/new` create empty local lifetimes with the current eligible
+catalog selected when their FIFO boundary runs, while preserving provider
+configuration/reasoning, requested model preference and workspace.
 
 Plugin-owned skills are installed through the shared managed
 [`balda plugin` lifecycle](plugins.md#host-local-plugin-cli), not the standalone

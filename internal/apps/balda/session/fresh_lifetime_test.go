@@ -16,8 +16,11 @@ import (
 )
 
 const (
-	freshLifetimeProviderID  = "balda-provider"
-	freshLifetimeHostedModel = "hosted-model"
+	freshLifetimeProviderID      = "balda-provider"
+	freshLifetimeHostedModel     = "hosted-model"
+	freshLifetimeCurrentCatalog  = "catalog-current-B"
+	freshLifetimeRecoveryCatalog = "catalog-recovery-B"
+	freshLifetimeLaterCatalog    = "catalog-recovery-C"
 )
 
 type freshLifetimeControlSpy struct {
@@ -389,11 +392,19 @@ func TestFreshLifetimeApplyingRecoveryPublishesPinnedTarget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	runtimeManagerBefore := manager.runtimeManager.(*fakeScopedRuntimeManager)
+	runtimeManagerBefore.currentSnapshot = freshLifetimeRecoveryCatalog
+	runtimeManagerBefore.runtimeForSession = func(request SessionRuntimeRequest) (*BuiltRuntime, error) {
+		runtime := *f.runtime
+		runtime.RuntimeSnapshotID = request.RuntimeSnapshotID
+		return &runtime, nil
+	}
 	request := FreshLifetimeRequest{OperationID: "fresh-applying", SessionID: topic.GetSessionID(), InputHash: strings.Repeat("d", 64)}
 	prepared, _, err := manager.PrepareFreshLifetime(t.Context(), request)
 	if err != nil {
 		t.Fatal(err)
 	}
+	runtimeManagerBefore.currentSnapshot = freshLifetimeLaterCatalog
 	if err := f.provider.RuntimeOperations().MarkApplying(t.Context(), request.OperationID, request.InputHash); err != nil {
 		t.Fatal(err)
 	}
@@ -416,6 +427,10 @@ func TestFreshLifetimeApplyingRecoveryPublishesPinnedTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer lease.Release()
+	if lease.RuntimeSnapshotID() != freshLifetimeRecoveryCatalog {
+		t.Fatalf("recovery snapshot=%q", lease.RuntimeSnapshotID())
+	}
+
 	t.Cleanup(func() {
 		_ = topic.DrainRuntime(context.Background())
 	})
@@ -525,11 +540,19 @@ func TestFreshLifetimeColdRecoveryUsesPinnedLocalIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	oldLease.Release()
+	runtimeManagerBefore := manager.runtimeManager.(*fakeScopedRuntimeManager)
+	runtimeManagerBefore.currentSnapshot = freshLifetimeRecoveryCatalog
+	runtimeManagerBefore.runtimeForSession = func(request SessionRuntimeRequest) (*BuiltRuntime, error) {
+		runtime := *f.runtime
+		runtime.RuntimeSnapshotID = request.RuntimeSnapshotID
+		return &runtime, nil
+	}
 	request := FreshLifetimeRequest{OperationID: "fresh-cold-recovery", SessionID: topic.GetSessionID(), InputHash: strings.Repeat("e", 64)}
 	prepared, _, err := manager.PrepareFreshLifetime(t.Context(), request)
 	if err != nil {
 		t.Fatal(err)
 	}
+	runtimeManagerBefore.currentSnapshot = freshLifetimeLaterCatalog
 	if err := f.provider.RuntimeOperations().MarkApplying(t.Context(), request.OperationID, request.InputHash); err != nil {
 		t.Fatal(err)
 	}
@@ -548,6 +571,9 @@ func TestFreshLifetimeColdRecoveryUsesPinnedLocalIdentity(t *testing.T) {
 	restarted := f.manager()
 	restarted.runtimeOperations = f.provider.RuntimeOperations()
 	runtimeManager := restarted.runtimeManager.(*fakeScopedRuntimeManager)
+	runtimeManager.currentSnapshot = freshLifetimeLaterCatalog
+	runtimeManager.runtimeForSession = runtimeManagerBefore.runtimeForSession
+
 	if err := restarted.recoverApplyingFreshLifetimeOperation(t.Context(), operation); err != nil {
 		t.Fatal(err)
 	}
@@ -574,6 +600,10 @@ func TestFreshLifetimeColdRecoveryUsesPinnedLocalIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer lease.Release()
+	if lease.RuntimeSnapshotID() != freshLifetimeRecoveryCatalog {
+		t.Fatalf("recovery snapshot=%q", lease.RuntimeSnapshotID())
+	}
+
 	if lease.SessionID() != prepared.operation.TargetArchiveID {
 		t.Fatalf("restored target = %q, want %q", lease.SessionID(), prepared.operation.TargetArchiveID)
 	}
@@ -1209,5 +1239,88 @@ func TestFreshLifetimeAbortRetainsOwnerThroughDeleteAndFinalize(t *testing.T) {
 	}
 	if closeCalls.Load() != 1 {
 		t.Fatalf("incumbent close calls=%d", closeCalls.Load())
+	}
+}
+
+func TestFreshLifetimeFreezesCurrentCatalogInsteadOfIncumbent(t *testing.T) {
+	f := newArchiveFixture(t)
+	f.runtime.ProviderBindingJSON = publicationBinding
+	manager := f.manager()
+	manager.runtimeOperations = f.provider.RuntimeOperations()
+	topic, err := manager.EnsureSession(t.Context(), archiveInput(), "saved")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeManager := manager.runtimeManager.(*fakeScopedRuntimeManager)
+	oldSnapshot := topic.runtime.value.runtime.RuntimeSnapshotID
+	runtimeManager.currentSnapshot = freshLifetimeCurrentCatalog
+	runtimeManager.runtimeForSession = func(request SessionRuntimeRequest) (*BuiltRuntime, error) {
+		runtime := *f.runtime
+		runtime.RuntimeSnapshotID = request.RuntimeSnapshotID
+		return &runtime, nil
+	}
+	request := FreshLifetimeRequest{OperationID: "current-catalog", SessionID: topic.GetSessionID(), InputHash: strings.Repeat("c", 64)}
+	prepared, result, err := manager.PrepareFreshLifetime(t.Context(), request)
+	if err != nil || prepared == nil {
+		t.Fatalf("prepare = %#v, %v", result, err)
+	}
+	if prepared.operation.TargetSnapshotID != freshLifetimeCurrentCatalog || oldSnapshot == prepared.operation.TargetSnapshotID {
+		t.Errorf("frozen snapshot=%q, incumbent=%q", prepared.operation.TargetSnapshotID, oldSnapshot)
+	}
+	runtimeManager.currentSnapshot = "catalog-current-C"
+	duplicate, _, err := manager.PrepareFreshLifetime(t.Context(), request)
+	if err != nil || duplicate == nil {
+		t.Fatalf("retry prepare=%v", err)
+	}
+	result, err = manager.PublishFreshLifetime(t.Context(), prepared)
+	if err != nil || result.Status != FreshLifetimeReset {
+		t.Fatalf("publish=%#v, %v", result, err)
+	}
+	if _, err := manager.AbortFreshLifetime(t.Context(), duplicate); err != nil {
+		t.Fatal(err)
+	}
+	replay, found, err := manager.ResolveFreshLifetimeResult(t.Context(), request)
+	if err != nil || !found || !reflect.DeepEqual(replay, result) {
+		t.Fatalf("receipt=%+v found=%v err=%v, want %+v", replay, found, err, result)
+	}
+	collision := request
+	collision.InputHash = strings.Repeat("d", 64)
+	if got, found, err := manager.ResolveFreshLifetimeResult(t.Context(), collision); err != nil || !found || got.Status != FreshLifetimeConflict {
+		t.Fatalf("collision=%+v,%v,%v", got, found, err)
+	}
+	missing := request
+	missing.OperationID = "never-admitted"
+	if _, found, err := manager.ResolveFreshLifetimeResult(t.Context(), missing); err != nil || found {
+		t.Fatalf("missing found=%v err=%v", found, err)
+	}
+	if topic.runtime.value.runtime.RuntimeSnapshotID != freshLifetimeCurrentCatalog || runtimeManager.snapshotCalls != 1 {
+		t.Errorf("published snapshot=%q selections=%d", topic.runtime.value.runtime.RuntimeSnapshotID, runtimeManager.snapshotCalls)
+	}
+}
+
+func TestFreshLifetimeSelectionFailureLeavesPredecessorAndNoOperation(t *testing.T) {
+	f := newArchiveFixture(t)
+	manager := f.manager()
+	manager.runtimeOperations = f.provider.RuntimeOperations()
+	topic, err := manager.EnsureSession(t.Context(), archiveInput(), "saved")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeManager := manager.runtimeManager.(*fakeScopedRuntimeManager)
+	runtimeManager.snapshotErr = errors.New("synthetic catalog selection failure")
+	before := topic.GetArchiveID()
+	request := FreshLifetimeRequest{OperationID: "selection-failure", SessionID: topic.GetSessionID(), InputHash: strings.Repeat("e", 64)}
+	plan, result, err := manager.PrepareFreshLifetime(t.Context(), request)
+	if plan != nil || result.Status != FreshLifetimeUnavailable || err == nil {
+		t.Fatalf("prepare=%v,%+v,%v", plan, result, err)
+	}
+	if _, found, err := f.provider.RuntimeOperations().Get(t.Context(), request.OperationID); err != nil || found {
+		t.Fatalf("operation found=%v err=%v", found, err)
+	}
+	if topic.GetArchiveID() != before || len(runtimeManager.unpublishedRequests) != 0 {
+		t.Fatalf("archive=%q builds=%d", topic.GetArchiveID(), len(runtimeManager.unpublishedRequests))
+	}
+	if _, err := manager.archive.Pending(t.Context(), topic.locator.ChannelType, topic.locator.AddressKey); !errors.Is(err, chatarchivecmd.ErrNotFound) {
+		t.Fatalf("pending archive=%v", err)
 	}
 }

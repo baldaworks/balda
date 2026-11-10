@@ -9,8 +9,10 @@ after restart.
 
 - `/reset` and `/new` wait behind active and prior session work in the existing
   FIFO, then publish a new empty local lifetime at the same stable locator. They
-  preserve the exact provider binding, optional requested model preference, and
-  pinned capability snapshot. Active model observation remains unknown until a
+  select current eligible catalog capabilities when that boundary runs and freeze
+  the target for retry/restart. They preserve the exact provider binding and
+  configuration/reasoning, optional requested model preference and workspace.
+  Active model observation remains unknown until a
   later provider attachment or execution; provider use stays lazy.
 - `/cancel` stops the active conversational turn and drops queued turns for the
   current session. It does not stop GoalKeeper.
@@ -28,9 +30,10 @@ Answer ordinary questions directly instead of redirecting the user to a command.
 ## Capability snapshots and skills
 
 Commands, skills, and MCP definitions are bound to an immutable session snapshot.
-Application catalog changes affect genuinely new stable sessions. They do not
-mutate a healthy active runtime, and reset/new preserve the existing session's
-exact pinned snapshot.
+Application catalog changes do not mutate a healthy active runtime. New sessions
+and explicit reset/new lifetime boundaries select the current eligible catalog.
+The latter freezes its target at FIFO execution and preserves the exact provider
+configuration/reasoning, requested model preference and workspace.
 
 The available-skills list is metadata for discovery. Skill content is user-level
 guidance. Resolve ambiguous names with the advertised qualified identity. The

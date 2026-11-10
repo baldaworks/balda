@@ -177,9 +177,15 @@ session capability and remain lazy-loaded only after explicit selection. MCP
 servers are also independent: their fixed list is supplied when the provider
 session is created or restored and remains attached until that session runtime
 closes. Commands do not acquire MCP or construct a per-turn provider runtime.
-A catalog refresh cannot change an active session. `/reset` and `/new` publish
-a new empty local conversation while preserving the exact pinned command,
-skill, MCP, provider, and model metadata. They do not adopt a refreshed catalog.
+A catalog refresh cannot change an active lifetime. `/reset` and `/new` select
+the current effective catalog when their existing FIFO replacement callback runs,
+after active and prior work. That one snapshot supplies commands, skills, MCP and
+enabled plugin contributions for the same workspace. The exact provider binding,
+configuration/reasoning, requested model preference and workspace remain unchanged.
+The selected target is frozen in the existing operation journal before candidate
+construction; retry/restart reuses it, and a duplicate terminal callback reads the
+existing receipt. Ingress and CommandActor retain their command-envelope snapshot;
+they do not select the replacement catalog.
 
 ## Transport parsing and support
 

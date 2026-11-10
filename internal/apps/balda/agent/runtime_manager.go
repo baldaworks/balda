@@ -601,6 +601,23 @@ func (m *RuntimeManager) RuntimeForSession(ctx context.Context, request SessionR
 	return m.buildSessionRuntime(ctx, request, true)
 }
 
+// CurrentSessionSnapshot selects catalog metadata without building a runtime or acquiring MCP.
+func (m *RuntimeManager) CurrentSessionSnapshot(ctx context.Context, workspaceDir string) (string, error) {
+	if m == nil {
+		return "", ErrProviderUnavailable
+	}
+	m.mu.RLock()
+	binder := m.capabilityBinder
+	m.mu.RUnlock()
+	selector, ok := binder.(interface {
+		CurrentSessionSnapshot(ctx context.Context, workspaceDir string) (string, error)
+	})
+	if !ok {
+		return "", ErrProviderUnavailable
+	}
+	return selector.CurrentSessionSnapshot(ctx, workspaceDir)
+}
+
 // BuildUnpublishedSessionRuntime constructs an independently owned runtime
 // without exposing it through scoped runtime or child-runtime indexes.
 func (m *RuntimeManager) BuildUnpublishedSessionRuntime(ctx context.Context, request SessionRuntimeRequest) (*UnpublishedSessionRuntimeCandidate, error) {

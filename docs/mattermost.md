@@ -181,8 +181,9 @@ unsupported change leaves the incumbent model and context intact and never
 resets the session.
 
 Bare `/reset` and `/new` (or `/balda reset` and `/balda new`) queue a new empty
-local conversation while preserving the exact provider binding, optional
-requested model preference, and capabilities. Active model state is unknown
+local conversation. At the FIFO boundary they select current catalog capabilities
+while preserving the exact provider binding, optional requested model preference
+and workspace. Active model state is unknown
 until later provider attachment or execution.
 Provider use remains lazy, and success does not promise remote-history deletion.
 

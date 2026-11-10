@@ -116,8 +116,9 @@ authentication boundary.
   from that pin.
 - Every turn reuses the session's existing runner. `/reset` and `/new` remain
   separate explicit actions: they publish a new empty local conversation while
-  retaining the exact provider binding, optional requested model preference,
-  and capability snapshot. Active model observation is unknown until later
+  selecting current eligible catalog capabilities at the queued FIFO boundary
+  while retaining the exact provider binding/configuration/reasoning, optional
+  requested model preference and workspace. Active model observation is unknown until later
   provider attachment or execution.
 - Persisted session label is reused as-is for restore; if missing, balda falls back to label `auto`.
 - In workspace mode, restore first tries to sync the session branch with the configured base branch.
@@ -196,14 +197,19 @@ replacement until lazy reconciliation under the canonical operation lock proves
 the old runtime retained or destroyed. Reconciliation never repeats lifecycle
 hooks. Later hook/workspace cleanup failure cannot undo a proved destruction.
 
-Active `/reset` and `/new` instead prepare and verify an empty local ADK session
-under a new archive/runtime identity, then cross the existing per-session FIFO
-boundary and publish it at the next runtime generation. The stable Balda
-session, locator, exact provider binding, optional requested model preference,
-and capability snapshot do not change. Active model observation is cleared and
-remains unknown until later provider attachment or execution. Preparation and
-restart recovery use only those pinned identities and
-perform no provider RPC. A contradiction remains recovery-fenced.
+Active `/reset` and `/new` prepare and publish inside the existing per-session
+FIFO replacement callback, after active and prior work. At that boundary the
+catalog owner selects the current application catalog plus the preserved
+workspace overlay: MCP, skills, commands and enabled plugin contributions. The
+existing operation durably freezes that target once before preparing an empty
+local ADK session under a new archive/runtime identity and next generation.
+The stable session, locator, workspace/branch/mode, exact provider binding and
+configuration/reasoning, and optional requested model preference remain unchanged.
+Active model observation is cleared until later attachment or execution.
+Preparation performs no provider RPC or MCP network discovery. Retry/restart uses
+the frozen target and separate predecessor/target readiness fences; missing or
+contradictory evidence remains recovery-fenced. A duplicate terminal callback
+returns its verified existing receipt without selecting another catalog.
 
 A fresh replacement uses a new archive UUID and retains the ended predecessor
 where available. `/reset` and `/new` make the predecessor unreachable through

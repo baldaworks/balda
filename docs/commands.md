@@ -125,8 +125,13 @@ snapshot exists, Balda says so. It does not query a provider or start a turn.
 
 These aliases queue one fresh-lifetime boundary behind active and already queued
 session work. On success Balda keeps the stable session and locator, preserves
-the exact provider binding, optional requested model preference, and capability snapshot, and
-publishes a new empty local conversation/archive identity. The prior local
+the exact provider binding, optional requested model preference, and workspace, and
+publishes a new empty local conversation/archive identity. When that FIFO boundary
+runs, it selects the current eligible catalog of MCP, skills, commands and enabled
+plugin contributions for the same workspace. Provider configuration and reasoning
+settings remain pinned; the command does not reload those defaults. The operation
+freezes its selected catalog for retry/restart, and terminal replay returns the
+existing result without selecting again. The prior local
 context is no longer addressable through that session. The active model is
 unknown until a later provider attachment or execution supplies valid evidence.
 
@@ -169,9 +174,9 @@ The selected skill revision is pinned before the turn is published, but its
 body and resources stay lazy until the session turn executes. Skill content is
 user-level context: it cannot override Balda system policy, permissions, or
 approval boundaries. Installing, upgrading, enabling, disabling, or removing a
-skill does not alter an existing session snapshot. `/reset` deliberately
-preserves that snapshot; adopting a different snapshot requires a separate
-supported session-control flow.
+skill does not alter a live session snapshot. Explicit `/reset` or `/new` starts
+a new local lifetime with current eligible skills and other catalog contributions
+selected at its FIFO boundary, while retaining provider/model/workspace identity.
 
 ### `/close`
 

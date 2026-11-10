@@ -1071,6 +1071,9 @@ func (f *fakeBaldaRuntimeManager) ProviderID() string {
 }
 
 type fakeScopedRuntimeManager struct {
+	currentSnapshot string
+	snapshotCalls   int
+	snapshotErr     error
 	fakeBaldaRuntimeManager
 	sessionRuntime      *BuiltRuntime
 	sessionErr          error
@@ -1116,6 +1119,20 @@ func (c *fakeUnpublishedRuntimeCandidate) Abort(context.Context) error {
 	}
 	c.aborted = true
 	return nil
+}
+
+func (f *fakeScopedRuntimeManager) CurrentSessionSnapshot(context.Context, string) (string, error) {
+	f.snapshotCalls++
+	if f.snapshotErr != nil {
+		return "", f.snapshotErr
+	}
+	if f.currentSnapshot != "" {
+		return f.currentSnapshot, nil
+	}
+	if f.sessionRuntime != nil {
+		return f.sessionRuntime.RuntimeSnapshotID, nil
+	}
+	return f.runtime.RuntimeSnapshotID, nil
 }
 
 func (f *fakeScopedRuntimeManager) BuildUnpublishedSessionRuntime(_ context.Context, request SessionRuntimeRequest) (UnpublishedSessionRuntimeCandidate, error) {

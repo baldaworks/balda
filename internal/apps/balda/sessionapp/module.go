@@ -160,6 +160,11 @@ func (a SessionRuntimeManagerAdapter) RuntimeForSession(ctx context.Context, req
 	return sessionRuntime(runtime), nil
 }
 
+// CurrentSessionSnapshot forwards metadata selection to the catalog capability owner.
+func (a SessionRuntimeManagerAdapter) CurrentSessionSnapshot(ctx context.Context, workspaceDir string) (string, error) {
+	return a.Manager.CurrentSessionSnapshot(ctx, workspaceDir)
+}
+
 func (a SessionRuntimeManagerAdapter) BuildUnpublishedSessionRuntime(ctx context.Context, request baldasession.SessionRuntimeRequest) (baldasession.UnpublishedSessionRuntimeCandidate, error) {
 	candidate, err := a.Manager.BuildUnpublishedSessionRuntime(ctx, baldaagent.SessionRuntimeRequest{
 		Locator: deliverycmd.Locator{ChannelType: request.Locator.ChannelType, AddressKey: request.Locator.AddressKey, AddressJSON: request.Locator.AddressJSON, SessionID: request.Locator.SessionID},

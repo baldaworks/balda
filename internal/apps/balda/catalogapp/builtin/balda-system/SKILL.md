@@ -38,10 +38,11 @@ path.
 An active session keeps its pinned commands, skills, and MCP definitions when
 the application catalog changes. `/reset` and `/new` wait behind active and
 prior work, create a fresh empty local lifetime at the same stable locator, and
-preserve the exact pinned catalog, provider binding, and optional requested
-model preference. Active model observation is unknown until later provider
-attachment or execution. Only a genuinely new stable session selects the
-current catalog.
+select the current eligible catalog when that FIFO boundary runs. The operation
+freezes its target for retry/restart and replays the verified terminal receipt.
+Exact provider binding/configuration/reasoning, optional requested model preference
+and workspace remain unchanged. Active model observation is unknown until later
+provider attachment or execution; reset does not promise remote tool readiness.
 
 ## Load the relevant runtime reference
 

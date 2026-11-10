@@ -111,7 +111,7 @@ Balda supports these commands in Zulip:
 | `/topic <name>` | Create a session in the current stream's native Zulip topic |
 | `/goalkeeper <objective>` | Start goal work from the current session context |
 | `/goalkeeper clear` | Stop active goal work for the current session |
-| `/reset` | Start an empty local conversation while preserving provider binding, requested model preference, and capabilities |
+| `/reset` | Start an empty local conversation with current catalog capabilities, preserving provider binding, requested model preference and workspace |
 | `/new` | Bare alias for `/reset` |
 | `/cancel` | Cancel current session turn; active goal runs continue |
 | `/locator` | Show current locator ref |

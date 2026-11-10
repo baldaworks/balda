@@ -35,6 +35,21 @@ type sessionCapabilityBinder struct {
 	extra     []string
 }
 
+// CurrentSessionSnapshot selects and retains the complete current workspace catalog.
+func (b *sessionCapabilityBinder) CurrentSessionSnapshot(ctx context.Context, workspaceDir string) (string, error) {
+	if b == nil || b.catalog == nil {
+		return "", runtimecatalogcmd.ErrSnapshotUnavailable
+	}
+	snapshot, err := b.catalog.CurrentSkillSnapshot(ctx, workspaceDir)
+	if err != nil {
+		return "", err
+	}
+	if snapshot.ID == "" {
+		return "", runtimecatalogcmd.ErrSnapshotUnavailable
+	}
+	return string(snapshot.ID), nil
+}
+
 func (b *sessionCapabilityBinder) BindSessionCapabilities(ctx context.Context, providerID string, request baldaagent.SessionRuntimeRequest) (baldaagent.SessionCapabilityBinding, error) {
 	if b == nil || b.catalog == nil || b.skills == nil {
 		return baldaagent.SessionCapabilityBinding{}, fmt.Errorf("session capability binder is unavailable")

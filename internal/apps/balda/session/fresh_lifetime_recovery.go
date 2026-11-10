@@ -284,7 +284,8 @@ func (m *Manager) freshLifetimeRecoveryService(sessionID string, record baldasta
 
 func freshLifetimeIncumbentRecordMatches(record baldastate.SessionRecord, operation baldastate.RuntimeOperationRecord) bool {
 	return record.SessionID == operation.SessionID && record.ArchiveID == operation.ExpectedArchiveID &&
-		record.RuntimeGeneration == operation.ExpectedGeneration && record.RuntimeSnapshotID == operation.TargetSnapshotID &&
+		record.RuntimeGeneration == operation.ExpectedGeneration && record.RuntimeSnapshotID != "" &&
+		(operation.Kind == string(baldastate.RuntimeOperationKindLifetimePreference) || record.RuntimeSnapshotID == operation.TargetSnapshotID) &&
 		record.ProviderBindingJSON == operation.TargetProviderBindingJSON && record.EffectiveModel == operation.TargetModel &&
 		(operation.Kind != string(baldastate.RuntimeOperationKindLifetimePreference) || sameOptionalModel(record.RequestedModel, operation.TargetRequestedModel))
 }
@@ -304,7 +305,9 @@ func freshLifetimeRecoveryRecordMatches(record baldastate.SessionRecord, operati
 
 func freshLifetimeValueMatches(value runtimeSlotValue, record baldastate.SessionRecord, operation baldastate.RuntimeOperationRecord) bool {
 	return value.archiveID == operation.ExpectedArchiveID && value.generation == operation.ExpectedGeneration &&
-		value.runtime.RuntimeSnapshotID == operation.TargetSnapshotID &&
+		value.runtime.RuntimeSnapshotID != "" &&
+		(operation.Kind == string(baldastate.RuntimeOperationKindLifetimePreference) || value.runtime.RuntimeSnapshotID == operation.TargetSnapshotID) &&
+		(record.ArchiveID != operation.ExpectedArchiveID || value.runtime.RuntimeSnapshotID == record.RuntimeSnapshotID) &&
 		value.runtime.ProviderBindingJSON == operation.TargetProviderBindingJSON && value.effectiveModel == operation.TargetModel &&
 		value.userID == record.UserID && value.sessionID != operation.TargetArchiveID
 }

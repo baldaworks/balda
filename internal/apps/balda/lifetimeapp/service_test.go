@@ -29,6 +29,7 @@ type fakeFreshLifetimeManager struct {
 	publishCalls int
 	abortCalls   int
 	publishHook  func()
+	prepareHook  func()
 }
 
 func newFakeFreshLifetimeManager() *fakeFreshLifetimeManager {
@@ -44,6 +45,9 @@ func (m *fakeFreshLifetimeManager) PrepareFreshLifetime(_ context.Context, reque
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.requests = append(m.requests, request)
+	if m.prepareHook != nil {
+		m.prepareHook()
+	}
 	if terminal, ok := m.terminal[request.OperationID]; ok {
 		return nil, terminal, nil
 	}
@@ -82,88 +86,111 @@ func (m *fakeFreshLifetimeManager) AbortFreshLifetime(_ context.Context, plan *b
 	return m.abort, m.abortErr
 }
 
+func (m *fakeFreshLifetimeManager) ResolveFreshLifetimeResult(_ context.Context, request baldasession.FreshLifetimeRequest) (baldasession.FreshLifetimeResult, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	result, found := m.terminal[request.OperationID]
+	return result, found, nil
+}
+
 func (m *fakeFreshLifetimeManager) snapshot() ([]baldasession.FreshLifetimeRequest, int, int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return append([]baldasession.FreshLifetimeRequest(nil), m.requests...), m.publishCalls, m.abortCalls
 }
 
-func TestSubmitPreparesBeforeExistingReplacementFIFO(t *testing.T) {
-	dispatcher := testDispatcher(t)
-	manager := newFakeFreshLifetimeManager()
+func TestSubmitPreparesAtExistingReplacementFIFO(t *testing.T) {
+	for _, command := range []string{"reset", "new"} {
+		t.Run(command, func(t *testing.T) {
+			dispatcher := testDispatcher(t)
+			manager := newFakeFreshLifetimeManager()
 
-	var mu sync.Mutex
-	order := make([]string, 0, 3)
-	appendOrder := func(value string) {
-		mu.Lock()
-		defer mu.Unlock()
-		order = append(order, value)
-	}
-	manager.publishHook = func() { appendOrder("replacement") }
+			var mu sync.Mutex
+			order := make([]string, 0, 3)
+			appendOrder := func(value string) {
+				mu.Lock()
+				defer mu.Unlock()
+				order = append(order, value)
+			}
+			manager.publishHook = func() { appendOrder("replacement") }
+			currentCatalog := "B"
+			manager.prepareHook = func() {
+				mu.Lock()
+				defer mu.Unlock()
+				if currentCatalog != "C" {
+					t.Errorf("boundary selected catalog %q, want C", currentCatalog)
+				}
+				order = append(order, "prepare-C")
+			}
 
-	activeStarted := make(chan struct{})
-	releaseActive := make(chan struct{})
-	active, _, err := dispatcher.Enqueue(t.Context(), appports.TurnTask{SessionID: "session", Run: func(context.Context) error {
-		close(activeStarted)
-		<-releaseActive
-		appendOrder("active")
-		return nil
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	<-activeStarted
-	priorStarted := make(chan struct{})
-	releasePrior := make(chan struct{})
-	prior, _, err := dispatcher.Enqueue(t.Context(), appports.TurnTask{SessionID: "session", Run: func(context.Context) error {
-		close(priorStarted)
-		<-releasePrior
-		appendOrder("prior")
-		return nil
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
+			activeStarted := make(chan struct{})
+			releaseActive := make(chan struct{})
+			active, _, err := dispatcher.Enqueue(t.Context(), appports.TurnTask{SessionID: "session", Run: func(context.Context) error {
+				close(activeStarted)
+				<-releaseActive
+				appendOrder("active")
+				return nil
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			<-activeStarted
+			priorStarted := make(chan struct{})
+			releasePrior := make(chan struct{})
+			prior, _, err := dispatcher.Enqueue(t.Context(), appports.TurnTask{SessionID: "session", Run: func(context.Context) error {
+				close(priorStarted)
+				<-releasePrior
+				appendOrder("prior")
+				mu.Lock()
+				currentCatalog = "C"
+				mu.Unlock()
+				return nil
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
 
-	service := newService(dispatcher, manager)
-	completion, position, err := service.Submit(t.Context(), Request{OperationID: "operation", SessionID: "session", Command: "reset"})
-	if err != nil || position != 2 {
-		t.Fatalf("Submit() position=%d err=%v", position, err)
-	}
-	requests, publishCalls, _ := manager.snapshot()
-	if len(requests) != 1 || publishCalls != 0 {
-		t.Fatalf("pre-boundary state: requests=%d publishes=%d", len(requests), publishCalls)
-	}
-	if _, _, err := dispatcher.Enqueue(t.Context(), appports.TurnTask{SessionID: "session", Run: func(context.Context) error { return nil }}); !errors.Is(err, appports.ErrTurnReplacementPending) {
-		t.Fatalf("later Enqueue() error = %v, want replacement pending", err)
-	}
+			service := newService(dispatcher, manager)
+			completion, position, err := service.Submit(t.Context(), Request{OperationID: "operation", SessionID: "session", Command: command})
+			if err != nil || position != 2 {
+				t.Fatalf("Submit() position=%d err=%v", position, err)
+			}
+			requests, publishCalls, _ := manager.snapshot()
+			if len(requests) != 0 || publishCalls != 0 {
+				t.Errorf("pre-boundary state: requests=%d publishes=%d", len(requests), publishCalls)
+			}
+			if _, _, err := dispatcher.Enqueue(t.Context(), appports.TurnTask{SessionID: "session", Run: func(context.Context) error { return nil }}); !errors.Is(err, appports.ErrTurnReplacementPending) {
+				t.Fatalf("later Enqueue() error = %v, want replacement pending", err)
+			}
 
-	close(releaseActive)
-	if err := <-active; err != nil {
-		t.Fatal(err)
-	}
-	<-priorStarted
-	_, publishCalls, _ = manager.snapshot()
-	if publishCalls != 0 {
-		t.Fatalf("publish before prior turn completed: %d", publishCalls)
-	}
-	close(releasePrior)
-	if err := <-prior; err != nil {
-		t.Fatal(err)
-	}
-	got := <-completion
-	if got.Result.Status != StatusReset || got.Result.Generation != 2 {
-		t.Fatalf("completion = %+v", got)
-	}
-	mu.Lock()
-	gotOrder := append([]string(nil), order...)
-	mu.Unlock()
-	if !reflect.DeepEqual(gotOrder, []string{"active", "prior", "replacement"}) {
-		t.Fatalf("order = %v", gotOrder)
+			close(releaseActive)
+			if err := <-active; err != nil {
+				t.Fatal(err)
+			}
+			<-priorStarted
+			_, publishCalls, _ = manager.snapshot()
+			if publishCalls != 0 {
+				t.Fatalf("publish before prior turn completed: %d", publishCalls)
+			}
+			close(releasePrior)
+			if err := <-prior; err != nil {
+				t.Fatal(err)
+			}
+			got := <-completion
+			if got.Result.Status != StatusReset || got.Result.Generation != 2 {
+				t.Fatalf("completion = %+v", got)
+			}
+			mu.Lock()
+			gotOrder := append([]string(nil), order...)
+			mu.Unlock()
+			if !reflect.DeepEqual(gotOrder, []string{"active", "prior", "prepare-C", "replacement"}) {
+				t.Fatalf("order = %v", gotOrder)
+			}
+		})
 	}
 }
 
-func TestSubmitExactRedeliveryPublishesOnceAndCollisionAborts(t *testing.T) {
+func TestSubmitExactRedeliveryPublishesOnceAndRejectsCollision(t *testing.T) {
 	dispatcher := testDispatcher(t)
 	manager := newFakeFreshLifetimeManager()
 	service := newService(dispatcher, manager)
@@ -207,11 +234,8 @@ func TestSubmitExactRedeliveryPublishesOnceAndCollisionAborts(t *testing.T) {
 		}
 	}
 	requests, publishes, aborts := manager.snapshot()
-	if len(requests) != 3 || publishes != 1 || aborts != 2 {
+	if len(requests) != 1 || publishes != 1 || aborts != 0 {
 		t.Fatalf("calls: prepare=%d publish=%d abort=%d", len(requests), publishes, aborts)
-	}
-	if requests[0].InputHash != requests[1].InputHash || requests[0].InputHash == requests[2].InputHash {
-		t.Fatalf("input hashes do not encode canonical alias: %#v", requests)
 	}
 }
 
@@ -268,12 +292,12 @@ func TestSubmitConcurrentExactRedeliveryPublishesOnce(t *testing.T) {
 		}
 	}
 	requests, publishes, aborts := manager.snapshot()
-	if len(requests) != submissions || publishes != 1 || aborts != submissions-1 {
+	if len(requests) != 1 || publishes != 1 || aborts != 0 {
 		t.Fatalf("calls: prepare=%d publish=%d abort=%d", len(requests), publishes, aborts)
 	}
 }
 
-func TestSubmitQueueFullAbortsWithoutPublication(t *testing.T) {
+func TestSubmitQueueFullDoesNotPrepare(t *testing.T) {
 	manager := newFakeFreshLifetimeManager()
 	service := newService(rejectingReplacementQueue{err: appports.ErrTurnQueueFull}, manager)
 
@@ -288,13 +312,13 @@ func TestSubmitQueueFullAbortsWithoutPublication(t *testing.T) {
 	if got := <-completion; got.Result.Status != StatusConflict {
 		t.Fatalf("completion = %+v", got)
 	}
-	_, publishes, aborts := manager.snapshot()
-	if publishes != 0 || aborts != 1 {
+	requests, publishes, aborts := manager.snapshot()
+	if len(requests) != 0 || publishes != 0 || aborts != 0 {
 		t.Fatalf("publish=%d abort=%d", publishes, aborts)
 	}
 }
 
-func TestSubmitCancellationAbortsPreparedCandidate(t *testing.T) {
+func TestSubmitQueuedCancellationDoesNotPrepare(t *testing.T) {
 	dispatcher := testDispatcher(t)
 	manager := newFakeFreshLifetimeManager()
 	service := newService(dispatcher, manager)
@@ -323,24 +347,9 @@ func TestSubmitCancellationAbortsPreparedCandidate(t *testing.T) {
 	if got := <-completion; got.Result.Status != StatusInterrupted {
 		t.Fatalf("completion = %+v", got)
 	}
-	_, publishes, aborts := manager.snapshot()
-	if publishes != 0 || aborts != 1 {
+	requests, publishes, aborts := manager.snapshot()
+	if len(requests) != 0 || publishes != 0 || aborts != 0 {
 		t.Fatalf("publish=%d abort=%d", publishes, aborts)
-	}
-}
-
-func TestSubmitRecoveryEvidenceWinsOverAdmissionFailure(t *testing.T) {
-	manager := newFakeFreshLifetimeManager()
-	manager.abort = baldasession.FreshLifetimeResult{Status: baldasession.FreshLifetimeRecoveryRequired}
-	manager.abortErr = baldasession.ErrRuntimeRecoveryRequired
-	service := newService(rejectingReplacementQueue{err: appports.ErrTurnQueueFull}, manager)
-
-	completion, _, err := service.Submit(t.Context(), Request{OperationID: "operation", SessionID: "session", Command: "reset"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := <-completion; got.Result.Status != StatusRecoveryRequired {
-		t.Fatalf("completion = %+v", got)
 	}
 }
 
@@ -427,7 +436,7 @@ func TestSubmitMapsBoundedResults(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			manager := newFakeFreshLifetimeManager()
 			manager.prepare, manager.prepareErr = test.result, test.err
-			service := newService(rejectingReplacementQueue{}, manager)
+			service := newService(testDispatcher(t), manager)
 			completion, _, err := service.Submit(t.Context(), Request{OperationID: "operation", SessionID: "session", Command: "reset"})
 			if err != nil {
 				t.Fatal(err)
@@ -477,4 +486,28 @@ func testDispatcher(t *testing.T) *actors.TurnDispatcher {
 		}
 	})
 	return dispatcher
+}
+
+func TestSubmitCachedReplacementReturnsReceiptWithoutPreparation(t *testing.T) {
+	dispatcher := testDispatcher(t)
+	manager := newFakeFreshLifetimeManager()
+	service := newService(dispatcher, manager)
+	request := Request{OperationID: "cached-operation", SessionID: "session", Command: "new"}
+	first, _, err := service.Submit(t.Context(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := <-first
+	duplicate, _, err := service.Submit(t.Context(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after := <-duplicate
+	if !reflect.DeepEqual(before, after) || after.Result.Status != StatusReset {
+		t.Fatalf("replay=%+v, want %+v", after, before)
+	}
+	requests, publishes, aborts := manager.snapshot()
+	if len(requests) != 1 || publishes != 1 || aborts != 0 {
+		t.Fatalf("prepare=%d publish=%d abort=%d", len(requests), publishes, aborts)
+	}
 }

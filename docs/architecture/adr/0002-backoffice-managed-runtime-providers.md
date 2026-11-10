@@ -17,7 +17,11 @@ Operators currently edit YAML and restart Balda to change them.
 
 Backoffice should manage an additional set of definitions without breaking
 YAML. Changes apply to new sessions; active sessions keep their selected graph.
-The local-lifetime `/reset` and `/new` operations preserve that exact graph.
+The local-lifetime `/reset` and `/new` operations preserve that exact graph,
+including configuration and reasoning, separately from current catalog selection.
+Their queued FIFO boundary may adopt current MCP, skills, commands and enabled
+plugin contributions for the same workspace; it does not select newer provider
+revisions or clear the requested model override.
 
 ADR 0003 defines the runtime driver registry and YAML normalization. This
 decision adds only the persistence, encryption, and session binding needed for

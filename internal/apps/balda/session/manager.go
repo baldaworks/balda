@@ -92,6 +92,11 @@ type SessionRuntimeManager interface {
 	RuntimeForSession(ctx context.Context, request SessionRuntimeRequest) (*BuiltRuntime, error)
 }
 
+// currentSessionSnapshotSelector selects a retained catalog ID without runtime construction.
+type currentSessionSnapshotSelector interface {
+	CurrentSessionSnapshot(ctx context.Context, workspaceDir string) (string, error)
+}
+
 // UnpublishedSessionRuntimeManager constructs an independently owned runtime
 // which is not visible to child-runtime lookup until publication wins.
 type UnpublishedSessionRuntimeManager interface {

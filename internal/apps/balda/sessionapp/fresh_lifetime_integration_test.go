@@ -23,8 +23,10 @@ import (
 const freshLifetimeIntegrationProviderID = "provider"
 
 type freshLifetimeRuntimeManager struct {
-	runtime *baldasession.BuiltRuntime
-	calls   atomic.Int32
+	runtime         *baldasession.BuiltRuntime
+	currentSnapshot string
+	selections      atomic.Int32
+	calls           atomic.Int32
 }
 
 type freshLifetimeCandidate struct {
@@ -52,8 +54,17 @@ func (c *freshLifetimeCandidate) Abort(context.Context) error {
 	return nil
 }
 
+func (m *freshLifetimeRuntimeManager) CurrentSessionSnapshot(context.Context, string) (string, error) {
+	m.selections.Add(1)
+	if m.currentSnapshot != "" {
+		return m.currentSnapshot, nil
+	}
+	return m.runtime.RuntimeSnapshotID, nil
+}
+
 func (m *freshLifetimeRuntimeManager) BuildUnpublishedSessionRuntime(_ context.Context, request baldasession.SessionRuntimeRequest) (baldasession.UnpublishedSessionRuntimeCandidate, error) {
 	runtime := *m.runtime
+	runtime.RuntimeSnapshotID = request.RuntimeSnapshotID
 	runtime.RuntimeBaseToken = 1
 	runtime.ProviderID = freshLifetimeIntegrationProviderID
 	if request.ModelOverride != nil {
@@ -192,8 +203,8 @@ func TestQueuedFreshLifetimeUsesProductionBoundariesWithoutProviderControl(t *te
 	if err != nil || position != 1 {
 		t.Fatalf("Submit() position=%d err=%v", position, err)
 	}
-	if sessionService.createCalls.Load() != 1 {
-		t.Fatalf("local candidate creates before boundary = %d, want 1", sessionService.createCalls.Load())
+	if sessionService.createCalls.Load() != 0 {
+		t.Fatalf("local candidate creates before boundary = %d, want 0", sessionService.createCalls.Load())
 	}
 	conflict, _, err := application.Submit(t.Context(), lifetimeapp.Request{
 		OperationID: "foreign-operation",
@@ -209,26 +220,13 @@ func TestQueuedFreshLifetimeUsesProductionBoundariesWithoutProviderControl(t *te
 	if _, found, getErr := provider.RuntimeOperations().Get(t.Context(), "foreign-operation"); getErr != nil || found {
 		t.Fatalf("foreign operation mutated journal: found=%t err=%v", found, getErr)
 	}
-	if sessionService.createCalls.Load() != 1 || sessionService.deleteCalls.Load() != 0 {
+	if sessionService.createCalls.Load() != 0 || sessionService.deleteCalls.Load() != 0 {
 		t.Fatalf("foreign operation mutated target: Create=%d Delete=%d", sessionService.createCalls.Load(), sessionService.deleteCalls.Load())
 	}
-	sessionService.failGet.Store(true)
-	failedPreparation, _, err := application.Submit(t.Context(), lifetimeapp.Request{
-		OperationID: "fresh-operation",
-		SessionID:   "session",
-		Command:     "reset",
-	})
+	duplicate, _, err := application.Submit(t.Context(), lifetimeapp.Request{OperationID: "fresh-operation", SessionID: "session", Command: "reset"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := <-failedPreparation; got.Result.Status != lifetimeapp.StatusUnavailable {
-		t.Fatalf("replay preparation failure = %+v", got)
-	}
-	sessionService.failGet.Store(false)
-	if sessionService.deleteCalls.Load() != 0 {
-		t.Fatalf("failed replay preparation deleted owner target %d times", sessionService.deleteCalls.Load())
-	}
-
 	rejectedReplay := lifetimeapp.New(rejectingFreshLifetimeQueue{err: appports.ErrTurnQueueFull}, manager)
 	replayFailure, _, err := rejectedReplay.Submit(t.Context(), lifetimeapp.Request{
 		OperationID: "fresh-operation",
@@ -241,26 +239,17 @@ func TestQueuedFreshLifetimeUsesProductionBoundariesWithoutProviderControl(t *te
 	if got := <-replayFailure; got.Result.Status != lifetimeapp.StatusConflict {
 		t.Fatalf("rejected replay completion = %+v", got)
 	}
-	operation, found, err := provider.RuntimeOperations().Get(t.Context(), "fresh-operation")
-	if err != nil || !found || operation.State != baldastate.RuntimeOperationPrepared {
-		t.Fatalf("owner operation after rejected replay = %+v found=%t err=%v", operation, found, err)
+	if _, found, err := provider.RuntimeOperations().Get(t.Context(), "fresh-operation"); err != nil || found {
+		t.Fatalf("pre-boundary operation found=%v err=%v", found, err)
 	}
-	if _, err := sessionService.Get(t.Context(), &adksession.GetRequest{
-		AppName: agentRuntime.AppName, UserID: "user", SessionID: operation.TargetArchiveID,
-	}); err != nil {
-		t.Fatalf("owner target after rejected replay: %v", err)
-	}
-	if _, err := provider.ChatArchive().Pending(t.Context(), locator.ChannelType, locator.AddressKey); err != nil {
-		t.Fatalf("owner archive intent after rejected replay: %v", err)
-	}
-	if sessionService.deleteCalls.Load() != 0 {
-		t.Fatalf("rejected replay deleted owner target %d times", sessionService.deleteCalls.Load())
+	if runtimeManager.selections.Load() != 0 {
+		t.Fatalf("early catalog selections=%d", runtimeManager.selections.Load())
 	}
 	before, err := topic.AcquireRuntime()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if before.SessionID() != oldSessionID || before.ArchiveID() != oldArchiveID || before.Generation() != oldGeneration {
+	if before.SessionID() != oldSessionID || before.ArchiveID() != oldArchiveID || before.Generation() != oldGeneration || before.RuntimeSnapshotID() != oldSnapshot {
 		t.Fatal("incumbent changed before FIFO boundary")
 	}
 	before.Release()
@@ -268,6 +257,7 @@ func TestQueuedFreshLifetimeUsesProductionBoundariesWithoutProviderControl(t *te
 		t.Fatalf("later work error = %v, want replacement pending", err)
 	}
 
+	runtimeManager.currentSnapshot = "catalog-B"
 	close(releaseActive)
 	if err := <-active; err != nil {
 		t.Fatal(err)
@@ -276,13 +266,17 @@ func TestQueuedFreshLifetimeUsesProductionBoundariesWithoutProviderControl(t *te
 	if completed.Result.Status != lifetimeapp.StatusReset || completed.Result.Generation != oldGeneration+1 {
 		t.Fatalf("completion = %+v", completed)
 	}
+	if got := <-duplicate; !reflect.DeepEqual(got.Result, completed.Result) {
+		t.Fatalf("attached duplicate=%+v, want %+v", got, completed)
+	}
+	runtimeManager.currentSnapshot = "catalog-C"
 	current, err := topic.AcquireRuntime()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer current.Release()
 	if current.SessionID() == oldSessionID || current.SessionID() != current.ArchiveID() ||
-		current.Generation() != oldGeneration+1 || current.RuntimeSnapshotID() != oldSnapshot ||
+		current.Generation() != oldGeneration+1 || current.RuntimeSnapshotID() != "catalog-B" ||
 		current.ProviderBindingJSON() != oldBinding || current.EffectiveModel() != oldModel {
 		t.Fatalf("published identity = runtime %q archive %q generation %d snapshot %q binding %q model %q",
 			current.SessionID(), current.ArchiveID(), current.Generation(), current.RuntimeSnapshotID(),
@@ -315,7 +309,7 @@ func TestQueuedFreshLifetimeUsesProductionBoundariesWithoutProviderControl(t *te
 	if got := <-replay; !reflect.DeepEqual(got.Result, completed.Result) {
 		t.Fatalf("terminal replay = %+v, want %+v", got, completed)
 	}
-	if sessionService.createCalls.Load() != 1 || runtimeManager.calls.Load() != runtimeCalls ||
+	if runtimeManager.selections.Load() != 1 || sessionService.createCalls.Load() != 1 || runtimeManager.calls.Load() != runtimeCalls ||
 		host.calls.Load() != hostCalls || sessionService.deleteCalls.Load() != 0 {
 		t.Fatal("terminal replay repeated local or provider work")
 	}
