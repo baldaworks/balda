@@ -103,6 +103,10 @@ type grantOAuth struct {
 	exchange    func(context.Context, mcpcmd.Grant, string, string) (OAuthToken, error)
 	discoveries atomic.Int64
 	refreshes   atomic.Int64
+
+	registrationRedirect  string
+	authorizationRedirect string
+	exchangeRedirect      string
 }
 
 func (o *grantOAuth) BeginDevice(ctx context.Context, _ OAuthMetadata, g mcpcmd.Grant, secrets GrantSecrets) (OAuthDevice, error) {
@@ -115,10 +119,12 @@ func (o *grantOAuth) PollDevice(ctx context.Context, _ OAuthMetadata, g mcpcmd.G
 	return o.poll(ctx, g, secrets, device)
 }
 
-func (*grantOAuth) BeginCode(_ OAuthMetadata, _ mcpcmd.Grant, _ string, state string) (string, string, error) {
+func (o *grantOAuth) BeginCode(_ OAuthMetadata, _ mcpcmd.Grant, redirectURI string, state string) (string, string, error) {
+	o.authorizationRedirect = redirectURI
 	return "https://issuer.example.org/authorize?state=" + state, "private-pkce-verifier", nil
 }
-func (o *grantOAuth) ExchangeCode(ctx context.Context, _ OAuthMetadata, g mcpcmd.Grant, _ GrantSecrets, _ string, code, verifier string) (OAuthToken, error) {
+func (o *grantOAuth) ExchangeCode(ctx context.Context, _ OAuthMetadata, g mcpcmd.Grant, _ GrantSecrets, redirectURI string, code, verifier string) (OAuthToken, error) {
+	o.exchangeRedirect = redirectURI
 	return o.exchange(ctx, g, code, verifier)
 }
 
@@ -129,7 +135,8 @@ func (o *grantOAuth) DiscoverIssuer(context.Context, mcpcmd.AuthBinding) (OAuthM
 	o.discoveries.Add(1)
 	return o.metadata, nil
 }
-func (o *grantOAuth) Register(ctx context.Context, _ OAuthMetadata, _ string, _ []string) (OAuthClient, error) {
+func (o *grantOAuth) Register(ctx context.Context, _ OAuthMetadata, redirectURI string, _ []string) (OAuthClient, error) {
+	o.registrationRedirect = redirectURI
 	if o.register != nil {
 		return o.register(ctx)
 	}

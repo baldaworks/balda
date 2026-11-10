@@ -1,5 +1,6 @@
 const { submit, cancelConfirmation } = require('./actions.cjs');
 const assert = require('node:assert/strict');
+const { createHash } = require('node:crypto');
 const { chromium } = require('playwright');
 const [baseURL, issuerURL, flow, phase, widthString, markerDirectory] = process.argv.slice(2);
 let detailURL = `${baseURL}/mcp/connections/config%3Aworker-tools`;
@@ -145,10 +146,15 @@ async function complete(page, context, denied = false) {
   if (flow === 'browser') {
     stage = denied ? 'browser denial callback' : 'browser completion callback';
     assert.equal(new URL(page.url()).origin, new URL(issuerURL).origin, 'service credentials are entered only on the external issuer');
+    const callback = new URL(new URL(page.url()).searchParams.get('redirect_uri'));
+    const sharedCallback = `${prefix}/mcp/oauth/callback`;
+    const issuerCallback = `${sharedCallback}/${createHash('sha256').update(issuerURL, 'utf8').digest('hex')}`;
+    assert.equal(callback.origin, new URL(baseURL).origin, 'callback uses configured Backoffice origin');
+    assert.equal([sharedCallback, issuerCallback].includes(callback.pathname), true, 'callback is shared or bound to exact issuer');
     await page.getByLabel('Service account', { exact: true }).fill('service-user');
     await page.getByLabel('Service password', { exact: true }).fill('synthetic-service-password');
     const [response] = await Promise.all([
-      page.waitForResponse(r => new URL(r.url()).pathname === `${prefix}/mcp/oauth/callback`),
+      page.waitForResponse(r => new URL(r.url()).origin === callback.origin && new URL(r.url()).pathname === callback.pathname),
       activate(page, 'button', denied ? 'Deny worker' : 'Authorize worker'),
     ]);
     const callbackHeaders = await response.request().allHeaders();
@@ -160,6 +166,7 @@ async function complete(page, context, denied = false) {
     assert.equal(response.headers().location.includes('state='), false, 'callback target omits protocol state');
     assert.equal(response.headers().location.includes('code='), false, 'callback target omits protocol code');
     const callbackURL = response.url();
+    assert.equal(new URL(callbackURL).searchParams.has('iss'), callback.pathname === sharedCallback, 'fixture fallback completes without an issuer response');
     stage = denied ? 'denied callback native return' : 'authorized callback native return';
     await activate(page, 'link', 'Continue to MCP');
     const replay = await page.request.get(callbackURL, { maxRedirects: 0 });

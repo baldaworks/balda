@@ -876,12 +876,42 @@ is shared by the installation. Client secrets are encrypted and write-only. Brow
 supported server client registration when the ID is blank; device authorization
 requires a pre-registered client and server support. Unsupported device flows
 show an error; use browser authorization when the service supports that flow.
-Browser authorization requires the issuer to advertise S256 PKCE and
-`authorization_response_iss_parameter_supported`; the callback's `iss` value must
-match the trusted issuer. The browser callback is
-`<balda.http.base_url><balda.http.base_path>/backoffice/mcp/oauth/callback`;
-register that exact URL with the issuer. Use the configured public origin and
-shared deployment prefix.
+Browser authorization requires S256 PKCE. If discovery advertises
+`authorization_response_iss_parameter_supported: true`, the callback must include
+`iss`. Every supplied `iss` must exactly match the trusted OAuth issuer that
+issued the MCP code, including when support was not advertised. An upstream
+identity provider used for login does not replace that issuer.
+
+The selected browser callback depends on the discovered capability:
+
+- Advertised `true`:
+  `<balda.http.base_url><balda.http.base_path>/backoffice/mcp/oauth/callback`.
+- Omitted or `false`: the same URL followed by `/<issuer_sha256>`, where
+  `issuer_sha256` is the full lowercase hexadecimal SHA-256 of the exact
+  discovered issuer string encoded as UTF-8, with no added newline or URL
+  normalization. This distinct callback permits a response without `iss`.
+
+Balda verifies the actual callback path against the initiating attempt before
+exchanging the code. Automatic client registration receives the selected exact
+URI. For a pre-registered client, add that URI at the authorization server;
+registering only the shared URI is insufficient for an omitted/false capability.
+Use the configured public origin and deployment prefix. For example, calculate
+an issuer-specific URI with synthetic deployment values:
+
+```python
+import hashlib
+
+issuer = "https://issuer.example.org"
+callback = "https://balda.example.org/balda/backoffice/mcp/oauth/callback"
+print(f"{callback}/{hashlib.sha256(issuer.encode('utf-8')).hexdigest()}")
+```
+
+A change in issuer or advertised capability can change the URI needed by a new
+attempt; update the external client registration before retrying. Distinct
+callbacks provide the [OAuth mix-up fallback](https://www.rfc-editor.org/rfc/rfc9700.html#section-4.4.2.2)
+when issuer-response support is unavailable. They rely on exact redirect
+registration and do not provide all the guarantees of an explicit issuer
+response; PKCE, state and browser-authority checks remain required.
 
 Begin, cancel, disconnect and retry are native forms with the existing normal
 administrator, current assurance, CSRF and same-origin checks. The callback uses

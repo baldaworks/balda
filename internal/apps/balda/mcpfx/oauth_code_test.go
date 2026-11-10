@@ -12,6 +12,8 @@ import (
 	"golang.org/x/oauth2"
 )
 
+const workerPKCEMethod = "S256"
+
 func TestWorkerBrowserCodeUsesS256AndExactResourceClientRedirect(t *testing.T) {
 	var base, verifier string
 	issuer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -27,7 +29,7 @@ func TestWorkerBrowserCodeUsesS256AndExactResourceClientRedirect(t *testing.T) {
 	defer issuer.Close()
 	base = issuer.URL
 	p := NewOAuthProvider(issuer.Client())
-	metadata := mcpmanage.OAuthMetadata{RequireIssuerParameter: true, Resource: base + "/mcp", Issuer: base, AuthorizationEndpoint: base + "/authorize", TokenEndpoint: base + "/token", PKCEMethods: []string{"S256"}, GrantTypes: []string{"authorization_code"}, ResponseTypes: []string{"code"}}
+	metadata := mcpmanage.OAuthMetadata{RequireIssuerParameter: true, Resource: base + "/mcp", Issuer: base, AuthorizationEndpoint: base + "/authorize", TokenEndpoint: base + "/token", PKCEMethods: []string{workerPKCEMethod}, GrantTypes: []string{"authorization_code"}, ResponseTypes: []string{"code"}}
 	g := mcpcmd.Grant{Binding: mcpcmd.AuthBinding{Resource: metadata.Resource, Issuer: metadata.Issuer, ClientID: "browser-client"}, TokenEndpointAuthMethod: mcpcmd.ClientAuthNone, Scopes: []string{workerOAuthScope}}
 	location, v, err := p.BeginCode(metadata, g, "https://backoffice.example.org/balda/mcp/oauth/callback", "one-use-state")
 	if err != nil {
@@ -39,7 +41,7 @@ func TestWorkerBrowserCodeUsesS256AndExactResourceClientRedirect(t *testing.T) {
 		t.Fatal(err)
 	}
 	q := u.Query()
-	if q.Get("state") != "one-use-state" || q.Get("code_challenge_method") != "S256" || q.Get("code_challenge") != oauth2.S256ChallengeFromVerifier(verifier) || q.Get("resource") != g.Binding.Resource || q.Get("client_id") != g.Binding.ClientID {
+	if q.Get("state") != "one-use-state" || q.Get("code_challenge_method") != workerPKCEMethod || q.Get("code_challenge") != oauth2.S256ChallengeFromVerifier(verifier) || q.Get("resource") != g.Binding.Resource || q.Get("client_id") != g.Binding.ClientID {
 		t.Fatal("native redirect lost state/PKCE/worker binding")
 	}
 	token, err := p.ExchangeCode(t.Context(), metadata, g, mcpmanage.GrantSecrets{}, "https://backoffice.example.org/balda/mcp/oauth/callback", "native-code", verifier)
@@ -69,5 +71,46 @@ func TestWorkerCallbackUsesExactBackofficeOriginAndBasePath(t *testing.T) {
 		if _, err := MCPCallbackURL(tc.origin, tc.base); err == nil {
 			t.Fatal("invalid callback origin/base accepted")
 		}
+	}
+}
+
+func TestWorkerBrowserCodeHonorsDiscoveredIssuerResponseCapability(t *testing.T) {
+	for _, capability := range []string{"omitted", "false", "true"} {
+		t.Run(capability, func(t *testing.T) {
+			var base string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != workerAuthorizationMetadataPath {
+					http.NotFound(w, r)
+					return
+				}
+				metadata := map[string]any{"issuer": base, "authorization_endpoint": base + "/authorize", "token_endpoint": base + "/token", "code_challenge_methods_supported": []string{workerPKCEMethod}, "response_types_supported": []string{"code"}}
+				if capability != "omitted" {
+					metadata["authorization_response_iss_parameter_supported"] = capability == "true"
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(metadata)
+			}))
+			defer server.Close()
+			base = server.URL
+			p := NewOAuthProvider(server.Client())
+			binding := mcpcmd.AuthBinding{Resource: base + "/mcp", Issuer: base, ClientID: "browser-client"}
+			metadata, err := p.DiscoverIssuer(t.Context(), binding)
+			if err != nil || metadata.RequireIssuerParameter != (capability == "true") {
+				t.Fatalf("discovered capability=%v, err=%v", metadata.RequireIssuerParameter, err)
+			}
+			redirectURI := "https://backoffice.example.org/balda/mcp/oauth/callback"
+			location, verifier, err := p.BeginCode(metadata, mcpcmd.Grant{Binding: binding}, redirectURI, "one-use-state")
+			if err != nil {
+				t.Fatalf("begin with %s capability: %v", capability, err)
+			}
+			u, err := url.Parse(location)
+			if err != nil {
+				t.Fatal(err)
+			}
+			q := u.Query()
+			if q.Get("state") != "one-use-state" || q.Get("code_challenge_method") != workerPKCEMethod || q.Get("code_challenge") != oauth2.S256ChallengeFromVerifier(verifier) || q.Get("redirect_uri") != redirectURI || q.Get("resource") != binding.Resource || q.Get("client_id") != binding.ClientID {
+				t.Fatal("authorization lost PKCE/state/client/resource/redirect binding")
+			}
+		})
 	}
 }

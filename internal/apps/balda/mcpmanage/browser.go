@@ -3,6 +3,10 @@ package mcpmanage
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"fmt"
+	"net/url"
+	"path"
 	"slices"
 	"strings"
 	"sync"
@@ -37,6 +41,7 @@ type authorizationAttempt struct {
 	Authority                         mcpcmd.Authority
 	Grant                             mcpcmd.Grant
 	RevisionID                        string
+	RedirectURI                       string
 	Metadata                          OAuthMetadata
 	Ready, Consumed                   bool
 	ctx                               context.Context
@@ -81,7 +86,11 @@ func (s *Authorizations) BeginBrowser(ctx context.Context, r mcpcmd.Revision, me
 	if err != nil {
 		return mcpcmd.BrowserAuthorization{}, err
 	}
-	location, verifier, err := s.grants.oauth.BeginCode(metadata, g, s.redirectURI, a.State)
+	redirectURI, err := browserRedirectURI(s.redirectURI, metadata)
+	if err != nil {
+		return mcpcmd.BrowserAuthorization{}, err
+	}
+	location, verifier, err := s.grants.oauth.BeginCode(metadata, g, redirectURI, a.State)
 	if err != nil {
 		return mcpcmd.BrowserAuthorization{}, safeOperationError(err)
 	}
@@ -93,7 +102,7 @@ func (s *Authorizations) BeginBrowser(ctx context.Context, r mcpcmd.Revision, me
 	if s.attempts[a.ID] != a || a.ctx.Err() != nil {
 		return mcpcmd.BrowserAuthorization{}, mcpcmd.ErrAuthAttempt
 	}
-	a.Grant, a.Metadata, a.Verifier, a.Ready, a.RevisionID = g, metadata, verifier, true, r.ID
+	a.Grant, a.Metadata, a.Verifier, a.Ready, a.RevisionID, a.RedirectURI = g, metadata, verifier, true, r.ID, redirectURI
 	complete = true
 	return mcpcmd.BrowserAuthorization{ID: a.ID, ConnectionID: a.ConnectionID, AuthorizationURL: location, ExpiresAt: a.ExpiresAt}, nil
 }
@@ -115,7 +124,12 @@ func (s *Authorizations) CompleteBrowser(ctx context.Context, callback mcpcmd.Br
 	if !sameBrowserAuthority(snapshot.Authority, callback.Authority) {
 		return mcpcmd.Grant{}, mcpcmd.ErrForbidden
 	}
-	if callback.Issuer == "" || callback.Issuer != snapshot.Grant.Binding.Issuer {
+	redirect, err := url.Parse(snapshot.RedirectURI)
+	if err != nil || callback.CallbackPath == "" || callback.CallbackPath != redirect.Path {
+		return mcpcmd.Grant{}, mcpcmd.ErrInvalid
+	}
+	issuerPresent := callback.IssuerPresent || callback.Issuer != ""
+	if (snapshot.Metadata.RequireIssuerParameter && !issuerPresent) || (issuerPresent && callback.Issuer != snapshot.Grant.Binding.Issuer) {
 		return mcpcmd.Grant{}, mcpcmd.ErrInvalid
 	}
 	if callback.Denied {
@@ -148,7 +162,7 @@ func (s *Authorizations) CompleteBrowser(ctx context.Context, callback mcpcmd.Br
 	defer expireCancel()
 	exchangeCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	token, err := s.grants.oauth.ExchangeCode(exchangeCtx, snapshot.Metadata, g, secrets, s.redirectURI, callback.Code, snapshot.Verifier)
+	token, err := s.grants.oauth.ExchangeCode(exchangeCtx, snapshot.Metadata, g, secrets, snapshot.RedirectURI, callback.Code, snapshot.Verifier)
 	if err != nil {
 		return mcpcmd.Grant{}, safeOperationError(err)
 	}
@@ -297,9 +311,25 @@ func (s *Authorizations) Close() {
 	s.polls.Wait()
 }
 
-// A shared callback URI requires an issuer response to prevent server mix-up.
 func supportsBrowserAuthorization(metadata OAuthMetadata) bool {
-	return metadata.RequireIssuerParameter && validRemoteURL(metadata.AuthorizationEndpoint) && slices.Contains(metadata.PKCEMethods, "S256") && (len(metadata.GrantTypes) == 0 || slices.Contains(metadata.GrantTypes, "authorization_code")) && (len(metadata.ResponseTypes) == 0 || slices.Contains(metadata.ResponseTypes, "code"))
+	return validRemoteURL(metadata.AuthorizationEndpoint) && slices.Contains(metadata.PKCEMethods, "S256") && (len(metadata.GrantTypes) == 0 || slices.Contains(metadata.GrantTypes, "authorization_code")) && (len(metadata.ResponseTypes) == 0 || slices.Contains(metadata.ResponseTypes, "code"))
+}
+
+// browserRedirectURI keeps unadvertised issuer responses isolated by callback.
+func browserRedirectURI(base string, metadata OAuthMetadata) (string, error) {
+	u, err := url.Parse(base)
+	if err != nil || !validRemoteURL(base) || strings.ContainsAny(base, "?#") || u.RawPath != "" || u.EscapedPath() != u.Path || u.Path == "" || strings.HasSuffix(u.Path, "/") || strings.Contains(u.Path, "//") || strings.ContainsAny(u.Path, "\\%") || path.Clean(u.Path) != u.Path {
+		return "", mcpcmd.ErrInvalid
+	}
+	if metadata.RequireIssuerParameter {
+		return base, nil
+	}
+	if !validRemoteURL(metadata.Issuer) {
+		return "", mcpcmd.ErrInvalid
+	}
+	digest := sha256.Sum256([]byte(metadata.Issuer))
+	u.Path += fmt.Sprintf("/%x", digest)
+	return u.String(), nil
 }
 
 type authorizationFlow uint8

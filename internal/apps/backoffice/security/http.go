@@ -29,7 +29,7 @@ const (
 	RefreshPath = "/auth/session/refresh"
 	// OAuthCallbackCookieName carries the initiating access credential only to OAuth callbacks.
 	OAuthCallbackCookieName = "balda_oauth_callback"
-	// OAuthCallbackPath is the only route allowed to restore the callback credential.
+	// OAuthCallbackPath is the parent route for restoring the callback credential.
 	OAuthCallbackPath = "/mcp/oauth/callback"
 
 	defaultMaxBodyBytes = 8 << 10
@@ -330,10 +330,29 @@ func (b *Browser) PreserveOAuthCallbackCredential(w http.ResponseWriter, r *http
 	return nil
 }
 
+// IsOAuthCallbackPath recognizes only the shared callback or one canonical
+// issuer digest child. It does not establish which issuer owns the callback.
+func (b *Browser) IsOAuthCallbackPath(callbackPath string) bool {
+	base := b.path(OAuthCallbackPath)
+	if callbackPath == base {
+		return true
+	}
+	digest, ok := strings.CutPrefix(callbackPath, base+"/")
+	if !ok || len(digest) != 64 {
+		return false
+	}
+	for _, c := range digest {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
 // RestoreOAuthCallbackCredential clears the transient cookie on every callback
 // outcome and supplies it to the ordinary guards only when access is absent.
 func (b *Browser) RestoreOAuthCallbackCredential(w http.ResponseWriter, r *http.Request) *http.Request {
-	if r.URL.Path != b.path(OAuthCallbackPath) {
+	if !b.IsOAuthCallbackPath(r.URL.EscapedPath()) {
 		return r
 	}
 	http.SetCookie(w, &http.Cookie{Name: OAuthCallbackCookieName, Path: b.path(OAuthCallbackPath),

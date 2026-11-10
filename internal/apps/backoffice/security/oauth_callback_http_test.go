@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -51,7 +52,7 @@ func TestOAuthCallbackCookieScopeAndBoundedExpiration(t *testing.T) {
 	}
 }
 
-func TestOAuthCallbackCredentialOnlyRestoresExactNativeCallback(t *testing.T) {
+func TestOAuthCallbackCredentialOnlyRestoresCanonicalNativeCallbacks(t *testing.T) {
 	t.Parallel()
 	b, err := NewBrowser(&fakeBrowserService{}, HTTPConfig{TrustedOrigin: "https://backoffice.example", SecureCookies: true, BasePath: "/balda"})
 	if err != nil {
@@ -62,6 +63,15 @@ func TestOAuthCallbackCredentialOnlyRestoresExactNativeCallback(t *testing.T) {
 		ordinary, cleared                bool
 	}{
 		{"native callback", "GET", "/balda/mcp/oauth/callback", "", "callback-access", false, true},
+		{"issuer callback", "GET", "/balda/mcp/oauth/callback/" + strings.Repeat("a", 64), "", "callback-access", false, true},
+		{"issuer ordinary preferred", "GET", "/balda/mcp/oauth/callback/" + strings.Repeat("a", 64), "other-family", "other-family", true, true},
+		{"short issuer digest", "GET", "/balda/mcp/oauth/callback/aaa", "", "", false, false},
+		{"uppercase issuer digest", "GET", "/balda/mcp/oauth/callback/" + strings.Repeat("A", 64), "", "", false, false},
+		{"escaped issuer digest", "GET", "/balda/mcp/oauth/callback/%61" + strings.Repeat("a", 63), "", "", false, false},
+		{"escaped callback", "GET", "/balda/mcp/oauth/%63allback", "", "", false, false},
+		{"extra issuer segment", "GET", "/balda/mcp/oauth/callback/" + strings.Repeat("a", 64) + "/extra", "", "", false, false},
+		{"double slash issuer path", "GET", "/balda/mcp/oauth/callback//" + strings.Repeat("a", 64), "", "", false, false},
+		{"HEAD issuer callback", "HEAD", "/balda/mcp/oauth/callback/" + strings.Repeat("a", 64), "", "", false, true},
 		{"ordinary access preferred", "GET", "/balda/mcp/oauth/callback", "other-family", "other-family", true, true},
 		{"empty ordinary access fails closed", "GET", "/balda/mcp/oauth/callback", "", "", true, true},
 		{"metadata page", "GET", "/balda/mcp", "", "", false, false},
