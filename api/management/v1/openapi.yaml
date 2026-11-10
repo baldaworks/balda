@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Balda Management API
-  version: 1.7.0
+  version: 1.10.0
   description: >-
     Contract for the loopback Balda management API. The API distinguishes
     browser WebAuth authority from AI conversation sessions.
@@ -21,6 +21,46 @@ paths:
                 $ref: "#/components/schemas/ManagementCompatibility"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/management/v1/system/overview:
+    get:
+      operationId: getSystemOverview
+      summary: Read configured integration capabilities
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+      responses:
+        "200":
+          description: Allowlisted configured integration capabilities
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemOverview"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/management/v1/system/agent:
+    get:
+      operationId: getSystemAgent
+      summary: Read the effective configured agent view
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+      responses:
+        "200":
+          description: Allowlisted effective agent configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemAgent"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "500":
           $ref: "#/components/responses/InternalError"
   /api/management/v1/auth/login:
@@ -1224,6 +1264,101 @@ paths:
         "409": { $ref: "#/components/responses/Conflict" }
         "503": { $ref: "#/components/responses/ServiceUnavailable" }
         "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/ai-sessions:
+    get:
+      operationId: listAISessionArchives
+      security: [{ operatorServiceAuth: [], webAuthAccess: [] }]
+      parameters:
+        - { name: q, in: query, schema: { type: string, maxLength: 200 } }
+        - { name: channel, in: query, schema: { type: string, maxLength: 40 } }
+        - { name: status, in: query, schema: { type: string, enum: [active, ended, pending, uncertain] } }
+        - { name: cursor, in: query, schema: { type: string, maxLength: 2048 } }
+      responses:
+        "200": { description: Bounded passive AI Session archive inventory, content: { application/json: { schema: { $ref: "#/components/schemas/AISessionArchiveInventory" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/ai-sessions/{ai_session_id}:
+    get:
+      operationId: getAISessionArchive
+      security: [{ operatorServiceAuth: [], webAuthAccess: [] }]
+      parameters:
+        - { name: ai_session_id, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 64 } }
+        - { name: cursor, in: query, schema: { type: string, maxLength: 2048 } }
+      responses:
+        "200": { description: Bounded passive AI Session transcript, content: { application/json: { schema: { $ref: "#/components/schemas/AISessionArchiveTranscript" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/memory/facts:
+    get:
+      operationId: listMemoryFacts
+      security: [{ operatorServiceAuth: [], webAuthAccess: [] }]
+      parameters:
+        - { name: q, in: query, schema: { type: string, maxLength: 4096 } }
+      responses:
+        "200": { description: Global fact memory inventory, content: { application/json: { schema: { $ref: "#/components/schemas/MemoryFactInventory" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    post:
+      operationId: createMemoryFact
+      security: [{ operatorServiceAuth: [], webAuthAccess: [], csrf: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/MemoryFactCreateRequest" } } } }
+      responses:
+        "200": { description: Created fact, content: { application/json: { schema: { $ref: "#/components/schemas/MemoryFact" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/memory/facts/{fact_id}:
+    parameters:
+      - { name: fact_id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    get:
+      operationId: getMemoryFact
+      security: [{ operatorServiceAuth: [], webAuthAccess: [] }]
+      responses:
+        "200": { description: Selected fact and global edit version, content: { application/json: { schema: { $ref: "#/components/schemas/MemoryFactEditor" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    put:
+      operationId: updateMemoryFact
+      security: [{ operatorServiceAuth: [], webAuthAccess: [], csrf: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/MemoryFactUpdateRequest" } } } }
+      responses:
+        "200": { description: Updated fact, content: { application/json: { schema: { $ref: "#/components/schemas/MemoryFact" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    delete:
+      operationId: deleteMemoryFact
+      security: [{ operatorServiceAuth: [], webAuthAccess: [], csrf: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/MemoryFactDeleteRequest" } } } }
+      responses:
+        "204": { description: Fact deleted }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
   /api/management/v1/hooks/{hook_name}:
     put:
       operationId: updateHook
@@ -1608,12 +1743,118 @@ components:
         contract_version:
           type: string
           maxLength: 32
-          example: 1.7.0
+          example: 1.10.0
         api_major:
           type: integer
           format: int32
           enum:
             - 1
+    SystemOverview:
+      type: object
+      additionalProperties: false
+      required:
+        - capabilities
+      properties:
+        capabilities:
+          type: array
+          maxItems: 32
+          items:
+            $ref: "#/components/schemas/SystemCapability"
+    SystemCapability:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - mode
+        - route_count
+        - settings
+        - endpoints
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 64
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        mode:
+          type: string
+          minLength: 1
+          maxLength: 64
+        route_count:
+          type: integer
+          minimum: 0
+          maximum: 100000
+        settings:
+          type: array
+          maxItems: 32
+          items:
+            $ref: "#/components/schemas/SystemSetting"
+        endpoints:
+          type: array
+          maxItems: 16
+          items:
+            $ref: "#/components/schemas/SystemEndpoint"
+    SystemSetting:
+      type: object
+      additionalProperties: false
+      required:
+        - label
+        - value
+      properties:
+        label:
+          type: string
+          minLength: 1
+          maxLength: 128
+        value:
+          type: string
+          maxLength: 2048
+    SystemEndpoint:
+      type: object
+      additionalProperties: false
+      required:
+        - label
+        - url
+      properties:
+        label:
+          type: string
+          minLength: 1
+          maxLength: 128
+        url:
+          type: string
+          minLength: 1
+          maxLength: 4096
+    SystemAgent:
+      type: object
+      additionalProperties: false
+      required:
+        - provider_id
+        - provider_type
+        - profile
+        - model
+        - reasoning_effort
+        - global_instruction
+      properties:
+        provider_id:
+          type: string
+          maxLength: 256
+        provider_type:
+          type: string
+          maxLength: 128
+        profile:
+          type: string
+          maxLength: 128
+        model:
+          type: string
+          maxLength: 256
+        reasoning_effort:
+          type: string
+          maxLength: 64
+        global_instruction:
+          type: string
+          maxLength: 1048576
     ProviderInventory:
       type: object
       additionalProperties: false
@@ -2017,6 +2258,116 @@ components:
     HookEvent:
       type: string
       enum: [SessionStart, UserPromptSubmit, Stop, SessionEnd, PreToolUse, PostToolUse]
+    MemoryFact:
+      type: object
+      additionalProperties: false
+      required: [id, fact, created_at]
+      properties:
+        id: { type: integer, format: int64, minimum: 1 }
+        fact: { type: string, minLength: 1, maxLength: 1048576 }
+        created_at: { type: string, maxLength: 64 }
+    MemoryFactInventory:
+      type: object
+      additionalProperties: false
+      required: [enabled, version, updated_at, total_facts, facts]
+      properties:
+        enabled: { type: boolean }
+        version: { type: integer, format: int64, minimum: 0 }
+        updated_at: { type: string, maxLength: 64 }
+        total_facts: { type: integer, minimum: 0 }
+        facts: { type: array, maxItems: 100000, items: { $ref: "#/components/schemas/MemoryFact" } }
+    MemoryFactEditor:
+      type: object
+      additionalProperties: false
+      required: [fact, expected_version]
+      properties:
+        fact: { $ref: "#/components/schemas/MemoryFact" }
+        expected_version: { type: integer, format: int64, minimum: 1 }
+    MemoryFactCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [fact]
+      properties:
+        fact: { type: string, minLength: 1, maxLength: 1048576 }
+    MemoryFactUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [fact, expected_version]
+      properties:
+        fact: { type: string, minLength: 1, maxLength: 1048576 }
+        expected_version: { type: integer, format: int64, minimum: 1 }
+    MemoryFactDeleteRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, confirm]
+      properties:
+        expected_version: { type: integer, format: int64, minimum: 1 }
+        confirm: { type: boolean }
+    AISessionArchiveSpeaker:
+      type: object
+      additionalProperties: false
+      required: [principal, name, username]
+      properties:
+        principal: { type: string, maxLength: 512 }
+        name: { type: string, maxLength: 512 }
+        username: { type: string, maxLength: 512 }
+    AISessionArchiveAttachment:
+      type: object
+      additionalProperties: false
+      required: [name, kind]
+      properties:
+        name: { type: string, maxLength: 4096 }
+        kind: { type: string, maxLength: 256 }
+    AISessionArchiveSummary:
+      type: object
+      additionalProperties: false
+      required: [ai_session_id, label, channel, locator, title, audience, subdivision, subdivision_label, status, end_reason, partial, predecessor_ai_session_id, message_count, speaker]
+      properties:
+        ai_session_id: { type: string, minLength: 1, maxLength: 64 }
+        label: { type: string, maxLength: 4096 }
+        channel: { type: string, maxLength: 128 }
+        locator: { type: string, maxLength: 4096 }
+        title: { type: string, maxLength: 4096 }
+        audience: { type: string, maxLength: 128 }
+        subdivision: { type: string, maxLength: 128 }
+        subdivision_label: { type: string, maxLength: 4096 }
+        status: { type: string, maxLength: 128 }
+        started_at: { type: string, format: date-time }
+        observed_at: { type: string, format: date-time }
+        ended_at: { type: string, format: date-time }
+        coverage_start: { type: string, format: date-time }
+        end_reason: { type: string, maxLength: 1024 }
+        partial: { type: boolean }
+        predecessor_ai_session_id: { type: string, maxLength: 64 }
+        message_count: { type: integer, format: int64, minimum: 0 }
+        speaker: { $ref: "#/components/schemas/AISessionArchiveSpeaker" }
+    AISessionArchiveInventory:
+      type: object
+      additionalProperties: false
+      required: [rows, older_cursor]
+      properties:
+        rows: { type: array, maxItems: 50, items: { $ref: "#/components/schemas/AISessionArchiveSummary" } }
+        older_cursor: { type: string, maxLength: 2048 }
+    AISessionArchiveMessage:
+      type: object
+      additionalProperties: false
+      required: [sequence, role, text, speaker, attachments]
+      properties:
+        sequence: { type: integer, format: int64, minimum: 1 }
+        role: { type: string, enum: [user, agent] }
+        text: { type: string, maxLength: 1048576 }
+        speaker: { $ref: "#/components/schemas/AISessionArchiveSpeaker" }
+        attachments: { type: array, maxItems: 128, items: { $ref: "#/components/schemas/AISessionArchiveAttachment" } }
+        observed_at: { type: string, format: date-time }
+    AISessionArchiveTranscript:
+      type: object
+      additionalProperties: false
+      required: [summary, messages, older_cursor, successor_ai_session_id]
+      properties:
+        summary: { $ref: "#/components/schemas/AISessionArchiveSummary" }
+        messages: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/AISessionArchiveMessage" } }
+        older_cursor: { type: string, maxLength: 2048 }
+        successor_ai_session_id: { type: string, maxLength: 64 }
     HookDefinition:
       type: object
       additionalProperties: false

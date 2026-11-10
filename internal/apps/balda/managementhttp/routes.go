@@ -8,8 +8,10 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/aliascmd"
 	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/hookcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/memorycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/plugincmd"
 	"github.com/baldaworks/balda/internal/apps/balda/providers"
 	"github.com/baldaworks/balda/internal/apps/balda/schedulecmd"
@@ -43,6 +45,8 @@ type routeRule struct {
 
 var managementRoutes = map[string]routeRule{
 	http.MethodGet + " " + compatibilityPath:                                   {authority: operatorOnly},
+	http.MethodGet + " /api/management/v1/system/overview":                     {authority: webAuthRead},
+	http.MethodGet + " /api/management/v1/system/agent":                        {authority: webAuthRead},
 	http.MethodPost + " /api/management/v1/auth/login":                         {authority: operatorOnly, body: true},
 	http.MethodPost + " /api/management/v1/auth/login/mfa":                     {authority: operatorOnly, body: true},
 	http.MethodPost + " /api/management/v1/auth/refresh":                       {authority: webAuthRefresh},
@@ -97,6 +101,12 @@ func managementRoute(method, path string) (routeRule, bool) {
 	if rule, ok := hookManagementRoute(method, path); ok {
 		return rule, true
 	}
+	if rule, ok := memoryManagementRoute(method, path); ok {
+		return rule, true
+	}
+	if rule, ok := archiveManagementRoute(method, path); ok {
+		return rule, true
+	}
 	if rule, ok := pluginManagementRoute(method, path); ok {
 		return rule, true
 	}
@@ -113,6 +123,53 @@ func managementRoute(method, path string) (routeRule, bool) {
 		return routeRule{}, false
 	}
 	return routeRule{authority: webAuthMutation, body: true}, true
+}
+
+func archiveManagementRoute(method, path string) (routeRule, bool) {
+	const root = "/api/management/v1/ai-sessions"
+	if method != http.MethodGet {
+		return routeRule{}, false
+	}
+	if path == root {
+		return routeRule{authority: webAuthRead, admin: true}, true
+	}
+	if !strings.HasPrefix(path, root+"/") {
+		return routeRule{}, false
+	}
+	id := strings.TrimPrefix(path, root+"/")
+	if id == "" || strings.Contains(id, "/") {
+		return routeRule{}, false
+	}
+	return routeRule{authority: webAuthRead, admin: true}, true
+}
+
+func memoryManagementRoute(method, path string) (routeRule, bool) {
+	const root = "/api/management/v1/memory/facts"
+	if path == root {
+		switch method {
+		case http.MethodGet:
+			return routeRule{authority: webAuthRead, admin: true}, true
+		case http.MethodPost:
+			return routeRule{authority: webAuthMutation, body: true, admin: true}, true
+		default:
+			return routeRule{}, false
+		}
+	}
+	if !strings.HasPrefix(path, root+"/") {
+		return routeRule{}, false
+	}
+	id := strings.TrimPrefix(path, root+"/")
+	if id == "" || strings.Contains(id, "/") {
+		return routeRule{}, false
+	}
+	switch method {
+	case http.MethodGet:
+		return routeRule{authority: webAuthRead, admin: true}, true
+	case http.MethodPut, http.MethodDelete:
+		return routeRule{authority: webAuthMutation, body: true, admin: true}, true
+	default:
+		return routeRule{}, false
+	}
 }
 
 func skillManagementRoute(method, path string) (routeRule, bool) {
@@ -480,6 +537,24 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, hookcmd.ErrConflict):
 		writeError(w, r, http.StatusConflict, "conflict", "request conflict")
 	case errors.Is(err, hookcmd.ErrUnavailable):
+		writeError(w, r, http.StatusServiceUnavailable, "unavailable", "service unavailable")
+	case errors.Is(err, memorycmd.ErrInvalid):
+		writeError(w, r, http.StatusBadRequest, "request.invalid", "invalid request")
+	case errors.Is(err, memorycmd.ErrDisabled), errors.Is(err, memorycmd.ErrForbidden):
+		writeError(w, r, http.StatusForbidden, "forbidden", "forbidden")
+	case errors.Is(err, memorycmd.ErrNotFound):
+		writeError(w, r, http.StatusNotFound, "not_found", "not found")
+	case errors.Is(err, memorycmd.ErrConflict):
+		writeError(w, r, http.StatusConflict, "conflict", "request conflict")
+	case errors.Is(err, memorycmd.ErrUnavailable):
+		writeError(w, r, http.StatusServiceUnavailable, "unavailable", "service unavailable")
+	case errors.Is(err, chatarchivecmd.ErrInvalid):
+		writeError(w, r, http.StatusBadRequest, "request.invalid", "invalid request")
+	case errors.Is(err, chatarchivecmd.ErrForbidden):
+		writeError(w, r, http.StatusForbidden, "forbidden", "forbidden")
+	case errors.Is(err, chatarchivecmd.ErrNotFound):
+		writeError(w, r, http.StatusNotFound, "not_found", "not found")
+	case errors.Is(err, chatarchivecmd.ErrUnavailable):
 		writeError(w, r, http.StatusServiceUnavailable, "unavailable", "service unavailable")
 	case errors.Is(err, plugincmd.ErrInvalid):
 		writeError(w, r, http.StatusBadRequest, "request.invalid", "invalid request")

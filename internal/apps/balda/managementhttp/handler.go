@@ -8,12 +8,15 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/aliascmd"
 	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/hookcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/memorycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/plugincmd"
 	"github.com/baldaworks/balda/internal/apps/balda/providers"
 	"github.com/baldaworks/balda/internal/apps/balda/schedulecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/skillcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/systemviewcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookroutecmd"
 	managementv1 "github.com/baldaworks/balda/internal/managementapi/v1"
 )
@@ -31,6 +34,22 @@ type Services struct {
 	Hooks       hookOperations
 	Plugins     pluginOperations
 	Skills      skillOperations
+	System      *systemviewcmd.Snapshot
+	Memory      memoryOperations
+	Archives    archiveOperations
+}
+
+type archiveOperations interface {
+	Inventory(ctx context.Context, query chatarchivecmd.BrowseQuery, authority chatarchivecmd.Authority) (chatarchivecmd.Inventory, error)
+	Transcript(ctx context.Context, id, cursor string, authority chatarchivecmd.Authority) (chatarchivecmd.Transcript, error)
+}
+
+type memoryOperations interface {
+	Inventory(ctx context.Context, query string, authority memorycmd.Authority) (memorycmd.Inventory, error)
+	Get(ctx context.Context, id int64, authority memorycmd.Authority) (memorycmd.Editor, error)
+	Create(ctx context.Context, request memorycmd.Create) (memorycmd.Fact, error)
+	Edit(ctx context.Context, request memorycmd.Edit) (memorycmd.Fact, error)
+	Delete(ctx context.Context, request memorycmd.Delete) error
 }
 
 type skillOperations interface {
@@ -119,7 +138,7 @@ type mcpOperations interface {
 
 // Handler returns the authenticated management API handler.
 func (c ResolvedConfig) Handler(services Services) http.Handler {
-	server := strictServer{browserAuth: services.BrowserAuth, providers: services.Providers, mcp: services.MCP, schedules: services.Schedules, webhooks: services.Webhooks, aliases: services.Aliases, hooks: services.Hooks, plugins: services.Plugins, skills: services.Skills}
+	server := strictServer{browserAuth: services.BrowserAuth, providers: services.Providers, mcp: services.MCP, schedules: services.Schedules, webhooks: services.Webhooks, aliases: services.Aliases, hooks: services.Hooks, plugins: services.Plugins, skills: services.Skills, system: services.System, memory: services.Memory, archives: services.Archives}
 	strict := managementv1.NewStrictHandlerWithOptions(server, nil, managementv1.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, _ error) {
 			writeError(w, r, http.StatusBadRequest, "request.invalid", "invalid request")
@@ -145,6 +164,18 @@ func (c ResolvedConfig) Handler(services Services) http.Handler {
 			return
 		}
 		if services.Skills == nil && strings.HasPrefix(r.URL.Path, "/api/management/v1/skills") {
+			writeError(w, r, http.StatusNotFound, "not_found", "not found")
+			return
+		}
+		if services.System == nil && strings.HasPrefix(r.URL.Path, "/api/management/v1/system/") {
+			writeError(w, r, http.StatusNotFound, "not_found", "not found")
+			return
+		}
+		if services.Memory == nil && strings.HasPrefix(r.URL.Path, "/api/management/v1/memory/") {
+			writeError(w, r, http.StatusNotFound, "not_found", "not found")
+			return
+		}
+		if services.Archives == nil && strings.HasPrefix(r.URL.Path, "/api/management/v1/ai-sessions") {
 			writeError(w, r, http.StatusNotFound, "not_found", "not found")
 			return
 		}

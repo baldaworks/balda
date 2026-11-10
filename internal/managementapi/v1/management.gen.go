@@ -25,6 +25,24 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for AISessionArchiveMessageRole.
+const (
+	Agent AISessionArchiveMessageRole = "agent"
+	User  AISessionArchiveMessageRole = "user"
+)
+
+// Valid indicates whether the value is a known member of the AISessionArchiveMessageRole enum.
+func (e AISessionArchiveMessageRole) Valid() bool {
+	switch e {
+	case Agent:
+		return true
+	case User:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for HookEvent.
 const (
 	PostToolUse      HookEvent = "PostToolUse"
@@ -649,6 +667,92 @@ func (e WebhookItemSource) Valid() bool {
 	}
 }
 
+// Defines values for ListAISessionArchivesParamsStatus.
+const (
+	ListAISessionArchivesParamsStatusActive    ListAISessionArchivesParamsStatus = "active"
+	ListAISessionArchivesParamsStatusEnded     ListAISessionArchivesParamsStatus = "ended"
+	ListAISessionArchivesParamsStatusPending   ListAISessionArchivesParamsStatus = "pending"
+	ListAISessionArchivesParamsStatusUncertain ListAISessionArchivesParamsStatus = "uncertain"
+)
+
+// Valid indicates whether the value is a known member of the ListAISessionArchivesParamsStatus enum.
+func (e ListAISessionArchivesParamsStatus) Valid() bool {
+	switch e {
+	case ListAISessionArchivesParamsStatusActive:
+		return true
+	case ListAISessionArchivesParamsStatusEnded:
+		return true
+	case ListAISessionArchivesParamsStatusPending:
+		return true
+	case ListAISessionArchivesParamsStatusUncertain:
+		return true
+	default:
+		return false
+	}
+}
+
+// AISessionArchiveAttachment defines model for AISessionArchiveAttachment.
+type AISessionArchiveAttachment struct {
+	Kind string `json:"kind"`
+	Name string `json:"name"`
+}
+
+// AISessionArchiveInventory defines model for AISessionArchiveInventory.
+type AISessionArchiveInventory struct {
+	OlderCursor string                    `json:"older_cursor"`
+	Rows        []AISessionArchiveSummary `json:"rows"`
+}
+
+// AISessionArchiveMessage defines model for AISessionArchiveMessage.
+type AISessionArchiveMessage struct {
+	Attachments []AISessionArchiveAttachment `json:"attachments"`
+	ObservedAt  *time.Time                   `json:"observed_at,omitempty"`
+	Role        AISessionArchiveMessageRole  `json:"role"`
+	Sequence    int64                        `json:"sequence"`
+	Speaker     AISessionArchiveSpeaker      `json:"speaker"`
+	Text        string                       `json:"text"`
+}
+
+// AISessionArchiveMessageRole defines model for AISessionArchiveMessage.Role.
+type AISessionArchiveMessageRole string
+
+// AISessionArchiveSpeaker defines model for AISessionArchiveSpeaker.
+type AISessionArchiveSpeaker struct {
+	Name      string `json:"name"`
+	Principal string `json:"principal"`
+	Username  string `json:"username"`
+}
+
+// AISessionArchiveSummary defines model for AISessionArchiveSummary.
+type AISessionArchiveSummary struct {
+	AISessionID            string                  `json:"ai_session_id"`
+	Audience               string                  `json:"audience"`
+	Channel                string                  `json:"channel"`
+	CoverageStart          *time.Time              `json:"coverage_start,omitempty"`
+	EndReason              string                  `json:"end_reason"`
+	EndedAt                *time.Time              `json:"ended_at,omitempty"`
+	Label                  string                  `json:"label"`
+	Locator                string                  `json:"locator"`
+	MessageCount           int64                   `json:"message_count"`
+	ObservedAt             *time.Time              `json:"observed_at,omitempty"`
+	Partial                bool                    `json:"partial"`
+	PredecessorAISessionID string                  `json:"predecessor_ai_session_id"`
+	Speaker                AISessionArchiveSpeaker `json:"speaker"`
+	StartedAt              *time.Time              `json:"started_at,omitempty"`
+	Status                 string                  `json:"status"`
+	Subdivision            string                  `json:"subdivision"`
+	SubdivisionLabel       string                  `json:"subdivision_label"`
+	Title                  string                  `json:"title"`
+}
+
+// AISessionArchiveTranscript defines model for AISessionArchiveTranscript.
+type AISessionArchiveTranscript struct {
+	Messages             []AISessionArchiveMessage `json:"messages"`
+	OlderCursor          string                    `json:"older_cursor"`
+	SuccessorAISessionID string                    `json:"successor_ai_session_id"`
+	Summary              AISessionArchiveSummary   `json:"summary"`
+}
+
 // AISessionSummary defines model for AISessionSummary.
 type AISessionSummary struct {
 	AISessionID string    `json:"ai_session_id"`
@@ -944,7 +1048,7 @@ type ManagementCompatibility struct {
 	APIMajor   ManagementCompatibilityAPIMajor   `json:"api_major"`
 	ContractID ManagementCompatibilityContractID `json:"contract_id"`
 
-	// ContractVersion Example: 1.7.0
+	// ContractVersion Example: 1.10.0
 	ContractVersion string `json:"contract_version"`
 }
 
@@ -973,6 +1077,45 @@ type ManagementResourceSummary struct {
 	ResourceID      string    `json:"resource_id"`
 	ResourceVersion uint64    `json:"resource_version"`
 	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+// MemoryFact defines model for MemoryFact.
+type MemoryFact struct {
+	CreatedAt string `json:"created_at"`
+	Fact      string `json:"fact"`
+	ID        int64  `json:"id"`
+}
+
+// MemoryFactCreateRequest defines model for MemoryFactCreateRequest.
+type MemoryFactCreateRequest struct {
+	Fact string `json:"fact"`
+}
+
+// MemoryFactDeleteRequest defines model for MemoryFactDeleteRequest.
+type MemoryFactDeleteRequest struct {
+	Confirm         bool  `json:"confirm"`
+	ExpectedVersion int64 `json:"expected_version"`
+}
+
+// MemoryFactEditor defines model for MemoryFactEditor.
+type MemoryFactEditor struct {
+	ExpectedVersion int64      `json:"expected_version"`
+	Fact            MemoryFact `json:"fact"`
+}
+
+// MemoryFactInventory defines model for MemoryFactInventory.
+type MemoryFactInventory struct {
+	Enabled    bool         `json:"enabled"`
+	Facts      []MemoryFact `json:"facts"`
+	TotalFacts int          `json:"total_facts"`
+	UpdatedAt  string       `json:"updated_at"`
+	Version    int64        `json:"version"`
+}
+
+// MemoryFactUpdateRequest defines model for MemoryFactUpdateRequest.
+type MemoryFactUpdateRequest struct {
+	ExpectedVersion int64  `json:"expected_version"`
+	Fact            string `json:"fact"`
 }
 
 // PluginCandidate defines model for PluginCandidate.
@@ -1394,6 +1537,43 @@ type SkillObservedStateRequest struct {
 // SkillOwnership defines model for SkillOwnership.
 type SkillOwnership string
 
+// SystemAgent defines model for SystemAgent.
+type SystemAgent struct {
+	GlobalInstruction string `json:"global_instruction"`
+	Model             string `json:"model"`
+	Profile           string `json:"profile"`
+	ProviderID        string `json:"provider_id"`
+	ProviderType      string `json:"provider_type"`
+	ReasoningEffort   string `json:"reasoning_effort"`
+}
+
+// SystemCapability defines model for SystemCapability.
+type SystemCapability struct {
+	Endpoints  []SystemEndpoint `json:"endpoints"`
+	ID         string           `json:"id"`
+	Mode       string           `json:"mode"`
+	Name       string           `json:"name"`
+	RouteCount int              `json:"route_count"`
+	Settings   []SystemSetting  `json:"settings"`
+}
+
+// SystemEndpoint defines model for SystemEndpoint.
+type SystemEndpoint struct {
+	Label string `json:"label"`
+	URL   string `json:"url"`
+}
+
+// SystemOverview defines model for SystemOverview.
+type SystemOverview struct {
+	Capabilities []SystemCapability `json:"capabilities"`
+}
+
+// SystemSetting defines model for SystemSetting.
+type SystemSetting struct {
+	Label string `json:"label"`
+	Value string `json:"value"`
+}
+
 // WebAuthAssurance defines model for WebAuthAssurance.
 type WebAuthAssurance string
 
@@ -1713,11 +1893,32 @@ type ServiceUnavailable = ManagementError
 // Unauthorized defines model for Unauthorized.
 type Unauthorized = ManagementError
 
+// ListAISessionArchivesParams defines parameters for ListAISessionArchives.
+type ListAISessionArchivesParams struct {
+	Q       *string                            `form:"q,omitempty" json:"q,omitempty"`
+	Channel *string                            `form:"channel,omitempty" json:"channel,omitempty"`
+	Status  *ListAISessionArchivesParamsStatus `form:"status,omitempty" json:"status,omitempty"`
+	Cursor  *string                            `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListAISessionArchivesParamsStatus defines parameters for ListAISessionArchives.
+type ListAISessionArchivesParamsStatus string
+
+// GetAISessionArchiveParams defines parameters for GetAISessionArchive.
+type GetAISessionArchiveParams struct {
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
 // ListWebAuthSessionsParams defines parameters for ListWebAuthSessions.
 type ListWebAuthSessionsParams struct {
 	UserID  *string `form:"user_id,omitempty" json:"user_id,omitempty"`
 	AfterID *string `form:"after_id,omitempty" json:"after_id,omitempty"`
 	Limit   *int32  `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// ListMemoryFactsParams defines parameters for ListMemoryFacts.
+type ListMemoryFactsParams struct {
+	Q *string `form:"q,omitempty" json:"q,omitempty"`
 }
 
 // ReviewPluginCandidateParams defines parameters for ReviewPluginCandidate.
@@ -1817,6 +2018,15 @@ type ProbeMCPConnectionUpdateJSONRequestBody = MCPUpdateRequest
 
 // SelectMCPConnectionJSONRequestBody defines body for SelectMCPConnection for application/json ContentType.
 type SelectMCPConnectionJSONRequestBody = MCPSelectionRequest
+
+// CreateMemoryFactJSONRequestBody defines body for CreateMemoryFact for application/json ContentType.
+type CreateMemoryFactJSONRequestBody = MemoryFactCreateRequest
+
+// DeleteMemoryFactJSONRequestBody defines body for DeleteMemoryFact for application/json ContentType.
+type DeleteMemoryFactJSONRequestBody = MemoryFactDeleteRequest
+
+// UpdateMemoryFactJSONRequestBody defines body for UpdateMemoryFact for application/json ContentType.
+type UpdateMemoryFactJSONRequestBody = MemoryFactUpdateRequest
 
 // AddPluginMarketplaceJSONRequestBody defines body for AddPluginMarketplace for application/json ContentType.
 type AddPluginMarketplaceJSONRequestBody = PluginMarketplaceAddRequest
@@ -1963,6 +2173,12 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 
 // The interface specification for the client above.
 type ClientInterface interface {
+
+	// ListAISessionArchives performs a GET /api/management/v1/ai-sessions (the `ListAISessionArchives` operationId) request.
+	ListAISessionArchives(ctx context.Context, params *ListAISessionArchivesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetAISessionArchive performs a GET /api/management/v1/ai-sessions/{ai_session_id} (the `GetAISessionArchive` operationId) request.
+	GetAISessionArchive(ctx context.Context, aiSessionID string, params *GetAISessionArchiveParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListAliases performs a GET /api/management/v1/aliases (the `ListAliases` operationId) request.
 	ListAliases(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -2328,6 +2544,36 @@ type ClientInterface interface {
 	// Corresponds with POST /api/management/v1/mcp/{connection_id}/selection (the `SelectMCPConnection` operationId).
 	SelectMCPConnection(ctx context.Context, connectionID MCPConnectionID, body SelectMCPConnectionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListMemoryFacts performs a GET /api/management/v1/memory/facts (the `ListMemoryFacts` operationId) request.
+	ListMemoryFacts(ctx context.Context, params *ListMemoryFactsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateMemoryFactWithBody performs a POST /api/management/v1/memory/facts (the `CreateMemoryFact` operationId) request,
+	// with any type of body and a specified content type.
+	CreateMemoryFactWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateMemoryFact performs a POST /api/management/v1/memory/facts (the `CreateMemoryFact` operationId) request.
+	// Takes a body of the `application/json` content type.
+	CreateMemoryFact(ctx context.Context, body CreateMemoryFactJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteMemoryFactWithBody performs a DELETE /api/management/v1/memory/facts/{fact_id} (the `DeleteMemoryFact` operationId) request,
+	// with any type of body and a specified content type.
+	DeleteMemoryFactWithBody(ctx context.Context, factID int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteMemoryFact performs a DELETE /api/management/v1/memory/facts/{fact_id} (the `DeleteMemoryFact` operationId) request.
+	// Takes a body of the `application/json` content type.
+	DeleteMemoryFact(ctx context.Context, factID int64, body DeleteMemoryFactJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetMemoryFact performs a GET /api/management/v1/memory/facts/{fact_id} (the `GetMemoryFact` operationId) request.
+	GetMemoryFact(ctx context.Context, factID int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateMemoryFactWithBody performs a PUT /api/management/v1/memory/facts/{fact_id} (the `UpdateMemoryFact` operationId) request,
+	// with any type of body and a specified content type.
+	UpdateMemoryFactWithBody(ctx context.Context, factID int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateMemoryFact performs a PUT /api/management/v1/memory/facts/{fact_id} (the `UpdateMemoryFact` operationId) request.
+	// Takes a body of the `application/json` content type.
+	UpdateMemoryFact(ctx context.Context, factID int64, body UpdateMemoryFactJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListPluginMarketplaces performs a GET /api/management/v1/plugin-marketplaces (the `ListPluginMarketplaces` operationId) request.
 	ListPluginMarketplaces(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -2572,6 +2818,16 @@ type ClientInterface interface {
 	// Takes a body of the `application/json` content type.
 	ReviewSkillUpdate(ctx context.Context, skillID SkillID, body ReviewSkillUpdateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetSystemAgent Read the effective configured agent view
+	//
+	// Corresponds with GET /api/management/v1/system/agent (the `GetSystemAgent` operationId).
+	GetSystemAgent(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetSystemOverview Read configured integration capabilities
+	//
+	// Corresponds with GET /api/management/v1/system/overview (the `GetSystemOverview` operationId).
+	GetSystemOverview(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListWebhooks performs a GET /api/management/v1/webhooks (the `ListWebhooks` operationId) request.
 	ListWebhooks(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -2631,6 +2887,32 @@ type ClientInterface interface {
 	// TestWebhook performs a POST /api/management/v1/webhooks/{webhook_name}/test (the `TestWebhook` operationId) request.
 	// Takes a body of the `application/json` content type.
 	TestWebhook(ctx context.Context, webhookName WebhookName, body TestWebhookJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+}
+
+// ListAISessionArchives performs a GET /api/management/v1/ai-sessions (the `ListAISessionArchives` operationId) request.
+func (c *Client) ListAISessionArchives(ctx context.Context, params *ListAISessionArchivesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListAISessionArchivesRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetAISessionArchive performs a GET /api/management/v1/ai-sessions/{ai_session_id} (the `GetAISessionArchive` operationId) request.
+func (c *Client) GetAISessionArchive(ctx context.Context, aiSessionID string, params *GetAISessionArchiveParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetAISessionArchiveRequest(c.Server, aiSessionID, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
 }
 
 // ListAliases performs a GET /api/management/v1/aliases (the `ListAliases` operationId) request.
@@ -3677,6 +3959,116 @@ func (c *Client) SelectMCPConnection(ctx context.Context, connectionID MCPConnec
 	return c.Client.Do(req)
 }
 
+// ListMemoryFacts performs a GET /api/management/v1/memory/facts (the `ListMemoryFacts` operationId) request.
+func (c *Client) ListMemoryFacts(ctx context.Context, params *ListMemoryFactsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListMemoryFactsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateMemoryFactWithBody performs a POST /api/management/v1/memory/facts (the `CreateMemoryFact` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) CreateMemoryFactWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateMemoryFactRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateMemoryFact performs a POST /api/management/v1/memory/facts (the `CreateMemoryFact` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) CreateMemoryFact(ctx context.Context, body CreateMemoryFactJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateMemoryFactRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteMemoryFactWithBody performs a DELETE /api/management/v1/memory/facts/{fact_id} (the `DeleteMemoryFact` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) DeleteMemoryFactWithBody(ctx context.Context, factID int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteMemoryFactRequestWithBody(c.Server, factID, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteMemoryFact performs a DELETE /api/management/v1/memory/facts/{fact_id} (the `DeleteMemoryFact` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) DeleteMemoryFact(ctx context.Context, factID int64, body DeleteMemoryFactJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteMemoryFactRequest(c.Server, factID, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetMemoryFact performs a GET /api/management/v1/memory/facts/{fact_id} (the `GetMemoryFact` operationId) request.
+func (c *Client) GetMemoryFact(ctx context.Context, factID int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetMemoryFactRequest(c.Server, factID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateMemoryFactWithBody performs a PUT /api/management/v1/memory/facts/{fact_id} (the `UpdateMemoryFact` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) UpdateMemoryFactWithBody(ctx context.Context, factID int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateMemoryFactRequestWithBody(c.Server, factID, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateMemoryFact performs a PUT /api/management/v1/memory/facts/{fact_id} (the `UpdateMemoryFact` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) UpdateMemoryFact(ctx context.Context, factID int64, body UpdateMemoryFactJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateMemoryFactRequest(c.Server, factID, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // ListPluginMarketplaces performs a GET /api/management/v1/plugin-marketplaces (the `ListPluginMarketplaces` operationId) request.
 func (c *Client) ListPluginMarketplaces(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListPluginMarketplacesRequest(c.Server)
@@ -4401,6 +4793,36 @@ func (c *Client) ReviewSkillUpdate(ctx context.Context, skillID SkillID, body Re
 	return c.Client.Do(req)
 }
 
+// GetSystemAgent Read the effective configured agent view
+//
+// Corresponds with GET /api/management/v1/system/agent (the `GetSystemAgent` operationId).
+func (c *Client) GetSystemAgent(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSystemAgentRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetSystemOverview Read configured integration capabilities
+//
+// Corresponds with GET /api/management/v1/system/overview (the `GetSystemOverview` operationId).
+func (c *Client) GetSystemOverview(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSystemOverviewRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // ListWebhooks performs a GET /api/management/v1/webhooks (the `ListWebhooks` operationId) request.
 func (c *Client) ListWebhooks(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListWebhooksRequest(c.Server)
@@ -4619,6 +5041,157 @@ func (c *Client) TestWebhook(ctx context.Context, webhookName WebhookName, body 
 		return nil, err
 	}
 	return c.Client.Do(req)
+}
+
+// NewListAISessionArchivesRequest constructs an http.Request for the ListAISessionArchives method
+func NewListAISessionArchivesRequest(server string, params *ListAISessionArchivesParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/ai-sessions")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Q != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "q", *params.Q, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Channel != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "channel", *params.Channel, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Status != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "status", *params.Status, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetAISessionArchiveRequest constructs an http.Request for the GetAISessionArchive method
+func NewGetAISessionArchiveRequest(server string, aiSessionID string, params *GetAISessionArchiveParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "ai_session_id", aiSessionID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/ai-sessions/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
 }
 
 // NewListAliasesRequest constructs an http.Request for the ListAliases method
@@ -6249,6 +6822,228 @@ func NewSelectMCPConnectionRequestWithBody(server string, connectionID MCPConnec
 	return req, nil
 }
 
+// NewListMemoryFactsRequest constructs an http.Request for the ListMemoryFacts method
+func NewListMemoryFactsRequest(server string, params *ListMemoryFactsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/memory/facts")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Q != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "q", *params.Q, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateMemoryFactRequest calls the generic CreateMemoryFact builder with application/json body
+func NewCreateMemoryFactRequest(server string, body CreateMemoryFactJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateMemoryFactRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateMemoryFactRequestWithBody constructs an http.Request for the CreateMemoryFact method, with any body, and a specified content type
+func NewCreateMemoryFactRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/memory/facts")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteMemoryFactRequest calls the generic DeleteMemoryFact builder with application/json body
+func NewDeleteMemoryFactRequest(server string, factID int64, body DeleteMemoryFactJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewDeleteMemoryFactRequestWithBody(server, factID, "application/json", bodyReader)
+}
+
+// NewDeleteMemoryFactRequestWithBody constructs an http.Request for the DeleteMemoryFact method, with any body, and a specified content type
+func NewDeleteMemoryFactRequestWithBody(server string, factID int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "fact_id", factID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/memory/facts/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetMemoryFactRequest constructs an http.Request for the GetMemoryFact method
+func NewGetMemoryFactRequest(server string, factID int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "fact_id", factID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/memory/facts/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateMemoryFactRequest calls the generic UpdateMemoryFact builder with application/json body
+func NewUpdateMemoryFactRequest(server string, factID int64, body UpdateMemoryFactJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateMemoryFactRequestWithBody(server, factID, "application/json", bodyReader)
+}
+
+// NewUpdateMemoryFactRequestWithBody constructs an http.Request for the UpdateMemoryFact method, with any body, and a specified content type
+func NewUpdateMemoryFactRequestWithBody(server string, factID int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "fact_id", factID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/memory/facts/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewListPluginMarketplacesRequest constructs an http.Request for the ListPluginMarketplaces method
 func NewListPluginMarketplacesRequest(server string) (*http.Request, error) {
 	var err error
@@ -7492,6 +8287,60 @@ func NewReviewSkillUpdateRequestWithBody(server string, skillID SkillID, content
 	return req, nil
 }
 
+// NewGetSystemAgentRequest constructs an http.Request for the GetSystemAgent method
+func NewGetSystemAgentRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/system/agent")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetSystemOverviewRequest constructs an http.Request for the GetSystemOverview method
+func NewGetSystemOverviewRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/system/overview")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewListWebhooksRequest constructs an http.Request for the ListWebhooks method
 func NewListWebhooksRequest(server string) (*http.Request, error) {
 	var err error
@@ -7986,6 +8835,16 @@ func WithBaseURL(baseURL string) ClientOption {
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
 
+	// ListAISessionArchivesWithResponse performs a GET /api/management/v1/ai-sessions (the `ListAISessionArchives` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ListAISessionArchivesWithResponse(ctx context.Context, params *ListAISessionArchivesParams, reqEditors ...RequestEditorFn) (*ListAISessionArchivesResponse, error)
+
+	// GetAISessionArchiveWithResponse performs a GET /api/management/v1/ai-sessions/{ai_session_id} (the `GetAISessionArchive` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	GetAISessionArchiveWithResponse(ctx context.Context, aiSessionID string, params *GetAISessionArchiveParams, reqEditors ...RequestEditorFn) (*GetAISessionArchiveResponse, error)
+
 	// ListAliasesWithResponse performs a GET /api/management/v1/aliases (the `ListAliases` operationId) request.
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -8402,6 +9261,46 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /api/management/v1/mcp/{connection_id}/selection (the `SelectMCPConnection` operationId).
 	SelectMCPConnectionWithResponse(ctx context.Context, connectionID MCPConnectionID, body SelectMCPConnectionJSONRequestBody, reqEditors ...RequestEditorFn) (*SelectMCPConnectionResponse, error)
 
+	// ListMemoryFactsWithResponse performs a GET /api/management/v1/memory/facts (the `ListMemoryFacts` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ListMemoryFactsWithResponse(ctx context.Context, params *ListMemoryFactsParams, reqEditors ...RequestEditorFn) (*ListMemoryFactsResponse, error)
+
+	// CreateMemoryFactWithBodyWithResponse performs a POST /api/management/v1/memory/facts (the `CreateMemoryFact` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	CreateMemoryFactWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateMemoryFactResponse, error)
+
+	// CreateMemoryFactWithResponse performs a POST /api/management/v1/memory/facts (the `CreateMemoryFact` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	CreateMemoryFactWithResponse(ctx context.Context, body CreateMemoryFactJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateMemoryFactResponse, error)
+
+	// DeleteMemoryFactWithBodyWithResponse performs a DELETE /api/management/v1/memory/facts/{fact_id} (the `DeleteMemoryFact` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	DeleteMemoryFactWithBodyWithResponse(ctx context.Context, factID int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeleteMemoryFactResponse, error)
+
+	// DeleteMemoryFactWithResponse performs a DELETE /api/management/v1/memory/facts/{fact_id} (the `DeleteMemoryFact` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	DeleteMemoryFactWithResponse(ctx context.Context, factID int64, body DeleteMemoryFactJSONRequestBody, reqEditors ...RequestEditorFn) (*DeleteMemoryFactResponse, error)
+
+	// GetMemoryFactWithResponse performs a GET /api/management/v1/memory/facts/{fact_id} (the `GetMemoryFact` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	GetMemoryFactWithResponse(ctx context.Context, factID int64, reqEditors ...RequestEditorFn) (*GetMemoryFactResponse, error)
+
+	// UpdateMemoryFactWithBodyWithResponse performs a PUT /api/management/v1/memory/facts/{fact_id} (the `UpdateMemoryFact` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	UpdateMemoryFactWithBodyWithResponse(ctx context.Context, factID int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateMemoryFactResponse, error)
+
+	// UpdateMemoryFactWithResponse performs a PUT /api/management/v1/memory/facts/{fact_id} (the `UpdateMemoryFact` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	UpdateMemoryFactWithResponse(ctx context.Context, factID int64, body UpdateMemoryFactJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateMemoryFactResponse, error)
+
 	// ListPluginMarketplacesWithResponse performs a GET /api/management/v1/plugin-marketplaces (the `ListPluginMarketplaces` operationId) request.
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -8688,6 +9587,20 @@ type ClientWithResponsesInterface interface {
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	ReviewSkillUpdateWithResponse(ctx context.Context, skillID SkillID, body ReviewSkillUpdateJSONRequestBody, reqEditors ...RequestEditorFn) (*ReviewSkillUpdateResponse, error)
 
+	// GetSystemAgentWithResponse Read the effective configured agent view
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/management/v1/system/agent (the `GetSystemAgent` operationId).
+	GetSystemAgentWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSystemAgentResponse, error)
+
+	// GetSystemOverviewWithResponse Read configured integration capabilities
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/management/v1/system/overview (the `GetSystemOverview` operationId).
+	GetSystemOverviewWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSystemOverviewResponse, error)
+
 	// ListWebhooksWithResponse performs a GET /api/management/v1/webhooks (the `ListWebhooks` operationId) request.
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -8767,6 +9680,165 @@ type ClientWithResponsesInterface interface {
 	// TestWebhookWithResponse performs a POST /api/management/v1/webhooks/{webhook_name}/test (the `TestWebhook` operationId) request.
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	TestWebhookWithResponse(ctx context.Context, webhookName WebhookName, body TestWebhookJSONRequestBody, reqEditors ...RequestEditorFn) (*TestWebhookResponse, error)
+}
+
+type ListAISessionArchivesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *AISessionArchiveInventory
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListAISessionArchivesResponse) GetJSON200() *AISessionArchiveInventory {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ListAISessionArchivesResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListAISessionArchivesResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListAISessionArchivesResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r ListAISessionArchivesResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r ListAISessionArchivesResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r ListAISessionArchivesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListAISessionArchivesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListAISessionArchivesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListAISessionArchivesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetAISessionArchiveResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *AISessionArchiveTranscript
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetAISessionArchiveResponse) GetJSON200() *AISessionArchiveTranscript {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetAISessionArchiveResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetAISessionArchiveResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetAISessionArchiveResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetAISessionArchiveResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r GetAISessionArchiveResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r GetAISessionArchiveResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r GetAISessionArchiveResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetAISessionArchiveResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetAISessionArchiveResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetAISessionArchiveResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
 }
 
 type ListAliasesResponse struct {
@@ -11913,6 +12985,414 @@ func (r SelectMCPConnectionResponse) ContentType() string {
 	return ""
 }
 
+type ListMemoryFactsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *MemoryFactInventory
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListMemoryFactsResponse) GetJSON200() *MemoryFactInventory {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListMemoryFactsResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListMemoryFactsResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r ListMemoryFactsResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r ListMemoryFactsResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r ListMemoryFactsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListMemoryFactsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListMemoryFactsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListMemoryFactsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateMemoryFactResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *MemoryFact
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r CreateMemoryFactResponse) GetJSON200() *MemoryFact {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r CreateMemoryFactResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r CreateMemoryFactResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r CreateMemoryFactResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r CreateMemoryFactResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r CreateMemoryFactResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r CreateMemoryFactResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateMemoryFactResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateMemoryFactResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateMemoryFactResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateMemoryFactResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteMemoryFactResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r DeleteMemoryFactResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r DeleteMemoryFactResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r DeleteMemoryFactResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r DeleteMemoryFactResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r DeleteMemoryFactResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r DeleteMemoryFactResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r DeleteMemoryFactResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r DeleteMemoryFactResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteMemoryFactResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteMemoryFactResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteMemoryFactResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetMemoryFactResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *MemoryFactEditor
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetMemoryFactResponse) GetJSON200() *MemoryFactEditor {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetMemoryFactResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetMemoryFactResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetMemoryFactResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetMemoryFactResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r GetMemoryFactResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r GetMemoryFactResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r GetMemoryFactResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetMemoryFactResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetMemoryFactResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetMemoryFactResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UpdateMemoryFactResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *MemoryFact
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r UpdateMemoryFactResponse) GetJSON200() *MemoryFact {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r UpdateMemoryFactResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r UpdateMemoryFactResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r UpdateMemoryFactResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r UpdateMemoryFactResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r UpdateMemoryFactResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r UpdateMemoryFactResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r UpdateMemoryFactResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r UpdateMemoryFactResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateMemoryFactResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateMemoryFactResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UpdateMemoryFactResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ListPluginMarketplacesResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -14340,6 +15820,130 @@ func (r ReviewSkillUpdateResponse) ContentType() string {
 	return ""
 }
 
+type GetSystemAgentResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *SystemAgent
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetSystemAgentResponse) GetJSON200() *SystemAgent {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetSystemAgentResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetSystemAgentResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r GetSystemAgentResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r GetSystemAgentResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetSystemAgentResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetSystemAgentResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetSystemAgentResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetSystemOverviewResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *SystemOverview
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetSystemOverviewResponse) GetJSON200() *SystemOverview {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetSystemOverviewResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetSystemOverviewResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r GetSystemOverviewResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r GetSystemOverviewResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetSystemOverviewResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetSystemOverviewResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetSystemOverviewResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ListWebhooksResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -15177,6 +16781,28 @@ func (r TestWebhookResponse) ContentType() string {
 	return ""
 }
 
+// ListAISessionArchivesWithResponse performs a GET /api/management/v1/ai-sessions (the `ListAISessionArchives` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ListAISessionArchivesWithResponse(ctx context.Context, params *ListAISessionArchivesParams, reqEditors ...RequestEditorFn) (*ListAISessionArchivesResponse, error) {
+	rsp, err := c.ListAISessionArchives(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListAISessionArchivesResponse(rsp)
+}
+
+// GetAISessionArchiveWithResponse performs a GET /api/management/v1/ai-sessions/{ai_session_id} (the `GetAISessionArchive` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) GetAISessionArchiveWithResponse(ctx context.Context, aiSessionID string, params *GetAISessionArchiveParams, reqEditors ...RequestEditorFn) (*GetAISessionArchiveResponse, error) {
+	rsp, err := c.GetAISessionArchive(ctx, aiSessionID, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetAISessionArchiveResponse(rsp)
+}
+
 // ListAliasesWithResponse performs a GET /api/management/v1/aliases (the `ListAliases` operationId) request.
 //
 // Returns a wrapper object for the known response body format(s).
@@ -16001,6 +17627,94 @@ func (c *ClientWithResponses) SelectMCPConnectionWithResponse(ctx context.Contex
 	return ParseSelectMCPConnectionResponse(rsp)
 }
 
+// ListMemoryFactsWithResponse performs a GET /api/management/v1/memory/facts (the `ListMemoryFacts` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ListMemoryFactsWithResponse(ctx context.Context, params *ListMemoryFactsParams, reqEditors ...RequestEditorFn) (*ListMemoryFactsResponse, error) {
+	rsp, err := c.ListMemoryFacts(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListMemoryFactsResponse(rsp)
+}
+
+// CreateMemoryFactWithBodyWithResponse performs a POST /api/management/v1/memory/facts (the `CreateMemoryFact` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) CreateMemoryFactWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateMemoryFactResponse, error) {
+	rsp, err := c.CreateMemoryFactWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateMemoryFactResponse(rsp)
+}
+
+// CreateMemoryFactWithResponse performs a POST /api/management/v1/memory/facts (the `CreateMemoryFact` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) CreateMemoryFactWithResponse(ctx context.Context, body CreateMemoryFactJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateMemoryFactResponse, error) {
+	rsp, err := c.CreateMemoryFact(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateMemoryFactResponse(rsp)
+}
+
+// DeleteMemoryFactWithBodyWithResponse performs a DELETE /api/management/v1/memory/facts/{fact_id} (the `DeleteMemoryFact` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) DeleteMemoryFactWithBodyWithResponse(ctx context.Context, factID int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeleteMemoryFactResponse, error) {
+	rsp, err := c.DeleteMemoryFactWithBody(ctx, factID, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteMemoryFactResponse(rsp)
+}
+
+// DeleteMemoryFactWithResponse performs a DELETE /api/management/v1/memory/facts/{fact_id} (the `DeleteMemoryFact` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) DeleteMemoryFactWithResponse(ctx context.Context, factID int64, body DeleteMemoryFactJSONRequestBody, reqEditors ...RequestEditorFn) (*DeleteMemoryFactResponse, error) {
+	rsp, err := c.DeleteMemoryFact(ctx, factID, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteMemoryFactResponse(rsp)
+}
+
+// GetMemoryFactWithResponse performs a GET /api/management/v1/memory/facts/{fact_id} (the `GetMemoryFact` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) GetMemoryFactWithResponse(ctx context.Context, factID int64, reqEditors ...RequestEditorFn) (*GetMemoryFactResponse, error) {
+	rsp, err := c.GetMemoryFact(ctx, factID, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetMemoryFactResponse(rsp)
+}
+
+// UpdateMemoryFactWithBodyWithResponse performs a PUT /api/management/v1/memory/facts/{fact_id} (the `UpdateMemoryFact` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) UpdateMemoryFactWithBodyWithResponse(ctx context.Context, factID int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateMemoryFactResponse, error) {
+	rsp, err := c.UpdateMemoryFactWithBody(ctx, factID, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateMemoryFactResponse(rsp)
+}
+
+// UpdateMemoryFactWithResponse performs a PUT /api/management/v1/memory/facts/{fact_id} (the `UpdateMemoryFact` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) UpdateMemoryFactWithResponse(ctx context.Context, factID int64, body UpdateMemoryFactJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateMemoryFactResponse, error) {
+	rsp, err := c.UpdateMemoryFact(ctx, factID, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateMemoryFactResponse(rsp)
+}
+
 // ListPluginMarketplacesWithResponse performs a GET /api/management/v1/plugin-marketplaces (the `ListPluginMarketplaces` operationId) request.
 //
 // Returns a wrapper object for the known response body format(s).
@@ -16575,6 +18289,32 @@ func (c *ClientWithResponses) ReviewSkillUpdateWithResponse(ctx context.Context,
 	return ParseReviewSkillUpdateResponse(rsp)
 }
 
+// GetSystemAgentWithResponse Read the effective configured agent view
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/management/v1/system/agent (the `GetSystemAgent` operationId).
+func (c *ClientWithResponses) GetSystemAgentWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSystemAgentResponse, error) {
+	rsp, err := c.GetSystemAgent(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetSystemAgentResponse(rsp)
+}
+
+// GetSystemOverviewWithResponse Read configured integration capabilities
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/management/v1/system/overview (the `GetSystemOverview` operationId).
+func (c *ClientWithResponses) GetSystemOverviewWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSystemOverviewResponse, error) {
+	rsp, err := c.GetSystemOverview(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetSystemOverviewResponse(rsp)
+}
+
 // ListWebhooksWithResponse performs a GET /api/management/v1/webhooks (the `ListWebhooks` operationId) request.
 //
 // Returns a wrapper object for the known response body format(s).
@@ -16749,6 +18489,135 @@ func (c *ClientWithResponses) TestWebhookWithResponse(ctx context.Context, webho
 		return nil, err
 	}
 	return ParseTestWebhookResponse(rsp)
+}
+
+// ParseListAISessionArchivesResponse parses an HTTP response from a ListAISessionArchivesWithResponse call
+func ParseListAISessionArchivesResponse(rsp *http.Response) (*ListAISessionArchivesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListAISessionArchivesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AISessionArchiveInventory
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetAISessionArchiveResponse parses an HTTP response from a GetAISessionArchiveWithResponse call
+func ParseGetAISessionArchiveResponse(rsp *http.Response) (*GetAISessionArchiveResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetAISessionArchiveResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AISessionArchiveTranscript
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
 }
 
 // ParseListAliasesResponse parses an HTTP response from a ListAliasesWithResponse call
@@ -19304,6 +21173,342 @@ func ParseSelectMCPConnectionResponse(rsp *http.Response) (*SelectMCPConnectionR
 	return response, nil
 }
 
+// ParseListMemoryFactsResponse parses an HTTP response from a ListMemoryFactsWithResponse call
+func ParseListMemoryFactsResponse(rsp *http.Response) (*ListMemoryFactsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListMemoryFactsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MemoryFactInventory
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateMemoryFactResponse parses an HTTP response from a CreateMemoryFactWithResponse call
+func ParseCreateMemoryFactResponse(rsp *http.Response) (*CreateMemoryFactResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateMemoryFactResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MemoryFact
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteMemoryFactResponse parses an HTTP response from a DeleteMemoryFactWithResponse call
+func ParseDeleteMemoryFactResponse(rsp *http.Response) (*DeleteMemoryFactResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteMemoryFactResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetMemoryFactResponse parses an HTTP response from a GetMemoryFactWithResponse call
+func ParseGetMemoryFactResponse(rsp *http.Response) (*GetMemoryFactResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetMemoryFactResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MemoryFactEditor
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateMemoryFactResponse parses an HTTP response from a UpdateMemoryFactWithResponse call
+func ParseUpdateMemoryFactResponse(rsp *http.Response) (*UpdateMemoryFactResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateMemoryFactResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MemoryFact
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseListPluginMarketplacesResponse parses an HTTP response from a ListPluginMarketplacesWithResponse call
 func ParseListPluginMarketplacesResponse(rsp *http.Response) (*ListPluginMarketplacesResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -21296,6 +23501,100 @@ func ParseReviewSkillUpdateResponse(rsp *http.Response) (*ReviewSkillUpdateRespo
 	return response, nil
 }
 
+// ParseGetSystemAgentResponse parses an HTTP response from a GetSystemAgentWithResponse call
+func ParseGetSystemAgentResponse(rsp *http.Response) (*GetSystemAgentResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetSystemAgentResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SystemAgent
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetSystemOverviewResponse parses an HTTP response from a GetSystemOverviewWithResponse call
+func ParseGetSystemOverviewResponse(rsp *http.Response) (*GetSystemOverviewResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetSystemOverviewResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SystemOverview
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseListWebhooksResponse parses an HTTP response from a ListWebhooksWithResponse call
 func ParseListWebhooksResponse(rsp *http.Response) (*ListWebhooksResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -21986,6 +24285,12 @@ func ParseTestWebhookResponse(rsp *http.Response) (*TestWebhookResponse, error) 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 
+	// (GET /api/management/v1/ai-sessions)
+	ListAISessionArchives(w http.ResponseWriter, r *http.Request, params ListAISessionArchivesParams)
+
+	// (GET /api/management/v1/ai-sessions/{ai_session_id})
+	GetAISessionArchive(w http.ResponseWriter, r *http.Request, aiSessionID string, params GetAISessionArchiveParams)
+
 	// (GET /api/management/v1/aliases)
 	ListAliases(w http.ResponseWriter, r *http.Request)
 
@@ -22109,6 +24414,21 @@ type ServerInterface interface {
 	// (POST /api/management/v1/mcp/{connection_id}/selection)
 	SelectMCPConnection(w http.ResponseWriter, r *http.Request, connectionID MCPConnectionID)
 
+	// (GET /api/management/v1/memory/facts)
+	ListMemoryFacts(w http.ResponseWriter, r *http.Request, params ListMemoryFactsParams)
+
+	// (POST /api/management/v1/memory/facts)
+	CreateMemoryFact(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /api/management/v1/memory/facts/{fact_id})
+	DeleteMemoryFact(w http.ResponseWriter, r *http.Request, factID int64)
+
+	// (GET /api/management/v1/memory/facts/{fact_id})
+	GetMemoryFact(w http.ResponseWriter, r *http.Request, factID int64)
+
+	// (PUT /api/management/v1/memory/facts/{fact_id})
+	UpdateMemoryFact(w http.ResponseWriter, r *http.Request, factID int64)
+
 	// (GET /api/management/v1/plugin-marketplaces)
 	ListPluginMarketplaces(w http.ResponseWriter, r *http.Request)
 
@@ -22198,6 +24518,12 @@ type ServerInterface interface {
 
 	// (POST /api/management/v1/skills/{skill_id}/reviews/update)
 	ReviewSkillUpdate(w http.ResponseWriter, r *http.Request, skillID SkillID)
+	// GetSystemAgent Read the effective configured agent view
+	// (GET /api/management/v1/system/agent)
+	GetSystemAgent(w http.ResponseWriter, r *http.Request)
+	// GetSystemOverview Read configured integration capabilities
+	// (GET /api/management/v1/system/overview)
+	GetSystemOverview(w http.ResponseWriter, r *http.Request)
 
 	// (GET /api/management/v1/webhooks)
 	ListWebhooks(w http.ResponseWriter, r *http.Request)
@@ -22238,6 +24564,120 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// ListAISessionArchives operation middleware
+func (siw *ServerInterfaceWrapper) ListAISessionArchives(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListAISessionArchivesParams
+
+	// ------------- Optional query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "q", r.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "q"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "channel" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "channel", r.URL.Query(), &params.Channel, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "channel"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "channel", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAISessionArchives(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetAISessionArchive operation middleware
+func (siw *ServerInterfaceWrapper) GetAISessionArchive(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "ai_session_id" -------------
+	var aiSessionID string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "ai_session_id", r.PathValue("ai_session_id"), &aiSessionID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "ai_session_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetAISessionArchiveParams
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAISessionArchive(w, r, aiSessionID, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // ListAliases operation middleware
 func (siw *ServerInterfaceWrapper) ListAliases(w http.ResponseWriter, r *http.Request) {
@@ -23062,6 +25502,131 @@ func (siw *ServerInterfaceWrapper) SelectMCPConnection(w http.ResponseWriter, r 
 	handler.ServeHTTP(w, r)
 }
 
+// ListMemoryFacts operation middleware
+func (siw *ServerInterfaceWrapper) ListMemoryFacts(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListMemoryFactsParams
+
+	// ------------- Optional query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "q", r.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "q"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListMemoryFacts(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateMemoryFact operation middleware
+func (siw *ServerInterfaceWrapper) CreateMemoryFact(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateMemoryFact(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteMemoryFact operation middleware
+func (siw *ServerInterfaceWrapper) DeleteMemoryFact(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "fact_id" -------------
+	var factID int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "fact_id", r.PathValue("fact_id"), &factID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "fact_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteMemoryFact(w, r, factID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetMemoryFact operation middleware
+func (siw *ServerInterfaceWrapper) GetMemoryFact(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "fact_id" -------------
+	var factID int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "fact_id", r.PathValue("fact_id"), &factID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "fact_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetMemoryFact(w, r, factID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateMemoryFact operation middleware
+func (siw *ServerInterfaceWrapper) UpdateMemoryFact(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "fact_id" -------------
+	var factID int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "fact_id", r.PathValue("fact_id"), &factID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "fact_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateMemoryFact(w, r, factID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListPluginMarketplaces operation middleware
 func (siw *ServerInterfaceWrapper) ListPluginMarketplaces(w http.ResponseWriter, r *http.Request) {
 
@@ -23752,6 +26317,34 @@ func (siw *ServerInterfaceWrapper) ReviewSkillUpdate(w http.ResponseWriter, r *h
 	handler.ServeHTTP(w, r)
 }
 
+// GetSystemAgent operation middleware
+func (siw *ServerInterfaceWrapper) GetSystemAgent(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSystemAgent(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSystemOverview operation middleware
+func (siw *ServerInterfaceWrapper) GetSystemOverview(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSystemOverview(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListWebhooks operation middleware
 func (siw *ServerInterfaceWrapper) ListWebhooks(w http.ResponseWriter, r *http.Request) {
 
@@ -24147,6 +26740,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	}
 
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/compatibility", wrapper.GetManagementCompatibility)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/system/overview", wrapper.GetSystemOverview)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/system/agent", wrapper.GetSystemAgent)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/auth/login", wrapper.LoginWebAuth)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/auth/login/mfa", wrapper.FinishWebAuthLogin)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/auth/refresh", wrapper.RefreshWebAuth)
@@ -24209,6 +26804,13 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/mcp/{connection_id}/authorization/retry", wrapper.RetryMCPAuthorization)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/hooks", wrapper.ListHooks)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/hooks", wrapper.CreateHook)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/ai-sessions", wrapper.ListAISessionArchives)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/ai-sessions/{ai_session_id}", wrapper.GetAISessionArchive)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/memory/facts", wrapper.ListMemoryFacts)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/memory/facts", wrapper.CreateMemoryFact)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/management/v1/memory/facts/{fact_id}", wrapper.DeleteMemoryFact)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/memory/facts/{fact_id}", wrapper.GetMemoryFact)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/management/v1/memory/facts/{fact_id}", wrapper.UpdateMemoryFact)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/management/v1/hooks/{hook_name}", wrapper.DeleteHook)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/management/v1/hooks/{hook_name}", wrapper.UpdateHook)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/plugins", wrapper.ListPlugins)
@@ -24244,6 +26846,205 @@ type NotFoundJSONResponse ManagementError
 type ServiceUnavailableJSONResponse ManagementError
 
 type UnauthorizedJSONResponse ManagementError
+
+type ListAISessionArchivesRequestObject struct {
+	Params ListAISessionArchivesParams
+}
+
+type ListAISessionArchivesResponseObject interface {
+	VisitListAISessionArchivesResponse(w http.ResponseWriter) error
+}
+
+type ListAISessionArchives200JSONResponse AISessionArchiveInventory
+
+func (response ListAISessionArchives200JSONResponse) VisitListAISessionArchivesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAISessionArchives400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response ListAISessionArchives400JSONResponse) VisitListAISessionArchivesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAISessionArchives401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListAISessionArchives401JSONResponse) VisitListAISessionArchivesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAISessionArchives403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListAISessionArchives403JSONResponse) VisitListAISessionArchivesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAISessionArchives500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ListAISessionArchives500JSONResponse) VisitListAISessionArchivesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAISessionArchives503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response ListAISessionArchives503JSONResponse) VisitListAISessionArchivesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAISessionArchiveRequestObject struct {
+	AISessionID string `json:"ai_session_id"`
+	Params      GetAISessionArchiveParams
+}
+
+type GetAISessionArchiveResponseObject interface {
+	VisitGetAISessionArchiveResponse(w http.ResponseWriter) error
+}
+
+type GetAISessionArchive200JSONResponse AISessionArchiveTranscript
+
+func (response GetAISessionArchive200JSONResponse) VisitGetAISessionArchiveResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAISessionArchive400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response GetAISessionArchive400JSONResponse) VisitGetAISessionArchiveResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAISessionArchive401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetAISessionArchive401JSONResponse) VisitGetAISessionArchiveResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAISessionArchive403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetAISessionArchive403JSONResponse) VisitGetAISessionArchiveResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAISessionArchive404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetAISessionArchive404JSONResponse) VisitGetAISessionArchiveResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAISessionArchive500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response GetAISessionArchive500JSONResponse) VisitGetAISessionArchiveResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAISessionArchive503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response GetAISessionArchive503JSONResponse) VisitGetAISessionArchiveResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
 
 type ListAliasesRequestObject struct {
 }
@@ -28141,6 +30942,532 @@ func (response SelectMCPConnection503JSONResponse) VisitSelectMCPConnectionRespo
 	return err
 }
 
+type ListMemoryFactsRequestObject struct {
+	Params ListMemoryFactsParams
+}
+
+type ListMemoryFactsResponseObject interface {
+	VisitListMemoryFactsResponse(w http.ResponseWriter) error
+}
+
+type ListMemoryFacts200JSONResponse MemoryFactInventory
+
+func (response ListMemoryFacts200JSONResponse) VisitListMemoryFactsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListMemoryFacts401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListMemoryFacts401JSONResponse) VisitListMemoryFactsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListMemoryFacts403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListMemoryFacts403JSONResponse) VisitListMemoryFactsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListMemoryFacts500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ListMemoryFacts500JSONResponse) VisitListMemoryFactsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListMemoryFacts503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response ListMemoryFacts503JSONResponse) VisitListMemoryFactsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateMemoryFactRequestObject struct {
+	Body *CreateMemoryFactJSONRequestBody
+}
+
+type CreateMemoryFactResponseObject interface {
+	VisitCreateMemoryFactResponse(w http.ResponseWriter) error
+}
+
+type CreateMemoryFact200JSONResponse MemoryFact
+
+func (response CreateMemoryFact200JSONResponse) VisitCreateMemoryFactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateMemoryFact400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response CreateMemoryFact400JSONResponse) VisitCreateMemoryFactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateMemoryFact401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response CreateMemoryFact401JSONResponse) VisitCreateMemoryFactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateMemoryFact403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response CreateMemoryFact403JSONResponse) VisitCreateMemoryFactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateMemoryFact409JSONResponse struct{ ConflictJSONResponse }
+
+func (response CreateMemoryFact409JSONResponse) VisitCreateMemoryFactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateMemoryFact500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response CreateMemoryFact500JSONResponse) VisitCreateMemoryFactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateMemoryFact503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response CreateMemoryFact503JSONResponse) VisitCreateMemoryFactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteMemoryFactRequestObject struct {
+	FactID int64 `json:"fact_id"`
+	Body   *DeleteMemoryFactJSONRequestBody
+}
+
+type DeleteMemoryFactResponseObject interface {
+	VisitDeleteMemoryFactResponse(w http.ResponseWriter) error
+}
+
+type DeleteMemoryFact204Response struct {
+}
+
+func (response DeleteMemoryFact204Response) VisitDeleteMemoryFactResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteMemoryFact400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response DeleteMemoryFact400JSONResponse) VisitDeleteMemoryFactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteMemoryFact401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response DeleteMemoryFact401JSONResponse) VisitDeleteMemoryFactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteMemoryFact403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DeleteMemoryFact403JSONResponse) VisitDeleteMemoryFactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteMemoryFact404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response DeleteMemoryFact404JSONResponse) VisitDeleteMemoryFactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteMemoryFact409JSONResponse struct{ ConflictJSONResponse }
+
+func (response DeleteMemoryFact409JSONResponse) VisitDeleteMemoryFactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteMemoryFact500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response DeleteMemoryFact500JSONResponse) VisitDeleteMemoryFactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteMemoryFact503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response DeleteMemoryFact503JSONResponse) VisitDeleteMemoryFactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMemoryFactRequestObject struct {
+	FactID int64 `json:"fact_id"`
+}
+
+type GetMemoryFactResponseObject interface {
+	VisitGetMemoryFactResponse(w http.ResponseWriter) error
+}
+
+type GetMemoryFact200JSONResponse MemoryFactEditor
+
+func (response GetMemoryFact200JSONResponse) VisitGetMemoryFactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMemoryFact400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response GetMemoryFact400JSONResponse) VisitGetMemoryFactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMemoryFact401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetMemoryFact401JSONResponse) VisitGetMemoryFactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMemoryFact403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetMemoryFact403JSONResponse) VisitGetMemoryFactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMemoryFact404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetMemoryFact404JSONResponse) VisitGetMemoryFactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMemoryFact500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response GetMemoryFact500JSONResponse) VisitGetMemoryFactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMemoryFact503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response GetMemoryFact503JSONResponse) VisitGetMemoryFactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateMemoryFactRequestObject struct {
+	FactID int64 `json:"fact_id"`
+	Body   *UpdateMemoryFactJSONRequestBody
+}
+
+type UpdateMemoryFactResponseObject interface {
+	VisitUpdateMemoryFactResponse(w http.ResponseWriter) error
+}
+
+type UpdateMemoryFact200JSONResponse MemoryFact
+
+func (response UpdateMemoryFact200JSONResponse) VisitUpdateMemoryFactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateMemoryFact400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response UpdateMemoryFact400JSONResponse) VisitUpdateMemoryFactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateMemoryFact401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response UpdateMemoryFact401JSONResponse) VisitUpdateMemoryFactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateMemoryFact403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response UpdateMemoryFact403JSONResponse) VisitUpdateMemoryFactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateMemoryFact404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response UpdateMemoryFact404JSONResponse) VisitUpdateMemoryFactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateMemoryFact409JSONResponse struct{ ConflictJSONResponse }
+
+func (response UpdateMemoryFact409JSONResponse) VisitUpdateMemoryFactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateMemoryFact500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response UpdateMemoryFact500JSONResponse) VisitUpdateMemoryFactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateMemoryFact503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response UpdateMemoryFact503JSONResponse) VisitUpdateMemoryFactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListPluginMarketplacesRequestObject struct {
 }
 
@@ -31244,6 +34571,132 @@ func (response ReviewSkillUpdate503JSONResponse) VisitReviewSkillUpdateResponse(
 	return err
 }
 
+type GetSystemAgentRequestObject struct {
+}
+
+type GetSystemAgentResponseObject interface {
+	VisitGetSystemAgentResponse(w http.ResponseWriter) error
+}
+
+type GetSystemAgent200JSONResponse SystemAgent
+
+func (response GetSystemAgent200JSONResponse) VisitGetSystemAgentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSystemAgent401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetSystemAgent401JSONResponse) VisitGetSystemAgentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSystemAgent403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetSystemAgent403JSONResponse) VisitGetSystemAgentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSystemAgent500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response GetSystemAgent500JSONResponse) VisitGetSystemAgentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSystemOverviewRequestObject struct {
+}
+
+type GetSystemOverviewResponseObject interface {
+	VisitGetSystemOverviewResponse(w http.ResponseWriter) error
+}
+
+type GetSystemOverview200JSONResponse SystemOverview
+
+func (response GetSystemOverview200JSONResponse) VisitGetSystemOverviewResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSystemOverview401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetSystemOverview401JSONResponse) VisitGetSystemOverviewResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSystemOverview403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetSystemOverview403JSONResponse) VisitGetSystemOverviewResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSystemOverview500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response GetSystemOverview500JSONResponse) VisitGetSystemOverviewResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListWebhooksRequestObject struct {
 }
 
@@ -32327,6 +35780,12 @@ func (response TestWebhook503JSONResponse) VisitTestWebhookResponse(w http.Respo
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 
+	// (GET /api/management/v1/ai-sessions)
+	ListAISessionArchives(ctx context.Context, request ListAISessionArchivesRequestObject) (ListAISessionArchivesResponseObject, error)
+
+	// (GET /api/management/v1/ai-sessions/{ai_session_id})
+	GetAISessionArchive(ctx context.Context, request GetAISessionArchiveRequestObject) (GetAISessionArchiveResponseObject, error)
+
 	// (GET /api/management/v1/aliases)
 	ListAliases(ctx context.Context, request ListAliasesRequestObject) (ListAliasesResponseObject, error)
 
@@ -32450,6 +35909,21 @@ type StrictServerInterface interface {
 	// (POST /api/management/v1/mcp/{connection_id}/selection)
 	SelectMCPConnection(ctx context.Context, request SelectMCPConnectionRequestObject) (SelectMCPConnectionResponseObject, error)
 
+	// (GET /api/management/v1/memory/facts)
+	ListMemoryFacts(ctx context.Context, request ListMemoryFactsRequestObject) (ListMemoryFactsResponseObject, error)
+
+	// (POST /api/management/v1/memory/facts)
+	CreateMemoryFact(ctx context.Context, request CreateMemoryFactRequestObject) (CreateMemoryFactResponseObject, error)
+
+	// (DELETE /api/management/v1/memory/facts/{fact_id})
+	DeleteMemoryFact(ctx context.Context, request DeleteMemoryFactRequestObject) (DeleteMemoryFactResponseObject, error)
+
+	// (GET /api/management/v1/memory/facts/{fact_id})
+	GetMemoryFact(ctx context.Context, request GetMemoryFactRequestObject) (GetMemoryFactResponseObject, error)
+
+	// (PUT /api/management/v1/memory/facts/{fact_id})
+	UpdateMemoryFact(ctx context.Context, request UpdateMemoryFactRequestObject) (UpdateMemoryFactResponseObject, error)
+
 	// (GET /api/management/v1/plugin-marketplaces)
 	ListPluginMarketplaces(ctx context.Context, request ListPluginMarketplacesRequestObject) (ListPluginMarketplacesResponseObject, error)
 
@@ -32539,6 +36013,12 @@ type StrictServerInterface interface {
 
 	// (POST /api/management/v1/skills/{skill_id}/reviews/update)
 	ReviewSkillUpdate(ctx context.Context, request ReviewSkillUpdateRequestObject) (ReviewSkillUpdateResponseObject, error)
+	// GetSystemAgent Read the effective configured agent view
+	// (GET /api/management/v1/system/agent)
+	GetSystemAgent(ctx context.Context, request GetSystemAgentRequestObject) (GetSystemAgentResponseObject, error)
+	// GetSystemOverview Read configured integration capabilities
+	// (GET /api/management/v1/system/overview)
+	GetSystemOverview(ctx context.Context, request GetSystemOverviewRequestObject) (GetSystemOverviewResponseObject, error)
 
 	// (GET /api/management/v1/webhooks)
 	ListWebhooks(ctx context.Context, request ListWebhooksRequestObject) (ListWebhooksResponseObject, error)
@@ -32608,6 +36088,59 @@ type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
 	options     StrictHTTPServerOptions
+}
+
+// ListAISessionArchives operation middleware
+func (sh *strictHandler) ListAISessionArchives(w http.ResponseWriter, r *http.Request, params ListAISessionArchivesParams) {
+	var request ListAISessionArchivesRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListAISessionArchives(ctx, request.(ListAISessionArchivesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListAISessionArchives")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListAISessionArchivesResponseObject); ok {
+		if err := validResponse.VisitListAISessionArchivesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetAISessionArchive operation middleware
+func (sh *strictHandler) GetAISessionArchive(w http.ResponseWriter, r *http.Request, aiSessionID string, params GetAISessionArchiveParams) {
+	var request GetAISessionArchiveRequestObject
+
+	request.AISessionID = aiSessionID
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetAISessionArchive(ctx, request.(GetAISessionArchiveRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetAISessionArchive")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetAISessionArchiveResponseObject); ok {
+		if err := validResponse.VisitGetAISessionArchiveResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
 }
 
 // ListAliases operation middleware
@@ -33819,6 +37352,155 @@ func (sh *strictHandler) SelectMCPConnection(w http.ResponseWriter, r *http.Requ
 	}
 }
 
+// ListMemoryFacts operation middleware
+func (sh *strictHandler) ListMemoryFacts(w http.ResponseWriter, r *http.Request, params ListMemoryFactsParams) {
+	var request ListMemoryFactsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListMemoryFacts(ctx, request.(ListMemoryFactsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListMemoryFacts")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListMemoryFactsResponseObject); ok {
+		if err := validResponse.VisitListMemoryFactsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateMemoryFact operation middleware
+func (sh *strictHandler) CreateMemoryFact(w http.ResponseWriter, r *http.Request) {
+	var request CreateMemoryFactRequestObject
+
+	var body CreateMemoryFactJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateMemoryFact(ctx, request.(CreateMemoryFactRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateMemoryFact")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateMemoryFactResponseObject); ok {
+		if err := validResponse.VisitCreateMemoryFactResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteMemoryFact operation middleware
+func (sh *strictHandler) DeleteMemoryFact(w http.ResponseWriter, r *http.Request, factID int64) {
+	var request DeleteMemoryFactRequestObject
+
+	request.FactID = factID
+
+	var body DeleteMemoryFactJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteMemoryFact(ctx, request.(DeleteMemoryFactRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteMemoryFact")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteMemoryFactResponseObject); ok {
+		if err := validResponse.VisitDeleteMemoryFactResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetMemoryFact operation middleware
+func (sh *strictHandler) GetMemoryFact(w http.ResponseWriter, r *http.Request, factID int64) {
+	var request GetMemoryFactRequestObject
+
+	request.FactID = factID
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetMemoryFact(ctx, request.(GetMemoryFactRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetMemoryFact")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetMemoryFactResponseObject); ok {
+		if err := validResponse.VisitGetMemoryFactResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateMemoryFact operation middleware
+func (sh *strictHandler) UpdateMemoryFact(w http.ResponseWriter, r *http.Request, factID int64) {
+	var request UpdateMemoryFactRequestObject
+
+	request.FactID = factID
+
+	var body UpdateMemoryFactJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateMemoryFact(ctx, request.(UpdateMemoryFactRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateMemoryFact")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateMemoryFactResponseObject); ok {
+		if err := validResponse.VisitUpdateMemoryFactResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListPluginMarketplaces operation middleware
 func (sh *strictHandler) ListPluginMarketplaces(w http.ResponseWriter, r *http.Request) {
 	var request ListPluginMarketplacesRequestObject
@@ -34704,6 +38386,54 @@ func (sh *strictHandler) ReviewSkillUpdate(w http.ResponseWriter, r *http.Reques
 	}
 }
 
+// GetSystemAgent operation middleware
+func (sh *strictHandler) GetSystemAgent(w http.ResponseWriter, r *http.Request) {
+	var request GetSystemAgentRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetSystemAgent(ctx, request.(GetSystemAgentRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSystemAgent")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetSystemAgentResponseObject); ok {
+		if err := validResponse.VisitGetSystemAgentResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetSystemOverview operation middleware
+func (sh *strictHandler) GetSystemOverview(w http.ResponseWriter, r *http.Request) {
+	var request GetSystemOverviewRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetSystemOverview(ctx, request.(GetSystemOverviewRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSystemOverview")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetSystemOverviewResponseObject); ok {
+		if err := validResponse.VisitGetSystemOverviewResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListWebhooks operation middleware
 func (sh *strictHandler) ListWebhooks(w http.ResponseWriter, r *http.Request) {
 	var request ListWebhooksRequestObject
@@ -35009,164 +38739,184 @@ func (sh *strictHandler) TestWebhook(w http.ResponseWriter, r *http.Request, web
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,
