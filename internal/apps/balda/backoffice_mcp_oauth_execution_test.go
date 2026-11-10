@@ -3,6 +3,7 @@ package balda
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -157,9 +158,15 @@ type oauthBrowserACP struct {
 }
 
 func (*oauthBrowserACP) Initialize(context.Context, acp.InitializeRequest) (acp.InitializeResponse, error) {
+	if err := oauthBrowserRecordRPC("initialize"); err != nil {
+		return acp.InitializeResponse{}, err
+	}
 	return acp.InitializeResponse{ProtocolVersion: acp.ProtocolVersionNumber, AgentCapabilities: acp.AgentCapabilities{McpCapabilities: acp.McpCapabilities{Http: true, Sse: true}}}, nil
 }
 func (p *oauthBrowserACP) NewSession(ctx context.Context, request acp.NewSessionRequest) (acp.NewSessionResponse, error) {
+	if err := oauthBrowserRecordRPC("session/new"); err != nil {
+		return acp.NewSessionResponse{}, err
+	}
 	var sessions []*mcp.ClientSession
 	complete := false
 	defer func() {
@@ -209,7 +216,7 @@ func (p *oauthBrowserACP) NewSession(ctx context.Context, request acp.NewSession
 	p.sessions[id] = sessions
 	p.mu.Unlock()
 	complete = true
-	return acp.NewSessionResponse{SessionId: id}, nil
+	return acp.NewSessionResponse{SessionId: id, ConfigOptions: oauthLifetimeConfigOptions()}, nil
 }
 func (p *oauthBrowserACP) Prompt(ctx context.Context, request acp.PromptRequest) (acp.PromptResponse, error) {
 	<-p.ready
@@ -260,7 +267,7 @@ func (*oauthBrowserACP) ResumeSession(context.Context, acp.ResumeSessionRequest)
 	return acp.ResumeSessionResponse{}, fmt.Errorf("fixture does not support resume")
 }
 func (*oauthBrowserACP) SetSessionConfigOption(context.Context, acp.SetSessionConfigOptionRequest) (acp.SetSessionConfigOptionResponse, error) {
-	return acp.SetSessionConfigOptionResponse{}, nil
+	return acp.SetSessionConfigOptionResponse{ConfigOptions: oauthLifetimeConfigOptions()}, nil
 }
 func (*oauthBrowserACP) SetSessionMode(context.Context, acp.SetSessionModeRequest) (acp.SetSessionModeResponse, error) {
 	return acp.SetSessionModeResponse{}, nil
@@ -275,4 +282,35 @@ func (h oauthBrowserHeaders) RoundTrip(r *http.Request) (*http.Response, error) 
 		cloned.Header.Set(k, v)
 	}
 	return http.DefaultTransport.RoundTrip(cloned)
+}
+
+func oauthBrowserRecordRPC(name string) error {
+	path := os.Getenv("BALDA_OAUTH_LIFETIME_RPC_LOG")
+	if path == "" {
+		return nil
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return err
+	}
+	_, writeErr := fmt.Fprintln(f, name)
+	return errors.Join(writeErr, f.Close())
+}
+
+func oauthLifetimeConfigOptions() []acp.SessionConfigOption {
+	if os.Getenv("BALDA_OAUTH_LIFETIME_RPC_LOG") == "" {
+		return nil
+	}
+	var result []acp.SessionConfigOption
+	for _, option := range []struct {
+		id, value string
+		category  acp.SessionConfigOptionCategory
+	}{
+		{"model", "fixture-model", acp.SessionConfigOptionCategoryModel},
+		{"reasoning_effort", "high", acp.SessionConfigOptionCategoryThoughtLevel},
+	} {
+		values := acp.SessionConfigSelectOptionsUngrouped{{Name: option.value, Value: acp.SessionConfigValueId(option.value)}}
+		result = append(result, acp.SessionConfigOption{Select: &acp.SessionConfigOptionSelect{Id: acp.SessionConfigId(option.id), Name: option.id, Type: "select", Category: &option.category, CurrentValue: acp.SessionConfigValueId(option.value), Options: acp.SessionConfigSelectOptions{Ungrouped: &values}}})
+	}
+	return result
 }

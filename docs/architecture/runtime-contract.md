@@ -168,7 +168,13 @@ Status: active
   Delete/Create, and therefore clears its prior ADK state and history. Balda
   persists the current snapshot before exposing the replacement; any fallback
   failure remains an error. `/reset` remains a separate explicit action that
-  deliberately selects current capabilities.
+  selects current eligible application/workspace catalog capabilities when the
+  existing FIFO replacement callback runs after prior work. It freezes one target
+  in the existing operation journal before candidate construction. Retry/restart
+  reuses that target, and terminal duplicates read its existing receipt. Exact
+  provider binding/configuration/reasoning, requested model preference and workspace
+  remain unchanged. Source and target snapshots have independent epoch/readiness
+  fences; preparation performs no provider RPC or MCP network discovery.
 - Provider-open Goose SQL migrations mark persisted configured MCP descriptors
   from the pre-targeting catalog format without rewriting snapshots, session
   pins or history. `catalogapp` consumes those exact markers at restore and

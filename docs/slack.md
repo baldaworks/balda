@@ -201,8 +201,9 @@ prevent readiness delivery to other integrations.
   context. Unsupported changes leave the incumbent model and context intact;
   they do not reset the session.
 - `/balda reset` and `/balda new` are bare aliases. They queue a new empty local
-  conversation while preserving the exact provider binding, optional requested
-  model preference, and capabilities. Active model state is unknown until later
+  conversation. At the FIFO boundary they select current catalog capabilities
+  while preserving the exact provider binding, optional requested model preference
+  and workspace. Active model state is unknown until later
   provider attachment or execution.
   Provider use remains lazy, and success does not promise remote-history deletion.
 - Slack Agent Session status is `processing` while a turn runs, `active` after

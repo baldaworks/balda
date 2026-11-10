@@ -610,7 +610,7 @@ func (m *RuntimeManager) CurrentSessionSnapshot(ctx context.Context, workspaceDi
 	binder := m.capabilityBinder
 	m.mu.RUnlock()
 	selector, ok := binder.(interface {
-		CurrentSessionSnapshot(context.Context, string) (string, error)
+		CurrentSessionSnapshot(ctx context.Context, workspaceDir string) (string, error)
 	})
 	if !ok {
 		return "", ErrProviderUnavailable

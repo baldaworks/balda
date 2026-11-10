@@ -642,17 +642,29 @@ func TestApplyingHostedReplacementRecoveryAdoptsPromotedBaseAfterPreCommitFailur
 	if err != nil || result.Status != baldasession.ModelChangeChangedReplacement || control.changeCalls.Load() != 1 {
 		t.Fatalf("terminal replay = %+v, %v; change calls %d", result, err, control.changeCalls.Load())
 	}
+	beforeReset, found, err := provider.Sessions().GetBySessionID(t.Context(), locator.SessionID)
+	if err != nil || !found || beforeReset.RequestedModel == nil || *beforeReset.RequestedModel != target {
+		t.Fatal("recovered user preference unavailable before reset")
+	}
 	prepared, resetResult, err := manager.PrepareFreshLifetime(t.Context(), baldasession.FreshLifetimeRequest{
 		OperationID: "reset-after-recovered-hosted-model", SessionID: locator.SessionID, InputHash: strings.Repeat("f", 64),
 	})
 	if err != nil || prepared == nil || resetResult.Status != "" {
 		t.Fatalf("reset preparation = %#v, %+v, %v", prepared, resetResult, err)
 	}
-	if _, err := manager.AbortFreshLifetime(t.Context(), prepared); err != nil {
-		t.Fatal(err)
+	resetResult, err = manager.PublishFreshLifetime(t.Context(), prepared)
+	if err != nil || resetResult.Status != baldasession.FreshLifetimeReset {
+		t.Fatalf("reset publication=%+v,%v", resetResult, err)
 	}
+	afterReset, found, err := provider.Sessions().GetBySessionID(t.Context(), locator.SessionID)
+	if err != nil || !found || afterReset.RequestedModel == nil || *afterReset.RequestedModel != target || afterReset.EffectiveModel != target ||
+		afterReset.ArchiveID == beforeReset.ArchiveID || afterReset.RuntimeGeneration != beforeReset.RuntimeGeneration+1 ||
+		afterReset.ProviderBindingJSON != beforeReset.ProviderBindingJSON || afterReset.WorkspaceDir != beforeReset.WorkspaceDir {
+		t.Fatal("completed fresh lifetime lost explicit user preference or retained identity")
+	}
+
 	if capabilities.closeCalls.Load() != 1 {
-		t.Fatalf("aborted reset candidate close count = %d, want 1", capabilities.closeCalls.Load())
+		t.Fatalf("retired predecessor close count after reset = %d, want 1", capabilities.closeCalls.Load())
 	}
 	if err := manager.Stop(t.Context()); err != nil {
 		t.Fatal(err)
@@ -661,7 +673,7 @@ func TestApplyingHostedReplacementRecoveryAdoptsPromotedBaseAfterPreCommitFailur
 		t.Fatal(err)
 	}
 	if capabilities.closeCalls.Load() != 3 {
-		t.Fatalf("recovered replacement aggregate close count = %d, want 3 including root and reset abort", capabilities.closeCalls.Load())
+		t.Fatalf("recovered replacement aggregate close count = %d, want 3 including root and published reset", capabilities.closeCalls.Load())
 	}
 	if err := manager.Stop(t.Context()); err != nil {
 		t.Fatal(err)

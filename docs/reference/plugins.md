@@ -47,7 +47,8 @@ processes.
 
 Management does not reset existing sessions or change their pins. New sessions
 select the current catalog. `/reset` and `/new` start an empty local conversation
-but deliberately preserve the active session's exact capabilities. A failed
+with current eligible catalog capabilities selected at their FIFO boundary, while
+retaining the exact provider/configuration, requested model and workspace. A failed
 restore can replace the saved ADK session with current capabilities as described
 below.
 
@@ -139,8 +140,8 @@ is one-time. Starting Balda recovers already accepted pending publication; it is
 not a replacement for explicit registration.
 
 Publication affects new eligible sessions. Existing sessions retain their exact
-capability snapshot; `/reset` and `/new` clear local conversational context but
-do not adopt the current catalog. Global CLI inventory and that saved session's
+capability snapshot until an explicit `/reset` or `/new` starts an empty local
+lifetime with the current effective catalog selected at its FIFO boundary. Global CLI inventory and that saved session's
 capabilities are separate views. Installation does not copy skill instructions
 into unrelated knowledge or memory stores.
 
@@ -253,7 +254,8 @@ turn executes. The existing `$skill:` selection mechanism remains available.
 
 Selected skill content is user-level context. It cannot replace Balda's system
 policy or weaken permissions and approval controls. A healthy active session
-keeps its captured catalog, including across `/reset` and `/new`. If an exact
+keeps its captured catalog during ordinary turns. Explicit `/reset` and `/new`
+select the current effective catalog for their new local lifetime. If an exact
 persisted snapshot cannot restore, automatic fresh-session fallback may instead
 adopt current eligible capabilities.
 
@@ -266,15 +268,19 @@ same topic retain that session's runtime identity, history, and pinned
 capabilities. The caller remains the requester for attribution and approvals.
 No turn constructs or swaps a session runtime.
 
-Catalog activation affects newly created sessions only. Restoring a session
+Catalog activation affects future selections, including new sessions and explicit
+reset/new lifetime boundaries. Restoring a session
 first uses its exact persisted snapshot. If that attempt fails while the caller
 and service remain active, Balda replaces the saved ADK session at the same
 locator with a fresh one using the current effective snapshot. The replacement
 keeps the stable ADK session ID, clears prior ADK state and history, and persists
 the new snapshot before exposure; fallback failure remains an error. A legacy
 session without a pin adopts the current effective snapshot once and persists
-it. `/reset` and `/new` are separate local lifetime operations that preserve the
-pinned commands, skills, MCP servers, provider, and model.
+it. `/reset` and `/new` are separate local lifetime operations that select current
+commands, skills, MCP and enabled plugin contributions at the queued FIFO boundary.
+They freeze the target for retry/restart and replay its existing terminal receipt.
+Exact provider configuration/reasoning, requested model preference and workspace
+remain pinned, with provider use deferred to a later ordinary turn.
 
 Immutable command instructions are retained in snapshot descriptors. Archived
 skill bytes remain readable by exact revision. MCP processes are the only

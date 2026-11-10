@@ -186,10 +186,10 @@ func TestSubmitPreparesAtExistingReplacementFIFO(t *testing.T) {
 			if !reflect.DeepEqual(gotOrder, []string{"active", "prior", "prepare-C", "replacement"}) {
 				t.Fatalf("order = %v", gotOrder)
 			}
-
 		})
 	}
 }
+
 func TestSubmitExactRedeliveryPublishesOnceAndRejectsCollision(t *testing.T) {
 	dispatcher := testDispatcher(t)
 	manager := newFakeFreshLifetimeManager()
@@ -237,7 +237,6 @@ func TestSubmitExactRedeliveryPublishesOnceAndRejectsCollision(t *testing.T) {
 	if len(requests) != 1 || publishes != 1 || aborts != 0 {
 		t.Fatalf("calls: prepare=%d publish=%d abort=%d", len(requests), publishes, aborts)
 	}
-
 }
 
 func TestSubmitConcurrentExactRedeliveryPublishesOnce(t *testing.T) {

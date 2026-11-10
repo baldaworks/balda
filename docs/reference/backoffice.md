@@ -721,8 +721,10 @@ selection while retaining revision archives and plugin data. Existing active
 sessions keep their exact command, skill and MCP snapshot. Restore first tries
 that snapshot; on failure, Balda may replace the saved ADK session with a fresh
 one using current eligible capabilities. No management action itself resets a
-session: new sessions select the current catalog, while ordinary `/reset` and
-`/new` preserve the existing session's exact capabilities.
+session. New sessions and explicit `/reset` or `/new` lifetime boundaries select
+current eligible catalog capabilities. The latter selects only when the queued
+FIFO boundary runs and preserves the exact provider configuration/reasoning,
+requested model preference and workspace.
 
 Enabled describes selection policy, rather than readiness. Current catalog,
 runtime health and **Activation outcome** remain separate. If durable acceptance
@@ -962,10 +964,13 @@ defaults; it does not necessarily remove previously granted resource access.
 
 A blank client ID may create a different client through dynamic registration.
 That new identity does not replace an older pinned client's credentials. Retained
-sessions stay on their exact prior binding; `/reset` also preserves the pinned
-provider and capabilities and does not migrate that binding. Reauthorize the
-same client identity to repair it, or use a new session that selects the current
-configuration when changing identity.
+lifetimes stay on their exact prior binding. Reauthorize the same client identity
+to repair compatible retained access, or issue `/reset` or `/new` to create an
+empty local lifetime with the current eligible catalog at the same locator.
+That explicit FIFO boundary may select the newer MCP revision/client binding;
+it never rewrites the old revision or gives its calls the new credentials.
+Provider configuration/reasoning, requested model preference and workspace remain
+pinned. Success confirms local publication; later tool execution proves readiness.
 
 A saved grant is renewable only when the server actually issues a refresh token.
 The private MCP credential bridge renews it on demand near or after access-token
@@ -1308,8 +1313,10 @@ account's existing `.agents/skills` or workspace directories.
 **Disable skill** and **Remove skill** use retained revisions without fetching
 the origin. Disable/remove require confirmation. Remove excludes the source
 from new selection while retaining archived instructions/resources and session
-pins. Existing sessions are neither reset nor repinned; only new sessions select
-the current catalog. `/reset` and `/new` preserve the existing pin.
+pins. Management does not reset or repin existing lifetimes. New sessions and
+explicit `/reset` or `/new` FIFO boundaries select current eligible catalog
+capabilities; the latter preserves provider configuration/reasoning, requested
+model preference and workspace.
 
 GET pages read retained metadata only. **Refresh sources** explicitly rebuilds
 eligible global roots with current managed/plugin/configured sources. Normal

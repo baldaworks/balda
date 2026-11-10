@@ -382,8 +382,10 @@ Missing roots are empty. Existing roots are subject to the catalog's bounded
 filesystem traversal and validation. The global root does not replace the
 state-directory root, and neither overrides workspace or enabled-plugin skills;
 duplicate unqualified names remain ambiguous. Restart Balda to compile changes
-to application roots. Existing conversations keep their pinned catalog snapshot,
-including across `/reset` and `/new`.
+to application roots. Existing lifetimes keep their pinned catalog snapshot.
+Explicit `/reset` and `/new` select the current published application catalog plus
+the same workspace overlay when their queued boundary runs; they do not reload
+provider/model/reasoning or workspace configuration.
 
 Balda auto-loads `/workspace/.env`. `env_file: .env` is optional after the file
 exists, but should not be required for the first `docker compose run --rm balda init`.
@@ -473,7 +475,9 @@ remain read-only there except for the explicit **Refresh state** diagnostic.
 Its last secret-free result remains visible for the exact revision until the
 Balda process restarts. Backoffice OAuth status and actions apply only to eligible managed
 HTTP/SSE definitions with OAuth enabled. Provider targets apply when a session
-is first created; local lifetime reset preserves the exact active target.
+is created or explicitly replaced through `/reset` or `/new`. The latter selects
+current catalog targets under the preserved provider binding when its FIFO
+boundary runs, then freezes them for retry/restart.
 When a provider pool is selected, its MCP selection also applies to that pool's
 members for that runtime. It does not change the shared member configuration or
 the selection for standalone members or other pools.
@@ -592,7 +596,11 @@ Rejected or insufficient renewal also requires sign-in, rather than an unsigned
 upstream request or an attachment retry that invents authorization. Reauthorizing
 the same connection/resource/issuer/client binding can restore compatible
 retained sessions. Dynamic registration may create a different client; older
-pins stay on their exact prior binding, and `/reset` does not repin them.
+lifetimes stay on their exact prior binding. Explicit `/reset` or `/new` can start
+a new local lifetime with the current eligible MCP revision and binding at the
+same locator; it never lends those credentials to the historical revision.
+Provider configuration/reasoning, model preference and workspace remain pinned,
+and reset success is local publication rather than proof of tool readiness.
 
 Automatic client registration receives the selected exact URI; pre-registered
 clients must have it added at the authorization server. See

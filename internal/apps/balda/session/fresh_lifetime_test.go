@@ -20,6 +20,7 @@ const (
 	freshLifetimeHostedModel     = "hosted-model"
 	freshLifetimeCurrentCatalog  = "catalog-current-B"
 	freshLifetimeRecoveryCatalog = "catalog-recovery-B"
+	freshLifetimeLaterCatalog    = "catalog-recovery-C"
 )
 
 type freshLifetimeControlSpy struct {
@@ -403,7 +404,7 @@ func TestFreshLifetimeApplyingRecoveryPublishesPinnedTarget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimeManagerBefore.currentSnapshot = "catalog-recovery-C"
+	runtimeManagerBefore.currentSnapshot = freshLifetimeLaterCatalog
 	if err := f.provider.RuntimeOperations().MarkApplying(t.Context(), request.OperationID, request.InputHash); err != nil {
 		t.Fatal(err)
 	}
@@ -551,7 +552,7 @@ func TestFreshLifetimeColdRecoveryUsesPinnedLocalIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimeManagerBefore.currentSnapshot = "catalog-recovery-C"
+	runtimeManagerBefore.currentSnapshot = freshLifetimeLaterCatalog
 	if err := f.provider.RuntimeOperations().MarkApplying(t.Context(), request.OperationID, request.InputHash); err != nil {
 		t.Fatal(err)
 	}
@@ -570,7 +571,7 @@ func TestFreshLifetimeColdRecoveryUsesPinnedLocalIdentity(t *testing.T) {
 	restarted := f.manager()
 	restarted.runtimeOperations = f.provider.RuntimeOperations()
 	runtimeManager := restarted.runtimeManager.(*fakeScopedRuntimeManager)
-	runtimeManager.currentSnapshot = "catalog-recovery-C"
+	runtimeManager.currentSnapshot = freshLifetimeLaterCatalog
 	runtimeManager.runtimeForSession = runtimeManagerBefore.runtimeForSession
 
 	if err := restarted.recoverApplyingFreshLifetimeOperation(t.Context(), operation); err != nil {

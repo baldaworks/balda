@@ -123,7 +123,8 @@ root:
 <workspace>/.agents/skills/<name>/SKILL.md
 ```
 
-When Balda creates a genuinely new stable session runtime, it captures this
+When Balda selects current capabilities for a new session or an explicit
+`/reset` or `/new` lifetime boundary, it captures this
 directory and merges its valid skills into that workspace's effective snapshot as
 `workspace-skill` contributions. A missing `.agents/skills` directory is an
 empty overlay. Malformed or unsafe entries follow the catalog's existing
@@ -138,11 +139,11 @@ Session snapshots are immutable. An active or restored session continues to
 use its pinned snapshot even if files under `.agents/skills` change. `/reset`
 and `/new` wait behind active and prior work in the existing per-session FIFO,
 then publish a new empty local ADK lifetime/archive at the same stable Balda
-session. They preserve the exact pinned capability snapshot, including its
-project-skill revisions, provider binding, and optional requested model
-preference. Active model observation stays unknown until later provider
-attachment or execution. Only a genuinely new stable session selects the current
-project-skill revision. Because each workspace receives a separate overlay, its
+session. When that boundary runs, they select current eligible capabilities,
+including project-skill revisions, for the same workspace. The exact provider
+binding/configuration/reasoning and optional requested model preference remain
+pinned. Active model observation stays unknown until later provider attachment
+or execution. Because each workspace receives a separate overlay, its
 project skills are unavailable to sessions bound to another workspace.
 
 Conceptually:
@@ -457,8 +458,9 @@ model.
 Each session pins its skill metadata and resolvable revisions. Content remains
 lazy, but every selected body is read from the exact archived revision named by
 that session snapshot. Catalog or workspace refresh does not affect an active
-session. Reset creates a fresh empty local conversation while deliberately
-preserving that session's exact pinned state.
+lifetime. Explicit reset/new selects current capabilities for a fresh empty
+local lifetime at the same locator; ordinary turns and successful exact restore
+continue using their saved snapshot.
 
 ### Session capability binding
 
@@ -472,20 +474,26 @@ effective snapshot and persists the new pin before exposure. A failed fallback
 remains an error.
 
 The MCP list is bound only when the ADK session runtime is created or opened.
-MCP acquisitions live until the Balda session runtime closes. Individual
-prompts and commands neither receive a new MCP list nor construct, swap, or
-close a session runtime. Every turn uses the existing `TopicSession` runner.
+MCP acquisitions live until the Balda session runtime closes. Ordinary prompts
+and plugin/skill turns neither receive a new MCP list nor construct, swap, or
+close a session runtime. Every turn uses the existing `TopicSession` runner;
+explicit reset/new remains a separate queued lifetime boundary.
 
 Publishing a new catalog snapshot never mutates an active session. `/reset` and
 `/new` cross the existing per-session FIFO and publish a new empty local ADK
-lifetime/archive at the same stable Balda session. They preserve the exact
-pinned `SnapshotID`, including commands, project-skill revisions, and MCP
-servers, together with the exact provider binding and optional requested model
-preference; they do not select the current catalog revision. Active model
-observation remains unknown until later provider attachment or execution. Provider use remains
-lazy, and reset success promises neither provider availability nor physical
-deletion of provider-native history. Only creation of a genuinely new stable
-session selects the current catalog revision.
+lifetime/archive at the same stable Balda session. Metadata-only catalog selection
+runs inside the replacement callback after prior work, using the current
+application snapshot plus the same workspace overlay. It persists the effective
+ID without provider restoration, MCP acquisition or runtime skill injection;
+bounded local workspace source capture/retention still occurs. The existing
+operation freezes that ID before the normal exact-provider candidate build binds
+its commands, skills, MCP and enabled plugin contributions once. Retries/restart
+reuse the frozen target; terminal duplicates read the existing verified receipt.
+The predecessor snapshot is fenced independently from the target. Exact provider
+binding/configuration/reasoning, requested model preference and workspace remain
+unchanged. Active model observation remains unknown until later attachment or
+execution. Provider use stays lazy; success promises neither availability nor
+physical deletion of provider-native history.
 
 Metadata budgeting is deterministic. The effective catalog sorts by stable
 source and contribution identity, applies a host-defined total budget, and

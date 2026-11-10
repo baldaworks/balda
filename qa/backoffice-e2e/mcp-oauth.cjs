@@ -12,10 +12,11 @@ const partialEntry = phase.startsWith('managed-partial-');
 let createdAndAuthorized = false;
 const staticEntry = phase.startsWith('managed-static-');
 const scopeChange = phase.startsWith('managed-scopes-');
-const renewalProfile = phase.startsWith('managed-renewal-');
+const lifetimeRestore = phase === 'managed-lifetime-restore';
+const renewalProfile = phase.startsWith('managed-renewal-') || phase.startsWith('managed-lifetime-');
 const missingScopes = phase.startsWith('managed-missing-');
 const identityOnly = missingScopes || phase.startsWith('managed-equal-');
-const existingEntry = phase === 'managed-revoke' || scopeChange || identityOnly || phase.startsWith('managed-restore-') || pendingRestart;
+const existingEntry = phase === 'managed-revoke' || scopeChange || identityOnly || phase.startsWith('managed-restore-') || pendingRestart || lifetimeRestore;
 const serverName = managed ? (staticEntry ? 'static-tools' : partialEntry ? 'partial-tools' : 'managed-tools') : phase === 'configured-public' ? 'public-tools' : 'worker-tools';
 const providerPrefix = staticEntry ? 'static' : partialEntry ? 'partial' : 'managed';
 const clientSecret = 'synthetic-client-secret';
@@ -57,9 +58,9 @@ async function clientSettings(page, register = false) {
   if (!await page.getByLabel('Client ID', { exact: true }).isVisible()) {
     await summary.click();
   }
-  await page.getByLabel('Client ID', { exact: true }).fill(register ? '' : staticEntry ? 'confidential-client' : 'browser-client');
-  await page.getByLabel('Client authentication', { exact: true }).selectOption(staticEntry ? 'client_secret_basic' : 'none');
-  await page.getByLabel('Client secret', { exact: true }).fill(staticEntry ? clientSecret : '');
+  await page.getByLabel('Client ID', { exact: true }).fill(register ? '' : staticEntry || lifetimeRestore ? 'confidential-client' : 'browser-client');
+  await page.getByLabel('Client authentication', { exact: true }).selectOption(staticEntry || lifetimeRestore ? 'client_secret_basic' : 'none');
+  await page.getByLabel('Client secret', { exact: true }).fill(staticEntry || lifetimeRestore ? clientSecret : '');
   const scopes = page.getByLabel('OAuth scopes · one per line', { exact: true });
   await scopes.fill(scopeChange || renewalProfile ? '' : 'tools:read');
   if (missingScopes) await scopes.evaluate(field => { field.disabled = true; });
