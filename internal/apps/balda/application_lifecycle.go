@@ -23,6 +23,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/mcpbackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpbridge"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
+	"github.com/baldaworks/balda/internal/apps/balda/providers"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
 	"github.com/baldaworks/balda/internal/apps/balda/scheduledjobs"
 	"github.com/baldaworks/balda/internal/apps/balda/session"
@@ -174,6 +175,7 @@ type applicationLifecycleParams struct {
 	HTTPConfig           ResolvedHTTPConfig
 	ManagementHTTPConfig managementhttp.ResolvedConfig
 	BrowserAuth          *browserauth.Service
+	ProviderService      *providers.Service
 	HTTPRegistry         *httpfx.Registry
 	WebhookHTTP          webhookfx.HTTPContribution
 	GatewayCallbacks     []httpfx.GatewayCallbackProvider `group:"balda_http_gateway_callback_providers"`
@@ -267,7 +269,7 @@ func applicationLifecycleStages(p applicationLifecycleParams, telegram *telegram
 			managementServer = httpfx.NewNamedServer(
 				"management HTTP",
 				p.ManagementHTTPConfig.ListenAddr,
-				p.ManagementHTTPConfig.Handler(p.BrowserAuth),
+				p.ManagementHTTPConfig.Handler(managementhttp.Services{BrowserAuth: p.BrowserAuth, Providers: p.ProviderService, MCP: p.BackofficeMCP}),
 			)
 			if err := managementServer.Start(); err != nil {
 				managementServer = nil

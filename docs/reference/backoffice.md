@@ -6,11 +6,16 @@ Backoffice. Read it before changing `cmd/balda` or
 
 ## Application boundary
 
-- `cmd/balda` is the sole executable entrypoint. Its `start` command owns the
-  production process lifecycle; `backoffice bootstrap-admin`,
+- `cmd/balda` remains the Core executable and owns product state, migrations,
+  runtime policy, and the embedded Backoffice fallback. Its `start` command
+  owns the Core process lifecycle; `backoffice bootstrap-admin`,
   `backoffice reset-password`, and `backoffice recover-2fa` are offline
   administrator maintenance subcommands.
   `backoffice qa serve` is a local preview command without application state.
+- `cmd/backoffice` builds `balda-backoffice`, a stateless browser application.
+  It owns browser cookies, forms, redirects, and login throttling, and reaches
+  Core only through the generated loopback Management API client. It owns no
+  database, migrations, provider runtime, MCP runtime, or AI Session state.
 - `internal/apps/balda` composes one state provider for bot and Backoffice.
 - `internal/apps/backoffice` owns Backoffice application behavior, including
   HTTP routes, security enforcement, server-side rendering, view models,
@@ -19,6 +24,25 @@ Backoffice. Read it before changing `cmd/balda` or
   calls server-side; the browser must never call Assistant directly.
 - `superadmin` is the interface name, not a new authorization role. Existing
   `administrator` and `operator` roles remain authoritative.
+
+### Embedded/standalone migration parity
+
+Embedded Backoffice remains available as rollback until the final cutover.
+Parity is defined by administrator-visible capabilities and Core domain
+outcomes, not byte-identical HTML:
+
+| Outcome | Embedded browser path | Standalone browser path | Automated evidence |
+| --- | --- | --- | --- |
+| Success | `/providers`, `/mcp`, `/mcp/connections/*` | `/providers`, `/mcp`, `/mcp/*` | `TestProvidersBrowserManagementAndSecretBoundary`, `TestMCPFormsFenceAuthorityAndNeverReflectValues`, `TestGeneratedClientProviderLifecycleAndRedaction`, `TestGeneratedClientMCPDefinitionLifecycleAndRedaction` |
+| Authorization | Embedded WebAuth and same-origin CSRF guards | Operator token plus Core-resolved administrator WebAuth and CSRF | `TestMCPRoutesRequireCurrentAdministrator`, `TestMCPAuthorizationBrowserAndDeviceBoundary`, generated-client operator/CSRF cases in the management integration suites |
+| Conflict | Embedded state/revision conflict responses | Typed Management API conflict responses | Provider and MCP lifecycle integration tests exercise stale state, cancel, disconnect, and exact-revision retry conflicts |
+| Recovery | Saved-change links and passive recovery/readiness projections | Saved-item links and the same Core recovery projections | `TestMCPDiagnosticUsesProtectedServerAuthorityAndRetainsLastResult`, `TestCommittedMCPCreateHasRecoveryLink`, `TestMCPPagesAndMutationsUseGeneratedClientSurface`, and MCP generated-client integration |
+| Continuation | `/mcp/oauth/*` callback/device flows | `/mcp/authorization/*` callback/device flows | `TestMCPOnboardingNativeGuardsAndSavedFailure`, `TestBackofficeMCPOAuthBrowserWorkflow`, and `TestMCPAuthorizationBrowserAndDeviceBoundary` cover single-use callbacks, begin-only device instructions, and no automatic replay |
+| Exact AI Session pins | Existing session runtime | Unchanged Core runtime | `TestManagementMutationsPreserveExactAISessionPins` proves generated API edit, disable, and delete preserve old provider bindings and MCP snapshots; AI Session IDs are never management credentials |
+
+The generated contract and exact route gate are the standalone compatibility
+boundary. A contract mismatch fails `balda-backoffice preflight`; it does not
+serve a partially compatible UI.
 
 ## Startup and configuration
 

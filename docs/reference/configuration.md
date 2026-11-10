@@ -48,11 +48,29 @@ a non-empty environment value overrides profile and file values, while an empty
 environment value leaves the underlying value unchanged. The decoded process
 configuration retains the plaintext token like other configured secrets; JSON
 and YAML projections omit it, and the request authenticator retains only its
-digest. Rotate the token by updating configuration and restarting Core and its
-client. To roll back the listener, set `balda.management.enabled: false` and
-restart. The future standalone Backoffice will use the generated client and
-the compatibility operation to verify Core reachability, credentials, and API
-version; deployment health for that process is separate.
+digest. Rotate the token by updating configuration and restarting Core and the
+standalone Backoffice. To roll back the listener, stop the standalone process,
+set `balda.management.enabled: false`, and restart Core. `balda-backoffice
+preflight` calls the compatibility operation before binding its browser
+listener, verifying Core reachability, the operator credential, and the exact
+API contract version. `validate` performs no network request.
+
+Build and check the standalone process from the same repository revision as
+Core:
+
+```bash
+go build -trimpath -o ./bin/balda-backoffice ./cmd/backoffice
+./bin/balda-backoffice validate
+./bin/balda-backoffice preflight
+./bin/balda-backoffice start
+```
+
+During the migration, embedded Backoffice remains the production fallback.
+Use a separate profile/listen address when comparing both browser applications;
+do not complete production cutover until the final parity/cutover Story removes
+the embedded application. The standalone process owns no database or
+migrations. Its provider and MCP pages call Core only through the generated
+management client.
 
 The operator bearer token authenticates the Backoffice application, never the
 human user. Login endpoints require only that application credential. Guarded

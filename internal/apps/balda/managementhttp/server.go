@@ -6,12 +6,15 @@ import (
 	"strings"
 
 	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
+	"github.com/baldaworks/balda/internal/apps/balda/providers"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	managementv1 "github.com/baldaworks/balda/internal/managementapi/v1"
 )
 
 type strictServer struct {
 	browserAuth *browserauth.Service
+	providers   *providers.Service
+	mcp         mcpOperations
 }
 
 func (strictServer) GetManagementCompatibility(context.Context, managementv1.GetManagementCompatibilityRequestObject) (managementv1.GetManagementCompatibilityResponseObject, error) {

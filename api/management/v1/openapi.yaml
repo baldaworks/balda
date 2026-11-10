@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Balda Management API
-  version: 1.0.0
+  version: 1.1.0
   description: >-
     Contract for the loopback Balda management API. The API distinguishes
     browser WebAuth authority from AI conversation sessions.
@@ -416,6 +416,463 @@ paths:
           $ref: "#/components/responses/Conflict"
         "500":
           $ref: "#/components/responses/InternalError"
+  /api/management/v1/providers:
+    get:
+      operationId: listProviders
+      summary: Read the current provider inventory
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+      responses:
+        "200":
+          description: Secret-free provider inventory
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderInventory"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      operationId: createProvider
+      summary: Create a managed provider
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProviderCreateRequest"
+      responses:
+        "204":
+          description: Provider created
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/management/v1/providers/{provider_id}:
+    put:
+      operationId: updateProvider
+      summary: Replace the editable definition of a managed provider
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+          csrf: []
+      parameters:
+        - $ref: "#/components/parameters/ProviderID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProviderUpdateRequest"
+      responses:
+        "204":
+          description: Provider updated
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      operationId: deleteProvider
+      summary: Tombstone a managed provider
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+          csrf: []
+      parameters:
+        - $ref: "#/components/parameters/ProviderID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProviderDeleteRequest"
+      responses:
+        "204":
+          description: Provider deleted
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/management/v1/providers/{provider_id}/selection:
+    post:
+      operationId: selectProvider
+      summary: Enable or disable a managed provider
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+          csrf: []
+      parameters:
+        - $ref: "#/components/parameters/ProviderID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProviderSelectionRequest"
+      responses:
+        "204":
+          description: Provider selection changed
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/management/v1/mcp:
+    get:
+      operationId: listMCPConnections
+      summary: Read the current secret-free MCP inventory
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+      responses:
+        "200":
+          description: MCP inventory and provider choices
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MCPInventory"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    post:
+      operationId: createMCPConnection
+      summary: Create a managed MCP connection
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MCPCreateRequest" }
+      responses:
+        "200":
+          description: Created MCP connection
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MCPItem" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/mcp/probe:
+    post:
+      operationId: probeMCPConnection
+      summary: Probe an unsaved MCP candidate
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MCPCreateRequest" }
+      responses:
+        "200":
+          description: Secret-free probe result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MCPItem" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/mcp/{connection_id}:
+    put:
+      operationId: updateMCPConnection
+      summary: Update a managed MCP connection
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+          csrf: []
+      parameters: [{ $ref: "#/components/parameters/MCPConnectionID" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MCPUpdateRequest" }
+      responses:
+        "200":
+          description: Updated MCP connection
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MCPItem" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    delete:
+      operationId: deleteMCPConnection
+      summary: Tombstone a managed MCP connection
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+          csrf: []
+      parameters: [{ $ref: "#/components/parameters/MCPConnectionID" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MCPSelectionRequest" }
+      responses:
+        "200":
+          description: Deleted MCP connection
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MCPItem" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/mcp/{connection_id}/probe:
+    put:
+      operationId: probeMCPConnectionUpdate
+      summary: Probe edits against the current retained revision
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+          csrf: []
+      parameters: [{ $ref: "#/components/parameters/MCPConnectionID" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MCPUpdateRequest" }
+      responses:
+        "200":
+          description: Secret-free probe result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MCPItem" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/mcp/{connection_id}/selection:
+    post:
+      operationId: selectMCPConnection
+      summary: Enable or disable a managed MCP connection
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+          csrf: []
+      parameters: [{ $ref: "#/components/parameters/MCPConnectionID" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MCPSelectionRequest" }
+      responses:
+        "200":
+          description: MCP selection changed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MCPItem" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/mcp/{connection_id}/diagnostic:
+    post:
+      operationId: diagnoseMCPConnection
+      summary: Diagnose the authoritative current MCP definition
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+          csrf: []
+      parameters: [{ $ref: "#/components/parameters/MCPConnectionID" }]
+      responses:
+        "200":
+          description: Safe terminal diagnostic result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MCPDiagnostic" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/mcp/authorization/browser/onboard:
+    post:
+      operationId: onboardMCPBrowserAuthorization
+      security: [{ operatorServiceAuth: [], webAuthAccess: [], csrf: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/MCPAuthorizationOnboardRequest" } } } }
+      responses:
+        "200": { description: Saved connection and browser start outcome, content: { application/json: { schema: { $ref: "#/components/schemas/MCPBrowserOnboardResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/mcp/authorization/device/onboard:
+    post:
+      operationId: onboardMCPDeviceAuthorization
+      security: [{ operatorServiceAuth: [], webAuthAccess: [], csrf: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/MCPAuthorizationOnboardRequest" } } } }
+      responses:
+        "200": { description: Saved connection and one-time device instructions, content: { application/json: { schema: { $ref: "#/components/schemas/MCPDeviceOnboardResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/mcp/{connection_id}/authorization/browser:
+    post:
+      operationId: beginMCPBrowserAuthorization
+      security: [{ operatorServiceAuth: [], webAuthAccess: [], csrf: [] }]
+      parameters: [{ $ref: "#/components/parameters/MCPConnectionID" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/MCPAuthorizationInput" } } } }
+      responses:
+        "200": { description: Browser redirect instruction, content: { application/json: { schema: { $ref: "#/components/schemas/MCPBrowserAuthorizationStart" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/mcp/{connection_id}/authorization/device:
+    post:
+      operationId: beginMCPDeviceAuthorization
+      security: [{ operatorServiceAuth: [], webAuthAccess: [], csrf: [] }]
+      parameters: [{ $ref: "#/components/parameters/MCPConnectionID" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/MCPAuthorizationInput" } } } }
+      responses:
+        "200": { description: One-time device instructions, content: { application/json: { schema: { $ref: "#/components/schemas/MCPDeviceAuthorizationStart" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/mcp/authorization/browser/callback:
+    post:
+      operationId: completeMCPBrowserAuthorization
+      security: [{ operatorServiceAuth: [], webAuthAccess: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/MCPBrowserCallback" } } } }
+      responses:
+        "200": { description: Current safe connection state, content: { application/json: { schema: { $ref: "#/components/schemas/MCPItem" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/mcp/authorization/device/{attempt_id}:
+    get:
+      operationId: getMCPDeviceAuthorization
+      security: [{ operatorServiceAuth: [], webAuthAccess: [] }]
+      parameters: [{ $ref: "#/components/parameters/MCPAttemptID" }]
+      responses:
+        "200": { description: Safe device progress without one-time instructions, content: { application/json: { schema: { $ref: "#/components/schemas/MCPDeviceAuthorizationStatus" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/mcp/authorization/attempts/{attempt_id}/cancel:
+    post:
+      operationId: cancelMCPAuthorization
+      security: [{ operatorServiceAuth: [], webAuthAccess: [], csrf: [] }]
+      parameters: [{ $ref: "#/components/parameters/MCPAttemptID" }]
+      responses:
+        "204": { description: Attempt cancelled }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/mcp/{connection_id}/authorization/disconnect:
+    post:
+      operationId: disconnectMCPAuthorization
+      security: [{ operatorServiceAuth: [], webAuthAccess: [], csrf: [] }]
+      parameters: [{ $ref: "#/components/parameters/MCPConnectionID" }]
+      responses:
+        "204": { description: Grant disconnected }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/management/v1/mcp/{connection_id}/authorization/retry:
+    post:
+      operationId: retryMCPAuthorization
+      security: [{ operatorServiceAuth: [], webAuthAccess: [], csrf: [] }]
+      parameters: [{ $ref: "#/components/parameters/MCPConnectionID" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/MCPRetryAuthorizationRequest" } } } }
+      responses:
+        "200": { description: Current safe connection state, content: { application/json: { schema: { $ref: "#/components/schemas/MCPItem" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "500": { $ref: "#/components/responses/InternalError" }
 components:
   securitySchemes:
     operatorServiceAuth:
@@ -438,6 +895,28 @@ components:
       in: header
       name: X-Balda-CSRF
       description: WebAuth-session-bound CSRF proof forwarded by Backoffice.
+  parameters:
+    ProviderID:
+      name: provider_id
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+    MCPConnectionID:
+      name: connection_id
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+    MCPAttemptID:
+      name: attempt_id
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 128 }
   responses:
     BadRequest:
       description: Invalid management request
@@ -475,6 +954,12 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ManagementError"
+    ServiceUnavailable:
+      description: Provider management dependency is unavailable
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ManagementError"
   schemas:
     ManagementCompatibility:
       type: object
@@ -491,12 +976,477 @@ components:
         contract_version:
           type: string
           maxLength: 32
-          example: 1.0.0
+          example: 1.1.0
         api_major:
           type: integer
           format: int32
           enum:
             - 1
+    ProviderInventory:
+      type: object
+      additionalProperties: false
+      required:
+        - version
+        - types
+        - items
+      properties:
+        version:
+          type: integer
+          format: uint64
+          minimum: 0
+        types:
+          type: array
+          maxItems: 32
+          items:
+            type: string
+            minLength: 1
+            maxLength: 128
+        items:
+          type: array
+          maxItems: 96
+          items:
+            $ref: "#/components/schemas/ProviderItem"
+    ProviderItem:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - source
+        - current_revision_id
+        - enabled
+        - deleted
+        - driver_type
+        - contract_version
+        - format_version
+        - config
+        - has_api_key
+        - environment_names
+        - reproducible
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        source:
+          $ref: "#/components/schemas/ProviderSource"
+        current_revision_id:
+          type: string
+          minLength: 1
+          maxLength: 256
+        enabled:
+          type: boolean
+        deleted:
+          type: boolean
+        driver_type:
+          type: string
+          minLength: 1
+          maxLength: 128
+        contract_version:
+          type: integer
+          format: uint32
+          minimum: 1
+        format_version:
+          type: integer
+          format: uint32
+          minimum: 1
+        config:
+          $ref: "#/components/schemas/ProviderConfig"
+        has_api_key:
+          type: boolean
+        environment_names:
+          type: array
+          maxItems: 256
+          items:
+            type: string
+            minLength: 1
+            maxLength: 256
+        reproducible:
+          type: boolean
+    ProviderSource:
+      type: string
+      enum:
+        - configured
+        - managed
+    ProviderConfig:
+      type: object
+      additionalProperties: false
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          minLength: 1
+          maxLength: 128
+        model:
+          type: string
+          maxLength: 1024
+        timeout:
+          type: string
+          maxLength: 64
+        reasoning_effort:
+          type: string
+          maxLength: 128
+        model_config_id:
+          type: string
+          maxLength: 256
+        reasoning_effort_config_id:
+          type: string
+          maxLength: 256
+        mode:
+          type: string
+          maxLength: 256
+        bridge_version:
+          type: string
+          maxLength: 256
+        registry_id:
+          type: string
+          maxLength: 256
+        inherit_env:
+          type: boolean
+          nullable: true
+        extra_args:
+          type: array
+          maxItems: 64
+          items:
+            type: string
+            maxLength: 2048
+        pool_members:
+          type: array
+          maxItems: 64
+          items:
+            type: string
+            minLength: 1
+            maxLength: 128
+        mcp_servers:
+          type: array
+          maxItems: 256
+          items:
+            type: string
+            minLength: 1
+            maxLength: 256
+        system_instructions:
+          type: string
+          maxLength: 131072
+    ProviderCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - expected_version
+        - id
+        - config
+        - protected
+      properties:
+        expected_version:
+          type: integer
+          format: uint64
+          minimum: 0
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        config:
+          $ref: "#/components/schemas/ProviderConfig"
+        protected:
+          $ref: "#/components/schemas/ProviderProtectedEdit"
+    ProviderUpdateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - expected_version
+        - config
+        - protected
+      properties:
+        expected_version:
+          type: integer
+          format: uint64
+          minimum: 0
+        config:
+          $ref: "#/components/schemas/ProviderConfig"
+        protected:
+          $ref: "#/components/schemas/ProviderProtectedEdit"
+    ProviderSelectionRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - expected_version
+        - enabled
+      properties:
+        expected_version:
+          type: integer
+          format: uint64
+          minimum: 0
+        enabled:
+          type: boolean
+    ProviderDeleteRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - expected_version
+      properties:
+        expected_version:
+          type: integer
+          format: uint64
+          minimum: 0
+    ProviderProtectedEdit:
+      type: object
+      additionalProperties: false
+      required:
+        - api_key
+        - environment
+      properties:
+        api_key:
+          $ref: "#/components/schemas/ProviderSecretEdit"
+        environment:
+          $ref: "#/components/schemas/ProviderEnvironmentEdit"
+    ProviderEditOperation:
+      type: string
+      enum:
+        - keep
+        - replace
+        - clear
+    ProviderSecretEdit:
+      type: object
+      additionalProperties: false
+      required:
+        - operation
+      properties:
+        operation:
+          $ref: "#/components/schemas/ProviderEditOperation"
+        value:
+          type: string
+          maxLength: 65536
+          writeOnly: true
+    ProviderEnvironmentEdit:
+      type: object
+      additionalProperties: false
+      required:
+        - operation
+      properties:
+        operation:
+          $ref: "#/components/schemas/ProviderEditOperation"
+        values:
+          type: object
+          maxProperties: 64
+          additionalProperties:
+            type: string
+            maxLength: 4096
+          writeOnly: true
+    MCPInventory:
+      type: object
+      additionalProperties: false
+      required: [provider_ids, items]
+      properties:
+        provider_ids:
+          type: array
+          maxItems: 64
+          items: { type: string, minLength: 1, maxLength: 128 }
+        items:
+          type: array
+          maxItems: 256
+          items: { $ref: "#/components/schemas/MCPItem" }
+    MCPItem:
+      type: object
+      additionalProperties: false
+      required: [connection_id, public_id, source, current_revision_id, enabled, deleted, version, published_version, definition, status, tool_count, authorization]
+      properties:
+        connection_id: { type: string, minLength: 1, maxLength: 128 }
+        public_id: { type: string, minLength: 1, maxLength: 128 }
+        source: { type: string, enum: [config, managed] }
+        current_revision_id: { type: string, minLength: 1, maxLength: 128 }
+        enabled: { type: boolean }
+        deleted: { type: boolean }
+        version: { type: integer, format: uint64, minimum: 1 }
+        published_version: { type: integer, format: uint64, minimum: 0 }
+        definition: { $ref: "#/components/schemas/MCPDefinition" }
+        status: { type: string, enum: [pending, ready, unavailable, disabled, deleted, conflict, auth_required, disconnected] }
+        tool_count: { type: integer, format: int32, minimum: 0 }
+        recovery: { type: string, enum: [authorization_required, first_authorization_required, capture_required] }
+        authorization: { type: string, maxLength: 64 }
+        last_diagnostic: { $ref: "#/components/schemas/MCPDiagnostic" }
+        active_attempt: { $ref: "#/components/schemas/MCPAuthorizationAttempt" }
+    MCPDefinition:
+      type: object
+      additionalProperties: false
+      required: [transport, targets]
+      properties:
+        transport: { type: string, enum: [stdio, http, sse] }
+        command: { type: string, maxLength: 4096 }
+        args:
+          type: array
+          maxItems: 256
+          items: { type: string, maxLength: 4096 }
+        directory: { type: string, maxLength: 4096 }
+        url: { type: string, maxLength: 8192 }
+        env:
+          type: object
+          maxProperties: 256
+          additionalProperties: { $ref: "#/components/schemas/MCPValueBinding" }
+        headers:
+          type: object
+          maxProperties: 256
+          additionalProperties: { $ref: "#/components/schemas/MCPValueBinding" }
+        targets: { $ref: "#/components/schemas/MCPTargets" }
+        oauth: { type: boolean }
+        config_revision:
+          type: string
+          maxLength: 256
+          readOnly: true
+        scopes:
+          type: array
+          maxItems: 128
+          items: { type: string, maxLength: 512 }
+    MCPValueBinding:
+      type: object
+      additionalProperties: false
+      required: [kind]
+      properties:
+        kind: { type: string, enum: [literal, protected, environment] }
+        value: { type: string, maxLength: 4096 }
+    MCPTargets:
+      type: object
+      additionalProperties: false
+      required: [all, providers]
+      properties:
+        all: { type: boolean }
+        providers:
+          type: array
+          maxItems: 64
+          items: { type: string, minLength: 1, maxLength: 128 }
+    MCPValueEdit:
+      type: object
+      additionalProperties: false
+      required: [operation, kind]
+      properties:
+        operation: { type: string, enum: [keep, set, remove] }
+        kind: { type: string, enum: [literal, protected, environment] }
+        value: { type: string, maxLength: 4096, writeOnly: true }
+    MCPValueEdits:
+      type: object
+      additionalProperties:
+        $ref: "#/components/schemas/MCPValueEdit"
+      maxProperties: 256
+      writeOnly: true
+    MCPCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [public_id, definition, env, headers, enabled]
+      properties:
+        public_id: { type: string, minLength: 1, maxLength: 128 }
+        definition: { $ref: "#/components/schemas/MCPDefinition" }
+        env: { $ref: "#/components/schemas/MCPValueEdits" }
+        headers: { $ref: "#/components/schemas/MCPValueEdits" }
+        enabled: { type: boolean }
+    MCPUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, definition, env, headers, enabled]
+      properties:
+        expected_version: { type: integer, format: uint64, minimum: 1 }
+        definition: { $ref: "#/components/schemas/MCPDefinition" }
+        env: { $ref: "#/components/schemas/MCPValueEdits" }
+        headers: { $ref: "#/components/schemas/MCPValueEdits" }
+        enabled: { type: boolean }
+    MCPSelectionRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, enabled]
+      properties:
+        expected_version: { type: integer, format: uint64, minimum: 1 }
+        enabled: { type: boolean }
+    MCPDiagnostic:
+      type: object
+      additionalProperties: false
+      required: [outcome, tool_count, checked_at]
+      properties:
+        outcome: { type: string, enum: [succeeded, failed] }
+        tool_count: { type: integer, format: int32, minimum: 0 }
+        checked_at: { type: string, format: date-time }
+    MCPAuthorizationInput:
+      type: object
+      additionalProperties: false
+      required: [scopes, client_id, client_auth_method]
+      properties:
+        scopes: { type: array, maxItems: 128, items: { type: string, maxLength: 512 } }
+        client_id: { type: string, maxLength: 4096 }
+        client_auth_method: { type: string, enum: [none, client_secret_basic, client_secret_post] }
+        client_secret: { type: string, maxLength: 65536, writeOnly: true }
+    MCPAuthorizationOnboardRequest:
+      type: object
+      additionalProperties: false
+      required: [creation, authorization]
+      properties:
+        creation: { $ref: "#/components/schemas/MCPCreateRequest" }
+        authorization: { $ref: "#/components/schemas/MCPAuthorizationInput" }
+    MCPBrowserAuthorizationStart:
+      type: object
+      additionalProperties: false
+      required: [attempt_id, connection_id, authorization_url, expires_at]
+      properties:
+        attempt_id: { type: string, minLength: 1, maxLength: 128 }
+        connection_id: { type: string, minLength: 1, maxLength: 128 }
+        authorization_url: { type: string, minLength: 1, maxLength: 16384 }
+        expires_at: { type: string, format: date-time }
+    MCPDeviceAuthorizationStart:
+      type: object
+      additionalProperties: false
+      required: [attempt_id, connection_id, verification_uri, user_code, expires_at, status]
+      properties:
+        attempt_id: { type: string, minLength: 1, maxLength: 128 }
+        connection_id: { type: string, minLength: 1, maxLength: 128 }
+        verification_uri: { type: string, minLength: 1, maxLength: 16384 }
+        verification_uri_complete: { type: string, maxLength: 16384 }
+        user_code: { type: string, minLength: 1, maxLength: 4096 }
+        expires_at: { type: string, format: date-time }
+        status: { type: string, enum: [pending, authorized, denied, expired, failed] }
+    MCPDeviceAuthorizationStatus:
+      type: object
+      additionalProperties: false
+      required: [attempt_id, connection_id, expires_at, status]
+      properties:
+        attempt_id: { type: string, minLength: 1, maxLength: 128 }
+        connection_id: { type: string, minLength: 1, maxLength: 128 }
+        expires_at: { type: string, format: date-time }
+        status: { type: string, enum: [pending, authorized, denied, expired, failed] }
+    MCPAuthorizationAttempt:
+      type: object
+      additionalProperties: false
+      required: [attempt_id, connection_id, expires_at, device]
+      properties:
+        attempt_id: { type: string, minLength: 1, maxLength: 128 }
+        connection_id: { type: string, minLength: 1, maxLength: 128 }
+        expires_at: { type: string, format: date-time }
+        device: { type: boolean }
+    MCPBrowserOnboardResult:
+      type: object
+      additionalProperties: false
+      required: [item]
+      properties:
+        item: { $ref: "#/components/schemas/MCPItem" }
+        start: { $ref: "#/components/schemas/MCPBrowserAuthorizationStart" }
+        start_error: { type: string, enum: [invalid, forbidden, conflict, auth_required, disconnected, unavailable] }
+    MCPDeviceOnboardResult:
+      type: object
+      additionalProperties: false
+      required: [item]
+      properties:
+        item: { $ref: "#/components/schemas/MCPItem" }
+        start: { $ref: "#/components/schemas/MCPDeviceAuthorizationStart" }
+        start_error: { type: string, enum: [invalid, forbidden, conflict, auth_required, disconnected, unavailable] }
+    MCPBrowserCallback:
+      type: object
+      additionalProperties: false
+      required: [state, code, issuer, denied]
+      properties:
+        state: { type: string, minLength: 1, maxLength: 8192, writeOnly: true }
+        code: { type: string, maxLength: 8192, writeOnly: true }
+        issuer: { type: string, maxLength: 8192 }
+        denied: { type: boolean }
+    MCPRetryAuthorizationRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_revision_id]
+      properties:
+        expected_revision_id: { type: string, minLength: 1, maxLength: 128 }
     LocalLoginRequest:
       type: object
       additionalProperties: false

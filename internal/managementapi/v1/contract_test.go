@@ -252,21 +252,43 @@ func inspectManagementContract(spec *openapi3.T) []string {
 	}
 
 	expectedSecurity := map[string][]string{
-		"getManagementCompatibility": {"operatorServiceAuth"},
-		"loginWebAuth":               {"operatorServiceAuth"},
-		"finishWebAuthLogin":         {"operatorServiceAuth"},
-		"refreshWebAuth":             {"csrf", "operatorServiceAuth", "webAuthRefresh"},
-		"getWebAuthPrincipal":        {"operatorServiceAuth", "webAuthAccess"},
-		"logoutWebAuth":              {"csrf", "operatorServiceAuth", "webAuthAccess"},
-		"replaceWebAuthPassword":     {"csrf", "operatorServiceAuth", "webAuthAccess"},
-		"getWebAuthMFAStatus":        {"operatorServiceAuth", "webAuthAccess"},
-		"beginWebAuthMFAEnable":      {"csrf", "operatorServiceAuth", "webAuthAccess"},
-		"finishWebAuthMFAEnable":     {"csrf", "operatorServiceAuth", "webAuthAccess"},
-		"beginWebAuthMFAReplace":     {"csrf", "operatorServiceAuth", "webAuthAccess"},
-		"finishWebAuthMFAReplace":    {"csrf", "operatorServiceAuth", "webAuthAccess"},
-		"disableWebAuthMFA":          {"csrf", "operatorServiceAuth", "webAuthAccess"},
-		"listWebAuthSessions":        {"operatorServiceAuth", "webAuthAccess"},
-		"revokeWebAuthSession":       {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"getManagementCompatibility":      {"operatorServiceAuth"},
+		"loginWebAuth":                    {"operatorServiceAuth"},
+		"finishWebAuthLogin":              {"operatorServiceAuth"},
+		"refreshWebAuth":                  {"csrf", "operatorServiceAuth", "webAuthRefresh"},
+		"getWebAuthPrincipal":             {"operatorServiceAuth", "webAuthAccess"},
+		"logoutWebAuth":                   {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"replaceWebAuthPassword":          {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"getWebAuthMFAStatus":             {"operatorServiceAuth", "webAuthAccess"},
+		"beginWebAuthMFAEnable":           {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"finishWebAuthMFAEnable":          {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"beginWebAuthMFAReplace":          {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"finishWebAuthMFAReplace":         {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"disableWebAuthMFA":               {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"listWebAuthSessions":             {"operatorServiceAuth", "webAuthAccess"},
+		"revokeWebAuthSession":            {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"listProviders":                   {"operatorServiceAuth", "webAuthAccess"},
+		"createProvider":                  {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"updateProvider":                  {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"selectProvider":                  {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"deleteProvider":                  {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"listMCPConnections":              {"operatorServiceAuth", "webAuthAccess"},
+		"createMCPConnection":             {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"probeMCPConnection":              {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"updateMCPConnection":             {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"probeMCPConnectionUpdate":        {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"selectMCPConnection":             {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"deleteMCPConnection":             {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"diagnoseMCPConnection":           {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"onboardMCPBrowserAuthorization":  {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"onboardMCPDeviceAuthorization":   {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"beginMCPBrowserAuthorization":    {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"beginMCPDeviceAuthorization":     {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"completeMCPBrowserAuthorization": {"operatorServiceAuth", "webAuthAccess"},
+		"getMCPDeviceAuthorization":       {"operatorServiceAuth", "webAuthAccess"},
+		"cancelMCPAuthorization":          {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"disconnectMCPAuthorization":      {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"retryMCPAuthorization":           {"csrf", "operatorServiceAuth", "webAuthAccess"},
 	}
 	for _, path := range spec.Paths.Keys() {
 		for _, operation := range spec.Paths.Value(path).Operations() {
@@ -288,8 +310,82 @@ func inspectManagementContract(spec *openapi3.T) []string {
 
 	findings = append(findings, inspectIdentitySchemas(spec)...)
 	findings = append(findings, inspectWebAuthSchemas(spec)...)
+	findings = append(findings, inspectProviderSchemas(spec)...)
+	findings = append(findings, inspectMCPSchemas(spec)...)
 	findings = append(findings, inspectErrorSchema(spec)...)
 	slices.Sort(findings)
+	return findings
+}
+
+func inspectMCPSchemas(spec *openapi3.T) []string {
+	var findings []string
+	value := spec.Components.Schemas["MCPValueEdit"]
+	if value == nil || value.Value == nil || value.Value.Properties["value"] == nil || !value.Value.Properties["value"].Value.WriteOnly {
+		findings = append(findings, "MCPValueEdit.value must be writeOnly")
+	}
+	definition := spec.Components.Schemas["MCPDefinition"]
+	if definition == nil || definition.Value == nil || definition.Value.Properties["config_revision"] == nil || !definition.Value.Properties["config_revision"].Value.ReadOnly {
+		findings = append(findings, "MCPDefinition.config_revision must be readOnly")
+	}
+	for _, schemaName := range []string{"MCPItem", "MCPInventory", "MCPDiagnostic"} {
+		data, err := json.Marshal(spec.Components.Schemas[schemaName])
+		if err != nil {
+			findings = append(findings, fmt.Sprintf("marshal schema %s: %v", schemaName, err))
+			continue
+		}
+		for _, forbidden := range []string{"client_secret", "protected_values", "access_token", "refresh_token"} {
+			if strings.Contains(string(data), forbidden) {
+				findings = append(findings, fmt.Sprintf("%s exposes protected property %s", schemaName, forbidden))
+			}
+		}
+	}
+	for schemaName, propertyName := range map[string]string{"MCPAuthorizationInput": "client_secret", "MCPBrowserCallback": "state"} {
+		schema := spec.Components.Schemas[schemaName]
+		if schema == nil || schema.Value == nil || schema.Value.Properties[propertyName] == nil || !schema.Value.Properties[propertyName].Value.WriteOnly {
+			findings = append(findings, fmt.Sprintf("%s.%s must be writeOnly", schemaName, propertyName))
+		}
+	}
+	statusData, err := json.Marshal(spec.Components.Schemas["MCPDeviceAuthorizationStatus"])
+	if err != nil {
+		findings = append(findings, err.Error())
+	} else {
+		for _, forbidden := range []string{"verification_uri", "user_code"} {
+			if strings.Contains(string(statusData), forbidden) {
+				findings = append(findings, "device status exposes "+forbidden)
+			}
+		}
+	}
+	return findings
+}
+
+func inspectProviderSchemas(spec *openapi3.T) []string {
+	var findings []string
+	for schemaName, propertyName := range map[string]string{
+		"ProviderSecretEdit":      "value",
+		"ProviderEnvironmentEdit": "values",
+	} {
+		schema := spec.Components.Schemas[schemaName]
+		if schema == nil || schema.Value == nil {
+			findings = append(findings, fmt.Sprintf("missing schema %s", schemaName))
+			continue
+		}
+		property := schema.Value.Properties[propertyName]
+		if property == nil || property.Value == nil || !property.Value.WriteOnly {
+			findings = append(findings, fmt.Sprintf("%s.%s must be writeOnly", schemaName, propertyName))
+		}
+	}
+	for _, schemaName := range []string{"ProviderItem", "ProviderInventory"} {
+		data, err := json.Marshal(spec.Components.Schemas[schemaName])
+		if err != nil {
+			findings = append(findings, fmt.Sprintf("marshal schema %s: %v", schemaName, err))
+			continue
+		}
+		for _, forbidden := range []string{"\"api_key\":", "protected_values", "environment_values"} {
+			if strings.Contains(string(data), forbidden) {
+				findings = append(findings, fmt.Sprintf("%s exposes protected property %s", schemaName, forbidden))
+			}
+		}
+	}
 	return findings
 }
 

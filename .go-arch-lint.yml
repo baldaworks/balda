@@ -11,6 +11,11 @@ exclude:
   - .config
 
 vendors:
+  management_api_adapter_dependencies:
+    in:
+      - github.com/baldaworks/runtime/v2/agentconfig
+      - github.com/google/uuid
+
   native_hook_process_runtime:
     in:
       - golang.org/x/sys/unix
@@ -678,8 +683,12 @@ deps:
       - http_composition
       - browser_auth
       - user_contracts
+      - providers
+      - mcp_contracts
     deepScan: false
     anyVendorDeps: false
+    canUse:
+      - management_api_adapter_dependencies
 
   chat_archive_app:
     mayDependOn:
