@@ -43,6 +43,9 @@ func selectedResourceScopes(scopes []string) ([]string, error) {
 		}
 		if scope != offlineAccessScope && !slices.Contains(selected, scope) {
 			selected = append(selected, scope)
+			if len(selected) > 64 {
+				return nil, mcpcmd.ErrInvalid
+			}
 		}
 	}
 	return selected, nil

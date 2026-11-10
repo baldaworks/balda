@@ -45,6 +45,7 @@ func TestBrowserScopeSelectionPreservesResourceIntentAndRenewalCapabilities(t *t
 		{"invalid resource default", nil, []string{"openid\n"}, allScopes, refresh, nil, true},
 		{"oversized token", []string{strings.Repeat("s", 257)}, nil, nil, nil, nil, true},
 		{"too many request scopes", append(slices.Clone(many), "extra"), nil, nil, nil, nil, true},
+		{"too many resource defaults", nil, append(slices.Clone(many), "extra"), nil, nil, nil, true},
 		{"renewal exceeds scope bound", many, many, append(slices.Clone(many), offlineAccessScope), refresh, nil, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
