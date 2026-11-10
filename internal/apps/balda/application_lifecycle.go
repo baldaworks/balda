@@ -16,6 +16,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/commandoutboxfx"
 	natsbus "github.com/baldaworks/balda/internal/apps/balda/eventbus/nats"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
+	"github.com/baldaworks/balda/internal/apps/balda/hookbackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/httpfx"
 	"github.com/baldaworks/balda/internal/apps/balda/internalmcp"
 	"github.com/baldaworks/balda/internal/apps/balda/jobexec"
@@ -24,6 +25,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/mcpbackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpbridge"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
+	"github.com/baldaworks/balda/internal/apps/balda/pluginbackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/providers"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
 	"github.com/baldaworks/balda/internal/apps/balda/schedulebackofficeapp"
@@ -31,6 +33,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
 	"github.com/baldaworks/balda/internal/apps/balda/shutdown"
+	"github.com/baldaworks/balda/internal/apps/balda/skillbackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/startupnotifyapp"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
@@ -189,6 +192,9 @@ type applicationLifecycleParams struct {
 	BackofficeSchedules  *schedulebackofficeapp.Operations
 	BackofficeWebhooks   *webhookbackofficeapp.Operations
 	BackofficeAliases    *aliasbackofficeapp.Operations
+	BackofficeHooks      *hookbackofficeapp.Operations
+	BackofficePlugins    *pluginbackofficeapp.Operations
+	BackofficeSkills     *skillbackofficeapp.Operations
 	MCP                  *internalmcp.InternalMCPManager
 	MCPManagement        *mcpmanage.Service
 	MCPBridge            *mcpbridge.Bridge
@@ -275,7 +281,7 @@ func applicationLifecycleStages(p applicationLifecycleParams, telegram *telegram
 			managementServer = httpfx.NewNamedServer(
 				"management HTTP",
 				p.ManagementHTTPConfig.ListenAddr,
-				p.ManagementHTTPConfig.Handler(managementhttp.Services{BrowserAuth: p.BrowserAuth, Providers: p.ProviderService, MCP: p.BackofficeMCP, Schedules: p.BackofficeSchedules, Webhooks: p.BackofficeWebhooks, Aliases: p.BackofficeAliases}),
+				p.ManagementHTTPConfig.Handler(managementhttp.Services{BrowserAuth: p.BrowserAuth, Providers: p.ProviderService, MCP: p.BackofficeMCP, Schedules: p.BackofficeSchedules, Webhooks: p.BackofficeWebhooks, Aliases: p.BackofficeAliases, Hooks: p.BackofficeHooks, Plugins: p.BackofficePlugins, Skills: p.BackofficeSkills}),
 			)
 			if err := managementServer.Start(); err != nil {
 				managementServer = nil

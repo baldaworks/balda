@@ -14,7 +14,7 @@ import (
 
 func TestClientNeutralGeneratedManagementFlow(t *testing.T) {
 	aliases := &aliasFixture{}
-	server := httptest.NewServer(newManagementTestHandler(t, nil, nil, nil, aliases))
+	server := httptest.NewServer(newManagementTestHandler(t, nil, nil, nil, aliases, nil, nil, nil))
 	t.Cleanup(server.Close)
 	client, err := managementv1.NewClientWithResponses(server.URL, managementv1.WithRequestEditorFn(operatorRequestEditor))
 	if err != nil {
@@ -42,7 +42,7 @@ func TestClientNeutralGeneratedManagementFlow(t *testing.T) {
 
 func TestClientNeutralAuthorityFailuresDoNotMutate(t *testing.T) {
 	aliases := &countingAliasFixture{}
-	server := httptest.NewServer(newManagementTestHandler(t, nil, nil, nil, aliases))
+	server := httptest.NewServer(newManagementTestHandler(t, nil, nil, nil, aliases, nil, nil, nil))
 	t.Cleanup(server.Close)
 	client, err := managementv1.NewClientWithResponses(server.URL, managementv1.WithRequestEditorFn(operatorRequestEditor))
 	if err != nil {

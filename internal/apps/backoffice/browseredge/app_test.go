@@ -92,7 +92,7 @@ func TestAmbiguousRefreshClearsCredentialsWithoutRetry(t *testing.T) {
 
 func TestUnknownProductPageIsNotProxied(t *testing.T) {
 	app := newTestApp(t, &fakeService{})
-	request := httptest.NewRequest(http.MethodGet, "http://admin.test/balda/backoffice/hooks", nil)
+	request := httptest.NewRequest(http.MethodGet, "http://admin.test/balda/backoffice/does-not-exist", nil)
 	response := httptest.NewRecorder()
 	app.Handler().ServeHTTP(response, request)
 	require.Equal(t, http.StatusNotFound, response.Code)

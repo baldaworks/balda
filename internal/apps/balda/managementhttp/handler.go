@@ -8,9 +8,12 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/aliascmd"
 	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
+	"github.com/baldaworks/balda/internal/apps/balda/hookcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/plugincmd"
 	"github.com/baldaworks/balda/internal/apps/balda/providers"
 	"github.com/baldaworks/balda/internal/apps/balda/schedulecmd"
+	"github.com/baldaworks/balda/internal/apps/balda/skillcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookroutecmd"
 	managementv1 "github.com/baldaworks/balda/internal/managementapi/v1"
 )
@@ -25,6 +28,38 @@ type Services struct {
 	Schedules   scheduleOperations
 	Webhooks    webhookOperations
 	Aliases     aliasOperations
+	Hooks       hookOperations
+	Plugins     pluginOperations
+	Skills      skillOperations
+}
+
+type skillOperations interface {
+	Inventory(ctx context.Context, authority skillcmd.Authority) (skillcmd.Inventory, error)
+	ReviewInstall(ctx context.Context, request skillcmd.InstallReview) (skillcmd.Candidate, error)
+	ReviewUpdate(ctx context.Context, request skillcmd.Mutation) (skillcmd.Candidate, error)
+	Accept(ctx context.Context, handle string, authority skillcmd.Authority) (skillcmd.Outcome, error)
+	Change(ctx context.Context, operation skillcmd.Operation, request skillcmd.Mutation) (skillcmd.Outcome, error)
+	Refresh(ctx context.Context, request skillcmd.Mutation) (skillcmd.Outcome, error)
+	RetryPublication(ctx context.Context, authority skillcmd.Authority) (skillcmd.Outcome, error)
+}
+
+type pluginOperations interface {
+	Inventory(ctx context.Context, authority plugincmd.Authority) ([]plugincmd.InstalledView, error)
+	Detail(ctx context.Context, name string, authority plugincmd.Authority) (plugincmd.PluginDetail, error)
+	Marketplaces(ctx context.Context, authority plugincmd.Authority) ([]plugincmd.MarketplaceView, error)
+	Marketplace(ctx context.Context, name string, authority plugincmd.Authority) (plugincmd.MarketplaceDetail, error)
+	AddMarketplace(ctx context.Context, request plugincmd.MarketplaceAdd) (plugincmd.MarketplaceDetail, error)
+	RefreshMarketplace(ctx context.Context, request plugincmd.MarketplaceMutation) (plugincmd.MarketplaceDetail, error)
+	RemoveMarketplace(ctx context.Context, request plugincmd.MarketplaceMutation) error
+	Candidate(ctx context.Context, name, marketplace string, authority plugincmd.Authority) (plugincmd.CandidateView, error)
+	MutatePlugin(ctx context.Context, request plugincmd.PluginMutation) (plugincmd.MutationOutcome, error)
+}
+
+type hookOperations interface {
+	CapabilityDescription() string
+	Inventory(ctx context.Context, authority hookcmd.Authority) (hookcmd.Record, error)
+	Save(ctx context.Context, request hookcmd.Save) error
+	Delete(ctx context.Context, request hookcmd.Delete) error
 }
 
 type aliasOperations interface {
@@ -84,7 +119,7 @@ type mcpOperations interface {
 
 // Handler returns the authenticated management API handler.
 func (c ResolvedConfig) Handler(services Services) http.Handler {
-	server := strictServer{browserAuth: services.BrowserAuth, providers: services.Providers, mcp: services.MCP, schedules: services.Schedules, webhooks: services.Webhooks, aliases: services.Aliases}
+	server := strictServer{browserAuth: services.BrowserAuth, providers: services.Providers, mcp: services.MCP, schedules: services.Schedules, webhooks: services.Webhooks, aliases: services.Aliases, hooks: services.Hooks, plugins: services.Plugins, skills: services.Skills}
 	strict := managementv1.NewStrictHandlerWithOptions(server, nil, managementv1.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, _ error) {
 			writeError(w, r, http.StatusBadRequest, "request.invalid", "invalid request")
@@ -100,7 +135,16 @@ func (c ResolvedConfig) Handler(services Services) http.Handler {
 		if !ok || (services.BrowserAuth == nil && r.URL.Path != compatibilityPath) ||
 			(services.Schedules == nil && strings.HasPrefix(r.URL.Path, "/api/management/v1/schedules")) ||
 			(services.Webhooks == nil && strings.HasPrefix(r.URL.Path, "/api/management/v1/webhooks")) ||
-			(services.Aliases == nil && strings.HasPrefix(r.URL.Path, "/api/management/v1/aliases")) {
+			(services.Aliases == nil && strings.HasPrefix(r.URL.Path, "/api/management/v1/aliases")) ||
+			(services.Hooks == nil && strings.HasPrefix(r.URL.Path, "/api/management/v1/hooks")) {
+			writeError(w, r, http.StatusNotFound, "not_found", "not found")
+			return
+		}
+		if services.Plugins == nil && (strings.HasPrefix(r.URL.Path, "/api/management/v1/plugins") || strings.HasPrefix(r.URL.Path, "/api/management/v1/plugin-marketplaces")) {
+			writeError(w, r, http.StatusNotFound, "not_found", "not found")
+			return
+		}
+		if services.Skills == nil && strings.HasPrefix(r.URL.Path, "/api/management/v1/skills") {
 			writeError(w, r, http.StatusNotFound, "not_found", "not found")
 			return
 		}

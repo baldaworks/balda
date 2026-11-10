@@ -698,6 +698,8 @@ deps:
       - schedule_contracts
       - webhook_route_contracts
       - alias_contracts
+      - hook_contracts
+      - contracts
     deepScan: false
     anyVendorDeps: false
     canUse:

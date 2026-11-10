@@ -25,6 +25,36 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for HookEvent.
+const (
+	PostToolUse      HookEvent = "PostToolUse"
+	PreToolUse       HookEvent = "PreToolUse"
+	SessionEnd       HookEvent = "SessionEnd"
+	SessionStart     HookEvent = "SessionStart"
+	Stop             HookEvent = "Stop"
+	UserPromptSubmit HookEvent = "UserPromptSubmit"
+)
+
+// Valid indicates whether the value is a known member of the HookEvent enum.
+func (e HookEvent) Valid() bool {
+	switch e {
+	case PostToolUse:
+		return true
+	case PreToolUse:
+		return true
+	case SessionEnd:
+		return true
+	case SessionStart:
+		return true
+	case Stop:
+		return true
+	case UserPromptSubmit:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for MCPAuthorizationInputClientAuthMethod.
 const (
 	MCPAuthorizationInputClientAuthMethodClientSecretBasic MCPAuthorizationInputClientAuthMethod = "client_secret_basic"
@@ -367,6 +397,36 @@ func (e ManagementCompatibilityContractID) Valid() bool {
 	}
 }
 
+// Defines values for PluginOperation.
+const (
+	PluginOperationDisable  PluginOperation = "disable"
+	PluginOperationEnable   PluginOperation = "enable"
+	PluginOperationInstall  PluginOperation = "install"
+	PluginOperationRemove   PluginOperation = "remove"
+	PluginOperationRollback PluginOperation = "rollback"
+	PluginOperationUpgrade  PluginOperation = "upgrade"
+)
+
+// Valid indicates whether the value is a known member of the PluginOperation enum.
+func (e PluginOperation) Valid() bool {
+	switch e {
+	case PluginOperationDisable:
+		return true
+	case PluginOperationEnable:
+		return true
+	case PluginOperationInstall:
+		return true
+	case PluginOperationRemove:
+		return true
+	case PluginOperationRollback:
+		return true
+	case PluginOperationUpgrade:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProviderEditOperation.
 const (
 	ProviderEditOperationClear   ProviderEditOperation = "clear"
@@ -400,6 +460,48 @@ func (e ProviderSource) Valid() bool {
 	case ProviderSourceConfigured:
 		return true
 	case ProviderSourceManaged:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SkillLifecycleOperation.
+const (
+	SkillLifecycleOperationDisable SkillLifecycleOperation = "disable"
+	SkillLifecycleOperationEnable  SkillLifecycleOperation = "enable"
+	SkillLifecycleOperationRemove  SkillLifecycleOperation = "remove"
+)
+
+// Valid indicates whether the value is a known member of the SkillLifecycleOperation enum.
+func (e SkillLifecycleOperation) Valid() bool {
+	switch e {
+	case SkillLifecycleOperationDisable:
+		return true
+	case SkillLifecycleOperationEnable:
+		return true
+	case SkillLifecycleOperationRemove:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SkillOwnership.
+const (
+	SkillOwnershipManaged   SkillOwnership = "managed"
+	SkillOwnershipPlugin    SkillOwnership = "plugin"
+	SkillOwnershipUnmanaged SkillOwnership = "unmanaged"
+)
+
+// Valid indicates whether the value is a known member of the SkillOwnership enum.
+func (e SkillOwnership) Valid() bool {
+	switch e {
+	case SkillOwnershipManaged:
+		return true
+	case SkillOwnershipPlugin:
+		return true
+	case SkillOwnershipUnmanaged:
 		return true
 	default:
 		return false
@@ -585,6 +687,41 @@ type AliasRecord struct {
 type AliasRetargetRequest struct {
 	ExpectedVersion uint64 `json:"expected_version"`
 	LocatorRef      string `json:"locator_ref"`
+}
+
+// HookDefinition defines model for HookDefinition.
+type HookDefinition struct {
+	Args           []string  `json:"args"`
+	Command        string    `json:"command"`
+	Enabled        bool      `json:"enabled"`
+	Event          HookEvent `json:"event"`
+	Matcher        string    `json:"matcher"`
+	Name           string    `json:"name"`
+	Provider       string    `json:"provider"`
+	TimeoutSeconds int64     `json:"timeout_seconds"`
+}
+
+// HookDeleteRequest defines model for HookDeleteRequest.
+type HookDeleteRequest struct {
+	Confirm         bool  `json:"confirm"`
+	ExpectedVersion int64 `json:"expected_version"`
+}
+
+// HookEvent defines model for HookEvent.
+type HookEvent string
+
+// HookInventory defines model for HookInventory.
+type HookInventory struct {
+	Capabilities string           `json:"capabilities"`
+	Definitions  []HookDefinition `json:"definitions"`
+	UpdatedAt    string           `json:"updated_at"`
+	Version      int64            `json:"version"`
+}
+
+// HookSaveRequest defines model for HookSaveRequest.
+type HookSaveRequest struct {
+	Definition      HookDefinition `json:"definition"`
+	ExpectedVersion int64          `json:"expected_version"`
 }
 
 // LocalLoginRequest defines model for LocalLoginRequest.
@@ -807,7 +944,7 @@ type ManagementCompatibility struct {
 	APIMajor   ManagementCompatibilityAPIMajor   `json:"api_major"`
 	ContractID ManagementCompatibilityContractID `json:"contract_id"`
 
-	// ContractVersion Example: 1.4.0
+	// ContractVersion Example: 1.7.0
 	ContractVersion string `json:"contract_version"`
 }
 
@@ -836,6 +973,156 @@ type ManagementResourceSummary struct {
 	ResourceID      string    `json:"resource_id"`
 	ResourceVersion uint64    `json:"resource_version"`
 	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+// PluginCandidate defines model for PluginCandidate.
+type PluginCandidate struct {
+	CandidateToken         string                  `json:"candidate_token"`
+	Capabilities           PluginCapabilitySummary `json:"capabilities"`
+	DeclaresBaldaExtension bool                    `json:"declares_balda_extension"`
+	Description            string                  `json:"description"`
+	DiagnosticCodes        []string                `json:"diagnostic_codes"`
+	ExpectedState          string                  `json:"expected_state"`
+	Marketplace            string                  `json:"marketplace"`
+	Name                   string                  `json:"name"`
+	Revision               string                  `json:"revision"`
+	Version                string                  `json:"version"`
+}
+
+// PluginCapabilitySummary defines model for PluginCapabilitySummary.
+type PluginCapabilitySummary struct {
+	Commands    int `json:"commands"`
+	Diagnostics int `json:"diagnostics"`
+	McpServers  int `json:"mcp_servers"`
+	Skills      int `json:"skills"`
+}
+
+// PluginContribution defines model for PluginContribution.
+type PluginContribution struct {
+	Description string `json:"description"`
+	Name        string `json:"name"`
+	Transport   string `json:"transport"`
+}
+
+// PluginDetail defines model for PluginDetail.
+type PluginDetail struct {
+	Commands        []PluginContribution     `json:"commands"`
+	DiagnosticCodes []string                 `json:"diagnostic_codes"`
+	Item            PluginInstalled          `json:"item"`
+	McpServers      []PluginContribution     `json:"mcp_servers"`
+	Revisions       []PluginRetainedRevision `json:"revisions"`
+	Skills          []PluginContribution     `json:"skills"`
+}
+
+// PluginInstalled defines model for PluginInstalled.
+type PluginInstalled struct {
+	Capabilities           PluginCapabilitySummary `json:"capabilities"`
+	DeclaresBaldaExtension bool                    `json:"declares_balda_extension"`
+	Description            string                  `json:"description"`
+	Drifted                bool                    `json:"drifted"`
+	Enabled                bool                    `json:"enabled"`
+	ExpectedState          string                  `json:"expected_state"`
+	Marketplace            string                  `json:"marketplace"`
+	Name                   string                  `json:"name"`
+	Origin                 string                  `json:"origin"`
+	OriginAvailable        bool                    `json:"origin_available"`
+	RecoveryPending        bool                    `json:"recovery_pending"`
+	Removed                bool                    `json:"removed"`
+	Revision               string                  `json:"revision"`
+	Runtime                PluginRuntimeStatus     `json:"runtime"`
+	Version                string                  `json:"version"`
+}
+
+// PluginInventory defines model for PluginInventory.
+type PluginInventory struct {
+	Items []PluginInstalled `json:"items"`
+}
+
+// PluginMarketplace defines model for PluginMarketplace.
+type PluginMarketplace struct {
+	AvailablePlugins  int      `json:"available_plugins"`
+	ExpectedState     string   `json:"expected_state"`
+	FailureCode       string   `json:"failure_code"`
+	Kind              string   `json:"kind"`
+	LastAttemptAt     string   `json:"last_attempt_at"`
+	LastAttemptStatus string   `json:"last_attempt_status"`
+	LastSuccessfulAt  string   `json:"last_successful_at"`
+	Name              string   `json:"name"`
+	Ref               string   `json:"ref"`
+	ResolvedRevision  string   `json:"resolved_revision"`
+	Source            string   `json:"source"`
+	Sparse            []string `json:"sparse"`
+}
+
+// PluginMarketplaceAddRequest defines model for PluginMarketplaceAddRequest.
+type PluginMarketplaceAddRequest struct {
+	Name   string   `json:"name"`
+	Ref    string   `json:"ref"`
+	Source string   `json:"source"`
+	Sparse []string `json:"sparse"`
+}
+
+// PluginMarketplaceDetail defines model for PluginMarketplaceDetail.
+type PluginMarketplaceDetail struct {
+	Candidates      []PluginCandidate `json:"candidates"`
+	DiagnosticCodes []string          `json:"diagnostic_codes"`
+	Item            PluginMarketplace `json:"item"`
+}
+
+// PluginMarketplaceInventory defines model for PluginMarketplaceInventory.
+type PluginMarketplaceInventory struct {
+	Items []PluginMarketplace `json:"items"`
+}
+
+// PluginMarketplaceMutationRequest defines model for PluginMarketplaceMutationRequest.
+type PluginMarketplaceMutationRequest struct {
+	Confirm       bool   `json:"confirm"`
+	ExpectedState string `json:"expected_state"`
+}
+
+// PluginMutationOutcome defines model for PluginMutationOutcome.
+type PluginMutationOutcome struct {
+	Accepted        bool   `json:"accepted"`
+	PluginName      string `json:"plugin_name"`
+	RecoveryPending bool   `json:"recovery_pending"`
+}
+
+// PluginMutationRequest defines model for PluginMutationRequest.
+type PluginMutationRequest struct {
+	CandidateToken  string          `json:"candidate_token"`
+	Confirm         bool            `json:"confirm"`
+	ExpectedState   string          `json:"expected_state"`
+	MarketplaceName string          `json:"marketplace_name"`
+	Operation       PluginOperation `json:"operation"`
+	Revision        string          `json:"revision"`
+}
+
+// PluginOperation defines model for PluginOperation.
+type PluginOperation string
+
+// PluginRetainedRevision defines model for PluginRetainedRevision.
+type PluginRetainedRevision struct {
+	Available  bool      `json:"available"`
+	Current    bool      `json:"current"`
+	RetainedAt time.Time `json:"retained_at"`
+	Revision   string    `json:"revision"`
+	Version    string    `json:"version"`
+}
+
+// PluginRuntimeStatus defines model for PluginRuntimeStatus.
+type PluginRuntimeStatus struct {
+	Advertisements      int      `json:"advertisements"`
+	DegradedMcpServers  int      `json:"degraded_mcp_servers"`
+	DesiredMcpServers   int      `json:"desired_mcp_servers"`
+	DiagnosticCodes     []string `json:"diagnostic_codes"`
+	ProjectionLag       uint64   `json:"projection_lag"`
+	ProjectionOmissions []string `json:"projection_omissions"`
+	ReadyMcpServers     int      `json:"ready_mcp_servers"`
+	RevisionCurrent     bool     `json:"revision_current"`
+	SkillAmbiguities    int      `json:"skill_ambiguities"`
+	Skills              int      `json:"skills"`
+	SnapshotID          string   `json:"snapshot_id"`
+	SnapshotSequence    uint64   `json:"snapshot_sequence"`
 }
 
 // ProviderConfig defines model for ProviderConfig.
@@ -1033,6 +1320,79 @@ type ScheduleUpdateRequest struct {
 	Definition      ScheduleDefinition `json:"definition"`
 	ExpectedVersion uint64             `json:"expected_version"`
 }
+
+// SkillAcceptRequest defines model for SkillAcceptRequest.
+type SkillAcceptRequest struct {
+	CandidateHandle string `json:"candidate_handle"`
+}
+
+// SkillCandidate defines model for SkillCandidate.
+type SkillCandidate struct {
+	CandidateHandle string     `json:"candidate_handle"`
+	ExpectedState   string     `json:"expected_state"`
+	ExpiresAt       time.Time  `json:"expires_at"`
+	Item            SkillEntry `json:"item"`
+	ResolvedCommit  string     `json:"resolved_commit"`
+	SkillPath       string     `json:"skill_path"`
+}
+
+// SkillEntry defines model for SkillEntry.
+type SkillEntry struct {
+	CurrentRevision string         `json:"current_revision"`
+	Description     string         `json:"description"`
+	Enabled         bool           `json:"enabled"`
+	Name            string         `json:"name"`
+	Ownership       SkillOwnership `json:"ownership"`
+	Pending         bool           `json:"pending"`
+	PluginID        string         `json:"plugin_id"`
+	Revision        string         `json:"revision"`
+	SourceKind      string         `json:"source_kind"`
+	SourceLabel     string         `json:"source_label"`
+	SourceName      string         `json:"source_name"`
+}
+
+// SkillInstallReviewRequest defines model for SkillInstallReviewRequest.
+type SkillInstallReviewRequest struct {
+	ExpectedState string `json:"expected_state"`
+	Path          string `json:"path"`
+	Ref           string `json:"ref"`
+	Source        string `json:"source"`
+}
+
+// SkillInventory defines model for SkillInventory.
+type SkillInventory struct {
+	Diagnostics        []string     `json:"diagnostics"`
+	ExpectedState      string       `json:"expected_state"`
+	Generation         uint64       `json:"generation"`
+	Items              []SkillEntry `json:"items"`
+	PublicationPending bool         `json:"publication_pending"`
+}
+
+// SkillLifecycleOperation defines model for SkillLifecycleOperation.
+type SkillLifecycleOperation string
+
+// SkillMutationOutcome defines model for SkillMutationOutcome.
+type SkillMutationOutcome struct {
+	Accepted           bool        `json:"accepted"`
+	Generation         uint64      `json:"generation"`
+	Item               *SkillEntry `json:"item,omitempty"`
+	PublicationPending bool        `json:"publication_pending"`
+}
+
+// SkillMutationRequest defines model for SkillMutationRequest.
+type SkillMutationRequest struct {
+	Confirm       bool                    `json:"confirm"`
+	ExpectedState string                  `json:"expected_state"`
+	Operation     SkillLifecycleOperation `json:"operation"`
+}
+
+// SkillObservedStateRequest defines model for SkillObservedStateRequest.
+type SkillObservedStateRequest struct {
+	ExpectedState string `json:"expected_state"`
+}
+
+// SkillOwnership defines model for SkillOwnership.
+type SkillOwnership string
 
 // WebAuthAssurance defines model for WebAuthAssurance.
 type WebAuthAssurance string
@@ -1299,11 +1659,20 @@ type WebhookVersionRequest struct {
 // AliasName defines model for AliasName.
 type AliasName = string
 
+// HookName defines model for HookName.
+type HookName = string
+
 // MCPAttemptID defines model for MCPAttemptID.
 type MCPAttemptID = string
 
 // MCPConnectionID defines model for MCPConnectionID.
 type MCPConnectionID = string
+
+// PluginMarketplaceName defines model for PluginMarketplaceName.
+type PluginMarketplaceName = string
+
+// PluginName defines model for PluginName.
+type PluginName = string
 
 // ProviderID defines model for ProviderID.
 type ProviderID = string
@@ -1313,6 +1682,9 @@ type ScheduleID = string
 
 // ScheduleRunID defines model for ScheduleRunID.
 type ScheduleRunID = openapi_types.UUID
+
+// SkillID defines model for SkillID.
+type SkillID = string
 
 // WebhookJobID defines model for WebhookJobID.
 type WebhookJobID = string
@@ -1346,6 +1718,11 @@ type ListWebAuthSessionsParams struct {
 	UserID  *string `form:"user_id,omitempty" json:"user_id,omitempty"`
 	AfterID *string `form:"after_id,omitempty" json:"after_id,omitempty"`
 	Limit   *int32  `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// ReviewPluginCandidateParams defines parameters for ReviewPluginCandidate.
+type ReviewPluginCandidateParams struct {
+	Marketplace *string `form:"marketplace,omitempty" json:"marketplace,omitempty"`
 }
 
 // ListScheduleRunsParams defines parameters for ListScheduleRuns.
@@ -1396,6 +1773,15 @@ type ReplaceWebAuthPasswordJSONRequestBody = WebAuthPasswordReplaceRequest
 // RevokeWebAuthSessionJSONRequestBody defines body for RevokeWebAuthSession for application/json ContentType.
 type RevokeWebAuthSessionJSONRequestBody = WebAuthSessionRevokeRequest
 
+// CreateHookJSONRequestBody defines body for CreateHook for application/json ContentType.
+type CreateHookJSONRequestBody = HookSaveRequest
+
+// DeleteHookJSONRequestBody defines body for DeleteHook for application/json ContentType.
+type DeleteHookJSONRequestBody = HookDeleteRequest
+
+// UpdateHookJSONRequestBody defines body for UpdateHook for application/json ContentType.
+type UpdateHookJSONRequestBody = HookSaveRequest
+
 // CreateMCPConnectionJSONRequestBody defines body for CreateMCPConnection for application/json ContentType.
 type CreateMCPConnectionJSONRequestBody = MCPCreateRequest
 
@@ -1432,6 +1818,18 @@ type ProbeMCPConnectionUpdateJSONRequestBody = MCPUpdateRequest
 // SelectMCPConnectionJSONRequestBody defines body for SelectMCPConnection for application/json ContentType.
 type SelectMCPConnectionJSONRequestBody = MCPSelectionRequest
 
+// AddPluginMarketplaceJSONRequestBody defines body for AddPluginMarketplace for application/json ContentType.
+type AddPluginMarketplaceJSONRequestBody = PluginMarketplaceAddRequest
+
+// RemovePluginMarketplaceJSONRequestBody defines body for RemovePluginMarketplace for application/json ContentType.
+type RemovePluginMarketplaceJSONRequestBody = PluginMarketplaceMutationRequest
+
+// RefreshPluginMarketplaceJSONRequestBody defines body for RefreshPluginMarketplace for application/json ContentType.
+type RefreshPluginMarketplaceJSONRequestBody = PluginMarketplaceMutationRequest
+
+// MutatePluginJSONRequestBody defines body for MutatePlugin for application/json ContentType.
+type MutatePluginJSONRequestBody = PluginMutationRequest
+
 // CreateProviderJSONRequestBody defines body for CreateProvider for application/json ContentType.
 type CreateProviderJSONRequestBody = ProviderCreateRequest
 
@@ -1458,6 +1856,21 @@ type RunScheduleNowJSONRequestBody = ScheduleRunNowRequest
 
 // SelectScheduleJSONRequestBody defines body for SelectSchedule for application/json ContentType.
 type SelectScheduleJSONRequestBody = ScheduleSelectionRequest
+
+// RefreshSkillsJSONRequestBody defines body for RefreshSkills for application/json ContentType.
+type RefreshSkillsJSONRequestBody = SkillObservedStateRequest
+
+// AcceptSkillReviewJSONRequestBody defines body for AcceptSkillReview for application/json ContentType.
+type AcceptSkillReviewJSONRequestBody = SkillAcceptRequest
+
+// ReviewSkillInstallJSONRequestBody defines body for ReviewSkillInstall for application/json ContentType.
+type ReviewSkillInstallJSONRequestBody = SkillInstallReviewRequest
+
+// MutateSkillJSONRequestBody defines body for MutateSkill for application/json ContentType.
+type MutateSkillJSONRequestBody = SkillMutationRequest
+
+// ReviewSkillUpdateJSONRequestBody defines body for ReviewSkillUpdate for application/json ContentType.
+type ReviewSkillUpdateJSONRequestBody = SkillObservedStateRequest
 
 // CreateWebhookJSONRequestBody defines body for CreateWebhook for application/json ContentType.
 type CreateWebhookJSONRequestBody = WebhookCreateRequest
@@ -1737,6 +2150,33 @@ type ClientInterface interface {
 	// Corresponds with GET /api/management/v1/compatibility (the `GetManagementCompatibility` operationId).
 	GetManagementCompatibility(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListHooks performs a GET /api/management/v1/hooks (the `ListHooks` operationId) request.
+	ListHooks(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateHookWithBody performs a POST /api/management/v1/hooks (the `CreateHook` operationId) request,
+	// with any type of body and a specified content type.
+	CreateHookWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateHook performs a POST /api/management/v1/hooks (the `CreateHook` operationId) request.
+	// Takes a body of the `application/json` content type.
+	CreateHook(ctx context.Context, body CreateHookJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteHookWithBody performs a DELETE /api/management/v1/hooks/{hook_name} (the `DeleteHook` operationId) request,
+	// with any type of body and a specified content type.
+	DeleteHookWithBody(ctx context.Context, hookName HookName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteHook performs a DELETE /api/management/v1/hooks/{hook_name} (the `DeleteHook` operationId) request.
+	// Takes a body of the `application/json` content type.
+	DeleteHook(ctx context.Context, hookName HookName, body DeleteHookJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateHookWithBody performs a PUT /api/management/v1/hooks/{hook_name} (the `UpdateHook` operationId) request,
+	// with any type of body and a specified content type.
+	UpdateHookWithBody(ctx context.Context, hookName HookName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateHook performs a PUT /api/management/v1/hooks/{hook_name} (the `UpdateHook` operationId) request.
+	// Takes a body of the `application/json` content type.
+	UpdateHook(ctx context.Context, hookName HookName, body UpdateHookJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListMCPConnections Read the current secret-free MCP inventory
 	//
 	// Corresponds with GET /api/management/v1/mcp (the `ListMCPConnections` operationId).
@@ -1888,6 +2328,53 @@ type ClientInterface interface {
 	// Corresponds with POST /api/management/v1/mcp/{connection_id}/selection (the `SelectMCPConnection` operationId).
 	SelectMCPConnection(ctx context.Context, connectionID MCPConnectionID, body SelectMCPConnectionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListPluginMarketplaces performs a GET /api/management/v1/plugin-marketplaces (the `ListPluginMarketplaces` operationId) request.
+	ListPluginMarketplaces(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// AddPluginMarketplaceWithBody performs a POST /api/management/v1/plugin-marketplaces (the `AddPluginMarketplace` operationId) request,
+	// with any type of body and a specified content type.
+	AddPluginMarketplaceWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// AddPluginMarketplace performs a POST /api/management/v1/plugin-marketplaces (the `AddPluginMarketplace` operationId) request.
+	// Takes a body of the `application/json` content type.
+	AddPluginMarketplace(ctx context.Context, body AddPluginMarketplaceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RemovePluginMarketplaceWithBody performs a DELETE /api/management/v1/plugin-marketplaces/{marketplace_name} (the `RemovePluginMarketplace` operationId) request,
+	// with any type of body and a specified content type.
+	RemovePluginMarketplaceWithBody(ctx context.Context, marketplaceName PluginMarketplaceName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RemovePluginMarketplace performs a DELETE /api/management/v1/plugin-marketplaces/{marketplace_name} (the `RemovePluginMarketplace` operationId) request.
+	// Takes a body of the `application/json` content type.
+	RemovePluginMarketplace(ctx context.Context, marketplaceName PluginMarketplaceName, body RemovePluginMarketplaceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetPluginMarketplace performs a GET /api/management/v1/plugin-marketplaces/{marketplace_name} (the `GetPluginMarketplace` operationId) request.
+	GetPluginMarketplace(ctx context.Context, marketplaceName PluginMarketplaceName, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RefreshPluginMarketplaceWithBody performs a POST /api/management/v1/plugin-marketplaces/{marketplace_name}/refresh (the `RefreshPluginMarketplace` operationId) request,
+	// with any type of body and a specified content type.
+	RefreshPluginMarketplaceWithBody(ctx context.Context, marketplaceName PluginMarketplaceName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RefreshPluginMarketplace performs a POST /api/management/v1/plugin-marketplaces/{marketplace_name}/refresh (the `RefreshPluginMarketplace` operationId) request.
+	// Takes a body of the `application/json` content type.
+	RefreshPluginMarketplace(ctx context.Context, marketplaceName PluginMarketplaceName, body RefreshPluginMarketplaceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListPlugins performs a GET /api/management/v1/plugins (the `ListPlugins` operationId) request.
+	ListPlugins(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetPlugin performs a GET /api/management/v1/plugins/{plugin_name} (the `GetPlugin` operationId) request.
+	GetPlugin(ctx context.Context, pluginName PluginName, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ReviewPluginCandidate performs a GET /api/management/v1/plugins/{plugin_name}/candidate (the `ReviewPluginCandidate` operationId) request.
+	ReviewPluginCandidate(ctx context.Context, pluginName PluginName, params *ReviewPluginCandidateParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// MutatePluginWithBody performs a POST /api/management/v1/plugins/{plugin_name}/lifecycle (the `MutatePlugin` operationId) request,
+	// with any type of body and a specified content type.
+	MutatePluginWithBody(ctx context.Context, pluginName PluginName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// MutatePlugin performs a POST /api/management/v1/plugins/{plugin_name}/lifecycle (the `MutatePlugin` operationId) request.
+	// Takes a body of the `application/json` content type.
+	MutatePlugin(ctx context.Context, pluginName PluginName, body MutatePluginJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListProviders Read the current provider inventory
 	//
 	// Corresponds with GET /api/management/v1/providers (the `ListProviders` operationId).
@@ -2038,6 +2525,52 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /api/management/v1/schedules/{schedule_id}/selection (the `SelectSchedule` operationId).
 	SelectSchedule(ctx context.Context, scheduleID ScheduleID, body SelectScheduleJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListSkills performs a GET /api/management/v1/skills (the `ListSkills` operationId) request.
+	ListSkills(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RetrySkillPublication performs a POST /api/management/v1/skills/publication/retry (the `RetrySkillPublication` operationId) request.
+	RetrySkillPublication(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RefreshSkillsWithBody performs a POST /api/management/v1/skills/refresh (the `RefreshSkills` operationId) request,
+	// with any type of body and a specified content type.
+	RefreshSkillsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RefreshSkills performs a POST /api/management/v1/skills/refresh (the `RefreshSkills` operationId) request.
+	// Takes a body of the `application/json` content type.
+	RefreshSkills(ctx context.Context, body RefreshSkillsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// AcceptSkillReviewWithBody performs a POST /api/management/v1/skills/reviews/accept (the `AcceptSkillReview` operationId) request,
+	// with any type of body and a specified content type.
+	AcceptSkillReviewWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// AcceptSkillReview performs a POST /api/management/v1/skills/reviews/accept (the `AcceptSkillReview` operationId) request.
+	// Takes a body of the `application/json` content type.
+	AcceptSkillReview(ctx context.Context, body AcceptSkillReviewJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ReviewSkillInstallWithBody performs a POST /api/management/v1/skills/reviews/install (the `ReviewSkillInstall` operationId) request,
+	// with any type of body and a specified content type.
+	ReviewSkillInstallWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ReviewSkillInstall performs a POST /api/management/v1/skills/reviews/install (the `ReviewSkillInstall` operationId) request.
+	// Takes a body of the `application/json` content type.
+	ReviewSkillInstall(ctx context.Context, body ReviewSkillInstallJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// MutateSkillWithBody performs a POST /api/management/v1/skills/{skill_id}/lifecycle (the `MutateSkill` operationId) request,
+	// with any type of body and a specified content type.
+	MutateSkillWithBody(ctx context.Context, skillID SkillID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// MutateSkill performs a POST /api/management/v1/skills/{skill_id}/lifecycle (the `MutateSkill` operationId) request.
+	// Takes a body of the `application/json` content type.
+	MutateSkill(ctx context.Context, skillID SkillID, body MutateSkillJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ReviewSkillUpdateWithBody performs a POST /api/management/v1/skills/{skill_id}/reviews/update (the `ReviewSkillUpdate` operationId) request,
+	// with any type of body and a specified content type.
+	ReviewSkillUpdateWithBody(ctx context.Context, skillID SkillID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ReviewSkillUpdate performs a POST /api/management/v1/skills/{skill_id}/reviews/update (the `ReviewSkillUpdate` operationId) request.
+	// Takes a body of the `application/json` content type.
+	ReviewSkillUpdate(ctx context.Context, skillID SkillID, body ReviewSkillUpdateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListWebhooks performs a GET /api/management/v1/webhooks (the `ListWebhooks` operationId) request.
 	ListWebhooks(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -2606,6 +3139,103 @@ func (c *Client) GetManagementCompatibility(ctx context.Context, reqEditors ...R
 	return c.Client.Do(req)
 }
 
+// ListHooks performs a GET /api/management/v1/hooks (the `ListHooks` operationId) request.
+func (c *Client) ListHooks(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListHooksRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateHookWithBody performs a POST /api/management/v1/hooks (the `CreateHook` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) CreateHookWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateHookRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateHook performs a POST /api/management/v1/hooks (the `CreateHook` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) CreateHook(ctx context.Context, body CreateHookJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateHookRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteHookWithBody performs a DELETE /api/management/v1/hooks/{hook_name} (the `DeleteHook` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) DeleteHookWithBody(ctx context.Context, hookName HookName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteHookRequestWithBody(c.Server, hookName, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteHook performs a DELETE /api/management/v1/hooks/{hook_name} (the `DeleteHook` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) DeleteHook(ctx context.Context, hookName HookName, body DeleteHookJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteHookRequest(c.Server, hookName, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateHookWithBody performs a PUT /api/management/v1/hooks/{hook_name} (the `UpdateHook` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) UpdateHookWithBody(ctx context.Context, hookName HookName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateHookRequestWithBody(c.Server, hookName, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateHook performs a PUT /api/management/v1/hooks/{hook_name} (the `UpdateHook` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) UpdateHook(ctx context.Context, hookName HookName, body UpdateHookJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateHookRequest(c.Server, hookName, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // ListMCPConnections Read the current secret-free MCP inventory
 //
 // Corresponds with GET /api/management/v1/mcp (the `ListMCPConnections` operationId).
@@ -3047,6 +3677,183 @@ func (c *Client) SelectMCPConnection(ctx context.Context, connectionID MCPConnec
 	return c.Client.Do(req)
 }
 
+// ListPluginMarketplaces performs a GET /api/management/v1/plugin-marketplaces (the `ListPluginMarketplaces` operationId) request.
+func (c *Client) ListPluginMarketplaces(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListPluginMarketplacesRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// AddPluginMarketplaceWithBody performs a POST /api/management/v1/plugin-marketplaces (the `AddPluginMarketplace` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) AddPluginMarketplaceWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAddPluginMarketplaceRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// AddPluginMarketplace performs a POST /api/management/v1/plugin-marketplaces (the `AddPluginMarketplace` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) AddPluginMarketplace(ctx context.Context, body AddPluginMarketplaceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAddPluginMarketplaceRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RemovePluginMarketplaceWithBody performs a DELETE /api/management/v1/plugin-marketplaces/{marketplace_name} (the `RemovePluginMarketplace` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) RemovePluginMarketplaceWithBody(ctx context.Context, marketplaceName PluginMarketplaceName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRemovePluginMarketplaceRequestWithBody(c.Server, marketplaceName, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RemovePluginMarketplace performs a DELETE /api/management/v1/plugin-marketplaces/{marketplace_name} (the `RemovePluginMarketplace` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) RemovePluginMarketplace(ctx context.Context, marketplaceName PluginMarketplaceName, body RemovePluginMarketplaceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRemovePluginMarketplaceRequest(c.Server, marketplaceName, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetPluginMarketplace performs a GET /api/management/v1/plugin-marketplaces/{marketplace_name} (the `GetPluginMarketplace` operationId) request.
+func (c *Client) GetPluginMarketplace(ctx context.Context, marketplaceName PluginMarketplaceName, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPluginMarketplaceRequest(c.Server, marketplaceName)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RefreshPluginMarketplaceWithBody performs a POST /api/management/v1/plugin-marketplaces/{marketplace_name}/refresh (the `RefreshPluginMarketplace` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) RefreshPluginMarketplaceWithBody(ctx context.Context, marketplaceName PluginMarketplaceName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRefreshPluginMarketplaceRequestWithBody(c.Server, marketplaceName, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RefreshPluginMarketplace performs a POST /api/management/v1/plugin-marketplaces/{marketplace_name}/refresh (the `RefreshPluginMarketplace` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) RefreshPluginMarketplace(ctx context.Context, marketplaceName PluginMarketplaceName, body RefreshPluginMarketplaceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRefreshPluginMarketplaceRequest(c.Server, marketplaceName, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListPlugins performs a GET /api/management/v1/plugins (the `ListPlugins` operationId) request.
+func (c *Client) ListPlugins(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListPluginsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetPlugin performs a GET /api/management/v1/plugins/{plugin_name} (the `GetPlugin` operationId) request.
+func (c *Client) GetPlugin(ctx context.Context, pluginName PluginName, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPluginRequest(c.Server, pluginName)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ReviewPluginCandidate performs a GET /api/management/v1/plugins/{plugin_name}/candidate (the `ReviewPluginCandidate` operationId) request.
+func (c *Client) ReviewPluginCandidate(ctx context.Context, pluginName PluginName, params *ReviewPluginCandidateParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReviewPluginCandidateRequest(c.Server, pluginName, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// MutatePluginWithBody performs a POST /api/management/v1/plugins/{plugin_name}/lifecycle (the `MutatePlugin` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) MutatePluginWithBody(ctx context.Context, pluginName PluginName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewMutatePluginRequestWithBody(c.Server, pluginName, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// MutatePlugin performs a POST /api/management/v1/plugins/{plugin_name}/lifecycle (the `MutatePlugin` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) MutatePlugin(ctx context.Context, pluginName PluginName, body MutatePluginJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewMutatePluginRequest(c.Server, pluginName, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // ListProviders Read the current provider inventory
 //
 // Corresponds with GET /api/management/v1/providers (the `ListProviders` operationId).
@@ -3418,6 +4225,172 @@ func (c *Client) SelectScheduleWithBody(ctx context.Context, scheduleID Schedule
 // Corresponds with POST /api/management/v1/schedules/{schedule_id}/selection (the `SelectSchedule` operationId).
 func (c *Client) SelectSchedule(ctx context.Context, scheduleID ScheduleID, body SelectScheduleJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewSelectScheduleRequest(c.Server, scheduleID, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListSkills performs a GET /api/management/v1/skills (the `ListSkills` operationId) request.
+func (c *Client) ListSkills(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListSkillsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RetrySkillPublication performs a POST /api/management/v1/skills/publication/retry (the `RetrySkillPublication` operationId) request.
+func (c *Client) RetrySkillPublication(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRetrySkillPublicationRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RefreshSkillsWithBody performs a POST /api/management/v1/skills/refresh (the `RefreshSkills` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) RefreshSkillsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRefreshSkillsRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RefreshSkills performs a POST /api/management/v1/skills/refresh (the `RefreshSkills` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) RefreshSkills(ctx context.Context, body RefreshSkillsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRefreshSkillsRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// AcceptSkillReviewWithBody performs a POST /api/management/v1/skills/reviews/accept (the `AcceptSkillReview` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) AcceptSkillReviewWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAcceptSkillReviewRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// AcceptSkillReview performs a POST /api/management/v1/skills/reviews/accept (the `AcceptSkillReview` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) AcceptSkillReview(ctx context.Context, body AcceptSkillReviewJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAcceptSkillReviewRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ReviewSkillInstallWithBody performs a POST /api/management/v1/skills/reviews/install (the `ReviewSkillInstall` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) ReviewSkillInstallWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReviewSkillInstallRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ReviewSkillInstall performs a POST /api/management/v1/skills/reviews/install (the `ReviewSkillInstall` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) ReviewSkillInstall(ctx context.Context, body ReviewSkillInstallJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReviewSkillInstallRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// MutateSkillWithBody performs a POST /api/management/v1/skills/{skill_id}/lifecycle (the `MutateSkill` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) MutateSkillWithBody(ctx context.Context, skillID SkillID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewMutateSkillRequestWithBody(c.Server, skillID, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// MutateSkill performs a POST /api/management/v1/skills/{skill_id}/lifecycle (the `MutateSkill` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) MutateSkill(ctx context.Context, skillID SkillID, body MutateSkillJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewMutateSkillRequest(c.Server, skillID, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ReviewSkillUpdateWithBody performs a POST /api/management/v1/skills/{skill_id}/reviews/update (the `ReviewSkillUpdate` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) ReviewSkillUpdateWithBody(ctx context.Context, skillID SkillID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReviewSkillUpdateRequestWithBody(c.Server, skillID, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ReviewSkillUpdate performs a POST /api/management/v1/skills/{skill_id}/reviews/update (the `ReviewSkillUpdate` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) ReviewSkillUpdate(ctx context.Context, skillID SkillID, body ReviewSkillUpdateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReviewSkillUpdateRequest(c.Server, skillID, body)
 	if err != nil {
 		return nil, err
 	}
@@ -4423,6 +5396,167 @@ func NewGetManagementCompatibilityRequest(server string) (*http.Request, error) 
 	return req, nil
 }
 
+// NewListHooksRequest constructs an http.Request for the ListHooks method
+func NewListHooksRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/hooks")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateHookRequest calls the generic CreateHook builder with application/json body
+func NewCreateHookRequest(server string, body CreateHookJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateHookRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateHookRequestWithBody constructs an http.Request for the CreateHook method, with any body, and a specified content type
+func NewCreateHookRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/hooks")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteHookRequest calls the generic DeleteHook builder with application/json body
+func NewDeleteHookRequest(server string, hookName HookName, body DeleteHookJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewDeleteHookRequestWithBody(server, hookName, "application/json", bodyReader)
+}
+
+// NewDeleteHookRequestWithBody constructs an http.Request for the DeleteHook method, with any body, and a specified content type
+func NewDeleteHookRequestWithBody(server string, hookName HookName, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "hook_name", hookName, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/hooks/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewUpdateHookRequest calls the generic UpdateHook builder with application/json body
+func NewUpdateHookRequest(server string, hookName HookName, body UpdateHookJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateHookRequestWithBody(server, hookName, "application/json", bodyReader)
+}
+
+// NewUpdateHookRequestWithBody constructs an http.Request for the UpdateHook method, with any body, and a specified content type
+func NewUpdateHookRequestWithBody(server string, hookName HookName, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "hook_name", hookName, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/hooks/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewListMCPConnectionsRequest constructs an http.Request for the ListMCPConnections method
 func NewListMCPConnectionsRequest(server string) (*http.Request, error) {
 	var err error
@@ -5115,6 +6249,370 @@ func NewSelectMCPConnectionRequestWithBody(server string, connectionID MCPConnec
 	return req, nil
 }
 
+// NewListPluginMarketplacesRequest constructs an http.Request for the ListPluginMarketplaces method
+func NewListPluginMarketplacesRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/plugin-marketplaces")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewAddPluginMarketplaceRequest calls the generic AddPluginMarketplace builder with application/json body
+func NewAddPluginMarketplaceRequest(server string, body AddPluginMarketplaceJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewAddPluginMarketplaceRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewAddPluginMarketplaceRequestWithBody constructs an http.Request for the AddPluginMarketplace method, with any body, and a specified content type
+func NewAddPluginMarketplaceRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/plugin-marketplaces")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewRemovePluginMarketplaceRequest calls the generic RemovePluginMarketplace builder with application/json body
+func NewRemovePluginMarketplaceRequest(server string, marketplaceName PluginMarketplaceName, body RemovePluginMarketplaceJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRemovePluginMarketplaceRequestWithBody(server, marketplaceName, "application/json", bodyReader)
+}
+
+// NewRemovePluginMarketplaceRequestWithBody constructs an http.Request for the RemovePluginMarketplace method, with any body, and a specified content type
+func NewRemovePluginMarketplaceRequestWithBody(server string, marketplaceName PluginMarketplaceName, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "marketplace_name", marketplaceName, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/plugin-marketplaces/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetPluginMarketplaceRequest constructs an http.Request for the GetPluginMarketplace method
+func NewGetPluginMarketplaceRequest(server string, marketplaceName PluginMarketplaceName) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "marketplace_name", marketplaceName, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/plugin-marketplaces/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRefreshPluginMarketplaceRequest calls the generic RefreshPluginMarketplace builder with application/json body
+func NewRefreshPluginMarketplaceRequest(server string, marketplaceName PluginMarketplaceName, body RefreshPluginMarketplaceJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRefreshPluginMarketplaceRequestWithBody(server, marketplaceName, "application/json", bodyReader)
+}
+
+// NewRefreshPluginMarketplaceRequestWithBody constructs an http.Request for the RefreshPluginMarketplace method, with any body, and a specified content type
+func NewRefreshPluginMarketplaceRequestWithBody(server string, marketplaceName PluginMarketplaceName, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "marketplace_name", marketplaceName, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/plugin-marketplaces/%s/refresh", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListPluginsRequest constructs an http.Request for the ListPlugins method
+func NewListPluginsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/plugins")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetPluginRequest constructs an http.Request for the GetPlugin method
+func NewGetPluginRequest(server string, pluginName PluginName) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "plugin_name", pluginName, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/plugins/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewReviewPluginCandidateRequest constructs an http.Request for the ReviewPluginCandidate method
+func NewReviewPluginCandidateRequest(server string, pluginName PluginName, params *ReviewPluginCandidateParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "plugin_name", pluginName, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/plugins/%s/candidate", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Marketplace != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "marketplace", *params.Marketplace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewMutatePluginRequest calls the generic MutatePlugin builder with application/json body
+func NewMutatePluginRequest(server string, pluginName PluginName, body MutatePluginJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewMutatePluginRequestWithBody(server, pluginName, "application/json", bodyReader)
+}
+
+// NewMutatePluginRequestWithBody constructs an http.Request for the MutatePlugin method, with any body, and a specified content type
+func NewMutatePluginRequestWithBody(server string, pluginName PluginName, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "plugin_name", pluginName, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/plugins/%s/lifecycle", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewListProvidersRequest constructs an http.Request for the ListProviders method
 func NewListProvidersRequest(server string) (*http.Request, error) {
 	var err error
@@ -5707,6 +7205,274 @@ func NewSelectScheduleRequestWithBody(server string, scheduleID ScheduleID, cont
 	}
 
 	operationPath := fmt.Sprintf("/api/management/v1/schedules/%s/selection", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListSkillsRequest constructs an http.Request for the ListSkills method
+func NewListSkillsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/skills")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRetrySkillPublicationRequest constructs an http.Request for the RetrySkillPublication method
+func NewRetrySkillPublicationRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/skills/publication/retry")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRefreshSkillsRequest calls the generic RefreshSkills builder with application/json body
+func NewRefreshSkillsRequest(server string, body RefreshSkillsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRefreshSkillsRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewRefreshSkillsRequestWithBody constructs an http.Request for the RefreshSkills method, with any body, and a specified content type
+func NewRefreshSkillsRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/skills/refresh")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewAcceptSkillReviewRequest calls the generic AcceptSkillReview builder with application/json body
+func NewAcceptSkillReviewRequest(server string, body AcceptSkillReviewJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewAcceptSkillReviewRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewAcceptSkillReviewRequestWithBody constructs an http.Request for the AcceptSkillReview method, with any body, and a specified content type
+func NewAcceptSkillReviewRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/skills/reviews/accept")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewReviewSkillInstallRequest calls the generic ReviewSkillInstall builder with application/json body
+func NewReviewSkillInstallRequest(server string, body ReviewSkillInstallJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewReviewSkillInstallRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewReviewSkillInstallRequestWithBody constructs an http.Request for the ReviewSkillInstall method, with any body, and a specified content type
+func NewReviewSkillInstallRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/skills/reviews/install")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewMutateSkillRequest calls the generic MutateSkill builder with application/json body
+func NewMutateSkillRequest(server string, skillID SkillID, body MutateSkillJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewMutateSkillRequestWithBody(server, skillID, "application/json", bodyReader)
+}
+
+// NewMutateSkillRequestWithBody constructs an http.Request for the MutateSkill method, with any body, and a specified content type
+func NewMutateSkillRequestWithBody(server string, skillID SkillID, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "skill_id", skillID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/skills/%s/lifecycle", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewReviewSkillUpdateRequest calls the generic ReviewSkillUpdate builder with application/json body
+func NewReviewSkillUpdateRequest(server string, skillID SkillID, body ReviewSkillUpdateJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewReviewSkillUpdateRequestWithBody(server, skillID, "application/json", bodyReader)
+}
+
+// NewReviewSkillUpdateRequestWithBody constructs an http.Request for the ReviewSkillUpdate method, with any body, and a specified content type
+func NewReviewSkillUpdateRequestWithBody(server string, skillID SkillID, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "skill_id", skillID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/skills/%s/reviews/update", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -6428,6 +8194,41 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /api/management/v1/compatibility (the `GetManagementCompatibility` operationId).
 	GetManagementCompatibilityWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetManagementCompatibilityResponse, error)
 
+	// ListHooksWithResponse performs a GET /api/management/v1/hooks (the `ListHooks` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ListHooksWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListHooksResponse, error)
+
+	// CreateHookWithBodyWithResponse performs a POST /api/management/v1/hooks (the `CreateHook` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	CreateHookWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateHookResponse, error)
+
+	// CreateHookWithResponse performs a POST /api/management/v1/hooks (the `CreateHook` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	CreateHookWithResponse(ctx context.Context, body CreateHookJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateHookResponse, error)
+
+	// DeleteHookWithBodyWithResponse performs a DELETE /api/management/v1/hooks/{hook_name} (the `DeleteHook` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	DeleteHookWithBodyWithResponse(ctx context.Context, hookName HookName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeleteHookResponse, error)
+
+	// DeleteHookWithResponse performs a DELETE /api/management/v1/hooks/{hook_name} (the `DeleteHook` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	DeleteHookWithResponse(ctx context.Context, hookName HookName, body DeleteHookJSONRequestBody, reqEditors ...RequestEditorFn) (*DeleteHookResponse, error)
+
+	// UpdateHookWithBodyWithResponse performs a PUT /api/management/v1/hooks/{hook_name} (the `UpdateHook` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	UpdateHookWithBodyWithResponse(ctx context.Context, hookName HookName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateHookResponse, error)
+
+	// UpdateHookWithResponse performs a PUT /api/management/v1/hooks/{hook_name} (the `UpdateHook` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	UpdateHookWithResponse(ctx context.Context, hookName HookName, body UpdateHookJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateHookResponse, error)
+
 	// ListMCPConnectionsWithResponse Read the current secret-free MCP inventory
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -6601,6 +8402,71 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /api/management/v1/mcp/{connection_id}/selection (the `SelectMCPConnection` operationId).
 	SelectMCPConnectionWithResponse(ctx context.Context, connectionID MCPConnectionID, body SelectMCPConnectionJSONRequestBody, reqEditors ...RequestEditorFn) (*SelectMCPConnectionResponse, error)
 
+	// ListPluginMarketplacesWithResponse performs a GET /api/management/v1/plugin-marketplaces (the `ListPluginMarketplaces` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ListPluginMarketplacesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListPluginMarketplacesResponse, error)
+
+	// AddPluginMarketplaceWithBodyWithResponse performs a POST /api/management/v1/plugin-marketplaces (the `AddPluginMarketplace` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	AddPluginMarketplaceWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AddPluginMarketplaceResponse, error)
+
+	// AddPluginMarketplaceWithResponse performs a POST /api/management/v1/plugin-marketplaces (the `AddPluginMarketplace` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	AddPluginMarketplaceWithResponse(ctx context.Context, body AddPluginMarketplaceJSONRequestBody, reqEditors ...RequestEditorFn) (*AddPluginMarketplaceResponse, error)
+
+	// RemovePluginMarketplaceWithBodyWithResponse performs a DELETE /api/management/v1/plugin-marketplaces/{marketplace_name} (the `RemovePluginMarketplace` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	RemovePluginMarketplaceWithBodyWithResponse(ctx context.Context, marketplaceName PluginMarketplaceName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RemovePluginMarketplaceResponse, error)
+
+	// RemovePluginMarketplaceWithResponse performs a DELETE /api/management/v1/plugin-marketplaces/{marketplace_name} (the `RemovePluginMarketplace` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	RemovePluginMarketplaceWithResponse(ctx context.Context, marketplaceName PluginMarketplaceName, body RemovePluginMarketplaceJSONRequestBody, reqEditors ...RequestEditorFn) (*RemovePluginMarketplaceResponse, error)
+
+	// GetPluginMarketplaceWithResponse performs a GET /api/management/v1/plugin-marketplaces/{marketplace_name} (the `GetPluginMarketplace` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	GetPluginMarketplaceWithResponse(ctx context.Context, marketplaceName PluginMarketplaceName, reqEditors ...RequestEditorFn) (*GetPluginMarketplaceResponse, error)
+
+	// RefreshPluginMarketplaceWithBodyWithResponse performs a POST /api/management/v1/plugin-marketplaces/{marketplace_name}/refresh (the `RefreshPluginMarketplace` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	RefreshPluginMarketplaceWithBodyWithResponse(ctx context.Context, marketplaceName PluginMarketplaceName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RefreshPluginMarketplaceResponse, error)
+
+	// RefreshPluginMarketplaceWithResponse performs a POST /api/management/v1/plugin-marketplaces/{marketplace_name}/refresh (the `RefreshPluginMarketplace` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	RefreshPluginMarketplaceWithResponse(ctx context.Context, marketplaceName PluginMarketplaceName, body RefreshPluginMarketplaceJSONRequestBody, reqEditors ...RequestEditorFn) (*RefreshPluginMarketplaceResponse, error)
+
+	// ListPluginsWithResponse performs a GET /api/management/v1/plugins (the `ListPlugins` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ListPluginsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListPluginsResponse, error)
+
+	// GetPluginWithResponse performs a GET /api/management/v1/plugins/{plugin_name} (the `GetPlugin` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	GetPluginWithResponse(ctx context.Context, pluginName PluginName, reqEditors ...RequestEditorFn) (*GetPluginResponse, error)
+
+	// ReviewPluginCandidateWithResponse performs a GET /api/management/v1/plugins/{plugin_name}/candidate (the `ReviewPluginCandidate` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ReviewPluginCandidateWithResponse(ctx context.Context, pluginName PluginName, params *ReviewPluginCandidateParams, reqEditors ...RequestEditorFn) (*ReviewPluginCandidateResponse, error)
+
+	// MutatePluginWithBodyWithResponse performs a POST /api/management/v1/plugins/{plugin_name}/lifecycle (the `MutatePlugin` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	MutatePluginWithBodyWithResponse(ctx context.Context, pluginName PluginName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*MutatePluginResponse, error)
+
+	// MutatePluginWithResponse performs a POST /api/management/v1/plugins/{plugin_name}/lifecycle (the `MutatePlugin` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	MutatePluginWithResponse(ctx context.Context, pluginName PluginName, body MutatePluginJSONRequestBody, reqEditors ...RequestEditorFn) (*MutatePluginResponse, error)
+
 	// ListProvidersWithResponse Read the current provider inventory
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -6761,6 +8627,66 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with POST /api/management/v1/schedules/{schedule_id}/selection (the `SelectSchedule` operationId).
 	SelectScheduleWithResponse(ctx context.Context, scheduleID ScheduleID, body SelectScheduleJSONRequestBody, reqEditors ...RequestEditorFn) (*SelectScheduleResponse, error)
+
+	// ListSkillsWithResponse performs a GET /api/management/v1/skills (the `ListSkills` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ListSkillsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListSkillsResponse, error)
+
+	// RetrySkillPublicationWithResponse performs a POST /api/management/v1/skills/publication/retry (the `RetrySkillPublication` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	RetrySkillPublicationWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*RetrySkillPublicationResponse, error)
+
+	// RefreshSkillsWithBodyWithResponse performs a POST /api/management/v1/skills/refresh (the `RefreshSkills` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	RefreshSkillsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RefreshSkillsResponse, error)
+
+	// RefreshSkillsWithResponse performs a POST /api/management/v1/skills/refresh (the `RefreshSkills` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	RefreshSkillsWithResponse(ctx context.Context, body RefreshSkillsJSONRequestBody, reqEditors ...RequestEditorFn) (*RefreshSkillsResponse, error)
+
+	// AcceptSkillReviewWithBodyWithResponse performs a POST /api/management/v1/skills/reviews/accept (the `AcceptSkillReview` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	AcceptSkillReviewWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AcceptSkillReviewResponse, error)
+
+	// AcceptSkillReviewWithResponse performs a POST /api/management/v1/skills/reviews/accept (the `AcceptSkillReview` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	AcceptSkillReviewWithResponse(ctx context.Context, body AcceptSkillReviewJSONRequestBody, reqEditors ...RequestEditorFn) (*AcceptSkillReviewResponse, error)
+
+	// ReviewSkillInstallWithBodyWithResponse performs a POST /api/management/v1/skills/reviews/install (the `ReviewSkillInstall` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ReviewSkillInstallWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReviewSkillInstallResponse, error)
+
+	// ReviewSkillInstallWithResponse performs a POST /api/management/v1/skills/reviews/install (the `ReviewSkillInstall` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	ReviewSkillInstallWithResponse(ctx context.Context, body ReviewSkillInstallJSONRequestBody, reqEditors ...RequestEditorFn) (*ReviewSkillInstallResponse, error)
+
+	// MutateSkillWithBodyWithResponse performs a POST /api/management/v1/skills/{skill_id}/lifecycle (the `MutateSkill` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	MutateSkillWithBodyWithResponse(ctx context.Context, skillID SkillID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*MutateSkillResponse, error)
+
+	// MutateSkillWithResponse performs a POST /api/management/v1/skills/{skill_id}/lifecycle (the `MutateSkill` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	MutateSkillWithResponse(ctx context.Context, skillID SkillID, body MutateSkillJSONRequestBody, reqEditors ...RequestEditorFn) (*MutateSkillResponse, error)
+
+	// ReviewSkillUpdateWithBodyWithResponse performs a POST /api/management/v1/skills/{skill_id}/reviews/update (the `ReviewSkillUpdate` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ReviewSkillUpdateWithBodyWithResponse(ctx context.Context, skillID SkillID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReviewSkillUpdateResponse, error)
+
+	// ReviewSkillUpdateWithResponse performs a POST /api/management/v1/skills/{skill_id}/reviews/update (the `ReviewSkillUpdate` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	ReviewSkillUpdateWithResponse(ctx context.Context, skillID SkillID, body ReviewSkillUpdateJSONRequestBody, reqEditors ...RequestEditorFn) (*ReviewSkillUpdateResponse, error)
 
 	// ListWebhooksWithResponse performs a GET /api/management/v1/webhooks (the `ListWebhooks` operationId) request.
 	//
@@ -8265,6 +10191,317 @@ func (r GetManagementCompatibilityResponse) ContentType() string {
 	return ""
 }
 
+type ListHooksResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *HookInventory
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListHooksResponse) GetJSON200() *HookInventory {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListHooksResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListHooksResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r ListHooksResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r ListHooksResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r ListHooksResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListHooksResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListHooksResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListHooksResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateHookResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r CreateHookResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r CreateHookResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r CreateHookResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r CreateHookResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r CreateHookResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r CreateHookResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateHookResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateHookResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateHookResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateHookResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteHookResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r DeleteHookResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r DeleteHookResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r DeleteHookResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r DeleteHookResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r DeleteHookResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r DeleteHookResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r DeleteHookResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r DeleteHookResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteHookResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteHookResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteHookResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UpdateHookResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r UpdateHookResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r UpdateHookResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r UpdateHookResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r UpdateHookResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r UpdateHookResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r UpdateHookResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r UpdateHookResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r UpdateHookResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateHookResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateHookResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UpdateHookResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ListMCPConnectionsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -9676,6 +11913,732 @@ func (r SelectMCPConnectionResponse) ContentType() string {
 	return ""
 }
 
+type ListPluginMarketplacesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *PluginMarketplaceInventory
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListPluginMarketplacesResponse) GetJSON200() *PluginMarketplaceInventory {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListPluginMarketplacesResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListPluginMarketplacesResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r ListPluginMarketplacesResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r ListPluginMarketplacesResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r ListPluginMarketplacesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListPluginMarketplacesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListPluginMarketplacesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListPluginMarketplacesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type AddPluginMarketplaceResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *PluginMarketplaceDetail
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r AddPluginMarketplaceResponse) GetJSON200() *PluginMarketplaceDetail {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r AddPluginMarketplaceResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r AddPluginMarketplaceResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r AddPluginMarketplaceResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r AddPluginMarketplaceResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r AddPluginMarketplaceResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r AddPluginMarketplaceResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r AddPluginMarketplaceResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r AddPluginMarketplaceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AddPluginMarketplaceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r AddPluginMarketplaceResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RemovePluginMarketplaceResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r RemovePluginMarketplaceResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r RemovePluginMarketplaceResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r RemovePluginMarketplaceResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r RemovePluginMarketplaceResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r RemovePluginMarketplaceResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r RemovePluginMarketplaceResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r RemovePluginMarketplaceResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r RemovePluginMarketplaceResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RemovePluginMarketplaceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RemovePluginMarketplaceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RemovePluginMarketplaceResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetPluginMarketplaceResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *PluginMarketplaceDetail
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetPluginMarketplaceResponse) GetJSON200() *PluginMarketplaceDetail {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetPluginMarketplaceResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetPluginMarketplaceResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetPluginMarketplaceResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r GetPluginMarketplaceResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r GetPluginMarketplaceResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r GetPluginMarketplaceResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetPluginMarketplaceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetPluginMarketplaceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetPluginMarketplaceResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RefreshPluginMarketplaceResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *PluginMarketplaceDetail
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r RefreshPluginMarketplaceResponse) GetJSON200() *PluginMarketplaceDetail {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r RefreshPluginMarketplaceResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r RefreshPluginMarketplaceResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r RefreshPluginMarketplaceResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r RefreshPluginMarketplaceResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r RefreshPluginMarketplaceResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r RefreshPluginMarketplaceResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r RefreshPluginMarketplaceResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r RefreshPluginMarketplaceResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RefreshPluginMarketplaceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RefreshPluginMarketplaceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RefreshPluginMarketplaceResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListPluginsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *PluginInventory
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListPluginsResponse) GetJSON200() *PluginInventory {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListPluginsResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListPluginsResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r ListPluginsResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r ListPluginsResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r ListPluginsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListPluginsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListPluginsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListPluginsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetPluginResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *PluginDetail
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetPluginResponse) GetJSON200() *PluginDetail {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetPluginResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetPluginResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetPluginResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r GetPluginResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r GetPluginResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r GetPluginResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetPluginResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetPluginResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetPluginResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ReviewPluginCandidateResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *PluginCandidate
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ReviewPluginCandidateResponse) GetJSON200() *PluginCandidate {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ReviewPluginCandidateResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ReviewPluginCandidateResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ReviewPluginCandidateResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r ReviewPluginCandidateResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r ReviewPluginCandidateResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r ReviewPluginCandidateResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r ReviewPluginCandidateResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r ReviewPluginCandidateResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ReviewPluginCandidateResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ReviewPluginCandidateResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ReviewPluginCandidateResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type MutatePluginResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *PluginMutationOutcome
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r MutatePluginResponse) GetJSON200() *PluginMutationOutcome {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r MutatePluginResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r MutatePluginResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r MutatePluginResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r MutatePluginResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r MutatePluginResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r MutatePluginResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r MutatePluginResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r MutatePluginResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r MutatePluginResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r MutatePluginResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r MutatePluginResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ListProvidersResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -10790,6 +13753,587 @@ func (r SelectScheduleResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r SelectScheduleResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListSkillsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *SkillInventory
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListSkillsResponse) GetJSON200() *SkillInventory {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListSkillsResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListSkillsResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r ListSkillsResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r ListSkillsResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r ListSkillsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListSkillsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListSkillsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListSkillsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RetrySkillPublicationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *SkillMutationOutcome
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r RetrySkillPublicationResponse) GetJSON200() *SkillMutationOutcome {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r RetrySkillPublicationResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r RetrySkillPublicationResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r RetrySkillPublicationResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r RetrySkillPublicationResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r RetrySkillPublicationResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r RetrySkillPublicationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RetrySkillPublicationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RetrySkillPublicationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RetrySkillPublicationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RefreshSkillsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *SkillMutationOutcome
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r RefreshSkillsResponse) GetJSON200() *SkillMutationOutcome {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r RefreshSkillsResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r RefreshSkillsResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r RefreshSkillsResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r RefreshSkillsResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r RefreshSkillsResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r RefreshSkillsResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r RefreshSkillsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RefreshSkillsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RefreshSkillsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RefreshSkillsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type AcceptSkillReviewResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *SkillMutationOutcome
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r AcceptSkillReviewResponse) GetJSON200() *SkillMutationOutcome {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r AcceptSkillReviewResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r AcceptSkillReviewResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r AcceptSkillReviewResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r AcceptSkillReviewResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r AcceptSkillReviewResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r AcceptSkillReviewResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r AcceptSkillReviewResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r AcceptSkillReviewResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r AcceptSkillReviewResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AcceptSkillReviewResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r AcceptSkillReviewResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ReviewSkillInstallResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *SkillCandidate
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ReviewSkillInstallResponse) GetJSON200() *SkillCandidate {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ReviewSkillInstallResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ReviewSkillInstallResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ReviewSkillInstallResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r ReviewSkillInstallResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r ReviewSkillInstallResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r ReviewSkillInstallResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r ReviewSkillInstallResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ReviewSkillInstallResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ReviewSkillInstallResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ReviewSkillInstallResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type MutateSkillResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *SkillMutationOutcome
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r MutateSkillResponse) GetJSON200() *SkillMutationOutcome {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r MutateSkillResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r MutateSkillResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r MutateSkillResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r MutateSkillResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r MutateSkillResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r MutateSkillResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r MutateSkillResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r MutateSkillResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r MutateSkillResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r MutateSkillResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r MutateSkillResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ReviewSkillUpdateResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *SkillCandidate
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ReviewSkillUpdateResponse) GetJSON200() *SkillCandidate {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ReviewSkillUpdateResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ReviewSkillUpdateResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ReviewSkillUpdateResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r ReviewSkillUpdateResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r ReviewSkillUpdateResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r ReviewSkillUpdateResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r ReviewSkillUpdateResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r ReviewSkillUpdateResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ReviewSkillUpdateResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ReviewSkillUpdateResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ReviewSkillUpdateResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -12033,6 +15577,83 @@ func (c *ClientWithResponses) GetManagementCompatibilityWithResponse(ctx context
 	return ParseGetManagementCompatibilityResponse(rsp)
 }
 
+// ListHooksWithResponse performs a GET /api/management/v1/hooks (the `ListHooks` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ListHooksWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListHooksResponse, error) {
+	rsp, err := c.ListHooks(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListHooksResponse(rsp)
+}
+
+// CreateHookWithBodyWithResponse performs a POST /api/management/v1/hooks (the `CreateHook` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) CreateHookWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateHookResponse, error) {
+	rsp, err := c.CreateHookWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateHookResponse(rsp)
+}
+
+// CreateHookWithResponse performs a POST /api/management/v1/hooks (the `CreateHook` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) CreateHookWithResponse(ctx context.Context, body CreateHookJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateHookResponse, error) {
+	rsp, err := c.CreateHook(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateHookResponse(rsp)
+}
+
+// DeleteHookWithBodyWithResponse performs a DELETE /api/management/v1/hooks/{hook_name} (the `DeleteHook` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) DeleteHookWithBodyWithResponse(ctx context.Context, hookName HookName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeleteHookResponse, error) {
+	rsp, err := c.DeleteHookWithBody(ctx, hookName, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteHookResponse(rsp)
+}
+
+// DeleteHookWithResponse performs a DELETE /api/management/v1/hooks/{hook_name} (the `DeleteHook` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) DeleteHookWithResponse(ctx context.Context, hookName HookName, body DeleteHookJSONRequestBody, reqEditors ...RequestEditorFn) (*DeleteHookResponse, error) {
+	rsp, err := c.DeleteHook(ctx, hookName, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteHookResponse(rsp)
+}
+
+// UpdateHookWithBodyWithResponse performs a PUT /api/management/v1/hooks/{hook_name} (the `UpdateHook` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) UpdateHookWithBodyWithResponse(ctx context.Context, hookName HookName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateHookResponse, error) {
+	rsp, err := c.UpdateHookWithBody(ctx, hookName, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateHookResponse(rsp)
+}
+
+// UpdateHookWithResponse performs a PUT /api/management/v1/hooks/{hook_name} (the `UpdateHook` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) UpdateHookWithResponse(ctx context.Context, hookName HookName, body UpdateHookJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateHookResponse, error) {
+	rsp, err := c.UpdateHook(ctx, hookName, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateHookResponse(rsp)
+}
+
 // ListMCPConnectionsWithResponse Read the current secret-free MCP inventory
 //
 // Returns a wrapper object for the known response body format(s).
@@ -12380,6 +16001,149 @@ func (c *ClientWithResponses) SelectMCPConnectionWithResponse(ctx context.Contex
 	return ParseSelectMCPConnectionResponse(rsp)
 }
 
+// ListPluginMarketplacesWithResponse performs a GET /api/management/v1/plugin-marketplaces (the `ListPluginMarketplaces` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ListPluginMarketplacesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListPluginMarketplacesResponse, error) {
+	rsp, err := c.ListPluginMarketplaces(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListPluginMarketplacesResponse(rsp)
+}
+
+// AddPluginMarketplaceWithBodyWithResponse performs a POST /api/management/v1/plugin-marketplaces (the `AddPluginMarketplace` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) AddPluginMarketplaceWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AddPluginMarketplaceResponse, error) {
+	rsp, err := c.AddPluginMarketplaceWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAddPluginMarketplaceResponse(rsp)
+}
+
+// AddPluginMarketplaceWithResponse performs a POST /api/management/v1/plugin-marketplaces (the `AddPluginMarketplace` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) AddPluginMarketplaceWithResponse(ctx context.Context, body AddPluginMarketplaceJSONRequestBody, reqEditors ...RequestEditorFn) (*AddPluginMarketplaceResponse, error) {
+	rsp, err := c.AddPluginMarketplace(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAddPluginMarketplaceResponse(rsp)
+}
+
+// RemovePluginMarketplaceWithBodyWithResponse performs a DELETE /api/management/v1/plugin-marketplaces/{marketplace_name} (the `RemovePluginMarketplace` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) RemovePluginMarketplaceWithBodyWithResponse(ctx context.Context, marketplaceName PluginMarketplaceName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RemovePluginMarketplaceResponse, error) {
+	rsp, err := c.RemovePluginMarketplaceWithBody(ctx, marketplaceName, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRemovePluginMarketplaceResponse(rsp)
+}
+
+// RemovePluginMarketplaceWithResponse performs a DELETE /api/management/v1/plugin-marketplaces/{marketplace_name} (the `RemovePluginMarketplace` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) RemovePluginMarketplaceWithResponse(ctx context.Context, marketplaceName PluginMarketplaceName, body RemovePluginMarketplaceJSONRequestBody, reqEditors ...RequestEditorFn) (*RemovePluginMarketplaceResponse, error) {
+	rsp, err := c.RemovePluginMarketplace(ctx, marketplaceName, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRemovePluginMarketplaceResponse(rsp)
+}
+
+// GetPluginMarketplaceWithResponse performs a GET /api/management/v1/plugin-marketplaces/{marketplace_name} (the `GetPluginMarketplace` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) GetPluginMarketplaceWithResponse(ctx context.Context, marketplaceName PluginMarketplaceName, reqEditors ...RequestEditorFn) (*GetPluginMarketplaceResponse, error) {
+	rsp, err := c.GetPluginMarketplace(ctx, marketplaceName, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetPluginMarketplaceResponse(rsp)
+}
+
+// RefreshPluginMarketplaceWithBodyWithResponse performs a POST /api/management/v1/plugin-marketplaces/{marketplace_name}/refresh (the `RefreshPluginMarketplace` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) RefreshPluginMarketplaceWithBodyWithResponse(ctx context.Context, marketplaceName PluginMarketplaceName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RefreshPluginMarketplaceResponse, error) {
+	rsp, err := c.RefreshPluginMarketplaceWithBody(ctx, marketplaceName, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRefreshPluginMarketplaceResponse(rsp)
+}
+
+// RefreshPluginMarketplaceWithResponse performs a POST /api/management/v1/plugin-marketplaces/{marketplace_name}/refresh (the `RefreshPluginMarketplace` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) RefreshPluginMarketplaceWithResponse(ctx context.Context, marketplaceName PluginMarketplaceName, body RefreshPluginMarketplaceJSONRequestBody, reqEditors ...RequestEditorFn) (*RefreshPluginMarketplaceResponse, error) {
+	rsp, err := c.RefreshPluginMarketplace(ctx, marketplaceName, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRefreshPluginMarketplaceResponse(rsp)
+}
+
+// ListPluginsWithResponse performs a GET /api/management/v1/plugins (the `ListPlugins` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ListPluginsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListPluginsResponse, error) {
+	rsp, err := c.ListPlugins(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListPluginsResponse(rsp)
+}
+
+// GetPluginWithResponse performs a GET /api/management/v1/plugins/{plugin_name} (the `GetPlugin` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) GetPluginWithResponse(ctx context.Context, pluginName PluginName, reqEditors ...RequestEditorFn) (*GetPluginResponse, error) {
+	rsp, err := c.GetPlugin(ctx, pluginName, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetPluginResponse(rsp)
+}
+
+// ReviewPluginCandidateWithResponse performs a GET /api/management/v1/plugins/{plugin_name}/candidate (the `ReviewPluginCandidate` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ReviewPluginCandidateWithResponse(ctx context.Context, pluginName PluginName, params *ReviewPluginCandidateParams, reqEditors ...RequestEditorFn) (*ReviewPluginCandidateResponse, error) {
+	rsp, err := c.ReviewPluginCandidate(ctx, pluginName, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseReviewPluginCandidateResponse(rsp)
+}
+
+// MutatePluginWithBodyWithResponse performs a POST /api/management/v1/plugins/{plugin_name}/lifecycle (the `MutatePlugin` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) MutatePluginWithBodyWithResponse(ctx context.Context, pluginName PluginName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*MutatePluginResponse, error) {
+	rsp, err := c.MutatePluginWithBody(ctx, pluginName, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseMutatePluginResponse(rsp)
+}
+
+// MutatePluginWithResponse performs a POST /api/management/v1/plugins/{plugin_name}/lifecycle (the `MutatePlugin` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) MutatePluginWithResponse(ctx context.Context, pluginName PluginName, body MutatePluginJSONRequestBody, reqEditors ...RequestEditorFn) (*MutatePluginResponse, error) {
+	rsp, err := c.MutatePlugin(ctx, pluginName, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseMutatePluginResponse(rsp)
+}
+
 // ListProvidersWithResponse Read the current provider inventory
 //
 // Returns a wrapper object for the known response body format(s).
@@ -12677,6 +16441,138 @@ func (c *ClientWithResponses) SelectScheduleWithResponse(ctx context.Context, sc
 		return nil, err
 	}
 	return ParseSelectScheduleResponse(rsp)
+}
+
+// ListSkillsWithResponse performs a GET /api/management/v1/skills (the `ListSkills` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ListSkillsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListSkillsResponse, error) {
+	rsp, err := c.ListSkills(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListSkillsResponse(rsp)
+}
+
+// RetrySkillPublicationWithResponse performs a POST /api/management/v1/skills/publication/retry (the `RetrySkillPublication` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) RetrySkillPublicationWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*RetrySkillPublicationResponse, error) {
+	rsp, err := c.RetrySkillPublication(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRetrySkillPublicationResponse(rsp)
+}
+
+// RefreshSkillsWithBodyWithResponse performs a POST /api/management/v1/skills/refresh (the `RefreshSkills` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) RefreshSkillsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RefreshSkillsResponse, error) {
+	rsp, err := c.RefreshSkillsWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRefreshSkillsResponse(rsp)
+}
+
+// RefreshSkillsWithResponse performs a POST /api/management/v1/skills/refresh (the `RefreshSkills` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) RefreshSkillsWithResponse(ctx context.Context, body RefreshSkillsJSONRequestBody, reqEditors ...RequestEditorFn) (*RefreshSkillsResponse, error) {
+	rsp, err := c.RefreshSkills(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRefreshSkillsResponse(rsp)
+}
+
+// AcceptSkillReviewWithBodyWithResponse performs a POST /api/management/v1/skills/reviews/accept (the `AcceptSkillReview` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) AcceptSkillReviewWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AcceptSkillReviewResponse, error) {
+	rsp, err := c.AcceptSkillReviewWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAcceptSkillReviewResponse(rsp)
+}
+
+// AcceptSkillReviewWithResponse performs a POST /api/management/v1/skills/reviews/accept (the `AcceptSkillReview` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) AcceptSkillReviewWithResponse(ctx context.Context, body AcceptSkillReviewJSONRequestBody, reqEditors ...RequestEditorFn) (*AcceptSkillReviewResponse, error) {
+	rsp, err := c.AcceptSkillReview(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAcceptSkillReviewResponse(rsp)
+}
+
+// ReviewSkillInstallWithBodyWithResponse performs a POST /api/management/v1/skills/reviews/install (the `ReviewSkillInstall` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ReviewSkillInstallWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReviewSkillInstallResponse, error) {
+	rsp, err := c.ReviewSkillInstallWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseReviewSkillInstallResponse(rsp)
+}
+
+// ReviewSkillInstallWithResponse performs a POST /api/management/v1/skills/reviews/install (the `ReviewSkillInstall` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ReviewSkillInstallWithResponse(ctx context.Context, body ReviewSkillInstallJSONRequestBody, reqEditors ...RequestEditorFn) (*ReviewSkillInstallResponse, error) {
+	rsp, err := c.ReviewSkillInstall(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseReviewSkillInstallResponse(rsp)
+}
+
+// MutateSkillWithBodyWithResponse performs a POST /api/management/v1/skills/{skill_id}/lifecycle (the `MutateSkill` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) MutateSkillWithBodyWithResponse(ctx context.Context, skillID SkillID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*MutateSkillResponse, error) {
+	rsp, err := c.MutateSkillWithBody(ctx, skillID, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseMutateSkillResponse(rsp)
+}
+
+// MutateSkillWithResponse performs a POST /api/management/v1/skills/{skill_id}/lifecycle (the `MutateSkill` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) MutateSkillWithResponse(ctx context.Context, skillID SkillID, body MutateSkillJSONRequestBody, reqEditors ...RequestEditorFn) (*MutateSkillResponse, error) {
+	rsp, err := c.MutateSkill(ctx, skillID, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseMutateSkillResponse(rsp)
+}
+
+// ReviewSkillUpdateWithBodyWithResponse performs a POST /api/management/v1/skills/{skill_id}/reviews/update (the `ReviewSkillUpdate` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ReviewSkillUpdateWithBodyWithResponse(ctx context.Context, skillID SkillID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReviewSkillUpdateResponse, error) {
+	rsp, err := c.ReviewSkillUpdateWithBody(ctx, skillID, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseReviewSkillUpdateResponse(rsp)
+}
+
+// ReviewSkillUpdateWithResponse performs a POST /api/management/v1/skills/{skill_id}/reviews/update (the `ReviewSkillUpdate` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ReviewSkillUpdateWithResponse(ctx context.Context, skillID SkillID, body ReviewSkillUpdateJSONRequestBody, reqEditors ...RequestEditorFn) (*ReviewSkillUpdateResponse, error) {
+	rsp, err := c.ReviewSkillUpdate(ctx, skillID, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseReviewSkillUpdateResponse(rsp)
 }
 
 // ListWebhooksWithResponse performs a GET /api/management/v1/webhooks (the `ListWebhooks` operationId) request.
@@ -13986,6 +17882,266 @@ func ParseGetManagementCompatibilityResponse(rsp *http.Response) (*GetManagement
 	return response, nil
 }
 
+// ParseListHooksResponse parses an HTTP response from a ListHooksWithResponse call
+func ParseListHooksResponse(rsp *http.Response) (*ListHooksResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListHooksResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest HookInventory
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateHookResponse parses an HTTP response from a CreateHookWithResponse call
+func ParseCreateHookResponse(rsp *http.Response) (*CreateHookResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateHookResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteHookResponse parses an HTTP response from a DeleteHookWithResponse call
+func ParseDeleteHookResponse(rsp *http.Response) (*DeleteHookResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteHookResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateHookResponse parses an HTTP response from a UpdateHookWithResponse call
+func ParseUpdateHookResponse(rsp *http.Response) (*UpdateHookResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateHookResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseListMCPConnectionsResponse parses an HTTP response from a ListMCPConnectionsWithResponse call
 func ParseListMCPConnectionsResponse(rsp *http.Response) (*ListMCPConnectionsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -15148,6 +19304,600 @@ func ParseSelectMCPConnectionResponse(rsp *http.Response) (*SelectMCPConnectionR
 	return response, nil
 }
 
+// ParseListPluginMarketplacesResponse parses an HTTP response from a ListPluginMarketplacesWithResponse call
+func ParseListPluginMarketplacesResponse(rsp *http.Response) (*ListPluginMarketplacesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListPluginMarketplacesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PluginMarketplaceInventory
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseAddPluginMarketplaceResponse parses an HTTP response from a AddPluginMarketplaceWithResponse call
+func ParseAddPluginMarketplaceResponse(rsp *http.Response) (*AddPluginMarketplaceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &AddPluginMarketplaceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PluginMarketplaceDetail
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRemovePluginMarketplaceResponse parses an HTTP response from a RemovePluginMarketplaceWithResponse call
+func ParseRemovePluginMarketplaceResponse(rsp *http.Response) (*RemovePluginMarketplaceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RemovePluginMarketplaceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetPluginMarketplaceResponse parses an HTTP response from a GetPluginMarketplaceWithResponse call
+func ParseGetPluginMarketplaceResponse(rsp *http.Response) (*GetPluginMarketplaceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetPluginMarketplaceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PluginMarketplaceDetail
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRefreshPluginMarketplaceResponse parses an HTTP response from a RefreshPluginMarketplaceWithResponse call
+func ParseRefreshPluginMarketplaceResponse(rsp *http.Response) (*RefreshPluginMarketplaceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RefreshPluginMarketplaceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PluginMarketplaceDetail
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListPluginsResponse parses an HTTP response from a ListPluginsWithResponse call
+func ParseListPluginsResponse(rsp *http.Response) (*ListPluginsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListPluginsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PluginInventory
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetPluginResponse parses an HTTP response from a GetPluginWithResponse call
+func ParseGetPluginResponse(rsp *http.Response) (*GetPluginResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetPluginResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PluginDetail
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseReviewPluginCandidateResponse parses an HTTP response from a ReviewPluginCandidateWithResponse call
+func ParseReviewPluginCandidateResponse(rsp *http.Response) (*ReviewPluginCandidateResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ReviewPluginCandidateResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PluginCandidate
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseMutatePluginResponse parses an HTTP response from a MutatePluginWithResponse call
+func ParseMutatePluginResponse(rsp *http.Response) (*MutatePluginResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &MutatePluginResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PluginMutationOutcome
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseListProvidersResponse parses an HTTP response from a ListProvidersWithResponse call
 func ParseListProvidersResponse(rsp *http.Response) (*ListProvidersResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -16070,6 +20820,482 @@ func ParseSelectScheduleResponse(rsp *http.Response) (*SelectScheduleResponse, e
 	return response, nil
 }
 
+// ParseListSkillsResponse parses an HTTP response from a ListSkillsWithResponse call
+func ParseListSkillsResponse(rsp *http.Response) (*ListSkillsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListSkillsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SkillInventory
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRetrySkillPublicationResponse parses an HTTP response from a RetrySkillPublicationWithResponse call
+func ParseRetrySkillPublicationResponse(rsp *http.Response) (*RetrySkillPublicationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RetrySkillPublicationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SkillMutationOutcome
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRefreshSkillsResponse parses an HTTP response from a RefreshSkillsWithResponse call
+func ParseRefreshSkillsResponse(rsp *http.Response) (*RefreshSkillsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RefreshSkillsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SkillMutationOutcome
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseAcceptSkillReviewResponse parses an HTTP response from a AcceptSkillReviewWithResponse call
+func ParseAcceptSkillReviewResponse(rsp *http.Response) (*AcceptSkillReviewResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &AcceptSkillReviewResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SkillMutationOutcome
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseReviewSkillInstallResponse parses an HTTP response from a ReviewSkillInstallWithResponse call
+func ParseReviewSkillInstallResponse(rsp *http.Response) (*ReviewSkillInstallResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ReviewSkillInstallResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SkillCandidate
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseMutateSkillResponse parses an HTTP response from a MutateSkillWithResponse call
+func ParseMutateSkillResponse(rsp *http.Response) (*MutateSkillResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &MutateSkillResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SkillMutationOutcome
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseReviewSkillUpdateResponse parses an HTTP response from a ReviewSkillUpdateWithResponse call
+func ParseReviewSkillUpdateResponse(rsp *http.Response) (*ReviewSkillUpdateResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ReviewSkillUpdateResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SkillCandidate
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseListWebhooksResponse parses an HTTP response from a ListWebhooksWithResponse call
 func ParseListWebhooksResponse(rsp *http.Response) (*ListWebhooksResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -16819,6 +22045,18 @@ type ServerInterface interface {
 	// GetManagementCompatibility Read management contract compatibility metadata
 	// (GET /api/management/v1/compatibility)
 	GetManagementCompatibility(w http.ResponseWriter, r *http.Request)
+
+	// (GET /api/management/v1/hooks)
+	ListHooks(w http.ResponseWriter, r *http.Request)
+
+	// (POST /api/management/v1/hooks)
+	CreateHook(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /api/management/v1/hooks/{hook_name})
+	DeleteHook(w http.ResponseWriter, r *http.Request, hookName HookName)
+
+	// (PUT /api/management/v1/hooks/{hook_name})
+	UpdateHook(w http.ResponseWriter, r *http.Request, hookName HookName)
 	// ListMCPConnections Read the current secret-free MCP inventory
 	// (GET /api/management/v1/mcp)
 	ListMCPConnections(w http.ResponseWriter, r *http.Request)
@@ -16870,6 +22108,33 @@ type ServerInterface interface {
 	// SelectMCPConnection Enable or disable a managed MCP connection
 	// (POST /api/management/v1/mcp/{connection_id}/selection)
 	SelectMCPConnection(w http.ResponseWriter, r *http.Request, connectionID MCPConnectionID)
+
+	// (GET /api/management/v1/plugin-marketplaces)
+	ListPluginMarketplaces(w http.ResponseWriter, r *http.Request)
+
+	// (POST /api/management/v1/plugin-marketplaces)
+	AddPluginMarketplace(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /api/management/v1/plugin-marketplaces/{marketplace_name})
+	RemovePluginMarketplace(w http.ResponseWriter, r *http.Request, marketplaceName PluginMarketplaceName)
+
+	// (GET /api/management/v1/plugin-marketplaces/{marketplace_name})
+	GetPluginMarketplace(w http.ResponseWriter, r *http.Request, marketplaceName PluginMarketplaceName)
+
+	// (POST /api/management/v1/plugin-marketplaces/{marketplace_name}/refresh)
+	RefreshPluginMarketplace(w http.ResponseWriter, r *http.Request, marketplaceName PluginMarketplaceName)
+
+	// (GET /api/management/v1/plugins)
+	ListPlugins(w http.ResponseWriter, r *http.Request)
+
+	// (GET /api/management/v1/plugins/{plugin_name})
+	GetPlugin(w http.ResponseWriter, r *http.Request, pluginName PluginName)
+
+	// (GET /api/management/v1/plugins/{plugin_name}/candidate)
+	ReviewPluginCandidate(w http.ResponseWriter, r *http.Request, pluginName PluginName, params ReviewPluginCandidateParams)
+
+	// (POST /api/management/v1/plugins/{plugin_name}/lifecycle)
+	MutatePlugin(w http.ResponseWriter, r *http.Request, pluginName PluginName)
 	// ListProviders Read the current provider inventory
 	// (GET /api/management/v1/providers)
 	ListProviders(w http.ResponseWriter, r *http.Request)
@@ -16912,6 +22177,27 @@ type ServerInterface interface {
 	// SelectSchedule Enable or disable a managed schedule
 	// (POST /api/management/v1/schedules/{schedule_id}/selection)
 	SelectSchedule(w http.ResponseWriter, r *http.Request, scheduleID ScheduleID)
+
+	// (GET /api/management/v1/skills)
+	ListSkills(w http.ResponseWriter, r *http.Request)
+
+	// (POST /api/management/v1/skills/publication/retry)
+	RetrySkillPublication(w http.ResponseWriter, r *http.Request)
+
+	// (POST /api/management/v1/skills/refresh)
+	RefreshSkills(w http.ResponseWriter, r *http.Request)
+
+	// (POST /api/management/v1/skills/reviews/accept)
+	AcceptSkillReview(w http.ResponseWriter, r *http.Request)
+
+	// (POST /api/management/v1/skills/reviews/install)
+	ReviewSkillInstall(w http.ResponseWriter, r *http.Request)
+
+	// (POST /api/management/v1/skills/{skill_id}/lifecycle)
+	MutateSkill(w http.ResponseWriter, r *http.Request, skillID SkillID)
+
+	// (POST /api/management/v1/skills/{skill_id}/reviews/update)
+	ReviewSkillUpdate(w http.ResponseWriter, r *http.Request, skillID SkillID)
 
 	// (GET /api/management/v1/webhooks)
 	ListWebhooks(w http.ResponseWriter, r *http.Request)
@@ -17326,6 +22612,86 @@ func (siw *ServerInterfaceWrapper) GetManagementCompatibility(w http.ResponseWri
 	handler.ServeHTTP(w, r)
 }
 
+// ListHooks operation middleware
+func (siw *ServerInterfaceWrapper) ListHooks(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListHooks(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateHook operation middleware
+func (siw *ServerInterfaceWrapper) CreateHook(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateHook(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteHook operation middleware
+func (siw *ServerInterfaceWrapper) DeleteHook(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "hook_name" -------------
+	var hookName HookName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "hook_name", r.PathValue("hook_name"), &hookName, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "hook_name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteHook(w, r, hookName)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateHook operation middleware
+func (siw *ServerInterfaceWrapper) UpdateHook(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "hook_name" -------------
+	var hookName HookName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "hook_name", r.PathValue("hook_name"), &hookName, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "hook_name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateHook(w, r, hookName)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListMCPConnections operation middleware
 func (siw *ServerInterfaceWrapper) ListMCPConnections(w http.ResponseWriter, r *http.Request) {
 
@@ -17696,6 +23062,220 @@ func (siw *ServerInterfaceWrapper) SelectMCPConnection(w http.ResponseWriter, r 
 	handler.ServeHTTP(w, r)
 }
 
+// ListPluginMarketplaces operation middleware
+func (siw *ServerInterfaceWrapper) ListPluginMarketplaces(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListPluginMarketplaces(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AddPluginMarketplace operation middleware
+func (siw *ServerInterfaceWrapper) AddPluginMarketplace(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AddPluginMarketplace(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RemovePluginMarketplace operation middleware
+func (siw *ServerInterfaceWrapper) RemovePluginMarketplace(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "marketplace_name" -------------
+	var marketplaceName PluginMarketplaceName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "marketplace_name", r.PathValue("marketplace_name"), &marketplaceName, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "marketplace_name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RemovePluginMarketplace(w, r, marketplaceName)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPluginMarketplace operation middleware
+func (siw *ServerInterfaceWrapper) GetPluginMarketplace(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "marketplace_name" -------------
+	var marketplaceName PluginMarketplaceName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "marketplace_name", r.PathValue("marketplace_name"), &marketplaceName, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "marketplace_name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPluginMarketplace(w, r, marketplaceName)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RefreshPluginMarketplace operation middleware
+func (siw *ServerInterfaceWrapper) RefreshPluginMarketplace(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "marketplace_name" -------------
+	var marketplaceName PluginMarketplaceName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "marketplace_name", r.PathValue("marketplace_name"), &marketplaceName, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "marketplace_name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RefreshPluginMarketplace(w, r, marketplaceName)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListPlugins operation middleware
+func (siw *ServerInterfaceWrapper) ListPlugins(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListPlugins(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPlugin operation middleware
+func (siw *ServerInterfaceWrapper) GetPlugin(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "plugin_name" -------------
+	var pluginName PluginName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "plugin_name", r.PathValue("plugin_name"), &pluginName, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "plugin_name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPlugin(w, r, pluginName)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReviewPluginCandidate operation middleware
+func (siw *ServerInterfaceWrapper) ReviewPluginCandidate(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "plugin_name" -------------
+	var pluginName PluginName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "plugin_name", r.PathValue("plugin_name"), &pluginName, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "plugin_name", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ReviewPluginCandidateParams
+
+	// ------------- Optional query parameter "marketplace" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "marketplace", r.URL.Query(), &params.Marketplace, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "marketplace"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "marketplace", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReviewPluginCandidate(w, r, pluginName, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// MutatePlugin operation middleware
+func (siw *ServerInterfaceWrapper) MutatePlugin(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "plugin_name" -------------
+	var pluginName PluginName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "plugin_name", r.PathValue("plugin_name"), &pluginName, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "plugin_name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.MutatePlugin(w, r, pluginName)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListProviders operation middleware
 func (siw *ServerInterfaceWrapper) ListProviders(w http.ResponseWriter, r *http.Request) {
 
@@ -18041,6 +23621,128 @@ func (siw *ServerInterfaceWrapper) SelectSchedule(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.SelectSchedule(w, r, scheduleID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListSkills operation middleware
+func (siw *ServerInterfaceWrapper) ListSkills(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListSkills(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RetrySkillPublication operation middleware
+func (siw *ServerInterfaceWrapper) RetrySkillPublication(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RetrySkillPublication(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RefreshSkills operation middleware
+func (siw *ServerInterfaceWrapper) RefreshSkills(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RefreshSkills(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AcceptSkillReview operation middleware
+func (siw *ServerInterfaceWrapper) AcceptSkillReview(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AcceptSkillReview(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReviewSkillInstall operation middleware
+func (siw *ServerInterfaceWrapper) ReviewSkillInstall(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReviewSkillInstall(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// MutateSkill operation middleware
+func (siw *ServerInterfaceWrapper) MutateSkill(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "skill_id" -------------
+	var skillID SkillID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "skill_id", r.PathValue("skill_id"), &skillID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "skill_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.MutateSkill(w, r, skillID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReviewSkillUpdate operation middleware
+func (siw *ServerInterfaceWrapper) ReviewSkillUpdate(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "skill_id" -------------
+	var skillID SkillID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "skill_id", r.PathValue("skill_id"), &skillID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "skill_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReviewSkillUpdate(w, r, skillID)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -18505,6 +24207,26 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/mcp/authorization/attempts/{attempt_id}/cancel", wrapper.CancelMCPAuthorization)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/mcp/{connection_id}/authorization/disconnect", wrapper.DisconnectMCPAuthorization)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/mcp/{connection_id}/authorization/retry", wrapper.RetryMCPAuthorization)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/hooks", wrapper.ListHooks)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/hooks", wrapper.CreateHook)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/management/v1/hooks/{hook_name}", wrapper.DeleteHook)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/management/v1/hooks/{hook_name}", wrapper.UpdateHook)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/plugins", wrapper.ListPlugins)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/plugins/{plugin_name}", wrapper.GetPlugin)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/plugins/{plugin_name}/candidate", wrapper.ReviewPluginCandidate)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/plugins/{plugin_name}/lifecycle", wrapper.MutatePlugin)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/plugin-marketplaces", wrapper.ListPluginMarketplaces)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/plugin-marketplaces", wrapper.AddPluginMarketplace)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/management/v1/plugin-marketplaces/{marketplace_name}", wrapper.RemovePluginMarketplace)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/plugin-marketplaces/{marketplace_name}", wrapper.GetPluginMarketplace)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/plugin-marketplaces/{marketplace_name}/refresh", wrapper.RefreshPluginMarketplace)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/skills", wrapper.ListSkills)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/skills/reviews/install", wrapper.ReviewSkillInstall)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/skills/{skill_id}/reviews/update", wrapper.ReviewSkillUpdate)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/skills/reviews/accept", wrapper.AcceptSkillReview)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/skills/{skill_id}/lifecycle", wrapper.MutateSkill)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/skills/refresh", wrapper.RefreshSkills)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/skills/publication/retry", wrapper.RetrySkillPublication)
 
 	return m
 }
@@ -20184,6 +25906,413 @@ func (response GetManagementCompatibility500JSONResponse) VisitGetManagementComp
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListHooksRequestObject struct {
+}
+
+type ListHooksResponseObject interface {
+	VisitListHooksResponse(w http.ResponseWriter) error
+}
+
+type ListHooks200JSONResponse HookInventory
+
+func (response ListHooks200JSONResponse) VisitListHooksResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListHooks401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListHooks401JSONResponse) VisitListHooksResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListHooks403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListHooks403JSONResponse) VisitListHooksResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListHooks500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ListHooks500JSONResponse) VisitListHooksResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListHooks503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response ListHooks503JSONResponse) VisitListHooksResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateHookRequestObject struct {
+	Body *CreateHookJSONRequestBody
+}
+
+type CreateHookResponseObject interface {
+	VisitCreateHookResponse(w http.ResponseWriter) error
+}
+
+type CreateHook204Response struct {
+}
+
+func (response CreateHook204Response) VisitCreateHookResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type CreateHook400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response CreateHook400JSONResponse) VisitCreateHookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateHook401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response CreateHook401JSONResponse) VisitCreateHookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateHook403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response CreateHook403JSONResponse) VisitCreateHookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateHook409JSONResponse struct{ ConflictJSONResponse }
+
+func (response CreateHook409JSONResponse) VisitCreateHookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateHook500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response CreateHook500JSONResponse) VisitCreateHookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateHook503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response CreateHook503JSONResponse) VisitCreateHookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteHookRequestObject struct {
+	HookName HookName `json:"hook_name"`
+	Body     *DeleteHookJSONRequestBody
+}
+
+type DeleteHookResponseObject interface {
+	VisitDeleteHookResponse(w http.ResponseWriter) error
+}
+
+type DeleteHook204Response struct {
+}
+
+func (response DeleteHook204Response) VisitDeleteHookResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteHook400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response DeleteHook400JSONResponse) VisitDeleteHookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteHook401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response DeleteHook401JSONResponse) VisitDeleteHookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteHook403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DeleteHook403JSONResponse) VisitDeleteHookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteHook404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response DeleteHook404JSONResponse) VisitDeleteHookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteHook409JSONResponse struct{ ConflictJSONResponse }
+
+func (response DeleteHook409JSONResponse) VisitDeleteHookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteHook500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response DeleteHook500JSONResponse) VisitDeleteHookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteHook503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response DeleteHook503JSONResponse) VisitDeleteHookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateHookRequestObject struct {
+	HookName HookName `json:"hook_name"`
+	Body     *UpdateHookJSONRequestBody
+}
+
+type UpdateHookResponseObject interface {
+	VisitUpdateHookResponse(w http.ResponseWriter) error
+}
+
+type UpdateHook204Response struct {
+}
+
+func (response UpdateHook204Response) VisitUpdateHookResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type UpdateHook400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response UpdateHook400JSONResponse) VisitUpdateHookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateHook401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response UpdateHook401JSONResponse) VisitUpdateHookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateHook403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response UpdateHook403JSONResponse) VisitUpdateHookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateHook404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response UpdateHook404JSONResponse) VisitUpdateHookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateHook409JSONResponse struct{ ConflictJSONResponse }
+
+func (response UpdateHook409JSONResponse) VisitUpdateHookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateHook500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response UpdateHook500JSONResponse) VisitUpdateHookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateHook503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response UpdateHook503JSONResponse) VisitUpdateHookResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -22012,6 +28141,928 @@ func (response SelectMCPConnection503JSONResponse) VisitSelectMCPConnectionRespo
 	return err
 }
 
+type ListPluginMarketplacesRequestObject struct {
+}
+
+type ListPluginMarketplacesResponseObject interface {
+	VisitListPluginMarketplacesResponse(w http.ResponseWriter) error
+}
+
+type ListPluginMarketplaces200JSONResponse PluginMarketplaceInventory
+
+func (response ListPluginMarketplaces200JSONResponse) VisitListPluginMarketplacesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPluginMarketplaces401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListPluginMarketplaces401JSONResponse) VisitListPluginMarketplacesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPluginMarketplaces403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListPluginMarketplaces403JSONResponse) VisitListPluginMarketplacesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPluginMarketplaces500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ListPluginMarketplaces500JSONResponse) VisitListPluginMarketplacesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPluginMarketplaces503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response ListPluginMarketplaces503JSONResponse) VisitListPluginMarketplacesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddPluginMarketplaceRequestObject struct {
+	Body *AddPluginMarketplaceJSONRequestBody
+}
+
+type AddPluginMarketplaceResponseObject interface {
+	VisitAddPluginMarketplaceResponse(w http.ResponseWriter) error
+}
+
+type AddPluginMarketplace200JSONResponse PluginMarketplaceDetail
+
+func (response AddPluginMarketplace200JSONResponse) VisitAddPluginMarketplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddPluginMarketplace400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response AddPluginMarketplace400JSONResponse) VisitAddPluginMarketplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddPluginMarketplace401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response AddPluginMarketplace401JSONResponse) VisitAddPluginMarketplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddPluginMarketplace403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response AddPluginMarketplace403JSONResponse) VisitAddPluginMarketplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddPluginMarketplace409JSONResponse struct{ ConflictJSONResponse }
+
+func (response AddPluginMarketplace409JSONResponse) VisitAddPluginMarketplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddPluginMarketplace500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response AddPluginMarketplace500JSONResponse) VisitAddPluginMarketplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddPluginMarketplace503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response AddPluginMarketplace503JSONResponse) VisitAddPluginMarketplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemovePluginMarketplaceRequestObject struct {
+	MarketplaceName PluginMarketplaceName `json:"marketplace_name"`
+	Body            *RemovePluginMarketplaceJSONRequestBody
+}
+
+type RemovePluginMarketplaceResponseObject interface {
+	VisitRemovePluginMarketplaceResponse(w http.ResponseWriter) error
+}
+
+type RemovePluginMarketplace204Response struct {
+}
+
+func (response RemovePluginMarketplace204Response) VisitRemovePluginMarketplaceResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type RemovePluginMarketplace400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response RemovePluginMarketplace400JSONResponse) VisitRemovePluginMarketplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemovePluginMarketplace401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response RemovePluginMarketplace401JSONResponse) VisitRemovePluginMarketplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemovePluginMarketplace403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response RemovePluginMarketplace403JSONResponse) VisitRemovePluginMarketplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemovePluginMarketplace404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response RemovePluginMarketplace404JSONResponse) VisitRemovePluginMarketplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemovePluginMarketplace409JSONResponse struct{ ConflictJSONResponse }
+
+func (response RemovePluginMarketplace409JSONResponse) VisitRemovePluginMarketplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemovePluginMarketplace500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response RemovePluginMarketplace500JSONResponse) VisitRemovePluginMarketplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemovePluginMarketplace503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response RemovePluginMarketplace503JSONResponse) VisitRemovePluginMarketplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPluginMarketplaceRequestObject struct {
+	MarketplaceName PluginMarketplaceName `json:"marketplace_name"`
+}
+
+type GetPluginMarketplaceResponseObject interface {
+	VisitGetPluginMarketplaceResponse(w http.ResponseWriter) error
+}
+
+type GetPluginMarketplace200JSONResponse PluginMarketplaceDetail
+
+func (response GetPluginMarketplace200JSONResponse) VisitGetPluginMarketplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPluginMarketplace401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetPluginMarketplace401JSONResponse) VisitGetPluginMarketplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPluginMarketplace403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetPluginMarketplace403JSONResponse) VisitGetPluginMarketplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPluginMarketplace404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetPluginMarketplace404JSONResponse) VisitGetPluginMarketplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPluginMarketplace500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response GetPluginMarketplace500JSONResponse) VisitGetPluginMarketplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPluginMarketplace503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response GetPluginMarketplace503JSONResponse) VisitGetPluginMarketplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RefreshPluginMarketplaceRequestObject struct {
+	MarketplaceName PluginMarketplaceName `json:"marketplace_name"`
+	Body            *RefreshPluginMarketplaceJSONRequestBody
+}
+
+type RefreshPluginMarketplaceResponseObject interface {
+	VisitRefreshPluginMarketplaceResponse(w http.ResponseWriter) error
+}
+
+type RefreshPluginMarketplace200JSONResponse PluginMarketplaceDetail
+
+func (response RefreshPluginMarketplace200JSONResponse) VisitRefreshPluginMarketplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RefreshPluginMarketplace400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response RefreshPluginMarketplace400JSONResponse) VisitRefreshPluginMarketplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RefreshPluginMarketplace401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response RefreshPluginMarketplace401JSONResponse) VisitRefreshPluginMarketplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RefreshPluginMarketplace403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response RefreshPluginMarketplace403JSONResponse) VisitRefreshPluginMarketplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RefreshPluginMarketplace404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response RefreshPluginMarketplace404JSONResponse) VisitRefreshPluginMarketplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RefreshPluginMarketplace409JSONResponse struct{ ConflictJSONResponse }
+
+func (response RefreshPluginMarketplace409JSONResponse) VisitRefreshPluginMarketplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RefreshPluginMarketplace500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response RefreshPluginMarketplace500JSONResponse) VisitRefreshPluginMarketplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RefreshPluginMarketplace503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response RefreshPluginMarketplace503JSONResponse) VisitRefreshPluginMarketplaceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPluginsRequestObject struct {
+}
+
+type ListPluginsResponseObject interface {
+	VisitListPluginsResponse(w http.ResponseWriter) error
+}
+
+type ListPlugins200JSONResponse PluginInventory
+
+func (response ListPlugins200JSONResponse) VisitListPluginsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPlugins401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListPlugins401JSONResponse) VisitListPluginsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPlugins403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListPlugins403JSONResponse) VisitListPluginsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPlugins500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ListPlugins500JSONResponse) VisitListPluginsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPlugins503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response ListPlugins503JSONResponse) VisitListPluginsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPluginRequestObject struct {
+	PluginName PluginName `json:"plugin_name"`
+}
+
+type GetPluginResponseObject interface {
+	VisitGetPluginResponse(w http.ResponseWriter) error
+}
+
+type GetPlugin200JSONResponse PluginDetail
+
+func (response GetPlugin200JSONResponse) VisitGetPluginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPlugin401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetPlugin401JSONResponse) VisitGetPluginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPlugin403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetPlugin403JSONResponse) VisitGetPluginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPlugin404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetPlugin404JSONResponse) VisitGetPluginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPlugin500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response GetPlugin500JSONResponse) VisitGetPluginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPlugin503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response GetPlugin503JSONResponse) VisitGetPluginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReviewPluginCandidateRequestObject struct {
+	PluginName PluginName `json:"plugin_name"`
+	Params     ReviewPluginCandidateParams
+}
+
+type ReviewPluginCandidateResponseObject interface {
+	VisitReviewPluginCandidateResponse(w http.ResponseWriter) error
+}
+
+type ReviewPluginCandidate200JSONResponse PluginCandidate
+
+func (response ReviewPluginCandidate200JSONResponse) VisitReviewPluginCandidateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReviewPluginCandidate400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response ReviewPluginCandidate400JSONResponse) VisitReviewPluginCandidateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReviewPluginCandidate401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ReviewPluginCandidate401JSONResponse) VisitReviewPluginCandidateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReviewPluginCandidate403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ReviewPluginCandidate403JSONResponse) VisitReviewPluginCandidateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReviewPluginCandidate404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ReviewPluginCandidate404JSONResponse) VisitReviewPluginCandidateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReviewPluginCandidate409JSONResponse struct{ ConflictJSONResponse }
+
+func (response ReviewPluginCandidate409JSONResponse) VisitReviewPluginCandidateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReviewPluginCandidate500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ReviewPluginCandidate500JSONResponse) VisitReviewPluginCandidateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReviewPluginCandidate503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response ReviewPluginCandidate503JSONResponse) VisitReviewPluginCandidateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MutatePluginRequestObject struct {
+	PluginName PluginName `json:"plugin_name"`
+	Body       *MutatePluginJSONRequestBody
+}
+
+type MutatePluginResponseObject interface {
+	VisitMutatePluginResponse(w http.ResponseWriter) error
+}
+
+type MutatePlugin200JSONResponse PluginMutationOutcome
+
+func (response MutatePlugin200JSONResponse) VisitMutatePluginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MutatePlugin400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response MutatePlugin400JSONResponse) VisitMutatePluginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MutatePlugin401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response MutatePlugin401JSONResponse) VisitMutatePluginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MutatePlugin403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response MutatePlugin403JSONResponse) VisitMutatePluginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MutatePlugin404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response MutatePlugin404JSONResponse) VisitMutatePluginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MutatePlugin409JSONResponse struct{ ConflictJSONResponse }
+
+func (response MutatePlugin409JSONResponse) VisitMutatePluginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MutatePlugin500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response MutatePlugin500JSONResponse) VisitMutatePluginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MutatePlugin503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response MutatePlugin503JSONResponse) VisitMutatePluginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListProvidersRequestObject struct {
 }
 
@@ -23451,6 +30502,748 @@ func (response SelectSchedule503JSONResponse) VisitSelectScheduleResponse(w http
 	return err
 }
 
+type ListSkillsRequestObject struct {
+}
+
+type ListSkillsResponseObject interface {
+	VisitListSkillsResponse(w http.ResponseWriter) error
+}
+
+type ListSkills200JSONResponse SkillInventory
+
+func (response ListSkills200JSONResponse) VisitListSkillsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSkills401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListSkills401JSONResponse) VisitListSkillsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSkills403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListSkills403JSONResponse) VisitListSkillsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSkills500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ListSkills500JSONResponse) VisitListSkillsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSkills503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response ListSkills503JSONResponse) VisitListSkillsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetrySkillPublicationRequestObject struct {
+}
+
+type RetrySkillPublicationResponseObject interface {
+	VisitRetrySkillPublicationResponse(w http.ResponseWriter) error
+}
+
+type RetrySkillPublication200JSONResponse SkillMutationOutcome
+
+func (response RetrySkillPublication200JSONResponse) VisitRetrySkillPublicationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetrySkillPublication401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response RetrySkillPublication401JSONResponse) VisitRetrySkillPublicationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetrySkillPublication403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response RetrySkillPublication403JSONResponse) VisitRetrySkillPublicationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetrySkillPublication409JSONResponse struct{ ConflictJSONResponse }
+
+func (response RetrySkillPublication409JSONResponse) VisitRetrySkillPublicationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetrySkillPublication500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response RetrySkillPublication500JSONResponse) VisitRetrySkillPublicationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetrySkillPublication503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response RetrySkillPublication503JSONResponse) VisitRetrySkillPublicationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RefreshSkillsRequestObject struct {
+	Body *RefreshSkillsJSONRequestBody
+}
+
+type RefreshSkillsResponseObject interface {
+	VisitRefreshSkillsResponse(w http.ResponseWriter) error
+}
+
+type RefreshSkills200JSONResponse SkillMutationOutcome
+
+func (response RefreshSkills200JSONResponse) VisitRefreshSkillsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RefreshSkills400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response RefreshSkills400JSONResponse) VisitRefreshSkillsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RefreshSkills401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response RefreshSkills401JSONResponse) VisitRefreshSkillsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RefreshSkills403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response RefreshSkills403JSONResponse) VisitRefreshSkillsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RefreshSkills409JSONResponse struct{ ConflictJSONResponse }
+
+func (response RefreshSkills409JSONResponse) VisitRefreshSkillsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RefreshSkills500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response RefreshSkills500JSONResponse) VisitRefreshSkillsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RefreshSkills503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response RefreshSkills503JSONResponse) VisitRefreshSkillsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AcceptSkillReviewRequestObject struct {
+	Body *AcceptSkillReviewJSONRequestBody
+}
+
+type AcceptSkillReviewResponseObject interface {
+	VisitAcceptSkillReviewResponse(w http.ResponseWriter) error
+}
+
+type AcceptSkillReview200JSONResponse SkillMutationOutcome
+
+func (response AcceptSkillReview200JSONResponse) VisitAcceptSkillReviewResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AcceptSkillReview400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response AcceptSkillReview400JSONResponse) VisitAcceptSkillReviewResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AcceptSkillReview401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response AcceptSkillReview401JSONResponse) VisitAcceptSkillReviewResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AcceptSkillReview403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response AcceptSkillReview403JSONResponse) VisitAcceptSkillReviewResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AcceptSkillReview404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response AcceptSkillReview404JSONResponse) VisitAcceptSkillReviewResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AcceptSkillReview409JSONResponse struct{ ConflictJSONResponse }
+
+func (response AcceptSkillReview409JSONResponse) VisitAcceptSkillReviewResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AcceptSkillReview500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response AcceptSkillReview500JSONResponse) VisitAcceptSkillReviewResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AcceptSkillReview503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response AcceptSkillReview503JSONResponse) VisitAcceptSkillReviewResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReviewSkillInstallRequestObject struct {
+	Body *ReviewSkillInstallJSONRequestBody
+}
+
+type ReviewSkillInstallResponseObject interface {
+	VisitReviewSkillInstallResponse(w http.ResponseWriter) error
+}
+
+type ReviewSkillInstall200JSONResponse SkillCandidate
+
+func (response ReviewSkillInstall200JSONResponse) VisitReviewSkillInstallResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReviewSkillInstall400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response ReviewSkillInstall400JSONResponse) VisitReviewSkillInstallResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReviewSkillInstall401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ReviewSkillInstall401JSONResponse) VisitReviewSkillInstallResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReviewSkillInstall403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ReviewSkillInstall403JSONResponse) VisitReviewSkillInstallResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReviewSkillInstall409JSONResponse struct{ ConflictJSONResponse }
+
+func (response ReviewSkillInstall409JSONResponse) VisitReviewSkillInstallResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReviewSkillInstall500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ReviewSkillInstall500JSONResponse) VisitReviewSkillInstallResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReviewSkillInstall503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response ReviewSkillInstall503JSONResponse) VisitReviewSkillInstallResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MutateSkillRequestObject struct {
+	SkillID SkillID `json:"skill_id"`
+	Body    *MutateSkillJSONRequestBody
+}
+
+type MutateSkillResponseObject interface {
+	VisitMutateSkillResponse(w http.ResponseWriter) error
+}
+
+type MutateSkill200JSONResponse SkillMutationOutcome
+
+func (response MutateSkill200JSONResponse) VisitMutateSkillResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MutateSkill400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response MutateSkill400JSONResponse) VisitMutateSkillResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MutateSkill401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response MutateSkill401JSONResponse) VisitMutateSkillResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MutateSkill403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response MutateSkill403JSONResponse) VisitMutateSkillResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MutateSkill404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response MutateSkill404JSONResponse) VisitMutateSkillResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MutateSkill409JSONResponse struct{ ConflictJSONResponse }
+
+func (response MutateSkill409JSONResponse) VisitMutateSkillResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MutateSkill500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response MutateSkill500JSONResponse) VisitMutateSkillResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MutateSkill503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response MutateSkill503JSONResponse) VisitMutateSkillResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReviewSkillUpdateRequestObject struct {
+	SkillID SkillID `json:"skill_id"`
+	Body    *ReviewSkillUpdateJSONRequestBody
+}
+
+type ReviewSkillUpdateResponseObject interface {
+	VisitReviewSkillUpdateResponse(w http.ResponseWriter) error
+}
+
+type ReviewSkillUpdate200JSONResponse SkillCandidate
+
+func (response ReviewSkillUpdate200JSONResponse) VisitReviewSkillUpdateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReviewSkillUpdate400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response ReviewSkillUpdate400JSONResponse) VisitReviewSkillUpdateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReviewSkillUpdate401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ReviewSkillUpdate401JSONResponse) VisitReviewSkillUpdateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReviewSkillUpdate403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ReviewSkillUpdate403JSONResponse) VisitReviewSkillUpdateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReviewSkillUpdate404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ReviewSkillUpdate404JSONResponse) VisitReviewSkillUpdateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReviewSkillUpdate409JSONResponse struct{ ConflictJSONResponse }
+
+func (response ReviewSkillUpdate409JSONResponse) VisitReviewSkillUpdateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReviewSkillUpdate500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ReviewSkillUpdate500JSONResponse) VisitReviewSkillUpdateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReviewSkillUpdate503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response ReviewSkillUpdate503JSONResponse) VisitReviewSkillUpdateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListWebhooksRequestObject struct {
 }
 
@@ -24593,6 +32386,18 @@ type StrictServerInterface interface {
 	// GetManagementCompatibility Read management contract compatibility metadata
 	// (GET /api/management/v1/compatibility)
 	GetManagementCompatibility(ctx context.Context, request GetManagementCompatibilityRequestObject) (GetManagementCompatibilityResponseObject, error)
+
+	// (GET /api/management/v1/hooks)
+	ListHooks(ctx context.Context, request ListHooksRequestObject) (ListHooksResponseObject, error)
+
+	// (POST /api/management/v1/hooks)
+	CreateHook(ctx context.Context, request CreateHookRequestObject) (CreateHookResponseObject, error)
+
+	// (DELETE /api/management/v1/hooks/{hook_name})
+	DeleteHook(ctx context.Context, request DeleteHookRequestObject) (DeleteHookResponseObject, error)
+
+	// (PUT /api/management/v1/hooks/{hook_name})
+	UpdateHook(ctx context.Context, request UpdateHookRequestObject) (UpdateHookResponseObject, error)
 	// ListMCPConnections Read the current secret-free MCP inventory
 	// (GET /api/management/v1/mcp)
 	ListMCPConnections(ctx context.Context, request ListMCPConnectionsRequestObject) (ListMCPConnectionsResponseObject, error)
@@ -24644,6 +32449,33 @@ type StrictServerInterface interface {
 	// SelectMCPConnection Enable or disable a managed MCP connection
 	// (POST /api/management/v1/mcp/{connection_id}/selection)
 	SelectMCPConnection(ctx context.Context, request SelectMCPConnectionRequestObject) (SelectMCPConnectionResponseObject, error)
+
+	// (GET /api/management/v1/plugin-marketplaces)
+	ListPluginMarketplaces(ctx context.Context, request ListPluginMarketplacesRequestObject) (ListPluginMarketplacesResponseObject, error)
+
+	// (POST /api/management/v1/plugin-marketplaces)
+	AddPluginMarketplace(ctx context.Context, request AddPluginMarketplaceRequestObject) (AddPluginMarketplaceResponseObject, error)
+
+	// (DELETE /api/management/v1/plugin-marketplaces/{marketplace_name})
+	RemovePluginMarketplace(ctx context.Context, request RemovePluginMarketplaceRequestObject) (RemovePluginMarketplaceResponseObject, error)
+
+	// (GET /api/management/v1/plugin-marketplaces/{marketplace_name})
+	GetPluginMarketplace(ctx context.Context, request GetPluginMarketplaceRequestObject) (GetPluginMarketplaceResponseObject, error)
+
+	// (POST /api/management/v1/plugin-marketplaces/{marketplace_name}/refresh)
+	RefreshPluginMarketplace(ctx context.Context, request RefreshPluginMarketplaceRequestObject) (RefreshPluginMarketplaceResponseObject, error)
+
+	// (GET /api/management/v1/plugins)
+	ListPlugins(ctx context.Context, request ListPluginsRequestObject) (ListPluginsResponseObject, error)
+
+	// (GET /api/management/v1/plugins/{plugin_name})
+	GetPlugin(ctx context.Context, request GetPluginRequestObject) (GetPluginResponseObject, error)
+
+	// (GET /api/management/v1/plugins/{plugin_name}/candidate)
+	ReviewPluginCandidate(ctx context.Context, request ReviewPluginCandidateRequestObject) (ReviewPluginCandidateResponseObject, error)
+
+	// (POST /api/management/v1/plugins/{plugin_name}/lifecycle)
+	MutatePlugin(ctx context.Context, request MutatePluginRequestObject) (MutatePluginResponseObject, error)
 	// ListProviders Read the current provider inventory
 	// (GET /api/management/v1/providers)
 	ListProviders(ctx context.Context, request ListProvidersRequestObject) (ListProvidersResponseObject, error)
@@ -24686,6 +32518,27 @@ type StrictServerInterface interface {
 	// SelectSchedule Enable or disable a managed schedule
 	// (POST /api/management/v1/schedules/{schedule_id}/selection)
 	SelectSchedule(ctx context.Context, request SelectScheduleRequestObject) (SelectScheduleResponseObject, error)
+
+	// (GET /api/management/v1/skills)
+	ListSkills(ctx context.Context, request ListSkillsRequestObject) (ListSkillsResponseObject, error)
+
+	// (POST /api/management/v1/skills/publication/retry)
+	RetrySkillPublication(ctx context.Context, request RetrySkillPublicationRequestObject) (RetrySkillPublicationResponseObject, error)
+
+	// (POST /api/management/v1/skills/refresh)
+	RefreshSkills(ctx context.Context, request RefreshSkillsRequestObject) (RefreshSkillsResponseObject, error)
+
+	// (POST /api/management/v1/skills/reviews/accept)
+	AcceptSkillReview(ctx context.Context, request AcceptSkillReviewRequestObject) (AcceptSkillReviewResponseObject, error)
+
+	// (POST /api/management/v1/skills/reviews/install)
+	ReviewSkillInstall(ctx context.Context, request ReviewSkillInstallRequestObject) (ReviewSkillInstallResponseObject, error)
+
+	// (POST /api/management/v1/skills/{skill_id}/lifecycle)
+	MutateSkill(ctx context.Context, request MutateSkillRequestObject) (MutateSkillResponseObject, error)
+
+	// (POST /api/management/v1/skills/{skill_id}/reviews/update)
+	ReviewSkillUpdate(ctx context.Context, request ReviewSkillUpdateRequestObject) (ReviewSkillUpdateResponseObject, error)
 
 	// (GET /api/management/v1/webhooks)
 	ListWebhooks(ctx context.Context, request ListWebhooksRequestObject) (ListWebhooksResponseObject, error)
@@ -25331,6 +33184,127 @@ func (sh *strictHandler) GetManagementCompatibility(w http.ResponseWriter, r *ht
 	}
 }
 
+// ListHooks operation middleware
+func (sh *strictHandler) ListHooks(w http.ResponseWriter, r *http.Request) {
+	var request ListHooksRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListHooks(ctx, request.(ListHooksRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListHooks")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListHooksResponseObject); ok {
+		if err := validResponse.VisitListHooksResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateHook operation middleware
+func (sh *strictHandler) CreateHook(w http.ResponseWriter, r *http.Request) {
+	var request CreateHookRequestObject
+
+	var body CreateHookJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateHook(ctx, request.(CreateHookRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateHook")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateHookResponseObject); ok {
+		if err := validResponse.VisitCreateHookResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteHook operation middleware
+func (sh *strictHandler) DeleteHook(w http.ResponseWriter, r *http.Request, hookName HookName) {
+	var request DeleteHookRequestObject
+
+	request.HookName = hookName
+
+	var body DeleteHookJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteHook(ctx, request.(DeleteHookRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteHook")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteHookResponseObject); ok {
+		if err := validResponse.VisitDeleteHookResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateHook operation middleware
+func (sh *strictHandler) UpdateHook(w http.ResponseWriter, r *http.Request, hookName HookName) {
+	var request UpdateHookRequestObject
+
+	request.HookName = hookName
+
+	var body UpdateHookJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateHook(ctx, request.(UpdateHookRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateHook")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateHookResponseObject); ok {
+		if err := validResponse.VisitUpdateHookResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListMCPConnections operation middleware
 func (sh *strictHandler) ListMCPConnections(w http.ResponseWriter, r *http.Request) {
 	var request ListMCPConnectionsRequestObject
@@ -25845,6 +33819,263 @@ func (sh *strictHandler) SelectMCPConnection(w http.ResponseWriter, r *http.Requ
 	}
 }
 
+// ListPluginMarketplaces operation middleware
+func (sh *strictHandler) ListPluginMarketplaces(w http.ResponseWriter, r *http.Request) {
+	var request ListPluginMarketplacesRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListPluginMarketplaces(ctx, request.(ListPluginMarketplacesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListPluginMarketplaces")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListPluginMarketplacesResponseObject); ok {
+		if err := validResponse.VisitListPluginMarketplacesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AddPluginMarketplace operation middleware
+func (sh *strictHandler) AddPluginMarketplace(w http.ResponseWriter, r *http.Request) {
+	var request AddPluginMarketplaceRequestObject
+
+	var body AddPluginMarketplaceJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AddPluginMarketplace(ctx, request.(AddPluginMarketplaceRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AddPluginMarketplace")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AddPluginMarketplaceResponseObject); ok {
+		if err := validResponse.VisitAddPluginMarketplaceResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RemovePluginMarketplace operation middleware
+func (sh *strictHandler) RemovePluginMarketplace(w http.ResponseWriter, r *http.Request, marketplaceName PluginMarketplaceName) {
+	var request RemovePluginMarketplaceRequestObject
+
+	request.MarketplaceName = marketplaceName
+
+	var body RemovePluginMarketplaceJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RemovePluginMarketplace(ctx, request.(RemovePluginMarketplaceRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RemovePluginMarketplace")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RemovePluginMarketplaceResponseObject); ok {
+		if err := validResponse.VisitRemovePluginMarketplaceResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetPluginMarketplace operation middleware
+func (sh *strictHandler) GetPluginMarketplace(w http.ResponseWriter, r *http.Request, marketplaceName PluginMarketplaceName) {
+	var request GetPluginMarketplaceRequestObject
+
+	request.MarketplaceName = marketplaceName
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetPluginMarketplace(ctx, request.(GetPluginMarketplaceRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetPluginMarketplace")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetPluginMarketplaceResponseObject); ok {
+		if err := validResponse.VisitGetPluginMarketplaceResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RefreshPluginMarketplace operation middleware
+func (sh *strictHandler) RefreshPluginMarketplace(w http.ResponseWriter, r *http.Request, marketplaceName PluginMarketplaceName) {
+	var request RefreshPluginMarketplaceRequestObject
+
+	request.MarketplaceName = marketplaceName
+
+	var body RefreshPluginMarketplaceJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RefreshPluginMarketplace(ctx, request.(RefreshPluginMarketplaceRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RefreshPluginMarketplace")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RefreshPluginMarketplaceResponseObject); ok {
+		if err := validResponse.VisitRefreshPluginMarketplaceResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListPlugins operation middleware
+func (sh *strictHandler) ListPlugins(w http.ResponseWriter, r *http.Request) {
+	var request ListPluginsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListPlugins(ctx, request.(ListPluginsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListPlugins")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListPluginsResponseObject); ok {
+		if err := validResponse.VisitListPluginsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetPlugin operation middleware
+func (sh *strictHandler) GetPlugin(w http.ResponseWriter, r *http.Request, pluginName PluginName) {
+	var request GetPluginRequestObject
+
+	request.PluginName = pluginName
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetPlugin(ctx, request.(GetPluginRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetPlugin")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetPluginResponseObject); ok {
+		if err := validResponse.VisitGetPluginResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ReviewPluginCandidate operation middleware
+func (sh *strictHandler) ReviewPluginCandidate(w http.ResponseWriter, r *http.Request, pluginName PluginName, params ReviewPluginCandidateParams) {
+	var request ReviewPluginCandidateRequestObject
+
+	request.PluginName = pluginName
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ReviewPluginCandidate(ctx, request.(ReviewPluginCandidateRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ReviewPluginCandidate")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ReviewPluginCandidateResponseObject); ok {
+		if err := validResponse.VisitReviewPluginCandidateResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// MutatePlugin operation middleware
+func (sh *strictHandler) MutatePlugin(w http.ResponseWriter, r *http.Request, pluginName PluginName) {
+	var request MutatePluginRequestObject
+
+	request.PluginName = pluginName
+
+	var body MutatePluginJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.MutatePlugin(ctx, request.(MutatePluginRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "MutatePlugin")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(MutatePluginResponseObject); ok {
+		if err := validResponse.VisitMutatePluginResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListProviders operation middleware
 func (sh *strictHandler) ListProviders(w http.ResponseWriter, r *http.Request) {
 	var request ListProvidersRequestObject
@@ -26266,6 +34497,213 @@ func (sh *strictHandler) SelectSchedule(w http.ResponseWriter, r *http.Request, 
 	}
 }
 
+// ListSkills operation middleware
+func (sh *strictHandler) ListSkills(w http.ResponseWriter, r *http.Request) {
+	var request ListSkillsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListSkills(ctx, request.(ListSkillsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListSkills")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListSkillsResponseObject); ok {
+		if err := validResponse.VisitListSkillsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RetrySkillPublication operation middleware
+func (sh *strictHandler) RetrySkillPublication(w http.ResponseWriter, r *http.Request) {
+	var request RetrySkillPublicationRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RetrySkillPublication(ctx, request.(RetrySkillPublicationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RetrySkillPublication")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RetrySkillPublicationResponseObject); ok {
+		if err := validResponse.VisitRetrySkillPublicationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RefreshSkills operation middleware
+func (sh *strictHandler) RefreshSkills(w http.ResponseWriter, r *http.Request) {
+	var request RefreshSkillsRequestObject
+
+	var body RefreshSkillsJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RefreshSkills(ctx, request.(RefreshSkillsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RefreshSkills")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RefreshSkillsResponseObject); ok {
+		if err := validResponse.VisitRefreshSkillsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AcceptSkillReview operation middleware
+func (sh *strictHandler) AcceptSkillReview(w http.ResponseWriter, r *http.Request) {
+	var request AcceptSkillReviewRequestObject
+
+	var body AcceptSkillReviewJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AcceptSkillReview(ctx, request.(AcceptSkillReviewRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AcceptSkillReview")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AcceptSkillReviewResponseObject); ok {
+		if err := validResponse.VisitAcceptSkillReviewResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ReviewSkillInstall operation middleware
+func (sh *strictHandler) ReviewSkillInstall(w http.ResponseWriter, r *http.Request) {
+	var request ReviewSkillInstallRequestObject
+
+	var body ReviewSkillInstallJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ReviewSkillInstall(ctx, request.(ReviewSkillInstallRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ReviewSkillInstall")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ReviewSkillInstallResponseObject); ok {
+		if err := validResponse.VisitReviewSkillInstallResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// MutateSkill operation middleware
+func (sh *strictHandler) MutateSkill(w http.ResponseWriter, r *http.Request, skillID SkillID) {
+	var request MutateSkillRequestObject
+
+	request.SkillID = skillID
+
+	var body MutateSkillJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.MutateSkill(ctx, request.(MutateSkillRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "MutateSkill")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(MutateSkillResponseObject); ok {
+		if err := validResponse.VisitMutateSkillResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ReviewSkillUpdate operation middleware
+func (sh *strictHandler) ReviewSkillUpdate(w http.ResponseWriter, r *http.Request, skillID SkillID) {
+	var request ReviewSkillUpdateRequestObject
+
+	request.SkillID = skillID
+
+	var body ReviewSkillUpdateJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ReviewSkillUpdate(ctx, request.(ReviewSkillUpdateRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ReviewSkillUpdate")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ReviewSkillUpdateResponseObject); ok {
+		if err := validResponse.VisitReviewSkillUpdateResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListWebhooks operation middleware
 func (sh *strictHandler) ListWebhooks(w http.ResponseWriter, r *http.Request) {
 	var request ListWebhooksRequestObject
@@ -26571,128 +35009,164 @@ func (sh *strictHandler) TestWebhook(w http.ResponseWriter, r *http.Request, web
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"y/8HAAD//w==",
+	"7H19b9w28+BXEfZ+wAGHdew4adrm/nLc+prn6saw2+c5XJFbcCWul7WWVElqHdfwdz/wTaIkSqK0q31J",
+	"9E8b2xQ5HM4M553Pk5CsEoIh5mzy/nmSAApWkEMqf7qIEWC/gRUUPyA8eT9JAF9OphMsfzcB4u8z+cN0",
+	"QuHfKaIwmrznNIXTCQuXcAXElyvw5VeI7/ly8v7d2+lkhbD58fV0wp8SMRXjFOH7ycvLdPILIQ8Niy4J",
+	"eWhfMwGcQyq+/n9/gpN/Pov/nJ38ePL5+Wz67s3Lf01cK19f3lxwDlcJ//hT3ZbV32co8t3y6/Mf2vd8",
+	"fXlzSTCGIUcE1y4eZkO2vf5NnN4jfA3oA+RJDELYcACrfFSns+8ASMPqiRwwwMKUrFEEaS3yEz1g26i/",
+	"C5cwSmNYuzDTA4Za+DatpziatpLagtAV4JP3kzSVIx0LPaA4rt+e+GuHvZ1/9659b/+BcyEn/kXmtev+",
+	"ReYDrdpAvY9qRGf5dXbyoxFhsyYZ9iLmZAnBDEoJ/gFEt/DvFDIufgoJ5hDLf4IkiVEIhCw5/YsRLH6X",
+	"r/5fFC4m7yf/7TS/HU7VX9npNcDgHq4g5j9TSqhaNIIspCgR003eTz7iNYhRFKyyoQHVULxMJ5cEL2IU",
+	"7hSi6wokQajBYMEj4ssgTCkVf2YccCjAvCJ0jqII4l3CeZHyJcRczA+jDNQYhA8sAClfEor4U0BooBB8",
+	"eXd7FSSUkIWA+CMWJANiNfsOob4DCxjMSYojGAVIQxEsAIpTKnH5G+FX4s+7BErTPSyRISMpDWEQEcgC",
+	"THgAvyBFlneQrlEI/8BgDVAM5jHcJbTm+rGBjWACcQRx+BQgFqQWYC/TyR9Y08M/cKdovUaMIXwvaBBp",
+	"NmcKc+JX/4FzQcJBSGEk6BjEUjDq+aVO+fEOMoYIvktXK0CfJMBRhMT0IL6hJIGUIyG9FiBmcCru3exX",
+	"zxOAZkx9L4R3Vxk9nYRLgDGMZ+oPFd20Mj4Gcxi71qmMJHOBBxjNAC9cixHg8IQjKe8rHwlpk7IeSnJ+",
+	"c/xZwkk2aRGkz9ksZP4XDCXJS/3+kkLAoXVLdDiNmISAEzqTJFXUQM7O37YeBtYX5QZ71xepDUjtTn+C",
+	"Mey7U/glgSGH0WwNKUOKp3LNB2H+7u1EQo5W6cqGW4jDe0grgFcmrAX7I15DzElnVkEcror/aGJ9udQt",
+	"DAmNxMor8OWj+kydpAYNUAqeKntRC9RuQM/aDfpQkmU3btoDOU4naRJ1BnRbROSg/nzyqY3DApwNJ8UB",
+	"vYd8Xzyy4RG2sVi7nPiFkIef4AJhxPUGutxN9L7Ibxb0P7z+8dxBCDmbvTkvM9l0EpLVCuDyNff27Mf2",
+	"ew5ioSjIT/Xf5oTEEGD5x7XWFJoEgkDFz3KghJOHS0i9LkLDRt1dMNPMyHbZs5XBgrtIymcMhgRHrEBu",
+	"GbWBL4rafjw/f/Pm+/OzN+8sEjzz5TCFsRyt+dlM1bFboOfYqoJYT3P9ryZhyCC6qjnqJp6ssORZ92tr",
+	"mq1ft7efDbVBLNb4c2IUQA6owOkfDNIbSlYJv0vnKyR+dcdJIv6nBv4s0XxD4e+ExH8wcR43hHHz02cH",
+	"aYh1+96bIUjAHMXI/FxhvcpqUSYx/O/bkqQpyIJ3b6uyoHjNeN0oPY43P1VrveIGp0UE1Z36HVj3pOeo",
+	"IH+74XDb5G7BMvVT2X4lIYh/JfcI99v9nJJHBulM2nNfWqW0Nrg+qK8u9UdCkgLGHrXalWEg++W024Uy",
+	"nTxSxOEnHD8pV5UgSCbM/IrG5OUos1GczTO1wSujwYXq68ubC20DS2NX++673tq5R7+rE3Va8sh3/z6C",
+	"wnKuFd2IQtZBsSzbhXasohw7sGbPwPBB8kecpJ1vqBhBzGcg5cvZCvIliezrABMs9qIHMRhSyGdzwFBY",
+	"+W1CGHfKez0MRX4CuzBrWeX/7rs373wYgIUkgbUK33evm/U9W6VxW1V6fntzUxcqfU7tE54TQKN+IgnY",
+	"M7W6kJz08qKNEb8Jii6JMl6yiaYlyGoQoWVjASqle+xQUBQgnaW07FN6/e7ND28HFzfDipTqHgsrNh/P",
+	"JYjjOQgfOiu/EfQwtVz8G0GM6iwkxFhasUJqbDgVMXAN7XalltlfTjtVO8wgysBuxmbG7yyNeQ+/kQeT",
+	"Cjmmt0+5x/h6NjSTzKAJXJirQXuYJ1NBqzoaowwOGUBSJDfLsDadRIhpqpQ/2j7zz220Lfddg9ZNnKT+",
+	"+uz15U1JnW204vHaY8J/gziFP0eIM/HNEoJIJ3d0+i5J5zEK+widEpLziaYl5RqvJzl8+dZrDmQQJ02N",
+	"tpBf2rbDw8tL45LgC3Q/o3CNjH1SVp4pBFEuFlxKI6IwNIZt+5KaTtw48qODDwhHOTLs722M5Adkkdku",
+	"lyVCHLiZZevK2nSiXKU+m/ldjxQfUYBZQmjBIcJ4hIigfs6TyXTCapwaVa3BeSOVOC5fMQe5lqmEGbBf",
+	"RWn3Ko4dhTMnkkBFeblSo64XdfeaVeTFBFBRTFnnpQzYioLi5cBdQ4oWOoo7SynqpS+WJ5kJ+oxhRV3R",
+	"s22g+1XAtbdfsjY1ujsRoT6fkQo7UmFvl4DPIR2gllkrwo5AyfwJgXtMGEdhVyNoCcOHjiFIkvKQKO9d",
+	"dg2lYQhh1CbWOCHxLCQp5mXv6pvzbt5VA0Nhzqm9nRpM7SYkbpFfiwpo5YbW6hg+YqMpBFBWpO0lpw0h",
+	"eLOLjtIz5GgNZyB3qXZx+hhPbNnx4ZNxs6no1Yl8mYrd1zHb22iLZCyv1mhrsOhiwPgsKkiBtpXzwRtZ",
+	"afpbtvSO3p+5ovcUhmQNFVsaqVL0CllidIEoU55M559DkPCUwvxXLlmksvns5ZSBJQMcGNzXfdZw1Qrz",
+	"66kk1qXMN5Ffc77+d8SWpej28kfKGoBtnWvUuhnKjoTn+Mijh1VqKpn7WY5aQfJ7+XNvIadPBXGzYbrK",
+	"JpKiLjxuz1mzjzsYK9z3BL/RNzR4ulqrh+b33Dzucu/EsXtH5r7b1f0qALFXrdnlHzJMfvyOwW3kbvVz",
+	"LrYT2iZ+woIfqdvxPCBciFPGiEMKNFVwo/1DvEaU4BXE7sjkWgDg46gr4UGu3rQpgb697EjMmGlzZqoH",
+	"CKXrCnJ5ha7IGm6EjtbwSA7F1A9XG3sjJcK9XJGuaFOeWn9JVgngSGbQdE5/T9BsBf4qGLCvP0+r+kOV",
+	"O0OCOQWhcYiYg5uDOAKv8qqDV+vX7gi7+dwSEPALWCWxGPf61fevzopZJW9aPZM2RI4FptZunYdbKlbY",
+	"OHBYTfatSWGcvTr5/D+c+YsLBOOog4VZ3MKV+LrkeXZYmyvIGLiHLh92y/2nC4q2oOhov54BxeN81OYO",
+	"5pA2RYCaRIdnm7d/q4uO+lW8mJKlfvUu2dcb3OvdM9xLuLK34ACpNTddFQVfAhyhSMfaO+Vz6u9mnDxA",
+	"7JXDXM4BbWJiA53+4skcs3QFhDGgkM2klJ3BLxxicwpVva1QaOWVd5pZ/9LPXqsau/fYEt7KFDFXfkPd",
+	"jFlluFcCtyN90D2wKVzalArbMrE719tWPPMDKe7OAmlaIbAK7hoIoURqjjNtYogyyXWVrjJwrail0d+Q",
+	"A+UxeBUmM1l3Rj0Gy+rv1nGVy0cDnn1fXLUIcAMChcqB5mmPNILOvFqXKlt1DNkR4l4EXCTbfL56RPwE",
+	"OUDxBuTjpe04kN5aaTawkPOJQimwP2LGQSwszSqJD7h7I2a6rnMrThTD6NaIKY+1cl4cbEOuaNjUg59z",
+	"NHSSkPmhbVYCcqDXP0WLfoGGQ7rbCUX3CHsl5Kihs0KBfnVzJggxMz79mlErsq7DTyd9g6ZYasF+fKkG",
+	"64yGnWkrGskFtcXy4GtCyrFSUUvMJh26TeVUHEfQwAtN3LuLKK9LvG+n+LnSVKmrs8dgdKaaHnmoUz0Y",
+	"W7fpcCUquT8wXsRWzpbhTJNxUlO3Vhjj7IbQMLdMWGBskcZ103ewMBZeIkgYr/HaCvB4oSwPU9pDz966",
+	"IGEJoAzWRjlsgvRMUXULjiy+J89TYSBb3cHm5dN0n12JnpwH5cLi1EHtXjx1EfWsaqkjjVaHih+hNBx5",
+	"ywo7J4DCyXshvZ+9YMzkzipm5vgpbLSgFR2auWBL/TqtN8dHJ6XWmnqXN2RhR8Pdkdcp3yCm71cLX3s5",
+	"9gr154U69XXwept6b5/y3LtOKVkhTGr1fbsvot+F164ll1POCq0XM3Acc7WjoOfx9nHlDkgS02ozTC+T",
+	"x46gtnPep2x4N9OkIWLq6OFZ9WLatkJ3Yv/kChMjpWZLl/89BSo3HBdzrMTKRBcDNsaSazwdPZVsN4Ho",
+	"5Kc6M1Et3Snxdje+7NwstE7RhtdSuPIcr4bjLBquHXEcrcUPTEbDfNzNUNJGNOvkSo4gE7vv+NGQ6kJC",
+	"yV86vS4G930SKq0ZyAqxqidwUxBltmM3lGWpbY28odq6gtUc3ad5K5UtxAKmE4ZBwpaE10REqwq1Gc/E",
+	"pYOVVt7tJCoBzRIKikC5lqxQw7TMFpbzs4o8N3m7zq+GfRykXkNeThmg8+AuVXZt15YmKLovRKBbjwx+",
+	"4RTMmmo1a6zn5iY6CC8hRXymM+RwGmvRX6i0tKi4ztHfWUtoLB9Y+bpexMDY0yAUQ2e63NSTURJC4tkK",
+	"ruYDpllKkmUEI3w/g4uFX5yr+lHHnVF4jxinT94i44lxuJoJdYWmYdbZyQbzzeuz78/ru5L5lDo4mpB2",
+	"zkORf21k2Q1K18OM3Ru11KJw6J5N6pTy/aoYsjxGT5hvzAcqu689GdXkqqkig3y9piPYYePRs+00HjWQ",
+	"C6x8asj3pNBEGMIYAupW081ceV5pj9xVf5vJCbpJPW3MAvVqBWB/YnF1bepnrRXWhPcdOXbMapUqN5dn",
+	"Tfy8pWvB1exyW/Sds6oCuKk2roCA3YhGVx5tYb/F8h9nQl57iZuPUtJYpxZRtIZ01uuGai9PMHJA+h6G",
+	"1KwUZjfB9RKwGUjQ7AE+1bQKinpFERJKojREtY6HPH7gQ193anTF79qzkMs+fWdmdgmv1o1o48t11qW9",
+	"N3Fl8W7uniivj8wLf7ITnMnwtysgfG+b0uVWKSdyoaRx9xZIe7kp+7XF63XbHVAl3Nm2K+FKHFqpVE1V",
+	"vWhTtaqZYpNas31q8sMr5Z76uHnxaDfdvMxqduVefXvZJnj7N7uKEfDLp7CeD/ExckPqduS0XHu97krd",
+	"s93H7eG6/iSo+SxTjZR8y82YP7YnI7LnxHZiQZjVdNJj1ZDYKDic7aW7er4Zm27cxIGmuFNQCMMv3T9y",
+	"ppg4HU21z8wM9jJFsdjfaKDNTQMaWg5Zb9VdppR1rvabwwWhsBN29Sco8nvkzt58vpo9Tcu+euXUINON",
+	"2Udok5RXR3//w7u3b87daa2+rHObYsX55TBJKj1mEsZs+RY09DLFVVOzbnHYKO1GD16EIK0bQvms7R2T",
+	"utLMru9HgQWcNWRwui97V7KD20FN0f19pQ/uO7+L13xc2ts062xbBd6JvhaC+Y08bpQrNMtau9TE+FXJ",
+	"rDYm7WLTi5P/mz/J+MP09fkPNe/KFkOH+XzTKgwtm73Rdb+DX+gZSxdcLGdVDwv2eKSgKr276wBfc7eU",
+	"kha1C3X/6PV3DzzuRG2sntmoPR6q9ribZj1ug2IXMqbNnfCA4vhCpm1umn65BDiKu/e1nU6+nDCIGeJo",
+	"Dd0ew8oatTvZvB/AFnfRq/SmT5dYnxR0iZ6fMadPhZKVkKxWiPvlP8gEJPl2dXexXUHw1KS8W9NW4XJk",
+	"mba8HmHtsyMJlCIhXjjpXJ/ZKOi968HJI4aULVHideqfstEv00ljAaTO5vZOoOlc7jRzFIq57xc13PXU",
+	"blNtzcwTheV3NSzgilNVI2TF9FlneX1+PKWN2Bi2766mHHn1Ur7Kkb6FawQfN3Q9+ssiX17fsAJqK3dE",
+	"qXJJy5PSphvw288zWmqC0ecdAWeMusdh3UNsxfg6Z1Z1swgLl0lb+ZXqIKqaufpXltioNfA5rgNr2+6V",
+	"as/8V7SA4VMYQ2cyk6sCob7sQE44ZCnP5qfb7Uz7nZlV/+OaoLCN2nM53GqvDlU6dRTWVIDTqaBG3ez6",
+	"Mfc7DjaOSPlKmuaSt3pQbZXFMJmJcJt7UbZYbgp766ctLxhLKcDF2DmFYpxuWIkFh8RNc5Sex+z3Iuc8",
+	"7yLaRElebwdajZcT6Pmucsjowln3Vr1T3/m9f7ZGNWqXBy2UsVKAz0UZ+iguKYwg5gjErIfQZGzWx2jS",
+	"n2bIK6jykzujbQQkAX+nMFDDgzADNaCQpxTDKCA4fgo4CfgSBpymjMMo+HB19ar7i6ouGxLYtO7x7GvO",
+	"GxX6qNvi5d3tVZBQQha72hSFCwrZstfBmW99T06P3/nROe7GjN7Kuyic1NRB1k6U2cTRwF7y5eHrq4sr",
+	"hBFbbvYE8d4FXnaIMwpZQrDqilAkgQ8kxRGMAgYpAjH6B0aBRgUOAGNiVwQH5vvSYZtQqbUdr6cj9yyK",
+	"dVM3UPNKRudS9tJs02bh7j6YNprs9UhQWLwsPCSifb0Ic2UBPD+8vroQ6gHCaZYG6XgiB6R8KaYPgVI9",
+	"VgvQ9EBFzXs3Dbi6vrr4ADd+PHybnDvwQ+LlHgPVJ8DNZpqxVji8zmpx54tJv5TxAJ9mJMnqw9yLquLC",
+	"0s3FAY4AjdgJW4IERoGaMJddetb/GWC4hjRQ76tBGqwAl5Lu1cSBjoHFQuE6cmCg+YR+Usb1xqae5kWB",
+	"1c+ums29EWyTCZej4eBu5k1vWV1bCYa4aHd/z3W72q6vLm5VCdyBSe1j4BcH9r04qF8PipY+HzIlvFvy",
+	"VXsgP2WbtE3PYwauBwYrmLnRmNUE2VPO6gjIwEQxnWD4ONst5VW2VgKiCbUU4RAlIN6hy2IjV0AuxTbo",
+	"+x8hlsTgqTbO1laatwCzRhYRAzZ5bI7Evsi5FUPNi7y9iiXll5u8ocAg7YnHRziXr+TNGGT9qz0rs2wr",
+	"D8Xg1NpjiXT0Udk07XZ72BRTQrmTposk5MZUw84bGP5W01Zm90UCI1LLkTloypVPaJPT+U4t1yNlU+Zz",
+	"gQXvS6x6o/4xviLEVgdru5DjrKWOI1u1Aa96hVu4Jg+bWQJN3Yeq7wwVvmiHr997CpuJ7H4Oss5KS2dX",
+	"k2rgCiHu5bjt5/QV1NFtWxuI5m3I1xLFuQWRLf6soyuhuMb72yK0loQ87KasUS/Wv6qxOkFXpephRvAs",
+	"gjEyb826mulHaQJn6p1Az/Qu+UX1RVnr0Szz8KAwXkj0NGNLcP7dO+clYC770utUZyc/Zg9UnXx+Ppu+",
+	"e/PifKQqoWSV8BmHqySuBmsd9vTr+mIUTnpk8emruwyHPem0chZlNJYPooEefkGME/q04/Kuv8h8C/zu",
+	"KPjSE7dvuFfdl0H4LAFPMQGVtPyztz98972Lyp0FY82j295bcJaV1c/J8rvVQ8xoJGUqSVnn0L+vglqp",
+	"O5tWkdZ+OIPX29RscxtVN06+8i+8cUPWOX7TQ0HRp+RfdrAEbFYQdVUi7cnn6kN/SDoJXP8ajNKh6c3Y",
+	"rV1sdcICuYrOMrZsmBvIYDfl5Gax7ZaR27N2VDWEDtdBh5DjTc8koz9ggmGuOXzemh6/gcK2SYVSRi6m",
+	"JNInYzj7pFNKeOd3/bu/VLnfmqUSYsrItQlqWiDGEse3vJ+pKUB1FOoViPdJKi0xL5OrDZH+bYpJ1AKN",
+	"G/56a0b1Fn+HrGcxlzBgvJU2v1rpbTwiX6q37tZ4wYHDlnprZci1Y7gHz0RpIrOi4VY1kjpVIF+tYS+7",
+	"KYB0XjgHUP+o4fq3Gn88TX2UME0p4k93AsVat2Z0UQ3Ua9fiiXY8ncxJiiM76XNB6COgEYyC+VPwAYQP",
+	"ZLFAoYzXIzFBdsEoB8bk/5x8AHEETsQUOf+BBP1v+JRnyRN6B+kahVAsrixyQCG9Mpj5pEf9rjPIikD/",
+	"SkIQB0zNYOduLmEs4eRLaMEqdhJCxgTMkuYkZ8kFcwiXnCfauyd9rTLcUMXXJ5U3qtHmyPztiy9zEHph",
+	"B+Y0ZLfK29cKmiO1dVPYzNIV4F6k7b8gVaAudS9IsbY8lpiQZA7Ch0BOHayyV8+Di5uPr4Lfl1D8I4gQ",
+	"4wjfp4gtIQt05D9He8qXRNB3sKBkFVx8DEKCBUOopBITWZA5T4jHAlS13HVhOUu3ej95/er7V2eaQjFI",
+	"0OT95M2rs1dvdMGYpIVTkKDTHOTT9etT2V1Acdi9Ul+yso2P0eT9JEaMX+gxsoZV5ojI8ednZzpAYVqp",
+	"gSQxhTGnfzElLZSUbJOhconc6JInUjwJtfUoMAC/TCdvz17XzZsBevoH1tj+Rz12+PbsTftHV4TOURRB",
+	"Kcq/U/ts/uIj5pBiEMu3/9VXHutoKfIHzh05tvibvP/z2S1x/vxcYfU/P798lk3tmeMYlfp8oVvBaSXh",
+	"g1aJtneCRZf8S1H4Z/nxQ9LQLQwJjVwEpGDTBKQoweNcP4Dsvb3dUdzbsx/bv7gkeBEjddXvmUTV3Sxo",
+	"shOxvkwbJNLps/yHDKm/aB8wVMplkbTV7w1pJ4CCFeTyRYc/3XvLhyiS+U3cFi+fB2SLYltFL7Z4W72L",
+	"5FSBsasPnIDftn/xG+FXQl37hih+6r5k7yHfDv3uR7IawpSBnQMmsiO7yFMHpVDIAd0auQwk7m41kIep",
+	"BxjojkUVGCVpB90h5cvTmOgH9t2qsPyztsQG0oWlga/LwPbCAo5KNAcnyD8HWTvRgNBAg8gCgIPrqwth",
+	"lxZqxHbFKH2I0lPeCtGXBeUndxxQHsTSI2PMc0VArSR2qqvt3GS2kHUv9kEMRGyNlbD7obtCVaJDX7Cr",
+	"CjOsh8VSxq+O0tTBuEgteER8Kditjeb0O2u1co2k3BZsbQbFpUoQzYDRfqdAJyR+bQbvdm4e+0hVXq/0",
+	"C4ZuXDaeqMqYq7MIKrUYw/NtvpbLf1LaYZIPPmhX3CZqePGwQeQ8agsRTYetLotaL4aK0OVVX8PeFtX6",
+	"1IO8KXRt18pG957uiW9GqGm6KJB6yiD970xqhAsQcmUCtAiuvHJxeDLK12oQXAJ6nRX2jUos6xgNIpol",
+	"1qluFVerdMxhbkxdX138jLN+ckOKrkLx8X4EV6V/hiNidXVRLBbflzG1H6rdXBLJY5bUCjElcSzfkPOj",
+	"2FNlfnmaZ7uj3COwzsY7d/eUrm3DjqRuXiP2lc632evFwxK5q0XEKKW/fimtVMOA5gLEl4Q7i+tdkfIo",
+	"r0d53SyvOxK93QPETep6plKXk2EpvaaXykjvI71rS1Li3GVMKn92RtZNtE/z1M860pcDan3YOyc1wptD",
+	"FCPNWAm9FaKR2HMjr4FK7G4etSmpxf4VjkwImRD8d6qKtHU+cN66JSeSjsUI7omz3iVbnzlG6qmYfNoI",
+	"LoAszjg/m+ap+Nnj/uCLzsQ/O2vJy/88PHvZLWFcccBQ9jIuh58SOfxrV7z7iuJfEeMBcGLOj69Onx3t",
+	"Ol5OVdCvSTaLvxcPtobt9AMlmoTdzUGKWkV/vvk8qF7k7N/TN3+zMcw65h8dRCiXYOgbwhVwAo7mKJZQ",
+	"1Ady86KNy8InA8rfuiVr6yqkNh2aYpcV5CACHBx+UoUMcawcWyicjrUh91kuCXloVjh+kSMGPLJfCl0H",
+	"GgpgBKyBKg9PqeWlGmthOtXCCHwPZFSLqe/AeuML4xd50qpsZTRrDzbpVAqP02fxP99qFU183bK3xUeD",
+	"Jm//IquYt1GqIil3rFQ56koVZ/2B6rxxuOS7NbGrW4yMxPv1yOlVmDSqeNeXN5dZV9JBdb3ry5tmVe/y",
+	"JkBmQABwFCSUrFEEaRAuCQrH8uceyU+qf87JgkIYFBA8adEUC3QxkMoo1thn7bSgSNnIqL5uWuAs79o7",
+	"6qP7l3M2uatTCkxHiupx1crEU4NsRTeAc7hKODt91v+S3sEQ4FA1UK7hFPn368ubC3uyzjqCmECt+vEn",
+	"V0mrqypajQ8UBPGOyxbG+7fT/VuiNd0X5TQEcTwH4UMDfekitevLG/24aZnQBpLK5ilVA+EByWVzr4EF",
+	"tDg9UI/Vjnrr0fipunILwXMCmjJI9ICd80phmU8KiP3pM3rvGRx1VbDCZIxsBhL6tunYxGR5qHnIcNR5",
+	"juduUQ8/dGGWn6BZ/ZvjFbX1fqxCsGo2GyiMBwgzTlNtRI8cc3QcY+v9jWHNOo7Zrso/AJ0XAK6vG7sT",
+	"ipUm6oSSewoZk6XaJOU51VfJfVShDkiFSiiZN2S1yD9/4w6eO8sxJvERUH0DfG05WAflsbmRqAY4SDGT",
+	"96r02AAcoUgacPU0/Ww9nqWFdHO4sUzgnSV0/nUmpAdhkUoH88PhEhUYHd2gh81Uv5PVnHGCmzyhjaHN",
+	"o2GVYm/zw+ETBdfIJ4fNJ+qUeoULSreP20nVUpNa75o6WH4rAPpRvrW1N59W2YChTmtdDw4ojBCFIbdN",
+	"ldE//HVZ8s1MqYzYdp7ckj3/TbGk26Xg5shPR+wqGzlyqxyJmP57PVfmY7YRV3cwZVto/X9RgHmQgzHG",
+	"1o+Y4ijk6jXDuvIuTp8GorNBhP+tALgA7QGmTo0h+m+X/SIE7jFhHIVNIl6OGcTrMKDKk++sLmzCIV0h",
+	"DOIgx8JReJVHsvfoD6loVibXmpesgKxHNqm215c3QVR8MN+TafJwTeoVrVF+jNFP961Efb49dlNhIhgh",
+	"zgJwD4TJWEhrp5ADhGEUULhGrCO7MRNvqb+i1JAxgrQ5xwmpmCE8CJcA3491nYfGbqoPaEBooDtyd/aR",
+	"J3F6j/DJCtAHyGXbpObK8hs5/toePiB9VlZrLERSowNrL8WymbEEybvqHERRBfcD5ZpU1rmI9pVbWAHl",
+	"J/1KmKMbUBTByCa1UTQerL3rkHGnz9ZP7XXwFK7IGro4optqUZlh0BLjymrXKe/ue3K4Wq0pA4WasfT4",
+	"K3vhcVha37/8tkl4fAty+OxWPxns3XTz2xTFe+EU3THzuLSdUdx3ZU0fs28Htl6jgfcRMw7iGEaBgnk0",
+	"7zY58NNn9Y9c/W1WBnqK2F1d+/USrEI244W/JyI7zSsG6siNwjWCj+pIL7PRm5BeTbPiVUF5cHZ0fX3+",
+	"Q00P10Ep+dIqq6gQ889fQMgDhaWcoq1KjPFi/hoZJ0YLGD6FTa+brYRKCbclqwfTgQ9C8dVAfDKl8o4K",
+	"mpRKh/pKDz2WsvpR8+3AarpPWYvum40aki71Io36bykKrnqsjTpw/y5rbiQ2tVcz5zRUMERP36P61uGn",
+	"vcn68I1teY+iDZqhx0mbwDp9Nv/0q6m1yLajXmDk0nB5EGaJ7TTzzWj+SBr6jjWvNtk3VrseAxH3SKBr",
+	"IuIjaez7rRGx/cIYjBCXlkKeQxqQxeZC3T/d7Rj4ol+mWxNrjMlpR5yc1sYTgnyiNG5JRrvLRg1omZlF",
+	"mi0zPWi0xvpYY+qYlF3LnJhsMskM7gcyycz0e22IlBFhS9trg71RFh64pZcfVIsAPH02//Sz9Cxu6KYM",
+	"ZCQ2nDJgluhh6e2OlUzrpGNhpdHh28PitA+3Luq9PU7aEyVnSskY7x5ShRGUZWktYZxGCN8H9ymgkWpA",
+	"K4+62bdxDGJ7r8WBbcRuOnmNYvsr87FUhbZHtW6N+nRKU+xnUt6mrne6O/BiTdbJHC4IhTNQfCY7exlb",
+	"0LBsujPxfnRbz1h6zzubMU3lX3aZxWLhsO4x7Q+Cru0jpekxPKX9zd1rc31O4mgCsiie1xKxZvucptjQ",
+	"wm/k8ZCvttsU/0Ye93y13aa4rTdLpLNSaDo2xTv+C04eiuQzFMFVQgQpidsuBXGB0/rccqfPNMVtXfEt",
+	"ytv0svMcLWh8R2bRbdqQE3xnC7LRPtqZfSTQ/Yj4MlhQ8g/EAcJJytXLHClXPRE7kbp3kOwYDKx9t4No",
+	"9TKbDmGjjfX1h+haPdQPKI5bjCk1ZEiKFSs0R+Y4wBGIpfsPK28MRfNUugrEx2PErlfqrDr90ySdZyfn",
+	"07NRntdN/tHgtOGR6S3HBdZOAgpDsob0qZjzPYbGhs7H1kTlWwRsiZcB7mQx+ac5g3QNozu+R8enJxmb",
+	"ggUl1TSKxscAj4fo1wg+slMQhjBp6LOs/i6J4lZ+MiT9X8jFjorwx3qdb4ZVkKrrbbonxECtI6qxAzKL",
+	"XkJx5T55prF+9FMC/k5hXkCquOZo6kdH6n+W/5fOD++iUEkW3T0fkqoHdHvYAn68ZMZL5kDZzNw3KlPD",
+	"67rp2el5Jxx3MEZNj3tKH8HIbl8Nuz3C+ZKQh2ZH4n/MoAFJUq/hXYCtAR/9hz1bzKrkfY31gfRyPfte",
+	"U/c1DIp06l+rNxn8lKQcqhAZwfDEgBUw+f2onh+8IDt91v9qbyurfp+zQDdlQX83aM8Wvca/IWX709GN",
+	"ZG5J2JecM6oGX1cf2u0xx36I06UxjOkmW9Yv6tPqj0C27jWrvoV6TVL9KFq/DWXl1KT0ehhjv+ihG7HW",
+	"rrPk/yLzcqa81e/x/Lt308kK4az/427z5ouIbU2dt24WKxN7TJ4/oCyZFjY7fVb02Jiju2V28xv+LzIf",
+	"Ok23uK/6TN1PGKr754Q8YhgZWh+1qD3SLyW82RMu/17wfIzm7aYOIvOE3lE7iEYlbXPu8855PwLrZ98p",
+	"7y0GUIHpRt76+nmLQ9aQfCf+egRM9TtkfL/8pCCou8pMMgWIVogxlXE9vrZ9tAz28vL/AwAA//8=",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

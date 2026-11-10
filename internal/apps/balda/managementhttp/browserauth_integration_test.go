@@ -301,7 +301,7 @@ func operatorRequestEditor(_ context.Context, request *http.Request) error {
 
 func credentialRequestEditor(credential, csrf string) managementv1.RequestEditorFn {
 	return func(_ context.Context, request *http.Request) error {
-		if strings.Contains(request.URL.Path, "/refresh") {
+		if request.URL.Path == "/api/management/v1/auth/refresh" {
 			request.Header.Set(webAuthRefreshHeader, credential)
 		} else {
 			request.Header.Set(webAuthAccessHeader, credential)

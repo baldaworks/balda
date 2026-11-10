@@ -3,7 +3,6 @@ package skillbackofficeapp
 
 import (
 	"context"
-	"github.com/baldaworks/balda/internal/apps/backoffice"
 	"github.com/baldaworks/balda/internal/apps/balda/skillapp"
 	"github.com/baldaworks/balda/internal/apps/balda/skillcmd"
 )
@@ -16,7 +15,7 @@ func New(management *skillapp.Service) *Operations { return &Operations{manageme
 func (o *Operations) Inventory(ctx context.Context, a skillcmd.Authority) (skillcmd.Inventory, error) {
 	return o.management.Inventory(ctx, a)
 }
-func (o *Operations) ReviewInstall(ctx context.Context, r backoffice.SkillsInstall) (skillcmd.Candidate, error) {
+func (o *Operations) ReviewInstall(ctx context.Context, r skillcmd.InstallReview) (skillcmd.Candidate, error) {
 	return o.management.ReviewInstall(ctx, skillapp.InstallRequest{Source: r.Source, Ref: r.Ref, Path: r.Path, ExpectedState: r.ExpectedState, Authority: r.Authority})
 }
 func (o *Operations) ReviewUpdate(ctx context.Context, r skillcmd.Mutation) (skillcmd.Candidate, error) {

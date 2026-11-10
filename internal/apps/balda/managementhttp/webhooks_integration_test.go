@@ -17,7 +17,7 @@ func TestGeneratedClientWebhookLifecycleSecretsAndDedupe(t *testing.T) {
 	fixture := &webhookFixture{item: webhookroutecmd.Item{Definition: webhookroutecmd.Definition{Name: "orders", PromptTemplate: "Order: {{.Body}}", DedupeSource: webhookroutecmd.DedupeSourceRequestID},
 		Source: webhookroutecmd.SourceManaged, Enabled: true, Version: 1, AuthType: webhookroutecmd.AuthTypeHeader, AuthHeader: webhookroutecmd.ManagedSecretHeader,
 		CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}, secret: "one-response-secret"}
-	server := httptest.NewServer(newManagementTestHandler(t, nil, nil, fixture))
+	server := httptest.NewServer(newManagementTestHandler(t, nil, nil, fixture, nil, nil, nil, nil))
 	t.Cleanup(server.Close)
 	client, err := managementv1.NewClientWithResponses(server.URL, managementv1.WithRequestEditorFn(operatorRequestEditor))
 	if err != nil {
