@@ -29,6 +29,7 @@ const (
 	csrfCookie    = "balda_csrf"
 	mfaCookie     = "balda_webauthn"
 	maxFormBytes  = 128 << 10
+	htmlListEnd   = "</ul>"
 )
 
 // Service is the generated-client surface consumed by the browser edge.
@@ -45,6 +46,25 @@ type Service interface {
 	DisableMFA(ctx context.Context, auth managementclient.Auth, password *string) (managementv1.WebAuthCredentials, error)
 	Sessions(ctx context.Context, auth managementclient.Auth) (managementv1.WebAuthSessionPage, error)
 	RevokeSession(ctx context.Context, auth managementclient.Auth, sessionID string, confirmCurrent bool) error
+}
+
+// SystemService is the optional generated-client configured system view.
+type SystemService interface {
+	SystemOverview(ctx context.Context, auth managementclient.Auth) (managementv1.SystemOverview, error)
+	SystemAgent(ctx context.Context, auth managementclient.Auth) (managementv1.SystemAgent, error)
+}
+
+type MemoryService interface {
+	MemoryFacts(ctx context.Context, auth managementclient.Auth, query string) (managementv1.MemoryFactInventory, error)
+	MemoryFact(ctx context.Context, auth managementclient.Auth, id int64) (managementv1.MemoryFactEditor, error)
+	CreateMemoryFact(ctx context.Context, auth managementclient.Auth, request managementv1.MemoryFactCreateRequest) (managementv1.MemoryFact, error)
+	UpdateMemoryFact(ctx context.Context, auth managementclient.Auth, id int64, request managementv1.MemoryFactUpdateRequest) (managementv1.MemoryFact, error)
+	DeleteMemoryFact(ctx context.Context, auth managementclient.Auth, id int64, request managementv1.MemoryFactDeleteRequest) error
+}
+
+type ArchiveService interface {
+	AISessionArchives(ctx context.Context, auth managementclient.Auth, params *managementv1.ListAISessionArchivesParams) (managementv1.AISessionArchiveInventory, error)
+	AISessionArchive(ctx context.Context, auth managementclient.Auth, id string, params *managementv1.GetAISessionArchiveParams) (managementv1.AISessionArchiveTranscript, error)
 }
 
 // ProviderService is the optional generated-client surface activated by the provider Story.
@@ -203,6 +223,15 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("POST "+a.path("/auth/session/refresh"), a.refresh)
 	mux.HandleFunc("POST "+a.path("/logout"), a.logout)
 	mux.HandleFunc("GET "+a.path("/overview"), a.overview)
+	mux.HandleFunc("GET "+a.path("/agent"), a.agentPage)
+	mux.HandleFunc("GET "+a.path("/memory"), a.memoryPage)
+	mux.HandleFunc("GET "+a.path("/memory/new"), a.newMemoryFactPage)
+	mux.HandleFunc("POST "+a.path("/memory"), a.createMemoryFact)
+	mux.HandleFunc("GET "+a.path("/memory/{fact_id}"), a.memoryFactPage)
+	mux.HandleFunc("POST "+a.path("/memory/{fact_id}"), a.updateMemoryFact)
+	mux.HandleFunc("POST "+a.path("/memory/{fact_id}/delete"), a.deleteMemoryFact)
+	mux.HandleFunc("GET "+a.path("/chat-sessions"), a.archivePage)
+	mux.HandleFunc("GET "+a.path("/chat-sessions/{ai_session_id}"), a.archiveTranscriptPage)
 	mux.HandleFunc("GET "+a.path("/account"), a.account)
 	mux.HandleFunc("POST "+a.path("/account/password"), a.replacePassword)
 	mux.HandleFunc("POST "+a.path("/account/2fa/enable/start"), a.beginMFA(false))
@@ -370,7 +399,11 @@ func (a *App) overview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	a.page(w, http.StatusOK, "Backoffice", `<p>Signed in as <strong>`+template.HTMLEscapeString(principal.DisplayName)+`</strong>.</p><p><a href="`+a.path("/account")+`">Account</a> · <a href="`+a.path("/providers")+`">Providers</a> · <a href="`+a.path("/mcp")+`">MCP</a> · <a href="`+a.path("/hooks")+`">Hooks</a> · <a href="`+a.path("/plugins")+`">Plugins</a> · <a href="`+a.path("/skills")+`">Skills</a></p>`+a.logoutForm(r))
+	system, ok := a.systemOverview(w, r)
+	if !ok {
+		return
+	}
+	a.page(w, http.StatusOK, "Backoffice", `<p>Signed in as <strong>`+template.HTMLEscapeString(principal.DisplayName)+`</strong>.</p><p><a href="`+a.path("/account")+`">Account</a> · <a href="`+a.path("/agent")+`">Agent</a> · <a href="`+a.path("/memory")+`">Fact memory</a> · <a href="`+a.path("/chat-sessions")+`">AI Session archives</a> · <a href="`+a.path("/providers")+`">Providers</a> · <a href="`+a.path("/mcp")+`">MCP</a> · <a href="`+a.path("/hooks")+`">Hooks</a> · <a href="`+a.path("/plugins")+`">Plugins</a> · <a href="`+a.path("/skills")+`">Skills</a></p>`+system+a.logoutForm(r))
 }
 
 func (a *App) account(w http.ResponseWriter, r *http.Request) {

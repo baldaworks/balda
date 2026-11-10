@@ -81,6 +81,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/startupnotifyapp"
 	"github.com/baldaworks/balda/internal/apps/balda/startupnotifyfx"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/balda/internal/apps/balda/systemviewcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookapp"
@@ -438,6 +439,10 @@ func Module(
 			),
 		),
 		fx.Provide(
+			func() *systemviewcmd.Snapshot {
+				snapshot := backoffice.ProjectSystemSnapshot(backofficeConfig)
+				return &snapshot
+			},
 			func(lc fx.Lifecycle) (baldastate.Provider, error) {
 				provider, err := openBaldaStateProvider(context.Background(), stateDir, database)
 				if err != nil {

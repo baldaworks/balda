@@ -79,7 +79,7 @@ func (a *App) schedulePage(w http.ResponseWriter, r *http.Request) {
 		runID := run.ID.String()
 		body += `<li><a href="` + a.path("/schedules/") + url.PathEscape(id) + `?run_id=` + url.QueryEscape(runID) + `">` + escape(runID) + `</a> · ` + escape(run.State) + ` · ` + escape(run.ReportLocatorRef) + `</li>`
 	}
-	body += `</ul>`
+	body += htmlListEnd
 	if runs.Next != nil {
 		body += `<p><a href="` + a.path("/schedules/") + url.PathEscape(id) + `?before_at=` + url.QueryEscape(runs.Next.BeforeAt.UTC().Format(time.RFC3339Nano)) + `&before_id=` + url.QueryEscape(runs.Next.BeforeID.String()) + `">Older runs</a></p>`
 	}

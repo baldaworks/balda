@@ -6,6 +6,6 @@ package managementv1
 // verified against the authoritative OpenAPI document.
 const (
 	ContractID      = "balda.management.v1"
-	ContractVersion = "1.7.0"
+	ContractVersion = "1.10.0"
 	APIMajor        = 1
 )

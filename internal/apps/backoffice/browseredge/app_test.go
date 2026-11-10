@@ -174,3 +174,9 @@ func (f *fakeService) Sessions(context.Context, managementclient.Auth) (manageme
 func (f *fakeService) RevokeSession(context.Context, managementclient.Auth, string, bool) error {
 	return errors.New("unexpected call")
 }
+func (f *fakeService) SystemOverview(context.Context, managementclient.Auth) (managementv1.SystemOverview, error) {
+	return managementv1.SystemOverview{Capabilities: []managementv1.SystemCapability{}}, nil
+}
+func (f *fakeService) SystemAgent(context.Context, managementclient.Auth) (managementv1.SystemAgent, error) {
+	return managementv1.SystemAgent{}, nil
+}

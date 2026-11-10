@@ -319,6 +319,11 @@ components:
     in:
       - internal/apps/balda/aliascmd
 
+  # Allowlisted configured-system snapshots contain no runtime config or policy.
+  system_view_contracts:
+    in:
+      - internal/apps/balda/systemviewcmd
+
   alias_policy:
     in:
       - internal/apps/balda/aliases
@@ -699,6 +704,9 @@ deps:
       - webhook_route_contracts
       - alias_contracts
       - hook_contracts
+      - system_view_contracts
+      - memory_contracts
+      - chat_archive_contracts
       - contracts
     deepScan: false
     anyVendorDeps: false
@@ -1131,6 +1139,7 @@ deps:
       - hook_contracts
       - memory_contracts
       - alias_contracts
+      - system_view_contracts
       - mcp_contracts
       - schedule_contracts
       - webhook_route_contracts
@@ -1697,6 +1706,7 @@ deps:
       - webhook_management
       - webhook_route_wiring
       - alias_contracts
+      - system_view_contracts
       - alias_policy
       - alias_wiring
       - alias_backoffice_wiring

@@ -83,6 +83,20 @@ func TestProjectCapabilityCardsOmitsDisabledAndShowsOperationalSettings(t *testi
 	}
 }
 
+func TestProjectSystemSnapshotContainsOnlyExplicitConfiguredFields(t *testing.T) {
+	t.Parallel()
+	snapshot := ProjectSystemSnapshot(ResolvedConfig{
+		Agent: AgentConfig{ProviderID: "primary", ProviderType: "openai", Profile: "default", Model: "gpt-test", ReasoningEffort: "high", GlobalInstruction: "be useful"},
+		Balda: BaldaConfig{Telegram: TelegramConfig{Enabled: true, FormattingMode: "markdown"}},
+	})
+	if len(snapshot.Capabilities) != 1 || snapshot.Capabilities[0].ID != "telegram" {
+		t.Fatalf("capabilities = %+v", snapshot.Capabilities)
+	}
+	if snapshot.Agent.ProviderID != "primary" || snapshot.Agent.Model != "gpt-test" || snapshot.Agent.GlobalInstruction != "be useful" {
+		t.Fatalf("agent = %+v", snapshot.Agent)
+	}
+}
+
 func TestDefaultResolvedTTLs(t *testing.T) {
 	t.Parallel()
 	resolved, err := (ServerConfig{}).Resolve()

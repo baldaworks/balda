@@ -333,6 +333,15 @@ func inspectManagementContract(spec *openapi3.T) []string {
 		"cancelMCPAuthorization":          {"csrf", "operatorServiceAuth", "webAuthAccess"},
 		"disconnectMCPAuthorization":      {"csrf", "operatorServiceAuth", "webAuthAccess"},
 		"retryMCPAuthorization":           {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"getSystemOverview":               {"operatorServiceAuth", "webAuthAccess"},
+		"getSystemAgent":                  {"operatorServiceAuth", "webAuthAccess"},
+		"listMemoryFacts":                 {"operatorServiceAuth", "webAuthAccess"},
+		"getMemoryFact":                   {"operatorServiceAuth", "webAuthAccess"},
+		"createMemoryFact":                {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"updateMemoryFact":                {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"deleteMemoryFact":                {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"listAISessionArchives":           {"operatorServiceAuth", "webAuthAccess"},
+		"getAISessionArchive":             {"operatorServiceAuth", "webAuthAccess"},
 	}
 	for _, path := range spec.Paths.Keys() {
 		for _, operation := range spec.Paths.Value(path).Operations() {
