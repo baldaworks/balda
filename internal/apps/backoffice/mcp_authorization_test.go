@@ -334,3 +334,100 @@ func (f *mcpAuthorizationFixture) RetryAuthorization(context.Context, mcpcmd.Sel
 	f.retries++
 	return f.item, nil
 }
+
+func TestMCPCallbacksCaptureIssuerPresenceAndOriginalCanonicalPath(t *testing.T) {
+	for _, prefix := range []string{"", "/balda"} {
+		t.Run("prefix="+prefix, func(t *testing.T) {
+			provider, config := newHTTPAppTestState(t)
+			config.Server.BasePath = prefix
+			now := time.Now().UTC()
+			createAccessTestUser(t, provider.Users(), usercmd.User{ID: "admin", Username: "admin", NormalizedUsername: "admin", DisplayName: "Admin", Role: usercmd.RoleAdministrator, Status: usercmd.StatusActive, Primary: true, Version: 1, Credential: usercmd.Credential{State: usercmd.CredentialStateActive, Version: 1}, CreatedAt: now, UpdatedAt: now})
+			app, err := newHTTPApp(provider.Users(), config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			flows := &mcpAuthorizationFixture{}
+			app.mcpAuthorizations = flows
+			handler, err := app.handler()
+			if err != nil {
+				t.Fatal(err)
+			}
+			admin := loginHTTPAppSession(t, handler, config, "admin")
+			for _, suffix := range []string{"", "/" + strings.Repeat("a", 64)} {
+				for _, issuerQuery := range []string{"", "&iss=", "&iss=https%3A%2F%2Fissuer.example"} {
+					path := prefix + "/mcp/oauth/callback" + suffix
+					request := httptest.NewRequest(http.MethodGet, path+"?state=private-state&code=private-code"+issuerQuery, nil)
+					request.AddCookie(&http.Cookie{Name: security.OAuthCallbackCookieName, Value: admin.access})
+					response := httptest.NewRecorder()
+					handler.ServeHTTP(response, request)
+					if response.Code != http.StatusSeeOther || response.Header().Get("Location") != prefix+"/mcp/oauth/return" {
+						t.Fatalf("callback %q = %d %q", path, response.Code, response.Header().Get("Location"))
+					}
+					if flows.callback.CallbackPath != path || flows.callback.IssuerPresent != (issuerQuery != "") || flows.callback.State != "private-state" || flows.callback.Code != "private-code" || flows.callback.Authority.UserID != "admin" {
+						t.Fatal("callback lost actual path, issuer presence, protocol input or current authority")
+					}
+					cleared := false
+					for _, cookie := range response.Result().Cookies() {
+						if cookie.Name == security.OAuthCallbackCookieName && cookie.Path == prefix+"/mcp/oauth/callback" && cookie.MaxAge < 0 && cookie.HttpOnly && cookie.SameSite == http.SameSiteLaxMode {
+							cleared = true
+						}
+					}
+					if !cleared {
+						t.Fatal("canonical callback did not clear its parent-scoped temporary credential")
+					}
+					for _, secret := range []string{"private-code", "private-state", admin.access} {
+						if strings.Contains(response.Body.String(), secret) || strings.Contains(response.Header().Get("Location"), secret) {
+							t.Fatal("callback retained protocol input or credential in response")
+						}
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestMCPCallbackRejectsMalformedPathsAndAmbiguousProtocolWithoutReplay(t *testing.T) {
+	provider, config := newHTTPAppTestState(t)
+	now := time.Now().UTC()
+	createAccessTestUser(t, provider.Users(), usercmd.User{ID: "admin", Username: "admin", NormalizedUsername: "admin", DisplayName: "Admin", Role: usercmd.RoleAdministrator, Status: usercmd.StatusActive, Primary: true, Version: 1, Credential: usercmd.Credential{State: usercmd.CredentialStateActive, Version: 1}, CreatedAt: now, UpdatedAt: now})
+	app, err := newHTTPApp(provider.Users(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	flows := &mcpAuthorizationFixture{}
+	app.mcpAuthorizations = flows
+	handler, err := app.handler()
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin := loginHTTPAppSession(t, handler, config, "admin")
+	digest := strings.Repeat("a", 64)
+	for _, tc := range []struct{ name, method, path, query string }{
+		{"short digest", "GET", "/mcp/oauth/callback/aaa", ""},
+		{"uppercase digest", "GET", "/mcp/oauth/callback/" + strings.Repeat("A", 64), ""},
+		{"escaped digest", "GET", "/mcp/oauth/callback/%61" + digest[1:], ""},
+		{"escaped callback", "GET", "/mcp/oauth/%63allback/" + digest, ""},
+		{"extra child", "GET", "/mcp/oauth/callback/" + digest + "/extra", ""},
+		{"escaped slash", "GET", "/mcp/oauth/callback/" + digest + "%2fextra", ""},
+		{"duplicate slash", "GET", "/mcp/oauth/callback//" + digest, ""},
+		{"dot segment", "GET", "/mcp/oauth/./callback/" + digest, ""},
+		{"duplicate issuer", "GET", "/mcp/oauth/callback/" + digest, "&iss=https%3A%2F%2Fissuer.example&iss="},
+		{"malformed query", "GET", "/mcp/oauth/callback/" + digest, "&iss=%zz"},
+		{"HEAD callback", "HEAD", "/mcp/oauth/callback/" + digest, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			request := httptest.NewRequest(tc.method, tc.path+"?state=private-state&code=private-code"+tc.query, nil)
+			request.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: admin.access})
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if flows.callback.State != "" {
+				t.Fatal("invalid callback reached protocol owner")
+			}
+			for _, secret := range []string{"private-state", "private-code", admin.access} {
+				if strings.Contains(response.Body.String(), secret) || strings.Contains(response.Header().Get("Location"), secret) {
+					t.Fatalf("invalid callback retained %q in response", secret)
+				}
+			}
+		})
+	}
+}

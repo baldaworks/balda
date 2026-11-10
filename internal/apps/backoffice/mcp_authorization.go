@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 	"time"
 
@@ -64,6 +65,7 @@ func (a *httpApp) mcpAuthorizationRoutes(mux *http.ServeMux) {
 		}))))
 	}
 	mux.HandleFunc("GET "+a.path("/mcp/oauth/callback"), a.mcpCallback)
+	mux.HandleFunc("GET "+a.path("/mcp/oauth/callback/{issuer_digest}"), a.mcpCallback)
 	mux.HandleFunc("GET "+a.path("/mcp/oauth/return"), a.mcpOAuthReturn)
 	mux.Handle("GET "+a.path("/mcp/oauth/device/{attempt_id}"), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.mcpDeviceStatus))))
 	mux.HandleFunc("POST "+a.path("/mcp/oauth/attempts/{attempt_id}/cancel"), a.mcpCancelAuthorization)
@@ -210,12 +212,27 @@ func (a *httpApp) mcpBeginDevice(w http.ResponseWriter, r *http.Request) {
 	a.render(w, r, http.StatusOK, webui.TemplateMCP, page)
 }
 
+// mcpCallbackHandler rejects malformed callback paths before ServeMux can
+// canonicalize them in a redirect containing the authorization code and state.
+func (a *httpApp) mcpCallbackHandler(next http.Handler) http.Handler {
+	base := a.path(security.OAuthCallbackPath)
+	isCallback := func(p string) bool { return p == base || strings.HasPrefix(p, base+"/") }
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if (r.Method == http.MethodGet || r.Method == http.MethodHead) && !a.browser.IsOAuthCallbackPath(r.URL.EscapedPath()) && (isCallback(r.URL.Path) || isCallback(path.Clean(r.URL.Path))) {
+			a.mcpCallback(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (a *httpApp) mcpCallback(w http.ResponseWriter, r *http.Request) {
+	callbackPath := r.URL.EscapedPath()
 	r = a.browser.RestoreOAuthCallbackCredential(w, r)
 	// Preserve protocol input privately, then give every browser guard/error
 	// responder a metadata-only return path. Never replay a callback after refresh.
 	query, parseErr := url.ParseQuery(r.URL.RawQuery)
-	if len(r.URL.RawQuery) > 16<<10 || r.Header.Get("HX-Request") != "" || r.Header.Get("HX-History-Restore-Request") != "" {
+	if r.Method != http.MethodGet || !a.browser.IsOAuthCallbackPath(callbackPath) || len(r.URL.RawQuery) > 16<<10 || r.Header.Get("HX-Request") != "" || r.Header.Get("HX-History-Restore-Request") != "" {
 		parseErr = mcpcmd.ErrInvalid
 	}
 	for _, key := range []string{"state", "code", "iss", "error"} {
@@ -243,7 +260,7 @@ func (a *httpApp) mcpCallback(w http.ResponseWriter, r *http.Request) {
 			a.mcpCallbackResult(w, r, mcpcmd.Item{}, mcpcmd.ErrUnavailable)
 			return
 		}
-		item, err := a.mcpAuthorizations.CompleteBrowser(r.Context(), mcpcmd.BrowserCallback{State: query.Get("state"), Code: query.Get("code"), Issuer: query.Get("iss"), Denied: query.Get("error") != "", Authority: a.mcpAuthority(p)})
+		item, err := a.mcpAuthorizations.CompleteBrowser(r.Context(), mcpcmd.BrowserCallback{State: query.Get("state"), Code: query.Get("code"), Issuer: query.Get("iss"), IssuerPresent: query.Has("iss"), CallbackPath: callbackPath, Denied: query.Get("error") != "", Authority: a.mcpAuthority(p)})
 		if err != nil {
 			a.mcpCallbackResult(w, r, item, err)
 			return

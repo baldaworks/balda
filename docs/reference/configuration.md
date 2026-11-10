@@ -565,12 +565,24 @@ Keep the same key across restarts and back it up securely with the database.
 Replacing it is not a key rotation operation: no automatic re-encryption or
 lost-key recovery is provided. Run one active Balda grant writer. Pending
 authorization attempts are process-local and must be restarted after a host
-restart; saved encrypted grants persist. Register the browser callback as
-`<balda.http.base_url><balda.http.base_path>/backoffice/mcp/oauth/callback`, and use a supported pre-registered
-client for device authorization. Browser authorization requires the issuer to
-advertise S256 PKCE and `authorization_response_iss_parameter_supported`, with a
-callback `iss` value matching the trusted issuer. Use browser authorization after
-an unsupported device flow only when the service supports browser authorization.
+restart; saved encrypted grants persist. Browser authorization requires S256
+PKCE. With `authorization_response_iss_parameter_supported: true`, register
+`<balda.http.base_url><balda.http.base_path>/backoffice/mcp/oauth/callback`; its
+response must contain `iss`. With the flag omitted or `false`, register that
+base URI followed by `/<issuer_sha256>`: the full lowercase hexadecimal SHA-256
+of the exact discovered issuer string encoded as UTF-8, without an added newline
+or normalization. The issuer-specific callback permits a response without `iss`;
+every supplied `iss` must exactly match the trusted OAuth issuer, and the actual
+callback path must match the attempt. An upstream login identity provider is
+not the MCP code issuer.
+
+Automatic client registration receives the selected exact URI; pre-registered
+clients must have it added at the authorization server. See
+[OAuth authorization](backoffice.md#oauth-authorization) for a deterministic URI
+calculation example, capability changes and fallback security limits. Use a
+supported pre-registered client for device authorization. Use browser
+authorization after an unsupported device flow only when the service supports
+browser authorization.
 
 HTTP/SSE connections with configured headers and Backoffice-managed worker OAuth
 use Balda's private credential bridge for discovery and execution. External ACP

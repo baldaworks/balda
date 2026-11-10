@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -55,11 +56,17 @@ func TestBackofficeMCPOAuthBrowserWorkflow(t *testing.T) {
 	for _, scenario := range []struct {
 		transport, flow, base string
 		width                 int
+		omitIssuer            bool
 	}{
-		{"http", "browser", "", 1440}, {"http", "device", "/balda", 390},
-		{"sse", "browser", "/balda", 1440}, {"sse", "device", "", 390},
+		{"http", "browser", "", 1440, false}, {"http", "device", "/balda", 390, false},
+		{"sse", "browser", "/balda", 1440, false}, {"sse", "device", "", 390, false},
+		{"http", "browser", "/balda", 1440, true},
 	} {
-		t.Run(scenario.transport+"/"+scenario.flow, func(t *testing.T) {
+		name := scenario.transport + "/" + scenario.flow
+		if scenario.omitIssuer {
+			name += "-without-issuer"
+		}
+		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
 			t.Cleanup(func() {
 				_ = filepath.WalkDir(dir, func(path string, e fs.DirEntry, err error) error {
@@ -79,6 +86,7 @@ func TestBackofficeMCPOAuthBrowserWorkflow(t *testing.T) {
 			}
 			t.Cleanup(func() { _ = p.Close() })
 			issuer := newBackofficeOAuthIssuer(t, scenario.transport)
+			issuer.omitIssuerResponse.Store(scenario.omitIssuer)
 			credentials, err := mcpmanage.New(base64.StdEncoding.EncodeToString(make([]byte, 32)))
 			if err != nil {
 				t.Fatal(err)
@@ -482,6 +490,7 @@ type backofficeOAuthIssuer struct {
 	unavailable         atomic.Bool
 	deviceUnsupported   atomic.Bool
 	metadataUnavailable atomic.Bool
+	omitIssuerResponse  atomic.Bool
 	registrations       atomic.Int32
 	deviceStarts        atomic.Int32
 	deviceBegins        atomic.Int32
@@ -530,6 +539,9 @@ func newBackofficeOAuthIssuer(t *testing.T, transport string) *backofficeOAuthIs
 		case r.URL.Path == "/.well-known/oauth-authorization-server":
 			w.Header().Set("Content-Type", "application/json")
 			metadata := map[string]any{"issuer": origin, "authorization_endpoint": origin + "/authorize", "token_endpoint": origin + "/token", "registration_endpoint": origin + "/register", "code_challenge_methods_supported": []string{"S256"}, "token_endpoint_auth_methods_supported": []string{"none", "client_secret_basic"}, "response_types_supported": []string{"code"}, "grant_types_supported": []string{"authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code"}, "scopes_supported": []string{"tools:read"}, "authorization_response_iss_parameter_supported": true}
+			if f.omitIssuerResponse.Load() {
+				delete(metadata, "authorization_response_iss_parameter_supported")
+			}
 			if !f.deviceUnsupported.Load() {
 				metadata["device_authorization_endpoint"] = origin + "/device"
 			}
@@ -547,6 +559,11 @@ func newBackofficeOAuthIssuer(t *testing.T, transport string) *backofficeOAuthIs
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
+			if f.omitIssuerResponse.Load() && !strings.HasSuffix(registration.RedirectURIs[0], fmt.Sprintf("/mcp/oauth/callback/%x", sha256.Sum256([]byte(origin)))) {
+				t.Error("registration did not bind fallback callback to exact issuer")
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(map[string]any{"client_id": oauthBrowserClientID, "token_endpoint_auth_method": "none", "redirect_uris": registration.RedirectURIs, "grant_types": []string{"authorization_code", "refresh_token"}, "response_types": []string{"code"}})
@@ -555,6 +572,11 @@ func newBackofficeOAuthIssuer(t *testing.T, transport string) *backofficeOAuthIs
 				q := r.URL.Query()
 				if (q.Get("client_id") != oauthBrowserClientID && q.Get("client_id") != oauthBrowserConfidentialClientID) || q.Get("code_challenge_method") != "S256" || q.Get("state") == "" || q.Get("resource") == "" {
 					t.Error("browser authorization lost protocol bindings")
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				if f.omitIssuerResponse.Load() && !strings.HasSuffix(q.Get("redirect_uri"), fmt.Sprintf("/mcp/oauth/callback/%x", sha256.Sum256([]byte(origin)))) {
+					t.Error("authorization did not use issuer-specific callback")
 					w.WriteHeader(http.StatusBadRequest)
 					return
 				}
@@ -582,7 +604,9 @@ func newBackofficeOAuthIssuer(t *testing.T, transport string) *backofficeOAuthIs
 			target, _ := url.Parse(request.redirect)
 			q := target.Query()
 			q.Set("state", request.state)
-			q.Set("iss", origin)
+			if !f.omitIssuerResponse.Load() {
+				q.Set("iss", origin)
+			}
 			if r.Form.Get("decision") == "deny" {
 				q.Set("error", "access_denied")
 			} else {

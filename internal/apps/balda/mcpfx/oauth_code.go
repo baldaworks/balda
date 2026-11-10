@@ -14,7 +14,7 @@ import (
 
 // BeginCode builds a native S256 authorization request for the worker client.
 func (*OAuthProvider) BeginCode(metadata mcpmanage.OAuthMetadata, grant mcpcmd.Grant, redirectURI, state string) (string, string, error) {
-	if !metadata.RequireIssuerParameter || !validOAuthURL(metadata.AuthorizationEndpoint) || !validOAuthURL(redirectURI) || state == "" || grant.Binding.ClientID == "" || grant.Binding.Resource != metadata.Resource || grant.Binding.Issuer != metadata.Issuer || !slices.Contains(metadata.PKCEMethods, "S256") {
+	if !validOAuthURL(metadata.AuthorizationEndpoint) || !validOAuthURL(redirectURI) || state == "" || grant.Binding.ClientID == "" || grant.Binding.Resource != metadata.Resource || grant.Binding.Issuer != metadata.Issuer || !slices.Contains(metadata.PKCEMethods, "S256") {
 		return "", "", mcpcmd.ErrUnavailable
 	}
 	verifier := oauth2.GenerateVerifier()

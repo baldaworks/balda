@@ -232,7 +232,7 @@ func (a *httpApp) handler() (http.Handler, error) {
 		}
 		qaHandler.ServeHTTP(w, r)
 	})
-	return securityHeaders(mux, a.basePath), nil
+	return securityHeaders(a.mcpCallbackHandler(mux), a.basePath), nil
 }
 
 func (a *httpApp) path(route string) string { return a.basePath + route }

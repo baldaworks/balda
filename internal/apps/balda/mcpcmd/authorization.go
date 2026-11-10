@@ -47,11 +47,13 @@ type BrowserAuthorization struct {
 
 // BrowserCallback is write-only protocol input bound to current browser authority.
 type BrowserCallback struct {
-	State     string `json:"-"`
-	Code      string `json:"-"`
-	Issuer    string
-	Denied    bool
-	Authority Authority
+	State         string `json:"-"`
+	Code          string `json:"-"`
+	Issuer        string
+	IssuerPresent bool
+	CallbackPath  string
+	Denied        bool
+	Authority     Authority
 }
 
 // DeviceAuthorization carries instructions for a native no-store page only.

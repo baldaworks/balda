@@ -2,8 +2,10 @@ package mcpmanage
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
 	"strings"
 	"testing"
@@ -45,7 +47,7 @@ func TestBrowserCompletionBindsSavedGrantOutsideAttemptLock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	g, err := s.CompleteBrowser(t.Context(), mcpcmd.BrowserCallback{State: browserState(t, started), Code: "one-use-code", Issuer: o.metadata.Issuer, Authority: a})
+	g, err := s.CompleteBrowser(t.Context(), mcpcmd.BrowserCallback{CallbackPath: "/balda/mcp/oauth/callback", State: browserState(t, started), Code: "one-use-code", Issuer: o.metadata.Issuer, Authority: a})
 	if !bound || !errors.Is(err, mcpcmd.ErrUnavailable) || g.Status != mcpcmd.GrantAuthorized || store.grant.Status != mcpcmd.GrantAuthorized {
 		t.Fatalf("saved grant and failed binding were not preserved: bound=%v, status=%s, err=%v", bound, g.Status, err)
 	}
@@ -88,7 +90,7 @@ func TestBrowserDefinitionEditDuringExchangeCannotInstallGrant(t *testing.T) {
 		store.mu.Unlock()
 		return exchange(ctx, grant, code, verifier)
 	}
-	_, err = s.CompleteBrowser(t.Context(), mcpcmd.BrowserCallback{State: browserState(t, started), Code: "one-use-code", Issuer: o.metadata.Issuer, Authority: a})
+	_, err = s.CompleteBrowser(t.Context(), mcpcmd.BrowserCallback{CallbackPath: "/balda/mcp/oauth/callback", State: browserState(t, started), Code: "one-use-code", Issuer: o.metadata.Issuer, Authority: a})
 	if !errors.Is(err, mcpcmd.ErrConflict) || store.grant.Status != mcpcmd.GrantAuthRequired || len(store.writes) != 1 {
 		t.Fatalf("definition edit allowed stale completion: status=%s, err=%v", store.grant.Status, err)
 	}
@@ -135,7 +137,7 @@ func TestBrowserAttemptExpiresDuringExchangeAndCannotCommit(t *testing.T) {
 		return OAuthToken{Secrets: GrantSecrets{AccessToken: "late-token", TokenType: "Bearer"}, ExpiresAt: time.Now().Add(time.Hour)}, nil
 	}
 	before := len(store.writes)
-	if _, err := s.CompleteBrowser(t.Context(), mcpcmd.BrowserCallback{State: browserState(t, started), Code: "one-use-code", Issuer: o.metadata.Issuer, Authority: a}); !errors.Is(err, mcpcmd.ErrAuthAttempt) {
+	if _, err := s.CompleteBrowser(t.Context(), mcpcmd.BrowserCallback{CallbackPath: "/balda/mcp/oauth/callback", State: browserState(t, started), Code: "one-use-code", Issuer: o.metadata.Issuer, Authority: a}); !errors.Is(err, mcpcmd.ErrAuthAttempt) {
 		t.Fatalf("expired attempt completed: %v", err)
 	}
 	if len(store.writes) != before {
@@ -165,7 +167,7 @@ func TestBrowserCancelAndRestartInvalidateAttemptsWithoutPrivateProjection(t *te
 	if err := s.Cancel(t.Context(), started.ID, a); err != nil {
 		t.Fatal(err)
 	}
-	callback := mcpcmd.BrowserCallback{State: browserState(t, started), Code: "one-use-code", Issuer: o.metadata.Issuer, Authority: a}
+	callback := mcpcmd.BrowserCallback{CallbackPath: "/balda/mcp/oauth/callback", State: browserState(t, started), Code: "one-use-code", Issuer: o.metadata.Issuer, Authority: a}
 	if _, err := s.CompleteBrowser(t.Context(), callback); !errors.Is(err, mcpcmd.ErrAuthAttempt) {
 		t.Fatal("canceled state remained usable")
 	}
@@ -202,7 +204,7 @@ func TestBrowserDisconnectFencesExchangeAlreadyInProgress(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() {
-		_, err := s.CompleteBrowser(t.Context(), mcpcmd.BrowserCallback{State: browserState(t, started), Code: "one-use-code", Issuer: o.metadata.Issuer, Authority: a})
+		_, err := s.CompleteBrowser(t.Context(), mcpcmd.BrowserCallback{CallbackPath: "/balda/mcp/oauth/callback", State: browserState(t, started), Code: "one-use-code", Issuer: o.metadata.Issuer, Authority: a})
 		done <- err
 	}()
 	select {
@@ -239,7 +241,7 @@ func TestBrowserCallbackRejectsChangedGrantGenerationBeforeExchange(t *testing.T
 		return OAuthToken{}, mcpcmd.ErrUnavailable
 	}
 	before := len(store.writes)
-	if _, err := s.CompleteBrowser(t.Context(), mcpcmd.BrowserCallback{State: browserState(t, started), Code: "one-use-code", Issuer: o.metadata.Issuer, Authority: a}); !errors.Is(err, mcpcmd.ErrConflict) {
+	if _, err := s.CompleteBrowser(t.Context(), mcpcmd.BrowserCallback{CallbackPath: "/balda/mcp/oauth/callback", State: browserState(t, started), Code: "one-use-code", Issuer: o.metadata.Issuer, Authority: a}); !errors.Is(err, mcpcmd.ErrConflict) {
 		t.Fatalf("stale generation accepted: %v", err)
 	}
 	if len(store.writes) != before {
@@ -253,7 +255,7 @@ func TestBrowserAuthorizationInstallsWorkerGrantAndConsumesStateOnce(t *testing.
 	if err != nil || started.AuthorizationURL == "" {
 		t.Fatalf("browser authorization did not start: %v", err)
 	}
-	callback := mcpcmd.BrowserCallback{State: browserState(t, started), Code: "one-use-code", Issuer: o.metadata.Issuer, Authority: a}
+	callback := mcpcmd.BrowserCallback{CallbackPath: "/balda/mcp/oauth/callback", State: browserState(t, started), Code: "one-use-code", Issuer: o.metadata.Issuer, Authority: a}
 	g, err := s.CompleteBrowser(t.Context(), callback)
 	if err != nil || g.Status != mcpcmd.GrantAuthorized || g.ProtectedValues != nil {
 		t.Fatalf("worker authorization did not complete safely: %v", err)
@@ -287,7 +289,7 @@ func TestBrowserCallbackRejectsWrongIssuerBrowserAndAuthorityVersions(t *testing
 			t.Fatalf("browser begin failed: %v", err)
 		}
 		before := len(store.writes)
-		callback := mcpcmd.BrowserCallback{State: browserState(t, started), Code: "one-use-code", Issuer: o.metadata.Issuer, Authority: a}
+		callback := mcpcmd.BrowserCallback{CallbackPath: "/balda/mcp/oauth/callback", State: browserState(t, started), Code: "one-use-code", Issuer: o.metadata.Issuer, Authority: a}
 		change(&callback)
 		if _, err := s.CompleteBrowser(t.Context(), callback); err == nil || errors.Is(err, mcpcmd.ErrUnavailable) {
 			t.Fatalf("callback binding not enforced: %v", err)
@@ -298,15 +300,12 @@ func TestBrowserCallbackRejectsWrongIssuerBrowserAndAuthorityVersions(t *testing
 	}
 }
 
-func TestBrowserFlowRequiresIssuerResponseCapabilityBeforeRegistration(t *testing.T) {
-	s, store, o, r, a := browserHarness(t)
+func TestBrowserFlowStartsWithoutAdvertisedIssuerResponse(t *testing.T) {
+	s, _, o, r, a := browserHarness(t)
+	defer s.Close()
 	o.metadata.RequireIssuerParameter = false
-	before := len(store.writes)
-	if _, err := s.BeginBrowser(t.Context(), r, "", OAuthClient{ID: "worker-client", AuthMethod: mcpcmd.ClientAuthNone}, a); !errors.Is(err, mcpcmd.ErrUnavailable) {
-		t.Fatalf("unbound browser issuer capability accepted: %v", err)
-	}
-	if len(store.writes) != before {
-		t.Fatal("unsupported browser flow replaced current grant")
+	if _, err := s.BeginBrowser(t.Context(), r, "", OAuthClient{ID: "worker-client", AuthMethod: mcpcmd.ClientAuthNone}, a); err != nil {
+		t.Fatalf("browser authorization without advertised issuer response did not start: %v", err)
 	}
 }
 
@@ -347,7 +346,7 @@ func TestBrowserCancellationCannotReportSuccessAfterCommitStarts(t *testing.T) {
 	}
 	completed := make(chan error, 1)
 	go func() {
-		_, err := s.CompleteBrowser(t.Context(), mcpcmd.BrowserCallback{State: browserState(t, started), Code: "one-use-code", Issuer: o.metadata.Issuer, Authority: a})
+		_, err := s.CompleteBrowser(t.Context(), mcpcmd.BrowserCallback{CallbackPath: "/balda/mcp/oauth/callback", State: browserState(t, started), Code: "one-use-code", Issuer: o.metadata.Issuer, Authority: a})
 		completed <- err
 	}()
 	select {
@@ -375,16 +374,31 @@ func TestBrowserCancellationCannotReportSuccessAfterCommitStarts(t *testing.T) {
 }
 
 func TestBrowserUnsupportedCapabilityPreservesWorkerGrant(t *testing.T) {
-	s, store, o, r, a := browserHarness(t)
-	defer s.Close()
-	o.metadata.AuthorizationEndpoint = ""
-	before := store.grant
-	writes := len(store.writes)
-	if _, err := s.BeginBrowser(t.Context(), r, "", OAuthClient{ID: "worker-client", AuthMethod: mcpcmd.ClientAuthNone}, a); err == nil {
-		t.Fatal("missing authorization endpoint accepted")
-	}
-	if len(store.writes) != writes || store.grant.Generation != before.Generation || store.grant.Status != before.Status {
-		t.Fatal("unsupported browser begin cleared existing worker authorization")
+	for _, advertised := range []bool{false, true} {
+		for _, tc := range []struct {
+			name   string
+			change func(*OAuthMetadata)
+		}{
+			{"missing authorization endpoint", func(m *OAuthMetadata) { m.AuthorizationEndpoint = "" }},
+			{"missing S256", func(m *OAuthMetadata) { m.PKCEMethods = []string{"plain"} }},
+			{"unsupported grant", func(m *OAuthMetadata) { m.GrantTypes = []string{"client_credentials"} }},
+			{"unsupported response", func(m *OAuthMetadata) { m.ResponseTypes = []string{"token"} }},
+		} {
+			t.Run(fmt.Sprintf("%s/issuer=%v", tc.name, advertised), func(t *testing.T) {
+				s, store, o, r, a := browserHarness(t)
+				defer s.Close()
+				o.metadata.RequireIssuerParameter = advertised
+				tc.change(&o.metadata)
+				before := store.grant
+				writes := len(store.writes)
+				if _, err := s.BeginBrowser(t.Context(), r, "", OAuthClient{}, a); !errors.Is(err, mcpcmd.ErrUnavailable) {
+					t.Fatalf("unsupported capability accepted: %v", err)
+				}
+				if o.registrationRedirect != "" || len(store.writes) != writes || store.grant.Generation != before.Generation || store.grant.Status != before.Status {
+					t.Fatal("unsupported browser begin registered client or cleared existing worker authorization")
+				}
+			})
+		}
 	}
 }
 
@@ -422,7 +436,7 @@ func TestBrowserQueuedCompletionRechecksAuthorityAtCommit(t *testing.T) {
 	}
 	completed := make(chan error, 1)
 	go func() {
-		_, err := s.CompleteBrowser(t.Context(), mcpcmd.BrowserCallback{State: browserState(t, started), Code: "one-use-code", Issuer: o.metadata.Issuer, Authority: a})
+		_, err := s.CompleteBrowser(t.Context(), mcpcmd.BrowserCallback{CallbackPath: "/balda/mcp/oauth/callback", State: browserState(t, started), Code: "one-use-code", Issuer: o.metadata.Issuer, Authority: a})
 		completed <- err
 	}()
 	select {
@@ -441,5 +455,125 @@ func TestBrowserQueuedCompletionRechecksAuthorityAtCommit(t *testing.T) {
 	}
 	if store.grant.Status != mcpcmd.GrantAuthRequired {
 		t.Fatal("expired queued authority installed credentials")
+	}
+}
+
+func TestBrowserIssuerCapabilityBindsRedirectAcrossRegistrationAndExchange(t *testing.T) {
+	for _, advertised := range []bool{false, true} {
+		for _, prefix := range []string{"", "/balda"} {
+			for _, suppliedIssuer := range []bool{false, true} {
+				t.Run(fmt.Sprintf("advertised=%v/prefix=%s/issuer=%v", advertised, prefix, suppliedIssuer), func(t *testing.T) {
+					s, store, o, r, a := browserHarness(t)
+					defer s.Close()
+					o.metadata.RequireIssuerParameter = advertised
+					s.redirectURI = "https://backoffice.example.org" + prefix + "/mcp/oauth/callback"
+					wantRedirect := s.redirectURI
+					if !advertised {
+						wantRedirect += fmt.Sprintf("/%x", sha256.Sum256([]byte(o.metadata.Issuer)))
+					}
+					started, err := s.BeginBrowser(t.Context(), r, "", OAuthClient{}, a)
+					if err != nil {
+						t.Fatalf("begin: %v", err)
+					}
+					if o.registrationRedirect != wantRedirect || o.authorizationRedirect != wantRedirect {
+						t.Fatalf("redirects register=%q authorize=%q, want %q", o.registrationRedirect, o.authorizationRedirect, wantRedirect)
+					}
+					u, err := url.Parse(wantRedirect)
+					if err != nil {
+						t.Fatal(err)
+					}
+					callback := mcpcmd.BrowserCallback{State: browserState(t, started), Code: "one-use-code", CallbackPath: u.Path, IssuerPresent: suppliedIssuer, Authority: a}
+					if suppliedIssuer {
+						callback.Issuer = o.metadata.Issuer
+					}
+					// Discovery may change after start; the attempt owns its captured policy.
+					o.metadata.RequireIssuerParameter = !advertised
+					g, err := s.CompleteBrowser(t.Context(), callback)
+					if advertised && !suppliedIssuer {
+						if !errors.Is(err, mcpcmd.ErrInvalid) || o.exchangeRedirect != "" || store.grant.Status != mcpcmd.GrantAuthRequired {
+							t.Fatalf("missing advertised issuer exchanged code: err=%v, redirect=%q", err, o.exchangeRedirect)
+						}
+						return
+					}
+					if err != nil || g.Status != mcpcmd.GrantAuthorized || o.exchangeRedirect != wantRedirect {
+						t.Fatalf("completion status=%s, redirect=%q, err=%v", g.Status, o.exchangeRedirect, err)
+					}
+					writes := len(store.writes)
+					if _, err := s.CompleteBrowser(t.Context(), callback); !errors.Is(err, mcpcmd.ErrAuthAttempt) || len(store.writes) != writes {
+						t.Fatalf("callback replay: %v", err)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestBrowserFallbackRejectsWrongIssuerAndCallbackBeforeExchange(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		change func(*mcpcmd.BrowserCallback)
+	}{
+		{"explicit empty issuer", func(c *mcpcmd.BrowserCallback) { c.IssuerPresent = true }},
+		{"wrong issuer", func(c *mcpcmd.BrowserCallback) { c.Issuer = "https://login.example.org" }},
+		{"issuer trailing slash", func(c *mcpcmd.BrowserCallback) { c.Issuer = "https://issuer.example.org/" }},
+		{"shared callback", func(c *mcpcmd.BrowserCallback) { c.CallbackPath = "/balda/mcp/oauth/callback" }},
+		{"other issuer callback", func(c *mcpcmd.BrowserCallback) {
+			c.CallbackPath = fmt.Sprintf("/balda/mcp/oauth/callback/%x", sha256.Sum256([]byte("https://other.example.org")))
+		}},
+		{"wrong prefix", func(c *mcpcmd.BrowserCallback) { c.CallbackPath = strings.TrimPrefix(c.CallbackPath, "/balda") }},
+		{"empty path", func(c *mcpcmd.BrowserCallback) { c.CallbackPath = "" }},
+		{"extra path", func(c *mcpcmd.BrowserCallback) { c.CallbackPath += "/extra" }},
+		{"escaped path", func(c *mcpcmd.BrowserCallback) {
+			c.CallbackPath = strings.Replace(c.CallbackPath, "callback", "%63allback", 1)
+		}},
+	} {
+		for _, denied := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/denied=%v", tc.name, denied), func(t *testing.T) {
+				s, store, o, r, a := browserHarness(t)
+				defer s.Close()
+				o.metadata.RequireIssuerParameter = false
+				started, err := s.BeginBrowser(t.Context(), r, "", OAuthClient{ID: "worker-client", AuthMethod: mcpcmd.ClientAuthNone}, a)
+				if err != nil {
+					t.Fatal(err)
+				}
+				redirect, err := url.Parse(o.authorizationRedirect)
+				if err != nil {
+					t.Fatal(err)
+				}
+				callback := mcpcmd.BrowserCallback{State: browserState(t, started), Code: "one-use-code", CallbackPath: redirect.Path, Denied: denied, Authority: a}
+				tc.change(&callback)
+				if _, err := s.CompleteBrowser(t.Context(), callback); !errors.Is(err, mcpcmd.ErrInvalid) || o.exchangeRedirect != "" || store.grant.Status != mcpcmd.GrantAuthRequired {
+					t.Fatalf("invalid callback accepted or exchanged: err=%v, redirect=%q", err, o.exchangeRedirect)
+				}
+			})
+		}
+	}
+}
+
+func TestBrowserRedirectIsStableAndDistinctForTrustedIssuers(t *testing.T) {
+	first, err := browserRedirectURI("https://backoffice.example.org/balda/mcp/oauth/callback", OAuthMetadata{Issuer: "https://issuer.example.org"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, issuer := range []string{"https://issuer.example.org", "https://other.example.org", "https://issuer.example.org/"} {
+		got, err := browserRedirectURI("https://backoffice.example.org/balda/mcp/oauth/callback", OAuthMetadata{Issuer: issuer})
+		if err != nil || (got == first) != (issuer == "https://issuer.example.org") {
+			t.Fatalf("issuer %q callback=%q, first=%q, err=%v", issuer, got, first, err)
+		}
+	}
+}
+
+func TestBrowserRejectsAmbiguousRedirectBaseBeforeRegistration(t *testing.T) {
+	for _, suffix := range []string{"?query=value", "?", "#fragment", "/", "/../callback", "//child", "/%63hild", "/child%20name"} {
+		t.Run(suffix, func(t *testing.T) {
+			s, store, o, r, a := browserHarness(t)
+			defer s.Close()
+			o.metadata.RequireIssuerParameter = false
+			s.redirectURI += suffix
+			writes := len(store.writes)
+			if _, err := s.BeginBrowser(t.Context(), r, "", OAuthClient{}, a); !errors.Is(err, mcpcmd.ErrInvalid) || o.registrationRedirect != "" || len(store.writes) != writes {
+				t.Fatalf("ambiguous callback registered or wrote grant: %v", err)
+			}
+		})
 	}
 }

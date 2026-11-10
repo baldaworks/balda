@@ -90,7 +90,7 @@ func TestAuthorizationMetadataStaysMonotonicWithCurrentSecurityTime(t *testing.T
 				if parseErr != nil {
 					t.Fatal(parseErr)
 				}
-				item, err = operations.CompleteBrowser(t.Context(), mcpcmd.BrowserCallback{State: location.Query().Get("state"), Code: "one-use-code", Issuer: resource, Authority: authority})
+				item, err = operations.CompleteBrowser(t.Context(), mcpcmd.BrowserCallback{CallbackPath: "/mcp/oauth/callback", State: location.Query().Get("state"), Code: "one-use-code", Issuer: resource, Authority: authority})
 			}
 			if err != nil || item.Connection.UpdatedAt.Before(floor) {
 				t.Fatalf("metadata after wall rollback = %+v/%v", item.Connection, err)
@@ -205,7 +205,7 @@ func TestAuthorizationCompletionEditAfterSaveKeepsGrantIsolated(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if _, err := operations.CompleteBrowser(t.Context(), mcpcmd.BrowserCallback{State: location.Query().Get("state"), Code: "one-use-code", Issuer: resource, Authority: authority}); !errors.Is(err, mcpcmd.ErrConflict) {
+				if _, err := operations.CompleteBrowser(t.Context(), mcpcmd.BrowserCallback{CallbackPath: "/mcp/oauth/callback", State: location.Query().Get("state"), Code: "one-use-code", Issuer: resource, Authority: authority}); !errors.Is(err, mcpcmd.ErrConflict) {
 					t.Fatalf("stale binding completion = %v, want conflict", err)
 				}
 			}
@@ -316,7 +316,7 @@ func TestAuthorizationAdapterCapturesTrustedConfiguredRevisionAndRetriesSavedGra
 				if err != nil {
 					t.Fatal(err)
 				}
-				item, err := operations.CompleteBrowser(t.Context(), mcpcmd.BrowserCallback{State: location.Query().Get("state"), Code: "one-use-code", Issuer: resource, Authority: authority})
+				item, err := operations.CompleteBrowser(t.Context(), mcpcmd.BrowserCallback{CallbackPath: "/base/mcp/oauth/callback", State: location.Query().Get("state"), Code: "one-use-code", Issuer: resource, Authority: authority})
 				if err != nil || item.Authorization != mcpcmd.GrantAuthorized || item.Status == mcpcmd.StatusReady {
 					t.Fatalf("saved authorization vs readiness = %s/%s/%v", item.Authorization, item.Status, err)
 				}

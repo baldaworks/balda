@@ -50,7 +50,7 @@ func TestCreateAuthorizationReturnsSavedConnectionAndBoundNativeAttempt(t *testi
 					if parseErr != nil {
 						t.Fatal(parseErr)
 					}
-					completed, completeErr := o.CompleteBrowser(t.Context(), mcpcmd.BrowserCallback{State: location.Query().Get("state"), Code: "one-use-code", Issuer: resource, Authority: authority})
+					completed, completeErr := o.CompleteBrowser(t.Context(), mcpcmd.BrowserCallback{CallbackPath: "/mcp/oauth/callback", State: location.Query().Get("state"), Code: "one-use-code", Issuer: resource, Authority: authority})
 					if completeErr != nil || completed.Authorization != mcpcmd.GrantAuthorized {
 						t.Fatalf("new connection authorization could not complete: %v", completeErr)
 					}

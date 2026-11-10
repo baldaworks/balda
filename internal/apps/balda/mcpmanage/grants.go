@@ -36,7 +36,8 @@ type OAuthMetadata struct {
 	DeviceAuthorizationEndpoint                                                  string
 	Resource, Issuer, AuthorizationEndpoint, TokenEndpoint, RegistrationEndpoint string
 	Scopes, AuthMethods, GrantTypes, ResponseTypes, PKCEMethods                  []string
-	RequireIssuerParameter                                                       bool
+	// RequireIssuerParameter reflects advertised authorization-response iss support.
+	RequireIssuerParameter bool
 }
 
 // OAuthClient is supplied explicitly or returned by supported registration.
@@ -306,6 +307,12 @@ func (s *Grants) prepareAuthorization(ctx context.Context, revision mcpcmd.Revis
 	}
 	if (flow == authorizationBrowser && !supportsBrowserAuthorization(metadata)) || (flow == authorizationDevice && (!supportsDeviceAuthorization(metadata) || client.ID == "")) {
 		return mcpcmd.Grant{}, OAuthMetadata{}, mcpcmd.ErrUnavailable
+	}
+	if flow == authorizationBrowser {
+		redirectURI, err = browserRedirectURI(redirectURI, metadata)
+		if err != nil {
+			return mcpcmd.Grant{}, OAuthMetadata{}, err
+		}
 	}
 	if client.ID == "" {
 		client, err = s.oauth.Register(discoveryCtx, metadata, redirectURI, d.Scopes)
