@@ -31,7 +31,7 @@ func TestGeneratedClientWebAuthLifecycle(t *testing.T) {
 	password := browserAuthTestPassword
 	binding, csrf := strings.Repeat("b", 32), strings.Repeat("c", 32)
 	login, err := client.LoginWebAuthWithResponse(t.Context(), managementv1.LocalLoginRequest{
-		Username: "admin", Password: &password,
+		Username: browserAuthTestUsername, Password: &password,
 		BrowserContext: managementv1.WebAuthBrowserContext{BrowserBinding: &binding, CSRFToken: &csrf},
 	})
 	if err != nil || login.JSON200 == nil || login.JSON200.Credentials == nil {
@@ -40,7 +40,7 @@ func TestGeneratedClientWebAuthLifecycle(t *testing.T) {
 	credentials := *login.JSON200.Credentials
 	accessEditor := credentialRequestEditor(credentials.AccessToken, "")
 	principal, err := client.GetWebAuthPrincipalWithResponse(t.Context(), accessEditor)
-	if err != nil || principal.JSON200 == nil || principal.JSON200.Username != "admin" || principal.JSON200.WebAuthSessionID == "" {
+	if err != nil || principal.JSON200 == nil || principal.JSON200.Username != browserAuthTestUsername || principal.JSON200.WebAuthSessionID == "" {
 		t.Fatalf("principal = %#v, %v", principal, err)
 	}
 	mfa, err := client.GetWebAuthMFAStatusWithResponse(t.Context(), accessEditor)
@@ -76,7 +76,7 @@ func TestGeneratedClientWebAuthLifecycle(t *testing.T) {
 
 func TestBrowserAuthGuardOrderingAndRedaction(t *testing.T) {
 	handler, service := newBrowserAuthTestHandler(t)
-	credentials, err := service.Login(t.Context(), "admin", []byte(browserAuthTestPassword))
+	credentials, err := service.Login(t.Context(), browserAuthTestUsername, []byte(browserAuthTestPassword))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +136,7 @@ func TestGeneratedClientMFAEnableAndDisable(t *testing.T) {
 	password := browserAuthTestPassword
 	binding, csrf := strings.Repeat("b", 32), strings.Repeat("c", 32)
 	login, err := client.LoginWebAuthWithResponse(t.Context(), managementv1.LocalLoginRequest{
-		Username: "admin", Password: &password,
+		Username: browserAuthTestUsername, Password: &password,
 		BrowserContext: managementv1.WebAuthBrowserContext{BrowserBinding: &binding, CSRFToken: &csrf},
 	})
 	if err != nil || login.JSON200 == nil || login.JSON200.Credentials == nil {
@@ -165,7 +165,7 @@ func TestGeneratedClientMFAEnableAndDisable(t *testing.T) {
 		t.Fatalf("enabled MFA status = %#v, %v", status, err)
 	}
 	login, err = client.LoginWebAuthWithResponse(t.Context(), managementv1.LocalLoginRequest{
-		Username: "admin", Password: &password,
+		Username: browserAuthTestUsername, Password: &password,
 		BrowserContext: managementv1.WebAuthBrowserContext{BrowserBinding: &binding, CSRFToken: &csrf},
 	})
 	if err != nil || login.JSON200 == nil || login.JSON200.MFA == nil || login.JSON200.Credentials != nil {
@@ -257,7 +257,10 @@ func TestGeneratedClientSessionRevokeAndConcurrentRefresh(t *testing.T) {
 	}
 }
 
-const browserAuthTestPassword = "correct horse battery staple"
+const (
+	browserAuthTestUsername = "admin"
+	browserAuthTestPassword = "correct horse battery staple"
+)
 
 func newBrowserAuthTestHandler(t *testing.T) (http.Handler, *browserauth.Service) {
 	t.Helper()
@@ -272,7 +275,7 @@ func newBrowserAuthTestHandler(t *testing.T) (http.Handler, *browserauth.Service
 		t.Fatal(err)
 	}
 	user := usercmd.User{
-		ID: "admin", Username: "admin", NormalizedUsername: "admin", DisplayName: "Administrator",
+		ID: browserAuthTestUsername, Username: browserAuthTestUsername, NormalizedUsername: browserAuthTestUsername, DisplayName: "Administrator",
 		Status: usercmd.StatusActive, Role: usercmd.RoleAdministrator, Primary: true, Version: 1,
 		Credential: usercmd.Credential{State: usercmd.CredentialStateActive, Version: 1}, CreatedAt: now, UpdatedAt: now,
 	}
@@ -315,7 +318,7 @@ func generatedLogin(t *testing.T, client *managementv1.ClientWithResponses) mana
 	password := browserAuthTestPassword
 	binding, csrf := strings.Repeat("b", 32), strings.Repeat("c", 32)
 	response, err := client.LoginWebAuthWithResponse(t.Context(), managementv1.LocalLoginRequest{
-		Username: "admin", Password: &password,
+		Username: browserAuthTestUsername, Password: &password,
 		BrowserContext: managementv1.WebAuthBrowserContext{BrowserBinding: &binding, CSRFToken: &csrf},
 	})
 	if err != nil || response.JSON200 == nil || response.JSON200.Credentials == nil {

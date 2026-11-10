@@ -685,6 +685,9 @@ deps:
       - user_contracts
       - providers
       - mcp_contracts
+      - schedule_contracts
+      - webhook_route_contracts
+      - alias_contracts
     deepScan: false
     anyVendorDeps: false
     canUse:

@@ -6,10 +6,13 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/baldaworks/balda/internal/apps/balda/aliascmd"
 	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/providers"
+	"github.com/baldaworks/balda/internal/apps/balda/schedulecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookroutecmd"
 )
 
 const (
@@ -17,7 +20,7 @@ const (
 	webAuthRefreshHeader = "X-Balda-WebAuth-Refresh"
 	csrfHeader           = "X-Balda-CSRF"
 	maxCredentialBytes   = 4096
-	maxManagementBody    = 1 << 20
+	maxManagementBody    = 4 << 20
 )
 
 type routeAuthority uint8
@@ -79,6 +82,15 @@ func managementRoute(method, path string) (routeRule, bool) {
 	if rule, ok := mcpManagementRoute(method, path); ok {
 		return rule, true
 	}
+	if rule, ok := scheduleManagementRoute(method, path); ok {
+		return rule, true
+	}
+	if rule, ok := webhookManagementRoute(method, path); ok {
+		return rule, true
+	}
+	if rule, ok := aliasManagementRoute(method, path); ok {
+		return rule, true
+	}
 	const prefix = "/api/management/v1/auth/sessions/"
 	const suffix = "/revoke"
 	if method != http.MethodPost || !strings.HasPrefix(path, prefix) || !strings.HasSuffix(path, suffix) {
@@ -89,6 +101,104 @@ func managementRoute(method, path string) (routeRule, bool) {
 		return routeRule{}, false
 	}
 	return routeRule{authority: webAuthMutation, body: true}, true
+}
+
+func aliasManagementRoute(method, path string) (routeRule, bool) {
+	const root = "/api/management/v1/aliases"
+	if path == root {
+		if method == http.MethodGet {
+			return routeRule{authority: webAuthRead, admin: true}, true
+		}
+		if method == http.MethodPost {
+			return routeRule{authority: webAuthMutation, body: true, admin: true}, true
+		}
+		return routeRule{}, false
+	}
+	if !strings.HasPrefix(path, root+"/") {
+		return routeRule{}, false
+	}
+	name := strings.TrimPrefix(path, root+"/")
+	if name == "" || strings.Contains(name, "/") {
+		return routeRule{}, false
+	}
+	if method == http.MethodGet {
+		return routeRule{authority: webAuthRead, admin: true}, true
+	}
+	if method == http.MethodPut || method == http.MethodDelete {
+		return routeRule{authority: webAuthMutation, body: true, admin: true}, true
+	}
+	return routeRule{}, false
+}
+
+func webhookManagementRoute(method, path string) (routeRule, bool) {
+	const root = "/api/management/v1/webhooks"
+	if path == root {
+		if method == http.MethodGet {
+			return routeRule{authority: webAuthRead, admin: true}, true
+		}
+		if method == http.MethodPost {
+			return routeRule{authority: webAuthMutation, body: true, admin: true}, true
+		}
+		return routeRule{}, false
+	}
+	if !strings.HasPrefix(path, root+"/") {
+		return routeRule{}, false
+	}
+	parts := strings.Split(strings.TrimPrefix(path, root+"/"), "/")
+	if len(parts) == 0 || parts[0] == "" {
+		return routeRule{}, false
+	}
+	switch {
+	case len(parts) == 1 && method == http.MethodGet:
+		return routeRule{authority: webAuthRead, admin: true}, true
+	case len(parts) == 1 && (method == http.MethodPut || method == http.MethodDelete):
+		return routeRule{authority: webAuthMutation, body: true, admin: true}, true
+	case len(parts) == 2 && (parts[1] == "selection" || parts[1] == "rotate" || parts[1] == "test") && method == http.MethodPost:
+		return routeRule{authority: webAuthMutation, body: true, admin: true}, true
+	case len(parts) == 2 && parts[1] == "history" && method == http.MethodGet:
+		return routeRule{authority: webAuthRead, admin: true}, true
+	case len(parts) == 3 && parts[1] == "history" && parts[2] != "" && method == http.MethodGet:
+		return routeRule{authority: webAuthRead, admin: true}, true
+	default:
+		return routeRule{}, false
+	}
+}
+
+func scheduleManagementRoute(method, path string) (routeRule, bool) {
+	const root = "/api/management/v1/schedules"
+	const runs = "runs"
+	if path == root {
+		switch method {
+		case http.MethodGet:
+			return routeRule{authority: webAuthRead, admin: true}, true
+		case http.MethodPost:
+			return routeRule{authority: webAuthMutation, body: true, admin: true}, true
+		}
+		return routeRule{}, false
+	}
+	if !strings.HasPrefix(path, root+"/") {
+		return routeRule{}, false
+	}
+	parts := strings.Split(strings.TrimPrefix(path, root+"/"), "/")
+	if len(parts) == 0 || parts[0] == "" {
+		return routeRule{}, false
+	}
+	switch {
+	case len(parts) == 1 && method == http.MethodGet:
+		return routeRule{authority: webAuthRead, admin: true}, true
+	case len(parts) == 1 && (method == http.MethodPut || method == http.MethodDelete):
+		return routeRule{authority: webAuthMutation, body: true, admin: true}, true
+	case len(parts) == 2 && parts[1] == "selection" && method == http.MethodPost:
+		return routeRule{authority: webAuthMutation, body: true, admin: true}, true
+	case len(parts) == 2 && parts[1] == runs && method == http.MethodGet:
+		return routeRule{authority: webAuthRead, admin: true}, true
+	case len(parts) == 2 && parts[1] == runs && method == http.MethodPost:
+		return routeRule{authority: webAuthMutation, body: true, admin: true}, true
+	case len(parts) == 3 && parts[1] == runs && parts[2] != "" && method == http.MethodGet:
+		return routeRule{authority: webAuthRead, admin: true}, true
+	default:
+		return routeRule{}, false
+	}
 }
 
 func mcpManagementRoute(method, path string) (routeRule, bool) {
@@ -225,6 +335,30 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, r, http.StatusBadRequest, "request.invalid", "invalid request")
 	case errors.Is(err, mcpcmd.ErrInvalid):
 		writeError(w, r, http.StatusBadRequest, "request.invalid", "invalid request")
+	case errors.Is(err, schedulecmd.ErrInvalid):
+		writeError(w, r, http.StatusBadRequest, "request.invalid", "invalid request")
+	case errors.Is(err, schedulecmd.ErrForbidden):
+		writeError(w, r, http.StatusForbidden, "forbidden", "forbidden")
+	case errors.Is(err, schedulecmd.ErrNotFound):
+		writeError(w, r, http.StatusNotFound, "not_found", "not found")
+	case errors.Is(err, schedulecmd.ErrConflict):
+		writeError(w, r, http.StatusConflict, "conflict", "request conflict")
+	case errors.Is(err, webhookroutecmd.ErrInvalid):
+		writeError(w, r, http.StatusBadRequest, "request.invalid", "invalid request")
+	case errors.Is(err, webhookroutecmd.ErrForbidden):
+		writeError(w, r, http.StatusForbidden, "forbidden", "forbidden")
+	case errors.Is(err, webhookroutecmd.ErrNotFound):
+		writeError(w, r, http.StatusNotFound, "not_found", "not found")
+	case errors.Is(err, webhookroutecmd.ErrConflict):
+		writeError(w, r, http.StatusConflict, "conflict", "request conflict")
+	case errors.Is(err, aliascmd.ErrInvalid):
+		writeError(w, r, http.StatusBadRequest, "request.invalid", "invalid request")
+	case errors.Is(err, aliascmd.ErrForbidden):
+		writeError(w, r, http.StatusForbidden, "forbidden", "forbidden")
+	case errors.Is(err, aliascmd.ErrNotFound):
+		writeError(w, r, http.StatusNotFound, "not_found", "not found")
+	case errors.Is(err, aliascmd.ErrConflict):
+		writeError(w, r, http.StatusConflict, "conflict", "request conflict")
 	case errors.Is(err, mcpcmd.ErrForbidden), errors.Is(err, mcpcmd.ErrAuthRequired):
 		writeError(w, r, http.StatusForbidden, "forbidden", "forbidden")
 	case errors.Is(err, usercmd.ErrNotFound), errors.Is(err, mcpcmd.ErrNotFound), errors.Is(err, mcpcmd.ErrAuthAttempt):
@@ -232,6 +366,12 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, mcpcmd.ErrConflict):
 		writeError(w, r, http.StatusConflict, "conflict", "request conflict")
 	case errors.Is(err, providers.ErrUnavailable), errors.Is(err, mcpcmd.ErrCredentials), errors.Is(err, mcpcmd.ErrUnavailable), errors.Is(err, mcpcmd.ErrDisconnected):
+		writeError(w, r, http.StatusServiceUnavailable, "unavailable", "service unavailable")
+	case errors.Is(err, schedulecmd.ErrUnavailable):
+		writeError(w, r, http.StatusServiceUnavailable, "unavailable", "service unavailable")
+	case errors.Is(err, webhookroutecmd.ErrUnavailable):
+		writeError(w, r, http.StatusServiceUnavailable, "unavailable", "service unavailable")
+	case errors.Is(err, aliascmd.ErrUnavailable):
 		writeError(w, r, http.StatusServiceUnavailable, "unavailable", "service unavailable")
 	default:
 		writeError(w, r, http.StatusInternalServerError, "internal", "internal error")

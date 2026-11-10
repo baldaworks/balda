@@ -15,6 +15,9 @@ type strictServer struct {
 	browserAuth *browserauth.Service
 	providers   *providers.Service
 	mcp         mcpOperations
+	schedules   scheduleOperations
+	webhooks    webhookOperations
+	aliases     aliasOperations
 }
 
 func (strictServer) GetManagementCompatibility(context.Context, managementv1.GetManagementCompatibilityRequestObject) (managementv1.GetManagementCompatibilityResponseObject, error) {

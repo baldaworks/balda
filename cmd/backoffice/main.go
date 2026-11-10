@@ -120,7 +120,7 @@ func start(parent context.Context, opts options) error {
 	if err != nil {
 		return err
 	}
-	edge, err := browseredge.New(prepared.client, browseredge.Config{PublicOrigin: prepared.config.PublicOrigin, MountPath: prepared.config.MountPath})
+	edge, err := browseredge.New(prepared.client, browseredge.Config{PublicOrigin: prepared.config.PublicOrigin, MountPath: prepared.config.MountPath, WebhookURLPrefix: prepared.config.WebhookURLPrefix})
 	if err != nil {
 		return err
 	}

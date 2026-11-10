@@ -69,8 +69,10 @@ During the migration, embedded Backoffice remains the production fallback.
 Use a separate profile/listen address when comparing both browser applications;
 do not complete production cutover until the final parity/cutover Story removes
 the embedded application. The standalone process owns no database or
-migrations. Its provider and MCP pages call Core only through the generated
-management client.
+migrations. Its provider, MCP, Schedules, Webhooks, and Aliases pages call Core
+only through the generated management client. The displayed public webhook URL
+is derived from validated `balda.http.base_url` plus `balda.http.base_path`;
+request `Host` and forwarding headers do not redefine it.
 
 The operator bearer token authenticates the Backoffice application, never the
 human user. Login endpoints require only that application credential. Guarded

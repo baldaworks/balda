@@ -76,24 +76,64 @@ type MCPService interface {
 	RetryMCPAuthorization(ctx context.Context, auth managementclient.Auth, id string, request managementv1.MCPRetryAuthorizationRequest) (managementv1.MCPItem, error)
 }
 
+// ScheduleService is the optional generated-client schedule surface.
+type ScheduleService interface {
+	Schedules(ctx context.Context, auth managementclient.Auth) (managementv1.ScheduleInventory, error)
+	Schedule(ctx context.Context, auth managementclient.Auth, id string) (managementv1.ScheduleItem, error)
+	CreateSchedule(ctx context.Context, auth managementclient.Auth, request managementv1.ScheduleCreateRequest) (managementv1.ScheduleItem, error)
+	UpdateSchedule(ctx context.Context, auth managementclient.Auth, id string, request managementv1.ScheduleUpdateRequest) (managementv1.ScheduleItem, error)
+	SelectSchedule(ctx context.Context, auth managementclient.Auth, id string, request managementv1.ScheduleSelectionRequest) (managementv1.ScheduleItem, error)
+	DeleteSchedule(ctx context.Context, auth managementclient.Auth, id string, request managementv1.ScheduleDeleteRequest) (managementv1.ScheduleItem, error)
+	RunSchedule(ctx context.Context, auth managementclient.Auth, id string, request managementv1.ScheduleRunNowRequest) (managementv1.ScheduleRunItem, error)
+	ScheduleRuns(ctx context.Context, auth managementclient.Auth, id string, params *managementv1.ListScheduleRunsParams) (managementv1.ScheduleRunPage, error)
+	ScheduleRun(ctx context.Context, auth managementclient.Auth, scheduleID, runID string) (managementv1.ScheduleRunDetail, error)
+}
+
+type WebhookService interface {
+	Webhooks(ctx context.Context, auth managementclient.Auth) (managementv1.WebhookInventory, error)
+	Webhook(ctx context.Context, auth managementclient.Auth, name string) (managementv1.WebhookItem, error)
+	CreateWebhook(ctx context.Context, auth managementclient.Auth, request managementv1.WebhookCreateRequest) (managementv1.WebhookSecretResult, error)
+	UpdateWebhook(ctx context.Context, auth managementclient.Auth, name string, request managementv1.WebhookUpdateRequest) (managementv1.WebhookItem, error)
+	SelectWebhook(ctx context.Context, auth managementclient.Auth, name string, request managementv1.WebhookSelectionRequest) (managementv1.WebhookItem, error)
+	DeleteWebhook(ctx context.Context, auth managementclient.Auth, name string, request managementv1.WebhookVersionRequest) (managementv1.WebhookItem, error)
+	RotateWebhook(ctx context.Context, auth managementclient.Auth, name string, request managementv1.WebhookVersionRequest) (managementv1.WebhookSecretResult, error)
+	TestWebhook(ctx context.Context, auth managementclient.Auth, name string, request managementv1.WebhookTestRequest) (managementv1.WebhookTestResult, error)
+	WebhookHistory(ctx context.Context, auth managementclient.Auth, name string, params *managementv1.ListWebhookHistoryParams) (managementv1.WebhookHistoryPage, error)
+	WebhookHistoryDetail(ctx context.Context, auth managementclient.Auth, name, jobID string) (managementv1.WebhookHistoryDetail, error)
+}
+type AliasService interface {
+	Aliases(ctx context.Context, auth managementclient.Auth) (managementv1.AliasInventory, error)
+	Alias(ctx context.Context, auth managementclient.Auth, name string) (managementv1.AliasRecord, error)
+	CreateAlias(ctx context.Context, auth managementclient.Auth, request managementv1.AliasCreateRequest) (managementv1.AliasRecord, error)
+	RetargetAlias(ctx context.Context, auth managementclient.Auth, name string, request managementv1.AliasRetargetRequest) (managementv1.AliasRecord, error)
+	DeleteAlias(ctx context.Context, auth managementclient.Auth, name string, request managementv1.AliasDeleteRequest) error
+}
+
 // Config fixes the browser trust boundary.
 type Config struct {
-	PublicOrigin string
-	MountPath    string
+	PublicOrigin     string
+	MountPath        string
+	WebhookURLPrefix string
 }
 
 // App is a stateless browser BFF.
 type App struct {
-	service Service
-	limiter *loginlimit.Limiter
-	origin  string
-	mount   string
-	secure  bool
-	now     func() time.Time
+	service          Service
+	limiter          *loginlimit.Limiter
+	origin           string
+	mount            string
+	secure           bool
+	now              func() time.Time
+	webhookURLPrefix string
 }
 
 const formYesValue = "yes"
 const enabledHiddenInput = `<input type="hidden" name="enabled" value="yes">`
+const (
+	statusDisabled = "disabled"
+	statusDeleted  = "deleted"
+	statusEnabled  = "enabled"
+)
 
 // New validates and constructs the browser edge.
 func New(service Service, config Config) (*App, error) {
@@ -108,8 +148,16 @@ func New(service Service, config Config) (*App, error) {
 	if config.MountPath == "" || config.MountPath[0] != '/' || strings.HasSuffix(config.MountPath, "/") {
 		return nil, fmt.Errorf("mount path is invalid")
 	}
+	if config.WebhookURLPrefix == "" {
+		config.WebhookURLPrefix = strings.TrimSuffix(config.PublicOrigin, "/") + "/webhooks/"
+	}
+	webhookPrefix, err := url.Parse(config.WebhookURLPrefix)
+	if err != nil || webhookPrefix.Scheme != origin.Scheme || webhookPrefix.Host != origin.Host || webhookPrefix.RawQuery != "" ||
+		webhookPrefix.Fragment != "" || !strings.HasSuffix(webhookPrefix.Path, "/webhooks/") {
+		return nil, fmt.Errorf("webhook URL prefix is invalid")
+	}
 	return &App{service: service, limiter: loginlimit.New(), origin: strings.TrimSuffix(config.PublicOrigin, "/"),
-		mount: config.MountPath, secure: origin.Scheme == "https", now: time.Now}, nil
+		mount: config.MountPath, secure: origin.Scheme == "https", now: time.Now, webhookURLPrefix: config.WebhookURLPrefix}, nil
 }
 
 // Handler returns the complete authentication/account route set.
@@ -155,6 +203,29 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("POST "+a.path("/mcp/authorization/attempts/{attempt_id}/cancel"), a.cancelMCPAuthorization)
 	mux.HandleFunc("POST "+a.path("/mcp/{connection_id}/authorization/disconnect"), a.disconnectMCPAuthorization)
 	mux.HandleFunc("POST "+a.path("/mcp/{connection_id}/authorization/retry"), a.retryMCPAuthorization)
+	mux.HandleFunc("GET "+a.path("/schedules"), a.schedulesPage)
+	mux.HandleFunc("GET "+a.path("/schedules/new"), a.newSchedulePage)
+	mux.HandleFunc("POST "+a.path("/schedules"), a.createSchedule)
+	mux.HandleFunc("GET "+a.path("/schedules/{schedule_id}"), a.schedulePage)
+	mux.HandleFunc("POST "+a.path("/schedules/{schedule_id}"), a.updateSchedule)
+	mux.HandleFunc("POST "+a.path("/schedules/{schedule_id}/selection"), a.selectSchedule)
+	mux.HandleFunc("POST "+a.path("/schedules/{schedule_id}/delete"), a.deleteSchedule)
+	mux.HandleFunc("POST "+a.path("/schedules/{schedule_id}/runs"), a.runSchedule)
+	mux.HandleFunc("GET "+a.path("/webhooks"), a.webhooksPage)
+	mux.HandleFunc("GET "+a.path("/webhooks/new"), a.newWebhookPage)
+	mux.HandleFunc("POST "+a.path("/webhooks"), a.createWebhook)
+	mux.HandleFunc("GET "+a.path("/webhooks/{webhook_name}"), a.webhookPage)
+	mux.HandleFunc("POST "+a.path("/webhooks/{webhook_name}"), a.updateWebhook)
+	mux.HandleFunc("POST "+a.path("/webhooks/{webhook_name}/selection"), a.selectWebhook)
+	mux.HandleFunc("POST "+a.path("/webhooks/{webhook_name}/delete"), a.deleteWebhook)
+	mux.HandleFunc("POST "+a.path("/webhooks/{webhook_name}/rotate"), a.rotateWebhook)
+	mux.HandleFunc("POST "+a.path("/webhooks/{webhook_name}/test"), a.testWebhook)
+	mux.HandleFunc("GET "+a.path("/aliases"), a.aliasesPage)
+	mux.HandleFunc("GET "+a.path("/aliases/new"), a.newAliasPage)
+	mux.HandleFunc("POST "+a.path("/aliases"), a.createAlias)
+	mux.HandleFunc("GET "+a.path("/aliases/{alias_name}"), a.aliasPage)
+	mux.HandleFunc("POST "+a.path("/aliases/{alias_name}"), a.retargetAlias)
+	mux.HandleFunc("POST "+a.path("/aliases/{alias_name}/delete"), a.deleteAlias)
 	return noStore(mux)
 }
 
@@ -410,11 +481,15 @@ func (a *App) principal(w http.ResponseWriter, r *http.Request) (managementv1.We
 }
 
 func (a *App) mutationForm(w http.ResponseWriter, r *http.Request) (url.Values, bool) {
+	return a.mutationFormLimit(w, r, maxFormBytes)
+}
+
+func (a *App) mutationFormLimit(w http.ResponseWriter, r *http.Request, limit int64) (url.Values, bool) {
 	if r.Header.Get("Origin") != a.origin {
 		a.failure(w, http.StatusForbidden)
 		return nil, false
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxFormBytes)
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	if err := r.ParseForm(); err != nil {
 		a.failure(w, http.StatusBadRequest)
 		return nil, false

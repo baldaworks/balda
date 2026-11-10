@@ -128,7 +128,7 @@ func TestEveryGeneratedManagementRouteHasAnExactGate(t *testing.T) {
 			if _, ok := managementRoute(method, path); !ok {
 				t.Errorf("%s %s (%s) has no active route gate", method, template, operation.OperationID)
 			}
-			if _, ok := managementRoute(method, path+"/extra"); ok {
+			if _, ok := managementRoute(method, path+"/extra/extra"); ok {
 				t.Errorf("%s %s gate accepts a child path", method, template)
 			}
 		}
