@@ -24,6 +24,318 @@ import (
 	"github.com/oapi-codegen/runtime"
 )
 
+// Defines values for MCPAuthorizationInputClientAuthMethod.
+const (
+	ClientSecretBasic MCPAuthorizationInputClientAuthMethod = "client_secret_basic"
+	ClientSecretPost  MCPAuthorizationInputClientAuthMethod = "client_secret_post"
+	None              MCPAuthorizationInputClientAuthMethod = "none"
+)
+
+// Valid indicates whether the value is a known member of the MCPAuthorizationInputClientAuthMethod enum.
+func (e MCPAuthorizationInputClientAuthMethod) Valid() bool {
+	switch e {
+	case ClientSecretBasic:
+		return true
+	case ClientSecretPost:
+		return true
+	case None:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MCPBrowserOnboardResultStartError.
+const (
+	MCPBrowserOnboardResultStartErrorAuthRequired MCPBrowserOnboardResultStartError = "auth_required"
+	MCPBrowserOnboardResultStartErrorConflict     MCPBrowserOnboardResultStartError = "conflict"
+	MCPBrowserOnboardResultStartErrorDisconnected MCPBrowserOnboardResultStartError = "disconnected"
+	MCPBrowserOnboardResultStartErrorForbidden    MCPBrowserOnboardResultStartError = "forbidden"
+	MCPBrowserOnboardResultStartErrorInvalid      MCPBrowserOnboardResultStartError = "invalid"
+	MCPBrowserOnboardResultStartErrorUnavailable  MCPBrowserOnboardResultStartError = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the MCPBrowserOnboardResultStartError enum.
+func (e MCPBrowserOnboardResultStartError) Valid() bool {
+	switch e {
+	case MCPBrowserOnboardResultStartErrorAuthRequired:
+		return true
+	case MCPBrowserOnboardResultStartErrorConflict:
+		return true
+	case MCPBrowserOnboardResultStartErrorDisconnected:
+		return true
+	case MCPBrowserOnboardResultStartErrorForbidden:
+		return true
+	case MCPBrowserOnboardResultStartErrorInvalid:
+		return true
+	case MCPBrowserOnboardResultStartErrorUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MCPDefinitionTransport.
+const (
+	HTTP  MCPDefinitionTransport = "http"
+	Sse   MCPDefinitionTransport = "sse"
+	Stdio MCPDefinitionTransport = "stdio"
+)
+
+// Valid indicates whether the value is a known member of the MCPDefinitionTransport enum.
+func (e MCPDefinitionTransport) Valid() bool {
+	switch e {
+	case HTTP:
+		return true
+	case Sse:
+		return true
+	case Stdio:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MCPDeviceAuthorizationStartStatus.
+const (
+	MCPDeviceAuthorizationStartStatusAuthorized MCPDeviceAuthorizationStartStatus = "authorized"
+	MCPDeviceAuthorizationStartStatusDenied     MCPDeviceAuthorizationStartStatus = "denied"
+	MCPDeviceAuthorizationStartStatusExpired    MCPDeviceAuthorizationStartStatus = "expired"
+	MCPDeviceAuthorizationStartStatusFailed     MCPDeviceAuthorizationStartStatus = "failed"
+	MCPDeviceAuthorizationStartStatusPending    MCPDeviceAuthorizationStartStatus = "pending"
+)
+
+// Valid indicates whether the value is a known member of the MCPDeviceAuthorizationStartStatus enum.
+func (e MCPDeviceAuthorizationStartStatus) Valid() bool {
+	switch e {
+	case MCPDeviceAuthorizationStartStatusAuthorized:
+		return true
+	case MCPDeviceAuthorizationStartStatusDenied:
+		return true
+	case MCPDeviceAuthorizationStartStatusExpired:
+		return true
+	case MCPDeviceAuthorizationStartStatusFailed:
+		return true
+	case MCPDeviceAuthorizationStartStatusPending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MCPDeviceAuthorizationStatusStatus.
+const (
+	MCPDeviceAuthorizationStatusStatusAuthorized MCPDeviceAuthorizationStatusStatus = "authorized"
+	MCPDeviceAuthorizationStatusStatusDenied     MCPDeviceAuthorizationStatusStatus = "denied"
+	MCPDeviceAuthorizationStatusStatusExpired    MCPDeviceAuthorizationStatusStatus = "expired"
+	MCPDeviceAuthorizationStatusStatusFailed     MCPDeviceAuthorizationStatusStatus = "failed"
+	MCPDeviceAuthorizationStatusStatusPending    MCPDeviceAuthorizationStatusStatus = "pending"
+)
+
+// Valid indicates whether the value is a known member of the MCPDeviceAuthorizationStatusStatus enum.
+func (e MCPDeviceAuthorizationStatusStatus) Valid() bool {
+	switch e {
+	case MCPDeviceAuthorizationStatusStatusAuthorized:
+		return true
+	case MCPDeviceAuthorizationStatusStatusDenied:
+		return true
+	case MCPDeviceAuthorizationStatusStatusExpired:
+		return true
+	case MCPDeviceAuthorizationStatusStatusFailed:
+		return true
+	case MCPDeviceAuthorizationStatusStatusPending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MCPDeviceOnboardResultStartError.
+const (
+	MCPDeviceOnboardResultStartErrorAuthRequired MCPDeviceOnboardResultStartError = "auth_required"
+	MCPDeviceOnboardResultStartErrorConflict     MCPDeviceOnboardResultStartError = "conflict"
+	MCPDeviceOnboardResultStartErrorDisconnected MCPDeviceOnboardResultStartError = "disconnected"
+	MCPDeviceOnboardResultStartErrorForbidden    MCPDeviceOnboardResultStartError = "forbidden"
+	MCPDeviceOnboardResultStartErrorInvalid      MCPDeviceOnboardResultStartError = "invalid"
+	MCPDeviceOnboardResultStartErrorUnavailable  MCPDeviceOnboardResultStartError = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the MCPDeviceOnboardResultStartError enum.
+func (e MCPDeviceOnboardResultStartError) Valid() bool {
+	switch e {
+	case MCPDeviceOnboardResultStartErrorAuthRequired:
+		return true
+	case MCPDeviceOnboardResultStartErrorConflict:
+		return true
+	case MCPDeviceOnboardResultStartErrorDisconnected:
+		return true
+	case MCPDeviceOnboardResultStartErrorForbidden:
+		return true
+	case MCPDeviceOnboardResultStartErrorInvalid:
+		return true
+	case MCPDeviceOnboardResultStartErrorUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MCPDiagnosticOutcome.
+const (
+	MCPDiagnosticOutcomeFailed    MCPDiagnosticOutcome = "failed"
+	MCPDiagnosticOutcomeSucceeded MCPDiagnosticOutcome = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the MCPDiagnosticOutcome enum.
+func (e MCPDiagnosticOutcome) Valid() bool {
+	switch e {
+	case MCPDiagnosticOutcomeFailed:
+		return true
+	case MCPDiagnosticOutcomeSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MCPItemRecovery.
+const (
+	AuthorizationRequired      MCPItemRecovery = "authorization_required"
+	CaptureRequired            MCPItemRecovery = "capture_required"
+	FirstAuthorizationRequired MCPItemRecovery = "first_authorization_required"
+)
+
+// Valid indicates whether the value is a known member of the MCPItemRecovery enum.
+func (e MCPItemRecovery) Valid() bool {
+	switch e {
+	case AuthorizationRequired:
+		return true
+	case CaptureRequired:
+		return true
+	case FirstAuthorizationRequired:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MCPItemSource.
+const (
+	MCPItemSourceConfig  MCPItemSource = "config"
+	MCPItemSourceManaged MCPItemSource = "managed"
+)
+
+// Valid indicates whether the value is a known member of the MCPItemSource enum.
+func (e MCPItemSource) Valid() bool {
+	switch e {
+	case MCPItemSourceConfig:
+		return true
+	case MCPItemSourceManaged:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MCPItemStatus.
+const (
+	MCPItemStatusAuthRequired MCPItemStatus = "auth_required"
+	MCPItemStatusConflict     MCPItemStatus = "conflict"
+	MCPItemStatusDeleted      MCPItemStatus = "deleted"
+	MCPItemStatusDisabled     MCPItemStatus = "disabled"
+	MCPItemStatusDisconnected MCPItemStatus = "disconnected"
+	MCPItemStatusPending      MCPItemStatus = "pending"
+	MCPItemStatusReady        MCPItemStatus = "ready"
+	MCPItemStatusUnavailable  MCPItemStatus = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the MCPItemStatus enum.
+func (e MCPItemStatus) Valid() bool {
+	switch e {
+	case MCPItemStatusAuthRequired:
+		return true
+	case MCPItemStatusConflict:
+		return true
+	case MCPItemStatusDeleted:
+		return true
+	case MCPItemStatusDisabled:
+		return true
+	case MCPItemStatusDisconnected:
+		return true
+	case MCPItemStatusPending:
+		return true
+	case MCPItemStatusReady:
+		return true
+	case MCPItemStatusUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MCPValueBindingKind.
+const (
+	MCPValueBindingKindEnvironment MCPValueBindingKind = "environment"
+	MCPValueBindingKindLiteral     MCPValueBindingKind = "literal"
+	MCPValueBindingKindProtected   MCPValueBindingKind = "protected"
+)
+
+// Valid indicates whether the value is a known member of the MCPValueBindingKind enum.
+func (e MCPValueBindingKind) Valid() bool {
+	switch e {
+	case MCPValueBindingKindEnvironment:
+		return true
+	case MCPValueBindingKindLiteral:
+		return true
+	case MCPValueBindingKindProtected:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MCPValueEditKind.
+const (
+	MCPValueEditKindEnvironment MCPValueEditKind = "environment"
+	MCPValueEditKindLiteral     MCPValueEditKind = "literal"
+	MCPValueEditKindProtected   MCPValueEditKind = "protected"
+)
+
+// Valid indicates whether the value is a known member of the MCPValueEditKind enum.
+func (e MCPValueEditKind) Valid() bool {
+	switch e {
+	case MCPValueEditKindEnvironment:
+		return true
+	case MCPValueEditKindLiteral:
+		return true
+	case MCPValueEditKindProtected:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MCPValueEditOperation.
+const (
+	MCPValueEditOperationKeep   MCPValueEditOperation = "keep"
+	MCPValueEditOperationRemove MCPValueEditOperation = "remove"
+	MCPValueEditOperationSet    MCPValueEditOperation = "set"
+)
+
+// Valid indicates whether the value is a known member of the MCPValueEditOperation enum.
+func (e MCPValueEditOperation) Valid() bool {
+	switch e {
+	case MCPValueEditOperationKeep:
+		return true
+	case MCPValueEditOperationRemove:
+		return true
+	case MCPValueEditOperationSet:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ManagementCompatibilityAPIMajor.
 const (
 	N1 ManagementCompatibilityAPIMajor = 1
@@ -48,6 +360,45 @@ const (
 func (e ManagementCompatibilityContractID) Valid() bool {
 	switch e {
 	case BaldaManagementV1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProviderEditOperation.
+const (
+	ProviderEditOperationClear   ProviderEditOperation = "clear"
+	ProviderEditOperationKeep    ProviderEditOperation = "keep"
+	ProviderEditOperationReplace ProviderEditOperation = "replace"
+)
+
+// Valid indicates whether the value is a known member of the ProviderEditOperation enum.
+func (e ProviderEditOperation) Valid() bool {
+	switch e {
+	case ProviderEditOperationClear:
+		return true
+	case ProviderEditOperationKeep:
+		return true
+	case ProviderEditOperationReplace:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProviderSource.
+const (
+	ProviderSourceConfigured ProviderSource = "configured"
+	ProviderSourceManaged    ProviderSource = "managed"
+)
+
+// Valid indicates whether the value is a known member of the ProviderSource enum.
+func (e ProviderSource) Valid() bool {
+	switch e {
+	case ProviderSourceConfigured:
+		return true
+	case ProviderSourceManaged:
 		return true
 	default:
 		return false
@@ -154,12 +505,220 @@ type LocalLoginRequest struct {
 	Username       string                `json:"username"`
 }
 
+// MCPAuthorizationAttempt defines model for MCPAuthorizationAttempt.
+type MCPAuthorizationAttempt struct {
+	AttemptID    string    `json:"attempt_id"`
+	ConnectionID string    `json:"connection_id"`
+	Device       bool      `json:"device"`
+	ExpiresAt    time.Time `json:"expires_at"`
+}
+
+// MCPAuthorizationInput defines model for MCPAuthorizationInput.
+type MCPAuthorizationInput struct {
+	ClientAuthMethod MCPAuthorizationInputClientAuthMethod `json:"client_auth_method"`
+	ClientID         string                                `json:"client_id"`
+	ClientSecret     *string                               `json:"client_secret,omitempty"`
+	Scopes           []string                              `json:"scopes"`
+}
+
+// MCPAuthorizationInputClientAuthMethod defines model for MCPAuthorizationInput.ClientAuthMethod.
+type MCPAuthorizationInputClientAuthMethod string
+
+// MCPAuthorizationOnboardRequest defines model for MCPAuthorizationOnboardRequest.
+type MCPAuthorizationOnboardRequest struct {
+	Authorization MCPAuthorizationInput `json:"authorization"`
+	Creation      MCPCreateRequest      `json:"creation"`
+}
+
+// MCPBrowserAuthorizationStart defines model for MCPBrowserAuthorizationStart.
+type MCPBrowserAuthorizationStart struct {
+	AttemptID        string    `json:"attempt_id"`
+	AuthorizationURL string    `json:"authorization_url"`
+	ConnectionID     string    `json:"connection_id"`
+	ExpiresAt        time.Time `json:"expires_at"`
+}
+
+// MCPBrowserCallback defines model for MCPBrowserCallback.
+type MCPBrowserCallback struct {
+	Code   *string `json:"code,omitempty"`
+	Denied bool    `json:"denied"`
+	Issuer string  `json:"issuer"`
+	State  *string `json:"state,omitempty"`
+}
+
+// MCPBrowserOnboardResult defines model for MCPBrowserOnboardResult.
+type MCPBrowserOnboardResult struct {
+	Item       MCPItem                            `json:"item"`
+	Start      *MCPBrowserAuthorizationStart      `json:"start,omitempty"`
+	StartError *MCPBrowserOnboardResultStartError `json:"start_error,omitempty"`
+}
+
+// MCPBrowserOnboardResultStartError defines model for MCPBrowserOnboardResult.StartError.
+type MCPBrowserOnboardResultStartError string
+
+// MCPCreateRequest defines model for MCPCreateRequest.
+type MCPCreateRequest struct {
+	Definition MCPDefinition  `json:"definition"`
+	Enabled    bool           `json:"enabled"`
+	Env        *MCPValueEdits `json:"env,omitempty"`
+	Headers    *MCPValueEdits `json:"headers,omitempty"`
+	PublicID   string         `json:"public_id"`
+}
+
+// MCPDefinition defines model for MCPDefinition.
+type MCPDefinition struct {
+	Args           *[]string                   `json:"args,omitempty"`
+	Command        *string                     `json:"command,omitempty"`
+	ConfigRevision *string                     `json:"config_revision,omitempty"`
+	Directory      *string                     `json:"directory,omitempty"`
+	Env            *map[string]MCPValueBinding `json:"env,omitempty"`
+	Headers        *map[string]MCPValueBinding `json:"headers,omitempty"`
+	Oauth          *bool                       `json:"oauth,omitempty"`
+	Scopes         *[]string                   `json:"scopes,omitempty"`
+	Targets        MCPTargets                  `json:"targets"`
+	Transport      MCPDefinitionTransport      `json:"transport"`
+	URL            *string                     `json:"url,omitempty"`
+}
+
+// MCPDefinitionTransport defines model for MCPDefinition.Transport.
+type MCPDefinitionTransport string
+
+// MCPDeviceAuthorizationStart defines model for MCPDeviceAuthorizationStart.
+type MCPDeviceAuthorizationStart struct {
+	AttemptID               string                            `json:"attempt_id"`
+	ConnectionID            string                            `json:"connection_id"`
+	ExpiresAt               time.Time                         `json:"expires_at"`
+	Status                  MCPDeviceAuthorizationStartStatus `json:"status"`
+	UserCode                string                            `json:"user_code"`
+	VerificationURI         string                            `json:"verification_uri"`
+	VerificationURIComplete *string                           `json:"verification_uri_complete,omitempty"`
+}
+
+// MCPDeviceAuthorizationStartStatus defines model for MCPDeviceAuthorizationStart.Status.
+type MCPDeviceAuthorizationStartStatus string
+
+// MCPDeviceAuthorizationStatus defines model for MCPDeviceAuthorizationStatus.
+type MCPDeviceAuthorizationStatus struct {
+	AttemptID    string                             `json:"attempt_id"`
+	ConnectionID string                             `json:"connection_id"`
+	ExpiresAt    time.Time                          `json:"expires_at"`
+	Status       MCPDeviceAuthorizationStatusStatus `json:"status"`
+}
+
+// MCPDeviceAuthorizationStatusStatus defines model for MCPDeviceAuthorizationStatus.Status.
+type MCPDeviceAuthorizationStatusStatus string
+
+// MCPDeviceOnboardResult defines model for MCPDeviceOnboardResult.
+type MCPDeviceOnboardResult struct {
+	Item       MCPItem                           `json:"item"`
+	Start      *MCPDeviceAuthorizationStart      `json:"start,omitempty"`
+	StartError *MCPDeviceOnboardResultStartError `json:"start_error,omitempty"`
+}
+
+// MCPDeviceOnboardResultStartError defines model for MCPDeviceOnboardResult.StartError.
+type MCPDeviceOnboardResultStartError string
+
+// MCPDiagnostic defines model for MCPDiagnostic.
+type MCPDiagnostic struct {
+	CheckedAt time.Time            `json:"checked_at"`
+	Outcome   MCPDiagnosticOutcome `json:"outcome"`
+	ToolCount int32                `json:"tool_count"`
+}
+
+// MCPDiagnosticOutcome defines model for MCPDiagnostic.Outcome.
+type MCPDiagnosticOutcome string
+
+// MCPInventory defines model for MCPInventory.
+type MCPInventory struct {
+	Items       []MCPItem `json:"items"`
+	ProviderIds []string  `json:"provider_ids"`
+}
+
+// MCPItem defines model for MCPItem.
+type MCPItem struct {
+	ActiveAttempt     *MCPAuthorizationAttempt `json:"active_attempt,omitempty"`
+	Authorization     string                   `json:"authorization"`
+	ConnectionID      string                   `json:"connection_id"`
+	CurrentRevisionID string                   `json:"current_revision_id"`
+	Definition        MCPDefinition            `json:"definition"`
+	Deleted           bool                     `json:"deleted"`
+	Enabled           bool                     `json:"enabled"`
+	LastDiagnostic    *MCPDiagnostic           `json:"last_diagnostic,omitempty"`
+	PublicID          string                   `json:"public_id"`
+	PublishedVersion  uint64                   `json:"published_version"`
+	Recovery          *MCPItemRecovery         `json:"recovery,omitempty"`
+	Source            MCPItemSource            `json:"source"`
+	Status            MCPItemStatus            `json:"status"`
+	ToolCount         int32                    `json:"tool_count"`
+	Version           uint64                   `json:"version"`
+}
+
+// MCPItemRecovery defines model for MCPItem.Recovery.
+type MCPItemRecovery string
+
+// MCPItemSource defines model for MCPItem.Source.
+type MCPItemSource string
+
+// MCPItemStatus defines model for MCPItem.Status.
+type MCPItemStatus string
+
+// MCPRetryAuthorizationRequest defines model for MCPRetryAuthorizationRequest.
+type MCPRetryAuthorizationRequest struct {
+	ExpectedRevisionID string `json:"expected_revision_id"`
+}
+
+// MCPSelectionRequest defines model for MCPSelectionRequest.
+type MCPSelectionRequest struct {
+	Enabled         bool   `json:"enabled"`
+	ExpectedVersion uint64 `json:"expected_version"`
+}
+
+// MCPTargets defines model for MCPTargets.
+type MCPTargets struct {
+	All       bool     `json:"all"`
+	Providers []string `json:"providers"`
+}
+
+// MCPUpdateRequest defines model for MCPUpdateRequest.
+type MCPUpdateRequest struct {
+	Definition      MCPDefinition  `json:"definition"`
+	Enabled         bool           `json:"enabled"`
+	Env             *MCPValueEdits `json:"env,omitempty"`
+	ExpectedVersion uint64         `json:"expected_version"`
+	Headers         *MCPValueEdits `json:"headers,omitempty"`
+}
+
+// MCPValueBinding defines model for MCPValueBinding.
+type MCPValueBinding struct {
+	Kind  MCPValueBindingKind `json:"kind"`
+	Value *string             `json:"value,omitempty"`
+}
+
+// MCPValueBindingKind defines model for MCPValueBinding.Kind.
+type MCPValueBindingKind string
+
+// MCPValueEdit defines model for MCPValueEdit.
+type MCPValueEdit struct {
+	Kind      MCPValueEditKind      `json:"kind"`
+	Operation MCPValueEditOperation `json:"operation"`
+	Value     *string               `json:"value,omitempty"`
+}
+
+// MCPValueEditKind defines model for MCPValueEdit.Kind.
+type MCPValueEditKind string
+
+// MCPValueEditOperation defines model for MCPValueEdit.Operation.
+type MCPValueEditOperation string
+
+// MCPValueEdits defines model for MCPValueEdits.
+type MCPValueEdits map[string]MCPValueEdit
+
 // ManagementCompatibility defines model for ManagementCompatibility.
 type ManagementCompatibility struct {
 	APIMajor   ManagementCompatibilityAPIMajor   `json:"api_major"`
 	ContractID ManagementCompatibilityContractID `json:"contract_id"`
 
-	// ContractVersion Example: 1.0.0
+	// ContractVersion Example: 1.1.0
 	ContractVersion string `json:"contract_version"`
 }
 
@@ -188,6 +747,97 @@ type ManagementResourceSummary struct {
 	ResourceID      string    `json:"resource_id"`
 	ResourceVersion uint64    `json:"resource_version"`
 	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+// ProviderConfig defines model for ProviderConfig.
+type ProviderConfig struct {
+	BridgeVersion           *string   `json:"bridge_version,omitempty"`
+	ExtraArgs               *[]string `json:"extra_args,omitempty"`
+	InheritEnv              *bool     `json:"inherit_env,omitempty"`
+	McpServers              *[]string `json:"mcp_servers,omitempty"`
+	Mode                    *string   `json:"mode,omitempty"`
+	Model                   *string   `json:"model,omitempty"`
+	ModelConfigID           *string   `json:"model_config_id,omitempty"`
+	PoolMembers             *[]string `json:"pool_members,omitempty"`
+	ReasoningEffort         *string   `json:"reasoning_effort,omitempty"`
+	ReasoningEffortConfigID *string   `json:"reasoning_effort_config_id,omitempty"`
+	RegistryID              *string   `json:"registry_id,omitempty"`
+	SystemInstructions      *string   `json:"system_instructions,omitempty"`
+	Timeout                 *string   `json:"timeout,omitempty"`
+	Type                    string    `json:"type"`
+}
+
+// ProviderCreateRequest defines model for ProviderCreateRequest.
+type ProviderCreateRequest struct {
+	Config          ProviderConfig        `json:"config"`
+	ExpectedVersion uint64                `json:"expected_version"`
+	ID              string                `json:"id"`
+	Protected       ProviderProtectedEdit `json:"protected"`
+}
+
+// ProviderDeleteRequest defines model for ProviderDeleteRequest.
+type ProviderDeleteRequest struct {
+	ExpectedVersion uint64 `json:"expected_version"`
+}
+
+// ProviderEditOperation defines model for ProviderEditOperation.
+type ProviderEditOperation string
+
+// ProviderEnvironmentEdit defines model for ProviderEnvironmentEdit.
+type ProviderEnvironmentEdit struct {
+	Operation ProviderEditOperation `json:"operation"`
+	Values    *map[string]string    `json:"values,omitempty"`
+}
+
+// ProviderInventory defines model for ProviderInventory.
+type ProviderInventory struct {
+	Items   []ProviderItem `json:"items"`
+	Types   []string       `json:"types"`
+	Version uint64         `json:"version"`
+}
+
+// ProviderItem defines model for ProviderItem.
+type ProviderItem struct {
+	Config            ProviderConfig `json:"config"`
+	ContractVersion   uint32         `json:"contract_version"`
+	CurrentRevisionID string         `json:"current_revision_id"`
+	Deleted           bool           `json:"deleted"`
+	DriverType        string         `json:"driver_type"`
+	Enabled           bool           `json:"enabled"`
+	EnvironmentNames  []string       `json:"environment_names"`
+	FormatVersion     uint32         `json:"format_version"`
+	HasAPIKey         bool           `json:"has_api_key"`
+	ID                string         `json:"id"`
+	Reproducible      bool           `json:"reproducible"`
+	Source            ProviderSource `json:"source"`
+}
+
+// ProviderProtectedEdit defines model for ProviderProtectedEdit.
+type ProviderProtectedEdit struct {
+	APIKey      ProviderSecretEdit      `json:"api_key"`
+	Environment ProviderEnvironmentEdit `json:"environment"`
+}
+
+// ProviderSecretEdit defines model for ProviderSecretEdit.
+type ProviderSecretEdit struct {
+	Operation ProviderEditOperation `json:"operation"`
+	Value     *string               `json:"value,omitempty"`
+}
+
+// ProviderSelectionRequest defines model for ProviderSelectionRequest.
+type ProviderSelectionRequest struct {
+	Enabled         bool   `json:"enabled"`
+	ExpectedVersion uint64 `json:"expected_version"`
+}
+
+// ProviderSource defines model for ProviderSource.
+type ProviderSource string
+
+// ProviderUpdateRequest defines model for ProviderUpdateRequest.
+type ProviderUpdateRequest struct {
+	Config          ProviderConfig        `json:"config"`
+	ExpectedVersion uint64                `json:"expected_version"`
+	Protected       ProviderProtectedEdit `json:"protected"`
 }
 
 // WebAuthAssurance defines model for WebAuthAssurance.
@@ -339,6 +989,15 @@ type WebAuthSessionSummary struct {
 	WebAuthSessionID string           `json:"web_auth_session_id"`
 }
 
+// MCPAttemptID defines model for MCPAttemptID.
+type MCPAttemptID = string
+
+// MCPConnectionID defines model for MCPConnectionID.
+type MCPConnectionID = string
+
+// ProviderID defines model for ProviderID.
+type ProviderID = string
+
 // BadRequest defines model for BadRequest.
 type BadRequest = ManagementError
 
@@ -353,6 +1012,9 @@ type InternalError = ManagementError
 
 // NotFound defines model for NotFound.
 type NotFound = ManagementError
+
+// ServiceUnavailable defines model for ServiceUnavailable.
+type ServiceUnavailable = ManagementError
 
 // Unauthorized defines model for Unauthorized.
 type Unauthorized = ManagementError
@@ -390,6 +1052,54 @@ type ReplaceWebAuthPasswordJSONRequestBody = WebAuthPasswordReplaceRequest
 
 // RevokeWebAuthSessionJSONRequestBody defines body for RevokeWebAuthSession for application/json ContentType.
 type RevokeWebAuthSessionJSONRequestBody = WebAuthSessionRevokeRequest
+
+// CreateMCPConnectionJSONRequestBody defines body for CreateMCPConnection for application/json ContentType.
+type CreateMCPConnectionJSONRequestBody = MCPCreateRequest
+
+// CompleteMCPBrowserAuthorizationJSONRequestBody defines body for CompleteMCPBrowserAuthorization for application/json ContentType.
+type CompleteMCPBrowserAuthorizationJSONRequestBody = MCPBrowserCallback
+
+// OnboardMCPBrowserAuthorizationJSONRequestBody defines body for OnboardMCPBrowserAuthorization for application/json ContentType.
+type OnboardMCPBrowserAuthorizationJSONRequestBody = MCPAuthorizationOnboardRequest
+
+// OnboardMCPDeviceAuthorizationJSONRequestBody defines body for OnboardMCPDeviceAuthorization for application/json ContentType.
+type OnboardMCPDeviceAuthorizationJSONRequestBody = MCPAuthorizationOnboardRequest
+
+// ProbeMCPConnectionJSONRequestBody defines body for ProbeMCPConnection for application/json ContentType.
+type ProbeMCPConnectionJSONRequestBody = MCPCreateRequest
+
+// DeleteMCPConnectionJSONRequestBody defines body for DeleteMCPConnection for application/json ContentType.
+type DeleteMCPConnectionJSONRequestBody = MCPSelectionRequest
+
+// UpdateMCPConnectionJSONRequestBody defines body for UpdateMCPConnection for application/json ContentType.
+type UpdateMCPConnectionJSONRequestBody = MCPUpdateRequest
+
+// BeginMCPBrowserAuthorizationJSONRequestBody defines body for BeginMCPBrowserAuthorization for application/json ContentType.
+type BeginMCPBrowserAuthorizationJSONRequestBody = MCPAuthorizationInput
+
+// BeginMCPDeviceAuthorizationJSONRequestBody defines body for BeginMCPDeviceAuthorization for application/json ContentType.
+type BeginMCPDeviceAuthorizationJSONRequestBody = MCPAuthorizationInput
+
+// RetryMCPAuthorizationJSONRequestBody defines body for RetryMCPAuthorization for application/json ContentType.
+type RetryMCPAuthorizationJSONRequestBody = MCPRetryAuthorizationRequest
+
+// ProbeMCPConnectionUpdateJSONRequestBody defines body for ProbeMCPConnectionUpdate for application/json ContentType.
+type ProbeMCPConnectionUpdateJSONRequestBody = MCPUpdateRequest
+
+// SelectMCPConnectionJSONRequestBody defines body for SelectMCPConnection for application/json ContentType.
+type SelectMCPConnectionJSONRequestBody = MCPSelectionRequest
+
+// CreateProviderJSONRequestBody defines body for CreateProvider for application/json ContentType.
+type CreateProviderJSONRequestBody = ProviderCreateRequest
+
+// DeleteProviderJSONRequestBody defines body for DeleteProvider for application/json ContentType.
+type DeleteProviderJSONRequestBody = ProviderDeleteRequest
+
+// UpdateProviderJSONRequestBody defines body for UpdateProvider for application/json ContentType.
+type UpdateProviderJSONRequestBody = ProviderUpdateRequest
+
+// SelectProviderJSONRequestBody defines body for SelectProvider for application/json ContentType.
+type SelectProviderJSONRequestBody = ProviderSelectionRequest
 
 // RequestEditorFn is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -620,6 +1330,218 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /api/management/v1/compatibility (the `GetManagementCompatibility` operationId).
 	GetManagementCompatibility(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListMCPConnections Read the current secret-free MCP inventory
+	//
+	// Corresponds with GET /api/management/v1/mcp (the `ListMCPConnections` operationId).
+	ListMCPConnections(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateMCPConnectionWithBody Create a managed MCP connection
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/management/v1/mcp (the `CreateMCPConnection` operationId).
+	CreateMCPConnectionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateMCPConnection Create a managed MCP connection
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/management/v1/mcp (the `CreateMCPConnection` operationId).
+	CreateMCPConnection(ctx context.Context, body CreateMCPConnectionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CancelMCPAuthorization performs a POST /api/management/v1/mcp/authorization/attempts/{attempt_id}/cancel (the `CancelMCPAuthorization` operationId) request.
+	CancelMCPAuthorization(ctx context.Context, attemptID MCPAttemptID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CompleteMCPBrowserAuthorizationWithBody performs a POST /api/management/v1/mcp/authorization/browser/callback (the `CompleteMCPBrowserAuthorization` operationId) request,
+	// with any type of body and a specified content type.
+	CompleteMCPBrowserAuthorizationWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CompleteMCPBrowserAuthorization performs a POST /api/management/v1/mcp/authorization/browser/callback (the `CompleteMCPBrowserAuthorization` operationId) request.
+	// Takes a body of the `application/json` content type.
+	CompleteMCPBrowserAuthorization(ctx context.Context, body CompleteMCPBrowserAuthorizationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// OnboardMCPBrowserAuthorizationWithBody performs a POST /api/management/v1/mcp/authorization/browser/onboard (the `OnboardMCPBrowserAuthorization` operationId) request,
+	// with any type of body and a specified content type.
+	OnboardMCPBrowserAuthorizationWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// OnboardMCPBrowserAuthorization performs a POST /api/management/v1/mcp/authorization/browser/onboard (the `OnboardMCPBrowserAuthorization` operationId) request.
+	// Takes a body of the `application/json` content type.
+	OnboardMCPBrowserAuthorization(ctx context.Context, body OnboardMCPBrowserAuthorizationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// OnboardMCPDeviceAuthorizationWithBody performs a POST /api/management/v1/mcp/authorization/device/onboard (the `OnboardMCPDeviceAuthorization` operationId) request,
+	// with any type of body and a specified content type.
+	OnboardMCPDeviceAuthorizationWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// OnboardMCPDeviceAuthorization performs a POST /api/management/v1/mcp/authorization/device/onboard (the `OnboardMCPDeviceAuthorization` operationId) request.
+	// Takes a body of the `application/json` content type.
+	OnboardMCPDeviceAuthorization(ctx context.Context, body OnboardMCPDeviceAuthorizationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetMCPDeviceAuthorization performs a GET /api/management/v1/mcp/authorization/device/{attempt_id} (the `GetMCPDeviceAuthorization` operationId) request.
+	GetMCPDeviceAuthorization(ctx context.Context, attemptID MCPAttemptID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ProbeMCPConnectionWithBody Probe an unsaved MCP candidate
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/management/v1/mcp/probe (the `ProbeMCPConnection` operationId).
+	ProbeMCPConnectionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ProbeMCPConnection Probe an unsaved MCP candidate
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/management/v1/mcp/probe (the `ProbeMCPConnection` operationId).
+	ProbeMCPConnection(ctx context.Context, body ProbeMCPConnectionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteMCPConnectionWithBody Tombstone a managed MCP connection
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with DELETE /api/management/v1/mcp/{connection_id} (the `DeleteMCPConnection` operationId).
+	DeleteMCPConnectionWithBody(ctx context.Context, connectionID MCPConnectionID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteMCPConnection Tombstone a managed MCP connection
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with DELETE /api/management/v1/mcp/{connection_id} (the `DeleteMCPConnection` operationId).
+	DeleteMCPConnection(ctx context.Context, connectionID MCPConnectionID, body DeleteMCPConnectionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateMCPConnectionWithBody Update a managed MCP connection
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /api/management/v1/mcp/{connection_id} (the `UpdateMCPConnection` operationId).
+	UpdateMCPConnectionWithBody(ctx context.Context, connectionID MCPConnectionID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateMCPConnection Update a managed MCP connection
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /api/management/v1/mcp/{connection_id} (the `UpdateMCPConnection` operationId).
+	UpdateMCPConnection(ctx context.Context, connectionID MCPConnectionID, body UpdateMCPConnectionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// BeginMCPBrowserAuthorizationWithBody performs a POST /api/management/v1/mcp/{connection_id}/authorization/browser (the `BeginMCPBrowserAuthorization` operationId) request,
+	// with any type of body and a specified content type.
+	BeginMCPBrowserAuthorizationWithBody(ctx context.Context, connectionID MCPConnectionID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// BeginMCPBrowserAuthorization performs a POST /api/management/v1/mcp/{connection_id}/authorization/browser (the `BeginMCPBrowserAuthorization` operationId) request.
+	// Takes a body of the `application/json` content type.
+	BeginMCPBrowserAuthorization(ctx context.Context, connectionID MCPConnectionID, body BeginMCPBrowserAuthorizationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// BeginMCPDeviceAuthorizationWithBody performs a POST /api/management/v1/mcp/{connection_id}/authorization/device (the `BeginMCPDeviceAuthorization` operationId) request,
+	// with any type of body and a specified content type.
+	BeginMCPDeviceAuthorizationWithBody(ctx context.Context, connectionID MCPConnectionID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// BeginMCPDeviceAuthorization performs a POST /api/management/v1/mcp/{connection_id}/authorization/device (the `BeginMCPDeviceAuthorization` operationId) request.
+	// Takes a body of the `application/json` content type.
+	BeginMCPDeviceAuthorization(ctx context.Context, connectionID MCPConnectionID, body BeginMCPDeviceAuthorizationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DisconnectMCPAuthorization performs a POST /api/management/v1/mcp/{connection_id}/authorization/disconnect (the `DisconnectMCPAuthorization` operationId) request.
+	DisconnectMCPAuthorization(ctx context.Context, connectionID MCPConnectionID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RetryMCPAuthorizationWithBody performs a POST /api/management/v1/mcp/{connection_id}/authorization/retry (the `RetryMCPAuthorization` operationId) request,
+	// with any type of body and a specified content type.
+	RetryMCPAuthorizationWithBody(ctx context.Context, connectionID MCPConnectionID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RetryMCPAuthorization performs a POST /api/management/v1/mcp/{connection_id}/authorization/retry (the `RetryMCPAuthorization` operationId) request.
+	// Takes a body of the `application/json` content type.
+	RetryMCPAuthorization(ctx context.Context, connectionID MCPConnectionID, body RetryMCPAuthorizationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DiagnoseMCPConnection Diagnose the authoritative current MCP definition
+	//
+	// Corresponds with POST /api/management/v1/mcp/{connection_id}/diagnostic (the `DiagnoseMCPConnection` operationId).
+	DiagnoseMCPConnection(ctx context.Context, connectionID MCPConnectionID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ProbeMCPConnectionUpdateWithBody Probe edits against the current retained revision
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /api/management/v1/mcp/{connection_id}/probe (the `ProbeMCPConnectionUpdate` operationId).
+	ProbeMCPConnectionUpdateWithBody(ctx context.Context, connectionID MCPConnectionID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ProbeMCPConnectionUpdate Probe edits against the current retained revision
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /api/management/v1/mcp/{connection_id}/probe (the `ProbeMCPConnectionUpdate` operationId).
+	ProbeMCPConnectionUpdate(ctx context.Context, connectionID MCPConnectionID, body ProbeMCPConnectionUpdateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SelectMCPConnectionWithBody Enable or disable a managed MCP connection
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/management/v1/mcp/{connection_id}/selection (the `SelectMCPConnection` operationId).
+	SelectMCPConnectionWithBody(ctx context.Context, connectionID MCPConnectionID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SelectMCPConnection Enable or disable a managed MCP connection
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/management/v1/mcp/{connection_id}/selection (the `SelectMCPConnection` operationId).
+	SelectMCPConnection(ctx context.Context, connectionID MCPConnectionID, body SelectMCPConnectionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListProviders Read the current provider inventory
+	//
+	// Corresponds with GET /api/management/v1/providers (the `ListProviders` operationId).
+	ListProviders(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateProviderWithBody Create a managed provider
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/management/v1/providers (the `CreateProvider` operationId).
+	CreateProviderWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateProvider Create a managed provider
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/management/v1/providers (the `CreateProvider` operationId).
+	CreateProvider(ctx context.Context, body CreateProviderJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteProviderWithBody Tombstone a managed provider
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with DELETE /api/management/v1/providers/{provider_id} (the `DeleteProvider` operationId).
+	DeleteProviderWithBody(ctx context.Context, providerID ProviderID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteProvider Tombstone a managed provider
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with DELETE /api/management/v1/providers/{provider_id} (the `DeleteProvider` operationId).
+	DeleteProvider(ctx context.Context, providerID ProviderID, body DeleteProviderJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateProviderWithBody Replace the editable definition of a managed provider
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /api/management/v1/providers/{provider_id} (the `UpdateProvider` operationId).
+	UpdateProviderWithBody(ctx context.Context, providerID ProviderID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateProvider Replace the editable definition of a managed provider
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /api/management/v1/providers/{provider_id} (the `UpdateProvider` operationId).
+	UpdateProvider(ctx context.Context, providerID ProviderID, body UpdateProviderJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SelectProviderWithBody Enable or disable a managed provider
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/management/v1/providers/{provider_id}/selection (the `SelectProvider` operationId).
+	SelectProviderWithBody(ctx context.Context, providerID ProviderID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SelectProvider Enable or disable a managed provider
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/management/v1/providers/{provider_id}/selection (the `SelectProvider` operationId).
+	SelectProvider(ctx context.Context, providerID ProviderID, body SelectProviderJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 // LoginWebAuthWithBody Start local WebAuth login
@@ -1008,6 +1930,598 @@ func (c *Client) RevokeWebAuthSession(ctx context.Context, webAuthSessionID stri
 // Corresponds with GET /api/management/v1/compatibility (the `GetManagementCompatibility` operationId).
 func (c *Client) GetManagementCompatibility(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetManagementCompatibilityRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListMCPConnections Read the current secret-free MCP inventory
+//
+// Corresponds with GET /api/management/v1/mcp (the `ListMCPConnections` operationId).
+func (c *Client) ListMCPConnections(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListMCPConnectionsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateMCPConnectionWithBody Create a managed MCP connection
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/management/v1/mcp (the `CreateMCPConnection` operationId).
+func (c *Client) CreateMCPConnectionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateMCPConnectionRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateMCPConnection Create a managed MCP connection
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/management/v1/mcp (the `CreateMCPConnection` operationId).
+func (c *Client) CreateMCPConnection(ctx context.Context, body CreateMCPConnectionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateMCPConnectionRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CancelMCPAuthorization performs a POST /api/management/v1/mcp/authorization/attempts/{attempt_id}/cancel (the `CancelMCPAuthorization` operationId) request.
+func (c *Client) CancelMCPAuthorization(ctx context.Context, attemptID MCPAttemptID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCancelMCPAuthorizationRequest(c.Server, attemptID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CompleteMCPBrowserAuthorizationWithBody performs a POST /api/management/v1/mcp/authorization/browser/callback (the `CompleteMCPBrowserAuthorization` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) CompleteMCPBrowserAuthorizationWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCompleteMCPBrowserAuthorizationRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CompleteMCPBrowserAuthorization performs a POST /api/management/v1/mcp/authorization/browser/callback (the `CompleteMCPBrowserAuthorization` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) CompleteMCPBrowserAuthorization(ctx context.Context, body CompleteMCPBrowserAuthorizationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCompleteMCPBrowserAuthorizationRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// OnboardMCPBrowserAuthorizationWithBody performs a POST /api/management/v1/mcp/authorization/browser/onboard (the `OnboardMCPBrowserAuthorization` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) OnboardMCPBrowserAuthorizationWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewOnboardMCPBrowserAuthorizationRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// OnboardMCPBrowserAuthorization performs a POST /api/management/v1/mcp/authorization/browser/onboard (the `OnboardMCPBrowserAuthorization` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) OnboardMCPBrowserAuthorization(ctx context.Context, body OnboardMCPBrowserAuthorizationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewOnboardMCPBrowserAuthorizationRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// OnboardMCPDeviceAuthorizationWithBody performs a POST /api/management/v1/mcp/authorization/device/onboard (the `OnboardMCPDeviceAuthorization` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) OnboardMCPDeviceAuthorizationWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewOnboardMCPDeviceAuthorizationRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// OnboardMCPDeviceAuthorization performs a POST /api/management/v1/mcp/authorization/device/onboard (the `OnboardMCPDeviceAuthorization` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) OnboardMCPDeviceAuthorization(ctx context.Context, body OnboardMCPDeviceAuthorizationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewOnboardMCPDeviceAuthorizationRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetMCPDeviceAuthorization performs a GET /api/management/v1/mcp/authorization/device/{attempt_id} (the `GetMCPDeviceAuthorization` operationId) request.
+func (c *Client) GetMCPDeviceAuthorization(ctx context.Context, attemptID MCPAttemptID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetMCPDeviceAuthorizationRequest(c.Server, attemptID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ProbeMCPConnectionWithBody Probe an unsaved MCP candidate
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/management/v1/mcp/probe (the `ProbeMCPConnection` operationId).
+func (c *Client) ProbeMCPConnectionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewProbeMCPConnectionRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ProbeMCPConnection Probe an unsaved MCP candidate
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/management/v1/mcp/probe (the `ProbeMCPConnection` operationId).
+func (c *Client) ProbeMCPConnection(ctx context.Context, body ProbeMCPConnectionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewProbeMCPConnectionRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteMCPConnectionWithBody Tombstone a managed MCP connection
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with DELETE /api/management/v1/mcp/{connection_id} (the `DeleteMCPConnection` operationId).
+func (c *Client) DeleteMCPConnectionWithBody(ctx context.Context, connectionID MCPConnectionID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteMCPConnectionRequestWithBody(c.Server, connectionID, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteMCPConnection Tombstone a managed MCP connection
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with DELETE /api/management/v1/mcp/{connection_id} (the `DeleteMCPConnection` operationId).
+func (c *Client) DeleteMCPConnection(ctx context.Context, connectionID MCPConnectionID, body DeleteMCPConnectionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteMCPConnectionRequest(c.Server, connectionID, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateMCPConnectionWithBody Update a managed MCP connection
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /api/management/v1/mcp/{connection_id} (the `UpdateMCPConnection` operationId).
+func (c *Client) UpdateMCPConnectionWithBody(ctx context.Context, connectionID MCPConnectionID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateMCPConnectionRequestWithBody(c.Server, connectionID, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateMCPConnection Update a managed MCP connection
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /api/management/v1/mcp/{connection_id} (the `UpdateMCPConnection` operationId).
+func (c *Client) UpdateMCPConnection(ctx context.Context, connectionID MCPConnectionID, body UpdateMCPConnectionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateMCPConnectionRequest(c.Server, connectionID, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// BeginMCPBrowserAuthorizationWithBody performs a POST /api/management/v1/mcp/{connection_id}/authorization/browser (the `BeginMCPBrowserAuthorization` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) BeginMCPBrowserAuthorizationWithBody(ctx context.Context, connectionID MCPConnectionID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewBeginMCPBrowserAuthorizationRequestWithBody(c.Server, connectionID, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// BeginMCPBrowserAuthorization performs a POST /api/management/v1/mcp/{connection_id}/authorization/browser (the `BeginMCPBrowserAuthorization` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) BeginMCPBrowserAuthorization(ctx context.Context, connectionID MCPConnectionID, body BeginMCPBrowserAuthorizationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewBeginMCPBrowserAuthorizationRequest(c.Server, connectionID, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// BeginMCPDeviceAuthorizationWithBody performs a POST /api/management/v1/mcp/{connection_id}/authorization/device (the `BeginMCPDeviceAuthorization` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) BeginMCPDeviceAuthorizationWithBody(ctx context.Context, connectionID MCPConnectionID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewBeginMCPDeviceAuthorizationRequestWithBody(c.Server, connectionID, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// BeginMCPDeviceAuthorization performs a POST /api/management/v1/mcp/{connection_id}/authorization/device (the `BeginMCPDeviceAuthorization` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) BeginMCPDeviceAuthorization(ctx context.Context, connectionID MCPConnectionID, body BeginMCPDeviceAuthorizationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewBeginMCPDeviceAuthorizationRequest(c.Server, connectionID, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DisconnectMCPAuthorization performs a POST /api/management/v1/mcp/{connection_id}/authorization/disconnect (the `DisconnectMCPAuthorization` operationId) request.
+func (c *Client) DisconnectMCPAuthorization(ctx context.Context, connectionID MCPConnectionID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDisconnectMCPAuthorizationRequest(c.Server, connectionID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RetryMCPAuthorizationWithBody performs a POST /api/management/v1/mcp/{connection_id}/authorization/retry (the `RetryMCPAuthorization` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) RetryMCPAuthorizationWithBody(ctx context.Context, connectionID MCPConnectionID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRetryMCPAuthorizationRequestWithBody(c.Server, connectionID, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RetryMCPAuthorization performs a POST /api/management/v1/mcp/{connection_id}/authorization/retry (the `RetryMCPAuthorization` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) RetryMCPAuthorization(ctx context.Context, connectionID MCPConnectionID, body RetryMCPAuthorizationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRetryMCPAuthorizationRequest(c.Server, connectionID, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DiagnoseMCPConnection Diagnose the authoritative current MCP definition
+//
+// Corresponds with POST /api/management/v1/mcp/{connection_id}/diagnostic (the `DiagnoseMCPConnection` operationId).
+func (c *Client) DiagnoseMCPConnection(ctx context.Context, connectionID MCPConnectionID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDiagnoseMCPConnectionRequest(c.Server, connectionID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ProbeMCPConnectionUpdateWithBody Probe edits against the current retained revision
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /api/management/v1/mcp/{connection_id}/probe (the `ProbeMCPConnectionUpdate` operationId).
+func (c *Client) ProbeMCPConnectionUpdateWithBody(ctx context.Context, connectionID MCPConnectionID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewProbeMCPConnectionUpdateRequestWithBody(c.Server, connectionID, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ProbeMCPConnectionUpdate Probe edits against the current retained revision
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /api/management/v1/mcp/{connection_id}/probe (the `ProbeMCPConnectionUpdate` operationId).
+func (c *Client) ProbeMCPConnectionUpdate(ctx context.Context, connectionID MCPConnectionID, body ProbeMCPConnectionUpdateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewProbeMCPConnectionUpdateRequest(c.Server, connectionID, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SelectMCPConnectionWithBody Enable or disable a managed MCP connection
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/management/v1/mcp/{connection_id}/selection (the `SelectMCPConnection` operationId).
+func (c *Client) SelectMCPConnectionWithBody(ctx context.Context, connectionID MCPConnectionID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSelectMCPConnectionRequestWithBody(c.Server, connectionID, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SelectMCPConnection Enable or disable a managed MCP connection
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/management/v1/mcp/{connection_id}/selection (the `SelectMCPConnection` operationId).
+func (c *Client) SelectMCPConnection(ctx context.Context, connectionID MCPConnectionID, body SelectMCPConnectionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSelectMCPConnectionRequest(c.Server, connectionID, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListProviders Read the current provider inventory
+//
+// Corresponds with GET /api/management/v1/providers (the `ListProviders` operationId).
+func (c *Client) ListProviders(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListProvidersRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateProviderWithBody Create a managed provider
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/management/v1/providers (the `CreateProvider` operationId).
+func (c *Client) CreateProviderWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateProviderRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateProvider Create a managed provider
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/management/v1/providers (the `CreateProvider` operationId).
+func (c *Client) CreateProvider(ctx context.Context, body CreateProviderJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateProviderRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteProviderWithBody Tombstone a managed provider
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with DELETE /api/management/v1/providers/{provider_id} (the `DeleteProvider` operationId).
+func (c *Client) DeleteProviderWithBody(ctx context.Context, providerID ProviderID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteProviderRequestWithBody(c.Server, providerID, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteProvider Tombstone a managed provider
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with DELETE /api/management/v1/providers/{provider_id} (the `DeleteProvider` operationId).
+func (c *Client) DeleteProvider(ctx context.Context, providerID ProviderID, body DeleteProviderJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteProviderRequest(c.Server, providerID, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateProviderWithBody Replace the editable definition of a managed provider
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /api/management/v1/providers/{provider_id} (the `UpdateProvider` operationId).
+func (c *Client) UpdateProviderWithBody(ctx context.Context, providerID ProviderID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateProviderRequestWithBody(c.Server, providerID, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateProvider Replace the editable definition of a managed provider
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /api/management/v1/providers/{provider_id} (the `UpdateProvider` operationId).
+func (c *Client) UpdateProvider(ctx context.Context, providerID ProviderID, body UpdateProviderJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateProviderRequest(c.Server, providerID, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SelectProviderWithBody Enable or disable a managed provider
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/management/v1/providers/{provider_id}/selection (the `SelectProvider` operationId).
+func (c *Client) SelectProviderWithBody(ctx context.Context, providerID ProviderID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSelectProviderRequestWithBody(c.Server, providerID, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SelectProvider Enable or disable a managed provider
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/management/v1/providers/{provider_id}/selection (the `SelectProvider` operationId).
+func (c *Client) SelectProvider(ctx context.Context, providerID ProviderID, body SelectProviderJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSelectProviderRequest(c.Server, providerID, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1598,6 +3112,906 @@ func NewGetManagementCompatibilityRequest(server string) (*http.Request, error) 
 	return req, nil
 }
 
+// NewListMCPConnectionsRequest constructs an http.Request for the ListMCPConnections method
+func NewListMCPConnectionsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/mcp")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateMCPConnectionRequest calls the generic CreateMCPConnection builder with application/json body
+func NewCreateMCPConnectionRequest(server string, body CreateMCPConnectionJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateMCPConnectionRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateMCPConnectionRequestWithBody constructs an http.Request for the CreateMCPConnection method, with any body, and a specified content type
+func NewCreateMCPConnectionRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/mcp")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewCancelMCPAuthorizationRequest constructs an http.Request for the CancelMCPAuthorization method
+func NewCancelMCPAuthorizationRequest(server string, attemptID MCPAttemptID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "attempt_id", attemptID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/mcp/authorization/attempts/%s/cancel", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCompleteMCPBrowserAuthorizationRequest calls the generic CompleteMCPBrowserAuthorization builder with application/json body
+func NewCompleteMCPBrowserAuthorizationRequest(server string, body CompleteMCPBrowserAuthorizationJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCompleteMCPBrowserAuthorizationRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCompleteMCPBrowserAuthorizationRequestWithBody constructs an http.Request for the CompleteMCPBrowserAuthorization method, with any body, and a specified content type
+func NewCompleteMCPBrowserAuthorizationRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/mcp/authorization/browser/callback")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewOnboardMCPBrowserAuthorizationRequest calls the generic OnboardMCPBrowserAuthorization builder with application/json body
+func NewOnboardMCPBrowserAuthorizationRequest(server string, body OnboardMCPBrowserAuthorizationJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewOnboardMCPBrowserAuthorizationRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewOnboardMCPBrowserAuthorizationRequestWithBody constructs an http.Request for the OnboardMCPBrowserAuthorization method, with any body, and a specified content type
+func NewOnboardMCPBrowserAuthorizationRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/mcp/authorization/browser/onboard")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewOnboardMCPDeviceAuthorizationRequest calls the generic OnboardMCPDeviceAuthorization builder with application/json body
+func NewOnboardMCPDeviceAuthorizationRequest(server string, body OnboardMCPDeviceAuthorizationJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewOnboardMCPDeviceAuthorizationRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewOnboardMCPDeviceAuthorizationRequestWithBody constructs an http.Request for the OnboardMCPDeviceAuthorization method, with any body, and a specified content type
+func NewOnboardMCPDeviceAuthorizationRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/mcp/authorization/device/onboard")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetMCPDeviceAuthorizationRequest constructs an http.Request for the GetMCPDeviceAuthorization method
+func NewGetMCPDeviceAuthorizationRequest(server string, attemptID MCPAttemptID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "attempt_id", attemptID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/mcp/authorization/device/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewProbeMCPConnectionRequest calls the generic ProbeMCPConnection builder with application/json body
+func NewProbeMCPConnectionRequest(server string, body ProbeMCPConnectionJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewProbeMCPConnectionRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewProbeMCPConnectionRequestWithBody constructs an http.Request for the ProbeMCPConnection method, with any body, and a specified content type
+func NewProbeMCPConnectionRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/mcp/probe")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteMCPConnectionRequest calls the generic DeleteMCPConnection builder with application/json body
+func NewDeleteMCPConnectionRequest(server string, connectionID MCPConnectionID, body DeleteMCPConnectionJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewDeleteMCPConnectionRequestWithBody(server, connectionID, "application/json", bodyReader)
+}
+
+// NewDeleteMCPConnectionRequestWithBody constructs an http.Request for the DeleteMCPConnection method, with any body, and a specified content type
+func NewDeleteMCPConnectionRequestWithBody(server string, connectionID MCPConnectionID, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "connection_id", connectionID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/mcp/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewUpdateMCPConnectionRequest calls the generic UpdateMCPConnection builder with application/json body
+func NewUpdateMCPConnectionRequest(server string, connectionID MCPConnectionID, body UpdateMCPConnectionJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateMCPConnectionRequestWithBody(server, connectionID, "application/json", bodyReader)
+}
+
+// NewUpdateMCPConnectionRequestWithBody constructs an http.Request for the UpdateMCPConnection method, with any body, and a specified content type
+func NewUpdateMCPConnectionRequestWithBody(server string, connectionID MCPConnectionID, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "connection_id", connectionID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/mcp/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewBeginMCPBrowserAuthorizationRequest calls the generic BeginMCPBrowserAuthorization builder with application/json body
+func NewBeginMCPBrowserAuthorizationRequest(server string, connectionID MCPConnectionID, body BeginMCPBrowserAuthorizationJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewBeginMCPBrowserAuthorizationRequestWithBody(server, connectionID, "application/json", bodyReader)
+}
+
+// NewBeginMCPBrowserAuthorizationRequestWithBody constructs an http.Request for the BeginMCPBrowserAuthorization method, with any body, and a specified content type
+func NewBeginMCPBrowserAuthorizationRequestWithBody(server string, connectionID MCPConnectionID, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "connection_id", connectionID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/mcp/%s/authorization/browser", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewBeginMCPDeviceAuthorizationRequest calls the generic BeginMCPDeviceAuthorization builder with application/json body
+func NewBeginMCPDeviceAuthorizationRequest(server string, connectionID MCPConnectionID, body BeginMCPDeviceAuthorizationJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewBeginMCPDeviceAuthorizationRequestWithBody(server, connectionID, "application/json", bodyReader)
+}
+
+// NewBeginMCPDeviceAuthorizationRequestWithBody constructs an http.Request for the BeginMCPDeviceAuthorization method, with any body, and a specified content type
+func NewBeginMCPDeviceAuthorizationRequestWithBody(server string, connectionID MCPConnectionID, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "connection_id", connectionID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/mcp/%s/authorization/device", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDisconnectMCPAuthorizationRequest constructs an http.Request for the DisconnectMCPAuthorization method
+func NewDisconnectMCPAuthorizationRequest(server string, connectionID MCPConnectionID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "connection_id", connectionID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/mcp/%s/authorization/disconnect", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRetryMCPAuthorizationRequest calls the generic RetryMCPAuthorization builder with application/json body
+func NewRetryMCPAuthorizationRequest(server string, connectionID MCPConnectionID, body RetryMCPAuthorizationJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRetryMCPAuthorizationRequestWithBody(server, connectionID, "application/json", bodyReader)
+}
+
+// NewRetryMCPAuthorizationRequestWithBody constructs an http.Request for the RetryMCPAuthorization method, with any body, and a specified content type
+func NewRetryMCPAuthorizationRequestWithBody(server string, connectionID MCPConnectionID, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "connection_id", connectionID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/mcp/%s/authorization/retry", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDiagnoseMCPConnectionRequest constructs an http.Request for the DiagnoseMCPConnection method
+func NewDiagnoseMCPConnectionRequest(server string, connectionID MCPConnectionID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "connection_id", connectionID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/mcp/%s/diagnostic", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewProbeMCPConnectionUpdateRequest calls the generic ProbeMCPConnectionUpdate builder with application/json body
+func NewProbeMCPConnectionUpdateRequest(server string, connectionID MCPConnectionID, body ProbeMCPConnectionUpdateJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewProbeMCPConnectionUpdateRequestWithBody(server, connectionID, "application/json", bodyReader)
+}
+
+// NewProbeMCPConnectionUpdateRequestWithBody constructs an http.Request for the ProbeMCPConnectionUpdate method, with any body, and a specified content type
+func NewProbeMCPConnectionUpdateRequestWithBody(server string, connectionID MCPConnectionID, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "connection_id", connectionID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/mcp/%s/probe", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewSelectMCPConnectionRequest calls the generic SelectMCPConnection builder with application/json body
+func NewSelectMCPConnectionRequest(server string, connectionID MCPConnectionID, body SelectMCPConnectionJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSelectMCPConnectionRequestWithBody(server, connectionID, "application/json", bodyReader)
+}
+
+// NewSelectMCPConnectionRequestWithBody constructs an http.Request for the SelectMCPConnection method, with any body, and a specified content type
+func NewSelectMCPConnectionRequestWithBody(server string, connectionID MCPConnectionID, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "connection_id", connectionID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/mcp/%s/selection", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListProvidersRequest constructs an http.Request for the ListProviders method
+func NewListProvidersRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/providers")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateProviderRequest calls the generic CreateProvider builder with application/json body
+func NewCreateProviderRequest(server string, body CreateProviderJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateProviderRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateProviderRequestWithBody constructs an http.Request for the CreateProvider method, with any body, and a specified content type
+func NewCreateProviderRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/providers")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteProviderRequest calls the generic DeleteProvider builder with application/json body
+func NewDeleteProviderRequest(server string, providerID ProviderID, body DeleteProviderJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewDeleteProviderRequestWithBody(server, providerID, "application/json", bodyReader)
+}
+
+// NewDeleteProviderRequestWithBody constructs an http.Request for the DeleteProvider method, with any body, and a specified content type
+func NewDeleteProviderRequestWithBody(server string, providerID ProviderID, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider_id", providerID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/providers/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewUpdateProviderRequest calls the generic UpdateProvider builder with application/json body
+func NewUpdateProviderRequest(server string, providerID ProviderID, body UpdateProviderJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateProviderRequestWithBody(server, providerID, "application/json", bodyReader)
+}
+
+// NewUpdateProviderRequestWithBody constructs an http.Request for the UpdateProvider method, with any body, and a specified content type
+func NewUpdateProviderRequestWithBody(server string, providerID ProviderID, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider_id", providerID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/providers/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewSelectProviderRequest calls the generic SelectProvider builder with application/json body
+func NewSelectProviderRequest(server string, providerID ProviderID, body SelectProviderJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSelectProviderRequestWithBody(server, providerID, "application/json", bodyReader)
+}
+
+// NewSelectProviderRequestWithBody constructs an http.Request for the SelectProvider method, with any body, and a specified content type
+func NewSelectProviderRequestWithBody(server string, providerID ProviderID, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider_id", providerID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/providers/%s/selection", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -1809,6 +4223,242 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /api/management/v1/compatibility (the `GetManagementCompatibility` operationId).
 	GetManagementCompatibilityWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetManagementCompatibilityResponse, error)
+
+	// ListMCPConnectionsWithResponse Read the current secret-free MCP inventory
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/management/v1/mcp (the `ListMCPConnections` operationId).
+	ListMCPConnectionsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListMCPConnectionsResponse, error)
+
+	// CreateMCPConnectionWithBodyWithResponse Create a managed MCP connection
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/mcp (the `CreateMCPConnection` operationId).
+	CreateMCPConnectionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateMCPConnectionResponse, error)
+
+	// CreateMCPConnectionWithResponse Create a managed MCP connection
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/mcp (the `CreateMCPConnection` operationId).
+	CreateMCPConnectionWithResponse(ctx context.Context, body CreateMCPConnectionJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateMCPConnectionResponse, error)
+
+	// CancelMCPAuthorizationWithResponse performs a POST /api/management/v1/mcp/authorization/attempts/{attempt_id}/cancel (the `CancelMCPAuthorization` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	CancelMCPAuthorizationWithResponse(ctx context.Context, attemptID MCPAttemptID, reqEditors ...RequestEditorFn) (*CancelMCPAuthorizationResponse, error)
+
+	// CompleteMCPBrowserAuthorizationWithBodyWithResponse performs a POST /api/management/v1/mcp/authorization/browser/callback (the `CompleteMCPBrowserAuthorization` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	CompleteMCPBrowserAuthorizationWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CompleteMCPBrowserAuthorizationResponse, error)
+
+	// CompleteMCPBrowserAuthorizationWithResponse performs a POST /api/management/v1/mcp/authorization/browser/callback (the `CompleteMCPBrowserAuthorization` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	CompleteMCPBrowserAuthorizationWithResponse(ctx context.Context, body CompleteMCPBrowserAuthorizationJSONRequestBody, reqEditors ...RequestEditorFn) (*CompleteMCPBrowserAuthorizationResponse, error)
+
+	// OnboardMCPBrowserAuthorizationWithBodyWithResponse performs a POST /api/management/v1/mcp/authorization/browser/onboard (the `OnboardMCPBrowserAuthorization` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	OnboardMCPBrowserAuthorizationWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*OnboardMCPBrowserAuthorizationResponse, error)
+
+	// OnboardMCPBrowserAuthorizationWithResponse performs a POST /api/management/v1/mcp/authorization/browser/onboard (the `OnboardMCPBrowserAuthorization` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	OnboardMCPBrowserAuthorizationWithResponse(ctx context.Context, body OnboardMCPBrowserAuthorizationJSONRequestBody, reqEditors ...RequestEditorFn) (*OnboardMCPBrowserAuthorizationResponse, error)
+
+	// OnboardMCPDeviceAuthorizationWithBodyWithResponse performs a POST /api/management/v1/mcp/authorization/device/onboard (the `OnboardMCPDeviceAuthorization` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	OnboardMCPDeviceAuthorizationWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*OnboardMCPDeviceAuthorizationResponse, error)
+
+	// OnboardMCPDeviceAuthorizationWithResponse performs a POST /api/management/v1/mcp/authorization/device/onboard (the `OnboardMCPDeviceAuthorization` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	OnboardMCPDeviceAuthorizationWithResponse(ctx context.Context, body OnboardMCPDeviceAuthorizationJSONRequestBody, reqEditors ...RequestEditorFn) (*OnboardMCPDeviceAuthorizationResponse, error)
+
+	// GetMCPDeviceAuthorizationWithResponse performs a GET /api/management/v1/mcp/authorization/device/{attempt_id} (the `GetMCPDeviceAuthorization` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	GetMCPDeviceAuthorizationWithResponse(ctx context.Context, attemptID MCPAttemptID, reqEditors ...RequestEditorFn) (*GetMCPDeviceAuthorizationResponse, error)
+
+	// ProbeMCPConnectionWithBodyWithResponse Probe an unsaved MCP candidate
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/mcp/probe (the `ProbeMCPConnection` operationId).
+	ProbeMCPConnectionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ProbeMCPConnectionResponse, error)
+
+	// ProbeMCPConnectionWithResponse Probe an unsaved MCP candidate
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/mcp/probe (the `ProbeMCPConnection` operationId).
+	ProbeMCPConnectionWithResponse(ctx context.Context, body ProbeMCPConnectionJSONRequestBody, reqEditors ...RequestEditorFn) (*ProbeMCPConnectionResponse, error)
+
+	// DeleteMCPConnectionWithBodyWithResponse Tombstone a managed MCP connection
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /api/management/v1/mcp/{connection_id} (the `DeleteMCPConnection` operationId).
+	DeleteMCPConnectionWithBodyWithResponse(ctx context.Context, connectionID MCPConnectionID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeleteMCPConnectionResponse, error)
+
+	// DeleteMCPConnectionWithResponse Tombstone a managed MCP connection
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /api/management/v1/mcp/{connection_id} (the `DeleteMCPConnection` operationId).
+	DeleteMCPConnectionWithResponse(ctx context.Context, connectionID MCPConnectionID, body DeleteMCPConnectionJSONRequestBody, reqEditors ...RequestEditorFn) (*DeleteMCPConnectionResponse, error)
+
+	// UpdateMCPConnectionWithBodyWithResponse Update a managed MCP connection
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/management/v1/mcp/{connection_id} (the `UpdateMCPConnection` operationId).
+	UpdateMCPConnectionWithBodyWithResponse(ctx context.Context, connectionID MCPConnectionID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateMCPConnectionResponse, error)
+
+	// UpdateMCPConnectionWithResponse Update a managed MCP connection
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/management/v1/mcp/{connection_id} (the `UpdateMCPConnection` operationId).
+	UpdateMCPConnectionWithResponse(ctx context.Context, connectionID MCPConnectionID, body UpdateMCPConnectionJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateMCPConnectionResponse, error)
+
+	// BeginMCPBrowserAuthorizationWithBodyWithResponse performs a POST /api/management/v1/mcp/{connection_id}/authorization/browser (the `BeginMCPBrowserAuthorization` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	BeginMCPBrowserAuthorizationWithBodyWithResponse(ctx context.Context, connectionID MCPConnectionID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*BeginMCPBrowserAuthorizationResponse, error)
+
+	// BeginMCPBrowserAuthorizationWithResponse performs a POST /api/management/v1/mcp/{connection_id}/authorization/browser (the `BeginMCPBrowserAuthorization` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	BeginMCPBrowserAuthorizationWithResponse(ctx context.Context, connectionID MCPConnectionID, body BeginMCPBrowserAuthorizationJSONRequestBody, reqEditors ...RequestEditorFn) (*BeginMCPBrowserAuthorizationResponse, error)
+
+	// BeginMCPDeviceAuthorizationWithBodyWithResponse performs a POST /api/management/v1/mcp/{connection_id}/authorization/device (the `BeginMCPDeviceAuthorization` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	BeginMCPDeviceAuthorizationWithBodyWithResponse(ctx context.Context, connectionID MCPConnectionID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*BeginMCPDeviceAuthorizationResponse, error)
+
+	// BeginMCPDeviceAuthorizationWithResponse performs a POST /api/management/v1/mcp/{connection_id}/authorization/device (the `BeginMCPDeviceAuthorization` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	BeginMCPDeviceAuthorizationWithResponse(ctx context.Context, connectionID MCPConnectionID, body BeginMCPDeviceAuthorizationJSONRequestBody, reqEditors ...RequestEditorFn) (*BeginMCPDeviceAuthorizationResponse, error)
+
+	// DisconnectMCPAuthorizationWithResponse performs a POST /api/management/v1/mcp/{connection_id}/authorization/disconnect (the `DisconnectMCPAuthorization` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	DisconnectMCPAuthorizationWithResponse(ctx context.Context, connectionID MCPConnectionID, reqEditors ...RequestEditorFn) (*DisconnectMCPAuthorizationResponse, error)
+
+	// RetryMCPAuthorizationWithBodyWithResponse performs a POST /api/management/v1/mcp/{connection_id}/authorization/retry (the `RetryMCPAuthorization` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	RetryMCPAuthorizationWithBodyWithResponse(ctx context.Context, connectionID MCPConnectionID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RetryMCPAuthorizationResponse, error)
+
+	// RetryMCPAuthorizationWithResponse performs a POST /api/management/v1/mcp/{connection_id}/authorization/retry (the `RetryMCPAuthorization` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	RetryMCPAuthorizationWithResponse(ctx context.Context, connectionID MCPConnectionID, body RetryMCPAuthorizationJSONRequestBody, reqEditors ...RequestEditorFn) (*RetryMCPAuthorizationResponse, error)
+
+	// DiagnoseMCPConnectionWithResponse Diagnose the authoritative current MCP definition
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/mcp/{connection_id}/diagnostic (the `DiagnoseMCPConnection` operationId).
+	DiagnoseMCPConnectionWithResponse(ctx context.Context, connectionID MCPConnectionID, reqEditors ...RequestEditorFn) (*DiagnoseMCPConnectionResponse, error)
+
+	// ProbeMCPConnectionUpdateWithBodyWithResponse Probe edits against the current retained revision
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/management/v1/mcp/{connection_id}/probe (the `ProbeMCPConnectionUpdate` operationId).
+	ProbeMCPConnectionUpdateWithBodyWithResponse(ctx context.Context, connectionID MCPConnectionID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ProbeMCPConnectionUpdateResponse, error)
+
+	// ProbeMCPConnectionUpdateWithResponse Probe edits against the current retained revision
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/management/v1/mcp/{connection_id}/probe (the `ProbeMCPConnectionUpdate` operationId).
+	ProbeMCPConnectionUpdateWithResponse(ctx context.Context, connectionID MCPConnectionID, body ProbeMCPConnectionUpdateJSONRequestBody, reqEditors ...RequestEditorFn) (*ProbeMCPConnectionUpdateResponse, error)
+
+	// SelectMCPConnectionWithBodyWithResponse Enable or disable a managed MCP connection
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/mcp/{connection_id}/selection (the `SelectMCPConnection` operationId).
+	SelectMCPConnectionWithBodyWithResponse(ctx context.Context, connectionID MCPConnectionID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SelectMCPConnectionResponse, error)
+
+	// SelectMCPConnectionWithResponse Enable or disable a managed MCP connection
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/mcp/{connection_id}/selection (the `SelectMCPConnection` operationId).
+	SelectMCPConnectionWithResponse(ctx context.Context, connectionID MCPConnectionID, body SelectMCPConnectionJSONRequestBody, reqEditors ...RequestEditorFn) (*SelectMCPConnectionResponse, error)
+
+	// ListProvidersWithResponse Read the current provider inventory
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/management/v1/providers (the `ListProviders` operationId).
+	ListProvidersWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListProvidersResponse, error)
+
+	// CreateProviderWithBodyWithResponse Create a managed provider
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/providers (the `CreateProvider` operationId).
+	CreateProviderWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateProviderResponse, error)
+
+	// CreateProviderWithResponse Create a managed provider
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/providers (the `CreateProvider` operationId).
+	CreateProviderWithResponse(ctx context.Context, body CreateProviderJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateProviderResponse, error)
+
+	// DeleteProviderWithBodyWithResponse Tombstone a managed provider
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /api/management/v1/providers/{provider_id} (the `DeleteProvider` operationId).
+	DeleteProviderWithBodyWithResponse(ctx context.Context, providerID ProviderID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeleteProviderResponse, error)
+
+	// DeleteProviderWithResponse Tombstone a managed provider
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /api/management/v1/providers/{provider_id} (the `DeleteProvider` operationId).
+	DeleteProviderWithResponse(ctx context.Context, providerID ProviderID, body DeleteProviderJSONRequestBody, reqEditors ...RequestEditorFn) (*DeleteProviderResponse, error)
+
+	// UpdateProviderWithBodyWithResponse Replace the editable definition of a managed provider
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/management/v1/providers/{provider_id} (the `UpdateProvider` operationId).
+	UpdateProviderWithBodyWithResponse(ctx context.Context, providerID ProviderID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateProviderResponse, error)
+
+	// UpdateProviderWithResponse Replace the editable definition of a managed provider
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/management/v1/providers/{provider_id} (the `UpdateProvider` operationId).
+	UpdateProviderWithResponse(ctx context.Context, providerID ProviderID, body UpdateProviderJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateProviderResponse, error)
+
+	// SelectProviderWithBodyWithResponse Enable or disable a managed provider
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/providers/{provider_id}/selection (the `SelectProvider` operationId).
+	SelectProviderWithBodyWithResponse(ctx context.Context, providerID ProviderID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SelectProviderResponse, error)
+
+	// SelectProviderWithResponse Enable or disable a managed provider
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/providers/{provider_id}/selection (the `SelectProvider` operationId).
+	SelectProviderWithResponse(ctx context.Context, providerID ProviderID, body SelectProviderJSONRequestBody, reqEditors ...RequestEditorFn) (*SelectProviderResponse, error)
 }
 
 type LoginWebAuthResponse struct {
@@ -2832,6 +5482,1790 @@ func (r GetManagementCompatibilityResponse) ContentType() string {
 	return ""
 }
 
+type ListMCPConnectionsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *MCPInventory
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListMCPConnectionsResponse) GetJSON200() *MCPInventory {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListMCPConnectionsResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListMCPConnectionsResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r ListMCPConnectionsResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r ListMCPConnectionsResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r ListMCPConnectionsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListMCPConnectionsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListMCPConnectionsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListMCPConnectionsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateMCPConnectionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *MCPItem
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r CreateMCPConnectionResponse) GetJSON200() *MCPItem {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r CreateMCPConnectionResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r CreateMCPConnectionResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r CreateMCPConnectionResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r CreateMCPConnectionResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r CreateMCPConnectionResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r CreateMCPConnectionResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateMCPConnectionResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateMCPConnectionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateMCPConnectionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateMCPConnectionResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CancelMCPAuthorizationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r CancelMCPAuthorizationResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r CancelMCPAuthorizationResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r CancelMCPAuthorizationResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r CancelMCPAuthorizationResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r CancelMCPAuthorizationResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r CancelMCPAuthorizationResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r CancelMCPAuthorizationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CancelMCPAuthorizationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CancelMCPAuthorizationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CancelMCPAuthorizationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CompleteMCPBrowserAuthorizationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *MCPItem
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r CompleteMCPBrowserAuthorizationResponse) GetJSON200() *MCPItem {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r CompleteMCPBrowserAuthorizationResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r CompleteMCPBrowserAuthorizationResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r CompleteMCPBrowserAuthorizationResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r CompleteMCPBrowserAuthorizationResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r CompleteMCPBrowserAuthorizationResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r CompleteMCPBrowserAuthorizationResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r CompleteMCPBrowserAuthorizationResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r CompleteMCPBrowserAuthorizationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CompleteMCPBrowserAuthorizationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CompleteMCPBrowserAuthorizationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CompleteMCPBrowserAuthorizationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type OnboardMCPBrowserAuthorizationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *MCPBrowserOnboardResult
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r OnboardMCPBrowserAuthorizationResponse) GetJSON200() *MCPBrowserOnboardResult {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r OnboardMCPBrowserAuthorizationResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r OnboardMCPBrowserAuthorizationResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r OnboardMCPBrowserAuthorizationResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r OnboardMCPBrowserAuthorizationResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r OnboardMCPBrowserAuthorizationResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r OnboardMCPBrowserAuthorizationResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r OnboardMCPBrowserAuthorizationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r OnboardMCPBrowserAuthorizationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r OnboardMCPBrowserAuthorizationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r OnboardMCPBrowserAuthorizationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type OnboardMCPDeviceAuthorizationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *MCPDeviceOnboardResult
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r OnboardMCPDeviceAuthorizationResponse) GetJSON200() *MCPDeviceOnboardResult {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r OnboardMCPDeviceAuthorizationResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r OnboardMCPDeviceAuthorizationResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r OnboardMCPDeviceAuthorizationResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r OnboardMCPDeviceAuthorizationResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r OnboardMCPDeviceAuthorizationResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r OnboardMCPDeviceAuthorizationResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r OnboardMCPDeviceAuthorizationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r OnboardMCPDeviceAuthorizationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r OnboardMCPDeviceAuthorizationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r OnboardMCPDeviceAuthorizationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetMCPDeviceAuthorizationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *MCPDeviceAuthorizationStatus
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetMCPDeviceAuthorizationResponse) GetJSON200() *MCPDeviceAuthorizationStatus {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetMCPDeviceAuthorizationResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetMCPDeviceAuthorizationResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetMCPDeviceAuthorizationResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r GetMCPDeviceAuthorizationResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r GetMCPDeviceAuthorizationResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r GetMCPDeviceAuthorizationResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r GetMCPDeviceAuthorizationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetMCPDeviceAuthorizationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetMCPDeviceAuthorizationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetMCPDeviceAuthorizationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ProbeMCPConnectionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *MCPItem
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ProbeMCPConnectionResponse) GetJSON200() *MCPItem {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ProbeMCPConnectionResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ProbeMCPConnectionResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ProbeMCPConnectionResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r ProbeMCPConnectionResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r ProbeMCPConnectionResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r ProbeMCPConnectionResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ProbeMCPConnectionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ProbeMCPConnectionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ProbeMCPConnectionResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteMCPConnectionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *MCPItem
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r DeleteMCPConnectionResponse) GetJSON200() *MCPItem {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r DeleteMCPConnectionResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r DeleteMCPConnectionResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r DeleteMCPConnectionResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r DeleteMCPConnectionResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r DeleteMCPConnectionResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r DeleteMCPConnectionResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r DeleteMCPConnectionResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteMCPConnectionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteMCPConnectionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteMCPConnectionResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UpdateMCPConnectionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *MCPItem
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r UpdateMCPConnectionResponse) GetJSON200() *MCPItem {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r UpdateMCPConnectionResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r UpdateMCPConnectionResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r UpdateMCPConnectionResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r UpdateMCPConnectionResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r UpdateMCPConnectionResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r UpdateMCPConnectionResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r UpdateMCPConnectionResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateMCPConnectionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateMCPConnectionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UpdateMCPConnectionResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type BeginMCPBrowserAuthorizationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *MCPBrowserAuthorizationStart
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r BeginMCPBrowserAuthorizationResponse) GetJSON200() *MCPBrowserAuthorizationStart {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r BeginMCPBrowserAuthorizationResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r BeginMCPBrowserAuthorizationResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r BeginMCPBrowserAuthorizationResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r BeginMCPBrowserAuthorizationResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r BeginMCPBrowserAuthorizationResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r BeginMCPBrowserAuthorizationResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r BeginMCPBrowserAuthorizationResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r BeginMCPBrowserAuthorizationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r BeginMCPBrowserAuthorizationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r BeginMCPBrowserAuthorizationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r BeginMCPBrowserAuthorizationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type BeginMCPDeviceAuthorizationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *MCPDeviceAuthorizationStart
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r BeginMCPDeviceAuthorizationResponse) GetJSON200() *MCPDeviceAuthorizationStart {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r BeginMCPDeviceAuthorizationResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r BeginMCPDeviceAuthorizationResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r BeginMCPDeviceAuthorizationResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r BeginMCPDeviceAuthorizationResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r BeginMCPDeviceAuthorizationResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r BeginMCPDeviceAuthorizationResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r BeginMCPDeviceAuthorizationResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r BeginMCPDeviceAuthorizationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r BeginMCPDeviceAuthorizationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r BeginMCPDeviceAuthorizationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r BeginMCPDeviceAuthorizationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DisconnectMCPAuthorizationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r DisconnectMCPAuthorizationResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r DisconnectMCPAuthorizationResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r DisconnectMCPAuthorizationResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r DisconnectMCPAuthorizationResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r DisconnectMCPAuthorizationResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r DisconnectMCPAuthorizationResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r DisconnectMCPAuthorizationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DisconnectMCPAuthorizationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DisconnectMCPAuthorizationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DisconnectMCPAuthorizationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RetryMCPAuthorizationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *MCPItem
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r RetryMCPAuthorizationResponse) GetJSON200() *MCPItem {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r RetryMCPAuthorizationResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r RetryMCPAuthorizationResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r RetryMCPAuthorizationResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r RetryMCPAuthorizationResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r RetryMCPAuthorizationResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r RetryMCPAuthorizationResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r RetryMCPAuthorizationResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r RetryMCPAuthorizationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RetryMCPAuthorizationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RetryMCPAuthorizationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RetryMCPAuthorizationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DiagnoseMCPConnectionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *MCPDiagnostic
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r DiagnoseMCPConnectionResponse) GetJSON200() *MCPDiagnostic {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r DiagnoseMCPConnectionResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r DiagnoseMCPConnectionResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r DiagnoseMCPConnectionResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r DiagnoseMCPConnectionResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r DiagnoseMCPConnectionResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r DiagnoseMCPConnectionResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r DiagnoseMCPConnectionResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r DiagnoseMCPConnectionResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DiagnoseMCPConnectionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DiagnoseMCPConnectionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DiagnoseMCPConnectionResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ProbeMCPConnectionUpdateResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *MCPItem
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ProbeMCPConnectionUpdateResponse) GetJSON200() *MCPItem {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ProbeMCPConnectionUpdateResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ProbeMCPConnectionUpdateResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ProbeMCPConnectionUpdateResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r ProbeMCPConnectionUpdateResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r ProbeMCPConnectionUpdateResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r ProbeMCPConnectionUpdateResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r ProbeMCPConnectionUpdateResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ProbeMCPConnectionUpdateResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ProbeMCPConnectionUpdateResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ProbeMCPConnectionUpdateResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type SelectMCPConnectionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *MCPItem
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r SelectMCPConnectionResponse) GetJSON200() *MCPItem {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r SelectMCPConnectionResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r SelectMCPConnectionResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r SelectMCPConnectionResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r SelectMCPConnectionResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r SelectMCPConnectionResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r SelectMCPConnectionResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r SelectMCPConnectionResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r SelectMCPConnectionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SelectMCPConnectionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r SelectMCPConnectionResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListProvidersResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ProviderInventory
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListProvidersResponse) GetJSON200() *ProviderInventory {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListProvidersResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListProvidersResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r ListProvidersResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r ListProvidersResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r ListProvidersResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListProvidersResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListProvidersResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListProvidersResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateProviderResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r CreateProviderResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r CreateProviderResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r CreateProviderResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r CreateProviderResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r CreateProviderResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r CreateProviderResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateProviderResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateProviderResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateProviderResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateProviderResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteProviderResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r DeleteProviderResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r DeleteProviderResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r DeleteProviderResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r DeleteProviderResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r DeleteProviderResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r DeleteProviderResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r DeleteProviderResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteProviderResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteProviderResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteProviderResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UpdateProviderResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r UpdateProviderResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r UpdateProviderResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r UpdateProviderResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r UpdateProviderResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r UpdateProviderResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r UpdateProviderResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r UpdateProviderResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateProviderResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateProviderResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UpdateProviderResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type SelectProviderResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r SelectProviderResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r SelectProviderResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r SelectProviderResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r SelectProviderResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r SelectProviderResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r SelectProviderResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r SelectProviderResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r SelectProviderResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SelectProviderResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r SelectProviderResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // LoginWebAuthWithBodyWithResponse Start local WebAuth login
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
@@ -3142,6 +7576,470 @@ func (c *ClientWithResponses) GetManagementCompatibilityWithResponse(ctx context
 		return nil, err
 	}
 	return ParseGetManagementCompatibilityResponse(rsp)
+}
+
+// ListMCPConnectionsWithResponse Read the current secret-free MCP inventory
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/management/v1/mcp (the `ListMCPConnections` operationId).
+func (c *ClientWithResponses) ListMCPConnectionsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListMCPConnectionsResponse, error) {
+	rsp, err := c.ListMCPConnections(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListMCPConnectionsResponse(rsp)
+}
+
+// CreateMCPConnectionWithBodyWithResponse Create a managed MCP connection
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/mcp (the `CreateMCPConnection` operationId).
+func (c *ClientWithResponses) CreateMCPConnectionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateMCPConnectionResponse, error) {
+	rsp, err := c.CreateMCPConnectionWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateMCPConnectionResponse(rsp)
+}
+
+// CreateMCPConnectionWithResponse Create a managed MCP connection
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/mcp (the `CreateMCPConnection` operationId).
+func (c *ClientWithResponses) CreateMCPConnectionWithResponse(ctx context.Context, body CreateMCPConnectionJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateMCPConnectionResponse, error) {
+	rsp, err := c.CreateMCPConnection(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateMCPConnectionResponse(rsp)
+}
+
+// CancelMCPAuthorizationWithResponse performs a POST /api/management/v1/mcp/authorization/attempts/{attempt_id}/cancel (the `CancelMCPAuthorization` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) CancelMCPAuthorizationWithResponse(ctx context.Context, attemptID MCPAttemptID, reqEditors ...RequestEditorFn) (*CancelMCPAuthorizationResponse, error) {
+	rsp, err := c.CancelMCPAuthorization(ctx, attemptID, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCancelMCPAuthorizationResponse(rsp)
+}
+
+// CompleteMCPBrowserAuthorizationWithBodyWithResponse performs a POST /api/management/v1/mcp/authorization/browser/callback (the `CompleteMCPBrowserAuthorization` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) CompleteMCPBrowserAuthorizationWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CompleteMCPBrowserAuthorizationResponse, error) {
+	rsp, err := c.CompleteMCPBrowserAuthorizationWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCompleteMCPBrowserAuthorizationResponse(rsp)
+}
+
+// CompleteMCPBrowserAuthorizationWithResponse performs a POST /api/management/v1/mcp/authorization/browser/callback (the `CompleteMCPBrowserAuthorization` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) CompleteMCPBrowserAuthorizationWithResponse(ctx context.Context, body CompleteMCPBrowserAuthorizationJSONRequestBody, reqEditors ...RequestEditorFn) (*CompleteMCPBrowserAuthorizationResponse, error) {
+	rsp, err := c.CompleteMCPBrowserAuthorization(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCompleteMCPBrowserAuthorizationResponse(rsp)
+}
+
+// OnboardMCPBrowserAuthorizationWithBodyWithResponse performs a POST /api/management/v1/mcp/authorization/browser/onboard (the `OnboardMCPBrowserAuthorization` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) OnboardMCPBrowserAuthorizationWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*OnboardMCPBrowserAuthorizationResponse, error) {
+	rsp, err := c.OnboardMCPBrowserAuthorizationWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseOnboardMCPBrowserAuthorizationResponse(rsp)
+}
+
+// OnboardMCPBrowserAuthorizationWithResponse performs a POST /api/management/v1/mcp/authorization/browser/onboard (the `OnboardMCPBrowserAuthorization` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) OnboardMCPBrowserAuthorizationWithResponse(ctx context.Context, body OnboardMCPBrowserAuthorizationJSONRequestBody, reqEditors ...RequestEditorFn) (*OnboardMCPBrowserAuthorizationResponse, error) {
+	rsp, err := c.OnboardMCPBrowserAuthorization(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseOnboardMCPBrowserAuthorizationResponse(rsp)
+}
+
+// OnboardMCPDeviceAuthorizationWithBodyWithResponse performs a POST /api/management/v1/mcp/authorization/device/onboard (the `OnboardMCPDeviceAuthorization` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) OnboardMCPDeviceAuthorizationWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*OnboardMCPDeviceAuthorizationResponse, error) {
+	rsp, err := c.OnboardMCPDeviceAuthorizationWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseOnboardMCPDeviceAuthorizationResponse(rsp)
+}
+
+// OnboardMCPDeviceAuthorizationWithResponse performs a POST /api/management/v1/mcp/authorization/device/onboard (the `OnboardMCPDeviceAuthorization` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) OnboardMCPDeviceAuthorizationWithResponse(ctx context.Context, body OnboardMCPDeviceAuthorizationJSONRequestBody, reqEditors ...RequestEditorFn) (*OnboardMCPDeviceAuthorizationResponse, error) {
+	rsp, err := c.OnboardMCPDeviceAuthorization(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseOnboardMCPDeviceAuthorizationResponse(rsp)
+}
+
+// GetMCPDeviceAuthorizationWithResponse performs a GET /api/management/v1/mcp/authorization/device/{attempt_id} (the `GetMCPDeviceAuthorization` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) GetMCPDeviceAuthorizationWithResponse(ctx context.Context, attemptID MCPAttemptID, reqEditors ...RequestEditorFn) (*GetMCPDeviceAuthorizationResponse, error) {
+	rsp, err := c.GetMCPDeviceAuthorization(ctx, attemptID, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetMCPDeviceAuthorizationResponse(rsp)
+}
+
+// ProbeMCPConnectionWithBodyWithResponse Probe an unsaved MCP candidate
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/mcp/probe (the `ProbeMCPConnection` operationId).
+func (c *ClientWithResponses) ProbeMCPConnectionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ProbeMCPConnectionResponse, error) {
+	rsp, err := c.ProbeMCPConnectionWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseProbeMCPConnectionResponse(rsp)
+}
+
+// ProbeMCPConnectionWithResponse Probe an unsaved MCP candidate
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/mcp/probe (the `ProbeMCPConnection` operationId).
+func (c *ClientWithResponses) ProbeMCPConnectionWithResponse(ctx context.Context, body ProbeMCPConnectionJSONRequestBody, reqEditors ...RequestEditorFn) (*ProbeMCPConnectionResponse, error) {
+	rsp, err := c.ProbeMCPConnection(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseProbeMCPConnectionResponse(rsp)
+}
+
+// DeleteMCPConnectionWithBodyWithResponse Tombstone a managed MCP connection
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /api/management/v1/mcp/{connection_id} (the `DeleteMCPConnection` operationId).
+func (c *ClientWithResponses) DeleteMCPConnectionWithBodyWithResponse(ctx context.Context, connectionID MCPConnectionID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeleteMCPConnectionResponse, error) {
+	rsp, err := c.DeleteMCPConnectionWithBody(ctx, connectionID, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteMCPConnectionResponse(rsp)
+}
+
+// DeleteMCPConnectionWithResponse Tombstone a managed MCP connection
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /api/management/v1/mcp/{connection_id} (the `DeleteMCPConnection` operationId).
+func (c *ClientWithResponses) DeleteMCPConnectionWithResponse(ctx context.Context, connectionID MCPConnectionID, body DeleteMCPConnectionJSONRequestBody, reqEditors ...RequestEditorFn) (*DeleteMCPConnectionResponse, error) {
+	rsp, err := c.DeleteMCPConnection(ctx, connectionID, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteMCPConnectionResponse(rsp)
+}
+
+// UpdateMCPConnectionWithBodyWithResponse Update a managed MCP connection
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/management/v1/mcp/{connection_id} (the `UpdateMCPConnection` operationId).
+func (c *ClientWithResponses) UpdateMCPConnectionWithBodyWithResponse(ctx context.Context, connectionID MCPConnectionID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateMCPConnectionResponse, error) {
+	rsp, err := c.UpdateMCPConnectionWithBody(ctx, connectionID, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateMCPConnectionResponse(rsp)
+}
+
+// UpdateMCPConnectionWithResponse Update a managed MCP connection
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/management/v1/mcp/{connection_id} (the `UpdateMCPConnection` operationId).
+func (c *ClientWithResponses) UpdateMCPConnectionWithResponse(ctx context.Context, connectionID MCPConnectionID, body UpdateMCPConnectionJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateMCPConnectionResponse, error) {
+	rsp, err := c.UpdateMCPConnection(ctx, connectionID, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateMCPConnectionResponse(rsp)
+}
+
+// BeginMCPBrowserAuthorizationWithBodyWithResponse performs a POST /api/management/v1/mcp/{connection_id}/authorization/browser (the `BeginMCPBrowserAuthorization` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) BeginMCPBrowserAuthorizationWithBodyWithResponse(ctx context.Context, connectionID MCPConnectionID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*BeginMCPBrowserAuthorizationResponse, error) {
+	rsp, err := c.BeginMCPBrowserAuthorizationWithBody(ctx, connectionID, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseBeginMCPBrowserAuthorizationResponse(rsp)
+}
+
+// BeginMCPBrowserAuthorizationWithResponse performs a POST /api/management/v1/mcp/{connection_id}/authorization/browser (the `BeginMCPBrowserAuthorization` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) BeginMCPBrowserAuthorizationWithResponse(ctx context.Context, connectionID MCPConnectionID, body BeginMCPBrowserAuthorizationJSONRequestBody, reqEditors ...RequestEditorFn) (*BeginMCPBrowserAuthorizationResponse, error) {
+	rsp, err := c.BeginMCPBrowserAuthorization(ctx, connectionID, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseBeginMCPBrowserAuthorizationResponse(rsp)
+}
+
+// BeginMCPDeviceAuthorizationWithBodyWithResponse performs a POST /api/management/v1/mcp/{connection_id}/authorization/device (the `BeginMCPDeviceAuthorization` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) BeginMCPDeviceAuthorizationWithBodyWithResponse(ctx context.Context, connectionID MCPConnectionID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*BeginMCPDeviceAuthorizationResponse, error) {
+	rsp, err := c.BeginMCPDeviceAuthorizationWithBody(ctx, connectionID, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseBeginMCPDeviceAuthorizationResponse(rsp)
+}
+
+// BeginMCPDeviceAuthorizationWithResponse performs a POST /api/management/v1/mcp/{connection_id}/authorization/device (the `BeginMCPDeviceAuthorization` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) BeginMCPDeviceAuthorizationWithResponse(ctx context.Context, connectionID MCPConnectionID, body BeginMCPDeviceAuthorizationJSONRequestBody, reqEditors ...RequestEditorFn) (*BeginMCPDeviceAuthorizationResponse, error) {
+	rsp, err := c.BeginMCPDeviceAuthorization(ctx, connectionID, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseBeginMCPDeviceAuthorizationResponse(rsp)
+}
+
+// DisconnectMCPAuthorizationWithResponse performs a POST /api/management/v1/mcp/{connection_id}/authorization/disconnect (the `DisconnectMCPAuthorization` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) DisconnectMCPAuthorizationWithResponse(ctx context.Context, connectionID MCPConnectionID, reqEditors ...RequestEditorFn) (*DisconnectMCPAuthorizationResponse, error) {
+	rsp, err := c.DisconnectMCPAuthorization(ctx, connectionID, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDisconnectMCPAuthorizationResponse(rsp)
+}
+
+// RetryMCPAuthorizationWithBodyWithResponse performs a POST /api/management/v1/mcp/{connection_id}/authorization/retry (the `RetryMCPAuthorization` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) RetryMCPAuthorizationWithBodyWithResponse(ctx context.Context, connectionID MCPConnectionID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RetryMCPAuthorizationResponse, error) {
+	rsp, err := c.RetryMCPAuthorizationWithBody(ctx, connectionID, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRetryMCPAuthorizationResponse(rsp)
+}
+
+// RetryMCPAuthorizationWithResponse performs a POST /api/management/v1/mcp/{connection_id}/authorization/retry (the `RetryMCPAuthorization` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) RetryMCPAuthorizationWithResponse(ctx context.Context, connectionID MCPConnectionID, body RetryMCPAuthorizationJSONRequestBody, reqEditors ...RequestEditorFn) (*RetryMCPAuthorizationResponse, error) {
+	rsp, err := c.RetryMCPAuthorization(ctx, connectionID, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRetryMCPAuthorizationResponse(rsp)
+}
+
+// DiagnoseMCPConnectionWithResponse Diagnose the authoritative current MCP definition
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/mcp/{connection_id}/diagnostic (the `DiagnoseMCPConnection` operationId).
+func (c *ClientWithResponses) DiagnoseMCPConnectionWithResponse(ctx context.Context, connectionID MCPConnectionID, reqEditors ...RequestEditorFn) (*DiagnoseMCPConnectionResponse, error) {
+	rsp, err := c.DiagnoseMCPConnection(ctx, connectionID, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDiagnoseMCPConnectionResponse(rsp)
+}
+
+// ProbeMCPConnectionUpdateWithBodyWithResponse Probe edits against the current retained revision
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/management/v1/mcp/{connection_id}/probe (the `ProbeMCPConnectionUpdate` operationId).
+func (c *ClientWithResponses) ProbeMCPConnectionUpdateWithBodyWithResponse(ctx context.Context, connectionID MCPConnectionID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ProbeMCPConnectionUpdateResponse, error) {
+	rsp, err := c.ProbeMCPConnectionUpdateWithBody(ctx, connectionID, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseProbeMCPConnectionUpdateResponse(rsp)
+}
+
+// ProbeMCPConnectionUpdateWithResponse Probe edits against the current retained revision
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/management/v1/mcp/{connection_id}/probe (the `ProbeMCPConnectionUpdate` operationId).
+func (c *ClientWithResponses) ProbeMCPConnectionUpdateWithResponse(ctx context.Context, connectionID MCPConnectionID, body ProbeMCPConnectionUpdateJSONRequestBody, reqEditors ...RequestEditorFn) (*ProbeMCPConnectionUpdateResponse, error) {
+	rsp, err := c.ProbeMCPConnectionUpdate(ctx, connectionID, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseProbeMCPConnectionUpdateResponse(rsp)
+}
+
+// SelectMCPConnectionWithBodyWithResponse Enable or disable a managed MCP connection
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/mcp/{connection_id}/selection (the `SelectMCPConnection` operationId).
+func (c *ClientWithResponses) SelectMCPConnectionWithBodyWithResponse(ctx context.Context, connectionID MCPConnectionID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SelectMCPConnectionResponse, error) {
+	rsp, err := c.SelectMCPConnectionWithBody(ctx, connectionID, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSelectMCPConnectionResponse(rsp)
+}
+
+// SelectMCPConnectionWithResponse Enable or disable a managed MCP connection
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/mcp/{connection_id}/selection (the `SelectMCPConnection` operationId).
+func (c *ClientWithResponses) SelectMCPConnectionWithResponse(ctx context.Context, connectionID MCPConnectionID, body SelectMCPConnectionJSONRequestBody, reqEditors ...RequestEditorFn) (*SelectMCPConnectionResponse, error) {
+	rsp, err := c.SelectMCPConnection(ctx, connectionID, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSelectMCPConnectionResponse(rsp)
+}
+
+// ListProvidersWithResponse Read the current provider inventory
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/management/v1/providers (the `ListProviders` operationId).
+func (c *ClientWithResponses) ListProvidersWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListProvidersResponse, error) {
+	rsp, err := c.ListProviders(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListProvidersResponse(rsp)
+}
+
+// CreateProviderWithBodyWithResponse Create a managed provider
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/providers (the `CreateProvider` operationId).
+func (c *ClientWithResponses) CreateProviderWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateProviderResponse, error) {
+	rsp, err := c.CreateProviderWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateProviderResponse(rsp)
+}
+
+// CreateProviderWithResponse Create a managed provider
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/providers (the `CreateProvider` operationId).
+func (c *ClientWithResponses) CreateProviderWithResponse(ctx context.Context, body CreateProviderJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateProviderResponse, error) {
+	rsp, err := c.CreateProvider(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateProviderResponse(rsp)
+}
+
+// DeleteProviderWithBodyWithResponse Tombstone a managed provider
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /api/management/v1/providers/{provider_id} (the `DeleteProvider` operationId).
+func (c *ClientWithResponses) DeleteProviderWithBodyWithResponse(ctx context.Context, providerID ProviderID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeleteProviderResponse, error) {
+	rsp, err := c.DeleteProviderWithBody(ctx, providerID, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteProviderResponse(rsp)
+}
+
+// DeleteProviderWithResponse Tombstone a managed provider
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /api/management/v1/providers/{provider_id} (the `DeleteProvider` operationId).
+func (c *ClientWithResponses) DeleteProviderWithResponse(ctx context.Context, providerID ProviderID, body DeleteProviderJSONRequestBody, reqEditors ...RequestEditorFn) (*DeleteProviderResponse, error) {
+	rsp, err := c.DeleteProvider(ctx, providerID, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteProviderResponse(rsp)
+}
+
+// UpdateProviderWithBodyWithResponse Replace the editable definition of a managed provider
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/management/v1/providers/{provider_id} (the `UpdateProvider` operationId).
+func (c *ClientWithResponses) UpdateProviderWithBodyWithResponse(ctx context.Context, providerID ProviderID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateProviderResponse, error) {
+	rsp, err := c.UpdateProviderWithBody(ctx, providerID, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateProviderResponse(rsp)
+}
+
+// UpdateProviderWithResponse Replace the editable definition of a managed provider
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/management/v1/providers/{provider_id} (the `UpdateProvider` operationId).
+func (c *ClientWithResponses) UpdateProviderWithResponse(ctx context.Context, providerID ProviderID, body UpdateProviderJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateProviderResponse, error) {
+	rsp, err := c.UpdateProvider(ctx, providerID, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateProviderResponse(rsp)
+}
+
+// SelectProviderWithBodyWithResponse Enable or disable a managed provider
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/providers/{provider_id}/selection (the `SelectProvider` operationId).
+func (c *ClientWithResponses) SelectProviderWithBodyWithResponse(ctx context.Context, providerID ProviderID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SelectProviderResponse, error) {
+	rsp, err := c.SelectProviderWithBody(ctx, providerID, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSelectProviderResponse(rsp)
+}
+
+// SelectProviderWithResponse Enable or disable a managed provider
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/providers/{provider_id}/selection (the `SelectProvider` operationId).
+func (c *ClientWithResponses) SelectProviderWithResponse(ctx context.Context, providerID ProviderID, body SelectProviderJSONRequestBody, reqEditors ...RequestEditorFn) (*SelectProviderResponse, error) {
+	rsp, err := c.SelectProvider(ctx, providerID, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSelectProviderResponse(rsp)
 }
 
 // ParseLoginWebAuthResponse parses an HTTP response from a LoginWebAuthWithResponse call
@@ -3946,6 +8844,1478 @@ func ParseGetManagementCompatibilityResponse(rsp *http.Response) (*GetManagement
 	return response, nil
 }
 
+// ParseListMCPConnectionsResponse parses an HTTP response from a ListMCPConnectionsWithResponse call
+func ParseListMCPConnectionsResponse(rsp *http.Response) (*ListMCPConnectionsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListMCPConnectionsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MCPInventory
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateMCPConnectionResponse parses an HTTP response from a CreateMCPConnectionWithResponse call
+func ParseCreateMCPConnectionResponse(rsp *http.Response) (*CreateMCPConnectionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateMCPConnectionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MCPItem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCancelMCPAuthorizationResponse parses an HTTP response from a CancelMCPAuthorizationWithResponse call
+func ParseCancelMCPAuthorizationResponse(rsp *http.Response) (*CancelMCPAuthorizationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CancelMCPAuthorizationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCompleteMCPBrowserAuthorizationResponse parses an HTTP response from a CompleteMCPBrowserAuthorizationWithResponse call
+func ParseCompleteMCPBrowserAuthorizationResponse(rsp *http.Response) (*CompleteMCPBrowserAuthorizationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CompleteMCPBrowserAuthorizationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MCPItem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseOnboardMCPBrowserAuthorizationResponse parses an HTTP response from a OnboardMCPBrowserAuthorizationWithResponse call
+func ParseOnboardMCPBrowserAuthorizationResponse(rsp *http.Response) (*OnboardMCPBrowserAuthorizationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &OnboardMCPBrowserAuthorizationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MCPBrowserOnboardResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseOnboardMCPDeviceAuthorizationResponse parses an HTTP response from a OnboardMCPDeviceAuthorizationWithResponse call
+func ParseOnboardMCPDeviceAuthorizationResponse(rsp *http.Response) (*OnboardMCPDeviceAuthorizationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &OnboardMCPDeviceAuthorizationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MCPDeviceOnboardResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetMCPDeviceAuthorizationResponse parses an HTTP response from a GetMCPDeviceAuthorizationWithResponse call
+func ParseGetMCPDeviceAuthorizationResponse(rsp *http.Response) (*GetMCPDeviceAuthorizationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetMCPDeviceAuthorizationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MCPDeviceAuthorizationStatus
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseProbeMCPConnectionResponse parses an HTTP response from a ProbeMCPConnectionWithResponse call
+func ParseProbeMCPConnectionResponse(rsp *http.Response) (*ProbeMCPConnectionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ProbeMCPConnectionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MCPItem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteMCPConnectionResponse parses an HTTP response from a DeleteMCPConnectionWithResponse call
+func ParseDeleteMCPConnectionResponse(rsp *http.Response) (*DeleteMCPConnectionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteMCPConnectionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MCPItem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateMCPConnectionResponse parses an HTTP response from a UpdateMCPConnectionWithResponse call
+func ParseUpdateMCPConnectionResponse(rsp *http.Response) (*UpdateMCPConnectionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateMCPConnectionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MCPItem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseBeginMCPBrowserAuthorizationResponse parses an HTTP response from a BeginMCPBrowserAuthorizationWithResponse call
+func ParseBeginMCPBrowserAuthorizationResponse(rsp *http.Response) (*BeginMCPBrowserAuthorizationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &BeginMCPBrowserAuthorizationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MCPBrowserAuthorizationStart
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseBeginMCPDeviceAuthorizationResponse parses an HTTP response from a BeginMCPDeviceAuthorizationWithResponse call
+func ParseBeginMCPDeviceAuthorizationResponse(rsp *http.Response) (*BeginMCPDeviceAuthorizationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &BeginMCPDeviceAuthorizationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MCPDeviceAuthorizationStart
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDisconnectMCPAuthorizationResponse parses an HTTP response from a DisconnectMCPAuthorizationWithResponse call
+func ParseDisconnectMCPAuthorizationResponse(rsp *http.Response) (*DisconnectMCPAuthorizationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DisconnectMCPAuthorizationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRetryMCPAuthorizationResponse parses an HTTP response from a RetryMCPAuthorizationWithResponse call
+func ParseRetryMCPAuthorizationResponse(rsp *http.Response) (*RetryMCPAuthorizationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RetryMCPAuthorizationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MCPItem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDiagnoseMCPConnectionResponse parses an HTTP response from a DiagnoseMCPConnectionWithResponse call
+func ParseDiagnoseMCPConnectionResponse(rsp *http.Response) (*DiagnoseMCPConnectionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DiagnoseMCPConnectionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MCPDiagnostic
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseProbeMCPConnectionUpdateResponse parses an HTTP response from a ProbeMCPConnectionUpdateWithResponse call
+func ParseProbeMCPConnectionUpdateResponse(rsp *http.Response) (*ProbeMCPConnectionUpdateResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ProbeMCPConnectionUpdateResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MCPItem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSelectMCPConnectionResponse parses an HTTP response from a SelectMCPConnectionWithResponse call
+func ParseSelectMCPConnectionResponse(rsp *http.Response) (*SelectMCPConnectionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SelectMCPConnectionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MCPItem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListProvidersResponse parses an HTTP response from a ListProvidersWithResponse call
+func ParseListProvidersResponse(rsp *http.Response) (*ListProvidersResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListProvidersResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProviderInventory
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateProviderResponse parses an HTTP response from a CreateProviderWithResponse call
+func ParseCreateProviderResponse(rsp *http.Response) (*CreateProviderResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateProviderResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteProviderResponse parses an HTTP response from a DeleteProviderWithResponse call
+func ParseDeleteProviderResponse(rsp *http.Response) (*DeleteProviderResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteProviderResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateProviderResponse parses an HTTP response from a UpdateProviderWithResponse call
+func ParseUpdateProviderResponse(rsp *http.Response) (*UpdateProviderResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateProviderResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSelectProviderResponse parses an HTTP response from a SelectProviderWithResponse call
+func ParseSelectProviderResponse(rsp *http.Response) (*SelectProviderResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SelectProviderResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// LoginWebAuth Start local WebAuth login
@@ -3993,6 +10363,72 @@ type ServerInterface interface {
 	// GetManagementCompatibility Read management contract compatibility metadata
 	// (GET /api/management/v1/compatibility)
 	GetManagementCompatibility(w http.ResponseWriter, r *http.Request)
+	// ListMCPConnections Read the current secret-free MCP inventory
+	// (GET /api/management/v1/mcp)
+	ListMCPConnections(w http.ResponseWriter, r *http.Request)
+	// CreateMCPConnection Create a managed MCP connection
+	// (POST /api/management/v1/mcp)
+	CreateMCPConnection(w http.ResponseWriter, r *http.Request)
+
+	// (POST /api/management/v1/mcp/authorization/attempts/{attempt_id}/cancel)
+	CancelMCPAuthorization(w http.ResponseWriter, r *http.Request, attemptID MCPAttemptID)
+
+	// (POST /api/management/v1/mcp/authorization/browser/callback)
+	CompleteMCPBrowserAuthorization(w http.ResponseWriter, r *http.Request)
+
+	// (POST /api/management/v1/mcp/authorization/browser/onboard)
+	OnboardMCPBrowserAuthorization(w http.ResponseWriter, r *http.Request)
+
+	// (POST /api/management/v1/mcp/authorization/device/onboard)
+	OnboardMCPDeviceAuthorization(w http.ResponseWriter, r *http.Request)
+
+	// (GET /api/management/v1/mcp/authorization/device/{attempt_id})
+	GetMCPDeviceAuthorization(w http.ResponseWriter, r *http.Request, attemptID MCPAttemptID)
+	// ProbeMCPConnection Probe an unsaved MCP candidate
+	// (POST /api/management/v1/mcp/probe)
+	ProbeMCPConnection(w http.ResponseWriter, r *http.Request)
+	// DeleteMCPConnection Tombstone a managed MCP connection
+	// (DELETE /api/management/v1/mcp/{connection_id})
+	DeleteMCPConnection(w http.ResponseWriter, r *http.Request, connectionID MCPConnectionID)
+	// UpdateMCPConnection Update a managed MCP connection
+	// (PUT /api/management/v1/mcp/{connection_id})
+	UpdateMCPConnection(w http.ResponseWriter, r *http.Request, connectionID MCPConnectionID)
+
+	// (POST /api/management/v1/mcp/{connection_id}/authorization/browser)
+	BeginMCPBrowserAuthorization(w http.ResponseWriter, r *http.Request, connectionID MCPConnectionID)
+
+	// (POST /api/management/v1/mcp/{connection_id}/authorization/device)
+	BeginMCPDeviceAuthorization(w http.ResponseWriter, r *http.Request, connectionID MCPConnectionID)
+
+	// (POST /api/management/v1/mcp/{connection_id}/authorization/disconnect)
+	DisconnectMCPAuthorization(w http.ResponseWriter, r *http.Request, connectionID MCPConnectionID)
+
+	// (POST /api/management/v1/mcp/{connection_id}/authorization/retry)
+	RetryMCPAuthorization(w http.ResponseWriter, r *http.Request, connectionID MCPConnectionID)
+	// DiagnoseMCPConnection Diagnose the authoritative current MCP definition
+	// (POST /api/management/v1/mcp/{connection_id}/diagnostic)
+	DiagnoseMCPConnection(w http.ResponseWriter, r *http.Request, connectionID MCPConnectionID)
+	// ProbeMCPConnectionUpdate Probe edits against the current retained revision
+	// (PUT /api/management/v1/mcp/{connection_id}/probe)
+	ProbeMCPConnectionUpdate(w http.ResponseWriter, r *http.Request, connectionID MCPConnectionID)
+	// SelectMCPConnection Enable or disable a managed MCP connection
+	// (POST /api/management/v1/mcp/{connection_id}/selection)
+	SelectMCPConnection(w http.ResponseWriter, r *http.Request, connectionID MCPConnectionID)
+	// ListProviders Read the current provider inventory
+	// (GET /api/management/v1/providers)
+	ListProviders(w http.ResponseWriter, r *http.Request)
+	// CreateProvider Create a managed provider
+	// (POST /api/management/v1/providers)
+	CreateProvider(w http.ResponseWriter, r *http.Request)
+	// DeleteProvider Tombstone a managed provider
+	// (DELETE /api/management/v1/providers/{provider_id})
+	DeleteProvider(w http.ResponseWriter, r *http.Request, providerID ProviderID)
+	// UpdateProvider Replace the editable definition of a managed provider
+	// (PUT /api/management/v1/providers/{provider_id})
+	UpdateProvider(w http.ResponseWriter, r *http.Request, providerID ProviderID)
+	// SelectProvider Enable or disable a managed provider
+	// (POST /api/management/v1/providers/{provider_id}/selection)
+	SelectProvider(w http.ResponseWriter, r *http.Request, providerID ProviderID)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -4271,6 +10707,482 @@ func (siw *ServerInterfaceWrapper) GetManagementCompatibility(w http.ResponseWri
 	handler.ServeHTTP(w, r)
 }
 
+// ListMCPConnections operation middleware
+func (siw *ServerInterfaceWrapper) ListMCPConnections(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListMCPConnections(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateMCPConnection operation middleware
+func (siw *ServerInterfaceWrapper) CreateMCPConnection(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateMCPConnection(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CancelMCPAuthorization operation middleware
+func (siw *ServerInterfaceWrapper) CancelMCPAuthorization(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "attempt_id" -------------
+	var attemptID MCPAttemptID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "attempt_id", r.PathValue("attempt_id"), &attemptID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "attempt_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CancelMCPAuthorization(w, r, attemptID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CompleteMCPBrowserAuthorization operation middleware
+func (siw *ServerInterfaceWrapper) CompleteMCPBrowserAuthorization(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CompleteMCPBrowserAuthorization(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// OnboardMCPBrowserAuthorization operation middleware
+func (siw *ServerInterfaceWrapper) OnboardMCPBrowserAuthorization(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.OnboardMCPBrowserAuthorization(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// OnboardMCPDeviceAuthorization operation middleware
+func (siw *ServerInterfaceWrapper) OnboardMCPDeviceAuthorization(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.OnboardMCPDeviceAuthorization(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetMCPDeviceAuthorization operation middleware
+func (siw *ServerInterfaceWrapper) GetMCPDeviceAuthorization(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "attempt_id" -------------
+	var attemptID MCPAttemptID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "attempt_id", r.PathValue("attempt_id"), &attemptID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "attempt_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetMCPDeviceAuthorization(w, r, attemptID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ProbeMCPConnection operation middleware
+func (siw *ServerInterfaceWrapper) ProbeMCPConnection(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ProbeMCPConnection(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteMCPConnection operation middleware
+func (siw *ServerInterfaceWrapper) DeleteMCPConnection(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "connection_id" -------------
+	var connectionID MCPConnectionID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "connection_id", r.PathValue("connection_id"), &connectionID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "connection_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteMCPConnection(w, r, connectionID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateMCPConnection operation middleware
+func (siw *ServerInterfaceWrapper) UpdateMCPConnection(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "connection_id" -------------
+	var connectionID MCPConnectionID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "connection_id", r.PathValue("connection_id"), &connectionID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "connection_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateMCPConnection(w, r, connectionID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// BeginMCPBrowserAuthorization operation middleware
+func (siw *ServerInterfaceWrapper) BeginMCPBrowserAuthorization(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "connection_id" -------------
+	var connectionID MCPConnectionID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "connection_id", r.PathValue("connection_id"), &connectionID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "connection_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.BeginMCPBrowserAuthorization(w, r, connectionID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// BeginMCPDeviceAuthorization operation middleware
+func (siw *ServerInterfaceWrapper) BeginMCPDeviceAuthorization(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "connection_id" -------------
+	var connectionID MCPConnectionID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "connection_id", r.PathValue("connection_id"), &connectionID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "connection_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.BeginMCPDeviceAuthorization(w, r, connectionID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DisconnectMCPAuthorization operation middleware
+func (siw *ServerInterfaceWrapper) DisconnectMCPAuthorization(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "connection_id" -------------
+	var connectionID MCPConnectionID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "connection_id", r.PathValue("connection_id"), &connectionID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "connection_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DisconnectMCPAuthorization(w, r, connectionID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RetryMCPAuthorization operation middleware
+func (siw *ServerInterfaceWrapper) RetryMCPAuthorization(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "connection_id" -------------
+	var connectionID MCPConnectionID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "connection_id", r.PathValue("connection_id"), &connectionID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "connection_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RetryMCPAuthorization(w, r, connectionID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DiagnoseMCPConnection operation middleware
+func (siw *ServerInterfaceWrapper) DiagnoseMCPConnection(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "connection_id" -------------
+	var connectionID MCPConnectionID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "connection_id", r.PathValue("connection_id"), &connectionID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "connection_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DiagnoseMCPConnection(w, r, connectionID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ProbeMCPConnectionUpdate operation middleware
+func (siw *ServerInterfaceWrapper) ProbeMCPConnectionUpdate(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "connection_id" -------------
+	var connectionID MCPConnectionID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "connection_id", r.PathValue("connection_id"), &connectionID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "connection_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ProbeMCPConnectionUpdate(w, r, connectionID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SelectMCPConnection operation middleware
+func (siw *ServerInterfaceWrapper) SelectMCPConnection(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "connection_id" -------------
+	var connectionID MCPConnectionID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "connection_id", r.PathValue("connection_id"), &connectionID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "connection_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SelectMCPConnection(w, r, connectionID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListProviders operation middleware
+func (siw *ServerInterfaceWrapper) ListProviders(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListProviders(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateProvider operation middleware
+func (siw *ServerInterfaceWrapper) CreateProvider(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateProvider(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteProvider operation middleware
+func (siw *ServerInterfaceWrapper) DeleteProvider(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "provider_id" -------------
+	var providerID ProviderID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "provider_id", r.PathValue("provider_id"), &providerID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "provider_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteProvider(w, r, providerID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateProvider operation middleware
+func (siw *ServerInterfaceWrapper) UpdateProvider(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "provider_id" -------------
+	var providerID ProviderID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "provider_id", r.PathValue("provider_id"), &providerID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "provider_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateProvider(w, r, providerID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SelectProvider operation middleware
+func (siw *ServerInterfaceWrapper) SelectProvider(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "provider_id" -------------
+	var providerID ProviderID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "provider_id", r.PathValue("provider_id"), &providerID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "provider_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SelectProvider(w, r, providerID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -4406,6 +11318,28 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/auth/mfa/replace/finish", wrapper.FinishWebAuthMFAReplace)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/auth/sessions", wrapper.ListWebAuthSessions)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/auth/sessions/{web_auth_session_id}/revoke", wrapper.RevokeWebAuthSession)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/providers", wrapper.ListProviders)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/providers", wrapper.CreateProvider)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/management/v1/providers/{provider_id}", wrapper.DeleteProvider)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/management/v1/providers/{provider_id}", wrapper.UpdateProvider)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/providers/{provider_id}/selection", wrapper.SelectProvider)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/mcp", wrapper.ListMCPConnections)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/mcp", wrapper.CreateMCPConnection)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/mcp/probe", wrapper.ProbeMCPConnection)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/management/v1/mcp/{connection_id}", wrapper.DeleteMCPConnection)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/management/v1/mcp/{connection_id}", wrapper.UpdateMCPConnection)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/management/v1/mcp/{connection_id}/probe", wrapper.ProbeMCPConnectionUpdate)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/mcp/{connection_id}/selection", wrapper.SelectMCPConnection)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/mcp/{connection_id}/diagnostic", wrapper.DiagnoseMCPConnection)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/mcp/authorization/browser/onboard", wrapper.OnboardMCPBrowserAuthorization)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/mcp/authorization/device/onboard", wrapper.OnboardMCPDeviceAuthorization)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/mcp/{connection_id}/authorization/browser", wrapper.BeginMCPBrowserAuthorization)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/mcp/{connection_id}/authorization/device", wrapper.BeginMCPDeviceAuthorization)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/mcp/authorization/browser/callback", wrapper.CompleteMCPBrowserAuthorization)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/mcp/authorization/device/{attempt_id}", wrapper.GetMCPDeviceAuthorization)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/mcp/authorization/attempts/{attempt_id}/cancel", wrapper.CancelMCPAuthorization)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/mcp/{connection_id}/authorization/disconnect", wrapper.DisconnectMCPAuthorization)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/mcp/{connection_id}/authorization/retry", wrapper.RetryMCPAuthorization)
 
 	return m
 }
@@ -4419,6 +11353,8 @@ type ForbiddenJSONResponse ManagementError
 type InternalErrorJSONResponse ManagementError
 
 type NotFoundJSONResponse ManagementError
+
+type ServiceUnavailableJSONResponse ManagementError
 
 type UnauthorizedJSONResponse ManagementError
 
@@ -5576,6 +12512,2310 @@ func (response GetManagementCompatibility500JSONResponse) VisitGetManagementComp
 	return err
 }
 
+type ListMCPConnectionsRequestObject struct {
+}
+
+type ListMCPConnectionsResponseObject interface {
+	VisitListMCPConnectionsResponse(w http.ResponseWriter) error
+}
+
+type ListMCPConnections200JSONResponse MCPInventory
+
+func (response ListMCPConnections200JSONResponse) VisitListMCPConnectionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListMCPConnections401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListMCPConnections401JSONResponse) VisitListMCPConnectionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListMCPConnections403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListMCPConnections403JSONResponse) VisitListMCPConnectionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListMCPConnections500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ListMCPConnections500JSONResponse) VisitListMCPConnectionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListMCPConnections503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response ListMCPConnections503JSONResponse) VisitListMCPConnectionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateMCPConnectionRequestObject struct {
+	Body *CreateMCPConnectionJSONRequestBody
+}
+
+type CreateMCPConnectionResponseObject interface {
+	VisitCreateMCPConnectionResponse(w http.ResponseWriter) error
+}
+
+type CreateMCPConnection200JSONResponse MCPItem
+
+func (response CreateMCPConnection200JSONResponse) VisitCreateMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateMCPConnection400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response CreateMCPConnection400JSONResponse) VisitCreateMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateMCPConnection401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response CreateMCPConnection401JSONResponse) VisitCreateMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateMCPConnection403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response CreateMCPConnection403JSONResponse) VisitCreateMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateMCPConnection409JSONResponse struct{ ConflictJSONResponse }
+
+func (response CreateMCPConnection409JSONResponse) VisitCreateMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateMCPConnection500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response CreateMCPConnection500JSONResponse) VisitCreateMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateMCPConnection503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response CreateMCPConnection503JSONResponse) VisitCreateMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelMCPAuthorizationRequestObject struct {
+	AttemptID MCPAttemptID `json:"attempt_id"`
+}
+
+type CancelMCPAuthorizationResponseObject interface {
+	VisitCancelMCPAuthorizationResponse(w http.ResponseWriter) error
+}
+
+type CancelMCPAuthorization204Response struct {
+}
+
+func (response CancelMCPAuthorization204Response) VisitCancelMCPAuthorizationResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type CancelMCPAuthorization401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response CancelMCPAuthorization401JSONResponse) VisitCancelMCPAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelMCPAuthorization403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response CancelMCPAuthorization403JSONResponse) VisitCancelMCPAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelMCPAuthorization404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response CancelMCPAuthorization404JSONResponse) VisitCancelMCPAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelMCPAuthorization409JSONResponse struct{ ConflictJSONResponse }
+
+func (response CancelMCPAuthorization409JSONResponse) VisitCancelMCPAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelMCPAuthorization500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response CancelMCPAuthorization500JSONResponse) VisitCancelMCPAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelMCPAuthorization503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response CancelMCPAuthorization503JSONResponse) VisitCancelMCPAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CompleteMCPBrowserAuthorizationRequestObject struct {
+	Body *CompleteMCPBrowserAuthorizationJSONRequestBody
+}
+
+type CompleteMCPBrowserAuthorizationResponseObject interface {
+	VisitCompleteMCPBrowserAuthorizationResponse(w http.ResponseWriter) error
+}
+
+type CompleteMCPBrowserAuthorization200JSONResponse MCPItem
+
+func (response CompleteMCPBrowserAuthorization200JSONResponse) VisitCompleteMCPBrowserAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CompleteMCPBrowserAuthorization400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response CompleteMCPBrowserAuthorization400JSONResponse) VisitCompleteMCPBrowserAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CompleteMCPBrowserAuthorization401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response CompleteMCPBrowserAuthorization401JSONResponse) VisitCompleteMCPBrowserAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CompleteMCPBrowserAuthorization403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response CompleteMCPBrowserAuthorization403JSONResponse) VisitCompleteMCPBrowserAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CompleteMCPBrowserAuthorization404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response CompleteMCPBrowserAuthorization404JSONResponse) VisitCompleteMCPBrowserAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CompleteMCPBrowserAuthorization409JSONResponse struct{ ConflictJSONResponse }
+
+func (response CompleteMCPBrowserAuthorization409JSONResponse) VisitCompleteMCPBrowserAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CompleteMCPBrowserAuthorization500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response CompleteMCPBrowserAuthorization500JSONResponse) VisitCompleteMCPBrowserAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CompleteMCPBrowserAuthorization503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response CompleteMCPBrowserAuthorization503JSONResponse) VisitCompleteMCPBrowserAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OnboardMCPBrowserAuthorizationRequestObject struct {
+	Body *OnboardMCPBrowserAuthorizationJSONRequestBody
+}
+
+type OnboardMCPBrowserAuthorizationResponseObject interface {
+	VisitOnboardMCPBrowserAuthorizationResponse(w http.ResponseWriter) error
+}
+
+type OnboardMCPBrowserAuthorization200JSONResponse MCPBrowserOnboardResult
+
+func (response OnboardMCPBrowserAuthorization200JSONResponse) VisitOnboardMCPBrowserAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OnboardMCPBrowserAuthorization400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response OnboardMCPBrowserAuthorization400JSONResponse) VisitOnboardMCPBrowserAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OnboardMCPBrowserAuthorization401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response OnboardMCPBrowserAuthorization401JSONResponse) VisitOnboardMCPBrowserAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OnboardMCPBrowserAuthorization403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response OnboardMCPBrowserAuthorization403JSONResponse) VisitOnboardMCPBrowserAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OnboardMCPBrowserAuthorization409JSONResponse struct{ ConflictJSONResponse }
+
+func (response OnboardMCPBrowserAuthorization409JSONResponse) VisitOnboardMCPBrowserAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OnboardMCPBrowserAuthorization500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response OnboardMCPBrowserAuthorization500JSONResponse) VisitOnboardMCPBrowserAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OnboardMCPBrowserAuthorization503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response OnboardMCPBrowserAuthorization503JSONResponse) VisitOnboardMCPBrowserAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OnboardMCPDeviceAuthorizationRequestObject struct {
+	Body *OnboardMCPDeviceAuthorizationJSONRequestBody
+}
+
+type OnboardMCPDeviceAuthorizationResponseObject interface {
+	VisitOnboardMCPDeviceAuthorizationResponse(w http.ResponseWriter) error
+}
+
+type OnboardMCPDeviceAuthorization200JSONResponse MCPDeviceOnboardResult
+
+func (response OnboardMCPDeviceAuthorization200JSONResponse) VisitOnboardMCPDeviceAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OnboardMCPDeviceAuthorization400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response OnboardMCPDeviceAuthorization400JSONResponse) VisitOnboardMCPDeviceAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OnboardMCPDeviceAuthorization401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response OnboardMCPDeviceAuthorization401JSONResponse) VisitOnboardMCPDeviceAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OnboardMCPDeviceAuthorization403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response OnboardMCPDeviceAuthorization403JSONResponse) VisitOnboardMCPDeviceAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OnboardMCPDeviceAuthorization409JSONResponse struct{ ConflictJSONResponse }
+
+func (response OnboardMCPDeviceAuthorization409JSONResponse) VisitOnboardMCPDeviceAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OnboardMCPDeviceAuthorization500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response OnboardMCPDeviceAuthorization500JSONResponse) VisitOnboardMCPDeviceAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OnboardMCPDeviceAuthorization503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response OnboardMCPDeviceAuthorization503JSONResponse) VisitOnboardMCPDeviceAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMCPDeviceAuthorizationRequestObject struct {
+	AttemptID MCPAttemptID `json:"attempt_id"`
+}
+
+type GetMCPDeviceAuthorizationResponseObject interface {
+	VisitGetMCPDeviceAuthorizationResponse(w http.ResponseWriter) error
+}
+
+type GetMCPDeviceAuthorization200JSONResponse MCPDeviceAuthorizationStatus
+
+func (response GetMCPDeviceAuthorization200JSONResponse) VisitGetMCPDeviceAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMCPDeviceAuthorization401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetMCPDeviceAuthorization401JSONResponse) VisitGetMCPDeviceAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMCPDeviceAuthorization403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetMCPDeviceAuthorization403JSONResponse) VisitGetMCPDeviceAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMCPDeviceAuthorization404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetMCPDeviceAuthorization404JSONResponse) VisitGetMCPDeviceAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMCPDeviceAuthorization409JSONResponse struct{ ConflictJSONResponse }
+
+func (response GetMCPDeviceAuthorization409JSONResponse) VisitGetMCPDeviceAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMCPDeviceAuthorization500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response GetMCPDeviceAuthorization500JSONResponse) VisitGetMCPDeviceAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMCPDeviceAuthorization503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response GetMCPDeviceAuthorization503JSONResponse) VisitGetMCPDeviceAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ProbeMCPConnectionRequestObject struct {
+	Body *ProbeMCPConnectionJSONRequestBody
+}
+
+type ProbeMCPConnectionResponseObject interface {
+	VisitProbeMCPConnectionResponse(w http.ResponseWriter) error
+}
+
+type ProbeMCPConnection200JSONResponse MCPItem
+
+func (response ProbeMCPConnection200JSONResponse) VisitProbeMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ProbeMCPConnection400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response ProbeMCPConnection400JSONResponse) VisitProbeMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ProbeMCPConnection401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ProbeMCPConnection401JSONResponse) VisitProbeMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ProbeMCPConnection403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ProbeMCPConnection403JSONResponse) VisitProbeMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ProbeMCPConnection500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ProbeMCPConnection500JSONResponse) VisitProbeMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ProbeMCPConnection503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response ProbeMCPConnection503JSONResponse) VisitProbeMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteMCPConnectionRequestObject struct {
+	ConnectionID MCPConnectionID `json:"connection_id"`
+	Body         *DeleteMCPConnectionJSONRequestBody
+}
+
+type DeleteMCPConnectionResponseObject interface {
+	VisitDeleteMCPConnectionResponse(w http.ResponseWriter) error
+}
+
+type DeleteMCPConnection200JSONResponse MCPItem
+
+func (response DeleteMCPConnection200JSONResponse) VisitDeleteMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteMCPConnection400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response DeleteMCPConnection400JSONResponse) VisitDeleteMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteMCPConnection401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response DeleteMCPConnection401JSONResponse) VisitDeleteMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteMCPConnection403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DeleteMCPConnection403JSONResponse) VisitDeleteMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteMCPConnection409JSONResponse struct{ ConflictJSONResponse }
+
+func (response DeleteMCPConnection409JSONResponse) VisitDeleteMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteMCPConnection500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response DeleteMCPConnection500JSONResponse) VisitDeleteMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteMCPConnection503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response DeleteMCPConnection503JSONResponse) VisitDeleteMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateMCPConnectionRequestObject struct {
+	ConnectionID MCPConnectionID `json:"connection_id"`
+	Body         *UpdateMCPConnectionJSONRequestBody
+}
+
+type UpdateMCPConnectionResponseObject interface {
+	VisitUpdateMCPConnectionResponse(w http.ResponseWriter) error
+}
+
+type UpdateMCPConnection200JSONResponse MCPItem
+
+func (response UpdateMCPConnection200JSONResponse) VisitUpdateMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateMCPConnection400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response UpdateMCPConnection400JSONResponse) VisitUpdateMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateMCPConnection401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response UpdateMCPConnection401JSONResponse) VisitUpdateMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateMCPConnection403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response UpdateMCPConnection403JSONResponse) VisitUpdateMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateMCPConnection409JSONResponse struct{ ConflictJSONResponse }
+
+func (response UpdateMCPConnection409JSONResponse) VisitUpdateMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateMCPConnection500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response UpdateMCPConnection500JSONResponse) VisitUpdateMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateMCPConnection503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response UpdateMCPConnection503JSONResponse) VisitUpdateMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BeginMCPBrowserAuthorizationRequestObject struct {
+	ConnectionID MCPConnectionID `json:"connection_id"`
+	Body         *BeginMCPBrowserAuthorizationJSONRequestBody
+}
+
+type BeginMCPBrowserAuthorizationResponseObject interface {
+	VisitBeginMCPBrowserAuthorizationResponse(w http.ResponseWriter) error
+}
+
+type BeginMCPBrowserAuthorization200JSONResponse MCPBrowserAuthorizationStart
+
+func (response BeginMCPBrowserAuthorization200JSONResponse) VisitBeginMCPBrowserAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BeginMCPBrowserAuthorization400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response BeginMCPBrowserAuthorization400JSONResponse) VisitBeginMCPBrowserAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BeginMCPBrowserAuthorization401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response BeginMCPBrowserAuthorization401JSONResponse) VisitBeginMCPBrowserAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BeginMCPBrowserAuthorization403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response BeginMCPBrowserAuthorization403JSONResponse) VisitBeginMCPBrowserAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BeginMCPBrowserAuthorization404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response BeginMCPBrowserAuthorization404JSONResponse) VisitBeginMCPBrowserAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BeginMCPBrowserAuthorization409JSONResponse struct{ ConflictJSONResponse }
+
+func (response BeginMCPBrowserAuthorization409JSONResponse) VisitBeginMCPBrowserAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BeginMCPBrowserAuthorization500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response BeginMCPBrowserAuthorization500JSONResponse) VisitBeginMCPBrowserAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BeginMCPBrowserAuthorization503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response BeginMCPBrowserAuthorization503JSONResponse) VisitBeginMCPBrowserAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BeginMCPDeviceAuthorizationRequestObject struct {
+	ConnectionID MCPConnectionID `json:"connection_id"`
+	Body         *BeginMCPDeviceAuthorizationJSONRequestBody
+}
+
+type BeginMCPDeviceAuthorizationResponseObject interface {
+	VisitBeginMCPDeviceAuthorizationResponse(w http.ResponseWriter) error
+}
+
+type BeginMCPDeviceAuthorization200JSONResponse MCPDeviceAuthorizationStart
+
+func (response BeginMCPDeviceAuthorization200JSONResponse) VisitBeginMCPDeviceAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BeginMCPDeviceAuthorization400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response BeginMCPDeviceAuthorization400JSONResponse) VisitBeginMCPDeviceAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BeginMCPDeviceAuthorization401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response BeginMCPDeviceAuthorization401JSONResponse) VisitBeginMCPDeviceAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BeginMCPDeviceAuthorization403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response BeginMCPDeviceAuthorization403JSONResponse) VisitBeginMCPDeviceAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BeginMCPDeviceAuthorization404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response BeginMCPDeviceAuthorization404JSONResponse) VisitBeginMCPDeviceAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BeginMCPDeviceAuthorization409JSONResponse struct{ ConflictJSONResponse }
+
+func (response BeginMCPDeviceAuthorization409JSONResponse) VisitBeginMCPDeviceAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BeginMCPDeviceAuthorization500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response BeginMCPDeviceAuthorization500JSONResponse) VisitBeginMCPDeviceAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BeginMCPDeviceAuthorization503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response BeginMCPDeviceAuthorization503JSONResponse) VisitBeginMCPDeviceAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DisconnectMCPAuthorizationRequestObject struct {
+	ConnectionID MCPConnectionID `json:"connection_id"`
+}
+
+type DisconnectMCPAuthorizationResponseObject interface {
+	VisitDisconnectMCPAuthorizationResponse(w http.ResponseWriter) error
+}
+
+type DisconnectMCPAuthorization204Response struct {
+}
+
+func (response DisconnectMCPAuthorization204Response) VisitDisconnectMCPAuthorizationResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DisconnectMCPAuthorization401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response DisconnectMCPAuthorization401JSONResponse) VisitDisconnectMCPAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DisconnectMCPAuthorization403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DisconnectMCPAuthorization403JSONResponse) VisitDisconnectMCPAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DisconnectMCPAuthorization404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response DisconnectMCPAuthorization404JSONResponse) VisitDisconnectMCPAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DisconnectMCPAuthorization409JSONResponse struct{ ConflictJSONResponse }
+
+func (response DisconnectMCPAuthorization409JSONResponse) VisitDisconnectMCPAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DisconnectMCPAuthorization500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response DisconnectMCPAuthorization500JSONResponse) VisitDisconnectMCPAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DisconnectMCPAuthorization503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response DisconnectMCPAuthorization503JSONResponse) VisitDisconnectMCPAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryMCPAuthorizationRequestObject struct {
+	ConnectionID MCPConnectionID `json:"connection_id"`
+	Body         *RetryMCPAuthorizationJSONRequestBody
+}
+
+type RetryMCPAuthorizationResponseObject interface {
+	VisitRetryMCPAuthorizationResponse(w http.ResponseWriter) error
+}
+
+type RetryMCPAuthorization200JSONResponse MCPItem
+
+func (response RetryMCPAuthorization200JSONResponse) VisitRetryMCPAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryMCPAuthorization400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response RetryMCPAuthorization400JSONResponse) VisitRetryMCPAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryMCPAuthorization401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response RetryMCPAuthorization401JSONResponse) VisitRetryMCPAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryMCPAuthorization403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response RetryMCPAuthorization403JSONResponse) VisitRetryMCPAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryMCPAuthorization404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response RetryMCPAuthorization404JSONResponse) VisitRetryMCPAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryMCPAuthorization409JSONResponse struct{ ConflictJSONResponse }
+
+func (response RetryMCPAuthorization409JSONResponse) VisitRetryMCPAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryMCPAuthorization500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response RetryMCPAuthorization500JSONResponse) VisitRetryMCPAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryMCPAuthorization503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response RetryMCPAuthorization503JSONResponse) VisitRetryMCPAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DiagnoseMCPConnectionRequestObject struct {
+	ConnectionID MCPConnectionID `json:"connection_id"`
+}
+
+type DiagnoseMCPConnectionResponseObject interface {
+	VisitDiagnoseMCPConnectionResponse(w http.ResponseWriter) error
+}
+
+type DiagnoseMCPConnection200JSONResponse MCPDiagnostic
+
+func (response DiagnoseMCPConnection200JSONResponse) VisitDiagnoseMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DiagnoseMCPConnection400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response DiagnoseMCPConnection400JSONResponse) VisitDiagnoseMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DiagnoseMCPConnection401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response DiagnoseMCPConnection401JSONResponse) VisitDiagnoseMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DiagnoseMCPConnection403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DiagnoseMCPConnection403JSONResponse) VisitDiagnoseMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DiagnoseMCPConnection404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response DiagnoseMCPConnection404JSONResponse) VisitDiagnoseMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DiagnoseMCPConnection409JSONResponse struct{ ConflictJSONResponse }
+
+func (response DiagnoseMCPConnection409JSONResponse) VisitDiagnoseMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DiagnoseMCPConnection500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response DiagnoseMCPConnection500JSONResponse) VisitDiagnoseMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DiagnoseMCPConnection503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response DiagnoseMCPConnection503JSONResponse) VisitDiagnoseMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ProbeMCPConnectionUpdateRequestObject struct {
+	ConnectionID MCPConnectionID `json:"connection_id"`
+	Body         *ProbeMCPConnectionUpdateJSONRequestBody
+}
+
+type ProbeMCPConnectionUpdateResponseObject interface {
+	VisitProbeMCPConnectionUpdateResponse(w http.ResponseWriter) error
+}
+
+type ProbeMCPConnectionUpdate200JSONResponse MCPItem
+
+func (response ProbeMCPConnectionUpdate200JSONResponse) VisitProbeMCPConnectionUpdateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ProbeMCPConnectionUpdate400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response ProbeMCPConnectionUpdate400JSONResponse) VisitProbeMCPConnectionUpdateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ProbeMCPConnectionUpdate401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ProbeMCPConnectionUpdate401JSONResponse) VisitProbeMCPConnectionUpdateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ProbeMCPConnectionUpdate403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ProbeMCPConnectionUpdate403JSONResponse) VisitProbeMCPConnectionUpdateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ProbeMCPConnectionUpdate409JSONResponse struct{ ConflictJSONResponse }
+
+func (response ProbeMCPConnectionUpdate409JSONResponse) VisitProbeMCPConnectionUpdateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ProbeMCPConnectionUpdate500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ProbeMCPConnectionUpdate500JSONResponse) VisitProbeMCPConnectionUpdateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ProbeMCPConnectionUpdate503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response ProbeMCPConnectionUpdate503JSONResponse) VisitProbeMCPConnectionUpdateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SelectMCPConnectionRequestObject struct {
+	ConnectionID MCPConnectionID `json:"connection_id"`
+	Body         *SelectMCPConnectionJSONRequestBody
+}
+
+type SelectMCPConnectionResponseObject interface {
+	VisitSelectMCPConnectionResponse(w http.ResponseWriter) error
+}
+
+type SelectMCPConnection200JSONResponse MCPItem
+
+func (response SelectMCPConnection200JSONResponse) VisitSelectMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SelectMCPConnection400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response SelectMCPConnection400JSONResponse) VisitSelectMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SelectMCPConnection401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response SelectMCPConnection401JSONResponse) VisitSelectMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SelectMCPConnection403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response SelectMCPConnection403JSONResponse) VisitSelectMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SelectMCPConnection409JSONResponse struct{ ConflictJSONResponse }
+
+func (response SelectMCPConnection409JSONResponse) VisitSelectMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SelectMCPConnection500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response SelectMCPConnection500JSONResponse) VisitSelectMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SelectMCPConnection503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response SelectMCPConnection503JSONResponse) VisitSelectMCPConnectionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListProvidersRequestObject struct {
+}
+
+type ListProvidersResponseObject interface {
+	VisitListProvidersResponse(w http.ResponseWriter) error
+}
+
+type ListProviders200JSONResponse ProviderInventory
+
+func (response ListProviders200JSONResponse) VisitListProvidersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListProviders401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListProviders401JSONResponse) VisitListProvidersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListProviders403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListProviders403JSONResponse) VisitListProvidersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListProviders500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ListProviders500JSONResponse) VisitListProvidersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListProviders503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response ListProviders503JSONResponse) VisitListProvidersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateProviderRequestObject struct {
+	Body *CreateProviderJSONRequestBody
+}
+
+type CreateProviderResponseObject interface {
+	VisitCreateProviderResponse(w http.ResponseWriter) error
+}
+
+type CreateProvider204Response struct {
+}
+
+func (response CreateProvider204Response) VisitCreateProviderResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type CreateProvider400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response CreateProvider400JSONResponse) VisitCreateProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateProvider401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response CreateProvider401JSONResponse) VisitCreateProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateProvider403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response CreateProvider403JSONResponse) VisitCreateProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateProvider409JSONResponse struct{ ConflictJSONResponse }
+
+func (response CreateProvider409JSONResponse) VisitCreateProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateProvider500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response CreateProvider500JSONResponse) VisitCreateProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateProvider503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response CreateProvider503JSONResponse) VisitCreateProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteProviderRequestObject struct {
+	ProviderID ProviderID `json:"provider_id"`
+	Body       *DeleteProviderJSONRequestBody
+}
+
+type DeleteProviderResponseObject interface {
+	VisitDeleteProviderResponse(w http.ResponseWriter) error
+}
+
+type DeleteProvider204Response struct {
+}
+
+func (response DeleteProvider204Response) VisitDeleteProviderResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteProvider400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response DeleteProvider400JSONResponse) VisitDeleteProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteProvider401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response DeleteProvider401JSONResponse) VisitDeleteProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteProvider403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DeleteProvider403JSONResponse) VisitDeleteProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteProvider409JSONResponse struct{ ConflictJSONResponse }
+
+func (response DeleteProvider409JSONResponse) VisitDeleteProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteProvider500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response DeleteProvider500JSONResponse) VisitDeleteProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteProvider503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response DeleteProvider503JSONResponse) VisitDeleteProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateProviderRequestObject struct {
+	ProviderID ProviderID `json:"provider_id"`
+	Body       *UpdateProviderJSONRequestBody
+}
+
+type UpdateProviderResponseObject interface {
+	VisitUpdateProviderResponse(w http.ResponseWriter) error
+}
+
+type UpdateProvider204Response struct {
+}
+
+func (response UpdateProvider204Response) VisitUpdateProviderResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type UpdateProvider400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response UpdateProvider400JSONResponse) VisitUpdateProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateProvider401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response UpdateProvider401JSONResponse) VisitUpdateProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateProvider403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response UpdateProvider403JSONResponse) VisitUpdateProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateProvider409JSONResponse struct{ ConflictJSONResponse }
+
+func (response UpdateProvider409JSONResponse) VisitUpdateProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateProvider500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response UpdateProvider500JSONResponse) VisitUpdateProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateProvider503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response UpdateProvider503JSONResponse) VisitUpdateProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SelectProviderRequestObject struct {
+	ProviderID ProviderID `json:"provider_id"`
+	Body       *SelectProviderJSONRequestBody
+}
+
+type SelectProviderResponseObject interface {
+	VisitSelectProviderResponse(w http.ResponseWriter) error
+}
+
+type SelectProvider204Response struct {
+}
+
+func (response SelectProvider204Response) VisitSelectProviderResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type SelectProvider400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response SelectProvider400JSONResponse) VisitSelectProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SelectProvider401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response SelectProvider401JSONResponse) VisitSelectProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SelectProvider403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response SelectProvider403JSONResponse) VisitSelectProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SelectProvider409JSONResponse struct{ ConflictJSONResponse }
+
+func (response SelectProvider409JSONResponse) VisitSelectProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SelectProvider500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response SelectProvider500JSONResponse) VisitSelectProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SelectProvider503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response SelectProvider503JSONResponse) VisitSelectProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 	// LoginWebAuth Start local WebAuth login
@@ -5623,6 +14863,72 @@ type StrictServerInterface interface {
 	// GetManagementCompatibility Read management contract compatibility metadata
 	// (GET /api/management/v1/compatibility)
 	GetManagementCompatibility(ctx context.Context, request GetManagementCompatibilityRequestObject) (GetManagementCompatibilityResponseObject, error)
+	// ListMCPConnections Read the current secret-free MCP inventory
+	// (GET /api/management/v1/mcp)
+	ListMCPConnections(ctx context.Context, request ListMCPConnectionsRequestObject) (ListMCPConnectionsResponseObject, error)
+	// CreateMCPConnection Create a managed MCP connection
+	// (POST /api/management/v1/mcp)
+	CreateMCPConnection(ctx context.Context, request CreateMCPConnectionRequestObject) (CreateMCPConnectionResponseObject, error)
+
+	// (POST /api/management/v1/mcp/authorization/attempts/{attempt_id}/cancel)
+	CancelMCPAuthorization(ctx context.Context, request CancelMCPAuthorizationRequestObject) (CancelMCPAuthorizationResponseObject, error)
+
+	// (POST /api/management/v1/mcp/authorization/browser/callback)
+	CompleteMCPBrowserAuthorization(ctx context.Context, request CompleteMCPBrowserAuthorizationRequestObject) (CompleteMCPBrowserAuthorizationResponseObject, error)
+
+	// (POST /api/management/v1/mcp/authorization/browser/onboard)
+	OnboardMCPBrowserAuthorization(ctx context.Context, request OnboardMCPBrowserAuthorizationRequestObject) (OnboardMCPBrowserAuthorizationResponseObject, error)
+
+	// (POST /api/management/v1/mcp/authorization/device/onboard)
+	OnboardMCPDeviceAuthorization(ctx context.Context, request OnboardMCPDeviceAuthorizationRequestObject) (OnboardMCPDeviceAuthorizationResponseObject, error)
+
+	// (GET /api/management/v1/mcp/authorization/device/{attempt_id})
+	GetMCPDeviceAuthorization(ctx context.Context, request GetMCPDeviceAuthorizationRequestObject) (GetMCPDeviceAuthorizationResponseObject, error)
+	// ProbeMCPConnection Probe an unsaved MCP candidate
+	// (POST /api/management/v1/mcp/probe)
+	ProbeMCPConnection(ctx context.Context, request ProbeMCPConnectionRequestObject) (ProbeMCPConnectionResponseObject, error)
+	// DeleteMCPConnection Tombstone a managed MCP connection
+	// (DELETE /api/management/v1/mcp/{connection_id})
+	DeleteMCPConnection(ctx context.Context, request DeleteMCPConnectionRequestObject) (DeleteMCPConnectionResponseObject, error)
+	// UpdateMCPConnection Update a managed MCP connection
+	// (PUT /api/management/v1/mcp/{connection_id})
+	UpdateMCPConnection(ctx context.Context, request UpdateMCPConnectionRequestObject) (UpdateMCPConnectionResponseObject, error)
+
+	// (POST /api/management/v1/mcp/{connection_id}/authorization/browser)
+	BeginMCPBrowserAuthorization(ctx context.Context, request BeginMCPBrowserAuthorizationRequestObject) (BeginMCPBrowserAuthorizationResponseObject, error)
+
+	// (POST /api/management/v1/mcp/{connection_id}/authorization/device)
+	BeginMCPDeviceAuthorization(ctx context.Context, request BeginMCPDeviceAuthorizationRequestObject) (BeginMCPDeviceAuthorizationResponseObject, error)
+
+	// (POST /api/management/v1/mcp/{connection_id}/authorization/disconnect)
+	DisconnectMCPAuthorization(ctx context.Context, request DisconnectMCPAuthorizationRequestObject) (DisconnectMCPAuthorizationResponseObject, error)
+
+	// (POST /api/management/v1/mcp/{connection_id}/authorization/retry)
+	RetryMCPAuthorization(ctx context.Context, request RetryMCPAuthorizationRequestObject) (RetryMCPAuthorizationResponseObject, error)
+	// DiagnoseMCPConnection Diagnose the authoritative current MCP definition
+	// (POST /api/management/v1/mcp/{connection_id}/diagnostic)
+	DiagnoseMCPConnection(ctx context.Context, request DiagnoseMCPConnectionRequestObject) (DiagnoseMCPConnectionResponseObject, error)
+	// ProbeMCPConnectionUpdate Probe edits against the current retained revision
+	// (PUT /api/management/v1/mcp/{connection_id}/probe)
+	ProbeMCPConnectionUpdate(ctx context.Context, request ProbeMCPConnectionUpdateRequestObject) (ProbeMCPConnectionUpdateResponseObject, error)
+	// SelectMCPConnection Enable or disable a managed MCP connection
+	// (POST /api/management/v1/mcp/{connection_id}/selection)
+	SelectMCPConnection(ctx context.Context, request SelectMCPConnectionRequestObject) (SelectMCPConnectionResponseObject, error)
+	// ListProviders Read the current provider inventory
+	// (GET /api/management/v1/providers)
+	ListProviders(ctx context.Context, request ListProvidersRequestObject) (ListProvidersResponseObject, error)
+	// CreateProvider Create a managed provider
+	// (POST /api/management/v1/providers)
+	CreateProvider(ctx context.Context, request CreateProviderRequestObject) (CreateProviderResponseObject, error)
+	// DeleteProvider Tombstone a managed provider
+	// (DELETE /api/management/v1/providers/{provider_id})
+	DeleteProvider(ctx context.Context, request DeleteProviderRequestObject) (DeleteProviderResponseObject, error)
+	// UpdateProvider Replace the editable definition of a managed provider
+	// (PUT /api/management/v1/providers/{provider_id})
+	UpdateProvider(ctx context.Context, request UpdateProviderRequestObject) (UpdateProviderResponseObject, error)
+	// SelectProvider Enable or disable a managed provider
+	// (POST /api/management/v1/providers/{provider_id}/selection)
+	SelectProvider(ctx context.Context, request SelectProviderRequestObject) (SelectProviderResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
@@ -6091,57 +15397,768 @@ func (sh *strictHandler) GetManagementCompatibility(w http.ResponseWriter, r *ht
 	}
 }
 
+// ListMCPConnections operation middleware
+func (sh *strictHandler) ListMCPConnections(w http.ResponseWriter, r *http.Request) {
+	var request ListMCPConnectionsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListMCPConnections(ctx, request.(ListMCPConnectionsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListMCPConnections")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListMCPConnectionsResponseObject); ok {
+		if err := validResponse.VisitListMCPConnectionsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateMCPConnection operation middleware
+func (sh *strictHandler) CreateMCPConnection(w http.ResponseWriter, r *http.Request) {
+	var request CreateMCPConnectionRequestObject
+
+	var body CreateMCPConnectionJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateMCPConnection(ctx, request.(CreateMCPConnectionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateMCPConnection")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateMCPConnectionResponseObject); ok {
+		if err := validResponse.VisitCreateMCPConnectionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CancelMCPAuthorization operation middleware
+func (sh *strictHandler) CancelMCPAuthorization(w http.ResponseWriter, r *http.Request, attemptID MCPAttemptID) {
+	var request CancelMCPAuthorizationRequestObject
+
+	request.AttemptID = attemptID
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CancelMCPAuthorization(ctx, request.(CancelMCPAuthorizationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CancelMCPAuthorization")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CancelMCPAuthorizationResponseObject); ok {
+		if err := validResponse.VisitCancelMCPAuthorizationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CompleteMCPBrowserAuthorization operation middleware
+func (sh *strictHandler) CompleteMCPBrowserAuthorization(w http.ResponseWriter, r *http.Request) {
+	var request CompleteMCPBrowserAuthorizationRequestObject
+
+	var body CompleteMCPBrowserAuthorizationJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CompleteMCPBrowserAuthorization(ctx, request.(CompleteMCPBrowserAuthorizationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CompleteMCPBrowserAuthorization")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CompleteMCPBrowserAuthorizationResponseObject); ok {
+		if err := validResponse.VisitCompleteMCPBrowserAuthorizationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// OnboardMCPBrowserAuthorization operation middleware
+func (sh *strictHandler) OnboardMCPBrowserAuthorization(w http.ResponseWriter, r *http.Request) {
+	var request OnboardMCPBrowserAuthorizationRequestObject
+
+	var body OnboardMCPBrowserAuthorizationJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.OnboardMCPBrowserAuthorization(ctx, request.(OnboardMCPBrowserAuthorizationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "OnboardMCPBrowserAuthorization")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(OnboardMCPBrowserAuthorizationResponseObject); ok {
+		if err := validResponse.VisitOnboardMCPBrowserAuthorizationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// OnboardMCPDeviceAuthorization operation middleware
+func (sh *strictHandler) OnboardMCPDeviceAuthorization(w http.ResponseWriter, r *http.Request) {
+	var request OnboardMCPDeviceAuthorizationRequestObject
+
+	var body OnboardMCPDeviceAuthorizationJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.OnboardMCPDeviceAuthorization(ctx, request.(OnboardMCPDeviceAuthorizationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "OnboardMCPDeviceAuthorization")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(OnboardMCPDeviceAuthorizationResponseObject); ok {
+		if err := validResponse.VisitOnboardMCPDeviceAuthorizationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetMCPDeviceAuthorization operation middleware
+func (sh *strictHandler) GetMCPDeviceAuthorization(w http.ResponseWriter, r *http.Request, attemptID MCPAttemptID) {
+	var request GetMCPDeviceAuthorizationRequestObject
+
+	request.AttemptID = attemptID
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetMCPDeviceAuthorization(ctx, request.(GetMCPDeviceAuthorizationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetMCPDeviceAuthorization")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetMCPDeviceAuthorizationResponseObject); ok {
+		if err := validResponse.VisitGetMCPDeviceAuthorizationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ProbeMCPConnection operation middleware
+func (sh *strictHandler) ProbeMCPConnection(w http.ResponseWriter, r *http.Request) {
+	var request ProbeMCPConnectionRequestObject
+
+	var body ProbeMCPConnectionJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ProbeMCPConnection(ctx, request.(ProbeMCPConnectionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ProbeMCPConnection")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ProbeMCPConnectionResponseObject); ok {
+		if err := validResponse.VisitProbeMCPConnectionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteMCPConnection operation middleware
+func (sh *strictHandler) DeleteMCPConnection(w http.ResponseWriter, r *http.Request, connectionID MCPConnectionID) {
+	var request DeleteMCPConnectionRequestObject
+
+	request.ConnectionID = connectionID
+
+	var body DeleteMCPConnectionJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteMCPConnection(ctx, request.(DeleteMCPConnectionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteMCPConnection")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteMCPConnectionResponseObject); ok {
+		if err := validResponse.VisitDeleteMCPConnectionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateMCPConnection operation middleware
+func (sh *strictHandler) UpdateMCPConnection(w http.ResponseWriter, r *http.Request, connectionID MCPConnectionID) {
+	var request UpdateMCPConnectionRequestObject
+
+	request.ConnectionID = connectionID
+
+	var body UpdateMCPConnectionJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateMCPConnection(ctx, request.(UpdateMCPConnectionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateMCPConnection")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateMCPConnectionResponseObject); ok {
+		if err := validResponse.VisitUpdateMCPConnectionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// BeginMCPBrowserAuthorization operation middleware
+func (sh *strictHandler) BeginMCPBrowserAuthorization(w http.ResponseWriter, r *http.Request, connectionID MCPConnectionID) {
+	var request BeginMCPBrowserAuthorizationRequestObject
+
+	request.ConnectionID = connectionID
+
+	var body BeginMCPBrowserAuthorizationJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.BeginMCPBrowserAuthorization(ctx, request.(BeginMCPBrowserAuthorizationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "BeginMCPBrowserAuthorization")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(BeginMCPBrowserAuthorizationResponseObject); ok {
+		if err := validResponse.VisitBeginMCPBrowserAuthorizationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// BeginMCPDeviceAuthorization operation middleware
+func (sh *strictHandler) BeginMCPDeviceAuthorization(w http.ResponseWriter, r *http.Request, connectionID MCPConnectionID) {
+	var request BeginMCPDeviceAuthorizationRequestObject
+
+	request.ConnectionID = connectionID
+
+	var body BeginMCPDeviceAuthorizationJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.BeginMCPDeviceAuthorization(ctx, request.(BeginMCPDeviceAuthorizationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "BeginMCPDeviceAuthorization")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(BeginMCPDeviceAuthorizationResponseObject); ok {
+		if err := validResponse.VisitBeginMCPDeviceAuthorizationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DisconnectMCPAuthorization operation middleware
+func (sh *strictHandler) DisconnectMCPAuthorization(w http.ResponseWriter, r *http.Request, connectionID MCPConnectionID) {
+	var request DisconnectMCPAuthorizationRequestObject
+
+	request.ConnectionID = connectionID
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DisconnectMCPAuthorization(ctx, request.(DisconnectMCPAuthorizationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DisconnectMCPAuthorization")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DisconnectMCPAuthorizationResponseObject); ok {
+		if err := validResponse.VisitDisconnectMCPAuthorizationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RetryMCPAuthorization operation middleware
+func (sh *strictHandler) RetryMCPAuthorization(w http.ResponseWriter, r *http.Request, connectionID MCPConnectionID) {
+	var request RetryMCPAuthorizationRequestObject
+
+	request.ConnectionID = connectionID
+
+	var body RetryMCPAuthorizationJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RetryMCPAuthorization(ctx, request.(RetryMCPAuthorizationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RetryMCPAuthorization")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RetryMCPAuthorizationResponseObject); ok {
+		if err := validResponse.VisitRetryMCPAuthorizationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DiagnoseMCPConnection operation middleware
+func (sh *strictHandler) DiagnoseMCPConnection(w http.ResponseWriter, r *http.Request, connectionID MCPConnectionID) {
+	var request DiagnoseMCPConnectionRequestObject
+
+	request.ConnectionID = connectionID
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DiagnoseMCPConnection(ctx, request.(DiagnoseMCPConnectionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DiagnoseMCPConnection")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DiagnoseMCPConnectionResponseObject); ok {
+		if err := validResponse.VisitDiagnoseMCPConnectionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ProbeMCPConnectionUpdate operation middleware
+func (sh *strictHandler) ProbeMCPConnectionUpdate(w http.ResponseWriter, r *http.Request, connectionID MCPConnectionID) {
+	var request ProbeMCPConnectionUpdateRequestObject
+
+	request.ConnectionID = connectionID
+
+	var body ProbeMCPConnectionUpdateJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ProbeMCPConnectionUpdate(ctx, request.(ProbeMCPConnectionUpdateRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ProbeMCPConnectionUpdate")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ProbeMCPConnectionUpdateResponseObject); ok {
+		if err := validResponse.VisitProbeMCPConnectionUpdateResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SelectMCPConnection operation middleware
+func (sh *strictHandler) SelectMCPConnection(w http.ResponseWriter, r *http.Request, connectionID MCPConnectionID) {
+	var request SelectMCPConnectionRequestObject
+
+	request.ConnectionID = connectionID
+
+	var body SelectMCPConnectionJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SelectMCPConnection(ctx, request.(SelectMCPConnectionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SelectMCPConnection")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SelectMCPConnectionResponseObject); ok {
+		if err := validResponse.VisitSelectMCPConnectionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListProviders operation middleware
+func (sh *strictHandler) ListProviders(w http.ResponseWriter, r *http.Request) {
+	var request ListProvidersRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListProviders(ctx, request.(ListProvidersRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListProviders")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListProvidersResponseObject); ok {
+		if err := validResponse.VisitListProvidersResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateProvider operation middleware
+func (sh *strictHandler) CreateProvider(w http.ResponseWriter, r *http.Request) {
+	var request CreateProviderRequestObject
+
+	var body CreateProviderJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateProvider(ctx, request.(CreateProviderRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateProvider")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateProviderResponseObject); ok {
+		if err := validResponse.VisitCreateProviderResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteProvider operation middleware
+func (sh *strictHandler) DeleteProvider(w http.ResponseWriter, r *http.Request, providerID ProviderID) {
+	var request DeleteProviderRequestObject
+
+	request.ProviderID = providerID
+
+	var body DeleteProviderJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteProvider(ctx, request.(DeleteProviderRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteProvider")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteProviderResponseObject); ok {
+		if err := validResponse.VisitDeleteProviderResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateProvider operation middleware
+func (sh *strictHandler) UpdateProvider(w http.ResponseWriter, r *http.Request, providerID ProviderID) {
+	var request UpdateProviderRequestObject
+
+	request.ProviderID = providerID
+
+	var body UpdateProviderJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateProvider(ctx, request.(UpdateProviderRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateProvider")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateProviderResponseObject); ok {
+		if err := validResponse.VisitUpdateProviderResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SelectProvider operation middleware
+func (sh *strictHandler) SelectProvider(w http.ResponseWriter, r *http.Request, providerID ProviderID) {
+	var request SelectProviderRequestObject
+
+	request.ProviderID = providerID
+
+	var body SelectProviderJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SelectProvider(ctx, request.(SelectProviderRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SelectProvider")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SelectProviderResponseObject); ok {
+		if err := validResponse.VisitSelectProviderResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // Base64 encoded, compressed with deflate, json marshaled OpenAPI spec.
 // Stored as a slice of fixed-width chunks rather than one concatenated
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"7Fxtb+O4Ef4rBHtAgUKJ7SS37aWfnPQMBN10F8kVLRCkBi2NbW4kUktSSXwL//eCFPVqWpbs2Mnu5Uvg",
-	"RCI5nHn4zHBm4m/Y51HMGTAl8fk3LEDGnEkwv1yQ4Aa+JiCV/s3nTAEzH0kch9QninLW+yI503+T/hwi",
-	"oj/9JGCKz/GfesXUvfSp7F0TRmYQAVO/CsEFXi6XHg5A+oLGejp8jq/YIwlpgKL8VSSsFEsPX3I2Dal/",
-	"UImuVyRBvhVDoieq5shPhNCPpSIKtJgjLiY0CIAdUs5houbAlJ4fglzUkPgPEpFEzbmgaoG4QKmCL29v",
-	"RigWnE+1xFdMgWAkTGc/oNS3ZApowhMWQIColQJNCQ0TYXT5L65G+vEhhbK4hxoMJU+EDyjgIBHjCsEz",
-	"TWH5b2YV/DscVM5rKiVlM21Uas+NBPFIfdB/+g9MNCaQLyDQwCAh1lPY+fXyw6tbkJJydptEERELI3AQ",
-	"UD09CT8LHoNQVNPBlIQSPByX/vQNEzqW6fgxNfuOyPNHYDM1x+cnP3/wcERZ9vvAw2oRAz7HUgnKZlpt",
-	"/pwwBuE4fVAZ/uHM8X5IJhC61ll5k0+0HiAYE2OEKReR/oQDouBI0QiwY5A+vol0CNK4jaWH9VmjQpv+",
-	"rqaTfNKqSPf5LHzyBXyDoY/cJ+FHPqOsxLodjDER/EmCGBvsPatN6LLguEhHXdpBSw/HRMonLoKK3vI/",
-	"emXdnPV/2WBkDz8JquATCxf4XIkElh5OpD7jEXQGTE3T+TxeWby6GlyqLk7WJY9iouiEhlR1Rn9MxxH5",
-	"ktIlsCTC53eDe69QGmXq9KQAmia3GQgDfM6UIL6yx8YOxhMSBuS4oJzjx0FJ/tK5yYY/gpA05RR4JlEc",
-	"6vcGx/3jftVQpyeblFmWyLGAV9pts0ZzB9JBkz4PYOOxi4nSzgGf4//dkaPf7/WP/tEv4+Oj+7/85DrO",
-	"UwphYOanCiLZkW5HerSeJiLPV+n4QcE0RAiyME9BSjKrS//z4GQj+VkHvcqcg5O/dTsIRn2FKC3sk27u",
-	"zRhpVwWkk3ipiM3bv7FOfDuHl4UA27m7fHTp2OZkkVCmPpxhMwmNNB8MXMyRxNqFdfFrNV2Vt+AQqbKC",
-	"S5XWbwylTARhPpT5S4Be1Fegp2ZattDJX27fs527m1AW6Gk3mONDG8/kc8bA1wKMYwDRKtLwpZiOFX9I",
-	"Y/1G59hKhgB0+DZuG+rUrFvXSkW+BnNe5iGi7OoFfR+kHMNzTAXITvGWHZorr3YxACapoo+AeEy+JoDS",
-	"10vRLBKgEsEgQJyFC6Q4UnNASiQmcr8YjY67hyvPRzJbNzcJKWO9RUxVnI0VfKzbYnEZO9SmBEwFyPlW",
-	"hsvGtrWcff/gpquH5mW81XdRsZTngLVTZWVwNBwvE9Zfj4Yjyqic7xbfvzrh5UYcZ+miVQhc2Au9BEFJ",
-	"qK/F2W2UISKl3hVnKBtfM/bgdND/azWAOmm1m9elYg8rQZgkqT63iBBqcK3N5jWTu9swmzB5AzIJuyLR",
-	"rzqLFoxYdi86aJ6SlgOvR0MdHlCWmAyKudonyudRJe4g5cwXNvOPc03eb9JzNmGDrq5HwwvY+Wb+kid3",
-	"z7f0mooc9+tsM81aqxivm9a2cUxxMgmpP36AxZgbKmqIZvQ+V5KRirCAiEAeyTmJIUDphAV32Vn/jhg8",
-	"gkCPIOiUgkARUYbpjrFDHXumhYo7cmig2UL/oJJMQtgO2T5nUyqi0lnUWi0WnHAeAmH4NQGbydishjfn",
-	"mXf1sgJmVCpB9uFoD+/nurm269HwBuKQ+PDGWPt7OC8O7bc6Qbd59rzL7fGR0FDzj/5lVQm+gI7ZDg8D",
-	"0/MF7glDItU4kbskULL5vZLwDZr5bDVrAbklz6YFxvHec/MMnsaHRd7K1mpCNKlWUObTmIQHTFnslAoo",
-	"WGyHDGBAZRySxXirEkoaGzceEf1CO/H6LvEED9sq50a/agtC22VUzchdsqnblqI8/ASTsb537FYBXZll",
-	"6804imOpNy2VySrQsaYqY9qd9igjpqZyJ6arEHJrqmHnDQf+xmIrv/cFWiMmyuECe1gfcvOxIelsC96f",
-	"bdGmA20weFZjMlXbgtVutH1FqipxVrGolqT6/XpNqgaEfNUGvdoVbuCRP+x2ExhbOndRy2rFsTJis3xb",
-	"NinsRNnbJcg6By2dU00mkJEAbKvE7XZJX42ObtvagZpfgl9riHMTUZn+SqarqXhN9nc9aZkD7yeCqsWt",
-	"Bpg9JlJMV+9xFnlHVq4j0w5VrglMuXgiQl/1Jgt0QfwHPp1S31znqJ5gDiQAzYCpM8P/PbogYUCO9BSF",
-	"XUhM/wmGQDKivE2bhfTi5soDRIAYZZb6ZN/6zSYYq0KbfpW83aiU2p9DaORUcyjJqneifYuW2Zw4ww1m",
-	"wULCuVKxNb45isYbrerrU1pWyPqbVgtD2+orM4Rd2KE5K9lNCoaNojkqH7vKli29IpyGHGVTvirUpW3n",
-	"0Gsbs4ScxxPiPyAzdbnJbfj56hj9Ngf9AQVUKspmCZVzkMheDAu15z2FU8EjNLxCPmf6QKQ5h8zxmJQY",
-	"VaY1JV3uurJc6RRlvSspQhmJKT7Hp8f941PT46PmBgs9EtNeIXLvcdDTovRCPqOGamKeuq8U5ZSzqwCf",
-	"Y/PYyo7z9osLHixerGNvtYVrWeWgvPZWarM96fdfTABHat/RNWgeIz08BAUB4gJZESUiDF2PhtqSlaT7",
-	"WSqka+18M71Sw7AZMtg8pNI4ufTwz23WqfaqlpkWn999c5Pb3f3y3sMyiyDwrSJCodBwWAboFEB6vkaI",
-	"9Wz5wg2zqUkklg2xJ7A1lhZfB3eVMs+mBuXV7lT5QyItNYwLamnz+PVouAlzPFGNvMYTVSa2ipHPHO7A",
-	"tqtnwlimRjbC21qlZ/3TzYOK1ngz4pfNI/Ke/xeyWhqD3d176+y3En/UTZpelIwn9d26bLRomm+YgcOY",
-	"M1Arya39n9tiLcepraMlLl4+GE72eFhbGJsETlOXFNFk7NRZBKB97arBg7T8VqTR9+stVgt+b9JT2GR5",
-	"VFb3K/mJPwypWVxUoJ5IEH+WJiKcEl9xczPfQFxFKWj/MCrWaiAuLb39L4w/KGOVzJgpopmxemm+d33Q",
-	"MYHiMnU9Gv6avr5v6qpUc1+HuFYakhz/lDUaVqvvr3WZeh3U7s5ExswGrcAED0ONzpaI7aXXr5bXs8Mh",
-	"9zu4nb373MMj3d4NO0JdpJZqzc7WsnsHuavn5p2lf3yWTkNDJAoCaQvhznR9KCi/8/U7XzfzdUfQl5uq",
-	"3FC3M9XaxvaL9DXNae94f8e7vUkanbsuk2k+O4d1E/ZFUSxdB33zwtoc9sGhxlVzieIdM6US+ApojPbc",
-	"ymtASbk9ypliCqlU1YYgacrCgkSgQEgjvymhf01ALIoKetELV4CkYx+Je+K8GezFZw5pRFVl2gCmxPyr",
-	"1knf8RUTEXm2vTT9/oY+wfv9H69yj52rDuibfw6tl59i8/qPHnhvS8UfqVSIODXX7lz1vjn6n5a9tOjX",
-	"xM36edWwa45dTAx5Wwi7u62qUcX25+Z+r3GRsyGyVVR0tra7y11mfbsBy9nmEflXc333pVzOoG0J169/",
-	"ZdC6esi6bxnaI/+uW7L5W+2yb/tBESgSEEXeflOFKXFEji1UrFPa0HK5/H8AAAD//w==",
+	"7D15b9y4d19FUH9AgWLssRNvuuv+5Tjrwui6MezdtkDgDjjSmxmuJVJLUhN7A3/3H3hIoiTqmsvjZP4J",
+	"4hGPx3fxXSS/+QGNE0qACO6ff/MTxFAMApj66+by9kIIiBNx/Un+jYl/7idILPyRT1AM/rmP9PcJDv2R",
+	"z+CvFDMI/XPBUhj5PFhAjGTPGD39BmQuFv756bufR36MSf73yBfPiRyLC4bJ3H95GcmZLykhEAhMSePk",
+	"Qd5k0/PfMrrEIbDGqRPTYLMTv8iheEIJB0WAjyi8g79S4EL+FVAigKj/oiSJcIDk0sd/ckrkb8Wk/2Aw",
+	"88/9fxkXxB3rr3x8gwiaQwxE/MoYZXrSEHjAcCKH88/9a7JEEQ69OG/qMQPFy8i/pGQW4WCnEN3UIPEC",
+	"Awb3vmKx8IKUMfmZCyRAgnlF2RSHIZBdwnmRigUQIceHMAc1QsEj91AqFpRh8exR5mkEX97fXXkJo3Qm",
+	"Ib4mAhhBkR59h1Dfoxl4U5qSEEIPGyi8GcJRyhQu/5uKK/l5l0AZvocKG3KasgC8kAL3CBUePGHNlvfA",
+	"ljiAPwhaIhyhaQS7hDbTFzawISRAQiDBs4e5l1qAvYz8P4jhh79hp2i9wZxjMpc8iI2Yc405+dP/wlSy",
+	"sBcwCCUfo0hpQzO+nP7i+h44x5Tcp3GM2LMCOAyxHB5Ft4wmwASW2muGIg4jqSjzn775CE+47i8VZ1k/",
+	"vvvpQ4d+HPnBAhEC0UR/KHX/cOZoH6EpRK55ai3pVOIBwglSRJhRFsv/+SEScCRwDL6jk9Q2KXcA0rW/",
+	"FBvGlwpO8kHLID3ko9DpnxAolv+NBij6jc4xsTaJAcSYMvqVA5so3nsSXdxlmOOj7nVpOr2M/ARx/pWy",
+	"sIS3/MeRjZuzk186iDzyvzIs4DOJnvVu+jLyUy5VUgyDGaaC6XyckQ1eFQ0uVEtLyMirEkxjFg3l/sJY",
+	"GmoajCrGzvD+IUgplx3NpymlESAiv8FTghnwAbxf5WHbDKyaZdboORh9kHxNknQoioMIAxETqVwnMYgF",
+	"VagCksYSTEKJXItpxCFgICZTxHFQ+zWh3GYFiw66WY0GmrWbmutRq5rip5/ef+gjADygiV4fFhBXFc5P",
+	"p+8cE8fo6Vo3VtxhviPG0HONfGZ8e3EjFyr7UO0zmVLEwtVUErJH6tzunPwicc6g7wCXsilkwFbxkg80",
+	"qkDWgAijG0tQ3QvEdqooSpBOUlbd/04/vP/5bOvqZrsqpb7G0ozt5LlEUTRFweNQ1ULD6g708+kv7/rI",
+	"bwgEazuvrnsx5ymwHgMbe8MNw7AttSr+atiRXmEOUQ52OzZzeedpNJTPpTbrIaRSj5nlM9GjfbMYZoNM",
+	"IHOysq3BWMP+SPKq8RwV32lnV7PcJMfayA8xN1yp/rTt+4cu3lbrbkBrWSMNw2cIM0xwT9X3qWgs5ZVI",
+	"0Bt4FMiyx4D/g6IUfg2x4LLPAlBo4kiD+iXpNMLBKkqnguRioJGNGL2aAr5i6Q0E+VRC6hAtzuaNe3aD",
+	"tVBs2raXYjZtyY5xjEhfy4OSGZ5PGCwxN8BXjWcGKCzUgstoxAwCQbWf1z2l4RM3jvrxwUdMwgIZdn8b",
+	"IwWBLDbb5bRUqgO3sGzcWBv5ArE5iD6L+d20lJ0YIjyhWmNmao6LEFPJ/UIk0tfk4DRy61aDc0eqSFwx",
+	"YwFyo1BJN+B1DaXdmzh2xCCjSAKa8wqjRm8veu/NZlEbE8JlNWXRSzuwNQOl299+GflLYHhmIk6TlOGV",
+	"7MXqIBPJnxHUzBUz2hq2Xw1ce/kVb9OgexATGvocuHAgF64cEuhDpD20MhtV2BswMj9hNCeUCxwMdYIW",
+	"EDwOjJLSVARUR+/ybSgNAoCwS60JSqNJQFNSng0T8f6dryQDx3LAk7wvJgLmwGrIyGAojTmyl9OAqWuy",
+	"BJJZQAOZrvyfnuzXYQJaicdGG6OP2iimsQLn7uhQacqRmbEJXUbWhmjPQOAlTFARUh0S9MkisdXAR5/s",
+	"wLqq1yQdcxN71cDsyk5bCHKHbXTaWjy6CHExCUtaoGvmovFaXprpyxcQTpbAMtckF+4UE/HhrEO6JYMG",
+	"dAlaLDOtUo4KWWp0hhnXkUzn5wAlImVQ/OTSRTrzaE+nHSyV4CBo3tStZauV7tdzRa0rna8JV9C3/x6x",
+	"YS2qrK0eJDrtVMBVC8D2zg1q3QJVMLKNjwwsFzdV3P08n1bS/L3iuXcg2HNJ3awWl4GnRJFnLU1RQahz",
+	"zIZ13EOkcb8i+K2xoQyOTXFKbcDOCM3vhXs8ZN+JIveKsv1uV/urBMSetWGVfyThdxEYXJ9hVg0udjPa",
+	"OnHCUhxpGHkeMSnlKSMsgCHDFSKz/oEsMaMkBuLOTC4lAH0CdRU8qNnbFiXR9yorkiPm1lw21COACl2B",
+	"UFtoTJewFjo60yMFFKN+uFo7GqkQ3isU6co2FWVAlzROkMBTHGExuFQnwZMY/VlyYE8fRnX7oS6dASWC",
+	"oSALiGSEm6IoRMdFhdTx8tSdYc+6WwoCnlCcRLLd6fHp8Um5quR9Z2TShsgxwcharZO4lcKqtROH9Rqh",
+	"RPo/jPjn/v9/QUd/P8h/To5+mRwfPfzbP1xe9QxDFA7wMMtLuJK9K5Fnh7cZA+doDq4Ydsf+Z4ofN2Do",
+	"mLheBkoP+ujF7Q2R1kWAHsSkZ9uXf2cKJFerzsvKK1erzct7r7Gvp8rGCVevGrCX4ACpNIMLlVkh56X2",
+	"7YYW1OFwXlp/Z9khPAmGJm2ZwncnZz8PtC9HPiYLYFhMjH1G0siUxJbyfJYhFwfJRFUbNlu9fXigI3gV",
+	"14XMjRbZsFa3cvLurKnpxCQ73Yxbj0BITzCGeLpFI1+595wSTOYTmM1MHq46gUOKyp0GrozBHHPBnvu2",
+	"589cQDzBhAuWKhexhof3pyf/7spZSnmkqegTaHOU6w7Wguprq8iuUTgR5OLetodWlMNwX8YZYVkthpZb",
+	"0T1hvs06aNuy2xXKLCUd4irmayPBJxWfWTNGsjIqu9bUBrnEyucWb4NBEiEdo4oAMafdmo9VeDUreE4l",
+	"n6cPZcugZ45Pqw/SqxDF7mJJdaPj0eg1teF9N+mVfLZajuUXxy4l/97QtmB5Jvnwm+LvQlQ1wG2ZmRIC",
+	"dqMaXV5cab3l4LPTHOxOsPQxSlqzJCHDS2CTlXao7uBYpgcmBMWwTctKY3YdXC8Qn0gv+BGeGwpVV9mn",
+	"GCSMhmmAzYEsR7lUnlfpw1/3unUt171iGsGmvjMuUMGrtSPa+HLRurL2Nqks783DwzSGZL3wp84hZPEl",
+	"O/7Wd7epbG61YLYLJa2rt0B6lZ1ytUMZK+12e5SHOdl0HqYiobU8aaqzlW250myIdTIdr2nJb98o72mP",
+	"m6N6F5ynDJEyNRhIhJsAPJErjJzEcB/3W+2E4bTIirRte73OQlmJ5ARqByfcXm7A2Wwi6COQzvrID/3O",
+	"cyxxAJO+p0srdK1ipQRfCzkv81O5g1OdQQCcT1YpFTRdc+RVjo4D4VjgJXg0QX+l4Onm1gFij4FIGYHQ",
+	"oyR69gT1xAI8wVJ1tvvj1dXx8BOiT0c8mzcnCbJ5vccx1kI2avzRtMTiuP6uFsVgxoAvViJc1rcv5Uz7",
+	"nZOuaj/Y/FZdRYlSIwdbO1FmM0eLeKmT1DdXF1eYYL5Y70j1qyu8nIiT7EKROgt8NFc+cGAYRfhvCLML",
+	"AIiHOJerosTL+leInYUFreX0Ogr3yqrYHItADVV/g4+UV0YbtSt3N2G6eHKlouegvFn00Ij29iIdzhnq",
+	"2fHm6kKaB5ikuWHtKPlF9t0ovhq/reCuoX63BVc3VxcfYe3LEDYpuVu+GKFaplu/0iBbTDvWSsQbHLQd",
+	"vDGZyr9HeJ7QJM84uCfV6arKziUQCREL+RFfoARCTw9Y6C4z6n94BJbAPH1eRN3NIpSmO/Yd6NiyWiht",
+	"Rw4MtFPoky4JXcMjYrElixKrD64s4KsxbAZjOxr2bmded5c12Tq0jY129/vcsK3t5uriTidV9kxrvwV5",
+	"cWC/lwStdrzNvlGrjgR1ScbAI0HdZxNSvk4ZSBHrdR2YqmHm1mDWMOSKetZEnbd+HRKBr5Pdcl5taRUg",
+	"2lDLMAlwgqIdhizWCgUUWmyNOqYQ8yRCz5OVbq3StnGriMgG6xyeoVFf5NxRfWGdOmK7UvpN9VynJmzV",
+	"279G/leY6vuL1rp0rjbKpk46ZDgd2TeTlVjHkMrmaXfYw+aYCsqdPF1mITemWlbeIvB3hrdyvy+UGFFW",
+	"DmV+VtNNWVvQ2dwxeGtKTweoDQJPYoJmYlVmNQvtX1pQhjiruywX1p6cdN2/lc3aglczwx0s6eN6nsDE",
+	"qHOXaqnXTZd6dMO34r2Qa6ns1QJkg42WwaEmZchwALJS4Ha1oK/kjmHLWkM1b0K/VjjOrYhs9WeRroLi",
+	"huhvs9JSAh+kDIvne8lgRkw4m9X9OMN5RwauI3Vhrp0TmFH2FTHp6k2fvY8oeKSzGQ6UO6cukNYHiYor",
+	"pP/v6COKQnQkhyjoghL8X/BcHH6hzNxse2EunJkCYsCuMkp9Nq1+NwHGMtDqitD8hlcrtL+ASMEpFmDB",
+	"Klci9xYJs5I4pRvUhAWE6uoYTXwlimo3quPrs04rZFfK1hNDq+IrI4SZ2IE5A9mdZoZO0ByZj3Vhy6au",
+	"AfeiirNntA7UpSk+kXMrskSUJlMUPHpqaPtm4Yvb62Pv9wXI/3gh5gKTeYr5ArhnHMMC7fmt0zNGY+/i",
+	"2gsokQKhYw7ZxqNCYlioAzZ6upvSdJYUZSdwNIcSlGD/3H9/fHL8Xl2rKhaKF8YoweMC5PHydCxBGUd0",
+	"jpWqUfdr2kUc16F/7qvPBnY/P0TykYbPG7skuX5r7ktZB+W5N+si9ncnJxsDwBHad1zUrD572SU6oUeZ",
+	"Z0DkHiLezdWFpGQp6H6mgXTNnS9mbF0pr7qcdncp3VX9MvJ/6jNP+TZzW9P651++uZXbl4eXh5HPMwvC",
+	"V9epeJHSYRlDawaS47Wy2NikL9xsNlOBRJsQW2K21tTi6/BdKc3TdYV9/UJw/l1ymiaMi9X08wI3Vxdd",
+	"PGeOQjTqNZoKW7GViHzm2A7MgwYZMEZTe8bCWxmlZyfvuzsVjyeoHr9098hfhdgQ1bQN9uVh1ES/mv1R",
+	"Jal2lNROGrhx2UpRHW+Yg4OYcxC14Nb25baYyyG1VW5JisY745MtCmsPYqPQSWoLEW3E1puFrguuE9zc",
+	"yFKE0be7W9QTfnu5U5hgeWyj+5X2iR9GqRm+KLF6yoH9K1cW4QwFgirPvENxFamg7bNRMVeL4pLQm4t6",
+	"flCNZZExQ0S7xhrreG+z0TGFwpm6ubr4lZgLprarukrZ3NdRXLWCJMc7OFcX5ez7azlTr8O162siRWbF",
+	"rUAYjSJ1zKMfx461+9XTPdsd574B7+yw5+6e041vOJDVswPDfbXzXX7AeLtM7qq5OWjp719La9PQY4UC",
+	"6cvCg9X1rlj5oK8P+rpdXw9keruoys3qZqRK2dh2Ob2hOO3A7wd+N56kwrnLmdTx7Jyt23ifFcnSJtZX",
+	"DRpj2DtnNSraUxQHnrFS4DWmUdhzI6+FS+zyKGeIKcJclAuCuEoLF8+KfzHvaf+VAnsuMuhFLZzz8ew+",
+	"dSTugfNisI2PHOEYi9KwIcyQOqr17sRxUWaMnkwtzclJR53gw/bFy66xc+UB1a38tfRTopp/74b3qqr4",
+	"N8yFh5yY6ydX42+O+qeXsU76telm+b1M2AaxKz9j76626vWcfQ+5ediqXeQsiOxlFZ01Vne506z7a7Cc",
+	"dffIH29/86lcSqBvCjeoXnzclA9puit5i/q3aUpX/KMowsruJvJiEChEAu1/UYVKccSOJZSoYy3ITcs4",
+	"SFrNjZvL28u8AnirCa3Sc0Aucl3eejhr4CESetml/l6woDiAfU9uyV495jFU/8N6tmR7eTH9cvbRjAF4",
+	"JQTri1xd26GuEC7xxZZcdMcL0jv1yvN3oxyZVV0mrXBWVMgfPPBNMvn6W5umkpeV99bJ1agTx6UXbMbm",
+	"+Sw+/lY8vPcyDhAJ9GGFBklR36tvatVNRxeqiibqUS496/Un3+G8OAwu097TEEQ7rmjbR7vp1fmyN6+Z",
+	"IvNxYD2k3sBfpn654VHu7Wnl6lPve6SXs30NzcCSdE8/wn7wN96K0TJYWqh+wrRZWEyDnctKaZr8odXX",
+	"smfM2ssPvjrk6B4tIbQFSNrb2fEX9f6ql10adLB53s7eog9ZDhEWxzu8P4qsuN5G7isqlOgjoZ7GuFd6",
+	"AuIgMW9OYmy7vzXi1SQxmzX5t8Dnrofandw+y5k6YXTOgHN1ioemouD6OrsfTKg9MqESRqctCQ/1+QcP",
+	"8NxbgTGFD4+ZHeB7S8/tVcTmVqEaES8lXO2rKmKDSIhD5cA18/S30hvIL60njsB4zSUGH6yhi965kt6K",
+	"iNTutd8fKdFPEh3CoPstVL/TeMoFJW2R0JGfpI6tQD/o92ZEpfy2wf7IiYbrICf7LSeaSiulCyq7jztI",
+	"1XFcoTk0tbfyVgL0mkgV8moxraoDw5zeumnsMQgxg0DYrsohPvx9efLtQqmd2G6Z3JA//0OJpDuk4JbI",
+	"z284VHaQyI1KJObme7NUFm02kVd3CGVXav0/GSLCK8A45NbfMMcxEPo2zabKX8Get8RnW1H+dxLgErR7",
+	"WDp1SNH/uOIXYjQnlAsctKl41WYrUYctmjzFyprSJgJYjAmKvAILbyKqfGD7HlcHaZ5VxbXZtaBIHVXJ",
+	"Sm1vLm+9EGaY4KHBhCJdk/bK1ug4xiFO96NkfX48cdNpIgix4B6aI+kylsraGQiECYRe9kj1EHHjWb6l",
+	"eYvSTQ4ZpPUlTmrFHOFesEBkvv8Hw340cdNXRHmUeeayxsEx8uyoTvvZ5tu81RaZMZuk9bBRZSPQx4xK",
+	"h2MOB40GHTRyI7HthFFGpy3VnuSPlA8vQHFEhW7zo2j6YNBBg+35SaCMHzsV1vhb9t9+ZSUW2w6zB3K9",
+	"tD1TIJtCl21sjOf1wg88/wbKPgq2by34eAtMvIIP2cbEeuEHJt4zJrbvX5L+nrI+izCKR2frK/X+Ht9b",
+	"kIvVnL020Tj4Z2/YP7Nk4uXlnwEAAP//",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

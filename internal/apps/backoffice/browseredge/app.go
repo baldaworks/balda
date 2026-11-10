@@ -47,6 +47,35 @@ type Service interface {
 	RevokeSession(ctx context.Context, auth managementclient.Auth, sessionID string, confirmCurrent bool) error
 }
 
+// ProviderService is the optional generated-client surface activated by the provider Story.
+type ProviderService interface {
+	Providers(ctx context.Context, auth managementclient.Auth) (managementv1.ProviderInventory, error)
+	CreateProvider(ctx context.Context, auth managementclient.Auth, request managementv1.ProviderCreateRequest) error
+	UpdateProvider(ctx context.Context, auth managementclient.Auth, providerID string, request managementv1.ProviderUpdateRequest) error
+	SelectProvider(ctx context.Context, auth managementclient.Auth, providerID string, request managementv1.ProviderSelectionRequest) error
+	DeleteProvider(ctx context.Context, auth managementclient.Auth, providerID string, request managementv1.ProviderDeleteRequest) error
+}
+
+type MCPService interface {
+	MCPConnections(ctx context.Context, auth managementclient.Auth) (managementv1.MCPInventory, error)
+	CreateMCPConnection(ctx context.Context, auth managementclient.Auth, request managementv1.MCPCreateRequest) (managementv1.MCPItem, error)
+	ProbeMCPConnection(ctx context.Context, auth managementclient.Auth, request managementv1.MCPCreateRequest) (managementv1.MCPItem, error)
+	UpdateMCPConnection(ctx context.Context, auth managementclient.Auth, id string, request managementv1.MCPUpdateRequest) (managementv1.MCPItem, error)
+	ProbeMCPConnectionUpdate(ctx context.Context, auth managementclient.Auth, id string, request managementv1.MCPUpdateRequest) (managementv1.MCPItem, error)
+	SelectMCPConnection(ctx context.Context, auth managementclient.Auth, id string, request managementv1.MCPSelectionRequest) (managementv1.MCPItem, error)
+	DeleteMCPConnection(ctx context.Context, auth managementclient.Auth, id string, request managementv1.MCPSelectionRequest) (managementv1.MCPItem, error)
+	DiagnoseMCPConnection(ctx context.Context, auth managementclient.Auth, id string) (managementv1.MCPDiagnostic, error)
+	OnboardMCPBrowser(ctx context.Context, auth managementclient.Auth, request managementv1.MCPAuthorizationOnboardRequest) (managementv1.MCPBrowserOnboardResult, error)
+	OnboardMCPDevice(ctx context.Context, auth managementclient.Auth, request managementv1.MCPAuthorizationOnboardRequest) (managementv1.MCPDeviceOnboardResult, error)
+	BeginMCPBrowser(ctx context.Context, auth managementclient.Auth, id string, input managementv1.MCPAuthorizationInput) (managementv1.MCPBrowserAuthorizationStart, error)
+	BeginMCPDevice(ctx context.Context, auth managementclient.Auth, id string, input managementv1.MCPAuthorizationInput) (managementv1.MCPDeviceAuthorizationStart, error)
+	CompleteMCPBrowser(ctx context.Context, auth managementclient.Auth, callback managementv1.MCPBrowserCallback) (managementv1.MCPItem, error)
+	MCPDeviceStatus(ctx context.Context, auth managementclient.Auth, attemptID string) (managementv1.MCPDeviceAuthorizationStatus, error)
+	CancelMCPAuthorization(ctx context.Context, auth managementclient.Auth, attemptID string) error
+	DisconnectMCPAuthorization(ctx context.Context, auth managementclient.Auth, id string) error
+	RetryMCPAuthorization(ctx context.Context, auth managementclient.Auth, id string, request managementv1.MCPRetryAuthorizationRequest) (managementv1.MCPItem, error)
+}
+
 // Config fixes the browser trust boundary.
 type Config struct {
 	PublicOrigin string
@@ -62,6 +91,9 @@ type App struct {
 	secure  bool
 	now     func() time.Time
 }
+
+const formYesValue = "yes"
+const enabledHiddenInput = `<input type="hidden" name="enabled" value="yes">`
 
 // New validates and constructs the browser edge.
 func New(service Service, config Config) (*App, error) {
@@ -98,6 +130,31 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("POST "+a.path("/account/2fa/replace/finish"), a.finishMFA(true))
 	mux.HandleFunc("POST "+a.path("/account/2fa/disable"), a.disableMFA)
 	mux.HandleFunc("POST "+a.path("/account/sessions/{session_id}/revoke"), a.revokeSession)
+	mux.HandleFunc("GET "+a.path("/providers"), a.providersPage)
+	mux.HandleFunc("POST "+a.path("/providers"), a.createProvider)
+	mux.HandleFunc("GET "+a.path("/providers/new"), a.newProviderPage)
+	mux.HandleFunc("GET "+a.path("/providers/{provider_id}"), a.providerPage)
+	mux.HandleFunc("POST "+a.path("/providers/{provider_id}"), a.updateProvider)
+	mux.HandleFunc("POST "+a.path("/providers/{provider_id}/selection"), a.selectProvider)
+	mux.HandleFunc("POST "+a.path("/providers/{provider_id}/delete"), a.deleteProvider)
+	mux.HandleFunc("GET "+a.path("/mcp"), a.mcpPage)
+	mux.HandleFunc("GET "+a.path("/mcp/new"), a.newMCPPage)
+	mux.HandleFunc("POST "+a.path("/mcp"), a.createMCP)
+	mux.HandleFunc("GET "+a.path("/mcp/{connection_id}"), a.mcpConnectionPage)
+	mux.HandleFunc("POST "+a.path("/mcp/{connection_id}"), a.updateMCP)
+	mux.HandleFunc("POST "+a.path("/mcp/{connection_id}/selection"), a.selectMCP)
+	mux.HandleFunc("POST "+a.path("/mcp/{connection_id}/delete"), a.deleteMCP)
+	mux.HandleFunc("POST "+a.path("/mcp/{connection_id}/diagnostic"), a.diagnoseMCP)
+	mux.HandleFunc("POST "+a.path("/mcp/authorization/browser/onboard"), a.onboardMCPBrowser)
+	mux.HandleFunc("POST "+a.path("/mcp/authorization/device/onboard"), a.onboardMCPDevice)
+	mux.HandleFunc("POST "+a.path("/mcp/{connection_id}/authorization/browser"), a.beginMCPBrowser)
+	mux.HandleFunc("POST "+a.path("/mcp/{connection_id}/authorization/device"), a.beginMCPDevice)
+	mux.HandleFunc("GET "+a.path("/mcp/authorization/callback"), a.completeMCPBrowser)
+	mux.HandleFunc("GET "+a.path("/mcp/authorization/return"), a.mcpAuthorizationReturn)
+	mux.HandleFunc("GET "+a.path("/mcp/authorization/device/{attempt_id}"), a.mcpDeviceStatus)
+	mux.HandleFunc("POST "+a.path("/mcp/authorization/attempts/{attempt_id}/cancel"), a.cancelMCPAuthorization)
+	mux.HandleFunc("POST "+a.path("/mcp/{connection_id}/authorization/disconnect"), a.disconnectMCPAuthorization)
+	mux.HandleFunc("POST "+a.path("/mcp/{connection_id}/authorization/retry"), a.retryMCPAuthorization)
 	return noStore(mux)
 }
 
@@ -182,7 +239,7 @@ func (a *App) overview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	a.page(w, http.StatusOK, "Backoffice", `<p>Signed in as <strong>`+template.HTMLEscapeString(principal.DisplayName)+`</strong>.</p><p><a href="`+a.path("/account")+`">Account</a></p>`+a.logoutForm(r))
+	a.page(w, http.StatusOK, "Backoffice", `<p>Signed in as <strong>`+template.HTMLEscapeString(principal.DisplayName)+`</strong>.</p><p><a href="`+a.path("/account")+`">Account</a> · <a href="`+a.path("/providers")+`">Providers</a> · <a href="`+a.path("/mcp")+`">MCP</a></p>`+a.logoutForm(r))
 }
 
 func (a *App) account(w http.ResponseWriter, r *http.Request) {
@@ -331,7 +388,7 @@ func (a *App) revokeSession(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := a.service.RevokeSession(r.Context(), a.auth(r), r.PathValue("session_id"), form.Get("confirm_current") == "yes"); err != nil {
+	if err := a.service.RevokeSession(r.Context(), a.auth(r), r.PathValue("session_id"), form.Get("confirm_current") == formYesValue); err != nil {
 		a.serviceFailure(w, err, false)
 		return
 	}

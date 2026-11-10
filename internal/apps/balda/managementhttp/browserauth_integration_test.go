@@ -288,7 +288,7 @@ func newBrowserAuthTestHandler(t *testing.T) (http.Handler, *browserauth.Service
 	if err != nil {
 		t.Fatal(err)
 	}
-	return config.Handler(service), service
+	return config.Handler(Services{BrowserAuth: service}), service
 }
 
 func operatorRequestEditor(_ context.Context, request *http.Request) error {

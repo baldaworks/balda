@@ -66,6 +66,9 @@ func New(config Config) (*Client, error) {
 	if httpClient.Timeout <= 0 {
 		httpClient.Timeout = requestTimeout
 	}
+	httpClient.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
 	baseTransport := httpClient.Transport
 	if baseTransport == nil {
 		baseTransport = http.DefaultTransport

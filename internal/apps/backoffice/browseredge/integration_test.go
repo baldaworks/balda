@@ -35,7 +35,7 @@ func TestGeneratedCoreLoginAndImmediateRevokeIntegration(t *testing.T) {
 	require.NoError(t, err)
 	coreConfig, err := (managementhttp.Config{Enabled: true, ListenAddr: "127.0.0.1:8097", OperatorToken: "operator-secret"}).Resolve()
 	require.NoError(t, err)
-	core := httptest.NewServer(coreConfig.Handler(auth))
+	core := httptest.NewServer(coreConfig.Handler(managementhttp.Services{BrowserAuth: auth}))
 	t.Cleanup(core.Close)
 	httpClient := core.Client()
 	// Race instrumentation makes the deliberately expensive password hash much

@@ -36,7 +36,8 @@ func TestCompatibilityRejectsAuthenticationAndContractMismatch(t *testing.T) {
 	}{
 		{name: "unauthorized", serve: func(w http.ResponseWriter) { w.WriteHeader(http.StatusUnauthorized) }, want: ErrUnauthorized},
 		{name: "wrong id", serve: compatibilityBody("other.contract", managementv1.ContractVersion, managementv1.APIMajor), want: ErrIncompatible},
-		{name: "wrong version", serve: compatibilityBody(managementv1.ContractID, "2.0.0", managementv1.APIMajor), want: ErrIncompatible},
+		{name: "old core version", serve: compatibilityBody(managementv1.ContractID, "1.0.0", managementv1.APIMajor), want: ErrIncompatible},
+		{name: "newer version", serve: compatibilityBody(managementv1.ContractID, "2.0.0", managementv1.APIMajor), want: ErrIncompatible},
 		{name: "wrong major", serve: compatibilityBody(managementv1.ContractID, managementv1.ContractVersion, 2), want: ErrIncompatible},
 		{name: "malformed", serve: func(w http.ResponseWriter) { _, _ = w.Write([]byte("credential-canary")) }, want: ErrInternal},
 	} {

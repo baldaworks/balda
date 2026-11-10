@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	managementv1 "github.com/baldaworks/balda/internal/managementapi/v1"
@@ -112,11 +113,54 @@ func TestHandlerAuthenticatesBeforeRouteGate(t *testing.T) {
 	}
 }
 
+func TestEveryGeneratedManagementRouteHasAnExactGate(t *testing.T) {
+	spec, err := managementv1.GetSpec()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, template := range spec.Paths.Keys() {
+		path := concreteManagementPath(template)
+		for method, operation := range spec.Paths.Value(template).Operations() {
+			if operation == nil {
+				continue
+			}
+			method = strings.ToUpper(method)
+			if _, ok := managementRoute(method, path); !ok {
+				t.Errorf("%s %s (%s) has no active route gate", method, template, operation.OperationID)
+			}
+			if _, ok := managementRoute(method, path+"/extra"); ok {
+				t.Errorf("%s %s gate accepts a child path", method, template)
+			}
+		}
+		if _, ok := managementRoute(http.MethodOptions, path); ok {
+			t.Errorf("OPTIONS %s unexpectedly has an active route gate", template)
+		}
+	}
+	if _, ok := managementRoute(http.MethodGet, "/api/management/v1/mcp/authorization/device/"); ok {
+		t.Error("device authorization gate accepts an empty attempt ID")
+	}
+}
+
+func concreteManagementPath(template string) string {
+	path := template
+	for {
+		start := strings.IndexByte(path, '{')
+		if start < 0 {
+			return path
+		}
+		end := strings.IndexByte(path[start:], '}')
+		if end < 0 {
+			return path
+		}
+		path = path[:start] + "fixture" + path[start+end+1:]
+	}
+}
+
 func testHandler(t *testing.T) http.Handler {
 	t.Helper()
 	config, err := (Config{Enabled: true, ListenAddr: "127.0.0.1:8081", OperatorToken: "secret"}).Resolve()
 	if err != nil {
 		t.Fatal(err)
 	}
-	return config.Handler(nil)
+	return config.Handler(Services{})
 }
