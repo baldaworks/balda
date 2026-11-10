@@ -64,6 +64,11 @@ components:
     in:
       - internal/managementapi/v1
 
+  # Client-neutral test support exercises only the generated management wire.
+  management_api_client_testkit:
+    in:
+      - internal/managementapi/v1/clienttest
+
   # Core-side HTTP adapter for the generated management wire contract.
   management_api_adapter:
     in:
@@ -676,6 +681,11 @@ deps:
       - management_api_wire
     deepScan: false
     anyVendorDeps: true
+
+  management_api_client_testkit:
+    mayDependOn:
+      - management_api_wire
+      - management_api_client_testkit
 
   management_api_adapter:
     mayDependOn:
