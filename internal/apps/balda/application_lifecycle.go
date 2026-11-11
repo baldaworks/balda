@@ -7,10 +7,13 @@ import (
 	"sync"
 
 	"github.com/baldaworks/balda/internal/apps/backoffice"
+	"github.com/baldaworks/balda/internal/apps/balda/accessapp"
 	"github.com/baldaworks/balda/internal/apps/balda/actors"
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
 	"github.com/baldaworks/balda/internal/apps/balda/aliasbackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
+	"github.com/baldaworks/balda/internal/apps/balda/auditapp"
+	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
 	"github.com/baldaworks/balda/internal/apps/balda/catalogapp"
 	"github.com/baldaworks/balda/internal/apps/balda/chatarchivebackofficeapp"
@@ -183,6 +186,10 @@ type applicationLifecycleParams struct {
 	Config               BaldaConfig
 	HTTPConfig           ResolvedHTTPConfig
 	ManagementHTTPConfig managementhttp.ResolvedConfig
+	Access               *accessapp.Service
+	Audit                *auditapp.Service
+	BindingInvitations   *auth.BindingInvitations
+	BindingChannels      *auth.BindingChannels
 	BrowserAuth          *browserauth.Service
 	ProviderService      *providers.Service
 	HTTPRegistry         *httpfx.Registry
@@ -287,7 +294,7 @@ func applicationLifecycleStages(p applicationLifecycleParams, telegram *telegram
 			managementServer = httpfx.NewNamedServer(
 				"management HTTP",
 				p.ManagementHTTPConfig.ListenAddr,
-				p.ManagementHTTPConfig.Handler(managementhttp.Services{BrowserAuth: p.BrowserAuth, Providers: p.ProviderService, MCP: p.BackofficeMCP, Schedules: p.BackofficeSchedules, Webhooks: p.BackofficeWebhooks, Aliases: p.BackofficeAliases, Hooks: p.BackofficeHooks, Plugins: p.BackofficePlugins, Skills: p.BackofficeSkills, System: p.SystemView, Memory: p.BackofficeFacts, Archives: p.BackofficeArchives}),
+				p.ManagementHTTPConfig.Handler(managementhttp.Services{Access: p.Access, Audit: p.Audit, Invitations: p.BindingInvitations, Channels: p.BindingChannels, BrowserAuth: p.BrowserAuth, Providers: p.ProviderService, MCP: p.BackofficeMCP, Schedules: p.BackofficeSchedules, Webhooks: p.BackofficeWebhooks, Aliases: p.BackofficeAliases, Hooks: p.BackofficeHooks, Plugins: p.BackofficePlugins, Skills: p.BackofficeSkills, System: p.SystemView, Memory: p.BackofficeFacts, Archives: p.BackofficeArchives}),
 			)
 			if err := managementServer.Start(); err != nil {
 				managementServer = nil

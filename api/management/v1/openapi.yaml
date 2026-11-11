@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Balda Management API
-  version: 1.10.0
+  version: 1.13.0
   description: >-
     Contract for the loopback Balda management API. The API distinguishes
     browser WebAuth authority from AI conversation sessions.
@@ -444,6 +444,436 @@ paths:
       responses:
         "204":
           description: WebAuth session revoked
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/management/v1/users:
+    get:
+      operationId: listUsers
+      summary: List canonical users
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+      responses:
+        "200":
+          description: Secret-free canonical user inventory
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserInventory"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      operationId: createUser
+      summary: Create a canonical user with a temporary credential
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserCreateRequest"
+      responses:
+        "200":
+          description: Created canonical user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserRecord"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/management/v1/audit/events:
+    get:
+      operationId: listAuditEvents
+      summary: List canonical security audit events
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+      parameters:
+        - name: after_id
+          in: query
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 256
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 100
+            default: 25
+        - name: action
+          in: query
+          schema:
+            type: string
+            maxLength: 128
+        - name: outcome
+          in: query
+          schema:
+            type: string
+            maxLength: 32
+        - name: target_type
+          in: query
+          schema:
+            type: string
+            maxLength: 64
+        - name: actor_user_id
+          in: query
+          schema:
+            type: string
+            maxLength: 128
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: before
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Canonical audit page without storage provenance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditEventPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/management/v1/binding-channels:
+    get:
+      operationId: listBindingChannels
+      summary: List cached configured binding-channel identities
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+      responses:
+        "200":
+          description: Side-effect-free binding channel inventory
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BindingChannelInventory"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/management/v1/binding-channels/{channel_type}/refresh:
+    post:
+      operationId: refreshBindingChannel
+      summary: Explicitly refresh one configured binding-channel identity
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+          csrf: []
+      parameters:
+        - name: channel_type
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+      responses:
+        "200":
+          description: Refreshed binding channel
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BindingChannel"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/management/v1/users/{user_id}/bindings:
+    get:
+      operationId: listUserBindings
+      summary: List confirmed bindings and pending invitation metadata
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 256
+      responses:
+        "200":
+          description: Binding inventory without invitation proof
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserBindingInventory"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/management/v1/users/{user_id}/bindings/{binding_id}:
+    delete:
+      operationId: deleteUserBinding
+      summary: Remove one confirmed transport binding
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+          csrf: []
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 256
+        - name: binding_id
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 256
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BindingDeleteRequest"
+      responses:
+        "204":
+          description: Binding removed
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/management/v1/users/{user_id}/binding-invitations:
+    post:
+      operationId: issueBindingInvitation
+      summary: Issue one single-use binding proof
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+          csrf: []
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 256
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BindingInvitationIssueRequest"
+      responses:
+        "200":
+          description: Newly issued proof; returned only by this response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssuedBindingInvitation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/management/v1/users/{user_id}/binding-invitations/{invitation_id}:
+    delete:
+      operationId: cancelBindingInvitation
+      summary: Cancel one pending binding invitation
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+          csrf: []
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 256
+        - name: invitation_id
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 256
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BindingInvitationCancelRequest"
+      responses:
+        "204":
+          description: Invitation cancelled
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/management/v1/users/{user_id}:
+    parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 256
+    get:
+      operationId: getUser
+      summary: Read one canonical user
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+      responses:
+        "200":
+          description: Secret-free canonical user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserRecord"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    put:
+      operationId: updateUser
+      summary: Update canonical user profile and access
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserUpdateRequest"
+      responses:
+        "200":
+          description: Updated canonical user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserRecord"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/management/v1/users/{user_id}/credential-reset:
+    post:
+      operationId: resetUserCredential
+      summary: Replace a user's local credential with a temporary password
+      security:
+        - operatorServiceAuth: []
+          webAuthAccess: []
+          csrf: []
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 256
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserCredentialResetRequest"
+      responses:
+        "204":
+          description: Credential reset and existing WebAuth sessions revoked
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -1743,7 +2173,7 @@ components:
         contract_version:
           type: string
           maxLength: 32
-          example: 1.10.0
+          example: 1.13.0
         api_major:
           type: integer
           format: int32
@@ -3348,6 +3778,407 @@ components:
           type: integer
           format: uint64
           minimum: 1
+    UserRecord:
+      type: object
+      additionalProperties: false
+      required:
+        - user_id
+        - display_name
+        - username
+        - status
+        - role
+        - credential_state
+        - credential_must_change
+        - credential_version
+        - primary
+        - version
+        - created_at
+        - updated_at
+      properties:
+        user_id:
+          type: string
+          minLength: 1
+          maxLength: 256
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 256
+        username:
+          type: string
+          minLength: 1
+          maxLength: 256
+        status:
+          $ref: "#/components/schemas/UserStatus"
+        role:
+          $ref: "#/components/schemas/WebAuthRole"
+        credential_state:
+          $ref: "#/components/schemas/UserCredentialState"
+        credential_must_change:
+          type: boolean
+        credential_version:
+          type: integer
+          format: uint64
+          minimum: 1
+        primary:
+          type: boolean
+        version:
+          type: integer
+          format: uint64
+          minimum: 1
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    AuditEvent:
+      type: object
+      additionalProperties: false
+      required:
+        - event_id
+        - action
+        - outcome
+        - target_type
+        - occurred_at
+      properties:
+        event_id:
+          type: string
+          minLength: 1
+          maxLength: 256
+        action:
+          type: string
+          minLength: 1
+          maxLength: 128
+        outcome:
+          type: string
+          minLength: 1
+          maxLength: 32
+        actor_user_id:
+          type: string
+          maxLength: 128
+        actor_web_auth_session_id:
+          type: string
+          maxLength: 256
+        target_type:
+          type: string
+          minLength: 1
+          maxLength: 64
+        target_id:
+          type: string
+          maxLength: 256
+        occurred_at:
+          type: string
+          format: date-time
+    AuditEventPage:
+      type: object
+      additionalProperties: false
+      required:
+        - events
+      properties:
+        events:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/AuditEvent"
+        next_after_id:
+          type: string
+          minLength: 1
+          maxLength: 256
+    BindingRecord:
+      type: object
+      additionalProperties: false
+      required:
+        - binding_id
+        - channel_type
+        - principal
+        - created_at
+        - updated_at
+      properties:
+        binding_id:
+          type: string
+          minLength: 1
+          maxLength: 256
+        channel_type:
+          type: string
+          minLength: 1
+          maxLength: 64
+        principal:
+          type: string
+          minLength: 1
+          maxLength: 512
+        display_name:
+          type: string
+          maxLength: 256
+        provider_username:
+          type: string
+          maxLength: 256
+        provider_first_name:
+          type: string
+          maxLength: 256
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    BindingInvitation:
+      type: object
+      additionalProperties: false
+      required:
+        - invitation_id
+        - channel_type
+        - issued_by_user_id
+        - created_at
+        - expires_at
+        - version
+      properties:
+        invitation_id:
+          type: string
+          minLength: 1
+          maxLength: 256
+        channel_type:
+          type: string
+          minLength: 1
+          maxLength: 64
+        issued_by_user_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        consumed_at:
+          type: string
+          format: date-time
+        revoked_at:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          format: uint64
+          minimum: 1
+    UserBindingInventory:
+      type: object
+      additionalProperties: false
+      required:
+        - bindings
+        - invitations
+      properties:
+        bindings:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/BindingRecord"
+        invitations:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/BindingInvitation"
+    BindingChannel:
+      type: object
+      additionalProperties: false
+      required:
+        - channel_type
+        - ready
+        - commands_enabled
+      properties:
+        channel_type:
+          type: string
+          minLength: 1
+          maxLength: 64
+        ready:
+          type: boolean
+        name:
+          type: string
+          maxLength: 256
+        bot_username:
+          type: string
+          maxLength: 256
+        endpoint:
+          type: string
+          maxLength: 2048
+        commands_enabled:
+          type: boolean
+    BindingChannelInventory:
+      type: object
+      additionalProperties: false
+      required:
+        - channels
+      properties:
+        channels:
+          type: array
+          maxItems: 16
+          items:
+            $ref: "#/components/schemas/BindingChannel"
+    BindingDeleteRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - expected_user_version
+        - confirm_impact
+      properties:
+        expected_user_version:
+          type: integer
+          format: uint64
+          minimum: 1
+        confirm_impact:
+          type: boolean
+          enum:
+            - true
+    BindingInvitationIssueRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - channel_type
+        - expected_user_version
+        - replace
+      properties:
+        channel_type:
+          type: string
+          minLength: 1
+          maxLength: 64
+        expected_user_version:
+          type: integer
+          format: uint64
+          minimum: 1
+        replace:
+          type: boolean
+    BindingInvitationCancelRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - expected_invitation_version
+        - confirm
+      properties:
+        expected_invitation_version:
+          type: integer
+          format: uint64
+          minimum: 1
+        confirm:
+          type: boolean
+          enum:
+            - true
+    IssuedBindingInvitation:
+      type: object
+      additionalProperties: false
+      required:
+        - invitation
+        - proof
+      properties:
+        invitation:
+          $ref: "#/components/schemas/BindingInvitation"
+        proof:
+          type: string
+          minLength: 1
+          maxLength: 1024
+          x-sensitive: true
+          description: Single-use proof returned only by the issue response.
+    UserInventory:
+      type: object
+      additionalProperties: false
+      required:
+        - users
+      properties:
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserRecord"
+    UserCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - display_name
+        - username
+        - temporary_password
+        - role
+        - status
+      properties:
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 256
+        username:
+          type: string
+          minLength: 1
+          maxLength: 256
+        temporary_password:
+          type: string
+          format: password
+          minLength: 1
+          maxLength: 4096
+          writeOnly: true
+        role:
+          $ref: "#/components/schemas/WebAuthRole"
+        status:
+          $ref: "#/components/schemas/UserStatus"
+    UserUpdateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - display_name
+        - username
+        - role
+        - status
+        - expected_version
+        - acknowledge_bot_access_impact
+      properties:
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 256
+        username:
+          type: string
+          minLength: 1
+          maxLength: 256
+        role:
+          $ref: "#/components/schemas/WebAuthRole"
+        status:
+          $ref: "#/components/schemas/UserStatus"
+        expected_version:
+          type: integer
+          format: uint64
+          minimum: 1
+        acknowledge_bot_access_impact:
+          type: boolean
+    UserCredentialResetRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - temporary_password
+        - expected_user_version
+        - expected_credential_version
+        - confirm_current
+      properties:
+        temporary_password:
+          type: string
+          format: password
+          minLength: 1
+          maxLength: 4096
+          writeOnly: true
+        expected_user_version:
+          type: integer
+          format: uint64
+          minimum: 1
+        expected_credential_version:
+          type: integer
+          format: uint64
+          minimum: 1
+        confirm_current:
+          type: boolean
+    UserStatus:
+      type: string
+      enum:
+        - active
+        - disabled
+    UserCredentialState:
+      type: string
+      enum:
+        - temporary
+        - active
+        - disabled
     WebAuthSessionPage:
       type: object
       additionalProperties: false

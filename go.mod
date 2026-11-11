@@ -1,6 +1,6 @@
 module github.com/baldaworks/balda
 
-go 1.26.10
+go 1.26.11
 
 require (
 	github.com/baldaworks/runtime/v2 v2.9.0

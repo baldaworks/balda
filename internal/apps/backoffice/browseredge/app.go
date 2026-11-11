@@ -67,6 +67,27 @@ type ArchiveService interface {
 	AISessionArchive(ctx context.Context, auth managementclient.Auth, id string, params *managementv1.GetAISessionArchiveParams) (managementv1.AISessionArchiveTranscript, error)
 }
 
+// UserService is the generated-client canonical-user administration surface.
+type UserService interface {
+	Users(ctx context.Context, auth managementclient.Auth) (managementv1.UserInventory, error)
+	User(ctx context.Context, auth managementclient.Auth, userID string) (managementv1.UserRecord, error)
+	UserSessions(ctx context.Context, auth managementclient.Auth, userID string) (managementv1.WebAuthSessionPage, error)
+	CreateUser(ctx context.Context, auth managementclient.Auth, request managementv1.UserCreateRequest) (managementv1.UserRecord, error)
+	UpdateUser(ctx context.Context, auth managementclient.Auth, userID string, request managementv1.UserUpdateRequest) (managementv1.UserRecord, error)
+	ResetUserCredential(ctx context.Context, auth managementclient.Auth, userID string, request managementv1.UserCredentialResetRequest) error
+	BindingChannels(ctx context.Context, auth managementclient.Auth) (managementv1.BindingChannelInventory, error)
+	RefreshBindingChannel(ctx context.Context, auth managementclient.Auth, channel string) (managementv1.BindingChannel, error)
+	UserBindings(ctx context.Context, auth managementclient.Auth, userID string) (managementv1.UserBindingInventory, error)
+	DeleteUserBinding(ctx context.Context, auth managementclient.Auth, userID, bindingID string, request managementv1.BindingDeleteRequest) error
+	IssueBindingInvitation(ctx context.Context, auth managementclient.Auth, userID string, request managementv1.BindingInvitationIssueRequest) (managementv1.IssuedBindingInvitation, error)
+	CancelBindingInvitation(ctx context.Context, auth managementclient.Auth, userID, invitationID string, request managementv1.BindingInvitationCancelRequest) error
+}
+
+// AuditService is the generated-client read-only security audit surface.
+type AuditService interface {
+	AuditEvents(ctx context.Context, auth managementclient.Auth, params *managementv1.ListAuditEventsParams) (managementv1.AuditEventPage, error)
+}
+
 // ProviderService is the optional generated-client surface activated by the provider Story.
 type ProviderService interface {
 	Providers(ctx context.Context, auth managementclient.Auth) (managementv1.ProviderInventory, error)
@@ -232,6 +253,18 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("POST "+a.path("/memory/{fact_id}/delete"), a.deleteMemoryFact)
 	mux.HandleFunc("GET "+a.path("/chat-sessions"), a.archivePage)
 	mux.HandleFunc("GET "+a.path("/chat-sessions/{ai_session_id}"), a.archiveTranscriptPage)
+	mux.HandleFunc("GET "+a.path("/access/users"), a.usersPage)
+	mux.HandleFunc("GET "+a.path("/access/users/new"), a.newUserPage)
+	mux.HandleFunc("POST "+a.path("/access/users"), a.createUser)
+	mux.HandleFunc("GET "+a.path("/access/users/{user_id}"), a.userPage)
+	mux.HandleFunc("POST "+a.path("/access/users/{user_id}"), a.updateUser)
+	mux.HandleFunc("POST "+a.path("/access/users/{user_id}/credential-reset"), a.resetUserCredential)
+	mux.HandleFunc("POST "+a.path("/access/users/{user_id}/sessions/{session_id}/revoke"), a.revokeUserSession)
+	mux.HandleFunc("POST "+a.path("/access/users/{user_id}/bindings/{binding_id}/delete"), a.deleteUserBinding)
+	mux.HandleFunc("POST "+a.path("/access/users/{user_id}/binding-invitations"), a.issueBindingInvitation)
+	mux.HandleFunc("POST "+a.path("/access/users/{user_id}/binding-invitations/{invitation_id}/cancel"), a.cancelBindingInvitation)
+	mux.HandleFunc("POST "+a.path("/binding-channels/{channel_type}/refresh"), a.refreshBindingChannel)
+	mux.HandleFunc("GET "+a.path("/audit"), a.auditPage)
 	mux.HandleFunc("GET "+a.path("/account"), a.account)
 	mux.HandleFunc("POST "+a.path("/account/password"), a.replacePassword)
 	mux.HandleFunc("POST "+a.path("/account/2fa/enable/start"), a.beginMFA(false))
@@ -403,7 +436,7 @@ func (a *App) overview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	a.page(w, http.StatusOK, "Backoffice", `<p>Signed in as <strong>`+template.HTMLEscapeString(principal.DisplayName)+`</strong>.</p><p><a href="`+a.path("/account")+`">Account</a> · <a href="`+a.path("/agent")+`">Agent</a> · <a href="`+a.path("/memory")+`">Fact memory</a> · <a href="`+a.path("/chat-sessions")+`">AI Session archives</a> · <a href="`+a.path("/providers")+`">Providers</a> · <a href="`+a.path("/mcp")+`">MCP</a> · <a href="`+a.path("/hooks")+`">Hooks</a> · <a href="`+a.path("/plugins")+`">Plugins</a> · <a href="`+a.path("/skills")+`">Skills</a></p>`+system+a.logoutForm(r))
+	a.page(w, http.StatusOK, "Backoffice", `<p>Signed in as <strong>`+template.HTMLEscapeString(principal.DisplayName)+`</strong>.</p><p><a href="`+a.path("/account")+`">Account</a> · <a href="`+a.path("/access/users")+`">Access</a> · <a href="`+a.path("/audit")+`">Audit</a> · <a href="`+a.path("/agent")+`">Agent</a> · <a href="`+a.path("/memory")+`">Fact memory</a> · <a href="`+a.path("/chat-sessions")+`">AI Session archives</a> · <a href="`+a.path("/providers")+`">Providers</a> · <a href="`+a.path("/mcp")+`">MCP</a> · <a href="`+a.path("/hooks")+`">Hooks</a> · <a href="`+a.path("/plugins")+`">Plugins</a> · <a href="`+a.path("/skills")+`">Skills</a></p>`+system+a.logoutForm(r))
 }
 
 func (a *App) account(w http.ResponseWriter, r *http.Request) {

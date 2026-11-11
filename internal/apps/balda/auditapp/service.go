@@ -1,5 +1,5 @@
-// Package audit owns the bounded, read-only Backoffice security-event query.
-package audit
+// Package auditapp owns the bounded, read-only Core security-event query.
+package auditapp
 
 import (
 	"context"

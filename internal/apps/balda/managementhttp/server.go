@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"strings"
 
+	"github.com/baldaworks/balda/internal/apps/balda/accessapp"
+	"github.com/baldaworks/balda/internal/apps/balda/auditapp"
 	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
 	"github.com/baldaworks/balda/internal/apps/balda/providers"
 	"github.com/baldaworks/balda/internal/apps/balda/systemviewcmd"
@@ -13,6 +15,10 @@ import (
 )
 
 type strictServer struct {
+	access      *accessapp.Service
+	audit       *auditapp.Service
+	invitations bindingInvitationOperations
+	channels    bindingChannelOperations
 	browserAuth *browserauth.Service
 	providers   *providers.Service
 	mcp         mcpOperations

@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/baldaworks/balda/internal/apps/backoffice/access"
 	"github.com/baldaworks/balda/internal/apps/backoffice/internal/webui"
+	"github.com/baldaworks/balda/internal/apps/balda/accessapp"
 	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/users"
@@ -29,7 +29,7 @@ type BindingChannels interface {
 }
 
 func (a *httpApp) bindingDetailPage(r *http.Request, principal browserauth.Principal, userID string) (webui.Page, error) {
-	actor := access.Actor{User: principal.User, WebAuthSessionID: principal.WebAuthSessionID}
+	actor := accessapp.Actor{User: principal.User, WebAuthSessionID: principal.WebAuthSessionID}
 	user, err := a.access.GetUser(r.Context(), actor, userID)
 	if err != nil {
 		return webui.Page{}, err
