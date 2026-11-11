@@ -4,20 +4,10 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 output_dir="${1:?usage: make-go-test-shards.sh OUTPUT_DIR}"
-mode="${2:-full}"
-if [[ "$mode" != full && "$mode" != core ]]; then
-  printf 'mode must be full or core\n' >&2
-  exit 1
-fi
 mkdir -p "$output_dir"
 
 cd "$repo_root"
-go list ./... | LC_ALL=C sort >"$output_dir/repository.txt"
-if [[ "$mode" == core ]]; then
-  grep -Ev '^github\.com/baldaworks/balda/(cmd/backoffice|internal/apps/backoffice)(/|$)' "$output_dir/repository.txt" >"$output_dir/all.txt"
-else
-  cp "$output_dir/repository.txt" "$output_dir/all.txt"
-fi
+go list ./... | LC_ALL=C sort >"$output_dir/all.txt"
 : >"$output_dir/shard-0.txt"
 : >"$output_dir/shard-1.txt"
 
@@ -36,6 +26,7 @@ while IFS= read -r package; do
     github.com/baldaworks/balda/internal/apps/balda/session|\
     github.com/baldaworks/balda/internal/apps/balda/actors|\
     github.com/baldaworks/balda/cmd/balda|\
+    github.com/baldaworks/balda/internal/apps/backoffice/security|\
     github.com/baldaworks/balda/internal/apps/balda/state|\
     github.com/baldaworks/balda/internal/apps/balda/skillapp)
       shard=1

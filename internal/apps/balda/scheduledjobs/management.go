@@ -479,6 +479,6 @@ func scheduleItem(r state.ScheduledJobRecord) schedulecmd.Item {
 func scheduleAudit(id string, authority schedulecmd.Authority) usercmd.AuditEvent {
 	return usercmd.AuditEvent{ID: uuid.NewString(), Action: usercmd.AuditActionScheduleDefinitionChanged,
 		Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: authority.UserID,
-		ActorWebAuthSessionID: authority.WebAuthSessionID, TargetType: usercmd.AuditTargetSchedule,
+		ActorSessionID: authority.SessionID, TargetType: usercmd.AuditTargetSchedule,
 		TargetID: id, Source: "backoffice", OccurredAt: authority.At}
 }

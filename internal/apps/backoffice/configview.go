@@ -3,54 +3,51 @@ package backoffice
 import (
 	"sort"
 
-	"github.com/baldaworks/balda/internal/apps/balda/systemviewcmd"
+	"github.com/baldaworks/balda/internal/apps/backoffice/internal/webui"
 )
 
-// ProjectSystemSnapshot captures the explicit configured fields shared by the
-// embedded and standalone Backoffice views.
-func ProjectSystemSnapshot(cfg ResolvedConfig) systemviewcmd.Snapshot {
-	balda := cfg.Balda
-	cards := make([]systemviewcmd.Capability, 0, 5)
-	if balda.Telegram.Enabled {
-		card := systemviewcmd.Capability{ID: "telegram", Name: "Telegram", Mode: "polling", Settings: []systemviewcmd.Setting{{Label: "Formatting", Value: configuredValue(balda.Telegram.FormattingMode)}}}
-		if balda.Telegram.Webhook.Enabled {
+// ProjectCapabilityCards converts the safe configured projection into Web UI cards.
+func ProjectCapabilityCards(cfg BaldaConfig) []webui.CapabilityCard {
+	cards := make([]webui.CapabilityCard, 0, 5)
+	if cfg.Telegram.Enabled {
+		card := webui.CapabilityCard{ID: "telegram", Name: "Telegram", Mode: "polling", Settings: []webui.CapabilitySetting{{Label: "Formatting", Value: configuredValue(cfg.Telegram.FormattingMode)}}}
+		if cfg.Telegram.Webhook.Enabled {
 			card.Mode = "webhook"
-			card.Endpoints = appendEndpoint(card.Endpoints, "Webhook", balda.Telegram.Webhook.CallbackURL)
+			card.Endpoints = appendEndpoint(card.Endpoints, "Webhook", cfg.Telegram.Webhook.CallbackURL)
 		}
 		cards = append(cards, card)
 	}
-	if balda.Slack.Agent.Enabled {
-		cards = append(cards, systemviewcmd.Capability{
+	if cfg.Slack.Agent.Enabled {
+		cards = append(cards, webui.CapabilityCard{
 			ID: "slackagent", Name: "Slack Agent", Mode: "agent-events",
-			Settings: []systemviewcmd.Setting{
-				{Label: "Private channels", Value: yesNo(balda.Slack.Agent.IncludePrivateChannels)},
-				{Label: "Streaming", Value: yesNo(balda.Slack.Agent.EnableStreaming)},
-				{Label: "Suggested prompts", Value: yesNo(balda.Slack.Agent.SuggestedPrompts)},
+			Settings: []webui.CapabilitySetting{
+				{Label: "Private channels", Value: yesNo(cfg.Slack.Agent.IncludePrivateChannels)},
+				{Label: "Streaming", Value: yesNo(cfg.Slack.Agent.EnableStreaming)},
+				{Label: "Suggested prompts", Value: yesNo(cfg.Slack.Agent.SuggestedPrompts)},
 			},
-			Endpoints: appendEndpoint(appendEndpoint(nil, "Events", balda.Slack.Agent.EventsCallbackURL), "Commands", balda.Slack.Agent.CommandsCallbackURL),
+			Endpoints: appendEndpoint(appendEndpoint(nil, "Events", cfg.Slack.Agent.EventsCallbackURL), "Commands", cfg.Slack.Agent.CommandsCallbackURL),
 		})
 	}
-	if balda.Zulip.Webhook.Enabled {
-		cards = append(cards, systemviewcmd.Capability{
+	if cfg.Zulip.Webhook.Enabled {
+		cards = append(cards, webui.CapabilityCard{
 			ID: "zulip", Name: "Zulip", Mode: "webhook",
-			Endpoints: appendEndpoint(nil, "Webhook", balda.Zulip.Webhook.CallbackURL),
+			Endpoints: appendEndpoint(nil, "Webhook", cfg.Zulip.Webhook.CallbackURL),
 		})
 	}
-	if balda.Webhooks.Enabled {
-		cards = append(cards, systemviewcmd.Capability{
-			ID: "webhooks", Name: "Webhooks", Mode: "inbound", RouteCount: balda.Webhooks.RouteCount,
+	if cfg.Webhooks.Enabled {
+		cards = append(cards, webui.CapabilityCard{
+			ID: "webhooks", Name: "Webhooks", Mode: "inbound", RouteCount: cfg.Webhooks.RouteCount,
 		})
 	}
-	if balda.Mattermost.Enabled {
-		card := systemviewcmd.Capability{ID: "mattermost", Name: "Mattermost", Mode: "websocket", Settings: []systemviewcmd.Setting{{Label: "Server", Value: configuredValue(balda.Mattermost.ServerURL)}}}
-		if balda.Mattermost.CommandsEnabled {
-			card.Endpoints = appendEndpoint(card.Endpoints, "Commands", balda.Mattermost.CommandsCallbackURL)
+	if cfg.Mattermost.Enabled {
+		card := webui.CapabilityCard{ID: "mattermost", Name: "Mattermost", Mode: "websocket", Settings: []webui.CapabilitySetting{{Label: "Server", Value: configuredValue(cfg.Mattermost.ServerURL)}}}
+		if cfg.Mattermost.CommandsEnabled {
+			card.Endpoints = appendEndpoint(card.Endpoints, "Commands", cfg.Mattermost.CommandsCallbackURL)
 		}
 		cards = append(cards, card)
 	}
 	sort.Slice(cards, func(i, j int) bool { return cards[i].ID < cards[j].ID })
-	return systemviewcmd.Snapshot{Capabilities: cards, Agent: systemviewcmd.Agent{ProviderID: cfg.Agent.ProviderID, ProviderType: cfg.Agent.ProviderType,
-		Profile: cfg.Agent.Profile, Model: cfg.Agent.Model, ReasoningEffort: cfg.Agent.ReasoningEffort, GlobalInstruction: cfg.Agent.GlobalInstruction}}
+	return cards
 }
 
 func yesNo(value bool) string {
@@ -67,9 +64,26 @@ func configuredValue(value string) string {
 	return value
 }
 
-func appendEndpoint(endpoints []systemviewcmd.Endpoint, label, value string) []systemviewcmd.Endpoint {
+func appendEndpoint(endpoints []webui.CapabilityEndpoint, label, value string) []webui.CapabilityEndpoint {
 	if value == "" {
 		return endpoints
 	}
-	return append(endpoints, systemviewcmd.Endpoint{Label: label, URL: value})
+	return append(endpoints, webui.CapabilityEndpoint{Label: label, URL: value})
+}
+
+func configuredBindingChannels(cfg BaldaConfig) []string {
+	var channels []string
+	if cfg.Telegram.Enabled {
+		channels = append(channels, "telegram")
+	}
+	if cfg.Slack.Agent.Enabled {
+		channels = append(channels, "slackagent")
+	}
+	if cfg.Zulip.Webhook.Enabled {
+		channels = append(channels, "zulip")
+	}
+	if cfg.Mattermost.Enabled {
+		channels = append(channels, "mattermost")
+	}
+	return channels
 }

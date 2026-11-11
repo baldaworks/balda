@@ -1,6 +1,7 @@
 package backoffice
 
 import (
+	"slices"
 	"testing"
 	"time"
 )
@@ -46,17 +47,39 @@ func TestResolveServerConfig(t *testing.T) {
 	}
 }
 
-func TestProjectSystemSnapshotContainsOnlyExplicitConfiguredFields(t *testing.T) {
+func TestProjectCapabilityCardsOmitsDisabledAndShowsOperationalSettings(t *testing.T) {
 	t.Parallel()
-	snapshot := ProjectSystemSnapshot(ResolvedConfig{
-		Agent: AgentConfig{ProviderID: "primary", ProviderType: "openai", Profile: "default", Model: "gpt-test", ReasoningEffort: "high", GlobalInstruction: "be useful"},
-		Balda: BaldaConfig{Telegram: TelegramConfig{Enabled: true, FormattingMode: "markdown"}},
-	})
-	if len(snapshot.Capabilities) != 1 || snapshot.Capabilities[0].ID != "telegram" {
-		t.Fatalf("capabilities = %+v", snapshot.Capabilities)
+	cfg := BaldaConfig{
+		Telegram: TelegramConfig{Enabled: true, FormattingMode: "markdown", Webhook: TelegramWebhookConfig{Enabled: true, CallbackURL: "/gateway/telegram/webhook"}},
+		Zulip:    ZulipConfig{Webhook: ZulipWebhookConfig{Enabled: false}},
+		Slack: SlackConfig{
+			Agent: SlackAgentConfig{Enabled: true, IncludePrivateChannels: false, EnableStreaming: true, SuggestedPrompts: false, EventsCallbackURL: "/gateway/slack/events", CommandsCallbackURL: "/gateway/slack/commands"},
+		},
+		Webhooks:   WebhooksConfig{Enabled: true, RouteCount: 1},
+		Mattermost: MattermostConfig{Enabled: true, ServerURL: "https://mattermost.example", CommandsEnabled: true, CommandsCallbackURL: "/gateway/mattermost/commands"},
 	}
-	if snapshot.Agent.ProviderID != "primary" || snapshot.Agent.Model != "gpt-test" || snapshot.Agent.GlobalInstruction != "be useful" {
-		t.Fatalf("agent = %+v", snapshot.Agent)
+	cards := ProjectCapabilityCards(cfg)
+	if len(cards) != 4 {
+		t.Fatalf("capability count = %d, want 4: %+v", len(cards), cards)
+	}
+	for _, card := range cards {
+		if card.ID == "zulip" {
+			t.Fatal("disabled Zulip capability was projected")
+		}
+		if card.ID == "webhooks" && card.RouteCount != 1 {
+			t.Fatalf("webhook route count = %d, want 1", card.RouteCount)
+		}
+		if card.ID == "slackagent" {
+			if len(card.Settings) != 3 || card.Settings[0].Value != "No" || card.Settings[1].Value != "Yes" || card.Settings[2].Value != "No" {
+				t.Fatalf("Slack settings = %+v", card.Settings)
+			}
+			if len(card.Endpoints) != 2 || card.Endpoints[0].URL != "/gateway/slack/events" || card.Endpoints[1].URL != "/gateway/slack/commands" {
+				t.Fatalf("Slack endpoints = %+v", card.Endpoints)
+			}
+		}
+	}
+	if got := configuredBindingChannels(cfg); !slices.Equal(got, []string{"telegram", "slackagent", "mattermost"}) {
+		t.Fatalf("configured binding channels = %v", got)
 	}
 }
 

@@ -1,46 +1,13 @@
 name: lint
 on:
   workflow_dispatch:
-    inputs:
-      force-full:
-        description: Run full lint
-        type: boolean
-        default: false
   push:
     branches: [ master, main ]
   pull_request:
     branches: [ master, main ]
-  schedule:
-    - cron: '31 3 * * *'
 jobs:
-  changes:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    outputs:
-      backoffice: ${{ steps.classify.outputs.backoffice }}
-      core: ${{ steps.classify.outputs.core }}
-      full: ${{ steps.classify.outputs.full }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-      - id: classify
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          FORCE_FULL: ${{ inputs.force-full || false }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-          HEAD_SHA: ${{ github.sha }}
-        run: |
-          if [[ "$EVENT_NAME" == workflow_dispatch || "$FORCE_FULL" == true || -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]]; then
-            printf 'M\tgo.mod\n' | ./scripts/ci/classify-changes.sh
-          else
-            git diff --name-status "$BASE_SHA" "$HEAD_SHA" | ./scripts/ci/classify-changes.sh
-          fi
   golangci:
     name: lint
-    needs: changes
-    if: always()
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -49,20 +16,4 @@ jobs:
           go-version-file: 'go.mod'
           cache: false
       - name: golangci-lint
-        env:
-          BACKOFFICE: ${{ needs.changes.outputs.backoffice }}
-          CORE: ${{ needs.changes.outputs.core }}
-          FULL: ${{ needs.changes.outputs.full }}
-        run: |
-          if [[ "$FULL" == true ]]; then
-            go tool golangci-lint run
-          elif [[ "$BACKOFFICE" == true && "$CORE" == true ]]; then
-            go tool golangci-lint run
-          elif [[ "$BACKOFFICE" == true ]]; then
-            go tool golangci-lint run ./cmd/backoffice/... ./internal/apps/backoffice/...
-          elif [[ "$CORE" == true ]]; then
-            mapfile -t packages < <(go list ./... | grep -Ev '^github\.com/baldaworks/balda/(cmd/backoffice|internal/apps/backoffice)(/|$)' | sed 's#^github\.com/baldaworks/balda/#./#')
-            go tool golangci-lint run "${packages[@]}"
-          else
-            echo 'docs-only: no product lint selected'
-          fi
+        run: go tool golangci-lint run

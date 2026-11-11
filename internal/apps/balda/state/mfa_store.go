@@ -96,18 +96,18 @@ func (s *sqlUserStore) CreateMFACeremony(ctx context.Context, c usercmd.MFACerem
 	if err != nil {
 		return err
 	}
-	if (c.Purpose == usercmd.MFAEnable) == p.Enabled || (c.Purpose != usercmd.MFALogin && c.WebAuthSessionID == "") {
+	if (c.Purpose == usercmd.MFAEnable) == p.Enabled || (c.Purpose != usercmd.MFALogin && c.SessionID == "") {
 		return usercmd.ErrForbidden
 	}
-	if c.WebAuthSessionID != "" {
-		if _, err := s.liveMFASession(ctx, tx, c.WebAuthSessionID, c.UserID, c.CredentialVersion, c.CreatedAt); err != nil {
+	if c.SessionID != "" {
+		if _, err := s.liveMFASession(ctx, tx, c.SessionID, c.UserID, c.CredentialVersion, c.CreatedAt); err != nil {
 			return err
 		}
 	}
 	_, err = tx.ExecContext(ctx, s.bind(`INSERT INTO balda_mfa_ceremonies
 		(token_digest, browser_digest, csrf_digest, user_id, purpose, session_id, user_version, credential_version, mfa_version, ceremony_data, created_at, expires_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`), c.TokenDigest, c.BrowserDigest, c.CSRFDigest,
-		c.UserID, c.Purpose, c.WebAuthSessionID, c.UserVersion, c.CredentialVersion, c.MFAVersion, c.Data,
+		c.UserID, c.Purpose, c.SessionID, c.UserVersion, c.CredentialVersion, c.MFAVersion, c.Data,
 		formatMFATime(c.CreatedAt), formatMFATime(c.ExpiresAt))
 	if err != nil {
 		return s.mutationError("insert MFA ceremony", err)
@@ -129,9 +129,9 @@ func (s *sqlUserStore) ConsumeMFACeremony(ctx context.Context, token, browser, c
 	err = tx.QueryRowContext(ctx, s.bind(`SELECT token_digest, browser_digest, csrf_digest, user_id, purpose, session_id,
 		user_version, credential_version, mfa_version, ceremony_data, created_at, expires_at, consumed_at
 		FROM balda_mfa_ceremonies WHERE token_digest = ?`), token).Scan(&c.TokenDigest, &c.BrowserDigest, &c.CSRFDigest,
-		&c.UserID, &c.Purpose, &c.WebAuthSessionID, &c.UserVersion, &c.CredentialVersion, &c.MFAVersion, &c.Data, &created, &expires, &consumed)
+		&c.UserID, &c.Purpose, &c.SessionID, &c.UserVersion, &c.CredentialVersion, &c.MFAVersion, &c.Data, &created, &expires, &consumed)
 	if errors.Is(err, sql.ErrNoRows) {
-		return c, usercmd.ErrWebAuthSessionUnavailable
+		return c, usercmd.ErrSessionUnavailable
 	}
 	if err != nil {
 		return c, s.wrapError("load MFA ceremony", err)
@@ -144,13 +144,13 @@ func (s *sqlUserStore) ConsumeMFACeremony(ctx context.Context, token, browser, c
 	}
 	if consumed != "" || now.Before(c.CreatedAt) || !now.Before(c.ExpiresAt) || c.Purpose != purpose ||
 		subtle.ConstantTimeCompare(c.BrowserDigest, browser) != 1 || subtle.ConstantTimeCompare(c.CSRFDigest, csrf) != 1 {
-		return c, usercmd.ErrWebAuthSessionUnavailable
+		return c, usercmd.ErrSessionUnavailable
 	}
 	if _, err := s.mfaAuthority(ctx, tx, c.UserID, c.UserVersion, c.CredentialVersion, c.MFAVersion); err != nil {
 		return c, err
 	}
-	if c.WebAuthSessionID != "" {
-		if _, err := s.liveMFASession(ctx, tx, c.WebAuthSessionID, c.UserID, c.CredentialVersion, now); err != nil {
+	if c.SessionID != "" {
+		if _, err := s.liveMFASession(ctx, tx, c.SessionID, c.UserID, c.CredentialVersion, now); err != nil {
 			return c, err
 		}
 	}
@@ -208,11 +208,11 @@ func (s *sqlUserStore) ApplyMFAChange(ctx context.Context, c usercmd.MFAChange) 
 		return usercmd.ErrConflict
 	}
 	if c.Purpose != usercmd.MFARecover {
-		f, err := s.liveMFASession(ctx, tx, c.BoundWebAuthSessionID, c.UserID, c.ExpectedCredentialVersion, c.ChangedAt)
+		f, err := s.liveMFASession(ctx, tx, c.BoundSessionID, c.UserID, c.ExpectedCredentialVersion, c.ChangedAt)
 		if err != nil {
 			return err
 		}
-		if f.Version != c.ExpectedWebAuthSessionVersion || f.Assurance != usercmd.WebAuthAssuranceNormal {
+		if f.Version != c.ExpectedSessionVersion || f.Assurance != usercmd.SessionAssuranceNormal {
 			return usercmd.ErrConflict
 		}
 	}
@@ -250,14 +250,14 @@ func (s *sqlUserStore) ApplyMFAChange(ctx context.Context, c usercmd.MFAChange) 
 	if err := s.revokeUserSessionsTx(ctx, tx, c.UserID, c.ChangedAt, "MFA changed"); err != nil {
 		return err
 	}
-	if c.WebAuthSession != nil {
-		if c.WebAuthSession.UserID != c.UserID || c.WebAuthSession.CredentialVersion != c.ExpectedCredentialVersion+1 || c.Purpose == usercmd.MFARecover {
+	if c.Session != nil {
+		if c.Session.UserID != c.UserID || c.Session.CredentialVersion != c.ExpectedCredentialVersion+1 || c.Purpose == usercmd.MFARecover {
 			return usercmd.ErrInvalid
 		}
-		if err := usercmd.ValidateWebAuthSession(*c.WebAuthSession); err != nil {
+		if err := usercmd.ValidateSessionFamily(*c.Session); err != nil {
 			return err
 		}
-		if err := s.insertSessionTx(ctx, tx, *c.WebAuthSession); err != nil {
+		if err := s.insertSessionTx(ctx, tx, *c.Session); err != nil {
 			return err
 		}
 	}
@@ -267,13 +267,13 @@ func (s *sqlUserStore) ApplyMFAChange(ctx context.Context, c usercmd.MFAChange) 
 	return tx.Commit()
 }
 
-func (s *sqlUserStore) liveMFASession(ctx context.Context, tx *sql.Tx, sessionID, userID string, credentialVersion uint64, now time.Time) (usercmd.WebAuthSession, error) {
+func (s *sqlUserStore) liveMFASession(ctx context.Context, tx *sql.Tx, sessionID, userID string, credentialVersion uint64, now time.Time) (usercmd.SessionFamily, error) {
 	f, found, err := s.loadSessionFamily(ctx, tx, "session_id = ?"+s.forUpdate, sessionID)
 	if err != nil {
 		return f, err
 	}
 	if !found || f.UserID != userID || f.CredentialVersion != credentialVersion || !f.RevokedAt.IsZero() || !now.Before(f.RefreshExpiresAt) || !now.Before(f.Access.ExpiresAt) {
-		return f, usercmd.ErrWebAuthSessionUnavailable
+		return f, usercmd.ErrSessionUnavailable
 	}
 	return f, nil
 }
@@ -308,15 +308,15 @@ func (s *sqlUserStore) VerifyMFACredential(ctx context.Context, v usercmd.MFAVer
 	if err := requireOneMFAUpdate(result); err != nil {
 		return err
 	}
-	if v.WebAuthSession != nil {
-		if v.WebAuthSession.UserID != v.UserID || v.WebAuthSession.CredentialVersion != v.ExpectedCredentialVersion ||
-			v.WebAuthSession.MFAFactorID != key.ID || !v.WebAuthSession.WebAuthnVerifiedAt.Equal(v.VerifiedAt) {
+	if v.Session != nil {
+		if v.Session.UserID != v.UserID || v.Session.CredentialVersion != v.ExpectedCredentialVersion ||
+			v.Session.MFAFactorID != key.ID || !v.Session.WebAuthnVerifiedAt.Equal(v.VerifiedAt) {
 			return usercmd.ErrInvalid
 		}
-		if err := usercmd.ValidateWebAuthSession(*v.WebAuthSession); err != nil {
+		if err := usercmd.ValidateSessionFamily(*v.Session); err != nil {
 			return err
 		}
-		if err := s.insertSessionTx(ctx, tx, *v.WebAuthSession); err != nil {
+		if err := s.insertSessionTx(ctx, tx, *v.Session); err != nil {
 			return err
 		}
 	}
@@ -337,7 +337,7 @@ func requireOneMFAUpdate(result sql.Result) error {
 	return nil
 }
 
-func (s *sqlUserStore) checkSessionMFA(ctx context.Context, tx *sql.Tx, f usercmd.WebAuthSession) error {
+func (s *sqlUserStore) checkSessionMFA(ctx context.Context, tx *sql.Tx, f usercmd.SessionFamily) error {
 	var role string
 	if err := tx.QueryRowContext(ctx, s.bind(`SELECT role FROM balda_users WHERE user_id = ?`), f.UserID).Scan(&role); err != nil {
 		return s.wrapError("load session MFA role", err)
@@ -350,7 +350,7 @@ func (s *sqlUserStore) checkSessionMFA(ctx context.Context, tx *sql.Tx, f usercm
 		return err
 	}
 	if p.Enabled && (f.MFAFactorID != p.Credential.ID || f.WebAuthnVerifiedAt.IsZero()) {
-		return usercmd.ErrWebAuthSessionUnavailable
+		return usercmd.ErrSessionUnavailable
 	}
 	return nil
 }

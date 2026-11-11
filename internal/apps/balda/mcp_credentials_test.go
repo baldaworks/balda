@@ -93,13 +93,13 @@ func persistStartupMCPRevisions(t *testing.T, p state.Provider, s *mcpmanage.Ser
 	if err := p.Users().CreateUser(t.Context(), u, usercmd.CredentialSecret{UserID: u.ID, PasswordHash: "fixture-hash"}, audit("create-admin", usercmd.AuditActionUserCreated, usercmd.AuditTargetUser, u.ID)); err != nil {
 		t.Fatal(err)
 	}
-	f := usercmd.WebAuthSession{ID: "family", UserID: u.ID, Version: 1, CredentialVersion: 1, Assurance: usercmd.WebAuthAssuranceNormal,
-		Access:             usercmd.WebAuthAccessCredential{Selector: "access", VerifierDigest: []byte("access-digest"), ExpiresAt: now.Add(15 * time.Minute)},
+	f := usercmd.SessionFamily{ID: "family", UserID: u.ID, Version: 1, CredentialVersion: 1, Assurance: usercmd.SessionAssuranceNormal,
+		Access:             usercmd.AccessCredential{Selector: "access", VerifierDigest: []byte("access-digest"), ExpiresAt: now.Add(15 * time.Minute)},
 		CSRFVerifierDigest: []byte("csrf-digest"), CreatedAt: now, LastSeenAt: now, RefreshExpiresAt: now.Add(time.Hour),
-		RefreshTokens: []usercmd.WebAuthRefreshToken{{Selector: "refresh", VerifierDigest: []byte("refresh-digest"), Generation: 1,
-			State: usercmd.WebAuthRefreshTokenStateActive, IssuedAt: now, ExpiresAt: now.Add(time.Hour)}},
+		RefreshTokens: []usercmd.RefreshToken{{Selector: "refresh", VerifierDigest: []byte("refresh-digest"), Generation: 1,
+			State: usercmd.RefreshTokenStateActive, IssuedAt: now, ExpiresAt: now.Add(time.Hour)}},
 	}
-	if err := p.Users().CreateWebAuthSession(t.Context(), f, audit("create-session", usercmd.AuditActionWebAuthLoginSucceeded, usercmd.AuditTargetWebAuthSession, f.ID)); err != nil {
+	if err := p.Users().CreateSession(t.Context(), f, audit("create-session", usercmd.AuditActionLoginSucceeded, usercmd.AuditTargetSession, f.ID)); err != nil {
 		t.Fatal(err)
 	}
 	r, err := s.PrepareRevision(nil, mcpcmd.Revision{ConnectionID: "worker", ID: "protected", CreatedAt: now,
@@ -109,10 +109,10 @@ func persistStartupMCPRevisions(t *testing.T, p state.Provider, s *mcpmanage.Ser
 		t.Fatal(err)
 	}
 	event := audit("create-mcp", usercmd.AuditActionMCPDefinitionChanged, usercmd.AuditTargetMCP, r.ConnectionID)
-	event.ActorUserID, event.ActorWebAuthSessionID = u.ID, f.ID
+	event.ActorUserID, event.ActorSessionID = u.ID, f.ID
 	m := state.MCPMutation{Connection: mcpcmd.Connection{ID: r.ConnectionID, PublicID: "worker", Source: mcpcmd.SourceManaged,
 		CurrentRevisionID: r.ID, Enabled: true, CreatedAt: now, UpdatedAt: now}, Revision: &r, Audit: event,
-		Authority: mcpcmd.Authority{UserID: u.ID, UserVersion: 1, CredentialVersion: 1, WebAuthSessionID: f.ID, WebAuthSessionVersion: 1, At: now}}
+		Authority: mcpcmd.Authority{UserID: u.ID, UserVersion: 1, CredentialVersion: 1, SessionID: f.ID, SessionVersion: 1, At: now}}
 	if err := p.MCP().SaveMCPConnection(t.Context(), m); err != nil {
 		t.Fatal(err)
 	}

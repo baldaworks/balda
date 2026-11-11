@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
+	"github.com/baldaworks/balda/internal/apps/backoffice/security"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/userpassword"
@@ -88,20 +88,20 @@ balda:
 	primary = bootstrapped
 	familyCreatedAt := registeredAt.Add(time.Hour)
 	refreshExpiry := familyCreatedAt.Add(12 * time.Hour)
-	family := usercmd.WebAuthSession{
-		ID: "pre-bootstrap-family", UserID: primary.ID, Assurance: usercmd.WebAuthAssuranceRestricted,
+	family := usercmd.SessionFamily{
+		ID: "pre-bootstrap-family", UserID: primary.ID, Assurance: usercmd.SessionAssuranceRestricted,
 		CredentialVersion:  primary.Credential.Version,
-		Access:             usercmd.WebAuthAccessCredential{Selector: "pre-bootstrap-access", VerifierDigest: []byte("access-digest"), ExpiresAt: familyCreatedAt.Add(15 * time.Minute)},
+		Access:             usercmd.AccessCredential{Selector: "pre-bootstrap-access", VerifierDigest: []byte("access-digest"), ExpiresAt: familyCreatedAt.Add(15 * time.Minute)},
 		CSRFVerifierDigest: []byte("csrf-digest"), CreatedAt: familyCreatedAt, LastSeenAt: familyCreatedAt,
 		RefreshExpiresAt: refreshExpiry, Version: 1,
-		RefreshTokens: []usercmd.WebAuthRefreshToken{{
+		RefreshTokens: []usercmd.RefreshToken{{
 			Selector: "pre-bootstrap-refresh", VerifierDigest: []byte("refresh-digest"), Generation: 1,
-			State: usercmd.WebAuthRefreshTokenStateActive, IssuedAt: familyCreatedAt, ExpiresAt: refreshExpiry,
+			State: usercmd.RefreshTokenStateActive, IssuedAt: familyCreatedAt, ExpiresAt: refreshExpiry,
 		}},
 	}
-	if err := provider.Users().CreateWebAuthSession(t.Context(), family, usercmd.AuditEvent{
+	if err := provider.Users().CreateSession(t.Context(), family, usercmd.AuditEvent{
 		ID: "audit-pre-bootstrap-login", Action: usercmd.AuditActionCredentialChanged, Outcome: usercmd.AuditOutcomeSucceeded,
-		TargetType: usercmd.AuditTargetWebAuthSession, TargetID: family.ID, Source: "backoffice-test", OccurredAt: familyCreatedAt,
+		TargetType: usercmd.AuditTargetSession, TargetID: family.ID, Source: "backoffice-test", OccurredAt: familyCreatedAt,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -158,12 +158,12 @@ balda:
 			}
 		}
 	}
-	revoked, found, err := provider.Users().GetWebAuthSessionByAccessSelector(t.Context(), family.Access.Selector)
-	if err != nil || !found || revoked.WebAuthSession.RevokedAt.IsZero() {
+	revoked, found, err := provider.Users().GetSessionByAccessSelector(t.Context(), family.Access.Selector)
+	if err != nil || !found || revoked.Family.RevokedAt.IsZero() {
 		t.Fatalf("session after bootstrap reset = %+v, found=%t, error=%v", revoked, found, err)
 	}
-	if len(revoked.WebAuthSession.RefreshTokens) != 1 || revoked.WebAuthSession.RefreshTokens[0].State != usercmd.WebAuthRefreshTokenStateRevoked {
-		t.Fatalf("refresh lineage after bootstrap reset = %+v", revoked.WebAuthSession.RefreshTokens)
+	if len(revoked.Family.RefreshTokens) != 1 || revoked.Family.RefreshTokens[0].State != usercmd.RefreshTokenStateRevoked {
+		t.Fatalf("refresh lineage after bootstrap reset = %+v", revoked.Family.RefreshTokens)
 	}
 }
 
@@ -476,7 +476,7 @@ balda:
 	if err := p.Users().CreateUser(t.Context(), u, usercmd.CredentialSecret{UserID: u.ID, PasswordHash: hash}, audit); err != nil {
 		t.Fatal(err)
 	}
-	service, err := browserauth.NewService(p.Users(), browserauth.Config{AccessTTL: time.Minute, RefreshTTL: time.Hour})
+	service, err := security.NewService(p.Users(), security.Config{AccessTTL: time.Minute, RefreshTTL: time.Hour})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -490,7 +490,7 @@ balda:
 	}
 	audit.ID = "enable-cli"
 	audit.Action = usercmd.AuditActionMFAEnabled
-	err = p.Users().ApplyMFAChange(t.Context(), usercmd.MFAChange{UserID: u.ID, ExpectedUserVersion: 1, ExpectedCredentialVersion: 1, Purpose: usercmd.MFAEnable, BoundWebAuthSessionID: principal.WebAuthSessionID, ExpectedWebAuthSessionVersion: principal.WebAuthSessionVersion, ChangedAt: now, Audit: audit, Credential: usercmd.MFACredential{ID: "cli-key", UserID: u.ID, RPID: "localhost", CredentialID: []byte("credential"), PublicKey: []byte("public-key"), Data: []byte(`{}`), CreatedAt: now}})
+	err = p.Users().ApplyMFAChange(t.Context(), usercmd.MFAChange{UserID: u.ID, ExpectedUserVersion: 1, ExpectedCredentialVersion: 1, Purpose: usercmd.MFAEnable, BoundSessionID: principal.FamilyID, ExpectedSessionVersion: principal.Version, ChangedAt: now, Audit: audit, Credential: usercmd.MFACredential{ID: "cli-key", UserID: u.ID, RPID: "localhost", CredentialID: []byte("credential"), PublicKey: []byte("public-key"), Data: []byte(`{}`), CreatedAt: now}})
 	if err != nil {
 		t.Fatal(err)
 	}

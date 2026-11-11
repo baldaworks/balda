@@ -28,13 +28,13 @@ func checkProvider_WebhookRouteManagement(t *testing.T, open contractOpener) {
 	base := contractMCPMutation(t, p)
 	a := WebhookRouteAuthority{UserID: base.Authority.UserID, UserVersion: base.Authority.UserVersion,
 		CredentialVersion: base.Authority.CredentialVersion, MFAVersion: base.Authority.MFAVersion,
-		WebAuthSessionID: base.Authority.WebAuthSessionID, WebAuthSessionVersion: base.Authority.WebAuthSessionVersion, At: base.Authority.At}
+		SessionID: base.Authority.SessionID, SessionVersion: base.Authority.SessionVersion, At: base.Authority.At}
 	r := WebhookRouteRecord{Name: "managed", Source: WebhookRouteSourceManaged,
 		PromptTemplate: "{{.Body}}", DedupeSource: "body_sha256", AuthType: "header",
 		AuthHeader: "X-Balda-Webhook-Secret", SecretVerifier: strings.Repeat("a", 64),
 		Enabled: true, Version: 1}
 	audit := usercmd.AuditEvent{ID: "webhook-create", Action: usercmd.AuditActionWebhookRouteChanged,
-		Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: a.UserID, ActorWebAuthSessionID: a.WebAuthSessionID,
+		Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: a.UserID, ActorSessionID: a.SessionID,
 		TargetType: usercmd.AuditTargetWebhookRoute, TargetID: r.Name,
 		Source: "provider-contract", OccurredAt: a.At}
 	m := WebhookRouteMutation{Kind: WebhookRouteCreate, Record: r, Authority: a, Audit: audit}

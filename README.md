@@ -93,8 +93,7 @@ For the full setup, including Docker Compose, see
 
 Choose your agent, model, and integrations in `.config/balda/config.yaml`.
 Backoffice lets administrators manage supported integrations and capabilities
-from the browser. Its separate process connects to Core through a private
-loopback listener or a Unix socket shared between containers.
+from the browser.
 
 - [Configuration](docs/reference/configuration.md)
 - [Telegram formatting](docs/telegram-formatting.md)

@@ -210,26 +210,19 @@ balda:
       password: ""
       sslmode: disable
 
-  # Core binds webhook and gateway ingress at listen_addr. base_url/base_path
-  # also define the standalone Backoffice public origin and /backoffice mount.
+  # One local HTTP bind and one public origin/prefix for sibling
+  # /backoffice, /webhooks, and /gateway areas. Values fall back to the old
+  # Backoffice address settings when omitted.
   http:
-    listen_addr: "127.0.0.1:8094"
+    listen_addr: ""
     base_url: ""
     base_path: null
 
-  # Local management API used by the standalone Backoffice. The operator
-  # token may also be supplied through BALDA_MANAGEMENT_OPERATOR_TOKEN.
-  management:
-    enabled: false
-    listen_addr: ""
-    socket_path: ""
-    operator_token: ""
-
-  # Browser/session policy shared by Core and the separate balda-backoffice
-  # process. Only balda-backoffice binds listen_addr.
+  # Backoffice starts inside `balda start` after schema/data migrations and user
+  # readiness, using the same database and canonical users as the bot.
   backoffice:
-    # Standalone browser listener. A non-loopback bind requires an HTTPS
-    # balda.http.base_url.
+    # Legacy fallback address fields. Use balda.http.* for new deployments.
+    # A non-loopback shared bind requires an HTTPS public origin.
     listen_addr: "127.0.0.1:8095"
     public_url: "http://127.0.0.1:8095"
     # Opaque access credentials are short-lived. Single-use rotating refresh
@@ -237,8 +230,6 @@ balda:
     access_token_ttl: "15m"
     refresh_token_ttl: "720h"
     ceremony_ttl: "5m"
-    # Retained config compatibility; production QA is served only by the
-    # explicit `balda backoffice qa serve` command.
     qa_ui: false
 
   sessions:

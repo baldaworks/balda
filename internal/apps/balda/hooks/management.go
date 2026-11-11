@@ -120,6 +120,6 @@ func (m *Management) mutate(ctx context.Context, name string, expected int64, au
 	if record.Validate() != nil {
 		return hookcmd.ErrInvalid
 	}
-	audit := usercmd.AuditEvent{ID: uuid.NewString(), Action: usercmd.AuditActionHookChanged, Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: authority.UserID, ActorWebAuthSessionID: authority.WebAuthSessionID, TargetType: usercmd.AuditTargetHook, TargetID: name, Source: "backoffice", OccurredAt: authority.At}
+	audit := usercmd.AuditEvent{ID: uuid.NewString(), Action: usercmd.AuditActionHookChanged, Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: authority.UserID, ActorSessionID: authority.SessionID, TargetType: usercmd.AuditTargetHook, TargetID: name, Source: "backoffice", OccurredAt: authority.At}
 	return m.store.Commit(ctx, hookcmd.Mutation{Record: record, ExpectedVersion: expected, Authority: authority, Audit: audit})
 }

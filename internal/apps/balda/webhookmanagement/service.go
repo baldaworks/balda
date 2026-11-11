@@ -216,7 +216,7 @@ func (s *Service) save(ctx context.Context, kind webhookroutecmd.MutationKind, r
 	version uint64, authority webhookroutecmd.Authority) error {
 	audit := usercmd.AuditEvent{ID: uuid.NewString(), Action: usercmd.AuditActionWebhookRouteChanged,
 		Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: authority.UserID,
-		ActorWebAuthSessionID: authority.WebAuthSessionID, TargetType: usercmd.AuditTargetWebhookRoute,
+		ActorSessionID: authority.SessionID, TargetType: usercmd.AuditTargetWebhookRoute,
 		TargetID: r.Name, Source: "backoffice", OccurredAt: authority.At}
 	return s.store.Save(ctx, webhookroutecmd.Mutation{Kind: kind, Record: r,
 		ExpectedVersion: version, Authority: authority, Audit: audit})

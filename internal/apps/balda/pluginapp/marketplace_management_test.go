@@ -33,9 +33,9 @@ func newMarketplaceManagementTestService(t *testing.T) (*Service, state.Provider
 	if err := p.Users().CreateUser(t.Context(), u, usercmd.CredentialSecret{UserID: u.ID, PasswordHash: "hash"}, audit); err != nil {
 		t.Fatal(err)
 	}
-	f := usercmd.WebAuthSession{ID: "browser", UserID: u.ID, Assurance: usercmd.WebAuthAssuranceNormal, CredentialVersion: 1, Access: usercmd.WebAuthAccessCredential{Selector: "access", VerifierDigest: []byte("access"), ExpiresAt: now.Add(time.Hour)}, CSRFVerifierDigest: []byte("csrf"), CreatedAt: now, LastSeenAt: now, RefreshExpiresAt: now.Add(24 * time.Hour), Version: 1, RefreshTokens: []usercmd.WebAuthRefreshToken{{Selector: "refresh", VerifierDigest: []byte("refresh"), Generation: 1, State: usercmd.WebAuthRefreshTokenStateActive, IssuedAt: now, ExpiresAt: now.Add(24 * time.Hour)}}}
-	audit.ID, audit.Action, audit.TargetID = managementFixtureLoginAuditID, usercmd.AuditActionWebAuthLoginSucceeded, f.ID
-	if err := p.Users().CreateWebAuthSession(t.Context(), f, audit); err != nil {
+	f := usercmd.SessionFamily{ID: "browser", UserID: u.ID, Assurance: usercmd.SessionAssuranceNormal, CredentialVersion: 1, Access: usercmd.AccessCredential{Selector: "access", VerifierDigest: []byte("access"), ExpiresAt: now.Add(time.Hour)}, CSRFVerifierDigest: []byte("csrf"), CreatedAt: now, LastSeenAt: now, RefreshExpiresAt: now.Add(24 * time.Hour), Version: 1, RefreshTokens: []usercmd.RefreshToken{{Selector: "refresh", VerifierDigest: []byte("refresh"), Generation: 1, State: usercmd.RefreshTokenStateActive, IssuedAt: now, ExpiresAt: now.Add(24 * time.Hour)}}}
+	audit.ID, audit.Action, audit.TargetID = managementFixtureLoginAuditID, usercmd.AuditActionLoginSucceeded, f.ID
+	if err := p.Users().CreateSession(t.Context(), f, audit); err != nil {
 		t.Fatal(err)
 	}
 	s, err := NewManaged(dir, p.AppKV(), p.Plugins(), &recordingActivator{}, p.PluginManagement())
@@ -46,7 +46,7 @@ func newMarketplaceManagementTestService(t *testing.T) (*Service, state.Provider
 	writeManagedPlugin(t, root, managementTestVersion, false)
 	mustMkdirAll(t, filepath.Join(root, ".agents", "plugins"))
 	mustWriteFile(t, filepath.Join(root, marketplaceManifestPath), `{"name":"index-identity","plugins":[{"name":"demo","path":"plugins/demo"}]}`)
-	return s, p, plugincmd.Authority{UserID: u.ID, UserVersion: 1, CredentialVersion: 1, WebAuthSessionID: f.ID, WebAuthSessionVersion: 1, At: now}, root
+	return s, p, plugincmd.Authority{UserID: u.ID, UserVersion: 1, CredentialVersion: 1, SessionID: f.ID, SessionVersion: 1, At: now}, root
 }
 
 func TestMarketplaceManagementAcceptedDiscovery(t *testing.T) {

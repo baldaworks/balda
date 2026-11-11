@@ -11,17 +11,14 @@ import (
 	"strings"
 
 	"github.com/baldaworks/balda/internal/apps/backoffice"
-	"github.com/baldaworks/balda/internal/apps/balda/accessapp"
 	"github.com/baldaworks/balda/internal/apps/balda/actorsfx"
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
 	"github.com/baldaworks/balda/internal/apps/balda/aliasbackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/aliasfx"
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	"github.com/baldaworks/balda/internal/apps/balda/attachmentstore"
-	"github.com/baldaworks/balda/internal/apps/balda/auditapp"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
-	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
 	"github.com/baldaworks/balda/internal/apps/balda/catalogapp"
 	baldachannel "github.com/baldaworks/balda/internal/apps/balda/channel"
 	baldamattermost "github.com/baldaworks/balda/internal/apps/balda/channel/mattermost"
@@ -45,6 +42,7 @@ import (
 	natsbus "github.com/baldaworks/balda/internal/apps/balda/eventbus/nats"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	"github.com/baldaworks/balda/internal/apps/balda/handlersfx"
+	"github.com/baldaworks/balda/internal/apps/balda/hookbackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/hookfx"
 	"github.com/baldaworks/balda/internal/apps/balda/hooknative/claude"
 	"github.com/baldaworks/balda/internal/apps/balda/hooknative/codex"
@@ -82,7 +80,6 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/startupnotifyapp"
 	"github.com/baldaworks/balda/internal/apps/balda/startupnotifyfx"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
-	"github.com/baldaworks/balda/internal/apps/balda/systemviewcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookapp"
@@ -211,15 +208,11 @@ func Module(
 	if err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
-	backofficeConfig, err := backofficeProjectionConfig(cfg.Balda, normaCfg, runtimeLoadOpts.Profile, database)
+	backofficeConfig, err := backofficeRuntimeConfig(cfg.Balda, normaCfg, runtimeLoadOpts.Profile, database)
 	if err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
 	sharedHTTP, err := cfg.Balda.ResolveHTTP()
-	if err != nil {
-		return fx.Module("balda", fx.Error(err))
-	}
-	managementHTTP, err := cfg.Balda.ResolveManagement()
 	if err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
@@ -337,7 +330,6 @@ func Module(
 		fx.Supply(
 			cfg.Balda,
 			sharedHTTP,
-			managementHTTP,
 			tgbotkitCfg,
 			logger,
 			normaCfg,
@@ -440,10 +432,6 @@ func Module(
 			),
 		),
 		fx.Provide(
-			func() *systemviewcmd.Snapshot {
-				snapshot := backoffice.ProjectSystemSnapshot(backofficeConfig)
-				return &snapshot
-			},
 			func(lc fx.Lifecycle) (baldastate.Provider, error) {
 				provider, err := openBaldaStateProvider(context.Background(), stateDir, database)
 				if err != nil {
@@ -462,20 +450,48 @@ func Module(
 			func(provider baldastate.Provider, protector *secrets.Protector) *providers.Service {
 				return providers.New(normaCfg.Providers, provider.ProviderManagement(), protector)
 			},
-			func(provider baldastate.Provider) (*browserauth.Service, error) {
-				return browserauth.NewService(provider.Users(), browserauth.Config{
-					AccessTTL: backofficeConfig.Server.AccessTokenTTL, RefreshTTL: backofficeConfig.Server.RefreshTokenTTL,
-					Origin: backofficeConfig.Server.PublicURL, CeremonyTTL: backofficeConfig.Server.CeremonyTTL,
-				})
-			},
-			func(provider baldastate.Provider) (*backoffice.StateService, error) {
-				return backoffice.NewStateService(provider.Users())
-			},
-			func(provider baldastate.Provider) *accessapp.Service {
-				return accessapp.NewService(provider.Users())
-			},
-			func(provider baldastate.Provider) *auditapp.Service {
-				return auditapp.NewService(provider.Users())
+			func(provider baldastate.Provider, invitations *auth.BindingInvitations, channels *auth.BindingChannels, mcp *mcpbackofficeapp.Operations, providerOperations *providers.Service, schedules *schedulebackofficeapp.Operations, aliases *aliasbackofficeapp.Operations, webhooks *webhookbackofficeapp.Operations, facts *memorybackofficeapp.Operations, plugins *pluginbackofficeapp.Operations, hooks *hookbackofficeapp.Operations, skills *skillbackofficeapp.Operations, archive *chatarchivebackofficeapp.Operations) (*backoffice.Runtime, error) {
+				runtime, err := backoffice.NewRuntime(backofficeConfig, provider)
+				if err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigureBindingInvitations(invitations, channels); err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigureMCPOperations(mcp); err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigureProvidersOperations(providerOperations); err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigureSchedulesOperations(schedules); err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigureWebhooksOperations(webhooks); err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigureAliasesOperations(aliases); err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigureSkillsOperations(skills); err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigurePluginsOperations(plugins); err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigureHookOperations(hooks); err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigureChatArchiveOperations(archive); err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigureFactMemoryOperations(facts); err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigureMCPAuthorizations(mcp); err != nil {
+					return nil, err
+				}
+				return runtime, nil
 			},
 			func(provider baldastate.Provider) tgbotkit.OffsetStore {
 				return provider.PollingOffsetStore()

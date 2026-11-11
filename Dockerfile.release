@@ -20,11 +20,6 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
       -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${BUILD_DATE}" \
       -o /out/balda ./cmd/balda
 
-RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
-    go build -trimpath \
-      -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${BUILD_DATE}" \
-      -o /out/balda-backoffice ./cmd/backoffice
-
 FROM scratch
 
 # CA bundle: the scratch base has no trust store, so any HTTPS call (the LLM
@@ -33,7 +28,6 @@ FROM scratch
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
 COPY --from=builder /out/balda /usr/local/bin/balda
-COPY --from=builder /out/balda-backoffice /usr/local/bin/balda-backoffice
 
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 

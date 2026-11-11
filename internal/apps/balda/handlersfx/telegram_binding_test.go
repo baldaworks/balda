@@ -65,7 +65,7 @@ func TestTelegramBackofficeInvitations(t *testing.T) {
 				if !ok || info.Integration.Key != "1001" {
 					t.Fatal("verified bot identity unavailable")
 				}
-				i, err := bindings.Issue(t.Context(), usercmd.InvitationActor{UserID: bindingPrimaryUserID, WebAuthSessionID: "browser-family"}, target.id, 1, info.Integration, false)
+				i, err := bindings.Issue(t.Context(), usercmd.InvitationActor{UserID: bindingPrimaryUserID, SessionID: "browser-family"}, target.id, 1, info.Integration, false)
 				if err != nil {
 					t.Fatal(err)
 				}

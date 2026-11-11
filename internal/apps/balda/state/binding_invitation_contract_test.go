@@ -40,7 +40,7 @@ func checkBindingInvitations(t *testing.T, open contractOpener) {
 	}
 	issue := func(t *testing.T, s *auth.BindingInvitations, target usercmd.User, integration usercmd.BindingIntegration, replace bool) usercmd.IssuedBindingInvitation {
 		t.Helper()
-		got, err := s.Issue(t.Context(), usercmd.InvitationActor{UserID: target.ID + "-issuer", WebAuthSessionID: "browser-family"}, target.ID, target.Version, integration, replace)
+		got, err := s.Issue(t.Context(), usercmd.InvitationActor{UserID: target.ID + "-issuer", SessionID: "browser-family"}, target.ID, target.Version, integration, replace)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -81,7 +81,7 @@ func checkBindingInvitations(t *testing.T, open contractOpener) {
 			t.Fatal(err)
 		}
 		for _, event := range audits.Events {
-			if event.Action == usercmd.AuditActionInvitationIssued && event.ActorWebAuthSessionID != "browser-family" {
+			if event.Action == usercmd.AuditActionInvitationIssued && event.ActorSessionID != "browser-family" {
 				t.Fatal("issuance audit lost browser family")
 			}
 			if strings.Contains(fmt.Sprintf("%+v", event), "bind_") {
@@ -95,7 +95,7 @@ func checkBindingInvitations(t *testing.T, open contractOpener) {
 		if _, err := s.Issue(t.Context(), usercmd.InvitationActor{UserID: target.ID}, target.ID, target.Version, integration, false); !errors.Is(err, usercmd.ErrForbidden) {
 			t.Fatalf("operator issuance = %v", err)
 		}
-		if _, err := s.Issue(t.Context(), usercmd.InvitationActor{UserID: target.ID + "-issuer", WebAuthSessionID: "browser-family"}, target.ID, 99, integration, false); !errors.Is(err, usercmd.ErrConflict) {
+		if _, err := s.Issue(t.Context(), usercmd.InvitationActor{UserID: target.ID + "-issuer", SessionID: "browser-family"}, target.ID, 99, integration, false); !errors.Is(err, usercmd.ErrConflict) {
 			t.Fatalf("stale issuance = %v", err)
 		}
 		i := issue(t, s, target, integration, false)
@@ -134,10 +134,10 @@ func checkBindingInvitations(t *testing.T, open contractOpener) {
 		if _, err := s.Consume(t.Context(), proof(first, "101")); !errors.Is(err, usercmd.ErrBindingInvitationUnavailable) {
 			t.Fatalf("replaced proof = %v", err)
 		}
-		if err := s.Cancel(t.Context(), usercmd.InvitationActor{UserID: target.ID + "-issuer", WebAuthSessionID: "browser-family"}, target.ID, second.Invitation.ID, 99); !errors.Is(err, usercmd.ErrConflict) {
+		if err := s.Cancel(t.Context(), usercmd.InvitationActor{UserID: target.ID + "-issuer", SessionID: "browser-family"}, target.ID, second.Invitation.ID, 99); !errors.Is(err, usercmd.ErrConflict) {
 			t.Fatalf("stale cancel = %v", err)
 		}
-		if err := s.Cancel(t.Context(), usercmd.InvitationActor{UserID: target.ID + "-issuer", WebAuthSessionID: "browser-family"}, target.ID, second.Invitation.ID, second.Invitation.Version); err != nil {
+		if err := s.Cancel(t.Context(), usercmd.InvitationActor{UserID: target.ID + "-issuer", SessionID: "browser-family"}, target.ID, second.Invitation.ID, second.Invitation.Version); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := s.Consume(t.Context(), proof(second, "101")); !errors.Is(err, usercmd.ErrBindingInvitationUnavailable) {

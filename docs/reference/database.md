@@ -27,8 +27,8 @@ fields. Unknown fields, malformed templates and empty paths fail startup.
 Rendered relative paths are anchored to the working directory and cleaned.
 For example, `{{.StateDir}}/databases/runtime.db` selects a custom file.
 
-SQLite is intended for one Core process on local persistent storage. The
-standalone Backoffice never opens it. Do not run multiple active Core
+SQLite is intended for one Balda process on local persistent storage. The bot
+and embedded Backoffice share its provider. Do not run multiple active Balda
 processes, share the file across hosts, or place it on a network filesystem.
 It uses foreign keys, WAL where available, an immediate transaction lock for
 writes, a bounded busy timeout, and one pooled connection.

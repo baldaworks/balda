@@ -114,7 +114,7 @@ func (s *sqlScheduleManagementStore) AdmitManualRun(ctx context.Context, a Sched
 	if err := usercmd.ValidateAuditEvent(a.Audit); err != nil ||
 		a.Audit.Action != usercmd.AuditActionScheduleRunRequested ||
 		a.Audit.TargetType != usercmd.AuditTargetSchedule || a.Audit.TargetID != a.Run.ScheduleID ||
-		a.Audit.ActorUserID != a.Authority.UserID || a.Audit.ActorWebAuthSessionID != a.Authority.WebAuthSessionID ||
+		a.Audit.ActorUserID != a.Authority.UserID || a.Audit.ActorSessionID != a.Authority.SessionID ||
 		a.Audit.Outcome != usercmd.AuditOutcomeSucceeded || !a.Audit.OccurredAt.Equal(a.Authority.At) {
 		return false, schedulecmd.ErrInvalid
 	}
@@ -241,7 +241,7 @@ func validateScheduleMutation(m ScheduleMutation) error {
 	if err := usercmd.ValidateAuditEvent(m.Audit); err != nil ||
 		m.Audit.Action != usercmd.AuditActionScheduleDefinitionChanged ||
 		m.Audit.TargetType != usercmd.AuditTargetSchedule || m.Audit.TargetID != r.JobID ||
-		m.Audit.ActorUserID != a.UserID || m.Audit.ActorWebAuthSessionID != a.WebAuthSessionID ||
+		m.Audit.ActorUserID != a.UserID || m.Audit.ActorSessionID != a.SessionID ||
 		m.Audit.Outcome != usercmd.AuditOutcomeSucceeded || !m.Audit.OccurredAt.Equal(a.At) {
 		return schedulecmd.ErrInvalid
 	}
@@ -250,7 +250,7 @@ func validateScheduleMutation(m ScheduleMutation) error {
 
 func validateScheduleAuthority(a schedulecmd.Authority) error {
 	if a.UserID == "" || a.UserVersion == 0 || a.CredentialVersion == 0 ||
-		a.WebAuthSessionID == "" || a.WebAuthSessionVersion == 0 || a.At.IsZero() {
+		a.SessionID == "" || a.SessionVersion == 0 || a.At.IsZero() {
 		return schedulecmd.ErrInvalid
 	}
 	return nil
@@ -276,16 +276,16 @@ func (a lockedScheduleAuthority) checkTime(request schedulecmd.Authority) error 
 }
 
 func scheduleBrowserAuthority(a schedulecmd.Authority) browserAuthority {
-	return browserAuthority{userID: a.UserID, sessionID: a.WebAuthSessionID,
+	return browserAuthority{userID: a.UserID, sessionID: a.SessionID,
 		userVersion: a.UserVersion, credentialVersion: a.CredentialVersion,
-		mfaVersion: a.MFAVersion, sessionVersion: a.WebAuthSessionVersion, at: a.At}
+		mfaVersion: a.MFAVersion, sessionVersion: a.SessionVersion, at: a.At}
 }
 
 func scheduleAuthorityError(err error) error {
 	switch {
 	case errors.Is(err, usercmd.ErrConflict):
 		return schedulecmd.ErrConflict
-	case errors.Is(err, usercmd.ErrForbidden), errors.Is(err, usercmd.ErrNotFound), errors.Is(err, usercmd.ErrWebAuthSessionUnavailable):
+	case errors.Is(err, usercmd.ErrForbidden), errors.Is(err, usercmd.ErrNotFound), errors.Is(err, usercmd.ErrSessionUnavailable):
 		return schedulecmd.ErrForbidden
 	default:
 		return schedulecmd.ErrUnavailable

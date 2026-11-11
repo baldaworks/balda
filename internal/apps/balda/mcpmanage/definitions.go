@@ -151,7 +151,7 @@ func (s *Definitions) save(ctx context.Context, c mcpcmd.Connection, r *mcpcmd.R
 	if authority.At.IsZero() {
 		return mcpcmd.Item{}, mcpcmd.ErrInvalid
 	}
-	audit := usercmd.AuditEvent{ID: rand.Text(), Action: usercmd.AuditActionMCPDefinitionChanged, Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: authority.UserID, ActorWebAuthSessionID: authority.WebAuthSessionID, TargetType: usercmd.AuditTargetMCP, TargetID: c.ID, Source: "mcpmanage", OccurredAt: authority.At}
+	audit := usercmd.AuditEvent{ID: rand.Text(), Action: usercmd.AuditActionMCPDefinitionChanged, Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: authority.UserID, ActorSessionID: authority.SessionID, TargetType: usercmd.AuditTargetMCP, TargetID: c.ID, Source: "mcpmanage", OccurredAt: authority.At}
 	committed := false
 	err := s.catalog.PublishMCP(ctx, func() error {
 		if committed {

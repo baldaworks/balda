@@ -11,11 +11,6 @@ exclude:
   - .config
 
 vendors:
-  management_api_adapter_dependencies:
-    in:
-      - github.com/baldaworks/runtime/v2/agentconfig
-      - github.com/google/uuid
-
   native_hook_process_runtime:
     in:
       - golang.org/x/sys/unix
@@ -58,22 +53,6 @@ vendors:
       - google.golang.org/adk/v2/platform
 
 components:
-  # Generated OpenAPI DTOs and transport scaffolding are a wire boundary.
-  # Feature policy and persistence must not depend on this package directly.
-  management_api_wire:
-    in:
-      - internal/managementapi/v1
-
-  # Client-neutral test support exercises only the generated management wire.
-  management_api_client_testkit:
-    in:
-      - internal/managementapi/v1/clienttest
-
-  # Core-side HTTP adapter for the generated management wire contract.
-  management_api_adapter:
-    in:
-      - internal/apps/balda/managementhttp
-
   chat_archive_app:
     in:
       - internal/apps/balda/chatarchiveapp
@@ -319,11 +298,6 @@ components:
     in:
       - internal/apps/balda/aliascmd
 
-  # Allowlisted configured-system snapshots contain no runtime config or policy.
-  system_view_contracts:
-    in:
-      - internal/apps/balda/systemviewcmd
-
   alias_policy:
     in:
       - internal/apps/balda/aliases
@@ -351,50 +325,30 @@ components:
     in:
       - internal/apps/balda/userpassword
 
-  # Core-owned password, MFA, and WebAuth session policy without HTTP concerns.
-  browser_auth:
-    in:
-      - internal/apps/balda/browserauth
-
   # Separate Backoffice application behavior and composition-facing use cases.
   backoffice_application:
     in:
       - internal/apps/backoffice
 
-  standalone_backoffice_config:
+  # Backoffice-only canonical user and browser-session administration use cases.
+  backoffice_access:
     in:
-      - internal/apps/backoffice/standalone
+      - internal/apps/backoffice/access
 
-  # Private TCP/Unix dialing stays here; the browser never imports Core/state.
-  standalone_backoffice_client:
+  # Bounded, read-only Backoffice security-audit query use case.
+  backoffice_audit:
     in:
-      - internal/apps/backoffice/managementclient
+      - internal/apps/backoffice/audit
 
-  standalone_backoffice_limiter:
+  # Browser-only Backoffice authentication, opaque token rotation, and HTTP guards.
+  backoffice_security:
     in:
-      - internal/apps/backoffice/loginlimit
+      - internal/apps/backoffice/security
 
-  standalone_backoffice_edge:
+  # Embedded, secret-free Backoffice SSR models, templates, and static assets.
+  backoffice_webui:
     in:
-      - internal/apps/backoffice/browseredge
-
-  standalone_backoffice_preview:
-    in:
-      - internal/apps/backoffice/preview
-
-  standalone_backoffice_entrypoint:
-    in:
-      - cmd/backoffice
-
-  # Core-owned canonical user and browser-session administration use cases.
-  core_access:
-    in:
-      - internal/apps/balda/accessapp
-
-  # Bounded, read-only Core security-audit query use case.
-  core_audit:
-    in:
-      - internal/apps/balda/auditapp
+      - internal/apps/backoffice/internal/webui
 
   # Transport-neutral delivery formatting registry.
   neutral_registry:
@@ -676,40 +630,6 @@ components:
       - cmd/balda
 
 deps:
-  management_api_wire:
-    mayDependOn:
-      - management_api_wire
-    deepScan: false
-    anyVendorDeps: true
-
-  management_api_client_testkit:
-    mayDependOn:
-      - management_api_wire
-      - management_api_client_testkit
-
-  management_api_adapter:
-    mayDependOn:
-      - management_api_wire
-      - http_composition
-      - browser_auth
-      - core_access
-      - core_audit
-      - user_contracts
-      - providers
-      - mcp_contracts
-      - schedule_contracts
-      - webhook_route_contracts
-      - alias_contracts
-      - hook_contracts
-      - system_view_contracts
-      - memory_contracts
-      - chat_archive_contracts
-      - contracts
-    deepScan: false
-    anyVendorDeps: false
-    canUse:
-      - management_api_adapter_dependencies
-
   chat_archive_app:
     mayDependOn:
       - chat_archive_contracts
@@ -1122,21 +1042,12 @@ deps:
       - user_security
     anyVendorDeps: true
 
-  browser_auth:
-    mayDependOn:
-      - user_contracts
-      - user_application
-      - user_security
-      - browser_auth
-    anyVendorDeps: true
-
   backoffice_application:
     mayDependOn:
       - chat_archive_contracts
       - hook_contracts
       - memory_contracts
       - alias_contracts
-      - system_view_contracts
       - mcp_contracts
       - schedule_contracts
       - webhook_route_contracts
@@ -1144,77 +1055,59 @@ deps:
       - user_contracts
       - user_application
       - user_security
-      - browser_auth
       - storage
       - infrastructure
       - providers
       - backoffice_application
-      - core_access
-      - core_audit
+      - backoffice_access
+      - backoffice_audit
+      - backoffice_webui
+      - backoffice_security
     # Backoffice receives its canonical persistence port from the host.
     deepScan: false
     anyVendorDeps: true
 
-  standalone_backoffice_config:
-    mayDependOn:
-      - standalone_backoffice_config
-    anyVendorDeps: true
-
-  standalone_backoffice_client:
-    mayDependOn:
-      - management_api_wire
-      - standalone_backoffice_client
-    anyVendorDeps: false
-
-  standalone_backoffice_limiter:
-    mayDependOn:
-      - standalone_backoffice_limiter
-    anyVendorDeps: false
-
-  standalone_backoffice_edge:
-    mayDependOn:
-      - management_api_wire
-      - standalone_backoffice_client
-      - standalone_backoffice_limiter
-      - standalone_backoffice_edge
-      # QA preview injects its synthetic service through the edge-owned port.
-      - standalone_backoffice_preview
-    anyVendorDeps: false
-
-  standalone_backoffice_preview:
-    mayDependOn:
-      - management_api_wire
-      - standalone_backoffice_client
-      - standalone_backoffice_edge
-      - standalone_backoffice_preview
-    deepScan: false
-    anyVendorDeps: false
-
-  standalone_backoffice_entrypoint:
-    mayDependOn:
-      - standalone_backoffice_config
-      - standalone_backoffice_client
-      - standalone_backoffice_edge
-      - standalone_backoffice_entrypoint
-    anyVendorDeps: true
-
-  core_access:
+  backoffice_security:
     mayDependOn:
       - user_contracts
       - user_application
       - user_security
-      - core_access
+      - backoffice_security
+    # The storage and HTTP services are injected through security-owned narrow ports.
+    deepScan: false
+    anyVendorDeps: true
+
+  backoffice_access:
+    mayDependOn:
+      - user_contracts
+      - user_application
+      - user_security
+      - backoffice_access
     # The selected user store is injected through the Access-owned narrow port.
     deepScan: false
     anyVendorDeps: true
 
-  core_audit:
+  backoffice_audit:
     mayDependOn:
       - user_contracts
       - user_application
-      - core_audit
+      - backoffice_audit
     # The selected audit repository is injected through the Audit-owned query port.
     deepScan: false
+    anyVendorDeps: false
+
+  backoffice_webui:
+    mayDependOn:
+      - chat_archive_contracts
+      - hook_contracts
+      - contracts
+      - memory_contracts
+      - alias_contracts
+      - mcp_contracts
+      - schedule_contracts
+      - webhook_route_contracts
+      - user_contracts
+      - backoffice_webui
     anyVendorDeps: false
 
   # Transport-neutral delivery formatting registry. Provider renderers are
@@ -1665,10 +1558,6 @@ deps:
 
   composition_root:
     mayDependOn:
-      - management_api_adapter
-      - core_access
-      - core_audit
-      - browser_auth
       - plugin_policy
       - chat_archive_wiring
       - chat_archive_backoffice_wiring
@@ -1691,7 +1580,6 @@ deps:
       - webhook_management
       - webhook_route_wiring
       - alias_contracts
-      - system_view_contracts
       - alias_policy
       - alias_wiring
       - alias_backoffice_wiring
@@ -1753,7 +1641,6 @@ deps:
       - composition_root
       - application
       - backoffice_application
-      - standalone_backoffice_preview
       - contracts
       - user_contracts
       - user_security

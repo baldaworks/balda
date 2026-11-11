@@ -32,7 +32,7 @@ func checkProvider_WebhookTestAudit(t *testing.T, open contractOpener) {
 	}
 	authority := &webhookcmd.TestAuthority{UserID: base.UserID, UserVersion: base.UserVersion,
 		CredentialVersion: base.CredentialVersion, MFAVersion: base.MFAVersion,
-		WebAuthSessionID: base.WebAuthSessionID, WebAuthSessionVersion: base.WebAuthSessionVersion, At: base.At,
+		SessionID: base.SessionID, SessionVersion: base.SessionVersion, At: base.At,
 		RouteVersion: route.Version}
 	secretBody := "private-body-must-not-enter-audit"
 	admission := webhookcmd.Admission{RouteName: route.Name, DedupeKey: "webhook-test:configured:first",
@@ -55,7 +55,7 @@ func checkProvider_WebhookTestAudit(t *testing.T, open contractOpener) {
 			continue
 		}
 		auditCount++
-		if event.ActorUserID != authority.UserID || event.ActorWebAuthSessionID != authority.WebAuthSessionID ||
+		if event.ActorUserID != authority.UserID || event.ActorSessionID != authority.SessionID ||
 			event.TargetID != route.Name || event.TargetType != usercmd.AuditTargetWebhookRoute ||
 			strings.Contains(event.Reason, secretBody) || strings.Contains(event.RequestID, secretBody) {
 			t.Fatalf("unsafe Test POST audit: %+v", event)

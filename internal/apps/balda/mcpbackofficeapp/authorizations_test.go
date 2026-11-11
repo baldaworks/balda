@@ -64,7 +64,7 @@ func TestAuthorizationMetadataStaysMonotonicWithCurrentSecurityTime(t *testing.T
 				c := mcpcmd.Connection{ID: r.ConnectionID, PublicID: "worker", Source: mcpcmd.SourceManaged, CurrentRevisionID: r.ID, CreatedAt: floor, UpdatedAt: floor.Add(time.Minute)}
 				audit := fixtureAudit("clock-fixture", usercmd.AuditActionMCPDefinitionChanged, usercmd.AuditTargetMCP, c.ID)
 				authority.At = audit.OccurredAt
-				audit.ActorUserID, audit.ActorWebAuthSessionID = authority.UserID, authority.WebAuthSessionID
+				audit.ActorUserID, audit.ActorSessionID = authority.UserID, authority.SessionID
 				if err := provider.MCP().SaveMCPConnection(t.Context(), state.MCPMutation{Connection: c, Revision: &r, Authority: authority, Audit: audit}); err != nil {
 					t.Fatal(err)
 				}
