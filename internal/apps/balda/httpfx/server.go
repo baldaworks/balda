@@ -24,6 +24,7 @@ type Server struct {
 	listenAddr string
 	handler    http.Handler
 	component  string
+	unixSocket bool
 
 	mu       sync.Mutex
 	server   *http.Server
@@ -42,7 +43,12 @@ func NewNamedServer(component, listenAddr string, handler http.Handler) *Server 
 	return &Server{component: component, listenAddr: listenAddr, handler: handler}
 }
 
-// Start binds the configured TCP address and launches the serving loop.
+// NewNamedUnixServer constructs an inert server owning one private Unix socket.
+func NewNamedUnixServer(component, socketPath string, handler http.Handler) *Server {
+	return &Server{component: component, listenAddr: socketPath, handler: handler, unixSocket: true}
+}
+
+// Start binds the configured local endpoint and launches the serving loop.
 func (s *Server) Start() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -63,7 +69,13 @@ func (s *Server) Start() error {
 	if s.listenAddr == "" {
 		return fmt.Errorf("%s listen address is required", s.component)
 	}
-	listener, err := net.Listen("tcp", s.listenAddr)
+	var listener net.Listener
+	var err error
+	if s.unixSocket {
+		listener, err = listenUnix(s.listenAddr)
+	} else {
+		listener, err = net.Listen("tcp", s.listenAddr)
+	}
 	if err != nil {
 		return fmt.Errorf("listen for %s on %s: %w", s.component, s.listenAddr, err)
 	}

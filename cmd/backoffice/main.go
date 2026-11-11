@@ -41,6 +41,7 @@ balda:
   management:
     enabled: false
     listen_addr: 127.0.0.1:8096
+    socket_path: ""
     operator_token: ""
 `
 
@@ -99,7 +100,7 @@ func prepare(ctx context.Context, opts options, network bool) (prepared, error) 
 	if err != nil {
 		return prepared{}, err
 	}
-	client, err := managementclient.New(managementclient.Config{BaseURL: resolved.CoreURL, OperatorToken: resolved.OperatorToken})
+	client, err := managementclient.New(managementclient.Config{BaseURL: resolved.CoreURL, SocketPath: resolved.SocketPath, OperatorToken: resolved.OperatorToken})
 	if err != nil {
 		return prepared{}, err
 	}

@@ -3,6 +3,7 @@ package managementhttp
 import (
 	"fmt"
 	"net"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -13,6 +14,7 @@ const maxOperatorTokenBytes = 4096
 type Config struct {
 	Enabled       bool   `mapstructure:"enabled"`
 	ListenAddr    string `mapstructure:"listen_addr"`
+	SocketPath    string `mapstructure:"socket_path"`
 	OperatorToken string `mapstructure:"operator_token" json:"-" yaml:"-"`
 }
 
@@ -20,6 +22,7 @@ type Config struct {
 type ResolvedConfig struct {
 	Enabled    bool
 	ListenAddr string
+	SocketPath string
 	auth       operatorAuthenticator
 }
 
@@ -33,9 +36,17 @@ func (c Config) resolve(allowPortZero bool) (ResolvedConfig, error) {
 		return ResolvedConfig{}, nil
 	}
 
-	listenAddr, err := resolveListenAddr(c.ListenAddr, allowPortZero)
-	if err != nil {
-		return ResolvedConfig{}, err
+	var listenAddr string
+	if c.SocketPath != "" {
+		if !filepath.IsAbs(c.SocketPath) || filepath.Clean(c.SocketPath) != c.SocketPath || strings.ContainsAny(c.SocketPath, "\x00\r\n") {
+			return ResolvedConfig{}, fmt.Errorf("balda.management.socket_path must be a canonical absolute path")
+		}
+	} else {
+		var err error
+		listenAddr, err = resolveListenAddr(c.ListenAddr, allowPortZero)
+		if err != nil {
+			return ResolvedConfig{}, err
+		}
 	}
 	authenticator, err := newAuthenticator(c.OperatorToken)
 	if err != nil {
@@ -44,6 +55,7 @@ func (c Config) resolve(allowPortZero bool) (ResolvedConfig, error) {
 	return ResolvedConfig{
 		Enabled:    true,
 		ListenAddr: listenAddr,
+		SocketPath: c.SocketPath,
 		auth:       authenticator,
 	}, nil
 }

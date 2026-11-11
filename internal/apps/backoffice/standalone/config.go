@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/url"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -43,10 +44,11 @@ type BackofficeConfig struct {
 	ListenAddr string `mapstructure:"listen_addr"`
 }
 
-// ManagementConfig identifies the loopback Core API and its application token.
+// ManagementConfig identifies the private Core API and its application token.
 type ManagementConfig struct {
 	Enabled       bool   `mapstructure:"enabled"`
 	ListenAddr    string `mapstructure:"listen_addr"`
+	SocketPath    string `mapstructure:"socket_path"`
 	OperatorToken string `mapstructure:"operator_token" json:"-" yaml:"-"`
 }
 
@@ -56,6 +58,7 @@ type ResolvedConfig struct {
 	PublicOrigin     string
 	MountPath        string
 	CoreURL          string
+	SocketPath       string
 	OperatorToken    string `json:"-" yaml:"-"`
 	WebhookURLPrefix string
 }
@@ -97,16 +100,24 @@ func (c Config) Resolve() (ResolvedConfig, error) {
 	if !c.Management.Enabled {
 		return ResolvedConfig{}, fmt.Errorf("balda.management.enabled must be true for standalone Backoffice")
 	}
-	managementAddr, managementLoopback, err := resolveListenAddr(c.Management.ListenAddr, true)
-	if err != nil || !managementLoopback {
-		return ResolvedConfig{}, fmt.Errorf("balda.management.listen_addr must be an explicit loopback IP host:port address")
+	coreURL := "http://127.0.0.1"
+	if c.Management.SocketPath != "" {
+		if !filepath.IsAbs(c.Management.SocketPath) || filepath.Clean(c.Management.SocketPath) != c.Management.SocketPath || strings.ContainsAny(c.Management.SocketPath, "\x00\r\n") {
+			return ResolvedConfig{}, fmt.Errorf("balda.management.socket_path must be a canonical absolute path")
+		}
+	} else {
+		managementAddr, managementLoopback, err := resolveListenAddr(c.Management.ListenAddr, true)
+		if err != nil || !managementLoopback {
+			return ResolvedConfig{}, fmt.Errorf("balda.management.listen_addr must be an explicit loopback IP host:port address")
+		}
+		coreURL = "http://" + managementAddr
 	}
 	if err := validateBearerToken(c.Management.OperatorToken); err != nil {
 		return ResolvedConfig{}, err
 	}
 	return ResolvedConfig{
 		ListenAddr: listenAddr, PublicOrigin: publicOrigin, MountPath: basePath + "/backoffice",
-		CoreURL: "http://" + managementAddr, OperatorToken: c.Management.OperatorToken,
+		CoreURL: coreURL, SocketPath: c.Management.SocketPath, OperatorToken: c.Management.OperatorToken,
 		WebhookURLPrefix: publicOrigin + basePath + "/webhooks/",
 	}, nil
 }

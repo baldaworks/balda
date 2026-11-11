@@ -72,7 +72,7 @@ These records are active architecture contracts.
 - `startupnotifyapp` owns provider-independent readiness delivery to confirmed
   primary-administrator bindings; `startupnotifyfx` adapts channel-owned DM
   resolution without moving transport rules into the application service.
-- `internal/apps/balda/httpfx` owns Core's checked webhook/gateway listener and route registry. The standalone `cmd/backoffice` process owns browser ingress and calls Core only through the generated loopback Management API client. A reverse proxy exposes `/backoffice`, `/webhooks`, and `/gateway` as sibling public areas under `balda.http.base_path`.
+- `internal/apps/balda/httpfx` owns Core's checked webhook/gateway listener and route registry. The standalone `cmd/backoffice` process owns browser ingress and calls Core only through the generated private Management API client over loopback TCP or a Unix socket. A reverse proxy exposes `/backoffice`, `/webhooks`, and `/gateway` as sibling public areas under `balda.http.base_path`.
 - `locatorref` owns the public `<channel_type>:<address_key>` reference form and must stay independent from concrete transport adapter packages.
 - Use-case packages such as `sessionturn` and MCP surfaces own local ports and depend on small interfaces; composition/wiring code provides concrete adapters.
 - `sessionturn` owns queued-turn restoration and delegates provider iteration through a narrow executor port.
