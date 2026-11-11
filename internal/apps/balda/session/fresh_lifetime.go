@@ -71,6 +71,13 @@ func (m *Manager) PrepareFreshLifetime(ctx context.Context, request FreshLifetim
 		!validModelInputHash(request.InputHash) {
 		return nil, FreshLifetimeResult{Status: FreshLifetimeConflict, Reason: baldastate.RuntimeOperationReasonInvalid}, ErrRuntimePublicationInvalid
 	}
+	// Canceled requests still settle any durable preparation below. The
+	// lifecycle guard fences shutdown without skipping that reconciliation.
+	endLifecycle, err := m.beginLifecycleOperation(context.WithoutCancel(ctx))
+	if err != nil {
+		return nil, freshLifetimeUnavailable(), err
+	}
+	defer endLifecycle()
 
 	unlockOperation := m.lockSessionOperation("\x00lifetime-operation:" + request.OperationID)
 	defer unlockOperation()
@@ -112,7 +119,16 @@ func (m *Manager) PrepareFreshLifetime(ctx context.Context, request FreshLifetim
 			result, resultErr := freshLifetimeRecoveryRequired()
 			return nil, result, resultErr
 		}
-		return nil, freshLifetimeUnavailable(), nil
+		// Commands do not pass through conversational lazy restore. Resolve the
+		// saved local lifetime while holding the same session operation lock.
+		topic, err = m.restoreFreshLifetimeSessionLocked(ctx, request.SessionID)
+		if err != nil {
+			if errors.Is(err, ErrRuntimeRecoveryRequired) {
+				result, resultErr := freshLifetimeRecoveryRequired()
+				return nil, result, resultErr
+			}
+			return nil, freshLifetimeUnavailable(), err
+		}
 	}
 	lease, err := topic.AcquireRuntime()
 	if err != nil {
@@ -292,6 +308,27 @@ func (m *Manager) PrepareFreshLifetime(ctx context.Context, request FreshLifetim
 		ownsPreparation: ownsPreparation, incumbent: incumbent, candidate: candidate, runtimeCandidate: runtimeCandidate,
 		activation: activation,
 	}, FreshLifetimeResult{}, nil
+}
+
+func (m *Manager) restoreFreshLifetimeSessionLocked(ctx context.Context, sessionID string) (*TopicSession, error) {
+	if m.sessionStore == nil {
+		return nil, ErrNoPersistedSession
+	}
+	if err := m.recoverRuntimeOperation(ctx, sessionID); err != nil {
+		return nil, err
+	}
+	record, found, err := m.sessionStore.GetBySessionID(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, ErrNoPersistedSession
+	}
+	locator, err := LocatorFromRecord(record)
+	if err != nil {
+		return nil, err
+	}
+	return m.prepareSessionLocked(ctx, SessionContext{Locator: locator, UserID: record.UserID}, record.AgentName, false, record, true)
 }
 
 func (m *Manager) completeTerminalFreshLifetimePublication(ctx context.Context, operation baldastate.RuntimeOperationRecord, topic *TopicSession) bool {

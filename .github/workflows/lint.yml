@@ -61,7 +61,7 @@ jobs:
           elif [[ "$BACKOFFICE" == true ]]; then
             go tool golangci-lint run ./cmd/backoffice/... ./internal/apps/backoffice/...
           elif [[ "$CORE" == true ]]; then
-            mapfile -t packages < <(go list ./... | grep -Ev '^github\.com/baldaworks/balda/(cmd/backoffice|internal/apps/backoffice)(/|$)')
+            mapfile -t packages < <(go list ./... | grep -Ev '^github\.com/baldaworks/balda/(cmd/backoffice|internal/apps/backoffice)(/|$)' | sed 's#^github\.com/baldaworks/balda/#./#')
             go tool golangci-lint run "${packages[@]}"
           else
             echo 'docs-only: no product lint selected'

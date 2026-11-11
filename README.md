@@ -66,6 +66,8 @@ Use `/cancel` to stop the current turn. `/reset` and `/new` queue a fresh,
 empty local conversation with current capabilities while keeping the exact
 provider binding, optional requested model preference, and workspace. The active model remains unknown
 until later provider attachment or execution.
+Both commands also work as the first command after a process restart: saved local
+session state is restored inside the queue without a preliminary conversation turn.
 Use `/status` to inspect the provider, requested and observed model state, session state,
 and current turn without changing the runtime.
 Use `/model` to read the requested preference and current active observation, or `/model <model-id>` to queue a
