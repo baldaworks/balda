@@ -1,9 +1,7 @@
 package balda
 
 import (
-	"context"
 	"fmt"
-	"net/http"
 	"net/url"
 	"strings"
 
@@ -17,20 +15,8 @@ import (
 	runtimeconfig "github.com/baldaworks/runtime/v2/appconfig"
 )
 
-func backofficeSharedHandler(ctx context.Context, runtime *backoffice.Runtime, cfg BaldaConfig, mcp *mcpbackofficeapp.Operations) (http.Handler, error) {
-	server, err := cfg.ResolveSharedBackofficeServer()
-	if err != nil {
-		return nil, err
-	}
-	services := backoffice.HandlerServices{}
-	if mcp != nil {
-		services.MCP, services.MCPAuthorizations = mcp, mcp
-	}
-	return runtime.Handler(ctx, server, services)
-}
-
 func newSharedBackofficeMCP(cfg BaldaConfig, grants *mcpmanage.Grants, definitions *mcpmanage.Definitions, catalog *catalogapp.Runtime) (*mcpbackofficeapp.Operations, *mcpmanage.Authorizations, error) {
-	server, err := cfg.ResolveSharedBackofficeServer()
+	server, err := cfg.ResolveBackofficeProjection()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -50,12 +36,12 @@ func newSharedBackofficeMCP(cfg BaldaConfig, grants *mcpmanage.Grants, definitio
 	return operations, authorizations, nil
 }
 
-func backofficeRuntimeConfig(cfg BaldaConfig, runtimeCfg runtimeconfig.RuntimeConfig, profile string, database state.DatabaseConfig) (backoffice.ResolvedConfig, error) {
+func backofficeProjectionConfig(cfg BaldaConfig, runtimeCfg runtimeconfig.RuntimeConfig, profile string, database state.DatabaseConfig) (backoffice.ResolvedConfig, error) {
 	sharedHTTP, err := cfg.ResolveHTTP()
 	if err != nil {
 		return backoffice.ResolvedConfig{}, err
 	}
-	server, err := cfg.ResolveSharedBackofficeServer()
+	server, err := cfg.ResolveBackofficeProjection()
 	if err != nil {
 		return backoffice.ResolvedConfig{}, err
 	}

@@ -44,6 +44,33 @@ const (
 	pluginsRuntimeFixtureID = "fixture"
 )
 
+type pluginsRuntimeCompletion struct {
+	state.PluginStore
+	fail bool
+}
+
+func (s *pluginsRuntimeCompletion) CompletePluginActivation(ctx context.Context, id string, at time.Time) error {
+	if s.fail {
+		return fmt.Errorf("synthetic completion fault")
+	}
+	return s.PluginStore.CompletePluginActivation(ctx, id, at)
+}
+
+type pluginsRuntimeActivator struct {
+	pluginapp.CatalogActivator
+	entered chan struct{}
+}
+
+func (a *pluginsRuntimeActivator) LockCatalogMutation(ctx context.Context) (func(), error) {
+	if a.entered != nil {
+		select {
+		case a.entered <- struct{}{}:
+		default:
+		}
+	}
+	return a.CatalogActivator.LockCatalogMutation(ctx)
+}
+
 // TestBackofficePluginsRuntimeContracts uses the production Fx owners and the
 // real session manager. Only the provider itself is replaced: no LLM is called.
 func TestBackofficePluginsRuntimeContracts(t *testing.T) {

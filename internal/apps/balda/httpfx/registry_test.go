@@ -14,13 +14,7 @@ func TestRegistryDispatchesOnlyOwnedRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var browser, gateway, webhook int
-	if err := registry.AddBackoffice("backoffice", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		browser++
-		w.WriteHeader(http.StatusOK)
-	})); err != nil {
-		t.Fatal(err)
-	}
+	var gateway, webhook int
 	if err := registry.AddGateway("slack events", "/balda/gateway/slack/events", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		gateway++
 		w.WriteHeader(http.StatusAccepted)
@@ -41,8 +35,8 @@ func TestRegistryDispatchesOnlyOwnedRoutes(t *testing.T) {
 		path string
 		want int
 	}{
-		{"/balda/backoffice/", http.StatusOK},
-		{"/balda/backoffice/webhooks", http.StatusOK},
+		{"/balda/backoffice/", http.StatusNotFound},
+		{"/balda/backoffice/webhooks", http.StatusNotFound},
 		{"/balda/gateway/slack/events", http.StatusAccepted},
 		{"/balda/webhooks/orders", http.StatusAccepted},
 		{"/balda/webhooks/missing", http.StatusNotFound},
@@ -58,8 +52,8 @@ func TestRegistryDispatchesOnlyOwnedRoutes(t *testing.T) {
 			t.Errorf("GET %s: status = %d, want %d", test.path, recorder.Code, test.want)
 		}
 	}
-	if browser != 2 || gateway != 1 || webhook != 1 {
-		t.Errorf("handler calls = browser %d, gateway %d, webhook %d; want 2, 1, 1", browser, gateway, webhook)
+	if gateway != 1 || webhook != 1 {
+		t.Errorf("handler calls = gateway %d, webhook %d; want 1, 1", gateway, webhook)
 	}
 }
 
@@ -123,9 +117,6 @@ func TestRegistryWebhookLookupFailureDoesNotAdmit(t *testing.T) {
 func TestRegistryActivatesWebhookWithoutRestart(t *testing.T) {
 	registry, err := NewRegistry("/balda")
 	if err != nil {
-		t.Fatal(err)
-	}
-	if err := registry.AddBackoffice("browser", http.NotFoundHandler()); err != nil {
 		t.Fatal(err)
 	}
 	webhookCalls, lookupCalls := 0, 0

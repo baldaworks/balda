@@ -87,7 +87,7 @@ func TestResolvedHTTPURLs(t *testing.T) {
 	}
 }
 
-func TestResolveHTTPFallsBackToBackofficeSettings(t *testing.T) {
+func TestResolveHTTPKeepsCoreBindSeparateFromBackoffice(t *testing.T) {
 	cfg := BaldaConfig{Backoffice: backoffice.ServerConfig{
 		ListenAddr: "127.0.0.1:19095", PublicURL: "https://old.example.test/", BasePath: "/old",
 	}}
@@ -95,8 +95,8 @@ func TestResolveHTTPFallsBackToBackofficeSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resolved.ListenAddr != "127.0.0.1:19095" || resolved.BaseURL != "https://old.example.test" || resolved.BasePath != "/old" {
-		t.Fatalf("legacy fallback = %+v", resolved)
+	if resolved.ListenAddr != defaultCoreHTTPListenAddr || resolved.BaseURL != "https://old.example.test" || resolved.BasePath != "/old" {
+		t.Fatalf("separate Core bind and legacy public URL projection = %+v", resolved)
 	}
 
 	empty := ""
@@ -130,16 +130,17 @@ func TestResolveHTTPAcceptsExplicitEmptyBasePathFromConfig(t *testing.T) {
 	}
 }
 
-func TestResolveSharedBackofficeServerUsesSharedBrowserPath(t *testing.T) {
+func TestResolveBackofficeProjectionUsesPublicBrowserPathAndOwnSocket(t *testing.T) {
 	basePath := sharedTestBasePath
-	cfg := BaldaConfig{HTTP: HTTPConfig{
-		ListenAddr: testHTTPListenAddr, BaseURL: "https://balda.example.com", BasePath: &basePath,
-	}}
-	server, err := cfg.ResolveSharedBackofficeServer()
+	cfg := BaldaConfig{
+		Backoffice: backoffice.ServerConfig{ListenAddr: "127.0.0.1:19095"},
+		HTTP:       HTTPConfig{ListenAddr: testHTTPListenAddr, BaseURL: "https://balda.example.com", BasePath: &basePath},
+	}
+	server, err := cfg.ResolveBackofficeProjection()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if server.ListenAddr != testHTTPListenAddr || server.PublicURL != "https://balda.example.com" || server.BasePath != "/balda/backoffice" {
+	if server.ListenAddr != "127.0.0.1:19095" || server.PublicURL != "https://balda.example.com" || server.BasePath != "/balda/backoffice" {
 		t.Fatalf("Backoffice server = %+v", server)
 	}
 	callback, err := mcpfx.MCPCallbackURL(server.PublicURL, server.BasePath)
@@ -148,21 +149,6 @@ func TestResolveSharedBackofficeServerUsesSharedBrowserPath(t *testing.T) {
 	}
 	if callback != "https://balda.example.com/balda/backoffice/mcp/oauth/callback" {
 		t.Errorf("MCP OAuth callback = %q", callback)
-	}
-}
-
-func TestResolveBackofficeServerKeepsLegacyRouteAndSocketUntilCutover(t *testing.T) {
-	basePath := "/balda"
-	cfg := BaldaConfig{
-		Backoffice: backoffice.ServerConfig{ListenAddr: "127.0.0.1:19095", PublicURL: "https://old.example.test", BasePath: "/old"},
-		HTTP:       HTTPConfig{ListenAddr: testHTTPListenAddr, BaseURL: "https://balda.example.com", BasePath: &basePath},
-	}
-	server, err := cfg.ResolveBackofficeServer()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if server.ListenAddr != "127.0.0.1:19095" || server.PublicURL != "https://old.example.test" || server.BasePath != "/old" {
-		t.Fatalf("legacy Backoffice server = %+v", server)
 	}
 }
 
@@ -195,7 +181,7 @@ func stringPtr(value string) *string { return &value }
 
 func TestSharedWebhookDisplayOriginIsOptional(t *testing.T) {
 	cfg := BaldaConfig{}
-	server, err := cfg.ResolveSharedBackofficeServer()
+	server, err := cfg.ResolveBackofficeProjection()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +192,7 @@ func TestSharedWebhookDisplayOriginIsOptional(t *testing.T) {
 		t.Fatal("browser authentication origin must remain resolved")
 	}
 	cfg.HTTP.BaseURL = "https://balda.example.com"
-	server, err = cfg.ResolveSharedBackofficeServer()
+	server, err = cfg.ResolveBackofficeProjection()
 	if err != nil {
 		t.Fatal(err)
 	}

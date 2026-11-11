@@ -60,7 +60,7 @@ func TestApplyHTTPBasePathEnvCanSelectRoot(t *testing.T) {
 	}
 }
 
-func TestLoadConfigDocumentPreservesLegacyHTTPFallback(t *testing.T) {
+func TestLoadConfigDocumentKeepsCoreAndBackofficeBindsSeparate(t *testing.T) {
 	workingDir := t.TempDir()
 	if err := writeFile(filepath.Join(workingDir, ".config", "balda", "config.yaml"), `runtime:
   providers:
@@ -89,8 +89,8 @@ balda:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resolved.ListenAddr != "127.0.0.1:19095" || resolved.BaseURL != "https://old.example.test" || resolved.BasePath != "/old" {
-		t.Fatalf("legacy HTTP fallback = %+v", resolved)
+	if resolved.ListenAddr != "127.0.0.1:8094" || resolved.BaseURL != "https://old.example.test" || resolved.BasePath != "/old" {
+		t.Fatalf("separate Core bind and legacy public URL projection = %+v", resolved)
 	}
 }
 
@@ -182,7 +182,7 @@ func TestLoadedDefaultsDoNotAdvertiseWebhookPublicOrigin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server, err := doc.Balda.ResolveSharedBackofficeServer()
+	server, err := doc.Balda.ResolveBackofficeProjection()
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -21,12 +21,10 @@ BALDA_HTTP_BASE_URL=https://example.com
 BALDA_HTTP_BASE_PATH=/balda
 ```
 
-Balda binds one local HTTP listener for Backoffice, generic webhooks, and
-enabled HTTP transport callbacks. Public HTTPS Request URLs, certificates,
-reverse proxies, ingress, and tunnels are deployment infrastructure outside
-Balda. Forward requests to the shared listener with the original path and raw
-request body. The handlers keep their existing browser, webhook-secret, and
-transport-signature checks.
+Core binds one local HTTP listener for generic webhooks and enabled HTTP
+transport callbacks. The separate `balda-backoffice` process binds its own
+browser listener. Public HTTPS, certificates, reverse proxies, ingress, and
+tunnels remain deployment infrastructure outside Balda.
 
 ### Management API
 
@@ -65,14 +63,11 @@ go build -trimpath -o ./bin/balda-backoffice ./cmd/backoffice
 ./bin/balda-backoffice start
 ```
 
-During the migration, embedded Backoffice remains the production fallback.
-Use a separate profile/listen address when comparing both browser applications;
-do not complete production cutover until the final parity/cutover Story removes
-the embedded application. The standalone process owns no database or
-migrations. Its provider, MCP, Schedules, Webhooks, and Aliases pages call Core
-only through the generated management client. The displayed public webhook URL
-is derived from validated `balda.http.base_url` plus `balda.http.base_path`;
-request `Host` and forwarding headers do not redefine it.
+Core has no embedded Backoffice fallback. The standalone process owns no
+database or migrations. All product pages call Core only through the generated
+management client. The displayed public webhook URL is derived from validated
+`balda.http.base_url` plus `balda.http.base_path`; request `Host` and forwarding
+headers do not redefine it.
 
 The operator bearer token authenticates the Backoffice application, never the
 human user. Login endpoints require only that application credential. Guarded
@@ -235,10 +230,9 @@ completed turn's context, until its owning runtime is closed. See the
 
 ### Shared HTTP listener and public URLs
 
-`balda.http.listen_addr` is the local `host:port` bind for all HTTP-facing
-areas. It defaults to `127.0.0.1:8095`; a port collision aborts startup even
-when no webhook route is enabled. `balda.http.base_url` is the public origin
-used to display and register callbacks. It must contain only `http://` or
+`balda.http.listen_addr` is Core's local `host:port` bind for webhook and
+gateway ingress. `balda.backoffice.listen_addr` is the standalone browser bind.
+`balda.http.base_url` is their canonical public origin. It must contain only `http://` or
 `https://` plus the authority, without credentials, path, trailing slash,
 query, or fragment. A non-loopback bind requires an HTTPS origin.
 `balda.http.base_path` is an optional canonical root-relative deployment prefix:
@@ -247,7 +241,8 @@ values fail configuration validation before the listener binds. Environment
 overrides are `BALDA_HTTP_LISTEN_ADDR`, `BALDA_HTTP_BASE_URL`, and
 `BALDA_HTTP_BASE_PATH`.
 
-The three sibling areas are `<base_path>/backoffice/` for the browser,
+The reverse proxy exposes three sibling areas: `<base_path>/backoffice/` from
+the standalone process,
 `<base_path>/webhooks/<name>` for every config and managed generic webhook, and
 `<base_path>/gateway/<transport>/...` for chat transport callbacks. The
 Backoffice Webhooks management page is under `/backoffice/webhooks`; it is
@@ -269,20 +264,15 @@ balda:
 | Slack Events | `https://balda.example.com/balda/gateway/slack/events` |
 | Slack Commands | `https://balda.example.com/balda/gateway/slack/commands` |
 
-The local `listen_addr` does not appear in those public URLs. With an empty
+Neither local `listen_addr` appears in those public URLs. With an empty
 `base_path`, the same area paths start at `/backoffice`, `/webhooks`, and
-`/gateway`. If a shared field is omitted, it falls back to the corresponding
-`balda.backoffice.listen_addr`, `public_url`, or `base_path` value, then the
-default. Set `balda.http.*` explicitly in new configurations. Old per-area
-listen-address fields are ignored for binding once the shared listener is in
-use; the old Backoffice address fields do not create a separate browser mount.
+`/gateway`. Configure the reverse proxy so `/backoffice` reaches
+`balda.backoffice.listen_addr` while `/webhooks` and `/gateway` reach
+`balda.http.listen_addr`. Set `balda.http.*` explicitly in new configurations.
 Every generic webhook derives its callback path from the current shared prefix
 and immutable route name; changing `base_path` moves all route addresses after
 restart without rewriting route rows. For Backoffice callback display, only an
-explicit `balda.http.base_url` supplies the public origin. If it is omitted,
-generic webhook rows and Overview channel cards show canonical root-relative
-callback paths, even when browser authentication uses a fallback
-`balda.backoffice.public_url`. Chat transport callbacks use only their canonical
+explicit `balda.http.base_url` supplies the public origin. Chat transport callbacks use only their canonical
 `/gateway` paths. Overview also shows Telegram formatting mode, Slack Agent
 private-channel, streaming and suggested-prompt flags, and the Mattermost server
 URL with userinfo, query and fragment removed. Workspace → Agent shows the

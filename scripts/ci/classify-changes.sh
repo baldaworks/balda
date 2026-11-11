@@ -11,8 +11,19 @@ classify_path() {
   saw_path=true
   case "$path" in
     docs/*|*.md) ;;
-    cmd/backoffice/*|internal/apps/backoffice/*|qa/backoffice-e2e/*)
+    cmd/backoffice/*|\
+    internal/apps/backoffice/browseredge/*|\
+    internal/apps/backoffice/loginlimit/*|\
+    internal/apps/backoffice/managementclient/*|\
+    internal/apps/backoffice/preview/*|\
+    internal/apps/backoffice/standalone/*|\
+    qa/backoffice-e2e/*)
       backoffice=true
+      ;;
+    # The root package is Core-owned offline maintenance/config projection.
+    # Unknown future Backoffice subpackages fail safely into the Core suite.
+    internal/apps/backoffice/*)
+      core=true
       ;;
     api/management/*|internal/managementapi/*)
       backoffice=true
