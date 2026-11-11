@@ -486,7 +486,8 @@ Startup and conversation creation retain the full selected server set and its
 exact revisions. Restore first attempts the saved snapshot without filtering
 unavailable servers. Configured HTTP/SSE servers receive no startup, publication
 or inventory discovery requests, and Balda runs no idle remote retry loop. A
-later invocation may make a fresh attachment attempt. If exact restore fails,
+later invocation may make a fresh attachment attempt unless the provider has
+retained an indeterminate-creation fence. If exact restore fails,
 Balda attempts a fresh ADK session at the same locator with current eligible
 capabilities; successful fallback replaces the saved snapshot and clears prior
 ADK state and history while retaining the stable session ID. A failed fallback
@@ -502,6 +503,27 @@ remains an error.
 | Balda-owned stdio handshake and discovery | 10 seconds |
 | Balda-owned MCP stdio graceful stop | 5 seconds, then forced termination with reaping retained by its owner |
 | ACP immediate-child cleanup | Up to 200ms graceful exit, then forced termination and up to 5 seconds waiting for cleanup |
+
+If an ACP `session/new` attempt exhausts its attachment budget after the
+provider has recorded pending creation, remote acceptance is unknown. Balda
+publishes one failed final with explicit recovery advice; ordinary resending
+cannot clear that fence. Choose `/reset` or `/new` to start a new local
+conversation at the same chat/topic through its normal FIFO boundary. This
+preserves the exact provider binding, requested model preference and workspace,
+selects current eligible catalog capabilities, and does not confirm deletion of
+remote history. It neither resets automatically nor increases the timeout.
+A later message against the retained fence returns the same protected outcome
+without another process launch or attachment attempt.
+
+Provider-owned setup diagnostics distinguish gate waiting, process launch,
+`initialize`, attachment preflight/pending, `session/new`/`session/resume` and
+post-attachment configuration. Structural fields report elapsed time,
+configured/effective budget, classified context cause and known/unknown outcome.
+An attempted SDK call does not prove bytes were sent or accepted. These records
+help investigate future failures; the original timeout cause remains unknown.
+They omit command arguments, working directories, prompts, credentials and raw
+provider error bodies. The startup budget remains separate from the unchanged
+10-second attachment bound.
 
 Earlier caller cancellation or deadlines win. These bounds cover ACP startup,
 session attachment, MCP setup and tool operations, not the lifetime of a model
