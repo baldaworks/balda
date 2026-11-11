@@ -14,11 +14,13 @@ check() {
 }
 
 check backoffice 'M\tcmd/backoffice/main.go\n' $'backoffice=true\ncore=false\nfull=false'
+check backoffice-package 'M\tinternal/apps/backoffice/browseredge/app.go\n' $'backoffice=true\ncore=false\nfull=false'
+check maintenance 'M\tinternal/apps/backoffice/maintenance.go\n' $'backoffice=false\ncore=true\nfull=false'
 check core 'D\tinternal/apps/balda/state/store.go\n' $'backoffice=false\ncore=true\nfull=false'
 check shared 'M\tapi/management/v1/openapi.yaml\n' $'backoffice=true\ncore=true\nfull=false'
 check docs 'M\tdocs/reference/backoffice.md\n' $'backoffice=false\ncore=false\nfull=false'
 check unknown 'A\ttools/new-tool.txt\n' $'backoffice=true\ncore=true\nfull=true'
-check rename 'R100\tinternal/apps/backoffice/old.go\tinternal/apps/balda/new.go\n' $'backoffice=true\ncore=true\nfull=false'
+check rename 'R100\tinternal/apps/backoffice/browseredge/old.go\tinternal/apps/balda/new.go\n' $'backoffice=true\ncore=true\nfull=false'
 check ci 'M\t.github/workflows/test.yml\n' $'backoffice=true\ncore=true\nfull=true'
 check malformed 'broken\n' $'backoffice=true\ncore=true\nfull=true'
 

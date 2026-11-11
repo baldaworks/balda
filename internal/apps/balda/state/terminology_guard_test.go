@@ -15,7 +15,6 @@ import (
 
 var terminologyGuardPackages = map[string]map[string]bool{
 	"internal/apps/balda/usercmd":         {},
-	"internal/apps/backoffice/security":   {},
 	"internal/apps/balda/accessapp":       {},
 	"internal/apps/balda/aliascmd":        {},
 	"internal/apps/balda/chatarchivecmd":  {"Message": true},

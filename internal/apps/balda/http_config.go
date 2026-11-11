@@ -20,7 +20,10 @@ type HTTPConfig struct {
 	BasePath   *string `mapstructure:"base_path"`
 }
 
-const httpsScheme = "https"
+const (
+	httpsScheme               = "https"
+	defaultCoreHTTPListenAddr = "127.0.0.1:8094"
+)
 
 // ResolvedHTTPConfig holds validated shared HTTP settings.
 type ResolvedHTTPConfig struct {
@@ -29,19 +32,11 @@ type ResolvedHTTPConfig struct {
 	BasePath   string
 }
 
-// ResolveHTTP resolves shared settings, falling back to the old Backoffice settings.
+// ResolveHTTP resolves Core webhook and gateway ingress settings.
 func (c BaldaConfig) ResolveHTTP() (ResolvedHTTPConfig, error) {
-	defaults, err := (backoffice.ServerConfig{}).Resolve()
-	if err != nil {
-		return ResolvedHTTPConfig{}, fmt.Errorf("resolve default HTTP settings: %w", err)
-	}
-
 	listenAddr := strings.TrimSpace(c.HTTP.ListenAddr)
 	if listenAddr == "" {
-		listenAddr = strings.TrimSpace(c.Backoffice.ListenAddr)
-	}
-	if listenAddr == "" {
-		listenAddr = defaults.ListenAddr
+		listenAddr = defaultCoreHTTPListenAddr
 	}
 	host, port, err := net.SplitHostPort(listenAddr)
 	if err != nil || port == "" {
@@ -85,19 +80,14 @@ func (c BaldaConfig) ResolveHTTP() (ResolvedHTTPConfig, error) {
 	return ResolvedHTTPConfig{ListenAddr: listenAddr, BaseURL: baseURL, BasePath: basePath}, nil
 }
 
-// ResolveBackofficeServer preserves the standalone Backoffice settings until cutover.
-func (c BaldaConfig) ResolveBackofficeServer() (backoffice.ResolvedServerConfig, error) {
-	return c.Backoffice.Resolve()
-}
-
-// ResolveSharedBackofficeServer prepares the browser handler for the shared listener.
-func (c BaldaConfig) ResolveSharedBackofficeServer() (backoffice.ResolvedServerConfig, error) {
+// ResolveBackofficeProjection resolves browser/session policy for the standalone
+// Backoffice and Core-owned Management API services.
+func (c BaldaConfig) ResolveBackofficeProjection() (backoffice.ResolvedServerConfig, error) {
 	httpConfig, err := c.ResolveHTTP()
 	if err != nil {
 		return backoffice.ResolvedServerConfig{}, err
 	}
 	server := c.Backoffice
-	server.ListenAddr = httpConfig.ListenAddr
 	server.PublicURL = httpConfig.BaseURL
 	server.BasePath = httpConfig.BrowserPath()
 	resolved, err := server.Resolve()

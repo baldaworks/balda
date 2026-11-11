@@ -377,6 +377,10 @@ components:
     in:
       - internal/apps/backoffice/browseredge
 
+  standalone_backoffice_preview:
+    in:
+      - internal/apps/backoffice/preview
+
   standalone_backoffice_entrypoint:
     in:
       - cmd/backoffice
@@ -390,16 +394,6 @@ components:
   core_audit:
     in:
       - internal/apps/balda/auditapp
-
-  # Browser-only Backoffice cookie, origin, form, and HTTP guards.
-  backoffice_security:
-    in:
-      - internal/apps/backoffice/security
-
-  # Embedded, secret-free Backoffice SSR models, templates, and static assets.
-  backoffice_webui:
-    in:
-      - internal/apps/backoffice/internal/webui
 
   # Transport-neutral delivery formatting registry.
   neutral_registry:
@@ -1156,8 +1150,6 @@ deps:
       - backoffice_application
       - core_access
       - core_audit
-      - backoffice_webui
-      - backoffice_security
     # Backoffice receives its canonical persistence port from the host.
     deepScan: false
     anyVendorDeps: true
@@ -1184,6 +1176,17 @@ deps:
       - standalone_backoffice_client
       - standalone_backoffice_limiter
       - standalone_backoffice_edge
+      # QA preview injects its synthetic service through the edge-owned port.
+      - standalone_backoffice_preview
+    anyVendorDeps: false
+
+  standalone_backoffice_preview:
+    mayDependOn:
+      - management_api_wire
+      - standalone_backoffice_client
+      - standalone_backoffice_edge
+      - standalone_backoffice_preview
+    deepScan: false
     anyVendorDeps: false
 
   standalone_backoffice_entrypoint:
@@ -1192,15 +1195,6 @@ deps:
       - standalone_backoffice_client
       - standalone_backoffice_edge
       - standalone_backoffice_entrypoint
-    anyVendorDeps: true
-
-  backoffice_security:
-    mayDependOn:
-      - user_contracts
-      - browser_auth
-      - backoffice_security
-    # Core authentication is injected through adapter-owned narrow ports.
-    deepScan: false
     anyVendorDeps: true
 
   core_access:
@@ -1220,20 +1214,6 @@ deps:
       - core_audit
     # The selected audit repository is injected through the Audit-owned query port.
     deepScan: false
-    anyVendorDeps: false
-
-  backoffice_webui:
-    mayDependOn:
-      - chat_archive_contracts
-      - hook_contracts
-      - contracts
-      - memory_contracts
-      - alias_contracts
-      - mcp_contracts
-      - schedule_contracts
-      - webhook_route_contracts
-      - user_contracts
-      - backoffice_webui
     anyVendorDeps: false
 
   # Transport-neutral delivery formatting registry. Provider renderers are
@@ -1772,6 +1752,7 @@ deps:
       - composition_root
       - application
       - backoffice_application
+      - standalone_backoffice_preview
       - contracts
       - user_contracts
       - user_security

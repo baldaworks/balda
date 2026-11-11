@@ -4,11 +4,9 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
-	"net"
 	"path/filepath"
 	"reflect"
 	"testing"
-	"time"
 
 	"github.com/baldaworks/balda/internal/apps/backoffice"
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
@@ -211,31 +209,23 @@ func TestApplicationLifecycleStagesStartQuestionProjectorAfterTransport(t *testi
 	}
 }
 
-func TestBackofficeReadinessAndRollbackBeforeIngress(t *testing.T) {
+func TestUserReadinessBlocksIngressUntilAdminExists(t *testing.T) {
 	provider, err := state.NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = provider.Close() }()
-	reserved, err := net.Listen("tcp", "127.0.0.1:0")
+	readiness, err := backoffice.NewStateService(provider.Users())
 	if err != nil {
 		t.Fatal(err)
 	}
-	address := reserved.Addr().String()
-	if err := reserved.Close(); err != nil {
-		t.Fatal(err)
-	}
-	runtime, err := backoffice.NewRuntime(backoffice.ResolvedConfig{Server: backoffice.ResolvedServerConfig{
-		ListenAddr: address, PublicURL: "http://127.0.0.1:8095",
-		AccessTokenTTL: 15 * time.Minute, RefreshTokenTTL: 12 * time.Hour,
-	}}, provider)
+	bootstrap, err := backoffice.NewBootstrapService(provider.Users())
 	if err != nil {
 		t.Fatal(err)
 	}
 	ingressStarted := false
 	coordinator := newApplicationLifecycle(zerolog.Nop(), []lifecycleStage{
-		{name: "user readiness", start: runtime.ValidateReady},
-		{name: "Backoffice HTTP", start: runtime.Start, stop: runtime.Stop},
+		{name: "user readiness", start: readiness.ValidateReady},
 		{name: "ingress", start: func(context.Context) error {
 			ingressStarted = true
 			return errors.New("ingress failed")
@@ -244,18 +234,13 @@ func TestBackofficeReadinessAndRollbackBeforeIngress(t *testing.T) {
 	if err := coordinator.Start(t.Context()); err == nil || ingressStarted {
 		t.Fatalf("startup without admin = %v, ingress started = %t", err, ingressStarted)
 	}
-	if _, err := runtime.BootstrapAdmin(t.Context(), backoffice.BootstrapInput{
+	if _, err := bootstrap.Bootstrap(t.Context(), backoffice.BootstrapInput{
 		Username: "superuser", Password: []byte("correct horse battery staple"),
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := coordinator.Start(t.Context()); err == nil || !ingressStarted {
 		t.Fatalf("later ingress failure = %v, ingress started = %t", err, ingressStarted)
-	}
-	connection, err := net.DialTimeout("tcp", address, time.Second)
-	if err == nil {
-		_ = connection.Close()
-		t.Fatal("Backoffice listener remained open after ingress rollback")
 	}
 }
 

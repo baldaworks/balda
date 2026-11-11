@@ -22,38 +22,23 @@ type route struct {
 // Registry checks path ownership before assembling the shared HTTP handler.
 // Build it before listening; do not mutate it after calling Handler.
 type Registry struct {
-	backofficePath string
-	webhookPath    string
-	gatewayPath    string
-	backoffice     route
-	webhooks       route
-	lookup         WebhookLookup
-	exact          map[string]route
+	webhookPath string
+	gatewayPath string
+	webhooks    route
+	lookup      WebhookLookup
+	exact       map[string]route
 }
 
-// NewRegistry reserves the three sibling HTTP areas below basePath.
+// NewRegistry reserves the webhook and gateway HTTP areas below basePath.
 func NewRegistry(basePath string) (*Registry, error) {
 	if basePath != "" && (basePath == "/" || !strings.HasPrefix(basePath, "/") || strings.HasSuffix(basePath, "/") || strings.ContainsAny(basePath, "\\?#% \t\r\n") || strings.Contains(basePath, "//") || path.Clean(basePath) != basePath) {
 		return nil, fmt.Errorf("invalid shared http base path %q", basePath)
 	}
 	return &Registry{
-		backofficePath: basePath + "/backoffice",
-		webhookPath:    basePath + "/webhooks",
-		gatewayPath:    basePath + "/gateway",
-		exact:          make(map[string]route),
+		webhookPath: basePath + "/webhooks",
+		gatewayPath: basePath + "/gateway",
+		exact:       make(map[string]route),
 	}, nil
-}
-
-// AddBackoffice mounts the already secured browser handler below /backoffice.
-func (r *Registry) AddBackoffice(owner string, handler http.Handler) error {
-	if err := validateContribution(owner, handler); err != nil {
-		return err
-	}
-	if r.backoffice.handler != nil {
-		return routeConflict(r.backofficePath, owner, r.backoffice.owner)
-	}
-	r.backoffice = route{owner: owner, handler: handler}
-	return nil
 }
 
 // AddGateway registers one exact callback path.
@@ -66,9 +51,6 @@ func (r *Registry) AddGateway(owner, routePath string, handler http.Handler) err
 	}
 	if existing, exists := r.exact[routePath]; exists {
 		return routeConflict(routePath, owner, existing.owner)
-	}
-	if within(routePath, r.backofficePath) {
-		return routeConflict(routePath, owner, areaOwner(r.backoffice.owner, "backoffice"))
 	}
 	if within(routePath, r.webhookPath) {
 		return routeConflict(routePath, owner, areaOwner(r.webhooks.owner, "webhooks"))
@@ -106,18 +88,10 @@ func (r *Registry) Handler() http.Handler {
 	for routePath, contribution := range r.exact {
 		exact[routePath] = contribution
 	}
-	backoffice, webhooks, lookup := r.backoffice, r.webhooks, r.lookup
-	backofficePath, gatewayPath, webhookPath := r.backofficePath, r.gatewayPath, r.webhookPath
+	webhooks, lookup := r.webhooks, r.lookup
+	gatewayPath, webhookPath := r.gatewayPath, r.webhookPath
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		path := request.URL.Path
-		if within(path, backofficePath) {
-			if backoffice.handler != nil {
-				backoffice.handler.ServeHTTP(w, request)
-			} else {
-				http.NotFound(w, request)
-			}
-			return
-		}
 		if contribution, ok := exact[path]; ok {
 			contribution.handler.ServeHTTP(w, request)
 			return

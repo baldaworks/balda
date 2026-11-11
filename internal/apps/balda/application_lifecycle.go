@@ -196,7 +196,7 @@ type applicationLifecycleParams struct {
 	WebhookHTTP          webhookfx.HTTPContribution
 	GatewayCallbacks     []httpfx.GatewayCallbackProvider `group:"balda_http_gateway_callback_providers"`
 	TelegramSource       runtime.UpdateSource
-	Backoffice           *backoffice.Runtime
+	UserReadiness        *backoffice.StateService
 	CommandWorkers       *commandoutboxfx.LifecycleWorkers
 	BackofficeMCP        *mcpbackofficeapp.Operations
 	BackofficeSchedules  *schedulebackofficeapp.Operations
@@ -255,7 +255,7 @@ func applicationLifecycleStages(p applicationLifecycleParams, telegram *telegram
 		// FX constructs this before Start. Register cleanup first so every failed
 		// startup stage also closes pending browser authorization attempts.
 		{name: "MCP authorization attempts", stop: func(context.Context) error { p.MCPAuthorizations.Close(); return nil }},
-		{name: "user readiness", start: p.Backoffice.ValidateReady},
+		{name: "user readiness", start: p.UserReadiness.ValidateReady},
 		{name: "bundled MCP", start: p.MCP.EnsureStarted, stop: p.MCP.Stop},
 		{name: "managed MCP credential readiness", start: func(ctx context.Context) error {
 			return p.MCPManagement.ValidateCredentials(ctx, p.StateProvider.MCP())
@@ -380,13 +380,6 @@ func commandRecoveryStages(
 }
 
 func startSharedHTTPIngress(ctx context.Context, p applicationLifecycleParams) (*httpfx.Server, error) {
-	handler, err := backofficeSharedHandler(ctx, p.Backoffice, p.Config, p.BackofficeMCP)
-	if err != nil {
-		return nil, err
-	}
-	if err := p.HTTPRegistry.AddBackoffice("backoffice", handler); err != nil {
-		return nil, err
-	}
 	for _, provider := range p.GatewayCallbacks {
 		callbacks, err := provider(ctx)
 		if err != nil {

@@ -8,19 +8,15 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
-	"net/http/cookiejar"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/backoffice"
-	"github.com/baldaworks/balda/internal/apps/backoffice/security"
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
 	"github.com/baldaworks/balda/internal/apps/balda/catalogapp"
 	"github.com/baldaworks/balda/internal/apps/balda/httpfx"
@@ -240,11 +236,11 @@ func TestUnavailableMCPStartupKeepsManagementRunningAndDefersProviderBuild(t *te
 				if err := reserved.Close(); err != nil {
 					t.Fatal(err)
 				}
-				management, err := backoffice.NewRuntime(backoffice.ResolvedConfig{Server: backoffice.ResolvedServerConfig{ListenAddr: address, PublicURL: "http://" + address, AccessTokenTTL: 15 * time.Minute, RefreshTokenTTL: time.Hour}}, provider)
+				bootstrap, err := backoffice.NewBootstrapService(provider.Users())
 				if err != nil {
 					t.Fatal(err)
 				}
-				admin, err := management.BootstrapAdmin(t.Context(), backoffice.BootstrapInput{Username: "superuser", Password: []byte("correct horse battery staple")})
+				admin, err := bootstrap.Bootstrap(t.Context(), backoffice.BootstrapInput{Username: "superuser", Password: []byte("correct horse battery staple")})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -309,7 +305,7 @@ func TestUnavailableMCPStartupKeepsManagementRunningAndDefersProviderBuild(t *te
 				if err != nil {
 					t.Fatal(err)
 				}
-				params := applicationLifecycleParams{Catalog: lifecycle, Runtime: manager, Backoffice: management, StateProvider: provider, MCPManagement: credentials, MCPBridge: bridge, Logger: zerolog.Nop(),
+				params := applicationLifecycleParams{Catalog: lifecycle, Runtime: manager, UserReadiness: runtimeStateService(t, provider), StateProvider: provider, MCPManagement: credentials, MCPBridge: bridge, Logger: zerolog.Nop(),
 					Config:     BaldaConfig{HTTP: HTTPConfig{ListenAddr: address, BaseURL: "http://" + address}},
 					HTTPConfig: ResolvedHTTPConfig{ListenAddr: address, BaseURL: "http://" + address}, HTTPRegistry: httpRegistry,
 					WebhookHTTP: webhookfx.HTTPContribution(func(context.Context, *httpfx.Registry) error { return nil }),
@@ -331,12 +327,11 @@ func TestUnavailableMCPStartupKeepsManagementRunningAndDefersProviderBuild(t *te
 				if attempts.Load() != 0 {
 					t.Fatalf("startup initiated %d remote MCP requests", attempts.Load())
 				}
-				managementClient := verifyAuthenticatedMCPManagement(t, "http://"+address+"/backoffice")
+				verifyEmbeddedBackofficeAbsent(t, "http://"+address+"/backoffice")
 				if !validProvider {
 					if _, err := manager.Runtime(t.Context()); err == nil {
 						t.Fatal("first provider use unexpectedly accepted invalid static configuration")
 					}
-					verifyMCPManagementOverview(t, managementClient, "http://"+address+"/backoffice")
 					return
 				}
 				built, err := manager.Runtime(t.Context())
@@ -358,7 +353,6 @@ func TestUnavailableMCPStartupKeepsManagementRunningAndDefersProviderBuild(t *te
 					t.Fatal("startup captured OAuth without administrator action")
 				}
 				verifyUnavailableInvocationKeepsRuntime(t, builder, manager, built, stateDir)
-				verifyMCPManagementOverview(t, managementClient, "http://"+address+"/backoffice")
 				// Release the deliberately stalled peer before owner shutdown so
 				// the retained SDK cancellation notification can finish its cleanup.
 				close(release)
@@ -368,61 +362,15 @@ func TestUnavailableMCPStartupKeepsManagementRunningAndDefersProviderBuild(t *te
 	}
 }
 
-func verifyAuthenticatedMCPManagement(t *testing.T, origin string) *http.Client {
+func verifyEmbeddedBackofficeAbsent(t *testing.T, origin string) {
 	t.Helper()
-	jar, err := cookiejar.New(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// The real login performs bcrypt work at the production cost. Allow the
-	// server's 30-second response budget during concurrent full race tests.
-	client := &http.Client{Jar: jar, Timeout: 35 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	client := &http.Client{Timeout: 5 * time.Second}
 	response, err := client.Get(origin + "/login")
 	if err != nil {
 		t.Fatal(err)
 	}
 	_ = response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		t.Fatalf("login GET = %d", response.StatusCode)
-	}
-	u, _ := url.Parse(origin + "/login")
-	var csrf string
-	for _, cookie := range jar.Cookies(u) {
-		if cookie.Name == security.CSRFCookieName {
-			csrf = cookie.Value
-		}
-	}
-	if csrf == "" {
-		t.Fatal("management did not issue login CSRF")
-	}
-	form := url.Values{"username": {"superuser"}, "password": {"correct horse battery staple"}, "csrf_token": {csrf}}
-	request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, origin+"/login", strings.NewReader(form.Encode()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	request.Header.Set("Origin", u.Scheme+"://"+u.Host)
-	request.Header.Set("Sec-Fetch-Site", "same-origin")
-	response, err = client.Do(request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = response.Body.Close()
-	if response.StatusCode != http.StatusSeeOther {
-		t.Fatalf("authenticated login = %d", response.StatusCode)
-	}
-	verifyMCPManagementOverview(t, client, origin)
-	return client
-}
-
-func verifyMCPManagementOverview(t *testing.T, client *http.Client, origin string) {
-	t.Helper()
-	response, err := client.Get(origin + "/overview")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		t.Fatalf("authenticated management = %d", response.StatusCode)
+	if response.StatusCode != http.StatusNotFound {
+		t.Fatalf("embedded Backoffice status = %d, want 404", response.StatusCode)
 	}
 }

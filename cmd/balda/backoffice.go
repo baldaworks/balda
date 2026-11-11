@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/baldaworks/balda/internal/apps/backoffice"
+	"github.com/baldaworks/balda/internal/apps/backoffice/preview"
 	"github.com/baldaworks/balda/internal/apps/balda/userpassword"
 	"github.com/spf13/cobra"
 )
@@ -28,7 +29,7 @@ func backofficeQACommand() *cobra.Command {
 		RunE: func(command *cobra.Command, _ []string) error {
 			ctx, stop := signal.NotifyContext(command.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
-			return backoffice.ServeQA(ctx, listenAddr, func(address string) {
+			return preview.ServeQA(ctx, listenAddr, func(address string) {
 				_, _ = fmt.Fprintf(command.OutOrStdout(), "Backoffice QA: http://%s/qa/ui/\n", address)
 			})
 		},
@@ -38,18 +39,12 @@ func backofficeQACommand() *cobra.Command {
 	return command
 }
 
-func openBackofficeMaintenance(command *cobra.Command) (*backoffice.Runtime, error) {
+func openBackofficeMaintenance(command *cobra.Command) (*backoffice.Maintenance, error) {
 	prepared, err := loadBaldaCommandConfig(false)
 	if err != nil {
 		return nil, err
 	}
-	server, err := prepared.baldaCfg.Balda.Backoffice.Resolve()
-	if err != nil {
-		return nil, err
-	}
-	return backoffice.OpenRuntime(command.Context(), backoffice.ResolvedConfig{
-		Server: server, Database: prepared.database,
-	})
+	return backoffice.OpenMaintenance(command.Context(), prepared.database)
 }
 
 func bootstrapAdminCommand() *cobra.Command {

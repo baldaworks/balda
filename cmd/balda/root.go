@@ -103,7 +103,7 @@ func newRootCommand() (*cobra.Command, error) {
 
 	cmd := &cobra.Command{
 		Use:     "balda",
-		Short:   "Balda assistant with embedded Backoffice and integrations",
+		Short:   "Balda assistant Core and integrations",
 		Version: fmt.Sprintf("balda %s (commit %s, built %s)", resolvedVersion, resolvedCommit, resolvedDate),
 		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
 			logLevel := logging.LevelInfo

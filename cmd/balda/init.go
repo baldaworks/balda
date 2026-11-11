@@ -190,12 +190,7 @@ func bootstrapInitialAdmin(ctx context.Context, database state.DatabaseConfig) (
 	if err != nil {
 		return nil, err
 	}
-	server, err := (backoffice.ServerConfig{}).Resolve()
-	if err != nil {
-		zeroPassword(password)
-		return nil, err
-	}
-	runtime, err := backoffice.OpenRuntime(ctx, backoffice.ResolvedConfig{Server: server, Database: database})
+	runtime, err := backoffice.OpenMaintenance(ctx, database)
 	if err != nil {
 		zeroPassword(password)
 		return nil, err

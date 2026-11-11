@@ -45,7 +45,6 @@ import (
 	natsbus "github.com/baldaworks/balda/internal/apps/balda/eventbus/nats"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	"github.com/baldaworks/balda/internal/apps/balda/handlersfx"
-	"github.com/baldaworks/balda/internal/apps/balda/hookbackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/hookfx"
 	"github.com/baldaworks/balda/internal/apps/balda/hooknative/claude"
 	"github.com/baldaworks/balda/internal/apps/balda/hooknative/codex"
@@ -212,7 +211,7 @@ func Module(
 	if err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
-	backofficeConfig, err := backofficeRuntimeConfig(cfg.Balda, normaCfg, runtimeLoadOpts.Profile, database)
+	backofficeConfig, err := backofficeProjectionConfig(cfg.Balda, normaCfg, runtimeLoadOpts.Profile, database)
 	if err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
@@ -469,54 +468,14 @@ func Module(
 					Origin: backofficeConfig.Server.PublicURL, CeremonyTTL: backofficeConfig.Server.CeremonyTTL,
 				})
 			},
+			func(provider baldastate.Provider) (*backoffice.StateService, error) {
+				return backoffice.NewStateService(provider.Users())
+			},
 			func(provider baldastate.Provider) *accessapp.Service {
 				return accessapp.NewService(provider.Users())
 			},
 			func(provider baldastate.Provider) *auditapp.Service {
 				return auditapp.NewService(provider.Users())
-			},
-			func(provider baldastate.Provider, browserAuth *browserauth.Service, invitations *auth.BindingInvitations, channels *auth.BindingChannels, mcp *mcpbackofficeapp.Operations, providerOperations *providers.Service, schedules *schedulebackofficeapp.Operations, aliases *aliasbackofficeapp.Operations, webhooks *webhookbackofficeapp.Operations, facts *memorybackofficeapp.Operations, plugins *pluginbackofficeapp.Operations, hooks *hookbackofficeapp.Operations, skills *skillbackofficeapp.Operations, archive *chatarchivebackofficeapp.Operations) (*backoffice.Runtime, error) {
-				runtime, err := backoffice.NewRuntimeWithBrowserAuth(backofficeConfig, provider, browserAuth)
-				if err != nil {
-					return nil, err
-				}
-				if err := runtime.ConfigureBindingInvitations(invitations, channels); err != nil {
-					return nil, err
-				}
-				if err := runtime.ConfigureMCPOperations(mcp); err != nil {
-					return nil, err
-				}
-				if err := runtime.ConfigureProvidersOperations(providerOperations); err != nil {
-					return nil, err
-				}
-				if err := runtime.ConfigureSchedulesOperations(schedules); err != nil {
-					return nil, err
-				}
-				if err := runtime.ConfigureWebhooksOperations(webhooks); err != nil {
-					return nil, err
-				}
-				if err := runtime.ConfigureAliasesOperations(aliases); err != nil {
-					return nil, err
-				}
-				if err := runtime.ConfigureSkillsOperations(skills); err != nil {
-					return nil, err
-				}
-				if err := runtime.ConfigurePluginsOperations(plugins); err != nil {
-					return nil, err
-				}
-				if err := runtime.ConfigureHookOperations(hooks); err != nil {
-					return nil, err
-				}
-				if err := runtime.ConfigureChatArchiveOperations(archive); err != nil {
-					return nil, err
-				}
-				if err := runtime.ConfigureFactMemoryOperations(facts); err != nil {
-					return nil, err
-				}
-				if err := runtime.ConfigureMCPAuthorizations(mcp); err != nil {
-					return nil, err
-				}
-				return runtime, nil
 			},
 			func(provider baldastate.Provider) tgbotkit.OffsetStore {
 				return provider.PollingOffsetStore()

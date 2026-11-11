@@ -36,7 +36,6 @@ while IFS= read -r package; do
     github.com/baldaworks/balda/internal/apps/balda/session|\
     github.com/baldaworks/balda/internal/apps/balda/actors|\
     github.com/baldaworks/balda/cmd/balda|\
-    github.com/baldaworks/balda/internal/apps/backoffice/security|\
     github.com/baldaworks/balda/internal/apps/balda/state|\
     github.com/baldaworks/balda/internal/apps/balda/skillapp)
       shard=1

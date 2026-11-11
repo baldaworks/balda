@@ -3,26 +3,8 @@ package backoffice
 import (
 	"sort"
 
-	"github.com/baldaworks/balda/internal/apps/backoffice/internal/webui"
 	"github.com/baldaworks/balda/internal/apps/balda/systemviewcmd"
 )
-
-// ProjectCapabilityCards converts the safe configured projection into Web UI cards.
-func ProjectCapabilityCards(cfg BaldaConfig) []webui.CapabilityCard {
-	snapshot := ProjectSystemSnapshot(ResolvedConfig{Balda: cfg})
-	cards := make([]webui.CapabilityCard, 0, len(snapshot.Capabilities))
-	for _, capability := range snapshot.Capabilities {
-		card := webui.CapabilityCard{ID: capability.ID, Name: capability.Name, Mode: capability.Mode, RouteCount: capability.RouteCount}
-		for _, setting := range capability.Settings {
-			card.Settings = append(card.Settings, webui.CapabilitySetting{Label: setting.Label, Value: setting.Value})
-		}
-		for _, endpoint := range capability.Endpoints {
-			card.Endpoints = append(card.Endpoints, webui.CapabilityEndpoint{Label: endpoint.Label, URL: endpoint.URL})
-		}
-		cards = append(cards, card)
-	}
-	return cards
-}
 
 // ProjectSystemSnapshot captures the explicit configured fields shared by the
 // embedded and standalone Backoffice views.
@@ -90,21 +72,4 @@ func appendEndpoint(endpoints []systemviewcmd.Endpoint, label, value string) []s
 		return endpoints
 	}
 	return append(endpoints, systemviewcmd.Endpoint{Label: label, URL: value})
-}
-
-func configuredBindingChannels(cfg BaldaConfig) []string {
-	var channels []string
-	if cfg.Telegram.Enabled {
-		channels = append(channels, "telegram")
-	}
-	if cfg.Slack.Agent.Enabled {
-		channels = append(channels, "slackagent")
-	}
-	if cfg.Zulip.Webhook.Enabled {
-		channels = append(channels, "zulip")
-	}
-	if cfg.Mattermost.Enabled {
-		channels = append(channels, "mattermost")
-	}
-	return channels
 }
