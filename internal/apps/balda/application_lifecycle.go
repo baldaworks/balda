@@ -7,43 +7,28 @@ import (
 	"sync"
 
 	"github.com/baldaworks/balda/internal/apps/backoffice"
-	"github.com/baldaworks/balda/internal/apps/balda/accessapp"
 	"github.com/baldaworks/balda/internal/apps/balda/actors"
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
-	"github.com/baldaworks/balda/internal/apps/balda/aliasbackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
-	"github.com/baldaworks/balda/internal/apps/balda/auditapp"
-	"github.com/baldaworks/balda/internal/apps/balda/auth"
-	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
 	"github.com/baldaworks/balda/internal/apps/balda/catalogapp"
-	"github.com/baldaworks/balda/internal/apps/balda/chatarchivebackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/commandoutboxfx"
 	natsbus "github.com/baldaworks/balda/internal/apps/balda/eventbus/nats"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
-	"github.com/baldaworks/balda/internal/apps/balda/hookbackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/httpfx"
 	"github.com/baldaworks/balda/internal/apps/balda/internalmcp"
 	"github.com/baldaworks/balda/internal/apps/balda/jobexec"
 	baldajobs "github.com/baldaworks/balda/internal/apps/balda/jobs"
-	"github.com/baldaworks/balda/internal/apps/balda/managementhttp"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpbackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpbridge"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
-	"github.com/baldaworks/balda/internal/apps/balda/memorybackofficeapp"
-	"github.com/baldaworks/balda/internal/apps/balda/pluginbackofficeapp"
-	"github.com/baldaworks/balda/internal/apps/balda/providers"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
-	"github.com/baldaworks/balda/internal/apps/balda/schedulebackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/scheduledjobs"
 	"github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
 	"github.com/baldaworks/balda/internal/apps/balda/shutdown"
-	"github.com/baldaworks/balda/internal/apps/balda/skillbackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/startupnotifyapp"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
-	"github.com/baldaworks/balda/internal/apps/balda/systemviewcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
-	"github.com/baldaworks/balda/internal/apps/balda/webhookbackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookfx"
 	portableapp "github.com/baldaworks/balda/sessionmemory/app"
 	"github.com/rs/zerolog"
@@ -57,10 +42,7 @@ type lifecycleStage struct {
 	stop  func(context.Context) error
 }
 
-const (
-	managementHTTPIngressStage = "management HTTP ingress"
-	sharedHTTPIngressStage     = "shared HTTP ingress"
-)
+const sharedHTTPIngressStage = "shared HTTP ingress"
 
 type applicationLifecycle struct {
 	logger zerolog.Logger
@@ -185,29 +167,13 @@ type applicationLifecycleParams struct {
 	Logger               zerolog.Logger
 	Config               BaldaConfig
 	HTTPConfig           ResolvedHTTPConfig
-	ManagementHTTPConfig managementhttp.ResolvedConfig
-	Access               *accessapp.Service
-	Audit                *auditapp.Service
-	BindingInvitations   *auth.BindingInvitations
-	BindingChannels      *auth.BindingChannels
-	BrowserAuth          *browserauth.Service
-	ProviderService      *providers.Service
 	HTTPRegistry         *httpfx.Registry
 	WebhookHTTP          webhookfx.HTTPContribution
 	GatewayCallbacks     []httpfx.GatewayCallbackProvider `group:"balda_http_gateway_callback_providers"`
 	TelegramSource       runtime.UpdateSource
-	UserReadiness        *backoffice.StateService
+	Backoffice           *backoffice.Runtime
 	CommandWorkers       *commandoutboxfx.LifecycleWorkers
 	BackofficeMCP        *mcpbackofficeapp.Operations
-	BackofficeSchedules  *schedulebackofficeapp.Operations
-	BackofficeWebhooks   *webhookbackofficeapp.Operations
-	BackofficeAliases    *aliasbackofficeapp.Operations
-	BackofficeHooks      *hookbackofficeapp.Operations
-	BackofficePlugins    *pluginbackofficeapp.Operations
-	BackofficeSkills     *skillbackofficeapp.Operations
-	BackofficeFacts      *memorybackofficeapp.Operations
-	BackofficeArchives   *chatarchivebackofficeapp.Operations
-	SystemView           *systemviewcmd.Snapshot
 	MCP                  *internalmcp.InternalMCPManager
 	MCPManagement        *mcpmanage.Service
 	MCPBridge            *mcpbridge.Bridge
@@ -250,12 +216,11 @@ func registerApplicationLifecycle(p applicationLifecycleParams) {
 
 func applicationLifecycleStages(p applicationLifecycleParams, telegram *telegramLifecycle) []lifecycleStage {
 	var sharedServer *httpfx.Server
-	var managementServer *httpfx.Server
 	stages := []lifecycleStage{
 		// FX constructs this before Start. Register cleanup first so every failed
 		// startup stage also closes pending browser authorization attempts.
 		{name: "MCP authorization attempts", stop: func(context.Context) error { p.MCPAuthorizations.Close(); return nil }},
-		{name: "user readiness", start: p.UserReadiness.ValidateReady},
+		{name: "user readiness", start: p.Backoffice.ValidateReady},
 		{name: "bundled MCP", start: p.MCP.EnsureStarted, stop: p.MCP.Stop},
 		{name: "managed MCP credential readiness", start: func(ctx context.Context) error {
 			return p.MCPManagement.ValidateCredentials(ctx, p.StateProvider.MCP())
@@ -287,36 +252,6 @@ func applicationLifecycleStages(p applicationLifecycleParams, telegram *telegram
 		{name: "actor host", start: p.ActorHost.Start, stop: p.ActorHost.Stop},
 		{name: "webhook run finalizer", start: p.WebhookRunFinalizer.Start, stop: p.WebhookRunFinalizer.Stop},
 		{name: "scheduled jobs", start: p.Scheduler.Start, stop: p.Scheduler.Stop},
-		{name: managementHTTPIngressStage, start: func(context.Context) error {
-			if !p.ManagementHTTPConfig.Enabled {
-				return nil
-			}
-			handler := p.ManagementHTTPConfig.Handler(managementhttp.Services{Access: p.Access, Audit: p.Audit, Invitations: p.BindingInvitations, Channels: p.BindingChannels, BrowserAuth: p.BrowserAuth, Providers: p.ProviderService, MCP: p.BackofficeMCP, Schedules: p.BackofficeSchedules, Webhooks: p.BackofficeWebhooks, Aliases: p.BackofficeAliases, Hooks: p.BackofficeHooks, Plugins: p.BackofficePlugins, Skills: p.BackofficeSkills, System: p.SystemView, Memory: p.BackofficeFacts, Archives: p.BackofficeArchives})
-			if p.ManagementHTTPConfig.SocketPath != "" {
-				managementServer = httpfx.NewNamedUnixServer("management HTTP", p.ManagementHTTPConfig.SocketPath, handler)
-			} else {
-				managementServer = httpfx.NewNamedServer("management HTTP", p.ManagementHTTPConfig.ListenAddr, handler)
-			}
-			if err := managementServer.Start(); err != nil {
-				managementServer = nil
-				return err
-			}
-			go func(server *httpfx.Server) {
-				<-server.Done()
-				if err := server.Err(); err != nil {
-					p.Logger.Error().Err(err).Msg("management HTTP ingress stopped unexpectedly")
-					if shutdownErr := p.Shutdowner.Shutdown(fx.ExitCode(1)); shutdownErr != nil {
-						p.Logger.Error().Err(shutdownErr).Msg("request Balda shutdown after management HTTP failure")
-					}
-				}
-			}(managementServer)
-			return nil
-		}, stop: func(ctx context.Context) error {
-			if managementServer == nil {
-				return nil
-			}
-			return managementServer.Stop(ctx)
-		}},
 		{name: sharedHTTPIngressStage, start: func(ctx context.Context) error {
 			server, err := startSharedHTTPIngress(ctx, p)
 			if err != nil {
@@ -381,6 +316,13 @@ func commandRecoveryStages(
 }
 
 func startSharedHTTPIngress(ctx context.Context, p applicationLifecycleParams) (*httpfx.Server, error) {
+	handler, err := backofficeSharedHandler(ctx, p.Backoffice, p.Config, p.BackofficeMCP)
+	if err != nil {
+		return nil, err
+	}
+	if err := p.HTTPRegistry.AddBackoffice("backoffice", handler); err != nil {
+		return nil, err
+	}
 	for _, provider := range p.GatewayCallbacks {
 		callbacks, err := provider(ctx)
 		if err != nil {

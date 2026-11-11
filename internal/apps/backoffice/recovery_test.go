@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
+	"github.com/baldaworks/balda/internal/apps/backoffice/security"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/stretchr/testify/require"
 )
@@ -31,13 +31,13 @@ func TestRecoveryRevokesFamiliesPreservesPasswordAndRollsBackFailedAudit(t *test
 	secret, found, err := store.GetCredentialSecret(t.Context(), u.ID)
 	require.NoError(t, err)
 	require.True(t, found)
-	login, err := browserauth.NewService(store, browserauth.Config{AccessTTL: time.Minute, RefreshTTL: time.Hour})
+	login, err := security.NewService(store, security.Config{AccessTTL: time.Minute, RefreshTTL: time.Hour})
 	require.NoError(t, err)
 	credentials, err := login.Login(t.Context(), u.Username, []byte(validPassword))
 	require.NoError(t, err)
 	principal, err := login.ValidateAccess(t.Context(), credentials.AccessToken)
 	require.NoError(t, err)
-	family, _, err := store.GetWebAuthSession(t.Context(), principal.WebAuthSessionID)
+	family, _, err := store.GetSession(t.Context(), principal.FamilyID)
 	require.NoError(t, err)
 	family.ID = "enrolled-family"
 	family.CredentialVersion++
@@ -45,10 +45,10 @@ func TestRecoveryRevokesFamiliesPreservesPasswordAndRollsBackFailedAudit(t *test
 	family.RefreshTokens[0].Selector = "enrolled-refresh"
 	family.WebAuthnVerifiedAt = family.CreatedAt
 	family.MFAFactorID = "recovery-key"
-	err = store.ApplyMFAChange(t.Context(), usercmd.MFAChange{UserID: u.ID, ExpectedUserVersion: 1, ExpectedCredentialVersion: 1, Purpose: usercmd.MFAEnable, BoundWebAuthSessionID: principal.WebAuthSessionID, ExpectedWebAuthSessionVersion: principal.WebAuthSessionVersion, ChangedAt: now,
-		WebAuthSession: &family,
-		Credential:     usercmd.MFACredential{ID: "recovery-key", UserID: u.ID, RPID: "localhost", CredentialID: []byte("credential"), PublicKey: []byte("public-key"), Data: []byte(`{}`), CreatedAt: now},
-		Audit:          usercmd.AuditEvent{ID: "enable-recovery", Action: usercmd.AuditActionMFAEnabled, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetUser, TargetID: u.ID, Source: "test", OccurredAt: now}})
+	err = store.ApplyMFAChange(t.Context(), usercmd.MFAChange{UserID: u.ID, ExpectedUserVersion: 1, ExpectedCredentialVersion: 1, Purpose: usercmd.MFAEnable, BoundSessionID: principal.FamilyID, ExpectedSessionVersion: principal.Version, ChangedAt: now,
+		Session:    &family,
+		Credential: usercmd.MFACredential{ID: "recovery-key", UserID: u.ID, RPID: "localhost", CredentialID: []byte("credential"), PublicKey: []byte("public-key"), Data: []byte(`{}`), CreatedAt: now},
+		Audit:      usercmd.AuditEvent{ID: "enable-recovery", Action: usercmd.AuditActionMFAEnabled, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetUser, TargetID: u.ID, Source: "test", OccurredAt: now}})
 	require.NoError(t, err)
 	s, err := NewRecoveryService(store)
 	require.NoError(t, err)
@@ -58,7 +58,7 @@ func TestRecoveryRevokesFamiliesPreservesPasswordAndRollsBackFailedAudit(t *test
 	profile, err := store.GetMFAProfile(t.Context(), u.ID)
 	require.NoError(t, err)
 	require.True(t, profile.Enabled)
-	family, _, err = store.GetWebAuthSession(t.Context(), "enrolled-family")
+	family, _, err = store.GetSession(t.Context(), "enrolled-family")
 	require.NoError(t, err)
 	require.True(t, family.RevokedAt.IsZero())
 	s.store = staleRecoveryStore{store}
@@ -75,10 +75,10 @@ func TestRecoveryRevokesFamiliesPreservesPasswordAndRollsBackFailedAudit(t *test
 	current, _, err := store.GetCredentialSecret(t.Context(), u.ID)
 	require.NoError(t, err)
 	require.Equal(t, secret.PasswordHash, current.PasswordHash)
-	family, _, err = store.GetWebAuthSession(t.Context(), "enrolled-family")
+	family, _, err = store.GetSession(t.Context(), "enrolled-family")
 	require.NoError(t, err)
 	require.False(t, family.RevokedAt.IsZero())
-	page, err := store.ListActiveWebAuthSessions(t.Context(), u.ID, usercmd.PageRequest{Limit: 10}, time.Now())
+	page, err := store.ListActiveSessions(t.Context(), u.ID, usercmd.PageRequest{Limit: 10}, time.Now())
 	require.NoError(t, err)
 	require.Empty(t, page.Sessions)
 	_, err = s.Recover(t.Context(), RecoveryInput{Username: u.Username, Confirm: true})

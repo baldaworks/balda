@@ -64,8 +64,8 @@ func (s *memoryStore) Save(_ context.Context, m webhookroutecmd.Mutation) error 
 
 func testAuthority() webhookroutecmd.Authority {
 	return webhookroutecmd.Authority{UserID: "admin", UserVersion: 1,
-		CredentialVersion: 1, MFAVersion: 1, WebAuthSessionID: "browser",
-		WebAuthSessionVersion: 1, At: time.Now().UTC()}
+		CredentialVersion: 1, MFAVersion: 1, SessionID: "browser",
+		SessionVersion: 1, At: time.Now().UTC()}
 }
 
 func testDefinition() webhookroutecmd.Definition {

@@ -40,11 +40,11 @@ func checkMCPGrantMetadataUsesIndependentSecurityTime(t *testing.T, open contrac
 		case mcpcmd.GrantRenew:
 			m.Authority = nil
 			m.Audit.Action = usercmd.AuditActionMCPCredentialsRenewed
-			m.Audit.ActorUserID, m.Audit.ActorWebAuthSessionID = "", ""
+			m.Audit.ActorUserID, m.Audit.ActorSessionID = "", ""
 		case mcpcmd.GrantDisconnect:
 			m.Grant.Status, m.Grant.ProtectedValues = mcpcmd.GrantDisconnected, nil
 			m.Audit.Action = usercmd.AuditActionMCPAuthorizationChanged
-			m.Audit.ActorUserID, m.Audit.ActorWebAuthSessionID = authority.UserID, authority.WebAuthSessionID
+			m.Audit.ActorUserID, m.Audit.ActorSessionID = authority.UserID, authority.SessionID
 		}
 		if m.Authority != nil {
 			bad := m
@@ -84,7 +84,7 @@ func contractMCPGrantAt(t *testing.T, p Provider, now time.Time) MCPGrantMutatio
 		t.Fatal(err)
 	}
 	a := connection.Authority
-	return MCPGrantMutation{ExpectedRevisionID: connection.Connection.CurrentRevisionID, Grant: mcpcmd.Grant{ID: "worker-grant", Binding: mcpcmd.AuthBinding{ConnectionID: connection.Connection.ID, Resource: connection.Revision.Definition.URL, Issuer: "https://issuer.example.org", ClientID: "worker-client"}, Generation: 1, Status: mcpcmd.GrantAuthRequired, Scopes: []string{"tools"}, TokenEndpointAuthMethod: "none", CreatedAt: a.At, UpdatedAt: a.At}, Operation: mcpcmd.GrantRegister, Authority: &a, Audit: usercmd.AuditEvent{ID: "grant-register", Action: usercmd.AuditActionMCPAuthorizationChanged, Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: a.UserID, ActorWebAuthSessionID: a.WebAuthSessionID, TargetType: usercmd.AuditTargetMCP, TargetID: connection.Connection.ID, Source: "provider-contract", OccurredAt: a.At}}
+	return MCPGrantMutation{ExpectedRevisionID: connection.Connection.CurrentRevisionID, Grant: mcpcmd.Grant{ID: "worker-grant", Binding: mcpcmd.AuthBinding{ConnectionID: connection.Connection.ID, Resource: connection.Revision.Definition.URL, Issuer: "https://issuer.example.org", ClientID: "worker-client"}, Generation: 1, Status: mcpcmd.GrantAuthRequired, Scopes: []string{"tools"}, TokenEndpointAuthMethod: "none", CreatedAt: a.At, UpdatedAt: a.At}, Operation: mcpcmd.GrantRegister, Authority: &a, Audit: usercmd.AuditEvent{ID: "grant-register", Action: usercmd.AuditActionMCPAuthorizationChanged, Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: a.UserID, ActorSessionID: a.SessionID, TargetType: usercmd.AuditTargetMCP, TargetID: connection.Connection.ID, Source: "provider-contract", OccurredAt: a.At}}
 }
 
 func authorizeContractGrant(m MCPGrantMutation) MCPGrantMutation {
@@ -269,7 +269,7 @@ func checkMCPDisconnectFencesCompletion(t *testing.T, open contractOpener) {
 	refresh.Audit.ID = "grant-refresh"
 	refresh.Audit.Action = usercmd.AuditActionMCPCredentialsRenewed
 	refresh.Audit.ActorUserID = ""
-	refresh.Audit.ActorWebAuthSessionID = ""
+	refresh.Audit.ActorSessionID = ""
 	disconnect = m
 	disconnect.ExpectedGeneration = m.Grant.Generation
 	disconnect.Grant.Generation++
@@ -306,7 +306,7 @@ func checkMCPConcurrentGrantRenewalCommitsOnce(t *testing.T, open contractOpener
 	m.Grant.Generation++
 	m.Audit.Action = usercmd.AuditActionMCPCredentialsRenewed
 	m.Audit.ActorUserID = ""
-	m.Audit.ActorWebAuthSessionID = ""
+	m.Audit.ActorSessionID = ""
 	var won atomic.Int32
 	var wg sync.WaitGroup
 	for _, id := range []string{"renew-one", "renew-two"} {

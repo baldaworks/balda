@@ -29,7 +29,7 @@ func (s *testRouteStore) LookupActiveManagedByName(_ context.Context, name strin
 func (s *testRouteStore) List(context.Context) ([]webhookroutecmd.Record, error)          { return nil, nil }
 func (s *testRouteStore) ReconcileConfig(context.Context, []webhookroutecmd.Record) error { return nil }
 func (s *testRouteStore) CheckAuthority(_ context.Context, a webhookroutecmd.Authority) error {
-	if a.WebAuthSessionID == "" {
+	if a.SessionID == "" {
 		return webhookroutecmd.ErrForbidden
 	}
 	return nil
@@ -60,7 +60,7 @@ func TestPostUsesCurrentRouteAndFormKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	operations := New(webhookmanagement.New(store), ingress, nil)
-	authority := webhookroutecmd.Authority{WebAuthSessionID: "admin", At: time.Now().UTC()}
+	authority := webhookroutecmd.Authority{SessionID: "admin", At: time.Now().UTC()}
 	key := uuid.NewString()
 	request := webhookroutecmd.TestPost{Name: "configured", Body: "example", RequestKey: key,
 		ExpectedVersion: 1, Authority: authority}
@@ -91,7 +91,7 @@ func TestPostUsesCurrentRouteAndFormKey(t *testing.T) {
 	if _, err := operations.TestPost(t.Context(), request); err != webhookroutecmd.ErrConflict {
 		t.Fatalf("stale route version: %v", err)
 	}
-	request.ExpectedVersion, request.Authority.WebAuthSessionID = 1, ""
+	request.ExpectedVersion, request.Authority.SessionID = 1, ""
 	if _, err := operations.TestPost(t.Context(), request); err != webhookroutecmd.ErrForbidden {
 		t.Fatalf("stale administrator authority: %v", err)
 	}

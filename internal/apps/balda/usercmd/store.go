@@ -12,8 +12,8 @@ const MaxPageSize = 100
 type PageRequest struct {
 	AfterID string
 	Limit   int
-	// CurrentWebAuthSessionID places the active browser session first for WebAuth pages.
-	CurrentWebAuthSessionID string
+	// CurrentID places the active browser family first for session pages.
+	CurrentID string
 }
 
 // UserPage contains canonical users ordered by stable ID.
@@ -22,9 +22,9 @@ type UserPage struct {
 	NextAfterID string
 }
 
-// WebAuthSessionPage contains one page of session-family summaries.
-type WebAuthSessionPage struct {
-	Sessions    []WebAuthSessionSummary
+// SessionPage contains one page of session-family summaries.
+type SessionPage struct {
+	Sessions    []SessionSummary
 	NextAfterID string
 }
 
@@ -34,56 +34,56 @@ type AuditPage struct {
 	NextAfterID string
 }
 
-// WebAuthAccessSession is the durable state required to authenticate an access credential.
-type WebAuthAccessSession struct {
-	User           User
-	WebAuthSession WebAuthSession
+// AccessSession is the durable state required to authenticate an access credential.
+type AccessSession struct {
+	User   User
+	Family SessionFamily
 }
 
-// WebAuthRefreshSession is the durable state required to verify one refresh credential.
-type WebAuthRefreshSession struct {
-	User           User
-	WebAuthSession WebAuthSession
-	Token          WebAuthRefreshToken
+// RefreshSession is the durable state required to verify one refresh credential.
+type RefreshSession struct {
+	User   User
+	Family SessionFamily
+	Token  RefreshToken
 }
 
-// WebAuthRefreshRotation contains one atomic access/refresh pair rotation.
-type WebAuthRefreshRotation struct {
+// RefreshRotation contains one atomic access/refresh pair rotation.
+type RefreshRotation struct {
 	Selector                string
 	PresentedVerifierDigest []byte
-	Access                  WebAuthAccessCredential
-	Refresh                 WebAuthRefreshToken
+	Access                  AccessCredential
+	Refresh                 RefreshToken
 	RotatedAt               time.Time
 	SuccessAudit            AuditEvent
 	ReplayAudit             AuditEvent
 }
 
-// CredentialWebAuthSessionChange atomically replaces one credential, revokes all old
+// CredentialSessionChange atomically replaces one credential, revokes all old
 // session families, and creates the replacement normal session family.
-type CredentialWebAuthSessionChange struct {
+type CredentialSessionChange struct {
 	UserID                    string
 	ExpectedUserVersion       uint64
 	ExpectedCredentialVersion uint64
 	Credential                Credential
 	Secret                    CredentialSecret
 	RevokedAt                 time.Time
-	WebAuthSession            WebAuthSession
+	Session                   SessionFamily
 	CredentialAudit           AuditEvent
 	SessionAudit              AuditEvent
 }
 
-// WebAuthRefreshRotationResult is the non-secret outcome of one verified refresh attempt.
-type WebAuthRefreshRotationResult string
+// RefreshRotationResult is the non-secret outcome of one verified refresh attempt.
+type RefreshRotationResult string
 
 const (
-	// WebAuthRefreshRotationSucceeded means the old generation was consumed and a new pair was stored.
-	WebAuthRefreshRotationSucceeded WebAuthRefreshRotationResult = "succeeded"
-	// WebAuthRefreshRotationConcurrent means a recently consumed token was presented again.
-	WebAuthRefreshRotationConcurrent WebAuthRefreshRotationResult = "concurrent"
-	// WebAuthRefreshRotationReplayRevoked means a used generation was replayed and its family was revoked.
-	WebAuthRefreshRotationReplayRevoked WebAuthRefreshRotationResult = "replay_revoked"
-	// WebAuthRefreshRotationUnavailable means the selector, verifier, family, user, or credential is unusable.
-	WebAuthRefreshRotationUnavailable WebAuthRefreshRotationResult = "unavailable"
+	// RefreshRotationSucceeded means the old generation was consumed and a new pair was stored.
+	RefreshRotationSucceeded RefreshRotationResult = "succeeded"
+	// RefreshRotationConcurrent means a recently consumed token was presented again.
+	RefreshRotationConcurrent RefreshRotationResult = "concurrent"
+	// RefreshRotationReplayRevoked means a used generation was replayed and its family was revoked.
+	RefreshRotationReplayRevoked RefreshRotationResult = "replay_revoked"
+	// RefreshRotationUnavailable means the selector, verifier, family, user, or credential is unusable.
+	RefreshRotationUnavailable RefreshRotationResult = "unavailable"
 )
 
 // Store persists canonical users and security state without exposing plaintext credentials.
@@ -92,7 +92,7 @@ type Store interface {
 	CreateUser(ctx context.Context, user User, secret CredentialSecret, audit AuditEvent) error
 	UpdateUser(ctx context.Context, user User, expectedVersion uint64, audit AuditEvent) error
 	ChangeCredential(ctx context.Context, userID string, expectedUserVersion, expectedCredentialVersion uint64, credential Credential, secret CredentialSecret, revokedAt time.Time, audit AuditEvent) error
-	ChangeCredentialAndCreateWebAuthSession(ctx context.Context, change CredentialWebAuthSessionChange) error
+	ChangeCredentialAndCreateSession(ctx context.Context, change CredentialSessionChange) error
 	GetUser(ctx context.Context, userID string) (User, bool, error)
 	GetUserByNormalizedUsername(ctx context.Context, normalizedUsername string) (User, bool, error)
 	GetUserByBinding(ctx context.Context, channelType, principal string) (User, bool, error)
@@ -105,18 +105,18 @@ type Store interface {
 	DeleteBinding(ctx context.Context, userID, bindingID string, expectedUserVersion uint64, audit AuditEvent) error
 	UpdateTelegramBindingProfile(ctx context.Context, principal, username, firstName string, updatedAt time.Time) (bool, error)
 
-	CreateWebAuthSession(ctx context.Context, session WebAuthSession, audit AuditEvent) error
-	GetWebAuthSession(ctx context.Context, webAuthSessionID string) (WebAuthSession, bool, error)
-	GetWebAuthSessionByAccessSelector(ctx context.Context, selector string) (WebAuthAccessSession, bool, error)
-	GetWebAuthSessionByRefreshSelector(ctx context.Context, selector string) (WebAuthRefreshSession, bool, error)
-	ListWebAuthSessions(ctx context.Context, userID string, page PageRequest) (WebAuthSessionPage, error)
-	// ListActiveWebAuthSessions excludes revoked and expired families and orders by the
+	CreateSession(ctx context.Context, family SessionFamily, audit AuditEvent) error
+	GetSession(ctx context.Context, sessionID string) (SessionFamily, bool, error)
+	GetSessionByAccessSelector(ctx context.Context, selector string) (AccessSession, bool, error)
+	GetSessionByRefreshSelector(ctx context.Context, selector string) (RefreshSession, bool, error)
+	ListSessions(ctx context.Context, userID string, page PageRequest) (SessionPage, error)
+	// ListActiveSessions excludes revoked and expired families and orders by the
 	// recorded sign-in or refresh time, newest first.
-	ListActiveWebAuthSessions(ctx context.Context, userID string, page PageRequest, now time.Time) (WebAuthSessionPage, error)
-	RotateWebAuthRefresh(ctx context.Context, rotation WebAuthRefreshRotation) (WebAuthRefreshRotationResult, error)
-	RevokeWebAuthSession(ctx context.Context, webAuthSessionID string, expectedVersion uint64, revokedAt time.Time, reason string, audit AuditEvent) error
-	RevokeUserWebAuthSessions(ctx context.Context, userID string, revokedAt time.Time, reason string, audit AuditEvent) error
-	DeleteExpiredWebAuthSessions(ctx context.Context, before time.Time, limit int) (int, error)
+	ListActiveSessions(ctx context.Context, userID string, page PageRequest, now time.Time) (SessionPage, error)
+	RotateRefresh(ctx context.Context, rotation RefreshRotation) (RefreshRotationResult, error)
+	RevokeSession(ctx context.Context, sessionID string, expectedVersion uint64, revokedAt time.Time, reason string, audit AuditEvent) error
+	RevokeUserSessions(ctx context.Context, userID string, revokedAt time.Time, reason string, audit AuditEvent) error
+	DeleteExpiredSessions(ctx context.Context, before time.Time, limit int) (int, error)
 
 	ListAuditEvents(ctx context.Context, page PageRequest) (AuditPage, error)
 }

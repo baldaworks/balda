@@ -148,8 +148,8 @@ func TestManagementProjectionUsesSelectedRetainedDeclaration(t *testing.T) {
 func TestManagementProjectionRequiresCurrentAuthority(t *testing.T) {
 	s, p, a, _ := newMarketplaceManagementTestService(t)
 	now := time.Now().UTC()
-	event := usercmd.AuditEvent{ID: "revoke-projection", Action: usercmd.AuditActionWebAuthRevoked, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetWebAuthSession, TargetID: a.WebAuthSessionID, Source: "test", OccurredAt: now}
-	if err := p.Users().RevokeWebAuthSession(t.Context(), a.WebAuthSessionID, a.WebAuthSessionVersion, now, "test", event); err != nil {
+	event := usercmd.AuditEvent{ID: "revoke-projection", Action: usercmd.AuditActionSessionRevoked, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetSession, TargetID: a.SessionID, Source: "test", OccurredAt: now}
+	if err := p.Users().RevokeSession(t.Context(), a.SessionID, a.SessionVersion, now, "test", event); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.ManagementInventory(t.Context(), a); !errors.Is(err, plugincmd.ErrForbidden) {

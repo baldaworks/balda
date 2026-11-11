@@ -13,6 +13,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/backoffice"
 	"github.com/baldaworks/balda/internal/apps/balda/httpfx"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/runtime/v2/appconfig"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
 	"go.uber.org/fx"
@@ -73,7 +74,7 @@ func TestSharedHTTPIngressUsesOnlySharedSocket(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = server.Stop(context.Background()) })
 	for path, want := range map[string]int{
-		"/balda/backoffice/login":        http.StatusNotFound,
+		"/balda/backoffice/login":        http.StatusOK,
 		"/balda/gateway/slack/events":    http.StatusAccepted,
 		"/balda/webhooks/orders":         http.StatusAccepted,
 		"/balda/webhooks/unknown":        http.StatusNotFound,
@@ -228,15 +229,6 @@ func sharedHTTPTestParams(t *testing.T, sharedAddress string) applicationLifecyc
 	return sharedHTTPTestParamsWithBasePath(t, sharedAddress, "/balda")
 }
 
-func runtimeStateService(t *testing.T, provider state.Provider) *backoffice.StateService {
-	t.Helper()
-	service, err := backoffice.NewStateService(provider.Users())
-	if err != nil {
-		t.Fatal(err)
-	}
-	return service
-}
-
 func sharedHTTPTestParamsWithBasePath(t *testing.T, sharedAddress, basePath string) applicationLifecycleParams {
 	t.Helper()
 	provider, err := state.NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "state.db"))
@@ -245,11 +237,15 @@ func sharedHTTPTestParamsWithBasePath(t *testing.T, sharedAddress, basePath stri
 	}
 	t.Cleanup(func() { _ = provider.Close() })
 	config := BaldaConfig{HTTP: HTTPConfig{ListenAddr: sharedAddress, BaseURL: "http://" + sharedAddress, BasePath: &basePath}}
-	bootstrap, err := backoffice.NewBootstrapService(provider.Users())
+	backofficeConfig, err := backofficeRuntimeConfig(config, appconfig.RuntimeConfig{}, "", state.DatabaseConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := bootstrap.Bootstrap(t.Context(), backoffice.BootstrapInput{
+	runtime, err := backoffice.NewRuntime(backofficeConfig, provider)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.BootstrapAdmin(t.Context(), backoffice.BootstrapInput{
 		Username: "superuser", Password: []byte("correct horse battery staple"),
 	}); err != nil {
 		t.Fatal(err)
@@ -261,7 +257,7 @@ func sharedHTTPTestParamsWithBasePath(t *testing.T, sharedAddress, basePath stri
 	callback := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusAccepted) })
 	return applicationLifecycleParams{
 		Config: config, HTTPConfig: ResolvedHTTPConfig{ListenAddr: sharedAddress, BaseURL: "http://" + sharedAddress, BasePath: basePath},
-		UserReadiness: runtimeStateService(t, provider), HTTPRegistry: registry, StateProvider: provider,
+		Backoffice: runtime, HTTPRegistry: registry, StateProvider: provider,
 		GatewayCallbacks: []httpfx.GatewayCallbackProvider{func(context.Context) ([]httpfx.GatewayCallback, error) {
 			return []httpfx.GatewayCallback{{Owner: "slack events", Transport: "slack", Endpoint: "events", Handler: callback}}, nil
 		}},

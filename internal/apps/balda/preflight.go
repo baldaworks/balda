@@ -15,7 +15,6 @@ import (
 	natsbus "github.com/baldaworks/balda/internal/apps/balda/eventbus/nats"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	"github.com/baldaworks/balda/internal/apps/balda/internalmcp"
-	managementhttpapp "github.com/baldaworks/balda/internal/apps/balda/managementhttp"
 	"github.com/baldaworks/balda/internal/apps/balda/memory"
 	"github.com/baldaworks/balda/internal/apps/balda/paths"
 	"github.com/baldaworks/balda/internal/apps/balda/permissionfmt"
@@ -101,13 +100,6 @@ func PreflightRuntime(
 	sharedHTTP, err := cfg.Balda.ResolveHTTP()
 	if err != nil {
 		return err
-	}
-	managementHTTP, err := cfg.Balda.ResolveManagement()
-	if err != nil {
-		return err
-	}
-	if managementHTTP.Enabled {
-		_ = managementHTTP.Handler(managementhttpapp.Services{})
 	}
 	if err := validateExecutionConfigLint(executionConfig, sharedHTTP.ListenAddr, inboundWebhookConfig); err != nil {
 		return err

@@ -29,43 +29,43 @@ func checkUserStoreActiveSessions(t *testing.T, open contractOpener) {
 			family.DeviceLabel = "Firefox on Linux"
 			family.ConnectionPeer = "192.0.2.1"
 		}
-		if err := store.CreateWebAuthSession(t.Context(), family, contractAudit(fmt.Sprintf("login-%03d", index), usercmd.AuditActionWebAuthLoginSucceeded, family.ID, now)); err != nil {
-			t.Fatalf("CreateWebAuthSession(%d): %v", index, err)
+		if err := store.CreateSession(t.Context(), family, contractAudit(fmt.Sprintf("login-%03d", index), usercmd.AuditActionLoginSucceeded, family.ID, now)); err != nil {
+			t.Fatalf("CreateSession(%d): %v", index, err)
 		}
 	}
 	expired := contractSessionFamily(user.ID, now.Add(-25*time.Hour))
 	expired.ID = "expired-family"
 	expired.Access.Selector = "expired-access"
 	expired.RefreshTokens[0].Selector = "expired-refresh"
-	if err := store.CreateWebAuthSession(t.Context(), expired, contractAudit("login-expired", usercmd.AuditActionWebAuthLoginSucceeded, expired.ID, now)); err != nil {
+	if err := store.CreateSession(t.Context(), expired, contractAudit("login-expired", usercmd.AuditActionLoginSucceeded, expired.ID, now)); err != nil {
 		t.Fatal(err)
 	}
 	revoked := contractSessionFamily(user.ID, now.Add(-time.Hour))
 	revoked.ID = "revoked-family"
 	revoked.Access.Selector = "revoked-access"
 	revoked.RefreshTokens[0].Selector = "revoked-refresh"
-	if err := store.CreateWebAuthSession(t.Context(), revoked, contractAudit("login-revoked", usercmd.AuditActionWebAuthLoginSucceeded, revoked.ID, now)); err != nil {
+	if err := store.CreateSession(t.Context(), revoked, contractAudit("login-revoked", usercmd.AuditActionLoginSucceeded, revoked.ID, now)); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.RevokeWebAuthSession(t.Context(), revoked.ID, revoked.Version, now, "test revocation", contractAudit("revoke-family", usercmd.AuditActionWebAuthRevoked, revoked.ID, now)); err != nil {
+	if err := store.RevokeSession(t.Context(), revoked.ID, revoked.Version, now, "test revocation", contractAudit("revoke-family", usercmd.AuditActionSessionRevoked, revoked.ID, now)); err != nil {
 		t.Fatal(err)
 	}
-	page, err := store.ListActiveWebAuthSessions(t.Context(), user.ID, usercmd.PageRequest{Limit: 100}, now)
+	page, err := store.ListActiveSessions(t.Context(), user.ID, usercmd.PageRequest{Limit: 100}, now)
 	if err != nil || len(page.Sessions) != 100 || page.NextAfterID == "" || page.Sessions[0].ID != "family-102" {
 		t.Fatalf("first active page: %+v, %v", page, err)
 	}
-	next, err := store.ListActiveWebAuthSessions(t.Context(), user.ID, usercmd.PageRequest{AfterID: page.NextAfterID, Limit: 100}, now)
+	next, err := store.ListActiveSessions(t.Context(), user.ID, usercmd.PageRequest{AfterID: page.NextAfterID, Limit: 100}, now)
 	if err != nil || len(next.Sessions) != 3 || next.NextAfterID != "" || next.Sessions[2].ID != "family-000" {
 		t.Fatalf("second active page: %+v, %v", next, err)
 	}
 	if next.Sessions[2].DeviceLabel != "Firefox on Linux" || next.Sessions[2].ConnectionPeer != "192.0.2.1" || next.Sessions[1].DeviceLabel != "" {
 		t.Fatalf("session metadata: %+v", next.Sessions)
 	}
-	current, err := store.ListActiveWebAuthSessions(t.Context(), user.ID, usercmd.PageRequest{Limit: 1, CurrentWebAuthSessionID: "family-000"}, now)
+	current, err := store.ListActiveSessions(t.Context(), user.ID, usercmd.PageRequest{Limit: 1, CurrentID: "family-000"}, now)
 	if err != nil || len(current.Sessions) != 1 || current.Sessions[0].ID != "family-000" {
 		t.Fatalf("current family first: %+v, %v", current, err)
 	}
-	afterCurrent, err := store.ListActiveWebAuthSessions(t.Context(), user.ID, usercmd.PageRequest{Limit: 1, CurrentWebAuthSessionID: "family-000", AfterID: current.NextAfterID}, now)
+	afterCurrent, err := store.ListActiveSessions(t.Context(), user.ID, usercmd.PageRequest{Limit: 1, CurrentID: "family-000", AfterID: current.NextAfterID}, now)
 	if err != nil || len(afterCurrent.Sessions) != 1 || afterCurrent.Sessions[0].ID != "family-102" {
 		t.Fatalf("after current family: %+v, %v", afterCurrent, err)
 	}

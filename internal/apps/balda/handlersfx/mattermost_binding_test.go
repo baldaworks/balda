@@ -86,7 +86,7 @@ func TestMattermostBackofficeInvitationTrustedIngress(t *testing.T) {
 					if err := channels.Register(info); err != nil {
 						t.Fatal(err)
 					}
-					invitation, err := invites.Issue(t.Context(), usercmd.InvitationActor{UserID: bindingPrimaryUserID, WebAuthSessionID: "browser-fixture"}, bindingSelectedUserID, 1, info.Integration, false)
+					invitation, err := invites.Issue(t.Context(), usercmd.InvitationActor{UserID: bindingPrimaryUserID, SessionID: "browser-fixture"}, bindingSelectedUserID, 1, info.Integration, false)
 					if err != nil {
 						t.Fatal(err)
 					}

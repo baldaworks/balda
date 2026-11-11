@@ -182,13 +182,13 @@ func (r Record) Validate() error {
 
 // Authority binds a mutation to current administrator browser authority.
 type Authority struct {
-	UserID                string
-	UserVersion           uint64
-	CredentialVersion     uint64
-	MFAVersion            uint64
-	WebAuthSessionID      string
-	WebAuthSessionVersion uint64
-	At                    time.Time
+	UserID            string
+	UserVersion       uint64
+	CredentialVersion uint64
+	MFAVersion        uint64
+	SessionID         string
+	SessionVersion    uint64
+	At                time.Time
 }
 
 // Save creates or edits one explicitly approved executable definition.
@@ -217,10 +217,10 @@ type Mutation struct {
 // Validate checks the record version and the immutable management audit envelope.
 func (m Mutation) Validate() error {
 	a := m.Authority
-	if a.UserID == "" || a.UserVersion == 0 || a.CredentialVersion == 0 || a.WebAuthSessionID == "" || a.WebAuthSessionVersion == 0 || a.At.IsZero() || m.ExpectedVersion < 0 || m.ExpectedVersion == math.MaxInt64 || m.Record.Version != m.ExpectedVersion+1 || m.Record.Validate() != nil {
+	if a.UserID == "" || a.UserVersion == 0 || a.CredentialVersion == 0 || a.SessionID == "" || a.SessionVersion == 0 || a.At.IsZero() || m.ExpectedVersion < 0 || m.ExpectedVersion == math.MaxInt64 || m.Record.Version != m.ExpectedVersion+1 || m.Record.Validate() != nil {
 		return ErrInvalid
 	}
-	if usercmd.ValidateAuditEvent(m.Audit) != nil || m.Audit.Action != usercmd.AuditActionHookChanged || m.Audit.TargetType != usercmd.AuditTargetHook || !ValidName(m.Audit.TargetID) || m.Audit.ActorUserID != a.UserID || m.Audit.ActorWebAuthSessionID != a.WebAuthSessionID || m.Audit.Outcome != usercmd.AuditOutcomeSucceeded || !m.Audit.OccurredAt.Equal(a.At) {
+	if usercmd.ValidateAuditEvent(m.Audit) != nil || m.Audit.Action != usercmd.AuditActionHookChanged || m.Audit.TargetType != usercmd.AuditTargetHook || !ValidName(m.Audit.TargetID) || m.Audit.ActorUserID != a.UserID || m.Audit.ActorSessionID != a.SessionID || m.Audit.Outcome != usercmd.AuditOutcomeSucceeded || !m.Audit.OccurredAt.Equal(a.At) {
 		return ErrInvalid
 	}
 	return nil

@@ -284,16 +284,16 @@ func (s *sqlWebhookRouteStore) checkAuthority(ctx context.Context, tx *sql.Tx, a
 }
 
 func webhookBrowserAuthority(a WebhookRouteAuthority) browserAuthority {
-	return browserAuthority{userID: a.UserID, sessionID: a.WebAuthSessionID,
+	return browserAuthority{userID: a.UserID, sessionID: a.SessionID,
 		userVersion: a.UserVersion, credentialVersion: a.CredentialVersion,
-		mfaVersion: a.MFAVersion, sessionVersion: a.WebAuthSessionVersion, at: a.At}
+		mfaVersion: a.MFAVersion, sessionVersion: a.SessionVersion, at: a.At}
 }
 
 func webhookAuthorityError(err error) error {
 	switch {
 	case errors.Is(err, usercmd.ErrConflict):
 		return ErrWebhookRouteConflict
-	case errors.Is(err, usercmd.ErrForbidden), errors.Is(err, usercmd.ErrNotFound), errors.Is(err, usercmd.ErrWebAuthSessionUnavailable):
+	case errors.Is(err, usercmd.ErrForbidden), errors.Is(err, usercmd.ErrNotFound), errors.Is(err, usercmd.ErrSessionUnavailable):
 		return ErrWebhookRouteForbidden
 	default:
 		return ErrWebhookRouteUnavailable
@@ -301,8 +301,8 @@ func webhookAuthorityError(err error) error {
 }
 
 func validWebhookRouteAuthority(a WebhookRouteAuthority) bool {
-	return a.UserID != "" && a.WebAuthSessionID != "" && a.UserVersion > 0 &&
-		a.CredentialVersion > 0 && a.WebAuthSessionVersion > 0 && !a.At.IsZero()
+	return a.UserID != "" && a.SessionID != "" && a.UserVersion > 0 &&
+		a.CredentialVersion > 0 && a.SessionVersion > 0 && !a.At.IsZero()
 }
 
 func validWebhookRoute(r WebhookRouteRecord) bool {
@@ -334,7 +334,7 @@ func validWebhookRouteMutation(m WebhookRouteMutation) bool {
 	return usercmd.ValidateAuditEvent(m.Audit) == nil &&
 		m.Audit.Action == usercmd.AuditActionWebhookRouteChanged &&
 		m.Audit.TargetType == usercmd.AuditTargetWebhookRoute && m.Audit.TargetID == r.Name &&
-		m.Audit.ActorUserID == a.UserID && m.Audit.ActorWebAuthSessionID == a.WebAuthSessionID &&
+		m.Audit.ActorUserID == a.UserID && m.Audit.ActorSessionID == a.SessionID &&
 		m.Audit.Outcome == usercmd.AuditOutcomeSucceeded && m.Audit.OccurredAt.Equal(a.At)
 }
 

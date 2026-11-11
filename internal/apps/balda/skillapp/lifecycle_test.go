@@ -53,8 +53,8 @@ func newFixture(t *testing.T) fixture {
 	if err := provider.Users().CreateUser(t.Context(), user, usercmd.CredentialSecret{UserID: user.ID, PasswordHash: "fixture-hash"}, audit("user", usercmd.AuditActionUserCreated, usercmd.AuditTargetUser, user.ID)); err != nil {
 		t.Fatal(err)
 	}
-	family := usercmd.WebAuthSession{ID: "browser", UserID: user.ID, Version: 1, CredentialVersion: 1, Assurance: usercmd.WebAuthAssuranceNormal, Access: usercmd.WebAuthAccessCredential{Selector: "access", VerifierDigest: []byte("digest"), ExpiresAt: now.Add(15 * time.Minute)}, CSRFVerifierDigest: []byte("csrf"), CreatedAt: now, LastSeenAt: now, RefreshExpiresAt: now.Add(time.Hour), RefreshTokens: []usercmd.WebAuthRefreshToken{{Selector: "refresh", VerifierDigest: []byte("digest"), Generation: 1, State: usercmd.WebAuthRefreshTokenStateActive, IssuedAt: now, ExpiresAt: now.Add(time.Hour)}}}
-	if err := provider.Users().CreateWebAuthSession(t.Context(), family, audit("browser", usercmd.AuditActionWebAuthLoginSucceeded, usercmd.AuditTargetWebAuthSession, family.ID)); err != nil {
+	family := usercmd.SessionFamily{ID: "browser", UserID: user.ID, Version: 1, CredentialVersion: 1, Assurance: usercmd.SessionAssuranceNormal, Access: usercmd.AccessCredential{Selector: "access", VerifierDigest: []byte("digest"), ExpiresAt: now.Add(15 * time.Minute)}, CSRFVerifierDigest: []byte("csrf"), CreatedAt: now, LastSeenAt: now, RefreshExpiresAt: now.Add(time.Hour), RefreshTokens: []usercmd.RefreshToken{{Selector: "refresh", VerifierDigest: []byte("digest"), Generation: 1, State: usercmd.RefreshTokenStateActive, IssuedAt: now, ExpiresAt: now.Add(time.Hour)}}}
+	if err := provider.Users().CreateSession(t.Context(), family, audit("browser", usercmd.AuditActionLoginSucceeded, usercmd.AuditTargetSession, family.ID)); err != nil {
 		t.Fatal(err)
 	}
 	catalog, err := catalogapp.NewRuntime(directory, "", "", provider, nil, nil, mcpregistry.New(nil), commandcmd.NewRegistry(), nil, nil)
@@ -209,7 +209,7 @@ func TestReviewRejectsChangedContentStateIdentityAndAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 	foreign := f.authority
-	foreign.WebAuthSessionID = "other"
+	foreign.SessionID = "other"
 	if _, err := f.service.Accept(t.Context(), candidate.Handle, foreign); err != skillcmd.ErrForbidden {
 		t.Fatalf("foreign candidate=%v", err)
 	}
@@ -423,7 +423,7 @@ func TestAcceptRechecksAuthorityAfterCatalogGate(t *testing.T) {
 	}
 	fault.gateHook = func() {
 		now := time.Now().UTC()
-		err := f.provider.Users().RevokeWebAuthSession(t.Context(), f.authority.WebAuthSessionID, 1, now, "revoked", usercmd.AuditEvent{ID: "revoke", Action: usercmd.AuditActionWebAuthRevoked, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetWebAuthSession, TargetID: f.authority.WebAuthSessionID, Source: "fixture", OccurredAt: now})
+		err := f.provider.Users().RevokeSession(t.Context(), f.authority.SessionID, 1, now, "revoked", usercmd.AuditEvent{ID: "revoke", Action: usercmd.AuditActionSessionRevoked, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetSession, TargetID: f.authority.SessionID, Source: "fixture", OccurredAt: now})
 		if err != nil {
 			t.Fatal(err)
 		}

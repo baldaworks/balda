@@ -206,11 +206,15 @@ func prepareLoadedBaldaCommand(ctx context.Context, prepared preparedBaldaComman
 		return preparedBaldaCommand{}, fmt.Errorf("bootstrap balda owner token: %w", err)
 	}
 	if requireUserReady {
-		readiness, err := backoffice.NewStateService(provider.Users())
+		server, err := prepared.baldaCfg.Balda.ResolveBackofficeServer()
 		if err != nil {
 			return preparedBaldaCommand{}, err
 		}
-		if err := readiness.ValidateReady(ctx); err != nil {
+		runtime, err := backoffice.NewRuntime(backoffice.ResolvedConfig{Server: server, Database: prepared.database}, provider)
+		if err != nil {
+			return preparedBaldaCommand{}, err
+		}
+		if err := runtime.ValidateReady(ctx); err != nil {
 			return preparedBaldaCommand{}, fmt.Errorf("backoffice user readiness: %w; run balda backoffice bootstrap-admin", err)
 		}
 	}
@@ -279,10 +283,7 @@ func loadBaldaCommandConfig(requireChannel bool) (preparedBaldaCommand, error) {
 	if _, err := baldaCfg.Balda.ResolveHTTP(); err != nil {
 		return preparedBaldaCommand{}, err
 	}
-	if _, err := baldaCfg.Balda.ResolveManagement(); err != nil {
-		return preparedBaldaCommand{}, err
-	}
-	if _, err := baldaCfg.Balda.ResolveBackofficeProjection(); err != nil {
+	if _, err := baldaCfg.Balda.ResolveSharedBackofficeServer(); err != nil {
 		return preparedBaldaCommand{}, err
 	}
 	return preparedBaldaCommand{

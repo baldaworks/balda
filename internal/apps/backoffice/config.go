@@ -1,5 +1,4 @@
-// Package backoffice owns Core-side Backoffice configuration projections and
-// offline administrator maintenance services.
+// Package backoffice owns Backoffice configuration, lifecycle, and use cases.
 package backoffice
 
 import (

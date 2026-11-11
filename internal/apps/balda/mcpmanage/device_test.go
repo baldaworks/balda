@@ -371,7 +371,7 @@ func TestDeviceDenialIsTerminalAndOneConnectionSharesBrowserBudget(t *testing.T)
 		t.Fatalf("browser bypassed active device attempt: %v", err)
 	}
 	wrong := a
-	wrong.WebAuthSessionID = "another-browser"
+	wrong.SessionID = "another-browser"
 	if _, err := s.Device(t.Context(), started.ID, wrong); !errors.Is(err, mcpcmd.ErrForbidden) {
 		t.Fatal("device instructions crossed browser boundary")
 	}

@@ -103,7 +103,7 @@ func TestSlackBackofficeInvitationSignedAdmission(t *testing.T) {
 				if err != nil || info.Integration.Key != "T123:UBOT" || !strings.Contains(info.Endpoint, "UBOT") {
 					t.Fatalf("verified identity %+v: %v", info, err)
 				}
-				invitation, err := invites.Issue(t.Context(), usercmd.InvitationActor{UserID: "primary", WebAuthSessionID: "browser-fixture"}, "selected", 1, info.Integration, false)
+				invitation, err := invites.Issue(t.Context(), usercmd.InvitationActor{UserID: "primary", SessionID: "browser-fixture"}, "selected", 1, info.Integration, false)
 				if err != nil {
 					t.Fatal(err)
 				}

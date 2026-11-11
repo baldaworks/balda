@@ -111,7 +111,7 @@ func (s *sqlHookManagementStore) Commit(ctx context.Context, m hookcmd.Mutation)
 		return hookcmd.ErrConflict
 	}
 	// Rebuild the envelope so executable arguments and event payloads never enter audit.
-	audit := usercmd.AuditEvent{ID: m.Audit.ID, Action: usercmd.AuditActionHookChanged, Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: m.Authority.UserID, ActorWebAuthSessionID: m.Authority.WebAuthSessionID, TargetType: usercmd.AuditTargetHook, TargetID: m.Audit.TargetID, Source: "backoffice", Reason: "Agent hook definition changed", OccurredAt: m.Authority.At}
+	audit := usercmd.AuditEvent{ID: m.Audit.ID, Action: usercmd.AuditActionHookChanged, Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: m.Authority.UserID, ActorSessionID: m.Authority.SessionID, TargetType: usercmd.AuditTargetHook, TargetID: m.Audit.TargetID, Source: "backoffice", Reason: "Agent hook definition changed", OccurredAt: m.Authority.At}
 	if err := s.users.insertAudit(ctx, tx, audit); err != nil {
 		return hookcmd.ErrUnavailable
 	}
@@ -133,18 +133,18 @@ func decodeHookRecord(raw string) (hookcmd.Record, error) {
 }
 
 func validHookAuthority(a hookcmd.Authority) bool {
-	return a.UserID != "" && a.UserVersion != 0 && a.CredentialVersion != 0 && a.WebAuthSessionID != "" && a.WebAuthSessionVersion != 0 && !a.At.IsZero()
+	return a.UserID != "" && a.UserVersion != 0 && a.CredentialVersion != 0 && a.SessionID != "" && a.SessionVersion != 0 && !a.At.IsZero()
 }
 
 func hookBrowserAuthority(a hookcmd.Authority) browserAuthority {
-	return browserAuthority{userID: a.UserID, sessionID: a.WebAuthSessionID, userVersion: a.UserVersion, credentialVersion: a.CredentialVersion, mfaVersion: a.MFAVersion, sessionVersion: a.WebAuthSessionVersion, at: a.At}
+	return browserAuthority{userID: a.UserID, sessionID: a.SessionID, userVersion: a.UserVersion, credentialVersion: a.CredentialVersion, mfaVersion: a.MFAVersion, sessionVersion: a.SessionVersion, at: a.At}
 }
 
 func hookAuthorityError(err error) error {
 	switch {
 	case errors.Is(err, usercmd.ErrConflict):
 		return hookcmd.ErrConflict
-	case errors.Is(err, usercmd.ErrForbidden), errors.Is(err, usercmd.ErrNotFound), errors.Is(err, usercmd.ErrWebAuthSessionUnavailable):
+	case errors.Is(err, usercmd.ErrForbidden), errors.Is(err, usercmd.ErrNotFound), errors.Is(err, usercmd.ErrSessionUnavailable):
 		return hookcmd.ErrForbidden
 	default:
 		return hookcmd.ErrUnavailable

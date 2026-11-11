@@ -44,33 +44,6 @@ const (
 	pluginsRuntimeFixtureID = "fixture"
 )
 
-type pluginsRuntimeCompletion struct {
-	state.PluginStore
-	fail bool
-}
-
-func (s *pluginsRuntimeCompletion) CompletePluginActivation(ctx context.Context, id string, at time.Time) error {
-	if s.fail {
-		return fmt.Errorf("synthetic completion fault")
-	}
-	return s.PluginStore.CompletePluginActivation(ctx, id, at)
-}
-
-type pluginsRuntimeActivator struct {
-	pluginapp.CatalogActivator
-	entered chan struct{}
-}
-
-func (a *pluginsRuntimeActivator) LockCatalogMutation(ctx context.Context) (func(), error) {
-	if a.entered != nil {
-		select {
-		case a.entered <- struct{}{}:
-		default:
-		}
-	}
-	return a.CatalogActivator.LockCatalogMutation(ctx)
-}
-
 // TestBackofficePluginsRuntimeContracts uses the production Fx owners and the
 // real session manager. Only the provider itself is replaced: no LLM is called.
 func TestBackofficePluginsRuntimeContracts(t *testing.T) {
@@ -271,12 +244,12 @@ func newPluginsRuntimeFixture(t *testing.T, git bool) *pluginsRuntimeFixture {
 	if err := f.provider.Users().CreateUser(t.Context(), user, usercmd.CredentialSecret{UserID: user.ID, PasswordHash: pluginsRuntimeFixtureID}, audit); err != nil {
 		t.Fatal(err)
 	}
-	family := usercmd.WebAuthSession{ID: "plugin-browser", UserID: user.ID, Assurance: usercmd.WebAuthAssuranceNormal, CredentialVersion: 1, Access: usercmd.WebAuthAccessCredential{Selector: "plugin-access", VerifierDigest: []byte("access"), ExpiresAt: now.Add(time.Hour)}, CSRFVerifierDigest: []byte("csrf"), CreatedAt: now, LastSeenAt: now, RefreshExpiresAt: now.Add(2 * time.Hour), Version: 1, RefreshTokens: []usercmd.WebAuthRefreshToken{{Selector: "plugin-refresh", VerifierDigest: []byte("refresh"), Generation: 1, State: usercmd.WebAuthRefreshTokenStateActive, IssuedAt: now, ExpiresAt: now.Add(2 * time.Hour)}}}
-	audit.ID, audit.Action, audit.TargetID = "plugin-login", usercmd.AuditActionWebAuthLoginSucceeded, family.ID
-	if err := f.provider.Users().CreateWebAuthSession(t.Context(), family, audit); err != nil {
+	family := usercmd.SessionFamily{ID: "plugin-browser", UserID: user.ID, Assurance: usercmd.SessionAssuranceNormal, CredentialVersion: 1, Access: usercmd.AccessCredential{Selector: "plugin-access", VerifierDigest: []byte("access"), ExpiresAt: now.Add(time.Hour)}, CSRFVerifierDigest: []byte("csrf"), CreatedAt: now, LastSeenAt: now, RefreshExpiresAt: now.Add(2 * time.Hour), Version: 1, RefreshTokens: []usercmd.RefreshToken{{Selector: "plugin-refresh", VerifierDigest: []byte("refresh"), Generation: 1, State: usercmd.RefreshTokenStateActive, IssuedAt: now, ExpiresAt: now.Add(2 * time.Hour)}}}
+	audit.ID, audit.Action, audit.TargetID = "plugin-login", usercmd.AuditActionLoginSucceeded, family.ID
+	if err := f.provider.Users().CreateSession(t.Context(), family, audit); err != nil {
 		t.Fatal(err)
 	}
-	f.authority = plugincmd.Authority{UserID: user.ID, UserVersion: 1, CredentialVersion: 1, WebAuthSessionID: family.ID, WebAuthSessionVersion: 1, At: now}
+	f.authority = plugincmd.Authority{UserID: user.ID, UserVersion: 1, CredentialVersion: 1, SessionID: family.ID, SessionVersion: 1, At: now}
 	return f
 }
 

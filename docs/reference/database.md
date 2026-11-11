@@ -27,8 +27,8 @@ fields. Unknown fields, malformed templates and empty paths fail startup.
 Rendered relative paths are anchored to the working directory and cleaned.
 For example, `{{.StateDir}}/databases/runtime.db` selects a custom file.
 
-SQLite is intended for one Core process on local persistent storage. The
-standalone Backoffice never opens it. Do not run multiple active Core
+SQLite is intended for one Balda process on local persistent storage. The bot
+and embedded Backoffice share its provider. Do not run multiple active Balda
 processes, share the file across hosts, or place it on a network filesystem.
 It uses foreign keys, WAL where available, an immediate transaction lock for
 writes, a bounded busy timeout, and one pooled connection.
@@ -115,6 +115,52 @@ verify Backoffice health and bot ingress. `balda start` applies schema
 migrations and checks canonical users before listeners become ready. Schema
 recovery is forward migration or backup restore, not automatic migration
 downgrade.
+
+### Embedded Backoffice compatibility after the extraction rollback
+
+The restored embedded application supports SQLite schema **72** and PostgreSQL
+schema **37**, including runtime-slot state and requested model preference.
+Extraction's only later schema change was the audit actor column rename:
+SQLite73/PostgreSQL38 renamed `actor_session_id` to
+`actor_web_auth_session_id`. Its original Goose Down performs only the inverse
+column rename. It does not delete rows, reset accounts or rewrite audit actions.
+The restored application does not auto-downgrade a database.
+
+For a database that reached exactly73/38, an authorized operator must:
+
+1. Stop all writers and retain the current database and deployment credential
+   key. Take and verify a fresh consistent backup/checkpoint, including SQLite
+   WAL/SHM when applicable or PostgreSQL sequences and Goose history.
+2. Using the **migration-bearing extraction revision** (for example
+   `99f4b218`), inspect Goose status and the actual audit actor column. Confirm
+   the exact current version is73 for SQLite or38 for PostgreSQL. If already
+   at72/37, do not run Down again. A different/newer/unknown schema requires
+   explicit validation before proceeding.
+3. With that revision's existing Goose tooling and the validated database DSN,
+   run exactly the one-step compatibility boundary:
+   `go tool goose -dir internal/apps/balda/state/migrations sqlite3 '<DSN>' down-to 72`
+   or
+   `go tool goose -dir internal/apps/balda/state/postgres_migrations postgres '<DSN>' down-to 37`.
+   Supply credentials privately; never copy a real DSN into logs or tickets.
+4. Verify Goose status, the restored `actor_session_id` values, row counts and
+   audit IDs/timestamps/order/actions, then start the restored binary against
+   the same preserved database. Check administrator login, existing browser/MFA
+   state, a guarded write, managed definitions/grants and retained conversations.
+
+Do not restore an older database as a substitute for this compatibility step,
+truncate tables, alter migration rows by hand, rewrite audit vocabulary or
+invalidate sessions. Audit rows written after extraction remain historical data
+and are read without rewriting their action/target values. The synthetic
+`TestSQLiteEmbeddedAuditCompatibility` and
+`TestPostgresEmbeddedAuditCompatibility` gates exercise the original rename
+Up/Down/Up, preserve populated security/product rows, read credentials/browser
+families/audit and perform an optimistic guarded write after Down.
+
+Returning to extraction code requires matching its topology/configuration and
+reapplying that same original Up migration on the preserved database. This is
+an explicit compatibility procedure, separate from ordinary backup recovery
+and from any production rollout already performed. An older captured image's
+provenance does not change these source schema floors.
 
 Back up the deployment credential key securely alongside the database if
 protected MCP values, worker grants, or managed provider values are stored.

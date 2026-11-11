@@ -45,8 +45,8 @@ func TestRouteStorePreservesGuardedMutation(t *testing.T) {
 		ReportToKey: "main_chat", DedupeSource: "body_sha256", AuthType: "header",
 		AuthHeader: webhookroutecmd.ManagedSecretHeader, SecretVerifier: "verifier",
 		Enabled: true, Version: 2, CreatedAt: at, UpdatedAt: at}
-	authority := webhookroutecmd.Authority{UserID: "admin", WebAuthSessionID: "browser",
-		UserVersion: 1, CredentialVersion: 2, MFAVersion: 3, WebAuthSessionVersion: 4, At: at}
+	authority := webhookroutecmd.Authority{UserID: "admin", SessionID: "browser",
+		UserVersion: 1, CredentialVersion: 2, MFAVersion: 3, SessionVersion: 4, At: at}
 	if err := adapter.Save(t.Context(), webhookroutecmd.Mutation{Kind: webhookroutecmd.MutationRotate,
 		Record: record, ExpectedVersion: 1, Authority: authority}); err != nil {
 		t.Fatal(err)

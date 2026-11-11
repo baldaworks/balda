@@ -151,7 +151,7 @@ func (m *Management) mutate(ctx context.Context, id int64, text string, expected
 		rec.Entries = append(rec.Entries[:index], rec.Entries[index+1:]...)
 	}
 	audit := usercmd.AuditEvent{ID: uuid.NewString(), Action: action, Outcome: usercmd.AuditOutcomeSucceeded,
-		ActorUserID: a.UserID, ActorWebAuthSessionID: a.WebAuthSessionID, TargetType: usercmd.AuditTargetMemoryFact,
+		ActorUserID: a.UserID, ActorSessionID: a.SessionID, TargetType: usercmd.AuditTargetMemoryFact,
 		TargetID: strconv.FormatInt(selected.Version, 10), Source: "backoffice", OccurredAt: a.At}
 	if err := m.persistence.Commit(ctx, memorycmd.Mutation{Record: rec, ExpectedVersion: baseline, Authority: a, Audit: audit}); err != nil {
 		return memorycmd.Fact{}, err

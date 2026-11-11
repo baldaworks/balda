@@ -117,18 +117,18 @@ func TestAuthenticationAssurance(t *testing.T) {
 	tests := []struct {
 		name    string
 		user    usercmd.User
-		want    usercmd.WebAuthAssurance
+		want    usercmd.SessionAssurance
 		wantErr error
 	}{
 		{
 			name: "active credential",
 			user: testCredentialUser(usercmd.CredentialStateActive, false),
-			want: usercmd.WebAuthAssuranceNormal,
+			want: usercmd.SessionAssuranceNormal,
 		},
 		{
 			name: "temporary credential",
 			user: testCredentialUser(usercmd.CredentialStateTemporary, true),
-			want: usercmd.WebAuthAssuranceRestricted,
+			want: usercmd.SessionAssuranceRestricted,
 		},
 		{
 			name:    "disabled credential",
@@ -402,13 +402,13 @@ func TestValidateBindingClaim(t *testing.T) {
 func TestValidateSessionRevocation(t *testing.T) {
 	t.Parallel()
 
-	if err := ValidateWebAuthSessionRevocation("session-1", "session-2", false); err != nil {
-		t.Fatalf("ValidateWebAuthSessionRevocation(other) error = %v", err)
+	if err := ValidateSessionRevocation("session-1", "session-2", false); err != nil {
+		t.Fatalf("ValidateSessionRevocation(other) error = %v", err)
 	}
-	if err := ValidateWebAuthSessionRevocation("session-1", "session-1", false); !errors.Is(err, usercmd.ErrCurrentSessionConfirmationRequired) {
+	if err := ValidateSessionRevocation("session-1", "session-1", false); !errors.Is(err, usercmd.ErrCurrentSessionConfirmationRequired) {
 		t.Errorf("current session error = %v, want %v", err, usercmd.ErrCurrentSessionConfirmationRequired)
 	}
-	if err := ValidateWebAuthSessionRevocation("session-1", "session-1", true); err != nil {
+	if err := ValidateSessionRevocation("session-1", "session-1", true); err != nil {
 		t.Errorf("confirmed current session error = %v, want nil", err)
 	}
 }

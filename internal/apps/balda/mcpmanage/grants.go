@@ -259,7 +259,7 @@ func (s *Grants) save(ctx context.Context, previous, updated mcpcmd.Grant, secre
 	if authority == nil {
 		audit.Action = usercmd.AuditActionMCPCredentialsRenewed
 	} else {
-		audit.ActorUserID, audit.ActorWebAuthSessionID = authority.UserID, authority.WebAuthSessionID
+		audit.ActorUserID, audit.ActorSessionID = authority.UserID, authority.SessionID
 	}
 	return safeOperationError(s.store.SaveGrant(ctx, GrantMutation{Grant: updated, ExpectedGeneration: previous.Generation, ExpectedRevisionID: expectedRevisionID, Operation: operation, Authority: authority, Audit: audit}))
 }

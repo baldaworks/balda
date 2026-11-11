@@ -32,7 +32,7 @@ func checkPluginManagementAuthorityWhileWaiting(t *testing.T, open contractOpene
 		t.Fatal(err)
 	}
 	deadline := time.Now().UTC().Add(500 * time.Millisecond)
-	_, err = store.users.db.ExecContext(t.Context(), store.users.bind(`UPDATE balda_backoffice_sessions SET access_expires_at=? WHERE session_id=?`), formatUserTime(deadline), a.WebAuthSessionID)
+	_, err = store.users.db.ExecContext(t.Context(), store.users.bind(`UPDATE balda_backoffice_sessions SET access_expires_at=? WHERE session_id=?`), formatUserTime(deadline), a.SessionID)
 	if err != nil {
 		t.Fatal(err)
 	}
