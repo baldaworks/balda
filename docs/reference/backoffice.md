@@ -20,6 +20,11 @@ Backoffice. Read it before changing `cmd/balda` or
 - `superadmin` is the interface name, not a new authorization role. Existing
   `administrator` and `operator` roles remain authoritative.
 
+The source rollback restores the complete original embedded application and
+browser security owners. Existing extraction deployments must first follow the
+[non-destructive audit schema compatibility procedure](database.md#embedded-backoffice-compatibility-after-the-extraction-rollback).
+It is not an automatic database downgrade or a restore of an older backup.
+
 ## Startup and configuration
 
 `balda start` reads `.config/balda/config.yaml` once, applies `BALDA_*`
