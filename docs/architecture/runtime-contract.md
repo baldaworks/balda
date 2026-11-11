@@ -123,6 +123,19 @@ Status: active
   as a completed turn. The existing actor retry and terminal-failure delivery
   policy handles that error. If the request context was canceled or expired,
   its context error is preserved. This does not impose a timeout on active turns.
+- An indeterminate ACP conversation attachment is a completed failed provider
+  outcome. The provider retains its pending-creation fence and emits one bounded
+  failed final with session-scoped metadata; the existing generic executor and
+  actor settle it after final-delivery command acceptance, without provider
+  retries or pool substitution. A later ordinary turn, including after restart,
+  returns the same protected outcome without launching or attaching again.
+  Publication failure still follows generic retry policy; the retained fence
+  prevents another remote creation. Caller cancellation and shutdown remain
+  context errors, and incomplete streams and genuinely transient failures keep
+  their existing retry behavior. Explicit `/reset` or `/new` starts a fresh local
+  lifetime through the existing FIFO boundary; it does not confirm deletion of
+  remote provider history or guarantee later provider availability. The initial
+  attachment timeout cause remains unknown.
 - `sessionturnapp` records failed ADK tool responses with redacted error metadata and never logs raw tool arguments or complete tool responses.
 - `github.com/baldaworks/go-actorlayer` owns generic envelopes, retry/error helpers, runtime primitives, and transport-facing contracts, but does not make Balda-specific product policy decisions.
 - CommandActor is an independently registered Balda product actor on

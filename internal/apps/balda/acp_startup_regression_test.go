@@ -30,6 +30,7 @@ const (
 	startupParentDeadline = "parent-deadline"
 	startupInitialize     = "initialize"
 	startupResume         = "session/resume"
+	startupNew            = "session/new"
 )
 
 // These fixtures use the production Module and lifecycle owners, without starting
@@ -149,7 +150,7 @@ func TestACPColdRestoredFirstTurn(t *testing.T) {
 			for _, r := range records {
 				counts[r.Method]++
 			}
-			if counts["launch"] != 1 || counts[startupInitialize] != 1 || counts["session/new"] != 0 || counts[startupResume] != 0 || counts["session/prompt"] != 2 {
+			if counts["launch"] != 1 || counts[startupInitialize] != 1 || counts[startupNew] != 0 || counts[startupResume] != 0 || counts["session/prompt"] != 2 {
 				t.Fatalf("cold/warm method counts = %v", counts)
 			}
 			wantArgs := norma.Providers["fixture"].GenericACP.Cmd[1:]
@@ -334,7 +335,7 @@ func TestACPStartupLifecycle(t *testing.T) {
 			for _, r := range readStartupTrace(t, trace) {
 				counts[r.Method]++
 			}
-			if counts["launch"] != 1 || counts[startupInitialize] != 1 || counts["session/new"] != 0 {
+			if counts["launch"] != 1 || counts[startupInitialize] != 1 || counts[startupNew] != 0 {
 				t.Fatalf("failed startup retried or attached: %v", counts)
 			}
 		})
@@ -342,7 +343,7 @@ func TestACPStartupLifecycle(t *testing.T) {
 }
 
 func TestACPAttachmentKeepsShortBudget(t *testing.T) {
-	for _, method := range []string{"session/new", startupResume} {
+	for _, method := range []string{startupNew, startupResume} {
 		for _, caller := range []time.Duration{30 * time.Second, time.Second} {
 			t.Run(method+"/"+caller.String(), func(t *testing.T) {
 				cfg, norma, trace := startupRegressionConfig(t, "60s", "hang-"+method)
@@ -365,15 +366,34 @@ func TestACPAttachmentKeepsShortBudget(t *testing.T) {
 				}
 				ctx, cancel := context.WithTimeout(t.Context(), caller)
 				defer cancel()
-				done := make(chan error, 1)
+				type outcome struct {
+					err          error
+					failedFinals int
+				}
+				done := make(chan outcome, 1)
 				started := time.Now()
-				go func() { done <- startupSessionTurn(ctx, sess, "hello") }()
+				go func() {
+					var result outcome
+					for event, err := range sess.GetRunner().Run(ctx, sess.GetUserID(), sess.GetAgentSessionID(), genai.NewContentFromText("hello", genai.RoleUser), adkagent.RunConfig{}) {
+						if err != nil {
+							result.err = err
+						}
+						if event != nil && event.TurnComplete && event.ErrorMessage != "" {
+							result.failedFinals++
+						}
+					}
+					done <- result
+				}()
 				pid := awaitStartupMethod(t, trace, method)
 				budget := min(caller, 10*time.Second)
 				select {
-				case err := <-done:
-					if !errors.Is(err, context.DeadlineExceeded) {
-						t.Fatalf("attachment cause = %v", err)
+				case result := <-done:
+					if method == startupNew && caller > 10*time.Second {
+						if result.err != nil || result.failedFinals != 1 {
+							t.Fatalf("protected attachment outcome=%+v", result)
+						}
+					} else if !errors.Is(result.err, context.DeadlineExceeded) || result.failedFinals != 0 {
+						t.Fatalf("attachment cause/finals=%v/%d", result.err, result.failedFinals)
 					}
 				case <-time.After(time.Until(started.Add(budget + time.Second))):
 					t.Fatal("attachment exceeded its short deadline plus scheduling tolerance")
@@ -445,7 +465,7 @@ func TestBaldaACPRegressionChild(t *testing.T) {
 			}
 			time.Sleep(delay)
 			result = map[string]any{"protocolVersion": 1, "agentCapabilities": map[string]any{"sessionCapabilities": map[string]any{"resume": map[string]any{}}}}
-		case "session/new", startupResume:
+		case startupNew, startupResume:
 			if mode == "hang-"+req.Method {
 				for {
 					time.Sleep(time.Hour)
