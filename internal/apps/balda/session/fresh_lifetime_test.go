@@ -23,6 +23,66 @@ const (
 	freshLifetimeLaterCatalog    = "catalog-recovery-C"
 )
 
+func TestFreshLifetimeDoesNotCreateMissingSession(t *testing.T) {
+	f := newArchiveFixture(t)
+	manager := f.manager()
+	manager.runtimeOperations = f.provider.RuntimeOperations()
+	request := FreshLifetimeRequest{OperationID: "missing-reset", SessionID: archiveInput().Locator.SessionID, InputHash: strings.Repeat("b", 64)}
+	prepared, result, err := manager.PrepareFreshLifetime(t.Context(), request)
+	if prepared != nil || result.Status != FreshLifetimeUnavailable || !errors.Is(err, ErrNoPersistedSession) {
+		t.Fatalf("missing session prepare = %v, %+v, %v", prepared, result, err)
+	}
+	if len(manager.sessions) != 0 {
+		t.Fatal("reset created an unsolicited session")
+	}
+}
+
+func TestFreshLifetimeRestoresColdPersistedSession(t *testing.T) {
+	f := newArchiveFixture(t)
+	f.runtime.ProviderBindingJSON = publicationBinding
+	control := &freshLifetimeControlSpy{}
+	f.runtime.SessionControl = control
+	initial := f.manager()
+	topic, err := initial.EnsureSession(t.Context(), archiveInput(), "saved")
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldArchive := topic.GetArchiveID()
+	restarted := f.manager()
+	restarted.runtimeOperations = f.provider.RuntimeOperations()
+	runtimeManager := restarted.runtimeManager.(*fakeScopedRuntimeManager)
+	runtimeManager.currentSnapshot = freshLifetimeCurrentCatalog
+	runtimeManager.runtimeForSession = func(request SessionRuntimeRequest) (*BuiltRuntime, error) {
+		runtime := *f.runtime
+		runtime.RuntimeSnapshotID = request.RuntimeSnapshotID
+		return &runtime, nil
+	}
+	request := FreshLifetimeRequest{OperationID: "cold-reset", SessionID: topic.GetSessionID(), InputHash: strings.Repeat("a", 64)}
+	prepared, result, err := restarted.PrepareFreshLifetime(t.Context(), request)
+	if err != nil || prepared == nil {
+		t.Fatalf("cold prepare = %+v, %v; want prepared lifetime", result, err)
+	}
+	result, err = restarted.PublishFreshLifetime(t.Context(), prepared)
+	if err != nil || result.Status != FreshLifetimeReset {
+		t.Fatalf("cold publish = %+v, %v", result, err)
+	}
+	active := restarted.activeTopicSession(request.SessionID)
+	if active == nil || active.GetArchiveID() == oldArchive {
+		t.Fatal("cold reset did not publish a new archive")
+	}
+	value, ok := active.runtimeValue()
+	if !ok || value.session.Events().Len() != 0 || value.runtime.RuntimeSnapshotID != freshLifetimeCurrentCatalog || value.runtime.ProviderBindingJSON != publicationBinding {
+		t.Fatalf("cold reset lost empty context, current catalog, or provider binding: %+v", value)
+	}
+	if calls := control.calls.Load(); calls != 0 {
+		t.Fatalf("cold reset called provider control %d times", calls)
+	}
+	replay, replayResult, err := restarted.PrepareFreshLifetime(t.Context(), request)
+	if err != nil || replay != nil || !reflect.DeepEqual(replayResult, result) {
+		t.Fatalf("cold reset replay = %v, %+v, %v; want %+v", replay, replayResult, err, result)
+	}
+}
+
 type freshLifetimeControlSpy struct {
 	calls atomic.Int32
 }

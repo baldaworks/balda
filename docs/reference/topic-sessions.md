@@ -197,6 +197,12 @@ replacement until lazy reconciliation under the canonical operation lock proves
 the old runtime retained or destroyed. Reconciliation never repeats lifecycle
 hooks. Later hook/workspace cleanup failure cannot undo a proved destruction.
 
+`/reset` and `/new` also accept a persisted session that has not yet been restored
+into memory after restart. The replacement callback recovers pending runtime
+operations and restores the saved local session under the session operation lock
+before preparing the fresh lifetime. No preliminary conversational turn or ACP
+provider resume is required. Missing or inactive saved sessions remain unavailable.
+
 Active `/reset` and `/new` prepare and publish inside the existing per-session
 FIFO replacement callback, after active and prior work. At that boundary the
 catalog owner selects the current application catalog plus the preserved
