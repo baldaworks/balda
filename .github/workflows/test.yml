@@ -58,7 +58,9 @@ jobs:
       - name: Backoffice browser regression
         env:
           BALDA_BACKOFFICE_E2E_ARTIFACTS: ${{ runner.temp }}/balda-backoffice-e2e
-        run: ./scripts/qa/run-backoffice-e2e.sh
+        # Use the hosted runner's libraries; browser launch/font preflight still
+        # verifies them without depending on the runner's apt mirrors.
+        run: ./scripts/qa/run-backoffice-e2e.sh --no-system-install
       - name: Upload browser failure artifacts
         if: failure()
         uses: actions/upload-artifact@v7
