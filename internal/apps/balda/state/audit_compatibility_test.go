@@ -76,7 +76,8 @@ func checkAuditCompatibility(t *testing.T, db *sql.DB, migrations *goose.Provide
 		{`INSERT INTO balda_app_kv (namespace,key,value_json,updated_at) VALUES ('catalog','captured','{"snapshot":"immutable"}',?)`, []any{now.Format(time.RFC3339)}},
 		{`INSERT INTO balda_archive_sessions (archive_id,channel_type,address_key,status,observed_at,record_json) VALUES ('archive','telegram','101:0','active',?,'{"history":"retained"}')`, []any{now.Format(time.RFC3339)}},
 		{`INSERT INTO balda_archive_messages (archive_id,sequence,source_key,role,fingerprint,record_json) VALUES ('archive',1,'input','user','fingerprint','{"text":"retained conversation"}')`, nil},
-		{`INSERT INTO balda_session_metadata (session_id,channel_type,address_key,address_json,agent_name,workspace_dir,branch_name,status,updated_at,archive_id,requested_model) VALUES ('session','telegram','101:0','{}','fixture','','','active',?,'archive','preferred-model')`, []any{now.Format(time.RFC3339)}},
+		{`INSERT INTO balda_session_metadata (session_id,channel_type,address_key,address_json,agent_name,workspace_dir,branch_name,status,updated_at,archive_id,requested_model,runtime_generation,effective_model,runtime_outcome) VALUES ('session','telegram','101:0','{}','fixture','','','active',?,'archive','preferred-model',2,'observed-model','context_preserved')`, []any{now.Format(time.RFC3339)}},
+		{`INSERT INTO balda_runtime_operations (operation_id,session_id,input_hash,kind,state,expected_archive_id,expected_generation,target_archive_id,target_snapshot_id,target_provider_binding_json,target_model,target_requested_model,created_at,updated_at) VALUES ('replacement','session',?,'lifetime_preference','applying','archive',2,'next-archive','next-snapshot','{}','recipe-model','preferred-model',?,?)`, []any{fmt.Sprintf("%064x", 1), now.Format(time.RFC3339), now.Format(time.RFC3339)}},
 	}
 	for _, statement := range statements {
 		if _, err := db.ExecContext(t.Context(), store.bind(statement.query), statement.args...); err != nil {
@@ -111,7 +112,7 @@ func checkAuditCompatibility(t *testing.T, db *sql.DB, migrations *goose.Provide
 	if _, err := db.ExecContext(t.Context(), store.bind(`INSERT INTO balda_security_audit_events (event_id,actor_web_auth_session_id,action,target_type,target_id,outcome,source,occurred_at) VALUES ('after-rename',?,'web_auth.login.succeeded','web_auth_session',?,'succeeded','compatibility',?)`), family.ID, family.ID, now.Add(time.Minute).Format(time.RFC3339)); err != nil {
 		t.Fatal(err)
 	}
-	tables := []string{"balda_users", "balda_backoffice_sessions", "balda_backoffice_refresh_tokens", "balda_mfa_credentials", "balda_mfa_profiles", "balda_security_audit_events", "balda_mcp_connections", "balda_mcp_revisions", "balda_mcp_grants", "balda_app_kv", "balda_archive_sessions", "balda_archive_messages", "balda_session_metadata"}
+	tables := []string{"balda_users", "balda_backoffice_sessions", "balda_backoffice_refresh_tokens", "balda_mfa_credentials", "balda_mfa_profiles", "balda_security_audit_events", "balda_mcp_connections", "balda_mcp_revisions", "balda_mcp_grants", "balda_app_kv", "balda_archive_sessions", "balda_archive_messages", "balda_session_metadata", "balda_runtime_operations"}
 	before := auditCompatibilityRows(t, db, tables)
 	if _, err := migrations.Down(t.Context()); err != nil {
 		t.Fatal(err)
@@ -150,6 +151,16 @@ func checkAuditCompatibility(t *testing.T, db *sql.DB, migrations *goose.Provide
 	}
 	if after := auditCompatibilityRows(t, db, tables); !reflect.DeepEqual(afterWrite, after) {
 		t.Fatal("audit Up changed preserved rows")
+	}
+	if version, err := migrations.GetDBVersion(t.Context()); err != nil || version != floor+1 {
+		t.Fatalf("forward compatibility version=%d,%v", version, err)
+	}
+	var actor, action, target, occurred string
+	if err := db.QueryRowContext(t.Context(), `SELECT actor_web_auth_session_id,action,target_type,occurred_at FROM balda_security_audit_events WHERE event_id='after-rename'`).Scan(&actor, &action, &target, &occurred); err != nil {
+		t.Fatal(err)
+	}
+	if actor != family.ID || action != "web_auth.login.succeeded" || target != "web_auth_session" || occurred != now.Add(time.Minute).Format(time.RFC3339) {
+		t.Fatal("forward audit contract changed historical row")
 	}
 	if _, err := migrations.Down(t.Context()); err != nil {
 		t.Fatal(err)
