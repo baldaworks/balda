@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -36,6 +37,7 @@ var (
 // Config contains the server-only generated client inputs.
 type Config struct {
 	BaseURL       string
+	SocketPath    string
 	OperatorToken string
 	HTTPClient    *http.Client
 }
@@ -59,6 +61,9 @@ func New(config Config) (*Client, error) {
 	if !validBearerToken(config.OperatorToken) {
 		return nil, fmt.Errorf("core management operator token is invalid")
 	}
+	if config.SocketPath != "" && (!filepath.IsAbs(config.SocketPath) || filepath.Clean(config.SocketPath) != config.SocketPath || strings.ContainsAny(config.SocketPath, "\x00\r\n")) {
+		return nil, fmt.Errorf("core management socket path must be a canonical absolute path")
+	}
 	httpClient := http.Client{}
 	if config.HTTPClient != nil {
 		httpClient = *config.HTTPClient
@@ -72,6 +77,15 @@ func New(config Config) (*Client, error) {
 	baseTransport := httpClient.Transport
 	if baseTransport == nil {
 		baseTransport = http.DefaultTransport
+	}
+	if config.SocketPath != "" {
+		dialer := &net.Dialer{Timeout: requestTimeout}
+		baseTransport = &http.Transport{
+			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				return dialer.DialContext(ctx, "unix", config.SocketPath)
+			},
+			IdleConnTimeout: requestTimeout,
+		}
 	}
 	httpClient.Transport = boundedTransport{base: baseTransport}
 	generated, err := managementv1.NewClientWithResponses(config.BaseURL,

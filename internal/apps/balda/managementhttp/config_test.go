@@ -3,6 +3,7 @@ package managementhttp
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -80,5 +81,18 @@ func TestConfigProjectionRedactsOperatorToken(t *testing.T) {
 	}
 	if strings.Contains(string(jsonData), canary) || strings.Contains(string(yamlData), canary) {
 		t.Fatal("serialized config exposed the operator token")
+	}
+}
+
+func TestConfigResolveUnixSocket(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "core.sock")
+	config := Config{Enabled: true, SocketPath: path, OperatorToken: "operator-token"}
+	resolved, err := config.Resolve()
+	if err != nil || resolved.SocketPath != path || resolved.ListenAddr != "" {
+		t.Fatalf("socket resolution = %+v, %v", resolved, err)
+	}
+	config.SocketPath = "relative.sock"
+	if _, err := config.Resolve(); err == nil {
+		t.Fatal("relative socket path was accepted")
 	}
 }

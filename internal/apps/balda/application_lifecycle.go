@@ -291,11 +291,12 @@ func applicationLifecycleStages(p applicationLifecycleParams, telegram *telegram
 			if !p.ManagementHTTPConfig.Enabled {
 				return nil
 			}
-			managementServer = httpfx.NewNamedServer(
-				"management HTTP",
-				p.ManagementHTTPConfig.ListenAddr,
-				p.ManagementHTTPConfig.Handler(managementhttp.Services{Access: p.Access, Audit: p.Audit, Invitations: p.BindingInvitations, Channels: p.BindingChannels, BrowserAuth: p.BrowserAuth, Providers: p.ProviderService, MCP: p.BackofficeMCP, Schedules: p.BackofficeSchedules, Webhooks: p.BackofficeWebhooks, Aliases: p.BackofficeAliases, Hooks: p.BackofficeHooks, Plugins: p.BackofficePlugins, Skills: p.BackofficeSkills, System: p.SystemView, Memory: p.BackofficeFacts, Archives: p.BackofficeArchives}),
-			)
+			handler := p.ManagementHTTPConfig.Handler(managementhttp.Services{Access: p.Access, Audit: p.Audit, Invitations: p.BindingInvitations, Channels: p.BindingChannels, BrowserAuth: p.BrowserAuth, Providers: p.ProviderService, MCP: p.BackofficeMCP, Schedules: p.BackofficeSchedules, Webhooks: p.BackofficeWebhooks, Aliases: p.BackofficeAliases, Hooks: p.BackofficeHooks, Plugins: p.BackofficePlugins, Skills: p.BackofficeSkills, System: p.SystemView, Memory: p.BackofficeFacts, Archives: p.BackofficeArchives})
+			if p.ManagementHTTPConfig.SocketPath != "" {
+				managementServer = httpfx.NewNamedUnixServer("management HTTP", p.ManagementHTTPConfig.SocketPath, handler)
+			} else {
+				managementServer = httpfx.NewNamedServer("management HTTP", p.ManagementHTTPConfig.ListenAddr, handler)
+			}
 			if err := managementServer.Start(); err != nil {
 				managementServer = nil
 				return err

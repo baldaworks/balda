@@ -222,6 +222,7 @@ balda:
   management:
     enabled: false
     listen_addr: ""
+    socket_path: ""
     operator_token: ""
 
   # Browser/session policy shared by Core and the separate balda-backoffice

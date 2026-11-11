@@ -24,6 +24,14 @@ func TestResolveConfig(t *testing.T) {
 	require.Equal(t, "/balda/backoffice", resolved.MountPath)
 	require.Equal(t, "http://127.0.0.1:8097", resolved.CoreURL)
 	require.Equal(t, "operator-token", resolved.OperatorToken)
+	config := Config{
+		HTTP:       HTTPConfig{BaseURL: "https://admin.example.test", BasePath: &basePath},
+		Management: ManagementConfig{Enabled: true, SocketPath: filepath.Join(t.TempDir(), "core.sock"), OperatorToken: "operator-token"},
+	}
+	resolved, err = config.Resolve()
+	if err != nil || resolved.SocketPath != config.Management.SocketPath || resolved.CoreURL != "http://127.0.0.1" {
+		t.Fatalf("socket resolution = %+v, %v", resolved, err)
+	}
 }
 
 func TestResolveConfigRejectsUnsafeInputs(t *testing.T) {
@@ -40,6 +48,7 @@ func TestResolveConfigRejectsUnsafeInputs(t *testing.T) {
 		{name: "public URL path", mutate: func(c *Config) { c.HTTP.BaseURL = "https://example.test/backoffice" }},
 		{name: "noncanonical base path", mutate: func(c *Config) { value := "/balda/"; c.HTTP.BasePath = &value }},
 		{name: "management disabled", mutate: func(c *Config) { c.Management.Enabled = false }},
+		{name: "relative management socket", mutate: func(c *Config) { c.Management.SocketPath = "relative.sock" }},
 		{name: "management hostname", mutate: func(c *Config) { c.Management.ListenAddr = "localhost:8097" }},
 		{name: "management public", mutate: func(c *Config) { c.Management.ListenAddr = "192.0.2.2:8097" }},
 		{name: "missing token", mutate: func(c *Config) { c.Management.OperatorToken = "" }},

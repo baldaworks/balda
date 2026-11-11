@@ -28,7 +28,7 @@ tunnels remain deployment infrastructure outside Balda.
 
 ### Management API
 
-The optional Core management API uses a separate loopback-only listener. It is
+The optional Core management API uses a separate private listener. It is
 disabled by default. It exposes authenticated contract compatibility metadata
 and the local BrowserAuth/WebAuth lifecycle used by Backoffice; it has no health
 or readiness endpoint.
@@ -38,8 +38,19 @@ balda:
   management:
     enabled: true
     listen_addr: "127.0.0.1:8096"
+    socket_path: ""
     operator_token: "${BALDA_MANAGEMENT_OPERATOR_TOKEN}"
 ```
+
+For containers sharing a local filesystem, set `balda.management.socket_path`
+to the same canonical absolute Unix socket path in Core and Backoffice. A
+non-empty socket path replaces TCP binding and dialing; an invalid or unavailable
+socket never causes TCP fallback. `BALDA_MANAGEMENT_SOCKET_PATH` follows the same
+configuration precedence. Core requires an owned `0700` parent directory and
+creates a `0600` socket; both processes must use the same UID. See
+[Backoffice deployment](backoffice.md#build-and-configuration) for volume and
+lifecycle details. When no socket path is set, `listen_addr` must remain an
+explicit loopback IP endpoint.
 
 `BALDA_MANAGEMENT_OPERATOR_TOKEN` follows the normal configuration precedence:
 a non-empty environment value overrides profile and file values, while an empty

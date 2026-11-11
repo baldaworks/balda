@@ -3,7 +3,8 @@
 Backoffice is a separate stateless browser application built from
 `cmd/backoffice`. Balda Core owns all durable state, migrations, authorization,
 audit policy, and product operations. The two processes communicate only over
-the loopback Management API using the generated OpenAPI client.
+the private Management API using the generated OpenAPI client, over loopback TCP
+or a Unix socket.
 
 The browser never receives the operator token. It stores opaque WebAuth access,
 refresh, and CSRF cookies issued by Core. AI Session identifiers belong only to
@@ -43,9 +44,29 @@ balda:
 With the example above, proxy `/balda/backoffice/` to `127.0.0.1:8095` and
 Core's `/balda/webhooks/` and `/balda/gateway/` paths to `127.0.0.1:8094`.
 
-The Management listener must use an explicit loopback IP. The token can come
+For TCP, the Management listener must use an explicit loopback IP. The token can come
 from config, profile, `${VAR}` expansion, or
 `BALDA_MANAGEMENT_OPERATOR_TOKEN`; normal mapstructure precedence applies.
+
+For separate containers on the same host, set
+`balda.management.socket_path: /run/balda-management/core.sock` in both processes.
+This canonical absolute path selects Unix transport instead of `listen_addr`;
+Core does not also bind TCP, and Backoffice never falls back to TCP or an
+environment proxy. The operator token and all WebAuth/CSRF checks still apply.
+
+Core creates a missing immediate parent directory with mode `0700`; an existing
+parent must already be a real directory owned by its user with that mode.
+Core creates the socket with mode `0600`. Shared-volume deployments therefore
+run both processes under the same UID and mount only the socket directory into
+Backoffice. That mount may be read-only: it prevents filesystem changes, not
+authenticated API mutations. Do not share Core's database or workspace.
+
+The listener retains a private `.lock` file next to the socket to serialize
+ownership across processes. It refuses active or foreign endpoints and only
+removes an owned stale socket after a refused connection. Graceful shutdown
+cleans its own endpoint without deleting a replacement; the lock file remains
+for subsequent starts. Unix listener support requires a Unix host; loopback TCP
+remains available on other platforms.
 
 ## Deployment and cutover
 

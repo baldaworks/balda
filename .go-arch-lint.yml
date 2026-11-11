@@ -365,6 +365,7 @@ components:
     in:
       - internal/apps/backoffice/standalone
 
+  # Private TCP/Unix dialing stays here; the browser never imports Core/state.
   standalone_backoffice_client:
     in:
       - internal/apps/backoffice/managementclient

@@ -77,3 +77,28 @@ func TestManagementEnvironmentCanPopulateKnownDefaultKeys(t *testing.T) {
 		t.Fatalf("resolved management = %+v", resolved)
 	}
 }
+
+func TestManagementSocketConfigurationDoesNotRequireTCP(t *testing.T) {
+	dir := t.TempDir()
+	content := "runtime:\n  providers:\n    agent:\n      type: opencode_acp\n      opencode_acp:\n        model: test-model\nbalda:\n  management:\n    enabled: true\n    listen_addr: ''\n    socket_path: " + filepath.Join(dir, "core.sock") + "\n    operator_token: local-token\n"
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var document struct {
+		Balda baldaapp.BaldaConfig `mapstructure:"balda"`
+	}
+	_, err := appconfig.LoadConfigDocument(
+		appconfig.RuntimeLoadOptions{WorkingDir: dir, ConfigDir: dir},
+		appconfig.AppLoadOptions{AppName: "balda", DefaultsYAML: defaultBaldaConfig, UseDotConfigAppDir: true},
+		&document,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := document.Balda.ResolveManagement(); err != nil {
+		t.Fatalf("private socket configuration requires TCP: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "core.sock")); !os.IsNotExist(err) {
+		t.Fatalf("configuration validation touched socket: %v", err)
+	}
+}
