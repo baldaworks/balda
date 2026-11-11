@@ -1,5 +1,5 @@
-// Package access owns Backoffice-only canonical-user administration use cases.
-package access
+// Package accessapp owns Core canonical-user administration use cases.
+package accessapp
 
 import (
 	"context"
@@ -76,7 +76,7 @@ type Service struct {
 	newID func() string
 }
 
-// NewService creates the Backoffice Access use case over its local persistence port.
+// NewService creates the Core Access use case over its persistence port.
 func NewService(store store) *Service {
 	return &Service{store: store, now: time.Now, newID: uuid.NewString}
 }
@@ -309,6 +309,7 @@ func (s *Service) audit(actor Actor, action usercmd.AuditAction, targetType user
 		ID: s.newID(), Action: action, Outcome: usercmd.AuditOutcomeSucceeded,
 		ActorUserID: actor.User.ID, ActorWebAuthSessionID: actor.WebAuthSessionID,
 		TargetType: targetType, TargetID: targetID, Reason: reason,
+		// Keep the durable source value stable while ownership moves into Core.
 		Source: "backoffice-access", OccurredAt: now,
 	}
 }

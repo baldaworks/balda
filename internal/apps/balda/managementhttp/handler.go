@@ -6,7 +6,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/accessapp"
 	"github.com/baldaworks/balda/internal/apps/balda/aliascmd"
+	"github.com/baldaworks/balda/internal/apps/balda/auditapp"
 	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
 	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/hookcmd"
@@ -17,6 +19,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/schedulecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/skillcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/systemviewcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookroutecmd"
 	managementv1 "github.com/baldaworks/balda/internal/managementapi/v1"
 )
@@ -25,6 +28,10 @@ const compatibilityPath = "/api/management/v1/compatibility"
 
 // Services are the Core-owned capabilities exposed through management v1.
 type Services struct {
+	Access      *accessapp.Service
+	Audit       *auditapp.Service
+	Invitations bindingInvitationOperations
+	Channels    bindingChannelOperations
 	BrowserAuth *browserauth.Service
 	Providers   *providers.Service
 	MCP         mcpOperations
@@ -37,6 +44,18 @@ type Services struct {
 	System      *systemviewcmd.Snapshot
 	Memory      memoryOperations
 	Archives    archiveOperations
+}
+
+type bindingInvitationOperations interface {
+	Issue(ctx context.Context, actor usercmd.InvitationActor, userID string, version uint64, integration usercmd.BindingIntegration, replace bool) (usercmd.IssuedBindingInvitation, error)
+	Pending(ctx context.Context, userID string) ([]usercmd.BindingInvitation, error)
+	Cancel(ctx context.Context, actor usercmd.InvitationActor, userID, id string, version uint64) error
+}
+
+type bindingChannelOperations interface {
+	Get(channel string) (usercmd.BindingChannel, bool)
+	List() []usercmd.BindingChannel
+	Refresh(ctx context.Context, channel string) (usercmd.BindingChannel, error)
 }
 
 type archiveOperations interface {
@@ -138,7 +157,7 @@ type mcpOperations interface {
 
 // Handler returns the authenticated management API handler.
 func (c ResolvedConfig) Handler(services Services) http.Handler {
-	server := strictServer{browserAuth: services.BrowserAuth, providers: services.Providers, mcp: services.MCP, schedules: services.Schedules, webhooks: services.Webhooks, aliases: services.Aliases, hooks: services.Hooks, plugins: services.Plugins, skills: services.Skills, system: services.System, memory: services.Memory, archives: services.Archives}
+	server := strictServer{access: services.Access, audit: services.Audit, invitations: services.Invitations, channels: services.Channels, browserAuth: services.BrowserAuth, providers: services.Providers, mcp: services.MCP, schedules: services.Schedules, webhooks: services.Webhooks, aliases: services.Aliases, hooks: services.Hooks, plugins: services.Plugins, skills: services.Skills, system: services.System, memory: services.Memory, archives: services.Archives}
 	strict := managementv1.NewStrictHandlerWithOptions(server, nil, managementv1.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, _ error) {
 			writeError(w, r, http.StatusBadRequest, "request.invalid", "invalid request")
@@ -150,6 +169,7 @@ func (c ResolvedConfig) Handler(services Services) http.Handler {
 	mux := http.NewServeMux()
 	generated := managementv1.HandlerFromMux(strict, mux)
 	gated := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
 		rule, ok := managementRoute(r.Method, r.URL.Path)
 		if !ok || (services.BrowserAuth == nil && r.URL.Path != compatibilityPath) ||
 			(services.Schedules == nil && strings.HasPrefix(r.URL.Path, "/api/management/v1/schedules")) ||
@@ -176,6 +196,18 @@ func (c ResolvedConfig) Handler(services Services) http.Handler {
 			return
 		}
 		if services.Archives == nil && strings.HasPrefix(r.URL.Path, "/api/management/v1/ai-sessions") {
+			writeError(w, r, http.StatusNotFound, "not_found", "not found")
+			return
+		}
+		if services.Access == nil && strings.HasPrefix(r.URL.Path, "/api/management/v1/users") {
+			writeError(w, r, http.StatusNotFound, "not_found", "not found")
+			return
+		}
+		if services.Audit == nil && strings.HasPrefix(r.URL.Path, "/api/management/v1/audit/") {
+			writeError(w, r, http.StatusNotFound, "not_found", "not found")
+			return
+		}
+		if (services.Invitations == nil || services.Channels == nil) && (strings.HasPrefix(r.URL.Path, "/api/management/v1/binding-channels") || strings.Contains(r.URL.Path, "/bindings") || strings.Contains(r.URL.Path, "/binding-invitations")) {
 			writeError(w, r, http.StatusNotFound, "not_found", "not found")
 			return
 		}

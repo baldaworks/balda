@@ -11,12 +11,14 @@ import (
 	"strings"
 
 	"github.com/baldaworks/balda/internal/apps/backoffice"
+	"github.com/baldaworks/balda/internal/apps/balda/accessapp"
 	"github.com/baldaworks/balda/internal/apps/balda/actorsfx"
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
 	"github.com/baldaworks/balda/internal/apps/balda/aliasbackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/aliasfx"
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	"github.com/baldaworks/balda/internal/apps/balda/attachmentstore"
+	"github.com/baldaworks/balda/internal/apps/balda/auditapp"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
 	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
@@ -466,6 +468,12 @@ func Module(
 					AccessTTL: backofficeConfig.Server.AccessTokenTTL, RefreshTTL: backofficeConfig.Server.RefreshTokenTTL,
 					Origin: backofficeConfig.Server.PublicURL, CeremonyTTL: backofficeConfig.Server.CeremonyTTL,
 				})
+			},
+			func(provider baldastate.Provider) *accessapp.Service {
+				return accessapp.NewService(provider.Users())
+			},
+			func(provider baldastate.Provider) *auditapp.Service {
+				return auditapp.NewService(provider.Users())
 			},
 			func(provider baldastate.Provider, browserAuth *browserauth.Service, invitations *auth.BindingInvitations, channels *auth.BindingChannels, mcp *mcpbackofficeapp.Operations, providerOperations *providers.Service, schedules *schedulebackofficeapp.Operations, aliases *aliasbackofficeapp.Operations, webhooks *webhookbackofficeapp.Operations, facts *memorybackofficeapp.Operations, plugins *pluginbackofficeapp.Operations, hooks *hookbackofficeapp.Operations, skills *skillbackofficeapp.Operations, archive *chatarchivebackofficeapp.Operations) (*backoffice.Runtime, error) {
 				runtime, err := backoffice.NewRuntimeWithBrowserAuth(backofficeConfig, provider, browserAuth)

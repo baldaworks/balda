@@ -45,6 +45,8 @@ type routeRule struct {
 
 var managementRoutes = map[string]routeRule{
 	http.MethodGet + " " + compatibilityPath:                                   {authority: operatorOnly},
+	http.MethodGet + " /api/management/v1/audit/events":                        {authority: webAuthRead, admin: true},
+	http.MethodGet + " /api/management/v1/binding-channels":                    {authority: webAuthRead, admin: true},
 	http.MethodGet + " /api/management/v1/system/overview":                     {authority: webAuthRead},
 	http.MethodGet + " /api/management/v1/system/agent":                        {authority: webAuthRead},
 	http.MethodPost + " /api/management/v1/auth/login":                         {authority: operatorOnly, body: true},
@@ -113,6 +115,12 @@ func managementRoute(method, path string) (routeRule, bool) {
 	if rule, ok := skillManagementRoute(method, path); ok {
 		return rule, true
 	}
+	if rule, ok := userManagementRoute(method, path); ok {
+		return rule, true
+	}
+	if rule, ok := bindingChannelManagementRoute(method, path); ok {
+		return rule, true
+	}
 	const prefix = "/api/management/v1/auth/sessions/"
 	const suffix = "/revoke"
 	if method != http.MethodPost || !strings.HasPrefix(path, prefix) || !strings.HasSuffix(path, suffix) {
@@ -123,6 +131,61 @@ func managementRoute(method, path string) (routeRule, bool) {
 		return routeRule{}, false
 	}
 	return routeRule{authority: webAuthMutation, body: true}, true
+}
+
+func bindingChannelManagementRoute(method, path string) (routeRule, bool) {
+	const prefix = "/api/management/v1/binding-channels/"
+	const suffix = "/refresh"
+	if method != http.MethodPost || !strings.HasPrefix(path, prefix) || !strings.HasSuffix(path, suffix) {
+		return routeRule{}, false
+	}
+	channel := strings.TrimSuffix(strings.TrimPrefix(path, prefix), suffix)
+	if channel == "" || strings.Contains(channel, "/") {
+		return routeRule{}, false
+	}
+	return routeRule{authority: webAuthMutation, admin: true}, true
+}
+
+func userManagementRoute(method, path string) (routeRule, bool) {
+	const root = "/api/management/v1/users"
+	if path == root {
+		switch method {
+		case http.MethodGet:
+			return routeRule{authority: webAuthRead, admin: true}, true
+		case http.MethodPost:
+			return routeRule{authority: webAuthMutation, body: true, admin: true}, true
+		default:
+			return routeRule{}, false
+		}
+	}
+	if !strings.HasPrefix(path, root+"/") {
+		return routeRule{}, false
+	}
+	parts := strings.Split(strings.TrimPrefix(path, root+"/"), "/")
+	if len(parts) == 1 && parts[0] != "" {
+		switch method {
+		case http.MethodGet:
+			return routeRule{authority: webAuthRead, admin: true}, true
+		case http.MethodPut:
+			return routeRule{authority: webAuthMutation, body: true, admin: true}, true
+		}
+	}
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "credential-reset" && method == http.MethodPost {
+		return routeRule{authority: webAuthMutation, body: true, admin: true}, true
+	}
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "bindings" && method == http.MethodGet {
+		return routeRule{authority: webAuthRead, admin: true}, true
+	}
+	if len(parts) == 3 && parts[0] != "" && parts[1] == "bindings" && parts[2] != "" && method == http.MethodDelete {
+		return routeRule{authority: webAuthMutation, body: true, admin: true}, true
+	}
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "binding-invitations" && method == http.MethodPost {
+		return routeRule{authority: webAuthMutation, body: true, admin: true}, true
+	}
+	if len(parts) == 3 && parts[0] != "" && parts[1] == "binding-invitations" && parts[2] != "" && method == http.MethodDelete {
+		return routeRule{authority: webAuthMutation, body: true, admin: true}, true
+	}
+	return routeRule{}, false
 }
 
 func archiveManagementRoute(method, path string) (routeRule, bool) {
@@ -482,6 +545,10 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, r, http.StatusUnauthorized, "unauthorized", "unauthorized")
 	case errors.Is(err, browserauth.ErrForbidden):
 		writeError(w, r, http.StatusForbidden, "forbidden", "forbidden")
+	case errors.Is(err, usercmd.ErrForbidden):
+		writeError(w, r, http.StatusForbidden, "forbidden", "forbidden")
+	case errors.Is(err, usercmd.ErrBotImpactAcknowledgementRequired):
+		writeError(w, r, http.StatusBadRequest, "request.invalid", "confirmation required")
 	case errors.Is(err, browserauth.ErrRefreshConcurrent), errors.Is(err, providers.ErrConflict), errors.Is(err, usercmd.ErrConflict),
 		errors.Is(err, usercmd.ErrCurrentSessionConfirmationRequired), errors.Is(err, usercmd.ErrLastAdministrator),
 		errors.Is(err, usercmd.ErrPrimaryConflict):
@@ -520,7 +587,8 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, r, http.StatusNotFound, "not_found", "not found")
 	case errors.Is(err, mcpcmd.ErrConflict):
 		writeError(w, r, http.StatusConflict, "conflict", "request conflict")
-	case errors.Is(err, providers.ErrUnavailable), errors.Is(err, mcpcmd.ErrCredentials), errors.Is(err, mcpcmd.ErrUnavailable), errors.Is(err, mcpcmd.ErrDisconnected):
+	case errors.Is(err, providers.ErrUnavailable), errors.Is(err, mcpcmd.ErrCredentials), errors.Is(err, mcpcmd.ErrUnavailable), errors.Is(err, mcpcmd.ErrDisconnected),
+		errors.Is(err, usercmd.ErrBindingInvitationUnavailable), errors.Is(err, usercmd.ErrBindingInvitationScope):
 		writeError(w, r, http.StatusServiceUnavailable, "unavailable", "service unavailable")
 	case errors.Is(err, schedulecmd.ErrUnavailable):
 		writeError(w, r, http.StatusServiceUnavailable, "unavailable", "service unavailable")

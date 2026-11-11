@@ -1,4 +1,4 @@
-package audit
+package auditapp
 
 import (
 	"context"

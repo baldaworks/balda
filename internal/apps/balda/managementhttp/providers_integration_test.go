@@ -10,6 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/accessapp"
+	"github.com/baldaworks/balda/internal/apps/balda/auditapp"
+	authapp "github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
 	"github.com/baldaworks/balda/internal/apps/balda/providers"
 	"github.com/baldaworks/balda/internal/apps/balda/secrets"
@@ -192,11 +195,19 @@ func newManagementTestHandler(t *testing.T, mcp mcpOperations, schedules schedul
 	}
 	configured := map[string]agentconfig.Config{"configured": {Type: agentconfig.AgentTypeOpenAI, OpenAI: &agentconfig.LocalAPIConfig{APIKey: "configured-secret", Model: "configured-model"}}}
 	providerService := providers.New(configured, provider.ProviderManagement(), protector)
+	invitations, err := authapp.NewBindingInvitations(provider.Users().(usercmd.InvitationStore))
+	if err != nil {
+		t.Fatal(err)
+	}
+	channels := authapp.NewBindingChannels([]string{"telegram"})
+	if err := channels.Register(usercmd.BindingChannel{Integration: usercmd.BindingIntegration{ChannelType: "telegram", Key: "bot-id"}, Name: "Telegram", BotUsername: "balda_test_bot", CommandsEnabled: true}); err != nil {
+		t.Fatal(err)
+	}
 	config, err := (Config{Enabled: true, ListenAddr: "127.0.0.1:8081", OperatorToken: "operator-secret"}).Resolve()
 	if err != nil {
 		t.Fatal(err)
 	}
-	return config.Handler(Services{BrowserAuth: auth, Providers: providerService, MCP: mcp, Schedules: schedules, Webhooks: webhooks, Aliases: aliases, Hooks: hooks, Plugins: plugins, Skills: skills})
+	return config.Handler(Services{Access: accessapp.NewService(provider.Users()), Audit: auditapp.NewService(provider.Users()), Invitations: invitations, Channels: channels, BrowserAuth: auth, Providers: providerService, MCP: mcp, Schedules: schedules, Webhooks: webhooks, Aliases: aliases, Hooks: hooks, Plugins: plugins, Skills: skills})
 }
 
 func keepProviderSecrets() managementv1.ProviderProtectedEdit {

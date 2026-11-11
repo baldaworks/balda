@@ -381,15 +381,15 @@ components:
     in:
       - cmd/backoffice
 
-  # Backoffice-only canonical user and browser-session administration use cases.
-  backoffice_access:
+  # Core-owned canonical user and browser-session administration use cases.
+  core_access:
     in:
-      - internal/apps/backoffice/access
+      - internal/apps/balda/accessapp
 
-  # Bounded, read-only Backoffice security-audit query use case.
-  backoffice_audit:
+  # Bounded, read-only Core security-audit query use case.
+  core_audit:
     in:
-      - internal/apps/backoffice/audit
+      - internal/apps/balda/auditapp
 
   # Browser-only Backoffice cookie, origin, form, and HTTP guards.
   backoffice_security:
@@ -697,6 +697,8 @@ deps:
       - management_api_wire
       - http_composition
       - browser_auth
+      - core_access
+      - core_audit
       - user_contracts
       - providers
       - mcp_contracts
@@ -1152,8 +1154,8 @@ deps:
       - infrastructure
       - providers
       - backoffice_application
-      - backoffice_access
-      - backoffice_audit
+      - core_access
+      - core_audit
       - backoffice_webui
       - backoffice_security
     # Backoffice receives its canonical persistence port from the host.
@@ -1201,21 +1203,21 @@ deps:
     deepScan: false
     anyVendorDeps: true
 
-  backoffice_access:
+  core_access:
     mayDependOn:
       - user_contracts
       - user_application
       - user_security
-      - backoffice_access
+      - core_access
     # The selected user store is injected through the Access-owned narrow port.
     deepScan: false
     anyVendorDeps: true
 
-  backoffice_audit:
+  core_audit:
     mayDependOn:
       - user_contracts
       - user_application
-      - backoffice_audit
+      - core_audit
     # The selected audit repository is injected through the Audit-owned query port.
     deepScan: false
     anyVendorDeps: false
@@ -1683,6 +1685,8 @@ deps:
   composition_root:
     mayDependOn:
       - management_api_adapter
+      - core_access
+      - core_audit
       - browser_auth
       - plugin_policy
       - chat_archive_wiring

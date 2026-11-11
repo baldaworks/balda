@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-const minimumSecureGoVersion = "go1.26.10"
+const minimumSecureGoVersion = "go1.26.11"
 
 var (
 	moduleGoVersion  = regexp.MustCompile(`(?m)^go ([0-9]+\.[0-9]+\.[0-9]+)$`)

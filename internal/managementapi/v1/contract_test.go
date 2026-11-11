@@ -342,6 +342,18 @@ func inspectManagementContract(spec *openapi3.T) []string {
 		"deleteMemoryFact":                {"csrf", "operatorServiceAuth", "webAuthAccess"},
 		"listAISessionArchives":           {"operatorServiceAuth", "webAuthAccess"},
 		"getAISessionArchive":             {"operatorServiceAuth", "webAuthAccess"},
+		"listUsers":                       {"operatorServiceAuth", "webAuthAccess"},
+		"getUser":                         {"operatorServiceAuth", "webAuthAccess"},
+		"createUser":                      {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"updateUser":                      {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"resetUserCredential":             {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"listAuditEvents":                 {"operatorServiceAuth", "webAuthAccess"},
+		"listBindingChannels":             {"operatorServiceAuth", "webAuthAccess"},
+		"refreshBindingChannel":           {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"listUserBindings":                {"operatorServiceAuth", "webAuthAccess"},
+		"deleteUserBinding":               {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"issueBindingInvitation":          {"csrf", "operatorServiceAuth", "webAuthAccess"},
+		"cancelBindingInvitation":         {"csrf", "operatorServiceAuth", "webAuthAccess"},
 	}
 	for _, path := range spec.Paths.Keys() {
 		for _, operation := range spec.Paths.Value(path).Operations() {
@@ -368,8 +380,31 @@ func inspectManagementContract(spec *openapi3.T) []string {
 	findings = append(findings, inspectWebhookSchemas(spec)...)
 	findings = append(findings, inspectMCPSchemas(spec)...)
 	findings = append(findings, inspectSkillSchemas(spec)...)
+	findings = append(findings, inspectBindingSchemas(spec)...)
 	findings = append(findings, inspectErrorSchema(spec)...)
 	slices.Sort(findings)
+	return findings
+}
+
+func inspectBindingSchemas(spec *openapi3.T) []string {
+	var findings []string
+	issued := spec.Components.Schemas["IssuedBindingInvitation"]
+	if issued == nil || issued.Value == nil || issued.Value.Properties["proof"] == nil ||
+		issued.Value.Properties["proof"].Value == nil || issued.Value.Properties["proof"].Value.Extensions["x-sensitive"] != true {
+		findings = append(findings, "IssuedBindingInvitation.proof must be sensitive")
+	}
+	for _, schemaName := range []string{"BindingInvitation", "UserBindingInventory", "BindingChannelInventory"} {
+		data, err := json.Marshal(spec.Components.Schemas[schemaName])
+		if err != nil {
+			findings = append(findings, fmt.Sprintf("marshal %s: %v", schemaName, err))
+			continue
+		}
+		for _, forbidden := range []string{"proof", "token", "digest", "integration_key"} {
+			if strings.Contains(string(data), forbidden) {
+				findings = append(findings, fmt.Sprintf("%s exposes %s", schemaName, forbidden))
+			}
+		}
+	}
 	return findings
 }
 

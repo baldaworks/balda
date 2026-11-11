@@ -43,6 +43,36 @@ func (e AISessionArchiveMessageRole) Valid() bool {
 	}
 }
 
+// Defines values for BindingDeleteRequestConfirmImpact.
+const (
+	BindingDeleteRequestConfirmImpactTrue BindingDeleteRequestConfirmImpact = true
+)
+
+// Valid indicates whether the value is a known member of the BindingDeleteRequestConfirmImpact enum.
+func (e BindingDeleteRequestConfirmImpact) Valid() bool {
+	switch e {
+	case BindingDeleteRequestConfirmImpactTrue:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BindingInvitationCancelRequestConfirm.
+const (
+	BindingInvitationCancelRequestConfirmTrue BindingInvitationCancelRequestConfirm = true
+)
+
+// Valid indicates whether the value is a known member of the BindingInvitationCancelRequestConfirm enum.
+func (e BindingInvitationCancelRequestConfirm) Valid() bool {
+	switch e {
+	case BindingInvitationCancelRequestConfirmTrue:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for HookEvent.
 const (
 	PostToolUse      HookEvent = "PostToolUse"
@@ -526,6 +556,45 @@ func (e SkillOwnership) Valid() bool {
 	}
 }
 
+// Defines values for UserCredentialState.
+const (
+	UserCredentialStateActive    UserCredentialState = "active"
+	UserCredentialStateDisabled  UserCredentialState = "disabled"
+	UserCredentialStateTemporary UserCredentialState = "temporary"
+)
+
+// Valid indicates whether the value is a known member of the UserCredentialState enum.
+func (e UserCredentialState) Valid() bool {
+	switch e {
+	case UserCredentialStateActive:
+		return true
+	case UserCredentialStateDisabled:
+		return true
+	case UserCredentialStateTemporary:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for UserStatus.
+const (
+	UserStatusActive   UserStatus = "active"
+	UserStatusDisabled UserStatus = "disabled"
+)
+
+// Valid indicates whether the value is a known member of the UserStatus enum.
+func (e UserStatus) Valid() bool {
+	switch e {
+	case UserStatusActive:
+		return true
+	case UserStatusDisabled:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for WebAuthAssurance.
 const (
 	Normal     WebAuthAssurance = "normal"
@@ -793,6 +862,88 @@ type AliasRetargetRequest struct {
 	LocatorRef      string `json:"locator_ref"`
 }
 
+// AuditEvent defines model for AuditEvent.
+type AuditEvent struct {
+	Action                string    `json:"action"`
+	ActorUserID           *string   `json:"actor_user_id,omitempty"`
+	ActorWebAuthSessionID *string   `json:"actor_web_auth_session_id,omitempty"`
+	EventID               string    `json:"event_id"`
+	OccurredAt            time.Time `json:"occurred_at"`
+	Outcome               string    `json:"outcome"`
+	TargetID              *string   `json:"target_id,omitempty"`
+	TargetType            string    `json:"target_type"`
+}
+
+// AuditEventPage defines model for AuditEventPage.
+type AuditEventPage struct {
+	Events      []AuditEvent `json:"events"`
+	NextAfterID *string      `json:"next_after_id,omitempty"`
+}
+
+// BindingChannel defines model for BindingChannel.
+type BindingChannel struct {
+	BotUsername     *string `json:"bot_username,omitempty"`
+	ChannelType     string  `json:"channel_type"`
+	CommandsEnabled bool    `json:"commands_enabled"`
+	Endpoint        *string `json:"endpoint,omitempty"`
+	Name            *string `json:"name,omitempty"`
+	Ready           bool    `json:"ready"`
+}
+
+// BindingChannelInventory defines model for BindingChannelInventory.
+type BindingChannelInventory struct {
+	Channels []BindingChannel `json:"channels"`
+}
+
+// BindingDeleteRequest defines model for BindingDeleteRequest.
+type BindingDeleteRequest struct {
+	ConfirmImpact       BindingDeleteRequestConfirmImpact `json:"confirm_impact"`
+	ExpectedUserVersion uint64                            `json:"expected_user_version"`
+}
+
+// BindingDeleteRequestConfirmImpact defines model for BindingDeleteRequest.ConfirmImpact.
+type BindingDeleteRequestConfirmImpact bool
+
+// BindingInvitation defines model for BindingInvitation.
+type BindingInvitation struct {
+	ChannelType    string     `json:"channel_type"`
+	ConsumedAt     *time.Time `json:"consumed_at,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	ExpiresAt      time.Time  `json:"expires_at"`
+	InvitationID   string     `json:"invitation_id"`
+	IssuedByUserID string     `json:"issued_by_user_id"`
+	RevokedAt      *time.Time `json:"revoked_at,omitempty"`
+	Version        uint64     `json:"version"`
+}
+
+// BindingInvitationCancelRequest defines model for BindingInvitationCancelRequest.
+type BindingInvitationCancelRequest struct {
+	Confirm                   BindingInvitationCancelRequestConfirm `json:"confirm"`
+	ExpectedInvitationVersion uint64                                `json:"expected_invitation_version"`
+}
+
+// BindingInvitationCancelRequestConfirm defines model for BindingInvitationCancelRequest.Confirm.
+type BindingInvitationCancelRequestConfirm bool
+
+// BindingInvitationIssueRequest defines model for BindingInvitationIssueRequest.
+type BindingInvitationIssueRequest struct {
+	ChannelType         string `json:"channel_type"`
+	ExpectedUserVersion uint64 `json:"expected_user_version"`
+	Replace             bool   `json:"replace"`
+}
+
+// BindingRecord defines model for BindingRecord.
+type BindingRecord struct {
+	BindingID         string    `json:"binding_id"`
+	ChannelType       string    `json:"channel_type"`
+	CreatedAt         time.Time `json:"created_at"`
+	DisplayName       *string   `json:"display_name,omitempty"`
+	Principal         string    `json:"principal"`
+	ProviderFirstName *string   `json:"provider_first_name,omitempty"`
+	ProviderUsername  *string   `json:"provider_username,omitempty"`
+	UpdatedAt         time.Time `json:"updated_at"`
+}
+
 // HookDefinition defines model for HookDefinition.
 type HookDefinition struct {
 	Args           []string  `json:"args"`
@@ -826,6 +977,14 @@ type HookInventory struct {
 type HookSaveRequest struct {
 	Definition      HookDefinition `json:"definition"`
 	ExpectedVersion int64          `json:"expected_version"`
+}
+
+// IssuedBindingInvitation defines model for IssuedBindingInvitation.
+type IssuedBindingInvitation struct {
+	Invitation BindingInvitation `json:"invitation"`
+
+	// Proof Single-use proof returned only by the issue response.
+	Proof string `json:"proof"`
 }
 
 // LocalLoginRequest defines model for LocalLoginRequest.
@@ -1048,7 +1207,7 @@ type ManagementCompatibility struct {
 	APIMajor   ManagementCompatibilityAPIMajor   `json:"api_major"`
 	ContractID ManagementCompatibilityContractID `json:"contract_id"`
 
-	// ContractVersion Example: 1.10.0
+	// ContractVersion Example: 1.13.0
 	ContractVersion string `json:"contract_version"`
 }
 
@@ -1574,6 +1733,66 @@ type SystemSetting struct {
 	Value string `json:"value"`
 }
 
+// UserBindingInventory defines model for UserBindingInventory.
+type UserBindingInventory struct {
+	Bindings    []BindingRecord     `json:"bindings"`
+	Invitations []BindingInvitation `json:"invitations"`
+}
+
+// UserCreateRequest defines model for UserCreateRequest.
+type UserCreateRequest struct {
+	DisplayName       string      `json:"display_name"`
+	Role              WebAuthRole `json:"role"`
+	Status            UserStatus  `json:"status"`
+	TemporaryPassword *string     `json:"temporary_password,omitempty"`
+	Username          string      `json:"username"`
+}
+
+// UserCredentialResetRequest defines model for UserCredentialResetRequest.
+type UserCredentialResetRequest struct {
+	ConfirmCurrent            bool    `json:"confirm_current"`
+	ExpectedCredentialVersion uint64  `json:"expected_credential_version"`
+	ExpectedUserVersion       uint64  `json:"expected_user_version"`
+	TemporaryPassword         *string `json:"temporary_password,omitempty"`
+}
+
+// UserCredentialState defines model for UserCredentialState.
+type UserCredentialState string
+
+// UserInventory defines model for UserInventory.
+type UserInventory struct {
+	Users []UserRecord `json:"users"`
+}
+
+// UserRecord defines model for UserRecord.
+type UserRecord struct {
+	CreatedAt            time.Time           `json:"created_at"`
+	CredentialMustChange bool                `json:"credential_must_change"`
+	CredentialState      UserCredentialState `json:"credential_state"`
+	CredentialVersion    uint64              `json:"credential_version"`
+	DisplayName          string              `json:"display_name"`
+	Primary              bool                `json:"primary"`
+	Role                 WebAuthRole         `json:"role"`
+	Status               UserStatus          `json:"status"`
+	UpdatedAt            time.Time           `json:"updated_at"`
+	UserID               string              `json:"user_id"`
+	Username             string              `json:"username"`
+	Version              uint64              `json:"version"`
+}
+
+// UserStatus defines model for UserStatus.
+type UserStatus string
+
+// UserUpdateRequest defines model for UserUpdateRequest.
+type UserUpdateRequest struct {
+	AcknowledgeBotAccessImpact bool        `json:"acknowledge_bot_access_impact"`
+	DisplayName                string      `json:"display_name"`
+	ExpectedVersion            uint64      `json:"expected_version"`
+	Role                       WebAuthRole `json:"role"`
+	Status                     UserStatus  `json:"status"`
+	Username                   string      `json:"username"`
+}
+
 // WebAuthAssurance defines model for WebAuthAssurance.
 type WebAuthAssurance string
 
@@ -1909,6 +2128,18 @@ type GetAISessionArchiveParams struct {
 	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// ListAuditEventsParams defines parameters for ListAuditEvents.
+type ListAuditEventsParams struct {
+	AfterID     *string    `form:"after_id,omitempty" json:"after_id,omitempty"`
+	Limit       *int32     `form:"limit,omitempty" json:"limit,omitempty"`
+	Action      *string    `form:"action,omitempty" json:"action,omitempty"`
+	Outcome     *string    `form:"outcome,omitempty" json:"outcome,omitempty"`
+	TargetType  *string    `form:"target_type,omitempty" json:"target_type,omitempty"`
+	ActorUserID *string    `form:"actor_user_id,omitempty" json:"actor_user_id,omitempty"`
+	From        *time.Time `form:"from,omitempty" json:"from,omitempty"`
+	Before      *time.Time `form:"before,omitempty" json:"before,omitempty"`
+}
+
 // ListWebAuthSessionsParams defines parameters for ListWebAuthSessions.
 type ListWebAuthSessionsParams struct {
 	UserID  *string `form:"user_id,omitempty" json:"user_id,omitempty"`
@@ -2082,6 +2313,24 @@ type MutateSkillJSONRequestBody = SkillMutationRequest
 // ReviewSkillUpdateJSONRequestBody defines body for ReviewSkillUpdate for application/json ContentType.
 type ReviewSkillUpdateJSONRequestBody = SkillObservedStateRequest
 
+// CreateUserJSONRequestBody defines body for CreateUser for application/json ContentType.
+type CreateUserJSONRequestBody = UserCreateRequest
+
+// UpdateUserJSONRequestBody defines body for UpdateUser for application/json ContentType.
+type UpdateUserJSONRequestBody = UserUpdateRequest
+
+// IssueBindingInvitationJSONRequestBody defines body for IssueBindingInvitation for application/json ContentType.
+type IssueBindingInvitationJSONRequestBody = BindingInvitationIssueRequest
+
+// CancelBindingInvitationJSONRequestBody defines body for CancelBindingInvitation for application/json ContentType.
+type CancelBindingInvitationJSONRequestBody = BindingInvitationCancelRequest
+
+// DeleteUserBindingJSONRequestBody defines body for DeleteUserBinding for application/json ContentType.
+type DeleteUserBindingJSONRequestBody = BindingDeleteRequest
+
+// ResetUserCredentialJSONRequestBody defines body for ResetUserCredential for application/json ContentType.
+type ResetUserCredentialJSONRequestBody = UserCredentialResetRequest
+
 // CreateWebhookJSONRequestBody defines body for CreateWebhook for application/json ContentType.
 type CreateWebhookJSONRequestBody = WebhookCreateRequest
 
@@ -2209,6 +2458,11 @@ type ClientInterface interface {
 	// RetargetAlias performs a PUT /api/management/v1/aliases/{alias_name} (the `RetargetAlias` operationId) request.
 	// Takes a body of the `application/json` content type.
 	RetargetAlias(ctx context.Context, aliasName AliasName, body RetargetAliasJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListAuditEvents List canonical security audit events
+	//
+	// Corresponds with GET /api/management/v1/audit/events (the `ListAuditEvents` operationId).
+	ListAuditEvents(ctx context.Context, params *ListAuditEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// LoginWebAuthWithBody Start local WebAuth login
 	//
@@ -2360,6 +2614,16 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /api/management/v1/auth/sessions/{web_auth_session_id}/revoke (the `RevokeWebAuthSession` operationId).
 	RevokeWebAuthSession(ctx context.Context, webAuthSessionID string, body RevokeWebAuthSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListBindingChannels List cached configured binding-channel identities
+	//
+	// Corresponds with GET /api/management/v1/binding-channels (the `ListBindingChannels` operationId).
+	ListBindingChannels(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RefreshBindingChannel Explicitly refresh one configured binding-channel identity
+	//
+	// Corresponds with POST /api/management/v1/binding-channels/{channel_type}/refresh (the `RefreshBindingChannel` operationId).
+	RefreshBindingChannel(ctx context.Context, channelType string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetManagementCompatibility Read management contract compatibility metadata
 	//
@@ -2828,6 +3092,105 @@ type ClientInterface interface {
 	// Corresponds with GET /api/management/v1/system/overview (the `GetSystemOverview` operationId).
 	GetSystemOverview(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListUsers List canonical users
+	//
+	// Corresponds with GET /api/management/v1/users (the `ListUsers` operationId).
+	ListUsers(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateUserWithBody Create a canonical user with a temporary credential
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/management/v1/users (the `CreateUser` operationId).
+	CreateUserWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateUser Create a canonical user with a temporary credential
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/management/v1/users (the `CreateUser` operationId).
+	CreateUser(ctx context.Context, body CreateUserJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetUser Read one canonical user
+	//
+	// Corresponds with GET /api/management/v1/users/{user_id} (the `GetUser` operationId).
+	GetUser(ctx context.Context, userID string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateUserWithBody Update canonical user profile and access
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /api/management/v1/users/{user_id} (the `UpdateUser` operationId).
+	UpdateUserWithBody(ctx context.Context, userID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateUser Update canonical user profile and access
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /api/management/v1/users/{user_id} (the `UpdateUser` operationId).
+	UpdateUser(ctx context.Context, userID string, body UpdateUserJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// IssueBindingInvitationWithBody Issue one single-use binding proof
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/management/v1/users/{user_id}/binding-invitations (the `IssueBindingInvitation` operationId).
+	IssueBindingInvitationWithBody(ctx context.Context, userID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// IssueBindingInvitation Issue one single-use binding proof
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/management/v1/users/{user_id}/binding-invitations (the `IssueBindingInvitation` operationId).
+	IssueBindingInvitation(ctx context.Context, userID string, body IssueBindingInvitationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CancelBindingInvitationWithBody Cancel one pending binding invitation
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with DELETE /api/management/v1/users/{user_id}/binding-invitations/{invitation_id} (the `CancelBindingInvitation` operationId).
+	CancelBindingInvitationWithBody(ctx context.Context, userID string, invitationID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CancelBindingInvitation Cancel one pending binding invitation
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with DELETE /api/management/v1/users/{user_id}/binding-invitations/{invitation_id} (the `CancelBindingInvitation` operationId).
+	CancelBindingInvitation(ctx context.Context, userID string, invitationID string, body CancelBindingInvitationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListUserBindings List confirmed bindings and pending invitation metadata
+	//
+	// Corresponds with GET /api/management/v1/users/{user_id}/bindings (the `ListUserBindings` operationId).
+	ListUserBindings(ctx context.Context, userID string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteUserBindingWithBody Remove one confirmed transport binding
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with DELETE /api/management/v1/users/{user_id}/bindings/{binding_id} (the `DeleteUserBinding` operationId).
+	DeleteUserBindingWithBody(ctx context.Context, userID string, bindingID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteUserBinding Remove one confirmed transport binding
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with DELETE /api/management/v1/users/{user_id}/bindings/{binding_id} (the `DeleteUserBinding` operationId).
+	DeleteUserBinding(ctx context.Context, userID string, bindingID string, body DeleteUserBindingJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ResetUserCredentialWithBody Replace a user's local credential with a temporary password
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/management/v1/users/{user_id}/credential-reset (the `ResetUserCredential` operationId).
+	ResetUserCredentialWithBody(ctx context.Context, userID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ResetUserCredential Replace a user's local credential with a temporary password
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/management/v1/users/{user_id}/credential-reset (the `ResetUserCredential` operationId).
+	ResetUserCredential(ctx context.Context, userID string, body ResetUserCredentialJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListWebhooks performs a GET /api/management/v1/webhooks (the `ListWebhooks` operationId) request.
 	ListWebhooks(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -3015,6 +3378,21 @@ func (c *Client) RetargetAliasWithBody(ctx context.Context, aliasName AliasName,
 // Takes a body of the `application/json` content type.
 func (c *Client) RetargetAlias(ctx context.Context, aliasName AliasName, body RetargetAliasJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewRetargetAliasRequest(c.Server, aliasName, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListAuditEvents List canonical security audit events
+//
+// Corresponds with GET /api/management/v1/audit/events (the `ListAuditEvents` operationId).
+func (c *Client) ListAuditEvents(ctx context.Context, params *ListAuditEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListAuditEventsRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -3396,6 +3774,36 @@ func (c *Client) RevokeWebAuthSessionWithBody(ctx context.Context, webAuthSessio
 // Corresponds with POST /api/management/v1/auth/sessions/{web_auth_session_id}/revoke (the `RevokeWebAuthSession` operationId).
 func (c *Client) RevokeWebAuthSession(ctx context.Context, webAuthSessionID string, body RevokeWebAuthSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewRevokeWebAuthSessionRequest(c.Server, webAuthSessionID, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListBindingChannels List cached configured binding-channel identities
+//
+// Corresponds with GET /api/management/v1/binding-channels (the `ListBindingChannels` operationId).
+func (c *Client) ListBindingChannels(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListBindingChannelsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RefreshBindingChannel Explicitly refresh one configured binding-channel identity
+//
+// Corresponds with POST /api/management/v1/binding-channels/{channel_type}/refresh (the `RefreshBindingChannel` operationId).
+func (c *Client) RefreshBindingChannel(ctx context.Context, channelType string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRefreshBindingChannelRequest(c.Server, channelType)
 	if err != nil {
 		return nil, err
 	}
@@ -4823,6 +5231,255 @@ func (c *Client) GetSystemOverview(ctx context.Context, reqEditors ...RequestEdi
 	return c.Client.Do(req)
 }
 
+// ListUsers List canonical users
+//
+// Corresponds with GET /api/management/v1/users (the `ListUsers` operationId).
+func (c *Client) ListUsers(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListUsersRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateUserWithBody Create a canonical user with a temporary credential
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/management/v1/users (the `CreateUser` operationId).
+func (c *Client) CreateUserWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateUserRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateUser Create a canonical user with a temporary credential
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/management/v1/users (the `CreateUser` operationId).
+func (c *Client) CreateUser(ctx context.Context, body CreateUserJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateUserRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetUser Read one canonical user
+//
+// Corresponds with GET /api/management/v1/users/{user_id} (the `GetUser` operationId).
+func (c *Client) GetUser(ctx context.Context, userID string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetUserRequest(c.Server, userID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateUserWithBody Update canonical user profile and access
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /api/management/v1/users/{user_id} (the `UpdateUser` operationId).
+func (c *Client) UpdateUserWithBody(ctx context.Context, userID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateUserRequestWithBody(c.Server, userID, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateUser Update canonical user profile and access
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /api/management/v1/users/{user_id} (the `UpdateUser` operationId).
+func (c *Client) UpdateUser(ctx context.Context, userID string, body UpdateUserJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateUserRequest(c.Server, userID, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// IssueBindingInvitationWithBody Issue one single-use binding proof
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/management/v1/users/{user_id}/binding-invitations (the `IssueBindingInvitation` operationId).
+func (c *Client) IssueBindingInvitationWithBody(ctx context.Context, userID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewIssueBindingInvitationRequestWithBody(c.Server, userID, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// IssueBindingInvitation Issue one single-use binding proof
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/management/v1/users/{user_id}/binding-invitations (the `IssueBindingInvitation` operationId).
+func (c *Client) IssueBindingInvitation(ctx context.Context, userID string, body IssueBindingInvitationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewIssueBindingInvitationRequest(c.Server, userID, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CancelBindingInvitationWithBody Cancel one pending binding invitation
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with DELETE /api/management/v1/users/{user_id}/binding-invitations/{invitation_id} (the `CancelBindingInvitation` operationId).
+func (c *Client) CancelBindingInvitationWithBody(ctx context.Context, userID string, invitationID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCancelBindingInvitationRequestWithBody(c.Server, userID, invitationID, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CancelBindingInvitation Cancel one pending binding invitation
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with DELETE /api/management/v1/users/{user_id}/binding-invitations/{invitation_id} (the `CancelBindingInvitation` operationId).
+func (c *Client) CancelBindingInvitation(ctx context.Context, userID string, invitationID string, body CancelBindingInvitationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCancelBindingInvitationRequest(c.Server, userID, invitationID, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListUserBindings List confirmed bindings and pending invitation metadata
+//
+// Corresponds with GET /api/management/v1/users/{user_id}/bindings (the `ListUserBindings` operationId).
+func (c *Client) ListUserBindings(ctx context.Context, userID string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListUserBindingsRequest(c.Server, userID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteUserBindingWithBody Remove one confirmed transport binding
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with DELETE /api/management/v1/users/{user_id}/bindings/{binding_id} (the `DeleteUserBinding` operationId).
+func (c *Client) DeleteUserBindingWithBody(ctx context.Context, userID string, bindingID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteUserBindingRequestWithBody(c.Server, userID, bindingID, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteUserBinding Remove one confirmed transport binding
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with DELETE /api/management/v1/users/{user_id}/bindings/{binding_id} (the `DeleteUserBinding` operationId).
+func (c *Client) DeleteUserBinding(ctx context.Context, userID string, bindingID string, body DeleteUserBindingJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteUserBindingRequest(c.Server, userID, bindingID, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ResetUserCredentialWithBody Replace a user's local credential with a temporary password
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/management/v1/users/{user_id}/credential-reset (the `ResetUserCredential` operationId).
+func (c *Client) ResetUserCredentialWithBody(ctx context.Context, userID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewResetUserCredentialRequestWithBody(c.Server, userID, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ResetUserCredential Replace a user's local credential with a temporary password
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/management/v1/users/{user_id}/credential-reset (the `ResetUserCredential` operationId).
+func (c *Client) ResetUserCredential(ctx context.Context, userID string, body ResetUserCredentialJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewResetUserCredentialRequest(c.Server, userID, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // ListWebhooks performs a GET /api/management/v1/webhooks (the `ListWebhooks` operationId) request.
 func (c *Client) ListWebhooks(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListWebhooksRequest(c.Server)
@@ -5389,6 +6046,144 @@ func NewRetargetAliasRequestWithBody(server string, aliasName AliasName, content
 	return req, nil
 }
 
+// NewListAuditEventsRequest constructs an http.Request for the ListAuditEvents method
+func NewListAuditEventsRequest(server string, params *ListAuditEventsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/audit/events")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.AfterID != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "after_id", *params.AfterID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Action != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "action", *params.Action, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Outcome != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "outcome", *params.Outcome, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.TargetType != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "target_type", *params.TargetType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.ActorUserID != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "actor_user_id", *params.ActorUserID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.From != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "from", *params.From, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "date-time"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Before != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "before", *params.Before, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "date-time"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewLoginWebAuthRequest calls the generic LoginWebAuth builder with application/json body
 func NewLoginWebAuthRequest(server string, body LoginWebAuthJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -5938,6 +6733,67 @@ func NewRevokeWebAuthSessionRequestWithBody(server string, webAuthSessionID stri
 	}
 
 	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListBindingChannelsRequest constructs an http.Request for the ListBindingChannels method
+func NewListBindingChannelsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/binding-channels")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRefreshBindingChannelRequest constructs an http.Request for the RefreshBindingChannel method
+func NewRefreshBindingChannelRequest(server string, channelType string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "channel_type", channelType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/binding-channels/%s/refresh", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
 
 	return req, nil
 }
@@ -8341,6 +9197,390 @@ func NewGetSystemOverviewRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewListUsersRequest constructs an http.Request for the ListUsers method
+func NewListUsersRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/users")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateUserRequest calls the generic CreateUser builder with application/json body
+func NewCreateUserRequest(server string, body CreateUserJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateUserRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateUserRequestWithBody constructs an http.Request for the CreateUser method, with any body, and a specified content type
+func NewCreateUserRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/users")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetUserRequest constructs an http.Request for the GetUser method
+func NewGetUserRequest(server string, userID string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "user_id", userID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/users/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateUserRequest calls the generic UpdateUser builder with application/json body
+func NewUpdateUserRequest(server string, userID string, body UpdateUserJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateUserRequestWithBody(server, userID, "application/json", bodyReader)
+}
+
+// NewUpdateUserRequestWithBody constructs an http.Request for the UpdateUser method, with any body, and a specified content type
+func NewUpdateUserRequestWithBody(server string, userID string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "user_id", userID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/users/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewIssueBindingInvitationRequest calls the generic IssueBindingInvitation builder with application/json body
+func NewIssueBindingInvitationRequest(server string, userID string, body IssueBindingInvitationJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewIssueBindingInvitationRequestWithBody(server, userID, "application/json", bodyReader)
+}
+
+// NewIssueBindingInvitationRequestWithBody constructs an http.Request for the IssueBindingInvitation method, with any body, and a specified content type
+func NewIssueBindingInvitationRequestWithBody(server string, userID string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "user_id", userID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/users/%s/binding-invitations", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewCancelBindingInvitationRequest calls the generic CancelBindingInvitation builder with application/json body
+func NewCancelBindingInvitationRequest(server string, userID string, invitationID string, body CancelBindingInvitationJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCancelBindingInvitationRequestWithBody(server, userID, invitationID, "application/json", bodyReader)
+}
+
+// NewCancelBindingInvitationRequestWithBody constructs an http.Request for the CancelBindingInvitation method, with any body, and a specified content type
+func NewCancelBindingInvitationRequestWithBody(server string, userID string, invitationID string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "user_id", userID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "invitation_id", invitationID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/users/%s/binding-invitations/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListUserBindingsRequest constructs an http.Request for the ListUserBindings method
+func NewListUserBindingsRequest(server string, userID string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "user_id", userID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/users/%s/bindings", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewDeleteUserBindingRequest calls the generic DeleteUserBinding builder with application/json body
+func NewDeleteUserBindingRequest(server string, userID string, bindingID string, body DeleteUserBindingJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewDeleteUserBindingRequestWithBody(server, userID, bindingID, "application/json", bodyReader)
+}
+
+// NewDeleteUserBindingRequestWithBody constructs an http.Request for the DeleteUserBinding method, with any body, and a specified content type
+func NewDeleteUserBindingRequestWithBody(server string, userID string, bindingID string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "user_id", userID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "binding_id", bindingID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/users/%s/bindings/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewResetUserCredentialRequest calls the generic ResetUserCredential builder with application/json body
+func NewResetUserCredentialRequest(server string, userID string, body ResetUserCredentialJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewResetUserCredentialRequestWithBody(server, userID, "application/json", bodyReader)
+}
+
+// NewResetUserCredentialRequestWithBody constructs an http.Request for the ResetUserCredential method, with any body, and a specified content type
+func NewResetUserCredentialRequestWithBody(server string, userID string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "user_id", userID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/management/v1/users/%s/credential-reset", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewListWebhooksRequest constructs an http.Request for the ListWebhooks method
 func NewListWebhooksRequest(server string) (*http.Request, error) {
 	var err error
@@ -8885,6 +10125,13 @@ type ClientWithResponsesInterface interface {
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	RetargetAliasWithResponse(ctx context.Context, aliasName AliasName, body RetargetAliasJSONRequestBody, reqEditors ...RequestEditorFn) (*RetargetAliasResponse, error)
 
+	// ListAuditEventsWithResponse List canonical security audit events
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/management/v1/audit/events (the `ListAuditEvents` operationId).
+	ListAuditEventsWithResponse(ctx context.Context, params *ListAuditEventsParams, reqEditors ...RequestEditorFn) (*ListAuditEventsResponse, error)
+
 	// LoginWebAuthWithBodyWithResponse Start local WebAuth login
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
@@ -9045,6 +10292,20 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with POST /api/management/v1/auth/sessions/{web_auth_session_id}/revoke (the `RevokeWebAuthSession` operationId).
 	RevokeWebAuthSessionWithResponse(ctx context.Context, webAuthSessionID string, body RevokeWebAuthSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*RevokeWebAuthSessionResponse, error)
+
+	// ListBindingChannelsWithResponse List cached configured binding-channel identities
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/management/v1/binding-channels (the `ListBindingChannels` operationId).
+	ListBindingChannelsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListBindingChannelsResponse, error)
+
+	// RefreshBindingChannelWithResponse Explicitly refresh one configured binding-channel identity
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/binding-channels/{channel_type}/refresh (the `RefreshBindingChannel` operationId).
+	RefreshBindingChannelWithResponse(ctx context.Context, channelType string, reqEditors ...RequestEditorFn) (*RefreshBindingChannelResponse, error)
 
 	// GetManagementCompatibilityWithResponse Read management contract compatibility metadata
 	//
@@ -9600,6 +10861,111 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /api/management/v1/system/overview (the `GetSystemOverview` operationId).
 	GetSystemOverviewWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSystemOverviewResponse, error)
+
+	// ListUsersWithResponse List canonical users
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/management/v1/users (the `ListUsers` operationId).
+	ListUsersWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListUsersResponse, error)
+
+	// CreateUserWithBodyWithResponse Create a canonical user with a temporary credential
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/users (the `CreateUser` operationId).
+	CreateUserWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateUserResponse, error)
+
+	// CreateUserWithResponse Create a canonical user with a temporary credential
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/users (the `CreateUser` operationId).
+	CreateUserWithResponse(ctx context.Context, body CreateUserJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateUserResponse, error)
+
+	// GetUserWithResponse Read one canonical user
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/management/v1/users/{user_id} (the `GetUser` operationId).
+	GetUserWithResponse(ctx context.Context, userID string, reqEditors ...RequestEditorFn) (*GetUserResponse, error)
+
+	// UpdateUserWithBodyWithResponse Update canonical user profile and access
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/management/v1/users/{user_id} (the `UpdateUser` operationId).
+	UpdateUserWithBodyWithResponse(ctx context.Context, userID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateUserResponse, error)
+
+	// UpdateUserWithResponse Update canonical user profile and access
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/management/v1/users/{user_id} (the `UpdateUser` operationId).
+	UpdateUserWithResponse(ctx context.Context, userID string, body UpdateUserJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateUserResponse, error)
+
+	// IssueBindingInvitationWithBodyWithResponse Issue one single-use binding proof
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/users/{user_id}/binding-invitations (the `IssueBindingInvitation` operationId).
+	IssueBindingInvitationWithBodyWithResponse(ctx context.Context, userID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*IssueBindingInvitationResponse, error)
+
+	// IssueBindingInvitationWithResponse Issue one single-use binding proof
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/users/{user_id}/binding-invitations (the `IssueBindingInvitation` operationId).
+	IssueBindingInvitationWithResponse(ctx context.Context, userID string, body IssueBindingInvitationJSONRequestBody, reqEditors ...RequestEditorFn) (*IssueBindingInvitationResponse, error)
+
+	// CancelBindingInvitationWithBodyWithResponse Cancel one pending binding invitation
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /api/management/v1/users/{user_id}/binding-invitations/{invitation_id} (the `CancelBindingInvitation` operationId).
+	CancelBindingInvitationWithBodyWithResponse(ctx context.Context, userID string, invitationID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CancelBindingInvitationResponse, error)
+
+	// CancelBindingInvitationWithResponse Cancel one pending binding invitation
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /api/management/v1/users/{user_id}/binding-invitations/{invitation_id} (the `CancelBindingInvitation` operationId).
+	CancelBindingInvitationWithResponse(ctx context.Context, userID string, invitationID string, body CancelBindingInvitationJSONRequestBody, reqEditors ...RequestEditorFn) (*CancelBindingInvitationResponse, error)
+
+	// ListUserBindingsWithResponse List confirmed bindings and pending invitation metadata
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/management/v1/users/{user_id}/bindings (the `ListUserBindings` operationId).
+	ListUserBindingsWithResponse(ctx context.Context, userID string, reqEditors ...RequestEditorFn) (*ListUserBindingsResponse, error)
+
+	// DeleteUserBindingWithBodyWithResponse Remove one confirmed transport binding
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /api/management/v1/users/{user_id}/bindings/{binding_id} (the `DeleteUserBinding` operationId).
+	DeleteUserBindingWithBodyWithResponse(ctx context.Context, userID string, bindingID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeleteUserBindingResponse, error)
+
+	// DeleteUserBindingWithResponse Remove one confirmed transport binding
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /api/management/v1/users/{user_id}/bindings/{binding_id} (the `DeleteUserBinding` operationId).
+	DeleteUserBindingWithResponse(ctx context.Context, userID string, bindingID string, body DeleteUserBindingJSONRequestBody, reqEditors ...RequestEditorFn) (*DeleteUserBindingResponse, error)
+
+	// ResetUserCredentialWithBodyWithResponse Replace a user's local credential with a temporary password
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/users/{user_id}/credential-reset (the `ResetUserCredential` operationId).
+	ResetUserCredentialWithBodyWithResponse(ctx context.Context, userID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ResetUserCredentialResponse, error)
+
+	// ResetUserCredentialWithResponse Replace a user's local credential with a temporary password
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/management/v1/users/{user_id}/credential-reset (the `ResetUserCredential` operationId).
+	ResetUserCredentialWithResponse(ctx context.Context, userID string, body ResetUserCredentialJSONRequestBody, reqEditors ...RequestEditorFn) (*ResetUserCredentialResponse, error)
 
 	// ListWebhooksWithResponse performs a GET /api/management/v1/webhooks (the `ListWebhooks` operationId) request.
 	//
@@ -10236,6 +11602,75 @@ func (r RetargetAliasResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r RetargetAliasResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListAuditEventsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *AuditEventPage
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListAuditEventsResponse) GetJSON200() *AuditEventPage {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ListAuditEventsResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListAuditEventsResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListAuditEventsResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r ListAuditEventsResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r ListAuditEventsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListAuditEventsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListAuditEventsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListAuditEventsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -11202,6 +12637,151 @@ func (r RevokeWebAuthSessionResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r RevokeWebAuthSessionResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListBindingChannelsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *BindingChannelInventory
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListBindingChannelsResponse) GetJSON200() *BindingChannelInventory {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListBindingChannelsResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListBindingChannelsResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r ListBindingChannelsResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r ListBindingChannelsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListBindingChannelsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListBindingChannelsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListBindingChannelsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RefreshBindingChannelResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *BindingChannel
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ServiceUnavailable
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r RefreshBindingChannelResponse) GetJSON200() *BindingChannel {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r RefreshBindingChannelResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r RefreshBindingChannelResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r RefreshBindingChannelResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r RefreshBindingChannelResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r RefreshBindingChannelResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r RefreshBindingChannelResponse) GetJSON503() *ServiceUnavailable {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r RefreshBindingChannelResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RefreshBindingChannelResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RefreshBindingChannelResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RefreshBindingChannelResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -15944,6 +17524,676 @@ func (r GetSystemOverviewResponse) ContentType() string {
 	return ""
 }
 
+type ListUsersResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *UserInventory
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListUsersResponse) GetJSON200() *UserInventory {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListUsersResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListUsersResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r ListUsersResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r ListUsersResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListUsersResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListUsersResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListUsersResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateUserResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *UserRecord
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r CreateUserResponse) GetJSON200() *UserRecord {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r CreateUserResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r CreateUserResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r CreateUserResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r CreateUserResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r CreateUserResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateUserResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateUserResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateUserResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateUserResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetUserResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *UserRecord
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetUserResponse) GetJSON200() *UserRecord {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetUserResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetUserResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetUserResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r GetUserResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r GetUserResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetUserResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetUserResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetUserResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UpdateUserResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *UserRecord
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r UpdateUserResponse) GetJSON200() *UserRecord {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r UpdateUserResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r UpdateUserResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r UpdateUserResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r UpdateUserResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r UpdateUserResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r UpdateUserResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r UpdateUserResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateUserResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateUserResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UpdateUserResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type IssueBindingInvitationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *IssuedBindingInvitation
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r IssueBindingInvitationResponse) GetJSON200() *IssuedBindingInvitation {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r IssueBindingInvitationResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r IssueBindingInvitationResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r IssueBindingInvitationResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r IssueBindingInvitationResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r IssueBindingInvitationResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r IssueBindingInvitationResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r IssueBindingInvitationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r IssueBindingInvitationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r IssueBindingInvitationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r IssueBindingInvitationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CancelBindingInvitationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r CancelBindingInvitationResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r CancelBindingInvitationResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r CancelBindingInvitationResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r CancelBindingInvitationResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r CancelBindingInvitationResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r CancelBindingInvitationResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r CancelBindingInvitationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CancelBindingInvitationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CancelBindingInvitationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CancelBindingInvitationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListUserBindingsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *UserBindingInventory
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListUserBindingsResponse) GetJSON200() *UserBindingInventory {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListUserBindingsResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListUserBindingsResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r ListUserBindingsResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r ListUserBindingsResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r ListUserBindingsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListUserBindingsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListUserBindingsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListUserBindingsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteUserBindingResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r DeleteUserBindingResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r DeleteUserBindingResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r DeleteUserBindingResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r DeleteUserBindingResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r DeleteUserBindingResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r DeleteUserBindingResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r DeleteUserBindingResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteUserBindingResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteUserBindingResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteUserBindingResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ResetUserCredentialResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ResetUserCredentialResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ResetUserCredentialResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ResetUserCredentialResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r ResetUserCredentialResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r ResetUserCredentialResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r ResetUserCredentialResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r ResetUserCredentialResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ResetUserCredentialResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ResetUserCredentialResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ResetUserCredentialResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ListWebhooksResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -16891,6 +19141,19 @@ func (c *ClientWithResponses) RetargetAliasWithResponse(ctx context.Context, ali
 	return ParseRetargetAliasResponse(rsp)
 }
 
+// ListAuditEventsWithResponse List canonical security audit events
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/management/v1/audit/events (the `ListAuditEvents` operationId).
+func (c *ClientWithResponses) ListAuditEventsWithResponse(ctx context.Context, params *ListAuditEventsParams, reqEditors ...RequestEditorFn) (*ListAuditEventsResponse, error) {
+	rsp, err := c.ListAuditEvents(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListAuditEventsResponse(rsp)
+}
+
 // LoginWebAuthWithBodyWithResponse Start local WebAuth login
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
@@ -17188,6 +19451,32 @@ func (c *ClientWithResponses) RevokeWebAuthSessionWithResponse(ctx context.Conte
 		return nil, err
 	}
 	return ParseRevokeWebAuthSessionResponse(rsp)
+}
+
+// ListBindingChannelsWithResponse List cached configured binding-channel identities
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/management/v1/binding-channels (the `ListBindingChannels` operationId).
+func (c *ClientWithResponses) ListBindingChannelsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListBindingChannelsResponse, error) {
+	rsp, err := c.ListBindingChannels(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListBindingChannelsResponse(rsp)
+}
+
+// RefreshBindingChannelWithResponse Explicitly refresh one configured binding-channel identity
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/binding-channels/{channel_type}/refresh (the `RefreshBindingChannel` operationId).
+func (c *ClientWithResponses) RefreshBindingChannelWithResponse(ctx context.Context, channelType string, reqEditors ...RequestEditorFn) (*RefreshBindingChannelResponse, error) {
+	rsp, err := c.RefreshBindingChannel(ctx, channelType, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRefreshBindingChannelResponse(rsp)
 }
 
 // GetManagementCompatibilityWithResponse Read management contract compatibility metadata
@@ -18315,6 +20604,201 @@ func (c *ClientWithResponses) GetSystemOverviewWithResponse(ctx context.Context,
 	return ParseGetSystemOverviewResponse(rsp)
 }
 
+// ListUsersWithResponse List canonical users
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/management/v1/users (the `ListUsers` operationId).
+func (c *ClientWithResponses) ListUsersWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListUsersResponse, error) {
+	rsp, err := c.ListUsers(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListUsersResponse(rsp)
+}
+
+// CreateUserWithBodyWithResponse Create a canonical user with a temporary credential
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/users (the `CreateUser` operationId).
+func (c *ClientWithResponses) CreateUserWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateUserResponse, error) {
+	rsp, err := c.CreateUserWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateUserResponse(rsp)
+}
+
+// CreateUserWithResponse Create a canonical user with a temporary credential
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/users (the `CreateUser` operationId).
+func (c *ClientWithResponses) CreateUserWithResponse(ctx context.Context, body CreateUserJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateUserResponse, error) {
+	rsp, err := c.CreateUser(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateUserResponse(rsp)
+}
+
+// GetUserWithResponse Read one canonical user
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/management/v1/users/{user_id} (the `GetUser` operationId).
+func (c *ClientWithResponses) GetUserWithResponse(ctx context.Context, userID string, reqEditors ...RequestEditorFn) (*GetUserResponse, error) {
+	rsp, err := c.GetUser(ctx, userID, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetUserResponse(rsp)
+}
+
+// UpdateUserWithBodyWithResponse Update canonical user profile and access
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/management/v1/users/{user_id} (the `UpdateUser` operationId).
+func (c *ClientWithResponses) UpdateUserWithBodyWithResponse(ctx context.Context, userID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateUserResponse, error) {
+	rsp, err := c.UpdateUserWithBody(ctx, userID, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateUserResponse(rsp)
+}
+
+// UpdateUserWithResponse Update canonical user profile and access
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/management/v1/users/{user_id} (the `UpdateUser` operationId).
+func (c *ClientWithResponses) UpdateUserWithResponse(ctx context.Context, userID string, body UpdateUserJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateUserResponse, error) {
+	rsp, err := c.UpdateUser(ctx, userID, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateUserResponse(rsp)
+}
+
+// IssueBindingInvitationWithBodyWithResponse Issue one single-use binding proof
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/users/{user_id}/binding-invitations (the `IssueBindingInvitation` operationId).
+func (c *ClientWithResponses) IssueBindingInvitationWithBodyWithResponse(ctx context.Context, userID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*IssueBindingInvitationResponse, error) {
+	rsp, err := c.IssueBindingInvitationWithBody(ctx, userID, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseIssueBindingInvitationResponse(rsp)
+}
+
+// IssueBindingInvitationWithResponse Issue one single-use binding proof
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/users/{user_id}/binding-invitations (the `IssueBindingInvitation` operationId).
+func (c *ClientWithResponses) IssueBindingInvitationWithResponse(ctx context.Context, userID string, body IssueBindingInvitationJSONRequestBody, reqEditors ...RequestEditorFn) (*IssueBindingInvitationResponse, error) {
+	rsp, err := c.IssueBindingInvitation(ctx, userID, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseIssueBindingInvitationResponse(rsp)
+}
+
+// CancelBindingInvitationWithBodyWithResponse Cancel one pending binding invitation
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /api/management/v1/users/{user_id}/binding-invitations/{invitation_id} (the `CancelBindingInvitation` operationId).
+func (c *ClientWithResponses) CancelBindingInvitationWithBodyWithResponse(ctx context.Context, userID string, invitationID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CancelBindingInvitationResponse, error) {
+	rsp, err := c.CancelBindingInvitationWithBody(ctx, userID, invitationID, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCancelBindingInvitationResponse(rsp)
+}
+
+// CancelBindingInvitationWithResponse Cancel one pending binding invitation
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /api/management/v1/users/{user_id}/binding-invitations/{invitation_id} (the `CancelBindingInvitation` operationId).
+func (c *ClientWithResponses) CancelBindingInvitationWithResponse(ctx context.Context, userID string, invitationID string, body CancelBindingInvitationJSONRequestBody, reqEditors ...RequestEditorFn) (*CancelBindingInvitationResponse, error) {
+	rsp, err := c.CancelBindingInvitation(ctx, userID, invitationID, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCancelBindingInvitationResponse(rsp)
+}
+
+// ListUserBindingsWithResponse List confirmed bindings and pending invitation metadata
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/management/v1/users/{user_id}/bindings (the `ListUserBindings` operationId).
+func (c *ClientWithResponses) ListUserBindingsWithResponse(ctx context.Context, userID string, reqEditors ...RequestEditorFn) (*ListUserBindingsResponse, error) {
+	rsp, err := c.ListUserBindings(ctx, userID, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListUserBindingsResponse(rsp)
+}
+
+// DeleteUserBindingWithBodyWithResponse Remove one confirmed transport binding
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /api/management/v1/users/{user_id}/bindings/{binding_id} (the `DeleteUserBinding` operationId).
+func (c *ClientWithResponses) DeleteUserBindingWithBodyWithResponse(ctx context.Context, userID string, bindingID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeleteUserBindingResponse, error) {
+	rsp, err := c.DeleteUserBindingWithBody(ctx, userID, bindingID, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteUserBindingResponse(rsp)
+}
+
+// DeleteUserBindingWithResponse Remove one confirmed transport binding
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /api/management/v1/users/{user_id}/bindings/{binding_id} (the `DeleteUserBinding` operationId).
+func (c *ClientWithResponses) DeleteUserBindingWithResponse(ctx context.Context, userID string, bindingID string, body DeleteUserBindingJSONRequestBody, reqEditors ...RequestEditorFn) (*DeleteUserBindingResponse, error) {
+	rsp, err := c.DeleteUserBinding(ctx, userID, bindingID, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteUserBindingResponse(rsp)
+}
+
+// ResetUserCredentialWithBodyWithResponse Replace a user's local credential with a temporary password
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/users/{user_id}/credential-reset (the `ResetUserCredential` operationId).
+func (c *ClientWithResponses) ResetUserCredentialWithBodyWithResponse(ctx context.Context, userID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ResetUserCredentialResponse, error) {
+	rsp, err := c.ResetUserCredentialWithBody(ctx, userID, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseResetUserCredentialResponse(rsp)
+}
+
+// ResetUserCredentialWithResponse Replace a user's local credential with a temporary password
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/management/v1/users/{user_id}/credential-reset (the `ResetUserCredential` operationId).
+func (c *ClientWithResponses) ResetUserCredentialWithResponse(ctx context.Context, userID string, body ResetUserCredentialJSONRequestBody, reqEditors ...RequestEditorFn) (*ResetUserCredentialResponse, error) {
+	rsp, err := c.ResetUserCredential(ctx, userID, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseResetUserCredentialResponse(rsp)
+}
+
 // ListWebhooksWithResponse performs a GET /api/management/v1/webhooks (the `ListWebhooks` operationId) request.
 //
 // Returns a wrapper object for the known response body format(s).
@@ -18943,6 +21427,60 @@ func ParseRetargetAliasResponse(rsp *http.Response) (*RetargetAliasResponse, err
 			return nil, err
 		}
 		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListAuditEventsResponse parses an HTTP response from a ListAuditEventsWithResponse call
+func ParseListAuditEventsResponse(rsp *http.Response) (*ListAuditEventsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListAuditEventsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AuditEventPage
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
 
 	}
 
@@ -19705,6 +22243,121 @@ func ParseRevokeWebAuthSessionResponse(rsp *http.Response) (*RevokeWebAuthSessio
 			return nil, err
 		}
 		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListBindingChannelsResponse parses an HTTP response from a ListBindingChannelsWithResponse call
+func ParseListBindingChannelsResponse(rsp *http.Response) (*ListBindingChannelsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListBindingChannelsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BindingChannelInventory
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRefreshBindingChannelResponse parses an HTTP response from a RefreshBindingChannelWithResponse call
+func ParseRefreshBindingChannelResponse(rsp *http.Response) (*RefreshBindingChannelResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RefreshBindingChannelResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BindingChannel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ServiceUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
 
 	}
 
@@ -23595,6 +26248,550 @@ func ParseGetSystemOverviewResponse(rsp *http.Response) (*GetSystemOverviewRespo
 	return response, nil
 }
 
+// ParseListUsersResponse parses an HTTP response from a ListUsersWithResponse call
+func ParseListUsersResponse(rsp *http.Response) (*ListUsersResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListUsersResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest UserInventory
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateUserResponse parses an HTTP response from a CreateUserWithResponse call
+func ParseCreateUserResponse(rsp *http.Response) (*CreateUserResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateUserResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest UserRecord
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetUserResponse parses an HTTP response from a GetUserWithResponse call
+func ParseGetUserResponse(rsp *http.Response) (*GetUserResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetUserResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest UserRecord
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateUserResponse parses an HTTP response from a UpdateUserWithResponse call
+func ParseUpdateUserResponse(rsp *http.Response) (*UpdateUserResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateUserResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest UserRecord
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseIssueBindingInvitationResponse parses an HTTP response from a IssueBindingInvitationWithResponse call
+func ParseIssueBindingInvitationResponse(rsp *http.Response) (*IssueBindingInvitationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &IssueBindingInvitationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest IssuedBindingInvitation
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCancelBindingInvitationResponse parses an HTTP response from a CancelBindingInvitationWithResponse call
+func ParseCancelBindingInvitationResponse(rsp *http.Response) (*CancelBindingInvitationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CancelBindingInvitationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListUserBindingsResponse parses an HTTP response from a ListUserBindingsWithResponse call
+func ParseListUserBindingsResponse(rsp *http.Response) (*ListUserBindingsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListUserBindingsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest UserBindingInventory
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteUserBindingResponse parses an HTTP response from a DeleteUserBindingWithResponse call
+func ParseDeleteUserBindingResponse(rsp *http.Response) (*DeleteUserBindingResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteUserBindingResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseResetUserCredentialResponse parses an HTTP response from a ResetUserCredentialWithResponse call
+func ParseResetUserCredentialResponse(rsp *http.Response) (*ResetUserCredentialResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ResetUserCredentialResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseListWebhooksResponse parses an HTTP response from a ListWebhooksWithResponse call
 func ParseListWebhooksResponse(rsp *http.Response) (*ListWebhooksResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -24305,6 +27502,9 @@ type ServerInterface interface {
 
 	// (PUT /api/management/v1/aliases/{alias_name})
 	RetargetAlias(w http.ResponseWriter, r *http.Request, aliasName AliasName)
+	// ListAuditEvents List canonical security audit events
+	// (GET /api/management/v1/audit/events)
+	ListAuditEvents(w http.ResponseWriter, r *http.Request, params ListAuditEventsParams)
 	// LoginWebAuth Start local WebAuth login
 	// (POST /api/management/v1/auth/login)
 	LoginWebAuth(w http.ResponseWriter, r *http.Request)
@@ -24347,6 +27547,12 @@ type ServerInterface interface {
 	// RevokeWebAuthSession Revoke one WebAuth session
 	// (POST /api/management/v1/auth/sessions/{web_auth_session_id}/revoke)
 	RevokeWebAuthSession(w http.ResponseWriter, r *http.Request, webAuthSessionID string)
+	// ListBindingChannels List cached configured binding-channel identities
+	// (GET /api/management/v1/binding-channels)
+	ListBindingChannels(w http.ResponseWriter, r *http.Request)
+	// RefreshBindingChannel Explicitly refresh one configured binding-channel identity
+	// (POST /api/management/v1/binding-channels/{channel_type}/refresh)
+	RefreshBindingChannel(w http.ResponseWriter, r *http.Request, channelType string)
 	// GetManagementCompatibility Read management contract compatibility metadata
 	// (GET /api/management/v1/compatibility)
 	GetManagementCompatibility(w http.ResponseWriter, r *http.Request)
@@ -24524,6 +27730,33 @@ type ServerInterface interface {
 	// GetSystemOverview Read configured integration capabilities
 	// (GET /api/management/v1/system/overview)
 	GetSystemOverview(w http.ResponseWriter, r *http.Request)
+	// ListUsers List canonical users
+	// (GET /api/management/v1/users)
+	ListUsers(w http.ResponseWriter, r *http.Request)
+	// CreateUser Create a canonical user with a temporary credential
+	// (POST /api/management/v1/users)
+	CreateUser(w http.ResponseWriter, r *http.Request)
+	// GetUser Read one canonical user
+	// (GET /api/management/v1/users/{user_id})
+	GetUser(w http.ResponseWriter, r *http.Request, userID string)
+	// UpdateUser Update canonical user profile and access
+	// (PUT /api/management/v1/users/{user_id})
+	UpdateUser(w http.ResponseWriter, r *http.Request, userID string)
+	// IssueBindingInvitation Issue one single-use binding proof
+	// (POST /api/management/v1/users/{user_id}/binding-invitations)
+	IssueBindingInvitation(w http.ResponseWriter, r *http.Request, userID string)
+	// CancelBindingInvitation Cancel one pending binding invitation
+	// (DELETE /api/management/v1/users/{user_id}/binding-invitations/{invitation_id})
+	CancelBindingInvitation(w http.ResponseWriter, r *http.Request, userID string, invitationID string)
+	// ListUserBindings List confirmed bindings and pending invitation metadata
+	// (GET /api/management/v1/users/{user_id}/bindings)
+	ListUserBindings(w http.ResponseWriter, r *http.Request, userID string)
+	// DeleteUserBinding Remove one confirmed transport binding
+	// (DELETE /api/management/v1/users/{user_id}/bindings/{binding_id})
+	DeleteUserBinding(w http.ResponseWriter, r *http.Request, userID string, bindingID string)
+	// ResetUserCredential Replace a user's local credential with a temporary password
+	// (POST /api/management/v1/users/{user_id}/credential-reset)
+	ResetUserCredential(w http.ResponseWriter, r *http.Request, userID string)
 
 	// (GET /api/management/v1/webhooks)
 	ListWebhooks(w http.ResponseWriter, r *http.Request)
@@ -24785,6 +28018,130 @@ func (siw *ServerInterfaceWrapper) RetargetAlias(w http.ResponseWriter, r *http.
 	handler.ServeHTTP(w, r)
 }
 
+// ListAuditEvents operation middleware
+func (siw *ServerInterfaceWrapper) ListAuditEvents(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListAuditEventsParams
+
+	// ------------- Optional query parameter "after_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "after_id", r.URL.Query(), &params.AfterID, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "after_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "after_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: "int32"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "action" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "action", r.URL.Query(), &params.Action, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "action"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "action", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "outcome" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "outcome", r.URL.Query(), &params.Outcome, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "outcome"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "outcome", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "target_type" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "target_type", r.URL.Query(), &params.TargetType, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "target_type"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target_type", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "actor_user_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "actor_user_id", r.URL.Query(), &params.ActorUserID, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "actor_user_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "actor_user_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "from" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "from", r.URL.Query(), &params.From, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "from"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "from", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "before" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "before", r.URL.Query(), &params.Before, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "before"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "before", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAuditEvents(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // LoginWebAuth operation middleware
 func (siw *ServerInterfaceWrapper) LoginWebAuth(w http.ResponseWriter, r *http.Request) {
 
@@ -25029,6 +28386,46 @@ func (siw *ServerInterfaceWrapper) RevokeWebAuthSession(w http.ResponseWriter, r
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RevokeWebAuthSession(w, r, webAuthSessionID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListBindingChannels operation middleware
+func (siw *ServerInterfaceWrapper) ListBindingChannels(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListBindingChannels(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RefreshBindingChannel operation middleware
+func (siw *ServerInterfaceWrapper) RefreshBindingChannel(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "channel_type" -------------
+	var channelType string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "channel_type", r.PathValue("channel_type"), &channelType, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "channel_type", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RefreshBindingChannel(w, r, channelType)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -26345,6 +29742,234 @@ func (siw *ServerInterfaceWrapper) GetSystemOverview(w http.ResponseWriter, r *h
 	handler.ServeHTTP(w, r)
 }
 
+// ListUsers operation middleware
+func (siw *ServerInterfaceWrapper) ListUsers(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListUsers(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateUser operation middleware
+func (siw *ServerInterfaceWrapper) CreateUser(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateUser(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetUser operation middleware
+func (siw *ServerInterfaceWrapper) GetUser(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "user_id" -------------
+	var userID string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "user_id", r.PathValue("user_id"), &userID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "user_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetUser(w, r, userID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateUser operation middleware
+func (siw *ServerInterfaceWrapper) UpdateUser(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "user_id" -------------
+	var userID string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "user_id", r.PathValue("user_id"), &userID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "user_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateUser(w, r, userID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// IssueBindingInvitation operation middleware
+func (siw *ServerInterfaceWrapper) IssueBindingInvitation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "user_id" -------------
+	var userID string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "user_id", r.PathValue("user_id"), &userID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "user_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.IssueBindingInvitation(w, r, userID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CancelBindingInvitation operation middleware
+func (siw *ServerInterfaceWrapper) CancelBindingInvitation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "user_id" -------------
+	var userID string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "user_id", r.PathValue("user_id"), &userID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "user_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "invitation_id" -------------
+	var invitationID string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "invitation_id", r.PathValue("invitation_id"), &invitationID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "invitation_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CancelBindingInvitation(w, r, userID, invitationID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListUserBindings operation middleware
+func (siw *ServerInterfaceWrapper) ListUserBindings(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "user_id" -------------
+	var userID string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "user_id", r.PathValue("user_id"), &userID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "user_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListUserBindings(w, r, userID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteUserBinding operation middleware
+func (siw *ServerInterfaceWrapper) DeleteUserBinding(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "user_id" -------------
+	var userID string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "user_id", r.PathValue("user_id"), &userID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "user_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "binding_id" -------------
+	var bindingID string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "binding_id", r.PathValue("binding_id"), &bindingID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "binding_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteUserBinding(w, r, userID, bindingID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ResetUserCredential operation middleware
+func (siw *ServerInterfaceWrapper) ResetUserCredential(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "user_id" -------------
+	var userID string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "user_id", r.PathValue("user_id"), &userID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "user_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ResetUserCredential(w, r, userID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListWebhooks operation middleware
 func (siw *ServerInterfaceWrapper) ListWebhooks(w http.ResponseWriter, r *http.Request) {
 
@@ -26756,6 +30381,18 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/auth/mfa/replace/finish", wrapper.FinishWebAuthMFAReplace)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/auth/sessions", wrapper.ListWebAuthSessions)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/auth/sessions/{web_auth_session_id}/revoke", wrapper.RevokeWebAuthSession)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/users", wrapper.ListUsers)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/users", wrapper.CreateUser)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/audit/events", wrapper.ListAuditEvents)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/binding-channels", wrapper.ListBindingChannels)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/binding-channels/{channel_type}/refresh", wrapper.RefreshBindingChannel)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/users/{user_id}/bindings", wrapper.ListUserBindings)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/management/v1/users/{user_id}/bindings/{binding_id}", wrapper.DeleteUserBinding)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/users/{user_id}/binding-invitations", wrapper.IssueBindingInvitation)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/management/v1/users/{user_id}/binding-invitations/{invitation_id}", wrapper.CancelBindingInvitation)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/users/{user_id}", wrapper.GetUser)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/management/v1/users/{user_id}", wrapper.UpdateUser)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/users/{user_id}/credential-reset", wrapper.ResetUserCredential)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/management/v1/providers", wrapper.ListProviders)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/management/v1/providers", wrapper.CreateProvider)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/management/v1/providers/{provider_id}", wrapper.DeleteProvider)
@@ -27553,6 +31190,84 @@ func (response RetargetAlias503JSONResponse) VisitRetargetAliasResponse(w http.R
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAuditEventsRequestObject struct {
+	Params ListAuditEventsParams
+}
+
+type ListAuditEventsResponseObject interface {
+	VisitListAuditEventsResponse(w http.ResponseWriter) error
+}
+
+type ListAuditEvents200JSONResponse AuditEventPage
+
+func (response ListAuditEvents200JSONResponse) VisitListAuditEventsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAuditEvents400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response ListAuditEvents400JSONResponse) VisitListAuditEventsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAuditEvents401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListAuditEvents401JSONResponse) VisitListAuditEventsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAuditEvents403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListAuditEvents403JSONResponse) VisitListAuditEventsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAuditEvents500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ListAuditEvents500JSONResponse) VisitListAuditEventsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -28658,6 +32373,175 @@ func (response RevokeWebAuthSession500JSONResponse) VisitRevokeWebAuthSessionRes
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListBindingChannelsRequestObject struct {
+}
+
+type ListBindingChannelsResponseObject interface {
+	VisitListBindingChannelsResponse(w http.ResponseWriter) error
+}
+
+type ListBindingChannels200JSONResponse BindingChannelInventory
+
+func (response ListBindingChannels200JSONResponse) VisitListBindingChannelsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListBindingChannels401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListBindingChannels401JSONResponse) VisitListBindingChannelsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListBindingChannels403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListBindingChannels403JSONResponse) VisitListBindingChannelsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListBindingChannels500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ListBindingChannels500JSONResponse) VisitListBindingChannelsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RefreshBindingChannelRequestObject struct {
+	ChannelType string `json:"channel_type"`
+}
+
+type RefreshBindingChannelResponseObject interface {
+	VisitRefreshBindingChannelResponse(w http.ResponseWriter) error
+}
+
+type RefreshBindingChannel200JSONResponse BindingChannel
+
+func (response RefreshBindingChannel200JSONResponse) VisitRefreshBindingChannelResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RefreshBindingChannel400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response RefreshBindingChannel400JSONResponse) VisitRefreshBindingChannelResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RefreshBindingChannel401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response RefreshBindingChannel401JSONResponse) VisitRefreshBindingChannelResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RefreshBindingChannel403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response RefreshBindingChannel403JSONResponse) VisitRefreshBindingChannelResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RefreshBindingChannel404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response RefreshBindingChannel404JSONResponse) VisitRefreshBindingChannelResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RefreshBindingChannel500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response RefreshBindingChannel500JSONResponse) VisitRefreshBindingChannelResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RefreshBindingChannel503JSONResponse struct{ ServiceUnavailableJSONResponse }
+
+func (response RefreshBindingChannel503JSONResponse) VisitRefreshBindingChannelResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -34697,6 +38581,836 @@ func (response GetSystemOverview500JSONResponse) VisitGetSystemOverviewResponse(
 	return err
 }
 
+type ListUsersRequestObject struct {
+}
+
+type ListUsersResponseObject interface {
+	VisitListUsersResponse(w http.ResponseWriter) error
+}
+
+type ListUsers200JSONResponse UserInventory
+
+func (response ListUsers200JSONResponse) VisitListUsersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListUsers401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListUsers401JSONResponse) VisitListUsersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListUsers403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListUsers403JSONResponse) VisitListUsersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListUsers500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ListUsers500JSONResponse) VisitListUsersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateUserRequestObject struct {
+	Body *CreateUserJSONRequestBody
+}
+
+type CreateUserResponseObject interface {
+	VisitCreateUserResponse(w http.ResponseWriter) error
+}
+
+type CreateUser200JSONResponse UserRecord
+
+func (response CreateUser200JSONResponse) VisitCreateUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateUser400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response CreateUser400JSONResponse) VisitCreateUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateUser401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response CreateUser401JSONResponse) VisitCreateUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateUser403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response CreateUser403JSONResponse) VisitCreateUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateUser409JSONResponse struct{ ConflictJSONResponse }
+
+func (response CreateUser409JSONResponse) VisitCreateUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateUser500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response CreateUser500JSONResponse) VisitCreateUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetUserRequestObject struct {
+	UserID string `json:"user_id"`
+}
+
+type GetUserResponseObject interface {
+	VisitGetUserResponse(w http.ResponseWriter) error
+}
+
+type GetUser200JSONResponse UserRecord
+
+func (response GetUser200JSONResponse) VisitGetUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetUser401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetUser401JSONResponse) VisitGetUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetUser403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetUser403JSONResponse) VisitGetUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetUser404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetUser404JSONResponse) VisitGetUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetUser500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response GetUser500JSONResponse) VisitGetUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateUserRequestObject struct {
+	UserID string `json:"user_id"`
+	Body   *UpdateUserJSONRequestBody
+}
+
+type UpdateUserResponseObject interface {
+	VisitUpdateUserResponse(w http.ResponseWriter) error
+}
+
+type UpdateUser200JSONResponse UserRecord
+
+func (response UpdateUser200JSONResponse) VisitUpdateUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateUser400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response UpdateUser400JSONResponse) VisitUpdateUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateUser401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response UpdateUser401JSONResponse) VisitUpdateUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateUser403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response UpdateUser403JSONResponse) VisitUpdateUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateUser404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response UpdateUser404JSONResponse) VisitUpdateUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateUser409JSONResponse struct{ ConflictJSONResponse }
+
+func (response UpdateUser409JSONResponse) VisitUpdateUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateUser500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response UpdateUser500JSONResponse) VisitUpdateUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type IssueBindingInvitationRequestObject struct {
+	UserID string `json:"user_id"`
+	Body   *IssueBindingInvitationJSONRequestBody
+}
+
+type IssueBindingInvitationResponseObject interface {
+	VisitIssueBindingInvitationResponse(w http.ResponseWriter) error
+}
+
+type IssueBindingInvitation200JSONResponse IssuedBindingInvitation
+
+func (response IssueBindingInvitation200JSONResponse) VisitIssueBindingInvitationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type IssueBindingInvitation400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response IssueBindingInvitation400JSONResponse) VisitIssueBindingInvitationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type IssueBindingInvitation401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response IssueBindingInvitation401JSONResponse) VisitIssueBindingInvitationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type IssueBindingInvitation403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response IssueBindingInvitation403JSONResponse) VisitIssueBindingInvitationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type IssueBindingInvitation404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response IssueBindingInvitation404JSONResponse) VisitIssueBindingInvitationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type IssueBindingInvitation409JSONResponse struct{ ConflictJSONResponse }
+
+func (response IssueBindingInvitation409JSONResponse) VisitIssueBindingInvitationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type IssueBindingInvitation500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response IssueBindingInvitation500JSONResponse) VisitIssueBindingInvitationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelBindingInvitationRequestObject struct {
+	UserID       string `json:"user_id"`
+	InvitationID string `json:"invitation_id"`
+	Body         *CancelBindingInvitationJSONRequestBody
+}
+
+type CancelBindingInvitationResponseObject interface {
+	VisitCancelBindingInvitationResponse(w http.ResponseWriter) error
+}
+
+type CancelBindingInvitation204Response struct {
+}
+
+func (response CancelBindingInvitation204Response) VisitCancelBindingInvitationResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type CancelBindingInvitation400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response CancelBindingInvitation400JSONResponse) VisitCancelBindingInvitationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelBindingInvitation401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response CancelBindingInvitation401JSONResponse) VisitCancelBindingInvitationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelBindingInvitation403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response CancelBindingInvitation403JSONResponse) VisitCancelBindingInvitationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelBindingInvitation404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response CancelBindingInvitation404JSONResponse) VisitCancelBindingInvitationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelBindingInvitation409JSONResponse struct{ ConflictJSONResponse }
+
+func (response CancelBindingInvitation409JSONResponse) VisitCancelBindingInvitationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelBindingInvitation500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response CancelBindingInvitation500JSONResponse) VisitCancelBindingInvitationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListUserBindingsRequestObject struct {
+	UserID string `json:"user_id"`
+}
+
+type ListUserBindingsResponseObject interface {
+	VisitListUserBindingsResponse(w http.ResponseWriter) error
+}
+
+type ListUserBindings200JSONResponse UserBindingInventory
+
+func (response ListUserBindings200JSONResponse) VisitListUserBindingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListUserBindings401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListUserBindings401JSONResponse) VisitListUserBindingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListUserBindings403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListUserBindings403JSONResponse) VisitListUserBindingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListUserBindings404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ListUserBindings404JSONResponse) VisitListUserBindingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListUserBindings500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ListUserBindings500JSONResponse) VisitListUserBindingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteUserBindingRequestObject struct {
+	UserID    string `json:"user_id"`
+	BindingID string `json:"binding_id"`
+	Body      *DeleteUserBindingJSONRequestBody
+}
+
+type DeleteUserBindingResponseObject interface {
+	VisitDeleteUserBindingResponse(w http.ResponseWriter) error
+}
+
+type DeleteUserBinding204Response struct {
+}
+
+func (response DeleteUserBinding204Response) VisitDeleteUserBindingResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteUserBinding400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response DeleteUserBinding400JSONResponse) VisitDeleteUserBindingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteUserBinding401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response DeleteUserBinding401JSONResponse) VisitDeleteUserBindingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteUserBinding403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DeleteUserBinding403JSONResponse) VisitDeleteUserBindingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteUserBinding404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response DeleteUserBinding404JSONResponse) VisitDeleteUserBindingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteUserBinding409JSONResponse struct{ ConflictJSONResponse }
+
+func (response DeleteUserBinding409JSONResponse) VisitDeleteUserBindingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteUserBinding500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response DeleteUserBinding500JSONResponse) VisitDeleteUserBindingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResetUserCredentialRequestObject struct {
+	UserID string `json:"user_id"`
+	Body   *ResetUserCredentialJSONRequestBody
+}
+
+type ResetUserCredentialResponseObject interface {
+	VisitResetUserCredentialResponse(w http.ResponseWriter) error
+}
+
+type ResetUserCredential204Response struct {
+}
+
+func (response ResetUserCredential204Response) VisitResetUserCredentialResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type ResetUserCredential400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response ResetUserCredential400JSONResponse) VisitResetUserCredentialResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResetUserCredential401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ResetUserCredential401JSONResponse) VisitResetUserCredentialResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResetUserCredential403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ResetUserCredential403JSONResponse) VisitResetUserCredentialResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResetUserCredential404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ResetUserCredential404JSONResponse) VisitResetUserCredentialResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResetUserCredential409JSONResponse struct{ ConflictJSONResponse }
+
+func (response ResetUserCredential409JSONResponse) VisitResetUserCredentialResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResetUserCredential500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ResetUserCredential500JSONResponse) VisitResetUserCredentialResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListWebhooksRequestObject struct {
 }
 
@@ -35800,6 +40514,9 @@ type StrictServerInterface interface {
 
 	// (PUT /api/management/v1/aliases/{alias_name})
 	RetargetAlias(ctx context.Context, request RetargetAliasRequestObject) (RetargetAliasResponseObject, error)
+	// ListAuditEvents List canonical security audit events
+	// (GET /api/management/v1/audit/events)
+	ListAuditEvents(ctx context.Context, request ListAuditEventsRequestObject) (ListAuditEventsResponseObject, error)
 	// LoginWebAuth Start local WebAuth login
 	// (POST /api/management/v1/auth/login)
 	LoginWebAuth(ctx context.Context, request LoginWebAuthRequestObject) (LoginWebAuthResponseObject, error)
@@ -35842,6 +40559,12 @@ type StrictServerInterface interface {
 	// RevokeWebAuthSession Revoke one WebAuth session
 	// (POST /api/management/v1/auth/sessions/{web_auth_session_id}/revoke)
 	RevokeWebAuthSession(ctx context.Context, request RevokeWebAuthSessionRequestObject) (RevokeWebAuthSessionResponseObject, error)
+	// ListBindingChannels List cached configured binding-channel identities
+	// (GET /api/management/v1/binding-channels)
+	ListBindingChannels(ctx context.Context, request ListBindingChannelsRequestObject) (ListBindingChannelsResponseObject, error)
+	// RefreshBindingChannel Explicitly refresh one configured binding-channel identity
+	// (POST /api/management/v1/binding-channels/{channel_type}/refresh)
+	RefreshBindingChannel(ctx context.Context, request RefreshBindingChannelRequestObject) (RefreshBindingChannelResponseObject, error)
 	// GetManagementCompatibility Read management contract compatibility metadata
 	// (GET /api/management/v1/compatibility)
 	GetManagementCompatibility(ctx context.Context, request GetManagementCompatibilityRequestObject) (GetManagementCompatibilityResponseObject, error)
@@ -36019,6 +40742,33 @@ type StrictServerInterface interface {
 	// GetSystemOverview Read configured integration capabilities
 	// (GET /api/management/v1/system/overview)
 	GetSystemOverview(ctx context.Context, request GetSystemOverviewRequestObject) (GetSystemOverviewResponseObject, error)
+	// ListUsers List canonical users
+	// (GET /api/management/v1/users)
+	ListUsers(ctx context.Context, request ListUsersRequestObject) (ListUsersResponseObject, error)
+	// CreateUser Create a canonical user with a temporary credential
+	// (POST /api/management/v1/users)
+	CreateUser(ctx context.Context, request CreateUserRequestObject) (CreateUserResponseObject, error)
+	// GetUser Read one canonical user
+	// (GET /api/management/v1/users/{user_id})
+	GetUser(ctx context.Context, request GetUserRequestObject) (GetUserResponseObject, error)
+	// UpdateUser Update canonical user profile and access
+	// (PUT /api/management/v1/users/{user_id})
+	UpdateUser(ctx context.Context, request UpdateUserRequestObject) (UpdateUserResponseObject, error)
+	// IssueBindingInvitation Issue one single-use binding proof
+	// (POST /api/management/v1/users/{user_id}/binding-invitations)
+	IssueBindingInvitation(ctx context.Context, request IssueBindingInvitationRequestObject) (IssueBindingInvitationResponseObject, error)
+	// CancelBindingInvitation Cancel one pending binding invitation
+	// (DELETE /api/management/v1/users/{user_id}/binding-invitations/{invitation_id})
+	CancelBindingInvitation(ctx context.Context, request CancelBindingInvitationRequestObject) (CancelBindingInvitationResponseObject, error)
+	// ListUserBindings List confirmed bindings and pending invitation metadata
+	// (GET /api/management/v1/users/{user_id}/bindings)
+	ListUserBindings(ctx context.Context, request ListUserBindingsRequestObject) (ListUserBindingsResponseObject, error)
+	// DeleteUserBinding Remove one confirmed transport binding
+	// (DELETE /api/management/v1/users/{user_id}/bindings/{binding_id})
+	DeleteUserBinding(ctx context.Context, request DeleteUserBindingRequestObject) (DeleteUserBindingResponseObject, error)
+	// ResetUserCredential Replace a user's local credential with a temporary password
+	// (POST /api/management/v1/users/{user_id}/credential-reset)
+	ResetUserCredential(ctx context.Context, request ResetUserCredentialRequestObject) (ResetUserCredentialResponseObject, error)
 
 	// (GET /api/management/v1/webhooks)
 	ListWebhooks(ctx context.Context, request ListWebhooksRequestObject) (ListWebhooksResponseObject, error)
@@ -36283,6 +41033,32 @@ func (sh *strictHandler) RetargetAlias(w http.ResponseWriter, r *http.Request, a
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(RetargetAliasResponseObject); ok {
 		if err := validResponse.VisitRetargetAliasResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListAuditEvents operation middleware
+func (sh *strictHandler) ListAuditEvents(w http.ResponseWriter, r *http.Request, params ListAuditEventsParams) {
+	var request ListAuditEventsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListAuditEvents(ctx, request.(ListAuditEventsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListAuditEvents")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListAuditEventsResponseObject); ok {
+		if err := validResponse.VisitListAuditEventsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -36686,6 +41462,56 @@ func (sh *strictHandler) RevokeWebAuthSession(w http.ResponseWriter, r *http.Req
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(RevokeWebAuthSessionResponseObject); ok {
 		if err := validResponse.VisitRevokeWebAuthSessionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListBindingChannels operation middleware
+func (sh *strictHandler) ListBindingChannels(w http.ResponseWriter, r *http.Request) {
+	var request ListBindingChannelsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListBindingChannels(ctx, request.(ListBindingChannelsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListBindingChannels")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListBindingChannelsResponseObject); ok {
+		if err := validResponse.VisitListBindingChannelsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RefreshBindingChannel operation middleware
+func (sh *strictHandler) RefreshBindingChannel(w http.ResponseWriter, r *http.Request, channelType string) {
+	var request RefreshBindingChannelRequestObject
+
+	request.ChannelType = channelType
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RefreshBindingChannel(ctx, request.(RefreshBindingChannelRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RefreshBindingChannel")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RefreshBindingChannelResponseObject); ok {
+		if err := validResponse.VisitRefreshBindingChannelResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -38434,6 +43260,280 @@ func (sh *strictHandler) GetSystemOverview(w http.ResponseWriter, r *http.Reques
 	}
 }
 
+// ListUsers operation middleware
+func (sh *strictHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
+	var request ListUsersRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListUsers(ctx, request.(ListUsersRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListUsers")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListUsersResponseObject); ok {
+		if err := validResponse.VisitListUsersResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateUser operation middleware
+func (sh *strictHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
+	var request CreateUserRequestObject
+
+	var body CreateUserJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateUser(ctx, request.(CreateUserRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateUser")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateUserResponseObject); ok {
+		if err := validResponse.VisitCreateUserResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetUser operation middleware
+func (sh *strictHandler) GetUser(w http.ResponseWriter, r *http.Request, userID string) {
+	var request GetUserRequestObject
+
+	request.UserID = userID
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetUser(ctx, request.(GetUserRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetUser")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetUserResponseObject); ok {
+		if err := validResponse.VisitGetUserResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateUser operation middleware
+func (sh *strictHandler) UpdateUser(w http.ResponseWriter, r *http.Request, userID string) {
+	var request UpdateUserRequestObject
+
+	request.UserID = userID
+
+	var body UpdateUserJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateUser(ctx, request.(UpdateUserRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateUser")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateUserResponseObject); ok {
+		if err := validResponse.VisitUpdateUserResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// IssueBindingInvitation operation middleware
+func (sh *strictHandler) IssueBindingInvitation(w http.ResponseWriter, r *http.Request, userID string) {
+	var request IssueBindingInvitationRequestObject
+
+	request.UserID = userID
+
+	var body IssueBindingInvitationJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.IssueBindingInvitation(ctx, request.(IssueBindingInvitationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "IssueBindingInvitation")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(IssueBindingInvitationResponseObject); ok {
+		if err := validResponse.VisitIssueBindingInvitationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CancelBindingInvitation operation middleware
+func (sh *strictHandler) CancelBindingInvitation(w http.ResponseWriter, r *http.Request, userID string, invitationID string) {
+	var request CancelBindingInvitationRequestObject
+
+	request.UserID = userID
+	request.InvitationID = invitationID
+
+	var body CancelBindingInvitationJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CancelBindingInvitation(ctx, request.(CancelBindingInvitationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CancelBindingInvitation")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CancelBindingInvitationResponseObject); ok {
+		if err := validResponse.VisitCancelBindingInvitationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListUserBindings operation middleware
+func (sh *strictHandler) ListUserBindings(w http.ResponseWriter, r *http.Request, userID string) {
+	var request ListUserBindingsRequestObject
+
+	request.UserID = userID
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListUserBindings(ctx, request.(ListUserBindingsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListUserBindings")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListUserBindingsResponseObject); ok {
+		if err := validResponse.VisitListUserBindingsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteUserBinding operation middleware
+func (sh *strictHandler) DeleteUserBinding(w http.ResponseWriter, r *http.Request, userID string, bindingID string) {
+	var request DeleteUserBindingRequestObject
+
+	request.UserID = userID
+	request.BindingID = bindingID
+
+	var body DeleteUserBindingJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteUserBinding(ctx, request.(DeleteUserBindingRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteUserBinding")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteUserBindingResponseObject); ok {
+		if err := validResponse.VisitDeleteUserBindingResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ResetUserCredential operation middleware
+func (sh *strictHandler) ResetUserCredential(w http.ResponseWriter, r *http.Request, userID string) {
+	var request ResetUserCredentialRequestObject
+
+	request.UserID = userID
+
+	var body ResetUserCredentialJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ResetUserCredential(ctx, request.(ResetUserCredentialRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ResetUserCredential")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ResetUserCredentialResponseObject); ok {
+		if err := validResponse.VisitResetUserCredentialResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListWebhooks operation middleware
 func (sh *strictHandler) ListWebhooks(w http.ResponseWriter, r *http.Request) {
 	var request ListWebhooksRequestObject
@@ -38739,184 +43839,210 @@ func (sh *strictHandler) TestWebhook(w http.ResponseWriter, r *http.Request, web
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
+	"4po3oGrsyGBnyGBfvvy/AAAA//8=",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

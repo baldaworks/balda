@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/baldaworks/balda/internal/apps/backoffice/access"
-	"github.com/baldaworks/balda/internal/apps/backoffice/audit"
 	"github.com/baldaworks/balda/internal/apps/backoffice/internal/webui"
 	"github.com/baldaworks/balda/internal/apps/backoffice/security"
+	"github.com/baldaworks/balda/internal/apps/balda/accessapp"
+	"github.com/baldaworks/balda/internal/apps/balda/auditapp"
 	"github.com/baldaworks/balda/internal/apps/balda/browserauth"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
@@ -27,8 +27,8 @@ type httpApp struct {
 	renderer          *webui.Renderer
 	browser           *security.Browser
 	security          *browserauth.Service
-	access            *access.Service
-	auditLog          *audit.Service
+	access            *accessapp.Service
+	auditLog          *auditapp.Service
 	cards             []webui.CapabilityCard
 	agent             webui.AgentView
 	bindingChoices    []string
@@ -83,7 +83,7 @@ func newHTTPAppWithBrowserAuth(store usercmd.Store, config ResolvedConfig, servi
 	if config.Server.WebhookPublicOrigin != nil {
 		webhookOrigin = *config.Server.WebhookPublicOrigin
 	}
-	app := &httpApp{renderer: renderer, security: service, access: access.NewService(store), auditLog: audit.NewService(store), cards: ProjectCapabilityCards(config.Balda), agent: webui.AgentView{
+	app := &httpApp{renderer: renderer, security: service, access: accessapp.NewService(store), auditLog: auditapp.NewService(store), cards: ProjectCapabilityCards(config.Balda), agent: webui.AgentView{
 		ProviderID: config.Agent.ProviderID, ProviderType: config.Agent.ProviderType, Profile: config.Agent.Profile,
 		Model: config.Agent.Model, ReasoningEffort: config.Agent.ReasoningEffort, GlobalInstruction: config.Agent.GlobalInstruction,
 	}, bindingChoices: bindingChoices, qa: config.Server.QAUI, basePath: config.Server.BasePath, publicOrigin: webhookOrigin,
@@ -367,7 +367,7 @@ func (a *httpApp) audit(w http.ResponseWriter, r *http.Request) {
 		}
 		before = lastDay.AddDate(0, 0, 1)
 	}
-	request := audit.Request{
+	request := auditapp.Request{
 		AfterID: r.URL.Query().Get("after"), Limit: limit,
 		Action: usercmd.AuditAction(r.URL.Query().Get("action")), Outcome: usercmd.AuditOutcome(r.URL.Query().Get("outcome")),
 		TargetType:  usercmd.AuditTargetType(r.URL.Query().Get("target")),
@@ -379,7 +379,7 @@ func (a *httpApp) audit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	events := make([]webui.AuditView, 0, len(page.Events))
-	actor := access.Actor{User: principal.User, WebAuthSessionID: principal.WebAuthSessionID}
+	actor := accessapp.Actor{User: principal.User, WebAuthSessionID: principal.WebAuthSessionID}
 	knownUsers := make(map[string]string)
 	userName := func(id string) (string, error) {
 		if name, ok := knownUsers[id]; ok {
@@ -462,7 +462,7 @@ func (a *httpApp) accessList(w http.ResponseWriter, r *http.Request) {
 		a.browser.WriteError(w, r, browserauth.ErrUnauthenticated)
 		return
 	}
-	userList, err := a.access.ListUsers(r.Context(), access.Actor{User: principal.User, WebAuthSessionID: principal.WebAuthSessionID})
+	userList, err := a.access.ListUsers(r.Context(), accessapp.Actor{User: principal.User, WebAuthSessionID: principal.WebAuthSessionID})
 	if err != nil {
 		a.browser.WriteError(w, r, err)
 		return
@@ -529,7 +529,7 @@ func (a *httpApp) accessBindingDelete(w http.ResponseWriter, r *http.Request) {
 		a.browser.WriteError(w, r, err)
 		return
 	}
-	err = a.access.RemoveBinding(r.Context(), access.Actor{User: principal.User, WebAuthSessionID: principal.WebAuthSessionID}, access.BindingRemoval{
+	err = a.access.RemoveBinding(r.Context(), accessapp.Actor{User: principal.User, WebAuthSessionID: principal.WebAuthSessionID}, accessapp.BindingRemoval{
 		UserID: r.PathValue("user_id"), BindingID: r.PathValue("binding_id"),
 		ExpectedVersion: version, ConfirmImpact: form.Get("confirm_bot_impact") == checkedFormValue,
 	})
@@ -554,7 +554,7 @@ func (a *httpApp) accessCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	password := []byte(form.Get("temporary_password"))
 	defer clear(password)
-	_, err := a.access.CreateUser(r.Context(), access.Actor{User: principal.User, WebAuthSessionID: principal.WebAuthSessionID}, access.CreateInput{
+	_, err := a.access.CreateUser(r.Context(), accessapp.Actor{User: principal.User, WebAuthSessionID: principal.WebAuthSessionID}, accessapp.CreateInput{
 		DisplayName: form.Get("display_name"), Username: form.Get("username"), TemporaryPassword: password,
 		Role: usercmd.Role(form.Get("role")), Status: usercmd.UserStatus(form.Get("status")),
 	})
@@ -575,7 +575,7 @@ func (a *httpApp) accessUpdate(w http.ResponseWriter, r *http.Request) {
 		a.browser.WriteError(w, r, err)
 		return
 	}
-	_, err = a.access.UpdateUser(r.Context(), access.Actor{User: principal.User, WebAuthSessionID: principal.WebAuthSessionID}, access.UpdateInput{
+	_, err = a.access.UpdateUser(r.Context(), accessapp.Actor{User: principal.User, WebAuthSessionID: principal.WebAuthSessionID}, accessapp.UpdateInput{
 		UserID: r.PathValue("user_id"), DisplayName: form.Get("display_name"), Username: form.Get("username"),
 		Role: usercmd.Role(form.Get("role")), Status: usercmd.UserStatus(form.Get("status")), ExpectedVersion: expectedVersion,
 		AcknowledgeBotAccessImpact: form.Get("confirm_bot_impact") == checkedFormValue,
@@ -604,7 +604,7 @@ func (a *httpApp) accessCredentialReset(w http.ResponseWriter, r *http.Request) 
 	}
 	password := []byte(form.Get("temporary_password"))
 	defer clear(password)
-	err = a.access.ResetCredential(r.Context(), access.Actor{User: principal.User, WebAuthSessionID: principal.WebAuthSessionID}, access.CredentialInput{
+	err = a.access.ResetCredential(r.Context(), accessapp.Actor{User: principal.User, WebAuthSessionID: principal.WebAuthSessionID}, accessapp.CredentialInput{
 		UserID: r.PathValue("user_id"), ExpectedUserVersion: userVersion,
 		ExpectedCredentialVersion: credentialVersion, TemporaryPassword: password,
 		ConfirmCurrent: form.Get("confirm_current") == checkedFormValue,
@@ -622,7 +622,7 @@ func (a *httpApp) accessSessionRevoke(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	err := a.access.RevokeWebAuthSession(
-		r.Context(), access.Actor{User: principal.User, WebAuthSessionID: principal.WebAuthSessionID},
+		r.Context(), accessapp.Actor{User: principal.User, WebAuthSessionID: principal.WebAuthSessionID},
 		r.PathValue("user_id"), r.PathValue("session_id"), form.Get("confirm_current") == checkedFormValue,
 	)
 	if err != nil {
