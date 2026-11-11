@@ -667,9 +667,9 @@ func (m *Manager) createSessionLocked(ctx context.Context, sessionCtx SessionCon
 		effectiveModel: strings.TrimSpace(effectiveModel),
 		outcome:        strings.TrimSpace(runtimeOutcome),
 	})
-	source := "startup"
+	source := sessionHookStartup
 	if persisted != nil && !createdFresh {
-		source = "resume"
+		source = sessionHookResume
 	}
 	if err := m.startSessionHooks(ctx, ts, baldaProvider, source); err != nil {
 		cleanupErr := m.cleanupTopicSession(ctx, ts, sessionCleanupOptions{deleteRuntimeSession: createdFresh, cleanupWorkspace: cleanupWorkspace})

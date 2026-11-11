@@ -8,6 +8,11 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/hookcmd"
 )
 
+const (
+	sessionHookStartup = "startup"
+	sessionHookResume  = "resume"
+)
+
 // HookRunner is the lifecycle package's consuming port for managed hooks.
 type HookRunner interface {
 	Run(ctx context.Context, event hookcmd.Event) (hookcmd.Result, error)
@@ -17,15 +22,22 @@ func (m *Manager) startSessionHooks(ctx context.Context, ts *TopicSession, provi
 	if m.hooks == nil {
 		return nil
 	}
-	cwd, err := filepath.Abs(ts.workspaceDir)
-	if err != nil {
-		return fmt.Errorf("session hook workspace: %w", err)
-	}
 	value, ok := ts.runtimeValue()
 	if !ok {
 		return fmt.Errorf("session start hook: %w", ErrRuntimeUnavailable)
 	}
-	_, err = m.hooks.Run(ctx, hookcmd.Event{Name: hookcmd.SessionStart, SessionID: ts.sessionID, AgentSessionID: value.sessionID, CWD: cwd, Provider: provider, Source: source})
+	return m.startSessionHooksForRuntime(ctx, ts, value.sessionID, provider, source)
+}
+
+func (m *Manager) startSessionHooksForRuntime(ctx context.Context, ts *TopicSession, runtimeID, provider, source string) error {
+	if m.hooks == nil {
+		return nil
+	}
+	cwd, err := filepath.Abs(ts.workspaceDir)
+	if err != nil {
+		return fmt.Errorf("session hook workspace: %w", err)
+	}
+	_, err = m.hooks.Run(ctx, hookcmd.Event{Name: hookcmd.SessionStart, SessionID: ts.sessionID, AgentSessionID: runtimeID, CWD: cwd, Provider: provider, Source: source})
 	if err != nil {
 		return fmt.Errorf("session start hook: %w", err)
 	}

@@ -199,8 +199,10 @@ hooks. Later hook/workspace cleanup failure cannot undo a proved destruction.
 
 `/reset` and `/new` also accept a persisted session that has not yet been restored
 into memory after restart. The replacement callback recovers pending runtime
-operations and restores the saved local session under the session operation lock
-before preparing the fresh lifetime. No preliminary conversational turn or ACP
+operations and reads the saved metadata under the session operation lock, without
+opening the predecessor runtime or history, synchronizing its workspace, or
+running its resume hooks. Only the new cold successor runs the startup hook; a
+denial leaves the saved lifetime intact. No preliminary conversational turn or
 provider resume is required. Missing or inactive saved sessions remain unavailable.
 
 Active `/reset` and `/new` prepare and publish inside the existing per-session
