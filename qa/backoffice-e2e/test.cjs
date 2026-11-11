@@ -41,7 +41,7 @@ async function startPreview() {
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
 
-    await page.goto(`${url}/qa/ui/`);
+    await page.goto(`${url}/qa/ui/login`);
     await page.getByRole('heading', { name: 'Sign in' }).waitFor();
     await page.getByLabel('Username').fill('preview');
     await page.getByLabel('Password').fill('preview-password');
