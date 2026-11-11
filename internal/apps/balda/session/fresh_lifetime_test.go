@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
+	"github.com/baldaworks/balda/internal/apps/balda/hookcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/sessioncmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/runtime/v2/agentproduct"
@@ -37,7 +38,7 @@ func TestFreshLifetimeDoesNotCreateMissingSession(t *testing.T) {
 	}
 }
 
-func TestFreshLifetimeRestoresColdPersistedSession(t *testing.T) {
+func TestFreshLifetimeReplacesColdPersistedSession(t *testing.T) {
 	f := newArchiveFixture(t)
 	f.runtime.ProviderBindingJSON = publicationBinding
 	control := &freshLifetimeControlSpy{}
@@ -48,10 +49,30 @@ func TestFreshLifetimeRestoresColdPersistedSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	oldArchive := topic.GetArchiveID()
+	record, _, err := f.provider.Sessions().GetBySessionID(t.Context(), topic.GetSessionID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	requested := "saved-model"
+	record.RequestedModel, record.EffectiveModel = &requested, requested
+	record.WorkspaceDir, record.BranchName = f.dir, "saved-branch"
+	// Seed a saved preference before restart; Upsert preserves runtime-owned
+	// fields on an existing row.
+	if err := f.provider.Sessions().DeleteBySessionID(t.Context(), record.SessionID); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.provider.Sessions().Upsert(t.Context(), record); err != nil {
+		t.Fatal(err)
+	}
 	restarted := f.manager()
+	workspaces := &mutationRecordingWorkspace{}
+	restarted.workspaceEnabled, restarted.workspaces = true, workspaces
+	hooks := &coldResetHooks{}
+	restarted.hooks = hooks
 	restarted.runtimeOperations = f.provider.RuntimeOperations()
 	runtimeManager := restarted.runtimeManager.(*fakeScopedRuntimeManager)
 	runtimeManager.currentSnapshot = freshLifetimeCurrentCatalog
+	runtimeManager.runtimeErr = errors.New("predecessor unavailable")
 	runtimeManager.runtimeForSession = func(request SessionRuntimeRequest) (*BuiltRuntime, error) {
 		runtime := *f.runtime
 		runtime.RuntimeSnapshotID = request.RuntimeSnapshotID
@@ -74,12 +95,131 @@ func TestFreshLifetimeRestoresColdPersistedSession(t *testing.T) {
 	if !ok || value.session.Events().Len() != 0 || value.runtime.RuntimeSnapshotID != freshLifetimeCurrentCatalog || value.runtime.ProviderBindingJSON != publicationBinding {
 		t.Fatalf("cold reset lost empty context, current catalog, or provider binding: %+v", value)
 	}
+	if workspaces.mutations != 0 || runtimeManager.runtimeCalls != 0 || len(runtimeManager.sessionRequests) != 0 {
+		t.Fatalf("cold reset restored predecessor: workspace=%d root=%d bindings=%d", workspaces.mutations, runtimeManager.runtimeCalls, len(runtimeManager.sessionRequests))
+	}
+	saved, _, err := f.provider.Sessions().GetBySessionID(t.Context(), request.SessionID)
+	if err != nil || saved.WorkspaceDir != record.WorkspaceDir || saved.BranchName != record.BranchName || !sameOptionalModel(saved.RequestedModel, record.RequestedModel) || saved.EffectiveModel != requested {
+		t.Fatalf("cold reset metadata = %+v, %v", saved, err)
+	}
+	if _, observed := active.runtime.modelObservation(); observed {
+		t.Fatal("cold reset retained an active model observation")
+	}
 	if calls := control.calls.Load(); calls != 0 {
 		t.Fatalf("cold reset called provider control %d times", calls)
+	}
+	if len(hooks.events) != 1 || hooks.events[0].Name != hookcmd.SessionStart || hooks.events[0].Source != "startup" || hooks.events[0].AgentSessionID != active.GetArchiveID() {
+		t.Fatalf("cold reset hooks = %+v, want successor startup only", hooks.events)
+	}
+	next, err := restarted.EnsureSession(t.Context(), archiveInput(), "saved")
+	if err != nil || next != active {
+		t.Fatalf("next ordinary turn preparation = %v, %v; want published successor", next, err)
 	}
 	replay, replayResult, err := restarted.PrepareFreshLifetime(t.Context(), request)
 	if err != nil || replay != nil || !reflect.DeepEqual(replayResult, result) {
 		t.Fatalf("cold reset replay = %v, %+v, %v; want %+v", replay, replayResult, err, result)
+	}
+	coldReplay := f.manager()
+	coldReplay.runtimeOperations = f.provider.RuntimeOperations()
+	_, replayResult, _ = coldReplay.PrepareFreshLifetime(t.Context(), request)
+	coldRuntime := coldReplay.runtimeManager.(*fakeScopedRuntimeManager)
+	if replayResult.Status != FreshLifetimeRecoveryRequired || coldRuntime.snapshotCalls != 0 || len(coldRuntime.unpublishedRequests) != 0 {
+		t.Fatalf("cold terminal replay = %+v, selections=%d builds=%d", replayResult, coldRuntime.snapshotCalls, len(coldRuntime.unpublishedRequests))
+	}
+}
+
+type coldResetHooks struct {
+	events     []hookcmd.Event
+	startupErr error
+	onStartup  func()
+}
+
+func (h *coldResetHooks) Run(ctx context.Context, event hookcmd.Event) (hookcmd.Result, error) {
+	h.events = append(h.events, event)
+	if event.Source == "resume" {
+		return hookcmd.Result{}, hookcmd.ErrDenied
+	}
+	if h.onStartup != nil {
+		h.onStartup()
+	}
+	if h.startupErr != nil {
+		return hookcmd.Result{}, h.startupErr
+	}
+	return hookcmd.Result{}, ctx.Err()
+}
+
+func TestFreshLifetimeColdStartupFailurePreservesPredecessor(t *testing.T) {
+	for _, canceled := range []bool{false, true} {
+		t.Run(map[bool]string{false: "denied", true: "canceled"}[canceled], func(t *testing.T) {
+			f := newArchiveFixture(t)
+			f.runtime.ProviderBindingJSON = publicationBinding
+			topic, err := f.manager().EnsureSession(t.Context(), archiveInput(), "saved")
+			if err != nil {
+				t.Fatal(err)
+			}
+			manager := f.manager()
+			manager.runtimeOperations = f.provider.RuntimeOperations()
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			hooks := &coldResetHooks{startupErr: hookcmd.ErrDenied}
+			if canceled {
+				hooks.startupErr, hooks.onStartup = nil, cancel
+			}
+			manager.hooks = hooks
+			request := FreshLifetimeRequest{OperationID: "cold-start-failure", SessionID: topic.GetSessionID(), InputHash: strings.Repeat("f", 64)}
+			prepared, result, err := manager.PrepareFreshLifetime(ctx, request)
+			if prepared != nil || result.Status != FreshLifetimeUnavailable || err == nil {
+				t.Fatalf("startup failure = %v, %+v, %v", prepared, result, err)
+			}
+			record, _, err := f.provider.Sessions().GetBySessionID(t.Context(), request.SessionID)
+			if err != nil || record.ArchiveID != topic.GetArchiveID() || manager.activeTopicSession(request.SessionID) != nil {
+				t.Fatalf("startup failure changed predecessor: %+v, %v", record, err)
+			}
+			operation, _, err := f.provider.RuntimeOperations().Get(t.Context(), request.OperationID)
+			if err != nil || operation.State != baldastate.RuntimeOperationTerminal || operation.Outcome != string(baldastate.RuntimeOperationOutcomeAborted) || len(hooks.events) != 1 {
+				t.Fatalf("startup failure journal = %+v, hooks=%+v, %v", operation, hooks.events, err)
+			}
+			_, err = f.runtime.SessionSvc.Get(t.Context(), &adksession.GetRequest{AppName: baldaRuntimeAppName, UserID: record.UserID, SessionID: operation.TargetArchiveID})
+			if !errors.Is(err, adksession.ErrNotFound) {
+				t.Fatalf("failed successor exists: %v", err)
+			}
+		})
+	}
+}
+
+func TestFreshLifetimeColdPublicationRejectsActivatedPredecessorAndShutdown(t *testing.T) {
+	for _, stopping := range []bool{false, true} {
+		t.Run(map[bool]string{false: "activated", true: "shutdown"}[stopping], func(t *testing.T) {
+			f := newArchiveFixture(t)
+			f.runtime.ProviderBindingJSON = publicationBinding
+			topic, err := f.manager().EnsureSession(t.Context(), archiveInput(), "saved")
+			if err != nil {
+				t.Fatal(err)
+			}
+			manager := f.manager()
+			manager.runtimeOperations = f.provider.RuntimeOperations()
+			request := FreshLifetimeRequest{OperationID: "cold-stale-publication", SessionID: topic.GetSessionID(), InputHash: strings.Repeat("a", 64)}
+			prepared, _, err := manager.PrepareFreshLifetime(t.Context(), request)
+			if err != nil || prepared == nil {
+				t.Fatalf("cold prepare = %v, %v", prepared, err)
+			}
+			if stopping {
+				if err := manager.Stop(t.Context()); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				// A different local lifetime won publication after preparation.
+				manager.sessions[request.SessionID] = topic
+			}
+			result, err := manager.PublishFreshLifetime(t.Context(), prepared)
+			if err == nil || result.Status == FreshLifetimeReset {
+				t.Fatalf("stale cold publication = %+v, %v", result, err)
+			}
+			record, _, err := f.provider.Sessions().GetBySessionID(t.Context(), request.SessionID)
+			if err != nil || record.ArchiveID != topic.GetArchiveID() {
+				t.Fatalf("stale publication changed durable binding: %+v, %v", record, err)
+			}
+		})
 	}
 }
 
@@ -600,6 +740,10 @@ func TestFreshLifetimeColdRecoveryUsesPinnedLocalIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	oldLease.Release()
+	manager = f.manager()
+	manager.runtimeOperations = f.provider.RuntimeOperations()
+	hooks := &coldResetHooks{}
+	manager.hooks = hooks
 	runtimeManagerBefore := manager.runtimeManager.(*fakeScopedRuntimeManager)
 	runtimeManagerBefore.currentSnapshot = freshLifetimeRecoveryCatalog
 	runtimeManagerBefore.runtimeForSession = func(request SessionRuntimeRequest) (*BuiltRuntime, error) {
@@ -616,7 +760,7 @@ func TestFreshLifetimeColdRecoveryUsesPinnedLocalIdentity(t *testing.T) {
 	if err := f.provider.RuntimeOperations().MarkApplying(t.Context(), request.OperationID, request.InputHash); err != nil {
 		t.Fatal(err)
 	}
-	live := manager.sessionRecordFromValue(topic, baldastate.SessionStatusActive, prepared.candidate.value)
+	live := manager.sessionRecordFromValue(prepared.coldTopic, baldastate.SessionStatusActive, prepared.candidate.value)
 	if _, err := manager.archive.Activate(t.Context(), prepared.archiveToken, &live); err != nil {
 		t.Fatal(err)
 	}
@@ -630,6 +774,7 @@ func TestFreshLifetimeColdRecoveryUsesPinnedLocalIdentity(t *testing.T) {
 
 	restarted := f.manager()
 	restarted.runtimeOperations = f.provider.RuntimeOperations()
+	restarted.hooks = hooks
 	runtimeManager := restarted.runtimeManager.(*fakeScopedRuntimeManager)
 	runtimeManager.currentSnapshot = freshLifetimeLaterCatalog
 	runtimeManager.runtimeForSession = runtimeManagerBefore.runtimeForSession
@@ -651,6 +796,10 @@ func TestFreshLifetimeColdRecoveryUsesPinnedLocalIdentity(t *testing.T) {
 		record.RuntimeGeneration != prepared.operation.ExpectedGeneration+1 {
 		t.Fatalf("cold recovered metadata = %#v, %t, %v", record, found, err)
 	}
+	if len(hooks.events) != 1 || hooks.events[0].Source != "startup" {
+		t.Fatalf("cold recovery repeated lifecycle hooks: %+v", hooks.events)
+	}
+	restarted.hooks = nil
 	restored, err := restarted.RestoreSession(t.Context(), SessionContext{Locator: archiveInput().Locator})
 	if err != nil {
 		t.Fatal(err)

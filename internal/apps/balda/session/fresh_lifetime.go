@@ -56,6 +56,8 @@ type PreparedFreshLifetime struct {
 	candidate        *RuntimeSlot
 	runtimeCandidate UnpublishedSessionRuntimeCandidate
 	activation       *sessioncmd.Activation
+	coldTopic        *TopicSession
+	predecessor      *baldastate.SessionRecord
 	settleOnce       sync.Once
 	settleResult     FreshLifetimeResult
 	settleErr        error
@@ -119,16 +121,7 @@ func (m *Manager) PrepareFreshLifetime(ctx context.Context, request FreshLifetim
 			result, resultErr := freshLifetimeRecoveryRequired()
 			return nil, result, resultErr
 		}
-		// Commands do not pass through conversational lazy restore. Resolve the
-		// saved local lifetime while holding the same session operation lock.
-		topic, err = m.restoreFreshLifetimeSessionLocked(ctx, request.SessionID)
-		if err != nil {
-			if errors.Is(err, ErrRuntimeRecoveryRequired) {
-				result, resultErr := freshLifetimeRecoveryRequired()
-				return nil, result, resultErr
-			}
-			return nil, freshLifetimeUnavailable(), err
-		}
+		return m.prepareColdFreshLifetime(ctx, request)
 	}
 	lease, err := topic.AcquireRuntime()
 	if err != nil {
@@ -310,27 +303,6 @@ func (m *Manager) PrepareFreshLifetime(ctx context.Context, request FreshLifetim
 	}, FreshLifetimeResult{}, nil
 }
 
-func (m *Manager) restoreFreshLifetimeSessionLocked(ctx context.Context, sessionID string) (*TopicSession, error) {
-	if m.sessionStore == nil {
-		return nil, ErrNoPersistedSession
-	}
-	if err := m.recoverRuntimeOperation(ctx, sessionID); err != nil {
-		return nil, err
-	}
-	record, found, err := m.sessionStore.GetBySessionID(ctx, sessionID)
-	if err != nil {
-		return nil, err
-	}
-	if !found {
-		return nil, ErrNoPersistedSession
-	}
-	locator, err := LocatorFromRecord(record)
-	if err != nil {
-		return nil, err
-	}
-	return m.prepareSessionLocked(ctx, SessionContext{Locator: locator, UserID: record.UserID}, record.AgentName, false, record, true)
-}
-
 func (m *Manager) completeTerminalFreshLifetimePublication(ctx context.Context, operation baldastate.RuntimeOperationRecord, topic *TopicSession) bool {
 	if topic == nil || !m.freshLifetimeDurableTargetMatches(ctx, operation) {
 		return topic == nil
@@ -397,7 +369,7 @@ func (m *Manager) checkFreshLifetimePending(
 // PublishFreshLifetime commits one already prepared local lifetime. The caller
 // must hold the delivered TurnDispatcher replacement boundary.
 func (m *Manager) PublishFreshLifetime(ctx context.Context, prepared *PreparedFreshLifetime) (FreshLifetimeResult, error) {
-	if m == nil || prepared == nil || prepared.incumbent == nil || prepared.candidate == nil {
+	if m == nil || prepared == nil || prepared.candidate == nil || (prepared.incumbent == nil && prepared.predecessor == nil) {
 		return FreshLifetimeResult{Status: FreshLifetimeConflict, Reason: baldastate.RuntimeOperationReasonInvalid}, ErrRuntimePublicationInvalid
 	}
 	prepared.settleOnce.Do(func() {
@@ -417,6 +389,13 @@ func (m *Manager) publishFreshLifetime(ctx context.Context, prepared *PreparedFr
 			result, resultErr = freshLifetimeRecoveryRequired()
 		}
 	}()
+	if prepared.predecessor != nil {
+		endLifecycle, err := m.beginLifecycleOperation(context.WithoutCancel(ctx))
+		if err != nil {
+			return freshLifetimeUnavailable(), err
+		}
+		defer endLifecycle()
+	}
 	request := prepared.request
 	unlockOperation := m.lockSessionOperation("\x00lifetime-operation:" + request.OperationID)
 	defer unlockOperation()
@@ -424,6 +403,9 @@ func (m *Manager) publishFreshLifetime(ctx context.Context, prepared *PreparedFr
 	defer unlockSession()
 
 	topic := m.activeTopicSession(request.SessionID)
+	if topic == nil && prepared.coldTopic != nil {
+		topic = prepared.coldTopic
+	}
 	if topic == nil {
 		return freshLifetimeRecoveryRequired()
 	}
@@ -453,8 +435,13 @@ func (m *Manager) publishFreshLifetime(ctx context.Context, prepared *PreparedFr
 	if !legacy {
 		candidateMatches = freshLifetimeCandidateMatches(prepared.incumbent, prepared.candidate, operation)
 	}
+	guardMatches := topic.matchesRuntimeGuard(prepared.incumbent, operation.ExpectedArchiveID, operation.ExpectedGeneration)
+	if prepared.predecessor != nil {
+		guardMatches = m.coldFreshLifetimeGuard(ctx, *prepared.predecessor, operation)
+		candidateMatches = freshLifetimeActiveTargetMatches(prepared.candidate.value, operation)
+	}
 	if operation.State != baldastate.RuntimeOperationApplying ||
-		!topic.matchesRuntimeGuard(prepared.incumbent, operation.ExpectedArchiveID, operation.ExpectedGeneration) ||
+		!guardMatches ||
 		!candidateMatches ||
 		(!legacy && (prepared.runtimeCandidate == nil || prepared.runtimeCandidate.ClaimForPublication() != nil)) ||
 		!prepared.candidate.claimPublication() {
@@ -493,7 +480,7 @@ func (m *Manager) publishFreshLifetime(ctx context.Context, prepared *PreparedFr
 		topic.fenceRuntimeRecovery()
 		return freshLifetimeRecoveryRequired()
 	}
-	if !topic.swapRuntime(prepared.incumbent, prepared.candidate, operation.ExpectedArchiveID, operation.ExpectedGeneration) {
+	if !m.publishFreshLifetimeSlot(topic, prepared, operation) {
 		// The base is already promoted and remains protected by its barrier.
 		// Retain its owner for forward recovery; abort must not erase it.
 		prepared.candidate.releasePublicationClaim(true)
@@ -506,7 +493,9 @@ func (m *Manager) publishFreshLifetime(ctx context.Context, prepared *PreparedFr
 		prepared.runtimeCandidate.MarkPublished()
 	}
 	published = true
-	prepared.incumbent.beginDrain()
+	if prepared.incumbent != nil {
+		prepared.incumbent.beginDrain()
+	}
 	terminal, ok := m.finalizeFreshLifetime(ctx, operation)
 	if !ok || !isPublicationTerminal(terminal, operation, baldastate.RuntimeOperationOutcomeContextReset, "") {
 		topic.fenceRuntimeRecovery()
@@ -569,9 +558,13 @@ func (m *Manager) abortFreshLifetime(ctx context.Context, prepared *PreparedFres
 	if operation.State == baldastate.RuntimeOperationTerminal {
 		return m.replayFreshLifetime(context.WithoutCancel(ctx), topic, operation), nil
 	}
-	if operation.State != baldastate.RuntimeOperationPrepared || topic == nil {
+	if operation.State != baldastate.RuntimeOperationPrepared || (topic == nil && prepared.predecessor == nil) {
 		m.fenceRuntimeRecovery(prepared.request.SessionID)
 		return freshLifetimeRecoveryRequired()
+	}
+	if prepared.predecessor != nil {
+		_, result, err = m.rollbackFreshLifetimeRecord(ctx, *prepared.predecessor, operation, prepared.candidate.value.runtime.SessionSvc, prepared.candidate.value.appName)
+		return result, err
 	}
 	service := prepared.incumbent.value.runtime.SessionSvc
 	if prepared.runtimeCandidate != nil && prepared.runtimeCandidate.Runtime() != nil {
@@ -617,6 +610,10 @@ func (m *Manager) reserveFreshLifetimeArchive(ctx context.Context, topic *TopicS
 		old.RuntimeID != value.sessionID || old.Location.Channel != topic.locator.ChannelType || old.Location.AddressKey != topic.locator.AddressKey {
 		return chatarchivecmd.Intent{}, chatarchivecmd.ErrConflict
 	}
+	return m.beginFreshLifetimeArchive(ctx, old, operation)
+}
+
+func (m *Manager) beginFreshLifetimeArchive(ctx context.Context, old chatarchivecmd.Session, operation baldastate.RuntimeOperationRecord) (chatarchivecmd.Intent, error) {
 	now := operation.CreatedAt.UTC()
 	target := old
 	target.ID = operation.TargetArchiveID
@@ -653,33 +650,37 @@ func (m *Manager) rollbackFreshLifetimePreparation(
 	operation baldastate.RuntimeOperationRecord,
 	service adksession.Service,
 ) (*PreparedFreshLifetime, FreshLifetimeResult, error) {
+	return m.rollbackFreshLifetimeRecord(ctx, m.sessionRecordFromValue(topic, baldastate.SessionStatusActive, value), operation, service, value.appName)
+}
+
+func (m *Manager) rollbackFreshLifetimeRecord(ctx context.Context, record baldastate.SessionRecord, operation baldastate.RuntimeOperationRecord, service adksession.Service, appName string) (*PreparedFreshLifetime, FreshLifetimeResult, error) {
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
 	defer cancel()
 	current, found, err := m.runtimeOperations.Get(cleanupCtx, operation.OperationID)
 	if err != nil || !found || !samePublicationIntent(current, operation) ||
 		current.State != baldastate.RuntimeOperationPrepared {
-		topic.fenceRuntimeRecovery()
+		m.fenceRuntimeRecovery(record.SessionID)
 		result, resultErr := freshLifetimeRecoveryRequired()
 		return nil, result, resultErr
 	}
-	if err := m.deletePreparedFreshSession(cleanupCtx, service, value.appName, value.userID, current); err != nil {
-		topic.fenceRuntimeRecovery()
+	if err := m.deletePreparedFreshSession(cleanupCtx, service, appName, record.UserID, current); err != nil {
+		m.fenceRuntimeRecovery(record.SessionID)
 		result, resultErr := freshLifetimeRecoveryRequired()
 		return nil, result, resultErr
 	}
-	pending, err := m.archive.Pending(cleanupCtx, topic.locator.ChannelType, topic.locator.AddressKey)
+	pending, err := m.archive.Pending(cleanupCtx, record.ChannelType, record.AddressKey)
 	switch {
 	case err == nil:
 		if pending.Token != deterministicFreshLifetimeArchiveToken(current.OperationID) ||
-			!freshLifetimeArchiveIntentMatches(pending, current, m.sessionRecordFromValue(topic, baldastate.SessionStatusActive, value)) ||
+			!freshLifetimeArchiveIntentMatches(pending, current, record) ||
 			m.archive.Complete(cleanupCtx, pending.Token, chatarchivecmd.OutcomeAborted) != nil {
-			topic.fenceRuntimeRecovery()
+			m.fenceRuntimeRecovery(record.SessionID)
 			result, resultErr := freshLifetimeRecoveryRequired()
 			return nil, result, resultErr
 		}
 	case errors.Is(err, chatarchivecmd.ErrNotFound):
 	default:
-		topic.fenceRuntimeRecovery()
+		m.fenceRuntimeRecovery(record.SessionID)
 		result, resultErr := freshLifetimeRecoveryRequired()
 		return nil, result, resultErr
 	}
@@ -690,7 +691,7 @@ func (m *Manager) rollbackFreshLifetimePreparation(
 		reason = baldastate.RuntimeOperationReasonDeadlineExceeded
 	}
 	if _, ok := m.finalizeFreshLifetimeAbortedWithReason(cleanupCtx, current, reason); !ok {
-		topic.fenceRuntimeRecovery()
+		m.fenceRuntimeRecovery(record.SessionID)
 		result, resultErr := freshLifetimeRecoveryRequired()
 		return nil, result, resultErr
 	}
