@@ -116,6 +116,42 @@ type RuntimeSummary struct {
 	EffectiveModel string `json:"effective_model,omitempty"`
 }
 
+// ConfigurationSummary contains committed provider configuration facts without
+// claiming that a provider runtime is attached.
+type ConfigurationSummary struct {
+	ProviderID      string   `json:"provider_id,omitempty"`
+	ProviderType    string   `json:"provider_type,omitempty"`
+	ConfiguredModel string   `json:"configured_model,omitempty"`
+	RequestedModel  *string  `json:"requested_model,omitempty"`
+	ReasoningEffort string   `json:"reasoning_effort,omitempty"`
+	MCPServers      []string `json:"mcp_servers,omitempty"`
+}
+
+// Clone returns a copy whose optional model and MCP identities do not alias.
+func (s ConfigurationSummary) Clone() ConfigurationSummary {
+	if s.RequestedModel != nil {
+		model := *s.RequestedModel
+		s.RequestedModel = &model
+	}
+	s.MCPServers = slices.Clone(s.MCPServers)
+	return s
+}
+
+// Validate checks bounded, normalized public configuration facts.
+func (s ConfigurationSummary) Validate() error {
+	metadata := PublicRuntimeMetadata{
+		ProviderID: s.ProviderID, ProviderType: s.ProviderType,
+		ReasoningEffort: s.ReasoningEffort, MCPServers: s.MCPServers,
+	}
+	if metadata.Validate() != nil || !validPublicText(s.ConfiguredModel, maxIdentityBytes, true) {
+		return ErrInvalid
+	}
+	if s.RequestedModel != nil && !validPublicText(*s.RequestedModel, maxIdentityBytes, false) {
+		return ErrInvalid
+	}
+	return nil
+}
+
 // Validate checks the bounded public runtime summary.
 func (s RuntimeSummary) Validate() error {
 	if s.PublicRuntimeMetadata.Validate() != nil || !validPublicText(s.EffectiveModel, maxIdentityBytes, true) {
@@ -126,11 +162,12 @@ func (s RuntimeSummary) Validate() error {
 
 // Activation is the transport-neutral snapshot of one ordinary lifecycle outcome.
 type Activation struct {
-	Kind      ActivationKind `json:"kind"`
-	SessionID string         `json:"session_id"`
-	Label     string         `json:"label,omitempty"`
-	Runtime   RuntimeSummary `json:"runtime"`
-	Warnings  []WarningCode  `json:"warnings,omitempty"`
+	Kind          ActivationKind       `json:"kind"`
+	SessionID     string               `json:"session_id"`
+	Label         string               `json:"label,omitempty"`
+	Runtime       RuntimeSummary       `json:"runtime"`
+	Configuration ConfigurationSummary `json:"configuration"`
+	Warnings      []WarningCode        `json:"warnings,omitempty"`
 }
 
 // Clone returns an immutable copy of the activation snapshot.
@@ -140,6 +177,7 @@ func (a *Activation) Clone() *Activation {
 	}
 	clone := *a
 	clone.Runtime.PublicRuntimeMetadata = a.Runtime.Clone()
+	clone.Configuration = a.Configuration.Clone()
 	clone.Warnings = slices.Clone(a.Warnings)
 	return &clone
 }
@@ -149,7 +187,7 @@ func (a Activation) Validate() error {
 	if !a.Kind.Valid() ||
 		!validPublicText(a.SessionID, maxIdentityBytes, false) ||
 		!validPublicText(a.Label, maxLabelBytes, true) ||
-		a.Runtime.Validate() != nil || len(a.Warnings) > maxWarnings {
+		a.Runtime.Validate() != nil || a.Configuration.Validate() != nil || len(a.Warnings) > maxWarnings {
 		return ErrInvalid
 	}
 	seen := make(map[WarningCode]struct{}, len(a.Warnings))

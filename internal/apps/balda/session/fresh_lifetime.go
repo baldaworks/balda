@@ -270,6 +270,7 @@ func (m *Manager) PrepareFreshLifetime(ctx context.Context, request FreshLifetim
 		sessioncmd.ActivationCreated,
 		runtimeCandidate.Runtime().PublicRuntimeMetadata,
 		operation.TargetModel,
+		sessioncmd.ConfigurationSummary{},
 		nil,
 	)
 	if err != nil {
@@ -908,11 +909,19 @@ func (m *Manager) replayFreshLifetime(ctx context.Context, topic *TopicSession, 
 				if agentName == "" {
 					agentName = defaultSessionLabel
 				}
+				configuration, configurationErr := decodeConfigurationSummary(
+					operation.TargetConfigurationSummaryJSON, operation.TargetRequestedModel,
+				)
+				if configurationErr != nil {
+					err = configurationErr
+					break
+				}
 				activation, err = buildActivationFromReceipt(
 					&TopicSession{sessionID: record.SessionID, agentName: agentName},
 					sessioncmd.ActivationCreated,
 					sessioncmd.PublicRuntimeMetadata{},
 					"",
+					configuration,
 					nil,
 				)
 			case recordErr != nil:

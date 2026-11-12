@@ -78,6 +78,7 @@ func TestSessionActivationRenderersResolveAcrossTransports(t *testing.T) {
 			body := noticeFixture(t, sessioncmd.ActivationCreated)
 			body.Label = ""
 			body.Runtime = sessioncmd.RuntimeSummary{}
+			body.ModelState = ""
 			envelope, err := body.Envelope()
 			if err != nil {
 				t.Fatal(err)

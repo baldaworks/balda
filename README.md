@@ -66,6 +66,8 @@ Use `/cancel` to stop the current turn. `/reset` and `/new` queue a fresh,
 empty local conversation with current capabilities while keeping the exact
 provider binding, optional requested model preference, and workspace. The active model remains unknown
 until later provider attachment or execution.
+The reset notice reports committed provider/configured-model/reasoning/MCP facts and labels a requested
+model separately; it does not present those facts as an active runtime observation.
 Both commands also work as the first command after a process restart: saved local
 session state is restored inside the queue without a preliminary conversation turn.
 Use `/status` to inspect the provider, requested and observed model state, session state,
@@ -74,6 +76,10 @@ Use `/model` to read the requested preference and current active observation, or
 same-provider model change while preserving the current session context. An
 unsupported change leaves the current model and context intact; it never
 performs an implicit reset.
+On a provider-cold lifetime, only the exact configured model can be selected:
+Balda clears any stale override for the next attachment and reports that pending
+state without claiming the model is active. Other cold targets are unavailable
+until the provider is attached and can validate them.
 Command availability varies by chat provider; see the
 [command guide](docs/commands.md).
 

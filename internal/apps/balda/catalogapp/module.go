@@ -112,6 +112,32 @@ func (b *sessionCapabilityBinder) BindSessionCapabilities(ctx context.Context, p
 	}, nil
 }
 
+func (b *sessionCapabilityBinder) DescribeSessionCapabilities(ctx context.Context, providerID string, request baldaagent.SessionRuntimeRequest) (baldaagent.SessionCapabilityDescription, error) {
+	if b == nil || b.catalog == nil {
+		return baldaagent.SessionCapabilityDescription{}, runtimecatalogcmd.ErrSnapshotUnavailable
+	}
+	snapshot, err := b.catalog.RetainedSkillSnapshot(ctx, runtimecatalogcmd.SnapshotID(strings.TrimSpace(request.RuntimeSnapshotID)))
+	if err != nil || snapshot.ID == "" {
+		return baldaagent.SessionCapabilityDescription{}, runtimecatalogcmd.ErrSnapshotUnavailable
+	}
+	providerConfigs := request.ProviderConfigs
+	if len(providerConfigs) == 0 {
+		providerConfigs = b.providers
+	}
+	defaults, err := providerMCPDefaults(providerConfigs, providerID, b.extra)
+	if err != nil {
+		return baldaagent.SessionCapabilityDescription{}, err
+	}
+	selections, _, err := b.catalog.selectProviderMCPServerIDs(ctx, snapshot, defaults)
+	if err != nil {
+		return baldaagent.SessionCapabilityDescription{}, err
+	}
+	return baldaagent.SessionCapabilityDescription{
+		MCPServerIDs:         append([]string(nil), selections[providerID]...),
+		MCPServerPublicNames: mcpServerPublicNames(snapshot),
+	}, nil
+}
+
 func mcpServerPublicNames(snapshot runtimecatalogcmd.Snapshot) map[string]string {
 	names := make(map[string]string, len(snapshot.MCPServers))
 	for _, descriptor := range snapshot.MCPServers {

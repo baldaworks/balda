@@ -22,6 +22,15 @@ func (r *Runtime) AcquireProviderMCPServerIDs(ctx context.Context, snapshotID ru
 	if err != nil {
 		return nil, nil, err
 	}
+	result, descriptors, err := r.selectProviderMCPServerIDs(ctx, snapshot, configured)
+	if err != nil {
+		return nil, nil, err
+	}
+	_, release, err := r.mcp.AcquireDescriptors(ctx, descriptors)
+	return result, release, err
+}
+
+func (r *Runtime) selectProviderMCPServerIDs(ctx context.Context, snapshot runtimecatalogcmd.Snapshot, configured map[string][]string) (map[string][]string, []runtimecatalogcmd.MCPServerDescriptor, error) {
 	selected := make(map[runtimecatalogcmd.ContributionID]runtimecatalogcmd.MCPServerDescriptor)
 	result := make(map[string][]string, len(configured))
 	for providerID, names := range configured {
@@ -74,15 +83,11 @@ func (r *Runtime) AcquireProviderMCPServerIDs(ctx context.Context, snapshotID ru
 	for _, descriptor := range selected {
 		descriptors = append(descriptors, descriptor)
 	}
-	_, release, err := r.mcp.AcquireDescriptors(ctx, descriptors)
-	if err != nil {
-		return nil, nil, err
-	}
 	for providerID, ids := range result {
 		sort.Strings(ids)
 		result[providerID] = slices.Compact(ids)
 	}
-	return result, release, nil
+	return result, descriptors, nil
 }
 
 func descriptorRegistryID(descriptor runtimecatalogcmd.MCPServerDescriptor) string {

@@ -14,11 +14,24 @@ var ErrInvalid = errors.New("invalid session presentation contract")
 
 // Notice contains the bounded public values needed by transport renderers.
 type Notice struct {
-	Kind      sessioncmd.ActivationKind `json:"kind"`
-	SessionID string                    `json:"session_id"`
-	Label     string                    `json:"label,omitempty"`
-	Runtime   sessioncmd.RuntimeSummary `json:"runtime"`
+	Kind          sessioncmd.ActivationKind       `json:"kind"`
+	SessionID     string                          `json:"session_id"`
+	Label         string                          `json:"label,omitempty"`
+	Runtime       sessioncmd.RuntimeSummary       `json:"runtime"`
+	Configuration sessioncmd.ConfigurationSummary `json:"configuration"`
+	ModelState    ModelState                      `json:"model_state,omitempty"`
 }
+
+// ModelState identifies whether the displayed model is observed or configured.
+type ModelState string
+
+const (
+	ModelStateActive            ModelState = "active"
+	ModelStateRequestedPending  ModelState = "requested_pending"
+	ModelStateConfiguredDefault ModelState = "configured_default"
+)
+
+const defaultModelLabel = "Model"
 
 // Warning selects a bounded user-presentable warning without arbitrary text.
 type Warning struct {
@@ -39,10 +52,19 @@ func NewNotice(activation sessioncmd.Activation) (Notice, error) {
 		return Notice{}, ErrInvalid
 	}
 	notice := Notice{
-		Kind:      activation.Kind,
-		SessionID: activation.SessionID,
-		Label:     activation.Label,
-		Runtime:   cloneRuntimeSummary(activation.Runtime),
+		Kind:          activation.Kind,
+		SessionID:     activation.SessionID,
+		Label:         activation.Label,
+		Runtime:       cloneRuntimeSummary(activation.Runtime),
+		Configuration: activation.Configuration.Clone(),
+	}
+	switch {
+	case notice.Runtime.EffectiveModel != "":
+		notice.ModelState = ModelStateActive
+	case notice.Configuration.RequestedModel != nil:
+		notice.ModelState = ModelStateRequestedPending
+	case notice.Configuration.ConfiguredModel != "":
+		notice.ModelState = ModelStateConfiguredDefault
 	}
 	if err := notice.Validate(); err != nil {
 		return Notice{}, err
@@ -56,9 +78,12 @@ func (n Notice) Validate() error {
 		return ErrInvalid
 	}
 	candidate := sessioncmd.Activation{
-		Kind: n.Kind, SessionID: n.SessionID, Label: n.Label, Runtime: n.Runtime,
+		Kind: n.Kind, SessionID: n.SessionID, Label: n.Label, Runtime: n.Runtime, Configuration: n.Configuration,
 	}
 	if err := candidate.Validate(); err != nil {
+		return ErrInvalid
+	}
+	if n.ModelState != modelState(candidate) {
 		return ErrInvalid
 	}
 	return nil
@@ -70,7 +95,62 @@ func (n Notice) Envelope() (deliveryfmt.StructuredEnvelope[Notice], error) {
 		return deliveryfmt.StructuredEnvelope[Notice]{}, err
 	}
 	n.Runtime = cloneRuntimeSummary(n.Runtime)
+	n.Configuration = n.Configuration.Clone()
 	return deliveryfmt.StructuredEnvelope[Notice]{Descriptor: NoticeDescriptor, Body: n}, nil
+}
+
+func modelState(activation sessioncmd.Activation) ModelState {
+	switch {
+	case activation.Runtime.EffectiveModel != "":
+		return ModelStateActive
+	case activation.Configuration.RequestedModel != nil:
+		return ModelStateRequestedPending
+	case activation.Configuration.ConfiguredModel != "":
+		return ModelStateConfiguredDefault
+	default:
+		return ""
+	}
+}
+
+// ProviderID returns the observed provider or its committed configuration.
+func (n Notice) ProviderID() string {
+	if n.Runtime.ProviderID != "" {
+		return n.Runtime.ProviderID
+	}
+	return n.Configuration.ProviderID
+}
+
+// ReasoningEffort returns observed or committed configured reasoning.
+func (n Notice) ReasoningEffort() string {
+	if n.Runtime.ReasoningEffort != "" {
+		return n.Runtime.ReasoningEffort
+	}
+	return n.Configuration.ReasoningEffort
+}
+
+// MCPServers returns observed or committed configured public MCP names.
+func (n Notice) MCPServers() []string {
+	if len(n.Runtime.MCPServers) != 0 {
+		return n.Runtime.MCPServers
+	}
+	return n.Configuration.MCPServers
+}
+
+// ModelDisplay returns a truthful label and model value for presentation.
+func (n Notice) ModelDisplay() (string, string) {
+	switch n.ModelState {
+	case ModelStateActive:
+		return defaultModelLabel, n.Runtime.EffectiveModel
+	case ModelStateRequestedPending:
+		if n.Configuration.RequestedModel != nil {
+			return "Model (requested)", *n.Configuration.RequestedModel
+		}
+		return defaultModelLabel, ""
+	case ModelStateConfiguredDefault:
+		return "Model (configured)", n.Configuration.ConfiguredModel
+	default:
+		return defaultModelLabel, ""
+	}
 }
 
 // NewWarning builds one validated warning body from a closed code.

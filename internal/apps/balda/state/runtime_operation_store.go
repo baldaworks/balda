@@ -27,7 +27,7 @@ func runtimeOperationError(ctx context.Context, err error) error {
 
 func validRuntimeOperationKind(kind string) bool {
 	switch RuntimeOperationKind(kind) {
-	case RuntimeOperationKindModel, RuntimeOperationKindProvider, RuntimeOperationKindLifetime,
+	case RuntimeOperationKindModel, RuntimeOperationKindModelPreference, RuntimeOperationKindProvider, RuntimeOperationKindLifetime,
 		RuntimeOperationKindLifetimePreference:
 		return true
 	default:
@@ -55,7 +55,8 @@ func validRuntimeOperationReason(reason RuntimeOperationReason) bool {
 		RuntimeOperationReasonIncompatible, RuntimeOperationReasonRejected,
 		RuntimeOperationReasonBusy, RuntimeOperationReasonClosed,
 		RuntimeOperationReasonUnavailable, RuntimeOperationReasonPreDispatch,
-		RuntimeOperationReasonChangedLive, RuntimeOperationReasonChangedReplacement:
+		RuntimeOperationReasonChangedLive, RuntimeOperationReasonChangedReplacement,
+		RuntimeOperationReasonPendingAttachment:
 		return true
 	default:
 		return false
@@ -101,12 +102,12 @@ func (s *sqlRuntimeOperationStore) Begin(ctx context.Context, intent RuntimeOper
 
 	_, err = tx.ExecContext(ctx, s.users.bind(`INSERT INTO balda_runtime_operations(
 		operation_id,session_id,input_hash,kind,state,expected_archive_id,expected_generation,
-		target_archive_id,target_snapshot_id,target_provider_binding_json,target_model,target_requested_model,
+		target_archive_id,target_snapshot_id,target_provider_binding_json,target_configuration_summary_json,target_model,target_requested_model,
 		outcome,reason_code,created_at,updated_at,terminal_at)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)`),
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)`),
 		intent.OperationID, intent.SessionID, intent.InputHash, intent.Kind, intent.State,
 		intent.ExpectedArchiveID, intent.ExpectedGeneration, intent.TargetArchiveID,
-		intent.TargetSnapshotID, intent.TargetProviderBindingJSON, intent.TargetModel,
+		intent.TargetSnapshotID, intent.TargetProviderBindingJSON, intent.TargetConfigurationSummaryJSON, intent.TargetModel,
 		intent.TargetRequestedModel,
 		intent.Outcome, intent.ReasonCode, runtimeOperationTime(intent.CreatedAt), runtimeOperationTime(intent.UpdatedAt))
 	if err != nil {
@@ -122,7 +123,8 @@ func sameRuntimeOperationIntent(a, b RuntimeOperationRecord) bool {
 	return a.OperationID == b.OperationID && a.SessionID == b.SessionID && a.InputHash == b.InputHash &&
 		a.Kind == b.Kind && a.ExpectedArchiveID == b.ExpectedArchiveID && a.ExpectedGeneration == b.ExpectedGeneration &&
 		a.TargetArchiveID == b.TargetArchiveID && a.TargetSnapshotID == b.TargetSnapshotID &&
-		a.TargetProviderBindingJSON == b.TargetProviderBindingJSON && a.TargetModel == b.TargetModel &&
+		a.TargetProviderBindingJSON == b.TargetProviderBindingJSON &&
+		a.TargetConfigurationSummaryJSON == b.TargetConfigurationSummaryJSON && a.TargetModel == b.TargetModel &&
 		sameOptionalString(a.TargetRequestedModel, b.TargetRequestedModel)
 }
 
@@ -223,12 +225,17 @@ func (s *sqlRuntimeOperationStore) Finalize(ctx context.Context, final RuntimeOp
 		}
 		if archiveID == record.ExpectedArchiveID && uint64(generation) == record.ExpectedGeneration {
 			updatePreference := record.Kind == string(RuntimeOperationKindModel) ||
+				record.Kind == string(RuntimeOperationKindModelPreference) ||
 				record.Kind == string(RuntimeOperationKindLifetimePreference)
 			if updatePreference {
 				targetPreference := record.TargetRequestedModel
 				if targetPreference == nil && record.Kind == string(RuntimeOperationKindModel) {
 					targetModel := record.TargetModel
 					targetPreference = &targetModel
+				}
+				targetEffectiveModel := record.TargetModel
+				if record.Kind == string(RuntimeOperationKindModelPreference) {
+					targetEffectiveModel = ""
 				}
 				result, err := tx.ExecContext(ctx, s.users.bind(`UPDATE balda_session_metadata SET
 					archive_id=CASE WHEN ?='' THEN archive_id ELSE ? END,
@@ -240,7 +247,7 @@ func (s *sqlRuntimeOperationStore) Finalize(ctx context.Context, final RuntimeOp
 					record.TargetArchiveID, record.TargetArchiveID,
 					record.TargetSnapshotID, record.TargetSnapshotID,
 					record.TargetProviderBindingJSON, record.TargetProviderBindingJSON,
-					targetPreference, record.TargetModel,
+					targetPreference, targetEffectiveModel,
 					string(final.Outcome), runtimeOperationTime(final.At), record.SessionID,
 					record.ExpectedArchiveID, record.ExpectedGeneration)
 				if err != nil {
@@ -288,7 +295,8 @@ func (s *sqlRuntimeOperationStore) Finalize(ctx context.Context, final RuntimeOp
 				targetModel = effectiveModel
 			}
 			preferenceMatches := true
-			if record.Kind == string(RuntimeOperationKindModel) || record.Kind == string(RuntimeOperationKindLifetimePreference) {
+			if record.Kind == string(RuntimeOperationKindModel) || record.Kind == string(RuntimeOperationKindModelPreference) ||
+				record.Kind == string(RuntimeOperationKindLifetimePreference) {
 				targetPreference := record.TargetRequestedModel
 				if targetPreference == nil && record.Kind == string(RuntimeOperationKindModel) {
 					targetModel := record.TargetModel
@@ -296,6 +304,9 @@ func (s *sqlRuntimeOperationStore) Finalize(ctx context.Context, final RuntimeOp
 				}
 				preferenceMatches = requestedModel.Valid == (targetPreference != nil) &&
 					(!requestedModel.Valid || requestedModel.String == *targetPreference)
+			}
+			if record.Kind == string(RuntimeOperationKindModelPreference) {
+				targetModel = ""
 			}
 			if archiveID != targetArchive || uint64(generation) != record.ExpectedGeneration+1 ||
 				snapshotID != targetSnapshot || bindingJSON != targetBinding || effectiveModel != targetModel ||
@@ -346,7 +357,7 @@ type runtimeOperationQuerier interface {
 
 func (s *sqlRuntimeOperationStore) get(ctx context.Context, q runtimeOperationQuerier, where string, args ...any) (RuntimeOperationRecord, bool, error) {
 	query := `SELECT operation_id,session_id,input_hash,kind,state,expected_archive_id,expected_generation,
-		target_archive_id,target_snapshot_id,target_provider_binding_json,target_model,target_requested_model,outcome,reason_code,
+		target_archive_id,target_snapshot_id,target_provider_binding_json,target_configuration_summary_json,target_model,target_requested_model,outcome,reason_code,
 		created_at,updated_at,terminal_at FROM balda_runtime_operations WHERE ` + where + ` LIMIT 1`
 	var record RuntimeOperationRecord
 	var generation int64
@@ -355,7 +366,7 @@ func (s *sqlRuntimeOperationStore) get(ctx context.Context, q runtimeOperationQu
 	err := q.QueryRowContext(ctx, s.users.bind(query), args...).Scan(
 		&record.OperationID, &record.SessionID, &record.InputHash, &record.Kind, &state,
 		&record.ExpectedArchiveID, &generation, &record.TargetArchiveID, &record.TargetSnapshotID,
-		&record.TargetProviderBindingJSON, &record.TargetModel, &record.TargetRequestedModel, &record.Outcome, &record.ReasonCode,
+		&record.TargetProviderBindingJSON, &record.TargetConfigurationSummaryJSON, &record.TargetModel, &record.TargetRequestedModel, &record.Outcome, &record.ReasonCode,
 		&createdAt, &updatedAt, &terminalAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return RuntimeOperationRecord{}, false, nil

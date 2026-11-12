@@ -194,6 +194,16 @@ work to the same dispatcher; `session.Manager` never owns queue admission. A col
 metadata. It does not construct or publish a provider runtime; the next ordinary
 turn attaches the exact retained provider binding lazily. Consequently the reset
 receipt has an empty runtime summary until that attachment occurs.
+The same activation carries a separate immutable configuration summary captured
+before reset publication. It contains only public provider/configured-model/
+reasoning/MCP facts and survives terminal replay; presentation labels configured
+or requested models rather than treating them as active observations.
+
+Cold `/model` does not speculate against a remote catalog. Selecting the exact
+configured model journals an atomic clear of stale requested/effective evidence
+and reports `pending_attachment`; another cold target is unavailable without a
+write. An unattached poisoned slot is fenced before that clear and retired after
+the durable commit. Warm attached model control remains unchanged.
 
 ## Transport parsing and support
 

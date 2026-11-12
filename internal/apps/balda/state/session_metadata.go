@@ -2,6 +2,7 @@ package state
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math"
 	"strings"
@@ -92,6 +93,10 @@ func prepareRuntimeOperationRecord(record *RuntimeOperationRecord) error {
 		if record.TargetRequestedModel != nil && *record.TargetRequestedModel != record.TargetModel {
 			return fmt.Errorf("target_requested_model is invalid")
 		}
+	case RuntimeOperationKindModelPreference:
+		if record.TargetModel == "" || record.TargetRequestedModel != nil {
+			return fmt.Errorf("model preference target is invalid")
+		}
 	case RuntimeOperationKindLifetimePreference:
 		if record.TargetRequestedModel != nil && *record.TargetRequestedModel != record.TargetModel {
 			return fmt.Errorf("target_requested_model projection is invalid")
@@ -103,6 +108,18 @@ func prepareRuntimeOperationRecord(record *RuntimeOperationRecord) error {
 	}
 	if err := prepareTargetProviderBinding(&record.TargetProviderBindingJSON); err != nil {
 		return err
+	}
+	if len(record.TargetConfigurationSummaryJSON) > 16384 {
+		return fmt.Errorf("target_configuration_summary_json is invalid")
+	}
+	if record.TargetConfigurationSummaryJSON != "" {
+		if RuntimeOperationKind(record.Kind) != RuntimeOperationKindLifetimePreference {
+			return fmt.Errorf("target_configuration_summary_json is not supported")
+		}
+		var summary any
+		if json.Unmarshal([]byte(record.TargetConfigurationSummaryJSON), &summary) != nil {
+			return fmt.Errorf("target_configuration_summary_json is invalid")
+		}
 	}
 	if record.CreatedAt.IsZero() || record.UpdatedAt.IsZero() {
 		return fmt.Errorf("runtime operation timestamps are required")

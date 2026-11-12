@@ -147,6 +147,11 @@ their failure responses remain plain. Other commands, startup bootstrap, and
 topic creation retain their existing behavior. Process startup readiness
 remains a separate `startupnotifyapp` message.
 
+For a provider-cold reset the runtime receipt is intentionally empty. A separate
+immutable configuration receipt supplies public provider, configured/requested
+model, reasoning, and MCP facts; `sessionfmt` classifies the model as active,
+requested-pending, or configured-default before transport formatting.
+
 ## Workspace allocation contract
 
 - Workspace allocation is session-scoped:

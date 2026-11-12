@@ -172,6 +172,9 @@ func TestFreshLifetimeReplacesColdPersistedSession(t *testing.T) {
 	)
 	f.runtime.ProviderID = retainedProviderID
 	f.runtime.ProviderBindingJSON = retainedBinding
+	f.builder.metadata = AgentMetadata{
+		Type: "codex", Model: "configured-model", ReasoningEffort: "high", MCPServers: []string{"know", "grafana"},
+	}
 	control := &freshLifetimeControlSpy{}
 	f.runtime.SessionControl = control
 	initial := f.manager()
@@ -243,9 +246,17 @@ func TestFreshLifetimeReplacesColdPersistedSession(t *testing.T) {
 	if result.Activation == nil || result.Activation.Label != defaultSessionLabel || !reflect.DeepEqual(result.Activation.Runtime, sessioncmd.RuntimeSummary{}) {
 		t.Fatalf("cold reset activation = %#v, want empty runtime summary", result.Activation)
 	}
+	wantConfiguration := sessioncmd.ConfigurationSummary{
+		ProviderID: retainedProviderID, ProviderType: "codex", ConfiguredModel: "configured-model",
+		RequestedModel: &requested, ReasoningEffort: "high", MCPServers: []string{"grafana", "know"},
+	}
+	if !reflect.DeepEqual(result.Activation.Configuration, wantConfiguration) {
+		t.Fatalf("cold reset configuration = %#v, want %#v", result.Activation.Configuration, wantConfiguration)
+	}
 	if len(hooks.events) != 1 || hooks.events[0].Name != hookcmd.SessionStart || hooks.events[0].Source != "startup" || hooks.events[0].AgentSessionID != saved.ArchiveID {
 		t.Fatalf("cold reset hooks = %+v, want successor startup only", hooks.events)
 	}
+	f.builder.metadata = AgentMetadata{Type: "changed", Model: "changed-model"}
 	coldReplay := f.manager()
 	coldReplay.runtimeOperations = f.provider.RuntimeOperations()
 	_, replayResult, err := coldReplay.PrepareFreshLifetime(t.Context(), request)
@@ -294,6 +305,23 @@ func TestFreshLifetimeReplacesColdPersistedSession(t *testing.T) {
 	}
 	if warmResult, err := restarted.PublishFreshLifetime(t.Context(), warmPrepared); err != nil || warmResult.Status != FreshLifetimeReset {
 		t.Fatalf("retained provider warm publish = %+v, %v", warmResult, err)
+	}
+}
+
+func TestRecoverApplyingColdFreshLifetimeRejectsMismatchedReceiptBeforeMutation(t *testing.T) {
+	requested := "requested"
+	other := "other"
+	raw, err := encodeConfigurationSummary(sessioncmd.ConfigurationSummary{RequestedModel: &requested})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := &Manager{}
+	err = manager.recoverApplyingColdFreshLifetime(t.Context(), baldastate.RuntimeOperationRecord{
+		TargetConfigurationSummaryJSON: raw,
+		TargetRequestedModel:           &other,
+	})
+	if !errors.Is(err, ErrRuntimeRecoveryRequired) {
+		t.Fatalf("recoverApplyingColdFreshLifetime() = %v", err)
 	}
 }
 

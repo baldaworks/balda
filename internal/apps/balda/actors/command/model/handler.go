@@ -169,6 +169,8 @@ func resultMessage(result session.ModelChangeResult) (string, string) {
 		if model := strings.TrimSpace(result.EffectiveModel); model != "" {
 			return "Model changed to " + model + " while preserving this session and its context.", "model-changed-replacement"
 		}
+	case session.ModelChangePending:
+		return "Configured model selected for the next provider attachment.", "model-pending-attachment"
 	case session.ModelChangeUnsupported:
 		return msgUnsupported, "model-unsupported"
 	case session.ModelChangeIncompatible:

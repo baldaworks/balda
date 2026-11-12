@@ -19,26 +19,25 @@ func (m *Manager) changeColdModelPreference(
 	existing baldastate.RuntimeOperationRecord,
 	found bool,
 ) (ModelChangeResult, error) {
-	if !m.validColdModelPreferenceLifetime(ctx, record) {
-		return unavailableModelRuntimeResult(nil)
-	}
 	if found && existing.State == baldastate.RuntimeOperationTerminal && sameModelRequest(existing, request) &&
 		isColdModelPreferenceOperation(existing) && coldModelPreferenceTargetMatches(record, existing) &&
-		isPublicationTerminal(existing, existing, baldastate.RuntimeOperationOutcomeContextReset, baldastate.RuntimeOperationReasonChangedReplacement) {
+		isPublicationTerminal(existing, existing, baldastate.RuntimeOperationOutcomeContextReset, baldastate.RuntimeOperationReasonPendingAttachment) {
 		return ModelChangeResult{
-			Status: ModelChangeChangedReplacement, EffectiveModel: request.TargetModel,
-			Reason: baldastate.RuntimeOperationReasonChangedReplacement, Generation: existing.ExpectedGeneration + 1,
+			Status: ModelChangePending,
+			Reason: baldastate.RuntimeOperationReasonPendingAttachment, Generation: existing.ExpectedGeneration + 1,
 		}, nil
 	}
-	target := request.TargetModel
+	if !m.validModelPreferenceLifetime(ctx, record) || m.configuredModel(ctx, record) != request.TargetModel {
+		return unavailableModelRuntimeResult(nil)
+	}
 	now := m.currentTime().UTC()
 	intent := baldastate.RuntimeOperationRecord{
 		OperationID: request.OperationID, SessionID: request.SessionID, InputHash: request.InputHash,
-		Kind: string(baldastate.RuntimeOperationKindModel), State: baldastate.RuntimeOperationPrepared,
+		Kind: string(baldastate.RuntimeOperationKindModelPreference), State: baldastate.RuntimeOperationPrepared,
 		ExpectedArchiveID: record.ArchiveID, ExpectedGeneration: record.RuntimeGeneration,
 		TargetArchiveID: record.ArchiveID, TargetSnapshotID: record.RuntimeSnapshotID,
-		TargetProviderBindingJSON: record.ProviderBindingJSON, TargetModel: target,
-		TargetRequestedModel: &target, CreatedAt: now, UpdatedAt: now,
+		TargetProviderBindingJSON: record.ProviderBindingJSON, TargetModel: request.TargetModel,
+		CreatedAt: now, UpdatedAt: now,
 	}
 	operation := existing
 	if !found {
@@ -69,12 +68,12 @@ func (m *Manager) changeColdModelPreference(
 	}
 	committed, committedFound, err := m.sessionStore.GetBySessionID(ctx, request.SessionID)
 	if err != nil || !committedFound || !coldModelPreferenceTargetMatches(committed, operation) ||
-		!isPublicationTerminal(operation, operation, baldastate.RuntimeOperationOutcomeContextReset, baldastate.RuntimeOperationReasonChangedReplacement) {
+		!isPublicationTerminal(operation, operation, baldastate.RuntimeOperationOutcomeContextReset, baldastate.RuntimeOperationReasonPendingAttachment) {
 		return recoveryRequiredModelResult()
 	}
 	return ModelChangeResult{
-		Status: ModelChangeChangedReplacement, EffectiveModel: target,
-		Reason: baldastate.RuntimeOperationReasonChangedReplacement, Generation: operation.ExpectedGeneration + 1,
+		Status: ModelChangePending,
+		Reason: baldastate.RuntimeOperationReasonPendingAttachment, Generation: operation.ExpectedGeneration + 1,
 	}, nil
 }
 
@@ -89,7 +88,7 @@ func (m *Manager) recoverApplyingColdModelPreference(ctx context.Context, operat
 	if coldModelPreferenceTargetMatches(record, operation) {
 		return nil
 	}
-	if !coldModelPreferenceIncumbentMatches(record, operation) || !m.validColdModelPreferenceLifetime(ctx, record) {
+	if !coldModelPreferenceIncumbentMatches(record, operation) || !m.validModelPreferenceLifetime(ctx, record) {
 		return ErrRuntimeRecoveryRequired
 	}
 	at := time.Now().UTC()
@@ -99,17 +98,17 @@ func (m *Manager) recoverApplyingColdModelPreference(ctx context.Context, operat
 	terminal, err := m.runtimeOperations.Finalize(ctx, baldastate.RuntimeOperationFinalization{
 		OperationID: operation.OperationID, InputHash: operation.InputHash,
 		Outcome:    baldastate.RuntimeOperationOutcomeContextReset,
-		ReasonCode: baldastate.RuntimeOperationReasonChangedReplacement, At: at,
+		ReasonCode: baldastate.RuntimeOperationReasonPendingAttachment, At: at,
 	})
 	if err != nil || !isPublicationTerminal(
-		terminal, operation, baldastate.RuntimeOperationOutcomeContextReset, baldastate.RuntimeOperationReasonChangedReplacement,
+		terminal, operation, baldastate.RuntimeOperationOutcomeContextReset, baldastate.RuntimeOperationReasonPendingAttachment,
 	) {
 		return ErrRuntimeRecoveryRequired
 	}
 	return nil
 }
 
-func (m *Manager) validColdModelPreferenceLifetime(ctx context.Context, record baldastate.SessionRecord) bool {
+func (m *Manager) validModelPreferenceLifetime(ctx context.Context, record baldastate.SessionRecord) bool {
 	if m.archive == nil || m.agentBuilder == nil || record.Status != baldastate.SessionStatusActive ||
 		strings.TrimSpace(record.ArchiveID) == "" || record.RuntimeOutcome != string(baldastate.RuntimeOperationOutcomeContextReset) {
 		return false
@@ -127,12 +126,14 @@ func (m *Manager) validColdModelPreferenceLifetime(ctx context.Context, record b
 	response, err := local.RuntimeSessionService().Get(ctx, &adksession.GetRequest{
 		AppName: baldaRuntimeAppName, UserID: record.UserID, SessionID: record.ArchiveID,
 	})
-	return err == nil && response != nil &&
-		freshLifetimeSessionMatches(response.Session, baldaRuntimeAppName, record.UserID, record.ArchiveID, record.SessionID)
+	if err != nil || response == nil {
+		return false
+	}
+	return freshLifetimeSessionIdentityMatches(response.Session, baldaRuntimeAppName, record.UserID, record.ArchiveID, record.SessionID)
 }
 
 func isColdModelPreferenceOperation(operation baldastate.RuntimeOperationRecord) bool {
-	return operation.Kind == string(baldastate.RuntimeOperationKindModel) &&
+	return operation.Kind == string(baldastate.RuntimeOperationKindModelPreference) &&
 		operation.TargetArchiveID != "" && operation.TargetArchiveID == operation.ExpectedArchiveID
 }
 
@@ -146,7 +147,18 @@ func coldModelPreferenceIncumbentMatches(record baldastate.SessionRecord, operat
 func coldModelPreferenceTargetMatches(record baldastate.SessionRecord, operation baldastate.RuntimeOperationRecord) bool {
 	return record.SessionID == operation.SessionID && record.ArchiveID == operation.TargetArchiveID &&
 		record.RuntimeGeneration == operation.ExpectedGeneration+1 && record.RuntimeSnapshotID == operation.TargetSnapshotID &&
-		record.ProviderBindingJSON == operation.TargetProviderBindingJSON && record.RequestedModel != nil &&
-		*record.RequestedModel == operation.TargetModel && record.EffectiveModel == operation.TargetModel &&
+		record.ProviderBindingJSON == operation.TargetProviderBindingJSON && record.RequestedModel == nil &&
+		record.EffectiveModel == "" &&
 		record.RuntimeOutcome == string(baldastate.RuntimeOperationOutcomeContextReset)
+}
+
+func (m *Manager) configuredModel(ctx context.Context, record baldastate.SessionRecord) string {
+	summary, err := m.describeSessionConfiguration(ctx, SessionRuntimeRequest{
+		WorkspaceDir: record.WorkspaceDir, RuntimeSnapshotID: record.RuntimeSnapshotID,
+		ProviderBindingJSON: record.ProviderBindingJSON, ModelOverride: cloneOptionalModel(record.RequestedModel),
+	})
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(summary.ConfiguredModel)
 }

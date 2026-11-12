@@ -134,6 +134,9 @@ freezes its selected catalog for retry/restart, and terminal replay returns the
 existing result without selecting again. The prior local
 context is no longer addressable through that session. The active model is
 unknown until a later provider attachment or execution supplies valid evidence.
+The structured receipt still includes committed provider, configured or requested
+model, reasoning, and public MCP names. Configured and requested models are labeled
+as such and are not active-runtime evidence.
 
 Both commands are bare: selectors and every other argument are rejected. A
 successful result uses the transport-owned structured session notice for the
@@ -273,6 +276,11 @@ provider rejection, and a busy session leave the incumbent model and context
 unchanged. The command never falls back to an implicit reset. A conflict,
 temporary unavailability, or recovery-required result is reported explicitly
 without exposing provider errors or internal runtime data.
+
+When the lifetime is provider-cold, Balda has no authoritative remote model
+catalog. A target equal to the exact configured model clears any stale explicit
+override and is accepted for the next provider attachment; the response does not
+claim a live change. Any other target is unavailable and leaves metadata unchanged.
 
 After a model change crosses the provider boundary, an unresolved `applying`
 operation fences new runtime admission. Restart recovery inspects the existing

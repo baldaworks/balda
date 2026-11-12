@@ -29,6 +29,25 @@ func TestNewNotice(t *testing.T) {
 	}
 }
 
+func TestNewNoticeClassifiesColdConfiguration(t *testing.T) {
+	requested := "model-requested"
+	activation := sessioncmd.Activation{
+		Kind: sessioncmd.ActivationCreated, SessionID: "session-1",
+		Configuration: sessioncmd.ConfigurationSummary{
+			ProviderID: "provider", ConfiguredModel: "model-default", RequestedModel: &requested,
+			ReasoningEffort: "high", MCPServers: []string{"grafana"},
+		},
+	}
+	notice, err := NewNotice(activation)
+	if err != nil || notice.ModelState != ModelStateRequestedPending || notice.ProviderID() != "provider" || notice.ReasoningEffort() != "high" {
+		t.Fatalf("NewNotice() = %#v, %v", notice, err)
+	}
+	label, model := notice.ModelDisplay()
+	if label != "Model (requested)" || model != requested || len(notice.MCPServers()) != 1 || notice.MCPServers()[0] != "grafana" {
+		t.Fatalf("cold display = %q/%q/%v", label, model, notice.MCPServers())
+	}
+}
+
 func TestWarning(t *testing.T) {
 	warning, err := NewWarning("session-1", sessioncmd.WarningWorkspaceSyncSkipped)
 	if err != nil {

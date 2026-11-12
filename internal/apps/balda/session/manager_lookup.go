@@ -333,12 +333,11 @@ func runtimeMatchesSessionRecord(topic *TopicSession, record baldastate.SessionR
 	if record.RuntimeGeneration == 0 && strings.TrimSpace(record.ProviderBindingJSON) == "" {
 		bindingMatches = true
 	}
-	projectedModel, _ := restoreFallbackModelProjection(record.RequestedModel, value.runtime.RecipeModel)
 	return value.archiveID == strings.TrimSpace(record.ArchiveID) &&
 		value.generation == record.RuntimeGeneration &&
 		strings.TrimSpace(value.runtime.RuntimeSnapshotID) == strings.TrimSpace(record.RuntimeSnapshotID) &&
 		bindingMatches &&
-		value.effectiveModel == projectedModel &&
+		value.effectiveModel == strings.TrimSpace(record.EffectiveModel) &&
 		value.outcome == strings.TrimSpace(record.RuntimeOutcome)
 }
 
