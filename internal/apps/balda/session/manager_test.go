@@ -1078,10 +1078,13 @@ type fakeScopedRuntimeManager struct {
 	sessionRuntime      *BuiltRuntime
 	sessionErr          error
 	runtimeForSession   func(SessionRuntimeRequest) (*BuiltRuntime, error)
+	unpublishedClose    func() error
 	sessionRequests     []SessionRuntimeRequest
 	unpublishedRequests []SessionRuntimeRequest
 	adoptedCandidate    UnpublishedSessionRuntimeCandidate
+	lastCandidate       *fakeUnpublishedRuntimeCandidate
 	fenceCalls          int
+	completeFenceCalls  int
 	buildBeforeFence    bool
 }
 
@@ -1117,7 +1120,13 @@ func (c *fakeUnpublishedRuntimeCandidate) Abort(context.Context) error {
 	if c.promoted {
 		return ErrRuntimeUnavailable
 	}
+	if c.aborted {
+		return nil
+	}
 	c.aborted = true
+	if c.runtime != nil && c.runtime.Close != nil {
+		return c.runtime.Close()
+	}
 	return nil
 }
 
@@ -1155,7 +1164,7 @@ func (f *fakeScopedRuntimeManager) BuildUnpublishedSessionRuntime(_ context.Cont
 		runtime = &BuiltRuntime{}
 	}
 	copyRuntime := *runtime
-	copyRuntime.Close = func() error { return nil }
+	copyRuntime.Close = f.unpublishedClose
 	if copyRuntime.RuntimeBaseToken == 0 {
 		copyRuntime.RuntimeBaseToken = 1
 	}
@@ -1165,11 +1174,16 @@ func (f *fakeScopedRuntimeManager) BuildUnpublishedSessionRuntime(_ context.Cont
 	if request.ModelOverride != nil {
 		copyRuntime.RecipeModel = *request.ModelOverride
 	}
-	return &fakeUnpublishedRuntimeCandidate{runtime: &copyRuntime}, nil
+	candidate := &fakeUnpublishedRuntimeCandidate{runtime: &copyRuntime}
+	f.lastCandidate = candidate
+	return candidate, nil
 }
 
-func (f *fakeScopedRuntimeManager) FenceSessionRuntimeBase(string) error              { f.fenceCalls++; return nil }
-func (*fakeScopedRuntimeManager) CompleteSessionRuntimeRecovery(string, uint64) error { return nil }
+func (f *fakeScopedRuntimeManager) FenceSessionRuntimeBase(string) error { f.fenceCalls++; return nil }
+func (f *fakeScopedRuntimeManager) CompleteSessionRuntimeRecovery(string, uint64) error {
+	f.completeFenceCalls++
+	return nil
+}
 func (f *fakeScopedRuntimeManager) AdoptPromotedSessionRuntime(string, uint64, SessionRuntimeRequest) (UnpublishedSessionRuntimeCandidate, bool) {
 	return f.adoptedCandidate, f.adoptedCandidate != nil
 }

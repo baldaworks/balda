@@ -12,6 +12,14 @@ import (
 
 type runtimeSessionServiceProvider interface {
 	RuntimeSessionService() adksession.Service
+	CreateFreshLocalSession(
+		ctx context.Context,
+		agentName string,
+		userID string,
+		sessionID string,
+		workspaceDir string,
+		sessionCtx RuntimeSessionContext,
+	) (adksession.Session, error)
 }
 
 func (m *Manager) recoverPreparedFreshLifetimeOperation(ctx context.Context, operation baldastate.RuntimeOperationRecord) error {
@@ -122,6 +130,9 @@ func (m *Manager) recoverApplyingIndependentFreshLifetime(ctx context.Context, o
 	if operation.State != baldastate.RuntimeOperationApplying || operation.TargetArchiveID == operation.ExpectedArchiveID {
 		return ErrRuntimeRecoveryRequired
 	}
+	if m.activeTopicSession(operation.SessionID) == nil {
+		return m.recoverApplyingColdFreshLifetime(ctx, operation)
+	}
 	scoped, ok := m.runtimeManager.(UnpublishedSessionRuntimeManager)
 	if !ok || scoped.FenceSessionRuntimeBase(operation.SessionID) != nil {
 		return ErrRuntimeRecoveryRequired
@@ -144,20 +155,18 @@ func (m *Manager) recoverApplyingIndependentFreshLifetime(ctx context.Context, o
 	topic := m.activeTopicSession(operation.SessionID)
 	var incumbent, activeTarget *RuntimeSlot
 	var incumbentToken uint64
-	if topic != nil {
-		value, present := topic.runtimeValue()
-		switch {
-		case present && freshLifetimeActiveTargetMatches(value, operation):
-			activeTarget = topic.runtime
-		case present:
-			incumbent, value, ok = topic.modelRecoveryRuntime(operation)
-			if !ok || !freshLifetimeValueMatches(value, record, operation) {
-				return ErrRuntimeRecoveryRequired
-			}
-			incumbentToken = value.runtime.RuntimeBaseToken
-		default:
+	value, present := topic.runtimeValue()
+	switch {
+	case present && freshLifetimeActiveTargetMatches(value, operation):
+		activeTarget = topic.runtime
+	case present:
+		incumbent, value, ok = topic.modelRecoveryRuntime(operation)
+		if !ok || !freshLifetimeValueMatches(value, record, operation) {
 			return ErrRuntimeRecoveryRequired
 		}
+		incumbentToken = value.runtime.RuntimeBaseToken
+	default:
+		return ErrRuntimeRecoveryRequired
 	}
 	candidate, adopted := scoped.AdoptPromotedSessionRuntime(operation.SessionID, incumbentToken, request)
 	if !adopted {
@@ -232,13 +241,50 @@ func (m *Manager) recoverApplyingIndependentFreshLifetime(ctx context.Context, o
 	if !finalized || !isPublicationTerminal(terminal, operation, baldastate.RuntimeOperationOutcomeContextReset, "") {
 		return ErrRuntimeRecoveryRequired
 	}
-	if topic == nil {
-		return candidate.Abort(context.WithoutCancel(ctx))
-	}
 	if err := candidate.CompletePublication(); err != nil {
 		return err
 	}
 	if activeTarget != nil && !topic.completeRecoveredRuntime(activeTarget, operation.TargetArchiveID, operation.ExpectedGeneration+1) {
+		return ErrRuntimeRecoveryRequired
+	}
+	return nil
+}
+
+func (m *Manager) recoverApplyingColdFreshLifetime(ctx context.Context, operation baldastate.RuntimeOperationRecord) error {
+	record, found, err := m.sessionStore.GetBySessionID(ctx, operation.SessionID)
+	if err != nil || !found || !freshLifetimeRecoveryRecordMatches(record, operation) {
+		return ErrRuntimeRecoveryRequired
+	}
+	service, appName, userID, ok := m.freshLifetimeRecoveryService(operation.SessionID, record)
+	if !ok {
+		return ErrRuntimeRecoveryRequired
+	}
+	response, err := service.Get(ctx, &adksession.GetRequest{
+		AppName: appName, UserID: userID, SessionID: operation.TargetArchiveID,
+	})
+	if err != nil || response == nil || !freshLifetimeSessionMatches(
+		response.Session, appName, userID, operation.TargetArchiveID, operation.SessionID,
+	) {
+		return ErrRuntimeRecoveryRequired
+	}
+	if record.ArchiveID == operation.ExpectedArchiveID {
+		pending, pendingErr := m.archive.Pending(ctx, record.ChannelType, record.AddressKey)
+		if pendingErr != nil || !freshLifetimeArchiveIntentMatches(pending, operation, record) {
+			return ErrRuntimeRecoveryRequired
+		}
+		live := freshLifetimeTargetRecord(record, operation)
+		if _, err := m.archive.Activate(ctx, pending.Token, &live); err != nil &&
+			!m.freshLifetimeDurableTargetMatches(ctx, operation) {
+			return ErrRuntimeRecoveryRequired
+		}
+	}
+	if !m.freshLifetimeArchiveTargetMatches(ctx, operation, record) {
+		return ErrRuntimeRecoveryRequired
+	}
+	terminal, finalized := m.finalizeFreshLifetime(ctx, operation)
+	if !finalized || !isPublicationTerminal(
+		terminal, operation, baldastate.RuntimeOperationOutcomeContextReset, "",
+	) {
 		return ErrRuntimeRecoveryRequired
 	}
 	return nil
@@ -249,7 +295,7 @@ func freshLifetimeActiveTargetMatches(value runtimeSlotValue, operation baldasta
 		value.generation == operation.ExpectedGeneration+1 && value.runtime.RuntimeSnapshotID == operation.TargetSnapshotID &&
 		value.runtime.ProviderBindingJSON == operation.TargetProviderBindingJSON && value.runtime.RecipeModel == operation.TargetModel &&
 		value.effectiveModel == operation.TargetModel && value.outcome == string(baldastate.RuntimeOperationOutcomeContextReset) &&
-		freshLifetimeSessionMatches(value.session, value.appName, value.userID, operation.TargetArchiveID, operation.SessionID)
+		freshLifetimeSessionIdentityMatches(value.session, value.appName, value.userID, operation.TargetArchiveID, operation.SessionID)
 }
 
 func freshLifetimeRuntimeMatchesSlot(runtime *BuiltRuntime, slot *RuntimeSlot) bool {

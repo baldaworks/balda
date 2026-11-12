@@ -5,6 +5,7 @@ import (
 	"errors"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	"github.com/baldaworks/balda/internal/apps/balda/lifetimeapp"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/sessioncmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/rs/zerolog"
 	adkagent "google.golang.org/adk/v2/agent"
@@ -21,12 +23,14 @@ import (
 )
 
 const freshLifetimeIntegrationProviderID = "provider"
+const freshLifetimeCurrentSnapshot = "catalog-B"
 
 type freshLifetimeRuntimeManager struct {
 	runtime         *baldasession.BuiltRuntime
 	currentSnapshot string
 	selections      atomic.Int32
 	calls           atomic.Int32
+	builds          atomic.Int32
 }
 
 type freshLifetimeCandidate struct {
@@ -63,6 +67,7 @@ func (m *freshLifetimeRuntimeManager) CurrentSessionSnapshot(context.Context, st
 }
 
 func (m *freshLifetimeRuntimeManager) BuildUnpublishedSessionRuntime(_ context.Context, request baldasession.SessionRuntimeRequest) (baldasession.UnpublishedSessionRuntimeCandidate, error) {
+	m.builds.Add(1)
 	runtime := *m.runtime
 	runtime.RuntimeSnapshotID = request.RuntimeSnapshotID
 	runtime.RuntimeBaseToken = 1
@@ -85,6 +90,104 @@ func (m *freshLifetimeRuntimeManager) Runtime(context.Context) (*baldasession.Bu
 }
 
 func (*freshLifetimeRuntimeManager) ProviderID() string { return freshLifetimeIntegrationProviderID }
+
+func TestColdFreshLifetimeUsesProductionAdapterWithoutProviderRuntime(t *testing.T) {
+	sessionService := &integrationSessionService{Service: adksession.InMemoryService()}
+	agent, err := adkagent.New(adkagent.Config{Name: "incumbent-agent"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	product, err := baldaagent.NewRuntimeProduct(agent, &integrationModelControl{currentModel: "model-current"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	builder := baldaagent.NewBuilder(baldaagent.BuilderParams{
+		ScopedFactory:  &integrationProductFactory{product: product},
+		WorkingDir:     t.TempDir(),
+		SessionService: sessionService,
+	})
+	agentRuntime, err := builder.BuildRuntimeWithCapabilities(
+		t.Context(), freshLifetimeIntegrationProviderID, t.TempDir(), nil, nil,
+		baldaagent.SkillMetadataProjection{}, baldaagent.SessionInstructionContext{SessionID: "session"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	agentRuntime.RuntimeSnapshotID = integrationRuntimeSnapshotID
+	agentRuntime.ProviderBindingJSON = integrationProviderBindingJSON
+	agentRuntime.ProviderID = freshLifetimeIntegrationProviderID
+	t.Cleanup(func() { _ = agentRuntime.Close() })
+
+	provider, err := baldastate.NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = provider.Close() })
+	runtimeManager := &freshLifetimeRuntimeManager{runtime: sessionRuntime(agentRuntime), currentSnapshot: freshLifetimeCurrentSnapshot}
+	newManager := func() *baldasession.Manager {
+		manager, managerErr := baldasession.NewManager(baldasession.ManagerParams{
+			Archive: provider.ChatArchive(), AgentBuilder: SessionAgentBuilderAdapter{Builder: builder},
+			RuntimeManager: runtimeManager, WorkingDir: t.TempDir(), SessionsPersistent: true,
+			SessionStore: provider.Sessions(), RuntimeOperations: provider.RuntimeOperations(), Logger: zerolog.Nop(),
+		})
+		if managerErr != nil {
+			t.Fatal(managerErr)
+		}
+		return manager
+	}
+	locator, err := baldasession.NewSessionLocator("telegram", "chat:cold", `{}`, "session")
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial := newManager()
+	if err := initial.CreateSession(t.Context(), baldasession.SessionContext{Locator: locator, UserID: "user", Kind: baldasession.KindChat}, "display-label"); err != nil {
+		t.Fatal(err)
+	}
+	before, found, err := provider.Sessions().GetBySessionID(t.Context(), locator.SessionID)
+	if err != nil || !found {
+		t.Fatalf("initial record = %+v, %t, %v", before, found, err)
+	}
+	if err := initial.Stop(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	sessionService.createCalls.Store(0)
+	runtimeManager.builds.Store(0)
+	runtimeCalls := runtimeManager.calls.Load()
+
+	cold := newManager()
+	t.Cleanup(func() { _ = cold.Stop(context.Background()) })
+	request := baldasession.FreshLifetimeRequest{
+		OperationID: "cold-production-reset", SessionID: locator.SessionID, InputHash: strings.Repeat("a", 64),
+	}
+	prepared, result, err := cold.PrepareFreshLifetime(t.Context(), request)
+	if err != nil || prepared == nil {
+		t.Fatalf("PrepareFreshLifetime() = %p, %+v, %v", prepared, result, err)
+	}
+	result, err = cold.PublishFreshLifetime(t.Context(), prepared)
+	if err != nil || result.Status != baldasession.FreshLifetimeReset {
+		t.Fatalf("PublishFreshLifetime() = %+v, %v", result, err)
+	}
+	if result.Activation == nil || !reflect.DeepEqual(result.Activation.Runtime, sessioncmd.RuntimeSummary{}) {
+		t.Fatalf("activation = %#v, want empty runtime summary", result.Activation)
+	}
+	if _, err := cold.GetSession(locator); err == nil {
+		t.Fatal("cold reset eagerly published a TopicSession")
+	}
+	after, found, err := provider.Sessions().GetBySessionID(t.Context(), locator.SessionID)
+	if err != nil || !found || after.ArchiveID == before.ArchiveID || after.ProviderBindingJSON != before.ProviderBindingJSON || after.RuntimeSnapshotID != freshLifetimeCurrentSnapshot {
+		t.Fatalf("reset record = %+v, %t, %v", after, found, err)
+	}
+	if sessionService.createCalls.Load() != 1 || runtimeManager.builds.Load() != 0 || runtimeManager.calls.Load() != runtimeCalls {
+		t.Fatalf("local/provider calls = create %d, builds %d, runtime %d/%d",
+			sessionService.createCalls.Load(), runtimeManager.builds.Load(), runtimeManager.calls.Load(), runtimeCalls)
+	}
+	replayManager := newManager()
+	t.Cleanup(func() { _ = replayManager.Stop(context.Background()) })
+	_, replay, err := replayManager.PrepareFreshLifetime(t.Context(), request)
+	if err != nil || !reflect.DeepEqual(replay, result) {
+		t.Fatalf("terminal replay = %+v, %v; want %+v", replay, err, result)
+	}
+}
 
 func TestQueuedFreshLifetimeUsesProductionBoundariesWithoutProviderControl(t *testing.T) {
 	sessionService := &integrationSessionService{Service: adksession.InMemoryService()}
@@ -257,7 +360,7 @@ func TestQueuedFreshLifetimeUsesProductionBoundariesWithoutProviderControl(t *te
 		t.Fatalf("later work error = %v, want replacement pending", err)
 	}
 
-	runtimeManager.currentSnapshot = "catalog-B"
+	runtimeManager.currentSnapshot = freshLifetimeCurrentSnapshot
 	close(releaseActive)
 	if err := <-active; err != nil {
 		t.Fatal(err)
@@ -276,7 +379,7 @@ func TestQueuedFreshLifetimeUsesProductionBoundariesWithoutProviderControl(t *te
 	}
 	defer current.Release()
 	if current.SessionID() == oldSessionID || current.SessionID() != current.ArchiveID() ||
-		current.Generation() != oldGeneration+1 || current.RuntimeSnapshotID() != "catalog-B" ||
+		current.Generation() != oldGeneration+1 || current.RuntimeSnapshotID() != freshLifetimeCurrentSnapshot ||
 		current.ProviderBindingJSON() != oldBinding || current.EffectiveModel() != oldModel {
 		t.Fatalf("published identity = runtime %q archive %q generation %d snapshot %q binding %q model %q",
 			current.SessionID(), current.ArchiveID(), current.Generation(), current.RuntimeSnapshotID(),

@@ -58,6 +58,27 @@ func (b *archiveBuilder) OpenExistingRuntimeSession(ctx context.Context, runtime
 
 func (b *archiveBuilder) RuntimeSessionService() adksession.Service { return b.service }
 
+func (b *archiveBuilder) CreateFreshLocalSession(
+	ctx context.Context,
+	_ string,
+	userID string,
+	sessionID string,
+	_ string,
+	sessionCtx RuntimeSessionContext,
+) (adksession.Session, error) {
+	result, err := b.service.Create(ctx, &adksession.CreateRequest{
+		AppName: baldaRuntimeAppName, UserID: userID, SessionID: sessionID,
+		State: map[string]any{
+			chatarchivecmd.EpochStateKey: sessionCtx.ArchiveID,
+			baldaSessionIDStateKey:       sessionCtx.BaldaSessionID,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result.Session, nil
+}
+
 type archiveFixture struct {
 	provider baldastate.Provider
 	runtime  *BuiltRuntime

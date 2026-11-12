@@ -531,6 +531,37 @@ func TestCreateFreshRuntimeSession_IncludesCanonicalCWDState(t *testing.T) {
 	}
 }
 
+func TestCreateFreshLocalSessionIncludesCanonicalState(t *testing.T) {
+	t.Parallel()
+
+	service := adksession.InMemoryService()
+	builder := &Builder{sessionSvc: service}
+	workspaceDir := t.TempDir()
+	sess, err := builder.CreateFreshLocalSession(
+		t.Context(), "retained-provider", "user-1", "runtime-1", workspaceDir,
+		RuntimeSessionContext{
+			ArchiveID: "lifetime-epoch", BaldaSessionID: "tg-1-2",
+			SessionBranch: "norma/balda/tg-1-2",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		sessionstate.CWDKey:            workspaceDir,
+		chatarchivecmd.EpochStateKey:   "lifetime-epoch",
+		BaldaSessionIDStateKey:         "tg-1-2",
+		BaldaSessionBranchStateKey:     "norma/balda/tg-1-2",
+		BaldaRepoBranchAtStartStateKey: workspaceBranchNA,
+	}
+	for key, wantValue := range want {
+		got, stateErr := sess.State().Get(key)
+		if stateErr != nil || got != wantValue {
+			t.Fatalf("state %q = %v, %v; want %q", key, got, stateErr, wantValue)
+		}
+	}
+}
+
 func TestOpenExistingRuntimeSessionOnlyGets(t *testing.T) {
 	t.Parallel()
 

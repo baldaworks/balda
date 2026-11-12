@@ -17,6 +17,9 @@ func (m *Manager) recoverApplyingModelOperation(ctx context.Context, operation b
 	// Fence before any provider observation. The session-operation lock
 	// serializes Manager work, while this flag also rejects direct runtime leases.
 	m.fenceRuntimeRecovery(operation.SessionID)
+	if m.sessionStore == nil {
+		return ErrRuntimeRecoveryRequired
+	}
 	record, found, err := m.sessionStore.GetBySessionID(ctx, operation.SessionID)
 	if err != nil || !found || !modelRecoveryRecordMatches(record, operation) {
 		m.fenceRuntimeRecovery(operation.SessionID)
@@ -51,73 +54,13 @@ func (m *Manager) recoverPersistedModelOperation(
 	record baldastate.SessionRecord,
 	operation baldastate.RuntimeOperationRecord,
 ) error {
-	if m.runtimeManager == nil || m.agentBuilder == nil {
-		return ErrRuntimeRecoveryRequired
-	}
-	locator, err := LocatorFromRecord(record)
-	if err != nil {
-		return ErrRuntimeRecoveryRequired
-	}
-	workspaceDir := strings.TrimSpace(record.WorkspaceDir)
-	if workspaceDir == "" && !m.workspaceEnabled {
-		workspaceDir = m.workingDir
-	}
-	runtime, err := m.bindModelRecoveryRuntime(ctx, locator, record, operation, workspaceDir)
+	topic, err := m.openExactModelRuntime(
+		ctx, record, operation.TargetSnapshotID, operation.TargetProviderBindingJSON, &operation.TargetModel, true,
+	)
 	if err != nil {
 		return modelRecoveryContextError(ctx)
 	}
-	defer closeBuiltRuntime(runtime)
-	agentName := strings.TrimSpace(record.AgentName)
-	if agentName == "" {
-		agentName = defaultSessionLabel
-	}
-	sess, err := m.agentBuilder.OpenExistingRuntimeSession(
-		ctx, runtime, agentName, record.UserID, record.SessionID, workspaceDir,
-		RuntimeSessionContext{ArchiveID: record.ArchiveID, BaldaSessionID: record.SessionID, SessionBranch: record.BranchName},
-	)
-	if err != nil || runtime.ModelController == nil {
-		return modelRecoveryContextError(ctx)
-	}
-	value := runtimeSlotValue{
-		runtime: *runtime, session: sess, appName: sess.AppName(), userID: sess.UserID(), sessionID: sess.ID(),
-		archiveID: record.ArchiveID, generation: record.RuntimeGeneration,
-		effectiveModel: record.EffectiveModel, outcome: record.RuntimeOutcome,
-	}
-	if !modelRecoveryValueMatches(value, record, operation) {
-		return ErrRuntimeRecoveryRequired
-	}
-	change := runtime.ModelController.ChangeModel(ctx, runtimeIdentity(value), operation.TargetModel)
-	return m.applyModelRecoveryChange(ctx, nil, nil, value, operation, change)
-}
-
-func (m *Manager) bindModelRecoveryRuntime(
-	ctx context.Context,
-	locator SessionLocator,
-	record baldastate.SessionRecord,
-	operation baldastate.RuntimeOperationRecord,
-	workspaceDir string,
-) (*BuiltRuntime, error) {
-	if scopedManager, ok := m.runtimeManager.(SessionRuntimeManager); ok {
-		targetModel := operation.TargetModel
-		runtime, err := scopedManager.RuntimeForSession(ctx, SessionRuntimeRequest{
-			Locator: locator, UserID: record.UserID, AgentSessionID: record.SessionID,
-			WorkspaceDir: workspaceDir, RuntimeSnapshotID: operation.TargetSnapshotID,
-			ProviderBindingJSON: operation.TargetProviderBindingJSON,
-			ModelOverride:       &targetModel,
-		})
-		if err != nil {
-			return nil, err
-		}
-		return validateSessionRuntimeBinding(runtime, operation.TargetSnapshotID, operation.TargetProviderBindingJSON)
-	}
-	rootRuntime, err := m.runtimeManager.Runtime(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return m.bindSessionRuntime(
-		ctx, rootRuntime, locator, record.UserID, record.SessionID, workspaceDir,
-		operation.TargetSnapshotID, operation.TargetProviderBindingJSON, &operation.TargetModel,
-	)
+	return m.recoverActiveModelOperation(ctx, topic, record, operation)
 }
 
 func (m *Manager) applyModelRecoveryChange(
@@ -130,12 +73,6 @@ func (m *Manager) applyModelRecoveryChange(
 ) error {
 	switch change.Status {
 	case agentproduct.ModelApplied:
-		if topic == nil {
-			if _, ok := m.finalizeModelRecovery(ctx, operation, value, baldastate.RuntimeOperationOutcomeContextPreserved, baldastate.RuntimeOperationReasonChangedLive); !ok {
-				return ErrRuntimeRecoveryRequired
-			}
-			return nil
-		}
 		candidate, err := incumbent.sharedModelSuccessor(operation.TargetModel, string(baldastate.RuntimeOperationOutcomeContextPreserved))
 		if err != nil || !candidate.claimPublication() {
 			if candidate != nil {
@@ -154,21 +91,16 @@ func (m *Manager) applyModelRecoveryChange(
 		}
 		candidate.releasePublicationClaim(true)
 		incumbent.beginDrain()
+		if !m.completeModelRuntimeRecovery(topic, candidate) {
+			topic.fenceRuntimeRecovery()
+			return ErrRuntimeRecoveryRequired
+		}
 		return nil
 	case agentproduct.ModelReplacement:
 		if change.Candidate == nil || !verifiedModelIdentityMatches(change.Identity, runtimeIdentity(value)) {
 			closeModelCandidate(change.Candidate)
-			if topic != nil {
-				topic.fenceRuntimeRecovery()
-			}
+			topic.fenceRuntimeRecovery()
 			return ErrRuntimeRecoveryRequired
-		}
-		if topic == nil {
-			closeModelCandidate(change.Candidate)
-			if _, ok := m.finalizeModelRecovery(ctx, operation, value, baldastate.RuntimeOperationOutcomeContextPreserved, baldastate.RuntimeOperationReasonChangedReplacement); !ok {
-				return ErrRuntimeRecoveryRequired
-			}
-			return nil
 		}
 		candidate, err := incumbent.independentModelSuccessor(
 			change.Candidate, value.session, operation.TargetModel, string(baldastate.RuntimeOperationOutcomeContextPreserved),
@@ -180,16 +112,12 @@ func (m *Manager) applyModelRecoveryChange(
 		}
 		return m.finishRecoveredModelReplacement(ctx, topic, incumbent, value, operation, candidate)
 	case agentproduct.ModelAmbiguous:
-		if topic != nil {
-			topic.fenceRuntimeRecovery()
-		}
+		topic.fenceRuntimeRecovery()
 		return ErrRuntimeRecoveryRequired
 	default:
 		// Applying evidence proves the external boundary may already have been
 		// crossed. Only authoritative target confirmation can terminalize it.
-		if topic != nil {
-			topic.fenceRuntimeRecovery()
-		}
+		topic.fenceRuntimeRecovery()
 		return ErrRuntimeRecoveryRequired
 	}
 }
@@ -263,7 +191,19 @@ func (m *Manager) finishRecoveredModelReplacement(
 			return ErrRuntimeRecoveryRequired
 		}
 	}
+	if !m.completeModelRuntimeRecovery(topic, candidate) {
+		topic.fenceRuntimeRecovery()
+		return ErrRuntimeRecoveryRequired
+	}
 	return nil
+}
+
+func (m *Manager) completeModelRuntimeRecovery(topic *TopicSession, current *RuntimeSlot) bool {
+	if topic == nil || current == nil {
+		return false
+	}
+	manager, ok := m.runtimeManager.(UnpublishedSessionRuntimeManager)
+	return !ok || manager.CompleteSessionRuntimeRecovery(topic.sessionID, current.value.runtime.RuntimeBaseToken) == nil
 }
 
 func (m *Manager) completeTerminalModelReplacement(

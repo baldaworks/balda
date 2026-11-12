@@ -187,6 +187,14 @@ construction; retry/restart reuses it, and a duplicate terminal callback reads t
 existing receipt. Ingress and CommandActor retain their command-envelope snapshot;
 they do not select the replacement catalog.
 
+Conversational turns enter that FIFO through `SessionActor`. The bounded
+transport-neutral model and lifetime application services admit runtime-control
+work to the same dispatcher; `session.Manager` never owns queue admission. A cold
+`/reset` or `/new` commits only the new empty local ADK lifetime and its durable
+metadata. It does not construct or publish a provider runtime; the next ordinary
+turn attaches the exact retained provider binding lazily. Consequently the reset
+receipt has an empty runtime summary until that attachment occurs.
+
 ## Transport parsing and support
 
 The [command reference](../commands.md#invocation-and-access) is authoritative

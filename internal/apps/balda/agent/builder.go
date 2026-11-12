@@ -343,6 +343,45 @@ func (b *Builder) RuntimeSessionService() adksession.Service {
 	return b.sessionSvc
 }
 
+// CreateFreshLocalSession creates only the durable local ADK lifetime. It does
+// not construct, configure, or contact a provider runtime.
+func (b *Builder) CreateFreshLocalSession(
+	ctx context.Context,
+	agentName string,
+	userID string,
+	sessionID string,
+	workspaceDir string,
+	sessionCtx RuntimeSessionContext,
+) (adksession.Session, error) {
+	if b == nil || b.sessionSvc == nil {
+		return nil, fmt.Errorf("session service is required")
+	}
+	if strings.TrimSpace(agentName) == "" {
+		return nil, fmt.Errorf("agent name is required")
+	}
+	if strings.TrimSpace(userID) == "" {
+		return nil, fmt.Errorf("user id is required")
+	}
+	if strings.TrimSpace(sessionID) == "" {
+		return nil, fmt.Errorf("session id is required")
+	}
+	state, err := b.buildLocalSessionState(ctx, workspaceDir, sessionCtx)
+	if err != nil {
+		return nil, err
+	}
+	response, err := b.sessionSvc.Create(ctx, &adksession.CreateRequest{
+		AppName: defaultRuntimeAppName, UserID: strings.TrimSpace(userID),
+		SessionID: strings.TrimSpace(sessionID), State: state,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("creating local session: %w", err)
+	}
+	if response == nil || response.Session == nil {
+		return nil, fmt.Errorf("creating local session: empty response")
+	}
+	return response.Session, nil
+}
+
 type AgentMetadata struct {
 	Type            string
 	Model           string
@@ -844,9 +883,41 @@ func (b *Builder) buildSessionState(ctx context.Context, agentName, workspaceDir
 	if strings.TrimSpace(agentName) == "" {
 		return nil, fmt.Errorf("agent name is required")
 	}
-	if strings.TrimSpace(workspaceDir) == "" {
-		return nil, fmt.Errorf("workspace dir is required")
+	canonical, err := b.canonicalSessionState(ctx, workspaceDir, sessionCtx)
+	if err != nil {
+		return nil, err
 	}
+	var state map[string]any
+	if stateFactory, ok := any(b.factory).(sessionStateFactory); ok {
+		state, err = stateFactory.BuildSessionState(agentName, workspaceDir)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		state = make(map[string]any, len(canonical))
+	}
+	if state == nil {
+		state = make(map[string]any, len(canonical))
+	}
+	for key, value := range canonical {
+		state[key] = value
+	}
+	return b.addMemorySnapshot(ctx, state)
+}
+
+func (b *Builder) buildLocalSessionState(ctx context.Context, workspaceDir string, sessionCtx RuntimeSessionContext) (map[string]any, error) {
+	state, err := b.canonicalSessionState(ctx, workspaceDir, sessionCtx)
+	if err != nil {
+		return nil, err
+	}
+	return b.addMemorySnapshot(ctx, state)
+}
+
+func (b *Builder) canonicalSessionState(
+	ctx context.Context,
+	workspaceDir string,
+	sessionCtx RuntimeSessionContext,
+) (map[string]any, error) {
 	absCWD, err := resolveSessionWorkspaceDir(workspaceDir)
 	if err != nil {
 		return nil, err
@@ -857,19 +928,7 @@ func (b *Builder) buildSessionState(ctx context.Context, agentName, workspaceDir
 	}
 	sessionBranch := b.normalizedSessionBranch(sessionCtx.SessionBranch)
 	repoBranchAtStart := b.currentRepoBranch(ctx)
-
-	var state map[string]any
-	if stateFactory, ok := any(b.factory).(sessionStateFactory); ok {
-		state, err = stateFactory.BuildSessionState(agentName, workspaceDir)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		state = make(map[string]any, 4)
-	}
-	if state == nil {
-		state = make(map[string]any, 4)
-	}
+	state := make(map[string]any, 5)
 	state[sessionstate.CWDKey] = absCWD
 	if sessionCtx.ArchiveID != "" {
 		state[chatarchivecmd.EpochStateKey] = sessionCtx.ArchiveID
@@ -877,7 +936,7 @@ func (b *Builder) buildSessionState(ctx context.Context, agentName, workspaceDir
 	state[BaldaSessionIDStateKey] = baldaSessionID
 	state[BaldaSessionBranchStateKey] = sessionBranch
 	state[BaldaRepoBranchAtStartStateKey] = repoBranchAtStart
-	return b.addMemorySnapshot(ctx, state)
+	return state, nil
 }
 
 func (b *Builder) normalizedSessionBranch(branch string) string {

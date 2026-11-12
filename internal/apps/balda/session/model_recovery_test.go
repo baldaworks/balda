@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/runtime/v2/agentproduct"
 	"github.com/rs/zerolog"
@@ -21,6 +22,8 @@ type recoveryModelController struct {
 	inspectCalls  atomic.Int32
 	validateCalls atomic.Int32
 	changeCalls   atomic.Int32
+	changeStarted chan struct{}
+	releaseChange chan struct{}
 }
 
 func (c *recoveryModelController) InspectSessionControl(context.Context, RuntimeSessionIdentity) agentproduct.SessionControlSnapshot {
@@ -35,6 +38,10 @@ func (c *recoveryModelController) ValidateModel(context.Context, RuntimeSessionI
 
 func (c *recoveryModelController) ChangeModel(_ context.Context, _ RuntimeSessionIdentity, model string) RuntimeModelChange {
 	c.changeCalls.Add(1)
+	if c.changeStarted != nil {
+		close(c.changeStarted)
+		<-c.releaseChange
+	}
 	if c.snapshot.Status == agentproduct.ControlReady && strings.TrimSpace(c.snapshot.CurrentModel) != "" {
 		c.snapshot.CurrentModel = model
 		return RuntimeModelChange{Status: agentproduct.ModelApplied, EffectiveModel: model}
@@ -48,6 +55,87 @@ func (c *recoveryModelController) ChangeModel(_ context.Context, _ RuntimeSessio
 		return RuntimeModelChange{Status: agentproduct.ModelChangeClosed}
 	default:
 		return RuntimeModelChange{Status: agentproduct.ModelAmbiguous}
+	}
+}
+
+func TestApplyingModelRecoveryPublishesColdPostResetRuntimeFenced(t *testing.T) {
+	f := newArchiveFixture(t)
+	f.runtime.ProviderBindingJSON = publicationBinding
+	f.runtime.RuntimeSnapshotID = modelColdSnapshotID
+	f.runtime.RecipeModel = publicationOriginalModel
+	control := &recoveryModelController{
+		snapshot:      agentproduct.SessionControlSnapshot{Status: agentproduct.ControlReady, CurrentModel: publicationOriginalModel},
+		changeStarted: make(chan struct{}),
+		releaseChange: make(chan struct{}),
+	}
+	f.runtime.ModelController = control
+
+	initial := f.manager()
+	initial.runtimeOperations = f.provider.RuntimeOperations()
+	topic, err := initial.EnsureSession(t.Context(), archiveInput(), "saved")
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, _, err := initial.PrepareFreshLifetime(t.Context(), FreshLifetimeRequest{
+		OperationID: "recovery-cold-reset", SessionID: topic.GetSessionID(), InputHash: strings.Repeat("b", 64),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := initial.PublishFreshLifetime(t.Context(), prepared); err != nil {
+		t.Fatal(err)
+	}
+	record, found, err := f.provider.Sessions().GetBySessionID(t.Context(), topic.GetSessionID())
+	if err != nil || !found || record.ArchiveID == record.SessionID {
+		t.Fatalf("post-reset record = %+v, %t, %v", record, found, err)
+	}
+	target := modelChangeTargetModel
+	at := time.Now().UTC().Add(-time.Minute)
+	operation := baldastate.RuntimeOperationRecord{
+		OperationID: "cold-applying-recovery", SessionID: record.SessionID, InputHash: strings.Repeat("c", 64),
+		Kind: string(baldastate.RuntimeOperationKindModel), State: baldastate.RuntimeOperationPrepared,
+		ExpectedArchiveID: record.ArchiveID, ExpectedGeneration: record.RuntimeGeneration,
+		TargetSnapshotID: record.RuntimeSnapshotID, TargetProviderBindingJSON: record.ProviderBindingJSON,
+		TargetModel: target, TargetRequestedModel: &target, CreatedAt: at, UpdatedAt: at,
+	}
+	if _, err := f.provider.RuntimeOperations().Begin(t.Context(), operation); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.provider.RuntimeOperations().MarkApplying(t.Context(), operation.OperationID, operation.InputHash); err != nil {
+		t.Fatal(err)
+	}
+	operation.State = baldastate.RuntimeOperationApplying
+
+	restarted := f.manager()
+	restarted.runtimeOperations = f.provider.RuntimeOperations()
+	restarted.hooks = &modelStartHooks{}
+	done := make(chan error, 1)
+	go func() { done <- restarted.recoverApplyingModelOperation(t.Context(), operation) }()
+	select {
+	case <-control.changeStarted:
+	case <-time.After(time.Second):
+		t.Fatal("applying recovery did not reach provider control with Archive.RuntimeID")
+	}
+	active := restarted.activeTopicSession(record.SessionID)
+	if active == nil {
+		t.Fatal("applying recovery did not atomically publish its fenced exact runtime")
+	}
+	if _, err := active.AcquireRuntime(); !errors.Is(err, ErrRuntimeRecoveryRequired) {
+		t.Fatalf("AcquireRuntime() during applying recovery = %v, want recovery required", err)
+	}
+	runtimeManager := restarted.runtimeManager.(*fakeScopedRuntimeManager)
+	if runtimeManager.fenceCalls != 1 || runtimeManager.buildBeforeFence || runtimeManager.lastCandidate == nil ||
+		!runtimeManager.lastCandidate.claimed || !runtimeManager.lastCandidate.promoted || runtimeManager.lastCandidate.markCalls != 1 ||
+		runtimeManager.lastCandidate.completeCalls != 1 || runtimeManager.completeFenceCalls != 0 {
+		t.Fatalf("applying recovery base barrier = fence %d, before=%t, candidate=%+v, completed=%d",
+			runtimeManager.fenceCalls, runtimeManager.buildBeforeFence, runtimeManager.lastCandidate, runtimeManager.completeFenceCalls)
+	}
+	close(control.releaseChange)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if runtimeManager.completeFenceCalls != 1 {
+		t.Fatalf("completed recovery fences = %d, want 1", runtimeManager.completeFenceCalls)
 	}
 }
 
@@ -71,9 +159,26 @@ func (m *recoveryRuntimeManager) RuntimeForSession(_ context.Context, request Se
 	m.mu.Unlock()
 	return &BuiltRuntime{
 		SessionSvc: m.service, AppName: baldaRuntimeAppName, ModelController: m.control,
-		RuntimeSnapshotID: "snapshot", ProviderBindingJSON: publicationBinding,
+		RuntimeSnapshotID: modelColdSnapshotID, ProviderBindingJSON: publicationBinding,
 		Close: func() error { m.closeCalls.Add(1); return nil },
 	}, nil
+}
+
+func (m *recoveryRuntimeManager) BuildUnpublishedSessionRuntime(ctx context.Context, request SessionRuntimeRequest) (UnpublishedSessionRuntimeCandidate, error) {
+	runtime, err := m.RuntimeForSession(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	runtime.RuntimeBaseToken = 1
+	return &fakeUnpublishedRuntimeCandidate{runtime: runtime}, nil
+}
+
+func (*recoveryRuntimeManager) FenceSessionRuntimeBase(string) error { return nil }
+func (*recoveryRuntimeManager) CompleteSessionRuntimeRecovery(string, uint64) error {
+	return nil
+}
+func (*recoveryRuntimeManager) AdoptPromotedSessionRuntime(string, uint64, SessionRuntimeRequest) (UnpublishedSessionRuntimeCandidate, bool) {
+	return nil, false
 }
 
 func (m *recoveryRuntimeManager) sessionRequests() []SessionRuntimeRequest {
@@ -155,8 +260,8 @@ func TestApplyingModelRecoveryRestoresAuthoritativeObservation(t *testing.T) {
 				if getErr != nil || !found || operation.State != baldastate.RuntimeOperationApplying {
 					t.Fatalf("operation = %+v, %t, %v; want applying", operation, found, getErr)
 				}
-				if fixture.runtime.closeCalls.Load() != 1 {
-					t.Fatalf("private runtime closes = %d, want 1", fixture.runtime.closeCalls.Load())
+				if fixture.runtime.closeCalls.Load() != 0 {
+					t.Fatalf("published fenced runtime closes = %d, want 0", fixture.runtime.closeCalls.Load())
 				}
 			} else {
 				if err != nil || topic == nil {
@@ -175,14 +280,18 @@ func TestApplyingModelRecoveryRestoresAuthoritativeObservation(t *testing.T) {
 					operation.Outcome != string(test.wantOutcome) || operation.ReasonCode != string(test.wantReason) {
 					t.Fatalf("operation = %+v, %t, %v", operation, found, getErr)
 				}
-				if fixture.runtime.closeCalls.Load() != 1 {
-					t.Fatalf("private recovery runtime closes = %d, want 1", fixture.runtime.closeCalls.Load())
+				if fixture.runtime.closeCalls.Load() != 0 {
+					t.Fatalf("published recovered runtime closes = %d, want 0", fixture.runtime.closeCalls.Load())
 				}
 			}
-			if fixture.control.inspectCalls.Load() != 0 || fixture.control.validateCalls.Load() != 0 || fixture.control.changeCalls.Load() != 1 {
+			wantInspect := int32(0)
+			if !test.wantErr {
+				wantInspect = 1
+			}
+			if fixture.control.inspectCalls.Load() != wantInspect || fixture.control.validateCalls.Load() != 0 || fixture.control.changeCalls.Load() != 1 {
 				t.Fatalf("control calls inspect/validate/change = %d/%d/%d", fixture.control.inspectCalls.Load(), fixture.control.validateCalls.Load(), fixture.control.changeCalls.Load())
 			}
-			if fixture.builder.openCalls.Load() != 1+boolInt(!test.wantErr) {
+			if fixture.builder.openCalls.Load() != 1 {
 				t.Fatalf("open calls = %d", fixture.builder.openCalls.Load())
 			}
 			if fixture.builder.createCalls.Load() != 0 || fixture.builder.freshCalls.Load() != 0 {
@@ -246,7 +355,7 @@ func TestApplyingLegacyModelRecoveryUsesOperationBinding(t *testing.T) {
 					t.Fatal(acquireErr)
 				}
 				if lease.Generation() != 1 || lease.EffectiveModel() != modelChangeTargetModel ||
-					lease.ProviderBindingJSON() != publicationBinding || lease.RuntimeSnapshotID() != "snapshot" {
+					lease.ProviderBindingJSON() != publicationBinding || lease.RuntimeSnapshotID() != modelColdSnapshotID {
 					t.Fatalf("legacy recovery runtime = generation %d model %q binding %q snapshot %q", lease.Generation(), lease.EffectiveModel(), lease.ProviderBindingJSON(), lease.RuntimeSnapshotID())
 				}
 				lease.Release()
@@ -255,14 +364,12 @@ func TestApplyingLegacyModelRecoveryUsesOperationBinding(t *testing.T) {
 			wantRequests := 1
 			if test.active {
 				wantRequests = 0
-			} else if test.wantReady {
-				wantRequests = 2
 			}
 			if len(requests) != wantRequests {
 				t.Fatalf("RuntimeForSession() calls = %d, want %d", len(requests), wantRequests)
 			}
 			for _, request := range requests {
-				if request.ProviderBindingJSON != publicationBinding || request.RuntimeSnapshotID != "snapshot" {
+				if request.ProviderBindingJSON != publicationBinding || request.RuntimeSnapshotID != modelColdSnapshotID {
 					t.Fatalf("RuntimeForSession() request = binding %q snapshot %q", request.ProviderBindingJSON, request.RuntimeSnapshotID)
 				}
 			}
@@ -301,7 +408,7 @@ func TestApplyingModelRecoveryRepairsActiveFence(t *testing.T) {
 			topic := &TopicSession{
 				sessionID: recoverySessionID, userID: recoveryUserID, locator: fixture.locator, kind: KindChat,
 				runtime: newPublishedRuntimeSlot(runtimeSlotConfig{
-					runtime: &BuiltRuntime{SessionSvc: fixture.service, AppName: baldaRuntimeAppName, ModelController: fixture.control, RuntimeSnapshotID: "snapshot", ProviderBindingJSON: publicationBinding},
+					runtime: &BuiltRuntime{SessionSvc: fixture.service, AppName: baldaRuntimeAppName, ModelController: fixture.control, RuntimeSnapshotID: modelColdSnapshotID, ProviderBindingJSON: publicationBinding},
 					session: response.Session, archiveID: publicationArchiveID, generation: 1, effectiveModel: publicationOriginalModel, outcome: publicationOutcome,
 				}),
 			}
@@ -336,7 +443,7 @@ func TestApplyingModelRecoverySerializesConcurrentAdmission(t *testing.T) {
 	topic := &TopicSession{
 		sessionID: recoverySessionID, userID: recoveryUserID, locator: fixture.locator, kind: KindChat,
 		runtime: newPublishedRuntimeSlot(runtimeSlotConfig{
-			runtime: &BuiltRuntime{SessionSvc: fixture.service, AppName: baldaRuntimeAppName, ModelController: fixture.control, RuntimeSnapshotID: "snapshot", ProviderBindingJSON: publicationBinding},
+			runtime: &BuiltRuntime{SessionSvc: fixture.service, AppName: baldaRuntimeAppName, ModelController: fixture.control, RuntimeSnapshotID: modelColdSnapshotID, ProviderBindingJSON: publicationBinding},
 			session: response.Session, archiveID: publicationArchiveID, generation: 1, effectiveModel: publicationOriginalModel, outcome: publicationOutcome,
 		}),
 	}
@@ -572,15 +679,13 @@ func newPersistedModelRecoveryFixtureWithIntent(
 	record := baldastate.SessionRecord{
 		SessionID: recoverySessionID, UserID: recoveryUserID, ChannelType: locator.ChannelType, AddressKey: locator.AddressKey,
 		AddressJSON: locator.AddressJSON, AgentName: "agent", WorkspaceDir: t.TempDir(), ArchiveID: publicationArchiveID,
-		RuntimeSnapshotID: "snapshot", ProviderBindingJSON: publicationBinding, RuntimeGeneration: 1,
+		RuntimeSnapshotID: modelColdSnapshotID, ProviderBindingJSON: publicationBinding, RuntimeGeneration: 1,
 		EffectiveModel: publicationOriginalModel, RuntimeOutcome: publicationOutcome, Status: baldastate.SessionStatusActive,
 	}
 	if modifyRecord != nil {
 		modifyRecord(&record)
 	}
-	if err := provider.Sessions().Upsert(t.Context(), record); err != nil {
-		t.Fatal(err)
-	}
+	activateRecoveryArchive(t, provider, record)
 	intent := publicationIntent()
 	if modifyIntent != nil {
 		modifyIntent(&intent)
@@ -598,7 +703,7 @@ func newPersistedModelRecoveryFixtureWithIntent(
 	builder := &recoveryAgentBuilder{service: service}
 	manager, err := NewManager(ManagerParams{
 		AgentBuilder: builder, RuntimeManager: runtimeManager, WorkingDir: t.TempDir(), SessionsPersistent: true,
-		SessionStore: provider.Sessions(), RuntimeOperations: provider.RuntimeOperations(), Logger: zerolog.Nop(),
+		Archive: provider.ChatArchive(), SessionStore: provider.Sessions(), RuntimeOperations: provider.RuntimeOperations(), Logger: zerolog.Nop(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -641,14 +746,12 @@ func newLegacyModelRecoveryFixtureWithRecord(
 	record := baldastate.SessionRecord{
 		SessionID: recoverySessionID, UserID: recoveryUserID, ChannelType: locator.ChannelType, AddressKey: locator.AddressKey,
 		AddressJSON: locator.AddressJSON, AgentName: "agent", WorkspaceDir: t.TempDir(), ArchiveID: publicationArchiveID,
-		RuntimeSnapshotID: "snapshot", Status: baldastate.SessionStatusActive,
+		RuntimeSnapshotID: modelColdSnapshotID, Status: baldastate.SessionStatusActive,
 	}
 	if modifyRecord != nil {
 		modifyRecord(&record)
 	}
-	if err := provider.Sessions().Upsert(t.Context(), record); err != nil {
-		t.Fatal(err)
-	}
+	activateRecoveryArchive(t, provider, record)
 	intent := publicationIntent()
 	intent.ExpectedGeneration = 0
 	intent.CreatedAt = time.Now().UTC().Add(-time.Minute)
@@ -664,7 +767,7 @@ func newLegacyModelRecoveryFixtureWithRecord(
 	builder := &recoveryAgentBuilder{service: service}
 	manager, err := NewManager(ManagerParams{
 		AgentBuilder: builder, RuntimeManager: runtimeManager, WorkingDir: t.TempDir(), SessionsPersistent: true,
-		SessionStore: provider.Sessions(), RuntimeOperations: provider.RuntimeOperations(), Logger: zerolog.Nop(),
+		Archive: provider.ChatArchive(), SessionStore: provider.Sessions(), RuntimeOperations: provider.RuntimeOperations(), Logger: zerolog.Nop(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -675,7 +778,7 @@ func newLegacyModelRecoveryFixtureWithRecord(
 			runtime: newPublishedRuntimeSlot(runtimeSlotConfig{
 				runtime: &BuiltRuntime{
 					SessionSvc: service, AppName: baldaRuntimeAppName, ModelController: control,
-					RuntimeSnapshotID: "snapshot", ProviderBindingJSON: publicationBinding,
+					RuntimeSnapshotID: modelColdSnapshotID, ProviderBindingJSON: publicationBinding,
 				},
 				session: response.Session, archiveID: publicationArchiveID,
 			}),
@@ -687,9 +790,22 @@ func newLegacyModelRecoveryFixtureWithRecord(
 	}
 }
 
-func boolInt(value bool) int32 {
-	if value {
-		return 1
+func activateRecoveryArchive(t *testing.T, provider baldastate.Provider, record baldastate.SessionRecord) {
+	t.Helper()
+	now := time.Now().UTC()
+	archive := chatarchivecmd.Session{
+		ID: record.ArchiveID, StableID: record.SessionID, RuntimeID: recoverySessionID,
+		Persistence: chatarchivecmd.PersistenceDurable, BootID: "model-recovery", StartedAt: now, ObservedAt: now,
+		Location: chatarchivecmd.Location{
+			Channel: record.ChannelType, AddressKey: record.AddressKey,
+			Locator: record.ChannelType + ":" + record.AddressKey,
+		},
 	}
-	return 0
+	intent := chatarchivecmd.Intent{Token: "model-recovery-activation", Kind: chatarchivecmd.KindFresh, Session: archive, At: now}
+	if _, err := provider.ChatArchive().Begin(t.Context(), intent); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.ChatArchive().Activate(t.Context(), intent.Token, &record); err != nil {
+		t.Fatal(err)
+	}
 }

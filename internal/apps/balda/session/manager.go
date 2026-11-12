@@ -480,17 +480,21 @@ func (m *Manager) createSessionLocked(ctx context.Context, sessionCtx SessionCon
 	if runtimeManager == nil {
 		return fmt.Errorf("balda runtime manager is required")
 	}
-	if checker, ok := runtimeManager.(providerAvailabilityChecker); ok {
-		if err := checker.EnsureProviderAvailable(ctx); err != nil {
+	var rootRuntime *BuiltRuntime
+	_, scopedRestore := runtimeManager.(SessionRuntimeManager)
+	if persisted == nil || !scopedRestore || persisted.RuntimeOutcome != string(baldastate.RuntimeOperationOutcomeContextReset) {
+		if checker, ok := runtimeManager.(providerAvailabilityChecker); ok {
+			if err := checker.EnsureProviderAvailable(ctx); err != nil {
+				return err
+			}
+		}
+		rootRuntime, err = runtimeManager.Runtime(ctx)
+		if err != nil {
 			return err
 		}
-	}
-	rootRuntime, err := runtimeManager.Runtime(ctx)
-	if err != nil {
-		return err
-	}
-	if err := m.lifecycleInterruption(ctx); err != nil {
-		return err
+		if err := m.lifecycleInterruption(ctx); err != nil {
+			return err
+		}
 	}
 
 	branchName, workspaceDir, startupNotice, workspaceCreated, err := m.prepareSessionWorkspace(ctx, sessionID, persisted)
@@ -560,6 +564,17 @@ func (m *Manager) createSessionLocked(ctx context.Context, sessionCtx SessionCon
 		return fmt.Errorf("reserve archive activation: %w", err)
 	}
 	if interrupted {
+		if rootRuntime == nil {
+			if checker, ok := runtimeManager.(providerAvailabilityChecker); ok {
+				if err := checker.EnsureProviderAvailable(ctx); err != nil {
+					return err
+				}
+			}
+			rootRuntime, err = runtimeManager.Runtime(ctx)
+			if err != nil {
+				return err
+			}
+		}
 		recovered, err := m.recoverArchiveActivation(ctx, rootRuntime, builder, activation, userID, baldaProvider)
 		if err != nil {
 			return err
@@ -656,10 +671,14 @@ func (m *Manager) createSessionLocked(ctx context.Context, sessionCtx SessionCon
 	default:
 		effectiveModel = sessionRuntime.RecipeModel
 	}
+	sessionProvider := strings.TrimSpace(sessionRuntime.ProviderID)
+	if sessionProvider == "" {
+		sessionProvider = baldaProvider
+	}
 	ts.runtime = newPublishedRuntimeSlot(runtimeSlotConfig{
 		runtime:        sessionRuntime,
 		session:        sess,
-		providerID:     baldaProvider,
+		providerID:     sessionProvider,
 		userID:         userID,
 		sessionID:      agentSessionID,
 		archiveID:      archiveID,
@@ -671,7 +690,7 @@ func (m *Manager) createSessionLocked(ctx context.Context, sessionCtx SessionCon
 	if persisted != nil && !createdFresh {
 		source = sessionHookResume
 	}
-	if err := m.startSessionHooks(ctx, ts, baldaProvider, source); err != nil {
+	if err := m.startSessionHooks(ctx, ts, sessionProvider, source); err != nil {
 		cleanupErr := m.cleanupTopicSession(ctx, ts, sessionCleanupOptions{deleteRuntimeSession: createdFresh, cleanupWorkspace: cleanupWorkspace})
 		if activation != nil {
 			outcome := chatarchivecmd.OutcomeAborted
@@ -801,12 +820,12 @@ func (m *Manager) bindSessionRuntime(
 	userID, agentSessionID, workspaceDir, snapshotID, providerBindingJSON string,
 	modelOverride *string,
 ) (*BuiltRuntime, error) {
-	if rootRuntime == nil {
-		return nil, fmt.Errorf("runtime is required")
-	}
 	runtimeManager := m.runtimeManager
 	scopedManager, ok := runtimeManager.(SessionRuntimeManager)
 	if !ok {
+		if rootRuntime == nil {
+			return nil, fmt.Errorf("runtime is required")
+		}
 		if strings.TrimSpace(providerBindingJSON) != "" || modelOverride != nil {
 			return nil, fmt.Errorf("persisted provider binding requires a scoped runtime manager")
 		}
@@ -878,9 +897,13 @@ func (m *Manager) restoreRuntimeSession(
 		record.ProviderBindingJSON, record.RequestedModel,
 	)
 	if restoreErr == nil {
+		exactProvider := strings.TrimSpace(exactRuntime.ProviderID)
+		if exactProvider == "" {
+			exactProvider = provider
+		}
 		var sess adksession.Session
 		sess, restoreErr = builder.OpenExistingRuntimeSession(
-			ctx, exactRuntime, provider, userID, agentSessionID, workspaceDir, sessionCtx,
+			ctx, exactRuntime, exactProvider, userID, agentSessionID, workspaceDir, sessionCtx,
 		)
 		if restoreErr == nil {
 			return exactRuntime, sess, false, nil, nil
@@ -1031,8 +1054,12 @@ func (m *Manager) restoreRuntimeSession(
 		sessionCtx.ArchiveID = next.Session.ID
 	}
 
+	currentProvider := strings.TrimSpace(currentRuntime.ProviderID)
+	if currentProvider == "" {
+		currentProvider = provider
+	}
 	sess, err := builder.CreateFreshRuntimeSession(
-		ctx, currentRuntime, provider, userID, sessionID, workspaceDir, sessionCtx,
+		ctx, currentRuntime, currentProvider, userID, sessionID, workspaceDir, sessionCtx,
 	)
 	if err != nil {
 		closeBuiltRuntime(currentRuntime)

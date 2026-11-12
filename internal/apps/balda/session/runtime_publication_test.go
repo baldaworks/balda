@@ -746,7 +746,7 @@ func terminalPublicationOperation(
 }
 
 const (
-	publicationArchiveID     = "runtime-publication-archive"
+	publicationArchiveID     = "152da7ce-6d48-4ce7-a825-c8eb41d6c7ee"
 	publicationBeginCall     = "begin"
 	publicationBinding       = `{"RootProviderID":"provider","Entries":[{"ProviderID":"provider","Source":"managed","RevisionID":"revision"}],"Reproducible":true,"Warnings":null}`
 	publicationOutcome       = string(baldastate.RuntimeOperationOutcomeContextPreserved)
