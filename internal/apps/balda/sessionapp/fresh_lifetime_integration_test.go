@@ -3,7 +3,6 @@ package sessionapp
 import (
 	"context"
 	"errors"
-	"iter"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -17,14 +16,10 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/lifetimeapp"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/sessioncmd"
-	"github.com/baldaworks/balda/internal/apps/balda/sessionturn"
-	"github.com/baldaworks/balda/internal/apps/balda/sessionturnapp"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
-	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/rs/zerolog"
 	adkagent "google.golang.org/adk/v2/agent"
 	adksession "google.golang.org/adk/v2/session"
-	"google.golang.org/genai"
 )
 
 const freshLifetimeIntegrationProviderID = "provider"
@@ -42,31 +37,6 @@ type freshLifetimeCandidate struct {
 	runtime  *baldasession.BuiltRuntime
 	claimed  bool
 	promoted bool
-}
-
-type followingRuntimeManager struct {
-	runtime       *baldasession.BuiltRuntime
-	configuration sessioncmd.ConfigurationSummary
-}
-
-func (m followingRuntimeManager) Runtime(context.Context) (*baldasession.BuiltRuntime, error) {
-	return m.runtime, nil
-}
-
-func (m followingRuntimeManager) ProviderID() string { return freshLifetimeIntegrationProviderID }
-
-func (m followingRuntimeManager) DescribeSessionConfiguration(context.Context, baldasession.SessionRuntimeRequest) (sessioncmd.ConfigurationSummary, error) {
-	return m.configuration.Clone(), nil
-}
-
-func (m followingRuntimeManager) RuntimeForSession(_ context.Context, request baldasession.SessionRuntimeRequest) (*baldasession.BuiltRuntime, error) {
-	runtime := *m.runtime
-	runtime.RuntimeSnapshotID = request.RuntimeSnapshotID
-	runtime.ProviderBindingJSON = request.ProviderBindingJSON
-	if request.ModelOverride != nil {
-		runtime.RecipeModel = *request.ModelOverride
-	}
-	return &runtime, nil
 }
 
 func (c *freshLifetimeCandidate) Runtime() *baldasession.BuiltRuntime { return c.runtime }
@@ -239,175 +209,6 @@ func TestColdFreshLifetimeUsesProductionAdapterWithoutProviderRuntime(t *testing
 	_, replay, err := replayManager.PrepareFreshLifetime(t.Context(), request)
 	if err != nil || !reflect.DeepEqual(replay, result) {
 		t.Fatalf("terminal replay = %+v, %v; want %+v", replay, err, result)
-	}
-	alternateRequest := baldasession.ModelChangeRequest{
-		OperationID: "cold-production-alternate-model", SessionID: locator.SessionID,
-		InputHash: strings.Repeat("c", 64), TargetModel: "model-next",
-	}
-	alternateResult, err := cold.ChangeModel(t.Context(), alternateRequest)
-	if err != nil || alternateResult.Status != baldasession.ModelChangeUnavailable {
-		t.Fatalf("alternate ChangeModel() = %+v, %v", alternateResult, err)
-	}
-	unchanged, found, err := provider.Sessions().GetBySessionID(t.Context(), locator.SessionID)
-	if err != nil || !found || !reflect.DeepEqual(unchanged, after) {
-		t.Fatalf("record after alternate target = %+v, %t, %v; want %+v", unchanged, found, err, after)
-	}
-	if _, found, err := provider.RuntimeOperations().Get(t.Context(), alternateRequest.OperationID); err != nil || found {
-		t.Fatalf("alternate operation found=%t err=%v", found, err)
-	}
-	badModel := "model-next"
-	now := time.Now().UTC()
-	poison := baldastate.RuntimeOperationRecord{
-		OperationID: "cold-production-poison", SessionID: locator.SessionID, InputHash: strings.Repeat("d", 64),
-		Kind: string(baldastate.RuntimeOperationKindModel), State: baldastate.RuntimeOperationPrepared,
-		ExpectedArchiveID: after.ArchiveID, ExpectedGeneration: after.RuntimeGeneration,
-		TargetArchiveID: after.ArchiveID, TargetSnapshotID: after.RuntimeSnapshotID,
-		TargetProviderBindingJSON: after.ProviderBindingJSON, TargetModel: badModel, TargetRequestedModel: &badModel,
-		CreatedAt: now, UpdatedAt: now,
-	}
-	if _, err := provider.RuntimeOperations().Begin(t.Context(), poison); err != nil {
-		t.Fatal(err)
-	}
-	if err := provider.RuntimeOperations().MarkApplying(t.Context(), poison.OperationID, poison.InputHash); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := provider.RuntimeOperations().Finalize(t.Context(), baldastate.RuntimeOperationFinalization{
-		OperationID: poison.OperationID, InputHash: poison.InputHash,
-		Outcome: baldastate.RuntimeOperationOutcomeContextReset, ReasonCode: baldastate.RuntimeOperationReasonChangedReplacement,
-		At: time.Now().UTC(),
-	}); err != nil {
-		t.Fatal(err)
-	}
-	poisoned, found, err := provider.Sessions().GetBySessionID(t.Context(), locator.SessionID)
-	if err != nil || !found || poisoned.RequestedModel == nil || poisoned.EffectiveModel != badModel {
-		t.Fatalf("poisoned record = %+v, %t, %v", poisoned, found, err)
-	}
-	poisonBuilder := baldaagent.NewBuilder(baldaagent.BuilderParams{
-		ScopedFactory: &integrationProductFactory{product: product}, WorkingDir: poisoned.WorkspaceDir, SessionService: sessionService,
-	})
-	poisonRuntime, err := poisonBuilder.BuildRuntimeWithCapabilities(
-		t.Context(), freshLifetimeIntegrationProviderID, poisoned.WorkspaceDir, nil, nil,
-		baldaagent.SkillMetadataProjection{}, baldaagent.SessionInstructionContext{SessionID: "session"},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	poisonRuntime.RuntimeSnapshotID = poisoned.RuntimeSnapshotID
-	poisonRuntime.ProviderBindingJSON = poisoned.ProviderBindingJSON
-	poisonRuntime.ProviderID = freshLifetimeIntegrationProviderID
-	configuration := sessioncmd.ConfigurationSummary{
-		ProviderID: freshLifetimeIntegrationProviderID, ProviderType: "codex", ConfiguredModel: "model-current",
-		ReasoningEffort: "high", MCPServers: []string{"grafana"},
-	}
-	poisonManager, err := baldasession.NewManager(baldasession.ManagerParams{
-		Archive: provider.ChatArchive(), AgentBuilder: SessionAgentBuilderAdapter{Builder: poisonBuilder},
-		RuntimeManager: followingRuntimeManager{runtime: sessionRuntime(poisonRuntime), configuration: configuration},
-		WorkingDir:     poisoned.WorkspaceDir, SessionsPersistent: true,
-		SessionStore: provider.Sessions(), RuntimeOperations: provider.RuntimeOperations(), Logger: zerolog.Nop(),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = poisonManager.Stop(context.Background()) })
-	if _, err := poisonManager.EnsureSession(t.Context(), baldasession.SessionContext{Locator: locator, UserID: "user", Kind: baldasession.KindChat}, "display-label"); err != nil {
-		t.Fatal(err)
-	}
-	modelRequest := baldasession.ModelChangeRequest{
-		OperationID: "cold-production-model", SessionID: locator.SessionID,
-		InputHash: strings.Repeat("b", 64), TargetModel: "model-current",
-	}
-	modelResult, err := poisonManager.ChangeModel(t.Context(), modelRequest)
-	if err != nil || modelResult.Status != baldasession.ModelChangePending || modelResult.EffectiveModel != "" {
-		t.Fatalf("ChangeModel() = %+v, %v", modelResult, err)
-	}
-	if _, err := poisonManager.GetSession(locator); err == nil {
-		t.Fatal("repaired poisoned runtime remained published")
-	}
-	changed, found, err := provider.Sessions().GetBySessionID(t.Context(), locator.SessionID)
-	if err != nil || !found || changed.ArchiveID != after.ArchiveID || changed.RuntimeGeneration != after.RuntimeGeneration+2 ||
-		changed.RequestedModel != nil || changed.EffectiveModel != "" ||
-		changed.RuntimeOutcome != string(baldastate.RuntimeOperationOutcomeContextReset) {
-		t.Fatalf("model preference record = %+v, %t, %v", changed, found, err)
-	}
-	if control.validateCalls.Load() != 1 || control.changeCalls.Load() != 0 {
-		t.Fatalf("provider control after poison repair: validate=%d change=%d", control.validateCalls.Load(), control.changeCalls.Load())
-	}
-	modelReplayManager := newManager()
-	t.Cleanup(func() { _ = modelReplayManager.Stop(context.Background()) })
-	modelReplay, err := modelReplayManager.ChangeModel(t.Context(), modelRequest)
-	if err != nil || !reflect.DeepEqual(modelReplay, modelResult) {
-		t.Fatalf("model replay = %+v, %v; want %+v", modelReplay, err, modelResult)
-	}
-	if control.validateCalls.Load() != 1 || control.changeCalls.Load() != 0 {
-		t.Fatal("model replay performed provider work")
-	}
-	var finalResponses atomic.Int32
-	respondingAgent, err := adkagent.New(adkagent.Config{
-		Name: "responding-agent",
-		Run: func(ctx adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
-			return func(yield func(*adksession.Event, error) bool) {
-				event := adksession.NewEvent(ctx, ctx.InvocationID())
-				event.Author = "responding-agent"
-				event.Content = genai.NewContentFromText("configured response", genai.RoleModel)
-				event.TurnComplete = true
-				finalResponses.Add(1)
-				yield(event, nil)
-			}
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	respondingProduct, err := baldaagent.NewRuntimeProduct(respondingAgent, control, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	followBuilder := baldaagent.NewBuilder(baldaagent.BuilderParams{
-		ScopedFactory: &integrationProductFactory{product: respondingProduct}, WorkingDir: changed.WorkspaceDir, SessionService: sessionService,
-		RunnerFactory: baldaagent.NewRunnerFactory(baldaagent.RunnerFactoryParams{Host: &integrationHostFactory{}}),
-	})
-	followRuntime, err := followBuilder.BuildRuntimeWithCapabilities(
-		t.Context(), freshLifetimeIntegrationProviderID, changed.WorkspaceDir, nil, nil,
-		baldaagent.SkillMetadataProjection{}, baldaagent.SessionInstructionContext{SessionID: "session"},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	followRuntime.RuntimeSnapshotID = freshLifetimeCurrentSnapshot
-	followRuntime.ProviderBindingJSON = integrationProviderBindingJSON
-	followRuntime.ProviderID = freshLifetimeIntegrationProviderID
-	followingRuntime := sessionRuntime(followRuntime)
-	following, err := baldasession.NewManager(baldasession.ManagerParams{
-		Archive: provider.ChatArchive(), AgentBuilder: SessionAgentBuilderAdapter{Builder: followBuilder},
-		RuntimeManager: followingRuntimeManager{runtime: followingRuntime, configuration: configuration}, WorkingDir: changed.WorkspaceDir, SessionsPersistent: true,
-		SessionStore: provider.Sessions(), RuntimeOperations: provider.RuntimeOperations(), Logger: zerolog.Nop(),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = following.Stop(context.Background()) })
-	followingTopic, err := following.EnsureSession(t.Context(), baldasession.SessionContext{Locator: locator, UserID: "user", Kind: baldasession.KindChat}, "display-label")
-	if err != nil {
-		t.Fatal(err)
-	}
-	lease, err := followingTopic.AcquireRuntime()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer lease.Release()
-	executor := sessionturnapp.NewProviderTurnExecutor(nil, nil, zerolog.Nop())
-	err = executor.ExecuteSessionTurn(t.Context(), sessionturn.Request{
-		Session: followingTopic, Runtime: lease,
-		Payload: turncmd.SessionTurnPayload{
-			ArchiveID: lease.ArchiveID(), DedupeKey: "following-turn", Text: "next turn", Source: turncmd.SourceTelegram,
-			Locator: locator,
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if finalResponses.Load() != 1 {
-		t.Fatalf("following final responses = %d, want 1", finalResponses.Load())
 	}
 }
 

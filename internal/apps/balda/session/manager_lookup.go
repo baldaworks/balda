@@ -261,9 +261,6 @@ func (m *Manager) recoverRuntimeOperation(ctx context.Context, sessionID string)
 	if !found {
 		return nil
 	}
-	if operation.State == baldastate.RuntimeOperationApplying && isColdModelPreferenceOperation(operation) {
-		return m.recoverApplyingColdModelPreference(ctx, operation)
-	}
 	if operation.State == baldastate.RuntimeOperationApplying && operation.Kind == string(baldastate.RuntimeOperationKindModel) {
 		return m.recoverApplyingModelOperation(ctx, operation)
 	}

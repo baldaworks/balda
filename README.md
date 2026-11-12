@@ -76,10 +76,10 @@ Use `/model` to read the requested preference and current active observation, or
 same-provider model change while preserving the current session context. An
 unsupported change leaves the current model and context intact; it never
 performs an implicit reset.
-On a provider-cold lifetime, only the exact configured model can be selected:
-Balda clears any stale override for the next attachment and reports that pending
-state without claiming the model is active. Other cold targets are unavailable
-until the provider is attached and can validate them.
+On a provider-cold lifetime, `/model` opens the exact retained provider runtime
+and uses its normal model controller. This lets the command validate and apply a
+supported alternate before any ordinary message while preserving the same
+session identity and history.
 Command availability varies by chat provider; see the
 [command guide](docs/commands.md).
 
