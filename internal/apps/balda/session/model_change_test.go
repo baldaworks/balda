@@ -7,11 +7,12 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/hookcmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/runtime/v2/agentproduct"
+	"github.com/rs/zerolog"
 	adksession "google.golang.org/adk/v2/session"
 )
 
@@ -20,14 +21,6 @@ const modelColdSnapshotID = "snapshot"
 type modelStartHooks struct {
 	events []hookcmd.Event
 	err    error
-}
-
-type failBeginRuntimeOperations struct {
-	baldastate.RuntimeOperationStore
-}
-
-func (s failBeginRuntimeOperations) Begin(context.Context, baldastate.RuntimeOperationRecord) (baldastate.RuntimeOperationRecord, error) {
-	return baldastate.RuntimeOperationRecord{}, errors.New("synthetic pre-commit failure")
 }
 
 func (h *modelStartHooks) Run(_ context.Context, event hookcmd.Event) (hookcmd.Result, error) {
@@ -44,12 +37,12 @@ const (
 
 func TestModelChangeResultVocabulary(t *testing.T) {
 	statuses := []ModelChangeResultStatus{
-		ModelChangeChangedLive, ModelChangeChangedReplacement, ModelChangePending,
+		ModelChangeChangedLive, ModelChangeChangedReplacement,
 		ModelChangeUnsupported, ModelChangeIncompatible, ModelChangeRejected, ModelChangeBusy,
 		ModelChangeConflict, ModelChangeUnavailable, ModelChangeRecoveryRequired,
 	}
 	want := []string{
-		"changed_live", "changed_replacement", "pending", "unsupported", "incompatible", "rejected", "busy",
+		"changed_live", "changed_replacement", "unsupported", "incompatible", "rejected", "busy",
 		"conflict", "unavailable", "recovery_required",
 	}
 	for index, status := range statuses {
@@ -138,235 +131,176 @@ func TestChangeModelLivePublishesSharedSuccessorOnce(t *testing.T) {
 	}
 }
 
-func TestChangeModelColdPostResetChangesPreferenceWithoutProviderRuntime(t *testing.T) {
-	f := newArchiveFixture(t)
-	f.builder.metadata.Model = publicationOriginalModel
-	control := &modelTestController{
-		validation: agentproduct.ModelValidation{Status: agentproduct.ModelSupported, Model: modelChangeTargetModel},
-		change:     RuntimeModelChange{Status: agentproduct.ModelApplied, EffectiveModel: modelChangeTargetModel},
-	}
-	f.runtime.ModelController = control
-	f.runtime.ProviderBindingJSON = publicationBinding
-	f.runtime.RuntimeSnapshotID = modelColdSnapshotID
-	f.runtime.RecipeModel = publicationOriginalModel
+type modelChangeArchive struct {
+	ArchiveLifecycle
+	session chatarchivecmd.Session
+}
 
-	initial := f.manager()
-	initial.runtimeOperations = f.provider.RuntimeOperations()
-	topic, err := initial.EnsureSession(t.Context(), archiveInput(), "saved")
+func (a *modelChangeArchive) Get(context.Context, string) (chatarchivecmd.Session, error) {
+	return a.session, nil
+}
+
+type coldModelChangeUnitFixture struct {
+	manager        *Manager
+	newManager     func() *Manager
+	control        *modelTestController
+	runtimeManager *fakeScopedRuntimeManager
+	operations     *publicationStore
+	record         baldastate.SessionRecord
+}
+
+func newColdModelChangeUnitFixture(
+	t *testing.T,
+	validation agentproduct.ModelValidation,
+	change RuntimeModelChange,
+) coldModelChangeUnitFixture {
+	t.Helper()
+	locator := testTelegramLocator(10, 42)
+	service := adksession.InMemoryService()
+	created, err := service.Create(t.Context(), &adksession.CreateRequest{
+		AppName: baldaRuntimeAppName, UserID: "user", SessionID: publicationArchiveID,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	prepared, _, err := initial.PrepareFreshLifetime(t.Context(), FreshLifetimeRequest{
-		OperationID: "model-cold-reset", SessionID: topic.GetSessionID(), InputHash: strings.Repeat("c", 64),
-	})
-	if err != nil {
-		t.Fatal(err)
+	control := &modelTestController{validation: validation, change: change}
+	runtime := &BuiltRuntime{
+		ModelController: control, SessionSvc: service, AppName: baldaRuntimeAppName,
+		RuntimeSnapshotID: modelColdSnapshotID, ProviderBindingJSON: publicationBinding,
+		RecipeModel: publicationOriginalModel,
 	}
-	if _, err := initial.PublishFreshLifetime(t.Context(), prepared); err != nil {
-		t.Fatal(err)
+	runtimeManager := &fakeScopedRuntimeManager{
+		fakeBaldaRuntimeManager: fakeBaldaRuntimeManager{providerID: "provider"},
+		sessionRuntime:          runtime,
 	}
-	record, found, err := f.provider.Sessions().GetBySessionID(t.Context(), topic.GetSessionID())
-	if err != nil || !found || record.ArchiveID == "" || record.ArchiveID == record.SessionID {
-		t.Fatalf("post-reset record = %+v, %t, %v", record, found, err)
+	builder := &fakeAgentBuilder{
+		agentMetadata:  AgentMetadata{Model: publicationOriginalModel},
+		runtimeSession: created.Session,
 	}
-
-	restarted := f.manager()
-	restarted.runtimeOperations = f.provider.RuntimeOperations()
-	hooks := &modelStartHooks{}
-	restarted.hooks = hooks
-	result, err := restarted.ChangeModel(t.Context(), ModelChangeRequest{
-		OperationID: "cold-model-change", SessionID: record.SessionID,
-		InputHash: strings.Repeat("d", 64), TargetModel: publicationOriginalModel,
-	})
-	if err != nil || result.Status != ModelChangePending || result.EffectiveModel != "" {
-		t.Fatalf("ChangeModel() = %+v, %v", result, err)
+	requestedModel := publicationOriginalModel
+	record := baldastate.SessionRecord{
+		ArchiveID: publicationArchiveID, SessionID: locator.SessionID, UserID: "user",
+		ChannelType: locator.ChannelType, AddressKey: locator.AddressKey, AddressJSON: locator.AddressJSON,
+		AgentName: "auto", RuntimeSnapshotID: modelColdSnapshotID, ProviderBindingJSON: publicationBinding,
+		RuntimeGeneration: 1, RequestedModel: &requestedModel,
+		RuntimeOutcome: string(baldastate.RuntimeOperationOutcomeContextReset), Status: baldastate.SessionStatusActive,
 	}
-	active := restarted.activeTopicSession(record.SessionID)
-	if active != nil {
-		t.Fatalf("cold preference published runtime = %v", active)
+	store := &fakeSessionStore{recordsByID: map[string]baldastate.SessionRecord{record.SessionID: record}}
+	operations := &publicationStore{}
+	archive := &modelChangeArchive{session: chatarchivecmd.Session{
+		ID: record.ArchiveID, StableID: record.SessionID, RuntimeID: record.ArchiveID,
+		Status:   chatarchivecmd.StatusActive,
+		Location: chatarchivecmd.Location{Channel: record.ChannelType, AddressKey: record.AddressKey},
+	}}
+	newManager := func() *Manager {
+		return &Manager{
+			archive:      archive,
+			agentBuilder: builder, runtimeManager: runtimeManager, workingDir: t.TempDir(),
+			sessionStore: store, runtimeOperations: operations, logger: zerolog.Nop(),
+			sessions: make(map[string]*TopicSession), operations: make(map[string]*sessionOperation),
+		}
 	}
-	runtimeManager := restarted.runtimeManager.(*fakeScopedRuntimeManager)
-	if len(runtimeManager.unpublishedRequests) != 0 {
-		t.Fatalf("runtime requests = %+v, want none", runtimeManager.unpublishedRequests)
+	operations.beforeFinalize = func(outcome baldastate.RuntimeOperationOutcome) {
+		if outcome != baldastate.RuntimeOperationOutcomeContextPreserved {
+			return
+		}
+		committed := store.recordsByID[record.SessionID]
+		requested := modelChangeTargetModel
+		committed.RequestedModel = &requested
+		committed.EffectiveModel = modelChangeTargetModel
+		committed.RuntimeGeneration++
+		committed.RuntimeOutcome = string(outcome)
+		store.recordsByID[record.SessionID] = committed
 	}
-	if len(hooks.events) != 0 {
-		t.Fatalf("cold preference hooks = %+v", hooks.events)
-	}
-	changed, found, err := f.provider.Sessions().GetBySessionID(t.Context(), record.SessionID)
-	if err != nil || !found || changed.ArchiveID != record.ArchiveID || changed.RuntimeGeneration != record.RuntimeGeneration+1 ||
-		changed.RequestedModel != nil || changed.EffectiveModel != "" ||
-		changed.RuntimeOutcome != string(baldastate.RuntimeOperationOutcomeContextReset) {
-		t.Fatalf("changed preference = %+v, %t, %v", changed, found, err)
-	}
-	f.builder.metadata.Model = modelChangeOtherModel
-	replayed, err := restarted.ChangeModel(t.Context(), ModelChangeRequest{
-		OperationID: "cold-model-change", SessionID: record.SessionID,
-		InputHash: strings.Repeat("d", 64), TargetModel: publicationOriginalModel,
-	})
-	if err != nil || replayed != result {
-		t.Fatalf("terminal replay after configuration change = %+v, %v; want %+v", replayed, err, result)
+	manager := newManager()
+	return coldModelChangeUnitFixture{
+		manager: manager, newManager: newManager, control: control,
+		runtimeManager: runtimeManager, operations: operations, record: record,
 	}
 }
 
-func TestChangeModelColdPostResetRejectsUnconfiguredTargetWithoutMutation(t *testing.T) {
-	f := newArchiveFixture(t)
-	f.builder.metadata.Model = publicationOriginalModel
-	f.runtime.ProviderBindingJSON = publicationBinding
-	f.runtime.RuntimeSnapshotID = modelColdSnapshotID
-	f.runtime.RecipeModel = publicationOriginalModel
-
-	initial := f.manager()
-	initial.runtimeOperations = f.provider.RuntimeOperations()
-	topic, err := initial.EnsureSession(t.Context(), archiveInput(), "saved")
-	if err != nil {
-		t.Fatal(err)
-	}
-	prepared, _, err := initial.PrepareFreshLifetime(t.Context(), FreshLifetimeRequest{
-		OperationID: "model-cold-reject-reset", SessionID: topic.GetSessionID(), InputHash: strings.Repeat("c", 64),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := initial.PublishFreshLifetime(t.Context(), prepared); err != nil {
-		t.Fatal(err)
-	}
-	before, found, err := f.provider.Sessions().GetBySessionID(t.Context(), topic.GetSessionID())
-	if err != nil || !found {
-		t.Fatalf("post-reset record = %+v, %t, %v", before, found, err)
-	}
-
-	restarted := f.manager()
-	restarted.runtimeOperations = f.provider.RuntimeOperations()
-	request := ModelChangeRequest{
-		OperationID: "cold-model-reject", SessionID: before.SessionID,
-		InputHash: strings.Repeat("d", 64), TargetModel: modelChangeTargetModel,
-	}
-	result, err := restarted.ChangeModel(t.Context(), request)
-	if err != nil || result.Status != ModelChangeUnavailable {
-		t.Fatalf("ChangeModel() = %+v, %v", result, err)
-	}
-	after, found, err := f.provider.Sessions().GetBySessionID(t.Context(), before.SessionID)
-	if err != nil || !found || after != before {
-		t.Fatalf("record after rejection = %+v, %t, %v; want %+v", after, found, err, before)
-	}
-	if _, found, err := f.provider.RuntimeOperations().Get(t.Context(), request.OperationID); err != nil || found {
-		t.Fatalf("operation after rejection = found %t, err %v", found, err)
-	}
-}
-
-func TestChangeModelRepairsUnattachedFalseEffectivePreference(t *testing.T) {
-	f := newArchiveFixture(t)
-	f.builder.metadata.Model = publicationOriginalModel
-	f.runtime.ProviderBindingJSON = publicationBinding
-	f.runtime.RuntimeSnapshotID = modelColdSnapshotID
-	f.runtime.RecipeModel = publicationOriginalModel
-	f.runtime.ModelController = &modelTestController{
-		validation: agentproduct.ModelValidation{Status: agentproduct.ModelUnsupported},
-	}
-
-	initial := f.manager()
-	initial.runtimeOperations = f.provider.RuntimeOperations()
-	topic, err := initial.EnsureSession(t.Context(), archiveInput(), "saved")
-	if err != nil {
-		t.Fatal(err)
-	}
-	prepared, _, err := initial.PrepareFreshLifetime(t.Context(), FreshLifetimeRequest{
-		OperationID: "model-poison-reset", SessionID: topic.GetSessionID(), InputHash: strings.Repeat("a", 64),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := initial.PublishFreshLifetime(t.Context(), prepared); err != nil {
-		t.Fatal(err)
-	}
-	record, found, err := f.provider.Sessions().GetBySessionID(t.Context(), topic.GetSessionID())
-	if err != nil || !found {
-		t.Fatalf("post-reset record = %+v, %t, %v", record, found, err)
-	}
-	badModel := modelChangeTargetModel
-	now := time.Now().UTC()
-	poison := baldastate.RuntimeOperationRecord{
-		OperationID: "legacy-false-effective", SessionID: record.SessionID, InputHash: strings.Repeat("b", 64),
-		Kind: string(baldastate.RuntimeOperationKindModel), State: baldastate.RuntimeOperationPrepared,
-		ExpectedArchiveID: record.ArchiveID, ExpectedGeneration: record.RuntimeGeneration,
-		TargetArchiveID: record.ArchiveID, TargetSnapshotID: record.RuntimeSnapshotID,
-		TargetProviderBindingJSON: record.ProviderBindingJSON, TargetModel: badModel, TargetRequestedModel: &badModel,
-		CreatedAt: now, UpdatedAt: now,
-	}
-	if _, err := f.provider.RuntimeOperations().Begin(t.Context(), poison); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.provider.RuntimeOperations().MarkApplying(t.Context(), poison.OperationID, poison.InputHash); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.provider.RuntimeOperations().Finalize(t.Context(), baldastate.RuntimeOperationFinalization{
-		OperationID: poison.OperationID, InputHash: poison.InputHash,
-		Outcome: baldastate.RuntimeOperationOutcomeContextReset, ReasonCode: baldastate.RuntimeOperationReasonChangedReplacement,
-		At: time.Now().UTC(),
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	restarted := f.manager()
-	restarted.runtimeOperations = f.provider.RuntimeOperations()
-	restored, err := restarted.EnsureSession(t.Context(), archiveInput(), "saved")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, restoredValue, ok := modelRuntimeValue(restored)
-	if !ok {
-		t.Fatal("restored poisoned runtime is unavailable")
-	}
-	if restoredValue.outcome != string(baldastate.RuntimeOperationOutcomeContextReset) {
-		t.Fatalf("restored outcome = %q", restoredValue.outcome)
-	}
-	poisoned, found, err := f.provider.Sessions().GetBySessionID(t.Context(), record.SessionID)
-	if err != nil || !found {
-		t.Fatalf("poisoned record = %+v, %t, %v", poisoned, found, err)
-	}
-	if got := restarted.configuredModel(t.Context(), poisoned); got != publicationOriginalModel {
-		t.Fatalf("configured model = %q", got)
-	}
-	if !restarted.validModelPreferenceLifetime(t.Context(), poisoned) {
-		t.Fatal("poisoned lifetime identity is invalid")
-	}
-	restarted.runtimeOperations = failBeginRuntimeOperations{RuntimeOperationStore: f.provider.RuntimeOperations()}
-	failedRequest := ModelChangeRequest{
-		OperationID: "repair-precommit-failure", SessionID: restored.GetSessionID(),
-		InputHash: strings.Repeat("e", 64), TargetModel: publicationOriginalModel,
-	}
-	failed, err := restarted.ChangeModel(t.Context(), failedRequest)
-	if !errors.Is(err, ErrRuntimeRecoveryRequired) || failed.Status != ModelChangeRecoveryRequired {
-		t.Fatalf("ChangeModel() before commit = %+v, %v", failed, err)
-	}
-	if _, err := restored.AcquireRuntime(); !errors.Is(err, ErrRuntimeRecoveryRequired) {
-		t.Fatalf("AcquireRuntime() after fenced failure = %v", err)
-	}
-	if _, found, err := f.provider.RuntimeOperations().Get(t.Context(), failedRequest.OperationID); err != nil || found {
-		t.Fatalf("operation after pre-commit failure = found %t, err %v", found, err)
-	}
-
-	recoveredManager := f.manager()
-	recoveredManager.runtimeOperations = f.provider.RuntimeOperations()
-	restored, err = recoveredManager.EnsureSession(t.Context(), archiveInput(), "saved")
-	if err != nil {
-		t.Fatal(err)
-	}
-	request := ModelChangeRequest{
-		OperationID: "repair-false-effective", SessionID: restored.GetSessionID(),
-		InputHash: strings.Repeat("c", 64), TargetModel: publicationOriginalModel,
-	}
-	result, err := recoveredManager.ChangeModel(t.Context(), request)
-	if err != nil || result.Status != ModelChangePending {
-		t.Fatalf("ChangeModel() = %+v, %v", result, err)
-	}
-	if recoveredManager.activeTopicSession(record.SessionID) != nil {
-		t.Fatal("repaired unattached runtime remained published")
-	}
-	repaired, found, err := f.provider.Sessions().GetBySessionID(t.Context(), record.SessionID)
-	if err != nil || !found || repaired.ArchiveID != record.ArchiveID || repaired.RequestedModel != nil ||
-		repaired.EffectiveModel != "" || repaired.RuntimeGeneration != record.RuntimeGeneration+2 {
-		t.Fatalf("repaired record = %+v, %t, %v", repaired, found, err)
+func TestChangeModelColdUsesExactRuntimeController(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		validation    agentproduct.ModelValidation
+		change        RuntimeModelChange
+		wantStatus    ModelChangeResultStatus
+		wantCalls     string
+		wantOperation bool
+		wantModel     string
+	}{
+		{
+			name: "supported alternate",
+			validation: agentproduct.ModelValidation{
+				Status: agentproduct.ModelSupported, Model: modelChangeTargetModel,
+			},
+			change:        RuntimeModelChange{Status: agentproduct.ModelApplied, EffectiveModel: modelChangeTargetModel},
+			wantStatus:    ModelChangeChangedLive,
+			wantCalls:     modelControlCallOrder,
+			wantOperation: true,
+			wantModel:     modelChangeTargetModel,
+		},
+		{
+			name:       "unsupported alternate",
+			validation: agentproduct.ModelValidation{Status: agentproduct.ModelUnsupported},
+			wantStatus: ModelChangeUnsupported,
+			wantCalls:  modelValidationCallOrder,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newColdModelChangeUnitFixture(t, test.validation, test.change)
+			request := ModelChangeRequest{
+				OperationID: "cold-model-change", SessionID: fixture.record.SessionID,
+				InputHash: strings.Repeat("d", 64), TargetModel: modelChangeTargetModel,
+			}
+			result, err := fixture.manager.ChangeModel(t.Context(), request)
+			if err != nil || result.Status != test.wantStatus || result.EffectiveModel != test.wantModel {
+				t.Fatalf("ChangeModel() = %+v, %v", result, err)
+			}
+			if got := strings.Join(fixture.control.callOrder(), ","); got != test.wantCalls {
+				t.Fatalf("control order = %q, want %q", got, test.wantCalls)
+			}
+			if len(fixture.runtimeManager.unpublishedRequests) != 1 {
+				t.Fatalf("exact runtime requests = %d, want 1", len(fixture.runtimeManager.unpublishedRequests))
+			}
+			runtimeRequest := fixture.runtimeManager.unpublishedRequests[0]
+			if runtimeRequest.RuntimeSnapshotID != fixture.record.RuntimeSnapshotID ||
+				runtimeRequest.ProviderBindingJSON != fixture.record.ProviderBindingJSON ||
+				runtimeRequest.ModelOverride == nil || *runtimeRequest.ModelOverride != publicationOriginalModel {
+				t.Fatalf("exact runtime request = %+v", runtimeRequest)
+			}
+			topic := fixture.manager.activeTopicSession(fixture.record.SessionID)
+			if topic == nil {
+				t.Fatal("exact runtime was not published")
+			}
+			lease, err := topic.AcquireRuntime()
+			if err != nil {
+				t.Fatalf("AcquireRuntime() error = %v", err)
+			}
+			if got := lease.EffectiveModel(); got != test.wantModel {
+				t.Fatalf("runtime model = %q, want %q", got, test.wantModel)
+			}
+			lease.Release()
+			if found := fixture.operations.operation.OperationID != ""; found != test.wantOperation {
+				t.Fatalf("model operation found = %t, want %t", found, test.wantOperation)
+			}
+			if !test.wantOperation {
+				return
+			}
+			operation := fixture.operations.operation
+			if operation.State != baldastate.RuntimeOperationTerminal ||
+				operation.TargetRequestedModel == nil || *operation.TargetRequestedModel != modelChangeTargetModel {
+				t.Fatalf("model operation = %+v", operation)
+			}
+			restarted := fixture.newManager()
+			replayed, err := restarted.ChangeModel(t.Context(), request)
+			if err != nil || replayed != result {
+				t.Fatalf("restarted ChangeModel() = %+v, %v; want %+v", replayed, err, result)
+			}
+			if got := strings.Join(fixture.control.callOrder(), ","); got != test.wantCalls {
+				t.Fatalf("replay called controller: %q", got)
+			}
+		})
 	}
 }
 

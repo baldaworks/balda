@@ -199,11 +199,12 @@ before reset publication. It contains only public provider/configured-model/
 reasoning/MCP facts and survives terminal replay; presentation labels configured
 or requested models rather than treating them as active observations.
 
-Cold `/model` does not speculate against a remote catalog. Selecting the exact
-configured model journals an atomic clear of stale requested/effective evidence
-and reports `pending_attachment`; another cold target is unavailable without a
-write. An unattached poisoned slot is fenced before that clear and retired after
-the durable commit. Warm attached model control remains unchanged.
+Cold `/model` uses the same controller as warm model control. It opens the exact
+retained provider binding, capability snapshot and archive through the existing
+lazy runtime path, then performs the normal validation, journal and publication
+flow. The catalog does not project provider models, and no separate pending-model
+state machine exists. Reset/new themselves remain provider-lazy; `/model` may be
+the first operation that attaches the provider.
 
 ## Transport parsing and support
 

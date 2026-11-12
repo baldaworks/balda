@@ -277,10 +277,12 @@ unchanged. The command never falls back to an implicit reset. A conflict,
 temporary unavailability, or recovery-required result is reported explicitly
 without exposing provider errors or internal runtime data.
 
-When the lifetime is provider-cold, Balda has no authoritative remote model
-catalog. A target equal to the exact configured model clears any stale explicit
-override and is accepted for the next provider attachment; the response does not
-claim a live change. Any other target is unavailable and leaves metadata unchanged.
+When the lifetime is provider-cold, `/model` is the first provider-backed
+operation: Balda opens the exact retained binding, snapshot, and archive, then
+uses the same authoritative model controller as a warm session. Supported
+alternates can therefore be selected before any ordinary message. Validation or
+provider rejection leaves the model metadata unchanged; opening the exact runtime
+does not reset the session or its history.
 
 After a model change crosses the provider boundary, an unresolved `applying`
 operation fences new runtime admission. Restart recovery inspects the existing

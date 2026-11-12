@@ -246,7 +246,6 @@ func TestHandleMapsEveryModelResult(t *testing.T) {
 	}{
 		{name: "changed live", result: session.ModelChangeResult{Status: session.ModelChangeChangedLive, EffectiveModel: "model-next"}, text: "Model changed live to model-next.", suffix: "model-changed-live"},
 		{name: "changed replacement", result: session.ModelChangeResult{Status: session.ModelChangeChangedReplacement, EffectiveModel: "model-next"}, text: "Model changed to model-next while preserving this session and its context.", suffix: "model-changed-replacement"},
-		{name: "pending attachment", result: session.ModelChangeResult{Status: session.ModelChangePending}, text: "Configured model selected for the next provider attachment.", suffix: "model-pending-attachment"},
 		{name: "live missing effective model", result: session.ModelChangeResult{Status: session.ModelChangeChangedLive}, text: msgUnavailable, suffix: "model-unavailable"},
 		{name: "replacement missing effective model", result: session.ModelChangeResult{Status: session.ModelChangeChangedReplacement}, text: msgUnavailable, suffix: "model-unavailable"},
 		{name: "unsupported", result: session.ModelChangeResult{Status: session.ModelChangeUnsupported}, text: msgUnsupported, suffix: "model-unsupported"},
