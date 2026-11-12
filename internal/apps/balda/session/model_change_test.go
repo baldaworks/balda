@@ -129,7 +129,7 @@ func TestChangeModelLivePublishesSharedSuccessorOnce(t *testing.T) {
 	}
 }
 
-func TestChangeModelColdExactOpensPostResetRuntime(t *testing.T) {
+func TestChangeModelColdPostResetChangesPreferenceWithoutProviderRuntime(t *testing.T) {
 	f := newArchiveFixture(t)
 	control := &modelTestController{
 		validation: agentproduct.ModelValidation{Status: agentproduct.ModelSupported, Model: modelChangeTargetModel},
@@ -168,19 +168,25 @@ func TestChangeModelColdExactOpensPostResetRuntime(t *testing.T) {
 		OperationID: "cold-model-change", SessionID: record.SessionID,
 		InputHash: strings.Repeat("d", 64), TargetModel: modelChangeTargetModel,
 	})
-	if err != nil || result.Status != ModelChangeChangedLive {
+	if err != nil || result.Status != ModelChangeChangedReplacement {
 		t.Fatalf("ChangeModel() = %+v, %v", result, err)
 	}
 	active := restarted.activeTopicSession(record.SessionID)
-	if active == nil || active.GetArchiveID() != record.ArchiveID {
-		t.Fatalf("active exact archive = %v, want %q", active, record.ArchiveID)
+	if active != nil {
+		t.Fatalf("cold preference published runtime = %v", active)
 	}
 	runtimeManager := restarted.runtimeManager.(*fakeScopedRuntimeManager)
-	if len(runtimeManager.unpublishedRequests) != 1 || runtimeManager.unpublishedRequests[0].AgentSessionID != record.ArchiveID {
-		t.Fatalf("runtime requests = %+v, want unpublished Archive.RuntimeID %q", runtimeManager.unpublishedRequests, record.ArchiveID)
+	if len(runtimeManager.unpublishedRequests) != 0 {
+		t.Fatalf("runtime requests = %+v, want none", runtimeManager.unpublishedRequests)
 	}
-	if len(hooks.events) != 1 || hooks.events[0].Name != hookcmd.SessionStart || hooks.events[0].Source != sessionHookResume || hooks.events[0].AgentSessionID != record.ArchiveID {
-		t.Fatalf("cold model hooks = %+v", hooks.events)
+	if len(hooks.events) != 0 {
+		t.Fatalf("cold preference hooks = %+v", hooks.events)
+	}
+	changed, found, err := f.provider.Sessions().GetBySessionID(t.Context(), record.SessionID)
+	if err != nil || !found || changed.ArchiveID != record.ArchiveID || changed.RuntimeGeneration != record.RuntimeGeneration+1 ||
+		changed.RequestedModel == nil || *changed.RequestedModel != modelChangeTargetModel ||
+		changed.RuntimeOutcome != string(baldastate.RuntimeOperationOutcomeContextReset) {
+		t.Fatalf("changed preference = %+v, %t, %v", changed, found, err)
 	}
 }
 

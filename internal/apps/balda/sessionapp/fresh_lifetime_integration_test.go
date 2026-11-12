@@ -97,7 +97,8 @@ func TestColdFreshLifetimeUsesProductionAdapterWithoutProviderRuntime(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	product, err := baldaagent.NewRuntimeProduct(agent, &integrationModelControl{currentModel: "model-current"}, nil)
+	control := &integrationModelControl{currentModel: "model-current", unavailable: true}
+	product, err := baldaagent.NewRuntimeProduct(agent, control, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,6 +187,36 @@ func TestColdFreshLifetimeUsesProductionAdapterWithoutProviderRuntime(t *testing
 	_, replay, err := replayManager.PrepareFreshLifetime(t.Context(), request)
 	if err != nil || !reflect.DeepEqual(replay, result) {
 		t.Fatalf("terminal replay = %+v, %v; want %+v", replay, err, result)
+	}
+	modelRequest := baldasession.ModelChangeRequest{
+		OperationID: "cold-production-model", SessionID: locator.SessionID,
+		InputHash: strings.Repeat("b", 64), TargetModel: "model-next",
+	}
+	modelResult, err := cold.ChangeModel(t.Context(), modelRequest)
+	if err != nil || modelResult.Status != baldasession.ModelChangeChangedReplacement {
+		t.Fatalf("ChangeModel() = %+v, %v", modelResult, err)
+	}
+	if _, err := cold.GetSession(locator); err == nil {
+		t.Fatal("cold model preference eagerly published a TopicSession")
+	}
+	changed, found, err := provider.Sessions().GetBySessionID(t.Context(), locator.SessionID)
+	if err != nil || !found || changed.ArchiveID != after.ArchiveID || changed.RuntimeGeneration != after.RuntimeGeneration+1 ||
+		changed.RequestedModel == nil || *changed.RequestedModel != "model-next" ||
+		changed.RuntimeOutcome != string(baldastate.RuntimeOperationOutcomeContextReset) {
+		t.Fatalf("model preference record = %+v, %t, %v", changed, found, err)
+	}
+	if runtimeManager.builds.Load() != 0 || control.inspectCalls.Load() != 0 || control.validateCalls.Load() != 0 || control.changeCalls.Load() != 0 {
+		t.Fatalf("provider work after cold model preference: builds=%d inspect=%d validate=%d change=%d",
+			runtimeManager.builds.Load(), control.inspectCalls.Load(), control.validateCalls.Load(), control.changeCalls.Load())
+	}
+	modelReplayManager := newManager()
+	t.Cleanup(func() { _ = modelReplayManager.Stop(context.Background()) })
+	modelReplay, err := modelReplayManager.ChangeModel(t.Context(), modelRequest)
+	if err != nil || !reflect.DeepEqual(modelReplay, modelResult) {
+		t.Fatalf("model replay = %+v, %v; want %+v", modelReplay, err, modelResult)
+	}
+	if runtimeManager.builds.Load() != 0 || control.inspectCalls.Load() != 0 || control.validateCalls.Load() != 0 || control.changeCalls.Load() != 0 {
+		t.Fatal("model replay performed provider work")
 	}
 }
 

@@ -82,7 +82,13 @@ func (m *Manager) ChangeModel(ctx context.Context, request ModelChangeRequest) (
 		}
 	}
 	if found && existing.State == baldastate.RuntimeOperationApplying {
-		if err := m.recoverApplyingModelOperation(ctx, existing); err != nil {
+		var recoveryErr error
+		if isColdModelPreferenceOperation(existing) {
+			recoveryErr = m.recoverApplyingColdModelPreference(ctx, existing)
+		} else {
+			recoveryErr = m.recoverApplyingModelOperation(ctx, existing)
+		}
+		if recoveryErr != nil {
 			return recoveryRequiredModelResult()
 		}
 		existing, found, err = m.runtimeOperations.Get(ctx, request.OperationID)
@@ -101,6 +107,9 @@ func (m *Manager) ChangeModel(ctx context.Context, request ModelChangeRequest) (
 		}
 		if found && existing.State == baldastate.RuntimeOperationPrepared && !modelRecoveryRecordMatches(record, existing) {
 			return recoveryRequiredModelResult()
+		}
+		if record.RuntimeOutcome == string(baldastate.RuntimeOperationOutcomeContextReset) {
+			return m.changeColdModelPreference(ctx, record, request, existing, found)
 		}
 		topic, err = m.openExactModelRuntime(
 			ctx, record, record.RuntimeSnapshotID, record.ProviderBindingJSON, record.RequestedModel, false,
