@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -144,8 +145,10 @@ type coldModelChangeUnitFixture struct {
 	manager        *Manager
 	newManager     func() *Manager
 	control        *modelTestController
+	hooks          *modelStartHooks
 	runtimeManager *fakeScopedRuntimeManager
 	operations     *publicationStore
+	store          *fakeSessionStore
 	record         baldastate.SessionRecord
 }
 
@@ -192,11 +195,13 @@ func newColdModelChangeUnitFixture(
 		Status:   chatarchivecmd.StatusActive,
 		Location: chatarchivecmd.Location{Channel: record.ChannelType, AddressKey: record.AddressKey},
 	}}
+	hooks := &modelStartHooks{}
 	newManager := func() *Manager {
 		return &Manager{
 			archive:      archive,
 			agentBuilder: builder, runtimeManager: runtimeManager, workingDir: t.TempDir(),
 			sessionStore: store, runtimeOperations: operations, logger: zerolog.Nop(),
+			hooks:    hooks,
 			sessions: make(map[string]*TopicSession), operations: make(map[string]*sessionOperation),
 		}
 	}
@@ -215,36 +220,113 @@ func newColdModelChangeUnitFixture(
 	manager := newManager()
 	return coldModelChangeUnitFixture{
 		manager: manager, newManager: newManager, control: control,
-		runtimeManager: runtimeManager, operations: operations, record: record,
+		hooks: hooks, runtimeManager: runtimeManager, operations: operations, store: store, record: record,
 	}
 }
 
-func TestChangeModelColdUsesExactRuntimeController(t *testing.T) {
+func assertColdModelRecordUnchanged(t *testing.T, fixture coldModelChangeUnitFixture) {
+	t.Helper()
+	got, found := fixture.store.recordsByID[fixture.record.SessionID]
+	if !found || !reflect.DeepEqual(got, fixture.record) {
+		t.Fatalf("persisted session = %+v, found %t; want unchanged %+v", got, found, fixture.record)
+	}
+}
+
+func assertColdModelRecordCommitted(t *testing.T, fixture coldModelChangeUnitFixture) {
+	t.Helper()
+	got, found := fixture.store.recordsByID[fixture.record.SessionID]
+	if !found || got.RequestedModel == nil || *got.RequestedModel != modelChangeTargetModel ||
+		got.EffectiveModel != modelChangeTargetModel || got.RuntimeGeneration != fixture.record.RuntimeGeneration+1 ||
+		got.RuntimeOutcome != string(baldastate.RuntimeOperationOutcomeContextPreserved) {
+		t.Fatalf("persisted session = %+v, found %t; want committed model %q at generation %d",
+			got, found, modelChangeTargetModel, fixture.record.RuntimeGeneration+1)
+	}
+}
+
+func assertColdRuntimeLease(
+	t *testing.T,
+	topic *TopicSession,
+	record baldastate.SessionRecord,
+	wantModel string,
+	wantGeneration uint64,
+) {
+	t.Helper()
+	lease, err := topic.AcquireRuntime()
+	if err != nil {
+		t.Fatalf("AcquireRuntime() error = %v", err)
+	}
+	defer lease.Release()
+	if lease.EffectiveModel() != wantModel || lease.Generation() != wantGeneration ||
+		lease.ArchiveID() != record.ArchiveID || lease.SessionID() != record.ArchiveID ||
+		lease.RuntimeSnapshotID() != record.RuntimeSnapshotID || lease.ProviderBindingJSON() != record.ProviderBindingJSON {
+		t.Fatalf("runtime lease = model %q generation %d archive %q session %q snapshot %q binding %q",
+			lease.EffectiveModel(), lease.Generation(), lease.ArchiveID(), lease.SessionID(),
+			lease.RuntimeSnapshotID(), lease.ProviderBindingJSON())
+	}
+	got, err := lease.SessionService().Get(t.Context(), &adksession.GetRequest{
+		AppName: lease.AppName(), UserID: lease.UserID(), SessionID: lease.SessionID(),
+	})
+	if err != nil {
+		t.Fatalf("next runtime use: Get() error = %v", err)
+	}
+	if got == nil || got.Session == nil || got.Session.ID() != lease.Session().ID() {
+		t.Fatalf("next runtime use = session %v; want %q", got, lease.Session().ID())
+	}
+}
+
+func TestChangeModelAfterColdResetUsesExactRuntimeController(t *testing.T) {
 	for _, test := range []struct {
-		name          string
-		validation    agentproduct.ModelValidation
-		change        RuntimeModelChange
-		wantStatus    ModelChangeResultStatus
-		wantCalls     string
-		wantOperation bool
-		wantModel     string
+		name           string
+		validation     agentproduct.ModelValidation
+		change         RuntimeModelChange
+		wantStatus     ModelChangeResultStatus
+		wantCalls      string
+		wantOperation  bool
+		wantModel      string
+		wantGeneration uint64
+		wantOutcome    baldastate.RuntimeOperationOutcome
+		wantReason     baldastate.RuntimeOperationReason
+		wantJournal    string
+		wantUnchanged  bool
 	}{
 		{
 			name: "supported alternate",
 			validation: agentproduct.ModelValidation{
 				Status: agentproduct.ModelSupported, Model: modelChangeTargetModel,
 			},
-			change:        RuntimeModelChange{Status: agentproduct.ModelApplied, EffectiveModel: modelChangeTargetModel},
-			wantStatus:    ModelChangeChangedLive,
-			wantCalls:     modelControlCallOrder,
-			wantOperation: true,
-			wantModel:     modelChangeTargetModel,
+			change:         RuntimeModelChange{Status: agentproduct.ModelApplied, EffectiveModel: modelChangeTargetModel},
+			wantStatus:     ModelChangeChangedLive,
+			wantCalls:      modelControlCallOrder,
+			wantOperation:  true,
+			wantModel:      modelChangeTargetModel,
+			wantGeneration: 2,
+			wantOutcome:    baldastate.RuntimeOperationOutcomeContextPreserved,
+			wantReason:     baldastate.RuntimeOperationReasonChangedLive,
+			wantJournal:    "begin,applying,finalize:context_preserved",
 		},
 		{
-			name:       "unsupported alternate",
-			validation: agentproduct.ModelValidation{Status: agentproduct.ModelUnsupported},
-			wantStatus: ModelChangeUnsupported,
-			wantCalls:  modelValidationCallOrder,
+			name:           "unsupported alternate",
+			validation:     agentproduct.ModelValidation{Status: agentproduct.ModelUnsupported},
+			wantStatus:     ModelChangeUnsupported,
+			wantCalls:      modelValidationCallOrder,
+			wantGeneration: 1,
+			wantReason:     baldastate.RuntimeOperationReasonUnsupported,
+			wantUnchanged:  true,
+		},
+		{
+			name: "provider rejects validated alternate",
+			validation: agentproduct.ModelValidation{
+				Status: agentproduct.ModelSupported, Model: modelChangeTargetModel,
+			},
+			change:         RuntimeModelChange{Status: agentproduct.ModelRejected},
+			wantStatus:     ModelChangeRejected,
+			wantCalls:      modelControlCallOrder,
+			wantOperation:  true,
+			wantGeneration: 1,
+			wantOutcome:    baldastate.RuntimeOperationOutcomeAborted,
+			wantReason:     baldastate.RuntimeOperationReasonRejected,
+			wantJournal:    "begin,applying,finalize:aborted",
+			wantUnchanged:  true,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -254,7 +336,8 @@ func TestChangeModelColdUsesExactRuntimeController(t *testing.T) {
 				InputHash: strings.Repeat("d", 64), TargetModel: modelChangeTargetModel,
 			}
 			result, err := fixture.manager.ChangeModel(t.Context(), request)
-			if err != nil || result.Status != test.wantStatus || result.EffectiveModel != test.wantModel {
+			if err != nil || result.Status != test.wantStatus || result.EffectiveModel != test.wantModel ||
+				result.Generation != test.wantGeneration || result.Reason != test.wantReason {
 				t.Fatalf("ChangeModel() = %+v, %v", result, err)
 			}
 			if got := strings.Join(fixture.control.callOrder(), ","); got != test.wantCalls {
@@ -273,24 +356,32 @@ func TestChangeModelColdUsesExactRuntimeController(t *testing.T) {
 			if topic == nil {
 				t.Fatal("exact runtime was not published")
 			}
-			lease, err := topic.AcquireRuntime()
-			if err != nil {
-				t.Fatalf("AcquireRuntime() error = %v", err)
-			}
-			if got := lease.EffectiveModel(); got != test.wantModel {
-				t.Fatalf("runtime model = %q, want %q", got, test.wantModel)
-			}
-			lease.Release()
+			assertColdRuntimeLease(t, topic, fixture.record, test.wantModel, test.wantGeneration)
 			if found := fixture.operations.operation.OperationID != ""; found != test.wantOperation {
 				t.Fatalf("model operation found = %t, want %t", found, test.wantOperation)
 			}
+			if got := strings.Join(fixture.operations.callOrder(), ","); got != test.wantJournal {
+				t.Fatalf("model journal calls = %q, want %q", got, test.wantJournal)
+			}
+			if test.wantUnchanged {
+				assertColdModelRecordUnchanged(t, fixture)
+			} else {
+				assertColdModelRecordCommitted(t, fixture)
+			}
 			if !test.wantOperation {
+				if len(fixture.hooks.events) != 1 || fixture.hooks.events[0].Source != sessionHookResume {
+					t.Fatalf("validation resume hooks = %+v, want one resume", fixture.hooks.events)
+				}
 				return
 			}
 			operation := fixture.operations.operation
 			if operation.State != baldastate.RuntimeOperationTerminal ||
+				operation.Outcome != string(test.wantOutcome) || operation.ReasonCode != string(test.wantReason) ||
 				operation.TargetRequestedModel == nil || *operation.TargetRequestedModel != modelChangeTargetModel {
 				t.Fatalf("model operation = %+v", operation)
+			}
+			if len(fixture.hooks.events) != 1 || fixture.hooks.events[0].Source != sessionHookResume {
+				t.Fatalf("initial resume hooks = %+v, want one resume", fixture.hooks.events)
 			}
 			restarted := fixture.newManager()
 			replayed, err := restarted.ChangeModel(t.Context(), request)
@@ -300,8 +391,103 @@ func TestChangeModelColdUsesExactRuntimeController(t *testing.T) {
 			if got := strings.Join(fixture.control.callOrder(), ","); got != test.wantCalls {
 				t.Fatalf("replay called controller: %q", got)
 			}
+			if len(fixture.hooks.events) != 2 || fixture.hooks.events[1].Source != sessionHookResume {
+				t.Fatalf("restart resume hooks = %+v, want one hook per exact runtime open", fixture.hooks.events)
+			}
+			if len(fixture.runtimeManager.unpublishedRequests) != 2 {
+				t.Fatalf("restart exact runtime requests = %d, want 2", len(fixture.runtimeManager.unpublishedRequests))
+			}
+			restartedTopic := restarted.activeTopicSession(fixture.record.SessionID)
+			if restartedTopic == nil {
+				t.Fatal("replay did not restore the exact runtime")
+			}
+			assertColdRuntimeLease(t, restartedTopic, fixture.record, test.wantModel, test.wantGeneration)
+			replayedAgain, err := restarted.ChangeModel(t.Context(), request)
+			if err != nil || replayedAgain != result {
+				t.Fatalf("second replay = %+v, %v; want %+v", replayedAgain, err, result)
+			}
+			if got := strings.Join(fixture.control.callOrder(), ","); got != test.wantCalls {
+				t.Fatalf("second replay called controller: %q", got)
+			}
+			if len(fixture.hooks.events) != 2 {
+				t.Fatalf("second replay repeated resume hooks: %+v", fixture.hooks.events)
+			}
+			if len(fixture.runtimeManager.unpublishedRequests) != 2 {
+				t.Fatalf("second replay reopened runtime: %d exact requests", len(fixture.runtimeManager.unpublishedRequests))
+			}
+			if got := strings.Join(fixture.operations.callOrder(), ","); got != test.wantJournal {
+				t.Fatalf("replay repeated journal mutation: %q", got)
+			}
 		})
 	}
+}
+
+func TestChangeModelColdEntryFailuresDoNotMutateState(t *testing.T) {
+	t.Run("exact runtime build failure", func(t *testing.T) {
+		fixture := newColdModelChangeUnitFixture(t, agentproduct.ModelValidation{}, RuntimeModelChange{})
+		fixture.runtimeManager.sessionErr = errors.New("secret provider failure")
+		result, err := fixture.manager.ChangeModel(t.Context(), ModelChangeRequest{
+			OperationID: "cold-model-build-failure", SessionID: fixture.record.SessionID,
+			InputHash: strings.Repeat("f", 64), TargetModel: modelChangeTargetModel,
+		})
+		if err != nil || result.Status != ModelChangeUnavailable || result.Reason != baldastate.RuntimeOperationReasonUnavailable {
+			t.Fatalf("ChangeModel() = %+v, %v", result, err)
+		}
+		if fixture.manager.activeTopicSession(fixture.record.SessionID) != nil {
+			t.Fatal("failed exact runtime was published")
+		}
+		if fixture.operations.operation.OperationID != "" || len(fixture.control.callOrder()) != 0 || len(fixture.hooks.events) != 0 {
+			t.Fatalf("failed exact open side effects = operation %+v, control %v, hooks %+v",
+				fixture.operations.operation, fixture.control.callOrder(), fixture.hooks.events)
+		}
+		assertColdModelRecordUnchanged(t, fixture)
+	})
+
+	t.Run("exact runtime binding mismatch aborts candidate", func(t *testing.T) {
+		fixture := newColdModelChangeUnitFixture(t, agentproduct.ModelValidation{}, RuntimeModelChange{})
+		var closes atomic.Int32
+		fixture.runtimeManager.sessionRuntime.ProviderBindingJSON = `{"RootProviderID":"other"}`
+		fixture.runtimeManager.unpublishedClose = func() error { closes.Add(1); return nil }
+		result, err := fixture.manager.ChangeModel(t.Context(), ModelChangeRequest{
+			OperationID: "cold-model-binding-mismatch", SessionID: fixture.record.SessionID,
+			InputHash: strings.Repeat("b", 64), TargetModel: modelChangeTargetModel,
+		})
+		if err != nil || result.Status != ModelChangeUnavailable || closes.Load() != 1 {
+			t.Fatalf("ChangeModel() = %+v, %v; candidate closes = %d", result, err, closes.Load())
+		}
+		if fixture.runtimeManager.lastCandidate == nil || !fixture.runtimeManager.lastCandidate.aborted ||
+			fixture.manager.activeTopicSession(fixture.record.SessionID) != nil || fixture.operations.operation.OperationID != "" {
+			t.Fatalf("mismatched candidate = %+v, active topic %v, operation %+v",
+				fixture.runtimeManager.lastCandidate, fixture.manager.activeTopicSession(fixture.record.SessionID), fixture.operations.operation)
+		}
+		assertColdModelRecordUnchanged(t, fixture)
+	})
+
+	t.Run("model controller absent", func(t *testing.T) {
+		fixture := newColdModelChangeUnitFixture(t, agentproduct.ModelValidation{}, RuntimeModelChange{})
+		fixture.runtimeManager.sessionRuntime.ModelController = nil
+		result, err := fixture.manager.ChangeModel(t.Context(), ModelChangeRequest{
+			OperationID: "cold-model-no-controller", SessionID: fixture.record.SessionID,
+			InputHash: strings.Repeat("c", 64), TargetModel: modelChangeTargetModel,
+		})
+		if err != nil || result.Status != ModelChangeUnsupported || result.Reason != baldastate.RuntimeOperationReasonUnsupported ||
+			result.Generation != fixture.record.RuntimeGeneration {
+			t.Fatalf("ChangeModel() = %+v, %v", result, err)
+		}
+		if fixture.operations.operation.OperationID != "" || len(fixture.control.callOrder()) != 0 {
+			t.Fatalf("absent controller side effects = operation %+v, control %v",
+				fixture.operations.operation, fixture.control.callOrder())
+		}
+		if len(fixture.hooks.events) != 1 || fixture.hooks.events[0].Source != sessionHookResume {
+			t.Fatalf("absent controller resume hooks = %+v, want one resume", fixture.hooks.events)
+		}
+		assertColdModelRecordUnchanged(t, fixture)
+		topic := fixture.manager.activeTopicSession(fixture.record.SessionID)
+		if topic == nil {
+			t.Fatal("exact runtime without model control was not retained")
+		}
+		assertColdRuntimeLease(t, topic, fixture.record, "", fixture.record.RuntimeGeneration)
+	})
 }
 
 func TestChangeModelColdResumeHookDenialClosesUnpublishedRuntime(t *testing.T) {
