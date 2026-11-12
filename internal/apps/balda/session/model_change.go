@@ -55,6 +55,11 @@ func (m *Manager) ChangeModel(ctx context.Context, request ModelChangeRequest) (
 		!validModelInputHash(request.InputHash) {
 		return ModelChangeResult{Status: ModelChangeConflict, Reason: baldastate.RuntimeOperationReasonInvalid}, ErrRuntimePublicationInvalid
 	}
+	endLifecycle, err := m.beginLifecycleOperation(ctx)
+	if err != nil {
+		return ModelChangeResult{Status: ModelChangeUnavailable, Reason: baldastate.RuntimeOperationReasonUnavailable}, err
+	}
+	defer endLifecycle()
 
 	unlockOperation := m.lockSessionOperation("\x00model-operation:" + request.OperationID)
 	defer unlockOperation()
@@ -67,12 +72,42 @@ func (m *Manager) ChangeModel(ctx context.Context, request ModelChangeRequest) (
 	if found && !sameModelRequest(existing, request) {
 		return ModelChangeResult{Status: ModelChangeConflict, Reason: baldastate.RuntimeOperationReasonInvalid}, nil
 	}
-	topic := m.activeTopicSession(request.SessionID)
-	if found && existing.State == baldastate.RuntimeOperationApplying {
-		if topic != nil {
-			topic.fenceRuntimeRecovery()
+	if !found {
+		if err := m.recoverRuntimeOperation(ctx, request.SessionID); err != nil {
+			return recoveryRequiredModelResult()
 		}
-		return recoveryRequiredModelResult()
+		existing, found, err = m.runtimeOperations.Get(ctx, request.OperationID)
+		if err != nil {
+			return ModelChangeResult{Status: ModelChangeUnavailable, Reason: baldastate.RuntimeOperationReasonUnavailable}, nil
+		}
+	}
+	if found && existing.State == baldastate.RuntimeOperationApplying {
+		if err := m.recoverApplyingModelOperation(ctx, existing); err != nil {
+			return recoveryRequiredModelResult()
+		}
+		existing, found, err = m.runtimeOperations.Get(ctx, request.OperationID)
+		if err != nil || !found || !sameModelRequest(existing, request) {
+			return recoveryRequiredModelResult()
+		}
+	}
+	topic := m.activeTopicSession(request.SessionID)
+	if topic == nil {
+		if m.sessionStore == nil {
+			return unavailableModelRuntimeResult(nil)
+		}
+		record, recordFound, recordErr := m.sessionStore.GetBySessionID(ctx, request.SessionID)
+		if recordErr != nil || !recordFound || record.Status != baldastate.SessionStatusActive {
+			return unavailableModelRuntimeResult(nil)
+		}
+		if found && existing.State == baldastate.RuntimeOperationPrepared && !modelRecoveryRecordMatches(record, existing) {
+			return recoveryRequiredModelResult()
+		}
+		topic, err = m.openExactModelRuntime(
+			ctx, record, record.RuntimeSnapshotID, record.ProviderBindingJSON, record.RequestedModel, false,
+		)
+		if err != nil {
+			return unavailableModelRuntimeResult(nil)
+		}
 	}
 	if found && existing.State == baldastate.RuntimeOperationTerminal &&
 		baldastate.RuntimeOperationReason(existing.ReasonCode) == baldastate.RuntimeOperationReasonChangedReplacement {

@@ -8,10 +8,23 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/baldaworks/balda/internal/apps/balda/hookcmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/runtime/v2/agentproduct"
 	adksession "google.golang.org/adk/v2/session"
 )
+
+const modelColdSnapshotID = "snapshot"
+
+type modelStartHooks struct {
+	events []hookcmd.Event
+	err    error
+}
+
+func (h *modelStartHooks) Run(_ context.Context, event hookcmd.Event) (hookcmd.Result, error) {
+	h.events = append(h.events, event)
+	return hookcmd.Result{}, h.err
+}
 
 const (
 	modelChangeTargetModel   = "model-2"
@@ -113,6 +126,108 @@ func TestChangeModelLivePublishesSharedSuccessorOnce(t *testing.T) {
 	}
 	if closes.Load() != 1 {
 		t.Fatalf("close count = %d, want 1", closes.Load())
+	}
+}
+
+func TestChangeModelColdExactOpensPostResetRuntime(t *testing.T) {
+	f := newArchiveFixture(t)
+	control := &modelTestController{
+		validation: agentproduct.ModelValidation{Status: agentproduct.ModelSupported, Model: modelChangeTargetModel},
+		change:     RuntimeModelChange{Status: agentproduct.ModelApplied, EffectiveModel: modelChangeTargetModel},
+	}
+	f.runtime.ModelController = control
+	f.runtime.ProviderBindingJSON = publicationBinding
+	f.runtime.RuntimeSnapshotID = modelColdSnapshotID
+	f.runtime.RecipeModel = publicationOriginalModel
+
+	initial := f.manager()
+	initial.runtimeOperations = f.provider.RuntimeOperations()
+	topic, err := initial.EnsureSession(t.Context(), archiveInput(), "saved")
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, _, err := initial.PrepareFreshLifetime(t.Context(), FreshLifetimeRequest{
+		OperationID: "model-cold-reset", SessionID: topic.GetSessionID(), InputHash: strings.Repeat("c", 64),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := initial.PublishFreshLifetime(t.Context(), prepared); err != nil {
+		t.Fatal(err)
+	}
+	record, found, err := f.provider.Sessions().GetBySessionID(t.Context(), topic.GetSessionID())
+	if err != nil || !found || record.ArchiveID == "" || record.ArchiveID == record.SessionID {
+		t.Fatalf("post-reset record = %+v, %t, %v", record, found, err)
+	}
+
+	restarted := f.manager()
+	restarted.runtimeOperations = f.provider.RuntimeOperations()
+	hooks := &modelStartHooks{}
+	restarted.hooks = hooks
+	result, err := restarted.ChangeModel(t.Context(), ModelChangeRequest{
+		OperationID: "cold-model-change", SessionID: record.SessionID,
+		InputHash: strings.Repeat("d", 64), TargetModel: modelChangeTargetModel,
+	})
+	if err != nil || result.Status != ModelChangeChangedLive {
+		t.Fatalf("ChangeModel() = %+v, %v", result, err)
+	}
+	active := restarted.activeTopicSession(record.SessionID)
+	if active == nil || active.GetArchiveID() != record.ArchiveID {
+		t.Fatalf("active exact archive = %v, want %q", active, record.ArchiveID)
+	}
+	runtimeManager := restarted.runtimeManager.(*fakeScopedRuntimeManager)
+	if len(runtimeManager.unpublishedRequests) != 1 || runtimeManager.unpublishedRequests[0].AgentSessionID != record.ArchiveID {
+		t.Fatalf("runtime requests = %+v, want unpublished Archive.RuntimeID %q", runtimeManager.unpublishedRequests, record.ArchiveID)
+	}
+	if len(hooks.events) != 1 || hooks.events[0].Name != hookcmd.SessionStart || hooks.events[0].Source != sessionHookResume || hooks.events[0].AgentSessionID != record.ArchiveID {
+		t.Fatalf("cold model hooks = %+v", hooks.events)
+	}
+}
+
+func TestChangeModelColdResumeHookDenialClosesUnpublishedRuntime(t *testing.T) {
+	f := newArchiveFixture(t)
+	f.runtime.ProviderBindingJSON = publicationBinding
+	f.runtime.RuntimeSnapshotID = modelColdSnapshotID
+	f.runtime.RecipeModel = publicationOriginalModel
+	initial := f.manager()
+	initial.runtimeOperations = f.provider.RuntimeOperations()
+	topic, err := initial.EnsureSession(t.Context(), archiveInput(), "saved")
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, found, err := f.provider.Sessions().GetBySessionID(t.Context(), topic.GetSessionID())
+	if err != nil || !found {
+		t.Fatalf("persisted record = %+v, %t, %v", record, found, err)
+	}
+
+	var closes atomic.Int32
+	restarted := f.manager()
+	restarted.runtimeOperations = f.provider.RuntimeOperations()
+	runtimeManager := restarted.runtimeManager.(*fakeScopedRuntimeManager)
+	runtimeManager.unpublishedClose = func() error { closes.Add(1); return nil }
+	runtimeManager.runtimeForSession = func(request SessionRuntimeRequest) (*BuiltRuntime, error) {
+		runtime := *f.runtime
+		runtime.RuntimeSnapshotID = request.RuntimeSnapshotID
+		return &runtime, nil
+	}
+	hooks := &modelStartHooks{err: hookcmd.ErrDenied}
+	restarted.hooks = hooks
+	request := ModelChangeRequest{
+		OperationID: "cold-model-hook-denial", SessionID: record.SessionID,
+		InputHash: strings.Repeat("e", 64), TargetModel: modelChangeTargetModel,
+	}
+	result, err := restarted.ChangeModel(t.Context(), request)
+	if err != nil || result.Status != ModelChangeUnavailable {
+		t.Fatalf("ChangeModel() = %+v, %v", result, err)
+	}
+	if closes.Load() != 1 || runtimeManager.lastCandidate == nil || !runtimeManager.lastCandidate.aborted || restarted.activeTopicSession(record.SessionID) != nil {
+		t.Fatalf("denied runtime close/visibility = %d/%v", closes.Load(), restarted.activeTopicSession(record.SessionID))
+	}
+	if len(hooks.events) != 1 || hooks.events[0].Source != sessionHookResume || hooks.events[0].AgentSessionID == "" {
+		t.Fatalf("resume hooks = %+v", hooks.events)
+	}
+	if _, found, err := f.provider.RuntimeOperations().Get(t.Context(), request.OperationID); err != nil || found {
+		t.Fatalf("operation after denied hook = found %t, err %v", found, err)
 	}
 }
 

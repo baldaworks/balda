@@ -22,6 +22,29 @@ type SessionAgentBuilderAdapter struct {
 	Builder *baldaagent.Builder
 }
 
+func (a SessionAgentBuilderAdapter) RuntimeSessionService() adksession.Service {
+	if a.Builder == nil {
+		return nil
+	}
+	return a.Builder.RuntimeSessionService()
+}
+
+func (a SessionAgentBuilderAdapter) CreateFreshLocalSession(
+	ctx context.Context,
+	agentName string,
+	userID string,
+	sessionID string,
+	workspaceDir string,
+	sessionCtx baldasession.RuntimeSessionContext,
+) (adksession.Session, error) {
+	if a.Builder == nil {
+		return nil, errors.New("agent builder is required")
+	}
+	return a.Builder.CreateFreshLocalSession(
+		ctx, agentName, userID, sessionID, workspaceDir, agentSessionContext(sessionCtx),
+	)
+}
+
 func (a SessionAgentBuilderAdapter) CreateRuntimeSession(
 	ctx context.Context,
 	runtime *baldasession.BuiltRuntime,

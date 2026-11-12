@@ -46,6 +46,11 @@ func (m *Manager) startSessionHooksForRuntime(ctx context.Context, ts *TopicSess
 }
 
 func (m *Manager) endSessionHooks(ctx context.Context, ts *TopicSession) {
+	value, _ := ts.runtimeValue()
+	m.endSessionHooksForRuntime(ctx, ts, value.sessionID, value.providerID)
+}
+
+func (m *Manager) endSessionHooksForRuntime(ctx context.Context, ts *TopicSession, runtimeID, provider string) {
 	if m.hooks == nil || ts == nil || !ts.hooksStarted || ts.hooksEnded {
 		return
 	}
@@ -54,8 +59,7 @@ func (m *Manager) endSessionHooks(ctx context.Context, ts *TopicSession) {
 	defer cancel()
 	cwd, err := filepath.Abs(ts.workspaceDir)
 	if err == nil {
-		value, _ := ts.runtimeValue()
-		_, err = m.hooks.Run(endCtx, hookcmd.Event{Name: hookcmd.SessionEnd, SessionID: ts.sessionID, AgentSessionID: value.sessionID, CWD: cwd, Provider: m.getProviderName(), Source: "close"})
+		_, err = m.hooks.Run(endCtx, hookcmd.Event{Name: hookcmd.SessionEnd, SessionID: ts.sessionID, AgentSessionID: runtimeID, CWD: cwd, Provider: provider, Source: "close"})
 	}
 	if err != nil {
 		m.logger.Warn().Str("session_id", ts.sessionID).Msg("session end hook failed; continuing cleanup")

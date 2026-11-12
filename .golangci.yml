@@ -50,6 +50,18 @@ linters:
         - pattern: '^session\.Manager\.(GetSession|EnsureSession|RestoreSession|CreateSession|TakeStartupNotice)$'
           pkg: '^github\.com/baldaworks/balda/internal/apps/balda/session$'
           msg: 'Ordinary conversational presentation must consume the shared SessionPreparer outcome.'
+        - pattern: '^appports\.TurnQueue\.Enqueue$'
+          pkg: '^github\.com/baldaworks/balda/internal/apps/balda/appports$'
+          msg: 'Ordinary FIFO admission is owned only by SessionActor and modelapp.'
+        - pattern: '^actors\.TurnDispatcher\.Enqueue$'
+          pkg: '^github\.com/baldaworks/balda/internal/apps/balda/actors$'
+          msg: 'Ordinary FIFO admission is owned only by SessionActor and modelapp.'
+        - pattern: '^appports\.ReplacementQueue\.EnqueueReplacement$'
+          pkg: '^github\.com/baldaworks/balda/internal/apps/balda/appports$'
+          msg: 'Replacement FIFO admission is owned only by lifetimeapp.'
+        - pattern: '^actors\.TurnDispatcher\.EnqueueReplacement$'
+          pkg: '^github\.com/baldaworks/balda/internal/apps/balda/actors$'
+          msg: 'Replacement FIFO admission is owned only by lifetimeapp.'
     revive:
       rules:
         - name: exported
@@ -60,6 +72,12 @@ linters:
         text: 'Ordinary conversational presentation must consume'
         linters: [forbidigo]
       - path: 'internal/apps/balda/state/|_test\.go$'
+        linters: [forbidigo]
+      - path: 'internal/apps/balda/(actors/session_actor|modelapp/service)\.go$'
+        text: 'Ordinary FIFO admission is owned only'
+        linters: [forbidigo]
+      - path: 'internal/apps/balda/lifetimeapp/service\.go$'
+        text: 'Replacement FIFO admission is owned only'
         linters: [forbidigo]
 
 formatters:

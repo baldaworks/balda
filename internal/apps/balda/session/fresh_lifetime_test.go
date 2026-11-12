@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"errors"
+	"os"
 	"reflect"
 	"strings"
 	"sync/atomic"
@@ -24,6 +25,18 @@ const (
 	freshLifetimeLaterCatalog    = "catalog-recovery-C"
 )
 
+type missingTargetArchive struct {
+	baldastate.ChatArchiveStore
+	target string
+}
+
+func (s missingTargetArchive) Get(ctx context.Context, id string) (chatarchivecmd.Session, error) {
+	if id == s.target {
+		return chatarchivecmd.Session{}, chatarchivecmd.ErrNotFound
+	}
+	return s.ChatArchiveStore.Get(ctx, id)
+}
+
 func TestFreshLifetimeDoesNotCreateMissingSession(t *testing.T) {
 	f := newArchiveFixture(t)
 	manager := f.manager()
@@ -38,9 +51,127 @@ func TestFreshLifetimeDoesNotCreateMissingSession(t *testing.T) {
 	}
 }
 
-func TestFreshLifetimeReplacesColdPersistedSession(t *testing.T) {
+func TestFreshLifetimeColdRejectsInvalidBindingBeforeSnapshotOrJournal(t *testing.T) {
 	f := newArchiveFixture(t)
 	f.runtime.ProviderBindingJSON = publicationBinding
+	topic, err := f.manager().EnsureSession(t.Context(), archiveInput(), "saved")
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, found, err := f.provider.Sessions().GetBySessionID(t.Context(), topic.GetSessionID())
+	if err != nil || !found {
+		t.Fatalf("record = %+v, %t, %v", record, found, err)
+	}
+	record.ProviderBindingJSON = `{"RootProviderID":""}`
+	if err := f.provider.Sessions().DeleteBySessionID(t.Context(), record.SessionID); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.provider.Sessions().Upsert(t.Context(), record); err != nil {
+		t.Fatal(err)
+	}
+
+	restarted := f.manager()
+	restarted.runtimeOperations = f.provider.RuntimeOperations()
+	request := FreshLifetimeRequest{OperationID: "invalid-binding-reset", SessionID: record.SessionID, InputHash: strings.Repeat("b", 64)}
+	prepared, result, _ := restarted.PrepareFreshLifetime(t.Context(), request)
+	if prepared != nil || result.Status != FreshLifetimeUnavailable {
+		t.Fatalf("PrepareFreshLifetime() = %p, %+v", prepared, result)
+	}
+	runtimeManager := restarted.runtimeManager.(*fakeScopedRuntimeManager)
+	if runtimeManager.snapshotCalls != 0 {
+		t.Fatalf("snapshot selections = %d, want 0", runtimeManager.snapshotCalls)
+	}
+	if _, found, err := f.provider.RuntimeOperations().Get(t.Context(), request.OperationID); err != nil || found {
+		t.Fatalf("runtime operation found=%t err=%v", found, err)
+	}
+	if _, err := f.provider.ChatArchive().Pending(t.Context(), record.ChannelType, record.AddressKey); !errors.Is(err, chatarchivecmd.ErrNotFound) {
+		t.Fatalf("pending archive error = %v, want not found", err)
+	}
+}
+
+func TestFreshLifetimeColdRejectsInvalidWorkspaceBeforeSnapshotOrJournal(t *testing.T) {
+	tests := []struct {
+		name             string
+		workspaceEnabled bool
+		mutate           func(*testing.T, *baldastate.SessionRecord)
+	}{
+		{
+			name: "missing directory",
+			mutate: func(t *testing.T, record *baldastate.SessionRecord) {
+				record.WorkspaceDir = t.TempDir() + "/missing"
+			},
+		},
+		{
+			name: "not a directory",
+			mutate: func(t *testing.T, record *baldastate.SessionRecord) {
+				path := t.TempDir() + "/workspace-file"
+				if err := os.WriteFile(path, []byte("not a directory"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				record.WorkspaceDir = path
+			},
+		},
+		{
+			name:             "workspace branch missing",
+			workspaceEnabled: true,
+			mutate: func(_ *testing.T, record *baldastate.SessionRecord) {
+				record.BranchName = ""
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			f := newArchiveFixture(t)
+			f.runtime.ProviderBindingJSON = publicationBinding
+			topic, err := f.manager().EnsureSession(t.Context(), archiveInput(), "saved")
+			if err != nil {
+				t.Fatal(err)
+			}
+			record, found, err := f.provider.Sessions().GetBySessionID(t.Context(), topic.GetSessionID())
+			if err != nil || !found {
+				t.Fatalf("record = %+v, %t, %v", record, found, err)
+			}
+			test.mutate(t, &record)
+			if err := f.provider.Sessions().DeleteBySessionID(t.Context(), record.SessionID); err != nil {
+				t.Fatal(err)
+			}
+			if err := f.provider.Sessions().Upsert(t.Context(), record); err != nil {
+				t.Fatal(err)
+			}
+
+			restarted := f.manager()
+			restarted.workspaceEnabled = test.workspaceEnabled
+			restarted.runtimeOperations = f.provider.RuntimeOperations()
+			request := FreshLifetimeRequest{
+				OperationID: "invalid-workspace-reset", SessionID: record.SessionID,
+				InputHash: strings.Repeat("9", 64),
+			}
+			prepared, result, _ := restarted.PrepareFreshLifetime(t.Context(), request)
+			if prepared != nil || result.Status != FreshLifetimeUnavailable {
+				t.Fatalf("PrepareFreshLifetime() = %p, %+v", prepared, result)
+			}
+			runtimeManager := restarted.runtimeManager.(*fakeScopedRuntimeManager)
+			if runtimeManager.snapshotCalls != 0 {
+				t.Fatalf("snapshot selections = %d, want 0", runtimeManager.snapshotCalls)
+			}
+			if _, found, err := f.provider.RuntimeOperations().Get(t.Context(), request.OperationID); err != nil || found {
+				t.Fatalf("runtime operation found=%t err=%v", found, err)
+			}
+			if _, err := f.provider.ChatArchive().Pending(t.Context(), record.ChannelType, record.AddressKey); !errors.Is(err, chatarchivecmd.ErrNotFound) {
+				t.Fatalf("pending archive error = %v, want not found", err)
+			}
+		})
+	}
+}
+
+func TestFreshLifetimeReplacesColdPersistedSession(t *testing.T) {
+	f := newArchiveFixture(t)
+	const (
+		retainedProviderID = "retained-provider"
+		retainedBinding    = `{"RootProviderID":"retained-provider","Entries":[{"ProviderID":"retained-provider","Source":"managed","RevisionID":"revision"}],"Reproducible":true,"Warnings":null}`
+	)
+	f.runtime.ProviderID = retainedProviderID
+	f.runtime.ProviderBindingJSON = retainedBinding
 	control := &freshLifetimeControlSpy{}
 	f.runtime.SessionControl = control
 	initial := f.manager()
@@ -55,6 +186,7 @@ func TestFreshLifetimeReplacesColdPersistedSession(t *testing.T) {
 	}
 	requested := "saved-model"
 	record.RequestedModel, record.EffectiveModel = &requested, requested
+	record.AgentName = ""
 	record.WorkspaceDir, record.BranchName = f.dir, "saved-branch"
 	// Seed a saved preference before restart; Upsert preserves runtime-owned
 	// fields on an existing row.
@@ -76,6 +208,9 @@ func TestFreshLifetimeReplacesColdPersistedSession(t *testing.T) {
 	runtimeManager.runtimeForSession = func(request SessionRuntimeRequest) (*BuiltRuntime, error) {
 		runtime := *f.runtime
 		runtime.RuntimeSnapshotID = request.RuntimeSnapshotID
+		if request.ModelOverride != nil {
+			runtime.RecipeModel = *request.ModelOverride
+		}
 		return &runtime, nil
 	}
 	request := FreshLifetimeRequest{OperationID: "cold-reset", SessionID: topic.GetSessionID(), InputHash: strings.Repeat("a", 64)}
@@ -87,44 +222,78 @@ func TestFreshLifetimeReplacesColdPersistedSession(t *testing.T) {
 	if err != nil || result.Status != FreshLifetimeReset {
 		t.Fatalf("cold publish = %+v, %v", result, err)
 	}
-	active := restarted.activeTopicSession(request.SessionID)
-	if active == nil || active.GetArchiveID() == oldArchive {
-		t.Fatal("cold reset did not publish a new archive")
-	}
-	value, ok := active.runtimeValue()
-	if !ok || value.session.Events().Len() != 0 || value.runtime.RuntimeSnapshotID != freshLifetimeCurrentCatalog || value.runtime.ProviderBindingJSON != publicationBinding {
-		t.Fatalf("cold reset lost empty context, current catalog, or provider binding: %+v", value)
+	if active := restarted.activeTopicSession(request.SessionID); active != nil {
+		t.Fatal("cold reset eagerly published a provider runtime")
 	}
 	if workspaces.mutations != 0 || runtimeManager.runtimeCalls != 0 || len(runtimeManager.sessionRequests) != 0 {
 		t.Fatalf("cold reset restored predecessor: workspace=%d root=%d bindings=%d", workspaces.mutations, runtimeManager.runtimeCalls, len(runtimeManager.sessionRequests))
 	}
 	saved, _, err := f.provider.Sessions().GetBySessionID(t.Context(), request.SessionID)
-	if err != nil || saved.WorkspaceDir != record.WorkspaceDir || saved.BranchName != record.BranchName || !sameOptionalModel(saved.RequestedModel, record.RequestedModel) || saved.EffectiveModel != requested {
+	if err != nil || saved.ArchiveID == oldArchive || saved.RuntimeSnapshotID != freshLifetimeCurrentCatalog || saved.ProviderBindingJSON != retainedBinding ||
+		saved.WorkspaceDir != record.WorkspaceDir || saved.BranchName != record.BranchName || !sameOptionalModel(saved.RequestedModel, record.RequestedModel) || saved.EffectiveModel != requested {
 		t.Fatalf("cold reset metadata = %+v, %v", saved, err)
 	}
-	if _, observed := active.runtime.modelObservation(); observed {
-		t.Fatal("cold reset retained an active model observation")
+	created, err := f.runtime.SessionSvc.Get(t.Context(), &adksession.GetRequest{AppName: baldaRuntimeAppName, UserID: saved.UserID, SessionID: saved.ArchiveID})
+	if err != nil || created.Session == nil || created.Session.Events().Len() != 0 {
+		t.Fatalf("cold reset local lifetime = %#v, %v", created, err)
 	}
 	if calls := control.calls.Load(); calls != 0 {
 		t.Fatalf("cold reset called provider control %d times", calls)
 	}
-	if len(hooks.events) != 1 || hooks.events[0].Name != hookcmd.SessionStart || hooks.events[0].Source != "startup" || hooks.events[0].AgentSessionID != active.GetArchiveID() {
+	if result.Activation == nil || result.Activation.Label != defaultSessionLabel || !reflect.DeepEqual(result.Activation.Runtime, sessioncmd.RuntimeSummary{}) {
+		t.Fatalf("cold reset activation = %#v, want empty runtime summary", result.Activation)
+	}
+	if len(hooks.events) != 1 || hooks.events[0].Name != hookcmd.SessionStart || hooks.events[0].Source != "startup" || hooks.events[0].AgentSessionID != saved.ArchiveID {
 		t.Fatalf("cold reset hooks = %+v, want successor startup only", hooks.events)
-	}
-	next, err := restarted.EnsureSession(t.Context(), archiveInput(), "saved")
-	if err != nil || next != active {
-		t.Fatalf("next ordinary turn preparation = %v, %v; want published successor", next, err)
-	}
-	replay, replayResult, err := restarted.PrepareFreshLifetime(t.Context(), request)
-	if err != nil || replay != nil || !reflect.DeepEqual(replayResult, result) {
-		t.Fatalf("cold reset replay = %v, %+v, %v; want %+v", replay, replayResult, err, result)
 	}
 	coldReplay := f.manager()
 	coldReplay.runtimeOperations = f.provider.RuntimeOperations()
-	_, replayResult, _ = coldReplay.PrepareFreshLifetime(t.Context(), request)
+	_, replayResult, err := coldReplay.PrepareFreshLifetime(t.Context(), request)
 	coldRuntime := coldReplay.runtimeManager.(*fakeScopedRuntimeManager)
-	if replayResult.Status != FreshLifetimeRecoveryRequired || coldRuntime.snapshotCalls != 0 || len(coldRuntime.unpublishedRequests) != 0 {
+	if err != nil || !reflect.DeepEqual(replayResult, result) || coldRuntime.snapshotCalls != 0 || len(coldRuntime.unpublishedRequests) != 0 {
 		t.Fatalf("cold terminal replay = %+v, selections=%d builds=%d", replayResult, coldRuntime.snapshotCalls, len(coldRuntime.unpublishedRequests))
+	}
+	brokenReplay := f.manager()
+	brokenReplay.runtimeOperations = f.provider.RuntimeOperations()
+	brokenReplay.archive = missingTargetArchive{ChatArchiveStore: f.provider.ChatArchive(), target: saved.ArchiveID}
+	if _, brokenResult, brokenErr := brokenReplay.PrepareFreshLifetime(t.Context(), request); brokenErr != nil || brokenResult.Status != FreshLifetimeRecoveryRequired || brokenResult.Activation != nil {
+		t.Fatalf("missing archive replay = %+v, %v; want recovery required", brokenResult, brokenErr)
+	}
+	restarted.hooks = nil
+	restarted.workspaceEnabled = false
+	if err := f.runtime.SessionSvc.Delete(t.Context(), &adksession.DeleteRequest{
+		AppName: baldaRuntimeAppName, UserID: saved.UserID, SessionID: saved.ArchiveID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if next, err := restarted.EnsureSession(t.Context(), archiveInput(), "saved"); err == nil || next != nil {
+		t.Fatalf("missing successor history = %v, %v; want bounded restore failure", next, err)
+	}
+	if _, err := f.provider.ChatArchive().Pending(t.Context(), saved.ChannelType, saved.AddressKey); !errors.Is(err, chatarchivecmd.ErrNotFound) {
+		t.Fatalf("failed exact restore pending archive = %v, want not found", err)
+	}
+	if _, err := f.builder.CreateFreshLocalSession(t.Context(), defaultSessionLabel, saved.UserID, saved.ArchiveID, saved.WorkspaceDir,
+		RuntimeSessionContext{ArchiveID: saved.ArchiveID, BaldaSessionID: saved.SessionID, SessionBranch: saved.BranchName}); err != nil {
+		t.Fatal(err)
+	}
+	resumeHooks := &modelStartHooks{}
+	restarted.hooks = resumeHooks
+	next, err := restarted.EnsureSession(t.Context(), archiveInput(), "saved")
+	if err != nil || next == nil || next.GetArchiveID() != saved.ArchiveID {
+		t.Fatalf("next ordinary turn preparation = %v, %v; want lazy exact successor", next, err)
+	}
+	_, nextValue, recoveryRequired := next.runtimeForRecovery()
+	if recoveryRequired || nextValue.providerID != retainedProviderID || len(resumeHooks.events) != 1 || resumeHooks.events[0].Provider != retainedProviderID {
+		t.Fatalf("retained provider restore = runtime %q, hooks %+v", nextValue.providerID, resumeHooks.events)
+	}
+	warmPrepared, _, err := restarted.PrepareFreshLifetime(t.Context(), FreshLifetimeRequest{
+		OperationID: "retained-provider-warm-reset", SessionID: saved.SessionID, InputHash: strings.Repeat("8", 64),
+	})
+	if err != nil || warmPrepared == nil {
+		t.Fatalf("retained provider warm prepare = %v, %v", warmPrepared, err)
+	}
+	if warmResult, err := restarted.PublishFreshLifetime(t.Context(), warmPrepared); err != nil || warmResult.Status != FreshLifetimeReset {
+		t.Fatalf("retained provider warm publish = %+v, %v", warmResult, err)
 	}
 }
 
@@ -220,6 +389,32 @@ func TestFreshLifetimeColdPublicationRejectsActivatedPredecessorAndShutdown(t *t
 				t.Fatalf("stale publication changed durable binding: %+v, %v", record, err)
 			}
 		})
+	}
+}
+
+func TestFreshLifetimeColdPreparedAbortEndsExactHook(t *testing.T) {
+	f := newArchiveFixture(t)
+	f.runtime.ProviderBindingJSON = publicationBinding
+	topic, err := f.manager().EnsureSession(t.Context(), archiveInput(), "saved")
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := f.manager()
+	manager.runtimeOperations = f.provider.RuntimeOperations()
+	hooks := &coldResetHooks{}
+	manager.hooks = hooks
+	prepared, _, err := manager.PrepareFreshLifetime(t.Context(), FreshLifetimeRequest{
+		OperationID: "cold-prepared-abort", SessionID: topic.GetSessionID(), InputHash: strings.Repeat("7", 64),
+	})
+	if err != nil || prepared == nil {
+		t.Fatalf("PrepareFreshLifetime() = %v, %v", prepared, err)
+	}
+	if _, err := manager.AbortFreshLifetime(t.Context(), prepared); err != nil {
+		t.Fatal(err)
+	}
+	if len(hooks.events) != 2 || hooks.events[1].Name != hookcmd.SessionEnd ||
+		hooks.events[1].AgentSessionID != prepared.operation.TargetArchiveID || hooks.events[1].Provider != recoveryProviderID {
+		t.Fatalf("cold rollback hooks = %+v", hooks.events)
 	}
 }
 
@@ -368,7 +563,7 @@ func TestFreshLifetimePublishesIndependentPreferenceAwareCandidate(t *testing.T)
 	}
 
 	replayed, replayResult, err := manager.PrepareFreshLifetime(t.Context(), request)
-	if err != nil || replayed != nil || replayResult.Status != FreshLifetimeReset || replayResult.Generation != oldGeneration+1 {
+	if err != nil || replayed != nil || !reflect.DeepEqual(replayResult, result) {
 		t.Fatalf("terminal replay = %#v, %#v, %v", replayed, replayResult, err)
 	}
 	collision := request
@@ -760,11 +955,8 @@ func TestFreshLifetimeColdRecoveryUsesPinnedLocalIdentity(t *testing.T) {
 	if err := f.provider.RuntimeOperations().MarkApplying(t.Context(), request.OperationID, request.InputHash); err != nil {
 		t.Fatal(err)
 	}
-	live := manager.sessionRecordFromValue(prepared.coldTopic, baldastate.SessionStatusActive, prepared.candidate.value)
+	live := freshLifetimeTargetRecord(*prepared.predecessor, prepared.operation)
 	if _, err := manager.archive.Activate(t.Context(), prepared.archiveToken, &live); err != nil {
-		t.Fatal(err)
-	}
-	if err := prepared.runtimeCandidate.Abort(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	operation, found, err := f.provider.RuntimeOperations().Get(t.Context(), request.OperationID)
@@ -785,10 +977,10 @@ func TestFreshLifetimeColdRecoveryUsesPinnedLocalIdentity(t *testing.T) {
 	if len(runtimeManager.sessionRequests) != 0 {
 		t.Fatalf("cold recovery built provider runtime %d times", len(runtimeManager.sessionRequests))
 	}
-	if len(runtimeManager.unpublishedRequests) != 1 {
-		t.Fatalf("cold recovery unpublished runtime builds = %d, want 1", len(runtimeManager.unpublishedRequests))
+	if len(runtimeManager.unpublishedRequests) != 0 {
+		t.Fatalf("cold recovery unpublished runtime builds = %d, want 0", len(runtimeManager.unpublishedRequests))
 	}
-	if runtimeManager.fenceCalls != 1 || runtimeManager.buildBeforeFence {
+	if runtimeManager.fenceCalls != 0 || runtimeManager.buildBeforeFence {
 		t.Fatalf("cold recovery fence/build order = calls %d, build-before-fence %t", runtimeManager.fenceCalls, runtimeManager.buildBeforeFence)
 	}
 	record, found, err := f.provider.Sessions().GetBySessionID(t.Context(), request.SessionID)

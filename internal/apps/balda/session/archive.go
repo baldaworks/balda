@@ -182,15 +182,16 @@ func (m *Manager) failArchiveActivation(ctx context.Context, root *BuiltRuntime,
 	recoveryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
 	defer cancel()
 	outcome := chatarchivecmd.StatusUncertain
-	appName := root.AppName
-	if appName == "" {
-		appName = baldaRuntimeAppName
-	}
-	if _, err := root.SessionSvc.Get(recoveryCtx, &adksession.GetRequest{AppName: appName, UserID: userID, SessionID: intent.Session.RuntimeID}); errors.Is(err, adksession.ErrNotFound) {
-		outcome = chatarchivecmd.OutcomeAborted
-	}
 	if intent.Kind == chatarchivecmd.KindExact {
 		outcome = chatarchivecmd.OutcomeAborted
+	} else if root != nil {
+		appName := root.AppName
+		if appName == "" {
+			appName = baldaRuntimeAppName
+		}
+		if _, err := root.SessionSvc.Get(recoveryCtx, &adksession.GetRequest{AppName: appName, UserID: userID, SessionID: intent.Session.RuntimeID}); errors.Is(err, adksession.ErrNotFound) {
+			outcome = chatarchivecmd.OutcomeAborted
+		}
 	}
 	if err := m.archive.Complete(recoveryCtx, intent.Token, outcome); err != nil {
 		m.logger.Warn().Str("archive_id", intent.Session.ID).Msg("archive activation outcome pending")

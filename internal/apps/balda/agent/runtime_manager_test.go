@@ -342,13 +342,17 @@ func TestUnpublishedSessionRuntimeCandidatePromotesExactBaseAtomically(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := recoveryCandidate.Abort(t.Context()); err != nil {
+	if err := recoveryCandidate.ClaimForPublication(); err != nil {
 		t.Fatal(err)
 	}
-	restored, err := manager.RuntimeForSession(t.Context(), request)
-	if err != nil {
+	if err := recoveryCandidate.Promote(); err != nil {
 		t.Fatal(err)
 	}
+	recoveryCandidate.MarkPublished()
+	if err := recoveryCandidate.CompletePublication(); err != nil {
+		t.Fatal(err)
+	}
+	restored := recoveryCandidate.Runtime()
 	if _, err := manager.childRuntimeBase(t.Context(), request.Locator.SessionID); !errors.Is(err, ErrProviderUnavailable) {
 		t.Fatalf("cold recovery fence cleared before slot proof: %v", err)
 	}

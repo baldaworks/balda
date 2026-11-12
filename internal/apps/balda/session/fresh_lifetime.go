@@ -57,6 +57,7 @@ type PreparedFreshLifetime struct {
 	runtimeCandidate UnpublishedSessionRuntimeCandidate
 	activation       *sessioncmd.Activation
 	coldTopic        *TopicSession
+	coldProviderID   string
 	predecessor      *baldastate.SessionRecord
 	settleOnce       sync.Once
 	settleResult     FreshLifetimeResult
@@ -369,7 +370,7 @@ func (m *Manager) checkFreshLifetimePending(
 // PublishFreshLifetime commits one already prepared local lifetime. The caller
 // must hold the delivered TurnDispatcher replacement boundary.
 func (m *Manager) PublishFreshLifetime(ctx context.Context, prepared *PreparedFreshLifetime) (FreshLifetimeResult, error) {
-	if m == nil || prepared == nil || prepared.candidate == nil || (prepared.incumbent == nil && prepared.predecessor == nil) {
+	if m == nil || prepared == nil || (prepared.predecessor == nil && (prepared.incumbent == nil || prepared.candidate == nil)) {
 		return FreshLifetimeResult{Status: FreshLifetimeConflict, Reason: baldastate.RuntimeOperationReasonInvalid}, ErrRuntimePublicationInvalid
 	}
 	prepared.settleOnce.Do(func() {
@@ -430,16 +431,15 @@ func (m *Manager) publishFreshLifetime(ctx context.Context, prepared *PreparedFr
 			operation.State = baldastate.RuntimeOperationApplying
 		}
 	}
+	if prepared.predecessor != nil {
+		return m.publishColdFreshLifetime(ctx, prepared, operation)
+	}
 	legacy := operation.Kind == string(baldastate.RuntimeOperationKindLifetime)
 	candidateMatches := legacyFreshLifetimeCandidateMatches(prepared.incumbent, prepared.candidate, operation)
 	if !legacy {
 		candidateMatches = freshLifetimeCandidateMatches(prepared.incumbent, prepared.candidate, operation)
 	}
 	guardMatches := topic.matchesRuntimeGuard(prepared.incumbent, operation.ExpectedArchiveID, operation.ExpectedGeneration)
-	if prepared.predecessor != nil {
-		guardMatches = m.coldFreshLifetimeGuard(ctx, *prepared.predecessor, operation)
-		candidateMatches = freshLifetimeActiveTargetMatches(prepared.candidate.value, operation)
-	}
 	if operation.State != baldastate.RuntimeOperationApplying ||
 		!guardMatches ||
 		!candidateMatches ||
@@ -511,6 +511,44 @@ func (m *Manager) publishFreshLifetime(ctx context.Context, prepared *PreparedFr
 	}, nil
 }
 
+func (m *Manager) publishColdFreshLifetime(
+	ctx context.Context,
+	prepared *PreparedFreshLifetime,
+	operation baldastate.RuntimeOperationRecord,
+) (FreshLifetimeResult, error) {
+	if operation.State != baldastate.RuntimeOperationApplying || prepared.predecessor == nil ||
+		!m.coldFreshLifetimeGuard(ctx, *prepared.predecessor, operation) {
+		return freshLifetimeRecoveryRequired()
+	}
+	service, appName, userID, ok := m.freshLifetimeRecoveryService(operation.SessionID, *prepared.predecessor)
+	if !ok {
+		return freshLifetimeRecoveryRequired()
+	}
+	response, err := service.Get(ctx, &adksession.GetRequest{
+		AppName: appName, UserID: userID, SessionID: operation.TargetArchiveID,
+	})
+	if err != nil || response == nil || !freshLifetimeSessionMatches(
+		response.Session, appName, userID, operation.TargetArchiveID, operation.SessionID,
+	) {
+		return freshLifetimeRecoveryRequired()
+	}
+	live := freshLifetimeTargetRecord(*prepared.predecessor, operation)
+	if _, err := m.archive.Activate(ctx, prepared.archiveToken, &live); err != nil &&
+		!m.freshLifetimeDurableTargetMatches(ctx, operation) {
+		return freshLifetimeRecoveryRequired()
+	}
+	terminal, finalized := m.finalizeFreshLifetime(ctx, operation)
+	if !finalized || !isPublicationTerminal(
+		terminal, operation, baldastate.RuntimeOperationOutcomeContextReset, "",
+	) {
+		return freshLifetimeRecoveryRequired()
+	}
+	return FreshLifetimeResult{
+		Status: FreshLifetimeReset, Generation: operation.ExpectedGeneration + 1,
+		Activation: prepared.activation.Clone(),
+	}, nil
+}
+
 // AbortFreshLifetime safely abandons a prepared candidate before the
 // replacement boundary has begun.
 func (m *Manager) AbortFreshLifetime(ctx context.Context, prepared *PreparedFreshLifetime) (FreshLifetimeResult, error) {
@@ -563,7 +601,14 @@ func (m *Manager) abortFreshLifetime(ctx context.Context, prepared *PreparedFres
 		return freshLifetimeRecoveryRequired()
 	}
 	if prepared.predecessor != nil {
-		_, result, err = m.rollbackFreshLifetimeRecord(ctx, *prepared.predecessor, operation, prepared.candidate.value.runtime.SessionSvc, prepared.candidate.value.appName)
+		service, appName, _, ok := m.freshLifetimeRecoveryService(operation.SessionID, *prepared.predecessor)
+		if !ok {
+			return freshLifetimeRecoveryRequired()
+		}
+		_, result, err = m.rollbackFreshLifetimeRecord(ctx, *prepared.predecessor, operation, service, appName)
+		if err == nil {
+			m.endSessionHooksForRuntime(context.WithoutCancel(ctx), prepared.coldTopic, operation.TargetArchiveID, prepared.coldProviderID)
+		}
 		return result, err
 	}
 	service := prepared.incumbent.value.runtime.SessionSvc
@@ -738,8 +783,12 @@ func (m *Manager) ensureFreshLifetimeSessionWithRuntime(ctx context.Context, top
 }
 
 func freshLifetimeSessionMatches(sess adksession.Session, appName, userID, runtimeID, stableID string) bool {
+	return freshLifetimeSessionIdentityMatches(sess, appName, userID, runtimeID, stableID) &&
+		sess.Events() != nil && sess.Events().Len() == 0
+}
+
+func freshLifetimeSessionIdentityMatches(sess adksession.Session, appName, userID, runtimeID, stableID string) bool {
 	return sess != nil && sess.AppName() == appName && sess.UserID() == userID && sess.ID() == runtimeID &&
-		sess.Events() != nil && sess.Events().Len() == 0 &&
 		archiveStateString(sess, chatarchivecmd.EpochStateKey) == runtimeID &&
 		archiveStateString(sess, baldaSessionIDStateKey) == stableID
 }
@@ -847,7 +896,31 @@ func (m *Manager) ResolveFreshLifetimeResult(ctx context.Context, request FreshL
 
 func (m *Manager) replayFreshLifetime(ctx context.Context, topic *TopicSession, operation baldastate.RuntimeOperationRecord) FreshLifetimeResult {
 	if operation.Outcome == string(baldastate.RuntimeOperationOutcomeContextReset) && m.freshLifetimeDurableTargetMatches(ctx, operation) {
-		activation, err := m.buildActivation(topic, sessioncmd.ActivationCreated, nil)
+		var activation *sessioncmd.Activation
+		var err error
+		if topic != nil {
+			activation, err = m.buildActivation(topic, sessioncmd.ActivationCreated, nil)
+		} else {
+			record, found, recordErr := m.sessionStore.GetBySessionID(ctx, operation.SessionID)
+			switch {
+			case recordErr == nil && found && m.freshLifetimeArchiveTargetMatches(ctx, operation, record):
+				agentName := strings.TrimSpace(record.AgentName)
+				if agentName == "" {
+					agentName = defaultSessionLabel
+				}
+				activation, err = buildActivationFromReceipt(
+					&TopicSession{sessionID: record.SessionID, agentName: agentName},
+					sessioncmd.ActivationCreated,
+					sessioncmd.PublicRuntimeMetadata{},
+					"",
+					nil,
+				)
+			case recordErr != nil:
+				err = recordErr
+			default:
+				err = ErrNoPersistedSession
+			}
+		}
 		if err == nil {
 			return FreshLifetimeResult{
 				Status: FreshLifetimeReset, Generation: operation.ExpectedGeneration + 1,

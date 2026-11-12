@@ -13,6 +13,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/actors"
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
+	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/modelapp"
 	"github.com/baldaworks/balda/internal/apps/balda/providers"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
@@ -146,6 +147,34 @@ type integrationScopedRuntimeManager struct {
 	requests   []baldasession.SessionRuntimeRequest
 }
 
+type integrationUnpublishedRuntime struct {
+	runtime  *baldasession.BuiltRuntime
+	claimed  bool
+	promoted bool
+}
+
+func (c *integrationUnpublishedRuntime) Runtime() *baldasession.BuiltRuntime { return c.runtime }
+func (*integrationUnpublishedRuntime) ExpectedBaseToken() uint64             { return 0 }
+func (c *integrationUnpublishedRuntime) ClaimForPublication() error {
+	c.claimed = true
+	return nil
+}
+func (c *integrationUnpublishedRuntime) Promote() error {
+	if !c.claimed {
+		return baldasession.ErrRuntimeUnavailable
+	}
+	c.promoted = true
+	return nil
+}
+func (*integrationUnpublishedRuntime) MarkPublished()             {}
+func (*integrationUnpublishedRuntime) CompletePublication() error { return nil }
+func (c *integrationUnpublishedRuntime) Abort(context.Context) error {
+	if c.promoted || c.runtime == nil || c.runtime.Close == nil {
+		return nil
+	}
+	return c.runtime.Close()
+}
+
 func (m *integrationScopedRuntimeManager) Runtime(context.Context) (*baldasession.BuiltRuntime, error) {
 	return sessionRuntime(m.runtime), nil
 }
@@ -162,6 +191,23 @@ func (m *integrationScopedRuntimeManager) RuntimeForSession(_ context.Context, r
 		return nil
 	}
 	return runtime, nil
+}
+
+func (m *integrationScopedRuntimeManager) BuildUnpublishedSessionRuntime(ctx context.Context, request baldasession.SessionRuntimeRequest) (baldasession.UnpublishedSessionRuntimeCandidate, error) {
+	runtime, err := m.RuntimeForSession(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	runtime.RuntimeBaseToken = 1
+	return &integrationUnpublishedRuntime{runtime: runtime}, nil
+}
+
+func (*integrationScopedRuntimeManager) FenceSessionRuntimeBase(string) error { return nil }
+func (*integrationScopedRuntimeManager) CompleteSessionRuntimeRecovery(string, uint64) error {
+	return nil
+}
+func (*integrationScopedRuntimeManager) AdoptPromotedSessionRuntime(string, uint64, baldasession.SessionRuntimeRequest) (baldasession.UnpublishedSessionRuntimeCandidate, bool) {
+	return nil, false
 }
 
 func (m *integrationScopedRuntimeManager) sessionRequests() []baldasession.SessionRuntimeRequest {
@@ -721,7 +767,7 @@ func TestApplyingModelRecoveryUsesProductionTargetAwareAdapter(t *testing.T) {
 	workspaceDir := t.TempDir()
 	newManager := func() *baldasession.Manager {
 		manager, managerErr := baldasession.NewManager(baldasession.ManagerParams{
-			AgentBuilder: SessionAgentBuilderAdapter{Builder: builder}, RuntimeManager: runtimeManager,
+			Archive: provider.ChatArchive(), AgentBuilder: SessionAgentBuilderAdapter{Builder: builder}, RuntimeManager: runtimeManager,
 			WorkingDir: workspaceDir, SessionsPersistent: true, SessionStore: provider.Sessions(),
 			RuntimeOperations: provider.RuntimeOperations(), Logger: zerolog.Nop(),
 		})
@@ -736,7 +782,7 @@ func TestApplyingModelRecoveryUsesProductionTargetAwareAdapter(t *testing.T) {
 	}
 	wantSession, err := builder.CreateFreshRuntimeSession(
 		t.Context(), agentRuntime, "provider", "user", "session", workspaceDir,
-		baldaagent.RuntimeSessionContext{BaldaSessionID: "session"},
+		baldaagent.RuntimeSessionContext{ArchiveID: "0b3d577e-f3dc-4571-b4a7-bff21a280e35", BaldaSessionID: "session"},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -748,18 +794,34 @@ func TestApplyingModelRecoveryUsesProductionTargetAwareAdapter(t *testing.T) {
 	if err := service.AppendEvent(t.Context(), wantSession, prior); err != nil {
 		t.Fatal(err)
 	}
-	if err := provider.Sessions().Upsert(t.Context(), baldastate.SessionRecord{
+	record := baldastate.SessionRecord{
 		SessionID: "session", UserID: "user", ChannelType: locator.ChannelType, AddressKey: locator.AddressKey,
 		AddressJSON: locator.AddressJSON, AgentName: "provider", WorkspaceDir: workspaceDir,
-		RuntimeSnapshotID: integrationRuntimeSnapshotID, Status: baldastate.SessionStatusActive,
-	}); err != nil {
+		RuntimeSnapshotID: integrationRuntimeSnapshotID, ProviderBindingJSON: agentRuntime.ProviderBindingJSON,
+		Status: baldastate.SessionStatusActive,
+	}
+	archiveID := "0b3d577e-f3dc-4571-b4a7-bff21a280e35"
+	now := time.Now().UTC()
+	archiveIntent := chatarchivecmd.Intent{
+		Token: "model-adapter-archive", Kind: chatarchivecmd.KindFresh, At: now,
+		Session: chatarchivecmd.Session{
+			ID: archiveID, StableID: record.SessionID, RuntimeID: "session",
+			Persistence: chatarchivecmd.PersistenceDurable, BootID: "model-adapter", StartedAt: now, ObservedAt: now,
+			Location: chatarchivecmd.Location{Channel: locator.ChannelType, AddressKey: locator.AddressKey, Locator: locator.ChannelType + ":" + locator.AddressKey},
+		},
+	}
+	if _, err := provider.ChatArchive().Begin(t.Context(), archiveIntent); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.ChatArchive().Activate(t.Context(), archiveIntent.Token, &record); err != nil {
 		t.Fatal(err)
 	}
 	operationAt := time.Now().UTC().Add(-time.Minute)
 	intent := baldastate.RuntimeOperationRecord{
 		OperationID: "operation", SessionID: "session", InputHash: strings.Repeat("a", 64),
 		Kind: string(baldastate.RuntimeOperationKindModel), State: baldastate.RuntimeOperationPrepared,
-		TargetSnapshotID: integrationRuntimeSnapshotID, TargetProviderBindingJSON: agentRuntime.ProviderBindingJSON, TargetModel: "model-next",
+		ExpectedArchiveID: archiveID,
+		TargetSnapshotID:  integrationRuntimeSnapshotID, TargetProviderBindingJSON: agentRuntime.ProviderBindingJSON, TargetModel: "model-next",
 		CreatedAt: operationAt, UpdatedAt: operationAt,
 	}
 	if _, err := provider.RuntimeOperations().Begin(t.Context(), intent); err != nil {
@@ -802,14 +864,14 @@ func TestApplyingModelRecoveryUsesProductionTargetAwareAdapter(t *testing.T) {
 	if !foundPrior {
 		t.Fatal("restored session lost prior event")
 	}
-	if control.inspectCalls.Load() != 0 || control.validateCalls.Load() != 0 || control.changeCalls.Load() != 1 {
+	if control.inspectCalls.Load() != 1 || control.validateCalls.Load() != 0 || control.changeCalls.Load() != 1 {
 		t.Fatalf("control calls inspect/validate/change = %d/%d/%d", control.inspectCalls.Load(), control.validateCalls.Load(), control.changeCalls.Load())
 	}
 	if service.createCalls.Load() != 0 || service.deleteCalls.Load() != 0 {
 		t.Fatalf("recovery session mutations: Create=%d Delete=%d", service.createCalls.Load(), service.deleteCalls.Load())
 	}
-	if runtimeManager.closeCalls.Load() != 1 {
-		t.Fatalf("private recovery runtime closes = %d, want 1", runtimeManager.closeCalls.Load())
+	if runtimeManager.closeCalls.Load() != 0 {
+		t.Fatalf("published recovery runtime closes = %d, want 0", runtimeManager.closeCalls.Load())
 	}
 	for _, request := range runtimeManager.sessionRequests() {
 		if request.RuntimeSnapshotID != integrationRuntimeSnapshotID || request.ProviderBindingJSON != agentRuntime.ProviderBindingJSON {

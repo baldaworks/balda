@@ -105,7 +105,7 @@ Status: active
   retry and expiry timestamps remain wall time. This does not support multiple
   active outbox owners sharing one database.
 
-- The session actor is the only code path that can enqueue `TurnDispatcher` work; `sessionturn` is the only queued-turn restoration use case.
+- `SessionActor` owns conversational enqueue. Bounded transport-neutral runtime-control application services may admit model changes and lifetime replacements to the same `TurnDispatcher`; `sessionturn` remains the only queued-turn restoration use case. `session.Manager` owns lifecycle state and never enqueues work.
 - `TurnDispatcher` is the authoritative per-session mailbox and the sole owner of current-turn state. Its read-only current-turn lookup exposes a copied session/requester identity while the turn runs; bundled MCP progress combines that identity with the independently authenticated session binding and keeps no second active-turn registry. Canceling a session resolves every dropped completion (including constituent steering waiters) with `context.Canceled` and cancels the active turn.
 - Coalesced steering messages retain individual constituent completion channels; constituent envelopes remain unacknowledged to durable transport until batch execution finishes, fails, or cancels.
 - Pre-execution process restart safely replays unacknowledged envelopes. Pending and running batches deduplicate constituents by stable identity (`DedupeKey` / message ID), attaching duplicate arrivals as waiters without duplicate text fragments. Transport delivery interruptions remain retryable rather than falsely settled.

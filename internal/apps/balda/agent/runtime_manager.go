@@ -340,8 +340,8 @@ func (c *UnpublishedSessionRuntimeCandidate) MarkPublished() {
 	c.slotPublished = true
 }
 
-// CompletePublication releases the child-lookup barrier only after the caller
-// has proved exact base, slot, and terminal operation state.
+// CompletePublication settles the candidate barrier after exact slot proof.
+// Recovery candidates retain a cold-recovery fence until durable recovery ends.
 func (c *UnpublishedSessionRuntimeCandidate) CompletePublication() error {
 	if c == nil || c.manager == nil {
 		return ErrProviderUnavailable
@@ -359,7 +359,11 @@ func (c *UnpublishedSessionRuntimeCandidate) CompletePublication() error {
 	if c.manager.baseTransitions[c.sessionID] != c.base.token || c.manager.sessionBases[c.sessionID].token != c.base.token {
 		return ErrProviderUnavailable
 	}
-	delete(c.manager.baseTransitions, c.sessionID)
+	if c.recovery {
+		c.manager.baseTransitions[c.sessionID] = recoveryRuntimeBaseFence
+	} else {
+		delete(c.manager.baseTransitions, c.sessionID)
+	}
 	delete(c.manager.baseCandidates, c.base.token)
 	c.state = candidatePublished
 	return nil
@@ -948,7 +952,8 @@ func (m *RuntimeManager) replacementBasePromoter(sessionID, scopedID string, tok
 		m.mu.Lock()
 		defer m.mu.Unlock()
 		base, ok := m.sessionBases[sessionID]
-		if !ok || base.token != token || base.runtime != expected || m.baseTransitions[sessionID] != 0 {
+		transition := m.baseTransitions[sessionID]
+		if !ok || base.token != token || base.runtime != expected || transition != 0 && transition != recoveryRuntimeBaseFence {
 			return ErrProviderUnavailable
 		}
 		if m.replacementCandidates == nil {

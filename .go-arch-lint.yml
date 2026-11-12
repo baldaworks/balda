@@ -368,8 +368,6 @@ components:
       - internal/apps/balda/jobs
       - internal/apps/balda/jobexec
       - internal/apps/balda/ingressapp
-      - internal/apps/balda/lifetimeapp
-      - internal/apps/balda/modelapp
       - internal/apps/balda/questions
       - internal/apps/balda/permissions
       - internal/apps/balda/session
@@ -382,6 +380,13 @@ components:
       - internal/apps/balda/turnstatusapp
       - internal/apps/balda/welcome
       - internal/apps/balda/webhookapp
+
+  # Bounded transport-neutral runtime-control services admit model and lifetime
+  # work to the same per-session FIFO owned by TurnDispatcher.
+  runtime_control_admission:
+    in:
+      - internal/apps/balda/lifetimeapp
+      - internal/apps/balda/modelapp
 
   # Schedule policy owns recurring definitions and runs. Session cleanup is
   # supplied through a consuming port by sessionapp, not constructed here.
@@ -1152,6 +1157,14 @@ deps:
       - providers
     anyVendorDeps: true
 
+  runtime_control_admission:
+    mayDependOn:
+      - application
+      - contracts
+      - session_lifecycle_contracts
+      - storage
+    anyVendorDeps: true
+
   schedule_policy:
     mayDependOn:
       - schedule_contracts
@@ -1297,6 +1310,7 @@ deps:
       - user_contracts
       - neutral_registry
       - application
+      - runtime_control_admission
       - domain
       - delivery
       - storage
@@ -1351,6 +1365,7 @@ deps:
       - user_application
       - neutral_registry
       - application
+      - runtime_control_admission
       - domain
       - runtime_catalog
       - mcp_runtime
@@ -1606,6 +1621,7 @@ deps:
       - session_memory_mcp
       - session_memory_contracts
       - application
+      - runtime_control_admission
       - domain
       - runtime
       - ingress_wiring
