@@ -19,6 +19,7 @@ type ModelChangeResultStatus string
 const (
 	ModelChangeChangedLive        ModelChangeResultStatus = "changed_live"
 	ModelChangeChangedReplacement ModelChangeResultStatus = "changed_replacement"
+	ModelChangePending            ModelChangeResultStatus = "pending"
 	ModelChangeUnsupported        ModelChangeResultStatus = "unsupported"
 	ModelChangeIncompatible       ModelChangeResultStatus = "incompatible"
 	ModelChangeRejected           ModelChangeResultStatus = "rejected"
@@ -148,6 +149,10 @@ func (m *Manager) ChangeModel(ctx context.Context, request ModelChangeRequest) (
 	}
 	validation := value.runtime.ModelController.ValidateModel(ctx, identity, request.TargetModel)
 	if validation.Status != agentproduct.ModelSupported {
+		if validation.Status == agentproduct.ModelUnsupported &&
+			value.outcome == string(baldastate.RuntimeOperationOutcomeContextReset) {
+			return m.repairUnattachedModelPreference(ctx, topic, request, existing, found)
+		}
 		return validationModelResult(validation.Status, value), nil
 	}
 
@@ -208,6 +213,36 @@ func (m *Manager) ChangeModel(ctx context.Context, request ModelChangeRequest) (
 	}
 }
 
+func (m *Manager) repairUnattachedModelPreference(
+	ctx context.Context,
+	topic *TopicSession,
+	request ModelChangeRequest,
+	existing baldastate.RuntimeOperationRecord,
+	found bool,
+) (ModelChangeResult, error) {
+	record, recordFound, err := m.sessionStore.GetBySessionID(ctx, request.SessionID)
+	if err != nil || !recordFound || m.configuredModel(ctx, record) != request.TargetModel ||
+		!m.validModelPreferenceLifetime(ctx, record) {
+		return unavailableModelRuntimeResult(nil)
+	}
+	topic.fenceRuntimeRecovery()
+	result, err := m.changeColdModelPreference(ctx, record, request, existing, found)
+	if err != nil || result.Status != ModelChangePending {
+		return recoveryRequiredModelResult()
+	}
+	m.mu.Lock()
+	if m.sessions[request.SessionID] == topic {
+		delete(m.sessions, request.SessionID)
+	}
+	m.mu.Unlock()
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
+	defer cancel()
+	if err := m.cleanupTopicSession(cleanupCtx, topic, sessionCleanupOptions{}); err != nil {
+		return recoveryRequiredModelResult()
+	}
+	return result, nil
+}
+
 func (m *Manager) publishModelChange(ctx context.Context, incumbent, candidate *RuntimeSlot, intent baldastate.RuntimeOperationRecord, status ModelChangeResultStatus, reason baldastate.RuntimeOperationReason) (ModelChangeResult, error) {
 	_, _, err := m.publishRuntimeStateLocked(ctx, incumbent, candidate, intent, baldastate.RuntimeOperationOutcomeContextPreserved, true, reason)
 	if err != nil {
@@ -253,7 +288,9 @@ func replayModelResult(topic *TopicSession, current runtimeSlotValue, operation 
 
 func sameModelRequest(operation baldastate.RuntimeOperationRecord, request ModelChangeRequest) bool {
 	return operation.OperationID == request.OperationID && operation.SessionID == request.SessionID &&
-		operation.InputHash == request.InputHash && operation.Kind == string(baldastate.RuntimeOperationKindModel) &&
+		operation.InputHash == request.InputHash &&
+		(operation.Kind == string(baldastate.RuntimeOperationKindModel) ||
+			operation.Kind == string(baldastate.RuntimeOperationKindModelPreference)) &&
 		operation.TargetModel == request.TargetModel
 }
 

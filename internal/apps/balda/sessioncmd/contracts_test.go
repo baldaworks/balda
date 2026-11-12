@@ -17,21 +17,27 @@ func TestNormalizePublicRuntimeMetadata(t *testing.T) {
 }
 
 func TestActivationValidateAndClone(t *testing.T) {
+	const changed = "changed"
 	a := Activation{
 		Kind: ActivationCreated, SessionID: "session-1", Label: "balda",
-		Runtime:  RuntimeSummary{PublicRuntimeMetadata: PublicRuntimeMetadata{ProviderID: "provider", MCPServers: []string{"mcp"}}, EffectiveModel: "model"},
-		Warnings: []WarningCode{WarningWorkspaceSyncSkipped},
+		Runtime:       RuntimeSummary{PublicRuntimeMetadata: PublicRuntimeMetadata{ProviderID: "provider", MCPServers: []string{"mcp"}}, EffectiveModel: "model"},
+		Configuration: ConfigurationSummary{ProviderID: "provider", ConfiguredModel: "configured", RequestedModel: ptr("requested"), MCPServers: []string{"mcp"}},
+		Warnings:      []WarningCode{WarningWorkspaceSyncSkipped},
 	}
 	if err := a.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)
 	}
 	clone := a.Clone()
-	clone.Runtime.MCPServers[0] = "changed"
-	clone.Warnings[0] = "changed"
-	if a.Runtime.MCPServers[0] != "mcp" || a.Warnings[0] != WarningWorkspaceSyncSkipped {
+	clone.Runtime.MCPServers[0] = changed
+	clone.Configuration.MCPServers[0] = changed
+	*clone.Configuration.RequestedModel = changed
+	clone.Warnings[0] = changed
+	if a.Runtime.MCPServers[0] != "mcp" || a.Configuration.MCPServers[0] != "mcp" || *a.Configuration.RequestedModel != "requested" || a.Warnings[0] != WarningWorkspaceSyncSkipped {
 		t.Fatal("Clone aliases activation slices")
 	}
 }
+
+func ptr(value string) *string { return &value }
 
 func TestActivationValidateRejectsInvalidContracts(t *testing.T) {
 	base := Activation{Kind: ActivationRestored, SessionID: "session-1"}

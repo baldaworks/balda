@@ -95,12 +95,25 @@ func (m *Manager) prepareColdFreshLifetime(ctx context.Context, request FreshLif
 	if err != nil || snapshotID == "" {
 		return nil, freshLifetimeUnavailable(), err
 	}
+	configuration, err := m.describeSessionConfiguration(ctx, SessionRuntimeRequest{
+		WorkspaceDir: workspaceDir, RuntimeSnapshotID: snapshotID,
+		ProviderBindingJSON: record.ProviderBindingJSON, ModelOverride: cloneOptionalModel(record.RequestedModel),
+	})
+	if err != nil {
+		return nil, freshLifetimeUnavailable(), err
+	}
+	configuration.RequestedModel = cloneOptionalModel(record.RequestedModel)
+	configurationJSON, err := encodeConfigurationSummary(configuration)
+	if err != nil {
+		return nil, freshLifetimeUnavailable(), err
+	}
 	operation := baldastate.RuntimeOperationRecord{
 		OperationID: request.OperationID, SessionID: record.SessionID, InputHash: request.InputHash,
 		Kind: string(baldastate.RuntimeOperationKindLifetimePreference), State: baldastate.RuntimeOperationPrepared,
 		ExpectedArchiveID: record.ArchiveID, ExpectedGeneration: record.RuntimeGeneration,
 		TargetArchiveID: deterministicFreshLifetimeID(request), TargetSnapshotID: snapshotID,
-		TargetProviderBindingJSON: record.ProviderBindingJSON, TargetModel: record.EffectiveModel,
+		TargetProviderBindingJSON: record.ProviderBindingJSON, TargetConfigurationSummaryJSON: configurationJSON,
+		TargetModel:          record.EffectiveModel,
 		TargetRequestedModel: cloneOptionalModel(record.RequestedModel), CreatedAt: m.currentTime().UTC(),
 	}
 	operation.UpdatedAt = operation.CreatedAt
@@ -151,7 +164,11 @@ func (m *Manager) prepareColdFreshLifetime(ctx context.Context, request FreshLif
 	if err != nil || response == nil || !freshLifetimeSessionMatches(response.Session, appName, record.UserID, operation.TargetArchiveID, record.SessionID) {
 		return nil, freshLifetimeUnavailable(), ErrRuntimeUnavailable
 	}
-	activation, err := buildActivationFromReceipt(topic, sessioncmd.ActivationCreated, sessioncmd.PublicRuntimeMetadata{}, "", nil)
+	configuration, err = decodeConfigurationSummary(operation.TargetConfigurationSummaryJSON, operation.TargetRequestedModel)
+	if err != nil {
+		return nil, freshLifetimeUnavailable(), err
+	}
+	activation, err := buildActivationFromReceipt(topic, sessioncmd.ActivationCreated, sessioncmd.PublicRuntimeMetadata{}, "", configuration, nil)
 	if err != nil {
 		return nil, freshLifetimeUnavailable(), err
 	}

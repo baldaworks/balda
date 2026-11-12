@@ -251,6 +251,9 @@ func (m *Manager) recoverApplyingIndependentFreshLifetime(ctx context.Context, o
 }
 
 func (m *Manager) recoverApplyingColdFreshLifetime(ctx context.Context, operation baldastate.RuntimeOperationRecord) error {
+	if _, err := decodeConfigurationSummary(operation.TargetConfigurationSummaryJSON, operation.TargetRequestedModel); err != nil {
+		return ErrRuntimeRecoveryRequired
+	}
 	record, found, err := m.sessionStore.GetBySessionID(ctx, operation.SessionID)
 	if err != nil || !found || !freshLifetimeRecoveryRecordMatches(record, operation) {
 		return ErrRuntimeRecoveryRequired

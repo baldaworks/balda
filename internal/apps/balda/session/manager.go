@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/chatarchivecmd"
+	"github.com/baldaworks/balda/internal/apps/balda/providers"
 	"github.com/baldaworks/balda/internal/apps/balda/sessioncmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/git"
@@ -90,6 +92,39 @@ type providerAvailabilityChecker interface {
 // deployments without scoped MCP.
 type SessionRuntimeManager interface {
 	RuntimeForSession(ctx context.Context, request SessionRuntimeRequest) (*BuiltRuntime, error)
+}
+
+type sessionConfigurationDescriber interface {
+	DescribeSessionConfiguration(ctx context.Context, request SessionRuntimeRequest) (sessioncmd.ConfigurationSummary, error)
+}
+
+func (m *Manager) describeSessionConfiguration(ctx context.Context, request SessionRuntimeRequest) (sessioncmd.ConfigurationSummary, error) {
+	describer, ok := m.runtimeManager.(sessionConfigurationDescriber)
+	if ok {
+		summary, err := describer.DescribeSessionConfiguration(ctx, request)
+		if err != nil || summary.Validate() != nil {
+			return sessioncmd.ConfigurationSummary{}, ErrRuntimeUnavailable
+		}
+		return summary.Clone(), nil
+	}
+	canonical, err := providers.CanonicalBindingJSON(request.ProviderBindingJSON)
+	if err != nil || m.agentBuilder == nil {
+		return sessioncmd.ConfigurationSummary{}, ErrRuntimeUnavailable
+	}
+	var binding providers.Binding
+	if json.Unmarshal([]byte(canonical), &binding) != nil {
+		return sessioncmd.ConfigurationSummary{}, ErrRuntimeUnavailable
+	}
+	metadata := m.agentBuilder.GetAgentMetadata(binding.RootProviderID)
+	summary := sessioncmd.ConfigurationSummary{
+		ProviderID: binding.RootProviderID, ProviderType: strings.TrimSpace(metadata.Type),
+		ConfiguredModel: strings.TrimSpace(metadata.Model), ReasoningEffort: strings.TrimSpace(metadata.ReasoningEffort),
+		MCPServers: sessioncmd.NormalizePublicRuntimeMetadata(sessioncmd.PublicRuntimeMetadata{MCPServers: metadata.MCPServers}).MCPServers,
+	}
+	if summary.Validate() != nil {
+		return sessioncmd.ConfigurationSummary{}, ErrRuntimeUnavailable
+	}
+	return summary, nil
 }
 
 // currentSessionSnapshotSelector selects a retained catalog ID without runtime construction.
@@ -666,7 +701,7 @@ func (m *Manager) createSessionLocked(ctx context.Context, sessionCtx SessionCon
 		archiveID = fallbackCommit.TargetArchiveID
 	case persisted != nil && !createdFresh:
 		generation = persisted.RuntimeGeneration
-		effectiveModel, _ = restoreFallbackModelProjection(persisted.RequestedModel, sessionRuntime.RecipeModel)
+		effectiveModel = strings.TrimSpace(persisted.EffectiveModel)
 		runtimeOutcome = persisted.RuntimeOutcome
 	default:
 		effectiveModel = sessionRuntime.RecipeModel

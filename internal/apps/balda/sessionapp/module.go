@@ -8,6 +8,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/scheduledjobs"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/sessioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorymcp"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
@@ -186,6 +187,14 @@ func (a SessionRuntimeManagerAdapter) RuntimeForSession(ctx context.Context, req
 // CurrentSessionSnapshot forwards metadata selection to the catalog capability owner.
 func (a SessionRuntimeManagerAdapter) CurrentSessionSnapshot(ctx context.Context, workspaceDir string) (string, error) {
 	return a.Manager.CurrentSessionSnapshot(ctx, workspaceDir)
+}
+
+// DescribeSessionConfiguration forwards the metadata-only retained descriptor.
+func (a SessionRuntimeManagerAdapter) DescribeSessionConfiguration(ctx context.Context, request baldasession.SessionRuntimeRequest) (sessioncmd.ConfigurationSummary, error) {
+	return a.Manager.DescribeSessionConfiguration(ctx, baldaagent.SessionRuntimeRequest{
+		WorkspaceDir: request.WorkspaceDir, RuntimeSnapshotID: request.RuntimeSnapshotID,
+		ProviderBindingJSON: request.ProviderBindingJSON, ModelOverride: request.ModelOverride,
+	})
 }
 
 func (a SessionRuntimeManagerAdapter) BuildUnpublishedSessionRuntime(ctx context.Context, request baldasession.SessionRuntimeRequest) (baldasession.UnpublishedSessionRuntimeCandidate, error) {

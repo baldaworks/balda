@@ -81,6 +81,16 @@ type SessionCapabilityBinder interface {
 	BindSessionCapabilities(ctx context.Context, providerID string, request SessionRuntimeRequest) (SessionCapabilityBinding, error)
 }
 
+type sessionCapabilityDescriber interface {
+	DescribeSessionCapabilities(ctx context.Context, providerID string, request SessionRuntimeRequest) (SessionCapabilityDescription, error)
+}
+
+// SessionCapabilityDescription is a read-only capability projection.
+type SessionCapabilityDescription struct {
+	MCPServerIDs         []string
+	MCPServerPublicNames map[string]string
+}
+
 // ScopedMCPServer is an authenticated per-session MCP endpoint registration.
 type ScopedMCPServer struct {
 	ID      string
@@ -620,6 +630,42 @@ func (m *RuntimeManager) CurrentSessionSnapshot(ctx context.Context, workspaceDi
 		return "", ErrProviderUnavailable
 	}
 	return selector.CurrentSessionSnapshot(ctx, workspaceDir)
+}
+
+// DescribeSessionConfiguration returns public retained configuration without
+// building a provider runtime or acquiring MCP registrations.
+func (m *RuntimeManager) DescribeSessionConfiguration(ctx context.Context, request SessionRuntimeRequest) (sessioncmd.ConfigurationSummary, error) {
+	if m == nil {
+		return sessioncmd.ConfigurationSummary{}, ErrProviderUnavailable
+	}
+	m.mu.RLock()
+	binder := m.capabilityBinder
+	providerID := m.providerID
+	builder := m.builder
+	m.mu.RUnlock()
+	builder, providerID, _, err := m.resolveProviderGraph(ctx, builder, providerID, request.ProviderBindingJSON)
+	if err != nil {
+		return sessioncmd.ConfigurationSummary{}, providerUnavailableError(err)
+	}
+	describer, ok := binder.(sessionCapabilityDescriber)
+	if !ok || builder == nil {
+		return sessioncmd.ConfigurationSummary{}, ErrProviderUnavailable
+	}
+	request.ProviderConfigs = maps.Clone(builder.normaCfg.Providers)
+	description, err := describer.DescribeSessionCapabilities(ctx, providerID, request)
+	if err != nil {
+		return sessioncmd.ConfigurationSummary{}, err
+	}
+	public, err := exactPublicRuntimeMetadata(builder, providerID, description.MCPServerIDs, description.MCPServerPublicNames)
+	if err != nil {
+		return sessioncmd.ConfigurationSummary{}, err
+	}
+	metadata := builder.GetAgentMetadata(providerID)
+	return sessioncmd.ConfigurationSummary{
+		ProviderID: public.ProviderID, ProviderType: public.ProviderType,
+		ConfiguredModel: strings.TrimSpace(metadata.Model), ReasoningEffort: public.ReasoningEffort,
+		MCPServers: append([]string(nil), public.MCPServers...),
+	}, nil
 }
 
 // BuildUnpublishedSessionRuntime constructs an independently owned runtime

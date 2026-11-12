@@ -327,9 +327,12 @@ const (
 	RuntimeOperationApplying RuntimeOperationState = "applying"
 	RuntimeOperationTerminal RuntimeOperationState = "terminal"
 
-	RuntimeOperationKindModel    RuntimeOperationKind = "model"
-	RuntimeOperationKindProvider RuntimeOperationKind = "provider"
-	RuntimeOperationKindLifetime RuntimeOperationKind = "lifetime"
+	RuntimeOperationKindModel RuntimeOperationKind = "model"
+	// RuntimeOperationKindModelPreference selects the configured model for the
+	// next attachment while clearing unconfirmed model observations.
+	RuntimeOperationKindModelPreference RuntimeOperationKind = "model_preference"
+	RuntimeOperationKindProvider        RuntimeOperationKind = "provider"
+	RuntimeOperationKindLifetime        RuntimeOperationKind = "lifetime"
 	// RuntimeOperationKindLifetimePreference is the preference-aware lifetime
 	// contract. Legacy lifetime records retain their original semantics.
 	RuntimeOperationKindLifetimePreference RuntimeOperationKind = "lifetime_preference"
@@ -357,22 +360,24 @@ const (
 	RuntimeOperationReasonPreDispatch        RuntimeOperationReason = "pre_dispatch"
 	RuntimeOperationReasonChangedLive        RuntimeOperationReason = "changed_live"
 	RuntimeOperationReasonChangedReplacement RuntimeOperationReason = "changed_replacement"
+	RuntimeOperationReasonPendingAttachment  RuntimeOperationReason = "pending_attachment"
 )
 
 // RuntimeOperationRecord is the bounded public evidence for one runtime operation.
 // The canonical session row, not this record, remains authoritative for committed runtime state.
 type RuntimeOperationRecord struct {
-	OperationID               string
-	SessionID                 string
-	InputHash                 string
-	Kind                      string
-	State                     RuntimeOperationState
-	ExpectedArchiveID         string
-	ExpectedGeneration        uint64
-	TargetArchiveID           string
-	TargetSnapshotID          string
-	TargetProviderBindingJSON string
-	TargetModel               string
+	OperationID                    string
+	SessionID                      string
+	InputHash                      string
+	Kind                           string
+	State                          RuntimeOperationState
+	ExpectedArchiveID              string
+	ExpectedGeneration             uint64
+	TargetArchiveID                string
+	TargetSnapshotID               string
+	TargetProviderBindingJSON      string
+	TargetConfigurationSummaryJSON string
+	TargetModel                    string
 	// TargetRequestedModel pins preference presence and value for model and
 	// preference-aware lifetime operations. Nil is meaningful only for the
 	// latter and records the absence of an explicit preference.
