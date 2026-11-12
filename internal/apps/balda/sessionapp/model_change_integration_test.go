@@ -62,6 +62,7 @@ func (s *integrationSessionService) Delete(ctx context.Context, request *adksess
 type integrationModelControl struct {
 	replacement   *agentproduct.Product
 	currentModel  string
+	unavailable   bool
 	inspectCalls  atomic.Int32
 	validateCalls atomic.Int32
 	changeCalls   atomic.Int32
@@ -69,11 +70,17 @@ type integrationModelControl struct {
 
 func (c *integrationModelControl) Inspect(context.Context, adksession.Session) agentproduct.SessionControlSnapshot {
 	c.inspectCalls.Add(1)
+	if c.unavailable {
+		return agentproduct.SessionControlSnapshot{Status: agentproduct.ControlUnsupported, Reason: agentproduct.ReasonUnavailable}
+	}
 	return agentproduct.SessionControlSnapshot{Status: agentproduct.ControlReady, CurrentModel: c.currentModel}
 }
 
 func (c *integrationModelControl) ValidateModel(_ context.Context, _ adksession.Session, model string) agentproduct.ModelValidation {
 	c.validateCalls.Add(1)
+	if c.unavailable {
+		return agentproduct.ModelValidation{Status: agentproduct.ModelUnsupported, Reason: agentproduct.ReasonUnavailable}
+	}
 	return agentproduct.ModelValidation{Status: agentproduct.ModelSupported, Model: model}
 }
 
