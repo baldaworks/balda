@@ -13,6 +13,7 @@ type MCPMutation struct {
 	Connection      mcpcmd.Connection
 	Revision        *mcpcmd.Revision
 	ExpectedVersion uint64
+	Recreate        bool
 	Authority       mcpcmd.Authority
 	Audit           usercmd.AuditEvent
 }

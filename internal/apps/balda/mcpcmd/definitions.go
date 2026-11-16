@@ -14,6 +14,15 @@ const (
 	StatusDisconnected Status = "disconnected"
 )
 
+// InventoryScope selects lifecycle rows without changing their source policy.
+type InventoryScope string
+
+const (
+	InventoryActive  InventoryScope = "active"
+	InventoryDeleted InventoryScope = "deleted"
+	InventoryAll     InventoryScope = "all"
+)
+
 // RecoveryReason identifies a positively evidenced current repair action.
 type RecoveryReason string
 
