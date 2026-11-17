@@ -174,7 +174,7 @@ func TestDiagnoseCurrentUsesConfiguredStaticHeaderWithoutCredentialKey(t *testin
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, store, configured := definitionHarness(t)
-			withoutKey, err := New("")
+			withoutKey, err := newTestService("")
 			if err != nil {
 				t.Fatal(err)
 			}

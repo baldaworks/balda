@@ -17,8 +17,7 @@ payload owners:
 
 All three use the same `app.security_key` root. The scoped primitive emits
 version-2 `version || nonce || ciphertext` frames using registered HKDF-SHA-256
-labels and opens retained version-1 frames directly with the same root. Consumer
-wiring remains on version 1 until its dedicated migration task. The obsolete
+labels and opens retained version-1 frames directly with the same root. The obsolete
 `balda.mcp_management.credential_key` field is retained only to reject it with
 migration guidance; it is never an active or fallback root.
 

@@ -53,7 +53,7 @@ func TestConfiguredCaptureTransitionsKeepRetainedIdentity(t *testing.T) {
 			if change == wrongKey {
 				key := make([]byte, 32)
 				key[0] = 1
-				values, err = mcpmanage.New(base64.StdEncoding.EncodeToString(key))
+				values, err = newMCPService(base64.StdEncoding.EncodeToString(key))
 				if err != nil {
 					t.Fatal(err)
 				}

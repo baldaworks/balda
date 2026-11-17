@@ -23,7 +23,7 @@ func TestMCPStartupChecksRetainedCredentialsBeforeProviderAndIngress(t *testing.
 		t.Fatal(err)
 	}
 	key := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32))
-	s, err := mcpmanage.New(key)
+	s, err := newMCPService(key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func TestMCPStartupChecksRetainedCredentialsBeforeProviderAndIngress(t *testing.
 		{"wrong deployment key", base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{2}, 32)), true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			s, err := mcpmanage.New(tc.key)
+			s, err := newMCPService(tc.key)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -13,7 +13,7 @@ import (
 )
 
 func TestWorkerGrantEncryptionBindsIdentityAndGeneration(t *testing.T) {
-	s, err := New(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{2}, 32)))
+	s, err := newTestService(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{2}, 32)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,6 +22,9 @@ func TestWorkerGrantEncryptionBindsIdentityAndGeneration(t *testing.T) {
 	g.ProtectedValues, err = s.ProtectGrant(g, secrets)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if g.ProtectedValues[0] != 2 {
+		t.Fatalf("protected grant frame = %d, want v2", g.ProtectedValues[0])
 	}
 	for _, secret := range []string{secrets.AccessToken, secrets.RefreshToken, secrets.ClientSecret} {
 		if bytes.Contains(g.ProtectedValues, []byte(secret)) {
@@ -54,7 +57,7 @@ func TestWorkerGrantEncryptionBindsIdentityAndGeneration(t *testing.T) {
 			t.Fatalf("grant crossed authentication boundary: %v", err)
 		}
 	}
-	withoutKey, err := New("")
+	withoutKey, err := newTestService("")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,6 +69,44 @@ func TestWorkerGrantEncryptionBindsIdentityAndGeneration(t *testing.T) {
 	}
 }
 
+func TestGrantCredentialsReadV1AndRejectRevisionScope(t *testing.T) {
+	key := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{5}, 32))
+	legacy, err := newLegacyTestService(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := grantCredentialFixture()
+	want := GrantSecrets{AccessToken: "legacy-access", RefreshToken: "legacy-refresh", TokenType: "Bearer"}
+	grant.ProtectedValues, err = legacy.ProtectGrant(grant, want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if grant.ProtectedValues[0] != 1 {
+		t.Fatalf("legacy grant frame = %d, want v1", grant.ProtectedValues[0])
+	}
+	scoped, err := newTestService(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := scoped.OpenGrant(grant)
+	if err != nil || got != want {
+		t.Fatalf("v1 grant unavailable: %#v, %v", got, err)
+	}
+	plain, err := scoped.grantCredentials.Open(grant.ProtectedValues, grantAAD(grant))
+	if err != nil {
+		t.Fatal(err)
+	}
+	crossScope, err := scoped.credentials.Seal(plain, grantAAD(grant))
+	clear(plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant.ProtectedValues = crossScope
+	if _, err := scoped.OpenGrant(grant); !errors.Is(err, mcpcmd.ErrCredentials) {
+		t.Fatalf("revision-scoped payload accepted as grant credentials: %v", err)
+	}
+}
+
 func grantCredentialFixture() mcpcmd.Grant {
 	now := time.Now().UTC()
 	return mcpcmd.Grant{ID: "grant", Binding: mcpcmd.AuthBinding{ConnectionID: "worker", Resource: "https://worker.example.org/mcp", Issuer: "https://issuer.example.org", ClientID: "worker-client"}, Generation: 2, Status: mcpcmd.GrantAuthorized, TokenEndpointAuthMethod: "client_secret_basic", CreatedAt: now, UpdatedAt: now}
@@ -73,7 +114,7 @@ func grantCredentialFixture() mcpcmd.Grant {
 
 func TestCredentialReadinessIncludesRetainedWorkerGrants(t *testing.T) {
 	key := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{2}, 32))
-	s, err := New(key)
+	s, err := newTestService(key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +124,7 @@ func TestCredentialReadinessIncludesRetainedWorkerGrants(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, candidate := range []string{"", base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{3}, 32))} {
-		service, err := New(candidate)
+		service, err := newTestService(candidate)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -91,7 +132,7 @@ func TestCredentialReadinessIncludesRetainedWorkerGrants(t *testing.T) {
 			t.Fatalf("protected grant bypassed startup key validation: %v", err)
 		}
 	}
-	restarted, err := New(key)
+	restarted, err := newTestService(key)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -114,7 +114,7 @@ func validateMCPGrantMutation(m MCPGrantMutation) error {
 	if g.ID == "" || len(g.ID) > 256 || b.ConnectionID == "" || len(b.ConnectionID) > 256 || b.Resource == "" || len(b.Resource) > 8192 || b.Issuer == "" || len(b.Issuer) > 8192 || b.ClientID == "" || len(b.ClientID) > 1024 || m.ExpectedGeneration >= math.MaxInt64 || g.Generation != m.ExpectedGeneration+1 || g.CreatedAt.IsZero() || g.UpdatedAt.Before(g.CreatedAt) || len(g.Scopes) > 64 {
 		return mcpcmd.ErrInvalid
 	}
-	if len(g.ProtectedValues) > (128<<10)+29 || (len(g.ProtectedValues) > 0 && (len(g.ProtectedValues) < 29 || g.ProtectedValues[0] != 1)) {
+	if len(g.ProtectedValues) > (128<<10)+29 || (len(g.ProtectedValues) > 0 && (len(g.ProtectedValues) < 29 || (g.ProtectedValues[0] != 1 && g.ProtectedValues[0] != 2))) {
 		return mcpcmd.ErrInvalid
 	}
 	if g.Status == mcpcmd.GrantAuthorized && len(g.ProtectedValues) == 0 {

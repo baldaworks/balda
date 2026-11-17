@@ -59,7 +59,7 @@ func cloneState(state State) State {
 
 func newTestService(t *testing.T, configured map[string]agentconfig.Config, store *memoryStore) *Service {
 	t.Helper()
-	protector, err := secrets.New(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{9}, 32)))
+	protector, err := newProviderProtector(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{9}, 32)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,8 +72,71 @@ func newTestService(t *testing.T, configured map[string]agentconfig.Config, stor
 	return service
 }
 
+func TestProviderCredentialsReadV1WriteV2AndRejectMCPScope(t *testing.T) {
+	key := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{6}, 32))
+	// Deprecated root-direct encryption is required only to build a retained v1 fixture.
+	//nolint:staticcheck
+	legacyProtector, err := secrets.New(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := &memoryStore{}
+	legacy := New(nil, store, legacyProtector)
+	legacy.newID = func() string { return "legacy-revision" }
+	apiKey := "legacy-provider-secret"
+	if _, err := legacy.Create(t.Context(), Change{ID: "legacy", Config: openAIConfig("legacy"), Protected: ProtectedEdit{APIKey: &apiKey}}); err != nil {
+		t.Fatal(err)
+	}
+	legacyRevision := store.state.Revisions[0]
+	if legacyRevision.ProtectedValues[0] != 1 {
+		t.Fatalf("legacy provider frame = %d, want v1", legacyRevision.ProtectedValues[0])
+	}
+	root, err := secrets.NewRoot(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	providerProtector, err := root.Protector(secrets.ScopeProviderRevision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scoped := New(nil, store, providerProtector)
+	values, err := scoped.open(legacyRevision)
+	if err != nil || values.APIKey != apiKey {
+		t.Fatalf("v1 provider revision unavailable: %#v, %v", values, err)
+	}
+	scoped.newID = func() string { return "scoped-revision" }
+	if _, err := scoped.Create(t.Context(), Change{ExpectedVersion: store.state.Version, ID: "scoped", Config: openAIConfig("scoped"), Protected: ProtectedEdit{APIKey: &apiKey}}); err != nil {
+		t.Fatal(err)
+	}
+	scopedRevision := store.state.Revisions[1]
+	if scopedRevision.ProtectedValues[0] != 2 {
+		t.Fatalf("scoped provider frame = %d, want v2", scopedRevision.ProtectedValues[0])
+	}
+	plain, err := providerProtector.Open(scopedRevision.ProtectedValues, revisionAAD(scopedRevision.ProviderID, scopedRevision.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mcpProtector, err := root.Protector(secrets.ScopeMCPRevision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	crossScope, err := mcpProtector.Seal(plain, revisionAAD(scopedRevision.ProviderID, scopedRevision.ID))
+	clear(plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scopedRevision.ProtectedValues = crossScope
+	if _, err := scoped.open(scopedRevision); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("MCP-scoped payload accepted as provider credentials: %v", err)
+	}
+}
+
 func codexConfig(model string) agentconfig.Config {
 	return agentconfig.Config{Type: agentconfig.AgentTypeCodexACP, CodexACP: &agentconfig.ACPConfig{Model: model}}
+}
+
+func openAIConfig(model string) agentconfig.Config {
+	return agentconfig.Config{Type: agentconfig.AgentTypeOpenAI, OpenAI: &agentconfig.LocalAPIConfig{Model: model}}
 }
 
 func TestServiceCompilesOrderedMixedGraphWithoutExposingSecrets(t *testing.T) {

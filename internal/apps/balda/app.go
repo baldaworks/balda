@@ -346,7 +346,18 @@ func Module(
 			permissionConfig,
 		),
 		fx.Provide(
-			func() (*mcpmanage.Service, error) { return mcpmanage.New(securityKey) },
+			func() (*secrets.Root, error) { return secrets.NewRoot(securityKey) },
+			func(root *secrets.Root) (*mcpmanage.Service, error) {
+				revisions, err := root.Protector(secrets.ScopeMCPRevision)
+				if err != nil {
+					return nil, err
+				}
+				grants, err := root.Protector(secrets.ScopeMCPGrant)
+				if err != nil {
+					return nil, err
+				}
+				return mcpmanage.New(revisions, grants)
+			},
 			func(credentials *mcpmanage.Service, provider baldastate.Provider) (*mcpmanage.Grants, error) {
 				return mcpmanage.NewGrants(credentials, mcpfx.NewGrantStore(provider.MCP()), mcpfx.NewOAuthProvider(nil))
 			},
@@ -448,8 +459,8 @@ func Module(
 				})
 				return provider, nil
 			},
-			func() (*secrets.Protector, error) {
-				return secrets.New(securityKey)
+			func(root *secrets.Root) (*secrets.Protector, error) {
+				return root.Protector(secrets.ScopeProviderRevision)
 			},
 			func(provider baldastate.Provider, protector *secrets.Protector) *providers.Service {
 				return providers.New(normaCfg.Providers, provider.ProviderManagement(), protector)

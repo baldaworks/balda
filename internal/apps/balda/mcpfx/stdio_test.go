@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
-	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpruntime"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -20,7 +19,7 @@ func TestStdioDiscoveryInheritsHostEnvironmentForConfiguredAndManaged(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	credentials, err := mcpmanage.New("")
+	credentials, err := newMCPService("")
 	if err != nil {
 		t.Fatal(err)
 	}

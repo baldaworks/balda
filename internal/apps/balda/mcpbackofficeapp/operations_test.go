@@ -170,7 +170,7 @@ func operationsFixture(t *testing.T, configured map[string]agentconfig.MCPServer
 	if err := p.Users().CreateSession(t.Context(), family, fixtureAudit("browser", usercmd.AuditActionLoginSucceeded, usercmd.AuditTargetSession, family.ID)); err != nil {
 		t.Fatal(err)
 	}
-	credentials, err := mcpmanage.New(base64.StdEncoding.EncodeToString(make([]byte, 32)))
+	credentials, err := newMCPService(base64.StdEncoding.EncodeToString(make([]byte, 32)))
 	if err != nil {
 		t.Fatal(err)
 	}

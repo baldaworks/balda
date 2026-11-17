@@ -13,17 +13,17 @@ import (
 )
 
 type Service struct {
-	credentials *secrets.Protector
+	credentials      *secrets.Protector
+	grantCredentials *secrets.Protector
 }
 
-// New accepts one deployment-owned base64 AES-256 key. Empty is supported for
-// installations without protected data; protected writes require a key.
-func New(credentialKey string) (*Service, error) {
-	protector, err := secrets.New(credentialKey)
-	if err != nil {
-		return nil, mcpcmd.ErrCredentials
+// New binds distinct registered protectors to MCP revision and OAuth grant
+// policy. Root material never enters this feature boundary.
+func New(credentials, grantCredentials *secrets.Protector) (*Service, error) {
+	if credentials == nil || grantCredentials == nil {
+		return nil, mcpcmd.ErrInvalid
 	}
-	return &Service{credentials: protector}, nil
+	return &Service{credentials: credentials, grantCredentials: grantCredentials}, nil
 }
 
 // CredentialReader includes retained revision and worker-grant credentials.

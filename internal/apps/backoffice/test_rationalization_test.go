@@ -66,7 +66,7 @@ var rationalizationScopes = []rationalizationScope{
 		"service-lifecycle": {"TestDeletedDefinitionInventoryDetailAndRecreate"},
 	}},
 	{path: "internal/apps/balda/providers/service_test.go", groups: map[string][]string{
-		"service-security":  {"TestServiceCompilesOrderedMixedGraphWithoutExposingSecrets", "TestInventoryProjectsConfiguredAndManagedWithoutProtectedPayloads", "TestRecreateDoesNotInheritAPIKey", "TestRestoreRejectsUnavailableContractAndTampering"},
+		"service-security":  {"TestServiceCompilesOrderedMixedGraphWithoutExposingSecrets", "TestInventoryProjectsConfiguredAndManagedWithoutProtectedPayloads", "TestRecreateDoesNotInheritAPIKey", "TestRestoreRejectsUnavailableContractAndTampering", "TestProviderCredentialsReadV1WriteV2AndRejectMCPScope"},
 		"service-failure":   {"TestCreateRejectsConfiguredAndActiveProviderCollisions", "TestActiveConfiguredManagedCollisionIsInvalid", "TestConfiguredProviderOwnsDeletedManagedReconciliationTombstone", "TestServiceRejectsUnsafeManagedDefinitionsAndBrokenGraphs", "TestCompileRejectsSourceCollisionAndCycle"},
 		"service-lifecycle": {"TestProviderLifecycleFiltersPassiveDetailAndRecreate", "TestServiceRestoresExactManagedRevisionAndRejectsChangedConfiguredDefinition", "TestManagedReproducibilityTracksInheritedEnvironment"},
 	}},
@@ -145,7 +145,7 @@ func TestLifecycleRationalizationInventoryIsComplete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const wantScopedTests = 81
+	const wantScopedTests = 82
 	classified := 0
 	for _, scope := range rationalizationScopes {
 		expected := make(map[string]string)
@@ -186,7 +186,7 @@ func TestLifecycleRationalizationInventoryIsComplete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read exact rationalization inventory: %v\nresolved inventory:\n%s", err, inventory)
 	}
-	const wantFocusedTests = 436
+	const wantFocusedTests = 439
 	if err := compareRationalizationInventory(snapshot, inventory, wantFocusedTests); err != nil {
 		t.Fatal(err)
 	}

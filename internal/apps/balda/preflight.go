@@ -229,8 +229,11 @@ func PreflightRuntime(
 				lc.Append(fx.Hook{OnStop: func(context.Context) error { return provider.Close() }})
 				return provider, nil
 			},
-			func() (*secrets.Protector, error) {
-				return secrets.New(securityKey)
+			func() (*secrets.Root, error) {
+				return secrets.NewRoot(securityKey)
+			},
+			func(root *secrets.Root) (*secrets.Protector, error) {
+				return root.Protector(secrets.ScopeProviderRevision)
 			},
 			func(provider baldastate.Provider, protector *secrets.Protector) *providers.Service {
 				return providers.New(normaCfg.Providers, provider.ProviderManagement(), protector)

@@ -718,7 +718,7 @@ func hybridCatalogFixtureWithDatabase(t *testing.T, databasePath string) (state.
 	if err := p.Users().CreateSession(t.Context(), f, audit("create-browser", usercmd.AuditActionLoginSucceeded, usercmd.AuditTargetSession, f.ID)); err != nil {
 		t.Fatal(err)
 	}
-	credentials, err := mcpmanage.New(base64.StdEncoding.EncodeToString(make([]byte, 32)))
+	credentials, err := newMCPService(base64.StdEncoding.EncodeToString(make([]byte, 32)))
 	if err != nil {
 		t.Fatal(err)
 	}

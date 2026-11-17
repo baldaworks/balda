@@ -24,7 +24,7 @@ func (s *Service) ProtectGrant(g mcpcmd.Grant, secrets GrantSecrets) ([]byte, er
 	if secrets.AccessToken == "" && secrets.RefreshToken == "" && secrets.ClientSecret == "" {
 		return nil, nil
 	}
-	if !s.credentials.Available() {
+	if !s.grantCredentials.Available() {
 		return nil, mcpcmd.ErrCredentials
 	}
 	plain, err := json.Marshal(map[string]string{"access_token": secrets.AccessToken, "refresh_token": secrets.RefreshToken, "client_secret": secrets.ClientSecret, "token_type": secrets.TokenType})
@@ -32,7 +32,7 @@ func (s *Service) ProtectGrant(g mcpcmd.Grant, secrets GrantSecrets) ([]byte, er
 	if err != nil || len(plain) > maxProtectedPayload {
 		return nil, mcpcmd.ErrInvalid
 	}
-	payload, err := s.credentials.Seal(plain, grantAAD(g))
+	payload, err := s.grantCredentials.Seal(plain, grantAAD(g))
 	if err != nil {
 		return nil, mcpcmd.ErrCredentials
 	}
@@ -46,7 +46,7 @@ func (s *Service) OpenGrant(g mcpcmd.Grant) (GrantSecrets, error) {
 	}
 	var secrets GrantSecrets
 	if len(g.ProtectedValues) > 0 {
-		plain, err := s.credentials.Open(g.ProtectedValues, grantAAD(g))
+		plain, err := s.grantCredentials.Open(g.ProtectedValues, grantAAD(g))
 		if err != nil {
 			return secrets, mcpcmd.ErrCredentials
 		}

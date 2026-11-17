@@ -323,10 +323,12 @@ func (s *Service) makeRevision(id string, cfg agentconfig.Config, edit Protected
 		if marshalErr != nil {
 			return Revision{}, ErrInvalid
 		}
-		revision.ProtectedValues, err = s.protector.Seal(payload, revisionAAD(id, revision.ID))
-		if err != nil {
+		protected, sealErr := s.protector.Seal(payload, revisionAAD(id, revision.ID))
+		clear(payload)
+		if sealErr != nil {
 			return Revision{}, ErrUnavailable
 		}
+		revision.ProtectedValues = protected
 	}
 	return revision, nil
 }
@@ -359,7 +361,12 @@ func (s *Service) open(revision Revision) (protectedValues, error) {
 		return values, nil
 	}
 	payload, err := s.protector.Open(revision.ProtectedValues, revisionAAD(revision.ProviderID, revision.ID))
-	if err != nil || json.Unmarshal(payload, &values) != nil {
+	if err != nil {
+		return protectedValues{}, ErrUnavailable
+	}
+	unmarshalErr := json.Unmarshal(payload, &values)
+	clear(payload)
+	if unmarshalErr != nil {
 		return protectedValues{}, ErrUnavailable
 	}
 	return values, nil

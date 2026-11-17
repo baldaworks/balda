@@ -14,7 +14,6 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/mcpbridge"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
-	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpruntime"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -25,7 +24,7 @@ func TestOAuthProbeRequiresWorkerBindingBeforeAnyRequest(t *testing.T) {
 	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { requests.Add(1); handler.ServeHTTP(w, r) }))
 	defer upstream.Close()
-	credentials, err := mcpmanage.New("")
+	credentials, err := newMCPService("")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +67,7 @@ func TestProbeRetiresPrivateRouteWhenShutdownStalls(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = bridge.Close(context.Background()) }()
-	credentials, err := mcpmanage.New("")
+	credentials, err := newMCPService("")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +152,7 @@ func TestProbeDeadlineIncludesLaterDiscoveryPages(t *testing.T) {
 				normal.ServeHTTP(w, r)
 			}))
 			defer func() { close(release); upstream.Close() }()
-			credentials, err := mcpmanage.New("")
+			credentials, err := newMCPService("")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -202,7 +201,7 @@ func TestProbeBoundsHungDiscoveryIncludingCancellationCleanup(t *testing.T) {
 		w.WriteHeader(http.StatusAccepted)
 	}))
 	defer func() { close(release); upstream.Close() }()
-	credentials, err := mcpmanage.New("")
+	credentials, err := newMCPService("")
 	if err != nil {
 		t.Fatal(err)
 	}

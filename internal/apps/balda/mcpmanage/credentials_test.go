@@ -14,7 +14,7 @@ import (
 )
 
 func TestProtectedLiteralsSurviveRevisionChangeWithoutEnteringPublicJSON(t *testing.T) {
-	s, err := New(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32)))
+	s, err := newTestService(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,6 +27,9 @@ func TestProtectedLiteralsSurviveRevisionChangeWithoutEnteringPublicJSON(t *test
 	}
 	if len(r.ProtectedValues) == 0 || bytes.Contains(r.ProtectedValues, []byte(secret)) {
 		t.Fatal("literal was not protected at rest")
+	}
+	if r.ProtectedValues[0] != 2 {
+		t.Fatalf("protected revision frame = %d, want v2", r.ProtectedValues[0])
 	}
 	data, err := json.Marshal(r)
 	if err != nil {
@@ -59,8 +62,46 @@ func TestProtectedLiteralsSurviveRevisionChangeWithoutEnteringPublicJSON(t *test
 	}
 }
 
+func TestRevisionCredentialsReadV1AndRejectGrantScope(t *testing.T) {
+	key := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{4}, 32))
+	legacy, err := newLegacyTestService(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	revision, err := legacy.PrepareRevision(nil, credentialTestRevision(), mcpcmd.ValueEdits{Env: map[string]mcpcmd.ValueEdit{
+		"TOKEN": {Operation: mcpcmd.ValueSet, Kind: mcpcmd.ValueProtected, Value: "legacy-secret"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if revision.ProtectedValues[0] != 1 {
+		t.Fatalf("legacy revision frame = %d, want v1", revision.ProtectedValues[0])
+	}
+	scoped, err := newTestService(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	values, err := scoped.ResolveValues(revision)
+	if err != nil || values.Env["TOKEN"] != "legacy-secret" {
+		t.Fatalf("v1 revision unavailable: %v", err)
+	}
+	plain, err := scoped.credentials.Open(revision.ProtectedValues, revisionAAD(revision))
+	if err != nil {
+		t.Fatal(err)
+	}
+	crossScope, err := scoped.grantCredentials.Seal(plain, revisionAAD(revision))
+	clear(plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	revision.ProtectedValues = crossScope
+	if _, err := scoped.ResolveValues(revision); !errors.Is(err, mcpcmd.ErrCredentials) {
+		t.Fatalf("grant-scoped payload accepted as revision credentials: %v", err)
+	}
+}
+
 func TestProtectedValuesRejectTamperingWrongKeyAndMissingMaterial(t *testing.T) {
-	s, err := New(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32)))
+	s, err := newTestService(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,11 +111,11 @@ func TestProtectedValuesRejectTamperingWrongKeyAndMissingMaterial(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	wrongKey, err := New(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{2}, 32)))
+	wrongKey, err := newTestService(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{2}, 32)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	missingKey, err := New("")
+	missingKey, err := newTestService("")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +140,7 @@ func TestProtectedValuesRejectTamperingWrongKeyAndMissingMaterial(t *testing.T) 
 }
 
 func TestValueEditsKeepReplaceRemoveWithoutChangingPreviousRevision(t *testing.T) {
-	s, err := New(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32)))
+	s, err := newTestService(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +193,7 @@ func TestValueEditsKeepReplaceRemoveWithoutChangingPreviousRevision(t *testing.T
 func TestEnvironmentReferencesResolveAtLaunchAndDistinguishEmptyFromMissing(t *testing.T) {
 	const envName = "BALDA_MCP_CREDENTIAL_REFERENCE_FIXTURE"
 	t.Setenv(envName, "first")
-	s, err := New("")
+	s, err := newTestService("")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +230,7 @@ func (r retainedRevisionReader) ListMCPRevisions(context.Context) ([]mcpcmd.Revi
 
 func TestCredentialReadinessChecksHistoricalProtectedRevisions(t *testing.T) {
 	key := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32))
-	s, err := New(key)
+	s, err := newTestService(key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +242,7 @@ func TestCredentialReadinessChecksHistoricalProtectedRevisions(t *testing.T) {
 	}
 	public := credentialTestRevision()
 	public.ID = "current-public-revision"
-	noKey, err := New("")
+	noKey, err := newTestService("")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +252,7 @@ func TestCredentialReadinessChecksHistoricalProtectedRevisions(t *testing.T) {
 	if err := noKey.ValidateCredentials(t.Context(), retainedRevisionReader{public, r}); !errors.Is(err, mcpcmd.ErrCredentials) {
 		t.Fatalf("historical protected data bypassed key readiness: %v", err)
 	}
-	restarted, err := New(key)
+	restarted, err := newTestService(key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +262,7 @@ func TestCredentialReadinessChecksHistoricalProtectedRevisions(t *testing.T) {
 	if _, err := noKey.PrepareRevision(nil, public, mcpcmd.ValueEdits{Env: map[string]mcpcmd.ValueEdit{"SECRET": {Operation: mcpcmd.ValueSet, Kind: mcpcmd.ValueProtected, Value: "worker-secret"}}}); !errors.Is(err, mcpcmd.ErrCredentials) {
 		t.Fatalf("protected write without key succeeded: %v", err)
 	}
-	if _, err := New("malformed-key-fixture"); !errors.Is(err, mcpcmd.ErrCredentials) {
+	if _, err := newTestService("malformed-key-fixture"); !errors.Is(err, mcpcmd.ErrCredentials) {
 		t.Fatalf("invalid key accepted: %v", err)
 	}
 }
