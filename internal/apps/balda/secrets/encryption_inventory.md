@@ -15,10 +15,10 @@ payload owners:
 - Provider revision API keys and environment values, with AAD binding provider
   and revision identity.
 
-All three currently use the same `balda.mcp_management.credential_key` root and
-version-1 `version || nonce || ciphertext` frame. That configuration ownership
-is recorded as the defect being migrated by this Story, not as an approved
-second root.
+All three use the same `app.security_key` root and version-1
+`version || nonce || ciphertext` frame. The obsolete
+`balda.mcp_management.credential_key` field is retained only to reject it with
+migration guidance; it is never an active or fallback root.
 
 No direct TLS or provider-owned credential-store cryptography exists in the
 production Go sources. TLS is transport encryption and provider-owned stores
