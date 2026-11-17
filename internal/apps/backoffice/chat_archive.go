@@ -60,7 +60,7 @@ func (a *httpApp) chatArchivePage(w http.ResponseWriter, r *http.Request) {
 	status, message := http.StatusServiceUnavailable, "Chat archive is temporarily unavailable. Reopen Chat sessions to retry."
 	switch {
 	case errors.Is(err, chatarchivecmd.ErrForbidden):
-		status, message = http.StatusForbidden, "Your administrator authority changed. Sign in again."
+		status, message = http.StatusForbidden, changedAdministratorAuthorityMessage
 	case errors.Is(err, chatarchivecmd.ErrInvalid):
 		status, message = http.StatusBadRequest, "The session address, filters or pagination cursor are invalid. Open Chat sessions to start again."
 	case errors.Is(err, chatarchivecmd.ErrNotFound):
@@ -68,5 +68,6 @@ func (a *httpApp) chatArchivePage(w http.ResponseWriter, r *http.Request) {
 	}
 	page.Error = &webui.ErrorView{Heading: "Chat archive could not be opened", Message: message}
 	page.RestartURL, page.RestartLabel = a.path("/chat-sessions"), "Open Chat sessions"
-	a.render(w, r, status, webui.TemplateError, page)
+	page.ChatArchive = webui.ProjectChatQuery(query)
+	a.render(w, r, status, webui.TemplateChatArchive, page)
 }

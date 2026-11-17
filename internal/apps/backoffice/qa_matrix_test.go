@@ -79,6 +79,10 @@ func TestQAStateMatrixEvidenceIsCurrent(t *testing.T) {
 		}
 		gotFamilies = append(gotFamilies, strings.TrimSpace(cells[0]))
 		for column, cell := range cells[1:] {
+			trimmedCell := strings.TrimSpace(cell)
+			if strings.HasPrefix(trimmedCell, "N/A") && (!strings.HasPrefix(trimmedCell, "N/A — ") || len(strings.TrimPrefix(trimmedCell, "N/A — ")) < 12) {
+				t.Errorf("%s column %d has an unjustified N/A: %q", strings.TrimSpace(cells[0]), column+2, trimmedCell)
+			}
 			references := evidencePattern.FindAllStringSubmatch(cell, -1)
 			if strings.Contains(cell, "Covered") && len(references) == 0 {
 				t.Errorf("%s column %d is Covered without an exact G:/A: evidence ID", strings.TrimSpace(cells[0]), column+2)

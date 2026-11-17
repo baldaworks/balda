@@ -197,38 +197,82 @@ type Page struct {
 	Ceremony     *MFACeremonyView
 
 	// ViewerUsername identifies the signed-in operator, independently of User.
-	ViewerUsername      string
-	Title               string
-	Current             Location
-	Navigation          []NavGroup
-	Capabilities        []CapabilityCard
-	BindingForms        []BindingForm
-	OwnUser             bool
-	CreateUser          bool
-	AccessSearch        string
-	AccessRole          string
-	AccessStatus        string
-	Users               []UserView
-	User                *UserView
-	Sessions            []SessionView
-	SessionActionPrefix string
-	SessionNextURL      string
-	MixedSessions       bool
-	Audit               []AuditView
-	Error               *ErrorView
-	CSRFToken           string
-	AutoRefresh         bool
-	RefreshRetryable    bool
-	ReturnTo            string
-	AuditAction         string
-	AuditOutcome        string
-	AuditTargetType     string
-	AuditActor          string
-	AuditFrom           string
-	AuditTo             string
-	NextURL             string
-	Gallery             []QALink
-	Preview             bool
+	ViewerUsername       string
+	Title                string
+	Current              Location
+	Navigation           []NavGroup
+	Capabilities         []CapabilityCard
+	BindingForms         []BindingForm
+	OwnUser              bool
+	CreateUser           bool
+	AccessSearch         string
+	AccessRole           string
+	AccessStatus         string
+	AccessDisplayName    string
+	AccessUsername       string
+	AccessDraftRole      string
+	AccessDraftStatus    string
+	AccessOriginalRole   string
+	AccessOriginalStatus string
+	ErrorFormID          string
+	Users                []UserView
+	User                 *UserView
+	Sessions             []SessionView
+	SessionActionPrefix  string
+	SessionNextURL       string
+	MixedSessions        bool
+	Audit                []AuditView
+	Error                *ErrorView
+	LoginUsername        string
+	CSRFToken            string
+	AutoRefresh          bool
+	RefreshRetryable     bool
+	ReturnTo             string
+	AuditAction          string
+	AuditActions         []AuditFilterOption
+	AuditOutcome         string
+	AuditTargetType      string
+	AuditTargets         []AuditFilterOption
+	AuditActor           string
+	AuditFrom            string
+	AuditTo              string
+	NextURL              string
+	Gallery              []QALink
+	Preview              bool
+}
+
+// AuditFilterOption is one complete, typed audit-filter choice.
+type AuditFilterOption struct {
+	Value string
+	Label string
+}
+
+// AuditActionOptions returns every action accepted by the audit query contract.
+func AuditActionOptions() []AuditFilterOption {
+	actions := []usercmd.AuditAction{
+		usercmd.AuditActionUserCreated, usercmd.AuditActionUserUpdated, usercmd.AuditActionUserAccessChanged, usercmd.AuditActionUserRoleChanged, usercmd.AuditActionUserStatusChanged, usercmd.AuditActionCredentialChanged,
+		usercmd.AuditActionBindingClaimCreated, usercmd.AuditActionInvitationIssued, usercmd.AuditActionInvitationRevoked, usercmd.AuditActionBindingAttached, usercmd.AuditActionBindingDetached, usercmd.AuditActionUserMigrated,
+		usercmd.AuditActionLoginSucceeded, usercmd.AuditActionRefreshSucceeded, usercmd.AuditActionRefreshReplay, usercmd.AuditActionSessionRevoked, usercmd.AuditActionMFAVerified, usercmd.AuditActionMFAEnabled, usercmd.AuditActionMFAReplaced, usercmd.AuditActionMFADisabled, usercmd.AuditActionMFARecovered, usercmd.AuditActionLogout,
+		usercmd.AuditActionMCPDefinitionChanged, usercmd.AuditActionMCPAuthorizationChanged, usercmd.AuditActionMCPCredentialsRenewed, usercmd.AuditActionScheduleDefinitionChanged, usercmd.AuditActionScheduleRunRequested,
+		usercmd.AuditActionProviderChanged, usercmd.AuditActionWebhookRouteChanged, usercmd.AuditActionWebhookTestRequested,
+		usercmd.AuditActionPluginInstalled, usercmd.AuditActionPluginUpgraded, usercmd.AuditActionPluginEnabled, usercmd.AuditActionPluginDisabled, usercmd.AuditActionPluginRolledBack, usercmd.AuditActionPluginRemoved, usercmd.AuditActionPluginRevisionPurged, usercmd.AuditActionPluginMarketplaceAdded, usercmd.AuditActionPluginMarketplaceRefreshed, usercmd.AuditActionPluginMarketplaceRefreshFailed, usercmd.AuditActionPluginOriginAdopted, usercmd.AuditActionPluginMarketplaceRemoved,
+		usercmd.AuditActionSkillChanged, usercmd.AuditActionHookChanged, usercmd.AuditActionMemoryFactCreated, usercmd.AuditActionMemoryFactEdited, usercmd.AuditActionMemoryFactDeleted, usercmd.AuditActionAliasCreated, usercmd.AuditActionAliasRetargeted, usercmd.AuditActionAliasDeleted,
+	}
+	options := make([]AuditFilterOption, 0, len(actions))
+	for _, action := range actions {
+		options = append(options, AuditFilterOption{Value: string(action), Label: auditActionLabel(action)})
+	}
+	return options
+}
+
+// AuditTargetOptions returns every target accepted by the audit query contract.
+func AuditTargetOptions() []AuditFilterOption {
+	targets := []usercmd.AuditTargetType{usercmd.AuditTargetUser, usercmd.AuditTargetSession, usercmd.AuditTargetBinding, usercmd.AuditTargetSystem, usercmd.AuditTargetMigration, usercmd.AuditTargetMCP, usercmd.AuditTargetSchedule, usercmd.AuditTargetProvider, usercmd.AuditTargetWebhookRoute, usercmd.AuditTargetPlugin, usercmd.AuditTargetPluginMarketplace, usercmd.AuditTargetSkill, usercmd.AuditTargetHook, usercmd.AuditTargetMemoryFact, usercmd.AuditTargetAlias}
+	options := make([]AuditFilterOption, 0, len(targets))
+	for _, target := range targets {
+		options = append(options, AuditFilterOption{Value: string(target), Label: auditTargetLabel(target)})
+	}
+	return options
 }
 
 // Navigation derives non-empty sidebar groups from current server capabilities.
@@ -387,6 +431,48 @@ func auditActionLabel(action usercmd.AuditAction) string {
 		return "Recovered two-factor access offline"
 	case usercmd.AuditActionLogout:
 		return "Signed out"
+	case usercmd.AuditActionMCPDefinitionChanged:
+		return "Changed MCP definition"
+	case usercmd.AuditActionMCPAuthorizationChanged:
+		return "Changed MCP authorization"
+	case usercmd.AuditActionMCPCredentialsRenewed:
+		return "Renewed MCP credentials"
+	case usercmd.AuditActionScheduleDefinitionChanged:
+		return "Changed schedule"
+	case usercmd.AuditActionScheduleRunRequested:
+		return "Requested schedule run"
+	case usercmd.AuditActionProviderChanged:
+		return "Changed provider"
+	case usercmd.AuditActionWebhookRouteChanged:
+		return "Changed webhook route"
+	case usercmd.AuditActionWebhookTestRequested:
+		return "Requested webhook test"
+	case usercmd.AuditActionPluginInstalled:
+		return "Installed plugin"
+	case usercmd.AuditActionPluginUpgraded:
+		return "Upgraded plugin"
+	case usercmd.AuditActionPluginEnabled:
+		return "Enabled plugin"
+	case usercmd.AuditActionPluginDisabled:
+		return "Disabled plugin"
+	case usercmd.AuditActionPluginRolledBack:
+		return "Rolled back plugin"
+	case usercmd.AuditActionPluginRemoved:
+		return "Removed plugin"
+	case usercmd.AuditActionPluginRevisionPurged:
+		return "Purged plugin revision"
+	case usercmd.AuditActionPluginMarketplaceAdded:
+		return "Added plugin marketplace"
+	case usercmd.AuditActionPluginMarketplaceRefreshed:
+		return "Refreshed plugin marketplace"
+	case usercmd.AuditActionPluginMarketplaceRefreshFailed:
+		return "Plugin marketplace refresh failed"
+	case usercmd.AuditActionPluginOriginAdopted:
+		return "Adopted plugin origin"
+	case usercmd.AuditActionPluginMarketplaceRemoved:
+		return "Removed plugin marketplace"
+	case usercmd.AuditActionSkillChanged:
+		return "Changed skill"
 	case usercmd.AuditActionHookChanged:
 		return "Agent hook changed"
 	case usercmd.AuditActionMemoryFactCreated:
@@ -424,6 +510,20 @@ func auditTargetLabel(target usercmd.AuditTargetType) string {
 		return "Fact"
 	case usercmd.AuditTargetAlias:
 		return "Alias"
+	case usercmd.AuditTargetMCP:
+		return "MCP connection"
+	case usercmd.AuditTargetSchedule:
+		return "Schedule"
+	case usercmd.AuditTargetProvider:
+		return "Provider"
+	case usercmd.AuditTargetWebhookRoute:
+		return "Webhook route"
+	case usercmd.AuditTargetPlugin:
+		return "Plugin"
+	case usercmd.AuditTargetPluginMarketplace:
+		return "Plugin marketplace"
+	case usercmd.AuditTargetSkill:
+		return "Skill"
 	default:
 		return "Target"
 	}

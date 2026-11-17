@@ -18,6 +18,8 @@ type SkillsView struct {
 	Diagnostics     []string
 	Detail          *SkillRow
 	Install         bool
+	InstallRef      string
+	InstallPath     string
 	Review          *skillcmd.Candidate
 	Update          bool
 	MutationBlocked bool

@@ -78,6 +78,25 @@ func TestHTMXMutationFormsUseSharedAccessibleStatus(t *testing.T) {
 			t.Errorf("shared mutation status is missing %s", attribute)
 		}
 	}
+	asset, err := fs.ReadFile(embedded, "static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeRequest := string(asset)
+	start := strings.Index(beforeRequest, `document.addEventListener("htmx:beforeRequest"`)
+	if start < 0 {
+		t.Fatal("shared HTMX mutation lifecycle is missing")
+	}
+	end := strings.Index(beforeRequest[start:], `document.addEventListener("htmx:afterRequest"`)
+	if end < 0 {
+		t.Fatal("shared HTMX mutation lifecycle is missing")
+	}
+	beforeRequest = beforeRequest[start : start+end]
+	clearFeedback := strings.Index(beforeRequest, `feedback.hidden = true`)
+	markBusy := strings.Index(beforeRequest, `form.setAttribute("aria-busy", "true")`)
+	if clearFeedback < 0 || markBusy < 0 || clearFeedback > markBusy {
+		t.Error("shared mutation lifecycle must clear stale request feedback before exposing the new busy state")
+	}
 }
 
 func TestRendererFullFragmentAndHistoryContracts(t *testing.T) {

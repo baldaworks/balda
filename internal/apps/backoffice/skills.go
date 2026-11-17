@@ -113,6 +113,8 @@ func (a *httpApp) skillReviewInstall(w http.ResponseWriter, r *http.Request) {
 	page := a.skillBasePage(r, p)
 	page.Skills.Install = true
 	page.Skills.ExpectedState = form.Get("expected_state")
+	page.Skills.InstallRef = strings.TrimSpace(form.Get("ref"))
+	page.Skills.InstallPath = strings.TrimSpace(form.Get("path"))
 	page.RestartURL, page.RestartLabel = a.path("/skills/install"), reopenInstallLabel
 	if a.skills == nil {
 		a.skillError(w, r, page, skillcmd.ErrUnavailable)
@@ -138,6 +140,9 @@ func (a *httpApp) skillReviewUpdate(w http.ResponseWriter, r *http.Request) {
 	if a.skills == nil {
 		a.skillError(w, r, page, skillcmd.ErrUnavailable)
 		return
+	}
+	if readErr := a.readSkills(r, p, &page); readErr == nil {
+		_ = selectManagedSkill(&page, r.PathValue("skill_id"))
 	}
 	candidate, err := a.skills.ReviewUpdate(r.Context(), skillMutation(r, form.Get("expected_state"), p))
 	if err != nil {
@@ -166,7 +171,6 @@ func (a *httpApp) skillAccept(w http.ResponseWriter, r *http.Request) {
 		if selectManagedSkill(&page, id) == nil {
 			page.RestartURL, page.RestartLabel = a.path(page.Skills.Detail.DetailPath), reopenSkillLabel
 		}
-		page.Skills.Detail = nil
 	}
 	if a.skills == nil {
 		a.skillError(w, r, page, skillcmd.ErrUnavailable)
@@ -183,6 +187,11 @@ func (a *httpApp) skillChange(w http.ResponseWriter, r *http.Request) {
 	}
 	page := a.skillBasePage(r, p)
 	page.RestartURL, page.RestartLabel = a.path("/skills/managed/"+r.PathValue("skill_id")), reopenSkillLabel
+	if a.skills != nil {
+		if readErr := a.readSkills(r, p, &page); readErr == nil {
+			_ = selectManagedSkill(&page, r.PathValue("skill_id"))
+		}
+	}
 	operation := skillcmd.Operation(r.PathValue("skill_operation"))
 	if operation != skillcmd.OperationEnable && operation != skillcmd.OperationDisable && operation != skillcmd.OperationRemove || (operation == skillcmd.OperationDisable || operation == skillcmd.OperationRemove) && form.Get("confirm") != checkedFormValue {
 		a.skillError(w, r, page, skillcmd.ErrInvalid)
@@ -206,6 +215,7 @@ func (a *httpApp) skillRefresh(w http.ResponseWriter, r *http.Request) {
 		a.skillError(w, r, page, skillcmd.ErrUnavailable)
 		return
 	}
+	_ = a.readSkills(r, p, &page)
 	outcome, err := a.skills.Refresh(r.Context(), skillcmd.Mutation{ExpectedState: form.Get("expected_state"), Authority: skillAuthority(p)})
 	a.skillOutcome(w, r, p, page, outcome, err)
 }
@@ -220,6 +230,7 @@ func (a *httpApp) skillRetry(w http.ResponseWriter, r *http.Request) {
 		a.skillError(w, r, page, skillcmd.ErrUnavailable)
 		return
 	}
+	_ = a.readSkills(r, p, &page)
 	outcome, err := a.skills.RetryPublication(r.Context(), skillAuthority(p))
 	a.skillOutcome(w, r, p, page, outcome, err)
 }

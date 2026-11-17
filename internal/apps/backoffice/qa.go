@@ -447,6 +447,7 @@ func qaLogin() webui.Page {
 
 func qaLoginError() webui.Page {
 	page := qaLogin()
+	page.LoginUsername = "synthetic-user"
 	page.Error = &webui.ErrorView{Heading: "Sign in failed", Message: "Check the synthetic credentials."}
 	return page
 }

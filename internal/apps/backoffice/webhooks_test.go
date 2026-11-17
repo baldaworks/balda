@@ -27,6 +27,7 @@ type webhooksHTTPFixture struct {
 	selections         []webhookroutecmd.ChangeSelection
 	deletes            []webhookroutecmd.Delete
 	rotates            []webhookroutecmd.Rotate
+	createErr          error
 	updateErr          error
 	tests              []webhookroutecmd.TestPost
 	history            []webhookroutecmd.HistoryItem
@@ -240,6 +241,10 @@ func TestWebhooksTestPostAndHistory(t *testing.T) {
 	if got := post("/webhooks/configured/test", form, "invalid").Code; got != http.StatusForbidden || len(fixture.tests) != 0 {
 		t.Fatalf("invalid CSRF reached Test POST: %d", got)
 	}
+	if got := post("/webhooks/configured/test", form, admin.csrf); got.Code != http.StatusBadRequest || len(fixture.tests) != 0 || !strings.Contains(got.Body.String(), `aria-describedby="webhook-form-error"`) {
+		t.Fatalf("unconfirmed enabled Test POST reached owner: %d", got.Code)
+	}
+	form.Set("confirm", "yes")
 	if got := post("/webhooks/configured/test", form, admin.csrf); got.Code != http.StatusSeeOther ||
 		len(fixture.tests) != 1 || fixture.tests[0].Body != "test body" || fixture.tests[0].RequestKey != key ||
 		fixture.tests[0].Authority.SessionID == "" {
@@ -256,7 +261,7 @@ func TestWebhooksTestPostAndHistory(t *testing.T) {
 	if got := post("/webhooks/disabled/test", url.Values{"request_key": {key}, "expected_version": {"2"}}, admin.csrf); got.Code != http.StatusBadRequest || len(fixture.tests) != 2 {
 		t.Fatalf("unconfirmed disabled Test POST = %d", got.Code)
 	}
-	if got := post("/webhooks/disabled/test", url.Values{"request_key": {key}, "expected_version": {"2"}, "confirm_disabled": {"yes"}}, admin.csrf); got.Code != http.StatusSeeOther || len(fixture.tests) != 3 || !fixture.tests[2].ConfirmDisabled {
+	if got := post("/webhooks/disabled/test", url.Values{"request_key": {key}, "expected_version": {"2"}, "confirm": {"yes"}, "confirm_disabled": {"yes"}}, admin.csrf); got.Code != http.StatusSeeOther || len(fixture.tests) != 3 || !fixture.tests[2].ConfirmDisabled {
 		t.Fatalf("confirmed disabled Test POST = %d", got.Code)
 	}
 	if got := post("/webhooks/archived/test", url.Values{"request_key": {key}, "expected_version": {"3"}}, admin.csrf).Code; got != http.StatusNotFound || len(fixture.tests) != 3 {
@@ -267,7 +272,7 @@ func TestWebhooksTestPostAndHistory(t *testing.T) {
 		t.Fatalf("archived route detail = %d", got.Code)
 	}
 	encodedBody := strings.Repeat("{", 600_000)
-	validForm := url.Values{"request_key": {uuid.NewString()}, "expected_version": {"1"}, "body": {encodedBody}}
+	validForm := url.Values{"request_key": {uuid.NewString()}, "expected_version": {"1"}, "body": {encodedBody}, "confirm": {"yes"}}
 	if encodedSize := len(validForm.Encode()); encodedSize <= webhookcmd.MaxBodyBytes {
 		t.Fatalf("test body did not exercise form encoding growth: %d", encodedSize)
 	}
@@ -276,7 +281,7 @@ func TestWebhooksTestPostAndHistory(t *testing.T) {
 		t.Fatalf("valid encoded Test POST body = %d, admissions = %d", got.Code, len(fixture.tests))
 	}
 	tooLargeBody := strings.Repeat("a", webhookcmd.MaxBodyBytes+1)
-	invalidForm := url.Values{"request_key": {uuid.NewString()}, "expected_version": {"1"}, "body": {tooLargeBody}}
+	invalidForm := url.Values{"request_key": {uuid.NewString()}, "expected_version": {"1"}, "body": {tooLargeBody}, "confirm": {"yes"}}
 	if got := post("/webhooks/configured/test", invalidForm, admin.csrf); got.Code != http.StatusBadRequest ||
 		len(fixture.tests) != 4 || !strings.Contains(got.Body.String(), "Test POST body is too large") {
 		t.Fatalf("oversized decoded Test POST body = %d, admissions = %d", got.Code, len(fixture.tests))
@@ -328,6 +333,9 @@ func (f *webhooksHTTPFixture) Get(_ context.Context, name string, _ webhookroute
 
 func (f *webhooksHTTPFixture) Create(_ context.Context, request webhookroutecmd.Create) (webhookroutecmd.SecretResult, error) {
 	f.creates = append(f.creates, request)
+	if f.createErr != nil {
+		return webhookroutecmd.SecretResult{}, f.createErr
+	}
 	if _, exists := f.items[request.Definition.Name]; exists {
 		return webhookroutecmd.SecretResult{}, webhookroutecmd.ErrConflict
 	}
@@ -483,11 +491,18 @@ func TestWebhooksBrowserManagement(t *testing.T) {
 			if got := performAccessMutation(t, handler, config, base+"/webhooks", form, admin.access, "invalid", false).Code; got != http.StatusForbidden || len(fixture.creates) != 0 {
 				t.Fatalf("invalid CSRF reached policy: %d", got)
 			}
+			fixture.createErr = webhookroutecmd.ErrInvalid
+			invalid := mutation("/webhooks", form)
+			if invalid.Code != http.StatusBadRequest || !strings.Contains(invalid.Body.String(), `value="new_route"`) || !strings.Contains(invalid.Body.String(), `value="telegram:123456:0"`) || !strings.Contains(invalid.Body.String(), "handle {{.Body}}") || !strings.Contains(invalid.Body.String(), `value="request_id" selected`) || !strings.Contains(invalid.Body.String(), `aria-describedby="webhook-form-error"`) {
+				t.Fatalf("invalid webhook create discarded safe draft: %d", invalid.Code)
+			}
+			fixture.createErr = nil
 			created := mutation("/webhooks", form)
 			if created.Code != http.StatusOK || created.Header().Get("Cache-Control") != "no-store" ||
 				!strings.Contains(created.Body.String(), "created-secret-example") ||
 				!strings.Contains(created.Body.String(), `data-webhook-once="`+base+`/webhooks/new_route"`) ||
-				len(fixture.creates) != 1 || fixture.creates[0].Authority.SessionID == "" {
+				strings.Contains(created.Body.String(), `name="request_key" value=""`) ||
+				len(fixture.creates) != 2 || fixture.creates[1].Authority.SessionID == "" {
 				t.Fatalf("create did not return one-time secret safely: %d", created.Code)
 			}
 			if got := get("/webhooks/new_route", admin.access); got.Code != http.StatusOK || strings.Contains(got.Body.String(), "created-secret-example") {
@@ -506,14 +521,21 @@ func TestWebhooksBrowserManagement(t *testing.T) {
 			if got := mutation("/webhooks/managed", update); got.Code != http.StatusConflict || !strings.Contains(got.Body.String(), "Webhook operation could not complete") {
 				t.Fatalf("conflicting update = %d", got.Code)
 			}
-			if got := mutation("/webhooks/managed/selection", url.Values{"expected_version": {"3"}}).Code; got != http.StatusBadRequest || len(fixture.selections) != 0 {
-				t.Fatalf("unconfirmed selection = %d", got)
+			fixture.updateErr = webhookroutecmd.ErrUnavailable
+			unavailable := mutation("/webhooks/managed", update)
+			if unavailable.Code != http.StatusServiceUnavailable || !strings.Contains(unavailable.Body.String(), `name="expected_version" value="2"`) || !strings.Contains(unavailable.Body.String(), `value="telegram:123456:0"`) || !strings.Contains(unavailable.Body.String(), "updated") || !strings.Contains(unavailable.Body.String(), `value="body_sha256" selected`) || !strings.Contains(unavailable.Body.String(), `aria-describedby="webhook-form-error"`) {
+				t.Fatalf("unavailable webhook edit discarded safe draft or version: %d", unavailable.Code)
+			}
+			fixture.updateErr = nil
+			if got := mutation("/webhooks/managed/selection", url.Values{"expected_version": {"3"}}); got.Code != http.StatusBadRequest || len(fixture.selections) != 0 || !strings.Contains(got.Body.String(), `action="`+base+`/webhooks/managed/selection"`) || !strings.Contains(got.Body.String(), `aria-describedby="webhook-form-error"`) {
+				t.Fatalf("unconfirmed selection = %d", got.Code)
 			}
 			if got := mutation("/webhooks/managed/selection", url.Values{"expected_version": {"3"}, "confirm": {"yes"}, "enabled": {"no"}}).Code; got != http.StatusSeeOther || len(fixture.selections) != 1 {
 				t.Fatalf("confirmed selection = %d", got)
 			}
 			rotated := mutation("/webhooks/managed/rotate", url.Values{"expected_version": {"4"}, "confirm": {"yes"}})
 			if rotated.Code != http.StatusOK || !strings.Contains(rotated.Body.String(), "rotated-secret-example") ||
+				strings.Contains(rotated.Body.String(), `name="request_key" value=""`) ||
 				strings.Contains(get("/webhooks/managed", admin.access).Body.String(), "rotated-secret-example") {
 				t.Fatalf("secret rotation exposed later: %d", rotated.Code)
 			}

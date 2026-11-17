@@ -37,11 +37,14 @@ func TestPluginsNavigationAndMarketplaceRender(t *testing.T) {
 			if !strings.Contains(body, `pattern="(?!.*\.\.)[A-Za-z0-9][A-Za-z0-9._\-]{0,63}"`) {
 				t.Fatal("Name field excludes supported identities")
 			}
-			if !strings.Contains(body, `name="ref" maxlength="256"`) {
+			if !strings.Contains(body, `name="ref" value="" maxlength="256"`) {
 				t.Fatal("Ref field exceeds supported bound")
 			}
 			if !strings.Contains(body, `data-plugin-source`) || !strings.Contains(body, `href="/balda/backoffice/plugins/marketplaces"`) {
 				t.Fatal("transient source/cancel missing")
+			}
+			if !strings.Contains(body, `fieldset data-plugin-git-fields class="mt-3"`) || strings.Contains(body, `data-plugin-git-fields hidden disabled`) {
+				t.Fatal("Git options have no native form fallback")
 			}
 		} else {
 			for _, label := range []string{"Name", "Source", "Ref", "Sparse", "Discovery", "Available plugins", "Last successful refresh", "Actions"} {

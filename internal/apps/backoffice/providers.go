@@ -30,6 +30,7 @@ type ProvidersOperations interface {
 }
 
 const protectedActionReplace = "replace"
+const protectedActionClear = "clear"
 
 func (r *Runtime) ConfigureProvidersOperations(operations ProvidersOperations) error {
 	r.mu.Lock()
@@ -93,7 +94,11 @@ func (a *httpApp) providersView(r *http.Request, p security.Principal) (webui.Pa
 	}
 	if r.Method == http.MethodPost || r.URL.Query().Get("new") == "1" {
 		page.Title = "Add provider · Balda"
-		view.Editor = projectProviderEditor(providers.Item{}, inventory.Version, true)
+		selectedType := strings.TrimSpace(r.URL.Query().Get("type"))
+		if selectedType != "" && !managedProviderType(selectedType) {
+			return page, providers.ErrInvalid
+		}
+		view.Editor = projectProviderEditorForType(providers.Item{}, inventory.Version, true, selectedType)
 		view.Editor.Action = lifecyclePath(view.Editor.Action, selected)
 	}
 	page.Providers = view
@@ -122,6 +127,9 @@ func (a *httpApp) providerCreate(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		_, err = a.providers.Create(r.Context(), change)
 	}
+	if err != nil {
+		retainProviderDraft(&page, form, nil)
+	}
 	a.providerResult(w, r, page, change.ID, err)
 }
 
@@ -140,7 +148,38 @@ func (a *httpApp) providerUpdate(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		_, err = a.providers.Update(r.Context(), change)
 	}
+	if err != nil {
+		retainProviderDraft(&page, form, item)
+	}
 	a.providerResult(w, r, page, change.ID, err)
+}
+
+func retainProviderDraft(page *webui.Page, form url.Values, current *webui.ProviderEditor) {
+	if page == nil || page.Providers == nil {
+		return
+	}
+	typeName := strings.TrimSpace(form.Get("type"))
+	if current == nil {
+		if !managedProviderType(typeName) {
+			return
+		}
+		page.Providers.Editor = projectProviderEditorForType(providers.Item{}, providers.StateVersion(page.Providers.Version), true, typeName)
+		current = page.Providers.Editor
+	}
+	current.ID = strings.TrimSpace(form.Get("id"))
+	current.Model = strings.TrimSpace(form.Get("model"))
+	current.ReasoningEffort = strings.TrimSpace(form.Get("reasoning_effort"))
+	current.Mode = strings.TrimSpace(form.Get("mode"))
+	current.Timeout = strings.TrimSpace(form.Get("timeout"))
+	current.BridgeVersion = strings.TrimSpace(form.Get("bridge_version"))
+	current.RegistryID = strings.TrimSpace(form.Get("registry_id"))
+	current.ModelConfigID = strings.TrimSpace(form.Get("model_config_id"))
+	current.ReasoningEffortConfigID = strings.TrimSpace(form.Get("reasoning_effort_config_id"))
+	current.ExtraArgs = strings.TrimSpace(form.Get("extra_args"))
+	current.InheritEnv = strings.TrimSpace(form.Get("inherit_env"))
+	current.MCPServers = strings.TrimSpace(form.Get("mcp_servers"))
+	current.PoolMembers = strings.TrimSpace(form.Get("pool_members"))
+	current.SystemInstructions = strings.TrimSpace(form.Get("system_instructions"))
 }
 
 func (a *httpApp) providerSelection(w http.ResponseWriter, r *http.Request) {
@@ -195,19 +234,38 @@ func providerChange(form url.Values, current *webui.ProviderEditor, audit usercm
 	if err != nil {
 		return providers.Change{ExpectedVersion: version, ID: id, Audit: audit}, err
 	}
-	protected, err := providerProtectedEdit(form, current)
+	protected, err := providerProtectedEdit(form, current, cfg.Type)
 	if err != nil {
 		return providers.Change{ExpectedVersion: version, ID: id, Config: cfg, Audit: audit}, err
+	}
+	if cfg.Type == agentconfig.AgentTypeOpenAI {
+		hasAPIKey := current != nil && current.HasAPIKey
+		if protected.APIKey != nil {
+			hasAPIKey = *protected.APIKey != ""
+		}
+		if !hasAPIKey {
+			return providers.Change{ExpectedVersion: version, ID: id, Config: cfg, Audit: audit}, providers.ErrInvalid
+		}
 	}
 	return providers.Change{ExpectedVersion: version, ID: id, Config: cfg, Protected: protected, Audit: audit}, nil
 }
 
 func providerConfig(form url.Values) (agentconfig.Config, error) {
 	typeName := strings.TrimSpace(form.Get("type"))
+	descriptor, ok := agentconfig.BuiltinDriverRegistry().Lookup(typeName)
+	if !ok || descriptor.Type != typeName || descriptor.Type == agentconfig.AgentTypeGenericACP || descriptor.Deprecated {
+		return agentconfig.Config{}, providers.ErrInvalid
+	}
+	if err := rejectInapplicableProviderFields(form, descriptor); err != nil {
+		return agentconfig.Config{}, err
+	}
 	cfg := agentconfig.Config{Type: typeName, MCPServers: providerList(form.Get("mcp_servers")), SystemInstructions: strings.TrimSpace(form.Get("system_instructions"))}
 	switch typeName {
 	case agentconfig.AgentTypeOpenAI, agentconfig.AgentTypeAIStudio:
 		block := &agentconfig.LocalAPIConfig{Model: strings.TrimSpace(form.Get("model")), Timeout: strings.TrimSpace(form.Get("timeout")), ReasoningEffort: strings.TrimSpace(form.Get("reasoning_effort"))}
+		if block.Model == "" {
+			return agentconfig.Config{}, providers.ErrInvalid
+		}
 		if typeName == agentconfig.AgentTypeOpenAI {
 			cfg.OpenAI = block
 		} else {
@@ -216,8 +274,7 @@ func providerConfig(form url.Values) (agentconfig.Config, error) {
 	case agentconfig.AgentTypePool:
 		cfg.PoolConfig = &agentconfig.PoolConfig{Members: providerList(form.Get("pool_members"))}
 	default:
-		descriptor, ok := agentconfig.BuiltinDriverRegistry().Lookup(typeName)
-		if !ok || descriptor.Class != agentconfig.DriverClassACP || descriptor.Type == agentconfig.AgentTypeGenericACP || descriptor.Deprecated {
+		if descriptor.Class != agentconfig.DriverClassACP {
 			return agentconfig.Config{}, providers.ErrInvalid
 		}
 		block := &agentconfig.ACPConfig{ExtraArgs: providerList(form.Get("extra_args")), Model: strings.TrimSpace(form.Get("model")),
@@ -238,6 +295,43 @@ func providerConfig(form url.Values) (agentconfig.Config, error) {
 		setProviderACPBlock(&cfg, descriptor.Type, block)
 	}
 	return cfg, nil
+}
+
+func managedProviderType(typeName string) bool {
+	descriptor, ok := agentconfig.BuiltinDriverRegistry().Lookup(typeName)
+	return ok && descriptor.Type == typeName && descriptor.Type != agentconfig.AgentTypeGenericACP && !descriptor.Deprecated
+}
+
+func rejectInapplicableProviderFields(form url.Values, descriptor agentconfig.DriverDescriptor) error {
+	allowed := map[string]bool{"mcp_servers": true, "system_instructions": true}
+	switch descriptor.Class {
+	case agentconfig.DriverClassHosted:
+		allowed["model"] = true
+		if descriptor.Type == agentconfig.AgentTypeOpenAI {
+			allowed["timeout"] = true
+			allowed["reasoning_effort"] = true
+		}
+	case agentconfig.DriverClassPool:
+		allowed["pool_members"] = true
+	case agentconfig.DriverClassACP:
+		for _, field := range []string{"model", "reasoning_effort", "mode", "model_config_id", "reasoning_effort_config_id", "extra_args", "inherit_env"} {
+			allowed[field] = true
+		}
+		if descriptor.Type == agentconfig.AgentTypeCodexACP || descriptor.Type == agentconfig.AgentTypeRegistryACP || descriptor.Type == agentconfig.AgentTypeAgyACP {
+			allowed["bridge_version"] = true
+		}
+		if descriptor.Type == agentconfig.AgentTypeRegistryACP {
+			allowed["registry_id"] = true
+		}
+	default:
+		return providers.ErrInvalid
+	}
+	for _, field := range []string{"model", "reasoning_effort", "mode", "timeout", "bridge_version", "registry_id", "model_config_id", "reasoning_effort_config_id", "extra_args", "inherit_env", "pool_members"} {
+		if !allowed[field] && strings.TrimSpace(form.Get(field)) != "" {
+			return providers.ErrInvalid
+		}
+	}
+	return nil
 }
 
 func setProviderACPBlock(cfg *agentconfig.Config, typeName string, block *agentconfig.ACPConfig) {
@@ -261,22 +355,48 @@ func setProviderACPBlock(cfg *agentconfig.Config, typeName string, block *agentc
 	}
 }
 
-func providerProtectedEdit(form url.Values, current *webui.ProviderEditor) (providers.ProtectedEdit, error) {
+func providerProtectedEdit(form url.Values, current *webui.ProviderEditor, typeName string) (providers.ProtectedEdit, error) {
+	descriptor, ok := agentconfig.BuiltinDriverRegistry().Lookup(typeName)
+	if !ok || descriptor.Deprecated {
+		return providers.ProtectedEdit{}, providers.ErrInvalid
+	}
 	edit := providers.ProtectedEdit{}
+	_, hasAPIKeyAction := form["api_key_action"]
+	_, hasAPIKey := form["api_key"]
+	if descriptor.Class != agentconfig.DriverClassHosted && (hasAPIKeyAction || hasAPIKey) {
+		return providers.ProtectedEdit{}, providers.ErrInvalid
+	}
 	switch form.Get("api_key_action") {
 	case "", "keep":
+		if form.Get("api_key") != "" {
+			return providers.ProtectedEdit{}, providers.ErrInvalid
+		}
 	case protectedActionReplace:
 		value := form.Get("api_key")
 		edit.APIKey = &value
-	case "clear":
+	case protectedActionClear:
+		if form.Get("api_key") != "" {
+			return providers.ProtectedEdit{}, providers.ErrInvalid
+		}
 		value := ""
 		edit.APIKey = &value
 	default:
 		return providers.ProtectedEdit{}, providers.ErrInvalid
 	}
+	_, hasEnvironmentAction := form["environment_action"]
+	_, hasEnvironment := form["environment"]
+	if descriptor.Class != agentconfig.DriverClassACP && (hasEnvironmentAction || hasEnvironment) {
+		return providers.ProtectedEdit{}, providers.ErrInvalid
+	}
 	switch form.Get("environment_action") {
 	case "", "keep":
-	case "clear", protectedActionReplace:
+		if form.Get("environment") != "" {
+			return providers.ProtectedEdit{}, providers.ErrInvalid
+		}
+	case protectedActionClear, protectedActionReplace:
+		if form.Get("environment_action") == protectedActionClear && form.Get("environment") != "" {
+			return providers.ProtectedEdit{}, providers.ErrInvalid
+		}
 		edit.Environment = make(map[string]*string)
 		if current != nil {
 			for _, name := range current.EnvironmentNames {

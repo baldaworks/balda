@@ -127,6 +127,7 @@ type MCPEditor struct {
 	CanRetry                                                             bool
 	Attempt                                                              *MCPAttempt
 	PublicID, Transport, Command, Args, Directory, URL, Scopes, ClientID string
+	ClientAuthMethod                                                     string
 	Enabled, All                                                         bool
 	Providers                                                            []MCPProvider
 	Env, Headers                                                         []MCPValueRow
@@ -140,7 +141,7 @@ type MCPValueRow struct{ Key, Kind, Operation string }
 
 func ProjectMCPEditor(item mcpcmd.Item, providers []string, create bool) *MCPEditor {
 	d := item.Definition
-	e := &MCPEditor{Row: ProjectMCPRow(item), New: create, PublicID: item.Connection.PublicID, Transport: string(d.Transport), Command: d.Command, Args: strings.Join(d.Args, "\n"), Directory: d.Directory, URL: d.URL, Scopes: strings.Join(d.Scopes, "\n"), Enabled: item.Connection.Enabled, All: d.Targets.All, Action: "/mcp/connections/" + url.PathEscape(item.Connection.ID)}
+	e := &MCPEditor{Row: ProjectMCPRow(item), New: create, PublicID: item.Connection.PublicID, Transport: string(d.Transport), Command: d.Command, Args: strings.Join(d.Args, "\n"), Directory: d.Directory, URL: d.URL, Scopes: strings.Join(d.Scopes, "\n"), ClientAuthMethod: "none", Enabled: item.Connection.Enabled, All: d.Targets.All, Action: "/mcp/connections/" + url.PathEscape(item.Connection.ID)}
 	e.DiagnosticPath = e.Action + "/diagnostic"
 	if d.AuthBinding != nil {
 		e.ClientID = d.AuthBinding.ClientID

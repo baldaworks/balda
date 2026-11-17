@@ -103,6 +103,9 @@ func (a *httpApp) mcpNativeMutationLimit(w http.ResponseWriter, r *http.Request,
 		a.mcpAuthorizationError(w, r, page, mcpcmd.ErrUnavailable)
 		return nil, page, mcpcmd.Authority{}, false
 	}
+	if contextual, err := a.mcpView(r, p); err == nil {
+		page = contextual
+	}
 	return form, page, a.mcpAuthority(p), true
 }
 
@@ -307,7 +310,15 @@ func (a *httpApp) mcpCancelAuthorization(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	if err := a.mcpAuthorizations.Cancel(r.Context(), r.PathValue("attempt_id"), authority); err != nil {
+	attemptID := r.PathValue("attempt_id")
+	if err := a.mcpAuthorizations.Cancel(r.Context(), attemptID, authority); err != nil {
+		if !errors.Is(err, mcpcmd.ErrNotFound) && !errors.Is(err, mcpcmd.ErrAuthAttempt) {
+			page.Title = "Cancel authorization · MCP · Balda"
+			page.MCP = &webui.MCPView{Lifecycle: lifecycleView("/mcp", lifecycleActive), Device: &webui.MCPDevice{
+				Status: "Pending", Message: "The authorization attempt was not cancelled. Retry cancellation or return to MCP management.", Expires: "Unknown",
+				Pending: true, CancelPath: "/mcp/oauth/attempts/" + url.PathEscape(attemptID) + "/cancel", StatusPath: "/mcp", DetailPath: "/mcp",
+			}}
+		}
 		a.mcpAuthorizationError(w, r, page, err)
 		return
 	}
@@ -367,6 +378,9 @@ func (a *httpApp) mcpSavedAuthorizationAvailable(ctx context.Context, connection
 
 func (a *httpApp) mcpAuthorizationError(w http.ResponseWriter, r *http.Request, page webui.Page, err error) {
 	status, message := mcpAuthorizationFailure(err)
+	if r.Method == http.MethodPost && !errors.Is(err, mcpcmd.ErrConflict) && !errors.Is(err, mcpcmd.ErrForbidden) && !errors.Is(err, mcpcmd.ErrNotFound) {
+		retainMCPDraft(&page, r.PostForm)
+	}
 	page.Error = &webui.ErrorView{Heading: "OAuth could not complete", Message: message}
 	page.RestartURL, page.RestartLabel = a.path("/mcp"), "Return to MCP"
 	if id := r.PathValue("connection_id"); id != "" {

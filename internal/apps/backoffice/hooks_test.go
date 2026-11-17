@@ -77,7 +77,7 @@ func TestHooksHTTPManagement(t *testing.T) {
 				t.Fatal("operator sees hook navigation")
 			}
 			form.Set("timeout_seconds", "1e4")
-			if response := mutate("/hooks", form, true); response.Code != 400 || !strings.Contains(response.Body.String(), `value="1e4"`) {
+			if response := mutate("/hooks", form, true); response.Code != 400 || !strings.Contains(response.Body.String(), `value="1e4"`) || !strings.Contains(response.Body.String(), `aria-describedby="hook-form-error"`) {
 				t.Fatalf("invalid timeout draft = %d, %s", response.Code, response.Body.String())
 			}
 			form.Set("timeout_seconds", "3600")
@@ -103,7 +103,7 @@ func TestHooksHTTPManagement(t *testing.T) {
 				t.Fatalf("update = %d", response.Code)
 			}
 			deletion := url.Values{"expected_version": {"2"}, "csrf_token": {admin.csrf}}
-			if response := mutate("/hooks/guard/delete", deletion, false); response.Code != 400 {
+			if response := mutate("/hooks/guard/delete", deletion, false); response.Code != 400 || !strings.Contains(response.Body.String(), `value="submitted-canary"`) || !strings.Contains(response.Body.String(), `action="`+base+`/hooks/guard/delete"`) || !strings.Contains(response.Body.String(), `aria-describedby="hook-form-error"`) {
 				t.Fatalf("unconfirmed delete = %d", response.Code)
 			}
 			deletion.Set("confirm", "yes")

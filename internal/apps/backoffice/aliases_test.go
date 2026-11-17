@@ -1,6 +1,7 @@
 package backoffice
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -10,9 +11,19 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/backoffice/security"
 	"github.com/baldaworks/balda/internal/apps/balda/aliasbackofficeapp"
+	"github.com/baldaworks/balda/internal/apps/balda/aliascmd"
 	"github.com/baldaworks/balda/internal/apps/balda/aliases"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 )
+
+type aliasFailureOperations struct {
+	AliasesOperations
+	retargetErr error
+}
+
+func (f aliasFailureOperations) Retarget(context.Context, aliascmd.Retarget) (aliascmd.Record, error) {
+	return aliascmd.Record{}, f.retargetErr
+}
 
 func TestAliasesBrowserManagement(t *testing.T) {
 	for _, base := range []string{"", "/balda"} {
@@ -60,6 +71,10 @@ func TestAliasesBrowserManagement(t *testing.T) {
 			if got := mutation("/aliases", create, operator.access, operator.csrf).Code; got != http.StatusForbidden {
 				t.Fatalf("operator create = %d", got)
 			}
+			invalid := mutation("/aliases", url.Values{"name": {"draft_alias"}, "locator_ref": {"not a locator"}}, admin.access, admin.csrf)
+			if invalid.Code != http.StatusBadRequest || !strings.Contains(invalid.Body.String(), `value="draft_alias"`) || !strings.Contains(invalid.Body.String(), `value="not a locator"`) || !strings.Contains(invalid.Body.String(), `aria-describedby="alias-form-error"`) {
+				t.Fatalf("invalid alias draft was discarded: %d", invalid.Code)
+			}
 			if got := mutation("/aliases", create, admin.access, admin.csrf).Code; got != http.StatusSeeOther {
 				t.Fatalf("create = %d", got)
 			}
@@ -70,12 +85,22 @@ func TestAliasesBrowserManagement(t *testing.T) {
 			if got := mutation("/aliases/main_chat", url.Values{"expected_version": {"1"}, "locator_ref": {"telegram:-1003953132278:0"}}, admin.access, admin.csrf).Code; got != http.StatusSeeOther {
 				t.Fatalf("retarget = %d", got)
 			}
+			owner := app.aliases
+			app.aliases = aliasFailureOperations{AliasesOperations: owner, retargetErr: aliascmd.ErrUnavailable}
+			unavailable := mutation("/aliases/main_chat", url.Values{"expected_version": {"2"}, "locator_ref": {"telegram:-1003953132280:0"}}, admin.access, admin.csrf)
+			if unavailable.Code != http.StatusServiceUnavailable || !strings.Contains(unavailable.Body.String(), `name="expected_version" value="2"`) || !strings.Contains(unavailable.Body.String(), `value="telegram:-1003953132280:0"`) || !strings.Contains(unavailable.Body.String(), `aria-describedby="alias-form-error"`) {
+				t.Fatalf("unavailable alias retarget discarded draft/version: %d", unavailable.Code)
+			}
+			app.aliases = owner
 			if got := mutation("/aliases/main_chat", url.Values{"expected_version": {"1"}, "locator_ref": {"telegram:-1003953132279:0"}}, admin.access, admin.csrf).Code; got != http.StatusConflict {
 				t.Fatalf("stale retarget = %d", got)
 			}
 			inventory := get("/aliases", admin.access)
 			if inventory.Code != http.StatusOK || !strings.Contains(inventory.Body.String(), "telegram:-1003953132278:0") || !strings.Contains(inventory.Body.String(), `href="`+base+`/aliases/main_chat"`) {
 				t.Fatalf("inventory = %d", inventory.Code)
+			}
+			if got := mutation("/aliases/main_chat/delete", url.Values{"expected_version": {"2"}}, admin.access, admin.csrf); got.Code != http.StatusBadRequest || !strings.Contains(got.Body.String(), `action="`+base+`/aliases/main_chat/delete"`) || !strings.Contains(got.Body.String(), `aria-describedby="alias-form-error"`) {
+				t.Fatalf("unconfirmed alias delete recovery = %d", got.Code)
 			}
 			if got := mutation("/aliases/main_chat/delete", url.Values{"expected_version": {"2"}, "confirm": {"yes"}}, admin.access, admin.csrf).Code; got != http.StatusSeeOther {
 				t.Fatalf("delete = %d", got)

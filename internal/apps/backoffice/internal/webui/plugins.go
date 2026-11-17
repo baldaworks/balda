@@ -19,8 +19,8 @@ type PluginsView struct {
 	MarketplaceDetail *PluginMarketplaceDetail
 }
 
-// PluginMarketplaceAdd intentionally has no Source value to refill.
-type PluginMarketplaceAdd struct{}
+// PluginMarketplaceAdd retains safe fields; Source remains write-only.
+type PluginMarketplaceAdd struct{ Name, Ref, Sparse string }
 
 // PluginMarketplaceRow uses the same field labels as the definition form.
 type PluginMarketplaceRow struct {

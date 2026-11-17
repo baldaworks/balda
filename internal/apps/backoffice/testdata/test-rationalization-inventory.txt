@@ -24,6 +24,11 @@ internal/apps/backoffice/confirmations_browser_test.go|TestConfirmationsLayoutBr
 internal/apps/backoffice/fact_memory_browser_test.go|TestFactMemoryApplicationBrowser|out-of-scope-backoffice-feature
 internal/apps/backoffice/fact_memory_layout_browser_test.go|TestFactMemoryLayoutBrowser|out-of-scope-backoffice-feature
 internal/apps/backoffice/fact_memory_test.go|TestFactMemoryHTTPManagement|out-of-scope-backoffice-feature
+internal/apps/backoffice/form_inventory_test.go|TestProductionFormAuditContractFailsClosed|out-of-scope-backoffice-feature
+internal/apps/backoffice/form_inventory_test.go|TestProductionFormAuditDocumentationIsCurrent|out-of-scope-backoffice-feature
+internal/apps/backoffice/form_inventory_test.go|TestProductionFormControlsHaveProgrammaticLabels|out-of-scope-backoffice-feature
+internal/apps/backoffice/form_inventory_test.go|TestProductionFormFieldMatrixIsClassified|out-of-scope-backoffice-feature
+internal/apps/backoffice/form_inventory_test.go|TestProductionFormInventoryBaseline|out-of-scope-backoffice-feature
 internal/apps/backoffice/hooks_browser_test.go|TestHooksApplicationBrowser|out-of-scope-backoffice-feature
 internal/apps/backoffice/hooks_layout_browser_test.go|TestHooksLayoutBrowser|out-of-scope-backoffice-feature
 internal/apps/backoffice/hooks_test.go|TestHooksHTTPManagement|out-of-scope-backoffice-feature
@@ -106,6 +111,7 @@ internal/apps/backoffice/plugins_qa_test.go|TestPluginLifecycleRenderRecoveryLin
 internal/apps/backoffice/plugins_qa_test.go|TestPluginMarketplaceRenderPreviews|out-of-scope-backoffice-feature
 internal/apps/backoffice/providers_layout_browser_test.go|TestProvidersLayoutBrowser|out-of-scope-backoffice-feature
 internal/apps/backoffice/providers_test.go|TestProviderProtectedEditDistinguishesDeleteFromExplicitEmpty|handler-authorization
+internal/apps/backoffice/providers_test.go|TestProviderTypeSpecificFormsRejectInapplicableFields|handler-authorization
 internal/apps/backoffice/providers_test.go|TestProvidersBrowserManagementAndSecretBoundary|handler-authorization
 internal/apps/backoffice/qa_matrix_test.go|TestQAStateMatrixEvidenceIsCurrent|out-of-scope-backoffice-feature
 internal/apps/backoffice/qa_matrix_test.go|TestValidateGoTestFunction|out-of-scope-backoffice-feature

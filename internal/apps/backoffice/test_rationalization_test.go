@@ -35,7 +35,7 @@ var rationalizationScopes = []rationalizationScope{
 		"handler-shape":         {"TestMCPInventoryUsesSafeSharedRendering", "TestMCPIntakePreservesTransportFieldsForOwnerValidation", "TestCommittedMCPCreateHasRecoveryLink"},
 	}},
 	{path: "internal/apps/backoffice/providers_test.go", groups: map[string][]string{
-		"handler-authorization": {"TestProvidersBrowserManagementAndSecretBoundary", "TestProviderProtectedEditDistinguishesDeleteFromExplicitEmpty"},
+		"handler-authorization": {"TestProvidersBrowserManagementAndSecretBoundary", "TestProviderProtectedEditDistinguishesDeleteFromExplicitEmpty", "TestProviderTypeSpecificFormsRejectInapplicableFields"},
 	}},
 	{path: "internal/apps/backoffice/schedules_test.go", groups: map[string][]string{
 		"handler-authorization": {"TestSchedulesBrowserManagement"},
@@ -145,7 +145,7 @@ func TestLifecycleRationalizationInventoryIsComplete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const wantScopedTests = 80
+	const wantScopedTests = 81
 	classified := 0
 	for _, scope := range rationalizationScopes {
 		expected := make(map[string]string)
@@ -186,7 +186,7 @@ func TestLifecycleRationalizationInventoryIsComplete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read exact rationalization inventory: %v\nresolved inventory:\n%s", err, inventory)
 	}
-	const wantFocusedTests = 430
+	const wantFocusedTests = 436
 	if err := compareRationalizationInventory(snapshot, inventory, wantFocusedTests); err != nil {
 		t.Fatal(err)
 	}

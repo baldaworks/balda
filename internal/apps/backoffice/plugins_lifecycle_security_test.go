@@ -145,7 +145,7 @@ func TestPluginLifecycleHTTPRoutesActionsAndRecovery(t *testing.T) {
 					t.Fatal("plugin detail not private")
 				}
 				before := len(fixture.mutations)
-				if got := mutation(path+"/remove", url.Values{"expected_state": {pluginLifecycleExpected}}, admin.access, admin.csrf, false); got.Code != http.StatusBadRequest || len(fixture.mutations) != before {
+				if got := mutation(path+"/remove", url.Values{"expected_state": {pluginLifecycleExpected}}, admin.access, admin.csrf, false); got.Code != http.StatusBadRequest || len(fixture.mutations) != before || !strings.Contains(got.Body.String(), "Retained revisions") || !strings.Contains(got.Body.String(), `aria-describedby="plugin-form-error"`) {
 					t.Fatal("unconfirmed remove reached lifecycle")
 				}
 				if got := mutation(path+"/disable", url.Values{"expected_state": {pluginLifecycleExpected}, "confirm": {checkedFormValue}}, admin.access, admin.csrf, false); got.Code != http.StatusSeeOther || got.Header().Get("Location") != base+path {

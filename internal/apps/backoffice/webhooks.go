@@ -201,6 +201,12 @@ func (a *httpApp) webhookTestPost(w http.ResponseWriter, r *http.Request) {
 	if _, keyErr := uuid.Parse(request.RequestKey); keyErr == nil {
 		editor.TestRequestKey = request.RequestKey
 	}
+	if form.Get("confirm") != checkedFormValue {
+		page.Error = &webui.ErrorView{Heading: "Confirm Test POST",
+			Message: "Confirm that you want to submit this Test POST through the selected webhook route."}
+		a.render(w, r, http.StatusBadRequest, webui.TemplateWebhooks, page)
+		return
+	}
 	if !editor.Row.Enabled && !request.ConfirmDisabled {
 		page.Error = &webui.ErrorView{Heading: "Confirm disabled webhook test",
 			Message: "Confirm that you want to send a Test POST through this disabled route."}
@@ -360,6 +366,7 @@ func (a *httpApp) webhookSecretResult(w http.ResponseWriter, r *http.Request, pa
 	}
 	page.Webhooks = &webui.WebhooksView{MissingPublicOrigin: a.publicOrigin == "", Lifecycle: lifecycleView("/webhooks", selected), Editor: a.projectWebhookEditor(result.Item, false)}
 	page.Webhooks.Editor.Secret = result.Secret
+	page.Webhooks.Editor.TestRequestKey = uuid.NewString()
 	// The secret exists only in this POST response. A subsequent GET uses Get,
 	// whose Item cannot carry a secret.
 	w.Header().Set("Cache-Control", "no-store")
@@ -382,6 +389,9 @@ func (a *httpApp) webhookResult(w http.ResponseWriter, r *http.Request, page web
 
 func (a *httpApp) webhookError(w http.ResponseWriter, r *http.Request, page webui.Page, err error) {
 	status, message := webhookOperationFailure(err)
+	if r.Method == http.MethodPost && !errors.Is(err, webhookroutecmd.ErrConflict) && !errors.Is(err, webhookroutecmd.ErrForbidden) && !errors.Is(err, webhookroutecmd.ErrNotFound) {
+		retainWebhookDraft(&page, r.PostForm)
+	}
 	page.Error = &webui.ErrorView{Heading: "Webhook operation could not complete", Message: message}
 	templateName := webui.TemplateWebhooks
 	if page.Webhooks == nil {
@@ -389,6 +399,29 @@ func (a *httpApp) webhookError(w http.ResponseWriter, r *http.Request, page webu
 		templateName = webui.TemplateError
 	}
 	a.render(w, r, status, templateName, page)
+}
+
+func retainWebhookDraft(page *webui.Page, form url.Values) {
+	if page == nil || page.Webhooks == nil || page.Webhooks.Editor == nil || !form.Has("prompt_template") {
+		return
+	}
+	editor := page.Webhooks.Editor
+	if editor.New {
+		editor.Name = strings.TrimSpace(form.Get("name"))
+		if editor.Name != "" {
+			editor.Row.URL = editor.URLPrefix + editor.Name
+		}
+	} else if version, err := webhookVersion(form); err == nil {
+		editor.Row.Version = version
+	}
+	editor.PromptTemplate = form.Get("prompt_template")
+	editor.ReportTo = strings.TrimSpace(form.Get("report_to"))
+	editor.AckOnDelivery = form.Get("ack_on_delivery") == checkedFormValue
+	switch source := form.Get("dedupe_source"); source {
+	case webhookroutecmd.DedupeSourceRequestID, webhookroutecmd.DedupeSourceBodySHA, webhookroutecmd.DedupeSourceHeader:
+		editor.DedupeSource = source
+	}
+	editor.DedupeHeader = strings.TrimSpace(form.Get("dedupe_header"))
 }
 
 func webhookOperationFailure(err error) (int, string) {

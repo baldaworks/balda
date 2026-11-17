@@ -337,6 +337,7 @@ func (a *httpApp) mcpResult(w http.ResponseWriter, r *http.Request, page webui.P
 		return
 	}
 	if probe {
+		retainMCPDraft(&page, r.PostForm)
 		page.MCP.ProbeMessage = fmt.Sprintf("Candidate probe succeeded: %d tools discovered. No definition was saved; runtime readiness is unchanged.", item.ToolCount)
 		a.render(w, r, http.StatusOK, webui.TemplateMCP, page)
 		return
@@ -352,6 +353,9 @@ func (a *httpApp) mcpResult(w http.ResponseWriter, r *http.Request, page webui.P
 
 func (a *httpApp) mcpError(w http.ResponseWriter, r *http.Request, page webui.Page, err error) {
 	status, message := mcpOperationFailure(err)
+	if r.Method == http.MethodPost && !errors.Is(err, mcpcmd.ErrConflict) && !errors.Is(err, mcpcmd.ErrForbidden) && !errors.Is(err, mcpcmd.ErrNotFound) {
+		retainMCPDraft(&page, r.PostForm)
+	}
 	page.Error = &webui.ErrorView{Heading: "MCP operation could not complete", Message: message}
 	templateName := webui.TemplateMCP
 	if page.MCP == nil {
@@ -361,11 +365,72 @@ func (a *httpApp) mcpError(w http.ResponseWriter, r *http.Request, page webui.Pa
 	a.render(w, r, status, templateName, page)
 }
 
+func retainMCPDraft(page *webui.Page, form url.Values) {
+	if page == nil || page.MCP == nil || page.MCP.Editor == nil || len(form) == 0 {
+		return
+	}
+	editor := page.MCP.Editor
+	if editor.New {
+		editor.PublicID = strings.TrimSpace(form.Get("public_id"))
+	} else if version, err := mcpVersion(form); err == nil {
+		editor.Row.Version = version
+	}
+	if form.Has("transport") {
+		switch transport := mcpcmd.Transport(form.Get("transport")); transport {
+		case mcpcmd.TransportStdio, mcpcmd.TransportHTTP, mcpcmd.TransportSSE:
+			editor.Transport = string(transport)
+		}
+		editor.Command = form.Get("command")
+		editor.Directory = form.Get("directory")
+		editor.Args = strings.ReplaceAll(form.Get("args"), "\r\n", "\n")
+		editor.URL = strings.TrimSpace(form.Get("url"))
+		editor.All = form.Get("targets_all") == checkedFormValue
+		selected := make(map[string]struct{}, len(form["provider"]))
+		for _, id := range form["provider"] {
+			selected[id] = struct{}{}
+		}
+		for i := range editor.Providers {
+			_, editor.Providers[i].Selected = selected[editor.Providers[i].ID]
+		}
+		editor.Env = mcpDraftValueRows(form, "env")
+		editor.Headers = mcpDraftValueRows(form, "header")
+	}
+	if form.Has("client_id") {
+		editor.ClientID = strings.TrimSpace(form.Get("client_id"))
+	}
+	if form.Has("scopes") {
+		editor.Scopes = strings.ReplaceAll(form.Get("scopes"), "\r\n", "\n")
+	}
+	if form.Has("client_auth_method") {
+		switch method := form.Get("client_auth_method"); method {
+		case "none", "client_secret_basic", "client_secret_post":
+			editor.ClientAuthMethod = method
+		}
+	}
+}
+
+func mcpDraftValueRows(form url.Values, prefix string) []webui.MCPValueRow {
+	keys, kinds, operations := form[prefix+"_key"], form[prefix+"_kind"], form[prefix+"_operation"]
+	count := min(len(keys), len(kinds), len(operations), 258)
+	rows := make([]webui.MCPValueRow, 0, count)
+	for i := range count {
+		kind, operation := kinds[i], operations[i]
+		if kind != string(mcpcmd.ValueLiteral) && kind != string(mcpcmd.ValueProtected) && kind != string(mcpcmd.ValueEnvironment) {
+			kind = string(mcpcmd.ValueLiteral)
+		}
+		if operation != string(mcpcmd.ValueKeep) && operation != string(mcpcmd.ValueSet) && operation != string(mcpcmd.ValueRemove) {
+			operation = string(mcpcmd.ValueSet)
+		}
+		rows = append(rows, webui.MCPValueRow{Key: strings.TrimSpace(keys[i]), Kind: kind, Operation: operation})
+	}
+	return rows
+}
+
 func mcpOperationFailure(err error) (int, string) {
 	status, message := http.StatusServiceUnavailable, "The operation could not be completed. Reopen MCP management and try again."
 	switch {
 	case errors.Is(err, mcpcmd.ErrInvalid):
-		status, message = http.StatusBadRequest, "Review the transport, provider targets and value operations. Enter replacement values again; inputs are not retained."
+		status, message = http.StatusBadRequest, "Review the transport, provider targets and value operations. Safe fields are retained; enter replacement values again."
 	case errors.Is(err, mcpcmd.ErrForbidden):
 		status, message = http.StatusForbidden, "This connection is read-only or your administrator authority changed."
 	case errors.Is(err, mcpcmd.ErrNotFound):

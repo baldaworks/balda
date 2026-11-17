@@ -13,6 +13,13 @@ const states = [
   ['providers', 200],
   ['providers-empty', 200],
   ['providers/new', 200],
+  ['providers/new/openai', 200],
+  ['providers/new/aistudio', 200],
+  ['providers/new/pool', 200],
+  ['providers/new/registry', 200],
+  ['providers/new/codex', 200],
+  ['providers/new/opencode', 200],
+  ['providers/new/agy', 200],
   ['providers/managed', 200],
   ['providers/configured', 200],
   ['providers-conflict', 409],
@@ -66,15 +73,23 @@ const forbidden = ['managed-secret', 'configured-secret', 'synthetic-api-key'];
         assert.ok((await history.text()).includes('<!doctype html>'), `${label} history full document`);
 
         if (state === 'providers/new') {
+          assert.equal(await page.getByLabel('Provider type', {exact: true}).count(), 1, `${label} type picker`);
+          assert.equal(await page.getByLabel(/^Provider ID/).count(), 0, `${label} no union editor before type selection`);
+        }
+        if (state.startsWith('providers/new/')) {
           const id = page.getByLabel(/^Provider ID(?: \(required\))?$/);
           await id.focus();
           assert.notEqual(await id.evaluate(element => getComputedStyle(element).boxShadow), 'none', `${label} focus`);
-          await assertPlaceholderDistinct(page.getByLabel('Hosted timeout', {exact: true}), label);
-          assert.equal(await page.getByLabel('Replacement API key', {exact: true}).inputValue(), '', `${label} empty api key`);
-          assert.equal(await page.getByLabel('Replacement environment', {exact: true}).inputValue(), '', `${label} empty environment`);
+          if (state === 'providers/new/openai') await assertPlaceholderDistinct(page.getByLabel('Request timeout', {exact: true}), label);
+          const hosted = state === 'providers/new/openai' || state === 'providers/new/aistudio';
+          const acp = ['providers/new/registry', 'providers/new/codex', 'providers/new/opencode', 'providers/new/agy'].includes(state);
+          assert.equal(await page.getByLabel('API key', {exact: true}).count(), hosted ? 1 : 0, `${label} API key applicability`);
+          assert.equal(await page.getByLabel('Environment', {exact: true}).count(), acp ? 1 : 0, `${label} environment applicability`);
+          if (hosted) assert.equal(await page.getByLabel('API key', {exact: true}).inputValue(), '', `${label} empty api key`);
+          if (acp) assert.equal(await page.getByLabel('Environment', {exact: true}).inputValue(), '', `${label} empty environment`);
         }
         if (state === 'providers/managed') {
-          assert.equal(await page.getByLabel('Replacement API key', {exact: true}).inputValue(), '', `${label} managed api key blank`);
+          assert.equal(await page.getByLabel('Replacement API key', {exact: true}).count(), 0, `${label} managed ACP has no API key`);
           assert.equal(await page.getByLabel('Replacement environment', {exact: true}).inputValue(), '', `${label} managed environment blank`);
           await cancelConfirmation(page, page.getByRole('button', { name: 'Disable provider', exact: true }));
           await cancelConfirmation(page, page.getByRole('button', { name: 'Delete provider', exact: true }));

@@ -146,6 +146,11 @@ document.addEventListener("htmx:beforeRequest", function (event) {
     event.preventDefault();
     return;
   }
+  const feedback = document.getElementById("request-error");
+  if (feedback) {
+    feedback.hidden = true;
+    feedback.textContent = "";
+  }
   form.setAttribute("aria-busy", "true");
   form.querySelectorAll('button[type="submit"], input[type="submit"]').forEach(function (control) {
     if (control.disabled) return;
