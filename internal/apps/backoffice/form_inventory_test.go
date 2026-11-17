@@ -360,10 +360,13 @@ func repositoryContainsReference(t *testing.T, root, pathHint, symbol string, te
 	found := false
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
 			return err
 		}
 		if info.IsDir() {
-			if info.Name() == ".git" || info.Name() == "node_modules" {
+			if info.Name() == ".git" || info.Name() == ".tmp" || info.Name() == "node_modules" {
 				return filepath.SkipDir
 			}
 			return nil
