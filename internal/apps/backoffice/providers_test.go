@@ -14,7 +14,6 @@ import (
 	"github.com/baldaworks/balda/internal/apps/backoffice/internal/webui"
 	"github.com/baldaworks/balda/internal/apps/backoffice/security"
 	"github.com/baldaworks/balda/internal/apps/balda/providers"
-	"github.com/baldaworks/balda/internal/apps/balda/secrets"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/baldaworks/runtime/v2/agentconfig"
 )
@@ -28,7 +27,7 @@ func TestProvidersBrowserManagementAndSecretBoundary(t *testing.T) {
 			for _, role := range []usercmd.Role{usercmd.RoleAdministrator, usercmd.RoleOperator} {
 				createAccessTestUser(t, provider.Users(), usercmd.User{ID: string(role), Username: string(role), NormalizedUsername: string(role), DisplayName: string(role), Role: role, Status: usercmd.StatusActive, Primary: role == usercmd.RoleAdministrator, Credential: usercmd.Credential{State: usercmd.CredentialStateActive, Version: 1}, Version: 1, CreatedAt: now, UpdatedAt: now})
 			}
-			protector, err := secrets.New(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32)))
+			protector, err := newProviderProtector(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32)))
 			if err != nil {
 				t.Fatal(err)
 			}

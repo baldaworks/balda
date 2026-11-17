@@ -48,6 +48,10 @@ func (s *providerStateFixture) Revisions(_ context.Context, refs []providers.Rev
 	return result, nil
 }
 
+func (s *providerStateFixture) ListRevisions(context.Context) ([]providers.Revision, error) {
+	return append([]providers.Revision(nil), s.state.Revisions...), nil
+}
+
 type providerGraphCapture struct{ models []string }
 
 type graphFactory struct {

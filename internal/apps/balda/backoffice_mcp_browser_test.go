@@ -191,7 +191,7 @@ func TestBackofficeMCPBrowserWorkflow(t *testing.T) {
 	})
 	upstream := httptest.NewServer(recorder)
 	t.Cleanup(upstream.Close)
-	credentials, err := mcpmanage.New(base64.StdEncoding.EncodeToString(make([]byte, 32)))
+	credentials, err := newMCPService(base64.StdEncoding.EncodeToString(make([]byte, 32)))
 	if err != nil {
 		t.Fatal(err)
 	}

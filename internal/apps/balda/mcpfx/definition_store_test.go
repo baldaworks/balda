@@ -38,7 +38,7 @@ func TestDefinitionServiceUsesCanonicalAuthorityAtCommit(t *testing.T) {
 	if err := p.Users().CreateSession(t.Context(), f, audit("create-browser", usercmd.AuditActionLoginSucceeded, usercmd.AuditTargetSession, f.ID)); err != nil {
 		t.Fatal(err)
 	}
-	credentials, err := mcpmanage.New("")
+	credentials, err := newMCPService("")
 	if err != nil {
 		t.Fatal(err)
 	}

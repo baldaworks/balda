@@ -132,7 +132,11 @@ func (f *workerGrantFixture) save(t *testing.T, grant mcpcmd.Grant, secrets mcpm
 	}
 	if err := f.provider.MCP().SaveMCPGrant(t.Context(), state.MCPGrantMutation{Grant: grant, Operation: operation, ExpectedGeneration: expected, ExpectedRevisionID: connection.CurrentRevisionID, Authority: authority, Audit: audit}); err != nil {
 		current, found, readErr := f.provider.MCP().GetMCPGrant(t.Context(), grant.Binding)
-		t.Fatalf("save fixture grant: operation=%s expected=%d attempted=%d current=%d found=%v readError=%v created=%s updated=%s currentCreated=%s currentUpdated=%s: %v", operation, expected, grant.Generation, current.Generation, found, readErr, grant.CreatedAt.Format(time.RFC3339Nano), grant.UpdatedAt.Format(time.RFC3339Nano), current.CreatedAt.Format(time.RFC3339Nano), current.UpdatedAt.Format(time.RFC3339Nano), err)
+		version := byte(0)
+		if len(grant.ProtectedValues) > 0 {
+			version = grant.ProtectedValues[0]
+		}
+		t.Fatalf("save fixture grant: operation=%s expected=%d attempted=%d current=%d found=%v readError=%v protectedLen=%d protectedVersion=%d created=%s updated=%s currentCreated=%s currentUpdated=%s: %v", operation, expected, grant.Generation, current.Generation, found, readErr, len(grant.ProtectedValues), version, grant.CreatedAt.Format(time.RFC3339Nano), grant.UpdatedAt.Format(time.RFC3339Nano), current.CreatedAt.Format(time.RFC3339Nano), current.UpdatedAt.Format(time.RFC3339Nano), err)
 	}
 }
 

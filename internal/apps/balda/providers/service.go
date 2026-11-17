@@ -43,6 +43,37 @@ func New(configured map[string]agentconfig.Config, store Store, protector *secre
 	}
 }
 
+// ValidateCredentials passively opens every retained managed revision. Startup
+// and maintenance preflight use this before provider-backed work is admitted;
+// historical and deleted revisions remain part of the backup compatibility
+// contract even when they are not present in the active inventory.
+func (s *Service) ValidateCredentials(ctx context.Context) error {
+	if s == nil || s.store == nil {
+		return ErrInvalid
+	}
+	revisions, err := s.store.ListRevisions(ctx)
+	if err != nil {
+		return err
+	}
+	for _, revision := range revisions {
+		if len(revision.ProtectedValues) == 0 {
+			if revision.Definition.HasAPIKey || len(revision.Definition.EnvironmentNames) != 0 {
+				return ErrUnavailable
+			}
+			continue
+		}
+		values, err := s.open(revision)
+		if err != nil {
+			return err
+		}
+		if revision.Definition.HasAPIKey != (values.APIKey != "") ||
+			!slicesEqual(revision.Definition.EnvironmentNames, sortedKeys(values.Environment)) {
+			return ErrUnavailable
+		}
+	}
+	return nil
+}
+
 // Inventory returns active configured and managed definitions without protected values.
 func (s *Service) Inventory(ctx context.Context) (Inventory, error) {
 	return s.InventoryByFilter(ctx, InventoryActive)
@@ -323,10 +354,12 @@ func (s *Service) makeRevision(id string, cfg agentconfig.Config, edit Protected
 		if marshalErr != nil {
 			return Revision{}, ErrInvalid
 		}
-		revision.ProtectedValues, err = s.protector.Seal(payload, revisionAAD(id, revision.ID))
-		if err != nil {
+		protected, sealErr := s.protector.Seal(payload, revisionAAD(id, revision.ID))
+		clear(payload)
+		if sealErr != nil {
 			return Revision{}, ErrUnavailable
 		}
+		revision.ProtectedValues = protected
 	}
 	return revision, nil
 }
@@ -359,7 +392,12 @@ func (s *Service) open(revision Revision) (protectedValues, error) {
 		return values, nil
 	}
 	payload, err := s.protector.Open(revision.ProtectedValues, revisionAAD(revision.ProviderID, revision.ID))
-	if err != nil || json.Unmarshal(payload, &values) != nil {
+	if err != nil {
+		return protectedValues{}, ErrUnavailable
+	}
+	unmarshalErr := json.Unmarshal(payload, &values)
+	clear(payload)
+	if unmarshalErr != nil {
 		return protectedValues{}, ErrUnavailable
 	}
 	return values, nil

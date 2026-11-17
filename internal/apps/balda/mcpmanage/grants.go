@@ -298,7 +298,7 @@ func (s *Grants) prepareAuthorization(ctx context.Context, revision mcpcmd.Revis
 	if err := s.store.CheckMCPAuthority(ctx, authority); err != nil {
 		return mcpcmd.Grant{}, OAuthMetadata{}, safeOperationError(err)
 	}
-	if !s.credentials.credentials.Available() {
+	if !s.credentials.grantCredentials.Available() {
 		return mcpcmd.Grant{}, OAuthMetadata{}, mcpcmd.ErrCredentials
 	}
 	d := revision.Definition

@@ -922,8 +922,8 @@ func verifyProductionFormContracts(t *testing.T, forms []auditedForm, evidence m
 			evidenceDigest.Write(body)
 			evidenceDigest.Write([]byte{0})
 		}
-		if contract[4] != hex.EncodeToString(evidenceDigest.Sum(nil)) {
-			t.Errorf("form %q authenticated variant evidence source drifted", form.id)
+		if got := hex.EncodeToString(evidenceDigest.Sum(nil)); contract[4] != got {
+			t.Errorf("form %q authenticated variant evidence source drifted: got %s, want %s", form.id, got, contract[4])
 		}
 		if digest := sha256.Sum256([]byte(markup[form.template+"#"+strconv.Itoa(form.ordinal)])); contract[5] != hex.EncodeToString(digest[:]) {
 			t.Errorf("form %q conditional field applicability drifted", form.id)
@@ -939,8 +939,8 @@ func verifyProductionFormContracts(t *testing.T, forms []auditedForm, evidence m
 				stateDigest.Write([]byte{0})
 			}
 		}
-		if contract[6] != hex.EncodeToString(stateDigest.Sum(nil)) {
-			t.Errorf("form %q per-state evidence mapping drifted", form.id)
+		if got := hex.EncodeToString(stateDigest.Sum(nil)); contract[6] != got {
+			t.Errorf("form %q per-state evidence mapping drifted: got %s, want %s", form.id, got, contract[6])
 		}
 		var formRoutes []productionFormRoute
 		for _, row := range routes {

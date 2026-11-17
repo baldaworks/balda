@@ -17,6 +17,7 @@ import (
 
 type baldaTestConfigDocument struct {
 	Runtime appconfig.RuntimeConfig `mapstructure:"runtime"`
+	App     baldaapp.AppConfig      `mapstructure:"app"`
 	Balda   baldaapp.BaldaConfig    `mapstructure:"balda"`
 }
 
@@ -64,7 +65,7 @@ balda:
 		t.Fatalf("profile = %q, want %s", selectedProfile, testBaldaDefaultProfile)
 	}
 
-	baldaCfg := baldaapp.Config{Balda: doc.Balda}
+	baldaCfg := baldaapp.Config{App: doc.App, Balda: doc.Balda}
 
 	if baldaCfg.Balda.Provider != testBaldaProvider {
 		t.Fatalf("provider = %q, want %s", baldaCfg.Balda.Provider, testBaldaProvider)

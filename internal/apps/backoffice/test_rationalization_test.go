@@ -66,7 +66,7 @@ var rationalizationScopes = []rationalizationScope{
 		"service-lifecycle": {"TestDeletedDefinitionInventoryDetailAndRecreate"},
 	}},
 	{path: "internal/apps/balda/providers/service_test.go", groups: map[string][]string{
-		"service-security":  {"TestServiceCompilesOrderedMixedGraphWithoutExposingSecrets", "TestInventoryProjectsConfiguredAndManagedWithoutProtectedPayloads", "TestRecreateDoesNotInheritAPIKey", "TestRestoreRejectsUnavailableContractAndTampering"},
+		"service-security":  {"TestServiceCompilesOrderedMixedGraphWithoutExposingSecrets", "TestInventoryProjectsConfiguredAndManagedWithoutProtectedPayloads", "TestRecreateDoesNotInheritAPIKey", "TestRestoreRejectsUnavailableContractAndTampering", "TestProviderCredentialsReadV1WriteV2AndRejectMCPScope", "TestValidateCredentialsChecksEveryRetainedRevisionWithoutMutation"},
 		"service-failure":   {"TestCreateRejectsConfiguredAndActiveProviderCollisions", "TestActiveConfiguredManagedCollisionIsInvalid", "TestConfiguredProviderOwnsDeletedManagedReconciliationTombstone", "TestServiceRejectsUnsafeManagedDefinitionsAndBrokenGraphs", "TestCompileRejectsSourceCollisionAndCycle"},
 		"service-lifecycle": {"TestProviderLifecycleFiltersPassiveDetailAndRecreate", "TestServiceRestoresExactManagedRevisionAndRejectsChangedConfiguredDefinition", "TestManagedReproducibilityTracksInheritedEnvironment"},
 	}},
@@ -88,12 +88,14 @@ var rationalizationScopes = []rationalizationScope{
 
 var rationalizationBackendOwners = map[string][]string{
 	"internal/apps/balda/state/provider_sqlite_test.go": {
+		"TestSQLiteProviderContract/EncryptedStateMixedFramesSurviveRestart",
 		"TestSQLiteProviderContract/MCPConcurrentRecreateRetainsHistory",
 		"TestSQLiteProviderContract/Provider_ManagedProviderState",
 		"TestSQLiteProviderContract/Provider_ScheduleManagementAuthorityAndVersion",
 		"TestSQLiteProviderContract/Provider_WebhookRouteManagement",
 	},
 	"internal/apps/balda/state/provider_postgres_test.go": {
+		"TestPostgresProviderContract/EncryptedStateMixedFramesSurviveRestart",
 		"TestPostgresProviderContract/MCPConcurrentRecreateRetainsHistory",
 		"TestPostgresProviderContract/Provider_ManagedProviderState",
 		"TestPostgresProviderContract/Provider_ScheduleManagementAuthorityAndVersion",
@@ -145,7 +147,7 @@ func TestLifecycleRationalizationInventoryIsComplete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const wantScopedTests = 81
+	const wantScopedTests = 83
 	classified := 0
 	for _, scope := range rationalizationScopes {
 		expected := make(map[string]string)
@@ -186,7 +188,7 @@ func TestLifecycleRationalizationInventoryIsComplete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read exact rationalization inventory: %v\nresolved inventory:\n%s", err, inventory)
 	}
-	const wantFocusedTests = 436
+	const wantFocusedTests = 440
 	if err := compareRationalizationInventory(snapshot, inventory, wantFocusedTests); err != nil {
 		t.Fatal(err)
 	}
@@ -429,7 +431,7 @@ func validateBackendOwners(t *testing.T, repositoryRoot string) {
 			}
 		}
 	}
-	if err := validateUniqueBackendOwners(exactOwners, 8); err != nil {
+	if err := validateUniqueBackendOwners(exactOwners, 10); err != nil {
 		t.Error(err)
 	}
 }

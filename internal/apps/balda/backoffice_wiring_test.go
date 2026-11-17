@@ -97,7 +97,7 @@ func TestSharedBackofficeMCPBrowserOAuthUsesSharedCallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = provider.Close() })
-	credentials, err := mcpmanage.New(base64.StdEncoding.EncodeToString(make([]byte, 32)))
+	credentials, err := newMCPService(base64.StdEncoding.EncodeToString(make([]byte, 32)))
 	if err != nil {
 		t.Fatal(err)
 	}

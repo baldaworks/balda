@@ -60,7 +60,7 @@ type Revision struct {
 	ContractVersion uint32
 	FormatVersion   uint32
 	Definition      Definition
-	ProtectedValues []byte
+	ProtectedValues []byte `json:"-"`
 	CreatedAt       time.Time
 }
 
@@ -100,6 +100,7 @@ type Store interface {
 	Read(ctx context.Context) (State, error)
 	Apply(ctx context.Context, mutation Mutation) (State, error)
 	Revisions(ctx context.Context, refs []RevisionRef) ([]Revision, error)
+	ListRevisions(ctx context.Context) ([]Revision, error)
 }
 
 type ProtectedEdit struct {

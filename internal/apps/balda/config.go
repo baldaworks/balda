@@ -7,6 +7,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/backoffice"
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	baldaeventbus "github.com/baldaworks/balda/internal/apps/balda/eventbus"
+	"github.com/baldaworks/balda/internal/apps/balda/secrets"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 )
 
@@ -18,7 +19,14 @@ const (
 
 // Config holds the configuration for the Balda bot.
 type Config struct {
+	App   AppConfig   `mapstructure:"app"`
 	Balda BaldaConfig `mapstructure:"balda"`
+}
+
+// AppConfig owns application-wide security material. Features receive scoped
+// protectors and must not add their own configured encryption roots.
+type AppConfig struct {
+	SecurityKey string `mapstructure:"security_key" json:"-"`
 }
 
 // BaldaConfig holds the balda-specific configuration.
@@ -52,9 +60,23 @@ type BaldaConfig struct {
 	SessionInstructions SessionInstructionsConfig `mapstructure:"session_instructions"`
 }
 
-// MCPManagementConfig supplies the deployment-owned worker credential key.
+// MCPManagementConfig retains the obsolete field only so configuration can
+// reject it with explicit migration guidance. It is never an active key source.
 type MCPManagementConfig struct {
 	CredentialKey string `mapstructure:"credential_key" json:"-"`
+}
+
+// ResolveSecurityKey returns the sole configured encryption root. The obsolete
+// MCP field is rejected even when app.security_key is also set, so there is no
+// fallback or precedence between two apparent roots.
+func (c Config) ResolveSecurityKey() (string, error) {
+	if c.Balda.MCPManagement.CredentialKey != "" {
+		return "", fmt.Errorf("balda.mcp_management.credential_key is obsolete; move the identical value to app.security_key or BALDA_APP_SECURITY_KEY")
+	}
+	if _, err := secrets.NewRoot(c.App.SecurityKey); err != nil {
+		return "", fmt.Errorf("app.security_key is invalid: %w", err)
+	}
+	return c.App.SecurityKey, nil
 }
 
 // SessionInstructionsConfig controls trusted host instruction contributions.

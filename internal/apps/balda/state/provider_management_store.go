@@ -150,6 +150,40 @@ func (s *sqlProviderManagementStore) Revisions(ctx context.Context, refs []provi
 	return result, nil
 }
 
+func (s *sqlProviderManagementStore) ListRevisions(ctx context.Context) ([]providers.Revision, error) {
+	tx, err := s.begin(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, s.wrapError("begin retained provider revision read", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	rows, err := tx.QueryContext(ctx, s.bind(`
+		SELECT provider_id,revision_id,driver_type,contract_version,format_version,definition_json,protected_values,created_at
+		FROM balda_provider_revisions
+		ORDER BY provider_id,created_at,revision_id`))
+	if err != nil {
+		return nil, s.wrapError("list retained provider revisions", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var result []providers.Revision
+	for rows.Next() {
+		revision, scanErr := s.scanRevision(rows)
+		if scanErr != nil {
+			return nil, s.wrapError("scan retained provider revision", scanErr)
+		}
+		result = append(result, revision)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, s.wrapError("iterate retained provider revisions", err)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, s.wrapError("close retained provider revisions", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, s.wrapError("commit retained provider revision read", err)
+	}
+	return result, nil
+}
+
 func (s *sqlProviderManagementStore) readState(ctx context.Context, tx *sql.Tx) (providers.State, error) {
 	var version uint64
 	if err := tx.QueryRowContext(ctx, s.bind(`SELECT state_version FROM balda_provider_state WHERE singleton = 1`)).Scan(&version); err != nil {

@@ -31,6 +31,9 @@ transport-signature checks.
 Config shape:
 
 ```yaml
+app:
+  # Strict standard-base64 encoding of exactly 32 bytes.
+  security_key: ""
 runtime:
   providers:
     <provider_id>:
@@ -103,7 +106,10 @@ open the selected state database but do not resolve or compile the selected
 agent graph. An empty `balda.provider`, or a selected managed provider that is
 disabled, deleted, incomplete, or temporarily unusable, does not prevent the
 base runtime, Backoffice, or enabled integrations from starting. Static
-application configuration and source-ID collisions remain startup errors.
+application configuration and source-ID collisions remain startup errors. This
+provider-lazy boundary does not bypass retained encryption validation: an
+encrypted historical revision that cannot be opened with `app.security_key`
+fails preflight/startup even when its Provider is disabled or deleted.
 
 Agent-backed work resolves the selected graph on first use. A missing or
 unusable provider returns the fixed unavailable outcome for that operation
@@ -118,7 +124,7 @@ Providers. They apply to new sessions; `/reset` and `/new` preserve an active
 session's stored binding. The managed source excludes generic ACP definitions, explicit
 commands, and command overrides. Root selection remains in configuration.
 Protected API keys and ACP environment values use
-`balda.mcp_management.credential_key`; see
+the application-wide `app.security_key`; see
 [Providers management](backoffice.md#providers-management) and
 [database backup and restore](database.md#backup-restore-and-changing-engines).
 
@@ -516,18 +522,42 @@ definitions remain OAuth-neutral and use their public endpoint or configured
 headers. For managed OAuth, the operator signs in at the external service.
 Stdio keeps its ordinary command, arguments and environment configuration.
 
-Set `balda.mcp_management.credential_key`, or its environment override
-`BALDA_MCP_MANAGEMENT_CREDENTIAL_KEY`, to a standard base64-encoded 32-byte
-deployment key before storing protected values or worker OAuth grants. Supply
-it through your deployment's secret mechanism. An empty key supports
-installations without encrypted MCP data; protected writes require a key.
-Startup validates every retained encrypted revision and worker grant, including
-historical session bindings. A missing or different key prevents startup when
-that data cannot be decrypted.
+Set `app.security_key`, or the exact environment override
+`BALDA_APP_SECURITY_KEY`, through the deployment's secret mechanism before
+storing protected values. The value is strict standard base64 encoding of
+exactly 32 bytes. It is the only configured root for Balda-owned at-rest
+encryption. An empty value is accepted only while no retained encrypted state
+or protected write requires it; Balda never generates an implicit key.
 
-Keep the same key across restarts and back it up securely with the database.
-Replacing it is not a key rotation operation: no automatic re-encryption or
-lost-key recovery is provided. Run one active Balda grant writer. Pending
+Balda derives separate AES-256-GCM keys with HKDF-SHA-256 and stable versioned
+labels for MCP revision values, MCP OAuth grants, and managed Provider
+revisions. Feature-specific AAD still binds the exact revision, grant, identity,
+and generation. New writes use a version-2 frame; retained version-1 frames are
+opened directly with the same application root and are not eagerly rewritten.
+`balda preflight`, `balda doctor`, and normal startup passively validate every
+retained encrypted MCP revision, worker grant, and managed Provider revision,
+including historical and deleted state. Missing, different, corrupt, truncated,
+or unknown protection material fails closed before the affected runtime starts.
+
+#### Migration from the obsolete MCP key
+
+Before upgrading an installation that used
+`balda.mcp_management.credential_key` or
+`BALDA_MCP_MANAGEMENT_CREDENTIAL_KEY`, stop all Balda writers and take a
+consistent database backup paired with the existing key. Move the identical
+value to `app.security_key` or `BALDA_APP_SECURITY_KEY`, remove the obsolete
+setting/environment variable, then run `balda validate` and `balda preflight`.
+A non-empty obsolete field is rejected; it is never a fallback or second active
+root. No ciphertext rewrite is required for this config move.
+
+Keep the same application key across restarts and back it up securely with the
+database. Replacing it is not key rotation: there is no automatic
+re-encryption or lost-key recovery. As soon as the upgraded binary writes any
+version-2 payload, a v1-only binary cannot read that payload. Rollback therefore
+requires stopping Balda and restoring the matching pre-upgrade database and key
+backup; rolling back only the binary is unsupported.
+
+Run one active Balda grant writer. Pending
 authorization attempts are process-local and must be restarted after a host
 restart; saved encrypted grants persist. Browser authorization requires S256
 PKCE. With `authorization_response_iss_parameter_supported: true`, register

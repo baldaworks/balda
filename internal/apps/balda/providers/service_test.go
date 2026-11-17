@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"slices"
 	"testing"
 
@@ -51,15 +52,22 @@ func (s *memoryStore) Revisions(_ context.Context, refs []RevisionRef) ([]Revisi
 	return result, nil
 }
 
+func (s *memoryStore) ListRevisions(context.Context) ([]Revision, error) {
+	return cloneState(s.state).Revisions, nil
+}
+
 func cloneState(state State) State {
 	state.Records = append([]Record(nil), state.Records...)
 	state.Revisions = append([]Revision(nil), state.Revisions...)
+	for i := range state.Revisions {
+		state.Revisions[i].ProtectedValues = bytes.Clone(state.Revisions[i].ProtectedValues)
+	}
 	return state
 }
 
 func newTestService(t *testing.T, configured map[string]agentconfig.Config, store *memoryStore) *Service {
 	t.Helper()
-	protector, err := secrets.New(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{9}, 32)))
+	protector, err := newProviderProtector(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{9}, 32)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,8 +80,157 @@ func newTestService(t *testing.T, configured map[string]agentconfig.Config, stor
 	return service
 }
 
+func TestProviderCredentialsReadV1WriteV2AndRejectMCPScope(t *testing.T) {
+	key := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{6}, 32))
+	// Deprecated root-direct encryption is required only to build a retained v1 fixture.
+	//nolint:staticcheck
+	legacyProtector, err := secrets.New(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := &memoryStore{}
+	legacy := New(nil, store, legacyProtector)
+	legacy.newID = func() string { return "legacy-revision" }
+	apiKey := "legacy-provider-secret"
+	if _, err := legacy.Create(t.Context(), Change{ID: "legacy", Config: openAIConfig("legacy"), Protected: ProtectedEdit{APIKey: &apiKey}}); err != nil {
+		t.Fatal(err)
+	}
+	legacyRevision := store.state.Revisions[0]
+	if legacyRevision.ProtectedValues[0] != 1 {
+		t.Fatalf("legacy provider frame = %d, want v1", legacyRevision.ProtectedValues[0])
+	}
+	root, err := secrets.NewRoot(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	providerProtector, err := root.Protector(secrets.ScopeProviderRevision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scoped := New(nil, store, providerProtector)
+	values, err := scoped.open(legacyRevision)
+	if err != nil || values.APIKey != apiKey {
+		t.Fatalf("v1 provider revision unavailable: %#v, %v", values, err)
+	}
+	scoped.newID = func() string { return "scoped-revision" }
+	if _, err := scoped.Create(t.Context(), Change{ExpectedVersion: store.state.Version, ID: "scoped", Config: openAIConfig("scoped"), Protected: ProtectedEdit{APIKey: &apiKey}}); err != nil {
+		t.Fatal(err)
+	}
+	scopedRevision := store.state.Revisions[1]
+	if scopedRevision.ProtectedValues[0] != 2 {
+		t.Fatalf("scoped provider frame = %d, want v2", scopedRevision.ProtectedValues[0])
+	}
+	publicJSON, err := json.Marshal(scopedRevision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(publicJSON, []byte("ProtectedValues")) || bytes.Contains(publicJSON, scopedRevision.ProtectedValues) {
+		t.Fatal("provider ciphertext reached JSON")
+	}
+	plain, err := providerProtector.Open(scopedRevision.ProtectedValues, revisionAAD(scopedRevision.ProviderID, scopedRevision.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mcpProtector, err := root.Protector(secrets.ScopeMCPRevision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	crossScope, err := mcpProtector.Seal(plain, revisionAAD(scopedRevision.ProviderID, scopedRevision.ID))
+	clear(plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scopedRevision.ProtectedValues = crossScope
+	if _, err := scoped.open(scopedRevision); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("MCP-scoped payload accepted as provider credentials: %v", err)
+	}
+}
+
+func TestValidateCredentialsChecksEveryRetainedRevisionWithoutMutation(t *testing.T) {
+	key := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{8}, 32))
+	// Deprecated root-direct encryption is required only to build a retained v1 fixture.
+	//nolint:staticcheck
+	legacy, err := secrets.New(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := secrets.NewRoot(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scoped, err := root.Protector(secrets.ScopeProviderRevision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain := []byte(`{"api_key":"retained-secret"}`)
+	v1, err := legacy.Seal(plain, revisionAAD("retained", "revision-v1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	v2, err := scoped.Seal(plain, revisionAAD("retained", "revision-v2"))
+	clear(plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := State{Version: 7,
+		Records: []Record{{ID: "retained", CurrentRevisionID: "revision-v2", Enabled: true}},
+		Revisions: []Revision{
+			{ProviderID: "retained", ID: "revision-v1", Definition: Definition{HasAPIKey: true}, ProtectedValues: v1},
+			{ProviderID: "retained", ID: "revision-v2", Definition: Definition{HasAPIKey: true}, ProtectedValues: v2},
+		},
+	}
+	store := &memoryStore{state: cloneState(base)}
+	service := New(nil, store, scoped)
+	if err := service.ValidateCredentials(t.Context()); err != nil {
+		t.Fatalf("mixed retained credentials rejected: %v", err)
+	}
+	if !reflect.DeepEqual(store.state, base) {
+		t.Fatal("passive retained-state validation mutated provider state")
+	}
+
+	for _, tc := range []struct {
+		name      string
+		protector *secrets.Protector
+		mutate    func(*State)
+	}{
+		{name: "missing root", protector: newProviderProtectorForTest(t, "")},
+		{name: "wrong root", protector: newProviderProtectorForTest(t, base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{3}, 32)))},
+		{name: "corrupt frame", protector: scoped, mutate: func(state *State) { state.Revisions[0].ProtectedValues[len(v1)-1] ^= 1 }},
+		{name: "unknown version", protector: scoped, mutate: func(state *State) { state.Revisions[1].ProtectedValues[0] = 99 }},
+		{name: "truncated frame", protector: scoped, mutate: func(state *State) { state.Revisions[1].ProtectedValues = state.Revisions[1].ProtectedValues[:2] }},
+		{name: "missing ciphertext", protector: scoped, mutate: func(state *State) { state.Revisions[1].ProtectedValues = nil }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			candidate := cloneState(base)
+			if tc.mutate != nil {
+				tc.mutate(&candidate)
+			}
+			if err := New(nil, &memoryStore{state: candidate}, tc.protector).ValidateCredentials(t.Context()); !errors.Is(err, ErrUnavailable) {
+				t.Fatalf("retained credential failure = %v, want unavailable", err)
+			}
+		})
+	}
+}
+
+func newProviderProtectorForTest(t *testing.T, key string) *secrets.Protector {
+	t.Helper()
+	root, err := secrets.NewRoot(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	protector, err := root.Protector(secrets.ScopeProviderRevision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return protector
+}
+
 func codexConfig(model string) agentconfig.Config {
 	return agentconfig.Config{Type: agentconfig.AgentTypeCodexACP, CodexACP: &agentconfig.ACPConfig{Model: model}}
+}
+
+func openAIConfig(model string) agentconfig.Config {
+	return agentconfig.Config{Type: agentconfig.AgentTypeOpenAI, OpenAI: &agentconfig.LocalAPIConfig{Model: model}}
 }
 
 func TestServiceCompilesOrderedMixedGraphWithoutExposingSecrets(t *testing.T) {

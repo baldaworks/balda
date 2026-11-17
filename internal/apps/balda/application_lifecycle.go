@@ -21,6 +21,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/mcpbackofficeapp"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpbridge"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
+	"github.com/baldaworks/balda/internal/apps/balda/providers"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
 	"github.com/baldaworks/balda/internal/apps/balda/scheduledjobs"
 	"github.com/baldaworks/balda/internal/apps/balda/session"
@@ -176,6 +177,7 @@ type applicationLifecycleParams struct {
 	BackofficeMCP        *mcpbackofficeapp.Operations
 	MCP                  *internalmcp.InternalMCPManager
 	MCPManagement        *mcpmanage.Service
+	ProviderManagement   *providers.Service
 	MCPBridge            *mcpbridge.Bridge
 	MCPAuthorizations    *mcpmanage.Authorizations
 	StateProvider        state.Provider
@@ -225,6 +227,7 @@ func applicationLifecycleStages(p applicationLifecycleParams, telegram *telegram
 		{name: "managed MCP credential readiness", start: func(ctx context.Context) error {
 			return p.MCPManagement.ValidateCredentials(ctx, p.StateProvider.MCP())
 		}},
+		{name: "managed provider credential readiness", start: p.ProviderManagement.ValidateCredentials},
 		{name: "MCP credential bridge", start: p.MCPBridge.Start, stop: p.MCPBridge.Close},
 		{name: "runtime contribution catalog", start: p.Catalog.Start, stop: p.Catalog.Stop},
 		{name: "session-memory runtime", start: func(ctx context.Context) error {

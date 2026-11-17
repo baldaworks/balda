@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
-	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpruntime"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/baldaworks/runtime/v2/mcpregistry"
@@ -35,7 +34,7 @@ func TestManagedSSECredentialsNeverReachForeignEndpointEvent(t *testing.T) {
 		<-r.Context().Done()
 	}))
 	defer origin.Close()
-	s, err := mcpmanage.New(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32)))
+	s, err := newMCPService(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +92,7 @@ func TestManagedMCPCredentialsNeverReachCrossOriginRedirect(t *testing.T) {
 		http.Redirect(w, r, foreign.URL, http.StatusTemporaryRedirect)
 	}))
 	defer origin.Close()
-	s, err := mcpmanage.New(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32)))
+	s, err := newMCPService(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +146,7 @@ func TestManagedMCPReceivesProtectedAndEnvironmentHeaders(t *testing.T) {
 				handler.ServeHTTP(w, r)
 			}))
 			defer httpServer.Close()
-			s, err := mcpmanage.New(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32)))
+			s, err := newMCPService(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32)))
 			if err != nil {
 				t.Fatal(err)
 			}

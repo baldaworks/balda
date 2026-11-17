@@ -387,7 +387,7 @@ type definitionProbe struct{}
 func (definitionProbe) ProbeMCP(context.Context, mcpcmd.Revision) (int, error) { return 2, nil }
 func definitionHarness(t *testing.T) (*Definitions, *definitionMemoryStore, *definitionConfigured) {
 	t.Helper()
-	credentials, err := New(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32)))
+	credentials, err := newTestService(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32)))
 	if err != nil {
 		t.Fatal(err)
 	}

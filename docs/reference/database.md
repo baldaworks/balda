@@ -162,13 +162,17 @@ an explicit compatibility procedure, separate from ordinary backup recovery
 and from any production rollout already performed. An older captured image's
 provenance does not change these source schema floors.
 
-Back up the deployment credential key securely alongside the database if
-protected MCP values, worker grants, or managed provider values are stored.
-Restore the matching
-`balda.mcp_management.credential_key` (or
-`BALDA_MCP_MANAGEMENT_CREDENTIAL_KEY`) before starting the restored deployment.
-The database alone cannot decrypt that data. Retained MCP and provider
-revisions need the same key even after a definition is edited or deleted. See
+Back up the exact `app.security_key` securely alongside every database backup
+when protected MCP values, worker grants, or managed Provider values are
+stored. Restore the matching key through `app.security_key` or
+`BALDA_APP_SECURITY_KEY` before starting the restored deployment. The database
+alone cannot decrypt that data. Retained MCP and Provider revisions need the
+same key even after a definition is edited or deleted. A non-empty obsolete
+`balda.mcp_management.credential_key` is migration-only input and is rejected;
+it is not a restore fallback. Version-1 ciphertext remains readable after the
+config move, while new writes use version 2. Once version-2 data exists, an
+older v1-only binary requires the matching pre-upgrade database-and-key backup;
+binary-only rollback is unsupported. See
 [MCP credential configuration](configuration.md#protected-values-and-worker-grants).
 
 SQLite migration 67 and PostgreSQL migration 32 add managed provider records,

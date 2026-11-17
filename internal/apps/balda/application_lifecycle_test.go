@@ -86,7 +86,7 @@ func TestCommandRecoveryWorkersFollowReadinessAndPrecedeStateClose(t *testing.T)
 }
 
 func TestMCPAuthorizationsCloseWhenEarlyStartupFails(t *testing.T) {
-	credentials, err := mcpmanage.New(base64.StdEncoding.EncodeToString(make([]byte, 32)))
+	credentials, err := newMCPService(base64.StdEncoding.EncodeToString(make([]byte, 32)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,6 +184,7 @@ func TestApplicationLifecycleStagesStartQuestionProjectorAfterTransport(t *testi
 		"question answer recovery",
 		"bundled MCP",
 		"managed MCP credential readiness",
+		"managed provider credential readiness",
 		"MCP credential bridge",
 		"runtime contribution catalog",
 		"session-memory runtime",
