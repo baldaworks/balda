@@ -100,6 +100,21 @@ func TestEncryptionInventoryRejectsMissingOverlappingAndStaleOwnership(t *testin
 	}
 }
 
+func TestEncryptionInventoryIgnoresRepositoryBuildArtifacts(t *testing.T) {
+	t.Parallel()
+
+	for _, path := range []string{".git", ".tmp", ".tmp/go-build123", "pack/callee", "pack/callee/cache", "vendor"} {
+		if !skipProductionDirectory(path) {
+			t.Errorf("skipProductionDirectory(%q) = false, want true", path)
+		}
+	}
+	for _, path := range []string{".", "cmd", "internal/apps/balda", "pkg"} {
+		if skipProductionDirectory(path) {
+			t.Errorf("skipProductionDirectory(%q) = true, want false", path)
+		}
+	}
+}
+
 func TestConfiguredEncryptionRootsArePinnedToApplicationSecurityKey(t *testing.T) {
 	root := repositoryRoot(t)
 	fields, envNames := discoverConfiguredEncryptionRoots(t, root)
@@ -590,7 +605,7 @@ func walkProductionGo(root string, visit func(path, rel string, file *ast.File) 
 		}
 		rel = filepath.ToSlash(rel)
 		if entry.IsDir() {
-			if rel == ".git" || rel == "pack/callee" || strings.HasPrefix(rel, "pack/callee/") || rel == "vendor" {
+			if skipProductionDirectory(rel) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -604,6 +619,11 @@ func walkProductionGo(root string, visit func(path, rel string, file *ast.File) 
 		}
 		return visit(path, rel, file)
 	})
+}
+
+func skipProductionDirectory(rel string) bool {
+	return rel == ".git" || rel == ".tmp" || strings.HasPrefix(rel, ".tmp/") ||
+		rel == "pack/callee" || strings.HasPrefix(rel, "pack/callee/") || rel == "vendor"
 }
 
 func providerOwnedCryptoImport(importPath string) bool {
