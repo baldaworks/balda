@@ -8,6 +8,8 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -31,6 +33,7 @@ var primitiveImports = map[string]map[string]bool{
 
 type inventoryEntry struct {
 	scopeID          string
+	scopeLabel       string
 	consumer         string
 	persistenceOwner string
 	aadOwner         string
@@ -84,6 +87,7 @@ func TestEncryptionInventoryRejectsMissingOverlappingAndStaleOwnership(t *testin
 		{name: "unowned encryption consumer", entries: entries, exclusions: exclusions, imports: imports, sealOwners: appendClone(sealOwners, "internal/new.go"), rootWiring: rootConstructors},
 		{name: "unowned root constructor", entries: entries, exclusions: exclusions, imports: imports, sealOwners: sealOwners, rootWiring: appendClone(rootConstructors, "internal/new.go")},
 		{name: "overlapping scope", entries: appendClone(entries, entries[0]), exclusions: exclusions, imports: imports, sealOwners: sealOwners, rootWiring: rootConstructors},
+		{name: "unregistered scope label", entries: replaceScopeLabel(entries, 0, "balda/unregistered/v1"), exclusions: exclusions, imports: imports, sealOwners: sealOwners, rootWiring: rootConstructors},
 		{name: "stale consumer", entries: replaceConsumer(entries, 0, "internal/removed.go"), exclusions: exclusions, imports: imports, sealOwners: sealOwners, rootWiring: rootConstructors},
 		{name: "stale exclusion", entries: entries, exclusions: appendClone(exclusions, exclusion{importPath: "crypto/md5", category: "digest", reason: "test"}), imports: imports, sealOwners: sealOwners, rootWiring: rootConstructors},
 	}
@@ -96,14 +100,95 @@ func TestEncryptionInventoryRejectsMissingOverlappingAndStaleOwnership(t *testin
 	}
 }
 
+func TestConfiguredEncryptionRootsArePinnedToApplicationSecurityKey(t *testing.T) {
+	root := repositoryRoot(t)
+	fields, envNames := discoverConfiguredEncryptionRoots(t, root)
+	wantFields := []string{
+		"internal/apps/balda/config.go:AppConfig.SecurityKey:security_key",
+		"internal/apps/balda/config.go:MCPManagementConfig.CredentialKey:credential_key",
+	}
+	if !slices.Equal(fields, wantFields) {
+		t.Fatalf("configured encryption-root fields changed; app.security_key is the sole active root and credential_key is migration rejection only\ngot:  %v\nwant: %v", fields, wantFields)
+	}
+	for _, name := range envNames {
+		if name != "BALDA_APP_SECURITY_KEY" {
+			t.Fatalf("feature-specific encryption-root environment override discovered: %s", name)
+		}
+	}
+	if len(envNames) == 0 {
+		t.Fatal("BALDA_APP_SECURITY_KEY environment contract disappeared")
+	}
+}
+
+func TestEncryptionDocumentationPublishesSingleRootCompatibilityContract(t *testing.T) {
+	root := repositoryRoot(t)
+	for _, relative := range []string{
+		"docs/architecture/application-encryption.md",
+		"docs/reference/configuration.md",
+		"docs/reference/database.md",
+		"docs/reference/backoffice.md",
+		"cmd/balda/balda.yaml",
+	} {
+		content, err := os.ReadFile(filepath.Join(root, relative))
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(content)
+		if !strings.Contains(text, "app.security_key") {
+			t.Errorf("%s does not publish app.security_key", relative)
+		}
+		if relative != "docs/reference/backoffice.md" && !strings.Contains(text, "BALDA_APP_SECURITY_KEY") {
+			t.Errorf("%s does not publish BALDA_APP_SECURITY_KEY", relative)
+		}
+	}
+	architecture, err := os.ReadFile(filepath.Join(root, "docs/architecture/application-encryption.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"HKDF-SHA-256", "version-1", "version 2", "database and exact application key", "rollback", "Adding a scope"} {
+		if !strings.Contains(string(architecture), required) {
+			t.Errorf("application encryption architecture is missing %q", required)
+		}
+	}
+
+	err = filepath.WalkDir(filepath.Join(root, "docs"), func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || filepath.Ext(path) != ".md" {
+			return nil
+		}
+		content, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		lines := strings.Split(string(content), "\n")
+		for index, line := range lines {
+			if !strings.Contains(line, "balda.mcp_management.credential_key") && !strings.Contains(line, "BALDA_MCP_MANAGEMENT_CREDENTIAL_KEY") {
+				continue
+			}
+			start, end := max(0, index-5), min(len(lines), index+6)
+			context := strings.ToLower(strings.Join(lines[start:end], "\n"))
+			if !strings.Contains(context, "obsolete") && !strings.Contains(context, "migration") {
+				t.Errorf("%s:%d presents the obsolete MCP root outside migration guidance", path, index+1)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func validateInventory(root string, entries []inventoryEntry, exclusions []exclusion, imports []cryptoImport, sealOwners, rootConstructors []string) error {
 	if len(entries) == 0 {
 		return fmt.Errorf("encryption inventory is empty")
 	}
 	seenScopes := make(map[string]bool, len(entries))
+	seenScopeLabels := make(map[Scope]bool, len(entries))
 	seenConsumers := make(map[string]bool, len(entries))
 	for _, entry := range entries {
-		fields := []string{entry.scopeID, entry.consumer, entry.persistenceOwner, entry.aadOwner, entry.primitiveOwner, entry.rootSource, entry.rootWiring, entry.frame, entry.compatibility}
+		fields := []string{entry.scopeID, entry.scopeLabel, entry.consumer, entry.persistenceOwner, entry.aadOwner, entry.primitiveOwner, entry.rootSource, entry.rootWiring, entry.frame, entry.compatibility}
 		for _, field := range fields {
 			if strings.TrimSpace(field) == "" {
 				return fmt.Errorf("scope %q has an empty field", entry.scopeID)
@@ -113,6 +198,14 @@ func validateInventory(root string, entries []inventoryEntry, exclusions []exclu
 			return fmt.Errorf("scope %q has overlapping ownership", entry.scopeID)
 		}
 		seenScopes[entry.scopeID] = true
+		label := Scope(entry.scopeLabel)
+		if !registeredScope(label) {
+			return fmt.Errorf("scope %q has unregistered label %q", entry.scopeID, entry.scopeLabel)
+		}
+		if seenScopeLabels[label] {
+			return fmt.Errorf("scope label %q has overlapping ownership", label)
+		}
+		seenScopeLabels[label] = true
 		if seenConsumers[entry.consumer] {
 			return fmt.Errorf("consumer %q has overlapping ownership", entry.consumer)
 		}
@@ -144,6 +237,9 @@ func validateInventory(root string, entries []inventoryEntry, exclusions []exclu
 				return fmt.Errorf("scope %q has stale primitive owner %q: %w", entry.scopeID, owner, err)
 			}
 		}
+	}
+	if len(seenScopeLabels) != len(registeredScopes) {
+		return fmt.Errorf("inventory covers %d registered scope labels, want %d", len(seenScopeLabels), len(registeredScopes))
 	}
 	registeredConsumers := make(map[string]bool, len(entries))
 	registeredConstructors := make(map[string]bool)
@@ -334,6 +430,71 @@ func discoverCryptoImports(t *testing.T, root string) []cryptoImport {
 	return found
 }
 
+func discoverConfiguredEncryptionRoots(t *testing.T, root string) ([]string, []string) {
+	t.Helper()
+	var fields, envNames []string
+	err := walkProductionGo(root, func(_ string, rel string, file *ast.File) error {
+		for _, declaration := range file.Decls {
+			general, ok := declaration.(*ast.GenDecl)
+			if !ok || general.Tok != token.TYPE {
+				continue
+			}
+			for _, spec := range general.Specs {
+				typeSpec, ok := spec.(*ast.TypeSpec)
+				if !ok {
+					continue
+				}
+				structure, ok := typeSpec.Type.(*ast.StructType)
+				if !ok {
+					continue
+				}
+				for _, field := range structure.Fields.List {
+					if field.Tag == nil || len(field.Names) != 1 {
+						continue
+					}
+					rawTag, err := strconv.Unquote(field.Tag.Value)
+					if err != nil {
+						return err
+					}
+					mapTag := strings.Split(reflect.StructTag(rawTag).Get("mapstructure"), ",")[0]
+					if rootKeyLike(field.Names[0].Name) || rootKeyLike(mapTag) {
+						fields = append(fields, rel+":"+typeSpec.Name.Name+"."+field.Names[0].Name+":"+mapTag)
+					}
+				}
+			}
+		}
+		ast.Inspect(file, func(node ast.Node) bool {
+			literal, ok := node.(*ast.BasicLit)
+			if !ok || literal.Kind != token.STRING {
+				return true
+			}
+			value, err := strconv.Unquote(literal.Value)
+			if err == nil && strings.HasPrefix(value, "BALDA_") && rootKeyLike(value) {
+				envNames = append(envNames, value)
+			}
+			return true
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sort.Strings(fields)
+	sort.Strings(envNames)
+	envNames = slices.Compact(envNames)
+	return fields, envNames
+}
+
+func rootKeyLike(value string) bool {
+	normalized := strings.NewReplacer("_", "", "-", "", ".", "").Replace(strings.ToLower(value))
+	for _, marker := range []string{"securitykey", "credentialkey", "encryptionkey", "encryptkey", "masterkey", "rootkey", "secretkey"} {
+		if strings.Contains(normalized, marker) {
+			return true
+		}
+	}
+	return false
+}
+
 func walkProductionGo(root string, visit func(path, rel string, file *ast.File) error) error {
 	return filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -368,13 +529,13 @@ func providerOwnedCryptoImport(importPath string) bool {
 
 func readInventory(t *testing.T, path string) []inventoryEntry {
 	t.Helper()
-	rows := readTSV(t, path, 9)
-	if got := strings.Join(rows[0], "\t"); got != "scope_id\tconsumer\tpersistence_owner\taad_owner\tprimitive_owner\troot_source\troot_wiring\tframe\tcompatibility" {
+	rows := readTSV(t, path, 10)
+	if got := strings.Join(rows[0], "\t"); got != "scope_id\tscope_label\tconsumer\tpersistence_owner\taad_owner\tprimitive_owner\troot_source\troot_wiring\tframe\tcompatibility" {
 		t.Fatalf("unexpected inventory header: %s", got)
 	}
 	entries := make([]inventoryEntry, 0, len(rows)-1)
 	for _, row := range rows[1:] {
-		entries = append(entries, inventoryEntry{row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8]})
+		entries = append(entries, inventoryEntry{row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9]})
 	}
 	return entries
 }
@@ -455,5 +616,11 @@ func appendClone[T any](values []T, value T) []T {
 func replaceConsumer(entries []inventoryEntry, index int, consumer string) []inventoryEntry {
 	cloned := append([]inventoryEntry(nil), entries...)
 	cloned[index].consumer = consumer
+	return cloned
+}
+
+func replaceScopeLabel(entries []inventoryEntry, index int, label string) []inventoryEntry {
+	cloned := append([]inventoryEntry(nil), entries...)
+	cloned[index].scopeLabel = label
 	return cloned
 }
