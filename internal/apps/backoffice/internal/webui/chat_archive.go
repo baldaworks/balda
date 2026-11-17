@@ -13,6 +13,7 @@ const archiveUserRole = "user"
 const archiveTelegram = "telegram"
 const archiveSlack = "slackagent"
 const archiveMattermost = "mattermost"
+const archiveZulip = "zulip"
 
 // ChatArchiveView allowlists browser-visible historical metadata and chat text.
 type ChatArchiveView struct {
@@ -39,6 +40,23 @@ type ChatMessageRow struct {
 
 // ChatAttachment is a non-interactive safe attachment label.
 type ChatAttachment struct{ Name, Kind string }
+
+// ProjectChatQuery retains only bounded, selectable filters for error recovery.
+func ProjectChatQuery(q chatarchivecmd.BrowseQuery) *ChatArchiveView {
+	view := &ChatArchiveView{}
+	if len(q.Query) <= 200 {
+		view.Query = q.Query
+	}
+	switch q.Channel {
+	case "", archiveTelegram, archiveSlack, archiveZulip, archiveMattermost:
+		view.Channel = q.Channel
+	}
+	switch q.Status {
+	case "", "active", "ended", "pending", "uncertain":
+		view.Status = q.Status
+	}
+	return view
+}
 
 func archiveTimeLabel(t time.Time) string {
 	if t.IsZero() {
@@ -70,7 +88,7 @@ func archiveChannelLabel(channel string) string {
 		return "Telegram"
 	case archiveSlack:
 		return "Slack"
-	case "zulip":
+	case archiveZulip:
 		return "Zulip"
 	case archiveMattermost:
 		return "Mattermost"

@@ -158,9 +158,13 @@ func TestChatArchiveHTTPTranscript(t *testing.T) {
 				t.Fatalf("older messages=%d %v", len(older.Messages), err)
 			}
 			for _, path := range []string{"/chat-sessions?cursor=garbage", "/chat-sessions?status=made-up", "/chat-sessions/not-a-uuid", "/chat-sessions/" + id + "?cursor=bad"} {
-				if got := get(path, true); got.Code != 400 {
+				if got := get(path, true); got.Code != 400 || !strings.Contains(got.Body.String(), `id="chat-archive-filter-error"`) || !strings.Contains(got.Body.String(), `aria-describedby="chat-archive-filter-error"`) {
 					t.Fatalf("invalid %s=%d", path, got.Code)
 				}
+			}
+			recovery := get("/chat-sessions?q=Planning&status=made-up", true)
+			if recovery.Code != 400 || !strings.Contains(recovery.Body.String(), `value="Planning"`) || strings.Contains(recovery.Body.String(), `value="made-up"`) {
+				t.Fatal("invalid archive filter did not retain only the safe query draft")
 			}
 			if got := get("/chat-sessions/9e26f7b0-13cd-4c4e-9ed6-cd68b760849f", false); got.Code != 404 {
 				t.Fatalf("missing=%d", got.Code)

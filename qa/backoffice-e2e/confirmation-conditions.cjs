@@ -54,17 +54,18 @@ const { chromium } = require('playwright');
       await response;
       assert.equal(requests.length, 1);
       assert.equal(requests[0].get(field), expected ? value : null);
+      if (route === 'webhooks-disabled') assert.equal(requests[0].get('confirm_disabled'), 'yes');
       if (route === 'account-2fa-enabled') assert.equal(requests[0].get('password'), 'synthetic current password', 'native MFA preserves entered password');
       requests.length = 0;
     }
-    for (const [route, expected] of [['access', false], ['access-primary', true]]) {
+    for (const [route, expected] of [['access', true], ['access-primary', true]]) {
       await checkAction(route, 'Reset credential', expected, async () => {
         await page.getByText('Reset temporary password', { exact: true }).click();
         await page.getByLabel('New temporary password').fill('synthetic temporary password');
       }, 'confirm_current');
     }
-    for (const [route, expected] of [['webhooks-managed', false], ['webhooks-disabled', true]]) {
-      await checkAction(route, 'Send test POST', expected, null, 'confirm_disabled');
+    for (const route of ['webhooks-managed', 'webhooks-disabled']) {
+      await checkAction(route, 'Send test POST', true, null, 'confirm', 'yes');
     }
     for (const button of ['Replace passkey', 'Disable 2FA']) {
       await checkAction('account-2fa-enabled', button, true, async () => {
@@ -76,10 +77,10 @@ const { chromium } = require('playwright');
       const form = page.locator(`form[action$="/${current ? 'family-demo' : 'family-other'}/revoke"]`);
       const response = page.waitForResponse(r => r.request().method() === 'POST');
       await form.getByRole('button', { name: 'End session', exact: true }).click();
-      assert.equal(await page.getByRole('dialog').isVisible(), current);
-      if (current) await page.getByRole('dialog').locator('[data-confirm-accept]').click();
+      assert.equal(await page.getByRole('dialog').isVisible(), true);
+      await page.getByRole('dialog').locator('[data-confirm-accept]').click();
       await response;
-      assert.equal(requests[0].get('confirm_current'), current ? 'yes' : null);
+      assert.equal(requests[0].get('confirm_current'), 'yes');
       requests.length = 0;
     }
     const fs = require('node:fs'), path = require('node:path');

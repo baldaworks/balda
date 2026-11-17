@@ -35,8 +35,13 @@ func projectProviderRow(item providers.Item, version providers.StateVersion) web
 }
 
 func projectProviderEditor(item providers.Item, version providers.StateVersion, create bool) *webui.ProviderEditor {
+	return projectProviderEditorForType(item, version, create, "")
+}
+
+func projectProviderEditorForType(item providers.Item, version providers.StateVersion, create bool, selectedType string) *webui.ProviderEditor {
 	row := projectProviderRow(item, version)
 	editor := &webui.ProviderEditor{Row: row, New: create, Action: row.DetailPath,
+		ID:               row.ID,
 		HasAPIKey:        item.Revision.Definition.HasAPIKey,
 		EnvironmentNames: append([]string(nil), item.Revision.Definition.EnvironmentNames...)}
 	if create {
@@ -44,6 +49,10 @@ func projectProviderEditor(item providers.Item, version providers.StateVersion, 
 		editor.Row.Version = uint64(version)
 	}
 	cfg := item.Revision.Definition.Config
+	if create {
+		cfg.Type = selectedType
+	}
+	editor.Type = cfg.Type
 	editor.SystemInstructions = cfg.SystemInstructions
 	editor.MCPServers = strings.Join(cfg.MCPServers, "\n")
 	if cfg.PoolConfig != nil {
@@ -69,15 +78,22 @@ func projectProviderEditor(item providers.Item, version providers.StateVersion, 
 			editor.InheritEnv = "no"
 		}
 	}
-	selected := cfg.Type
 	for _, descriptor := range agentconfig.BuiltinDriverRegistry().Descriptors() {
 		if descriptor.Type == agentconfig.AgentTypeGenericACP || descriptor.Deprecated {
 			continue
 		}
-		editor.Types = append(editor.Types, webui.ProviderTypeOption{Value: descriptor.Type, Label: descriptor.Type, Selected: descriptor.Type == selected})
+		editor.Types = append(editor.Types, webui.ProviderTypeOption{Value: descriptor.Type, Label: descriptor.Type, Selected: descriptor.Type == cfg.Type})
 	}
-	if create && selected == "" && len(editor.Types) > 0 {
-		editor.Types[0].Selected = true
+	editor.SelectType = create && cfg.Type == ""
+	if descriptor, ok := agentconfig.BuiltinDriverRegistry().Lookup(cfg.Type); ok {
+		editor.DriverClass = string(descriptor.Class)
+		editor.ShowAPIKey = descriptor.Class == agentconfig.DriverClassHosted
+		editor.RequireAPIKey = descriptor.Type == agentconfig.AgentTypeOpenAI && (create || !editor.HasAPIKey)
+		editor.ShowEnvironment = descriptor.SupportsEnvironment
+		editor.ShowReasoning = descriptor.Class == agentconfig.DriverClassACP || descriptor.Type == agentconfig.AgentTypeOpenAI
+		editor.ShowTimeout = descriptor.Type == agentconfig.AgentTypeOpenAI
+		editor.ShowBridgeVersion = descriptor.Type == agentconfig.AgentTypeCodexACP || descriptor.Type == agentconfig.AgentTypeRegistryACP || descriptor.Type == agentconfig.AgentTypeAgyACP
+		editor.ShowRegistryID = descriptor.Type == agentconfig.AgentTypeRegistryACP
 	}
 	slices.Sort(editor.EnvironmentNames)
 	return editor

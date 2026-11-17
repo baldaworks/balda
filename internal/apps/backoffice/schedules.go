@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -18,6 +19,8 @@ import (
 )
 
 const scheduleHistoryPageSize = 20
+
+var scheduleRunRequestKey = regexp.MustCompile(`^[A-Za-z0-9_-]{8,128}$`)
 
 // SchedulesOperations is Backoffice's port to host-owned schedule policy.
 type SchedulesOperations interface {
@@ -222,8 +225,12 @@ func (a *httpApp) scheduleRunNow(w http.ResponseWriter, r *http.Request) {
 	}
 	request := schedulecmd.RunNow{ID: r.PathValue("schedule_id"), RequestKey: form.Get("request_key"),
 		ConfirmDisabled: form.Get("confirm_disabled") == checkedFormValue, Authority: a.scheduleAuthority(p)}
-	if _, keyErr := uuid.Parse(request.RequestKey); keyErr == nil {
+	if scheduleRunRequestKey.MatchString(request.RequestKey) {
 		page.Schedules.Editor.RunRequestKey = request.RequestKey
+	}
+	if form.Get("confirm") != checkedFormValue {
+		a.scheduleError(w, r, page, schedulecmd.ErrInvalid)
+		return
 	}
 	_, err = a.schedules.RunNow(r.Context(), request)
 	if err != nil {
@@ -302,6 +309,9 @@ func (a *httpApp) scheduleResult(w http.ResponseWriter, r *http.Request, page we
 
 func (a *httpApp) scheduleError(w http.ResponseWriter, r *http.Request, page webui.Page, err error) {
 	status, message := scheduleOperationFailure(err)
+	if r.Method == http.MethodPost && !errors.Is(err, schedulecmd.ErrConflict) && !errors.Is(err, schedulecmd.ErrForbidden) && !errors.Is(err, schedulecmd.ErrNotFound) {
+		retainScheduleDraft(&page, r.PostForm)
+	}
 	page.Error = &webui.ErrorView{Heading: "Schedule operation could not complete", Message: message}
 	templateName := webui.TemplateSchedules
 	if page.Schedules == nil {
@@ -309,6 +319,21 @@ func (a *httpApp) scheduleError(w http.ResponseWriter, r *http.Request, page web
 		templateName = webui.TemplateError
 	}
 	a.render(w, r, status, templateName, page)
+}
+
+func retainScheduleDraft(page *webui.Page, form url.Values) {
+	if page == nil || page.Schedules == nil || page.Schedules.Editor == nil || !form.Has("cron") {
+		return
+	}
+	editor := page.Schedules.Editor
+	if editor.New {
+		editor.ID = strings.TrimSpace(form.Get("id"))
+	} else if version, err := scheduleVersion(form); err == nil {
+		editor.Row.Version = version
+	}
+	editor.Cron = form.Get("cron")
+	editor.ReportTo = strings.TrimSpace(form.Get("locator"))
+	editor.Content = form.Get("content")
 }
 
 func scheduleOperationFailure(err error) (int, string) {

@@ -272,8 +272,12 @@ func (b *Browser) RevokeSession(w http.ResponseWriter, r *http.Request) {
 		b.writeServiceError(w, r, err)
 		return
 	}
+	if form.Get("confirm_current") != "yes" {
+		b.writeServiceError(w, r, usercmd.ErrCurrentSessionConfirmationRequired)
+		return
+	}
 	targetSessionID := strings.TrimSpace(r.PathValue("session_id"))
-	if err := b.service.RevokeSession(r.Context(), access.Value, targetSessionID, form.Get("confirm_current") == "yes"); err != nil {
+	if err := b.service.RevokeSession(r.Context(), access.Value, targetSessionID, true); err != nil {
 		b.writeServiceError(w, r, err)
 		return
 	}

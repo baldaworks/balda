@@ -192,6 +192,7 @@ func TestMCPInventoryUsesSafeSharedRendering(t *testing.T) {
 
 type mcpHTTPFixture struct {
 	inventoryErr          error
+	providerIDsErr        error
 	items                 []mcpcmd.Item
 	err                   error
 	creates               []mcpcmd.CreateDefinition
@@ -229,8 +230,8 @@ func (f *mcpHTTPFixture) Get(_ context.Context, id string) (mcpcmd.Item, error) 
 	}
 	return mcpcmd.Item{}, mcpcmd.ErrNotFound
 }
-func (*mcpHTTPFixture) ProviderIDs(context.Context) ([]string, error) {
-	return []string{"alpha", "beta"}, nil
+func (f *mcpHTTPFixture) ProviderIDs(context.Context) ([]string, error) {
+	return []string{"alpha", "beta"}, f.providerIDsErr
 }
 func (f *mcpHTTPFixture) Create(_ context.Context, r mcpcmd.CreateDefinition) (mcpcmd.Item, error) {
 	f.creates = append(f.creates, r)
@@ -476,14 +477,24 @@ func TestMCPFormsFenceAuthorityAndNeverReflectValues(t *testing.T) {
 	if request.Values.Headers["X-Secret"].Value != "write-only-canary" || request.Authority.UserID != "admin" || request.Authority.SessionID == "" || request.Authority.SessionVersion == 0 {
 		t.Fatal("write or current authority lost")
 	}
+	form.Set("public_id", "draft-worker")
+	form.Set("url", "https://safe-draft.example/mcp")
+	form.Set("client_id", "safe-client")
+	form.Set("client_auth_method", "client_secret_post")
+	form.Set("client_secret", "oauth-secret-canary")
+	form.Set("scopes", "tools.read\ntools.write")
 	for _, tc := range []struct {
 		err    error
 		status int
 	}{{mcpcmd.ErrInvalid, 400}, {mcpcmd.ErrForbidden, 403}, {mcpcmd.ErrNotFound, 404}, {mcpcmd.ErrConflict, 409}, {errors.New("private SDK payload write-only-canary"), 503}} {
 		fixture.err = tc.err
 		w := performAccessMutation(t, handler, config, "/mcp/connections", form, login.access, login.csrf, true)
-		if w.Code != tc.status || strings.Count(w.Body.String(), `id="main-content"`) != 1 || strings.Contains(w.Body.String(), "write-only-canary") {
+		body := w.Body.String()
+		if w.Code != tc.status || strings.Count(body, `id="main-content"`) != 1 || strings.Contains(body, "write-only-canary") || strings.Contains(body, "oauth-secret-canary") {
 			t.Fatalf("safe error mapping: %d, want %d", w.Code, tc.status)
+		}
+		if tc.status != http.StatusForbidden && tc.status != http.StatusNotFound && tc.status != http.StatusConflict && (!strings.Contains(body, `value="draft-worker"`) || !strings.Contains(body, `value="https://safe-draft.example/mcp"`) || !strings.Contains(body, `value="safe-client"`) || !strings.Contains(body, `value="client_secret_post" selected`) || !strings.Contains(body, "tools.read")) {
+			t.Fatalf("safe MCP draft was not retained for status %d: %q", tc.status, body)
 		}
 	}
 	fixture.err = nil
@@ -503,6 +514,9 @@ func TestMCPFormsFenceAuthorityAndNeverReflectValues(t *testing.T) {
 	}
 	if w.Code != 200 || fixture.probes != 1 || len(fixture.updates) != 1 || strings.Contains(w.Body.String(), "write-only-canary") {
 		t.Fatal("candidate probe persisted or leaked values")
+	}
+	if !strings.Contains(w.Body.String(), `value="https://safe-draft.example/mcp"`) || strings.Contains(w.Body.String(), "oauth-secret-canary") {
+		t.Fatal("candidate probe did not retain safe fields or clear write-only OAuth input")
 	}
 	form.Del("operation")
 	for _, action := range []string{"selection", "delete"} {

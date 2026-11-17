@@ -21,6 +21,7 @@ import (
 
 const checkedFormValue = "yes"
 const sessionPageSize = 20
+const changedAdministratorAuthorityMessage = "Your administrator authority changed. Sign in again."
 
 type httpApp struct {
 	renderer          *webui.Renderer
@@ -327,22 +328,27 @@ func (a *httpApp) audit(w http.ResponseWriter, r *http.Request) {
 		a.browser.WriteError(w, r, security.ErrUnauthenticated)
 		return
 	}
+	request := audit.Request{
+		AfterID: r.URL.Query().Get("after"),
+		Action:  usercmd.AuditAction(r.URL.Query().Get("action")), Outcome: usercmd.AuditOutcome(r.URL.Query().Get("outcome")),
+		TargetType: usercmd.AuditTargetType(r.URL.Query().Get("target")), ActorUserID: r.URL.Query().Get("actor"),
+	}
+	fromText := strings.TrimSpace(r.URL.Query().Get("from"))
+	toText := strings.TrimSpace(r.URL.Query().Get("to"))
 	limit := 0
 	if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
 		parsed, err := strconv.Atoi(rawLimit)
 		if err != nil {
-			a.browser.WriteError(w, r, usercmd.ErrInvalid)
+			a.renderAuditError(w, r, principal.User, request, fromText, toText, usercmd.ErrInvalid)
 			return
 		}
 		limit = parsed
 	}
-	fromText := strings.TrimSpace(r.URL.Query().Get("from"))
-	toText := strings.TrimSpace(r.URL.Query().Get("to"))
 	var from, before time.Time
 	if fromText != "" {
 		parsed, parseErr := time.Parse("2006-01-02", fromText)
 		if parseErr != nil {
-			a.browser.WriteError(w, r, usercmd.ErrInvalid)
+			a.renderAuditError(w, r, principal.User, request, "", toText, usercmd.ErrInvalid)
 			return
 		}
 		from = parsed
@@ -350,20 +356,15 @@ func (a *httpApp) audit(w http.ResponseWriter, r *http.Request) {
 	if toText != "" {
 		lastDay, parseErr := time.Parse("2006-01-02", toText)
 		if parseErr != nil {
-			a.browser.WriteError(w, r, usercmd.ErrInvalid)
+			a.renderAuditError(w, r, principal.User, request, fromText, "", usercmd.ErrInvalid)
 			return
 		}
 		before = lastDay.AddDate(0, 0, 1)
 	}
-	request := audit.Request{
-		AfterID: r.URL.Query().Get("after"), Limit: limit,
-		Action: usercmd.AuditAction(r.URL.Query().Get("action")), Outcome: usercmd.AuditOutcome(r.URL.Query().Get("outcome")),
-		TargetType:  usercmd.AuditTargetType(r.URL.Query().Get("target")),
-		ActorUserID: r.URL.Query().Get("actor"), From: from, Before: before,
-	}
+	request.Limit, request.From, request.Before = limit, from, before
 	page, err := a.auditLog.List(r.Context(), principal.User, request)
 	if err != nil {
-		a.browser.WriteError(w, r, err)
+		a.renderAuditError(w, r, principal.User, request, fromText, toText, err)
 		return
 	}
 	events := make([]webui.AuditView, 0, len(page.Events))
@@ -389,7 +390,7 @@ func (a *httpApp) audit(w http.ResponseWriter, r *http.Request) {
 		if event.ActorUserID != "" {
 			name, lookupErr := userName(event.ActorUserID)
 			if lookupErr != nil {
-				a.browser.WriteError(w, r, lookupErr)
+				a.renderAuditError(w, r, principal.User, request, fromText, toText, lookupErr)
 				return
 			}
 			if name != "" {
@@ -399,7 +400,7 @@ func (a *httpApp) audit(w http.ResponseWriter, r *http.Request) {
 		if event.TargetType == usercmd.AuditTargetUser && event.TargetID != "" {
 			name, lookupErr := userName(event.TargetID)
 			if lookupErr != nil {
-				a.browser.WriteError(w, r, lookupErr)
+				a.renderAuditError(w, r, principal.User, request, fromText, toText, lookupErr)
 				return
 			}
 			if name != "" {
@@ -434,14 +435,45 @@ func (a *httpApp) audit(w http.ResponseWriter, r *http.Request) {
 		}
 		nextURL = a.path("/audit?") + query.Encode()
 	}
-	capabilities := users.BackofficeCapabilities(principal.User)
-	a.render(w, r, http.StatusOK, webui.TemplateAudit, webui.Page{
-		Title: "Audit · Balda", Current: webui.LocationAudit,
-		Navigation: webui.Navigation(capabilities, webui.LocationAudit), Audit: events,
-		AuditAction: string(request.Action), AuditOutcome: string(request.Outcome),
-		AuditTargetType: string(request.TargetType), AuditActor: request.ActorUserID,
-		AuditFrom: fromText, AuditTo: toText, NextURL: nextURL,
-	})
+	view := auditView(principal.User, request, fromText, toText)
+	view.Audit, view.NextURL = events, nextURL
+	a.render(w, r, http.StatusOK, webui.TemplateAudit, view)
+}
+
+func auditView(user usercmd.User, request audit.Request, fromText, toText string) webui.Page {
+	if request.Action != "" && !request.Action.Valid() {
+		request.Action = ""
+	}
+	if request.Outcome != "" && !request.Outcome.Valid() {
+		request.Outcome = ""
+	}
+	if request.TargetType != "" && !request.TargetType.Valid() {
+		request.TargetType = ""
+	}
+	request.ActorUserID = strings.TrimSpace(request.ActorUserID)
+	if len(request.ActorUserID) > 128 {
+		request.ActorUserID = ""
+	}
+	return webui.Page{
+		Title: "Audit · Balda", Current: webui.LocationAudit, ViewerUsername: user.Username,
+		Navigation:  webui.Navigation(users.BackofficeCapabilities(user), webui.LocationAudit),
+		AuditAction: string(request.Action), AuditActions: webui.AuditActionOptions(), AuditOutcome: string(request.Outcome),
+		AuditTargetType: string(request.TargetType), AuditTargets: webui.AuditTargetOptions(), AuditActor: request.ActorUserID,
+		AuditFrom: fromText, AuditTo: toText,
+	}
+}
+
+func (a *httpApp) renderAuditError(w http.ResponseWriter, r *http.Request, user usercmd.User, request audit.Request, fromText, toText string, err error) {
+	status, message := http.StatusServiceUnavailable, "Audit events are temporarily unavailable. Reopen Audit to retry."
+	switch {
+	case errors.Is(err, usercmd.ErrInvalid):
+		status, message = http.StatusBadRequest, "One or more filters are invalid. Review the retained filters and try again."
+	case errors.Is(err, usercmd.ErrForbidden):
+		status, message = http.StatusForbidden, changedAdministratorAuthorityMessage
+	}
+	page := auditView(user, request, fromText, toText)
+	page.Error = &webui.ErrorView{Heading: "Audit could not be filtered", Message: message}
+	a.render(w, r, status, webui.TemplateAudit, page)
 }
 
 func (a *httpApp) accessList(w http.ResponseWriter, r *http.Request) {
@@ -490,6 +522,7 @@ func (a *httpApp) accessCreatePage(w http.ResponseWriter, r *http.Request) {
 		Title: "Create user · Balda", Current: webui.LocationAccess,
 		Navigation: webui.Navigation(capabilities, webui.LocationAccess),
 		CreateUser: true, CSRFToken: a.browser.CSRFToken(r),
+		AccessDraftRole: string(usercmd.RoleOperator), AccessDraftStatus: string(usercmd.StatusActive),
 	})
 }
 
@@ -514,7 +547,7 @@ func (a *httpApp) accessBindingDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	version, err := parseFormVersion(form.Get("expected_version"))
 	if err != nil {
-		a.browser.WriteError(w, r, err)
+		a.renderAccessMutationError(w, r, principal, "access-binding-delete", err)
 		return
 	}
 	err = a.access.RemoveBinding(r.Context(), access.Actor{User: principal.User, SessionID: principal.FamilyID}, access.BindingRemoval{
@@ -522,7 +555,7 @@ func (a *httpApp) accessBindingDelete(w http.ResponseWriter, r *http.Request) {
 		ExpectedVersion: version, ConfirmImpact: form.Get("confirm_bot_impact") == checkedFormValue,
 	})
 	if err != nil {
-		a.browser.WriteError(w, r, err)
+		a.renderAccessMutationError(w, r, principal, "access-binding-delete", err)
 		return
 	}
 	a.respondAccessDetailMutation(w, r, r.PathValue("user_id"))
@@ -547,7 +580,7 @@ func (a *httpApp) accessCreate(w http.ResponseWriter, r *http.Request) {
 		Role: usercmd.Role(form.Get("role")), Status: usercmd.UserStatus(form.Get("status")),
 	})
 	if err != nil {
-		a.browser.WriteError(w, r, err)
+		a.renderAccessMutationError(w, r, principal, "access-create", err)
 		return
 	}
 	a.respondMutation(w, r, webui.LocationAccess)
@@ -560,7 +593,7 @@ func (a *httpApp) accessUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	expectedVersion, err := parseFormVersion(form.Get("expected_version"))
 	if err != nil {
-		a.browser.WriteError(w, r, err)
+		a.renderAccessMutationError(w, r, principal, "access-user-update", err)
 		return
 	}
 	_, err = a.access.UpdateUser(r.Context(), access.Actor{User: principal.User, SessionID: principal.FamilyID}, access.UpdateInput{
@@ -569,7 +602,7 @@ func (a *httpApp) accessUpdate(w http.ResponseWriter, r *http.Request) {
 		AcknowledgeBotAccessImpact: form.Get("confirm_bot_impact") == checkedFormValue,
 	})
 	if err != nil {
-		a.browser.WriteError(w, r, err)
+		a.renderAccessMutationError(w, r, principal, "access-user-update", err)
 		return
 	}
 	a.respondMutation(w, r, webui.LocationAccess)
@@ -582,12 +615,16 @@ func (a *httpApp) accessCredentialReset(w http.ResponseWriter, r *http.Request) 
 	}
 	userVersion, err := parseFormVersion(form.Get("expected_user_version"))
 	if err != nil {
-		a.browser.WriteError(w, r, err)
+		a.renderAccessMutationError(w, r, principal, "access-credential-reset", err)
 		return
 	}
 	credentialVersion, err := parseFormVersion(form.Get("expected_credential_version"))
 	if err != nil {
-		a.browser.WriteError(w, r, err)
+		a.renderAccessMutationError(w, r, principal, "access-credential-reset", err)
+		return
+	}
+	if form.Get("confirm_current") != checkedFormValue {
+		a.renderAccessMutationError(w, r, principal, "access-credential-reset", usercmd.ErrCurrentSessionConfirmationRequired)
 		return
 	}
 	password := []byte(form.Get("temporary_password"))
@@ -595,13 +632,66 @@ func (a *httpApp) accessCredentialReset(w http.ResponseWriter, r *http.Request) 
 	err = a.access.ResetCredential(r.Context(), access.Actor{User: principal.User, SessionID: principal.FamilyID}, access.CredentialInput{
 		UserID: r.PathValue("user_id"), ExpectedUserVersion: userVersion,
 		ExpectedCredentialVersion: credentialVersion, TemporaryPassword: password,
-		ConfirmCurrent: form.Get("confirm_current") == checkedFormValue,
+		ConfirmCurrent: true,
 	})
 	if err != nil {
-		a.browser.WriteError(w, r, err)
+		a.renderAccessMutationError(w, r, principal, "access-credential-reset", err)
+		return
+	}
+	if r.PathValue("user_id") == principal.User.ID {
+		a.respondMutation(w, r, webui.LocationLogin)
 		return
 	}
 	a.respondMutation(w, r, webui.LocationAccess)
+}
+
+func (a *httpApp) renderAccessMutationError(w http.ResponseWriter, r *http.Request, principal security.Principal, formID string, cause error) {
+	status, message := http.StatusInternalServerError, "Access management is unavailable. Reopen the page and try again."
+	switch {
+	case errors.Is(cause, usercmd.ErrInvalid), errors.Is(cause, usercmd.ErrBotImpactAcknowledgementRequired), errors.Is(cause, usercmd.ErrCurrentSessionConfirmationRequired):
+		status, message = http.StatusBadRequest, "Review the highlighted form, required values, and confirmation."
+	case errors.Is(cause, usercmd.ErrConflict), errors.Is(cause, usercmd.ErrLastAdministrator), errors.Is(cause, usercmd.ErrPrimaryConflict):
+		status, message = http.StatusConflict, "This user changed. Reopen the current values before trying again."
+	case errors.Is(cause, usercmd.ErrForbidden), errors.Is(cause, security.ErrForbidden):
+		status, message = http.StatusForbidden, "You are no longer allowed to make this access change."
+	case errors.Is(cause, usercmd.ErrNotFound):
+		status, message = http.StatusNotFound, "This user or access record no longer exists. Return to Access."
+	}
+
+	var page webui.Page
+	if formID == "access-create" {
+		page = webui.Page{
+			Title: "Create user · Balda", Current: webui.LocationAccess, CreateUser: true,
+			Navigation: webui.Navigation(users.BackofficeCapabilities(principal.User), webui.LocationAccess),
+			CSRFToken:  a.browser.CSRFToken(r), AccessDisplayName: strings.TrimSpace(r.PostForm.Get("display_name")),
+			AccessUsername: strings.TrimSpace(r.PostForm.Get("username")), AccessDraftRole: r.PostForm.Get("role"), AccessDraftStatus: r.PostForm.Get("status"),
+		}
+	} else {
+		var err error
+		page, err = a.bindingDetailPage(r, principal, r.PathValue("user_id"))
+		if err != nil {
+			a.browser.WriteError(w, r, cause)
+			return
+		}
+		if formID == "access-user-update" && (errors.Is(cause, usercmd.ErrInvalid) || errors.Is(cause, usercmd.ErrBotImpactAcknowledgementRequired)) {
+			page.AccessOriginalRole = page.User.Role
+			page.AccessOriginalStatus = page.User.Status
+			page.User.DisplayName = strings.TrimSpace(r.PostForm.Get("display_name"))
+			page.User.Username = strings.TrimSpace(r.PostForm.Get("username"))
+			if role := usercmd.Role(r.PostForm.Get("role")); role.Valid() {
+				page.User.Role = string(role)
+			}
+			if state := usercmd.UserStatus(r.PostForm.Get("status")); state.Valid() {
+				page.User.Status = string(state)
+			}
+			if expectedVersion, err := parseFormVersion(r.PostForm.Get("expected_version")); err == nil {
+				page.User.Version = expectedVersion
+			}
+		}
+	}
+	page.Error = &webui.ErrorView{Heading: "Access change not saved", Message: message}
+	page.ErrorFormID = formID
+	a.render(w, r, status, webui.TemplateAccess, page)
 }
 
 func (a *httpApp) accessSessionRevoke(w http.ResponseWriter, r *http.Request) {
@@ -609,9 +699,13 @@ func (a *httpApp) accessSessionRevoke(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if form.Get("confirm_current") != checkedFormValue {
+		a.browser.WriteError(w, r, usercmd.ErrCurrentSessionConfirmationRequired)
+		return
+	}
 	err := a.access.RevokeSession(
 		r.Context(), access.Actor{User: principal.User, SessionID: principal.FamilyID},
-		r.PathValue("user_id"), r.PathValue("session_id"), form.Get("confirm_current") == checkedFormValue,
+		r.PathValue("user_id"), r.PathValue("session_id"), true,
 	)
 	if err != nil {
 		a.browser.WriteError(w, r, err)
@@ -680,10 +774,11 @@ func (a *httpApp) renderSecurityError(w http.ResponseWriter, r *http.Request, st
 		templateName = webui.TemplateLogin
 		page.Current = webui.LocationLogin
 		page.CSRFToken = a.browser.CSRFToken(r)
+		page.LoginUsername = strings.TrimSpace(r.PostForm.Get("username"))
 	case a.path(security.RefreshPath):
 		templateName = webui.TemplateRefresh
 		page.CSRFToken = a.browser.CSRFToken(r)
-		page.ReturnTo = a.browser.SafeReturnPath(r.FormValue("return_to"), a.path(string(webui.LocationOverview)))
+		page.ReturnTo = a.browser.SafeReturnPath(r.PostForm.Get("return_to"), a.path(string(webui.LocationOverview)))
 		page.RefreshRetryable = status == http.StatusConflict
 	case a.path("/account/password"):
 		templateName = webui.TemplatePassword

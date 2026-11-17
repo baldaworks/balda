@@ -59,9 +59,15 @@ module.exports = async function checkMutationFeedback(browser, baseURL, viewport
     let release;
     plan = { status, wait: new Promise(resolve => { release = resolve; }) };
     await secret.fill(`synthetic-${status}`);
+    await page.locator('#request-error').evaluate(element => {
+      element.hidden = false;
+      element.textContent = 'Previous request failed.';
+    });
     const response = page.waitForResponse(value => value.request().method() === 'POST' && value.url().endsWith('/confirmation-preview'));
     await submit.click({ noWaitAfter: true });
     await waitForPlan(plan);
+    assert.equal(await page.locator('#request-error').isHidden(), true, `${status} clears stale request feedback before retry`);
+    assert.equal(await page.locator('#request-error').textContent(), '', `${status} removes stale request feedback text`);
     assert.equal(await form.getAttribute('aria-busy'), 'true', `${status} exposes aria-busy`);
     assert.equal(await submit.isDisabled(), true, `${status} disables submit`);
     assert.equal(await unavailable.isDisabled(), true, `${status} preserves initial disabled state while busy`);

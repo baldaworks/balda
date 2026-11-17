@@ -128,6 +128,55 @@ and hydrated-history boundaries are separately tested in `handlersfx` and
    package dependencies changed, also run
    `go tool go-arch-lint check --project-path .`.
 
+## Authoritative production-form audit
+
+The production contract contains **66 production forms in 17 families**. The
+machine-checked source is
+`internal/apps/backoffice/testdata/form-inventory.tsv`; route ownership is in
+`form-route-inventory.tsv`, authenticated/template evidence is in
+`form-evidence.tsv`, and exact state, field-classification, plus regression-source digests are in
+`form-contract.tsv`. The gate probes every recorded method/path against the
+production router, reconciles handler owners, and fails when a field or material
+state changes without an explicit contract update. QA-only forms are listed
+with reviewed reasons in `form-exclusions.tsv`; there is no basename-only silent
+exclusion. Stable IDs are grouped below so a screen or conditional
+variant cannot disappear behind a page-family summary.
+
+| Family | Stable production form IDs |
+| --- | --- |
+| Access | `access-create`, `access-user-update`, `access-binding-delete`, `access-credential-reset`, `access-filter` |
+| Account | `account-password`, `account-passkey-replace`, `account-passkey-disable`, `account-passkey-enable` |
+| Aliases | `alias-editor`, `alias-delete` |
+| Audit | `audit-filter` |
+| Authentication | `shell-logout`, `login-password`, `forced-password-replace`, `forced-password-logout`, `session-refresh`, `webauthn-finish` |
+| Bindings | `binding-invitation-cancel`, `binding-identity-refresh`, `binding-invitation-issue` |
+| Chat archive | `chat-archive-filter` |
+| Fact memory | `memory-filter`, `memory-editor`, `memory-delete` |
+| Hooks | `hook-editor`, `hook-delete` |
+| MCP | `mcp-diagnostic`, `mcp-editor`, `mcp-selection`, `mcp-delete`, `mcp-oauth-attempt-cancel`, `mcp-oauth-start`, `mcp-oauth-retry`, `mcp-oauth-disconnect`, `mcp-device-cancel` |
+| Plugin marketplaces | `plugin-marketplace-create`, `plugin-marketplace-refresh`, `plugin-marketplace-remove` |
+| Plugins | `plugin-install-filter`, `plugin-review-accept`, `plugin-selection`, `plugin-rollback`, `plugin-remove` |
+| Providers | `provider-type-select`, `provider-editor`, `provider-selection`, `provider-delete` |
+| Schedules | `schedule-editor`, `schedule-selection`, `schedule-delete`, `schedule-run-now` |
+| Sessions | `session-revoke` |
+| Skills | `skill-retry-publication`, `skill-refresh`, `skill-review-install`, `skill-accept`, `skill-review-update`, `skill-disable`, `skill-enable`, `skill-remove` |
+| Webhooks | `webhook-editor`, `webhook-selection`, `webhook-rotate-secret`, `webhook-delete`, `webhook-test` |
+
+The completed audit records **37 findings: 13 high and 24 medium, all closed**
+in `form-findings.tsv`. Each row names the affected stable form IDs, repair
+location, Prism child task, and resolving regression. A missing route owner,
+evidence reference, state dimension, field classification, stale form ID, or
+open finding fails `TestProductionFormInventoryBaseline`; documentation drift
+fails `TestProductionFormAuditDocumentationIsCurrent`.
+
+When adding or changing a form, update all six TSV contracts (inventory,
+routes, evidence, state/field contract, exclusions, and findings) in the same
+change, classify every named field and material state, and add authenticated
+evidence. Record each discovered defect even when it is fixed immediately.
+Do not mark a finding closed until its named regression passes. Page-family
+matrix cells may use N/A only for a product lifecycle that does not exist; an
+N/A never exempts a rendered `<form>` from the production inventory.
+
 ## Maintained page-family state matrix
 
 This matrix is the inventory for the common gallery. `G:<route>` identifies a
@@ -154,7 +203,7 @@ cookies, tokens, real message bodies, or capability-bearing URLs.
 | Fact memory | Covered — `G:memory`, `G:memory-empty`, search fixtures | Covered — `G:memory/new` | Covered — `G:memory/1`, `G:memory-long` | Covered — `G:memory-invalid`, `G:memory-forbidden`, `G:memory-missing`, `G:memory-conflict`, `G:memory-unavailable` | Covered — `G:memory-delete`, `G:memory-disabled`; per-fact deleted history is N/A by product contract | `A:TestFactMemoryLayoutBrowser`, `A:TestFactMemoryApplicationBrowser` |
 | Providers | Covered — `G:providers`, `G:providers-empty` | Covered — `G:providers/new` | Covered — `G:providers/managed`, `G:providers/configured` | Covered — `G:providers-conflict`; unavailable behavior in `A:TestProvidersBrowserManagementAndSecretBoundary` | Covered — managed enable/disable/delete and configured reconciliation in `A:TestProvidersBrowserManagementAndSecretBoundary` | `A:TestProvidersLayoutBrowser`, `A:TestProvidersBrowserManagementAndSecretBoundary` |
 | Access | Covered — `G:access-list`, `G:access-empty` | Covered — `G:access-create` | Covered — `G:access`, `G:access-primary`, `G:access-long` | Covered — `G:access-error`, `G:form-bad-request`, `G:form-forbidden`, `G:form-conflict`, `G:form-server-error` | Covered — user/session disable/revoke state in `G:access`, `G:account-session-states`; hard user deletion is unsupported | `A:TestHTTPAppAccessAdministrationNoJSHTMXAndRoleBoundary` |
-| Audit | Covered — `G:audit`, `G:audit-empty` | N/A — append-only system evidence has no UI create | Covered — expandable row detail in `G:audit` | Covered — shared `G:error` recovery contract | N/A — immutable audit events cannot be edited or deleted | `A:TestHTTPAppAuditFilteringPaginationRedactionAndRoleBoundary` |
+| Audit | Covered — `G:audit`, `G:audit-empty` | N/A — append-only system evidence has no UI create | Covered — expandable row detail in `G:audit` | Covered — contextual filter recovery in `A:TestHTTPAppAuditFilteringPaginationRedactionAndRoleBoundary` | N/A — immutable audit events cannot be edited or deleted | `A:TestHTTPAppAuditFilteringPaginationRedactionAndRoleBoundary` |
 | Account | Covered — `G:account`, `G:account-empty`, `G:account-many`, `G:account-many-next` | N/A — the current account already exists | Covered — `G:account-2fa-off`, `G:account-2fa-enabled`, `G:account-2fa-unavailable` | Covered — `G:account-error`, `G:password-error`, `G:webauthn-register`, `G:webauthn-assert` | Covered — `G:account-session-states`, `G:account-many`, `G:account-many-next` | `A:TestHTTPAppAccountRotationAndCurrentFamilyRevocation`, `A:TestHTTPAppWebAuthnBrowserWorkflow` |
 
 Schedules and Aliases have a focused layout gate because their authenticated

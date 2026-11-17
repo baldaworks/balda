@@ -75,7 +75,7 @@ func ProjectBindingReveal(form BindingForm, issued usercmd.IssuedBindingInvitati
 	case "slackagent":
 		reveal.Command = "/balda start " + issued.Payload
 		reveal.BotURL = form.Endpoint
-	case "zulip":
+	case archiveZulip:
 		reveal.Command = "/start " + issued.Payload
 		reveal.BotURL = form.Endpoint
 	case "mattermost":

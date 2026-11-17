@@ -1,0 +1,4 @@
+# template	ordinal	reason
+style-guide.tmpl	1	QA-only component example; the standalone preview server accepts GET and HEAD only and never registers this form with the production application.
+style-guide.tmpl	2	QA-only component example; the standalone preview server accepts GET and HEAD only and never registers this form with the production application.
+style-guide.tmpl	3	QA-only component example; the standalone preview server accepts GET and HEAD only and never registers this form with the production application.

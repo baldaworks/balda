@@ -224,6 +224,17 @@ func TestMCPAuthorizationNativeGuardsAndManagedSideState(t *testing.T) {
 	if !strings.Contains(response.Body.String(), "Open the connection to check whether tools are available") {
 		t.Fatal("device grant status was mistaken for runtime readiness")
 	}
+	app.mcp = &mcpHTTPFixture{items: []mcpcmd.Item{item}, providerIDsErr: mcpcmd.ErrUnavailable}
+	cancel := performAccessMutation(t, handler, config, "/mcp/oauth/attempts/attempt/cancel", url.Values{"csrf_token": {admin.csrf}}, admin.access, admin.csrf, false)
+	disconnect := performAccessMutation(t, handler, config, "/mcp/connections/managed-worker/oauth/disconnect", url.Values{"csrf_token": {admin.csrf}, "confirm": {"yes"}}, admin.access, admin.csrf, false)
+	if cancel.Code != http.StatusSeeOther || disconnect.Code != http.StatusSeeOther || flows.cancels != 1 || flows.disconnects != 1 {
+		t.Fatalf("context-only provider outage blocked OAuth actions: cancel=%d disconnect=%d calls=%d/%d", cancel.Code, disconnect.Code, flows.cancels, flows.disconnects)
+	}
+	flows.cancelErr = mcpcmd.ErrUnavailable
+	cancel = performAccessMutation(t, handler, config, "/mcp/oauth/attempts/attempt/cancel", url.Values{"csrf_token": {admin.csrf}}, admin.access, admin.csrf, false)
+	if cancel.Code != http.StatusServiceUnavailable || !strings.Contains(cancel.Body.String(), `action="/mcp/oauth/attempts/attempt/cancel"`) || !strings.Contains(cancel.Body.String(), `aria-describedby="mcp-form-error"`) || !strings.Contains(cancel.Body.String(), "Retry cancellation") {
+		t.Fatalf("cancel failure lost contextual recovery: status=%d", cancel.Code)
+	}
 }
 
 func TestMCPSavedAuthorizationActionsRequireEligibleManagedOAuth(t *testing.T) {
@@ -282,6 +293,8 @@ type mcpAuthorizationFixture struct {
 	creation     mcpcmd.CreateDefinition
 	begin        mcpcmd.BeginAuthorization
 	beginErr     error
+	cancels      int
+	cancelErr    error
 	disconnects  int
 	retries      int
 	currentReads int
@@ -325,7 +338,10 @@ func (f *mcpAuthorizationFixture) CurrentAttempt(context.Context, string, mcpcmd
 	f.currentReads++
 	return mcpcmd.AuthorizationAttempt{}, false, nil
 }
-func (*mcpAuthorizationFixture) Cancel(context.Context, string, mcpcmd.Authority) error { return nil }
+func (f *mcpAuthorizationFixture) Cancel(context.Context, string, mcpcmd.Authority) error {
+	f.cancels++
+	return f.cancelErr
+}
 func (f *mcpAuthorizationFixture) Disconnect(context.Context, string, mcpcmd.Authority) error {
 	f.disconnects++
 	return nil
@@ -467,7 +483,10 @@ func TestMCPOAuthFailuresGiveCurrentConnectionRecovery(t *testing.T) {
 				item.Definition.Headers = map[string]mcpcmd.ValueBinding{"Authorization": {Kind: mcpcmd.ValueProtected}}
 			}
 			app.mcp = &mcpHTTPFixture{items: []mcpcmd.Item{item}}
-			response := performAccessMutation(t, handler, config, "/mcp/connections/worker/oauth/browser", url.Values{"csrf_token": {admin.csrf}, "client_secret": {"private-replacement-secret"}}, admin.access, admin.csrf, false)
+			response := performAccessMutation(t, handler, config, "/mcp/connections/worker/oauth/browser", url.Values{
+				"csrf_token": {admin.csrf}, "client_id": {"safe-client-id"}, "client_auth_method": {"client_secret_basic"},
+				"client_secret": {"private-replacement-secret"}, "scopes": {"safe.read\nsafe.write"},
+			}, admin.access, admin.csrf, false)
 			status, message := mcpAuthorizationFailure(tc.err)
 			if status != tc.status || message != tc.message || response.Code != tc.status || !strings.Contains(response.Body.String(), tc.message) || !strings.Contains(response.Body.String(), `href="/mcp/connections/worker"`) {
 				t.Fatalf("authorization recovery status=%d, copy=%q", response.Code, message)
@@ -475,6 +494,53 @@ func TestMCPOAuthFailuresGiveCurrentConnectionRecovery(t *testing.T) {
 			if strings.Contains(response.Body.String(), "private-replacement-secret") || response.Header().Get("Cache-Control") != noStoreCacheControl {
 				t.Fatal("authorization failure exposed replacement secret or lost private response policy")
 			}
+			if tc.err == mcpcmd.ErrInvalid {
+				for _, retained := range []string{`value="safe-client-id"`, `value="client_secret_basic" selected`, "safe.read\nsafe.write"} {
+					if !strings.Contains(response.Body.String(), retained) {
+						t.Fatalf("authorization failure discarded safe client setting %q", retained)
+					}
+				}
+				if !strings.Contains(response.Body.String(), `action="/mcp/connections/worker/oauth/browser" method="post" hx-boost="false" autocomplete="off" aria-describedby="mcp-form-error"`) {
+					t.Fatal("authorization failure was not associated with its recovery form")
+				}
+			}
 		})
+	}
+	t.Run("onboarding validation retains safe draft", testMCPOnboardingValidationRetainsSafeDraftAndClearsSecrets)
+}
+
+func testMCPOnboardingValidationRetainsSafeDraftAndClearsSecrets(t *testing.T) {
+	provider, config := newHTTPAppTestState(t)
+	now := time.Now().UTC()
+	createAccessTestUser(t, provider.Users(), usercmd.User{ID: "admin", Username: "admin", NormalizedUsername: "admin", DisplayName: "Admin", Role: usercmd.RoleAdministrator, Status: usercmd.StatusActive, Primary: true, Version: 1, Credential: usercmd.Credential{State: usercmd.CredentialStateActive, Version: 1}, CreatedAt: now, UpdatedAt: now})
+	app, err := newHTTPApp(provider.Users(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.mcp = &mcpHTTPFixture{}
+	app.mcpAuthorizations = &mcpAuthorizationFixture{}
+	handler, err := app.handler()
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin := loginHTTPAppSession(t, handler, config, "admin")
+	response := performAccessMutation(t, handler, config, "/mcp/connections/oauth/browser", url.Values{
+		"csrf_token": {admin.csrf}, "public_id": {"safe-server"}, "transport": {"http"}, "url": {"not-a-url"},
+		"targets_all": {"yes"}, "header_key": {"X-Safe-Key", "X-Safe-Key"}, "header_kind": {"protected", "protected"}, "header_operation": {"set", "set"}, "header_value": {"private-header-value", "private-header-value"},
+		"client_id": {"safe-client-id"}, "client_auth_method": {"client_secret_post"}, "client_secret": {"private-client-secret"}, "scopes": {"safe.scope"},
+	}, admin.access, admin.csrf, false)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("onboarding validation = %d, want 400", response.Code)
+	}
+	body := response.Body.String()
+	for _, retained := range []string{`value="safe-server"`, `value="not-a-url"`, `value="X-Safe-Key"`, `value="safe-client-id"`, `value="client_secret_post" selected`, "safe.scope"} {
+		if !strings.Contains(body, retained) {
+			t.Fatalf("onboarding validation discarded safe field %q", retained)
+		}
+	}
+	for _, secret := range []string{"private-header-value", "private-client-secret"} {
+		if strings.Contains(body, secret) {
+			t.Fatalf("onboarding validation reflected secret %q", secret)
+		}
 	}
 }

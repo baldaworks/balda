@@ -1,8 +1,10 @@
 package backoffice
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -12,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/backoffice/access"
 	"github.com/baldaworks/balda/internal/apps/backoffice/security"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
@@ -19,7 +22,22 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 )
 
+const (
+	testAccessPath  = "/access"
+	testAccountPath = "/account"
+	testLoginPath   = "/login"
+)
+
 const noStoreCacheControl = "no-store"
+
+type readTrackingBody struct {
+	read bool
+}
+
+func (b *readTrackingBody) Read([]byte) (int, error) {
+	b.read = true
+	return 0, io.EOF
+}
 
 func TestHTTPAppQAIsOptInAndUsesProductionTemplates(t *testing.T) {
 	t.Parallel()
@@ -187,7 +205,7 @@ func TestHTTPAppServesConfiguredBasePath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, route := range []string{"/", "/login", "/overview", "/balda/unknown"} {
+	for _, route := range []string{"/", testLoginPath, "/overview", "/balda/unknown"} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, route, nil))
 		if response.Code != http.StatusNotFound {
@@ -286,12 +304,42 @@ func TestHTTPAppLoginOverviewAndRefreshContinuation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	for _, route := range []string{testLoginPath, security.RefreshPath} {
+		body := &readTrackingBody{}
+		request := httptest.NewRequest(http.MethodPost, route, body)
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		request.Header.Set("Origin", "https://attacker.example")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusForbidden || body.read {
+			t.Fatalf("early rejection for %s = status %d, body read %t", route, response.Code, body.read)
+		}
+	}
 	loginPage := httptest.NewRecorder()
-	handler.ServeHTTP(loginPage, httptest.NewRequest(http.MethodGet, "/login", nil))
+	handler.ServeHTTP(loginPage, httptest.NewRequest(http.MethodGet, testLoginPath, nil))
 	cookies := loginPage.Result().Cookies()
 	csrf := cookieValue(cookies, security.CSRFCookieName)
+	failedForm := url.Values{"username": {"safe<operator>"}, "password": {"secret-never-render-4987"}, "csrf_token": {csrf}}
+	failedRequest := httptest.NewRequest(http.MethodPost, testLoginPath, strings.NewReader(failedForm.Encode()))
+	failedRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	failedRequest.Header.Set("Origin", config.Server.PublicURL)
+	failedRequest.Header.Set("Sec-Fetch-Site", "same-origin")
+	failedRequest.AddCookie(&http.Cookie{Name: security.CSRFCookieName, Value: csrf})
+	failed := httptest.NewRecorder()
+	handler.ServeHTTP(failed, failedRequest)
+	failedBody := failed.Body.String()
+	if failed.Code != http.StatusUnauthorized ||
+		!strings.Contains(failedBody, `value="safe&lt;operator&gt;"`) ||
+		!strings.Contains(failedBody, `id="login-error"`) ||
+		!strings.Contains(failedBody, `aria-describedby="login-error"`) ||
+		!strings.Contains(failedBody, `aria-invalid="true"`) {
+		t.Fatalf("failed login form state = %d %q", failed.Code, failedBody)
+	}
+	if strings.Contains(failedBody, "secret-never-render-4987") {
+		t.Fatalf("failed login retained the submitted password: %q", failedBody)
+	}
 	form := url.Values{"username": {"admin"}, "password": {validPassword}, "csrf_token": {csrf}}
-	request := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(form.Encode()))
+	request := httptest.NewRequest(http.MethodPost, testLoginPath, strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Origin", config.Server.PublicURL)
 	request.Header.Set("Sec-Fetch-Site", "same-origin")
@@ -320,7 +368,7 @@ func TestHTTPAppLoginOverviewAndRefreshContinuation(t *testing.T) {
 	expiredRequest.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: "invalid.access"})
 	expired := httptest.NewRecorder()
 	handler.ServeHTTP(expired, expiredRequest)
-	if expired.Code != http.StatusUnauthorized || !strings.Contains(expired.Body.String(), `action="/auth/session/refresh"`) || !strings.Contains(expired.Body.String(), `data-auto-refresh="true"`) {
+	if expired.Code != http.StatusUnauthorized || !strings.Contains(expired.Body.String(), `action="/auth/session/refresh"`) || !strings.Contains(expired.Body.String(), `data-auto-refresh="true"`) || !strings.Contains(expired.Body.String(), `aria-describedby="refresh-error"`) {
 		t.Fatalf("refresh continuation = %d %q", expired.Code, expired.Body.String())
 	}
 	refreshCSRF := cookieValue(expired.Result().Cookies(), security.CSRFCookieName)
@@ -365,7 +413,7 @@ func TestHTTPAppAccessAdministrationNoJSHTMXAndRoleBoundary(t *testing.T) {
 	}
 	adminAccess, adminCSRF := loginHTTPApp(t, handler, config, "admin")
 
-	listRequest := httptest.NewRequest(http.MethodGet, "/access", nil)
+	listRequest := httptest.NewRequest(http.MethodGet, testAccessPath, nil)
 	listRequest.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: adminAccess})
 	list := httptest.NewRecorder()
 	handler.ServeHTTP(list, listRequest)
@@ -386,13 +434,27 @@ func TestHTTPAppAccessAdministrationNoJSHTMXAndRoleBoundary(t *testing.T) {
 	if createPage.Code != http.StatusOK || !strings.Contains(createPage.Body.String(), `name="temporary_password"`) || strings.Contains(createPage.Body.String(), `id="users-heading"`) {
 		t.Fatalf("separate create page = %d", createPage.Code)
 	}
+	invalidCreateForm := url.Values{
+		"csrf_token": {adminCSRF}, "display_name": {"Safe <Draft>"}, "username": {"draft-user"},
+		"role": {"administrator"}, "status": {"disabled"}, "temporary_password": {"secret-5"},
+	}
+	invalidCreate := performAccessMutation(t, handler, config, "/access/users", invalidCreateForm, adminAccess, adminCSRF, true)
+	invalidCreateBody := invalidCreate.Body.String()
+	if invalidCreate.Code != http.StatusBadRequest || !strings.Contains(invalidCreateBody, `value="Safe &lt;Draft&gt;"`) ||
+		!strings.Contains(invalidCreateBody, `value="draft-user"`) || !strings.Contains(invalidCreateBody, `value="administrator" selected`) ||
+		!strings.Contains(invalidCreateBody, `value="disabled" selected`) || !strings.Contains(invalidCreateBody, `aria-describedby="access-form-error"`) {
+		t.Fatalf("invalid create state = %d %q", invalidCreate.Code, invalidCreateBody)
+	}
+	if strings.Contains(invalidCreateBody, "secret-5") {
+		t.Fatalf("invalid create retained temporary password: %q", invalidCreateBody)
+	}
 
 	createForm := url.Values{
 		"csrf_token": {adminCSRF}, "display_name": {"Second Operator"}, "username": {"second"},
 		"role": {"operator"}, "status": {"active"}, "temporary_password": {"temporary password"},
 	}
 	created := performAccessMutation(t, handler, config, "/access/users", createForm, adminAccess, adminCSRF, false)
-	if created.Code != http.StatusSeeOther || created.Header().Get("Location") != "/access" {
+	if created.Code != http.StatusSeeOther || created.Header().Get("Location") != testAccessPath {
 		t.Fatalf("native create = %d %v %q", created.Code, created.Header(), created.Body.String())
 	}
 	createdUser, found, err := provider.Users().GetUserByNormalizedUsername(t.Context(), "second")
@@ -405,8 +467,33 @@ func TestHTTPAppAccessAdministrationNoJSHTMXAndRoleBoundary(t *testing.T) {
 		"role": {"operator"}, "status": {"active"}, "temporary_password": {"temporary password"},
 	}
 	htmx := performAccessMutation(t, handler, config, "/access/users", htmxForm, adminAccess, adminCSRF, true)
-	if htmx.Code != http.StatusNoContent || testHTMXLocation(t, htmx.Header()) != "/access" {
+	if htmx.Code != http.StatusNoContent || testHTMXLocation(t, htmx.Header()) != testAccessPath {
 		t.Fatalf("HTMX create = %d %v %q", htmx.Code, htmx.Header(), htmx.Body.String())
+	}
+	adminPrincipal, err := app.security.ValidateAccess(t.Context(), adminAccess)
+	if err != nil {
+		t.Fatal(err)
+	}
+	thirdUser, found, err := provider.Users().GetUserByNormalizedUsername(t.Context(), "third")
+	if err != nil || !found {
+		t.Fatalf("load concurrent-edit fixture: found=%t err=%v", found, err)
+	}
+	if _, err := app.access.UpdateUser(t.Context(), access.Actor{User: adminPrincipal.User, SessionID: adminPrincipal.FamilyID}, access.UpdateInput{
+		UserID: thirdUser.ID, DisplayName: "Concurrent value", Username: thirdUser.Username,
+		Role: thirdUser.Role, Status: thirdUser.Status, ExpectedVersion: thirdUser.Version,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	staleDraftRequest := httptest.NewRequest(http.MethodPost, "/access/users/"+thirdUser.ID, nil)
+	staleDraftRequest.SetPathValue("user_id", thirdUser.ID)
+	staleDraftRequest.PostForm = url.Values{
+		"display_name": {"Safe stale draft"}, "username": {thirdUser.Username}, "role": {string(thirdUser.Role)},
+		"status": {string(thirdUser.Status)}, "expected_version": {"1"},
+	}
+	staleDraft := httptest.NewRecorder()
+	app.renderAccessMutationError(staleDraft, staleDraftRequest, adminPrincipal, "access-user-update", usercmd.ErrInvalid)
+	if staleDraft.Code != http.StatusBadRequest || !strings.Contains(staleDraft.Body.String(), `name="expected_version" value="1"`) || strings.Contains(staleDraft.Body.String(), `name="expected_version" value="2"`) {
+		t.Fatalf("stale draft lost its optimistic version: %d %q", staleDraft.Code, staleDraft.Body.String())
 	}
 
 	conflictForm := url.Values{
@@ -417,9 +504,41 @@ func TestHTTPAppAccessAdministrationNoJSHTMXAndRoleBoundary(t *testing.T) {
 	if conflict.Code != http.StatusConflict || strings.Contains(conflict.Body.String(), "<!doctype") || strings.Count(conflict.Body.String(), `id="main-content"`) != 1 {
 		t.Fatalf("conflict response = %d %q", conflict.Code, conflict.Body.String())
 	}
+	invalidUpdateForm := url.Values{
+		"csrf_token": {adminCSRF}, "display_name": {"Retained <Name>"}, "username": {"retained-user"},
+		"role": {"invalid"}, "status": {string(createdUser.Status)}, "expected_version": {"1"},
+	}
+	invalidUpdate := performAccessMutation(t, handler, config, "/access/users/"+createdUser.ID, invalidUpdateForm, adminAccess, adminCSRF, true)
+	if invalidUpdate.Code != http.StatusBadRequest || !strings.Contains(invalidUpdate.Body.String(), `value="Retained &lt;Name&gt;"`) || !strings.Contains(invalidUpdate.Body.String(), `value="retained-user"`) || !strings.Contains(invalidUpdate.Body.String(), `aria-describedby="access-form-error"`) {
+		t.Fatalf("invalid update state = %d %q", invalidUpdate.Code, invalidUpdate.Body.String())
+	}
+	detailRequest := httptest.NewRequest(http.MethodGet, "/access/users/"+createdUser.ID, nil)
+	detailRequest.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: adminAccess})
+	detail := httptest.NewRecorder()
+	handler.ServeHTTP(detail, detailRequest)
+	if detail.Code != http.StatusOK || !strings.Contains(detail.Body.String(), `data-confirm-title="Reset credential?"`) || !strings.Contains(detail.Body.String(), `name="confirm_current" value="yes" data-confirm-consent disabled`) {
+		t.Fatalf("other-user credential confirmation = %d %q", detail.Code, detail.Body.String())
+	}
+	resetForm := url.Values{
+		"csrf_token": {adminCSRF}, "expected_user_version": {"1"}, "expected_credential_version": {"1"},
+		"temporary_password": {"reset temporary password"},
+	}
+	unconfirmedReset := performAccessMutation(t, handler, config, "/access/users/"+createdUser.ID+"/credential", resetForm, adminAccess, adminCSRF, true)
+	if unconfirmedReset.Code != http.StatusBadRequest || strings.Contains(unconfirmedReset.Body.String(), "reset temporary password") || !strings.Contains(unconfirmedReset.Body.String(), `aria-describedby="access-form-error"`) {
+		t.Fatalf("unconfirmed credential reset = %d %q", unconfirmedReset.Code, unconfirmedReset.Body.String())
+	}
+	unchangedUser, found, err := provider.Users().GetUser(t.Context(), createdUser.ID)
+	if err != nil || !found || unchangedUser.Credential.Version != 1 {
+		t.Fatalf("unconfirmed reset changed credential: %+v found=%t err=%v", unchangedUser, found, err)
+	}
+	resetForm.Set("confirm_current", "yes")
+	confirmedReset := performAccessMutation(t, handler, config, "/access/users/"+createdUser.ID+"/credential", resetForm, adminAccess, adminCSRF, false)
+	if confirmedReset.Code != http.StatusSeeOther || confirmedReset.Header().Get("Location") != testAccessPath {
+		t.Fatalf("confirmed credential reset = %d %q", confirmedReset.Code, confirmedReset.Header().Get("Location"))
+	}
 
 	operatorAccess, operatorCSRF := loginHTTPApp(t, handler, config, "operator")
-	deniedRequest := httptest.NewRequest(http.MethodGet, "/access", nil)
+	deniedRequest := httptest.NewRequest(http.MethodGet, testAccessPath, nil)
 	deniedRequest.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: operatorAccess})
 	denied := httptest.NewRecorder()
 	handler.ServeHTTP(denied, deniedRequest)
@@ -443,6 +562,16 @@ func TestHTTPAppAccessAdministrationNoJSHTMXAndRoleBoundary(t *testing.T) {
 	}
 	if _, found, err := provider.Users().GetUserByNormalizedUsername(t.Context(), "denied"); err != nil || found {
 		t.Fatalf("denied user found = %t, error %v", found, err)
+	}
+	selfReset := performAccessMutation(t, handler, config, "/access/users/admin/credential", url.Values{
+		"csrf_token": {adminCSRF}, "expected_user_version": {"1"}, "expected_credential_version": {"1"},
+		"temporary_password": {"self temporary password"}, "confirm_current": {"yes"},
+	}, adminAccess, adminCSRF, false)
+	if selfReset.Code != http.StatusSeeOther || selfReset.Header().Get("Location") != testLoginPath {
+		t.Fatalf("self credential reset = %d %q", selfReset.Code, selfReset.Header().Get("Location"))
+	}
+	if _, err := app.security.ValidateAccess(t.Context(), adminAccess); !errors.Is(err, security.ErrUnauthenticated) {
+		t.Fatalf("self credential reset retained access: %v", err)
 	}
 }
 
@@ -484,6 +613,30 @@ func TestHTTPAppConfiguredBindingAdministration(t *testing.T) {
 		t.Fatal(err)
 	}
 	app.bindingChannels = channels
+	identityPath := "/access/users/operator/invitations/slackagent/identity"
+	identityForm := url.Values{"csrf_token": {adminCSRF}}
+	unavailableIdentity := performAccessMutation(t, handler, config, identityPath, identityForm, adminAccess, adminCSRF, true)
+	if unavailableIdentity.Code != http.StatusServiceUnavailable || !strings.Contains(unavailableIdentity.Body.String(), `data-binding-channel="slackagent"`) || !strings.Contains(unavailableIdentity.Body.String(), "Retry connection") || !strings.Contains(unavailableIdentity.Body.String(), `aria-describedby="binding-error-slackagent"`) {
+		t.Fatalf("unavailable identity refresh = %d %q", unavailableIdentity.Code, unavailableIdentity.Body.String())
+	}
+	slackIdentityUnavailable := false
+	if err := channels.RegisterResolver("slackagent", func(context.Context) (usercmd.BindingChannel, error) {
+		if slackIdentityUnavailable {
+			return usercmd.BindingChannel{}, errors.New("synthetic identity unavailable")
+		}
+		return usercmd.BindingChannel{Integration: usercmd.BindingIntegration{ChannelType: "slackagent", Key: "TQA:UBOT"}, Name: "Recovered workspace"}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	recoveredIdentity := performAccessMutation(t, handler, config, identityPath, identityForm, adminAccess, adminCSRF, false)
+	if recoveredIdentity.Code != http.StatusSeeOther || recoveredIdentity.Header().Get("Location") != "/access/users/operator" {
+		t.Fatalf("recovered identity refresh = %d %q", recoveredIdentity.Code, recoveredIdentity.Header().Get("Location"))
+	}
+	slackIdentityUnavailable = true
+	failedIdentity := performAccessMutation(t, handler, config, identityPath, identityForm, adminAccess, adminCSRF, false)
+	if failedIdentity.Code != http.StatusServiceUnavailable {
+		t.Fatalf("failed identity refresh = %d %q", failedIdentity.Code, failedIdentity.Body.String())
+	}
 	issuePath := "/access/users/operator/invitations/telegram"
 	issue := func(version string, replace, htmx bool) *httptest.ResponseRecorder {
 		form := url.Values{"csrf_token": {adminCSRF}, "expected_version": {version}, "principal": {"attacker"}, "channel_type": {"zulip"}, "integration_key": {"fake"}}
@@ -529,12 +682,28 @@ func TestHTTPAppConfiguredBindingAdministration(t *testing.T) {
 		t.Fatalf("stale user = %d", got.Code)
 	}
 	version := "2"
-	if got := issue(version, false, false); got.Code != http.StatusOK {
-		t.Fatalf("new invitation = %d", got.Code)
+	previousConfig, err := invitations.Issue(t.Context(), usercmd.InvitationActor{UserID: "admin", SessionID: "synthetic-admin-session"}, "operator", 2, usercmd.BindingIntegration{ChannelType: "telegram", Key: "previous-bot-configuration"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newInvitation := issue(version, false, false)
+	if newInvitation.Code != http.StatusOK {
+		t.Fatalf("new invitation = %d", newInvitation.Code)
 	}
 	pending, err := invitations.Pending(t.Context(), "operator")
-	if err != nil || len(pending) != 1 || pending[0].TokenDigest != nil {
+	if err != nil || len(pending) != 2 || pending[0].TokenDigest != nil || pending[1].TokenDigest != nil {
 		t.Fatalf("pending = %+v: %v", pending, err)
+	}
+	if !pending[0].ExpiresAt.Truncate(time.Minute).Equal(pending[1].ExpiresAt.Truncate(time.Minute)) {
+		t.Fatalf("synthetic pending invitations do not share an expiry minute: %+v", pending)
+	}
+	for _, invitation := range pending {
+		if !strings.Contains(newInvitation.Body.String(), "Reference <code>"+invitation.ID+"</code>") || !strings.Contains(newInvitation.Body.String(), "reference "+invitation.ID+" expiring") {
+			t.Fatalf("invitation %s lacks an exact visible and confirmation target: %q", invitation.ID, newInvitation.Body.String())
+		}
+	}
+	if !strings.Contains(newInvitation.Body.String(), previousConfig.Invitation.ID) {
+		t.Fatal("previous-configuration invitation is not distinguishable")
 	}
 	cancelPath := issuePath + "/cancel"
 	cancelForm := url.Values{"csrf_token": {adminCSRF}, "invitation_id": {pending[0].ID}, "invitation_version": {"1"}}
@@ -617,7 +786,7 @@ func TestHTTPAppAccountRotationAndCurrentFamilyRevocation(t *testing.T) {
 		t.Fatal(err)
 	}
 	initial := loginHTTPAppSession(t, handler, config, "operator")
-	accountRequest := httptest.NewRequest(http.MethodGet, "/account", nil)
+	accountRequest := httptest.NewRequest(http.MethodGet, testAccountPath, nil)
 	accountRequest.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: initial.access})
 	accountRequest.AddCookie(&http.Cookie{Name: security.CSRFCookieName, Value: initial.csrf})
 	account := httptest.NewRecorder()
@@ -635,11 +804,12 @@ func TestHTTPAppAccountRotationAndCurrentFamilyRevocation(t *testing.T) {
 		"new_password": {"replacement password"},
 	}
 	wrongRotation := performAccessMutation(t, handler, config, "/account/password", wrongRotateForm, initial.access, initial.csrf, true)
-	if wrongRotation.Code != http.StatusUnauthorized || strings.Contains(wrongRotation.Body.String(), "<!doctype") || strings.Count(wrongRotation.Body.String(), `id="main-content"`) != 1 {
+	if wrongRotation.Code != http.StatusUnauthorized || strings.Contains(wrongRotation.Body.String(), "<!doctype") || strings.Count(wrongRotation.Body.String(), `id="main-content"`) != 1 ||
+		!strings.Contains(wrongRotation.Body.String(), `aria-describedby="password-error"`) || strings.Contains(wrongRotation.Body.String(), invalidPassword) || strings.Contains(wrongRotation.Body.String(), "replacement password") {
 		t.Fatalf("wrong password rotation = %d %q", wrongRotation.Code, wrongRotation.Body.String())
 	}
 	rotated := performAccessMutation(t, handler, config, "/account/password", rotateForm, initial.access, initial.csrf, true)
-	if rotated.Code != http.StatusNoContent || testHTMXLocation(t, rotated.Header()) != "/account" {
+	if rotated.Code != http.StatusNoContent || testHTMXLocation(t, rotated.Header()) != testAccountPath {
 		t.Fatalf("password rotation = %d %v %q", rotated.Code, rotated.Header(), rotated.Body.String())
 	}
 	next := httpLoginCookies{
@@ -660,7 +830,7 @@ func TestHTTPAppAccountRotationAndCurrentFamilyRevocation(t *testing.T) {
 		"csrf_token": {next.csrf}, "current_password": {"replacement password"},
 		"new_password": {"final replacement password"},
 	}, next.access, next.csrf, false)
-	if nativeChange.Code != http.StatusSeeOther || nativeChange.Header().Get("Location") != "/account" {
+	if nativeChange.Code != http.StatusSeeOther || nativeChange.Header().Get("Location") != testAccountPath {
 		t.Fatalf("native password change = %d %v", nativeChange.Code, nativeChange.Header())
 	}
 	if _, err := app.security.ValidateAccess(t.Context(), next.access); !errors.Is(err, security.ErrUnauthenticated) {
@@ -683,7 +853,7 @@ func TestHTTPAppAccountRotationAndCurrentFamilyRevocation(t *testing.T) {
 	}
 	revokeForm := url.Values{"csrf_token": {next.csrf}, "confirm_current": {"yes"}}
 	revoked := performAccessMutation(t, handler, config, "/account/sessions/"+principal.FamilyID+"/revoke", revokeForm, next.access, next.csrf, false)
-	if revoked.Code != http.StatusSeeOther || revoked.Header().Get("Location") != "/login" {
+	if revoked.Code != http.StatusSeeOther || revoked.Header().Get("Location") != testLoginPath {
 		t.Fatalf("current family revocation = %d %v %q", revoked.Code, revoked.Header(), revoked.Body.String())
 	}
 	if _, err := app.security.ValidateAccess(t.Context(), next.access); !errors.Is(err, security.ErrUnauthenticated) {
@@ -746,9 +916,12 @@ func TestHTTPAppAccountActiveSessionPagination(t *testing.T) {
 		handler.ServeHTTP(response, request)
 		return response
 	}
-	first := account("/account")
+	first := account(testAccountPath)
 	if first.Code != http.StatusOK || strings.Count(first.Body.String(), ">End session</button>") != sessionPageSize {
 		t.Fatalf("first session page = %d, end actions = %d", first.Code, strings.Count(first.Body.String(), ">End session</button>"))
+	}
+	if strings.Count(first.Body.String(), "data-confirm-consent") != sessionPageSize || !strings.Contains(first.Body.String(), "This will sign you out.") || !strings.Contains(first.Body.String(), "That browser will lose access.") {
+		t.Fatalf("first session page does not confirm every destructive action: %q", first.Body.String())
 	}
 	firstSession := regexp.MustCompile(`<h3[^>]*>(.*?)</h3>`).FindStringSubmatch(first.Body.String())
 	if len(firstSession) != 2 || !strings.Contains(firstSession[1], "Current") {
@@ -766,12 +939,44 @@ func TestHTTPAppAccountActiveSessionPagination(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	revoked := performAccessMutation(t, handler, config, "/access/users/admin/sessions/"+other.FamilyID+"/revoke",
+	unconfirmedOwn := performAccessMutation(t, handler, config, "/account/sessions/"+other.FamilyID+"/revoke",
 		url.Values{"csrf_token": {oldest.csrf}}, oldest.access, oldest.csrf, false)
+	if unconfirmedOwn.Code == http.StatusSeeOther {
+		t.Fatalf("unconfirmed owned session revocation redirected with %d", unconfirmedOwn.Code)
+	}
+	if _, err := app.security.ValidateAccess(t.Context(), otherAccess); err != nil {
+		t.Fatalf("unconfirmed owned session revocation changed the target: %v", err)
+	}
+	revokedOwn := performAccessMutation(t, handler, config, "/account/sessions/"+other.FamilyID+"/revoke",
+		url.Values{"csrf_token": {oldest.csrf}, "confirm_current": {"yes"}}, oldest.access, oldest.csrf, false)
+	if revokedOwn.Code != http.StatusSeeOther || revokedOwn.Header().Get("Location") != testAccountPath {
+		t.Fatalf("owned session revocation = %d %q", revokedOwn.Code, revokedOwn.Header().Get("Location"))
+	}
+	if _, err := app.security.ValidateAccess(t.Context(), otherAccess); !errors.Is(err, security.ErrUnauthenticated) {
+		t.Fatalf("revoked owned access validation = %v", err)
+	}
+	administrativeCredentials, err := app.security.Login(t.Context(), "admin", []byte(validPassword))
+	if err != nil {
+		t.Fatal(err)
+	}
+	administrative, err := app.security.ValidateAccess(t.Context(), administrativeCredentials.AccessToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unconfirmed := performAccessMutation(t, handler, config, "/access/users/admin/sessions/"+administrative.FamilyID+"/revoke",
+		url.Values{"csrf_token": {oldest.csrf}}, oldest.access, oldest.csrf, false)
+	if unconfirmed.Code == http.StatusSeeOther {
+		t.Fatalf("unconfirmed access session revocation redirected with %d", unconfirmed.Code)
+	}
+	if _, err := app.security.ValidateAccess(t.Context(), administrativeCredentials.AccessToken); err != nil {
+		t.Fatalf("unconfirmed access session revocation changed the target: %v", err)
+	}
+	revoked := performAccessMutation(t, handler, config, "/access/users/admin/sessions/"+administrative.FamilyID+"/revoke",
+		url.Values{"csrf_token": {oldest.csrf}, "confirm_current": {"yes"}}, oldest.access, oldest.csrf, false)
 	if revoked.Code != http.StatusSeeOther || revoked.Header().Get("Location") != "/access/users/admin" {
 		t.Fatalf("access session revocation = %d %q", revoked.Code, revoked.Header().Get("Location"))
 	}
-	if _, err := app.security.ValidateAccess(t.Context(), otherAccess); !errors.Is(err, security.ErrUnauthenticated) {
+	if _, err := app.security.ValidateAccess(t.Context(), administrativeCredentials.AccessToken); !errors.Is(err, security.ErrUnauthenticated) {
 		t.Fatalf("revoked access validation = %v", err)
 	}
 	self, err := app.security.ValidateAccess(t.Context(), oldest.access)
@@ -780,7 +985,7 @@ func TestHTTPAppAccountActiveSessionPagination(t *testing.T) {
 	}
 	endedCurrent := performAccessMutation(t, handler, config, "/access/users/admin/sessions/"+self.FamilyID+"/revoke",
 		url.Values{"csrf_token": {oldest.csrf}, "confirm_current": {"yes"}}, oldest.access, oldest.csrf, false)
-	if endedCurrent.Code != http.StatusSeeOther || endedCurrent.Header().Get("Location") != "/login" {
+	if endedCurrent.Code != http.StatusSeeOther || endedCurrent.Header().Get("Location") != testLoginPath {
 		t.Fatalf("current access session revocation = %d %q", endedCurrent.Code, endedCurrent.Header().Get("Location"))
 	}
 }
@@ -823,6 +1028,11 @@ func TestHTTPAppAuditFilteringPaginationRedactionAndRoleBoundary(t *testing.T) {
 		!strings.Contains(body, "session.login.succeeded") || !strings.Contains(body, "Older events") {
 		t.Fatalf("filtered audit = %d %q", auditResponse.Code, body)
 	}
+	for _, option := range []string{"mcp.definition.changed", "schedule.run.requested", "provider.definition.changed", "webhook.test.requested", "plugin.marketplace.refresh_failed", "skill.management.changed", "hook.definition.changed", "memory.fact.edited", "alias.retargeted", `value="plugin_marketplace"`, `value="webhook_route"`} {
+		if !strings.Contains(body, option) {
+			t.Fatalf("audit filter omitted supported option %q", option)
+		}
+	}
 	for _, forbidden := range []string{validPassword, admin.access, admin.refresh, admin.csrf} {
 		if strings.Contains(body, forbidden) {
 			t.Fatalf("audit leaked browser secret %q", forbidden)
@@ -842,14 +1052,22 @@ func TestHTTPAppAuditFilteringPaginationRedactionAndRoleBoundary(t *testing.T) {
 		t.Fatalf("actor/date audit pagination = %d %q", actorResponse.Code, actorResponse.Body.String())
 	}
 
-	invalidRequest := httptest.NewRequest(http.MethodGet, "/audit?action=product.event", nil)
+	invalidPath := "/audit?action=product.event&outcome=succeeded&target=session&actor=operator&from=" + day
+	invalidRequest := httptest.NewRequest(http.MethodGet, invalidPath, nil)
 	invalidRequest.Header.Set("HX-Request", "true")
 	invalidRequest.Header.Set("HX-Target", "main-content")
 	invalidRequest.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: admin.access})
 	invalid := httptest.NewRecorder()
 	handler.ServeHTTP(invalid, invalidRequest)
-	if invalid.Code != http.StatusBadRequest || strings.Contains(invalid.Body.String(), "<!doctype") {
+	if invalid.Code != http.StatusBadRequest || strings.Contains(invalid.Body.String(), "<!doctype") || !strings.Contains(invalid.Body.String(), `id="audit-filter-error"`) || !strings.Contains(invalid.Body.String(), `aria-describedby="audit-filter-error"`) || !strings.Contains(invalid.Body.String(), `value="succeeded" selected`) || !strings.Contains(invalid.Body.String(), `value="session" selected`) || !strings.Contains(invalid.Body.String(), `value="operator"`) || !strings.Contains(invalid.Body.String(), `value="`+day+`"`) || strings.Contains(invalid.Body.String(), `value="product.event"`) {
 		t.Fatalf("invalid audit filter = %d %q", invalid.Code, invalid.Body.String())
+	}
+	invalidNativeRequest := httptest.NewRequest(http.MethodGet, invalidPath, nil)
+	invalidNativeRequest.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: admin.access})
+	invalidNative := httptest.NewRecorder()
+	handler.ServeHTTP(invalidNative, invalidNativeRequest)
+	if invalidNative.Code != http.StatusBadRequest || !strings.Contains(invalidNative.Body.String(), "<!doctype html>") || !strings.Contains(invalidNative.Body.String(), `aria-describedby="audit-filter-error"`) {
+		t.Fatalf("native invalid audit filter = %d", invalidNative.Code)
 	}
 
 	deniedRequest := httptest.NewRequest(http.MethodGet, "/audit", nil)
@@ -876,10 +1094,10 @@ func loginHTTPApp(t *testing.T, handler http.Handler, config ResolvedConfig, use
 func loginHTTPAppSession(t *testing.T, handler http.Handler, config ResolvedConfig, username string) httpLoginCookies {
 	t.Helper()
 	loginPage := httptest.NewRecorder()
-	handler.ServeHTTP(loginPage, httptest.NewRequest(http.MethodGet, config.Server.BasePath+"/login", nil))
+	handler.ServeHTTP(loginPage, httptest.NewRequest(http.MethodGet, config.Server.BasePath+testLoginPath, nil))
 	csrf := cookieValue(loginPage.Result().Cookies(), security.CSRFCookieName)
 	form := url.Values{"username": {username}, "password": {validPassword}, "csrf_token": {csrf}}
-	request := httptest.NewRequest(http.MethodPost, config.Server.BasePath+"/login", strings.NewReader(form.Encode()))
+	request := httptest.NewRequest(http.MethodPost, config.Server.BasePath+testLoginPath, strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Origin", config.Server.PublicURL)
 	request.Header.Set("Sec-Fetch-Site", "same-origin")

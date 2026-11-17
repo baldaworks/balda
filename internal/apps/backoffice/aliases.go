@@ -165,6 +165,9 @@ func (a *httpApp) aliasResult(w http.ResponseWriter, r *http.Request, page webui
 
 func (a *httpApp) aliasError(w http.ResponseWriter, r *http.Request, page webui.Page, err error) {
 	status, message := aliasOperationFailure(err)
+	if r.Method == http.MethodPost && !errors.Is(err, aliascmd.ErrConflict) && !errors.Is(err, aliascmd.ErrForbidden) && !errors.Is(err, aliascmd.ErrNotFound) {
+		retainAliasDraft(&page, r.PostForm)
+	}
 	page.Error = &webui.ErrorView{Heading: "Alias operation could not complete", Message: message}
 	templateName := webui.TemplateAliases
 	if page.Aliases == nil {
@@ -172,6 +175,19 @@ func (a *httpApp) aliasError(w http.ResponseWriter, r *http.Request, page webui.
 		templateName = webui.TemplateError
 	}
 	a.render(w, r, status, templateName, page)
+}
+
+func retainAliasDraft(page *webui.Page, form url.Values) {
+	if page == nil || page.Aliases == nil || page.Aliases.Editor == nil || !form.Has("locator_ref") {
+		return
+	}
+	editor := page.Aliases.Editor
+	if editor.New {
+		editor.Row.Name = strings.TrimSpace(form.Get("name"))
+	} else if version, err := aliasVersion(form); err == nil {
+		editor.Row.Version = version
+	}
+	editor.Row.LocatorRef = strings.TrimSpace(form.Get("locator_ref"))
 }
 
 func aliasOperationFailure(err error) (int, string) {

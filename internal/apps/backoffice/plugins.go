@@ -92,7 +92,7 @@ func (a *httpApp) pluginMarketplaceCreate(w http.ResponseWriter, r *http.Request
 	page := a.pluginBasePage(r, p)
 	page.Title = "Add marketplace · Balda"
 	page.Plugins.Marketplaces = true
-	page.Plugins.MarketplaceAdd = &webui.PluginMarketplaceAdd{}
+	page.Plugins.MarketplaceAdd = &webui.PluginMarketplaceAdd{Name: strings.TrimSpace(form.Get("name")), Ref: strings.TrimSpace(form.Get("ref")), Sparse: strings.ReplaceAll(form.Get("sparse"), "\r\n", "\n")}
 	if a.plugins == nil {
 		a.pluginError(w, r, page, plugincmd.ErrUnavailable)
 		return

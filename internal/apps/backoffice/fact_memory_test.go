@@ -87,13 +87,13 @@ func TestFactMemoryHTTPManagement(t *testing.T) {
 				t.Fatal(err)
 			}
 			stale := mutation("/memory/1", url.Values{"fact": {"unsaved textarea"}, "expected_version": {"2"}}, admin.access, admin.csrf, true)
-			if stale.Code != 409 || !strings.Contains(stale.Body.String(), "unsaved textarea") || !strings.Contains(stale.Body.String(), `value="2"`) {
+			if stale.Code != 409 || !strings.Contains(stale.Body.String(), "unsaved textarea") || !strings.Contains(stale.Body.String(), `value="2"`) || !strings.Contains(stale.Body.String(), `aria-describedby="fact-form-error"`) {
 				t.Fatalf("staleedit=%d", stale.Code)
 			}
 			if got := mutation("/memory/1", url.Values{"fact": {"alpha2"}, "expected_version": {"3"}}, admin.access, admin.csrf, true); got.Code != 204 {
 				t.Fatalf("edit=%d body=%s", got.Code, got.Body.String())
 			}
-			if got := mutation("/memory/1/delete", url.Values{"expected_version": {"4"}}, admin.access, admin.csrf, false); got.Code != 400 {
+			if got := mutation("/memory/1/delete", url.Values{"expected_version": {"4"}}, admin.access, admin.csrf, false); got.Code != 400 || !strings.Contains(got.Body.String(), `action="`+base+`/memory/1/delete"`) || !strings.Contains(got.Body.String(), `aria-describedby="fact-form-error"`) {
 				t.Fatalf("unconfirmeddelete=%d", got.Code)
 			}
 			if got := mutation("/memory/1/delete", url.Values{"expected_version": {"4"}, "confirm": {"yes"}}, admin.access, admin.csrf, false); got.Code != 303 {

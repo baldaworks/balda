@@ -145,7 +145,7 @@ func TestPluginMarketplaceHTTPAuthorityAndCollisions(t *testing.T) {
 				for _, fragment := range []bool{false, true} {
 					got := mutation("/plugins/marketplaces", url.Values{"name": {marketplaceSecurityAddName}, "source": {marketplaceSecuritySource}, "ref": {"main"}, "sparse": {"plugins/demo"}}, admin.access, admin.csrf, fragment)
 					body := got.Body.String()
-					if got.Code != failure.status || strings.Contains(body, marketplaceSecuritySource) || strings.Contains(body, "private-source-canary") || strings.Contains(body, "private-query-canary") || strings.Contains(body, "private-error-canary") {
+					if got.Code != failure.status || strings.Contains(body, marketplaceSecuritySource) || strings.Contains(body, "private-source-canary") || strings.Contains(body, "private-query-canary") || strings.Contains(body, "private-error-canary") || !strings.Contains(body, `value="`+marketplaceSecurityAddName+`"`) || !strings.Contains(body, `value="main"`) || !strings.Contains(body, "plugins/demo") || !strings.Contains(body, `aria-describedby="plugin-form-error"`) {
 						t.Fatalf("safe error status=%d want=%d", got.Code, failure.status)
 					}
 					if strings.Count(body, "<main") != 1 {
@@ -161,6 +161,10 @@ func TestPluginMarketplaceHTTPAuthorityAndCollisions(t *testing.T) {
 				t.Fatal("invalid CSRF reached marketplace owner")
 			}
 			fixture.err = nil
+			unconfirmedRemove := mutation("/plugins/marketplaces/definitions/new/remove", url.Values{"expected_state": {"current-state"}}, admin.access, admin.csrf, false)
+			if unconfirmedRemove.Code != http.StatusBadRequest || !strings.Contains(unconfirmedRemove.Body.String(), `aria-describedby="plugin-form-error"`) || len(fixture.removes) != 0 {
+				t.Fatal("definition remove missing confirmation was accepted or lacked form error association")
+			}
 			if got := mutation("/plugins/marketplaces/definitions/new/remove", url.Values{"expected_state": {"current-state"}, "confirm": {"yes"}}, admin.access, admin.csrf, false); got.Code != http.StatusSeeOther || len(fixture.removes) != 1 || !fixture.removes[0].Confirm || fixture.removes[0].Name != marketplaceSecurityIdentity {
 				t.Fatalf("definition remove=%d calls=%+v", got.Code, fixture.removes)
 			}

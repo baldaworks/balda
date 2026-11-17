@@ -297,6 +297,11 @@ func TestSchedulesBrowserManagement(t *testing.T) {
 			if wrongOriginResponse.Code != http.StatusForbidden || len(fixture.creates) != 0 {
 				t.Fatalf("foreign origin reached schedule owner: %d", wrongOriginResponse.Code)
 			}
+			invalidDraft := url.Values{"id": {"draft-daily"}, "cron": {"5 6 * * *"}, "locator": {"draft_alias"}, "content": {"safe draft content"}, "target_kind": {"legacy"}}
+			invalid := mutation("/schedules", invalidDraft)
+			if invalid.Code != http.StatusBadRequest || !strings.Contains(invalid.Body.String(), `value="draft-daily"`) || !strings.Contains(invalid.Body.String(), `value="5 6 * * *"`) || !strings.Contains(invalid.Body.String(), `value="draft_alias"`) || !strings.Contains(invalid.Body.String(), "safe draft content") || !strings.Contains(invalid.Body.String(), `aria-describedby="schedule-form-error"`) {
+				t.Fatalf("schedule validation discarded safe draft or error association: %d", invalid.Code)
+			}
 			created := mutation("/schedules", createForm)
 			if created.Code != http.StatusSeeOther || created.Header().Get("Location") != base+"/schedules/new-daily" || len(fixture.creates) != 1 || fixture.creates[0].Authority.SessionID == "" {
 				t.Fatalf("schedule create = %d, location %q", created.Code, created.Header().Get("Location"))
@@ -316,6 +321,11 @@ func TestSchedulesBrowserManagement(t *testing.T) {
 			if conflict.Code != http.StatusConflict || !strings.Contains(conflict.Body.String(), "Reopen it before trying again") {
 				t.Fatalf("stale schedule response = %d", conflict.Code)
 			}
+			fixture.updateErr = schedulecmd.ErrUnavailable
+			unavailable := mutation("/schedules/daily", updateForm)
+			if unavailable.Code != http.StatusServiceUnavailable || !strings.Contains(unavailable.Body.String(), `name="expected_version" value="2"`) || !strings.Contains(unavailable.Body.String(), `value="0 12 * * *"`) || !strings.Contains(unavailable.Body.String(), `value="telegram:9001:0"`) || !strings.Contains(unavailable.Body.String(), "updated") || !strings.Contains(unavailable.Body.String(), `aria-describedby="schedule-form-error"`) {
+				t.Fatalf("unavailable schedule edit discarded safe draft or version: %d", unavailable.Code)
+			}
 			fixture.updateErr = nil
 			if got := mutation("/schedules/daily/selection", url.Values{"expected_version": {"2"}, "confirm": {"yes"}, "enabled": {"no"}}).Code; got != http.StatusSeeOther || len(fixture.selections) != 1 || fixture.selections[0].Enabled {
 				t.Fatalf("schedule disable = %d", got)
@@ -326,10 +336,13 @@ func TestSchedulesBrowserManagement(t *testing.T) {
 			if got := mutation("/schedules/daily/delete", url.Values{"expected_version": {"2"}, "confirm": {"yes"}}).Code; got != http.StatusSeeOther || len(fixture.deletes) != 1 {
 				t.Fatalf("schedule delete = %d", got)
 			}
+			if got := mutation("/schedules/daily/runs", url.Values{"request_key": {uuid.NewString()}}); got.Code != http.StatusBadRequest || len(fixture.runRequests) != 0 {
+				t.Fatalf("unconfirmed enabled run reached owner: %d", got.Code)
+			}
 			for _, id := range []string{"daily", "config:knowl"} {
 				key := uuid.NewString()
 				for attempt := 0; attempt < 2; attempt++ {
-					result := mutation("/schedules/"+id+"/runs", url.Values{"request_key": {key}})
+					result := mutation("/schedules/"+id+"/runs", url.Values{"request_key": {key}, "confirm": {"yes"}})
 					if result.Code != http.StatusSeeOther || result.Header().Get("Location") != base+"/schedules/"+id {
 						t.Fatalf("run %s attempt %d = %d", id, attempt, result.Code)
 					}
@@ -343,18 +356,18 @@ func TestSchedulesBrowserManagement(t *testing.T) {
 			if page := get("/schedules/disabled", admin.access); page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "Waiting for execution") || strings.Contains(page.Body.String(), ">Running<") {
 				t.Fatalf("dispatched state is misrepresented: %d", page.Code)
 			}
-			if got := mutation("/schedules/disabled/runs", url.Values{"request_key": {uuid.NewString()}}); got.Code != http.StatusConflict || strings.Contains(got.Body.String(), "No runs yet") {
+			if got := mutation("/schedules/disabled/runs", url.Values{"request_key": {uuid.NewString()}}); got.Code != http.StatusBadRequest || strings.Contains(got.Body.String(), "No runs yet") {
 				t.Fatalf("unconfirmed disabled run = %d", got.Code)
 			}
-			if got := mutation("/schedules/disabled/runs", url.Values{"request_key": {uuid.NewString()}, "confirm_disabled": {"yes"}}).Code; got != http.StatusSeeOther {
+			if got := mutation("/schedules/disabled/runs", url.Values{"request_key": {uuid.NewString()}, "confirm": {"yes"}, "confirm_disabled": {"yes"}}).Code; got != http.StatusSeeOther {
 				t.Fatalf("confirmed disabled run = %d", got)
 			}
-			if got := mutation("/schedules/archived/runs", url.Values{"request_key": {uuid.NewString()}}).Code; got != http.StatusNotFound {
+			if got := mutation("/schedules/archived/runs", url.Values{"request_key": {uuid.NewString()}, "confirm": {"yes"}}).Code; got != http.StatusNotFound {
 				t.Fatalf("archived manual run = %d", got)
 			}
 			fixture.runErr = schedulecmd.ErrUnavailable
-			key := uuid.NewString()
-			uncertain := mutation("/schedules/daily/runs", url.Values{"request_key": {key}})
+			key := "request-111"
+			uncertain := mutation("/schedules/daily/runs", url.Values{"request_key": {key}, "confirm": {"yes"}})
 			if uncertain.Code != http.StatusServiceUnavailable || !strings.Contains(uncertain.Body.String(), "may have been queued") || !strings.Contains(uncertain.Body.String(), `name="request_key" value="`+key+`"`) || strings.Contains(uncertain.Body.String(), "No runs yet") {
 				t.Fatalf("uncertain manual admission = %d", uncertain.Code)
 			}

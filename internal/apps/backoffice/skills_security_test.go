@@ -127,7 +127,7 @@ func TestSkillsHTTPAuthorityFragmentsAndLifecycle(t *testing.T) {
 				return performAccessMutation(t, handler, config, base+path, form, admin.access, admin.csrf, fragment)
 			}
 			source := "https://private-user:private-canary@example.test/repo?secret=query-canary"
-			form := url.Values{"source": {source}, "path": {"selected"}, "expected_state": {"current"}}
+			form := url.Values{"source": {source}, "ref": {"safe-ref"}, "path": {"selected"}, "expected_state": {"current"}}
 			denied := performAccessMutation(t, handler, config, base+"/skills/review", form, admin.access, "wrong", false)
 			if denied.Code != 403 || len(fixture.installs) != 0 {
 				t.Fatal("CSRF accepted")
@@ -152,7 +152,7 @@ func TestSkillsHTTPAuthorityFragmentsAndLifecycle(t *testing.T) {
 			}
 			fixture.err = skillcmd.ErrInvalid
 			invalid := post("/skills/review", form, true)
-			if invalid.Code != 400 || strings.Contains(invalid.Body.String(), "private-canary") || !strings.Contains(invalid.Body.String(), `id="skill-source"`) || strings.Contains(invalid.Body.String(), "<!doctype") {
+			if invalid.Code != 400 || strings.Contains(invalid.Body.String(), "private-canary") || !strings.Contains(invalid.Body.String(), `id="skill-source"`) || !strings.Contains(invalid.Body.String(), `value="safe-ref"`) || !strings.Contains(invalid.Body.String(), `value="selected"`) || !strings.Contains(invalid.Body.String(), `aria-describedby="skill-form-error"`) || strings.Contains(invalid.Body.String(), "<!doctype") {
 				t.Fatal("validation reflects source or wrong fragment")
 			}
 			for _, failure := range []struct {
@@ -175,7 +175,7 @@ func TestSkillsHTTPAuthorityFragmentsAndLifecycle(t *testing.T) {
 			if accepted.Code != 303 {
 				t.Fatal("native acceptance contract")
 			}
-			if got := post("/skills/managed/managed-synthetic/disable", url.Values{"expected_state": {"current"}}, false); got.Code != 400 || len(fixture.mutations) != 0 {
+			if got := post("/skills/managed/managed-synthetic/disable", url.Values{"expected_state": {"current"}}, false); got.Code != 400 || len(fixture.mutations) != 0 || !strings.Contains(got.Body.String(), `aria-describedby="skill-form-error"`) {
 				t.Fatal("disable missing confirmation accepted")
 			}
 			if got := post("/skills/managed/managed-synthetic/remove", url.Values{"expected_state": {"current"}}, false); got.Code != 400 {
@@ -184,10 +184,21 @@ func TestSkillsHTTPAuthorityFragmentsAndLifecycle(t *testing.T) {
 			if got := post("/skills/managed/managed-synthetic/disable", url.Values{"expected_state": {"current"}, "confirm": {"yes"}}, false); got.Code != 303 || len(fixture.mutations) != 1 || fixture.mutations[0].ID.Name != "managed-synthetic" {
 				t.Fatal("confirmed disable failed")
 			}
+			fixture.err = skillcmd.ErrInvalid
+			refreshFailure := post("/skills/refresh", url.Values{"expected_state": {"current"}}, true)
+			if refreshFailure.Code != 400 || !strings.Contains(refreshFailure.Body.String(), "Refresh sources") || !strings.Contains(refreshFailure.Body.String(), "managed-synthetic") || !strings.Contains(refreshFailure.Body.String(), `aria-describedby="skill-form-error"`) {
+				t.Fatal("refresh failure discarded inventory context or form error association")
+			}
+			fixture.inventory.Pending = true
+			retryFailure := post("/skills/retry-publication", url.Values{}, true)
+			if retryFailure.Code != 400 || !strings.Contains(retryFailure.Body.String(), "Recover publication") || !strings.Contains(retryFailure.Body.String(), "managed-synthetic") || !strings.Contains(retryFailure.Body.String(), `aria-describedby="skill-form-error"`) {
+				t.Fatal("publication retry failure discarded pending recovery context or form error association")
+			}
+			fixture.inventory.Pending = false
 			fixture.err = skillcmd.ErrConflict
 			fixture.outcome = skillcmd.Outcome{}
 			conflict := post("/skills/managed/managed-synthetic/review-update", url.Values{"expected_state": {"old"}}, true)
-			if conflict.Code != 409 || !strings.Contains(conflict.Body.String(), base+"/skills/managed/managed-synthetic") || strings.Count(conflict.Body.String(), `id="main-content"`) != 1 {
+			if conflict.Code != 409 || !strings.Contains(conflict.Body.String(), base+"/skills/managed/managed-synthetic") || !strings.Contains(conflict.Body.String(), "Review code and retain supporting resources") || strings.Count(conflict.Body.String(), `id="main-content"`) != 1 {
 				t.Fatal("conflict lacks exact reopen fragment")
 			}
 			expired := post("/skills/accept", url.Values{"candidate_handle": {"expired"}, "skill_id": {"managed-synthetic"}}, true)

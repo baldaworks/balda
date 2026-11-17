@@ -150,6 +150,11 @@ func (a *httpApp) pluginLifecycleMutation(w http.ResponseWriter, r *http.Request
 		a.pluginError(w, r, page, plugincmd.ErrUnavailable)
 		return
 	}
+	if operation != plugincmd.Install {
+		if detail, readErr := a.plugins.Detail(r.Context(), name, pluginAuthority(p)); readErr == nil {
+			page.Plugins.PluginDetail = webui.ProjectPluginDetail(detail)
+		}
+	}
 	if err := request.Validate(); err != nil {
 		a.pluginError(w, r, page, err)
 		return

@@ -35,8 +35,19 @@ type ProviderTypeOption struct {
 type ProviderEditor struct {
 	Row                     ProviderRow
 	New                     bool
+	SelectType              bool
 	Action                  string
 	Types                   []ProviderTypeOption
+	Type                    string
+	DriverClass             string
+	ShowAPIKey              bool
+	RequireAPIKey           bool
+	ShowEnvironment         bool
+	ShowReasoning           bool
+	ShowTimeout             bool
+	ShowBridgeVersion       bool
+	ShowRegistryID          bool
+	ID                      string
 	Model                   string
 	ReasoningEffort         string
 	Mode                    string

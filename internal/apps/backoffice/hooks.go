@@ -119,6 +119,17 @@ func (a *httpApp) hookMutation(w http.ResponseWriter, r *http.Request) {
 		err = a.hooks.Save(r.Context(), hookcmd.Save{Definition: definition, Create: create, ExpectedVersion: version, Authority: hookAuthority(p)})
 	}
 	if err != nil {
+		if r.PathValue("hook_action") == hookDeleteAction {
+			if current, readErr := a.hooks.Inventory(r.Context(), hookAuthority(p)); readErr == nil {
+				if index := slices.IndexFunc(current.Definitions, func(d hookcmd.Definition) bool { return d.Name == name }); index >= 0 {
+					page.Hooks = webui.ProjectHooks(current)
+					page.Hooks.Editor = webui.ProjectHookEditor(current.Definitions[index], current.Version, false)
+					if capabilities, ok := a.hooks.(interface{ CapabilityDescription() string }); ok {
+						page.Hooks.Capabilities = capabilities.CapabilityDescription()
+					}
+				}
+			}
+		}
 		a.hookError(w, r, page, err)
 		return
 	}
@@ -138,7 +149,7 @@ func (a *httpApp) hookError(w http.ResponseWriter, r *http.Request, page webui.P
 	case errors.Is(err, hookcmd.ErrInvalid):
 		status, message = http.StatusBadRequest, "Check the name, event, executable, JSON argument array, matcher and timeout (whole seconds, 0 for no hook deadline). Confirm deletion when removing a hook."
 	case errors.Is(err, hookcmd.ErrForbidden):
-		status, message = http.StatusForbidden, "Your administrator authority changed. Sign in again."
+		status, message = http.StatusForbidden, changedAdministratorAuthorityMessage
 	case errors.Is(err, hookcmd.ErrConflict):
 		status, message = http.StatusConflict, "Agent hooks changed. Reopen the hook and review its current configuration before saving."
 	case errors.Is(err, hookcmd.ErrNotFound):
