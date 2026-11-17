@@ -128,6 +128,121 @@ and hydrated-history boundaries are separately tested in `handlersfx` and
    package dependencies changed, also run
    `go tool go-arch-lint check --project-path .`.
 
+## Maintained page-family state matrix
+
+This matrix is the inventory for the common gallery. `G:<route>` identifies a
+deterministic synthetic fixture rendered by the production template. `A:<gate>`
+identifies an isolated authenticated application gate. A Covered cell must keep
+at least one of those identifiers; removing or renaming a fixture requires
+updating the matrix and the browser inventory assertion in the same change.
+All fixtures use synthetic values and must not contain deployment credentials,
+cookies, tokens, real message bodies, or capability-bearing URLs.
+
+| Page family | Inventory / empty | Create | Detail / edit | Validation / conflict / unavailable | Delete / lifecycle / history | Interaction evidence |
+| --- | --- | --- | --- | --- | --- | --- |
+| Authentication | Covered — `G:login`, `G:refresh` | N/A — authentication creates no product resource | Covered — `G:password`, `G:webauthn-register`, `G:webauthn-assert` | Covered — `G:login-error`, `G:refresh-error`, `G:refresh-conflict`, `G:password-error` | Covered — session recovery in `G:refresh`, `G:refresh-error`, `G:refresh-conflict`; resource deletion is N/A | `A:TestHTTPAppBrowserWorkflow`, `A:TestHTTPAppWebAuthnBrowserWorkflow` |
+| Overview | Covered — `G:overview`, `G:overview-empty` | N/A — read-only aggregate | N/A — read-only aggregate | Covered — shared `G:error` recovery contract | N/A — no owned lifecycle | `A:TestHTTPAppBrowserWorkflow` |
+| Agent / bindings | Covered — `G:agent`, `G:access` | Covered — `G:bindings-issued` is the one-time invitation result | Covered — `G:bindings-pending` | Covered — `G:bindings-unavailable`, `G:bindings-disabled` | Covered — pending/expired invitation lifecycle in `G:bindings-pending`; bindings are removed from Access detail | `A:TestHTTPAppBindingBrowserWorkflow` |
+| Chat sessions | Covered — `G:chat-sessions`, `G:chat-sessions-empty` | N/A — passive archive never creates a runtime | Covered — `G:chat-sessions/after`, `G:chat-sessions/group` | Covered — `A:TestChatArchiveHTTPAuthority`, `A:TestChatArchiveHTTPTranscript` assert safe error handling | Covered — `G:chat-sessions/before`, `G:chat-sessions/after`, `G:chat-sessions/closed`; deletion is unsupported by product contract | `A:TestChatArchiveLayoutBrowser`, `A:TestChatArchiveHTTPTranscript` |
+| Plugins | Covered — `G:plugins-installed`, `G:plugins/marketplaces`, `G:plugins-marketplaces-empty` | Covered — `G:plugins/marketplaces/new`, `G:plugins/install` | Covered — `G:plugins/installed/demo`, `G:plugins/installed/demo/upgrade` | Covered — `G:plugins-marketplace-invalid`, `G:plugins-marketplace-conflict`, `G:plugins-marketplace-unavailable`, `G:plugins-conflict`, `G:plugins-unavailable` | Covered — `G:plugins-disabled`, `G:plugins-degraded`, `G:plugins-pending-remove` and retained revisions on detail | `A:TestPluginsLayoutBrowser`, `A:TestBackofficePluginsBrowserWorkflow` |
+| Skills | Covered — `G:skills`, `G:skills-empty` | Covered — `G:skills/install`, `G:skills-review` | Covered — `G:skills/managed/managed-synthetic`, `G:skills-update` | Covered — `G:skills-invalid`, `G:skills-conflict`, `G:skills-unavailable` | Covered — `G:skills-disabled`, `G:skills-pending`, retained revisions on managed detail | `A:TestSkillsLayoutBrowser`, `A:TestBackofficeSkillsBrowserWorkflow` |
+| MCP | Covered — `G:mcp`, `G:mcp-empty` | Covered — `G:mcp/new` | Covered — `G:mcp/connections/qa-worker`, `G:mcp/connections/config:qa-worker` | Covered — `G:mcp-invalid`, `G:mcp-conflict`, `G:mcp-unavailable`, authorization/device recovery fixtures | Covered — `G:mcp-retained`; active/deleted/all application evidence in `A:TestBackofficeMCPBrowserWorkflow` | `A:TestBackofficeMCPBrowserWorkflow`, `A:TestBackofficeMCPOAuthBrowserWorkflow` |
+| Schedules | Covered — `G:schedules`, `G:schedules-empty`, `G:schedules-deleted`, `G:schedules-all` | Covered — `G:schedules/new` | Covered — `G:schedules/daily-summary`, `G:schedules/deleted-summary`, `G:schedules-config`, `G:schedules-long` | Covered — `G:schedules-invalid`, `G:schedules-conflict`, `G:schedules-unavailable` | Covered — `G:schedules-disabled`, `G:schedules-deleted`, `G:schedules-all`, `G:schedules/deleted-summary`, `G:schedules-history` | `A:TestSchedulesAliasesLayoutBrowser`, `A:TestBackofficeSchedulesBrowserWorkflow` |
+| Webhooks | Covered — `G:webhooks`, `G:webhooks-empty` | Covered — `G:webhooks/new`, one-time `G:webhooks-secret` | Covered — `G:webhooks-managed`, `G:webhooks-config` | Covered — `G:webhooks-invalid`, `G:webhooks-conflict`, `G:webhooks-unavailable` | Covered — `G:webhooks-disabled`, `G:webhooks-archived`, `G:webhooks-history`, `G:webhooks-history-empty` | common gallery Webhooks gate, `A:TestBackofficeWebhooksBrowserWorkflow` |
+| Aliases | Covered — `G:aliases`, `G:aliases-empty` | Covered — `G:aliases/new` | Covered — `G:aliases/main_chat`, `G:aliases-long` | Covered — `G:aliases-invalid`, `G:aliases-conflict`, `G:aliases-unavailable` | Covered — delete confirmation on `G:aliases/main_chat`; deleted rows/history are N/A because deletion removes the mapping and recreation is allowed with a newer version | `A:TestSchedulesAliasesLayoutBrowser`, `A:TestAliasesBrowserWorkflow` |
+| Agent hooks | Covered — `G:hooks`, `G:hooks-empty` | Covered — `G:hooks/new` | Covered — `G:hooks/guard`, `G:hooks-long` | Covered — `G:hooks-invalid`, `G:hooks-conflict`, `G:hooks-unavailable`, `G:hooks-unsupported` | Covered — enable/disable/delete in `A:TestHooksApplicationBrowser`; historical execution rows are not a Backoffice product surface | `A:TestHooksLayoutBrowser`, `A:TestHooksApplicationBrowser` |
+| Fact memory | Covered — `G:memory`, `G:memory-empty`, search fixtures | Covered — `G:memory/new` | Covered — `G:memory/1`, `G:memory-long` | Covered — `G:memory-invalid`, `G:memory-forbidden`, `G:memory-missing`, `G:memory-conflict`, `G:memory-unavailable` | Covered — `G:memory-delete`, `G:memory-disabled`; per-fact deleted history is N/A by product contract | `A:TestFactMemoryLayoutBrowser`, `A:TestFactMemoryApplicationBrowser` |
+| Providers | Covered — `G:providers`, `G:providers-empty` | Covered — `G:providers/new` | Covered — `G:providers/managed`, `G:providers/configured` | Covered — `G:providers-conflict`; unavailable behavior in `A:TestProvidersBrowserManagementAndSecretBoundary` | Covered — managed enable/disable/delete and configured reconciliation in `A:TestProvidersBrowserManagementAndSecretBoundary` | `A:TestProvidersLayoutBrowser`, `A:TestProvidersBrowserManagementAndSecretBoundary` |
+| Access | Covered — `G:access-list`, `G:access-empty` | Covered — `G:access-create` | Covered — `G:access`, `G:access-primary`, `G:access-long` | Covered — `G:access-error`, `G:form-bad-request`, `G:form-forbidden`, `G:form-conflict`, `G:form-server-error` | Covered — user/session disable/revoke state in `G:access`, `G:account-session-states`; hard user deletion is unsupported | `A:TestHTTPAppAccessAdministrationNoJSHTMXAndRoleBoundary` |
+| Audit | Covered — `G:audit`, `G:audit-empty` | N/A — append-only system evidence has no UI create | Covered — expandable row detail in `G:audit` | Covered — shared `G:error` recovery contract | N/A — immutable audit events cannot be edited or deleted | `A:TestHTTPAppAuditFilteringPaginationRedactionAndRoleBoundary` |
+| Account | Covered — `G:account`, `G:account-empty`, `G:account-many`, `G:account-many-next` | N/A — the current account already exists | Covered — `G:account-2fa-off`, `G:account-2fa-enabled`, `G:account-2fa-unavailable` | Covered — `G:account-error`, `G:password-error`, `G:webauthn-register`, `G:webauthn-assert` | Covered — `G:account-session-states`, `G:account-many`, `G:account-many-next` | `A:TestHTTPAppAccountRotationAndCurrentFamilyRevocation`, `A:TestHTTPAppWebAuthnBrowserWorkflow` |
+
+Schedules and Aliases have a focused layout gate because their authenticated
+workflows use mutable isolated state. The gallery gate owns deterministic
+layout, fragment, history, focus, keyboard, confirmation and recovery evidence
+at 1440×900, 1024×768, 768×1024 and 390×844 under both the root and prefixed
+mounts. Authenticated gates continue to own authorization and durable mutation
+semantics.
+
+## Shared lifecycle and interaction review
+
+For Providers, MCP, Schedules, and Webhooks, review **Active**, **Deleted**, and
+**All** as distinct production states. Confirm that the selected lifecycle view
+survives detail, create, HTMX, Back/Forward, and error navigation. Deleted
+details must remain passive and expose only the safe retained metadata and
+feature history described in the Backoffice reference. Recreate a deleted
+managed identifier in the authenticated gate and verify that it advances the
+generation, preserves historical evidence, does not inherit protected state,
+and accepts only replacement input required by the new definition. A recreated
+Webhook must issue a new secret. A stale pre-delete form must return 409. Also
+verify that active and configured names,
+including retained configured records, remain reserved.
+
+Mutation feedback and table scrolling are presentation contracts, not domain
+state. Pending HTMX mutations must expose `aria-busy`, a visible live status,
+disabled submit controls, and duplicate-submit suppression, then settle on
+success, error, replacement, and history restoration. Native submissions keep
+their ordinary navigation. An overflowing table must show its server-rendered
+scroll cue, become keyboard focusable, expose the cue through
+`aria-describedby`, reach its rightmost column, and remain contained within the
+page. A non-overflowing table must hide the cue and have no added tab stop or
+scroll announcement.
+
+Run the evidence in this order from the repository root. A later gate does not
+replace an earlier one:
+
+1. Validate the maintained matrix and production-template invariants.
+
+   ```bash
+   go test -race ./internal/apps/backoffice -run '^TestQAStateMatrixEvidenceIsCurrent$' -count=1
+   go test -race ./internal/apps/backoffice/internal/webui -run '^TestHTMXMutationFormsUseSharedAccessibleStatus$' -count=1
+   ```
+
+2. Run the complete synthetic production-template gallery at all four
+   viewports.
+
+   ```bash
+   task backoffice-e2e
+   ```
+
+3. Run the focused lifecycle, mutation, and mobile-table layout gates at both
+   mounts. In an already provisioned browser image,
+   `BALDA_BACKOFFICE_BROWSER_TEST=1` uses the lockfile-pinned Playwright browser.
+
+   ```bash
+   BALDA_BACKOFFICE_BROWSER_TEST=1 go test -race ./internal/apps/backoffice -run '^(TestSchedulesAliasesLayoutBrowser|TestMobileTablesLayoutBrowser|TestMutationFeedbackBrowser)$' -count=1 -v
+   ```
+
+4. Only after the synthetic gates pass, run the authenticated application
+   workflows against disposable state and normal login.
+
+   ```bash
+   BALDA_BACKOFFICE_BROWSER_TEST=1 go test -race ./internal/apps/backoffice -run '^(TestAliasesBrowserWorkflow|TestProvidersBrowserManagementAndSecretBoundary)$' -count=1 -v
+   BALDA_BACKOFFICE_BROWSER_TEST=1 go test -race ./internal/apps/balda -run '^(TestBackofficeMCPBrowserWorkflow|TestBackofficeSchedulesBrowserWorkflow|TestBackofficeWebhooksBrowserWorkflow)$' -count=1 -v
+   ```
+
+5. Finish with the affected service/store contracts and repository-required
+   gates. Keep SQLite and PostgreSQL results separate when tagged integration
+   jobs run; browser evidence does not replace either backend contract.
+
+   ```bash
+   go test -race ./internal/apps/balda/mcpmanage ./internal/apps/balda/providers ./internal/apps/balda/scheduledjobs ./internal/apps/balda/webhookmanagement ./internal/apps/balda/state
+   go test -race -tags=integration,sqlite ./internal/apps/balda/state
+   BALDA_TEST_POSTGRES_DSN='<disposable-postgres-dsn>' go test -race -tags=integration,postgres ./internal/apps/balda/state
+
+   go test -race ./...
+   go tool golangci-lint run
+   go tool go-arch-lint check --project-path .
+   git diff --check
+   bd lint
+   ```
+
+Record synthetic and authenticated results separately. Use only reserved
+example domains, invalid invitation values, temporary databases, deterministic
+providers, and synthetic locators. Never capture passwords, cookies, tokens,
+one-time Webhook secrets, deployment topology, prompt bodies, or live message
+content.
+
 The preview proves template and layout behavior with fixed view models. For a
 deployment that changes Backoffice runtime behavior, also sign in through the
 normal login on the protected deployment and check the affected pages at
@@ -140,6 +255,59 @@ QA authentication bypass.
 Production Backoffice continues to run under `balda start`. Keep `qa_ui: false`
 there. See [Backoffice application](backoffice.md) for deployment, security, and
 rendering contracts.
+
+## Lifecycle test rationalization map
+
+The lifecycle audit below is intentionally limited to Backoffice and the MCP,
+Provider, Schedule, and Webhook Core suites. A similar feature name does not
+make evidence redundant when the layer, backend, authority boundary, browser
+mount, viewport, history behavior, or failure signal differs.
+
+The mechanically checked audit boundary scans every `*_test.go` below the nine
+package directories enumerated by `rationalizationPackageDirectories` in
+`internal/apps/backoffice/test_rationalization_test.go`, independent of a
+hand-maintained filename list. Its checked-in inventory records all 430 valid
+top-level Go tests, including build-tagged backend tests, with exactly one
+resolved classification. The 80 direct Story candidates/owners have exact
+per-test classifications; every remaining test has an explicit contract-based
+protected or out-of-scope category. `TestLifecycleRationalizationInventoryIsComplete`
+fails on an unmatched or overlapping rule, a new file/test, a missing owner,
+wrong test signature, duplicate backend owner, changed exact count, or a
+SQLite/PostgreSQL entrypoint/subtest chain that no longer calls the shared
+contract runner. The 335/336 default-build counts below are execution inventory,
+not the source-level audit boundary.
+
+| Candidate | Contract and layer | Fixture, stimulus, and assertions | Unique failure signal | Decision and retained owner |
+| --- | --- | --- | --- | --- |
+| Removed-field checks inside `TestSchedulesBrowserManagement` | No supported contract; Backoffice handler/template blacklist for obsolete form fields | `schedulesHTTPFixture`; POST create with `report_to_key` and negative template checks for `target_kind`/`report_to_key` | None: they only named unsupported surfaces and duplicated the current positive form boundary | Remove the request and name-blacklist checks. The positive assertion now requires exactly one current `locator` field; current parsing, validation, CSRF/origin rejection, and owner dispatch remain in the same test. |
+| `TestProviderLifecycleFiltersPassiveDetailAndRecreate` | Provider service lifecycle policy | In-memory provider store; delete, filter/detail, recreate, stale update/delete; asserts passive reads, new revision, retained pin, and no inherited environment | Service policy and retained environment-backed revision | Retain. Store atomicity remains separately owned by `TestSQLiteProviderContract` and `TestPostgresProviderContract`. |
+| `TestRecreateDoesNotInheritAPIKey` | Provider service protected-field policy | Hosted provider with API key; delete and recreate without replacement key; asserts public revision and compiled config are empty | API-key handling is distinct from environment bindings | Retain; it is not covered by the environment case above. |
+| `TestCreateRejectsConfiguredAndActiveProviderCollisions` | Provider service namespace policy | Configured and active managed IDs; create attempts; asserts conflict before replacement | Distinguishes configured reservation from active managed collision | Retain. |
+| `TestActiveConfiguredManagedCollisionIsInvalid` | Provider service reconciliation failure boundary | Corrupt mixed-source in-memory state; inventory/detail/create; asserts invalid/conflict outcomes | Active split-brain state must fail closed | Retain; a deleted reconciliation tombstone is intentionally handled differently. |
+| `TestConfiguredProviderOwnsDeletedManagedReconciliationTombstone` | Provider service deleted reconciliation policy | Configured provider plus deleted managed record; filtered reads/detail/create; asserts one configured projection and reserved name | Deleted tombstone reconciliation rather than active collision | Retain. |
+| `TestDeletedDefinitionInventoryDetailAndRecreate` | MCP service lifecycle policy | Definition harness; delete/filter/detail/recreate/stale edit; asserts new generation and retained protected revision | Policy projection and immutable pin preservation | Retain. Adapter call shape remains in `TestOperationsPersistProtectedEditsAndProbeExactCandidate`; handler shape in `TestMCPInventoryUsesSafeSharedRendering`; authenticated interaction in `TestBackofficeMCPBrowserWorkflow`. |
+| `TestSQLiteProviderContract/MCPConcurrentRecreateRetainsHistory` and `TestPostgresProviderContract/MCPConcurrentRecreateRetainsHistory` | MCP SQL atomicity and backend parity | Isolated SQLite/PostgreSQL contract databases; concurrent recreate; asserts one winner, conflict, history, and audit | Backend transaction/fencing rather than service projection | Retain both concrete backend cases. |
+| `TestSQLiteProviderContract/Provider_ManagedProviderState` and `TestPostgresProviderContract/Provider_ManagedProviderState` | Provider SQL atomicity and backend parity | Contract databases; delete/concurrent recreate; asserts one winner and retained revisions | Durable transaction and backend-specific SQL behavior | Retain alongside `TestProviderLifecycleFiltersPassiveDetailAndRecreate` and handler owner `TestProvidersBrowserManagementAndSecretBoundary`. |
+| `TestManagementLifecyclePreservesDisabledSelectionAndArchive` | Schedule management policy | Management fake; disable/delete/recreate and history projection | Service selection/history policy | Retain. SQL owners are `TestSQLiteProviderContract/Provider_ScheduleManagementAuthorityAndVersion` and `TestPostgresProviderContract/Provider_ScheduleManagementAuthorityAndVersion`; handler/browser owners are `TestSchedulesBrowserManagement`, `TestSchedulesAliasesLayoutBrowser`, and `TestBackofficeSchedulesBrowserWorkflow`. |
+| `TestManagedRouteLifecycleAndOneTimeSecret`, `TestInventoryLifecycleFilters`, and `TestConfiguredNamesRemainReservedForManagedCreate` | Webhook service lifecycle, filtering, secret, and namespace policy | In-memory service store; lifecycle reads/recreate and managed create against active/deleted configured names | One-time secret and configured reservation policy | Retain each exact service owner. SQL owners are `TestSQLiteProviderContract/Provider_WebhookRouteManagement` and `TestPostgresProviderContract/Provider_WebhookRouteManagement`; handler/authenticated owners are `TestWebhooksBrowserManagement` and `TestBackofficeWebhooksBrowserWorkflow`. |
+| `TestHTMXMutationFormsUseSharedAccessibleStatus` and `TestMutationFeedbackBrowser` | Production-template invariant and browser interaction | Embedded production templates versus live HTMX browser events; asserts marker/status presence versus pending/settled/focus/history behavior | Static template omission versus runtime interaction regression | Retain both; neither supersedes the other. |
+| `TestSchedulesAliasesLayoutBrowser`, `TestMobileTablesLayoutBrowser`, and `TestMutationFeedbackBrowser` | Synthetic production-template layout | Root/prefixed mounts at 1440/1024/768/390; asserts state inventory, focus, history, confirmation, and contained overflow | Prefix and responsive layout regressions | Retain all mount/viewport cases. Authenticated mutation owners are `TestBackofficeSchedulesBrowserWorkflow`, `TestBackofficeMCPBrowserWorkflow`, and `TestBackofficeWebhooksBrowserWorkflow`. |
+| `TestProjectHistoryKeepsOpaqueInputExact` | Supported stored-data compatibility | Current opaque body and older row without captured input; projection asserts lossless hex or bounded unavailable input | Compatibility with persisted older rows, not a removed UI surface | Retain. |
+| Exact `service-security`, `service-authorization`, and `handler-authorization` members in `rationalizationScopes` | Security/authorization | Protected values, current browser authority, configured ownership, secret redaction | Disclosure or unauthorized mutation | Retain every enumerated member; examples include `TestMCPFormsFenceAuthorityAndNeverReflectValues`, `TestProvidersBrowserManagementAndSecretBoundary`, `TestManagedRouteValidationAndAuthority`, and `TestProbeRejectsMissingAndRevokedAuthorityBeforeLaunching`. |
+| Exact `service-concurrency` and concrete backend-owner members in the manifest | Concurrency and stale-version fencing | Duplicate/manual admission, competing writes, stale generations | Duplicate execution or lost atomic winner | Retain `TestManagementManualRunIsIdempotentAndHistoryIsSafe`, `TestManagedScheduleManualRunFreezesAliasAndDuplicateSelection`, and all eight enumerated SQLite/PostgreSQL lifecycle owner IDs. |
+| Exact `service-failure`, `migration-compatibility`, and adapter members in the manifest | Rollback, unavailable, recovery, and compatibility | Invalid definitions, publication/store failures, missing aliases, read-only configured rows, old stored input | Partial mutation, unsafe readiness, or unreadable retained data | Retain every enumerated member; exact owners include `TestProbeAndPublicationErrorsDoNotExposeCredentialsOrClaimReadiness`, `TestManualRunWithMissingAliasRecordsFailureWithoutChangingCron`, `TestConfiguredRouteReconciliationRetainsDisabledDeclarations`, and `TestOperationsInventoryRecoveryReadsNeverLaunch`. |
+
+Baseline on 2026-11-16 was 335 top-level tests across the focused packages.
+The focused race suite passed before cleanup; statement coverage was 61.0% for
+`internal/webui`, 81.8% for Backoffice, 72.1% for `mcpbackofficeapp`, 83.7% for
+`mcpmanage`, 86.0% for Providers, 70.2% for `scheduledjobs`, 41.8% for
+`webhookbackofficeapp`, 81.4% for `webhookmanagement`, and 14.2% for `state`.
+The cleanup removes one unsupported request scenario and two removed-name
+assertions, with no supported contract owner lost. The post-cleanup inventory
+has 336 top-level tests because it adds the single manifest-integrity validator;
+the supported behavior suite is smaller while the ownership map is mechanically
+enforced. Record the post-cleanup race, browser, coverage, lint, and diff results
+in the task review; repository-wide gates remain a separate delivery gate.
 
 ## Webhooks layout and application gates
 

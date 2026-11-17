@@ -14,6 +14,15 @@ var (
 	ErrUnavailable = errors.New("schedule operation unavailable")
 )
 
+// InventoryFilter selects the current schedule lifecycle projection.
+type InventoryFilter string
+
+const (
+	InventoryActive  InventoryFilter = "active"
+	InventoryDeleted InventoryFilter = "deleted"
+	InventoryAll     InventoryFilter = "all"
+)
+
 // Authority binds a management request to the current administrator and browser family.
 type Authority struct {
 	UserID            string

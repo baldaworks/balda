@@ -150,6 +150,12 @@ func (o *Operations) Inventory(ctx context.Context, authority webhookroutecmd.Au
 	return o.service.Inventory(ctx, authority)
 }
 
+// InventoryByFilter returns the requested webhook lifecycle projection.
+func (o *Operations) InventoryByFilter(ctx context.Context, authority webhookroutecmd.Authority,
+	filter webhookroutecmd.InventoryFilter) ([]webhookroutecmd.Item, error) {
+	return o.service.InventoryByFilter(ctx, authority, filter)
+}
+
 func (o *Operations) Get(ctx context.Context, name string, authority webhookroutecmd.Authority) (webhookroutecmd.Item, error) {
 	return o.service.Get(ctx, name, authority)
 }

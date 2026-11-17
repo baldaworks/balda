@@ -71,7 +71,7 @@ func TestFactMemoryRendererFullFragmentAndSearch(t *testing.T) {
 			if strings.Contains(body, "<!doctype html>") != (mode != fragmentMode) || strings.Count(body, `id="main-content"`) != 1 {
 				t.Fatalf("wrong %s render shape", mode)
 			}
-			for _, want := range []string{`<th scope="col">Fact</th>`, `<th scope="col">Actions</th>`, `href="/balda/backoffice/memory/2"`, `href="/balda/backoffice/memory?new=1"`, `action="/balda/backoffice/memory"`, `name="q" value="&lt;query&gt;"`, `&lt;script&gt;unsafe()&lt;/script&gt;` + "\n  multiline fact", `hx-history="false"`, `data-fact-memory`, `aria-label="Fact memory table, horizontally scrollable"`} {
+			for _, want := range []string{`<th scope="col">Fact</th>`, `<th scope="col">Actions</th>`, `href="/balda/backoffice/memory/2"`, `href="/balda/backoffice/memory?new=1"`, `action="/balda/backoffice/memory"`, `name="q" value="&lt;query&gt;"`, `&lt;script&gt;unsafe()&lt;/script&gt;` + "\n  multiline fact", `hx-history="false"`, `data-fact-memory`, `aria-label="Fact memory table"`} {
 				if !strings.Contains(body, want) {
 					t.Errorf("%s missing %q", mode, want)
 				}

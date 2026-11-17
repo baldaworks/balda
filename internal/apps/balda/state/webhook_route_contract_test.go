@@ -8,7 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookcmd"
 )
 
 func checkProvider_WebhookRouteManagement(t *testing.T, open contractOpener) {
@@ -104,6 +106,19 @@ func checkProvider_WebhookRouteManagement(t *testing.T, open contractOpener) {
 	if got, found, err := s.LookupActiveManagedByName(t.Context(), r.Name); err != nil || !found || got.SecretVerifier != m.Record.SecretVerifier {
 		t.Fatalf("rotated verifier = %q, found=%t, err=%v", got.SecretVerifier, found, err)
 	}
+	priorReport := deliverycmd.Locator{ChannelType: "telegram", AddressKey: "123:0", AddressJSON: `{}`,
+		SessionID: "tg-123-0"}
+	priorAdmission := webhookcmd.Admission{RouteName: r.Name, DedupeKey: "webhook:managed:prior",
+		RequestID: "prior", Prompt: "old generation prompt", JobID: "webhook-managed-prior",
+		SessionID: "wh-managed-prior", ReportTo: &priorReport, CreatedAt: a.At}
+	if _, created, err := p.WebhookAdmissions().Create(t.Context(), priorAdmission); err != nil || !created {
+		t.Fatalf("create prior admission: created=%t err=%v", created, err)
+	}
+	priorJob := JobRecord{ID: priorAdmission.JobID, SessionID: priorAdmission.SessionID,
+		Objective: priorAdmission.Prompt, Status: JobStatusCreated, PrivateRunKind: PrivateRunKindWebhook}
+	if created, err := p.Jobs().CreateJob(t.Context(), priorJob); err != nil || !created {
+		t.Fatalf("create prior job: created=%t err=%v", created, err)
+	}
 	conflictingConfig := WebhookRouteRecord{Name: r.Name, Source: WebhookRouteSourceConfig,
 		PromptTemplate: "{{.Body}}", DedupeSource: "request_id", Enabled: true}
 	if err := s.ReconcileConfig(t.Context(), []WebhookRouteRecord{conflictingConfig}); !errors.Is(err, ErrWebhookRouteConflict) {
@@ -146,12 +161,71 @@ func checkProvider_WebhookRouteManagement(t *testing.T, open contractOpener) {
 	if _, found, err := s.LookupActiveManagedByName(t.Context(), r.Name); err != nil || found {
 		t.Fatalf("archived route active = %t, err=%v", found, err)
 	}
-	newRoute := m
-	newRoute.Kind, newRoute.ExpectedVersion = WebhookRouteCreate, 0
-	newRoute.Record.Version, newRoute.Record.Deleted, newRoute.Record.Enabled = 1, false, true
-	newRoute.Audit.ID = "webhook-reuse-name"
-	if err := s.Save(t.Context(), newRoute); !errors.Is(err, ErrWebhookRouteConflict) {
-		t.Fatalf("reuse archived name = %v, want conflict", err)
+	recreates := make([]WebhookRouteMutation, 2)
+	for i, verifier := range []string{strings.Repeat("c", 64), strings.Repeat("d", 64)} {
+		recreates[i] = m
+		recreates[i].Kind, recreates[i].ExpectedVersion = WebhookRouteRecreate, 4
+		recreates[i].Record.Version, recreates[i].Record.Deleted, recreates[i].Record.Enabled = 5, false, true
+		recreates[i].Record.PromptTemplate = "recreated {{.Body}}"
+		recreates[i].Record.SecretVerifier = verifier
+		recreates[i].Audit.ID = "webhook-recreate-" + string(rune('a'+i))
+	}
+	errCh := make(chan error, len(recreates))
+	for i := range recreates {
+		go func(mutation WebhookRouteMutation) {
+			errCh <- s.Save(t.Context(), mutation)
+		}(recreates[i])
+	}
+	var succeeded, conflicted int
+	for range recreates {
+		switch err := <-errCh; {
+		case err == nil:
+			succeeded++
+		case errors.Is(err, ErrWebhookRouteConflict):
+			conflicted++
+		default:
+			t.Fatalf("concurrent recreate = %v", err)
+		}
+	}
+	if succeeded != 1 || conflicted != 1 {
+		t.Fatalf("concurrent recreate: succeeded=%d conflicted=%d", succeeded, conflicted)
+	}
+	got, found, err := s.LookupActiveManagedByName(t.Context(), r.Name)
+	if err != nil || !found || got.Version != 5 || got.Deleted || !got.Enabled ||
+		got.SecretVerifier == strings.Repeat("b", 64) {
+		t.Fatalf("recreated managed route = %+v, found=%t, err=%v", got, found, err)
+	}
+	staleDelete := m
+	staleDelete.Audit.ID = "webhook-stale-delete"
+	if err := s.Save(t.Context(), staleDelete); !errors.Is(err, ErrWebhookRouteConflict) {
+		t.Fatalf("stale pre-recreate delete = %v, want conflict", err)
+	}
+	if history, found, err := p.WebhookAdmissions().GetHistory(t.Context(), r.Name, priorAdmission.JobID); err != nil || !found || history.ReportTo == nil || *history.ReportTo != priorReport {
+		t.Fatalf("prior admission after recreate = %+v, found=%t, err=%v", history, found, err)
+	}
+	if job, found, err := p.Jobs().GetJob(t.Context(), priorJob.ID); err != nil || !found ||
+		job.SessionID != priorJob.SessionID || job.Objective != priorJob.Objective ||
+		job.PrivateRunKind != priorJob.PrivateRunKind {
+		t.Fatalf("prior job after recreate = %+v, found=%t, err=%v", job, found, err)
+	}
+	audits, err := p.Users().ListAuditEvents(t.Context(), usercmd.PageRequest{Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var recreateAudits int
+	for _, event := range audits.Events {
+		if event.TargetType == usercmd.AuditTargetWebhookRoute && event.TargetID == r.Name &&
+			event.Reason == "Webhook route recreated" {
+			recreateAudits++
+			if event.RequestID != "" || event.CorrelationID != "" ||
+				strings.Contains(event.Reason, "recreated {{.Body}}") ||
+				strings.Contains(event.Reason, got.SecretVerifier) {
+				t.Fatalf("recreate audit contains request or definition data: %+v", event)
+			}
+		}
+	}
+	if recreateAudits != 1 {
+		t.Fatalf("recreate audits = %d, want one committed winner", recreateAudits)
 	}
 	if err := s.ReconcileConfig(t.Context(), []WebhookRouteRecord{conflictingConfig}); !errors.Is(err, ErrWebhookRouteConflict) {
 		t.Fatalf("archived managed name collision = %v, want conflict", err)

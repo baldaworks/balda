@@ -99,6 +99,28 @@ func TestProvidersBrowserManagementAndSecretBoundary(t *testing.T) {
 			if deleted.Code != http.StatusOK || !strings.Contains(deleted.Body.String(), "Deleted provider") || strings.Contains(deleted.Body.String(), "managed-secret") {
 				t.Fatalf("deleted detail status=%d", deleted.Code)
 			}
+			deletedInventory := get("/providers?lifecycle=deleted", admin.access, true)
+			if deletedInventory.Code != http.StatusOK || !strings.Contains(deletedInventory.Body.String(), `aria-current="page">Deleted`) ||
+				!strings.Contains(deletedInventory.Body.String(), `/providers/managed?lifecycle=deleted`) ||
+				strings.Contains(deletedInventory.Body.String(), ">yaml</a>") || strings.Contains(deletedInventory.Body.String(), "<!doctype html>") {
+				t.Fatalf("deleted provider inventory status=%d body=%s", deletedInventory.Code, deletedInventory.Body.String())
+			}
+			deleted = get("/providers/managed?lifecycle=deleted", admin.access, false)
+			if !strings.Contains(deleted.Body.String(), `/providers?lifecycle=deleted`) || !strings.Contains(deleted.Body.String(), "Source</dt><dd>managed") {
+				t.Fatal("deleted provider detail lost lifecycle or source")
+			}
+			for _, action := range []string{"Save provider", "Enable provider", "Disable provider", "Delete provider", `name="api_key"`} {
+				if strings.Contains(deleted.Body.String(), action) {
+					t.Errorf("deleted provider exposes %q", action)
+				}
+			}
+			all := get("/providers?lifecycle=all", admin.access, false)
+			if all.Code != http.StatusOK || !strings.Contains(all.Body.String(), "managed") || !strings.Contains(all.Body.String(), "yaml") || !strings.Contains(all.Body.String(), `aria-current="page">All`) {
+				t.Fatalf("all provider inventory status=%d", all.Code)
+			}
+			if got := get("/providers?lifecycle=unknown", admin.access, false).Code; got != http.StatusBadRequest {
+				t.Fatalf("invalid provider lifecycle = %d", got)
+			}
 		})
 	}
 }

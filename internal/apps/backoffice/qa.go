@@ -13,6 +13,8 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/webhookroutecmd"
 )
 
+const qaSchedulesName = "schedules"
+
 // QAHandler serves synthetic previews without opening Backoffice state.
 func QAHandler(basePath string) (http.Handler, error) {
 	renderer, err := webui.NewQARenderer(basePath)
@@ -41,6 +43,21 @@ func QAHandler(basePath string) (http.Handler, error) {
 		}
 		if name == "webhooks" && r.URL.Query().Get("new") == "1" {
 			name = "webhooks/new"
+		}
+		if name == qaSchedulesName && r.URL.Query().Get("new") == "1" {
+			name = "schedules/new"
+		}
+		if name == qaSchedulesName && r.URL.Query().Get("lifecycle") == lifecycleDeleted {
+			name = "schedules-deleted"
+		}
+		if name == qaSchedulesName && r.URL.Query().Get("lifecycle") == lifecycleAll {
+			name = "schedules-all"
+		}
+		if name == "aliases" && r.URL.Query().Get("new") == "1" {
+			name = "aliases/new"
+		}
+		if name == "schedules/daily-summary" && r.URL.Query().Has("run_id") {
+			name = "schedules-history"
 		}
 		if name == "providers" && r.URL.Query().Get("new") == "1" {
 			name = "providers/new"
@@ -111,7 +128,7 @@ type qaEntry struct {
 	status       int
 }
 
-var qaEntries = append(append(append(append(append(pluginMarketplaceQAEntries, pluginLifecycleQAEntries...), hooksQAEntries...), skillsQAEntries...), providerQAEntries...), []qaEntry{
+var qaEntries = append(append(append(append(append(append(scheduleAliasQAEntries, pluginMarketplaceQAEntries...), pluginLifecycleQAEntries...), hooksQAEntries...), skillsQAEntries...), providerQAEntries...), []qaEntry{
 	{name: "memory", label: "Fact memory · inventory", templateName: webui.TemplateFactMemory, page: qaFactMemory, gallery: true},
 	{name: "memory-long", label: "Fact memory · long multiline fact", templateName: webui.TemplateFactMemory, page: func() webui.Page {
 		p := qaFactMemory()
@@ -217,7 +234,7 @@ var qaEntries = append(append(append(append(append(pluginMarketplaceQAEntries, p
 		p := qaMCPEditor(false, false)
 		p.MCP.Editor.Row.Deleted = true
 		p.MCP.Editor.AuthorizationAvailable = false
-		p.MCP.Editor.Row.Status = "Deleted"
+		p.MCP.Editor.Row.Status = deletedLabel
 		p.MCP.Editor.Row.Ready = false
 		return p
 	}, gallery: true},
@@ -352,14 +369,14 @@ func qaConfiguredWebhook() webhookroutecmd.Item {
 func qaWebhooks() webui.Page {
 	return webui.Page{Title: "Webhooks · QA", Current: webui.LocationWebhooks,
 		Navigation: qaAdminNavigation(webui.LocationWebhooks), CSRFToken: "synthetic-csrf",
-		Webhooks: &webui.WebhooksView{Rows: []webui.WebhookRow{
+		Webhooks: &webui.WebhooksView{Lifecycle: lifecycleView("/webhooks", lifecycleActive), EmptyMessage: "No webhooks match this lifecycle filter.", Rows: []webui.WebhookRow{
 			qaWebhookRow(qaManagedWebhook()), qaWebhookRow(qaConfiguredWebhook()),
 		}}}
 }
 
 func qaWebhookEditor(item webhookroutecmd.Item, create bool) webui.Page {
 	p := qaWebhooks()
-	p.Webhooks = &webui.WebhooksView{Editor: webui.ProjectWebhookEditor(item, create)}
+	p.Webhooks = &webui.WebhooksView{Lifecycle: lifecycleView("/webhooks", lifecycleActive), Editor: webui.ProjectWebhookEditor(item, create)}
 	p.Webhooks.Editor.Row.URL = qaWebhookRow(item).URL
 	p.Webhooks.Editor.URLPrefix = webhookroutecmd.CanonicalPath("", "")
 	if create {
@@ -389,7 +406,7 @@ func qaWebhookHistory() webui.Page {
 
 func qaAdminNavigation(current webui.Location) []webui.NavGroup {
 	return webui.Navigation(usercmd.BackofficeCapabilities{
-		Overview: true, Account: true, ViewChatArchive: true, ManageUsers: true, ManageMCP: true, ManageProviders: true, ManageSchedules: true, ManageWebhooks: true, ManageFactMemory: true, ManagePlugins: true, ViewAudit: true,
+		Overview: true, Account: true, ViewChatArchive: true, ManageUsers: true, ManageMCP: true, ManageProviders: true, ManageSchedules: true, ManageWebhooks: true, ManageAliases: true, ManageHooks: true, ManageFactMemory: true, ManagePlugins: true, ViewAudit: true,
 	}, current)
 }
 
@@ -722,7 +739,7 @@ func qaMCPState(status mcpcmd.Status, authorization mcpcmd.GrantStatus, transpor
 	return p
 }
 func qaMCP() webui.Page {
-	p := webui.Page{Title: "MCP servers · QA", Current: webui.LocationMCP, Navigation: qaAdminNavigation(webui.LocationMCP), CSRFToken: "qa-csrf", MCP: &webui.MCPView{}}
+	p := webui.Page{Title: "MCP servers · QA", Current: webui.LocationMCP, Navigation: qaAdminNavigation(webui.LocationMCP), CSRFToken: "qa-csrf", MCP: &webui.MCPView{Lifecycle: lifecycleView("/mcp", lifecycleActive), EmptyMessage: "No MCP servers match this lifecycle filter."}}
 	item := qaMCPItem()
 	p.MCP.Rows = append(p.MCP.Rows, webui.ProjectMCPRow(item))
 	for _, status := range []mcpcmd.Status{mcpcmd.StatusReady, mcpcmd.StatusPending, mcpcmd.StatusDisabled, mcpcmd.StatusDeleted, mcpcmd.StatusConflict, mcpcmd.StatusAuthRequired, mcpcmd.StatusDisconnected} {
@@ -769,7 +786,7 @@ func qaMCPEditor(create, configured bool) webui.Page {
 func qaMCPDevice(status mcpcmd.DeviceStatus, instructions bool) webui.Page {
 	p := qaMCP()
 	p.Title = "Worker authorization · synthetic preview"
-	p.MCP = &webui.MCPView{Device: webui.ProjectMCPDevice(mcpcmd.DeviceAuthorization{ID: "qa-attempt", ConnectionID: "qa-worker", Status: status, UserCode: "INVALID-QA-CODE", VerificationURI: "https://issuer.example.test/verify", VerificationURIComplete: "https://issuer.example.test/verify?code=invalid-qa", ExpiresAt: time.Date(2026, 8, 1, 12, 10, 0, 0, time.UTC)}, instructions)}
+	p.MCP = &webui.MCPView{Lifecycle: lifecycleView("/mcp", lifecycleActive), Device: webui.ProjectMCPDevice(mcpcmd.DeviceAuthorization{ID: "qa-attempt", ConnectionID: "qa-worker", Status: status, UserCode: "INVALID-QA-CODE", VerificationURI: "https://issuer.example.test/verify", VerificationURIComplete: "https://issuer.example.test/verify?code=invalid-qa", ExpiresAt: time.Date(2026, 8, 1, 12, 10, 0, 0, time.UTC)}, instructions)}
 	return p
 }
 

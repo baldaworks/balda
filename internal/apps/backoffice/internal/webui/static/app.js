@@ -43,6 +43,24 @@ function syncWebhookURL() {
   });
 }
 syncWebhookURL();
+
+function syncScrollableTables(root = document) {
+  root.querySelectorAll("[data-table-scroll-region]").forEach(function (region) {
+    const hint = document.getElementById(region.dataset.tableScrollHint);
+    if (!hint) return;
+    const scrollable = region.scrollWidth > region.clientWidth + 1;
+    hint.hidden = !scrollable;
+    if (scrollable) {
+      region.tabIndex = 0;
+      region.setAttribute("aria-describedby", hint.id);
+    } else {
+      region.removeAttribute("tabindex");
+      region.removeAttribute("aria-describedby");
+    }
+  });
+}
+syncScrollableTables();
+window.addEventListener("resize", function () { requestAnimationFrame(() => syncScrollableTables()); });
 document.addEventListener("input", function (event) {
   if (event.target instanceof HTMLInputElement && event.target.matches("[data-webhook-url-name]")) syncWebhookURL();
 });
@@ -94,6 +112,76 @@ const refreshForm = document.querySelector("form[data-auto-refresh]");
 if (refreshForm) {
   refreshForm.requestSubmit();
 }
+
+function settleMutationForm(form) {
+  if (!(form instanceof HTMLFormElement)) return;
+  form.removeAttribute("aria-busy");
+  form.querySelectorAll("[data-mutation-disabled]").forEach(function (control) {
+    control.disabled = false;
+    control.removeAttribute("data-mutation-disabled");
+  });
+  const status = form.querySelector(":scope > .mutation-status");
+  if (status) status.hidden = true;
+}
+
+function clearWriteOnly(root) {
+  if (!(root instanceof Document || root instanceof Element)) return;
+  const fields = [];
+  if (root instanceof Element && root.matches("[data-write-only]")) fields.push(root);
+  fields.push(...root.querySelectorAll("[data-write-only]"));
+  fields.forEach(function (field) {
+    if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) {
+      field.value = "";
+      field.removeAttribute("value");
+    } else if (field instanceof HTMLAnchorElement) {
+      field.removeAttribute("href");
+    }
+  });
+}
+
+document.addEventListener("htmx:beforeRequest", function (event) {
+  const form = event.detail.elt?.closest("form[data-mutation-form]");
+  if (!form) return;
+  if (form.getAttribute("aria-busy") === "true") {
+    event.preventDefault();
+    return;
+  }
+  form.setAttribute("aria-busy", "true");
+  form.querySelectorAll('button[type="submit"], input[type="submit"]').forEach(function (control) {
+    if (control.disabled) return;
+    control.disabled = true;
+    control.setAttribute("data-mutation-disabled", "");
+  });
+  const status = form.querySelector(":scope > .mutation-status");
+  if (status) status.hidden = false;
+});
+
+document.addEventListener("htmx:afterRequest", function (event) {
+  const form = event.detail.elt?.closest("form");
+  clearWriteOnly(form);
+  settleMutationForm(form);
+});
+
+document.addEventListener("htmx:beforeCleanupElement", function (event) {
+  const element = event.detail.elt;
+  if (!(element instanceof Element)) return;
+  clearWriteOnly(element);
+  if (element.matches("form[data-mutation-form]")) settleMutationForm(element);
+  element.querySelectorAll("form[data-mutation-form]").forEach(settleMutationForm);
+});
+
+function settleVisibleMutationForms() {
+  document.querySelectorAll('form[data-mutation-form][aria-busy="true"]').forEach(settleMutationForm);
+}
+document.addEventListener("htmx:historyRestore", settleVisibleMutationForms);
+window.addEventListener("pageshow", settleVisibleMutationForms);
+
+document.addEventListener("htmx:beforeSwap", function (event) {
+  clearWriteOnly(event.detail.requestConfig?.elt?.closest("form"));
+});
+document.addEventListener("htmx:beforeHistorySave", function () { clearWriteOnly(document); });
+document.addEventListener("htmx:historyRestore", function () { clearWriteOnly(document); });
+window.addEventListener("popstate", function () { clearWriteOnly(document); });
 
 document.addEventListener("htmx:responseError", function (event) {
   if (event.detail.xhr.status === 401) {
@@ -187,6 +275,7 @@ document.addEventListener("htmx:afterSwap", function (event) {
     syncPluginMarketplaceSource();
     syncWebhookDedupe();
     syncWebhookURL();
+    syncScrollableTables();
     const feedback = document.getElementById("request-error");
     if (feedback) {
       feedback.hidden = true;
@@ -202,6 +291,7 @@ document.addEventListener("htmx:historyRestore", function () {
   syncPluginMarketplaceSource();
   syncWebhookDedupe();
   syncWebhookURL();
+  syncScrollableTables();
   syncNavigation();
   document.getElementById("main-content")?.focus({ preventScroll: true });
 });
@@ -227,33 +317,23 @@ function clearMCPInstructions() {
 
 window.addEventListener("pagehide", function () {
   clearMCPInstructions();
-  document.querySelectorAll("[data-binding-secret], [data-mcp-secret], [data-webhook-secret], [data-plugin-source], [data-private-source]").forEach(function (element) {
-    if (element instanceof HTMLInputElement) {
-      element.value = "";
-      element.removeAttribute("value");
-    } else if (element instanceof HTMLAnchorElement) {
-      element.removeAttribute("href");
-    }
-  });
+  clearWriteOnly(document);
 });
 
 window.addEventListener("pageshow", function (event) {
-  if (event.persisted) document.querySelectorAll("[data-plugin-source], [data-private-source]").forEach(function (input) { input.value = ""; });
+  if (event.persisted) clearWriteOnly(document);
   syncMCPTransport();
   syncPluginMarketplaceSource();
   syncWebhookDedupe();
   syncWebhookURL();
+  syncScrollableTables();
   if (event.persisted) clearMCPInstructions();
-  if (event.persisted) document.querySelectorAll("[data-mcp-secret]").forEach(function (input) { input.value = ""; });
-  if (event.persisted) document.querySelectorAll("[data-webhook-secret]").forEach(function (input) { input.value = ""; input.removeAttribute("value"); });
 });
 
 const oneTimeWebhook = document.querySelector("[data-webhook-once]");
 if (oneTimeWebhook) history.replaceState(null, "", oneTimeWebhook.dataset.webhookOnce);
 
 document.addEventListener("htmx:afterRequest", function (event) {
-  const form = event.detail.elt?.closest("form");
-  form?.querySelectorAll("[data-mcp-secret], [data-plugin-source], [data-private-source]").forEach(function (input) { input.value = ""; });
   syncPluginMarketplaceSource();
 });
 

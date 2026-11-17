@@ -21,7 +21,8 @@ import (
 
 // ProvidersOperations is Backoffice's consuming port for provider management.
 type ProvidersOperations interface {
-	Inventory(ctx context.Context) (providers.Inventory, error)
+	InventoryByFilter(ctx context.Context, filter providers.InventoryFilter) (providers.Inventory, error)
+	Get(ctx context.Context, id string) (providers.Item, providers.StateVersion, error)
 	Create(ctx context.Context, change providers.Change) (providers.State, error)
 	Update(ctx context.Context, change providers.Change) (providers.State, error)
 	SetEnabled(ctx context.Context, expected providers.StateVersion, id string, enabled bool, audit usercmd.AuditEvent) (providers.State, error)
@@ -61,40 +62,42 @@ func (a *httpApp) providersView(r *http.Request, p security.Principal) (webui.Pa
 	if a.providers == nil {
 		return page, providers.ErrUnavailable
 	}
-	inventory, err := a.providers.Inventory(r.Context())
+	selected, ok := lifecycleSelection(r.URL.Query())
+	if !ok {
+		return page, providers.ErrInvalid
+	}
+	lifecycle := lifecycleView("/providers", selected)
+	view := &webui.ProvidersView{Lifecycle: lifecycle, EmptyMessage: "No providers match this lifecycle filter."}
+	id := r.PathValue("provider_id")
+	if id != "" {
+		item, version, err := a.providers.Get(r.Context(), id)
+		if err != nil {
+			return page, err
+		}
+		page.Title = item.Record.ID + " · Providers · Balda"
+		view.Version = uint64(version)
+		view.Editor = projectProviderEditor(item, version, false)
+		view.Editor.Row.DetailPath = lifecyclePath(view.Editor.Row.DetailPath, selected)
+		page.Providers = view
+		return page, nil
+	}
+	inventory, err := a.providers.InventoryByFilter(r.Context(), providers.InventoryFilter(selected))
 	if err != nil {
 		return page, err
 	}
-	view := &webui.ProvidersView{Version: uint64(inventory.Version)}
+	view.Version = uint64(inventory.Version)
 	for _, item := range inventory.Items {
-		view.Rows = append(view.Rows, projectProviderRow(item, inventory.Version))
-	}
-	id := r.PathValue("provider_id")
-	if id != "" {
-		item, ok := providerInventoryItem(inventory, id)
-		if !ok {
-			return page, providers.ErrUnavailable
-		}
-		page.Title = item.Record.ID + " · Providers · Balda"
-		view.Editor = projectProviderEditor(item, inventory.Version, false)
-		page.Providers = view
-		return page, nil
+		row := projectProviderRow(item, inventory.Version)
+		row.DetailPath = lifecyclePath(row.DetailPath, selected)
+		view.Rows = append(view.Rows, row)
 	}
 	if r.Method == http.MethodPost || r.URL.Query().Get("new") == "1" {
 		page.Title = "Add provider · Balda"
 		view.Editor = projectProviderEditor(providers.Item{}, inventory.Version, true)
+		view.Editor.Action = lifecyclePath(view.Editor.Action, selected)
 	}
 	page.Providers = view
 	return page, nil
-}
-
-func providerInventoryItem(inventory providers.Inventory, id string) (providers.Item, bool) {
-	for _, item := range inventory.Items {
-		if item.Record.ID == id {
-			return item, true
-		}
-	}
-	return providers.Item{}, false
 }
 
 func (a *httpApp) providerMutation(w http.ResponseWriter, r *http.Request) (url.Values, webui.Page, security.Principal, bool) {
@@ -341,6 +344,8 @@ func providerOperationFailure(err error) (int, string) {
 		return http.StatusBadRequest, "Review the provider type, public settings, pool members, and protected-value action."
 	case errors.Is(err, providers.ErrConflict):
 		return http.StatusConflict, "Provider state changed. Reopen Providers before trying again."
+	case errors.Is(err, providers.ErrNotFound):
+		return http.StatusNotFound, "This provider is no longer available. Reopen Providers."
 	case errors.Is(err, providers.ErrUnavailable):
 		return http.StatusServiceUnavailable, "The provider definition or required protected values are unavailable. Reopen Providers and check the current state."
 	default:

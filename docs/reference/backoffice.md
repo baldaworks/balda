@@ -343,6 +343,38 @@ raw User-Agent and token values are never displayed.
 
 ## Providers management
 
+### Managed lifecycle inventory
+
+Providers, MCP servers, Schedules, and Webhooks use the same lifecycle
+navigation. **Active** is the default and hides deleted managed records;
+**Deleted** shows only retained deleted records; **All** shows both. The selected
+view is preserved while opening a detail, returning to the inventory, or opening
+the create form. These reads are passive: filtering or opening a deleted detail
+does not restore, probe, run, or otherwise mutate the resource.
+
+Deleting a managed record is a soft lifecycle transition, not physical erasure.
+Its identifier, version lineage, audit evidence, and feature-specific retained
+history remain available. Deleted details are read-only: MCP and Provider
+details expose safe retained metadata, while Schedule and Webhook details also
+retain their run or request history. Actions that would edit, enable, diagnose,
+rotate a secret, test, or delete the record again are unavailable.
+
+A new managed record may reuse an identifier only when the current managed
+record with that identifier is deleted. This is a recreate, not a continuation
+of the deleted mutable state: it advances the generation, starts enabled, and
+never inherits protected inputs. Supply again only the protected inputs required
+by the new definition; a Provider may remain keyless or use deployment-owned
+environment. A recreated Webhook receives a new one-time secret. Retained Provider/MCP
+revisions and Schedule/Webhook run or request history remain attached for audit
+and exact historical use. Forms from before deletion or recreation fail with a
+conflict and must be reopened.
+
+Configuration-owned identifiers remain reserved even when reconciliation has
+retained a deleted configuration record. They cannot be claimed by a managed
+create. Active managed identifiers also conflict. Recreate affects future
+selection or admission only: it does not repin an existing Provider/MCP binding
+or rewrite already admitted Schedule/Webhook work.
+
 Administration → Providers combines two sources in one provider-ID namespace:
 
 - `configured` rows come from effective `runtime.providers`; they are redacted
@@ -426,6 +458,20 @@ Backoffice requires JavaScript for navigation, session refresh, and interactive 
 HTMX may improve navigation and interaction, but it must not own
 authentication, authorization, validation, or domain state. Those concerns
 remain server-side and authoritative.
+
+Eligible HTMX mutation forms expose a server-rendered live status. While a
+request is pending, the form has `aria-busy=true`, its enabled submit controls
+are temporarily disabled, and a repeated submission is ignored. Success,
+failure, fragment replacement, and history restoration settle the form and
+clear write-only inputs. Native forms keep normal browser submission and
+navigation behavior; the server response remains the authority in both modes.
+
+Tables that exceed their container keep horizontal scrolling inside the page.
+Their scroll instruction is rendered with the page but is shown only after the
+browser measures real overflow. Only then does the region become keyboard
+focusable and reference the instruction. Wider non-overflowing tables receive
+no extra tab stop or scroll announcement. This behavior is recalculated after
+resize, HTMX replacement, and history restoration.
 
 ## Confirmation dialogs
 
@@ -743,6 +789,13 @@ navigating between inventory and detail with GET is passive: it does not connect
 to an MCP server, run `initialize` or `tools/list`, discover OAuth metadata,
 retry authorization, poll health, or write MCP state.
 
+The shared **Active**, **Deleted**, and **All** views follow the managed
+lifecycle contract above. A deleted managed server can be recreated with the
+same public ID only when no configured server reserves it. Recreation creates a
+new revision and does not inherit protected values, OAuth authorization, tool
+observations, or readiness. Existing exact pins can still use their retained
+revision; recreation does not move them.
+
 `/mcp/new` creates a managed server. `/mcp/connections/{connection_id}` shows
 its current state and editor. The immutable server ID must be unique across
 both sources. Stdio uses a direct command, working directory and one argument
@@ -985,6 +1038,13 @@ escaped. Forms use the current CSRF token and same-origin guard, and durable
 writes recheck current administrator, credential, MFA and browser-session
 versions. Session refresh returns to the requested Schedules page.
 
+The inventory defaults to **Active**; **Deleted** and **All** expose archived
+managed definitions and their retained history. Creating the same ID after a
+managed deletion recreates it at a newer generation with the newly submitted
+definition. Earlier runs and last-run evidence remain visible, while a stale
+pre-delete form conflicts. Active and configuration-owned IDs, including a
+retained record for a removed configuration entry, remain reserved.
+
 `/schedules?new=1` creates a Backoffice-owned schedule. IDs use lowercase
 letters, digits, `_` and `-`, start with a letter or digit, and are fixed after
 creation. The ID must be unique across sources. The form uses a five-field UTC
@@ -1090,7 +1150,11 @@ request ID, header, or request body hash; header mode also needs a header name.
 The route starts enabled. Confirmed enable, disable, and delete affect new
 requests; work already admitted retains its selected definition and concrete
 recipient. Deletion archives the route and its history. An archived name cannot
-be used for a new managed route. A removed config route is archived on the next restart and can reappear under its
+be edited, tested, rotated, or admitted. A new managed route may recreate that
+name at a newer generation when no configuration route reserves it. Recreation
+generates a new one-time secret; it never recovers or reuses the deleted
+credential. Earlier request history remains visible, and stale pre-delete forms
+conflict. A removed config route is archived on the next restart and can reappear under its
 original config identity. Stale definition versions require reopening the editor.
 
 Creation generates a random secret for `X-Balda-Webhook-Secret`. Copy it from

@@ -11,6 +11,7 @@ type ScheduleMutationKind string
 
 const (
 	ScheduleCreate    ScheduleMutationKind = "create"
+	ScheduleRecreate  ScheduleMutationKind = "recreate"
 	ScheduleEdit      ScheduleMutationKind = "edit"
 	ScheduleSelection ScheduleMutationKind = "selection"
 	ScheduleDelete    ScheduleMutationKind = "delete"

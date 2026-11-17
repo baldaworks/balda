@@ -36,10 +36,21 @@ type Service struct{ store Store }
 // New composes webhook management with its durable store.
 func New(store Store) *Service { return &Service{store: store} }
 
-// Inventory returns current config and managed routes after checking authority.
+// Inventory returns active config and managed routes after checking authority.
 func (s *Service) Inventory(ctx context.Context, authority webhookroutecmd.Authority) ([]webhookroutecmd.Item, error) {
+	return s.InventoryByFilter(ctx, authority, webhookroutecmd.InventoryActive)
+}
+
+// InventoryByFilter returns the requested lifecycle projection. Config routes
+// are active reservations and never appear as managed tombstones.
+func (s *Service) InventoryByFilter(ctx context.Context, authority webhookroutecmd.Authority,
+	filter webhookroutecmd.InventoryFilter) ([]webhookroutecmd.Item, error) {
 	if err := s.checkAuthority(ctx, authority); err != nil {
 		return nil, err
+	}
+	if filter != webhookroutecmd.InventoryActive && filter != webhookroutecmd.InventoryDeleted &&
+		filter != webhookroutecmd.InventoryAll {
+		return nil, webhookroutecmd.ErrInvalid
 	}
 	records, err := s.store.List(ctx)
 	if err != nil {
@@ -47,6 +58,11 @@ func (s *Service) Inventory(ctx context.Context, authority webhookroutecmd.Autho
 	}
 	items := make([]webhookroutecmd.Item, 0, len(records))
 	for _, r := range records {
+		if r.Source == webhookroutecmd.SourceConfig && r.Deleted ||
+			filter == webhookroutecmd.InventoryActive && r.Deleted ||
+			filter == webhookroutecmd.InventoryDeleted && (r.Source != webhookroutecmd.SourceManaged || !r.Deleted) {
+			continue
+		}
 		items = append(items, project(r))
 	}
 	return items, nil
@@ -87,14 +103,31 @@ func (s *Service) Create(ctx context.Context, request webhookroutecmd.Create) (w
 	if err != nil {
 		return webhookroutecmd.SecretResult{}, err
 	}
+	kind := webhookroutecmd.MutationCreate
+	expectedVersion := uint64(0)
+	previous, found, err := s.store.Get(ctx, r.Name)
+	if err != nil {
+		return webhookroutecmd.SecretResult{}, err
+	}
+	if found {
+		if previous.Source != webhookroutecmd.SourceManaged || !previous.Deleted {
+			return webhookroutecmd.SecretResult{}, webhookroutecmd.ErrConflict
+		}
+		kind = webhookroutecmd.MutationRecreate
+		expectedVersion = previous.Version
+		r.CreatedAt = previous.CreatedAt
+	}
 	secret, verifier, err := newSecret()
 	if err != nil {
 		return webhookroutecmd.SecretResult{}, webhookroutecmd.ErrUnavailable
 	}
-	r.Source, r.Enabled, r.Version = webhookroutecmd.SourceManaged, true, 1
+	r.Source, r.Enabled, r.Version = webhookroutecmd.SourceManaged, true, expectedVersion+1
 	r.AuthType, r.AuthHeader, r.SecretVerifier = webhookroutecmd.AuthTypeHeader, webhookroutecmd.ManagedSecretHeader, verifier
-	r.CreatedAt, r.UpdatedAt = request.Authority.At, request.Authority.At
-	if err := s.save(ctx, webhookroutecmd.MutationCreate, r, 0, request.Authority); err != nil {
+	if r.CreatedAt.IsZero() {
+		r.CreatedAt = request.Authority.At
+	}
+	r.UpdatedAt = request.Authority.At
+	if err := s.save(ctx, kind, r, expectedVersion, request.Authority); err != nil {
 		return webhookroutecmd.SecretResult{}, err
 	}
 	return webhookroutecmd.SecretResult{Item: project(r), Secret: secret}, nil

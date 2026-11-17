@@ -24,7 +24,7 @@ var providerQAEntries = []qaEntry{
 func qaProviders() webui.Page {
 	managed, configured := qaManagedProvider(), qaConfiguredProvider()
 	return webui.Page{Title: "Providers · QA", Current: webui.LocationProviders, ViewerUsername: "qa-superuser", CSRFToken: "qa-csrf", Navigation: qaAdminNavigation(webui.LocationProviders),
-		Providers: &webui.ProvidersView{Version: 7, Rows: []webui.ProviderRow{projectProviderRow(configured, 7), projectProviderRow(managed, 7)}}}
+		Providers: &webui.ProvidersView{Version: 7, Lifecycle: lifecycleView("/providers", lifecycleActive), EmptyMessage: "No providers match this lifecycle filter.", Rows: []webui.ProviderRow{projectProviderRow(configured, 7), projectProviderRow(managed, 7)}}}
 }
 
 func qaProviderEditor(item providers.Item, create bool) webui.Page {

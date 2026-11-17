@@ -15,7 +15,17 @@ const StorageFormatVersion uint32 = 1
 var (
 	ErrInvalid     = errors.New("invalid provider definition")
 	ErrConflict    = errors.New("provider state changed")
+	ErrNotFound    = errors.New("provider not found")
 	ErrUnavailable = errors.New("provider revision unavailable")
+)
+
+// InventoryFilter selects the current provider lifecycle projection.
+type InventoryFilter string
+
+const (
+	InventoryActive  InventoryFilter = "active"
+	InventoryDeleted InventoryFilter = "deleted"
+	InventoryAll     InventoryFilter = "all"
 )
 
 type Source string

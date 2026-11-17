@@ -144,7 +144,139 @@ func TestInventoryProjectsConfiguredAndManagedWithoutProtectedPayloads(t *testin
 	}
 }
 
-func TestInventoryRejectsSourceCollision(t *testing.T) {
+func TestProviderLifecycleFiltersPassiveDetailAndRecreate(t *testing.T) {
+	ctx := t.Context()
+	store := &memoryStore{}
+	service := newTestService(t, map[string]agentconfig.Config{
+		"configured": codexConfig("configured-model"),
+	}, store)
+	oldSecret := "old-secret"
+	created, err := service.Create(ctx, Change{ID: "managed", Config: codexConfig("old-model"), Protected: ProtectedEdit{
+		Environment: map[string]*string{"TOKEN": &oldSecret},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldRevisionID := created.Records[0].CurrentRevisionID
+	pinned, err := service.CompileCurrent(ctx, "managed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	deleted, err := service.Delete(ctx, created.Version, "managed", usercmd.AuditEvent{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	active, err := service.Inventory(ctx)
+	if err != nil || len(active.Items) != 1 || active.Items[0].Source != SourceConfigured {
+		t.Fatalf("active inventory = %+v, %v", active, err)
+	}
+	deletedInventory, err := service.InventoryByFilter(ctx, InventoryDeleted)
+	if err != nil || len(deletedInventory.Items) != 1 || !deletedInventory.Items[0].Record.Deleted {
+		t.Fatalf("deleted inventory = %+v, %v", deletedInventory, err)
+	}
+	all, err := service.InventoryByFilter(ctx, InventoryAll)
+	if err != nil || len(all.Items) != 2 {
+		t.Fatalf("all inventory = %+v, %v", all, err)
+	}
+	beforeDetail := cloneState(store.state)
+	detail, version, err := service.Get(ctx, "managed")
+	if err != nil || version != deleted.Version || !detail.Record.Deleted || len(detail.Revision.ProtectedValues) != 0 {
+		t.Fatalf("deleted detail = %+v, version %d, %v", detail, version, err)
+	}
+	if !slices.Equal(beforeDetail.Records, store.state.Records) || len(beforeDetail.Revisions) != len(store.state.Revisions) || beforeDetail.Version != store.state.Version {
+		t.Fatal("passive deleted detail changed provider state")
+	}
+	if _, _, err := service.Get(ctx, "missing"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing detail error = %v, want ErrNotFound", err)
+	}
+	if _, err := service.InventoryByFilter(ctx, InventoryFilter("unknown")); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("unknown inventory filter error = %v, want ErrInvalid", err)
+	}
+
+	recreated, err := service.Create(ctx, Change{ExpectedVersion: deleted.Version, ID: "managed", Config: codexConfig("new-model")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	current := findRecord(recreated.Records, "managed")
+	if current == nil || current.Deleted || !current.Enabled || current.CurrentRevisionID == oldRevisionID {
+		t.Fatalf("recreated record = %+v", current)
+	}
+	currentRevision := findRevision(recreated.Revisions, "managed", current.CurrentRevisionID)
+	if currentRevision == nil || currentRevision.Definition.HasAPIKey || len(currentRevision.Definition.EnvironmentNames) != 0 || len(currentRevision.ProtectedValues) != 0 {
+		t.Fatalf("recreated revision inherited protected values: %+v", currentRevision)
+	}
+	compiled, err := service.CompileCurrent(ctx, "managed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := compiled.Configs["managed"].CodexACP.Model; got != "new-model" {
+		t.Fatalf("current model = %q, want new-model", got)
+	}
+	if got := compiled.Configs["managed"].CodexACP.Env["TOKEN"]; got != "" {
+		t.Fatalf("recreated environment inherited TOKEN = %q", got)
+	}
+	restored, err := service.Restore(ctx, pinned.Binding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := restored.Configs["managed"].CodexACP.Env["TOKEN"]; got != oldSecret {
+		t.Fatalf("retained revision TOKEN = %q, want old secret", got)
+	}
+	if _, err := service.Update(ctx, Change{ExpectedVersion: deleted.Version, ID: "managed", Config: codexConfig("stale")}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale update error = %v, want ErrConflict", err)
+	}
+	if _, err := service.Delete(ctx, deleted.Version, "managed", usercmd.AuditEvent{}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale delete error = %v, want ErrConflict", err)
+	}
+}
+
+func TestCreateRejectsConfiguredAndActiveProviderCollisions(t *testing.T) {
+	service := newTestService(t, map[string]agentconfig.Config{"configured": codexConfig("configured")}, &memoryStore{})
+	if _, err := service.Create(t.Context(), Change{ID: "configured", Config: codexConfig("managed")}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("configured collision error = %v, want ErrConflict", err)
+	}
+	state, err := service.Create(t.Context(), Change{ID: "managed", Config: codexConfig("first")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Create(t.Context(), Change{ExpectedVersion: state.Version, ID: "managed", Config: codexConfig("second")}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("active collision error = %v, want ErrConflict", err)
+	}
+}
+
+func TestRecreateDoesNotInheritAPIKey(t *testing.T) {
+	store := &memoryStore{}
+	service := newTestService(t, nil, store)
+	oldAPIKey := "old-api-key"
+	config := agentconfig.Config{Type: agentconfig.AgentTypeOpenAI, OpenAI: &agentconfig.LocalAPIConfig{Model: "gpt"}}
+	created, err := service.Create(t.Context(), Change{ID: "hosted", Config: config, Protected: ProtectedEdit{APIKey: &oldAPIKey}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deleted, err := service.Delete(t.Context(), created.Version, "hosted", usercmd.AuditEvent{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recreated, err := service.Create(t.Context(), Change{ExpectedVersion: deleted.Version, ID: "hosted", Config: config})
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := findRecord(recreated.Records, "hosted")
+	revision := findRevision(recreated.Revisions, "hosted", recordRevisionID(record))
+	if revision == nil || revision.Definition.HasAPIKey || len(revision.ProtectedValues) != 0 {
+		t.Fatalf("recreated revision inherited API key: %+v", revision)
+	}
+	compiled, err := service.CompileCurrent(t.Context(), "hosted")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := compiled.Configs["hosted"].OpenAI.APIKey; got != "" {
+		t.Fatalf("recreated API key = %q, want empty", got)
+	}
+}
+
+func TestActiveConfiguredManagedCollisionIsInvalid(t *testing.T) {
 	store := &memoryStore{state: State{
 		Version: 1,
 		Records: []Record{{ID: "duplicate", CurrentRevisionID: "revision", Enabled: true}},
@@ -152,8 +284,46 @@ func TestInventoryRejectsSourceCollision(t *testing.T) {
 			Definition: Definition{Config: codexConfig("managed")}}},
 	}}
 	service := newTestService(t, map[string]agentconfig.Config{"duplicate": codexConfig("configured")}, store)
-	if _, err := service.Inventory(t.Context()); !errors.Is(err, ErrInvalid) {
-		t.Fatalf("inventory collision error = %v, want ErrInvalid", err)
+	for _, filter := range []InventoryFilter{InventoryActive, InventoryDeleted, InventoryAll} {
+		if _, err := service.InventoryByFilter(t.Context(), filter); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("InventoryByFilter(%q) collision error = %v, want ErrInvalid", filter, err)
+		}
+	}
+	if _, _, err := service.Get(t.Context(), "duplicate"); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("Get() collision error = %v, want ErrInvalid", err)
+	}
+	if _, err := service.Create(t.Context(), Change{ExpectedVersion: 1, ID: "duplicate", Config: codexConfig("replacement")}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("Create() collision error = %v, want ErrConflict", err)
+	}
+}
+
+func TestConfiguredProviderOwnsDeletedManagedReconciliationTombstone(t *testing.T) {
+	store := &memoryStore{state: State{
+		Version: 4,
+		Records: []Record{{ID: "reserved", CurrentRevisionID: "old-revision", Deleted: true}},
+		Revisions: []Revision{{ID: "old-revision", ProviderID: "reserved", DriverType: agentconfig.AgentTypeCodexACP,
+			Definition: Definition{Config: codexConfig("old-managed")}}},
+	}}
+	service := newTestService(t, map[string]agentconfig.Config{"reserved": codexConfig("configured")}, store)
+
+	active, err := service.InventoryByFilter(t.Context(), InventoryActive)
+	if err != nil || len(active.Items) != 1 || active.Items[0].Source != SourceConfigured || active.Items[0].Record.Deleted {
+		t.Fatalf("active reconciliation projection = %+v, %v", active, err)
+	}
+	deleted, err := service.InventoryByFilter(t.Context(), InventoryDeleted)
+	if err != nil || len(deleted.Items) != 0 {
+		t.Fatalf("deleted reconciliation projection = %+v, %v", deleted, err)
+	}
+	all, err := service.InventoryByFilter(t.Context(), InventoryAll)
+	if err != nil || len(all.Items) != 1 || all.Items[0].Source != SourceConfigured || all.Items[0].Record.Deleted {
+		t.Fatalf("all reconciliation projection = %+v, %v", all, err)
+	}
+	detail, version, err := service.Get(t.Context(), "reserved")
+	if err != nil || version != store.state.Version || detail.Source != SourceConfigured || detail.Record.Deleted {
+		t.Fatalf("reconciliation detail = %+v, version %d, %v", detail, version, err)
+	}
+	if _, err := service.Create(t.Context(), Change{ExpectedVersion: store.state.Version, ID: "reserved", Config: codexConfig("replacement")}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("Create() reused configured reservation: %v", err)
 	}
 }
 

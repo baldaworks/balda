@@ -474,10 +474,13 @@ func (s *Definitions) InventoryByScope(ctx context.Context, scope mcpcmd.Invento
 	}
 	counts := make(map[string]int, len(items))
 	for _, item := range items {
+		if item.Connection.Deleted {
+			continue
+		}
 		counts[item.Connection.PublicID]++
 	}
 	for i := range items {
-		if counts[items[i].Connection.PublicID] > 1 {
+		if !items[i].Connection.Deleted && counts[items[i].Connection.PublicID] > 1 {
 			items[i].Status = mcpcmd.StatusConflict
 			items[i].ToolCount = 0
 		}

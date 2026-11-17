@@ -307,12 +307,13 @@ func (f *webhooksHTTPFixture) HistoryDetail(_ context.Context, _, jobID string,
 	return webhookroutecmd.HistoryItem{}, webhookroutecmd.ErrNotFound
 }
 
-func (f *webhooksHTTPFixture) Inventory(context.Context, webhookroutecmd.Authority) ([]webhookroutecmd.Item, error) {
+func (f *webhooksHTTPFixture) InventoryByFilter(_ context.Context, _ webhookroutecmd.Authority, filter webhookroutecmd.InventoryFilter) ([]webhookroutecmd.Item, error) {
 	var items []webhookroutecmd.Item
 	for _, item := range f.items {
-		if !item.Deleted {
-			items = append(items, item)
+		if filter == webhookroutecmd.InventoryActive && item.Deleted || filter == webhookroutecmd.InventoryDeleted && !item.Deleted {
+			continue
 		}
+		items = append(items, item)
 	}
 	return items, nil
 }
@@ -397,6 +398,9 @@ func TestWebhooksBrowserManagement(t *testing.T) {
 				"managed": {Definition: webhookroutecmd.Definition{Name: "managed",
 					PromptTemplate: "handle {{.Body}}", ReportTo: "main_chat"},
 					Source: webhookroutecmd.SourceManaged, Enabled: true, Version: 2},
+				"archived": {Definition: webhookroutecmd.Definition{Name: "archived",
+					PromptTemplate: "retained {{.RawBody}}", ReportTo: "main_chat"},
+					Source: webhookroutecmd.SourceManaged, Deleted: true, Version: 3},
 			}}
 			app.webhooks = fixture
 			handler, err := app.handler()
@@ -442,6 +446,24 @@ func TestWebhooksBrowserManagement(t *testing.T) {
 				strings.Contains(managed.Body.String(), `name="destination"`) ||
 				!strings.Contains(managed.Body.String(), `name="expected_version"`) {
 				t.Fatalf("managed form does not match route fields: %d", managed.Code)
+			}
+			deletedInventory := get("/webhooks?lifecycle=deleted", admin.access)
+			if deletedInventory.Code != http.StatusOK || !strings.Contains(deletedInventory.Body.String(), `aria-current="page">Deleted`) ||
+				!strings.Contains(deletedInventory.Body.String(), `/webhooks/archived?lifecycle=deleted`) || strings.Contains(deletedInventory.Body.String(), `/webhooks/managed?lifecycle=deleted`) {
+				t.Fatalf("deleted webhook inventory = %d", deletedInventory.Code)
+			}
+			archived := get("/webhooks/archived?lifecycle=deleted", admin.access)
+			if archived.Code != http.StatusOK || !strings.Contains(archived.Body.String(), "Archived webhook") ||
+				!strings.Contains(archived.Body.String(), `/webhooks?lifecycle=deleted`) || strings.Contains(archived.Body.String(), "created-secret-example") {
+				t.Fatalf("archived webhook detail = %d", archived.Code)
+			}
+			for _, action := range []string{"Save webhook", "Enable webhook", "Disable webhook", "Rotate secret", "Delete webhook", "Send test POST"} {
+				if strings.Contains(archived.Body.String(), action) {
+					t.Errorf("archived webhook exposes %q", action)
+				}
+			}
+			if got := get("/webhooks?lifecycle=unknown", admin.access).Code; got != http.StatusBadRequest {
+				t.Fatalf("invalid webhook lifecycle = %d", got)
 			}
 			createPage := get("/webhooks?new=1", admin.access)
 			if createPage.Code != http.StatusOK || !strings.Contains(createPage.Body.String(),

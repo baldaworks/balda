@@ -19,14 +19,16 @@ const (
 )
 
 type recordingScheduleManagementStore struct {
-	jobs state.ScheduledJobStore
-	runs state.ScheduleRunStore
+	jobs      state.ScheduledJobStore
+	runs      state.ScheduleRunStore
+	mutations []state.ScheduleMutation
 }
 
 func (*recordingScheduleManagementStore) CheckAuthority(context.Context, schedulecmd.Authority) error {
 	return nil
 }
 func (s *recordingScheduleManagementStore) Save(ctx context.Context, m state.ScheduleMutation) error {
+	s.mutations = append(s.mutations, m)
 	return s.jobs.Upsert(ctx, m.Record)
 }
 func (s *recordingScheduleManagementStore) AdmitManualRun(ctx context.Context, admission state.ScheduleManualAdmission) (bool, error) {
@@ -204,7 +206,8 @@ func TestManagementLifecyclePreservesDisabledSelectionAndArchive(t *testing.T) {
 	ctx := t.Context()
 	jobs := newSchedulerJobStore(t)
 	now := time.Date(2026, 10, 8, 8, 0, 0, 0, time.UTC)
-	m := NewManagement(jobs, &recordingScheduleManagementStore{jobs: jobs}, nil, nil, nil)
+	store := &recordingScheduleManagementStore{jobs: jobs}
+	m := NewManagement(jobs, store, nil, nil, nil)
 	m.now = func() time.Time { return now }
 	authority := schedulecmd.Authority{UserID: "admin", SessionID: "session", At: now}
 	definition := schedulecmd.Definition{ID: "daily-review", Cron: "0 9 * * *", Content: "review",
@@ -234,9 +237,74 @@ func TestManagementLifecyclePreservesDisabledSelectionAndArchive(t *testing.T) {
 	if err != nil || !archived.Deleted || archived.Enabled || archived.Version != 4 {
 		t.Fatalf("archived = %+v, %v", archived, err)
 	}
+	configured := state.ScheduledJobRecord{JobID: "configured", Source: state.ScheduledJobSourceConfig,
+		Enabled: true, DefinitionVersion: 1, Content: "configured", ScheduleSpec: "0 10 * * *",
+		Status: state.ScheduledJobStatusActive, NextRunAt: now.Add(2 * time.Hour)}
+	if err := jobs.Upsert(ctx, configured); err != nil {
+		t.Fatal(err)
+	}
+	configuredTombstone := configured
+	configuredTombstone.JobID = "removed-configured"
+	configuredTombstone.Enabled = false
+	configuredTombstone.Deleted = true
+	if err := jobs.Upsert(ctx, configuredTombstone); err != nil {
+		t.Fatal(err)
+	}
+
+	assertInventoryIDs(t, m, authority, schedulecmd.InventoryActive, "configured")
+	assertInventoryIDs(t, m, authority, schedulecmd.InventoryDeleted, definition.ID)
+	assertInventoryIDs(t, m, authority, schedulecmd.InventoryAll, "configured", definition.ID)
 	inventory, err = m.Inventory(ctx, authority)
-	if err != nil || len(inventory) != 0 {
-		t.Fatalf("inventory after archive = %+v, %v", inventory, err)
+	if err != nil || len(inventory) != 1 || inventory[0].Definition.ID != "configured" {
+		t.Fatalf("default inventory after archive = %+v, %v", inventory, err)
+	}
+	if _, err := m.InventoryByFilter(ctx, authority, schedulecmd.InventoryFilter("invalid")); !errors.Is(err, schedulecmd.ErrInvalid) {
+		t.Fatalf("invalid inventory filter = %v", err)
+	}
+	deleted, err := m.Get(ctx, definition.ID, authority)
+	if err != nil || !deleted.Deleted || deleted.Definition.Content != definition.Content {
+		t.Fatalf("passive deleted detail = %+v, %v", deleted, err)
+	}
+
+	recreatedDefinition := schedulecmd.Definition{ID: definition.ID, Cron: "30 10 * * *",
+		Content: "fresh generation", Locator: "telegram:9002:0"}
+	recreated, err := m.Create(ctx, schedulecmd.Create{Definition: recreatedDefinition, Authority: authority})
+	if err != nil || recreated.Deleted || !recreated.Enabled || recreated.Version != archived.Version+1 ||
+		recreated.Definition != recreatedDefinition {
+		t.Fatalf("recreated = %+v, %v", recreated, err)
+	}
+	lastMutation := store.mutations[len(store.mutations)-1]
+	if lastMutation.Kind != state.ScheduleRecreate || lastMutation.ExpectedVersion != archived.Version {
+		t.Fatalf("recreate mutation = %+v", lastMutation)
+	}
+	if _, err := m.Create(ctx, schedulecmd.Create{Definition: recreatedDefinition, Authority: authority}); !errors.Is(err, schedulecmd.ErrConflict) {
+		t.Fatalf("active collision = %v", err)
+	}
+	configuredDefinition := recreatedDefinition
+	configuredDefinition.ID = configured.JobID
+	if _, err := m.Create(ctx, schedulecmd.Create{Definition: configuredDefinition, Authority: authority}); !errors.Is(err, schedulecmd.ErrConflict) {
+		t.Fatalf("configured collision = %v", err)
+	}
+	configuredDefinition.ID = configuredTombstone.JobID
+	if _, err := m.Create(ctx, schedulecmd.Create{Definition: configuredDefinition, Authority: authority}); !errors.Is(err, schedulecmd.ErrConflict) {
+		t.Fatalf("configured tombstone collision = %v", err)
+	}
+}
+
+func assertInventoryIDs(t *testing.T, m *Management, authority schedulecmd.Authority,
+	filter schedulecmd.InventoryFilter, want ...string) {
+	t.Helper()
+	items, err := m.InventoryByFilter(t.Context(), authority, filter)
+	if err != nil {
+		t.Fatalf("InventoryByFilter(%q) error = %v", filter, err)
+	}
+	if len(items) != len(want) {
+		t.Fatalf("InventoryByFilter(%q) = %+v, want IDs %v", filter, items, want)
+	}
+	for i := range want {
+		if items[i].Definition.ID != want[i] || items[i].Definition.Content != "" {
+			t.Fatalf("InventoryByFilter(%q)[%d] = %+v, want content-free ID %q", filter, i, items[i], want[i])
+		}
 	}
 }
 

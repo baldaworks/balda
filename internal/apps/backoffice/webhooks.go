@@ -25,7 +25,7 @@ const webhookTestFormLimit = 3*webhookcmd.MaxBodyBytes + (4 << 10)
 
 // WebhooksOperations is Backoffice's consuming port for webhook route policy.
 type WebhooksOperations interface {
-	Inventory(ctx context.Context, authority webhookroutecmd.Authority) ([]webhookroutecmd.Item, error)
+	InventoryByFilter(ctx context.Context, authority webhookroutecmd.Authority, filter webhookroutecmd.InventoryFilter) ([]webhookroutecmd.Item, error)
 	Get(ctx context.Context, name string, authority webhookroutecmd.Authority) (webhookroutecmd.Item, error)
 	Create(ctx context.Context, request webhookroutecmd.Create) (webhookroutecmd.SecretResult, error)
 	Update(ctx context.Context, request webhookroutecmd.Update) (webhookroutecmd.Item, error)
@@ -71,6 +71,11 @@ func (a *httpApp) webhooksView(r *http.Request, p security.Principal) (webui.Pag
 	if a.webhooks == nil {
 		return page, webhookroutecmd.ErrUnavailable
 	}
+	selected, ok := lifecycleSelection(r.URL.Query())
+	if !ok {
+		return page, webhookroutecmd.ErrInvalid
+	}
+	lifecycle := lifecycleView("/webhooks", selected)
 	name := r.PathValue("webhook_name")
 	if name != "" {
 		item, err := a.webhooks.Get(r.Context(), name, a.webhookAuthority(p))
@@ -78,7 +83,9 @@ func (a *httpApp) webhooksView(r *http.Request, p security.Principal) (webui.Pag
 			return page, err
 		}
 		page.Title = item.Definition.Name + " · Webhooks · Balda"
-		page.Webhooks = &webui.WebhooksView{MissingPublicOrigin: a.publicOrigin == "", Editor: a.projectWebhookEditor(item, false)}
+		page.Webhooks = &webui.WebhooksView{MissingPublicOrigin: a.publicOrigin == "", Lifecycle: lifecycle, Editor: a.projectWebhookEditor(item, false)}
+		page.Webhooks.Editor.Row.DetailPath = lifecyclePath(page.Webhooks.Editor.Row.DetailPath, selected)
+		page.Webhooks.Editor.TestPath = lifecyclePath(page.Webhooks.Editor.TestPath, selected)
 		page.Webhooks.Editor.TestRequestKey = uuid.NewString()
 		if r.Method == http.MethodGet {
 			beforeAt, beforeJobID, err := webhookHistoryCursor(r.URL.Query())
@@ -92,9 +99,8 @@ func (a *httpApp) webhooksView(r *http.Request, p security.Principal) (webui.Pag
 			}
 			if len(history) > webhookHistoryPageSize {
 				last := history[webhookHistoryPageSize-1]
-				page.Webhooks.Editor.NextHistoryPath = page.Webhooks.Editor.Row.DetailPath +
-					"?before_at=" + url.QueryEscape(last.CreatedAt.UTC().Format(time.RFC3339Nano)) +
-					"&before_job_id=" + url.QueryEscape(last.JobID)
+				page.Webhooks.Editor.NextHistoryPath = queryPath(page.Webhooks.Editor.Row.DetailPath,
+					url.Values{"before_at": {last.CreatedAt.UTC().Format(time.RFC3339Nano)}, "before_job_id": {last.JobID}})
 				history = history[:webhookHistoryPageSize]
 			}
 			for _, record := range history {
@@ -117,17 +123,19 @@ func (a *httpApp) webhooksView(r *http.Request, p security.Principal) (webui.Pag
 	}
 	if r.Method == http.MethodPost || r.URL.Query().Get("new") == "1" {
 		page.Title = "Add webhook · Balda"
-		page.Webhooks = &webui.WebhooksView{MissingPublicOrigin: a.publicOrigin == "", Editor: a.projectWebhookEditor(webhookroutecmd.Item{}, true)}
+		page.Webhooks = &webui.WebhooksView{MissingPublicOrigin: a.publicOrigin == "", Lifecycle: lifecycle, Editor: a.projectWebhookEditor(webhookroutecmd.Item{}, true)}
+		page.Webhooks.Editor.Action = lifecyclePath(page.Webhooks.Editor.Action, selected)
 		return page, nil
 	}
-	items, err := a.webhooks.Inventory(r.Context(), a.webhookAuthority(p))
+	items, err := a.webhooks.InventoryByFilter(r.Context(), a.webhookAuthority(p), webhookroutecmd.InventoryFilter(selected))
 	if err != nil {
 		return page, err
 	}
-	page.Webhooks = &webui.WebhooksView{MissingPublicOrigin: a.publicOrigin == ""}
+	page.Webhooks = &webui.WebhooksView{MissingPublicOrigin: a.publicOrigin == "", Lifecycle: lifecycle, EmptyMessage: "No webhooks match this lifecycle filter."}
 	for _, item := range items {
 		row := webui.ProjectWebhookRow(item)
 		row.URL = a.webhookURL(item.Definition.Name)
+		row.DetailPath = lifecyclePath(row.DetailPath, selected)
 		page.Webhooks.Rows = append(page.Webhooks.Rows, row)
 	}
 	return page, nil
@@ -210,7 +218,7 @@ func (a *httpApp) webhookTestPost(w http.ResponseWriter, r *http.Request) {
 		a.webhookError(w, r, page, err)
 		return
 	}
-	location := a.path(editor.Row.DetailPath) + "?job_id=" + url.QueryEscape(result.JobID)
+	location := a.path(queryPath(editor.Row.DetailPath, url.Values{"job_id": {result.JobID}}))
 	if err := webui.RespondMutationPath(w, r, location); err != nil {
 		a.webhookError(w, r, page, webhookroutecmd.ErrUnavailable)
 	}
@@ -346,7 +354,11 @@ func webhookConfirmedVersion(form url.Values) (uint64, error) {
 
 func (a *httpApp) webhookSecretResult(w http.ResponseWriter, r *http.Request, page webui.Page, result webhookroutecmd.SecretResult) {
 	page.Title = result.Item.Definition.Name + " · Webhooks · Balda"
-	page.Webhooks = &webui.WebhooksView{MissingPublicOrigin: a.publicOrigin == "", Editor: a.projectWebhookEditor(result.Item, false)}
+	selected, ok := lifecycleSelection(r.URL.Query())
+	if !ok {
+		selected = lifecycleActive
+	}
+	page.Webhooks = &webui.WebhooksView{MissingPublicOrigin: a.publicOrigin == "", Lifecycle: lifecycleView("/webhooks", selected), Editor: a.projectWebhookEditor(result.Item, false)}
 	page.Webhooks.Editor.Secret = result.Secret
 	// The secret exists only in this POST response. A subsequent GET uses Get,
 	// whose Item cannot carry a secret.

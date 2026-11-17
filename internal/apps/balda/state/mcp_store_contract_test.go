@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"reflect"
 	"sync"
@@ -327,37 +328,78 @@ func checkMCPConcurrentRecreateRetainsHistory(t *testing.T, open contractOpener)
 
 	recreate := deleted
 	recreate.ExpectedVersion, recreate.Recreate = 2, true
-	recreate.Connection.CurrentRevisionID = "revision-recreated"
 	recreate.Connection.Enabled, recreate.Connection.Deleted = true, false
-	recreate.Revision = &mcpcmd.Revision{ConnectionID: recreate.Connection.ID, ID: recreate.Connection.CurrentRevisionID, CreatedAt: recreate.Connection.UpdatedAt,
-		Definition: mcpcmd.Definition{Transport: mcpcmd.TransportHTTP, URL: "https://recreated.example/mcp", Targets: mcpcmd.Targets{All: true}}}
-	recreate.Audit.ID = "mcp-recreate"
-	var successes atomic.Int32
+	type recreateResult struct {
+		revisionID string
+		auditID    string
+		err        error
+	}
+	results := make(chan recreateResult, 5)
 	var wg sync.WaitGroup
-	for range 5 {
+	for i := range 5 {
+		candidate := recreate
+		candidate.Connection.CurrentRevisionID = fmt.Sprintf("revision-recreated-%d", i)
+		candidate.Revision = &mcpcmd.Revision{ConnectionID: candidate.Connection.ID, ID: candidate.Connection.CurrentRevisionID, CreatedAt: candidate.Connection.UpdatedAt,
+			Definition: mcpcmd.Definition{Transport: mcpcmd.TransportHTTP, URL: fmt.Sprintf("https://recreated-%d.example/mcp", i), Targets: mcpcmd.Targets{All: true}}}
+		candidate.Audit.ID = fmt.Sprintf("mcp-recreate-%d", i)
 		wg.Go(func() {
-			err := store.SaveMCPConnection(t.Context(), recreate)
-			if err == nil {
-				successes.Add(1)
-			} else if !errors.Is(err, mcpcmd.ErrConflict) {
-				t.Errorf("concurrent recreate: %v", err)
-			}
+			results <- recreateResult{revisionID: candidate.Revision.ID, auditID: candidate.Audit.ID, err: store.SaveMCPConnection(t.Context(), candidate)}
 		})
 	}
 	wg.Wait()
-	if successes.Load() != 1 {
-		t.Fatalf("concurrent recreates = %d", successes.Load())
+	close(results)
+	var winner recreateResult
+	successes, conflicts := 0, 0
+	losingRevisions, losingAudits := make(map[string]bool), make(map[string]bool)
+	for result := range results {
+		switch {
+		case result.err == nil:
+			successes++
+			winner = result
+		case errors.Is(result.err, mcpcmd.ErrConflict):
+			conflicts++
+			losingRevisions[result.revisionID] = true
+			losingAudits[result.auditID] = true
+		default:
+			t.Fatalf("concurrent recreate = %v", result.err)
+		}
+	}
+	if successes != 1 || conflicts != 4 {
+		t.Fatalf("concurrent recreates: successes=%d conflicts=%d", successes, conflicts)
 	}
 	c, found, err := store.GetMCPConnection(t.Context(), create.Connection.ID)
-	if err != nil || !found || c.Version != 3 || c.Deleted || !c.Enabled || c.CurrentRevisionID != recreate.Revision.ID || c.PublishedVersion != 0 {
+	if err != nil || !found || c.Version != 3 || c.Deleted || !c.Enabled || c.CurrentRevisionID != winner.revisionID || c.PublishedVersion != 0 {
 		t.Fatalf("recreated connection = %+v, %v", c, err)
 	}
-	for _, revisionID := range []string{create.Revision.ID, recreate.Revision.ID} {
+	for _, revisionID := range []string{create.Revision.ID, winner.revisionID} {
 		if _, found, err := store.GetMCPRevision(t.Context(), c.ID, revisionID); err != nil || !found {
 			t.Fatalf("retained revision %q: found=%v err=%v", revisionID, found, err)
 		}
 	}
-	fresh, found, err := store.GetMCPRevision(t.Context(), c.ID, recreate.Revision.ID)
+	revisions, err := store.ListMCPRevisions(t.Context())
+	if err != nil || len(revisions) != 2 {
+		t.Fatalf("recreate retained losing revision: count=%d err=%v", len(revisions), err)
+	}
+	for revisionID := range losingRevisions {
+		if _, found, err := store.GetMCPRevision(t.Context(), c.ID, revisionID); err != nil || found {
+			t.Fatalf("losing revision %q retained: found=%v err=%v", revisionID, found, err)
+		}
+	}
+	audits, err := p.Users().ListAuditEvents(t.Context(), usercmd.PageRequest{Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	winnerAuditFound := false
+	for _, audit := range audits.Events {
+		if losingAudits[audit.ID] {
+			t.Fatalf("losing audit %q retained", audit.ID)
+		}
+		winnerAuditFound = winnerAuditFound || audit.ID == winner.auditID
+	}
+	if !winnerAuditFound {
+		t.Fatalf("winning audit %q missing", winner.auditID)
+	}
+	fresh, found, err := store.GetMCPRevision(t.Context(), c.ID, winner.revisionID)
 	if err != nil || !found || len(fresh.ProtectedValues) != 0 || fresh.Definition.AuthBinding != nil {
 		t.Fatalf("recreated revision inherited protected state: %+v, %v", fresh, err)
 	}
@@ -368,7 +410,7 @@ func checkMCPConcurrentRecreateRetainsHistory(t *testing.T, open contractOpener)
 	stale := create
 	stale.ExpectedVersion = 1
 	stale.Connection.CurrentRevisionID = "stale-revision"
-	stale.Revision = &mcpcmd.Revision{ConnectionID: c.ID, ID: "stale-revision", CreatedAt: c.UpdatedAt, Definition: recreate.Revision.Definition}
+	stale.Revision = &mcpcmd.Revision{ConnectionID: c.ID, ID: "stale-revision", CreatedAt: c.UpdatedAt, Definition: fresh.Definition}
 	stale.Audit.ID = "stale-pre-delete-edit"
 	if err := store.SaveMCPConnection(t.Context(), stale); !errors.Is(err, mcpcmd.ErrConflict) {
 		t.Fatalf("stale pre-delete mutation = %v", err)

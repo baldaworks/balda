@@ -9,8 +9,10 @@ import (
 
 // SchedulesView is the administrator inventory or one schedule editor.
 type SchedulesView struct {
-	Rows   []ScheduleRow
-	Editor *ScheduleEditor
+	Rows         []ScheduleRow
+	Editor       *ScheduleEditor
+	Lifecycle    LifecycleView
+	EmptyMessage string
 }
 
 // ScheduleRow is a content-free inventory projection.

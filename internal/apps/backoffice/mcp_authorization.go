@@ -157,7 +157,7 @@ func (a *httpApp) mcpCreateAndBeginDevice(w http.ResponseWriter, r *http.Request
 		return
 	}
 	page.Title = "Authorize connection · MCP · Balda"
-	page.MCP = &webui.MCPView{Device: webui.ProjectMCPDevice(started, true)}
+	page.MCP = &webui.MCPView{Lifecycle: lifecycleView("/mcp", lifecycleActive), Device: webui.ProjectMCPDevice(started, true)}
 	a.render(w, r, http.StatusOK, webui.TemplateMCP, page)
 }
 
@@ -207,7 +207,7 @@ func (a *httpApp) mcpBeginDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	page.Title = "Authorize worker · MCP · Balda"
-	page.MCP = &webui.MCPView{Device: webui.ProjectMCPDevice(started, true)}
+	page.MCP = &webui.MCPView{Lifecycle: lifecycleView("/mcp", lifecycleActive), Device: webui.ProjectMCPDevice(started, true)}
 	a.render(w, r, http.StatusOK, webui.TemplateMCP, page)
 }
 
@@ -299,7 +299,7 @@ func (a *httpApp) mcpDeviceStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	page.Title = "Worker authorization status · MCP · Balda"
-	page.MCP = &webui.MCPView{Device: webui.ProjectMCPDevice(device, false)}
+	page.MCP = &webui.MCPView{Lifecycle: lifecycleView("/mcp", lifecycleActive), Device: webui.ProjectMCPDevice(device, false)}
 	a.render(w, r, http.StatusOK, webui.TemplateMCP, page)
 }
 func (a *httpApp) mcpCancelAuthorization(w http.ResponseWriter, r *http.Request) {
@@ -355,20 +355,14 @@ func (a *httpApp) mcpRetryAuthorization(w http.ResponseWriter, r *http.Request) 
 }
 
 func (a *httpApp) mcpSavedAuthorizationAvailable(ctx context.Context, connectionID string) error {
-	items, err := a.mcp.Inventory(ctx)
+	item, err := a.mcp.Get(ctx, connectionID)
 	if err != nil {
 		return err
 	}
-	for _, item := range items {
-		if item.Connection.ID != connectionID {
-			continue
-		}
-		if webui.ProjectMCPEditor(item, nil, false).AuthorizationAvailable {
-			return nil
-		}
-		return mcpcmd.ErrForbidden
+	if webui.ProjectMCPEditor(item, nil, false).AuthorizationAvailable {
+		return nil
 	}
-	return mcpcmd.ErrNotFound
+	return mcpcmd.ErrForbidden
 }
 
 func (a *httpApp) mcpAuthorizationError(w http.ResponseWriter, r *http.Request, page webui.Page, err error) {

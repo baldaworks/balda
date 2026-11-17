@@ -515,7 +515,7 @@ func TestDeletedDefinitionInventoryDetailAndRecreate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	configured.items = []mcpcmd.Item{{Connection: mcpcmd.Connection{ID: "config:file-tools", PublicID: "file-tools", Source: mcpcmd.SourceConfig}}}
+	configured.items = []mcpcmd.Item{{Connection: mcpcmd.Connection{ID: "config:worker-tools", PublicID: request.PublicID, Source: mcpcmd.SourceConfig}}}
 	active, err := s.Inventory(t.Context())
 	if err != nil || len(active) != 1 || active[0].Connection.Source != mcpcmd.SourceConfig {
 		t.Fatalf("active inventory contains tombstone: %+v, %v", active, err)
@@ -527,6 +527,14 @@ func TestDeletedDefinitionInventoryDetailAndRecreate(t *testing.T) {
 	all, err := s.InventoryByScope(t.Context(), mcpcmd.InventoryAll)
 	if err != nil || len(all) != 2 {
 		t.Fatalf("all inventory = %+v, %v", all, err)
+	}
+	for _, item := range all {
+		if item.Connection.Deleted && item.Status != mcpcmd.StatusDeleted {
+			t.Fatalf("all inventory rewrote tombstone status: %+v", all)
+		}
+		if !item.Connection.Deleted && item.Status == mcpcmd.StatusConflict {
+			t.Fatalf("tombstone participated in active conflict projection: %+v", all)
+		}
 	}
 	detail, err := s.Detail(t.Context(), created.Connection.ID)
 	if err != nil || detail.Status != mcpcmd.StatusDeleted || detail.ToolCount != 0 {
@@ -540,7 +548,6 @@ func TestDeletedDefinitionInventoryDetailAndRecreate(t *testing.T) {
 		t.Fatalf("oversized detail ID accepted: %v", err)
 	}
 
-	configured.items = []mcpcmd.Item{{Connection: mcpcmd.Connection{ID: "config:worker-tools", PublicID: request.PublicID, Source: mcpcmd.SourceConfig}}}
 	if _, err := s.Create(t.Context(), request); !errors.Is(err, mcpcmd.ErrConflict) {
 		t.Fatalf("configured reservation was reused: %v", err)
 	}

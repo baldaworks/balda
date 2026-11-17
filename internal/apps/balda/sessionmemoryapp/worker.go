@@ -109,7 +109,10 @@ type laneWork struct {
 	export   sessionmemorycmd.Export
 }
 
-type memoryLane struct{ pending []laneWork }
+type memoryLane struct {
+	pending []laneWork
+	running bool
+}
 
 // NewCapabilityWorker constructs the production worker over narrow portable
 // ingest capabilities. Runtime lifecycle is owned by the Balda composition
@@ -317,7 +320,8 @@ func (w *Worker) enqueue(ctx context.Context, scopeKey string, work laneWork) er
 		}
 		if len(lane.pending) < w.config.MaxQueuedPerScope {
 			lane.pending = append(lane.pending, work)
-			if len(lane.pending) == 1 {
+			if !lane.running {
+				lane.running = true
 				w.laneWG.Add(1)
 				go w.runLane(ctx, scopeKey, lane)
 			}
@@ -343,6 +347,7 @@ func (w *Worker) runLane(ctx context.Context, scopeKey string, lane *memoryLane)
 	for {
 		w.mu.Lock()
 		if len(lane.pending) == 0 {
+			lane.running = false
 			if w.lanes[scopeKey] == lane {
 				delete(w.lanes, scopeKey)
 			}
