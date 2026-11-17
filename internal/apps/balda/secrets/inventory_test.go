@@ -14,12 +14,19 @@ import (
 	"testing"
 )
 
-const primitiveOwner = "internal/apps/balda/secrets/protector.go"
+const primaryPrimitiveOwner = "internal/apps/balda/secrets/protector.go"
 
-var primitiveImports = map[string]bool{
-	"crypto/aes":    true,
-	"crypto/cipher": true,
-	"crypto/rand":   true,
+var primitiveImports = map[string]map[string]bool{
+	"internal/apps/balda/secrets/protector.go": {
+		"crypto/aes":    true,
+		"crypto/cipher": true,
+		"crypto/rand":   true,
+	},
+	"internal/apps/balda/secrets/root.go": {
+		"crypto/cipher": true,
+		"crypto/hkdf":   true,
+		"crypto/sha256": true,
+	},
 }
 
 type inventoryEntry struct {
@@ -110,7 +117,7 @@ func validateInventory(root string, entries []inventoryEntry, exclusions []exclu
 			return fmt.Errorf("consumer %q has overlapping ownership", entry.consumer)
 		}
 		seenConsumers[entry.consumer] = true
-		for _, evidence := range []string{entry.consumer, entry.persistenceOwner, beforeColon(entry.aadOwner), entry.primitiveOwner, beforeColon(entry.rootSource)} {
+		for _, evidence := range []string{entry.consumer, entry.persistenceOwner, beforeColon(entry.aadOwner), beforeColon(entry.rootSource)} {
 			if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(evidence))); err != nil {
 				return fmt.Errorf("scope %q has stale evidence %q: %w", entry.scopeID, evidence, err)
 			}
@@ -120,8 +127,22 @@ func validateInventory(root string, entries []inventoryEntry, exclusions []exclu
 				return fmt.Errorf("scope %q: %w", entry.scopeID, err)
 			}
 		}
-		if entry.primitiveOwner != primitiveOwner {
-			return fmt.Errorf("scope %q has unregistered primitive owner %q", entry.scopeID, entry.primitiveOwner)
+		owners := strings.Split(entry.primitiveOwner, ";")
+		if len(owners) != len(primitiveImports) {
+			return fmt.Errorf("scope %q has incomplete primitive ownership %q", entry.scopeID, entry.primitiveOwner)
+		}
+		seenOwners := make(map[string]bool, len(owners))
+		for _, owner := range owners {
+			if seenOwners[owner] {
+				return fmt.Errorf("scope %q has duplicate primitive owner %q", entry.scopeID, owner)
+			}
+			seenOwners[owner] = true
+			if _, ok := primitiveImports[owner]; !ok {
+				return fmt.Errorf("scope %q has unregistered primitive owner %q", entry.scopeID, owner)
+			}
+			if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(owner))); err != nil {
+				return fmt.Errorf("scope %q has stale primitive owner %q: %w", entry.scopeID, owner, err)
+			}
 		}
 	}
 	registeredConsumers := make(map[string]bool, len(entries))
@@ -132,7 +153,7 @@ func validateInventory(root string, entries []inventoryEntry, exclusions []exclu
 			registeredConstructors[owner] = true
 		}
 	}
-	if err := compareOwnership("encryption consumer", registeredConsumers, sealOwners, primitiveOwner); err != nil {
+	if err := compareOwnership("encryption consumer", registeredConsumers, sealOwners, primaryPrimitiveOwner); err != nil {
 		return err
 	}
 	if err := compareOwnership("root constructor", registeredConstructors, rootConstructors, ""); err != nil {
@@ -150,10 +171,13 @@ func validateInventory(root string, entries []inventoryEntry, exclusions []exclu
 		excluded[rule.importPath] = rule
 	}
 	usedExclusions := make(map[string]bool, len(exclusions))
-	seenPrimitiveImport := make(map[string]bool, len(primitiveImports))
+	seenPrimitiveImport := make(map[string]map[string]bool, len(primitiveImports))
 	for _, item := range imports {
-		if item.file == primitiveOwner && primitiveImports[item.importPath] {
-			seenPrimitiveImport[item.importPath] = true
+		if ownedImports := primitiveImports[item.file]; ownedImports[item.importPath] {
+			if seenPrimitiveImport[item.file] == nil {
+				seenPrimitiveImport[item.file] = make(map[string]bool)
+			}
+			seenPrimitiveImport[item.file][item.importPath] = true
 			continue
 		}
 		if _, ok := excluded[item.importPath]; !ok {
@@ -161,9 +185,11 @@ func validateInventory(root string, entries []inventoryEntry, exclusions []exclu
 		}
 		usedExclusions[item.importPath] = true
 	}
-	for importPath := range primitiveImports {
-		if !seenPrimitiveImport[importPath] {
-			return fmt.Errorf("registered primitive import %q is stale", importPath)
+	for owner, importPaths := range primitiveImports {
+		for importPath := range importPaths {
+			if !seenPrimitiveImport[owner][importPath] {
+				return fmt.Errorf("registered primitive import %q in %s is stale", importPath, owner)
+			}
 		}
 	}
 	for importPath := range excluded {
@@ -256,7 +282,7 @@ func discoverSecretsConstructors(t *testing.T, root string) []string {
 				return true
 			}
 			identifier, identifierOK := selector.X.(*ast.Ident)
-			if identifierOK && selector.Sel.Name == "New" && aliases[identifier.Name] {
+			if identifierOK && (selector.Sel.Name == "New" || selector.Sel.Name == "NewRoot") && aliases[identifier.Name] {
 				found = true
 			}
 			return true
@@ -372,7 +398,11 @@ func readTSV(t *testing.T, path string, width int) [][]string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			t.Errorf("close %s: %v", path, err)
+		}
+	}()
 	var rows [][]string
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {

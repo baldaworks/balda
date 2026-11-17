@@ -73,7 +73,7 @@ func (c Config) ResolveSecurityKey() (string, error) {
 	if c.Balda.MCPManagement.CredentialKey != "" {
 		return "", fmt.Errorf("balda.mcp_management.credential_key is obsolete; move the identical value to app.security_key or BALDA_APP_SECURITY_KEY")
 	}
-	if _, err := secrets.New(c.App.SecurityKey); err != nil {
+	if _, err := secrets.NewRoot(c.App.SecurityKey); err != nil {
 		return "", fmt.Errorf("app.security_key is invalid: %w", err)
 	}
 	return c.App.SecurityKey, nil
