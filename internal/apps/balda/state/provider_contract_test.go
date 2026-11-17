@@ -73,6 +73,7 @@ func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) 
 	t.Run("MCPAuthorityFences", func(t *testing.T) { checkMCPAuthorityFences(t, factory(t)) })
 	t.Run("MCPSelectionAndPublicationSurviveRestart", func(t *testing.T) { checkMCPSelectionAndPublicationSurviveRestart(t, factory(t)) })
 	t.Run("MCPConcurrentEditsCommitOnce", func(t *testing.T) { checkMCPConcurrentEditsCommitOnce(t, factory(t)) })
+	t.Run("MCPConcurrentRecreateRetainsHistory", func(t *testing.T) { checkMCPConcurrentRecreateRetainsHistory(t, factory(t)) })
 	t.Run("MCPProtectedBindingsAndSafeAudit", func(t *testing.T) { checkMCPProtectedBindingsAndSafeAudit(t, factory(t)) })
 	t.Run("MCPEnrolledFactorAndRevocation", func(t *testing.T) { checkMCPEnrolledFactorAndRevocation(t, factory(t)) })
 	t.Run("MFAStoreLifecycle", func(t *testing.T) { checkMFAStoreLifecycle(t, factory(t)) })
@@ -426,6 +427,90 @@ func checkProvider_ScheduleManagementAuthorityAndVersion(t *testing.T, open cont
 	if err != nil || !current.Deleted || current.Enabled || current.DefinitionVersion != 4 {
 		t.Fatalf("archived = %+v, %v", current, err)
 	}
+	lastRunAt := a.At.Add(-time.Hour)
+	current.Status = ScheduledJobStatusPaused
+	current.RetryCount = 2
+	current.LastDispatchKey = "old-dispatch"
+	current.LastError = "old-safe-error"
+	current.LastRunAt = lastRunAt
+	if err := p.ScheduledJobs().Upsert(t.Context(), current); err != nil {
+		t.Fatalf("seed archived runtime state: %v", err)
+	}
+	run := ScheduleRunRecord{RunID: "schedule-run-before-recreate", ScheduleID: r.JobID,
+		Trigger: ScheduleRunTriggerManual, TriggerKey: "manual:before-recreate", DefinitionVersion: 3,
+		RequestedAt: a.At, DispatchState: ScheduleRunPending, PayloadJSON: `{"content":"updated"}`,
+		ReportLocatorRef: "telegram:1:0"}
+	if created, err := p.ScheduleRuns().Create(t.Context(), run); err != nil || !created {
+		t.Fatalf("create retained run = %v, %v", created, err)
+	}
+
+	recreate := m
+	recreate.Kind, recreate.ExpectedVersion, recreate.Record.DefinitionVersion = ScheduleRecreate, 4, 5
+	recreate.Record.Enabled, recreate.Record.Deleted = true, false
+	recreate.Record.Content = "fresh generation"
+	recreate.Record.ScheduleSpec = "30 10 * * *"
+	recreate.Record.Status = ScheduledJobStatusActive
+	recreate.Record.RetryCount = 0
+	recreate.Record.LastDispatchKey = ""
+	recreate.Record.LastError = ""
+	recreate.Record.NextRunAt = next.Add(time.Hour)
+	recreate.Record.TargetKey = "telegram:2:0"
+	recreate.Audit.ID = "schedule-recreate-a"
+	other := recreate
+	other.Audit.ID = "schedule-recreate-b"
+
+	results := make(chan error, 2)
+	start := make(chan struct{})
+	for _, mutation := range []ScheduleMutation{recreate, other} {
+		mutation := mutation
+		go func() {
+			<-start
+			results <- p.ScheduleManagement().Save(t.Context(), mutation)
+		}()
+	}
+	close(start)
+	succeeded, conflicted := 0, 0
+	for range 2 {
+		err := <-results
+		switch {
+		case err == nil:
+			succeeded++
+		case errors.Is(err, schedulecmd.ErrConflict):
+			conflicted++
+		default:
+			t.Fatalf("concurrent recreate = %v", err)
+		}
+	}
+	if succeeded != 1 || conflicted != 1 {
+		t.Fatalf("concurrent recreate outcomes: success=%d conflict=%d", succeeded, conflicted)
+	}
+	current, _, err = p.ScheduledJobs().GetByID(t.Context(), r.JobID)
+	if err != nil || current.Deleted || !current.Enabled || current.DefinitionVersion != 5 ||
+		current.Content != "fresh generation" || current.ScheduleSpec != "30 10 * * *" ||
+		current.TargetKey != "telegram:2:0" || current.Status != ScheduledJobStatusActive || current.RetryCount != 0 ||
+		current.LastDispatchKey != "" || current.LastError != "" {
+		t.Fatalf("recreated = %+v, %v", current, err)
+	}
+	if !current.LastRunAt.Equal(lastRunAt) {
+		t.Fatalf("recreate lost last run metadata: got %v want %v", current.LastRunAt, lastRunAt)
+	}
+	retained, found, err := p.ScheduleRuns().GetByID(t.Context(), run.RunID)
+	if err != nil || !found || retained.DefinitionVersion != run.DefinitionVersion ||
+		retained.PayloadJSON != run.PayloadJSON || retained.ReportLocatorRef != run.ReportLocatorRef {
+		t.Fatalf("retained run = %+v, %v, %v", retained, found, err)
+	}
+	stale = recreate
+	stale.Kind = ScheduleEdit
+	stale.Audit.ID = "schedule-stale-old-generation"
+	if err := p.ScheduleManagement().Save(t.Context(), stale); !errors.Is(err, schedulecmd.ErrConflict) {
+		t.Fatalf("old generation edit = %v, want conflict", err)
+	}
+	stale.Kind = ScheduleDelete
+	stale.Record.Enabled, stale.Record.Deleted = false, true
+	stale.Audit.ID = "schedule-stale-old-generation-delete"
+	if err := p.ScheduleManagement().Save(t.Context(), stale); !errors.Is(err, schedulecmd.ErrConflict) {
+		t.Fatalf("old generation delete = %v, want conflict", err)
+	}
 	audits, err := p.Users().ListAuditEvents(t.Context(), usercmd.PageRequest{Limit: 100})
 	if err != nil {
 		t.Fatal(err)
@@ -438,10 +523,10 @@ func checkProvider_ScheduleManagementAuthorityAndVersion(t *testing.T, open cont
 			reasons[event.Reason] = true
 		}
 	}
-	if count != 4 {
-		t.Fatalf("schedule audits = %d, want four committed changes", count)
+	if count != 5 {
+		t.Fatalf("schedule audits = %d, want five committed changes", count)
 	}
-	for _, reason := range []string{"Schedule created", "Schedule edited", "Schedule disabled", "Schedule deleted"} {
+	for _, reason := range []string{"Schedule created", "Schedule edited", "Schedule disabled", "Schedule deleted", "Schedule recreated"} {
 		if !reasons[reason] {
 			t.Errorf("missing audit operation %q", reason)
 		}
@@ -1114,7 +1199,7 @@ func checkProviderManagedProviderState(t *testing.T, open contractOpener) {
 	}
 	second := first
 	second.ID = "revision-2"
-	second.Definition.Config.CodexACP.Model = "second"
+	second.Definition.Config = agentconfig.Config{Type: agentconfig.AgentTypeCodexACP, CodexACP: &agentconfig.ACPConfig{Model: "second"}}
 	second.CreatedAt = now.Add(time.Second)
 	state, err = store.Apply(ctx, providers.Mutation{ExpectedVersion: 1, Record: providers.Record{ID: "managed", CurrentRevisionID: second.ID, Enabled: true}, Revision: &second, Audit: audit("provider-2")})
 	if err != nil || state.Version != 2 || state.Revisions[0].ID != second.ID {
@@ -1125,13 +1210,23 @@ func checkProviderManagedProviderState(t *testing.T, open contractOpener) {
 		t.Fatalf("retained revisions = %+v, %v", retained, err)
 	}
 
+	state, err = store.Apply(ctx, providers.Mutation{ExpectedVersion: state.Version,
+		Record: providers.Record{ID: "managed", CurrentRevisionID: second.ID, Deleted: true}, Audit: audit("provider-delete")})
+	if err != nil || state.Version != 3 || !state.Records[0].Deleted {
+		t.Fatalf("delete mutation = %+v, %v", state, err)
+	}
 	current := state.Version
 	results := make(chan error, 2)
 	for i := range 2 {
 		go func(index int) {
+			recreated := second
+			recreated.ID = fmt.Sprintf("revision-recreated-%d", index)
+			recreated.Definition.Config = agentconfig.Config{Type: agentconfig.AgentTypeCodexACP,
+				CodexACP: &agentconfig.ACPConfig{Model: fmt.Sprintf("recreated-%d", index)}}
+			recreated.CreatedAt = now.Add(time.Duration(index+2) * time.Second)
 			_, applyErr := store.Apply(ctx, providers.Mutation{ExpectedVersion: current,
-				Record: providers.Record{ID: "managed", CurrentRevisionID: second.ID, Enabled: index == 0},
-				Audit:  audit(fmt.Sprintf("provider-concurrent-%d", index))})
+				Record: providers.Record{ID: "managed", CurrentRevisionID: recreated.ID, Enabled: true}, Revision: &recreated,
+				Audit: audit(fmt.Sprintf("provider-recreate-%d", index))})
 			results <- applyErr
 		}(i)
 	}
@@ -1150,8 +1245,15 @@ func checkProviderManagedProviderState(t *testing.T, open contractOpener) {
 		t.Fatalf("concurrent mutations = %d success, %d conflict", successes, conflicts)
 	}
 	final, err := store.Read(ctx)
-	if err != nil || final.Version != current+1 || len(final.Revisions) != 1 || final.Revisions[0].ID != final.Records[0].CurrentRevisionID {
+	if err != nil || final.Version != current+1 || len(final.Revisions) != 1 || final.Records[0].Deleted || !final.Records[0].Enabled || final.Revisions[0].ID != final.Records[0].CurrentRevisionID {
 		t.Fatalf("final provider snapshot = %+v, %v", final, err)
+	}
+	retained, err = store.Revisions(ctx, []providers.RevisionRef{
+		{ProviderID: "managed", RevisionID: first.ID},
+		{ProviderID: "managed", RevisionID: second.ID},
+	})
+	if err != nil || len(retained) != 2 || retained[0].Definition.Config.CodexACP.Model != "first" || retained[1].Definition.Config.CodexACP.Model != "second" {
+		t.Fatalf("recreate lost retained revisions = %+v, %v", retained, err)
 	}
 }
 

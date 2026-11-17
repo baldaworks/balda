@@ -54,10 +54,22 @@ module.exports = async function checkConfirmations(browser, baseURL, viewport) {
     const confirming = modal.getByRole('button', { name: 'Remove example', exact: true }).click({ noWaitAfter: true });
     for (let tries = 0; !releaseRequest && tries < 50; tries++) await new Promise(resolve => setTimeout(resolve, 50));
     assert.equal(requests.length, 1, `${mode} confirms once`);
+    if (mode === 'htmx') {
+      assert.equal(await form.getAttribute('aria-busy'), 'true', 'HTMX mutation exposes busy state after consent');
+      assert.equal(await trigger.isDisabled(), true, 'HTMX mutation disables duplicate activation');
+      const status = form.getByRole('status');
+      assert.equal(await status.isVisible(), true, 'HTMX mutation exposes visible submitting status');
+      assert.equal((await status.textContent()).trim(), 'Submitting…');
+    }
     const completed = mode === 'native' ? page.waitForEvent('load') : page.waitForResponse(response => response.url().includes('/confirmation-preview'));
     releaseRequest(); releaseRequest = null;
     await completed;
     await confirming;
+    if (mode === 'htmx') {
+      assert.equal(await form.getAttribute('aria-busy'), null, 'terminal error settles busy state');
+      assert.equal(await trigger.isDisabled(), false, 'terminal error restores submit control');
+      assert.equal(await form.getByRole('status').isHidden(), true, 'terminal error hides submitting status');
+    }
     assert.equal(await modal.isVisible(), false, 'in-flight invocation cannot reopen');
     assert.equal(requests.length, 1, 'in-flight duplicate sends no additional request');
     const values = new URLSearchParams(requests[0].body);

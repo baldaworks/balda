@@ -47,12 +47,13 @@ func TestScheduleDefinitionSelectsReportDestination(t *testing.T) {
 	}
 }
 
-func (f *schedulesHTTPFixture) Inventory(context.Context, schedulecmd.Authority) ([]schedulecmd.Item, error) {
+func (f *schedulesHTTPFixture) InventoryByFilter(_ context.Context, _ schedulecmd.Authority, filter schedulecmd.InventoryFilter) ([]schedulecmd.Item, error) {
 	items := make([]schedulecmd.Item, 0, len(f.items))
 	for _, item := range f.items {
-		if !item.Deleted {
-			items = append(items, item)
+		if filter == schedulecmd.InventoryActive && item.Deleted || filter == schedulecmd.InventoryDeleted && !item.Deleted {
+			continue
 		}
+		items = append(items, item)
 	}
 	return items, nil
 }
@@ -209,8 +210,7 @@ func TestSchedulesBrowserManagement(t *testing.T) {
 				t.Fatalf("managed editor is missing or unsafe: %d", managed.Code)
 			}
 			if !strings.Contains(managed.Body.String(), `name="locator" value="telegram:9001:0"`) ||
-				strings.Contains(managed.Body.String(), `name="target_kind"`) ||
-				strings.Contains(managed.Body.String(), `name="report_to_key"`) {
+				strings.Count(managed.Body.String(), `name="locator"`) != 1 {
 				t.Fatal("managed editor must contain one report locator")
 			}
 			if got := get("/schedules/new", admin.access); got.Code != http.StatusOK || !strings.Contains(got.Body.String(), "name collision") || strings.Contains(got.Body.String(), "Add schedule</h1>") {
@@ -241,6 +241,24 @@ func TestSchedulesBrowserManagement(t *testing.T) {
 			if archivedHistory.Code != http.StatusOK || !strings.Contains(archivedHistory.Body.String(), "Archived schedule") || !strings.Contains(archivedHistory.Body.String(), "Succeeded") || strings.Contains(archivedHistory.Body.String(), "Run now</button>") {
 				t.Fatalf("archived history view = %d", archivedHistory.Code)
 			}
+			deletedInventory := get("/schedules?lifecycle=deleted", admin.access)
+			if deletedInventory.Code != http.StatusOK || !strings.Contains(deletedInventory.Body.String(), `aria-current="page">Deleted`) ||
+				!strings.Contains(deletedInventory.Body.String(), `/schedules/archived?lifecycle=deleted`) || strings.Contains(deletedInventory.Body.String(), `/schedules/daily?lifecycle=deleted`) {
+				t.Fatalf("deleted schedule inventory = %d", deletedInventory.Code)
+			}
+			archivedHistory = get("/schedules/archived?lifecycle=deleted", admin.access)
+			if !strings.Contains(archivedHistory.Body.String(), `/schedules?lifecycle=deleted`) ||
+				!strings.Contains(archivedHistory.Body.String(), `lifecycle=deleted&amp;run_id=`) {
+				t.Fatal("archived schedule detail/history lost lifecycle selection")
+			}
+			for _, action := range []string{"Save schedule", "Enable schedule", "Disable schedule", "Delete schedule", ">Run now</button>"} {
+				if strings.Contains(archivedHistory.Body.String(), action) {
+					t.Errorf("archived schedule exposes %q", action)
+				}
+			}
+			if got := get("/schedules?lifecycle=unknown", admin.access).Code; got != http.StatusBadRequest {
+				t.Fatalf("invalid schedule lifecycle = %d", got)
+			}
 			if !strings.Contains(managed.Body.String(), "Older runs") {
 				t.Fatal("history pagination link missing")
 			}
@@ -261,11 +279,6 @@ func TestSchedulesBrowserManagement(t *testing.T) {
 				t.Fatalf("configured deletion = %d", got)
 			}
 			createForm := url.Values{"id": {"new-daily"}, "cron": {"0 11 * * *"}, "locator": {"telegram:9001:0"}, "content": {"run report"}}
-			legacyForm := url.Values{"id": {"new-daily"}, "cron": {"0 11 * * *"}, "locator": {"telegram:9001:0"},
-				"content": {"run report"}, "report_to_key": {"telegram:9002:0"}}
-			if got := mutation("/schedules", legacyForm).Code; got != http.StatusBadRequest || len(fixture.creates) != 0 {
-				t.Fatalf("legacy report input reached schedule owner: %d", got)
-			}
 			invalidCSRF := url.Values{}
 			for key, values := range createForm {
 				invalidCSRF[key] = append([]string(nil), values...)

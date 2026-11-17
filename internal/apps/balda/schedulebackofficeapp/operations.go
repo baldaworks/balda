@@ -20,6 +20,11 @@ func (o *Operations) Inventory(ctx context.Context, authority schedulecmd.Author
 	return o.management.Inventory(ctx, authority)
 }
 
+func (o *Operations) InventoryByFilter(ctx context.Context, authority schedulecmd.Authority,
+	filter schedulecmd.InventoryFilter) ([]schedulecmd.Item, error) {
+	return o.management.InventoryByFilter(ctx, authority, filter)
+}
+
 func (o *Operations) Get(ctx context.Context, id string, authority schedulecmd.Authority) (schedulecmd.Item, error) {
 	return o.management.Get(ctx, id, authority)
 }

@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"image/png"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +19,64 @@ func TestVerifyAssets(t *testing.T) {
 	t.Parallel()
 	if err := VerifyAssets(); err != nil {
 		t.Fatalf("VerifyAssets() error = %v", err)
+	}
+}
+
+func TestHTMXMutationFormsUseSharedAccessibleStatus(t *testing.T) {
+	t.Parallel()
+	files, err := fs.Glob(embedded, "templates/*.tmpl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mutations int
+	formPattern := regexp.MustCompile(`(?s)<form\b[^>]*>.*?</form>`)
+	fieldPattern := regexp.MustCompile(`(?s)<(?:input|textarea|a)\b[^>]*>`)
+	for _, file := range files {
+		body, err := fs.ReadFile(embedded, file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		source := string(body)
+		for _, form := range formPattern.FindAllString(source, -1) {
+			if !strings.Contains(form, ` hx-post=`) {
+				continue
+			}
+			mutations++
+			opening := form[:strings.IndexByte(form, '>')+1]
+			if !strings.Contains(opening, `data-mutation-form`) {
+				t.Errorf("%s has an unmarked HTMX mutation form: %s", file, opening)
+			}
+			if strings.Count(form, `{{template "mutation-status" .}}`) != 1 {
+				t.Errorf("%s HTMX mutation does not contain exactly one shared status: %s", file, opening)
+			}
+		}
+		for _, field := range fieldPattern.FindAllString(source, -1) {
+			sensitive := strings.Contains(field, `type="password"`) ||
+				strings.Contains(field, `name="temporary_password"`) ||
+				strings.Contains(field, `name="credential"`) ||
+				strings.Contains(field, `name="api_key"`) ||
+				strings.Contains(field, `name="environment"`) ||
+				strings.Contains(field, `data-mcp-secret`) ||
+				strings.Contains(field, `data-plugin-source`) ||
+				strings.Contains(field, `data-private-source`) ||
+				strings.Contains(field, `data-binding-secret`) ||
+				strings.Contains(field, `data-webhook-secret`)
+			if sensitive && !strings.Contains(field, `data-write-only`) {
+				t.Errorf("%s sensitive field lacks the generic write-only marker: %s", file, field)
+			}
+		}
+	}
+	if mutations == 0 {
+		t.Fatal("no HTMX mutation forms found")
+	}
+	status, err := fs.ReadFile(embedded, "templates/sessions.tmpl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, attribute := range []string{`class="mutation-status"`, `role="status"`, `aria-live="polite"`, `hidden>Submitting…`} {
+		if !strings.Contains(string(status), attribute) {
+			t.Errorf("shared mutation status is missing %s", attribute)
+		}
 	}
 }
 

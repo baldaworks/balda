@@ -36,7 +36,7 @@ func (s *sqlWebhookRouteStore) Get(ctx context.Context, name string) (WebhookRou
 
 func (s *sqlWebhookRouteStore) List(ctx context.Context) ([]WebhookRouteRecord, error) {
 	rows, err := s.users.db.QueryContext(ctx, `SELECT `+webhookRouteColumns+`
-		FROM balda_webhook_routes WHERE deleted = 0 ORDER BY name`)
+		FROM balda_webhook_routes ORDER BY name`)
 	if err != nil {
 		return nil, ErrWebhookRouteUnavailable
 	}
@@ -209,6 +209,16 @@ func (s *sqlWebhookRouteStore) Save(ctx context.Context, m WebhookRouteMutation)
 			ON CONFLICT(name) DO NOTHING`), r.Name, r.PromptTemplate,
 			r.ReportToKind, r.ReportToKey, boolInt(r.AckOnDelivery), r.DedupeSource,
 			r.DedupeHeader, r.AuthHeader, r.SecretVerifier, now, now)
+	case WebhookRouteRecreate:
+		result, err = tx.ExecContext(ctx, s.users.bind(`UPDATE balda_webhook_routes SET
+			prompt_template = ?, report_to_kind = ?, report_to_key = ?,
+			ack_on_delivery = ?, dedupe_source = ?, dedupe_header = ?,
+			auth_type = 'header', auth_header = ?, secret_verifier = ?,
+			enabled = 1, deleted = 0, definition_version = definition_version + 1, updated_at = ?
+			WHERE name = ? AND source = 'managed' AND deleted = 1 AND definition_version = ?`),
+			r.PromptTemplate, r.ReportToKind, r.ReportToKey, boolInt(r.AckOnDelivery),
+			r.DedupeSource, r.DedupeHeader, r.AuthHeader, r.SecretVerifier, now,
+			r.Name, m.ExpectedVersion)
 	case WebhookRouteEdit:
 		result, err = tx.ExecContext(ctx, s.users.bind(`UPDATE balda_webhook_routes SET
 			prompt_template = ?, report_to_kind = ?, report_to_key = ?,
@@ -319,15 +329,16 @@ func validWebhookRouteMutation(m WebhookRouteMutation) bool {
 	if !validWebhookRouteAuthority(a) || r.Name == "" || r.Source != WebhookRouteSourceManaged ||
 		m.ExpectedVersion >= math.MaxInt64 || r.Version != m.ExpectedVersion+1 ||
 		(m.Kind == WebhookRouteCreate && (m.ExpectedVersion != 0 || !r.Enabled || r.Deleted)) ||
+		(m.Kind == WebhookRouteRecreate && (m.ExpectedVersion == 0 || !r.Enabled || r.Deleted)) ||
 		(m.Kind != WebhookRouteCreate && m.ExpectedVersion == 0) ||
-		(m.Kind == WebhookRouteCreate || m.Kind == WebhookRouteEdit) && !validWebhookRoute(r) ||
-		(m.Kind == WebhookRouteCreate && r.AuthHeader == "") ||
-		(m.Kind == WebhookRouteCreate || m.Kind == WebhookRouteRotate) && !validWebhookVerifier(r.SecretVerifier) ||
+		(m.Kind == WebhookRouteCreate || m.Kind == WebhookRouteRecreate || m.Kind == WebhookRouteEdit) && !validWebhookRoute(r) ||
+		((m.Kind == WebhookRouteCreate || m.Kind == WebhookRouteRecreate) && r.AuthHeader == "") ||
+		(m.Kind == WebhookRouteCreate || m.Kind == WebhookRouteRecreate || m.Kind == WebhookRouteRotate) && !validWebhookVerifier(r.SecretVerifier) ||
 		(m.Kind == WebhookRouteDelete && !r.Deleted) {
 		return false
 	}
 	switch m.Kind {
-	case WebhookRouteCreate, WebhookRouteEdit, WebhookRouteSelection, WebhookRouteDelete, WebhookRouteRotate:
+	case WebhookRouteCreate, WebhookRouteRecreate, WebhookRouteEdit, WebhookRouteSelection, WebhookRouteDelete, WebhookRouteRotate:
 	default:
 		return false
 	}
@@ -350,6 +361,8 @@ func webhookMutationReason(kind WebhookRouteMutationKind) string {
 	switch kind {
 	case WebhookRouteCreate:
 		return "Webhook route created"
+	case WebhookRouteRecreate:
+		return "Webhook route recreated"
 	case WebhookRouteEdit:
 		return "Webhook route edited"
 	case WebhookRouteSelection:

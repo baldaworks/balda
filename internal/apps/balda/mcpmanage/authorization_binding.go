@@ -77,7 +77,7 @@ func (s *Definitions) BindAuthorization(ctx context.Context, request mcpcmd.Sele
 	if err != nil {
 		return mcpcmd.Item{}, err
 	}
-	return s.save(ctx, c, &next, c.Version, request.Authority)
+	return s.save(ctx, c, &next, c.Version, false, request.Authority)
 }
 
 func (s *Definitions) recoverAuthorizationPublication(ctx context.Context, c mcpcmd.Connection, authority mcpcmd.Authority) (mcpcmd.Connection, error) {

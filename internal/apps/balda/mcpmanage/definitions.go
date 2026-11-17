@@ -18,6 +18,7 @@ type Mutation struct {
 	Connection      mcpcmd.Connection
 	Revision        *mcpcmd.Revision
 	ExpectedVersion uint64
+	Recreate        bool
 	Authority       mcpcmd.Authority
 	Audit           usercmd.AuditEvent
 }
@@ -97,15 +98,53 @@ func (s *Definitions) Create(ctx context.Context, request mcpcmd.CreateDefinitio
 	if !validPublicID(request.PublicID) || request.Definition.AuthBinding != nil || request.Definition.ConfigRevision != "" {
 		return mcpcmd.Item{}, mcpcmd.ErrInvalid
 	}
-	if err := s.checkConflict(ctx, request.PublicID, ""); err != nil {
+	tombstone, err := s.createTarget(ctx, request.PublicID)
+	if err != nil {
 		return mcpcmd.Item{}, err
 	}
 	c := mcpcmd.Connection{ID: rand.Text(), PublicID: request.PublicID, Source: mcpcmd.SourceManaged, CurrentRevisionID: rand.Text(), Enabled: request.Enabled, CreatedAt: request.Authority.At, UpdatedAt: request.Authority.At}
+	version, recreate := uint64(0), false
+	if tombstone != nil {
+		c = *tombstone
+		version, recreate = c.Version, true
+		c.CurrentRevisionID = rand.Text()
+		c.Enabled, c.Deleted = request.Enabled, false
+		if request.Authority.At.After(c.UpdatedAt) {
+			c.UpdatedAt = request.Authority.At
+		}
+	}
 	r, err := s.prepare(ctx, nil, c, request.Definition, request.Values)
 	if err != nil {
 		return mcpcmd.Item{}, err
 	}
-	return s.save(ctx, c, &r, 0, request.Authority)
+	return s.save(ctx, c, &r, version, recreate, request.Authority)
+}
+
+func (s *Definitions) createTarget(ctx context.Context, publicID string) (*mcpcmd.Connection, error) {
+	configured, err := s.configured.MCPDefinitions(ctx)
+	if err != nil {
+		return nil, safeOperationError(err)
+	}
+	for _, item := range configured {
+		if item.Connection.PublicID == publicID {
+			return nil, mcpcmd.ErrConflict
+		}
+	}
+	connections, err := s.store.ListMCPConnections(ctx)
+	if err != nil {
+		return nil, safeOperationError(err)
+	}
+	for i := range connections {
+		c := &connections[i]
+		if c.PublicID != publicID {
+			continue
+		}
+		if c.Source != mcpcmd.SourceManaged || !c.Deleted {
+			return nil, mcpcmd.ErrConflict
+		}
+		return c, nil
+	}
+	return nil, nil
 }
 
 func (s *Definitions) prepare(ctx context.Context, previous *mcpcmd.Revision, c mcpcmd.Connection, definition mcpcmd.Definition, edits mcpcmd.ValueEdits) (mcpcmd.Revision, error) {
@@ -147,7 +186,7 @@ func (s *Definitions) checkConflict(ctx context.Context, publicID, except string
 	return nil
 }
 
-func (s *Definitions) save(ctx context.Context, c mcpcmd.Connection, r *mcpcmd.Revision, version uint64, authority mcpcmd.Authority) (mcpcmd.Item, error) {
+func (s *Definitions) save(ctx context.Context, c mcpcmd.Connection, r *mcpcmd.Revision, version uint64, recreate bool, authority mcpcmd.Authority) (mcpcmd.Item, error) {
 	if authority.At.IsZero() {
 		return mcpcmd.Item{}, mcpcmd.ErrInvalid
 	}
@@ -169,7 +208,7 @@ func (s *Definitions) save(ctx context.Context, c mcpcmd.Connection, r *mcpcmd.R
 			c.UpdatedAt = authority.At
 		}
 		audit.OccurredAt = authority.At
-		err := s.store.SaveDefinition(ctx, Mutation{Connection: c, Revision: r, ExpectedVersion: version, Authority: authority, Audit: audit})
+		err := s.store.SaveDefinition(ctx, Mutation{Connection: c, Revision: r, ExpectedVersion: version, Recreate: recreate, Authority: authority, Audit: audit})
 		committed = err == nil
 		return err
 	})
@@ -253,7 +292,7 @@ func (s *Definitions) Update(ctx context.Context, request mcpcmd.UpdateDefinitio
 	if err != nil {
 		return mcpcmd.Item{}, err
 	}
-	return s.save(ctx, c, &r, request.ExpectedVersion, request.Authority)
+	return s.save(ctx, c, &r, request.ExpectedVersion, false, request.Authority)
 }
 
 func (s *Definitions) prepareUpdate(ctx context.Context, request mcpcmd.UpdateDefinition) (mcpcmd.Connection, mcpcmd.Revision, error) {
@@ -337,7 +376,7 @@ func (s *Definitions) changeSelection(ctx context.Context, request mcpcmd.Change
 	}
 	c.Enabled = request.Enabled && !deleted
 	c.Deleted = deleted
-	return s.save(ctx, c, nil, request.ExpectedVersion, request.Authority)
+	return s.save(ctx, c, nil, request.ExpectedVersion, false, request.Authority)
 }
 
 func (s *Definitions) managed(ctx context.Context, id string, version uint64) (mcpcmd.Connection, error) {
@@ -366,8 +405,17 @@ func (s *Definitions) managed(ctx context.Context, id string, version uint64) (m
 	return c, nil
 }
 
-// Inventory combines file-owned and managed definitions without precedence.
+// Inventory returns the active configured and managed definitions.
 func (s *Definitions) Inventory(ctx context.Context) ([]mcpcmd.Item, error) {
+	return s.InventoryByScope(ctx, mcpcmd.InventoryActive)
+}
+
+// InventoryByScope combines the requested lifecycle rows without precedence.
+// Configured definitions are active reservations and never appear as deleted.
+func (s *Definitions) InventoryByScope(ctx context.Context, scope mcpcmd.InventoryScope) ([]mcpcmd.Item, error) {
+	if scope != mcpcmd.InventoryActive && scope != mcpcmd.InventoryDeleted && scope != mcpcmd.InventoryAll {
+		return nil, mcpcmd.ErrInvalid
+	}
 	configured, err := s.configured.MCPDefinitions(ctx)
 	if err != nil {
 		return nil, safeOperationError(err)
@@ -376,7 +424,10 @@ func (s *Definitions) Inventory(ctx context.Context) ([]mcpcmd.Item, error) {
 	if err != nil {
 		return nil, safeOperationError(err)
 	}
-	items := append([]mcpcmd.Item(nil), configured...)
+	var items []mcpcmd.Item
+	if scope != mcpcmd.InventoryDeleted {
+		items = append(items, configured...)
+	}
 	for i := range items {
 		items[i].Connection.Source = mcpcmd.SourceConfig
 		for _, c := range connections {
@@ -412,6 +463,9 @@ func (s *Definitions) Inventory(ctx context.Context) ([]mcpcmd.Item, error) {
 		if c.Source == mcpcmd.SourceConfig {
 			continue
 		}
+		if (scope == mcpcmd.InventoryActive && c.Deleted) || (scope == mcpcmd.InventoryDeleted && !c.Deleted) {
+			continue
+		}
 		item, err := s.item(ctx, c)
 		if err != nil {
 			return nil, err
@@ -420,10 +474,13 @@ func (s *Definitions) Inventory(ctx context.Context) ([]mcpcmd.Item, error) {
 	}
 	counts := make(map[string]int, len(items))
 	for _, item := range items {
+		if item.Connection.Deleted {
+			continue
+		}
 		counts[item.Connection.PublicID]++
 	}
 	for i := range items {
-		if counts[items[i].Connection.PublicID] > 1 {
+		if !items[i].Connection.Deleted && counts[items[i].Connection.PublicID] > 1 {
 			items[i].Status = mcpcmd.StatusConflict
 			items[i].ToolCount = 0
 		}
@@ -436,6 +493,30 @@ func (s *Definitions) Inventory(ctx context.Context) ([]mcpcmd.Item, error) {
 		return items[i].Connection.PublicID < items[j].Connection.PublicID
 	})
 	return items, nil
+}
+
+// Detail returns one exact managed definition, including a passive tombstone.
+// Deleted rows do not consult runtime health and expose no protected values.
+func (s *Definitions) Detail(ctx context.Context, connectionID string) (mcpcmd.Item, error) {
+	if connectionID == "" || len(connectionID) > 256 {
+		return mcpcmd.Item{}, mcpcmd.ErrInvalid
+	}
+	c, found, err := s.store.GetMCPConnection(ctx, connectionID)
+	if err != nil {
+		return mcpcmd.Item{}, safeOperationError(err)
+	}
+	if !found {
+		return mcpcmd.Item{}, mcpcmd.ErrNotFound
+	}
+	if c.Source != mcpcmd.SourceManaged {
+		return mcpcmd.Item{}, mcpcmd.ErrForbidden
+	}
+	item, err := s.item(ctx, c)
+	if err != nil {
+		return mcpcmd.Item{}, err
+	}
+	s.attachLastDiagnostic(&item)
+	return item, nil
 }
 
 // Probe validates and discovers a candidate without publishing or saving it.

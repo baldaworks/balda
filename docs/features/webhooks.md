@@ -277,11 +277,22 @@ history entries.
   definition and destination.
 - **Disable** rejects new external requests. Work already admitted may finish.
 - **Rotate secret** replaces the managed route credential immediately.
-- **Delete** archives the route and preserves its request history.
+- **Delete** archives rather than physically erasing the route. Its read-only
+  detail and request history remain available under the **Deleted** and **All**
+  inventory views; edit, Test POST, rotation, and lifecycle actions are removed.
+
+The inventory opens on **Active**. Use **Deleted** for archived routes and
+**All** to review both lifecycle states. You may create the name of a deleted
+managed route again when no configuration route reserves it. Balda advances the
+generation and issues a new one-time secret; it never recovers or reuses the
+deleted credential. Earlier request history remains available, already admitted
+work keeps its frozen definition and destination, and a pre-delete form cannot
+change the recreated route.
 
 Routes declared in `.config/balda/config.yaml` are read-only in Backoffice and
 require a restart after configuration changes. Managed routes take effect
-without restart and survive process restarts.
+without restart and survive process restarts. Configuration route names remain
+reserved even when a removed declaration has a retained historical record.
 
 ## Troubleshooting
 

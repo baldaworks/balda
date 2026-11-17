@@ -25,7 +25,7 @@ func projectProviderRow(item providers.Item, version providers.StateVersion) web
 	}
 	switch {
 	case row.Deleted:
-		row.State = "Deleted"
+		row.State = deletedLabel
 	case row.Enabled:
 		row.State = "Enabled"
 	default:

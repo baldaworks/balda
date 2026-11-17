@@ -43,39 +43,47 @@ func New(configured map[string]agentconfig.Config, store Store, protector *secre
 	}
 }
 
-// Inventory returns configured and managed definitions without protected values.
+// Inventory returns active configured and managed definitions without protected values.
 func (s *Service) Inventory(ctx context.Context) (Inventory, error) {
+	return s.InventoryByFilter(ctx, InventoryActive)
+}
+
+// InventoryByFilter returns the requested lifecycle projection without protected values.
+// Configured providers are active reservations and never appear in Deleted.
+func (s *Service) InventoryByFilter(ctx context.Context, filter InventoryFilter) (Inventory, error) {
+	if !validInventoryFilter(filter) {
+		return Inventory{}, ErrInvalid
+	}
 	state, err := s.store.Read(ctx)
 	if err != nil {
 		return Inventory{}, err
 	}
 	items := make([]Item, 0, len(s.configured)+len(state.Records))
-	for id, cfg := range s.configured {
-		descriptor, ok := s.registry.Lookup(cfg.Type)
-		if !ok {
-			return Inventory{}, fmt.Errorf("%w: unsupported configured provider type", ErrInvalid)
+	if filter != InventoryDeleted {
+		for id, cfg := range s.configured {
+			item, itemErr := s.configuredItem(id, cfg)
+			if itemErr != nil {
+				return Inventory{}, itemErr
+			}
+			items = append(items, item)
 		}
-		fingerprint, fingerprintErr := configuredFingerprint(cfg)
-		if fingerprintErr != nil {
-			return Inventory{}, fingerprintErr
-		}
-		public := cloneConfig(cfg)
-		names := configEnvironmentNames(public)
-		redact(&public)
-		items = append(items, Item{Source: SourceConfigured,
-			Record: Record{ID: id, CurrentRevisionID: fingerprint, Enabled: true},
-			Revision: Revision{ID: fingerprint, ProviderID: id, DriverType: descriptor.Type,
-				ContractVersion: descriptor.ContractVersion, FormatVersion: StorageFormatVersion,
-				Definition: Definition{Config: public, HasAPIKey: configuredHasAPIKey(cfg), EnvironmentNames: names}},
-		})
 	}
 	for _, record := range state.Records {
 		if _, collision := s.configured[record.ID]; collision {
-			return Inventory{}, fmt.Errorf("%w: provider source collision", ErrInvalid)
+			if !record.Deleted {
+				return Inventory{}, fmt.Errorf("%w: provider source collision", ErrInvalid)
+			}
+			// A configured definition owns the current projection. Its retained
+			// reconciliation tombstone remains reserved but is not user-managed
+			// deleted state.
+			continue
 		}
 		revision := findRevision(state.Revisions, record.ID, record.CurrentRevisionID)
 		if revision == nil {
 			return Inventory{}, ErrUnavailable
+		}
+		if filter == InventoryActive && record.Deleted || filter == InventoryDeleted && !record.Deleted {
+			continue
 		}
 		publicRevision := *revision
 		publicRevision.ProtectedValues = nil
@@ -83,6 +91,61 @@ func (s *Service) Inventory(ctx context.Context) (Inventory, error) {
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].Record.ID < items[j].Record.ID })
 	return Inventory{Version: state.Version, Items: items}, nil
+}
+
+// Get returns one passive current provider projection and the state version used
+// to read it. The result never contains protected values.
+func (s *Service) Get(ctx context.Context, id string) (Item, StateVersion, error) {
+	if err := validateID(id); err != nil {
+		return Item{}, 0, err
+	}
+	state, err := s.store.Read(ctx)
+	if err != nil {
+		return Item{}, 0, err
+	}
+	record := findRecord(state.Records, id)
+	configured, isConfigured := s.configured[id]
+	if record != nil && isConfigured && !record.Deleted {
+		return Item{}, state.Version, fmt.Errorf("%w: provider source collision", ErrInvalid)
+	}
+	if isConfigured {
+		item, itemErr := s.configuredItem(id, configured)
+		return item, state.Version, itemErr
+	}
+	if record == nil {
+		return Item{}, state.Version, ErrNotFound
+	}
+	revision := findRevision(state.Revisions, id, record.CurrentRevisionID)
+	if revision == nil {
+		return Item{}, state.Version, ErrUnavailable
+	}
+	publicRevision := *revision
+	publicRevision.ProtectedValues = nil
+	return Item{Source: SourceManaged, Record: *record, Revision: publicRevision}, state.Version, nil
+}
+
+func (s *Service) configuredItem(id string, cfg agentconfig.Config) (Item, error) {
+	descriptor, ok := s.registry.Lookup(cfg.Type)
+	if !ok {
+		return Item{}, fmt.Errorf("%w: unsupported configured provider type", ErrInvalid)
+	}
+	fingerprint, err := configuredFingerprint(cfg)
+	if err != nil {
+		return Item{}, err
+	}
+	public := cloneConfig(cfg)
+	names := configEnvironmentNames(public)
+	redact(&public)
+	return Item{Source: SourceConfigured,
+		Record: Record{ID: id, CurrentRevisionID: fingerprint, Enabled: true},
+		Revision: Revision{ID: fingerprint, ProviderID: id, DriverType: descriptor.Type,
+			ContractVersion: descriptor.ContractVersion, FormatVersion: StorageFormatVersion,
+			Definition: Definition{Config: public, HasAPIKey: configuredHasAPIKey(cfg), EnvironmentNames: names}},
+	}, nil
+}
+
+func validInventoryFilter(filter InventoryFilter) bool {
+	return filter == InventoryActive || filter == InventoryDeleted || filter == InventoryAll
 }
 
 func configuredHasAPIKey(cfg agentconfig.Config) bool {
@@ -98,8 +161,12 @@ func (s *Service) Create(ctx context.Context, change Change) (State, error) {
 	if state.Version != change.ExpectedVersion {
 		return State{}, ErrConflict
 	}
-	if _, exists := s.configured[change.ID]; exists || findRecord(state.Records, change.ID) != nil {
-		return State{}, fmt.Errorf("%w: provider id already exists", ErrInvalid)
+	if _, exists := s.configured[change.ID]; exists {
+		return State{}, fmt.Errorf("%w: provider id is configured", ErrConflict)
+	}
+	current := findRecord(state.Records, change.ID)
+	if current != nil && !current.Deleted {
+		return State{}, fmt.Errorf("%w: provider id already exists", ErrConflict)
 	}
 	revision, err := s.makeRevision(change.ID, change.Config, change.Protected, nil)
 	if err != nil {

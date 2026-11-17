@@ -96,7 +96,7 @@ func newRenderer(pagePath, assetPath string) (*Renderer, error) {
 				}
 				return assetPath + route
 			},
-		}).ParseFS(embedded, "templates/document.tmpl", "templates/fragment.tmpl", "templates/sessions.tmpl", "templates/bindings.tmpl", pageFile)
+		}).ParseFS(embedded, "templates/document.tmpl", "templates/fragment.tmpl", "templates/sessions.tmpl", "templates/bindings.tmpl", "templates/lifecycle.tmpl", pageFile)
 		if err != nil {
 			return nil, fmt.Errorf("parse %s template: %w", name, err)
 		}

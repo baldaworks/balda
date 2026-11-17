@@ -90,6 +90,7 @@ func TestMCPInventoryUsesSafeSharedRendering(t *testing.T) {
 	app.mcp = &mcpHTTPFixture{items: []mcpcmd.Item{
 		{Connection: mcpcmd.Connection{ID: "managed-one", PublicID: "worker-tools", Source: mcpcmd.SourceManaged, Enabled: true, Version: 2}, Definition: mcpcmd.Definition{Transport: mcpcmd.TransportHTTP, URL: "https://worker.example/mcp", OAuth: true, Targets: mcpcmd.Targets{Providers: []string{"alpha"}}, Headers: map[string]mcpcmd.ValueBinding{"X-Worker": {Kind: mcpcmd.ValueProtected}}}, Status: mcpcmd.StatusUnavailable, Authorization: mcpcmd.GrantAuthorized},
 		{Connection: mcpcmd.Connection{ID: "config:protected", PublicID: "protected", Source: mcpcmd.SourceConfig, Enabled: true}, Definition: mcpcmd.Definition{Transport: mcpcmd.TransportSSE, URL: "https://protected.example/sse", Targets: mcpcmd.Targets{All: true}}, Status: mcpcmd.StatusPending, Recovery: mcpcmd.RecoveryFirstAuthorization},
+		{Connection: mcpcmd.Connection{ID: "deleted-one", PublicID: "retained-tools", Source: mcpcmd.SourceManaged, Deleted: true, Version: 4}, Definition: mcpcmd.Definition{Transport: mcpcmd.TransportHTTP, URL: "https://retained.example/mcp", Headers: map[string]mcpcmd.ValueBinding{"X-Private": {Kind: mcpcmd.ValueProtected}}}, Status: mcpcmd.StatusDeleted},
 	}}
 	handler, err := app.handler()
 	if err != nil {
@@ -132,6 +133,61 @@ func TestMCPInventoryUsesSafeSharedRendering(t *testing.T) {
 			}
 		})
 	}
+	for _, tc := range []struct {
+		path              string
+		visible, absent   []string
+		fragment, history bool
+	}{
+		{path: "/mcp?lifecycle=deleted", visible: []string{"retained-tools", `aria-current="page">Deleted`}, absent: []string{"worker-tools", "protected"}},
+		{path: "/mcp?lifecycle=all", visible: []string{"retained-tools", "worker-tools", "protected", `aria-current="page">All`}, fragment: true},
+		{path: "/mcp?lifecycle=deleted", visible: []string{"retained-tools", "<!doctype html>"}, history: true},
+	} {
+		request := httptest.NewRequest(http.MethodGet, tc.path, nil)
+		request.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: login.access})
+		if tc.fragment || tc.history {
+			request.Header.Set("HX-Request", "true")
+			request.Header.Set("HX-Target", "main-content")
+		}
+		if tc.history {
+			request.Header.Set("HX-History-Restore-Request", "true")
+		}
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusOK || strings.Count(response.Body.String(), `id="main-content"`) != 1 {
+			t.Fatalf("GET %s = %d", tc.path, response.Code)
+		}
+		for _, value := range tc.visible {
+			if !strings.Contains(strings.ToLower(response.Body.String()), strings.ToLower(value)) {
+				t.Errorf("GET %s missing %q", tc.path, value)
+			}
+		}
+		for _, value := range tc.absent {
+			if strings.Contains(response.Body.String(), value) {
+				t.Errorf("GET %s unexpectedly contains %q", tc.path, value)
+			}
+		}
+	}
+	deleted := httptest.NewRequest(http.MethodGet, "/mcp/connections/deleted-one?lifecycle=deleted", nil)
+	deleted.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: login.access})
+	deletedResponse := httptest.NewRecorder()
+	handler.ServeHTTP(deletedResponse, deleted)
+	deletedBody := deletedResponse.Body.String()
+	if deletedResponse.Code != http.StatusOK || !strings.Contains(deletedBody, "Retained definition") ||
+		!strings.Contains(deletedBody, `/mcp?lifecycle=deleted`) || strings.Contains(deletedBody, "X-Private") {
+		t.Fatalf("deleted MCP detail status=%d", deletedResponse.Code)
+	}
+	for _, action := range []string{"Probe candidate", "Refresh state", "Authorize in browser", "Delete connection", "Enable connection"} {
+		if strings.Contains(deletedBody, action) {
+			t.Errorf("deleted MCP detail exposes %q", action)
+		}
+	}
+	invalid := httptest.NewRequest(http.MethodGet, "/mcp?lifecycle=unknown", nil)
+	invalid.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: login.access})
+	invalidResponse := httptest.NewRecorder()
+	handler.ServeHTTP(invalidResponse, invalid)
+	if invalidResponse.Code != http.StatusBadRequest {
+		t.Fatalf("invalid lifecycle = %d", invalidResponse.Code)
+	}
 }
 
 type mcpHTTPFixture struct {
@@ -155,8 +211,23 @@ func (f *mcpHTTPFixture) result() (mcpcmd.Item, error) {
 	return f.items[0], nil
 }
 
-func (f *mcpHTTPFixture) Inventory(context.Context) ([]mcpcmd.Item, error) {
-	return f.items, f.inventoryErr
+func (f *mcpHTTPFixture) InventoryByScope(_ context.Context, scope mcpcmd.InventoryScope) ([]mcpcmd.Item, error) {
+	var items []mcpcmd.Item
+	for _, item := range f.items {
+		if scope == mcpcmd.InventoryActive && item.Connection.Deleted || scope == mcpcmd.InventoryDeleted && !item.Connection.Deleted {
+			continue
+		}
+		items = append(items, item)
+	}
+	return items, f.inventoryErr
+}
+func (f *mcpHTTPFixture) Get(_ context.Context, id string) (mcpcmd.Item, error) {
+	for _, item := range f.items {
+		if item.Connection.ID == id {
+			return item, f.inventoryErr
+		}
+	}
+	return mcpcmd.Item{}, mcpcmd.ErrNotFound
 }
 func (*mcpHTTPFixture) ProviderIDs(context.Context) ([]string, error) {
 	return []string{"alpha", "beta"}, nil

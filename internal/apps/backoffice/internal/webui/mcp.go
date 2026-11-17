@@ -14,6 +14,8 @@ type MCPView struct {
 	Editor       *MCPEditor
 	Device       *MCPDevice
 	ProbeMessage string
+	Lifecycle    LifecycleView
+	EmptyMessage string
 }
 
 // MCPDiagnosticView is the last secret-free explicit check result.
@@ -128,7 +130,7 @@ type MCPEditor struct {
 	Enabled, All                                                         bool
 	Providers                                                            []MCPProvider
 	Env, Headers                                                         []MCPValueRow
-	Action                                                               string
+	Action, DiagnosticPath                                               string
 }
 type MCPProvider struct {
 	ID       string
@@ -139,6 +141,7 @@ type MCPValueRow struct{ Key, Kind, Operation string }
 func ProjectMCPEditor(item mcpcmd.Item, providers []string, create bool) *MCPEditor {
 	d := item.Definition
 	e := &MCPEditor{Row: ProjectMCPRow(item), New: create, PublicID: item.Connection.PublicID, Transport: string(d.Transport), Command: d.Command, Args: strings.Join(d.Args, "\n"), Directory: d.Directory, URL: d.URL, Scopes: strings.Join(d.Scopes, "\n"), Enabled: item.Connection.Enabled, All: d.Targets.All, Action: "/mcp/connections/" + url.PathEscape(item.Connection.ID)}
+	e.DiagnosticPath = e.Action + "/diagnostic"
 	if d.AuthBinding != nil {
 		e.ClientID = d.AuthBinding.ClientID
 	}

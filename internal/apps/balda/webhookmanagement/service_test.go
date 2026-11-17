@@ -28,9 +28,6 @@ func (s *memoryStore) Get(_ context.Context, name string) (webhookroutecmd.Recor
 func (s *memoryStore) List(context.Context) ([]webhookroutecmd.Record, error) {
 	var routes []webhookroutecmd.Record
 	for _, r := range s.routes {
-		if r.Deleted {
-			continue
-		}
 		r.SecretVerifier = ""
 		routes = append(routes, r)
 	}
@@ -51,7 +48,8 @@ func (s *memoryStore) Save(_ context.Context, m webhookroutecmd.Mutation) error 
 		if r.Source != webhookroutecmd.SourceManaged {
 			return webhookroutecmd.ErrForbidden
 		}
-		if m.Kind == webhookroutecmd.MutationCreate || r.Version != m.ExpectedVersion {
+		if m.Kind == webhookroutecmd.MutationCreate || r.Version != m.ExpectedVersion ||
+			m.Kind == webhookroutecmd.MutationRecreate && !r.Deleted {
 			return webhookroutecmd.ErrConflict
 		}
 	} else if m.Kind != webhookroutecmd.MutationCreate {
@@ -60,6 +58,48 @@ func (s *memoryStore) Save(_ context.Context, m webhookroutecmd.Mutation) error 
 	s.mutations = append(s.mutations, m)
 	s.routes[m.Record.Name] = m.Record
 	return nil
+}
+
+func TestInventoryLifecycleFilters(t *testing.T) {
+	store := &memoryStore{routes: map[string]webhookroutecmd.Record{
+		"configured": {Name: "configured", Source: webhookroutecmd.SourceConfig, Enabled: true},
+		"active":     {Name: "active", Source: webhookroutecmd.SourceManaged, Enabled: true},
+		"deleted":    {Name: "deleted", Source: webhookroutecmd.SourceManaged, Deleted: true},
+		"reserved":   {Name: "reserved", Source: webhookroutecmd.SourceConfig, Deleted: true},
+	}}
+	service := New(store)
+	authority := testAuthority()
+	for _, tc := range []struct {
+		name   string
+		filter webhookroutecmd.InventoryFilter
+		want   map[string]bool
+	}{
+		{name: "active", filter: webhookroutecmd.InventoryActive, want: map[string]bool{"configured": true, "active": true}},
+		{name: "deleted", filter: webhookroutecmd.InventoryDeleted, want: map[string]bool{"deleted": true}},
+		{name: "all", filter: webhookroutecmd.InventoryAll, want: map[string]bool{"configured": true, "active": true, "deleted": true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			items, err := service.InventoryByFilter(t.Context(), authority, tc.filter)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := make(map[string]bool, len(items))
+			for _, item := range items {
+				got[item.Definition.Name] = true
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("names = %v, want %v", got, tc.want)
+			}
+			for name := range tc.want {
+				if !got[name] {
+					t.Fatalf("names = %v, missing %q", got, name)
+				}
+			}
+		})
+	}
+	if _, err := service.InventoryByFilter(t.Context(), authority, "unexpected"); !errors.Is(err, webhookroutecmd.ErrInvalid) {
+		t.Fatalf("invalid filter = %v", err)
+	}
 }
 
 func testAuthority() webhookroutecmd.Authority {
@@ -129,6 +169,47 @@ func TestManagedRouteLifecycleAndOneTimeSecret(t *testing.T) {
 	}
 	if got, err := service.Get(t.Context(), "events", authority); err != nil || !got.Deleted {
 		t.Fatalf("archived GET = %+v, %v", got, err)
+	}
+	if len(store.mutations) != 5 {
+		t.Fatalf("archived GET mutated store %d times", len(store.mutations))
+	}
+	recreatedDefinition := testDefinition()
+	recreatedDefinition.PromptTemplate = "new generation: {{ .RawBody }}"
+	recreated, err := service.Create(t.Context(), webhookroutecmd.Create{
+		Definition: recreatedDefinition, Authority: authority,
+	})
+	if err != nil || recreated.Item.Version != 6 || !recreated.Item.Enabled || recreated.Item.Deleted {
+		t.Fatalf("recreate = %+v, %v", recreated.Item, err)
+	}
+	if recreated.Secret == created.Secret || store.mutations[5].Kind != webhookroutecmd.MutationRecreate ||
+		store.mutations[5].ExpectedVersion != 5 ||
+		store.mutations[5].Record.SecretVerifier == hex.EncodeToString(digest[:]) {
+		t.Fatal("recreate reused the archived generation or verifier")
+	}
+	if _, err := service.Delete(t.Context(), webhookroutecmd.Delete{Name: "events", ExpectedVersion: 5,
+		Authority: authority}); !errors.Is(err, webhookroutecmd.ErrConflict) {
+		t.Fatalf("stale pre-recreate delete = %v", err)
+	}
+	if _, err := service.Create(t.Context(), webhookroutecmd.Create{Definition: recreatedDefinition,
+		Authority: authority}); !errors.Is(err, webhookroutecmd.ErrConflict) {
+		t.Fatalf("active name collision = %v", err)
+	}
+}
+
+func TestConfiguredNamesRemainReservedForManagedCreate(t *testing.T) {
+	for _, deleted := range []bool{false, true} {
+		store := &memoryStore{routes: map[string]webhookroutecmd.Record{
+			"events": {Name: "events", Source: webhookroutecmd.SourceConfig, Deleted: deleted, Version: 4},
+		}}
+		_, err := New(store).Create(t.Context(), webhookroutecmd.Create{
+			Definition: testDefinition(), Authority: testAuthority(),
+		})
+		if !errors.Is(err, webhookroutecmd.ErrConflict) {
+			t.Fatalf("configured deleted=%t create = %v", deleted, err)
+		}
+		if len(store.mutations) != 0 {
+			t.Fatalf("configured deleted=%t mutated store", deleted)
+		}
 	}
 }
 

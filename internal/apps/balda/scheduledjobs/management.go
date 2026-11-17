@@ -264,8 +264,19 @@ func (m *Management) projectRun(ctx context.Context, run state.ScheduleRunRecord
 }
 
 func (m *Management) Inventory(ctx context.Context, authority schedulecmd.Authority) ([]schedulecmd.Item, error) {
+	return m.InventoryByFilter(ctx, authority, schedulecmd.InventoryActive)
+}
+
+// InventoryByFilter returns the requested lifecycle projection. Configured
+// schedules are active reservations and never appear as managed tombstones.
+func (m *Management) InventoryByFilter(ctx context.Context, authority schedulecmd.Authority,
+	filter schedulecmd.InventoryFilter) ([]schedulecmd.Item, error) {
 	if err := m.store.CheckAuthority(ctx, authority); err != nil {
 		return nil, err
+	}
+	if filter != schedulecmd.InventoryActive && filter != schedulecmd.InventoryDeleted &&
+		filter != schedulecmd.InventoryAll {
+		return nil, schedulecmd.ErrInvalid
 	}
 	records, err := m.jobs.List(ctx)
 	if err != nil {
@@ -273,7 +284,10 @@ func (m *Management) Inventory(ctx context.Context, authority schedulecmd.Author
 	}
 	items := make([]schedulecmd.Item, 0, len(records))
 	for _, record := range records {
-		if record.Source == state.ScheduledJobSourceInternal || record.Deleted {
+		if record.Source == state.ScheduledJobSourceInternal ||
+			record.Source == state.ScheduledJobSourceConfig && record.Deleted ||
+			filter == schedulecmd.InventoryActive && record.Deleted ||
+			filter == schedulecmd.InventoryDeleted && (record.Source != state.ScheduledJobSourceManaged || !record.Deleted) {
 			continue
 		}
 		item := scheduleItem(record)
@@ -304,9 +318,24 @@ func (m *Management) Create(ctx context.Context, request schedulecmd.Create) (sc
 	}
 	record.Source = state.ScheduledJobSourceManaged
 	record.Enabled = true
-	record.DefinitionVersion = 1
-	if err := m.store.Save(ctx, state.ScheduleMutation{Kind: state.ScheduleCreate, Record: record,
-		Authority: request.Authority, Audit: scheduleAudit(record.JobID, request.Authority)}); err != nil {
+	kind := state.ScheduleCreate
+	expectedVersion := uint64(0)
+	current, found, err := m.jobs.GetByID(ctx, record.JobID)
+	if err != nil {
+		return schedulecmd.Item{}, schedulecmd.ErrUnavailable
+	}
+	if found {
+		if current.Source != state.ScheduledJobSourceManaged || !current.Deleted {
+			return schedulecmd.Item{}, schedulecmd.ErrConflict
+		}
+		kind = state.ScheduleRecreate
+		expectedVersion = current.DefinitionVersion
+		record.LastRunAt = current.LastRunAt
+	}
+	record.DefinitionVersion = expectedVersion + 1
+	if err := m.store.Save(ctx, state.ScheduleMutation{Kind: kind, Record: record,
+		ExpectedVersion: expectedVersion, Authority: request.Authority,
+		Audit: scheduleAudit(record.JobID, request.Authority)}); err != nil {
 		return schedulecmd.Item{}, err
 	}
 	return scheduleItem(record), nil

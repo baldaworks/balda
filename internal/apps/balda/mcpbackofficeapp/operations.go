@@ -3,6 +3,7 @@ package mcpbackofficeapp
 
 import (
 	"context"
+	"strings"
 
 	"github.com/baldaworks/balda/internal/apps/balda/catalogapp"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
@@ -23,21 +24,59 @@ func New(definitions *mcpmanage.Definitions, catalog *catalogapp.Runtime) *Opera
 
 // Inventory combines durable definitions with safe current recovery/grant reads.
 func (o *Operations) Inventory(ctx context.Context) ([]mcpcmd.Item, error) {
-	items, err := o.definitions.Inventory(ctx)
+	return o.InventoryByScope(ctx, mcpcmd.InventoryActive)
+}
+
+// InventoryByScope returns the requested lifecycle projection with safe
+// current recovery and authorization metadata for active rows.
+func (o *Operations) InventoryByScope(ctx context.Context, scope mcpcmd.InventoryScope) ([]mcpcmd.Item, error) {
+	items, err := o.definitions.InventoryByScope(ctx, scope)
 	if err != nil {
 		return nil, err
 	}
 	for i := range items {
-		items[i].Authorization, err = o.definitions.WorkerAuthorization(ctx, items[i])
-		if err != nil {
-			return nil, err
-		}
-		items[i].Recovery, err = o.catalog.CurrentMCPRecovery(ctx, items[i])
-		if err != nil {
+		if err := o.decorate(ctx, &items[i]); err != nil {
 			return nil, err
 		}
 	}
 	return items, nil
+}
+
+// Get returns one passive detail projection, including managed tombstones.
+func (o *Operations) Get(ctx context.Context, connectionID string) (mcpcmd.Item, error) {
+	if strings.HasPrefix(connectionID, "config:") {
+		items, err := o.InventoryByScope(ctx, mcpcmd.InventoryActive)
+		if err != nil {
+			return mcpcmd.Item{}, err
+		}
+		for _, item := range items {
+			if item.Connection.ID == connectionID {
+				return item, nil
+			}
+		}
+		return mcpcmd.Item{}, mcpcmd.ErrNotFound
+	}
+	item, err := o.definitions.Detail(ctx, connectionID)
+	if err != nil {
+		return mcpcmd.Item{}, err
+	}
+	if err := o.decorate(ctx, &item); err != nil {
+		return mcpcmd.Item{}, err
+	}
+	return item, nil
+}
+
+func (o *Operations) decorate(ctx context.Context, item *mcpcmd.Item) error {
+	if item.Connection.Deleted {
+		return nil
+	}
+	var err error
+	item.Authorization, err = o.definitions.WorkerAuthorization(ctx, *item)
+	if err != nil {
+		return err
+	}
+	item.Recovery, err = o.catalog.CurrentMCPRecovery(ctx, *item)
+	return err
 }
 
 // ProviderIDs returns configured provider choices.

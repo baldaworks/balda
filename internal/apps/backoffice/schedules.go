@@ -21,7 +21,7 @@ const scheduleHistoryPageSize = 20
 
 // SchedulesOperations is Backoffice's port to host-owned schedule policy.
 type SchedulesOperations interface {
-	Inventory(ctx context.Context, authority schedulecmd.Authority) ([]schedulecmd.Item, error)
+	InventoryByFilter(ctx context.Context, authority schedulecmd.Authority, filter schedulecmd.InventoryFilter) ([]schedulecmd.Item, error)
 	Get(ctx context.Context, id string, authority schedulecmd.Authority) (schedulecmd.Item, error)
 	Create(ctx context.Context, request schedulecmd.Create) (schedulecmd.Item, error)
 	Update(ctx context.Context, request schedulecmd.Update) (schedulecmd.Item, error)
@@ -64,10 +64,16 @@ func (a *httpApp) schedulesView(r *http.Request, p security.Principal) (webui.Pa
 	if a.schedules == nil {
 		return page, schedulecmd.ErrUnavailable
 	}
+	selected, ok := lifecycleSelection(r.URL.Query())
+	if !ok {
+		return page, schedulecmd.ErrInvalid
+	}
+	lifecycle := lifecycleView("/schedules", selected)
 	if r.Method == http.MethodPost && r.PathValue("schedule_id") == "" ||
 		r.Method == http.MethodGet && r.PathValue("schedule_id") == "" && r.URL.Query().Get("new") == "1" {
 		page.Title = "Add schedule · Balda"
-		page.Schedules = &webui.SchedulesView{Editor: webui.ProjectScheduleEditor(schedulecmd.Item{}, true)}
+		page.Schedules = &webui.SchedulesView{Lifecycle: lifecycle, Editor: webui.ProjectScheduleEditor(schedulecmd.Item{}, true)}
+		page.Schedules.Editor.Action = lifecyclePath(page.Schedules.Editor.Action, selected)
 		return page, nil
 	}
 	id := r.PathValue("schedule_id")
@@ -77,7 +83,8 @@ func (a *httpApp) schedulesView(r *http.Request, p security.Principal) (webui.Pa
 			return page, err
 		}
 		page.Title = item.Definition.ID + " · Schedules · Balda"
-		page.Schedules = &webui.SchedulesView{Editor: webui.ProjectScheduleEditor(item, false)}
+		page.Schedules = &webui.SchedulesView{Lifecycle: lifecycle, Editor: webui.ProjectScheduleEditor(item, false)}
+		page.Schedules.Editor.Row.DetailPath = lifecyclePath(page.Schedules.Editor.Row.DetailPath, selected)
 		page.Schedules.Editor.RunRequestKey = uuid.NewString()
 		if r.Method != http.MethodGet {
 			return page, nil
@@ -92,12 +99,12 @@ func (a *httpApp) schedulesView(r *http.Request, p security.Principal) (webui.Pa
 		}
 		if len(runs) > scheduleHistoryPageSize {
 			last := runs[scheduleHistoryPageSize-1]
-			page.Schedules.Editor.NextHistoryPath = page.Schedules.Editor.Row.DetailPath + "?before_at=" + url.QueryEscape(last.RequestedAt.UTC().Format(time.RFC3339Nano)) + "&before_id=" + url.QueryEscape(last.ID)
+			page.Schedules.Editor.NextHistoryPath = queryPath(page.Schedules.Editor.Row.DetailPath, url.Values{"before_at": {last.RequestedAt.UTC().Format(time.RFC3339Nano)}, "before_id": {last.ID}})
 			runs = runs[:scheduleHistoryPageSize]
 		}
 		for _, run := range runs {
 			view := webui.ProjectScheduleRun(run)
-			view.DetailPath = page.Schedules.Editor.Row.DetailPath + "?run_id=" + url.QueryEscape(run.ID)
+			view.DetailPath = queryPath(page.Schedules.Editor.Row.DetailPath, url.Values{"run_id": {run.ID}})
 			page.Schedules.Editor.Runs = append(page.Schedules.Editor.Runs, view)
 		}
 		if runID := r.URL.Query().Get("run_id"); runID != "" {
@@ -110,13 +117,15 @@ func (a *httpApp) schedulesView(r *http.Request, p security.Principal) (webui.Pa
 		page.Schedules.Editor.HistoryLoaded = true
 		return page, nil
 	}
-	items, err := a.schedules.Inventory(r.Context(), a.scheduleAuthority(p))
+	items, err := a.schedules.InventoryByFilter(r.Context(), a.scheduleAuthority(p), schedulecmd.InventoryFilter(selected))
 	if err != nil {
 		return page, err
 	}
-	page.Schedules = &webui.SchedulesView{}
+	page.Schedules = &webui.SchedulesView{Lifecycle: lifecycle, EmptyMessage: "No schedules match this lifecycle filter."}
 	for _, item := range items {
-		page.Schedules.Rows = append(page.Schedules.Rows, webui.ProjectScheduleRow(item))
+		row := webui.ProjectScheduleRow(item)
+		row.DetailPath = lifecyclePath(row.DetailPath, selected)
+		page.Schedules.Rows = append(page.Schedules.Rows, row)
 	}
 	return page, nil
 }

@@ -1,0 +1,9 @@
+{{define "lifecycle-filter"}}{{if .}}
+<nav class="mb-3" aria-label="Lifecycle filter"><div class="btn-group" role="group" aria-label="Show lifecycle state">
+<a class="btn btn-outline-secondary{{if eq .Selected "active"}} active{{end}}" href="{{path .ActivePath}}" hx-boost="true" hx-target="#main-content" hx-swap="outerHTML" hx-push-url="true"{{if eq .Selected "active"}} aria-current="page"{{end}}>Active</a>
+<a class="btn btn-outline-secondary{{if eq .Selected "deleted"}} active{{end}}" href="{{path .DeletedPath}}" hx-boost="true" hx-target="#main-content" hx-swap="outerHTML" hx-push-url="true"{{if eq .Selected "deleted"}} aria-current="page"{{end}}>Deleted</a>
+<a class="btn btn-outline-secondary{{if eq .Selected "all"}} active{{end}}" href="{{path .AllPath}}" hx-boost="true" hx-target="#main-content" hx-swap="outerHTML" hx-push-url="true"{{if eq .Selected "all"}} aria-current="page"{{end}}>All</a>
+</div></nav>
+{{end}}{{end}}
+
+{{define "table-scroll-hint"}}<p id="{{.}}" class="table-scroll-hint" data-table-scroll-hint hidden>Scroll the table sideways to see all columns.</p>{{end}}

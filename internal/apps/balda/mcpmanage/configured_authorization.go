@@ -105,7 +105,7 @@ func (s *Definitions) PrepareAuthorization(ctx context.Context, request mcpcmd.P
 	if err := s.credentials.ValidateTransportRevision(r); err != nil {
 		return mcpcmd.Revision{}, err
 	}
-	if _, err := s.save(ctx, c, &r, c.Version, request.Authority); err != nil {
+	if _, err := s.save(ctx, c, &r, c.Version, false, request.Authority); err != nil {
 		return mcpcmd.Revision{}, err
 	}
 	return r, nil
@@ -134,7 +134,7 @@ func (s *Definitions) prepareManagedAuthorization(ctx context.Context, c mcpcmd.
 	if err != nil {
 		return mcpcmd.Revision{}, err
 	}
-	if _, err := s.save(ctx, c, &r, c.Version, request.Authority); err != nil {
+	if _, err := s.save(ctx, c, &r, c.Version, false, request.Authority); err != nil {
 		return mcpcmd.Revision{}, err
 	}
 	return r, nil

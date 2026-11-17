@@ -260,7 +260,15 @@ func TestBackofficeMCPBrowserWorkflow(t *testing.T) {
 		t.Fatal("configured diagnostic changed MCP definitions, revisions, grants, catalog, or runtime health")
 	}
 	output := runMCPBrowser(t, root, "http://"+address, upstream.URL+"/managed", upstream.URL, "crud")
-	items, err := definitions.Inventory(t.Context())
+	active, err := definitions.InventoryByScope(t.Context(), mcpcmd.InventoryActive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deleted, err := definitions.InventoryByScope(t.Context(), mcpcmd.InventoryDeleted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	all, err := definitions.InventoryByScope(t.Context(), mcpcmd.InventoryAll)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,12 +276,21 @@ func TestBackofficeMCPBrowserWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(items) != 3 || len(revisions) != 6 {
-		t.Fatalf("durable definitions/revisions = %d/%d, want 3/6", len(items), len(revisions))
+	if len(active) != 1 || len(deleted) != 2 || len(all) != 3 || len(revisions) != 6 {
+		t.Fatalf("active/deleted/all definitions and revisions = %d/%d/%d and %d, want 1/2/3 and 6",
+			len(active), len(deleted), len(all), len(revisions))
 	}
-	for _, item := range items {
-		if item.Connection.Source == mcpcmd.SourceManaged && item.Status != mcpcmd.StatusDeleted {
-			t.Fatal("browser deletion did not tombstone managed connection")
+	if active[0].Connection.Source != mcpcmd.SourceConfig || active[0].Connection.Deleted {
+		t.Fatalf("active projection = %+v, want only the current configured connection", active)
+	}
+	for _, item := range deleted {
+		if item.Connection.Source != mcpcmd.SourceManaged || !item.Connection.Deleted || item.Status != mcpcmd.StatusDeleted {
+			t.Fatalf("deleted projection contains a non-tombstone item: %+v", item)
+		}
+	}
+	for _, item := range all {
+		if item.Connection.Source == mcpcmd.SourceManaged && (!item.Connection.Deleted || item.Status != mcpcmd.StatusDeleted) {
+			t.Fatalf("all projection lost managed tombstone state: %+v", item)
 		}
 	}
 	t.Log(string(diagnosticOutput))

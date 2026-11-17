@@ -16,6 +16,15 @@ var (
 	ErrUnavailable = errors.New("webhook route operation unavailable")
 )
 
+// InventoryFilter selects the current webhook route lifecycle projection.
+type InventoryFilter string
+
+const (
+	InventoryActive  InventoryFilter = "active"
+	InventoryDeleted InventoryFilter = "deleted"
+	InventoryAll     InventoryFilter = "all"
+)
+
 // ManagedSecretHeader carries the generated secret on managed external requests.
 const ManagedSecretHeader = "X-Balda-Webhook-Secret"
 
@@ -176,6 +185,7 @@ type MutationKind string
 
 const (
 	MutationCreate    MutationKind = "create"
+	MutationRecreate  MutationKind = "recreate"
 	MutationEdit      MutationKind = "edit"
 	MutationSelection MutationKind = "selection"
 	MutationDelete    MutationKind = "delete"

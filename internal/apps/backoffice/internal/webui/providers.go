@@ -2,9 +2,11 @@ package webui
 
 // ProvidersView is the provider inventory or one bounded editor.
 type ProvidersView struct {
-	Version uint64
-	Rows    []ProviderRow
-	Editor  *ProviderEditor
+	Version      uint64
+	Rows         []ProviderRow
+	Editor       *ProviderEditor
+	Lifecycle    LifecycleView
+	EmptyMessage string
 }
 
 // ProviderRow is a secret-free provider summary.

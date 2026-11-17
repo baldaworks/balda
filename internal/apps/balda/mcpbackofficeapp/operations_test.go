@@ -124,6 +124,19 @@ func TestOperationsPersistProtectedEditsAndProbeExactCandidate(t *testing.T) {
 	if err != nil || !found || !bytes.Equal(retained.ProtectedValues, original.ProtectedValues) {
 		t.Fatal("selection change lost exact old protected revision")
 	}
+	before = requests.Load()
+	active, err := operations.InventoryByScope(t.Context(), mcpcmd.InventoryActive)
+	if err != nil || len(active) != 0 {
+		t.Fatalf("active inventory after delete = %+v/%v", active, err)
+	}
+	deletedItems, err := operations.InventoryByScope(t.Context(), mcpcmd.InventoryDeleted)
+	if err != nil || len(deletedItems) != 1 || !deletedItems[0].Connection.Deleted {
+		t.Fatalf("deleted inventory = %+v/%v", deletedItems, err)
+	}
+	detail, err := operations.Get(t.Context(), deleted.Connection.ID)
+	if err != nil || !detail.Connection.Deleted || detail.Authorization != "" || detail.Recovery != "" || requests.Load() != before {
+		t.Fatalf("passive deleted detail = %+v/%v, requests=%d", detail, err, requests.Load())
+	}
 	if err := p.Users().RevokeSession(t.Context(), authority.SessionID, authority.SessionVersion, time.Now(), "revoked", fixtureAudit("revoke", usercmd.AuditActionSessionRevoked, usercmd.AuditTargetSession, authority.SessionID)); err != nil {
 		t.Fatal(err)
 	}
@@ -210,6 +223,10 @@ func TestOperationsInventoryRecoveryReadsNeverLaunch(t *testing.T) {
 		t.Fatal("inventory metadata made a remote request")
 	}
 	c := items[0].Connection
+	detail, err := operations.Get(t.Context(), c.ID)
+	if err != nil || detail.Connection.ID != c.ID || requests.Load() != before {
+		t.Fatalf("configured detail = %+v/%v, requests=%d", detail, err, requests.Load())
+	}
 	if _, err := operations.Delete(t.Context(), mcpcmd.ChangeSelection{ConnectionID: c.ID, ExpectedVersion: c.Version, Authority: authority}); !errors.Is(err, mcpcmd.ErrForbidden) {
 		t.Fatal("file-owned row became deletable")
 	}

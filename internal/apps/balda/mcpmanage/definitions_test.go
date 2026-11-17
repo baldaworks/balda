@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -234,6 +235,9 @@ func (s *definitionMemoryStore) SaveDefinition(_ context.Context, m Mutation) er
 	}
 	old, found := s.connections[m.Connection.ID]
 	if (m.ExpectedVersion == 0 && found) || (m.ExpectedVersion != 0 && (!found || old.Version != m.ExpectedVersion)) {
+		return mcpcmd.ErrConflict
+	}
+	if m.Recreate != (found && old.Deleted) {
 		return mcpcmd.ErrConflict
 	}
 	for _, c := range s.connections {
@@ -494,6 +498,86 @@ func TestDefinitionEditsFenceVersionsPreserveSecretsAndRetainPins(t *testing.T) 
 	selection.Enabled = true
 	if _, err := s.SetEnabled(t.Context(), selection); !errors.Is(err, mcpcmd.ErrConflict) {
 		t.Fatalf("tombstone resurrected: %v", err)
+	}
+}
+
+func TestDeletedDefinitionInventoryDetailAndRecreate(t *testing.T) {
+	s, store, configured := definitionHarness(t)
+	request := definitionCreate()
+	const oldSecret = "old-definition-secret"
+	request.Values.Env = map[string]mcpcmd.ValueEdit{"TOKEN": {Operation: mcpcmd.ValueSet, Kind: mcpcmd.ValueProtected, Value: oldSecret}}
+	created, err := s.Create(t.Context(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldRevisionID := created.Connection.CurrentRevisionID
+	deleted, err := s.Delete(t.Context(), mcpcmd.ChangeSelection{ConnectionID: created.Connection.ID, ExpectedVersion: created.Connection.Version, Authority: request.Authority})
+	if err != nil {
+		t.Fatal(err)
+	}
+	configured.items = []mcpcmd.Item{{Connection: mcpcmd.Connection{ID: "config:worker-tools", PublicID: request.PublicID, Source: mcpcmd.SourceConfig}}}
+	active, err := s.Inventory(t.Context())
+	if err != nil || len(active) != 1 || active[0].Connection.Source != mcpcmd.SourceConfig {
+		t.Fatalf("active inventory contains tombstone: %+v, %v", active, err)
+	}
+	deletedItems, err := s.InventoryByScope(t.Context(), mcpcmd.InventoryDeleted)
+	if err != nil || len(deletedItems) != 1 || deletedItems[0].Status != mcpcmd.StatusDeleted {
+		t.Fatalf("deleted inventory = %+v, %v", deletedItems, err)
+	}
+	all, err := s.InventoryByScope(t.Context(), mcpcmd.InventoryAll)
+	if err != nil || len(all) != 2 {
+		t.Fatalf("all inventory = %+v, %v", all, err)
+	}
+	for _, item := range all {
+		if item.Connection.Deleted && item.Status != mcpcmd.StatusDeleted {
+			t.Fatalf("all inventory rewrote tombstone status: %+v", all)
+		}
+		if !item.Connection.Deleted && item.Status == mcpcmd.StatusConflict {
+			t.Fatalf("tombstone participated in active conflict projection: %+v", all)
+		}
+	}
+	detail, err := s.Detail(t.Context(), created.Connection.ID)
+	if err != nil || detail.Status != mcpcmd.StatusDeleted || detail.ToolCount != 0 {
+		t.Fatalf("deleted detail = %+v, %v", detail, err)
+	}
+	data, err := json.Marshal(detail)
+	if err != nil || bytes.Contains(data, []byte(oldSecret)) {
+		t.Fatal("deleted detail exposed protected material")
+	}
+	if _, err := s.Detail(t.Context(), strings.Repeat("x", 257)); !errors.Is(err, mcpcmd.ErrInvalid) {
+		t.Fatalf("oversized detail ID accepted: %v", err)
+	}
+
+	if _, err := s.Create(t.Context(), request); !errors.Is(err, mcpcmd.ErrConflict) {
+		t.Fatalf("configured reservation was reused: %v", err)
+	}
+	configured.items = nil
+	const newSecret = "new-definition-secret"
+	request.Values.Env["TOKEN"] = mcpcmd.ValueEdit{Operation: mcpcmd.ValueSet, Kind: mcpcmd.ValueProtected, Value: newSecret}
+	recreated, err := s.Create(t.Context(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recreated.Connection.ID != created.Connection.ID || recreated.Connection.Version != deleted.Connection.Version+1 || recreated.Connection.CurrentRevisionID == oldRevisionID || recreated.Status != mcpcmd.StatusPending {
+		t.Fatalf("recreated lineage = %+v", recreated)
+	}
+	oldValues, err := s.credentials.ResolveValues(store.revisions[oldRevisionID])
+	if err != nil || oldValues.Env["TOKEN"] != oldSecret {
+		t.Fatalf("old pin changed: %v", err)
+	}
+	newValues, err := s.credentials.ResolveValues(store.revisions[recreated.Connection.CurrentRevisionID])
+	if err != nil || newValues.Env["TOKEN"] != newSecret || newValues.Env["TOKEN"] == oldSecret {
+		t.Fatalf("recreated protected values = %#v, %v", newValues.Env, err)
+	}
+	if recreated.Definition.AuthBinding != nil || recreated.Authorization != "" || recreated.ToolCount != 0 {
+		t.Fatalf("recreated row inherited mutable state: %+v", recreated)
+	}
+	stale := mcpcmd.UpdateDefinition{ConnectionID: created.Connection.ID, ExpectedVersion: created.Connection.Version, Definition: created.Definition, Enabled: true, Authority: request.Authority}
+	if _, err := s.Update(t.Context(), stale); !errors.Is(err, mcpcmd.ErrConflict) {
+		t.Fatalf("pre-delete form updated recreated row: %v", err)
+	}
+	if _, err := s.InventoryByScope(t.Context(), mcpcmd.InventoryScope("unknown")); !errors.Is(err, mcpcmd.ErrInvalid) {
+		t.Fatalf("unknown inventory scope accepted: %v", err)
 	}
 }
 

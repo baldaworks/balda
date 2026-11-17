@@ -47,15 +47,15 @@ function labelled(page, name) {
       if (whiteSpace!=='pre-wrap') defects.push(`${scene}: Sparse whitespace=${whiteSpace}, expected pre-wrap`);
     }
     for (const [scene,region,column,min] of [
-      ['plugins/marketplaces','Marketplaces table, horizontally scrollable',1,192],
-      ['plugins/marketplaces','Marketplaces table, horizontally scrollable',2,80],
-      ['plugins/marketplaces','Marketplaces table, horizontally scrollable',3,160],
-      ['plugins/marketplaces','Marketplaces table, horizontally scrollable',4,224],
-      ['plugins/marketplaces/definitions/new','Discovered plugins table, horizontally scrollable',0,80],
-      ['plugins/marketplaces/definitions/new','Discovered plugins table, horizontally scrollable',4,144],
-      ['plugins/installed/demo','Retained revisions table, horizontally scrollable',1,160],
-      ['plugins/installed/demo','Retained revisions table, horizontally scrollable',3,128],
-      ['plugins/installed/demo','Retained revisions table, horizontally scrollable',4,220],
+      ['plugins/marketplaces','Marketplaces table',1,192],
+      ['plugins/marketplaces','Marketplaces table',2,80],
+      ['plugins/marketplaces','Marketplaces table',3,160],
+      ['plugins/marketplaces','Marketplaces table',4,224],
+      ['plugins/marketplaces/definitions/new','Discovered plugins table',0,80],
+      ['plugins/marketplaces/definitions/new','Discovered plugins table',4,144],
+      ['plugins/installed/demo','Retained revisions table',1,160],
+      ['plugins/installed/demo','Retained revisions table',3,128],
+      ['plugins/installed/demo','Retained revisions table',4,220],
     ]) {
       await probe.goto(`${origin}${prefix}/${scene}`);
       const width=await probe.getByRole('region',{name:region,exact:true}).locator('tbody tr').first().locator('td').nth(column).evaluate(element=>element.clientWidth);
@@ -115,7 +115,7 @@ function labelled(page, name) {
         if (state === 'plugins/marketplaces') {
           assert.deepEqual(await page.getByRole('columnheader').allTextContents(), ['Name', 'Source', 'Ref', 'Sparse', 'Discovery', 'Available plugins', 'Last successful refresh', 'Actions'], `${label} marketplace columns`);
           if(viewport.width===390){
-            const region=page.getByRole('region',{name:'Marketplaces table, horizontally scrollable',exact:true});
+            const region=page.getByRole('region',{name:'Marketplaces table',exact:true});
             await region.focus();await page.keyboard.press('Tab');await page.keyboard.press('Tab');
             assert.equal(await region.getByRole('link',{name:'Open',exact:true}).evaluate(element=>element===document.activeElement),true,`${label} keyboard reaches marketplace action`);
             assert.ok(await region.evaluate(element=>element.scrollLeft>0),`${label} keyboard scrolls marketplace actions`);
@@ -127,7 +127,7 @@ function labelled(page, name) {
           assert.equal(await page.getByRole('link', { name: 'Open installed', exact: true }).count(), 1, `${label} installed discovery action`);
           assert.equal(await page.getByRole('link', { name: 'Review install', exact: true }).count(), 1, `${label} available discovery action`);
           if(viewport.width===390){
-            const region=page.getByRole('region',{name:'Discovered plugins table, horizontally scrollable',exact:true});
+            const region=page.getByRole('region',{name:'Discovered plugins table',exact:true});
             await region.focus();await page.keyboard.press('Tab');
             assert.equal(await region.getByRole('link',{name:'Review install',exact:true}).evaluate(element=>element===document.activeElement),true,`${label} keyboard reaches discovered review`);
             const bounds=await region.evaluate(element=>{const link=element.querySelector('a').getBoundingClientRect();const wrapper=element.getBoundingClientRect();return {left:link.left,right:link.right,wrapperLeft:wrapper.left,wrapperRight:wrapper.right,scroll:element.scrollLeft};});
@@ -179,7 +179,7 @@ function labelled(page, name) {
           assert.ok(await page.getByRole('heading', { name: 'Skills', exact: true }).count(), `${label} retained skills`);
           assert.ok(await page.getByRole('heading', { name: 'MCP servers', exact: true }).count(), `${label} retained MCP`);
           if(viewport.width===390){
-            const region=page.getByRole('region',{name:'Retained revisions table, horizontally scrollable',exact:true});
+            const region=page.getByRole('region',{name:'Retained revisions table',exact:true});
             await region.focus();await page.keyboard.press('Tab');
             assert.equal(await region.getByRole('button',{name:'Rollback',exact:true}).evaluate(element=>element===document.activeElement),true,`${label} keyboard reaches rollback action`);
             const bounds=await region.evaluate(element=>{const button=element.querySelector('button').getBoundingClientRect();const wrapper=element.getBoundingClientRect();return {left:button.left,right:button.right,wrapperLeft:wrapper.left,wrapperRight:wrapper.right,scroll:element.scrollLeft};});
@@ -187,12 +187,12 @@ function labelled(page, name) {
             await page.screenshot({path:path.join(directory,'plugins-retained-actions-right.png'),fullPage:true});
           }
         }
-        const revisions=page.getByRole('region',{name:'Retained revisions table, horizontally scrollable',exact:true});
+        const revisions=page.getByRole('region',{name:'Retained revisions table',exact:true});
         if(await revisions.count()) {
           const intact=await revisions.locator('tbody tr td:nth-child(4)').evaluateAll(elements=>elements.every(element=>{const range=document.createRange();range.selectNodeContents(element);return range.getClientRects().length===1;}));
           assert.ok(intact,`${label} ordinary retained status words stay intact`);
         }
-        const discovered=page.getByRole('region',{name:'Discovered plugins table, horizontally scrollable',exact:true});
+        const discovered=page.getByRole('region',{name:'Discovered plugins table',exact:true});
         if(await discovered.count()) {
           const intact=await discovered.locator('a').evaluateAll(elements=>elements.every(element=>{
             const walker=document.createTreeWalker(element,NodeFilter.SHOW_TEXT);

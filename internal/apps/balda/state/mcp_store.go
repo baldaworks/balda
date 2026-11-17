@@ -73,8 +73,11 @@ func (s *sqlMCPStore) SaveMCPConnection(ctx context.Context, m MCPMutation) erro
 		if !found {
 			return mcpcmd.ErrNotFound
 		}
-		if current.Version != m.ExpectedVersion || current.Source != c.Source || current.PublicID != c.PublicID || current.Deleted {
+		if current.Version != m.ExpectedVersion || current.Source != c.Source || current.PublicID != c.PublicID || current.Deleted != m.Recreate {
 			return mcpcmd.ErrConflict
+		}
+		if m.Recreate && (m.Revision == nil || c.Deleted) {
+			return mcpcmd.ErrInvalid
 		}
 		if m.Revision == nil && c.CurrentRevisionID != current.CurrentRevisionID {
 			return mcpcmd.ErrInvalid
@@ -131,7 +134,8 @@ func validateMCPMutation(m MCPMutation) error {
 		c.CurrentRevisionID == "" || len(c.CurrentRevisionID) > 256 ||
 		c.CreatedAt.IsZero() || c.UpdatedAt.Before(c.CreatedAt) ||
 		m.ExpectedVersion >= math.MaxInt64 || (c.Deleted && c.Enabled) ||
-		(m.ExpectedVersion == 0 && (m.Revision == nil || c.Deleted)) {
+		(m.ExpectedVersion == 0 && (m.Revision == nil || c.Deleted || m.Recreate)) ||
+		(m.Recreate && (m.ExpectedVersion == 0 || m.Revision == nil || c.Source != mcpcmd.SourceManaged || c.Deleted)) {
 		return mcpcmd.ErrInvalid
 	}
 	if err := validateMCPAuthority(a); err != nil {

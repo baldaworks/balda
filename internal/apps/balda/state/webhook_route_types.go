@@ -47,6 +47,7 @@ type WebhookRouteMutationKind string
 
 const (
 	WebhookRouteCreate    WebhookRouteMutationKind = "create"
+	WebhookRouteRecreate  WebhookRouteMutationKind = "recreate"
 	WebhookRouteEdit      WebhookRouteMutationKind = "edit"
 	WebhookRouteSelection WebhookRouteMutationKind = "selection"
 	WebhookRouteDelete    WebhookRouteMutationKind = "delete"

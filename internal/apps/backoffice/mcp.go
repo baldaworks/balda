@@ -22,7 +22,8 @@ const mcpDiagnosticFormLimit = 4 << 10
 // MCPOperations is Backoffice's port to host-owned MCP management. Definition
 // validation, durable authority fences and readiness policy remain with the host.
 type MCPOperations interface {
-	Inventory(ctx context.Context) ([]mcpcmd.Item, error)
+	InventoryByScope(ctx context.Context, scope mcpcmd.InventoryScope) ([]mcpcmd.Item, error)
+	Get(ctx context.Context, connectionID string) (mcpcmd.Item, error)
 	ProviderIDs(ctx context.Context) ([]string, error)
 	Create(ctx context.Context, request mcpcmd.CreateDefinition) (mcpcmd.Item, error)
 	Update(ctx context.Context, request mcpcmd.UpdateDefinition) (mcpcmd.Item, error)
@@ -110,6 +111,11 @@ func (a *httpApp) mcpBasePage(r *http.Request, p security.Principal) webui.Page 
 
 func (a *httpApp) mcpView(r *http.Request, p security.Principal) (webui.Page, error) {
 	page := a.mcpBasePage(r, p)
+	selected, ok := lifecycleSelection(r.URL.Query())
+	if !ok {
+		return page, mcpcmd.ErrInvalid
+	}
+	lifecycle := lifecycleView("/mcp", selected)
 	create := r.URL.Path == a.path("/mcp/new") || (r.Method == http.MethodPost && r.PathValue("connection_id") == "")
 	id := r.PathValue("connection_id")
 	if create {
@@ -118,41 +124,45 @@ func (a *httpApp) mcpView(r *http.Request, p security.Principal) (webui.Page, er
 			return page, err
 		}
 		page.Title = "Add MCP server · Balda"
-		page.MCP = &webui.MCPView{Editor: webui.ProjectMCPEditor(mcpcmd.Item{}, providers, true)}
+		page.MCP = &webui.MCPView{Lifecycle: lifecycle, Editor: webui.ProjectMCPEditor(mcpcmd.Item{}, providers, true)}
+		page.MCP.Editor.Action = lifecyclePath(page.MCP.Editor.Action, selected)
 		return page, nil
 	}
-	items, err := a.mcp.Inventory(r.Context())
+	if id == "" {
+		items, err := a.mcp.InventoryByScope(r.Context(), mcpcmd.InventoryScope(selected))
+		if err != nil {
+			return page, err
+		}
+		page.MCP = &webui.MCPView{Lifecycle: lifecycle, EmptyMessage: "No MCP servers match this lifecycle filter."}
+		for _, item := range items {
+			row := webui.ProjectMCPRow(item)
+			row.DetailPath = lifecyclePath(row.DetailPath, selected)
+			page.MCP.Rows = append(page.MCP.Rows, row)
+		}
+		return page, nil
+	}
+	item, err := a.mcp.Get(r.Context(), id)
 	if err != nil {
 		return page, err
 	}
-	if id == "" {
-		page.MCP = &webui.MCPView{}
-		for _, item := range items {
-			page.MCP.Rows = append(page.MCP.Rows, webui.ProjectMCPRow(item))
-		}
-		return page, nil
+	providers, err := a.mcp.ProviderIDs(r.Context())
+	if err != nil {
+		return page, err
 	}
-	for _, item := range items {
-		if item.Connection.ID == id {
-			providers, err := a.mcp.ProviderIDs(r.Context())
-			if err != nil {
-				return page, err
-			}
-			page.Title = item.Connection.PublicID + " · MCP · Balda"
-			page.MCP = &webui.MCPView{Editor: webui.ProjectMCPEditor(item, providers, false)}
-			if a.mcpAuthorizations != nil && page.MCP.Editor.AuthorizationAvailable {
-				attempt, found, err := a.mcpAuthorizations.CurrentAttempt(r.Context(), id, a.mcpAuthority(p))
-				if err != nil {
-					return page, err
-				}
-				if found {
-					page.MCP.Editor.Attempt = &webui.MCPAttempt{ID: attempt.ID, Device: attempt.Device, Expires: attempt.ExpiresAt.UTC().Format("2006-01-02 15:04 UTC"), CancelPath: "/mcp/oauth/attempts/" + url.PathEscape(attempt.ID) + "/cancel", StatusPath: "/mcp/oauth/device/" + url.PathEscape(attempt.ID)}
-				}
-			}
-			return page, nil
+	page.Title = item.Connection.PublicID + " · MCP · Balda"
+	page.MCP = &webui.MCPView{Lifecycle: lifecycle, Editor: webui.ProjectMCPEditor(item, providers, false)}
+	page.MCP.Editor.Row.DetailPath = lifecyclePath(page.MCP.Editor.Row.DetailPath, selected)
+	page.MCP.Editor.DiagnosticPath = lifecyclePath(page.MCP.Editor.DiagnosticPath, selected)
+	if a.mcpAuthorizations != nil && page.MCP.Editor.AuthorizationAvailable {
+		attempt, found, err := a.mcpAuthorizations.CurrentAttempt(r.Context(), id, a.mcpAuthority(p))
+		if err != nil {
+			return page, err
+		}
+		if found {
+			page.MCP.Editor.Attempt = &webui.MCPAttempt{ID: attempt.ID, Device: attempt.Device, Expires: attempt.ExpiresAt.UTC().Format("2006-01-02 15:04 UTC"), CancelPath: "/mcp/oauth/attempts/" + url.PathEscape(attempt.ID) + "/cancel", StatusPath: "/mcp/oauth/device/" + url.PathEscape(attempt.ID)}
 		}
 	}
-	return page, mcpcmd.ErrNotFound
+	return page, nil
 }
 
 func (a *httpApp) mcpMutation(w http.ResponseWriter, r *http.Request) (url.Values, webui.Page, mcpcmd.Authority, bool) {

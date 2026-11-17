@@ -14,6 +14,8 @@ type WebhooksView struct {
 	MissingPublicOrigin bool
 	Rows                []WebhookRow
 	Editor              *WebhookEditor
+	Lifecycle           LifecycleView
+	EmptyMessage        string
 }
 
 // WebhookRow contains secret-free inventory metadata.
@@ -33,11 +35,11 @@ type WebhookEditor struct {
 	DedupeSource, DedupeHeader             string
 	AuthLabel                              string
 	// Secret is populated only by create and rotate POST responses.
-	Secret                                    string
-	TestRequestKey, TestBody, NextHistoryPath string
-	History                                   []WebhookHistoryRow
-	HistoryDetail                             *WebhookHistoryDetail
-	HistoryLoaded                             bool
+	Secret                                              string
+	TestRequestKey, TestBody, TestPath, NextHistoryPath string
+	History                                             []WebhookHistoryRow
+	HistoryDetail                                       *WebhookHistoryDetail
+	HistoryLoaded                                       bool
 }
 
 // WebhookHistoryRow contains one admitted request's summary.
@@ -63,9 +65,16 @@ func ProjectWebhookHistoryRow(item webhookroutecmd.HistoryItem, routePath string
 	} else if delivery == "" {
 		delivery = "Pending"
 	}
+	detailPath := routePath
+	if parsed, err := url.Parse(routePath); err == nil {
+		query := parsed.Query()
+		query.Set("job_id", item.JobID)
+		parsed.RawQuery = query.Encode()
+		detailPath = parsed.String()
+	}
 	return WebhookHistoryRow{Source: source, Requested: item.CreatedAt.UTC().Format(time.RFC3339),
 		State: item.JobStatus, DeliveryState: delivery,
-		DetailPath: routePath + "?job_id=" + url.QueryEscape(item.JobID)}
+		DetailPath: detailPath}
 }
 
 // ProjectWebhookHistoryDetail displays exact valid text or a lossless hex input.
@@ -104,6 +113,7 @@ func ProjectWebhookEditor(item webhookroutecmd.Item, create bool) *WebhookEditor
 		AckOnDelivery: d.AckOnDelivery, DedupeSource: d.DedupeSource,
 		DedupeHeader: d.DedupeHeader, Action: "/webhooks/" + url.PathEscape(d.Name),
 		AuthLabel: "Generated secret in X-Balda-Webhook-Secret"}
+	e.TestPath = e.Action + "/test"
 	if item.Source == webhookroutecmd.SourceConfig {
 		e.AuthLabel = "None"
 		if item.AuthType == webhookroutecmd.AuthTypeHeader {

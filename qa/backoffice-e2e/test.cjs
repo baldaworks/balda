@@ -6,6 +6,12 @@ const { chromium } = require('playwright');
 const checkConfirmations = require('./confirmations.cjs');
 
 const routes = [
+  'schedules', 'schedules-empty', 'schedules/new', 'schedules/daily-summary',
+  'schedules-disabled', 'schedules-deleted', 'schedules-all', 'schedules/deleted-summary', 'schedules-config', 'schedules-history',
+  'schedules-long', 'schedules-invalid', 'schedules-conflict', 'schedules-unavailable',
+  'aliases', 'aliases-empty', 'aliases/new', 'aliases/main_chat', 'aliases-long',
+  'aliases-invalid', 'aliases-conflict', 'aliases-unavailable',
+
   'memory', 'memory-long', 'memory-search', 'memory-no-results', 'memory-empty', 'memory-disabled',
   'memory/new', 'memory/1', 'memory-delete', 'memory-invalid', 'memory-forbidden', 'memory-missing', 'memory-conflict', 'memory-unavailable',
 
@@ -24,6 +30,8 @@ const routes = [
   'form-bad-request', 'form-forbidden', 'form-conflict', 'form-server-error',
 ];
 const expectedStatus = new Map([
+  ['schedules-invalid', 400], ['schedules-conflict', 409], ['schedules-unavailable', 503],
+  ['aliases-invalid', 400], ['aliases-conflict', 409], ['aliases-unavailable', 503],
   ['memory-invalid', 400], ['memory-forbidden', 403], ['memory-missing', 404], ['memory-conflict', 409], ['memory-unavailable', 503],
 
   ['webhooks-invalid', 400], ['webhooks-conflict', 409], ['webhooks-unavailable', 503],
@@ -295,6 +303,14 @@ async function checkPage(browser, baseURL, viewport) {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await checkBranding(page, baseURL, viewport);
+  await page.goto(`${baseURL}/qa/ui/`);
+  const galleryRoutes = new Set(await page.locator('.qa-screen-card a').evaluateAll(links => links.map(link => {
+    const url = new URL(link.href);
+    return url.pathname.replace(/^.*\/qa\/ui\/?/, '');
+  })));
+  for (const route of routes.filter(route => route.startsWith('schedules') || route.startsWith('aliases'))) {
+    assert.equal(galleryRoutes.has(route), true, `gallery inventory contains ${route}`);
+  }
   for (const route of routes) {
     const response = await page.goto(`${baseURL}/qa/ui/${route}`);
     assert.equal(response.status(), expectedStatus.get(route) ?? 200, `${route} HTTP status at ${viewport.width}px`);
@@ -414,7 +430,7 @@ async function checkPage(browser, baseURL, viewport) {
   assert.equal(await page.locator('.app-header').evaluate(element => element.getBoundingClientRect().top), 0, `scrolled top bar stays visible at ${viewport.width}px`);
   assert.equal(await page.locator('.app-header .viewer-actions').isVisible(), true, 'scrolled viewer controls remain visible');
   await page.goto(`${baseURL}/qa/ui/style-guide`);
-  assert.equal(await page.locator('.qa-guide-section').count(), 9);
+  assert.equal(await page.locator('.qa-guide-section').count(), 10);
   await page.goto(`${baseURL}/qa/ui/audit`);
   assert.equal(await page.locator('section[aria-label="Security events"] table').count(), 1);
   assert.equal(await page.locator('section[aria-label="Security events"] tbody tr').count(), 3);
@@ -438,7 +454,7 @@ async function checkPage(browser, baseURL, viewport) {
     const table = page.locator('section[aria-label="Security events"] .table-responsive');
     assert.equal(await table.evaluate(element => element.scrollWidth > element.clientWidth), true);
     await table.evaluate(element => { element.scrollLeft = element.scrollWidth; });
-    assert.equal(await page.getByText('Swipe the table sideways').isVisible(), true);
+    assert.equal(await page.getByText('Scroll the table sideways to see all columns.').isVisible(), true);
     await page.getByRole('button', { name: 'Toggle navigation' }).click();
     assert.equal(await page.getByRole('navigation', { name: 'Primary navigation', exact: true }).isVisible(), true);
     await page.keyboard.press('Escape');

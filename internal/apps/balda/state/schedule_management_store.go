@@ -76,7 +76,14 @@ func (s *sqlScheduleManagementStore) Save(ctx context.Context, m ScheduleMutatio
 		if source != ScheduledJobSourceManaged {
 			return schedulecmd.ErrForbidden
 		}
-		if deleted == 1 || version != m.ExpectedVersion {
+		if version != m.ExpectedVersion {
+			return schedulecmd.ErrConflict
+		}
+		if m.Kind == ScheduleRecreate {
+			if deleted != 1 {
+				return schedulecmd.ErrConflict
+			}
+		} else if deleted == 1 {
 			return schedulecmd.ErrConflict
 		}
 		if m.Kind == ScheduleEdit && m.Record.Enabled != (enabled == 1) {
@@ -199,6 +206,8 @@ func scheduleMutationReason(m ScheduleMutation) string {
 	switch m.Kind {
 	case ScheduleCreate:
 		return "Schedule created"
+	case ScheduleRecreate:
+		return "Schedule recreated"
 	case ScheduleEdit:
 		return "Schedule edited"
 	case ScheduleSelection:
@@ -233,8 +242,10 @@ func validateScheduleMutation(m ScheduleMutation) error {
 		return schedulecmd.ErrInvalid
 	}
 	if (m.Kind == ScheduleCreate && (m.ExpectedVersion != 0 || r.Deleted || !r.Enabled)) ||
+		(m.Kind == ScheduleRecreate && (m.ExpectedVersion == 0 || r.Deleted || !r.Enabled)) ||
 		(m.Kind != ScheduleCreate && m.ExpectedVersion == 0) ||
-		(m.Kind != ScheduleCreate && m.Kind != ScheduleEdit && m.Kind != ScheduleSelection && m.Kind != ScheduleDelete) ||
+		(m.Kind != ScheduleCreate && m.Kind != ScheduleRecreate && m.Kind != ScheduleEdit &&
+			m.Kind != ScheduleSelection && m.Kind != ScheduleDelete) ||
 		(m.Kind == ScheduleDelete && (!r.Deleted || r.Enabled)) {
 		return schedulecmd.ErrInvalid
 	}
@@ -329,6 +340,18 @@ func (s *sqlScheduleManagementStore) update(ctx context.Context, tx *sql.Tx, m S
 	var query string
 	var args []any
 	switch m.Kind {
+	case ScheduleRecreate:
+		query = `UPDATE balda_scheduled_jobs SET
+			session_id=?, channel_type=?, address_key=?, address_json=?,
+			report_to_enabled=?, report_to_session_id=?, report_to_channel_type=?, report_to_address_key=?, report_to_address_json=?,
+			content=?, schedule_spec=?, timezone=?, max_retries=?, target_kind=?, target_key=?,
+			report_to_target_kind=?, report_to_target_key=?, enabled=1, deleted=0,
+			status=?, retry_count=0, last_dispatch_key='', next_run_at=?, last_error='', definition_version=?, updated_at=?`
+		args = []any{r.SessionID, r.ChannelType, r.AddressKey, r.AddressJSON,
+			boolInt(r.ReportToEnabled), r.ReportToSessionID, r.ReportToChannelType, r.ReportToAddressKey, r.ReportToAddressJSON,
+			r.Content, r.ScheduleSpec, r.Timezone, r.MaxRetries, r.TargetKind, r.TargetKey,
+			r.ReportToTargetKind, r.ReportToTargetKey, ScheduledJobStatusActive,
+			r.NextRunAt.UTC().Format(time.RFC3339), r.DefinitionVersion, time.Now().UTC().Format(time.RFC3339Nano)}
 	case ScheduleEdit:
 		query = `UPDATE balda_scheduled_jobs SET session_id=?, channel_type=?, address_key=?, address_json=?,
 			report_to_enabled=?, report_to_session_id=?, report_to_channel_type=?, report_to_address_key=?, report_to_address_json=?,
@@ -353,7 +376,11 @@ func (s *sqlScheduleManagementStore) update(ctx context.Context, tx *sql.Tx, m S
 	default:
 		return schedulecmd.ErrInvalid
 	}
-	query += ` WHERE job_id=? AND source='managed' AND deleted=0 AND definition_version=?`
+	deleted := "deleted=0"
+	if m.Kind == ScheduleRecreate {
+		deleted = "deleted=1"
+	}
+	query += ` WHERE job_id=? AND source='managed' AND ` + deleted + ` AND definition_version=?`
 	args = append(args, r.JobID, m.ExpectedVersion)
 	result, err := tx.ExecContext(ctx, s.users.bind(query), args...)
 	if err != nil {

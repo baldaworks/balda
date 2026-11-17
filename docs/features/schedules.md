@@ -188,11 +188,22 @@ erase a successfully generated result.
 - **Disable** prevents future due slots from being selected. A run already
   admitted may still finish.
 - **Enable** starts scheduling from the next future slot.
-- **Delete** archives the schedule. Its detail and run history remain readable.
+- **Delete** archives rather than physically erasing the schedule. Its read-only
+  detail and run history remain available under the **Deleted** and **All**
+  inventory views.
+
+The inventory opens on **Active**. Use **Deleted** for archived schedules and
+**All** to review both lifecycle states. If a managed schedule was deleted, you
+may create its ID again. Balda treats this as a new generation: the new
+definition starts enabled, while earlier run history and last-run evidence stay
+available. A form opened before deletion or recreation is stale and must be
+reopened after the conflict response.
 
 Schedules declared in `.config/balda/config.yaml` are visible but read-only in
 Backoffice. Change them in configuration and restart Balda. Backoffice-managed
-schedules and their enabled state survive restarts.
+schedules and their enabled state survive restarts. Configuration-owned IDs
+remain reserved, including after a configuration entry is removed and retained
+for historical review; they cannot be reused by a managed schedule.
 
 ## Troubleshooting
 

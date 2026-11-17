@@ -84,6 +84,8 @@ summary:not(.btn) { color: var(--accent); font-weight: 500; }
 .table td { padding: .85rem .75rem; vertical-align: middle; }
 .table td:first-child { font-weight: 500; }
 .table-responsive { width: 100%; min-width: 0; max-width: 100%; overflow-x: auto; border-radius: var(--radius); contain: inline-size; }
+.table-responsive:focus-visible { box-shadow: inset 0 0 0 2px var(--focus); }
+.table-scroll-hint { margin: 0; padding: .65rem 1.25rem; border-bottom: 1px solid var(--border); color: var(--muted); background: var(--surface); font-size: .875rem; }
 .audit-table { min-width: 54rem; }
 .access-table { min-width: 39rem; }
 .schedule-inventory-table { min-width: 54rem; }
@@ -146,6 +148,10 @@ summary:not(.btn) { color: var(--accent); font-weight: 500; }
 .section-tabs a { flex: 1; min-width: 6rem; padding: .6rem .9rem; border-radius: .45rem; text-align: center; text-decoration: none; }
 .section-tabs a[aria-current] { background: var(--bs-primary-bg-subtle); }
 .form-footer { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin-top: 1.25rem; padding: 1rem 1.25rem; border-top: 1px solid var(--border); color: var(--muted); font-size: .85rem; }
+.mutation-status { display: inline-flex; align-items: center; gap: .45rem; margin: .75rem 0 0 .75rem; color: var(--muted); font-size: .9rem; font-weight: 600; }
+.mutation-status::before { width: .85rem; height: .85rem; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; content: ""; animation: mutation-status-spin .8s linear infinite; }
+.mutation-status[hidden] { display: none; }
+@keyframes mutation-status-spin { to { transform: rotate(360deg); } }
 @media (max-width: 991.98px) { .detail-grid { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 640px) {
   .viewer-prefix, .viewer > .bi { display: none; }
@@ -156,7 +162,7 @@ summary:not(.btn) { color: var(--accent); font-weight: 500; }
   .fact-list, .form-grid, .qa-guide-section { grid-template-columns: minmax(0, 1fr); }
   .login-page { align-items: start; padding-top: max(2rem, 6vh); }
 }
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; scroll-behavior: auto !important; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; scroll-behavior: auto !important; } .mutation-status::before { animation: none; } }
 
 .session-card { min-width: 0; padding: 1.25rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-raised); }
 

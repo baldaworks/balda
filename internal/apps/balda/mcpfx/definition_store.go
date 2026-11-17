@@ -17,7 +17,7 @@ func NewDefinitionStore(store state.MCPStore) *DefinitionStore {
 
 // SaveDefinition preserves one atomic authority/definition/audit transaction.
 func (s *DefinitionStore) SaveDefinition(ctx context.Context, m mcpmanage.Mutation) error {
-	return s.SaveMCPConnection(ctx, state.MCPMutation{Connection: m.Connection, Revision: m.Revision, ExpectedVersion: m.ExpectedVersion, Authority: m.Authority, Audit: m.Audit})
+	return s.SaveMCPConnection(ctx, state.MCPMutation{Connection: m.Connection, Revision: m.Revision, ExpectedVersion: m.ExpectedVersion, Recreate: m.Recreate, Authority: m.Authority, Audit: m.Audit})
 }
 
 var _ mcpmanage.DefinitionStore = (*DefinitionStore)(nil)
