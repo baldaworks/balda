@@ -15,6 +15,7 @@ import (
 	natsbus "github.com/baldaworks/balda/internal/apps/balda/eventbus/nats"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	"github.com/baldaworks/balda/internal/apps/balda/internalmcp"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
 	"github.com/baldaworks/balda/internal/apps/balda/memory"
 	"github.com/baldaworks/balda/internal/apps/balda/paths"
 	"github.com/baldaworks/balda/internal/apps/balda/permissionfmt"
@@ -235,6 +236,17 @@ func PreflightRuntime(
 			func(root *secrets.Root) (*secrets.Protector, error) {
 				return root.Protector(secrets.ScopeProviderRevision)
 			},
+			func(root *secrets.Root) (*mcpmanage.Service, error) {
+				revisions, err := root.Protector(secrets.ScopeMCPRevision)
+				if err != nil {
+					return nil, err
+				}
+				grants, err := root.Protector(secrets.ScopeMCPGrant)
+				if err != nil {
+					return nil, err
+				}
+				return mcpmanage.New(revisions, grants)
+			},
 			func(provider baldastate.Provider, protector *secrets.Protector) *providers.Service {
 				return providers.New(normaCfg.Providers, provider.ProviderManagement(), protector)
 			},
@@ -368,8 +380,14 @@ func PreflightRuntime(
 		questions.Module,
 		preflightScopeClassifiers(),
 		fx.Populate(&runtimeManager, &mcpManager),
-		fx.Invoke(func(lc fx.Lifecycle, manager *internalmcp.InternalMCPManager, runtimeManager *baldaagent.RuntimeManager, memoryRuntime *portableapp.Runtime) {
+		fx.Invoke(func(lc fx.Lifecycle, manager *internalmcp.InternalMCPManager, runtimeManager *baldaagent.RuntimeManager, memoryRuntime *portableapp.Runtime, provider baldastate.Provider, mcpCredentials *mcpmanage.Service, providerCredentials *providers.Service) {
 			lc.Append(fx.Hook{OnStart: func(ctx context.Context) error {
+				if err := mcpCredentials.ValidateCredentials(ctx, provider.MCP()); err != nil {
+					return fmt.Errorf("validate retained MCP credentials: %w", err)
+				}
+				if err := providerCredentials.ValidateCredentials(ctx); err != nil {
+					return fmt.Errorf("validate retained provider credentials: %w", err)
+				}
 				if err := manager.EnsureStarted(ctx); err != nil {
 					_ = manager.Stop(context.Background())
 					return fmt.Errorf("start bundled internal MCP servers: %w", err)

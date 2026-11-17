@@ -300,16 +300,17 @@ func TestUnavailableMCPStartupKeepsManagementRunningAndDefersProviderBuild(t *te
 					t.Fatal(err)
 				}
 				builder := baldaagent.NewBuilder(baldaagent.BuilderParams{Factory: agentfactory.New(config.Providers, registry), ScopedFactory: catalogapp.NewProviderFactory(config.Providers, registry), NormaCfg: config})
+				providerService := providers.New(config.Providers, provider.ProviderManagement(), nil)
 				manager := baldaagent.NewRuntimeManager(baldaagent.RuntimeManagerParams{
 					Builder: builder, BaldaProviderID: "alpha", WorkingDir: stateDir, StateDir: stateDir,
-					CapabilityBinder: binder, ProviderService: providers.New(config.Providers, provider.ProviderManagement(), nil),
+					CapabilityBinder: binder, ProviderService: providerService,
 					MCPRegistry: registry, Logger: zerolog.Nop(),
 				})
 				httpRegistry, err := httpfx.NewRegistry("")
 				if err != nil {
 					t.Fatal(err)
 				}
-				params := applicationLifecycleParams{Catalog: lifecycle, Runtime: manager, Backoffice: management, StateProvider: provider, MCPManagement: credentials, MCPBridge: bridge, Logger: zerolog.Nop(),
+				params := applicationLifecycleParams{Catalog: lifecycle, Runtime: manager, Backoffice: management, StateProvider: provider, MCPManagement: credentials, ProviderManagement: providerService, MCPBridge: bridge, Logger: zerolog.Nop(),
 					Config:     BaldaConfig{HTTP: HTTPConfig{ListenAddr: address, BaseURL: "http://" + address}},
 					HTTPConfig: ResolvedHTTPConfig{ListenAddr: address, BaseURL: "http://" + address}, HTTPRegistry: httpRegistry,
 					WebhookHTTP: webhookfx.HTTPContribution(func(context.Context, *httpfx.Registry) error { return nil }),
@@ -317,7 +318,7 @@ func TestUnavailableMCPStartupKeepsManagementRunningAndDefersProviderBuild(t *te
 				var stages []lifecycleStage
 				for _, stage := range applicationLifecycleStages(params, &telegramLifecycle{}) {
 					switch stage.name {
-					case "user readiness", "managed MCP credential readiness", "MCP credential bridge", "runtime contribution catalog", "provider runtime", sharedHTTPIngressStage:
+					case "user readiness", "managed MCP credential readiness", "managed provider credential readiness", "MCP credential bridge", "runtime contribution catalog", "provider runtime", sharedHTTPIngressStage:
 						stages = append(stages, stage)
 					}
 				}

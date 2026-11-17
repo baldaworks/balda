@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"slices"
 	"testing"
 
@@ -51,9 +52,16 @@ func (s *memoryStore) Revisions(_ context.Context, refs []RevisionRef) ([]Revisi
 	return result, nil
 }
 
+func (s *memoryStore) ListRevisions(context.Context) ([]Revision, error) {
+	return cloneState(s.state).Revisions, nil
+}
+
 func cloneState(state State) State {
 	state.Records = append([]Record(nil), state.Records...)
 	state.Revisions = append([]Revision(nil), state.Revisions...)
+	for i := range state.Revisions {
+		state.Revisions[i].ProtectedValues = bytes.Clone(state.Revisions[i].ProtectedValues)
+	}
 	return state
 }
 
@@ -129,6 +137,85 @@ func TestProviderCredentialsReadV1WriteV2AndRejectMCPScope(t *testing.T) {
 	if _, err := scoped.open(scopedRevision); !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("MCP-scoped payload accepted as provider credentials: %v", err)
 	}
+}
+
+func TestValidateCredentialsChecksEveryRetainedRevisionWithoutMutation(t *testing.T) {
+	key := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{8}, 32))
+	// Deprecated root-direct encryption is required only to build a retained v1 fixture.
+	//nolint:staticcheck
+	legacy, err := secrets.New(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := secrets.NewRoot(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scoped, err := root.Protector(secrets.ScopeProviderRevision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain := []byte(`{"api_key":"retained-secret"}`)
+	v1, err := legacy.Seal(plain, revisionAAD("retained", "revision-v1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	v2, err := scoped.Seal(plain, revisionAAD("retained", "revision-v2"))
+	clear(plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := State{Version: 7,
+		Records: []Record{{ID: "retained", CurrentRevisionID: "revision-v2", Enabled: true}},
+		Revisions: []Revision{
+			{ProviderID: "retained", ID: "revision-v1", Definition: Definition{HasAPIKey: true}, ProtectedValues: v1},
+			{ProviderID: "retained", ID: "revision-v2", Definition: Definition{HasAPIKey: true}, ProtectedValues: v2},
+		},
+	}
+	store := &memoryStore{state: cloneState(base)}
+	service := New(nil, store, scoped)
+	if err := service.ValidateCredentials(t.Context()); err != nil {
+		t.Fatalf("mixed retained credentials rejected: %v", err)
+	}
+	if !reflect.DeepEqual(store.state, base) {
+		t.Fatal("passive retained-state validation mutated provider state")
+	}
+
+	for _, tc := range []struct {
+		name      string
+		protector *secrets.Protector
+		mutate    func(*State)
+	}{
+		{name: "missing root", protector: newProviderProtectorForTest(t, "")},
+		{name: "wrong root", protector: newProviderProtectorForTest(t, base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{3}, 32)))},
+		{name: "corrupt frame", protector: scoped, mutate: func(state *State) { state.Revisions[0].ProtectedValues[len(v1)-1] ^= 1 }},
+		{name: "unknown version", protector: scoped, mutate: func(state *State) { state.Revisions[1].ProtectedValues[0] = 99 }},
+		{name: "truncated frame", protector: scoped, mutate: func(state *State) { state.Revisions[1].ProtectedValues = state.Revisions[1].ProtectedValues[:2] }},
+		{name: "missing ciphertext", protector: scoped, mutate: func(state *State) { state.Revisions[1].ProtectedValues = nil }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			candidate := cloneState(base)
+			if tc.mutate != nil {
+				tc.mutate(&candidate)
+			}
+			if err := New(nil, &memoryStore{state: candidate}, tc.protector).ValidateCredentials(t.Context()); !errors.Is(err, ErrUnavailable) {
+				t.Fatalf("retained credential failure = %v, want unavailable", err)
+			}
+		})
+	}
+}
+
+func newProviderProtectorForTest(t *testing.T, key string) *secrets.Protector {
+	t.Helper()
+	root, err := secrets.NewRoot(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	protector, err := root.Protector(secrets.ScopeProviderRevision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return protector
 }
 
 func codexConfig(model string) agentconfig.Config {
