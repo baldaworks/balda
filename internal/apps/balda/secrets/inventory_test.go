@@ -60,7 +60,7 @@ func TestEncryptionInventoryMatchesProductionSources(t *testing.T) {
 	entries := readInventory(t, filepath.Join(root, "internal/apps/balda/secrets/testdata/encryption-inventory.tsv"))
 	exclusions := readExclusions(t, filepath.Join(root, "internal/apps/balda/secrets/testdata/crypto-exclusions.tsv"))
 	imports := discoverCryptoImports(t, root)
-	sealOwners := discoverMethodOwners(t, root, "Seal")
+	sealOwners := discoverProtectorOperationOwners(t, root)
 	rootConstructors := discoverSecretsConstructors(t, root)
 	if err := validateInventory(root, entries, exclusions, imports, sealOwners, rootConstructors); err != nil {
 		t.Fatal(err)
@@ -72,7 +72,7 @@ func TestEncryptionInventoryRejectsMissingOverlappingAndStaleOwnership(t *testin
 	entries := readInventory(t, filepath.Join(root, "internal/apps/balda/secrets/testdata/encryption-inventory.tsv"))
 	exclusions := readExclusions(t, filepath.Join(root, "internal/apps/balda/secrets/testdata/crypto-exclusions.tsv"))
 	imports := discoverCryptoImports(t, root)
-	sealOwners := discoverMethodOwners(t, root, "Seal")
+	sealOwners := discoverProtectorOperationOwners(t, root)
 	rootConstructors := discoverSecretsConstructors(t, root)
 
 	tests := []struct {
@@ -332,23 +332,100 @@ func validateSymbolEvidence(root, evidence string) error {
 	return nil
 }
 
-func discoverMethodOwners(t *testing.T, root, method string) []string {
+func discoverProtectorOperationOwners(t *testing.T, root string) []string {
 	t.Helper()
-	return discoverSourceOwners(t, root, func(file *ast.File) bool {
+	const secretsImport = "github.com/baldaworks/balda/internal/apps/balda/secrets"
+	packageProtectors := make(map[string]map[string]bool)
+	err := walkProductionGo(root, func(_ string, rel string, file *ast.File) error {
+		aliases := make(map[string]bool)
+		for _, spec := range file.Imports {
+			path, err := strconv.Unquote(spec.Path.Value)
+			if err != nil || path != secretsImport {
+				continue
+			}
+			name := "secrets"
+			if spec.Name != nil {
+				name = spec.Name.Name
+			}
+			aliases[name] = true
+		}
+		if len(aliases) == 0 {
+			return nil
+		}
+		directory := filepath.ToSlash(filepath.Dir(rel))
+		protectors := packageProtectors[directory]
+		if protectors == nil {
+			protectors = make(map[string]bool)
+			packageProtectors[directory] = protectors
+		}
+		ast.Inspect(file, func(node ast.Node) bool {
+			switch declaration := node.(type) {
+			case *ast.Field:
+				if isProtectorType(declaration.Type, aliases) {
+					for _, name := range declaration.Names {
+						protectors[name.Name] = true
+					}
+				}
+			case *ast.ValueSpec:
+				if isProtectorType(declaration.Type, aliases) {
+					for _, name := range declaration.Names {
+						protectors[name.Name] = true
+					}
+				}
+			}
+			return true
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var owners []string
+	err = walkProductionGo(root, func(_ string, rel string, file *ast.File) error {
+		protectors := packageProtectors[filepath.ToSlash(filepath.Dir(rel))]
+		if len(protectors) == 0 {
+			return nil
+		}
 		found := false
 		ast.Inspect(file, func(node ast.Node) bool {
 			call, ok := node.(*ast.CallExpr)
 			if !ok {
 				return true
 			}
-			selector, ok := call.Fun.(*ast.SelectorExpr)
-			if ok && selector.Sel.Name == method {
-				found = true
+			method, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || method.Sel.Name != "Seal" && method.Sel.Name != "Open" {
+				return true
 			}
-			return true
+			switch receiver := method.X.(type) {
+			case *ast.Ident:
+				found = protectors[receiver.Name]
+			case *ast.SelectorExpr:
+				found = protectors[receiver.Sel.Name]
+			}
+			return !found
 		})
-		return found
+		if found {
+			owners = append(owners, rel)
+		}
+		return nil
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sort.Strings(owners)
+	return owners
+}
+
+func isProtectorType(expression ast.Expr, aliases map[string]bool) bool {
+	if pointer, ok := expression.(*ast.StarExpr); ok {
+		expression = pointer.X
+	}
+	selector, ok := expression.(*ast.SelectorExpr)
+	if !ok || selector.Sel.Name != "Protector" {
+		return false
+	}
+	identifier, ok := selector.X.(*ast.Ident)
+	return ok && aliases[identifier.Name]
 }
 
 func discoverSecretsConstructors(t *testing.T, root string) []string {
@@ -490,6 +567,13 @@ func rootKeyLike(value string) bool {
 	for _, marker := range []string{"securitykey", "credentialkey", "encryptionkey", "encryptkey", "masterkey", "rootkey", "secretkey"} {
 		if strings.Contains(normalized, marker) {
 			return true
+		}
+	}
+	if strings.Contains(normalized, "encrypt") || strings.Contains(normalized, "crypto") {
+		for _, material := range []string{"key", "secret", "credential", "password", "passphrase", "root", "master"} {
+			if strings.Contains(normalized, material) {
+				return true
+			}
 		}
 	}
 	return false

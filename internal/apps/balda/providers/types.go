@@ -60,7 +60,7 @@ type Revision struct {
 	ContractVersion uint32
 	FormatVersion   uint32
 	Definition      Definition
-	ProtectedValues []byte
+	ProtectedValues []byte `json:"-"`
 	CreatedAt       time.Time
 }
 

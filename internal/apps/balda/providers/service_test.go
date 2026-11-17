@@ -120,6 +120,13 @@ func TestProviderCredentialsReadV1WriteV2AndRejectMCPScope(t *testing.T) {
 	if scopedRevision.ProtectedValues[0] != 2 {
 		t.Fatalf("scoped provider frame = %d, want v2", scopedRevision.ProtectedValues[0])
 	}
+	publicJSON, err := json.Marshal(scopedRevision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(publicJSON, []byte("ProtectedValues")) || bytes.Contains(publicJSON, scopedRevision.ProtectedValues) {
+		t.Fatal("provider ciphertext reached JSON")
+	}
 	plain, err := providerProtector.Open(scopedRevision.ProtectedValues, revisionAAD(scopedRevision.ProviderID, scopedRevision.ID))
 	if err != nil {
 		t.Fatal(err)
