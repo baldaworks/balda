@@ -275,7 +275,8 @@ func scheduleDefinition(form url.Values, id string) (schedulecmd.Definition, err
 			return schedulecmd.Definition{}, schedulecmd.ErrInvalid
 		}
 	}
-	definition := schedulecmd.Definition{ID: id, Cron: form.Get("cron"), Content: form.Get("content")}
+	definition := schedulecmd.Definition{ID: id, Cron: form.Get("cron"), Content: form.Get("content"),
+		KeepSession: form.Get("keep_session") == checkedFormValue}
 	reportTo := strings.TrimSpace(form.Get("locator"))
 	if strings.Contains(reportTo, ":") {
 		definition.Locator = reportTo
@@ -334,6 +335,7 @@ func retainScheduleDraft(page *webui.Page, form url.Values) {
 	editor.Cron = form.Get("cron")
 	editor.ReportTo = strings.TrimSpace(form.Get("locator"))
 	editor.Content = form.Get("content")
+	editor.KeepSession = form.Get("keep_session") == checkedFormValue
 }
 
 func scheduleOperationFailure(err error) (int, string) {

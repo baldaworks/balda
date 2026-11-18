@@ -1051,11 +1051,14 @@ retained record for a removed configuration entry, remain reserved.
 `/schedules?new=1` creates a Backoffice-owned schedule. IDs use lowercase
 letters, digits, `_` and `-`, start with a letter or digit, and are fixed after
 creation. The ID must be unique across sources. The form uses a five-field UTC
-cron expression, content, and one optional **Report to** field. Leave it empty
+cron expression, content, a **Keep session between runs** checkbox, and one optional **Report to** field. Leave it empty
 for no delivery, or enter a public `<channel_type>:<address_key>` locator
 (including a direct-message locator) or a managed alias such as `main_chat`.
 The form does not ask for a destination type. Each run starts in a new private
-session independent of that destination. A supplied locator is checked for
+session independent of that destination unless **Keep session between runs** is
+selected. The retained mode serializes cron and manual runs through one
+schedule-private model context and workspace; it never reuses the destination
+chat session. A supplied locator is checked for
 syntax, but its external address need not exist when the schedule is saved or
 run. An alias may be named before its mapping is created. Without a destination,
 the output remains in run history
@@ -1070,7 +1073,9 @@ selects a new future slot. Confirmed delete archives the definition; its
 detail and run history remain accessible at `/schedules/{id}`. Stale versions
 or ID collisions return a conflict, and the editor asks the administrator to
 reload. Invalid cron, alias name, or supplied locator leaves the prior
-definition intact.
+definition intact. Disabling a schedule preserves its retained session. Clearing
+the checkbox or deleting the schedule removes that session after active work
+settles; content and cron edits preserve it while the checkbox remains selected.
 
 Configuration-owned schedules are read-only in Backoffice. Change their
 definition in `.config/balda/config.yaml` and restart Balda. A removed config
@@ -1095,7 +1100,9 @@ Opening a run shows the selected concrete locator, frozen input, and durable
 provider output. Delivery status remains separate from
 the output: a failed or pending send does not erase the result. After execution
 and, when applicable, final delivery settles, Balda deletes the private session
-and its runtime events and ephemeral workspace branch; interrupted cleanup
+and its runtime events and ephemeral workspace branch unless the frozen run
+uses retained-session mode. A retained session stays private and is reused only
+by the same schedule; interrupted cleanup
 retries after restart without sending a second report. A canceled run without
 a queued report closes without waiting for delivery. History is paginated and remains
 available after deletion. A successful Run now redirect means admission, not

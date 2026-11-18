@@ -147,7 +147,7 @@ func TestSchedulesBrowserManagement(t *testing.T) {
 			}
 			fixture := &schedulesHTTPFixture{items: []schedulecmd.Item{
 				{Definition: schedulecmd.Definition{ID: "alias_report", Cron: "0 7 * * *", Content: "report", Alias: "owner_tg"}, Source: "managed", Enabled: true, Version: 1, Status: "active"},
-				{Definition: schedulecmd.Definition{ID: "daily", Cron: "0 9 * * *", Content: "ping <script>alert(1)</script>", Locator: "telegram:9001:0"}, Source: "managed", Enabled: true, Version: 2, Status: "active", NextRunAt: now},
+				{Definition: schedulecmd.Definition{ID: "daily", Cron: "0 9 * * *", Content: "ping <script>alert(1)</script>", Locator: "telegram:9001:0", KeepSession: true}, Source: "managed", Enabled: true, Version: 2, Status: "active", NextRunAt: now},
 				{Definition: schedulecmd.Definition{ID: "new", Cron: "0 8 * * *", Content: "name collision", Locator: "telegram:9001:0"}, Source: "managed", Enabled: true, Version: 1, Status: "active"},
 				{Definition: schedulecmd.Definition{ID: "config:knowl", Cron: "0 10 * * *", Content: "configured", Locator: "telegram:9001:0"}, Source: "config", Enabled: true, Version: 1, Status: "active"},
 				{Definition: schedulecmd.Definition{ID: "disabled", Cron: "0 11 * * *", Content: "disabled", Locator: "telegram:9001:0"}, Source: "managed", Enabled: false, Version: 1, Status: "active"},
@@ -212,6 +212,9 @@ func TestSchedulesBrowserManagement(t *testing.T) {
 			if !strings.Contains(managed.Body.String(), `name="locator" value="telegram:9001:0"`) ||
 				strings.Count(managed.Body.String(), `name="locator"`) != 1 {
 				t.Fatal("managed editor must contain one report locator")
+			}
+			if !strings.Contains(managed.Body.String(), `name="keep_session" type="checkbox" value="yes" checked`) {
+				t.Fatal("managed editor lost retained-session selection")
 			}
 			if got := get("/schedules/new", admin.access); got.Code != http.StatusOK || !strings.Contains(got.Body.String(), "name collision") || strings.Contains(got.Body.String(), "Add schedule</h1>") {
 				t.Fatalf("schedule named new is hidden: %d", got.Code)
@@ -278,7 +281,7 @@ func TestSchedulesBrowserManagement(t *testing.T) {
 			if got := mutation("/schedules/config:knowl/delete", url.Values{"expected_version": {"1"}, "confirm": {"yes"}}).Code; got != http.StatusForbidden || len(fixture.deletes) != 0 {
 				t.Fatalf("configured deletion = %d", got)
 			}
-			createForm := url.Values{"id": {"new-daily"}, "cron": {"0 11 * * *"}, "locator": {"telegram:9001:0"}, "content": {"run report"}}
+			createForm := url.Values{"id": {"new-daily"}, "cron": {"0 11 * * *"}, "locator": {"telegram:9001:0"}, "content": {"run report"}, "keep_session": {"yes"}}
 			invalidCSRF := url.Values{}
 			for key, values := range createForm {
 				invalidCSRF[key] = append([]string(nil), values...)
@@ -305,6 +308,9 @@ func TestSchedulesBrowserManagement(t *testing.T) {
 			created := mutation("/schedules", createForm)
 			if created.Code != http.StatusSeeOther || created.Header().Get("Location") != base+"/schedules/new-daily" || len(fixture.creates) != 1 || fixture.creates[0].Authority.SessionID == "" {
 				t.Fatalf("schedule create = %d, location %q", created.Code, created.Header().Get("Location"))
+			}
+			if !fixture.creates[0].Definition.KeepSession {
+				t.Fatal("schedule create lost keep-session selection")
 			}
 			withoutReport := mutation("/schedules", url.Values{"id": {"local-review"},
 				"cron": {"0 11 * * *"}, "content": {"review locally"}})

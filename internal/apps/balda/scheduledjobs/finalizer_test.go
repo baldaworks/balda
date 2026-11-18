@@ -75,7 +75,7 @@ func TestRunFinalizerWaitsForSentReportAndRunDetailUsesItsPayload(t *testing.T) 
 		t.Fatal(err)
 	}
 	closer := &recordingRunCloser{}
-	finalizer := NewRunFinalizer(provider.ScheduleRuns(), provider.Jobs(), provider.Jobs(), closer)
+	finalizer := NewRunFinalizer(provider.ScheduleRuns(), provider.ScheduledJobs(), provider.Jobs(), provider.Jobs(), closer)
 	if err := finalizer.Settle(ctx, 10); err != nil || len(closer.calls) != 0 {
 		t.Fatalf("closed before report: calls=%v err=%v", closer.calls, err)
 	}
@@ -146,7 +146,7 @@ func TestRunFinalizerClosesNoReportRunAfterExecution(t *testing.T) {
 		t.Fatal(err)
 	}
 	closer := &recordingRunCloser{}
-	finalizer := NewRunFinalizer(provider.ScheduleRuns(), provider.Jobs(), provider.Jobs(), closer)
+	finalizer := NewRunFinalizer(provider.ScheduleRuns(), provider.ScheduledJobs(), provider.Jobs(), provider.Jobs(), closer)
 	if err := finalizer.Settle(ctx, 10); err != nil || len(closer.calls) != 1 ||
 		closer.calls[0] != sessionID+":schedule-user" {
 		t.Fatalf("no-report close = %v, calls=%v", err, closer.calls)
@@ -163,6 +163,78 @@ func TestRunFinalizerClosesNoReportRunAfterExecution(t *testing.T) {
 	detail, err := manager.RunDetail(ctx, "daily", runID, schedulecmd.Authority{})
 	if err != nil || detail.Input != "input" || detail.Output != "answer" || detail.Run.State != runStateSucceeded {
 		t.Fatalf("no-report run detail = %+v, err=%v", detail, err)
+	}
+}
+
+func TestRunFinalizerRetainsOrCleansStableScheduleSession(t *testing.T) {
+	for _, testCase := range []struct {
+		name        string
+		currentKeep bool
+		activeNext  bool
+		wantClose   int
+	}{
+		{name: "retained", currentKeep: true},
+		{name: "disabled policy", wantClose: 1},
+		{name: "disabled policy waits for active run", activeNext: true},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			ctx := t.Context()
+			provider, err := state.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = provider.Close() })
+			now := time.Now().UTC()
+			definition := state.ScheduledJobRecord{JobID: "daily", Source: state.ScheduledJobSourceManaged,
+				Enabled: true, KeepSession: testCase.currentKeep, DefinitionVersion: 2, Content: "input",
+				ScheduleSpec: "0 9 * * *", Status: state.ScheduledJobStatusActive, NextRunAt: now.Add(time.Hour)}
+			if err := provider.ScheduledJobs().Upsert(ctx, definition); err != nil {
+				t.Fatal(err)
+			}
+			snapshot := definition
+			snapshot.KeepSession = true
+			payload, err := json.Marshal(snapshot)
+			if err != nil {
+				t.Fatal(err)
+			}
+			const jobID = "scheduled-daily-retained"
+			if _, err := provider.ScheduleRuns().Create(ctx, state.ScheduleRunRecord{
+				RunID: "run-retained", ScheduleID: "daily", Trigger: state.ScheduleRunTriggerManual,
+				TriggerKey: "manual:retained", DefinitionVersion: 1, RequestedAt: now,
+				DispatchState: state.ScheduleRunDispatched, ExecutionJobID: jobID, PayloadJSON: string(payload),
+			}); err != nil {
+				t.Fatal(err)
+			}
+			sessionID := turncmd.PersistentScheduledExecutionSessionID("daily")
+			if _, err := provider.Jobs().CreateJob(ctx, state.JobRecord{ID: jobID, SessionID: sessionID,
+				Objective: "input", Status: state.JobStatusCompleted,
+				CreatedBy: turncmd.ScheduledExecutionUserID(sessionID), CompletedAt: now}); err != nil {
+				t.Fatal(err)
+			}
+			if testCase.activeNext {
+				if _, err := provider.Jobs().CreateJob(ctx, state.JobRecord{ID: "scheduled-daily-next", SessionID: sessionID,
+					Objective: "next", Status: state.JobStatusRunning,
+					CreatedBy: turncmd.ScheduledExecutionUserID(sessionID)}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			closer := &recordingRunCloser{}
+			finalizer := NewRunFinalizer(provider.ScheduleRuns(), provider.ScheduledJobs(), provider.Jobs(), provider.Jobs(), closer)
+			if err := finalizer.Settle(ctx, 10); err != nil {
+				t.Fatal(err)
+			}
+			if got := len(closer.calls); got != testCase.wantClose {
+				t.Fatalf("close calls = %d, want %d", got, testCase.wantClose)
+			}
+			if testCase.activeNext {
+				if err := provider.Jobs().UpdateJobStatus(ctx, "scheduled-daily-next", state.JobStatusCompleted, ""); err != nil {
+					t.Fatal(err)
+				}
+				if err := finalizer.Settle(ctx, 10); err != nil || len(closer.calls) != 1 {
+					t.Fatalf("close after active run: calls=%v err=%v", closer.calls, err)
+				}
+			}
+		})
 	}
 }
 
@@ -193,7 +265,7 @@ func TestRunFinalizerClosesCanceledRunWithoutReportDelivery(t *testing.T) {
 		t.Fatal(err)
 	}
 	closer := &recordingRunCloser{}
-	finalizer := NewRunFinalizer(provider.ScheduleRuns(), provider.Jobs(), provider.Jobs(), closer)
+	finalizer := NewRunFinalizer(provider.ScheduleRuns(), provider.ScheduledJobs(), provider.Jobs(), provider.Jobs(), closer)
 	if err := finalizer.Settle(ctx, 1); err != nil || len(closer.calls) != 1 {
 		t.Fatalf("canceled cleanup: calls=%v err=%v", closer.calls, err)
 	}
@@ -251,7 +323,7 @@ func TestRunFinalizerDoesNotStarveNoReportRunBehindPendingDelivery(t *testing.T)
 		}
 	}
 	closer := &recordingRunCloser{}
-	finalizer := NewRunFinalizer(provider.ScheduleRuns(), provider.Jobs(), provider.Jobs(), closer)
+	finalizer := NewRunFinalizer(provider.ScheduleRuns(), provider.ScheduledJobs(), provider.Jobs(), provider.Jobs(), closer)
 	if err := finalizer.Settle(ctx, 1); err != nil {
 		t.Fatal(err)
 	}
@@ -292,7 +364,7 @@ func TestRunFinalizerAdvancesPastFailedCleanup(t *testing.T) {
 		}
 	}
 	closer := &blockedRunCloser{blockedSession: turncmd.ScheduledExecutionSessionID("scheduled-cleanup-blocked")}
-	finalizer := NewRunFinalizer(provider.ScheduleRuns(), provider.Jobs(), provider.Jobs(), closer)
+	finalizer := NewRunFinalizer(provider.ScheduleRuns(), provider.ScheduledJobs(), provider.Jobs(), provider.Jobs(), closer)
 	if err := finalizer.Settle(ctx, 1); err == nil {
 		t.Fatal("first cleanup should fail")
 	}
@@ -344,7 +416,7 @@ func TestRunFinalizerWaitsThroughAmbiguousDeliveryAndRetriesClose(t *testing.T) 
 		t.Fatal(err)
 	}
 	closer := &flakyRunCloser{failOnce: true}
-	finalizer := NewRunFinalizer(provider.ScheduleRuns(), provider.Jobs(), provider.Jobs(), closer)
+	finalizer := NewRunFinalizer(provider.ScheduleRuns(), provider.ScheduledJobs(), provider.Jobs(), provider.Jobs(), closer)
 	if err := finalizer.Settle(ctx, 10); err != nil || len(closer.calls) != 0 {
 		t.Fatalf("ambiguous send closed run: calls=%v err=%v", closer.calls, err)
 	}

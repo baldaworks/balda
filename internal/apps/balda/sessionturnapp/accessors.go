@@ -87,9 +87,10 @@ func (a sessionAccessor) EnsureTransientSession(ctx context.Context, sessionCtx 
 			SessionID: sessionCtx.Locator.SessionID, ChannelType: sessionCtx.Locator.ChannelType,
 			AddressKey: sessionCtx.Locator.AddressKey, AddressJSON: sessionCtx.Locator.AddressJSON,
 		},
-		UserID:     sessionCtx.UserID,
-		Kind:       baldasession.Kind(sessionCtx.Kind),
-		OwnerJobID: sessionCtx.OwnerJobID,
+		UserID:              sessionCtx.UserID,
+		Kind:                baldasession.Kind(sessionCtx.Kind),
+		OwnerJobID:          sessionCtx.OwnerJobID,
+		AllowOwnerJobRebind: sessionCtx.AllowOwnerJobRebind,
 	}, agentName)
 	return wrapActiveSession(topic), err
 }

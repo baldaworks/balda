@@ -1281,6 +1281,16 @@ func TestEnsureTransientSessionDoesNotPersistAddressMetadata(t *testing.T) {
 	}, "balda"); err == nil {
 		t.Fatal("active private session accepted a different owner")
 	}
+	rebound, err := m.EnsureTransientSession(t.Context(), SessionContext{
+		Locator: first, UserID: "tg-101", Kind: KindSchedule, OwnerJobID: "scheduled-other",
+		AllowOwnerJobRebind: true,
+	}, "balda")
+	if err != nil {
+		t.Fatalf("retained schedule owner rebind: %v", err)
+	}
+	if got := rebound.GetOwnerJobID(); got != "scheduled-other" {
+		t.Fatalf("retained schedule owner = %q, want scheduled-other", got)
+	}
 	if len(store.upsertedRecords) != 0 {
 		t.Fatalf("private sessions persisted address metadata: %+v", store.upsertedRecords)
 	}

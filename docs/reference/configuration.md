@@ -867,6 +867,7 @@ update external senders, and restore that backup with an older binary if a
 downgrade is needed; removed custom paths cannot be reconstructed.
 
 - `balda.scheduler.jobs`: config-owned recurring schedules, each with an `id`, five-field UTC `cron`, and `envelope.content`
+  - optional `keep_session: true` reuses one schedule-private model context and workspace across serialized cron and manual runs; the default is `false`
   - optional `envelope.report_to` uses `target: locator` or `target: managed_alias` with `key`; omit it to retain output only in run history
   - a managed alias may be referenced before its mapping exists. Each cron or manual run selects the current concrete locator at admission. A missing alias fails only that run; the next cron slot remains eligible.
   - an existing `envelope.target: locator` plus `envelope.key` remains supported as a literal report destination. Do not combine it with `report_to`.
@@ -877,6 +878,7 @@ balda:
     jobs:
       - id: daily_summary
         cron: "0 9 * * *"
+        keep_session: true
         envelope:
           content: Summarize yesterday's work
           report_to:

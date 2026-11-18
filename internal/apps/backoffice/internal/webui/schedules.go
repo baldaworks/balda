@@ -32,6 +32,7 @@ type ScheduleEditor struct {
 	Runs                           []ScheduleRunView
 	RunDetail                      *ScheduleRunDetailView
 	HistoryLoaded                  bool
+	KeepSession                    bool
 }
 
 // ScheduleRunView contains bounded, content-free execution status.
@@ -124,7 +125,7 @@ func ProjectScheduleRow(item schedulecmd.Item) ScheduleRow {
 func ProjectScheduleEditor(item schedulecmd.Item, create bool) *ScheduleEditor {
 	d := item.Definition
 	e := &ScheduleEditor{Row: ProjectScheduleRow(item), New: create, ID: d.ID, Cron: d.Cron,
-		Content: d.Content, ReportTo: d.Locator,
+		Content: d.Content, ReportTo: d.Locator, KeepSession: d.KeepSession,
 		Action: "/schedules/" + url.PathEscape(d.ID)}
 	if d.Alias != "" {
 		e.ReportTo = d.Alias

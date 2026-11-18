@@ -30,12 +30,13 @@ const (
 
 // ConfiguredScheduledJob defines a startup-managed recurring job.
 type ConfiguredScheduledJob struct {
-	ID       string
-	Cron     string
-	Target   string
-	Key      string
-	Content  string
-	ReportTo *ConfiguredScheduledJobTarget
+	ID          string
+	Cron        string
+	Target      string
+	Key         string
+	Content     string
+	KeepSession bool
+	ReportTo    *ConfiguredScheduledJobTarget
 }
 
 // ConfiguredScheduledJobTarget is a configured scheduler envelope address.
@@ -196,6 +197,7 @@ func (s *ScheduledJobScheduler) reconcileConfiguredJobs(ctx context.Context) err
 			JobID:               job.ID,
 			Source:              baldastate.ScheduledJobSourceConfig,
 			Enabled:             true,
+			KeepSession:         job.KeepSession,
 			TargetKind:          job.Target,
 			TargetKey:           job.Key,
 			SessionID:           target.SessionID,
@@ -257,6 +259,11 @@ func (s *ScheduledJobScheduler) reconcileConfiguredJobs(ctx context.Context) err
 			if err := s.jobStore.Upsert(ctx, existing); err != nil {
 				return fmt.Errorf("archive removed scheduler job %q: %w", jobID, err)
 			}
+			if existing.KeepSession && s.finalizer != nil {
+				if _, err := cleanupRetainedSession(ctx, jobID, s.finalizer.jobs, s.finalizer.sessions); err != nil {
+					return fmt.Errorf("clean retained scheduler session %q: %w", jobID, err)
+				}
+			}
 		case baldastate.ScheduledJobSourceInternal:
 			if err := s.jobStore.Delete(ctx, jobID); err != nil {
 				return fmt.Errorf("delete internal scheduler job %q: %w", jobID, err)
@@ -269,6 +276,7 @@ func (s *ScheduledJobScheduler) reconcileConfiguredJobs(ctx context.Context) err
 
 func sameConfiguredDefinition(a, b baldastate.ScheduledJobRecord) bool {
 	return a.Content == b.Content && a.ScheduleSpec == b.ScheduleSpec &&
+		a.KeepSession == b.KeepSession &&
 		a.TargetKind == b.TargetKind && a.TargetKey == b.TargetKey &&
 		a.ReportToTargetKind == b.ReportToTargetKind && a.ReportToTargetKey == b.ReportToTargetKey &&
 		a.SessionID == b.SessionID && a.ChannelType == b.ChannelType &&
@@ -590,12 +598,13 @@ func normalizeScheduledJobSchedulerConfig(raw ScheduledJobSchedulerConfig) (Sche
 		}
 
 		cfg.Jobs = append(cfg.Jobs, ConfiguredScheduledJob{
-			ID:       jobID,
-			Cron:     cronSpec,
-			Target:   target,
-			Key:      key,
-			Content:  content,
-			ReportTo: reportTo,
+			ID:          jobID,
+			Cron:        cronSpec,
+			Target:      target,
+			Key:         key,
+			Content:     content,
+			KeepSession: rawJob.KeepSession,
+			ReportTo:    reportTo,
 		})
 	}
 

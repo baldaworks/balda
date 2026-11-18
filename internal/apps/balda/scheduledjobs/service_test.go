@@ -231,11 +231,12 @@ func TestScheduledJobSchedulerReconcileConfiguredTasks_LocatorTarget(t *testing.
 		config: ScheduledJobSchedulerConfig{
 			Jobs: []ConfiguredScheduledJob{
 				{
-					ID:      "managed-task",
-					Cron:    "@every 2s",
-					Target:  "locator",
-					Key:     "telegram:-1002667079342:8939",
-					Content: "review queue",
+					ID:          "managed-task",
+					Cron:        "@every 2s",
+					Target:      "locator",
+					Key:         "telegram:-1002667079342:8939",
+					Content:     "review queue",
+					KeepSession: true,
 				},
 			},
 		},
@@ -260,6 +261,9 @@ func TestScheduledJobSchedulerReconcileConfiguredTasks_LocatorTarget(t *testing.
 	}
 	if !managed.ReportToEnabled {
 		t.Fatal("ReportToEnabled = false, want true")
+	}
+	if !managed.KeepSession {
+		t.Fatal("KeepSession = false, want true")
 	}
 	if got, want := managed.ReportToAddressKey, "-1002667079342:8939"; got != want {
 		t.Fatalf("ReportToAddressKey = %q, want %q", got, want)
@@ -739,11 +743,12 @@ func TestNormalizeScheduledJobSchedulerConfig_TrimsEnvelope(t *testing.T) {
 	got, err := normalizeScheduledJobSchedulerConfig(ScheduledJobSchedulerConfig{
 		Jobs: []ConfiguredScheduledJob{
 			{
-				ID:      " task-1 ",
-				Cron:    " @every 1m ",
-				Target:  " locator ",
-				Key:     " telegram:9001:0 ",
-				Content: " check ",
+				ID:          " task-1 ",
+				Cron:        " @every 1m ",
+				Target:      " locator ",
+				Key:         " telegram:9001:0 ",
+				Content:     " check ",
+				KeepSession: true,
 			},
 		},
 	})
@@ -754,7 +759,7 @@ func TestNormalizeScheduledJobSchedulerConfig_TrimsEnvelope(t *testing.T) {
 		t.Fatalf("tasks = %d, want 1", len(got.Jobs))
 	}
 	task := got.Jobs[0]
-	if task.ID != "task-1" || task.Target != envelopetarget.TargetLocator || task.Key != "telegram:9001:0" || task.Content != "check" {
+	if task.ID != "task-1" || task.Target != envelopetarget.TargetLocator || task.Key != "telegram:9001:0" || task.Content != "check" || !task.KeepSession {
 		t.Fatalf("task = %+v, want trimmed envelope", task)
 	}
 }

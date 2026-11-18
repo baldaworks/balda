@@ -5,9 +5,10 @@ description: Run recurring engineering tasks in private sessions and optionally 
 
 # Schedules
 
-Schedules let Balda run a recurring task without a chat message. Each run starts
-in a new private session, uses the configured agent and tools, stores its result
-in Backoffice, and can optionally send the final report to a chat.
+Schedules let Balda run a recurring task without a chat message. By default,
+each run starts in a new private session. An optional **Keep session between
+runs** setting reuses one private session for that schedule. Balda stores every
+result in Backoffice and can optionally send the final report to a chat.
 
 Use a schedule for work such as:
 
@@ -16,8 +17,9 @@ Use a schedule for work such as:
 - checking a repository for stale work;
 - generating a recurring operational report.
 
-Schedules use five-field UTC cron expressions. They do not continue a chat
-conversation or reuse its history.
+Schedules use five-field UTC cron expressions. They never continue a recipient
+chat conversation. A retained schedule session reuses only that schedule's own
+model context and workspace.
 
 ## Before you start
 
@@ -40,7 +42,9 @@ or a managed alias created on the Backoffice **Aliases** page. An alias such as
 4. Enter a five-field UTC cron expression.
 5. Write the task instruction in **Content**.
 6. Optionally enter a locator or managed alias in **Report to**.
-7. Save the schedule. A newly created schedule starts enabled.
+7. Optionally select **Keep session between runs** when later runs should build
+   on the schedule's earlier model context or workspace.
+8. Save the schedule. A newly created schedule starts enabled.
 
 Common UTC cron expressions include:
 
@@ -50,9 +54,9 @@ Common UTC cron expressions include:
 | Every Monday at 08:30 UTC | `30 8 * * 1` |
 | On the first day of each month at 12:00 UTC | `0 12 1 * *` |
 
-Write the content as a complete, self-contained instruction. A scheduled run
-does not inherit a recipient chat's conversation, even when it sends the result
-there.
+Write the content as a complete instruction. A scheduled run does not inherit a
+recipient chat's conversation, even when it sends the result there. Retained
+runs are serialized so two runs cannot modify their shared context concurrently.
 
 ## Schedule examples
 
@@ -153,7 +157,9 @@ flowchart LR
     Report -->|Yes| Deliver["Send final result to chat"]
     Report -->|No| History["Keep result in run history"]
     Deliver --> History
-    History --> Cleanup["Clean up private session"]
+    History --> Retain{"Keep session?"}
+    Retain -->|No| Cleanup["Clean up private session"]
+    Retain -->|Yes| Reuse["Reuse it on the next run"]
 ```
 
 The selected report destination is fixed when the run is admitted. Retargeting
@@ -186,11 +192,16 @@ erase a successfully generated result.
 
 - **Edit** changes future runs and recalculates the next cron slot.
 - **Disable** prevents future due slots from being selected. A run already
-  admitted may still finish.
+  admitted may still finish. A retained session remains available when the
+  schedule is enabled again.
 - **Enable** starts scheduling from the next future slot.
 - **Delete** archives rather than physically erasing the schedule. Its read-only
   detail and run history remain available under the **Deleted** and **All**
-  inventory views.
+  inventory views. Its retained private session is removed.
+
+Clearing **Keep session between runs** also removes the retained private session
+after any active run settles. Changing content or cron while leaving the option
+enabled preserves the session.
 
 The inventory opens on **Active**. Use **Deleted** for archived schedules and
 **All** to review both lifecycle states. If a managed schedule was deleted, you

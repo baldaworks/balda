@@ -218,6 +218,34 @@ func TestDurableCronRunRetriesWithSameExecutionKey(t *testing.T) {
 	}
 }
 
+func TestRetainedScheduleRunUsesStableExecutionSession(t *testing.T) {
+	ctx := t.Context()
+	provider, err := state.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = provider.Close() })
+	now := time.Date(2026, 10, 8, 9, 0, 0, 0, time.UTC)
+	job := state.ScheduledJobRecord{JobID: "daily", Source: state.ScheduledJobSourceManaged,
+		Enabled: true, KeepSession: true, DefinitionVersion: 1, Content: "review",
+		ScheduleSpec: "0 9 * * *", Status: state.ScheduledJobStatusActive, NextRunAt: now.Add(-time.Minute)}
+	if err := provider.ScheduledJobs().Upsert(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	bus := &recordingHandlerCommandBus{}
+	scheduler := newSchedulerForTest(t, provider.ScheduledJobs(), bus, now)
+	scheduler.runStore = provider.ScheduleRuns()
+	if err := scheduler.dispatchJob(ctx, job, now); err != nil {
+		t.Fatal(err)
+	}
+	if len(bus.commands) != 1 {
+		t.Fatalf("commands = %d, want 1", len(bus.commands))
+	}
+	if got, want := actorcmd.EnvelopeSessionID(bus.commands[0]), turncmd.PersistentScheduledExecutionSessionID(job.JobID); got != want {
+		t.Fatalf("execution session = %q, want %q", got, want)
+	}
+}
+
 func TestManualIntentDispatchDoesNotMoveCronCursor(t *testing.T) {
 	ctx := context.Background()
 	provider, err := state.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))

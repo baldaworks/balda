@@ -36,11 +36,12 @@ type Authority struct {
 
 // Definition is the editable portion of a recurring schedule.
 type Definition struct {
-	ID      string
-	Cron    string
-	Locator string
-	Alias   string
-	Content string
+	ID          string
+	Cron        string
+	Locator     string
+	Alias       string
+	Content     string
+	KeepSession bool
 }
 
 // Item is the safe management read model. Content is shown only on guarded detail.

@@ -20,25 +20,26 @@ type RunSessionCloser interface {
 
 // RunFinalizer closes a private session after execution and any report settle.
 type RunFinalizer struct {
-	runs       state.ScheduleRunStore
-	jobs       state.JobLifecycleStore
-	deliveries state.DeliveryStore
-	sessions   RunSessionCloser
-	now        func() time.Time
-	mu         sync.Mutex
-	lastAt     time.Time
-	lastID     string
+	runs        state.ScheduleRunStore
+	definitions state.ScheduledJobStore
+	jobs        state.JobLifecycleStore
+	deliveries  state.DeliveryStore
+	sessions    RunSessionCloser
+	now         func() time.Time
+	mu          sync.Mutex
+	lastAt      time.Time
+	lastID      string
 }
 
-func NewRunFinalizer(runs state.ScheduleRunStore, jobs state.JobLifecycleStore,
+func NewRunFinalizer(runs state.ScheduleRunStore, definitions state.ScheduledJobStore, jobs state.JobLifecycleStore,
 	deliveries state.DeliveryStore, sessions RunSessionCloser) *RunFinalizer {
-	return &RunFinalizer{runs: runs, jobs: jobs, deliveries: deliveries,
+	return &RunFinalizer{runs: runs, definitions: definitions, jobs: jobs, deliveries: deliveries,
 		sessions: sessions, now: time.Now}
 }
 
 // Settle retries deletion after restarts without resending a reported result.
 func (f *RunFinalizer) Settle(ctx context.Context, limit int) error {
-	if f == nil || f.runs == nil || f.jobs == nil || f.deliveries == nil || f.sessions == nil {
+	if f == nil || f.runs == nil || f.definitions == nil || f.jobs == nil || f.deliveries == nil || f.sessions == nil {
 		return fmt.Errorf("schedule run finalizer is unavailable")
 	}
 	f.mu.Lock()
@@ -75,10 +76,6 @@ func (f *RunFinalizer) settleRun(ctx context.Context, run state.ScheduleRunRecor
 	if err != nil || !found {
 		return err
 	}
-	if job.SessionID != turncmd.ScheduledExecutionSessionID(run.ExecutionJobID) {
-		// Older, pre-isolation runs belong to ordinary chat sessions.
-		return f.runs.MarkClosed(ctx, run.RunID, f.now().UTC())
-	}
 	switch job.Status {
 	case state.JobStatusCompleted, state.JobStatusFailed, state.JobStatusCanceled, state.JobStatusDeadLettered:
 	default:
@@ -87,6 +84,14 @@ func (f *RunFinalizer) settleRun(ctx context.Context, run state.ScheduleRunRecor
 	var snapshot state.ScheduledJobRecord
 	if err := json.Unmarshal([]byte(run.PayloadJSON), &snapshot); err != nil {
 		return fmt.Errorf("decode run snapshot: %w", err)
+	}
+	expectedSessionID := turncmd.ScheduledExecutionSessionID(run.ExecutionJobID)
+	if snapshot.KeepSession {
+		expectedSessionID = turncmd.PersistentScheduledExecutionSessionID(snapshot.JobID)
+	}
+	if job.SessionID != expectedSessionID {
+		// Older, pre-isolation runs belong to ordinary chat sessions.
+		return f.runs.MarkClosed(ctx, run.RunID, f.now().UTC())
 	}
 	if snapshot.ReportToEnabled {
 		delivery, found, err := f.deliveries.FinalDelivery(ctx, run.ExecutionJobID)
@@ -100,6 +105,20 @@ func (f *RunFinalizer) settleRun(ctx context.Context, run state.ScheduleRunRecor
 			(delivery.Status != state.DeliveryStatusFailed || delivery.Error != "permanent") {
 			return nil
 		}
+	}
+	if snapshot.KeepSession {
+		current, found, err := f.definitions.GetByID(ctx, snapshot.JobID)
+		if err != nil {
+			return err
+		}
+		if found && current.KeepSession && !current.Deleted {
+			return f.runs.MarkClosed(ctx, run.RunID, f.now().UTC())
+		}
+		cleaned, err := cleanupRetainedSession(ctx, snapshot.JobID, f.jobs, f.sessions)
+		if err != nil || !cleaned {
+			return err
+		}
+		return f.runs.MarkClosed(ctx, run.RunID, f.now().UTC())
 	}
 	if err := f.sessions.CloseRunSession(ctx, job.SessionID, strings.TrimSpace(job.CreatedBy)); err != nil {
 		return err

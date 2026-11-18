@@ -1505,6 +1505,7 @@ func checkProvider_ScheduledJobStoreRoundTrip(t *testing.T, open contractOpener)
 		Timezone:            "UTC",
 		Status:              ScheduledJobStatusActive,
 		MaxRetries:          4,
+		KeepSession:         true,
 		NextRunAt:           nextRunAt,
 	}
 	if err := store.Upsert(ctx, record); err != nil {
@@ -1532,6 +1533,9 @@ func checkProvider_ScheduledJobStoreRoundTrip(t *testing.T, open contractOpener)
 	}
 	if !got.ReportToEnabled || got.ReportToAddressKey != record.ReportToAddressKey {
 		t.Fatalf("report_to fields = %+v, want enabled address %q", got, record.ReportToAddressKey)
+	}
+	if !got.KeepSession {
+		t.Fatal("keep_session = false, want true")
 	}
 	allTasks, err := store.List(ctx)
 	if err != nil {

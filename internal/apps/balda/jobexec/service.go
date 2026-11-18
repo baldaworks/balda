@@ -29,6 +29,7 @@ type ScheduledJobRequest struct {
 	UserID      string
 	TopicID     int
 	OneShot     *bool
+	KeepSession bool
 }
 
 func New(tasks JobLifecycle, dispatcher actortransport.Dispatcher) *Service {
@@ -140,6 +141,7 @@ func (s *Service) StartScheduledJob(ctx context.Context, env actorlayer.Envelope
 	if !oneShot {
 		privateTurn, err := turncmd.PrivateScheduledTurn(turncmd.SessionTurnPayload{
 			JobID: jobID, ScheduledJobID: payload.JobID, Locator: payload.Locator, ReportTo: payload.ReportTo,
+			ScheduleKeepSession: payload.KeepSession,
 		})
 		if err != nil {
 			return actorlayer.PolicyError(err)
@@ -198,19 +200,20 @@ func (s *Service) StartScheduledJob(ctx context.Context, env actorlayer.Envelope
 		}
 	}
 	sessionPayload := turncmd.SessionTurnPayload{
-		JobID:           jobID,
-		Text:            content,
-		Locator:         executionLocator,
-		ReportTo:        reportTo,
-		ParentJobID:     strings.TrimSpace(payload.ParentJobID),
-		UserID:          payload.UserID,
-		ScheduledJobID:  payload.JobID,
-		ScheduleOneShot: &oneShot,
-		TopicID:         payload.TopicID,
-		DeliveryFormat:  "",
-		Deliver:         reportTo != nil,
-		Source:          turncmd.SourceSchedule,
-		DedupeKey:       firstNonEmpty(env.DedupeKey, jobID) + ":session",
+		JobID:               jobID,
+		Text:                content,
+		Locator:             executionLocator,
+		ReportTo:            reportTo,
+		ParentJobID:         strings.TrimSpace(payload.ParentJobID),
+		UserID:              payload.UserID,
+		ScheduledJobID:      payload.JobID,
+		ScheduleOneShot:     &oneShot,
+		ScheduleKeepSession: payload.KeepSession,
+		TopicID:             payload.TopicID,
+		DeliveryFormat:      "",
+		Deliver:             reportTo != nil,
+		Source:              turncmd.SourceSchedule,
+		DedupeKey:           firstNonEmpty(env.DedupeKey, jobID) + ":session",
 	}
 	sessionEnv, err := turncmd.SessionTurnEnvelope(sessionPayload)
 	if err != nil {
