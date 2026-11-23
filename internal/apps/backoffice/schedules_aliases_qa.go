@@ -55,6 +55,7 @@ var scheduleAliasQAEntries = []qaEntry{
 	{name: "aliases/new", label: "Aliases · create", templateName: webui.TemplateAliases, page: func() webui.Page {
 		return qaAliasEditor(aliascmd.Record{}, true)
 	}, gallery: true},
+	{name: "aliases/alerts", templateName: webui.TemplateAliases, page: func() webui.Page { return qaAliasEditor(qaAlertsAlias(), false) }},
 	{name: "aliases/main_chat", label: "Aliases · edit and delete", templateName: webui.TemplateAliases, page: func() webui.Page {
 		return qaAliasEditor(qaAlias(), false)
 	}, gallery: true},
@@ -158,11 +159,18 @@ func qaAllSchedules() webui.Page {
 
 func qaScheduleHistory() webui.Page {
 	p := qaScheduleEditor(qaManagedSchedule(), false)
-	p.Schedules.Editor.RunDetail = webui.ProjectScheduleRunDetail(schedulecmd.RunDetail{
+	p.Schedules.Editor.RunDetail = qaRunDetail("qa-run-succeeded")
+	return p
+}
+
+func qaRunDetail(id string) *webui.ScheduleRunDetailView {
+	if id == "qa-run-failed" {
+		return webui.ProjectScheduleRunDetail(schedulecmd.RunDetail{Run: schedulecmd.RunItem{ID: id, Trigger: "cron", RequestedAt: qaNow.Add(-26 * time.Hour), State: "failed", SafeFailureCode: "delivery_failed"}})
+	}
+	return webui.ProjectScheduleRunDetail(schedulecmd.RunDetail{
 		Run:   schedulecmd.RunItem{ID: "qa-run-succeeded", Trigger: "manual", RequestedAt: qaNow.Add(-2 * time.Hour), State: "succeeded", CompletedAt: qaNow.Add(-2*time.Hour + time.Minute), ReportLocatorRef: "telegram:9001:0"},
 		Input: "Summarize yesterday's work.", Output: "Synthetic summary output.",
 	})
-	return p
 }
 
 func qaLongSchedule() webui.Page {
@@ -189,12 +197,16 @@ func qaAlias() aliascmd.Record {
 	return aliascmd.Record{Name: "main_chat", LocatorRef: "telegram:9001:0", Version: 3}
 }
 
+func qaAlertsAlias() aliascmd.Record {
+	return aliascmd.Record{Name: "alerts", LocatorRef: "slackagent:T1:C1", Version: 1}
+}
+
 func qaAliases() webui.Page {
 	return webui.Page{
 		Title: "Aliases · QA", Current: webui.LocationAliases, Navigation: qaAdminNavigation(webui.LocationAliases), CSRFToken: "qa-csrf",
 		Aliases: &webui.AliasesView{Rows: []webui.AliasRow{
 			webui.ProjectAliasRow(qaAlias()),
-			webui.ProjectAliasRow(aliascmd.Record{Name: "alerts", LocatorRef: "slackagent:T1:C1", Version: 1}),
+			webui.ProjectAliasRow(qaAlertsAlias()),
 		}},
 	}
 }

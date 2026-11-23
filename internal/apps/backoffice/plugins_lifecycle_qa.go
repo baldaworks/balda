@@ -39,6 +39,13 @@ var pluginLifecycleQAEntries = []qaEntry{
 		p.Plugins.InstalledRows = []plugincmd.InstalledView{qaInstalledPlugin().InstalledView}
 		return p
 	}, gallery: true},
+	{name: "plugins/installed/installed-demo", templateName: webui.TemplatePlugins, page: func() webui.Page {
+		item := qaInstalledPlugin()
+		item.Name = "installed-demo"
+		p := qaPlugins()
+		p.Plugins.PluginDetail = webui.ProjectPluginDetail(item)
+		return p
+	}},
 	{name: "plugins/installed/demo", label: "Plugins · Plugin detail and confirmations", templateName: webui.TemplatePlugins, page: qaInstalledDetail, gallery: true},
 	{name: "plugins/install", label: "Plugins · Install review", templateName: webui.TemplatePlugins, page: func() webui.Page { return qaPluginReview(false) }, gallery: true},
 	{name: "plugins/installed/demo/upgrade", label: "Plugins · Upgrade review", templateName: webui.TemplatePlugins, page: func() webui.Page { return qaPluginReview(true) }, gallery: true},

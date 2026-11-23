@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="{{assetPath "/assets/app.css"}}">
 </head>
 <body class="layout-fixed fixed-header sidebar-expand-lg bg-body-tertiary" data-refresh-path="{{path "/"}}auth/session/refresh">
-<a class="skip-link" href="#main-content">Skip to main content</a>
+<div class="skip-links"><a class="skip-link" href="#main-content">Skip to main content</a></div>
 <div class="app-wrapper{{if not .Navigation}} auth-wrapper{{end}}">
   {{if .Navigation}}
   <header class="app-header navbar navbar-expand" aria-label="Utility navigation">
