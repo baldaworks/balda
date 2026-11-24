@@ -220,6 +220,11 @@ func (s *ScheduledJobScheduler) reconcileConfiguredJobs(ctx context.Context) err
 			NextRunAt:           nextRunAt,
 		}
 		if previous, ok := currentByID[job.ID]; ok {
+			if previous.KeepSession && !record.KeepSession && s.finalizer != nil {
+				if _, err := cleanupRetainedSession(ctx, job.ID, s.finalizer.jobs, s.finalizer.sessions); err != nil {
+					return fmt.Errorf("clean retained scheduler session %q: %w", job.ID, err)
+				}
+			}
 			record.DefinitionVersion = previous.DefinitionVersion
 			record.CreatedAt = previous.CreatedAt
 			record.LastRunAt = previous.LastRunAt
@@ -253,16 +258,18 @@ func (s *ScheduledJobScheduler) reconcileConfiguredJobs(ctx context.Context) err
 			if existing.Deleted {
 				continue
 			}
+			if existing.KeepSession && s.finalizer != nil {
+				cleaned, err := cleanupRetainedSession(ctx, jobID, s.finalizer.jobs, s.finalizer.sessions)
+				if err != nil {
+					return fmt.Errorf("clean retained scheduler session %q: %w", jobID, err)
+				}
+				existing.KeepSession = !cleaned
+			}
 			existing.Deleted = true
 			existing.Enabled = false
 			existing.DefinitionVersion++
 			if err := s.jobStore.Upsert(ctx, existing); err != nil {
 				return fmt.Errorf("archive removed scheduler job %q: %w", jobID, err)
-			}
-			if existing.KeepSession && s.finalizer != nil {
-				if _, err := cleanupRetainedSession(ctx, jobID, s.finalizer.jobs, s.finalizer.sessions); err != nil {
-					return fmt.Errorf("clean retained scheduler session %q: %w", jobID, err)
-				}
 			}
 		case baldastate.ScheduledJobSourceInternal:
 			if err := s.jobStore.Delete(ctx, jobID); err != nil {

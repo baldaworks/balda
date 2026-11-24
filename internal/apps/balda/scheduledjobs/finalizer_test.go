@@ -238,6 +238,56 @@ func TestRunFinalizerRetainsOrCleansStableScheduleSession(t *testing.T) {
 	}
 }
 
+func TestRunFinalizerRetriesRetainedSessionCleanupAfterRestart(t *testing.T) {
+	ctx := t.Context()
+	provider, err := state.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = provider.Close() })
+	now := time.Now().UTC()
+	definition := state.ScheduledJobRecord{
+		JobID: "daily", Source: state.ScheduledJobSourceManaged, Deleted: true,
+		KeepSession: true, DefinitionVersion: 2, Content: "input",
+		ScheduleSpec: "0 9 * * *", Status: state.ScheduledJobStatusActive,
+		NextRunAt: now.Add(time.Hour),
+	}
+	if err := provider.ScheduledJobs().Upsert(ctx, definition); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const jobID = "scheduled-daily-retained"
+	if _, err := provider.ScheduleRuns().Create(ctx, state.ScheduleRunRecord{
+		RunID: "run-retained", ScheduleID: "daily", Trigger: state.ScheduleRunTriggerManual,
+		TriggerKey: "manual:retained", DefinitionVersion: 1, RequestedAt: now,
+		DispatchState: state.ScheduleRunDispatched, ExecutionJobID: jobID, PayloadJSON: string(payload),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sessionID := turncmd.PersistentScheduledExecutionSessionID("daily")
+	if _, err := provider.Jobs().CreateJob(ctx, state.JobRecord{
+		ID: jobID, SessionID: sessionID, Objective: "input", Status: state.JobStatusCompleted,
+		CreatedBy: turncmd.ScheduledExecutionUserID(sessionID), CompletedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	closer := &flakyRunCloser{failOnce: true}
+	first := NewRunFinalizer(provider.ScheduleRuns(), provider.ScheduledJobs(), provider.Jobs(), provider.Jobs(), closer)
+	if err := first.Settle(ctx, 10); err == nil {
+		t.Fatal("first retained cleanup succeeded despite injected failure")
+	}
+	second := NewRunFinalizer(provider.ScheduleRuns(), provider.ScheduledJobs(), provider.Jobs(), provider.Jobs(), closer)
+	if err := second.Settle(ctx, 10); err != nil {
+		t.Fatalf("retry retained cleanup after restart: %v", err)
+	}
+	if len(closer.calls) != 1 || closer.calls[0] != sessionID+":"+turncmd.ScheduledExecutionUserID(sessionID) {
+		t.Fatalf("retained cleanup calls = %v", closer.calls)
+	}
+}
+
 func TestRunFinalizerClosesCanceledRunWithoutReportDelivery(t *testing.T) {
 	ctx := t.Context()
 	provider, err := state.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))

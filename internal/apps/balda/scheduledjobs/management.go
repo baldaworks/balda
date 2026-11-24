@@ -379,15 +379,15 @@ func (m *Management) Update(ctx context.Context, request schedulecmd.Update) (sc
 	record.Enabled = previous.Enabled
 	record.DefinitionVersion = previous.DefinitionVersion + 1
 	record.LastRunAt = previous.LastRunAt
+	if previous.KeepSession && !record.KeepSession {
+		if _, err := cleanupRetainedSession(ctx, record.JobID, m.executionJobs, m.sessions); err != nil {
+			return schedulecmd.Item{}, schedulecmd.ErrUnavailable
+		}
+	}
 	if err := m.store.Save(ctx, state.ScheduleMutation{Kind: state.ScheduleEdit, Record: record,
 		ExpectedVersion: request.ExpectedVersion, Authority: request.Authority,
 		Audit: scheduleAudit(record.JobID, request.Authority)}); err != nil {
 		return schedulecmd.Item{}, err
-	}
-	if previous.KeepSession && !record.KeepSession {
-		if err := m.cleanupRetainedSession(ctx, record.JobID); err != nil {
-			return schedulecmd.Item{}, err
-		}
 	}
 	return scheduleItem(record), nil
 }
@@ -428,24 +428,19 @@ func (m *Management) Delete(ctx context.Context, request schedulecmd.Delete) (sc
 	record.Enabled = false
 	record.Deleted = true
 	record.DefinitionVersion++
+	if record.KeepSession {
+		cleaned, err := cleanupRetainedSession(ctx, record.JobID, m.executionJobs, m.sessions)
+		if err != nil {
+			return schedulecmd.Item{}, schedulecmd.ErrUnavailable
+		}
+		record.KeepSession = !cleaned
+	}
 	if err := m.store.Save(ctx, state.ScheduleMutation{Kind: state.ScheduleDelete, Record: record,
 		ExpectedVersion: request.ExpectedVersion, Authority: request.Authority,
 		Audit: scheduleAudit(record.JobID, request.Authority)}); err != nil {
 		return schedulecmd.Item{}, err
 	}
-	if record.KeepSession {
-		if err := m.cleanupRetainedSession(ctx, record.JobID); err != nil {
-			return schedulecmd.Item{}, err
-		}
-	}
 	return scheduleItem(record), nil
-}
-
-func (m *Management) cleanupRetainedSession(ctx context.Context, scheduleID string) error {
-	if _, err := cleanupRetainedSession(ctx, scheduleID, m.executionJobs, m.sessions); err != nil {
-		return schedulecmd.ErrUnavailable
-	}
-	return nil
 }
 
 func cleanupRetainedSession(ctx context.Context, scheduleID string, jobs state.JobLifecycleStore,

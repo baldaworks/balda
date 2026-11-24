@@ -376,6 +376,65 @@ func TestManagementClearsIdleRetainedSessionWhenFlagIsRemoved(t *testing.T) {
 	}
 }
 
+func TestManagementRetainsCleanupIntentWhenIdleCleanupFails(t *testing.T) {
+	for _, testCase := range []struct {
+		name   string
+		mutate func(*Management, schedulecmd.Item) error
+	}{
+		{
+			name: "clear keep session",
+			mutate: func(m *Management, current schedulecmd.Item) error {
+				definition := current.Definition
+				definition.KeepSession = false
+				_, err := m.Update(t.Context(), schedulecmd.Update{
+					ID: current.Definition.ID, ExpectedVersion: current.Version, Definition: definition,
+				})
+				return err
+			},
+		},
+		{
+			name: "delete schedule",
+			mutate: func(m *Management, current schedulecmd.Item) error {
+				_, err := m.Delete(t.Context(), schedulecmd.Delete{
+					ID: current.Definition.ID, ExpectedVersion: current.Version,
+				})
+				return err
+			},
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			provider, err := state.NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "state.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = provider.Close() })
+			closer := &flakyRunCloser{failOnce: true}
+			m := NewManagementWithResolverAndSessions(provider.ScheduledJobs(),
+				&recordingScheduleManagementStore{jobs: provider.ScheduledJobs()}, nil,
+				provider.Jobs(), provider.Jobs(), nil, closer)
+			created, err := m.Create(t.Context(), schedulecmd.Create{Definition: schedulecmd.Definition{
+				ID: "daily", Cron: "0 9 * * *", Content: "review", KeepSession: true,
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := testCase.mutate(m, created); !errors.Is(err, schedulecmd.ErrUnavailable) {
+				t.Fatalf("first mutation error = %v, want unavailable", err)
+			}
+			stored, found, err := provider.ScheduledJobs().GetByID(t.Context(), "daily")
+			if err != nil || !found {
+				t.Fatalf("load retained definition: found=%t err=%v", found, err)
+			}
+			if !stored.KeepSession || stored.Deleted || stored.DefinitionVersion != created.Version {
+				t.Fatalf("definition changed after failed cleanup: %+v", stored)
+			}
+			if err := testCase.mutate(m, created); err != nil {
+				t.Fatalf("retry mutation: %v", err)
+			}
+		})
+	}
+}
+
 func TestManagementRejectsInvalidDefinitionAndConfigMutation(t *testing.T) {
 	jobs := newSchedulerJobStore(t)
 	now := time.Date(2026, 10, 8, 8, 0, 0, 0, time.UTC)

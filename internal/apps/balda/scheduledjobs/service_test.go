@@ -811,6 +811,64 @@ func TestReconcileConfiguredScheduleStoresUnresolvedReportAlias(t *testing.T) {
 	}
 }
 
+func TestReconcileConfiguredScheduleRetainsCleanupIntentAfterFailure(t *testing.T) {
+	for _, testCase := range []struct {
+		name        string
+		jobs        []ConfiguredScheduledJob
+		wantDeleted bool
+	}{
+		{
+			name: "clear keep session",
+			jobs: []ConfiguredScheduledJob{{
+				ID: "daily", Cron: "0 9 * * *", Content: "review",
+			}},
+		},
+		{name: "remove schedule", wantDeleted: true},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			provider, err := baldastate.NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "state.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = provider.Close() })
+			now := time.Date(2026, time.May, 14, 12, 0, 0, 0, time.UTC)
+			record := baldastate.ScheduledJobRecord{
+				JobID: "daily", Source: baldastate.ScheduledJobSourceConfig, Enabled: true,
+				KeepSession: true, DefinitionVersion: 1, Content: "review",
+				ScheduleSpec: "0 9 * * *", Status: baldastate.ScheduledJobStatusActive,
+				NextRunAt: now.Add(time.Hour),
+			}
+			if err := provider.ScheduledJobs().Upsert(t.Context(), record); err != nil {
+				t.Fatal(err)
+			}
+			closer := &flakyRunCloser{failOnce: true}
+			scheduler := newSchedulerForTest(t, provider.ScheduledJobs(), nil, now)
+			scheduler.config = ScheduledJobSchedulerConfig{Jobs: testCase.jobs}
+			scheduler.finalizer = &RunFinalizer{jobs: provider.Jobs(), sessions: closer}
+			if err := scheduler.reconcileConfiguredJobs(t.Context()); err == nil {
+				t.Fatal("reconcile succeeded despite retained-session cleanup failure")
+			}
+			stored, found, err := provider.ScheduledJobs().GetByID(t.Context(), "daily")
+			if err != nil || !found {
+				t.Fatalf("load retained definition: found=%t err=%v", found, err)
+			}
+			if !stored.KeepSession || stored.Deleted || stored.DefinitionVersion != 1 {
+				t.Fatalf("definition changed after failed cleanup: %+v", stored)
+			}
+			if err := scheduler.reconcileConfiguredJobs(t.Context()); err != nil {
+				t.Fatalf("retry reconcile: %v", err)
+			}
+			stored, found, err = provider.ScheduledJobs().GetByID(t.Context(), "daily")
+			if err != nil || !found {
+				t.Fatalf("load reconciled definition: found=%t err=%v", found, err)
+			}
+			if stored.KeepSession || stored.Deleted != testCase.wantDeleted {
+				t.Fatalf("reconciled definition = %+v, want deleted=%t", stored, testCase.wantDeleted)
+			}
+		})
+	}
+}
+
 func TestNormalizeScheduledJobSchedulerConfigRejectsAmbiguousAddress(t *testing.T) {
 	base := ConfiguredScheduledJob{ID: "daily", Cron: "0 9 * * *", Target: "locator",
 		Key: "telegram:9001:0", Content: "review"}
