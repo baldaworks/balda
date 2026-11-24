@@ -1,6 +1,19 @@
 version: "3"
 
 tasks:
+  deps-update:
+    desc: Update the Go modules specified in MODULES
+    requires:
+      vars: [MODULES]
+    cmds:
+      - 'go get{{range splitList " " .MODULES}} {{shellQuote .}}{{end}}'
+      - go mod tidy
+
+  vulncheck:
+    desc: Scan reachable Go code for known vulnerabilities
+    cmds:
+      - go tool govulncheck ./...
+
   backoffice-preview:
     desc: Serve the synthetic Backoffice QA gallery
     cmds:
