@@ -448,7 +448,7 @@ Nested Access, Plugins, MCP, Schedules, Webhooks, Aliases, and Fact memory pages
 Desktop collapse hides the sidebar and expands content. Mobile navigation uses
 an overlay with backdrop, Escape and focus containment.
 
-The theme is explicitly dark on console, authentication and recovery pages.
+Console, authentication and recovery use the Cobalt & Raspberry light theme from the Balda Backoffice Stitch project. The navigation rail is cobalt, primary actions are raspberry, and status labels use semantic colors.
 `data-lte-color-mode="off"` disables OS-driven mutation. Shared CSS tokens and
 primitives own surfaces, headings, controls, statuses, cards, tables, empty and
 danger states. Review the synthetic component and full-layout examples before

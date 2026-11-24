@@ -323,11 +323,11 @@ async function checkPage(browser, baseURL, viewport) {
         card: getComputedStyle(element.querySelector('.card')).backgroundColor,
         heading: getComputedStyle(element.querySelector('h1')).color,
       }));
-      assert.equal(theme.scheme, 'dark', `${route} auth color scheme`);
-      assert.equal(theme.card, 'rgb(33, 37, 41)', `${route} dark auth card`);
-      assert.equal(theme.heading, 'rgb(222, 226, 230)', `${route} legible auth heading`);
+      assert.equal(theme.scheme, 'light', `${route} auth color scheme`);
+      assert.equal(theme.card, 'rgb(255, 255, 255)', `${route} white auth card`);
+      assert.equal(theme.heading, 'rgb(21, 41, 68)', `${route} legible auth heading`);
       const controls = await page.locator('.login-page .form-control').evaluateAll(elements => elements.map(element => getComputedStyle(element).backgroundColor));
-      assert.equal(controls.every(color => [...color.matchAll(/\d+/g)].every(match => Number(match[0]) < 80)), true, `${route} dark form controls`);
+      assert.equal(controls.every(color => color === theme.card), true, `${route} white form controls`);
       const secondaryActions = await page.locator('.login-page .btn-outline-secondary').evaluateAll(elements => elements.map(element => getComputedStyle(element).color));
       assert.equal(secondaryActions.every(color => color === theme.heading), true, `${route} legible secondary actions`);
     }
@@ -442,7 +442,7 @@ async function checkPage(browser, baseURL, viewport) {
   assert.equal(await page.getByText('Action code').first().isVisible(), true);
 
   await page.goto(`${baseURL}/qa/ui/refresh`);
-  assert.equal(await page.locator('main').evaluate(element => getComputedStyle(element).colorScheme), 'dark');
+  assert.equal(await page.locator('main').evaluate(element => getComputedStyle(element).colorScheme), 'light');
   assert.equal(await page.getByRole('button', { name: 'Restore session' }).count(), 1);
   await page.goto(`${baseURL}/qa/ui/refresh-error`);
   assert.equal(await page.getByRole('link', { name: 'Sign in again' }).count(), 1);
