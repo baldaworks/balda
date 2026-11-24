@@ -94,7 +94,7 @@ html, body { color: var(--ink); background: var(--canvas); }
 .form-control:disabled, .form-select:disabled { background-color: var(--surface-raised); }
 .form-check-input:checked { background-color: var(--accent); border-color: var(--accent); }
 #provider-timeout::placeholder, #hook-command::placeholder, #alias-name::placeholder, #alias-locator::placeholder, #fact-query::placeholder, #archive-query::placeholder, #fact-text::placeholder { color: var(--input-placeholder); opacity: 1; }
-.form-control:focus, .form-select:focus { background-color: var(--surface); color: var(--ink); }
+.form-control:focus, .form-select:focus { background-color: var(--surface-raised); color: var(--ink); }
 .form-text { color: var(--muted); }
 .btn-outline-secondary { --bs-btn-color: var(--ink); --bs-btn-border-color: var(--muted); }
 .btn-primary {

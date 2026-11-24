@@ -326,8 +326,13 @@ async function checkPage(browser, baseURL, viewport) {
       assert.equal(theme.scheme, 'light', `${route} auth color scheme`);
       assert.equal(theme.card, 'rgb(255, 255, 255)', `${route} white auth card`);
       assert.equal(theme.heading, 'rgb(21, 41, 68)', `${route} legible auth heading`);
-      const controls = await page.locator('.login-page .form-control').evaluateAll(elements => elements.map(element => getComputedStyle(element).backgroundColor));
-      assert.equal(controls.every(color => color === theme.card), true, `${route} white form controls`);
+      const controls = await page.locator('.login-page .form-control').evaluateAll(elements => elements.map(element => ({
+        focused: element.matches(':focus'),
+        fill: getComputedStyle(element).backgroundColor,
+      })));
+      for (const control of controls) {
+        assert.equal(control.fill, control.focused ? 'rgb(237, 242, 247)' : theme.card, `${route} auth control surface`);
+      }
       const secondaryActions = await page.locator('.login-page .btn-outline-secondary').evaluateAll(elements => elements.map(element => getComputedStyle(element).color));
       assert.equal(secondaryActions.every(color => color === theme.heading), true, `${route} legible secondary actions`);
     }
