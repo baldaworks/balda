@@ -290,4 +290,4 @@ summary:not(.btn) { color: var(--accent); font-weight: 500; }
   [data-plugins] .plugins-marketplaces-table th { min-width: 0 !important; white-space: normal; }
 }
 
-@media (min-width: 992px) { .schedule-inventory-table .short-identifier { white-space: nowrap; } }
+@media (min-width: 992px) { .schedule-inventory-table td:nth-child(3) { min-width: calc(15ch + 1.5rem); } }
