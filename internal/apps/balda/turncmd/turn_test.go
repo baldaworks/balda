@@ -273,6 +273,31 @@ func TestPrivateScheduledTurnKeepsStableScheduleSession(t *testing.T) {
 	if first.UserID != ScheduledExecutionUserID(want) || second.UserID != first.UserID {
 		t.Fatalf("retained user IDs = %q, %q", first.UserID, second.UserID)
 	}
+	other, err := PrivateScheduledTurn(SessionTurnPayload{
+		JobID: "scheduled-weekly-first", ScheduledJobID: "weekly", ScheduleKeepSession: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if other.Locator.SessionID == want {
+		t.Fatalf("different schedules share retained session %q", want)
+	}
+
+	ordinaryFirst, err := PrivateScheduledTurn(SessionTurnPayload{
+		JobID: "scheduled-daily-ordinary-first", ScheduledJobID: "daily",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ordinarySecond, err := PrivateScheduledTurn(SessionTurnPayload{
+		JobID: "scheduled-daily-ordinary-second", ScheduledJobID: "daily",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ordinaryFirst.Locator.SessionID == ordinarySecond.Locator.SessionID {
+		t.Fatalf("ordinary runs share private session %q", ordinaryFirst.Locator.SessionID)
+	}
 }
 
 func TestNormalizedInboundCarriesOneOrderedAttachmentSetThroughDurableTurn(t *testing.T) {
