@@ -323,11 +323,16 @@ async function checkPage(browser, baseURL, viewport) {
         card: getComputedStyle(element.querySelector('.card')).backgroundColor,
         heading: getComputedStyle(element.querySelector('h1')).color,
       }));
-      assert.equal(theme.scheme, 'dark', `${route} auth color scheme`);
-      assert.equal(theme.card, 'rgb(33, 37, 41)', `${route} dark auth card`);
-      assert.equal(theme.heading, 'rgb(222, 226, 230)', `${route} legible auth heading`);
-      const controls = await page.locator('.login-page .form-control').evaluateAll(elements => elements.map(element => getComputedStyle(element).backgroundColor));
-      assert.equal(controls.every(color => [...color.matchAll(/\d+/g)].every(match => Number(match[0]) < 80)), true, `${route} dark form controls`);
+      assert.equal(theme.scheme, 'light', `${route} auth color scheme`);
+      assert.equal(theme.card, 'rgb(255, 255, 255)', `${route} white auth card`);
+      assert.equal(theme.heading, 'rgb(21, 41, 68)', `${route} legible auth heading`);
+      const controls = await page.locator('.login-page .form-control').evaluateAll(elements => elements.map(element => ({
+        focused: element.matches(':focus'),
+        fill: getComputedStyle(element).backgroundColor,
+      })));
+      for (const control of controls) {
+        assert.equal(control.fill, control.focused ? 'rgb(237, 242, 247)' : theme.card, `${route} auth control surface`);
+      }
       const secondaryActions = await page.locator('.login-page .btn-outline-secondary').evaluateAll(elements => elements.map(element => getComputedStyle(element).color));
       assert.equal(secondaryActions.every(color => color === theme.heading), true, `${route} legible secondary actions`);
     }
@@ -374,15 +379,15 @@ async function checkPage(browser, baseURL, viewport) {
   }
 
   const nativeLayouts = new Map();
-  const destinations = ['Overview', 'Account', 'Access', 'MCP', 'Audit'];
+  const destinations = { Overview: 'overview', Account: 'account', Access: 'access-list', MCP: 'mcp', Audit: 'audit' };
   async function layout() {
     return page.locator('main#main-content').evaluate(element => {
       const bounds = element.querySelector('.container-fluid').getBoundingClientRect();
       return { x: bounds.x, width: bounds.width, headingColor: getComputedStyle(element.querySelector('h1')).color };
     });
   }
-  for (const name of destinations) {
-    await page.goto(`${baseURL}/qa/ui/${name.toLowerCase()}`);
+  for (const [name, route] of Object.entries(destinations)) {
+    await page.goto(`${baseURL}/qa/ui/${route}`);
     nativeLayouts.set(name, await layout());
   }
   await page.goto(`${baseURL}/qa/ui/overview`);
@@ -403,7 +408,7 @@ async function checkPage(browser, baseURL, viewport) {
   for (const name of ['Account', 'Access', 'Audit', 'Overview']) {
     const navigation = page.getByRole('navigation', { name: 'Primary navigation', exact: true });
     if (name !== 'Account' && viewport.width < 992) await page.getByRole('button', { name: 'Toggle navigation' }).click();
-    const response = page.waitForResponse(response => response.url() === `${baseURL}/qa/ui/${name.toLowerCase()}`);
+    const response = page.waitForResponse(response => response.url() === `${baseURL}/qa/ui/${destinations[name]}`);
     if (name === 'Account') await page.getByRole('link', { name: 'Your account' }).click();
     else await navigation.getByRole('link', { name, exact: true }).click();
     await response;
@@ -442,7 +447,7 @@ async function checkPage(browser, baseURL, viewport) {
   assert.equal(await page.getByText('Action code').first().isVisible(), true);
 
   await page.goto(`${baseURL}/qa/ui/refresh`);
-  assert.equal(await page.locator('main').evaluate(element => getComputedStyle(element).colorScheme), 'dark');
+  assert.equal(await page.locator('main').evaluate(element => getComputedStyle(element).colorScheme), 'light');
   assert.equal(await page.getByRole('button', { name: 'Restore session' }).count(), 1);
   await page.goto(`${baseURL}/qa/ui/refresh-error`);
   assert.equal(await page.getByRole('link', { name: 'Sign in again' }).count(), 1);

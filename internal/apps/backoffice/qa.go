@@ -77,7 +77,21 @@ func QAHandler(basePath string) (http.Handler, error) {
 				}
 			}
 		}
+		aliases := map[string]string{
+			"providers/configured-pool": "providers/configured",
+			"providers/managed-codex":   "providers/managed",
+			"schedules/config:morning":  "schedules-config",
+		}
+		if fixture, found := aliases[name]; found {
+			name = fixture
+		}
 		page, templateName, status, ok := qaFixture(name)
+		if name == "schedules-config" {
+			id := r.URL.Query().Get("run_id")
+			if id == "qa-run-failed" || id == "qa-run-succeeded" {
+				page.Schedules.Editor.RunDetail = qaRunDetail(id)
+			}
+		}
 		if chatPage, chatOK := qaChatRequest(r, name); chatOK {
 			page, templateName, status, ok = chatPage, webui.TemplateChatArchive, http.StatusOK, true
 		}
@@ -94,12 +108,14 @@ func QAHandler(basePath string) (http.Handler, error) {
 		if page.ReturnTo != "" {
 			page.ReturnTo = basePath + "/qa/ui/overview"
 		}
-		if page.RestartURL != "" && (strings.HasPrefix(name, "plugins") || strings.HasPrefix(name, "skills")) {
+		if page.RestartURL != "" {
 			page.RestartURL = basePath + "/qa/ui" + page.RestartURL
-		} else if page.RestartURL != "" {
-			page.RestartURL = basePath + "/qa/ui/mcp"
-			if strings.HasPrefix(name, "memory") {
-				page.RestartURL = basePath + "/qa/ui/memory"
+		}
+		for _, group := range page.Navigation {
+			for i, item := range group.Items {
+				if item.Href == webui.LocationAccess {
+					group.Items[i].Href = "/access-list"
+				}
 			}
 		}
 		if r.Method == http.MethodHead {
@@ -150,6 +166,11 @@ var qaEntries = append(append(append(append(append(append(scheduleAliasQAEntries
 	{name: "memory-empty", label: "Fact memory · empty", templateName: webui.TemplateFactMemory, page: func() webui.Page { p := qaFactMemory(); p.FactMemory.Rows = nil; p.FactMemory.TotalFacts = 0; return p }, gallery: true},
 	{name: "memory-disabled", label: "Fact memory · disabled", templateName: webui.TemplateFactMemory, page: func() webui.Page { p := qaFactMemory(); p.FactMemory = &webui.FactMemoryView{}; return p }, gallery: true},
 	{name: "memory/new", label: "Fact memory · add", templateName: webui.TemplateFactMemory, page: func() webui.Page { return qaFactEditor(true) }, gallery: true},
+	{name: "memory/2", templateName: webui.TemplateFactMemory, page: func() webui.Page {
+		p := qaFactEditor(false)
+		p.FactMemory.Editor = webui.ProjectFactEditor(memorycmd.Editor{Fact: memorycmd.Fact{ID: 2, Fact: qaSecondFact}, ExpectedVersion: 3}, false)
+		return p
+	}},
 	{name: "memory/1", label: "Fact memory · edit", templateName: webui.TemplateFactMemory, page: func() webui.Page { return qaFactEditor(false) }, gallery: true},
 	{name: "memory-delete", label: "Fact memory · delete confirmation", templateName: webui.TemplateFactMemory, page: func() webui.Page { return qaFactEditor(false) }, gallery: true},
 	{name: "memory-invalid", label: "Fact memory · invalid (400)", templateName: webui.TemplateFactMemory, page: func() webui.Page { return qaFactFailure(memorycmd.ErrInvalid, true) }, gallery: true, status: http.StatusBadRequest},
@@ -206,10 +227,12 @@ var qaEntries = append(append(append(append(append(append(scheduleAliasQAEntries
 	}, gallery: true},
 	{name: "mcp-authorizing", label: "MCP · pending browser authorization", templateName: webui.TemplateMCP, page: func() webui.Page {
 		p := qaMCPEditor(false, true)
+		p.MCP.Editor.AuthorizationAvailable = true
 		p.MCP.Editor.Attempt = &webui.MCPAttempt{ID: "qa-attempt", CancelPath: "/mcp/oauth/attempts/qa-attempt/cancel", Expires: "2026-08-01 12:10 UTC"}
 		return p
 	}, gallery: true},
 	{name: "mcp-device-issued", label: "MCP · one-time device instructions", templateName: webui.TemplateMCP, page: func() webui.Page { return qaMCPDevice(mcpcmd.DevicePending, true) }, gallery: true},
+	{name: "mcp/oauth/device/qa-attempt", templateName: webui.TemplateMCP, page: func() webui.Page { return qaMCPDevice(mcpcmd.DevicePending, false) }},
 	{name: "mcp-device-pending", label: "MCP · device status without instructions", templateName: webui.TemplateMCP, page: func() webui.Page { return qaMCPDevice(mcpcmd.DevicePending, false) }, gallery: true},
 	{name: "mcp-device-authorized", label: "MCP · saved device grant, readiness separate", templateName: webui.TemplateMCP, page: func() webui.Page { return qaMCPDevice(mcpcmd.DeviceAuthorized, false) }, gallery: true},
 	{name: "mcp-device-denied", label: "MCP · device denied", templateName: webui.TemplateMCP, page: func() webui.Page { return qaMCPDevice(mcpcmd.DeviceDenied, false) }, gallery: true},
@@ -306,6 +329,7 @@ var qaEntries = append(append(append(append(append(append(scheduleAliasQAEntries
 	{name: "bindings-disabled", label: "Bindings · user disabled", templateName: webui.TemplateAccess, page: qaBindingsDisabled, gallery: true},
 	{name: "access-primary", label: "Access · primary administrator", templateName: webui.TemplateAccess, page: qaAccessPrimary, gallery: true},
 	{name: "access-long", label: "Access · long content", templateName: webui.TemplateAccess, page: qaAccessLong, gallery: true},
+	{name: "access/users/primary-demo", templateName: webui.TemplateAccess, page: qaAccessPrimary},
 	{name: "access/users/user-demo", templateName: webui.TemplateAccess, page: qaAccess},
 	{name: "access-list", label: "Access · list", templateName: webui.TemplateAccess, page: qaAccessList, gallery: true},
 	{name: "access-create", label: "Access · create", templateName: webui.TemplateAccess, page: qaAccessCreate, gallery: true},
@@ -716,7 +740,11 @@ func qaBindingsDisabled() webui.Page {
 }
 
 func qaWebAuthn(registration bool) webui.Page {
-	return webui.Page{Title: "Verify your passkey", CSRFToken: "synthetic-csrf", Ceremony: &webui.MFACeremonyView{Registration: registration, OptionsJSON: `{"publicKey":{"challenge":"c3ludGhldGlj","rpId":"invalid.example"}}`, Transaction: "synthetic-invalid", FinishPath: "/webauthn-assert", CancelPath: "/account"}}
+	title := "Verify your passkey"
+	if registration {
+		title = "Register your passkey"
+	}
+	return webui.Page{Title: title, CSRFToken: "synthetic-csrf", Ceremony: &webui.MFACeremonyView{Registration: registration, OptionsJSON: `{"publicKey":{"challenge":"c3ludGhldGlj","rpId":"invalid.example"}}`, Transaction: "synthetic-invalid", FinishPath: "/webauthn-assert", CancelPath: "/account"}}
 }
 
 func qaMCPItem() mcpcmd.Item {
@@ -799,10 +827,12 @@ func qaWebhookRow(item webhookroutecmd.Item) webui.WebhookRow {
 	return row
 }
 
+const qaSecondFact = "Synthetic deployment notes:\n  Review staging first.\n<script>window.syntheticFactExecuted = true</script>"
+
 func qaFactMemory() webui.Page {
 	inv := memorycmd.Inventory{Enabled: true, Version: 3, TotalFacts: 2, Facts: []memorycmd.Fact{
 		{ID: 1, Fact: "Prefers concise replies."},
-		{ID: 2, Fact: "Synthetic deployment notes:\n  Review staging first.\n<script>window.syntheticFactExecuted = true</script>"},
+		{ID: 2, Fact: qaSecondFact},
 	}}
 	return webui.Page{Title: "Fact memory · QA", Current: webui.LocationFactMemory, Navigation: qaAdminNavigation(webui.LocationFactMemory), FactMemory: webui.ProjectFactInventory(inv, "")}
 }

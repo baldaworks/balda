@@ -1,5 +1,5 @@
 {{define "document"}}<!doctype html>
-<html lang="en" data-bs-theme="dark" data-lte-color-mode="off">
+<html lang="en" data-bs-theme="light" data-lte-color-mode="off">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="{{assetPath "/assets/app.css"}}">
 </head>
 <body class="layout-fixed fixed-header sidebar-expand-lg bg-body-tertiary" data-refresh-path="{{path "/"}}auth/session/refresh">
-<a class="skip-link" href="#main-content">Skip to main content</a>
+<div class="skip-links"><a class="skip-link" href="#main-content">Skip to main content</a></div>
 <div class="app-wrapper{{if not .Navigation}} auth-wrapper{{end}}">
   {{if .Navigation}}
   <header class="app-header navbar navbar-expand" aria-label="Utility navigation">
@@ -22,7 +22,7 @@
       </div>
     </div>
   </header>
-  <aside id="primary-sidebar" class="app-sidebar shadow" data-bs-theme="dark">
+  <aside id="primary-sidebar" class="app-sidebar shadow">
     <div class="sidebar-brand"><a href="{{path "/"}}overview" class="brand-link"><img class="brand-logo" src="{{assetPath "/assets/baldaworks-logo.png"}}" alt="" aria-hidden="true"><span class="brand-text">Balda</span></a></div>
     <div class="sidebar-wrapper"><nav aria-label="Primary navigation"><ul class="nav sidebar-menu flex-column" role="list">
       {{range .Navigation}}<li class="nav-section"><h2 class="nav-section-title" id="{{.ID}}">{{.Label}}</h2><ul class="nav flex-column" role="list" aria-labelledby="{{.ID}}">{{range .Items}}<li class="nav-item"><a class="nav-link{{if .Current}} active{{end}}" data-nav-link href="{{path .Href}}" hx-boost="true" hx-target="#main-content" hx-swap="outerHTML" hx-push-url="true"{{if .Current}} aria-current="page"{{end}}><i class="nav-icon bi {{.Icon}}" aria-hidden="true"></i><p>{{.Label}}</p></a></li>{{end}}</ul></li>{{end}}

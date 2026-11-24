@@ -93,7 +93,7 @@ async function consume(channel, payload, sender) {
           await page.goto(detailURL); // Native recovery additionally verifies metadata-only GET.
           assert.equal(await panel().getByText('Waiting for confirmation', { exact: true }).count(), 0);
           assert.equal(await page.locator('[data-binding-reveal]').count(), 0);
-          assert.equal(await page.locator('h1').evaluate(element => getComputedStyle(element).color), 'rgb(222, 226, 230)');
+          assert.equal(await page.locator('h1').evaluate(element => getComputedStyle(element).color), 'rgb(21, 41, 68)');
           assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
           const storage = await page.evaluate(() => JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage } }));
           assert.equal(secrets.some(secret => storage.includes(secret)), false, 'credential excluded from storage/history cache');
