@@ -318,8 +318,8 @@ func TestSchedulesBrowserManagement(t *testing.T) {
 				fixture.creates[1].Definition.Locator != "" {
 				t.Fatalf("no-report schedule create = %d, definitions=%+v", withoutReport.Code, fixture.creates)
 			}
-			updateForm := url.Values{"expected_version": {"2"}, "cron": {"0 12 * * *"}, "locator": {"telegram:9001:0"}, "content": {"updated"}}
-			if got := mutation("/schedules/daily", updateForm).Code; got != http.StatusSeeOther || len(fixture.updates) != 1 || fixture.updates[0].ID != "daily" || fixture.updates[0].ExpectedVersion != 2 {
+			updateForm := url.Values{"expected_version": {"2"}, "cron": {"0 12 * * *"}, "locator": {"telegram:9001:0"}, "content": {"updated"}, "keep_session": {"yes"}}
+			if got := mutation("/schedules/daily", updateForm).Code; got != http.StatusSeeOther || len(fixture.updates) != 1 || fixture.updates[0].ID != "daily" || fixture.updates[0].ExpectedVersion != 2 || !fixture.updates[0].Definition.KeepSession {
 				t.Fatalf("schedule update = %d", got)
 			}
 			fixture.updateErr = schedulecmd.ErrConflict
@@ -329,7 +329,7 @@ func TestSchedulesBrowserManagement(t *testing.T) {
 			}
 			fixture.updateErr = schedulecmd.ErrUnavailable
 			unavailable := mutation("/schedules/daily", updateForm)
-			if unavailable.Code != http.StatusServiceUnavailable || !strings.Contains(unavailable.Body.String(), `name="expected_version" value="2"`) || !strings.Contains(unavailable.Body.String(), `value="0 12 * * *"`) || !strings.Contains(unavailable.Body.String(), `value="telegram:9001:0"`) || !strings.Contains(unavailable.Body.String(), "updated") || !strings.Contains(unavailable.Body.String(), `aria-describedby="schedule-form-error"`) {
+			if unavailable.Code != http.StatusServiceUnavailable || !strings.Contains(unavailable.Body.String(), `name="expected_version" value="2"`) || !strings.Contains(unavailable.Body.String(), `value="0 12 * * *"`) || !strings.Contains(unavailable.Body.String(), `value="telegram:9001:0"`) || !strings.Contains(unavailable.Body.String(), "updated") || !strings.Contains(unavailable.Body.String(), `name="keep_session" type="checkbox" value="yes" checked`) || !strings.Contains(unavailable.Body.String(), `aria-describedby="schedule-form-error"`) {
 				t.Fatalf("unavailable schedule edit discarded safe draft or version: %d", unavailable.Code)
 			}
 			fixture.updateErr = nil
