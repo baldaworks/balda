@@ -63,7 +63,7 @@ diagnostic directory when the job fails.
 
 The suite starts its own loopback preview on an ephemeral port. It checks every
 gallery page and state at 1440×900, 1024×768, 768×1024 and 390×844. It checks
-document overflow, consistent headings, dark authentication controls, native/HTMX
+document overflow, consistent headings, light authentication controls, native/HTMX
 geometry, top-bar visibility and alignment during navigation and scrolling,
 browser history and focus, sidebar collapse/overlay/backdrop/Escape,
 short-page footer position, grouped navigation, Audit details, and recovery actions.

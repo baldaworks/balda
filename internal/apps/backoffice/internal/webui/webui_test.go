@@ -488,7 +488,7 @@ func TestShellShowsViewerIndependentlyOfInspectedUser(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := response.Body.String()
-	for _, want := range []string{`<html lang="en" data-bs-theme="dark" data-lte-color-mode="off">`, `aria-label="Toggle navigation"`, `<strong title="signed-in-admin">signed-in-admin</strong>`, `action="/balda/logout"`, `class="app-footer"`} {
+	for _, want := range []string{`<html lang="en" data-bs-theme="light" data-lte-color-mode="off">`, `aria-label="Toggle navigation"`, `<strong title="signed-in-admin">signed-in-admin</strong>`, `action="/balda/logout"`, `class="app-footer"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("shell missing %q", want)
 		}
