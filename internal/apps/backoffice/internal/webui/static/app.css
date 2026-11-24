@@ -115,6 +115,7 @@ html, body { color: var(--ink); background: var(--canvas); }
   --bs-btn-hover-border-color: var(--accent);
 }
 .btn-group .btn.active, .section-tabs a[aria-current] { background: var(--selected); color: var(--accent); border-color: var(--outline); font-weight: 650; }
+.btn-outline-warning { --bs-btn-color: var(--bs-warning-text-emphasis); --bs-btn-border-color: var(--bs-warning-text-emphasis); }
 .btn-outline-danger { --bs-btn-color: var(--bs-danger-text-emphasis); --bs-btn-border-color: var(--bs-danger-text-emphasis); }
 .invalid-feedback { color: var(--bs-danger-text-emphasis); }
 .fact-memory-table { table-layout: fixed; width: 100%; }
